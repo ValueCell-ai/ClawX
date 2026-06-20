@@ -31,6 +31,7 @@ import { browserOAuthManager } from '../utils/browser-oauth';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
 import { getRecentTokenUsageHistory } from '../utils/token-usage';
+import { getCcConnectMediaDir, getOpenClawMediaDir } from '../utils/runtime-media-paths';
 import { getProviderService } from '../services/providers/provider-service';
 import {
   getOpenClawProviderKey,
@@ -150,8 +151,8 @@ function registerTypedHostHandlers(
     channels: createChannelsApi({ gatewayManager, runtimeManager, mainWindow }),
     agents: createAgentsApi({ gatewayManager }),
     providers: createProvidersApi({ gatewayManager, runtimeManager, mainWindow }),
-    files: createFilesApi(),
-    media: createMediaApi(),
+    files: createFilesApi({ runtimeManager }),
+    media: createMediaApi({ runtimeManager }),
     sessions: createSessionsApi(runtimeManager),
     chat: createChatApi({ gatewayManager, runtimeManager }),
     cron: createCronApi({ gatewayManager, runtimeManager }),
@@ -1289,7 +1290,7 @@ function getMimeType(ext: string): string {
   return EXT_MIME_MAP[ext.toLowerCase()] || 'application/octet-stream';
 }
 
-const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
+const OPENCLAW_OUTBOUND_DIR = join(getOpenClawMediaDir(), 'outbound');
 
 // ── File preview (sandboxed) ──────────────────────────────────────────
 //
@@ -1358,14 +1359,14 @@ function isPathInside(child: string, parent: string): boolean {
  */
 function getFilePreviewWriteRoots(): string[] {
   const roots: string[] = [];
-  const openclawDir = join(homedir(), '.openclaw');
-  roots.push(resolve(openclawDir));
+  roots.push(resolve(join(homedir(), '.openclaw')));
+  roots.push(resolve(getCcConnectMediaDir()));
   try {
     roots.push(resolve(app.getPath('userData')));
   } catch {
     // ignore — userData should always exist
   }
-  roots.push(resolve(OUTBOUND_DIR));
+  roots.push(resolve(OPENCLAW_OUTBOUND_DIR));
   return roots;
 }
 

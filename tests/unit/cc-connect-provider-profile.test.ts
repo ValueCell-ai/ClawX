@@ -8,6 +8,7 @@ const appPath = new Map<string, string>();
 const getDefaultProviderAccountIdMock = vi.fn();
 const getProviderAccountMock = vi.fn();
 const getProviderSecretMock = vi.fn();
+const deleteProviderSecretMock = vi.fn();
 const bdRouteSegment = ['model', 'hub'].join('');
 const bdProviderKey = `${bdRouteSegment}_openapi`;
 const bdHost = ['aidp', 'bytedance', 'net'].join('.');
@@ -30,6 +31,9 @@ vi.mock('@electron/services/providers/provider-store', () => ({
 
 vi.mock('@electron/services/secrets/secret-store', () => ({
   getProviderSecret: (...args: unknown[]) => getProviderSecretMock(...args),
+  getSecretStore: () => ({
+    delete: (...args: unknown[]) => deleteProviderSecretMock(...args),
+  }),
 }));
 
 describe('cc-connect provider profile sync', () => {
@@ -40,6 +44,7 @@ describe('cc-connect provider profile sync', () => {
     getDefaultProviderAccountIdMock.mockReset();
     getProviderAccountMock.mockReset();
     getProviderSecretMock.mockReset();
+    deleteProviderSecretMock.mockReset();
     tempDir = await mkdtemp(join(tmpdir(), 'clawx-cc-provider-profile-'));
     appPath.set('userData', tempDir);
     appPath.set('home', tempDir);
@@ -259,6 +264,168 @@ describe('cc-connect provider profile sync', () => {
     expect(profileFile).not.toContain('imported-id-token');
     expect(profileFile).not.toContain('imported-access-token');
     expect(profileFile).not.toContain('imported-refresh-token');
+  });
+
+  it('reports managed and user Codex OAuth status without exposing token values', async () => {
+    const managedHome = join(tempDir, 'runtimes', 'cc-connect', 'codex-home');
+    await mkdir(managedHome, { recursive: true });
+    await writeFile(join(managedHome, 'auth.json'), JSON.stringify({
+      auth_mode: 'chatgpt',
+      OPENAI_API_KEY: null,
+      tokens: {
+        id_token: 'managed-id-token',
+        access_token: 'managed-access-token',
+        refresh_token: 'managed-refresh-token',
+        account_id: 'acct_123',
+      },
+      last_refresh: '2026-06-07T00:00:00.000Z',
+    }, null, 2), 'utf8');
+    await mkdir(join(tempDir, '.codex'), { recursive: true });
+    await writeFile(join(tempDir, '.codex', 'auth.json'), JSON.stringify({
+      auth_mode: 'chatgpt',
+      tokens: {
+        id_token: 'user-id-token',
+        access_token: 'user-access-token',
+        refresh_token: 'user-refresh-token',
+        account_id: 'acct_123',
+      },
+    }, null, 2), 'utf8');
+    getDefaultProviderAccountIdMock.mockResolvedValue('openai-oauth');
+    getProviderAccountMock.mockResolvedValue({
+      id: 'openai-oauth',
+      vendorId: 'openai',
+      label: 'OpenAI OAuth',
+      authMode: 'oauth_browser',
+      model: 'gpt-5.5',
+      enabled: true,
+      isDefault: true,
+      createdAt: '2026-06-07T00:00:00.000Z',
+      updatedAt: '2026-06-07T00:00:00.000Z',
+    });
+    getProviderSecretMock.mockResolvedValue({
+      type: 'oauth',
+      accountId: 'openai-oauth',
+      accessToken: 'managed-access-token',
+      refreshToken: 'managed-refresh-token',
+      idToken: 'managed-id-token',
+      subject: 'acct_123',
+    });
+    const { getCcConnectCodexOAuthStatus } = await import('@electron/runtime/cc-connect-provider-profile');
+
+    const status = await getCcConnectCodexOAuthStatus();
+
+    expect(status).toMatchObject({
+      success: true,
+      managedCodexHome: managedHome,
+      authPath: join(managedHome, 'auth.json'),
+      managed: {
+        exists: true,
+        complete: true,
+        accountId: 'acct_123',
+        authMode: 'chatgpt',
+        lastRefresh: '2026-06-07T00:00:00.000Z',
+      },
+      user: {
+        exists: true,
+        complete: true,
+        accountId: 'acct_123',
+      },
+      provider: {
+        accountId: 'openai-oauth',
+        vendorId: 'openai',
+        authMode: 'oauth_browser',
+        hasOAuthSecret: true,
+        managedMatchesAccount: true,
+        userMatchesAccount: true,
+      },
+    });
+    expect(JSON.stringify(status)).not.toContain('managed-access-token');
+    expect(JSON.stringify(status)).not.toContain('user-refresh-token');
+  });
+
+  it('imports the local Codex OAuth auth file into the managed cc-connect Codex home', async () => {
+    await mkdir(join(tempDir, '.codex'), { recursive: true });
+    await writeFile(join(tempDir, '.codex', 'auth.json'), JSON.stringify({
+      auth_mode: 'chatgpt',
+      tokens: {
+        id_token: 'local-id-token',
+        access_token: 'local-access-token',
+        refresh_token: 'local-refresh-token',
+        account_id: 'acct_123',
+      },
+    }, null, 2), 'utf8');
+    getDefaultProviderAccountIdMock.mockResolvedValue('openai-oauth');
+    getProviderAccountMock.mockResolvedValue({
+      id: 'openai-oauth',
+      vendorId: 'openai',
+      label: 'OpenAI OAuth',
+      authMode: 'oauth_browser',
+      model: 'gpt-5.5',
+      enabled: true,
+      isDefault: true,
+      createdAt: '2026-06-07T00:00:00.000Z',
+      updatedAt: '2026-06-07T00:00:00.000Z',
+    });
+    getProviderSecretMock.mockResolvedValue({
+      type: 'oauth',
+      accountId: 'openai-oauth',
+      accessToken: 'different-access-token',
+      refreshToken: 'different-refresh-token',
+      subject: 'acct_123',
+    });
+    const { importUserCodexOAuthToManagedHome } = await import('@electron/runtime/cc-connect-provider-profile');
+
+    const status = await importUserCodexOAuthToManagedHome();
+
+    expect(status.managed).toMatchObject({
+      exists: true,
+      complete: true,
+      accountId: 'acct_123',
+    });
+    const managedAuth = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'codex-home', 'auth.json'), 'utf8');
+    expect(managedAuth).toContain('local-id-token');
+    expect(JSON.stringify(status)).not.toContain('local-id-token');
+    expect(JSON.stringify(status)).not.toContain('local-access-token');
+  });
+
+  it('logs out Codex OAuth by clearing the managed auth file and provider OAuth secret', async () => {
+    const managedHome = join(tempDir, 'runtimes', 'cc-connect', 'codex-home');
+    await mkdir(managedHome, { recursive: true });
+    await writeFile(join(managedHome, 'auth.json'), JSON.stringify({
+      auth_mode: 'chatgpt',
+      tokens: {
+        id_token: 'managed-id-token',
+        access_token: 'managed-access-token',
+        refresh_token: 'managed-refresh-token',
+        account_id: 'acct_123',
+      },
+    }, null, 2), 'utf8');
+    getDefaultProviderAccountIdMock.mockResolvedValue('openai-oauth');
+    getProviderAccountMock.mockResolvedValue({
+      id: 'openai-oauth',
+      vendorId: 'openai',
+      label: 'OpenAI OAuth',
+      authMode: 'oauth_browser',
+      model: 'gpt-5.5',
+      enabled: true,
+      isDefault: true,
+      createdAt: '2026-06-07T00:00:00.000Z',
+      updatedAt: '2026-06-07T00:00:00.000Z',
+    });
+    getProviderSecretMock.mockResolvedValue({
+      type: 'oauth',
+      accountId: 'openai-oauth',
+      accessToken: 'managed-access-token',
+      refreshToken: 'managed-refresh-token',
+      subject: 'acct_123',
+    });
+    const { logoutCcConnectCodexOAuth } = await import('@electron/runtime/cc-connect-provider-profile');
+
+    const status = await logoutCcConnectCodexOAuth();
+
+    expect(status.managed).toMatchObject({ exists: false, complete: false });
+    expect(deleteProviderSecretMock).toHaveBeenCalledWith('openai-oauth');
+    await expect(readFile(join(managedHome, 'auth.json'), 'utf8')).rejects.toThrow();
   });
 
   it('converts Ollama provider accounts to Codex OSS local-provider args', async () => {

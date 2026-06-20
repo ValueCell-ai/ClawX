@@ -164,8 +164,13 @@ export function Sidebar() {
   const isOnChat = useLocation().pathname === '/';
   const { t } = useTranslation(['common', 'chat']);
 
-  const getSessionLabel = (key: string, displayName?: string, label?: string) =>
-    sessionLabels[key] ?? label ?? displayName ?? key;
+  const getSessionLabel = (
+    key: string,
+    displayName?: string,
+    label?: string,
+    derivedTitle?: string,
+    lastMessagePreview?: string,
+  ) => sessionLabels[key] ?? label ?? derivedTitle ?? lastMessagePreview ?? displayName ?? key;
 
   const controlUiLabel = gatewayStatus.runtimeKind === 'cc-connect'
     ? t('common:sidebar.ccConnectPage')
@@ -454,7 +459,13 @@ export function Sidebar() {
                   const agentId = getAgentIdFromSessionKey(s.key);
                   const agentName = agentNameById[agentId] || agentId;
                   const isEditing = editingSessionKey === s.key;
-                  const sessionLabel = getSessionLabel(s.key, s.displayName, s.label);
+                  const sessionLabel = getSessionLabel(
+                    s.key,
+                    s.displayName,
+                    s.label,
+                    s.derivedTitle,
+                    s.lastMessagePreview,
+                  );
                   return (
                     <div key={s.key} className="group relative flex items-center">
                       {isEditing ? (
@@ -486,6 +497,7 @@ export function Sidebar() {
                       ) : (
                         <>
                           <button
+                            data-testid={`sidebar-session-${s.key}`}
                             onClick={() => {
                               if (currentSessionKey === s.key) {
                                 void loadHistory(false);

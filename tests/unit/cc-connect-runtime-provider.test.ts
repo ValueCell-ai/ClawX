@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { createServer as createHttpServer, type Server as HttpServer } from 'node:http';
+import { createServer as createTcpServer, type Server as TcpServer } from 'node:net';
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -57,6 +59,26 @@ function createChild() {
   };
 }
 
+async function occupyTcpPort(port: number): Promise<TcpServer | null> {
+  return await new Promise((resolve) => {
+    const server = createTcpServer();
+    server.once('error', () => resolve(null));
+    server.listen(port, '127.0.0.1', () => resolve(server));
+  });
+}
+
+async function listenHttp(server: HttpServer, port: number): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', () => resolve());
+  });
+}
+
+async function closeServer(server: TcpServer | HttpServer | null | undefined): Promise<void> {
+  if (!server) return;
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+}
+
 describe('CcConnectRuntimeProvider', () => {
   let tempDir: string;
 
@@ -70,6 +92,8 @@ describe('CcConnectRuntimeProvider', () => {
   });
 
   afterEach(async () => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
     if (originalCodexWorkDir === undefined) {
       delete process.env.CLAWX_CODEX_WORKDIR;
     } else {
@@ -83,6 +107,7 @@ describe('CcConnectRuntimeProvider', () => {
       connect: vi.fn(async () => undefined),
       close: vi.fn(async () => undefined),
       send: vi.fn(async () => ({ runId: 'cc-connect-run-1' })),
+      abort: vi.fn(async () => ({ success: true, abortedRuns: [] })),
       listSessions: vi.fn(async () => [{ key: 'agent:main:main', displayName: 'main', updatedAt: 2 }]),
       loadHistory: vi.fn(async () => [{ role: 'assistant', content: 'assistant ok', timestamp: 2 }]),
       deleteSession: vi.fn(async () => undefined),
@@ -175,6 +200,7 @@ describe('CcConnectRuntimeProvider', () => {
     ], expect.objectContaining({
       cwd: join(tempDir, 'runtimes', 'cc-connect'),
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32',
       env: expect.objectContaining({
         CODEX_HOME: join(tempDir, 'runtimes', 'cc-connect', 'codex-home'),
       }),
@@ -187,6 +213,59 @@ describe('CcConnectRuntimeProvider', () => {
       runtimeKind: 'cc-connect',
       capabilities: expect.objectContaining({ chat: true, doctor: true, providers: true, models: true, skills: true, cron: true }),
     });
+  });
+
+  it('falls back to available cc-connect ports when the defaults are occupied', async () => {
+    const occupiedBridge = await occupyTcpPort(9810);
+    const occupiedManagement = await occupyTcpPort(9820);
+    const managementApi = createHttpServer((req, res) => {
+      expect(req.url).toBe('/api/v1/cron?project=clawx-main');
+      expect(req.headers.authorization).toMatch(/^Bearer /);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, data: { jobs: [] } }));
+    });
+    try {
+      const binaryPath = join(tempDir, 'cc-connect');
+      await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+      const bridgeAdapter = createBridgeAdapterMock();
+      const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+      const provider = new CcConnectRuntimeProvider({
+        binaryPath,
+        codexPath: join(tempDir, 'codex'),
+        bridgeAdapter: bridgeAdapter as never,
+        skillSyncer: vi.fn(async () => ({ skills: [] })),
+        providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
+      });
+      const child = createChild();
+      forkMock.mockReturnValueOnce(child);
+
+      const startPromise = provider.start();
+      await vi.waitFor(() => expect(forkMock).toHaveBeenCalledOnce());
+      child.emit('spawn');
+      await startPromise;
+
+      const config = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'config.toml'), 'utf8');
+      const managementPort = Number(config.match(/\[management\][\s\S]*?port = (\d+)/)?.[1]);
+      const bridgePort = Number(config.match(/\[bridge\][\s\S]*?port = (\d+)/)?.[1]);
+      expect(managementPort).toBeGreaterThan(0);
+      expect(bridgePort).toBeGreaterThan(0);
+      if (occupiedManagement) expect(managementPort).not.toBe(9820);
+      if (occupiedBridge) expect(bridgePort).not.toBe(9810);
+      expect(provider.getStatus().port).toBe(managementPort);
+      await expect(provider.rpc('runtime.controlUi')).resolves.toMatchObject({
+        success: true,
+        url: `http://127.0.0.1:${managementPort}/`,
+        port: managementPort,
+      });
+
+      await listenHttp(managementApi, managementPort);
+      await expect(provider.rpc('cron.list')).resolves.toEqual([]);
+      await provider.stop();
+    } finally {
+      await closeServer(managementApi);
+      await closeServer(occupiedBridge);
+      await closeServer(occupiedManagement);
+    }
   });
 
   it('emits session update events when cc-connect channel sessions change on disk', async () => {
@@ -229,6 +308,62 @@ describe('CcConnectRuntimeProvider', () => {
         expect.objectContaining({
           type: 'session.updated',
           sessionKey: 'feishu:chat-1:user-1',
+          updatedAt: 2000,
+          reason: 'cc-connect-session-store',
+        }),
+      ]);
+      expect(bridgeAdapter.reconcilePendingRunsFromHistory).toHaveBeenCalledOnce();
+      await provider.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('emits session update events when sessions.list observes new cc-connect sessions', async () => {
+    vi.useFakeTimers();
+    try {
+      const binaryPath = join(tempDir, 'cc-connect');
+      await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+      let sessions = [{ key: 'agent:main:main', displayName: 'main', updatedAt: 1000 }];
+      const bridgeAdapter = createBridgeAdapterMock({
+        listSessions: vi.fn(async () => sessions),
+      });
+      const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+      const provider = new CcConnectRuntimeProvider({
+        binaryPath,
+        codexPath: join(tempDir, 'codex'),
+        bridgeAdapter: bridgeAdapter as never,
+        skillSyncer: vi.fn(async () => ({ skills: [] })),
+        providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
+      });
+      const events: unknown[] = [];
+      provider.on('chat:runtime-event', (event) => events.push(event));
+      const child = createChild();
+      forkMock.mockReturnValueOnce(child);
+
+      const startPromise = provider.start();
+      await vi.waitFor(() => expect(forkMock).toHaveBeenCalledOnce());
+      child.emit('spawn');
+      await startPromise;
+      await Promise.resolve();
+      expect(events).toEqual([]);
+
+      sessions = [
+        { key: 'agent:main:main', displayName: 'main', updatedAt: 1000 },
+        { key: 'agent:support:member-1', displayName: 'Support', updatedAt: 2000 },
+      ];
+
+      await expect(provider.listSessions()).resolves.toMatchObject({
+        success: true,
+        sessions: expect.arrayContaining([
+          expect.objectContaining({ key: 'agent:support:member-1' }),
+        ]),
+      });
+
+      expect(events).toEqual([
+        expect.objectContaining({
+          type: 'session.updated',
+          sessionKey: 'agent:support:member-1',
           updatedAt: 2000,
           reason: 'cc-connect-session-store',
         }),
@@ -375,6 +510,92 @@ describe('CcConnectRuntimeProvider', () => {
     });
   });
 
+  it('falls back to the cc-connect bridge when cron exec endpoint is unavailable for prompt jobs', async () => {
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const bridgeAdapter = createBridgeAdapterMock();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/cron/cron-1/exec') && init?.method === 'POST') {
+        return new Response(JSON.stringify({ ok: false, error: 'DELETE or PATCH only' }), { status: 200 });
+      }
+      if (url.endsWith('/api/v1/cron?project=clawx-main') && init?.method === 'GET') {
+        return new Response(JSON.stringify({
+          ok: true,
+          data: {
+            jobs: [{
+              id: 'cron-1',
+              project: 'clawx-main',
+              session_key: 'clawx:main:main',
+              cron_expr: '0 9 * * *',
+              prompt: 'Reply exactly: CRON_OK',
+              description: 'Morning check',
+              enabled: true,
+              silent: true,
+            }],
+          },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: false, error: `unexpected ${init?.method} ${url}` }), { status: 500 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      bridgeAdapter: bridgeAdapter as never,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+    });
+
+    await expect(provider.rpc('cron.run', { id: 'cron-1' })).resolves.toEqual({ success: true });
+    expect(bridgeAdapter.send).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'Reply exactly: CRON_OK',
+      sessionKey: 'clawx:main:main',
+      idempotencyKey: expect.stringMatching(/^cron:cron-1:/),
+    }));
+  });
+
+  it('keeps exec cron jobs unsupported when cc-connect does not expose manual exec', async () => {
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const bridgeAdapter = createBridgeAdapterMock();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/cron/cron-exec/exec') && init?.method === 'POST') {
+        return new Response(JSON.stringify({ ok: false, error: 'DELETE or PATCH only' }), { status: 200 });
+      }
+      if (url.endsWith('/api/v1/cron?project=clawx-main') && init?.method === 'GET') {
+        return new Response(JSON.stringify({
+          ok: true,
+          data: {
+            jobs: [{
+              id: 'cron-exec',
+              project: 'clawx-main',
+              session_key: 'clawx:main:main',
+              cron_expr: '0 9 * * *',
+              exec: 'npm run report',
+              description: 'Exec job',
+              enabled: true,
+            }],
+          },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: false, error: `unexpected ${init?.method} ${url}` }), { status: 500 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      bridgeAdapter: bridgeAdapter as never,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+    });
+
+    await expect(provider.rpc('cron.run', { id: 'cron-exec' }))
+      .rejects.toThrow('manual exec cron jobs');
+    expect(bridgeAdapter.send).not.toHaveBeenCalled();
+  });
+
   it('returns the cc-connect Web Admin URL for runtime control UI', async () => {
     const binaryPath = join(tempDir, 'cc-connect');
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
@@ -419,6 +640,60 @@ describe('CcConnectRuntimeProvider', () => {
       channels: {},
       channelAccounts: {},
       channelDefaultAccountId: {},
+    });
+  });
+
+  it('maps cc-connect channel lifecycle RPCs to runtime config refresh', async () => {
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+    });
+    const refreshSpy = vi.spyOn(provider, 'refreshConfig');
+
+    await expect(provider.rpc('channels.disconnect', { channelType: 'feishu' })).resolves.toEqual({ success: true });
+
+    expect(refreshSpy).toHaveBeenCalledWith({
+      scope: 'channels',
+      reason: 'runtime:channels.disconnect:feishu',
+      channelType: 'feishu',
+      forceRestart: true,
+    });
+  });
+
+  it('toggles cc-connect cron jobs through the native cron.toggle RPC', async () => {
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toContain('/api/v1/cron/cron-1');
+      expect(init?.method).toBe('PATCH');
+      expect(init?.body).toBe(JSON.stringify({ enabled: false }));
+      return new Response(JSON.stringify({
+        ok: true,
+        data: {
+          id: 'cron-1',
+          description: 'Toggle me',
+          prompt: 'ping',
+          cron_expr: '0 9 * * *',
+          enabled: false,
+          silent: true,
+        },
+      }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+    });
+
+    await expect(provider.rpc('cron.toggle', { id: 'cron-1', enabled: false })).resolves.toMatchObject({
+      id: 'cron-1',
+      name: 'Toggle me',
+      enabled: false,
     });
   });
 
@@ -740,7 +1015,13 @@ describe('CcConnectRuntimeProvider', () => {
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
     const bridgeAdapter = createBridgeAdapterMock({
       send: vi.fn(async () => ({ runId: 'cc-connect-run-1' })),
-      listSessions: vi.fn(async () => [{ key: 'agent:support:member-1', displayName: 'Support', updatedAt: 3 }]),
+      listSessions: vi.fn(async () => [{
+        key: 'agent:support:member-1',
+        displayName: 'Support',
+        derivedTitle: 'channel hello',
+        lastMessagePreview: 'channel ok',
+        updatedAt: 3,
+      }]),
       summarizeSessions: vi.fn(async () => [{ sessionKey: 'agent:support:member-1', firstUserText: 'channel hello', lastTimestamp: 3 }]),
       loadHistory: vi.fn(async (sessionKey: string) => sessionKey === 'agent:main:main'
         ? [{ role: 'assistant', content: 'bridge ok', timestamp: 3 }]
@@ -765,7 +1046,12 @@ describe('CcConnectRuntimeProvider', () => {
     await expect(provider.listSessions()).resolves.toMatchObject({
       success: true,
       sessions: [
-        { key: 'agent:support:member-1', displayName: 'Support' },
+        {
+          key: 'agent:support:member-1',
+          displayName: 'Support',
+          derivedTitle: 'channel hello',
+          lastMessagePreview: 'channel ok',
+        },
       ],
     });
     await expect(provider.listSessions({ sessionKeys: ['agent:main:main', 'agent:support:member-1'] })).resolves.toMatchObject({
@@ -789,6 +1075,115 @@ describe('CcConnectRuntimeProvider', () => {
       idempotencyKey: 'idem-1',
     }));
     expect(bridgeAdapter.deleteSession).toHaveBeenCalledWith('agent:main:main');
+  });
+
+  it('aborts active cc-connect chat runs and restarts the runtime to stop in-flight Codex work', async () => {
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const bridgeAdapter = createBridgeAdapterMock({
+      abort: vi.fn(async () => ({ success: true, abortedRuns: ['cc-connect-run-1'] })),
+    });
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexPath: join(tempDir, 'codex'),
+      bridgeAdapter: bridgeAdapter as never,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+      providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
+    });
+    const firstChild = createChild();
+    const secondChild = createChild();
+    forkMock.mockReturnValueOnce(firstChild).mockReturnValueOnce(secondChild);
+
+    const startPromise = provider.start();
+    await vi.waitFor(() => expect(forkMock).toHaveBeenCalledTimes(1));
+    firstChild.emit('spawn');
+    await startPromise;
+
+    const abortPromise = provider.rpc('chat.abort', { sessionKey: 'agent:main:main' });
+    await vi.waitFor(() => expect(forkMock).toHaveBeenCalledTimes(2));
+    secondChild.emit('spawn');
+    await expect(abortPromise).resolves.toEqual({ success: true, abortedRuns: ['cc-connect-run-1'] });
+
+    expect(bridgeAdapter.abort).toHaveBeenCalledWith({ sessionKey: 'agent:main:main' });
+    expect(firstChild.kill).toHaveBeenCalled();
+    expect(bridgeAdapter.close).toHaveBeenCalled();
+    expect(bridgeAdapter.connect).toHaveBeenCalledTimes(2);
+  });
+
+  it('automatically restarts cc-connect after an unexpected crash', async () => {
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const bridgeAdapter = createBridgeAdapterMock();
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexPath: join(tempDir, 'codex'),
+      bridgeAdapter: bridgeAdapter as never,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+      providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
+    });
+    const firstChild = createChild();
+    const secondChild = createChild();
+    forkMock.mockReturnValueOnce(firstChild).mockReturnValueOnce(secondChild);
+
+    const startPromise = provider.start();
+    await vi.waitFor(() => expect(forkMock).toHaveBeenCalledTimes(1));
+    firstChild.emit('spawn');
+    await startPromise;
+
+    vi.useFakeTimers();
+    firstChild.emit('exit', 1);
+
+    expect(provider.getStatus()).toMatchObject({
+      state: 'error',
+      error: 'cc-connect exited with code 1',
+    });
+    expect(bridgeAdapter.close).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.waitFor(() => expect(forkMock).toHaveBeenCalledTimes(2));
+    secondChild.emit('spawn');
+    await vi.waitFor(() => expect(bridgeAdapter.connect).toHaveBeenCalledTimes(2));
+
+    expect(provider.getStatus()).toMatchObject({
+      state: 'running',
+      pid: 4242,
+      error: undefined,
+    });
+  });
+
+  it('does not restart cc-connect after an intentional stop', async () => {
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const bridgeAdapter = createBridgeAdapterMock();
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexPath: join(tempDir, 'codex'),
+      bridgeAdapter: bridgeAdapter as never,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+      providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
+    });
+    const firstChild = createChild();
+    forkMock.mockReturnValueOnce(firstChild);
+
+    const startPromise = provider.start();
+    await vi.waitFor(() => expect(forkMock).toHaveBeenCalledTimes(1));
+    firstChild.emit('spawn');
+    await startPromise;
+
+    vi.useFakeTimers();
+    await provider.stop();
+    firstChild.emit('exit', 1);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(forkMock).toHaveBeenCalledTimes(1);
+    expect(firstChild.kill).toHaveBeenCalledOnce();
+    expect(provider.getStatus()).toMatchObject({
+      state: 'stopped',
+      pid: undefined,
+    });
   });
 
   it('keeps legacy Gateway RPC chat/session/history calls working for cc-connect', async () => {

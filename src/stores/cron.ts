@@ -4,10 +4,19 @@
  */
 import { create } from 'zustand';
 import { hostApi } from '@/lib/host-api';
+import { assertRuntimeOperationSupported } from '@/lib/runtime-operation-capabilities';
 import { useChatStore } from './chat';
+import { useGatewayStore } from './gateway';
 import type { CronJob, CronJobCreateInput, CronJobUpdateInput } from '../types/cron';
 
 let _fetchJobsInFlight: Promise<void> | null = null;
+
+/**
+ * How long an optimistically-created job is kept in the list even when the
+ * Gateway's `cron.list` does not yet return it (create-race bridge). Past this
+ * window a job missing from the Gateway is treated as deleted/auto-removed.
+ */
+const OPTIMISTIC_CREATE_GRACE_MS = 15_000;
 
 interface CronState {
   jobs: CronJob[];
@@ -45,13 +54,23 @@ export const useCronStore = create<CronState>((set) => ({
       }
 
       try {
+        assertRuntimeOperationSupported(useGatewayStore.getState().status, 'cron.list');
         const result = await hostApi.cron.list();
 
-        // Gateway now correctly returns agentId for all jobs.
-        // If Gateway returned fewer jobs than we have (e.g. race condition), preserve
-        // the extra ones from current state to avoid losing data.
+        // The Gateway list is authoritative. A job missing from it has either been
+        // deleted by the user or auto-removed by the runtime (one-time `at` jobs are
+        // deleted after they run). We only preserve a locally-cached job the Gateway
+        // omits when it was created within the last few seconds, to bridge the brief
+        // race window where an optimistic create isn't yet visible in `cron.list`.
+        // Without this bound, auto-deleted one-time tasks would re-appear on every
+        // refresh and never leave the list until a full app reload.
+        const now = Date.now();
         const resultIds = new Set(result.map((j) => j.id));
-        const extraJobs = currentJobs.filter((j) => !resultIds.has(j.id));
+        const extraJobs = currentJobs.filter((j) => {
+          if (resultIds.has(j.id)) return false;
+          const createdMs = Date.parse(j.createdAt);
+          return Number.isFinite(createdMs) && now - createdMs < OPTIMISTIC_CREATE_GRACE_MS;
+        });
         const allJobs = [...result, ...extraJobs];
 
         set({ jobs: allJobs, loading: false });
@@ -70,6 +89,7 @@ export const useCronStore = create<CronState>((set) => ({
 
   createJob: async (input) => {
     try {
+      assertRuntimeOperationSupported(useGatewayStore.getState().status, 'cron.create');
       // Auto-capture currentAgentId if not provided
       const agentId = input.agentId ?? useChatStore.getState().currentAgentId;
       const job = await hostApi.cron.create({ ...input, agentId });
@@ -83,6 +103,7 @@ export const useCronStore = create<CronState>((set) => ({
 
   updateJob: async (id, input) => {
     try {
+      assertRuntimeOperationSupported(useGatewayStore.getState().status, 'cron.update');
       const updatedJob = await hostApi.cron.update(id, input);
       set((state) => ({
         jobs: state.jobs.map((job) =>
@@ -97,6 +118,7 @@ export const useCronStore = create<CronState>((set) => ({
 
   deleteJob: async (id) => {
     try {
+      assertRuntimeOperationSupported(useGatewayStore.getState().status, 'cron.delete');
       await hostApi.cron.delete(id);
       set((state) => ({
         jobs: state.jobs.filter((job) => job.id !== id),
@@ -109,6 +131,7 @@ export const useCronStore = create<CronState>((set) => ({
 
   toggleJob: async (id, enabled) => {
     try {
+      assertRuntimeOperationSupported(useGatewayStore.getState().status, 'cron.toggle');
       await hostApi.cron.toggle(id, enabled);
       set((state) => ({
         jobs: state.jobs.map((job) =>
@@ -123,6 +146,7 @@ export const useCronStore = create<CronState>((set) => ({
 
   triggerJob: async (id) => {
     try {
+      assertRuntimeOperationSupported(useGatewayStore.getState().status, 'cron.run');
       await hostApi.cron.trigger(id);
       // Refresh jobs after trigger to update lastRun/nextRun state
       try {

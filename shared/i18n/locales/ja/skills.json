@@ -3,6 +3,10 @@
     "subtitle": "AI機能の閲覧と管理",
     "refresh": "更新",
     "openFolder": "スキルフォルダを開く",
+    "openRuntimeFolder": "ランタイムのスキルフォルダを開く",
+    "runtimeTarget": {
+        "mirror": "ランタイムミラー: {{path}}"
+    },
     "gatewayWarning": "ゲートウェイは停止しています。ローカルスキルは利用できますが、ランタイム状態は取得できません。",
     "gatewayStarting": "ゲートウェイを起動しています。ローカルスキルはすでに利用でき、ランタイム状態は準備完了後に反映されます。",
     "tabs": {

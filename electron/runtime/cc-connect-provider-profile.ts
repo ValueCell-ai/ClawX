@@ -1,8 +1,8 @@
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { app } from 'electron';
 import { getProviderAccount, getDefaultProviderAccountId } from '@electron/services/providers/provider-store';
-import { getProviderSecret } from '@electron/services/secrets/secret-store';
+import { getProviderSecret, getSecretStore } from '@electron/services/secrets/secret-store';
 import { getProviderDefaultModel } from '@electron/utils/provider-registry';
 import type { ProviderAccount, ProviderSecret } from '@electron/shared/providers/types';
 import { getCcConnectCodexHomeDir, getCcConnectProviderProfilePath } from './cc-connect-paths';
@@ -41,6 +41,37 @@ type OpenAIOAuthTokenSet = {
 type OpenAIOAuthTokenResolution = {
   tokens: OpenAIOAuthTokenSet;
   source: 'managed' | 'secret' | 'user-codex';
+};
+
+export type CodexOAuthAuthFileSummary = {
+  path: string;
+  exists: boolean;
+  complete: boolean;
+  accountId?: string;
+  authMode?: string;
+  lastRefresh?: string;
+  updatedAt?: string;
+  error?: string;
+};
+
+export type CodexOAuthProviderSummary = {
+  accountId: string;
+  vendorId: string;
+  authMode?: string;
+  hasOAuthSecret: boolean;
+  subject?: string;
+  email?: string;
+  managedMatchesAccount?: boolean;
+  userMatchesAccount?: boolean;
+};
+
+export type CodexOAuthStatus = {
+  success: true;
+  managedCodexHome: string;
+  authPath: string;
+  managed: CodexOAuthAuthFileSummary;
+  user: CodexOAuthAuthFileSummary;
+  provider?: CodexOAuthProviderSummary;
 };
 
 function resolveModel(account: ProviderAccount): string | undefined {
@@ -256,6 +287,49 @@ async function readCompleteCodexAuthTokens(authPath: string): Promise<OpenAIOAut
   }
 }
 
+async function readCodexAuthSummary(authPath: string): Promise<CodexOAuthAuthFileSummary> {
+  let raw: string;
+  try {
+    raw = await readFile(authPath, 'utf8');
+  } catch {
+    return { path: authPath, exists: false, complete: false };
+  }
+
+  const updatedAt = await stat(authPath)
+    .then((fileStat) => fileStat.mtime.toISOString())
+    .catch(() => undefined);
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      auth_mode?: unknown;
+      tokens?: { account_id?: unknown };
+      last_refresh?: unknown;
+    };
+    const tokens = await readCompleteCodexAuthTokens(authPath);
+    return {
+      path: authPath,
+      exists: true,
+      complete: Boolean(tokens),
+      accountId: tokens?.accountId ?? (
+        typeof parsed.tokens?.account_id === 'string' && parsed.tokens.account_id.trim()
+          ? parsed.tokens.account_id.trim()
+          : undefined
+      ),
+      authMode: typeof parsed.auth_mode === 'string' ? parsed.auth_mode : undefined,
+      lastRefresh: typeof parsed.last_refresh === 'string' ? parsed.last_refresh : undefined,
+      updatedAt,
+    };
+  } catch {
+    return {
+      path: authPath,
+      exists: true,
+      complete: false,
+      updatedAt,
+      error: 'Invalid Codex auth.json',
+    };
+  }
+}
+
 function codexTokensMatchAccount(
   tokens: OpenAIOAuthTokenSet,
   account: ProviderAccount,
@@ -271,6 +345,19 @@ function codexTokensMatchAccount(
   const providerIdMatches = Boolean(userAccountId && account.id === userAccountId);
 
   return accessMatches || refreshMatches || accountMatches || providerIdMatches;
+}
+
+async function resolveProviderAccount(accountId?: string): Promise<{
+  account: ProviderAccount | null;
+  secret?: Extract<ProviderSecret, { type: 'oauth' }>;
+}> {
+  const resolvedAccountId = accountId?.trim() || await getDefaultProviderAccountId();
+  const account = resolvedAccountId ? await getProviderAccount(resolvedAccountId) : null;
+  const secret = account ? await getProviderSecret(account.id) : null;
+  return {
+    account,
+    secret: secret?.type === 'oauth' && secret.accessToken && secret.refreshToken ? secret : undefined,
+  };
 }
 
 async function resolveOpenAIOAuthTokens(
@@ -305,6 +392,70 @@ async function resolveOpenAIOAuthTokens(
   }
 
   return undefined;
+}
+
+export async function getCcConnectCodexOAuthStatus(payload?: {
+  accountId?: string;
+}): Promise<CodexOAuthStatus> {
+  const managedCodexHome = getCcConnectCodexHomeDir();
+  const authPath = join(managedCodexHome, 'auth.json');
+  const userAuthPath = join(app.getPath('home'), '.codex', 'auth.json');
+  const [managed, user, { account, secret }] = await Promise.all([
+    readCodexAuthSummary(authPath),
+    readCodexAuthSummary(userAuthPath),
+    resolveProviderAccount(payload?.accountId),
+  ]);
+
+  const managedTokens = account ? await readCompleteCodexAuthTokens(authPath) : undefined;
+  const userTokens = account ? await readCompleteCodexAuthTokens(userAuthPath) : undefined;
+
+  return {
+    success: true,
+    managedCodexHome,
+    authPath,
+    managed,
+    user,
+    ...(account ? {
+      provider: {
+        accountId: account.id,
+        vendorId: account.vendorId,
+        authMode: account.authMode,
+        hasOAuthSecret: Boolean(secret),
+        subject: secret?.subject,
+        email: secret?.email,
+        managedMatchesAccount: managedTokens ? codexTokensMatchAccount(managedTokens, account, secret) : undefined,
+        userMatchesAccount: userTokens ? codexTokensMatchAccount(userTokens, account, secret) : undefined,
+      },
+    } : {}),
+  };
+}
+
+export async function importUserCodexOAuthToManagedHome(payload?: {
+  accountId?: string;
+}): Promise<CodexOAuthStatus> {
+  const { account, secret } = await resolveProviderAccount(payload?.accountId);
+  const userAuthPath = join(app.getPath('home'), '.codex', 'auth.json');
+  const tokens = await readCompleteCodexAuthTokens(userAuthPath);
+  if (!tokens) {
+    throw new Error(`No complete Codex OAuth auth.json found at ${userAuthPath}`);
+  }
+  if (account && !codexTokensMatchAccount(tokens, account, secret)) {
+    throw new Error('Local Codex OAuth credentials do not match the selected provider account');
+  }
+  await writeManagedOpenAIOAuthAuthFile(tokens);
+  return getCcConnectCodexOAuthStatus({ accountId: account?.id ?? payload?.accountId });
+}
+
+export async function logoutCcConnectCodexOAuth(payload?: {
+  accountId?: string;
+  managedOnly?: boolean;
+}): Promise<CodexOAuthStatus> {
+  const { account } = await resolveProviderAccount(payload?.accountId);
+  await rm(join(getCcConnectCodexHomeDir(), 'auth.json'), { force: true });
+  if (!payload?.managedOnly && account?.authMode === 'oauth_browser') {
+    await getSecretStore().delete(account.id);
+  }
+  return getCcConnectCodexOAuthStatus({ accountId: account?.id ?? payload?.accountId });
 }
 
 async function buildProfileForAccount(account: ProviderAccount): Promise<CodexProviderProfile> {

@@ -1,6 +1,6 @@
 {
     "name": "clawx",
-    "version": "0.4.10",
+    "version": "0.4.11",
     "pnpm": {
         "onlyBuiltDependencies": [
             "@discordjs/opus",
@@ -60,6 +60,8 @@
         "test:e2e": "pnpm run build:vite && playwright test",
         "test:e2e:cc-connect": "pnpm run test:e2e -- tests/e2e/cc-connect-codex-runtime.spec.ts tests/e2e/cc-connect-real-bundle-smoke.spec.ts",
         "test:e2e:cc-connect:real-oauth": "pnpm run test:e2e -- tests/e2e/cc-connect-real-oauth-chat.spec.ts",
+        "test:e2e:cc-connect:real-comprehensive": "pnpm run test:e2e -- tests/e2e/cc-connect-real-comprehensive.spec.ts",
+        "smoke:cc-connect:packaged": "node scripts/smoke-packaged-cc-connect.mjs",
         "test:e2e:headed": "pnpm run build:vite && playwright test --headed",
         "harness": "pnpm --filter @clawx/harness start --",
         "harness:ci": "pnpm harness list && pnpm harness validate --spec harness/specs/scenarios/gateway-backend-communication.md && pnpm harness validate --spec harness/specs/tasks/fix-chat-history-gateway-timeout.example.md --no-diff && pnpm harness run --spec harness/specs/scenarios/gateway-backend-communication.md --dry-run && pnpm exec vitest run tests/unit/harness-specs.test.ts tests/unit/harness-git.test.ts",
@@ -81,6 +83,7 @@
         "icons": "zx scripts/generate-icons.mjs",
         "package": "node scripts/generate-ext-bridge.mjs && pnpm run build:vite && zx scripts/bundle-openclaw.mjs && zx scripts/bundle-openclaw-plugins.mjs && zx scripts/bundle-preinstalled-skills.mjs && pnpm run bundle:cc-connect:current && pnpm run bundle:codex:current && pnpm run verify:runtime-bundles",
         "package:mac": "pnpm run package && pnpm run bundle:cc-connect:mac && pnpm run bundle:codex:mac && pnpm run verify:runtime-bundles -- --platform=mac && node scripts/run-electron-builder.mjs --mac --publish never",
+        "package:mac:dir": "SKIP_PREINSTALLED_SKILLS=1 pnpm run package && pnpm run bundle:cc-connect:mac && pnpm run bundle:codex:mac && pnpm run verify:runtime-bundles -- --platform=mac && node scripts/run-electron-builder.mjs --mac dir --publish never",
         "package:mac:local": "SKIP_PREINSTALLED_SKILLS=1 pnpm run package && pnpm run bundle:cc-connect:mac && pnpm run bundle:codex:mac && pnpm run verify:runtime-bundles -- --platform=mac && node scripts/run-electron-builder.mjs --mac --publish never",
         "package:win": "pnpm run prep:win-binaries && pnpm run package && pnpm run bundle:cc-connect:win && pnpm run bundle:codex:win && pnpm run verify:runtime-bundles -- --platform=win && node scripts/patch-nsis-win.mjs && node scripts/run-electron-builder.mjs --win --publish never",
         "package:linux": "pnpm run package && pnpm run bundle:cc-connect:linux && pnpm run bundle:codex:linux && pnpm run verify:runtime-bundles -- --platform=linux && node scripts/run-electron-builder.mjs --linux --publish never",

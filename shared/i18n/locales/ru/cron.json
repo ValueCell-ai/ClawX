@@ -29,8 +29,31 @@
         "taskNamePlaceholder": "напр., Утренняя сводка",
         "message": "Сообщение / Промпт",
         "messagePlaceholder": "Что должен сделать AI? напр., Дай мне сводку новостей и погоды на сегодня",
+        "pickSkill": "Вставить навык",
+        "skillButton": "Навыки",
+        "skillPickerTitle": "Быстрый доступ к навыкам для {{agent}}",
+        "skillSearchPlaceholder": "Поиск навыков",
+        "skillLoading": "Загрузка навыков...",
+        "skillEmpty": "Подходящие навыки не найдены",
         "agent": "Агент",
         "schedule": "Расписание",
+        "scheduleMode": {
+            "recurring": "Повтор",
+            "once": "Однократно"
+        },
+        "recurrence": {
+            "hourly": "Ежечасно",
+            "daily": "Ежедневно",
+            "weekdays": "По будням",
+            "weekly": "Еженедельно",
+            "custom": "Свой"
+        },
+        "timeLabel": "Время",
+        "hourColumn": "Час",
+        "minuteColumn": "Мин",
+        "dateLabel": "Дата",
+        "weekdayLabel": "День недели",
+        "minuteLabel": "Минута каждого часа",
         "cronPlaceholder": "Cron-выражение (напр., 0 9 * * *)",
         "usePresets": "Использовать пресеты",
         "useCustomCron": "Использовать свой cron",
@@ -105,7 +128,8 @@
         "failedLoadDeliveryTargets": "Не удалось загрузить цели доставки",
         "failedResolveDeliveryTarget": "Не удалось разрешить цель доставки по умолчанию",
         "discordIdRequired": "Пожалуйста, введите ID канала Discord",
-        "scheduleRequired": "Пожалуйста, выберите или введите расписание"
+        "scheduleRequired": "Пожалуйста, выберите или введите расписание",
+        "schedulePast": "Выбранное время уже прошло. Пожалуйста, выберите время в будущем."
     },
     "schedule": {
         "everySeconds": "Каждые {{count}} сек",
@@ -114,8 +138,19 @@
         "everyDays": "Каждые {{count}} дн",
         "onceAt": "Один раз в {{time}}",
         "weeklyAt": "Еженедельно в {{day}} в {{time}}",
+        "weekdaysAt": "По будням в {{time}}",
+        "hourlyAt": "Ежечасно в :{{minute}}",
         "monthlyAtDay": "Ежемесячно {{day}}-го в {{time}}",
         "dailyAt": "Ежедневно в {{time}}",
         "unknown": "Неизвестно"
+    },
+    "weekdays": {
+        "sun": "Воскресенье",
+        "mon": "Понедельник",
+        "tue": "Вторник",
+        "wed": "Среда",
+        "thu": "Четверг",
+        "fri": "Пятница",
+        "sat": "Суббота"
     }
 }

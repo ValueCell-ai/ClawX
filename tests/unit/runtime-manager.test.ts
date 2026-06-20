@@ -60,7 +60,7 @@ function createProvider(kind: RuntimeProvider['kind']) {
     })),
     listOperationCapabilities: vi.fn(() => ({
       'chat.send': { capability: 'chat', support: kind === 'openclaw' ? 'proxy' : 'native', notes: `${kind} chat` },
-      'chat.abort': { capability: 'chat', support: kind === 'openclaw' ? 'proxy' : 'unsupported', notes: `${kind} abort` },
+      'chat.abort': { capability: 'chat', support: kind === 'openclaw' ? 'proxy' : 'native', notes: `${kind} abort` },
     })),
   };
   return { provider, emitter };
@@ -97,7 +97,7 @@ describe('RuntimeManager', () => {
     expect(settings.get('runtimeKind')).toBe('cc-connect');
     expect(manager.getActiveProvider()).toBe(ccConnect);
     expect(manager.listCapabilities().controlUi).toBe(true);
-    expect(manager.listOperationCapabilities()['chat.abort']?.support).toBe('unsupported');
+    expect(manager.listOperationCapabilities()['chat.abort']?.support).toBe('native');
   });
 
   it('falls back to OpenClaw when cc-connect is stored without developer mode', async () => {

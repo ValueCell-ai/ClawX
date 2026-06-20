@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { dirname, join } from 'node:path';
 import type { OpenClawDoctorMode, OpenClawDoctorResult } from '@shared/host-api/contract';
 import type { CronJob, CronJobCreateInput, CronJobUpdateInput } from '@shared/types/cron';
@@ -46,7 +47,7 @@ type CcConnectRuntimeProviderOptions = {
   codexPath?: string;
   workDir?: string;
   codexBundle?: CodexBundle;
-  bridgeAdapter?: Pick<CcConnectBridgeAdapter, 'connect' | 'close' | 'send' | 'listSessions' | 'loadHistory' | 'deleteSession' | 'summarizeSessions' | 'reconcilePendingRunsFromHistory'>;
+  bridgeAdapter?: Pick<CcConnectBridgeAdapter, 'connect' | 'close' | 'send' | 'abort' | 'listSessions' | 'loadHistory' | 'deleteSession' | 'summarizeSessions' | 'reconcilePendingRunsFromHistory'>;
   skillSyncer?: typeof syncCcConnectSkills;
   providerProfileLoader?: (payload?: { providerId?: string; reason?: string }) => Promise<CodexProviderProfile>;
 };
@@ -55,6 +56,10 @@ const CC_CONNECT_DOCTOR_TIMEOUT_MS = 60_000;
 const MAX_DOCTOR_OUTPUT_BYTES = 10 * 1024 * 1024;
 const CLAWX_PROJECT_NAME = ccConnectProjectNameForAgent('main');
 const CC_CONNECT_BRIDGE_PORT = 9810;
+const CC_CONNECT_PORT_SCAN_LIMIT = 50;
+const CC_CONNECT_CRASH_RESTART_DELAY_MS = 1_000;
+const CC_CONNECT_CRASH_RESTART_WINDOW_MS = 60_000;
+const CC_CONNECT_MAX_CRASH_RESTARTS = 3;
 const CLAWX_LOCAL_PLACEHOLDER_SECRET = 'clawx-local-placeholder';
 const CODEX_AGENT_SESSION_RESET_MARKER = 'codex-agent-session-reset-v1.json';
 const SESSION_SYNC_POLL_INTERVAL_MS = 2_000;
@@ -92,8 +97,71 @@ function unsupported(method: string): never {
   throw new Error(`cc-connect runtime does not support RPC method: ${method}`);
 }
 
+function isUnsupportedCronExecError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return normalized.includes('delete or patch only')
+    || normalized.includes('method not allowed')
+    || normalized.includes('not found');
+}
+
 function resolveCcConnectWorkspace(agentId = 'main', fallbackWorkDir?: string): string {
   return expandPath(fallbackWorkDir || process.env.CLAWX_CODEX_WORKDIR || getCcConnectAgentWorkspaceDir(agentId));
+}
+
+function isPortAvailable(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = createServer();
+    server.once('error', () => resolve(false));
+    server.once('listening', () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, '127.0.0.1');
+  });
+}
+
+async function findAvailablePort(preferredPort: number, reserved = new Set<number>()): Promise<number> {
+  for (let offset = 0; offset <= CC_CONNECT_PORT_SCAN_LIMIT; offset += 1) {
+    const port = preferredPort + offset;
+    if (reserved.has(port)) continue;
+    if (await isPortAvailable(port)) return port;
+  }
+  throw new Error(`No available localhost port found near ${preferredPort}`);
+}
+
+function isRealSpawnedChild(child: ChildProcess): boolean {
+  return 'spawnfile' in child && typeof (child as ChildProcess & { spawnfile?: unknown }).spawnfile === 'string';
+}
+
+function terminateProcessTree(child: ChildProcess): void {
+  if (process.platform === 'win32') {
+    if (typeof child.pid === 'number' && isRealSpawnedChild(child)) {
+      const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      killer.on('error', () => {
+        try {
+          child.kill();
+        } catch {
+          // ignore
+        }
+      });
+      return;
+    }
+  } else if (typeof child.pid === 'number' && isRealSpawnedChild(child)) {
+    try {
+      process.kill(-child.pid, 'SIGTERM');
+      return;
+    } catch {
+      // Fall back to killing the direct child below.
+    }
+  }
+
+  try {
+    child.kill();
+  } catch {
+    // ignore
+  }
 }
 
 function existingConfiguredWorkspace(value: unknown): string | null {
@@ -203,6 +271,8 @@ function defaultConfig(options: {
   providerProfile?: CodexProviderProfile | null;
   managementToken: string;
   bridgeToken: string;
+  managementPort: number;
+  bridgePort: number;
   fallbackWorkDir?: string;
   agentProjects?: CcConnectAgentProject[];
   channelPlatforms?: CcConnectChannelPlatform[];
@@ -231,12 +301,12 @@ function defaultConfig(options: {
     '',
     '[management]',
     'enabled = true',
-    `port = ${CC_CONNECT_MANAGEMENT_PORT}`,
+    `port = ${options.managementPort}`,
     `token = "${escapeToml(options.managementToken)}"`,
     '',
     '[bridge]',
     'enabled = true',
-    `port = ${CC_CONNECT_BRIDGE_PORT}`,
+    `port = ${options.bridgePort}`,
     `token = "${escapeToml(options.bridgeToken)}"`,
     'path = "/bridge/ws"',
     '',
@@ -252,14 +322,17 @@ function defaultConfig(options: {
 export class CcConnectRuntimeProvider extends EventEmitter implements RuntimeProvider {
   readonly kind = 'cc-connect' as const;
   private child: ChildProcess | null = null;
-  private readonly bridgeAdapter: NonNullable<CcConnectRuntimeProviderOptions['bridgeAdapter']>;
+  private bridgeAdapter: NonNullable<CcConnectRuntimeProviderOptions['bridgeAdapter']>;
+  private readonly injectedBridgeAdapter: boolean;
   private readonly skillSyncer: NonNullable<CcConnectRuntimeProviderOptions['skillSyncer']>;
   private readonly providerProfileLoader: NonNullable<CcConnectRuntimeProviderOptions['providerProfileLoader']>;
   private readonly managementToken = randomUUID();
   private readonly bridgeToken = randomUUID();
+  private managementPort = CC_CONNECT_MANAGEMENT_PORT;
+  private bridgePort = CC_CONNECT_BRIDGE_PORT;
   private status = withRuntimeStatus({
     state: 'stopped',
-    port: CC_CONNECT_MANAGEMENT_PORT,
+    port: this.managementPort,
   }, this.kind, CC_CONNECT_RUNTIME_CAPABILITIES, getCcConnectManagedDir(), this.listOperationCapabilities());
   private readonly binaryPath?: string;
   private readonly codexPath?: string;
@@ -270,6 +343,8 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
   private sessionSyncPolling = false;
   private sessionSyncSeq = 0;
   private sessionSyncSnapshot = new Map<string, number>();
+  private crashRestartTimer: ReturnType<typeof setTimeout> | null = null;
+  private crashRestartTimestamps: number[] = [];
 
   constructor(options: CcConnectRuntimeProviderOptions = {}) {
     super();
@@ -277,13 +352,8 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     this.codexPath = options.codexPath;
     this.workDir = options.workDir;
     this.codexBundle = options.codexBundle;
-    this.bridgeAdapter = options.bridgeAdapter ?? new CcConnectBridgeAdapter({
-      port: CC_CONNECT_BRIDGE_PORT,
-      token: this.bridgeToken,
-      project: CLAWX_PROJECT_NAME,
-      projectForSessionKey: ccConnectProjectNameForSessionKey,
-      emit: this.emit.bind(this),
-    });
+    this.injectedBridgeAdapter = Boolean(options.bridgeAdapter);
+    this.bridgeAdapter = options.bridgeAdapter ?? this.createBridgeAdapter(this.bridgePort);
     this.skillSyncer = options.skillSyncer ?? syncCcConnectSkills;
     this.providerProfileLoader = options.providerProfileLoader ?? syncCcConnectProviderProfile;
   }
@@ -302,19 +372,25 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
 
   async start(): Promise<void> {
     if (this.status.state === 'running' || this.status.state === 'starting') return;
+    this.clearCrashRestartTimer();
     const codexPath = this.resolveCodexPath();
     const providerProfile = await this.loadAndApplyProviderProfile({ reason: 'runtime-start' });
+    await this.ensureRuntimePorts();
     const configPath = await this.ensureManagedConfig(providerProfile, codexPath);
     const binaryPath = assertCcConnectBinaryPath(this.binaryPath);
-    this.setStatus({ state: 'starting', error: undefined });
+    this.setStatus({ state: 'starting', error: undefined, port: this.managementPort });
 
     await this.skillSyncer();
     this.child = await this.spawnCcConnect(binaryPath, configPath, providerProfile);
     await this.bridgeAdapter.connect();
+    const child = this.child;
+    if (!child) {
+      throw new Error('cc-connect exited before the bridge adapter connected');
+    }
 
     this.setStatus({
       state: 'running',
-      pid: this.child.pid,
+      pid: child.pid,
       connectedAt: Date.now(),
       gatewayReady: true,
       error: undefined,
@@ -323,15 +399,12 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
   }
 
   async stop(): Promise<void> {
+    this.clearCrashRestartTimer();
     this.stopSessionSyncWatcher();
     const child = this.child;
     this.child = null;
     if (child) {
-      try {
-        child.kill();
-      } catch {
-        // ignore
-      }
+      terminateProcessTree(child);
     }
     await this.bridgeAdapter.close();
     this.setStatus({ state: 'stopped', pid: undefined, connectedAt: undefined, gatewayReady: undefined });
@@ -354,6 +427,8 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     switch (method) {
       case 'chat.send':
         return await this.sendMessageWithMedia(toSendPayload(params)) as T;
+      case 'chat.abort':
+        return await this.abortChatRun(params) as T;
       case 'sessions.list':
         return await this.listSessions(params) as T;
       case 'chat.history':
@@ -378,6 +453,10 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
         } as T;
       case 'channels.status':
         return await this.getChannelStatus() as T;
+      case 'channels.connect':
+      case 'channels.disconnect':
+      case 'channels.delete':
+        return await this.refreshChannelLifecycle(method, params) as T;
       case 'runtime.controlUi':
         return await this.getControlUi(isRecord(params) ? params : undefined) as T;
       case 'cron.list':
@@ -390,6 +469,8 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       case 'cron.delete':
       case 'cron.remove':
         return await this.deleteCronJob(params) as T;
+      case 'cron.toggle':
+        return await this.toggleCronJob(params) as T;
       case 'cron.run':
         return await this.triggerCronJob(params) as T;
       default:
@@ -404,6 +485,14 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     return await this.bridgeAdapter.send(payload);
   }
 
+  async abortChatRun(payload?: unknown) {
+    const result = await this.bridgeAdapter.abort(payload);
+    if (result.abortedRuns.length > 0 && this.status.state === 'running') {
+      await this.restart();
+    }
+    return result;
+  }
+
   async listSessions(payload?: unknown) {
     if (isRecord(payload) && Array.isArray(payload.sessionKeys)) {
       const sessionKeys = payload.sessionKeys.filter((value): value is string => typeof value === 'string');
@@ -414,11 +503,16 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       };
     }
     const sessions = await this.bridgeAdapter.listSessions();
+    if (this.status.state === 'running') {
+      await this.applySessionSyncSnapshot(sessions, true);
+    }
     return {
       success: true,
       sessions: sessions.map((session) => ({
         key: session.key,
         displayName: session.displayName,
+        derivedTitle: session.derivedTitle,
+        lastMessagePreview: session.lastMessagePreview,
         agentId: session.agentId,
         updatedAt: session.updatedAt,
       })),
@@ -494,6 +588,19 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     }
 
     return { channels, channelAccounts, channelDefaultAccountId };
+  }
+
+  async refreshChannelLifecycle(method: string, payload?: unknown): Promise<{ success: true }> {
+    const channelType = isRecord(payload) && typeof payload.channelType === 'string'
+      ? payload.channelType.trim()
+      : undefined;
+    await this.refreshConfig({
+      scope: 'channels',
+      reason: `runtime:${method}${channelType ? `:${channelType}` : ''}`,
+      ...(channelType ? { channelType } : {}),
+      forceRestart: true,
+    });
+    return { success: true };
   }
 
   async listLogs() {
@@ -621,6 +728,8 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       providerProfile,
       managementToken: this.managementToken,
       bridgeToken: this.bridgeToken,
+      managementPort: this.managementPort,
+      bridgePort: this.bridgePort,
       fallbackWorkDir: this.workDir,
       agentProjects,
       channelPlatforms: collectCcConnectChannelPlatforms(openClawConfig).filter((platform) => !platform.error),
@@ -655,10 +764,31 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     }
     return {
       success: true,
-      url: buildCcConnectWebAdminUrl(CC_CONNECT_MANAGEMENT_PORT),
+      url: buildCcConnectWebAdminUrl(this.managementPort),
       token: this.managementToken,
-      port: CC_CONNECT_MANAGEMENT_PORT,
+      port: this.managementPort,
     };
+  }
+
+  private createBridgeAdapter(port: number): CcConnectBridgeAdapter {
+    return new CcConnectBridgeAdapter({
+      port,
+      token: this.bridgeToken,
+      project: CLAWX_PROJECT_NAME,
+      projectForSessionKey: ccConnectProjectNameForSessionKey,
+      emit: this.emit.bind(this),
+    });
+  }
+
+  private async ensureRuntimePorts(): Promise<void> {
+    const managementPort = await findAvailablePort(CC_CONNECT_MANAGEMENT_PORT);
+    const bridgePort = await findAvailablePort(CC_CONNECT_BRIDGE_PORT, new Set([managementPort]));
+    this.managementPort = managementPort;
+    this.bridgePort = bridgePort;
+    if (!this.injectedBridgeAdapter) {
+      await this.bridgeAdapter.close().catch(() => undefined);
+      this.bridgeAdapter = this.createBridgeAdapter(this.bridgePort);
+    }
   }
 
   private async loadAndApplyProviderProfile(payload?: { providerId?: string; reason?: string }): Promise<CodexProviderProfile> {
@@ -712,7 +842,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
   }
 
   private async managementRequest<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
-    const response = await fetch(`http://127.0.0.1:${CC_CONNECT_MANAGEMENT_PORT}/api/v1${path}`, {
+    const response = await fetch(`http://127.0.0.1:${this.managementPort}/api/v1${path}`, {
       method,
       headers: {
         Authorization: `Bearer ${this.managementToken}`,
@@ -726,17 +856,27 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       const message = isRecord(data) && typeof data.error === 'string' ? data.error : text || `HTTP ${response.status}`;
       throw new Error(`cc-connect management API failed: ${message}`);
     }
+    if (isRecord(data) && data.ok === false) {
+      const message = typeof data.error === 'string' ? data.error : text || 'request failed';
+      throw new Error(`cc-connect management API failed: ${message}`);
+    }
+    if (isRecord(data) && data.ok === true && 'data' in data) {
+      return data.data as T;
+    }
     return data as T;
   }
 
   private async listCronJobs(): Promise<CronJob[]> {
+    return (await this.listCcConnectCronJobRecords()).map((job) => transformCcConnectCronJob(job));
+  }
+
+  private async listCcConnectCronJobRecords(): Promise<unknown[]> {
     const result = await this.managementRequest<unknown>('GET', `/cron?project=${encodeURIComponent(CLAWX_PROJECT_NAME)}`);
-    const jobs = Array.isArray(result)
+    return Array.isArray(result)
       ? result
       : isRecord(result) && Array.isArray(result.jobs)
         ? result.jobs
         : [];
-    return jobs.map((job) => transformCcConnectCronJob(job));
   }
 
   private async createCronJob(payload: unknown): Promise<CronJob> {
@@ -770,14 +910,47 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     return transformCcConnectCronJob(isRecord(result) && 'job' in result ? result.job : result);
   }
 
+  private async toggleCronJob(payload: unknown): Promise<CronJob> {
+    const body = isRecord(payload) ? payload : {};
+    return await this.updateCronJob({
+      id: getPayloadId(body),
+      input: { enabled: body.enabled === true },
+    });
+  }
+
   private async deleteCronJob(payload: unknown): Promise<{ success: true }> {
     await this.managementRequest('DELETE', `/cron/${encodeURIComponent(getPayloadId(payload))}`);
     return { success: true };
   }
 
   private async triggerCronJob(payload: unknown): Promise<{ success: true }> {
-    await this.managementRequest('POST', `/cron/${encodeURIComponent(getPayloadId(payload))}/exec`);
+    const id = getPayloadId(payload);
+    try {
+      await this.managementRequest('POST', `/cron/${encodeURIComponent(id)}/exec`);
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!isUnsupportedCronExecError(message)) throw error;
+    }
+    await this.triggerCronPromptFallback(id);
     return { success: true };
+  }
+
+  private async triggerCronPromptFallback(id: string): Promise<void> {
+    const jobs = await this.listCcConnectCronJobRecords();
+    const rawJob = jobs.find((item) => transformCcConnectCronJob(item).id === id);
+    if (!rawJob) throw new Error(`cc-connect cron job not found: ${id}`);
+    const job = isRecord(rawJob) ? rawJob : {};
+    const prompt = ccString(job, ['prompt', 'message', 'content']);
+    if (!prompt) {
+      throw new Error('cc-connect runtime does not support manual exec cron jobs in this version');
+    }
+    const sessionKey = ccString(job, ['session_key', 'sessionKey']) || 'clawx:main:main';
+    await this.bridgeAdapter.send({
+      message: prompt,
+      sessionKey,
+      idempotencyKey: `cron:${id}:${Date.now()}`,
+    });
   }
 
   private resolveCodexPath(): string {
@@ -803,6 +976,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       cwd,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32',
     });
     child.stdout?.on('data', (data) => {
       this.emit('notification', { type: 'log', message: String(data) });
@@ -810,18 +984,23 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     child.stderr?.on('data', (data) => {
       this.emit('notification', { type: 'log', message: String(data) });
     });
-    child.on('exit', (code) => {
+    child.on('exit', (code, signal) => {
       if (this.child !== child) return;
       this.child = null;
       this.stopSessionSyncWatcher();
+      void this.bridgeAdapter.close().catch(() => undefined);
+      const error = code === 0
+        ? undefined
+        : `cc-connect exited with ${typeof code === 'number' ? `code ${code}` : `signal ${signal ?? 'unknown'}`}`;
       this.setStatus({
         state: code === 0 ? 'stopped' : 'error',
         pid: undefined,
         connectedAt: undefined,
         gatewayReady: undefined,
-        ...(code === 0 ? { error: undefined } : { error: `cc-connect exited with code ${code}` }),
+        ...(error ? { error } : { error: undefined }),
       });
       this.emit('exit', code);
+      if (error) this.scheduleCrashRestart(error);
     });
     return await new Promise<ChildProcess>((resolve, reject) => {
       child.once('spawn', () => resolve(child));
@@ -833,12 +1012,58 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     this.status = {
       ...this.status,
       ...patch,
+      port: this.managementPort,
       runtimeKind: this.kind,
       capabilities: this.listCapabilities(),
       operationCapabilities: this.listOperationCapabilities(),
       configDir: getCcConnectManagedDir(),
     };
     this.emit('status', this.status);
+  }
+
+  private clearCrashRestartTimer(): void {
+    if (!this.crashRestartTimer) return;
+    clearTimeout(this.crashRestartTimer);
+    this.crashRestartTimer = null;
+  }
+
+  private scheduleCrashRestart(error: string): void {
+    this.clearCrashRestartTimer();
+    const now = Date.now();
+    this.crashRestartTimestamps = this.crashRestartTimestamps
+      .filter((timestamp) => now - timestamp <= CC_CONNECT_CRASH_RESTART_WINDOW_MS);
+    if (this.crashRestartTimestamps.length >= CC_CONNECT_MAX_CRASH_RESTARTS) {
+      this.setStatus({
+        state: 'error',
+        error: `${error}; restart limit reached`,
+      });
+      this.emit('notification', {
+        type: 'log',
+        message: `[cc-connect] ${error}; restart limit reached`,
+      });
+      return;
+    }
+
+    this.crashRestartTimestamps.push(now);
+    this.emit('notification', {
+      type: 'log',
+      message: `[cc-connect] ${error}; restarting`,
+    });
+    this.crashRestartTimer = setTimeout(() => {
+      this.crashRestartTimer = null;
+      if (this.child || this.status.state === 'running' || this.status.state === 'starting') return;
+      void this.start().catch((restartError) => {
+        const message = restartError instanceof Error ? restartError.message : String(restartError);
+        this.setStatus({
+          state: 'error',
+          pid: undefined,
+          connectedAt: undefined,
+          gatewayReady: undefined,
+          error: `Failed to restart cc-connect after crash: ${message}`,
+        });
+      });
+    }, CC_CONNECT_CRASH_RESTART_DELAY_MS);
+    this.crashRestartTimer.unref?.();
   }
 
   private startSessionSyncWatcher(): void {
@@ -864,40 +1089,47 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     this.sessionSyncPolling = true;
     try {
       const sessions = await this.bridgeAdapter.listSessions();
-      const next = new Map<string, number>();
-      const changed: Array<{ key: string; updatedAt: number }> = [];
-      for (const session of sessions) {
-        const key = typeof session.key === 'string' ? session.key : '';
-        const updatedAt = typeof session.updatedAt === 'number' && Number.isFinite(session.updatedAt)
-          ? session.updatedAt
-          : 0;
-        if (!key) continue;
-        next.set(key, updatedAt);
-        const previousUpdatedAt = this.sessionSyncSnapshot.get(key);
-        if (emitChanges && (previousUpdatedAt == null || updatedAt > previousUpdatedAt)) {
-          changed.push({ key, updatedAt });
-        }
-      }
-      this.sessionSyncSnapshot = next;
-      for (const session of changed) {
-        const now = Date.now();
-        this.emit('chat:runtime-event', {
-          type: 'session.updated',
-          runId: `cc-connect-session-sync-${++this.sessionSyncSeq}`,
-          sessionKey: session.key,
-          updatedAt: session.updatedAt,
-          reason: 'cc-connect-session-store',
-          seq: this.sessionSyncSeq,
-          ts: now,
-        });
-      }
-      if (changed.length > 0) {
-        await this.bridgeAdapter.reconcilePendingRunsFromHistory();
-      }
+      await this.applySessionSyncSnapshot(sessions, emitChanges);
     } catch {
       // Session sync is a best-effort UI refresh signal; chat/history RPCs still work on demand.
     } finally {
       this.sessionSyncPolling = false;
+    }
+  }
+
+  private async applySessionSyncSnapshot(
+    sessions: Awaited<ReturnType<NonNullable<CcConnectRuntimeProviderOptions['bridgeAdapter']>['listSessions']>>,
+    emitChanges: boolean,
+  ): Promise<void> {
+    const next = new Map<string, number>();
+    const changed: Array<{ key: string; updatedAt: number }> = [];
+    for (const session of sessions) {
+      const key = typeof session.key === 'string' ? session.key : '';
+      const updatedAt = typeof session.updatedAt === 'number' && Number.isFinite(session.updatedAt)
+        ? session.updatedAt
+        : 0;
+      if (!key) continue;
+      next.set(key, updatedAt);
+      const previousUpdatedAt = this.sessionSyncSnapshot.get(key);
+      if (emitChanges && (previousUpdatedAt == null || updatedAt > previousUpdatedAt)) {
+        changed.push({ key, updatedAt });
+      }
+    }
+    this.sessionSyncSnapshot = next;
+    for (const session of changed) {
+      const now = Date.now();
+      this.emit('chat:runtime-event', {
+        type: 'session.updated',
+        runId: `cc-connect-session-sync-${++this.sessionSyncSeq}`,
+        sessionKey: session.key,
+        updatedAt: session.updatedAt,
+        reason: 'cc-connect-session-store',
+        seq: this.sessionSyncSeq,
+        ts: now,
+      });
+    }
+    if (changed.length > 0) {
+      await this.bridgeAdapter.reconcilePendingRunsFromHistory();
     }
   }
 }

@@ -713,4 +713,208 @@ describe('gateway store event wiring', () => {
 
     expect(handleChatEvent).toHaveBeenCalledTimes(1);
   });
+
+  it('renders a cron run live when its run-scoped events bind to the base cron session in view', async () => {
+    const baseKey = 'agent:product:cron:294717ee-6dde-45a8-8f67-900e2831cc4f';
+    const runKey = `${baseKey}:run:0bfbc08a-7582-4c88-9fd3-47c484e17660`;
+
+    const handlers = new Map<string, (payload: unknown) => void>();
+    hostEventSubscriptionMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
+      handlers.set(eventName, handler);
+      return () => {};
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    const loadHistory = vi.fn(async () => {});
+    useChatStore.setState({
+      currentSessionKey: baseKey,
+      sessions: [{ key: baseKey }],
+      messages: [{ role: 'user', content: '[cron:294717ee 早报] 执行ai-news-summarizer' }],
+      sending: false,
+      activeRunId: null,
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      runtimeRuns: {},
+      loadHistory,
+    });
+
+    const { useGatewayStore } = await import('@/stores/gateway');
+    await useGatewayStore.getState().init();
+
+    handlers.get('chat:runtime-event')?.({
+      type: 'run.started',
+      runId: 'run-cron',
+      sessionKey: runKey,
+      startedAt: 1,
+    });
+    await flushAsyncImports();
+
+    expect(useChatStore.getState().sending).toBe(true);
+    expect(useChatStore.getState().activeRunId).toBe('run-cron');
+    expect(loadHistory).toHaveBeenCalledTimes(1);
+
+    handlers.get('chat:runtime-event')?.({
+      type: 'tool.started',
+      runId: 'run-cron',
+      sessionKey: runKey,
+      toolCallId: 'call-1',
+      name: 'web_search',
+      args: { query: 'AI news' },
+    });
+    await flushAsyncImports();
+
+    expect(useChatStore.getState().sending).toBe(true);
+    expect(useChatStore.getState().runtimeRuns['run-cron']?.events).toContainEqual(
+      expect.objectContaining({ type: 'tool.started', toolCallId: 'call-1', name: 'web_search' }),
+    );
+
+    handlers.get('chat:runtime-event')?.({
+      type: 'run.ended',
+      runId: 'run-cron',
+      sessionKey: runKey,
+      status: 'completed',
+      endedAt: 2,
+    });
+    await flushAsyncImports();
+
+    expect(useChatStore.getState().sending).toBe(false);
+    expect(useChatStore.getState().activeRunId).toBeNull();
+    expect(loadHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it('adopts an in-progress cron run when joining mid-flight without a run.started event', async () => {
+    const baseKey = 'agent:main:cron:job-cron-midflight';
+    const runKey = `${baseKey}:run:session-mid`;
+
+    const handlers = new Map<string, (payload: unknown) => void>();
+    hostEventSubscriptionMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
+      handlers.set(eventName, handler);
+      return () => {};
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    const loadHistory = vi.fn(async () => {});
+    useChatStore.setState({
+      currentSessionKey: baseKey,
+      sessions: [{ key: baseKey }],
+      messages: [{ role: 'user', content: '[cron:job-cron-midflight] write a doc' }],
+      sending: false,
+      activeRunId: null,
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      runtimeRuns: {},
+      loadHistory,
+    });
+
+    const { useGatewayStore } = await import('@/stores/gateway');
+    await useGatewayStore.getState().init();
+
+    // First event the renderer sees for this session is a mid-run tool event
+    // (run.started was emitted before the user opened the cron session).
+    handlers.get('chat:runtime-event')?.({
+      type: 'tool.completed',
+      runId: 'run-cron-mid',
+      sessionKey: runKey,
+      toolCallId: 'call-read',
+      name: 'read',
+      result: { summary: 'SKILL.md' },
+      isError: false,
+    });
+    await flushAsyncImports();
+
+    expect(useChatStore.getState().sending).toBe(true);
+    expect(useChatStore.getState().activeRunId).toBe('run-cron-mid');
+    expect(useChatStore.getState().runtimeRuns['run-cron-mid']?.events).toContainEqual(
+      expect.objectContaining({ type: 'tool.completed', toolCallId: 'call-read' }),
+    );
+
+    // The run still settles when the terminal event finally arrives.
+    handlers.get('chat:runtime-event')?.({
+      type: 'run.ended',
+      runId: 'run-cron-mid',
+      sessionKey: runKey,
+      status: 'completed',
+      endedAt: 10,
+    });
+    await flushAsyncImports();
+
+    expect(useChatStore.getState().sending).toBe(false);
+    expect(useChatStore.getState().activeRunId).toBeNull();
+  });
+
+  it('does not adopt a background :main inbound run from a mid-flight tool event', async () => {
+    const handlers = new Map<string, (payload: unknown) => void>();
+    hostEventSubscriptionMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
+      handlers.set(eventName, handler);
+      return () => {};
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      sessions: [{ key: 'agent:main:main' }],
+      messages: [],
+      sending: false,
+      activeRunId: null,
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      runtimeRuns: {},
+    });
+
+    const { useGatewayStore } = await import('@/stores/gateway');
+    await useGatewayStore.getState().init();
+
+    handlers.get('chat:runtime-event')?.({
+      type: 'tool.completed',
+      runId: 'run-inbound',
+      sessionKey: 'agent:main:main',
+      toolCallId: 'call-x',
+      name: 'read',
+      result: { summary: 'done' },
+      isError: false,
+    });
+    await flushAsyncImports();
+
+    // Background inbound runs on the main session must not flip into a tracked
+    // "Thinking" state from a stray tool event.
+    expect(useChatStore.getState().sending).toBe(false);
+    expect(useChatStore.getState().activeRunId).toBeNull();
+  });
+
+  it('does not surface a Thinking state for background :main heartbeat runs', async () => {
+    const handlers = new Map<string, (payload: unknown) => void>();
+    hostEventSubscriptionMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
+      handlers.set(eventName, handler);
+      return () => {};
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    const loadHistory = vi.fn(async () => {});
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      sessions: [{ key: 'agent:main:main' }],
+      messages: [],
+      sending: false,
+      activeRunId: null,
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      runtimeRuns: {},
+      loadHistory,
+    });
+
+    const { useGatewayStore } = await import('@/stores/gateway');
+    await useGatewayStore.getState().init();
+
+    handlers.get('chat:runtime-event')?.({
+      type: 'run.started',
+      runId: 'run-heartbeat',
+      sessionKey: 'agent:main:main',
+      startedAt: 1,
+    });
+    await flushAsyncImports();
+
+    // The background heartbeat must not flip the composer into a "Thinking"
+    // (sending) state — that gate is what suppresses the indicator.
+    expect(useChatStore.getState().sending).toBe(false);
+  });
 });

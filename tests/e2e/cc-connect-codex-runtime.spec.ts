@@ -215,8 +215,8 @@ async function prepareMockBundles(userDataDir: string): Promise<{ ccConnectPath:
 async function writeMockCcConnectChannelSession(userDataDir: string): Promise<void> {
   const sessionDir = join(userDataDir, 'runtimes', 'cc-connect', 'data', 'sessions');
   await mkdir(sessionDir, { recursive: true });
-  const createdAt = Date.parse('2026-06-08T00:00:00.000Z');
-  const updatedAt = Date.parse('2026-06-08T00:01:00.000Z');
+  const createdAt = Date.now() - 60_000;
+  const updatedAt = createdAt + 1_000;
   await writeFile(join(sessionDir, 'support-channel.json'), JSON.stringify({
     sessions: {
       'session-support-1': {
@@ -338,7 +338,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
           }),
           operationCapabilities: expect.objectContaining({
             'chat.send': expect.objectContaining({ support: 'native' }),
-            'chat.abort': expect.objectContaining({ support: 'unsupported' }),
+            'chat.abort': expect.objectContaining({ support: 'native' }),
             'doctor.fix': expect.objectContaining({ support: 'unsupported' }),
           }),
         },

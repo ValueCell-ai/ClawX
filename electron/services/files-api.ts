@@ -8,7 +8,9 @@ import type {
   FileReadBinaryOptions,
 } from '@shared/host-api/contract';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
+import type { RuntimeManager } from '../runtime/manager';
 import { expandPath } from '../utils/paths';
+import { getRuntimeOutboundMediaDir } from '../utils/runtime-media-paths';
 import { isRecord } from './payload-utils';
 
 const EXT_MIME_MAP: Record<string, string> = {
@@ -54,7 +56,6 @@ const EXT_MIME_MAP: Record<string, string> = {
   '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 };
 
-const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
 const DIRECTORY_MIME_TYPE = 'application/x-directory';
 const FILE_PREVIEW_MAX_TEXT_BYTES = 2 * 1024 * 1024;
 const FILE_PREVIEW_MAX_BINARY_BYTES = 50 * 1024 * 1024;
@@ -143,7 +144,7 @@ function isPathInside(child: string, parent: string): boolean {
   return c === p || c.startsWith(p + sep);
 }
 
-function getFilePreviewWriteRoots(): string[] {
+function getFilePreviewWriteRoots(runtimeManager?: Pick<RuntimeManager, 'getStatus'>): string[] {
   const roots: string[] = [];
   roots.push(resolve(join(homedir(), '.openclaw')));
   try {
@@ -151,13 +152,14 @@ function getFilePreviewWriteRoots(): string[] {
   } catch {
     // ignore
   }
-  roots.push(resolve(OUTBOUND_DIR));
+  roots.push(resolve(getRuntimeOutboundMediaDir(runtimeManager)));
   return roots;
 }
 
 async function resolveSandboxedPath(
   input: string,
   mode: 'read' | 'write' = 'read',
+  runtimeManager?: Pick<RuntimeManager, 'getStatus'>,
 ): Promise<ResolvedSandboxedPath> {
   if (!input.trim()) {
     throw new Error('outsideSandbox');
@@ -170,7 +172,7 @@ async function resolveSandboxedPath(
   } catch {
     real = resolve(expanded);
   }
-  const writeRoots = getFilePreviewWriteRoots();
+  const writeRoots = getFilePreviewWriteRoots(runtimeManager);
   if (writeRoots.some((root) => isPathInside(real, root))) {
     return { realPath: real, readOnly: false };
   }
@@ -207,7 +209,8 @@ function getBinaryOptions(opts: unknown): FileReadBinaryOptions {
   return isRecord(opts) ? opts as FileReadBinaryOptions : {};
 }
 
-export function createFilesApi(): CompleteHostServiceRegistry['files'] {
+export function createFilesApi(options: { runtimeManager?: Pick<RuntimeManager, 'getStatus'> } = {}): CompleteHostServiceRegistry['files'] {
+  const getOutboundDir = () => getRuntimeOutboundMediaDir(options.runtimeManager);
   return {
     stagePaths: async (payload) => {
       const body = isRecord(payload) ? payload as StagePathsPayload : {};
@@ -215,7 +218,8 @@ export function createFilesApi(): CompleteHostServiceRegistry['files'] {
         ? body.filePaths.filter((value): value is string => typeof value === 'string')
         : [];
       const fsP = await import('node:fs/promises');
-      await fsP.mkdir(OUTBOUND_DIR, { recursive: true });
+      const outboundDir = getOutboundDir();
+      await fsP.mkdir(outboundDir, { recursive: true });
 
       const results = [];
       for (const filePath of filePaths) {
@@ -235,7 +239,7 @@ export function createFilesApi(): CompleteHostServiceRegistry['files'] {
         }
 
         const ext = extname(filePath);
-        const stagedPath = join(OUTBOUND_DIR, `${id}${ext}`);
+        const stagedPath = join(outboundDir, `${id}${ext}`);
         await fsP.copyFile(filePath, stagedPath);
         const s = await fsP.stat(stagedPath);
         const mimeType = getMimeType(ext);
@@ -252,12 +256,13 @@ export function createFilesApi(): CompleteHostServiceRegistry['files'] {
         throw new Error('Invalid staged buffer payload');
       }
       const fsP = await import('node:fs/promises');
-      await fsP.mkdir(OUTBOUND_DIR, { recursive: true });
+      const outboundDir = getOutboundDir();
+      await fsP.mkdir(outboundDir, { recursive: true });
 
       const id = crypto.randomUUID();
       const payloadMimeType = typeof body.mimeType === 'string' ? body.mimeType : '';
       const ext = extname(body.fileName) || mimeToExt(payloadMimeType);
-      const stagedPath = join(OUTBOUND_DIR, `${id}${ext}`);
+      const stagedPath = join(outboundDir, `${id}${ext}`);
       const buffer = Buffer.from(body.base64, 'base64');
       await fsP.writeFile(stagedPath, buffer);
 
@@ -276,7 +281,7 @@ export function createFilesApi(): CompleteHostServiceRegistry['files'] {
     },
     readText: async (payload) => {
       try {
-        const { realPath: real, readOnly } = await resolveSandboxedPath(requirePath(payload), 'read');
+        const { realPath: real, readOnly } = await resolveSandboxedPath(requirePath(payload), 'read', options.runtimeManager);
         const fsP = await import('node:fs/promises');
         const stat = await fsP.stat(real);
         if (!stat.isFile()) return { ok: false, error: 'notFound' };
@@ -301,7 +306,7 @@ export function createFilesApi(): CompleteHostServiceRegistry['files'] {
       try {
         const body = isRecord(payload) ? payload as PathPayload : {};
         const opts = getBinaryOptions(body.opts);
-        const { realPath: real, readOnly } = await resolveSandboxedPath(requirePath(payload), 'read');
+        const { realPath: real, readOnly } = await resolveSandboxedPath(requirePath(payload), 'read', options.runtimeManager);
         const fsP = await import('node:fs/promises');
         const stat = await fsP.stat(real);
         if (!stat.isFile()) return { ok: false, error: 'notFound' };
@@ -331,7 +336,7 @@ export function createFilesApi(): CompleteHostServiceRegistry['files'] {
         if (Buffer.byteLength(body.content, 'utf8') > FILE_PREVIEW_MAX_TEXT_BYTES) {
           return { ok: false, error: 'tooLarge' };
         }
-        const { realPath: real } = await resolveSandboxedPath(requirePath(payload), 'write');
+        const { realPath: real } = await resolveSandboxedPath(requirePath(payload), 'write', options.runtimeManager);
         const fsP = await import('node:fs/promises');
         let stat;
         try {
@@ -351,7 +356,7 @@ export function createFilesApi(): CompleteHostServiceRegistry['files'] {
     },
     stat: async (payload) => {
       try {
-        const { realPath: real, readOnly } = await resolveSandboxedPath(requirePath(payload), 'read');
+        const { realPath: real, readOnly } = await resolveSandboxedPath(requirePath(payload), 'read', options.runtimeManager);
         const fsP = await import('node:fs/promises');
         const stat = await fsP.stat(real);
         return {
@@ -371,7 +376,7 @@ export function createFilesApi(): CompleteHostServiceRegistry['files'] {
     },
     listDir: async (payload) => {
       try {
-        const { realPath: real } = await resolveSandboxedPath(requirePath(payload), 'read');
+        const { realPath: real } = await resolveSandboxedPath(requirePath(payload), 'read', options.runtimeManager);
         const fsP = await import('node:fs/promises');
         const dirents = await fsP.readdir(real, { withFileTypes: true });
         const entries = await Promise.all(dirents.map(async (entry) => {
@@ -401,7 +406,7 @@ export function createFilesApi(): CompleteHostServiceRegistry['files'] {
       try {
         const body = isRecord(payload) ? payload as PathPayload : {};
         const opts = getTreeOptions(body.opts);
-        const { realPath: real } = await resolveSandboxedPath(requirePath(payload), 'read');
+        const { realPath: real } = await resolveSandboxedPath(requirePath(payload), 'read', options.runtimeManager);
         const fsP = await import('node:fs/promises');
         const stat = await fsP.stat(real);
         if (!stat.isDirectory()) return { ok: false, error: 'notDirectory' };

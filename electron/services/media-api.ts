@@ -2,6 +2,7 @@ import { dialog, nativeImage } from 'electron';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
+import type { RuntimeManager } from '../runtime/manager';
 import {
   CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
@@ -14,6 +15,7 @@ import {
   setImageGenerationConfig,
   type ImageGenerationModelConfig,
 } from '../utils/openclaw-image-generation';
+import { getRuntimeOutgoingMediaRecordDirs } from '../utils/runtime-media-paths';
 import { isRecord } from './payload-utils';
 
 type ThumbnailEntry = {
@@ -64,15 +66,24 @@ async function generateImagePreview(filePath: string, mimeType: string): Promise
 
 async function resolveOutgoingMediaUrl(
   gatewayUrl: string,
+  runtimeManager?: Pick<RuntimeManager, 'getStatus'>,
 ): Promise<{ path: string; mimeType: string } | null> {
   try {
     const match = gatewayUrl.match(/\/api\/chat\/media\/outgoing\/[^/]+\/([^/]+)\//);
     if (!match) return null;
     const attachmentId = decodeURIComponent(match[1]);
     if (!/^[A-Za-z0-9._-]+$/.test(attachmentId)) return null;
-    const recordPath = join(homedir(), '.openclaw', 'media', 'outgoing', 'records', `${attachmentId}.json`);
     const fsP = await import('node:fs/promises');
-    const raw = await fsP.readFile(recordPath, 'utf8');
+    let raw: string | null = null;
+    for (const recordDir of getRuntimeOutgoingMediaRecordDirs(runtimeManager)) {
+      try {
+        raw = await fsP.readFile(join(recordDir, `${attachmentId}.json`), 'utf8');
+        break;
+      } catch {
+        // Try fallback runtime media records for historical messages.
+      }
+    }
+    if (!raw) return null;
     const record = JSON.parse(raw) as {
       original?: { path?: string; contentType?: string };
     };
@@ -94,7 +105,7 @@ function normalizeThumbnailEntries(payload: unknown): ThumbnailEntry[] {
   return Array.isArray(value) ? value as ThumbnailEntry[] : [];
 }
 
-export function createMediaApi(): CompleteHostServiceRegistry['media'] {
+export function createMediaApi(options: { runtimeManager?: Pick<RuntimeManager, 'getStatus'> } = {}): CompleteHostServiceRegistry['media'] {
   return {
     thumbnails: async (payload) => {
       const entries = normalizeThumbnailEntries(payload);
@@ -116,7 +127,7 @@ export function createMediaApi(): CompleteHostServiceRegistry['media'] {
         }
 
         if (typeof entry.gatewayUrl === 'string' && entry.gatewayUrl) {
-          const resolved = await resolveOutgoingMediaUrl(entry.gatewayUrl);
+          const resolved = await resolveOutgoingMediaUrl(entry.gatewayUrl, options.runtimeManager);
           if (!resolved) {
             results[entry.gatewayUrl] = { preview: null, fileSize: 0 };
             continue;

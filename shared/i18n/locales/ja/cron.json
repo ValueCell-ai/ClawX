@@ -29,8 +29,31 @@
         "taskNamePlaceholder": "例：朝のブリーフィング",
         "message": "メッセージ / プロンプト",
         "messagePlaceholder": "AIに何をさせますか？ 例：今日のニュースと天気のまとめを作成",
+        "pickSkill": "スキルを挿入",
+        "skillButton": "スキル",
+        "skillPickerTitle": "{{agent}} のクイックスキル",
+        "skillSearchPlaceholder": "スキルを検索",
+        "skillLoading": "スキルを読み込み中...",
+        "skillEmpty": "一致するスキルが見つかりません",
         "agent": "エージェント",
         "schedule": "スケジュール",
+        "scheduleMode": {
+            "recurring": "繰り返し",
+            "once": "1回のみ"
+        },
+        "recurrence": {
+            "hourly": "毎時",
+            "daily": "毎日",
+            "weekdays": "平日",
+            "weekly": "毎週",
+            "custom": "カスタム"
+        },
+        "timeLabel": "時刻",
+        "hourColumn": "時",
+        "minuteColumn": "分",
+        "dateLabel": "日付",
+        "weekdayLabel": "曜日",
+        "minuteLabel": "毎時の分",
         "cronPlaceholder": "Cron式（例：0 9 * * *）",
         "usePresets": "プリセットを使用",
         "useCustomCron": "カスタムCronを使用",
@@ -105,7 +128,8 @@
         "failedLoadDeliveryTargets": "送信先の読み込みに失敗しました",
         "failedResolveDeliveryTarget": "既定の送信先を解決できませんでした",
         "discordIdRequired": "DiscordチャンネルIDを入力してください",
-        "scheduleRequired": "スケジュールを選択または入力してください"
+        "scheduleRequired": "スケジュールを選択または入力してください",
+        "schedulePast": "選択した時刻は過去です。未来の時刻を選択してください。"
     },
     "schedule": {
         "everySeconds": "{{count}}秒ごと",
@@ -114,8 +138,19 @@
         "everyDays": "{{count}}日ごと",
         "onceAt": "{{time}} に1回実行",
         "weeklyAt": "毎週 {{day}} {{time}}",
+        "weekdaysAt": "平日 {{time}}",
+        "hourlyAt": "毎時 {{minute}}分",
         "monthlyAtDay": "毎月 {{day}}日 {{time}}",
         "dailyAt": "毎日 {{time}}",
         "unknown": "不明"
+    },
+    "weekdays": {
+        "sun": "日曜日",
+        "mon": "月曜日",
+        "tue": "火曜日",
+        "wed": "水曜日",
+        "thu": "木曜日",
+        "fri": "金曜日",
+        "sat": "土曜日"
     }
 }

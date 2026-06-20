@@ -23,6 +23,11 @@ import {
 import { validateApiKeyWithProvider } from './providers/provider-validation';
 import type { ProviderAccount } from '../shared/providers/types';
 import { isRecord } from './payload-utils';
+import {
+  getCcConnectCodexOAuthStatus,
+  importUserCodexOAuthToManagedHome,
+  logoutCcConnectCodexOAuth,
+} from '../runtime/cc-connect-provider-profile';
 
 type ProvidersApiContext = {
   gatewayManager: GatewayManager;
@@ -558,6 +563,53 @@ async function submitOAuth(payload: ProviderPayload<'submitOAuth'>) {
   }
 }
 
+async function codexOAuthStatus(payload?: ProviderPayload<'codexOAuthStatus'>) {
+  try {
+    const accountId = payloadString(payload, 'accountId');
+    return await getCcConnectCodexOAuthStatus({ accountId });
+  } catch (error) {
+    logger.error('providers.codexOAuthStatus failed', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+async function importCodexOAuth(
+  payload: ProviderPayload<'importCodexOAuth'> | undefined,
+  ctx: Pick<ProvidersApiContext, 'runtimeManager'>,
+) {
+  try {
+    const accountId = payloadString(payload, 'accountId');
+    const result = await importUserCodexOAuthToManagedHome({ accountId });
+    await syncActiveRuntimeProviderProfile(ctx, {
+      providerId: result.provider?.accountId ?? accountId,
+      reason: 'codex-oauth-import',
+    });
+    return result;
+  } catch (error) {
+    logger.error('providers.importCodexOAuth failed', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+async function logoutCodexOAuth(
+  payload: ProviderPayload<'logoutCodexOAuth'> | undefined,
+  ctx: Pick<ProvidersApiContext, 'runtimeManager'>,
+) {
+  try {
+    const accountId = payloadString(payload, 'accountId');
+    const managedOnly = isRecord(payload) && payload.managedOnly === true;
+    const result = await logoutCcConnectCodexOAuth({ accountId, managedOnly });
+    await syncActiveRuntimeProviderProfile(ctx, {
+      providerId: result.provider?.accountId ?? accountId,
+      reason: 'codex-oauth-logout',
+    });
+    return result;
+  } catch (error) {
+    logger.error('providers.logoutCodexOAuth failed', error);
+    return { success: false, error: String(error) };
+  }
+}
+
 export function createProvidersApi(ctx: ProvidersApiContext): CompleteHostServiceRegistry['providers'] {
   const providerService = getProviderService();
   deviceOAuthManager.setWindow(ctx.mainWindow);
@@ -591,5 +643,8 @@ export function createProvidersApi(ctx: ProvidersApiContext): CompleteHostServic
     requestOAuth,
     cancelOAuth,
     submitOAuth,
+    codexOAuthStatus,
+    importCodexOAuth: async (payload) => importCodexOAuth(payload, ctx),
+    logoutCodexOAuth: async (payload) => logoutCodexOAuth(payload, ctx),
   };
 }

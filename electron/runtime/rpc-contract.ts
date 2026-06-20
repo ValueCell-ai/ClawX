@@ -44,6 +44,7 @@ const OPENCLAW_PROXY_METHODS: Array<[string, keyof RuntimeCapabilities, string]>
 
 const CC_CONNECT_NATIVE_METHODS: Array<[string, keyof RuntimeCapabilities, string]> = [
   ['chat.send', 'chat', 'Delivered through cc-connect BridgePlatform into Codex.'],
+  ['chat.abort', 'chat', 'Marks the active bridge run aborted and restarts cc-connect to terminate in-flight Codex work.'],
   ['sessions.list', 'sessions', 'Loaded from cc-connect bridge session state.'],
   ['chat.history', 'history', 'Loaded from cc-connect bridge session history.'],
   ['sessions.delete', 'sessions', 'Deletes cc-connect bridge session state.'],
@@ -54,22 +55,21 @@ const CC_CONNECT_NATIVE_METHODS: Array<[string, keyof RuntimeCapabilities, strin
   ['skills.status', 'skills', 'Synchronizes skills into the managed cc-connect Codex home.'],
   ['skills.update', 'skills', 'Synchronizes skills into the managed cc-connect Codex home.'],
   ['channels.status', 'channels', 'Projects configured channel accounts into cc-connect platform status.'],
+  ['channels.connect', 'channels', 'Refreshes cc-connect channel platform config and restarts when needed.'],
+  ['channels.disconnect', 'channels', 'Refreshes cc-connect channel platform config and restarts when needed.'],
+  ['channels.delete', 'channels', 'Refreshes cc-connect channel platform config after channel config deletion.'],
   ['runtime.controlUi', 'controlUi', 'Opens the cc-connect Web Admin.'],
   ['cron.list', 'cron', 'Uses cc-connect management API.'],
   ['cron.create', 'cron', 'Uses cc-connect management API.'],
   ['cron.update', 'cron', 'Uses cc-connect management API.'],
   ['cron.delete', 'cron', 'Uses cc-connect management API.'],
+  ['cron.toggle', 'cron', 'Uses cc-connect management API update with enabled=true/false.'],
   ['cron.run', 'cron', 'Uses cc-connect management API.'],
   ['logs.list', 'logs', 'Served from managed cc-connect config and runtime paths.'],
   ['doctor.run', 'doctor', 'Runs cc-connect doctor user-isolation.'],
 ];
 
 const CC_CONNECT_UNSUPPORTED_METHODS: Array<[string, keyof RuntimeCapabilities, string]> = [
-  ['chat.abort', 'chat', 'cc-connect BridgePlatform does not expose an abort RPC yet.'],
-  ['channels.connect', 'channels', 'Channel credentials are configured in ClawX and materialized during runtime config refresh.'],
-  ['channels.disconnect', 'channels', 'Channel credentials are configured in ClawX and materialized during runtime config refresh.'],
-  ['channels.delete', 'channels', 'Channel credentials are configured in ClawX and materialized during runtime config refresh.'],
-  ['cron.toggle', 'cron', 'Use cron.update with enabled=false/true for cc-connect.'],
   ['doctor.fix', 'doctor', 'cc-connect v1.3.2 does not support doctor fix mode.'],
   ['doctor.memory.status', 'doctor', 'OpenClaw Dreams memory doctor RPCs do not have a cc-connect equivalent.'],
 ];

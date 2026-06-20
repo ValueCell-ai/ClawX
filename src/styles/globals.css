@@ -394,13 +394,53 @@
 
 .prose ul,
 .prose ol {
+  list-style: disc outside;
   margin-top: 0.5em;
   margin-bottom: 0.5em;
   padding-left: 1.5em;
 }
 
+.prose ol {
+  list-style: decimal;
+}
+
+.prose li::marker {
+  color: hsl(var(--foreground));
+}
+
 .prose li {
   margin-bottom: 0.25em;
+}
+
+.prose h1 {
+  font-size: 1.875rem;
+  line-height: 1.25;
+  margin: 1rem 0 0.6rem;
+}
+
+.prose h2 {
+  font-size: 1.5rem;
+  line-height: 1.3;
+  margin: 0.9rem 0 0.5rem;
+}
+
+.prose h3 {
+  font-size: 1.25rem;
+  line-height: 1.35;
+  margin: 0.8rem 0 0.45rem;
+}
+
+.prose h4 {
+  font-size: 1.125rem;
+  line-height: 1.4;
+  margin: 0.7rem 0 0.4rem;
+}
+
+.prose h5,
+.prose h6 {
+  font-size: 1rem;
+  line-height: 1.45;
+  margin: 0.6rem 0 0.35rem;
 }
 
 .prose pre {

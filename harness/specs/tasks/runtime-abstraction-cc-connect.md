@@ -11,6 +11,7 @@ touchedAreas:
   - README.md
   - README.zh-CN.md
   - README.ja-JP.md
+  - README.ru-RU.md
   - clawx-extensions.json
   - docs/**
   - harness/specs/**
@@ -52,14 +53,26 @@ expectedUserBehavior:
   - Settings exposes a runtime selector with OpenClaw and cc-connect choices.
   - cc-connect can be selected without writing to the user's global ~/.cc-connect directory.
   - Packaged builds contain the cc-connect executable for the target platform.
+  - cc-connect probes localhost startup ports and falls back from default BridgePlatform/Management API ports when they are occupied; status, Control UI, diagnostics, and Management API calls use the selected port.
+  - cc-connect unexpected crashes close the bridge, stop session polling, report an error, and schedule a bounded automatic restart.
+  - cc-connect stop/restart terminates the runtime process tree so Codex child processes do not survive runtime switching.
+  - cc-connect app quit and rollback to OpenClaw release runtime ports and leave no process referencing the ClawX-managed cc-connect runtime directory in real bundled-runtime Electron smoke tests.
+  - macOS dir-packaged smoke starts `release/mac-arm64/ClawX.app`, verifies packaged `Contents/Resources/cc-connect` and `Contents/Resources/codex`, starts cc-connect through packaged resolver paths, and verifies app-quit cleanup.
   - cc-connect chat emits OpenClaw-compatible runtime events, including streamed assistant deltas.
   - cc-connect GUI chat is delivered through cc-connect BridgePlatform; ClawX must not call Codex directly from Chat in cc-connect mode.
+  - cc-connect BridgePlatform media packets (`image`, `file`, `audio`) are converted into shared chat messages with `_attachedFiles`; base64 media is persisted under ClawX-managed cc-connect userData media roots.
+  - cc-connect BridgePlatform tool, command, and patch packets are converted into shared runtime events; file-editing tool calls are persisted as `toolCall` content blocks for generated-file extraction.
   - cc-connect sessions/history/tool artifacts are sourced from cc-connect BridgePlatform, Management API, or cc-connect-owned session stores; ClawX must not read Codex transcript/runtime state files directly.
   - Models token usage includes cc-connect-owned session store usage records and must not read Codex transcript/runtime state files directly.
   - cc-connect mirrors each configured OpenClaw agent to a project that reuses that agent's existing OpenClaw workspace when it exists.
   - cc-connect falls back to a ClawX-managed workspace for agents whose configured OpenClaw workspace path is missing or unset.
   - cc-connect channel accounts run in the project for their bound agent.
-  - cc-connect validation covers mock bridge chat, real bundled runtime startup, and opt-in real Codex OAuth chat.
+  - cc-connect validation covers mock bridge chat, real bundled runtime startup, opt-in real Codex OAuth chat, session/history, restart reload, delete semantics, project workspace isolation, skills mirroring, and prompt cron create/list/run/toggle/delete.
+  - Runtime status exposes operation-level support metadata so degraded cc-connect sub-operations are visible before callers invoke them.
+  - Cron and channel runtime actions consult operation-level support metadata before invoking runtime-specific mutations.
+  - Runtime diagnostics expose active runtime status, operation capabilities, cc-connect managed paths, Codex OAuth status, sanitized provider profile data, bundle metadata/version command output, Management API health, and runtime log tail without exposing OAuth tokens or management tokens.
+  - Skills UI resolves source and runtime mirror directories through Host API so cc-connect opens the managed Codex skills mirror instead of hardcoding the OpenClaw skills directory.
+  - File/media staging and outgoing media record lookup use runtime-aware roots so cc-connect attachments stay inside ClawX-managed userData instead of ~/.openclaw.
   - cc-connect replacement readiness is tracked separately from initial runtime availability, including capability gaps, OAuth lifecycle, doctor parity, abort parity, and real-runtime validation gaps.
 requiredProfiles:
   - fast
@@ -73,10 +86,14 @@ requiredTests:
   - tests/unit/token-usage.test.ts
   - tests/unit/token-usage-scan.test.ts
   - tests/unit/host-api-facade.test.ts
+  - tests/unit/host-services.test.ts
+  - tests/unit/extension-host-api-contributions.test.ts
   - tests/e2e/cc-connect-codex-runtime.spec.ts
   - tests/e2e/token-usage.spec.ts
   - tests/e2e/cc-connect-real-bundle-smoke.spec.ts
   - tests/e2e/cc-connect-real-oauth-chat.spec.ts
+  - tests/e2e/cc-connect-real-comprehensive.spec.ts
+  - tests/e2e/settings-runtime-selector.spec.ts
 acceptance:
   - Renderer does not add direct IPC calls.
   - Renderer does not fetch Gateway or cc-connect HTTP endpoints directly.
@@ -86,12 +103,20 @@ acceptance:
   - Non-main agents keep separate cc-connect project names and Codex `work_dir` values.
   - cc-connect Codex `work_dir` never defaults to the ClawX source checkout or to `process.cwd()`.
   - cc-connect `reply_stream` packets update the same chat runtime graph path used by OpenClaw assistant deltas.
+  - cc-connect bridge registration declares media capabilities only when the adapter maps media packets into renderer-visible attachments.
+  - cc-connect bridge registration declares tool/command/patch capabilities only when the adapter maps those packets into shared runtime events and generated-file `toolCall` messages.
   - `usage:recentTokenHistory` returns cc-connect session-store usage with app-visible `agent:*` session IDs.
   - `pnpm run verify:runtime-bundles` passes after cc-connect and Codex bundles are prepared.
-  - `pnpm run test:e2e:cc-connect` covers mock bridge chat and real bundled runtime startup.
-  - Real Codex OAuth chat is gated behind `CLAWX_REAL_OAUTH_E2E=1` and uses isolated userData/CODEX_HOME.
+  - `pnpm run test:e2e:cc-connect` covers mock bridge chat, real bundled runtime startup, and real bundled runtime startup with default cc-connect ports occupied.
+  - `pnpm run test:e2e:cc-connect` covers real bundled runtime process cleanup on app quit and runtime rollback to OpenClaw.
+  - `pnpm run package:mac:dir && pnpm run smoke:cc-connect:packaged -- --app=release/mac-arm64/ClawX.app` validates macOS packaged resource paths and runtime cleanup.
+  - Unit lifecycle coverage proves unexpected crash restart and intentional stop behavior for cc-connect.
+  - Real Codex OAuth validation is gated behind `CLAWX_REAL_OAUTH_E2E=1` and uses isolated userData/CODEX_HOME.
+  - Gated real OAuth coverage validates chat, session summary/history, restart reload, delete semantics, project workspace isolation, skills mirroring, and prompt cron create/list/run/toggle/delete through real cc-connect plus bundled Codex.
   - `docs/runtime-abstraction-cc-connect.md` records the difference between first-version cc-connect support and replacement-ready OpenClaw parity.
-  - Capability documentation names unsupported cc-connect sub-operations such as chat abort, doctor fix, channel lifecycle mutations, and cron toggle rather than implying full parity from a top-level boolean.
+  - Capability documentation names unsupported or degraded cc-connect sub-operations such as doctor fix, channel lifecycle mutations, exec cron manual run, and upstream single-run chat cancellation rather than implying full parity from a top-level boolean.
+  - Settings exposes a runtime diagnostics copy action backed by the Host API diagnostics snapshot.
+  - Skills page folder actions use `skills.target` rather than `openclaw.getSkillsDir` when selecting the active runtime target.
 docs:
   required: true
 ---

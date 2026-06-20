@@ -371,6 +371,7 @@ async function initialize(): Promise<void> {
   // Initialize extension system
   await extensionRegistry.initialize({
     gatewayManager,
+    runtimeManager,
     getMainWindow: () => mainWindow,
     hostApi: {
       register: (extensionId, contributions) => (

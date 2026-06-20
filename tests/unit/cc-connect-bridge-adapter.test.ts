@@ -10,12 +10,22 @@ import {
   toCcConnectBridgeSessionKey,
 } from '@electron/runtime/cc-connect-bridge-adapter';
 
+const electronMockState = vi.hoisted(() => ({ userData: '' }));
+
+vi.mock('electron', () => ({
+  app: {
+    isPackaged: false,
+    getPath: vi.fn(() => electronMockState.userData),
+  },
+}));
+
 describe('cc-connect bridge adapter persisted sessions', () => {
   let tempDir: string;
   let sessionStoreDir: string;
 
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'clawx-cc-bridge-adapter-'));
+    electronMockState.userData = join(tempDir, 'userData');
     sessionStoreDir = join(tempDir, 'data', 'sessions');
     await mkdir(sessionStoreDir, { recursive: true });
   });
@@ -117,6 +127,263 @@ describe('cc-connect bridge adapter persisted sessions', () => {
     }
   });
 
+  it('declares media capabilities and converts bridge image packets to attached files', async () => {
+    const server = new WebSocketServer({ port: 0 });
+    const port = await new Promise<number>((resolve) => {
+      server.once('listening', () => {
+        const address = server.address();
+        resolve(typeof address === 'object' && address ? address.port : 0);
+      });
+    });
+    const emitted: Array<[string, unknown]> = [];
+    const received: Record<string, unknown>[] = [];
+    const imageData = Buffer.from('fake image bytes').toString('base64');
+
+    server.on('connection', (socket) => {
+      socket.on('message', (data) => {
+        const parsed = JSON.parse(String(data)) as Record<string, unknown>;
+        received.push(parsed);
+        if (parsed.type === 'register') {
+          socket.send(JSON.stringify({ type: 'register_ack', ok: true }));
+          return;
+        }
+        if (parsed.type === 'message') {
+          socket.send(JSON.stringify({
+            type: 'image',
+            session_key: parsed.session_key,
+            reply_ctx: parsed.reply_ctx,
+            data: imageData,
+            mime_type: 'image/png',
+            file_name: 'screenshot.png',
+          }));
+        }
+      });
+    });
+
+    try {
+      const adapter = new CcConnectBridgeAdapter({
+        port,
+        token: 'token',
+        project: 'clawx-main',
+        emit: ((event: string, payload: unknown) => emitted.push([event, payload])) as never,
+        sessionStoreDir,
+      });
+
+      const result = await adapter.send({
+        sessionKey: 'agent:main:main',
+        message: 'make image',
+        idempotencyKey: 'idem-image',
+      });
+
+      await vi.waitFor(() => {
+        expect(emitted).toEqual(expect.arrayContaining([
+          ['chat:message', expect.objectContaining({
+            runId: result.runId,
+            sessionKey: 'agent:main:main',
+            message: expect.objectContaining({
+              role: 'assistant',
+              content: 'screenshot.png',
+              _attachedFiles: [
+                expect.objectContaining({
+                  fileName: 'screenshot.png',
+                  mimeType: 'image/png',
+                  fileSize: Buffer.byteLength('fake image bytes'),
+                  preview: `data:image/png;base64,${imageData}`,
+                  source: 'gateway-media',
+                }),
+              ],
+            }),
+          })],
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'run.ended',
+            runId: result.runId,
+            sessionKey: 'agent:main:main',
+            status: 'completed',
+          })],
+        ]));
+      });
+
+      const register = received.find((message) => message.type === 'register');
+      expect(register?.capabilities).toEqual(expect.arrayContaining(['image', 'file', 'audio']));
+      const messageEvent = emitted.find(([event]) => event === 'chat:message')?.[1] as {
+        message?: { _attachedFiles?: Array<{ filePath?: string }> };
+      } | undefined;
+      const filePath = messageEvent?.message?._attachedFiles?.[0]?.filePath;
+      expect(filePath).toContain(join('runtimes', 'cc-connect', 'media', 'outgoing', 'bridge'));
+      await expect(readFile(filePath || '', 'utf8')).resolves.toBe('fake image bytes');
+      await adapter.close();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('maps bridge tool, command, and patch packets to runtime events and generated-file messages', async () => {
+    const server = new WebSocketServer({ port: 0 });
+    const port = await new Promise<number>((resolve) => {
+      server.once('listening', () => {
+        const address = server.address();
+        resolve(typeof address === 'object' && address ? address.port : 0);
+      });
+    });
+    const emitted: Array<[string, unknown]> = [];
+    const received: Record<string, unknown>[] = [];
+
+    server.on('connection', (socket) => {
+      socket.on('message', (data) => {
+        const parsed = JSON.parse(String(data)) as Record<string, unknown>;
+        received.push(parsed);
+        if (parsed.type === 'register') {
+          socket.send(JSON.stringify({ type: 'register_ack', ok: true }));
+          return;
+        }
+        if (parsed.type === 'message') {
+          socket.send(JSON.stringify({
+            type: 'tool_call',
+            reply_ctx: parsed.reply_ctx,
+            session_key: parsed.session_key,
+            tool_call_id: 'edit-1',
+            name: 'Edit',
+            arguments: {
+              file_path: '/workspace/demo.ts',
+              old_string: 'const value = 1\n',
+              new_string: 'const value = 2\n',
+            },
+          }));
+          socket.send(JSON.stringify({
+            type: 'command_output',
+            reply_ctx: parsed.reply_ctx,
+            session_key: parsed.session_key,
+            tool_call_id: 'edit-1',
+            item_id: 'cmd-1',
+            title: 'apply edit',
+            output: 'patched /workspace/demo.ts',
+            status: 'running',
+            cwd: '/workspace',
+          }));
+          socket.send(JSON.stringify({
+            type: 'patch_completed',
+            reply_ctx: parsed.reply_ctx,
+            session_key: parsed.session_key,
+            tool_call_id: 'edit-1',
+            item_id: 'patch-1',
+            title: 'demo.ts',
+            summary: '1 file changed',
+            added: 1,
+            modified: 1,
+          }));
+          socket.send(JSON.stringify({
+            type: 'tool_result',
+            reply_ctx: parsed.reply_ctx,
+            session_key: parsed.session_key,
+            tool_call_id: 'edit-1',
+            name: 'Edit',
+            result: 'ok',
+          }));
+          socket.send(JSON.stringify({
+            type: 'reply',
+            reply_ctx: parsed.reply_ctx,
+            session_key: parsed.session_key,
+            content: 'done',
+          }));
+        }
+      });
+    });
+
+    try {
+      const adapter = new CcConnectBridgeAdapter({
+        port,
+        token: 'token',
+        project: 'clawx-main',
+        emit: ((event: string, payload: unknown) => emitted.push([event, payload])) as never,
+        sessionStoreDir,
+      });
+
+      const result = await adapter.send({
+        sessionKey: 'agent:main:main',
+        message: 'edit demo.ts',
+        idempotencyKey: 'idem-tools',
+      });
+
+      await vi.waitFor(() => {
+        expect(emitted).toEqual(expect.arrayContaining([
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'tool.started',
+            runId: result.runId,
+            sessionKey: 'agent:main:main',
+            toolCallId: 'edit-1',
+            name: 'Edit',
+            args: expect.objectContaining({ file_path: '/workspace/demo.ts' }),
+          })],
+          ['chat:message', expect.objectContaining({
+            runId: result.runId,
+            sessionKey: 'agent:main:main',
+            message: expect.objectContaining({
+              role: 'assistant',
+              content: [expect.objectContaining({
+                type: 'toolCall',
+                id: 'edit-1',
+                name: 'Edit',
+                arguments: expect.objectContaining({
+                  file_path: '/workspace/demo.ts',
+                  old_string: 'const value = 1\n',
+                  new_string: 'const value = 2\n',
+                }),
+              })],
+            }),
+          })],
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'command.output',
+            runId: result.runId,
+            toolCallId: 'edit-1',
+            itemId: 'cmd-1',
+            output: 'patched /workspace/demo.ts',
+            cwd: '/workspace',
+          })],
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'patch.completed',
+            runId: result.runId,
+            toolCallId: 'edit-1',
+            itemId: 'patch-1',
+            summary: '1 file changed',
+            added: 1,
+            modified: 1,
+            deleted: 0,
+          })],
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'tool.completed',
+            runId: result.runId,
+            toolCallId: 'edit-1',
+            result: 'ok',
+          })],
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'run.ended',
+            runId: result.runId,
+            sessionKey: 'agent:main:main',
+            status: 'completed',
+          })],
+        ]));
+      });
+
+      const register = received.find((message) => message.type === 'register');
+      expect(register?.capabilities).toEqual(expect.arrayContaining(['tool_events', 'command_output', 'patch_events']));
+      await expect(adapter.loadHistory('agent:main:main')).resolves.toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          role: 'assistant',
+          content: [expect.objectContaining({
+            type: 'toolCall',
+            id: 'edit-1',
+            name: 'Edit',
+            arguments: expect.objectContaining({ file_path: '/workspace/demo.ts' }),
+          })],
+        }),
+        expect.objectContaining({ role: 'assistant', content: 'done' }),
+      ]));
+      await adapter.close();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it('maps bridge replies without reply_ctx back to the pending app run', async () => {
     const server = new WebSocketServer({ port: 0 });
     const port = await new Promise<number>((resolve) => {
@@ -174,6 +441,84 @@ describe('cc-connect bridge adapter persisted sessions', () => {
           })],
         ]));
       });
+      await adapter.close();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('aborts pending app runs and ignores late bridge replies', async () => {
+    const server = new WebSocketServer({ port: 0 });
+    const port = await new Promise<number>((resolve) => {
+      server.once('listening', () => {
+        const address = server.address();
+        resolve(typeof address === 'object' && address ? address.port : 0);
+      });
+    });
+    const emitted: Array<[string, unknown]> = [];
+    let capturedReplyCtx = '';
+
+    server.on('connection', (socket) => {
+      socket.on('message', (data) => {
+        const parsed = JSON.parse(String(data)) as Record<string, unknown>;
+        if (parsed.type === 'register') {
+          socket.send(JSON.stringify({ type: 'register_ack', ok: true }));
+          return;
+        }
+        if (parsed.type === 'message') {
+          capturedReplyCtx = String(parsed.reply_ctx || '');
+        }
+      });
+    });
+
+    try {
+      const adapter = new CcConnectBridgeAdapter({
+        port,
+        token: 'token',
+        project: 'clawx-main',
+        emit: ((event: string, payload: unknown) => emitted.push([event, payload])) as never,
+        sessionStoreDir,
+      });
+
+      const result = await adapter.send({
+        sessionKey: 'agent:main:main',
+        message: 'slow ping',
+        idempotencyKey: 'idem-abort',
+      });
+      await vi.waitFor(() => expect(capturedReplyCtx).toBe(result.runId));
+
+      await expect(adapter.abort({ sessionKey: 'agent:main:main' })).resolves.toEqual({
+        success: true,
+        abortedRuns: [result.runId],
+      });
+
+      await vi.waitFor(() => {
+        expect(emitted).toEqual(expect.arrayContaining([
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'run.ended',
+            runId: result.runId,
+            sessionKey: 'agent:main:main',
+            status: 'aborted',
+            stopReason: 'user',
+          })],
+        ]));
+      });
+
+      const socket = Array.from(server.clients)[0];
+      socket.send(JSON.stringify({
+        type: 'reply',
+        reply_ctx: result.runId,
+        session_key: 'clawx:main:main',
+        content: 'late pong',
+      }));
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(emitted).not.toEqual(expect.arrayContaining([
+        ['chat:message', expect.objectContaining({
+          runId: result.runId,
+          message: expect.objectContaining({ content: 'late pong' }),
+        })],
+      ]));
       await adapter.close();
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -301,11 +646,15 @@ describe('cc-connect bridge adapter persisted sessions', () => {
       {
         key: 'feishu:oc_chat:ou_user',
         displayName: '网关 / channel-user',
+        derivedTitle: '你在吗',
+        lastMessagePreview: '在。有什么需要我处理？',
         updatedAt: 1_780_900_001_000,
       },
       {
         key: 'agent:research:desk',
         displayName: 'hello from app',
+        derivedTitle: 'hello from app',
+        lastMessagePreview: 'hello from app',
         updatedAt: 1_780_800_000_000,
       },
     ]);

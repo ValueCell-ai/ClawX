@@ -638,6 +638,14 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     OPENCLAW_SKIP_CHANNELS: skipChannels ? '1' : '',
     CLAWDBOT_SKIP_CHANNELS: skipChannels ? '1' : '',
     OPENCLAW_NO_RESPAWN: '1',
+    // Disable OpenClaw's interactive-shell env snapshot. When the Gateway runs
+    // as an Electron utilityProcess, `process.execPath` is the Electron binary,
+    // and OpenClaw captures the shell env by spawning `process.execPath -e
+    // <script>` inside a sanitized login shell that strips ELECTRON_RUN_AS_NODE.
+    // Electron then treats the script as an app path and pops up "Unable to find
+    // Electron app at <cwd>/const safe = new Set(...)". Turning the snapshot off
+    // avoids that broken spawn; exec tools fall back to the Gateway launch env.
+    OPENCLAW_EXEC_SHELL_SNAPSHOT: '0',
   };
 
   // Ensure extension-specific packages (e.g. grammy from the telegram

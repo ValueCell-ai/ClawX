@@ -3,9 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import WebSocket from 'ws';
-import type { RawMessage } from '@shared/chat/types';
+import type { AttachedFileMeta, RawMessage } from '@shared/chat/types';
 import { getCcConnectManagedDir } from './cc-connect-paths';
 import type { RuntimeSendWithMediaPayload } from './types';
+import { getCcConnectMediaDir } from '../utils/runtime-media-paths';
 
 type BridgeAdapterOptions = {
   port: number;
@@ -19,6 +20,8 @@ type BridgeAdapterOptions = {
 type SessionMetadata = {
   key: string;
   displayName?: string;
+  derivedTitle?: string;
+  lastMessagePreview?: string;
   agentId?: string;
   createdAt: number;
   updatedAt: number;
@@ -35,6 +38,15 @@ type PendingRunResolution = {
   runId: string;
   pending: PendingRun;
 };
+
+type AbortedRun = {
+  sessionKey: string;
+  abortedAt: number;
+};
+
+type BridgeMediaKind = 'image' | 'file' | 'audio';
+
+type BridgeToolEventKind = 'started' | 'updated' | 'completed' | 'command-output' | 'patch-completed';
 
 type PersistedSession = {
   id: string;
@@ -60,6 +72,31 @@ type PersistedSessionStore = {
 
 const CONNECT_TIMEOUT_MS = 15_000;
 const CLAWX_PROJECT_PREFIX = 'clawx-';
+const ABORTED_RUN_TTL_MS = 10 * 60_000;
+const TOOL_START_TYPES = new Set(['tool_start', 'tool.started', 'tool_call', 'tool_call_start', 'tool_use', 'tool_use_start']);
+const TOOL_UPDATE_TYPES = new Set(['tool_update', 'tool.updated', 'tool_call_update', 'tool_use_update']);
+const TOOL_COMPLETE_TYPES = new Set(['tool_result', 'tool.completed', 'tool_finish', 'tool_end', 'tool_call_result', 'tool_use_result']);
+const COMMAND_OUTPUT_TYPES = new Set(['command_output', 'command.output', 'cmd_output', 'terminal_output']);
+const PATCH_COMPLETED_TYPES = new Set(['patch_completed', 'patch.completed', 'patch_applied', 'file_patch_completed']);
+const ARTIFACT_TYPES = new Set(['artifact', 'artifact_generated', 'generated_file', 'file_generated']);
+const TOOL_ID_KEYS = ['tool_call_id', 'toolCallId', 'call_id', 'callId', 'tool_id', 'toolId', 'item_id', 'itemId', 'id'];
+const TOOL_NAME_KEYS = ['tool_name', 'toolName', 'name', 'tool', 'command', 'title'];
+const TOOL_ARG_KEYS = ['args', 'arguments', 'input', 'parameters', 'params', 'tool_input', 'toolInput'];
+const FILE_ARG_KEYS = ['file_path', 'filePath', 'filepath', 'path', 'target_path', 'targetPath', 'file_name', 'fileName', 'filename'];
+const EDIT_ARG_KEYS = [
+  'old_string',
+  'oldString',
+  'new_string',
+  'newString',
+  'old_text',
+  'oldText',
+  'new_text',
+  'newText',
+  'content',
+  'contents',
+  'diff',
+  'patch',
+];
 
 function messageText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -89,6 +126,124 @@ function normalizeTimestamp(value: unknown): number | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function firstString(record: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function normalizedType(record: Record<string, unknown>): string {
+  return typeof record.type === 'string' ? record.type.trim().toLowerCase() : '';
+}
+
+function firstRecord(record: Record<string, unknown>, keys: string[]): Record<string, unknown> | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (isRecord(value)) return value;
+  }
+  return undefined;
+}
+
+function firstPayloadValue(record: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    if (record[key] !== undefined) return record[key];
+  }
+  return undefined;
+}
+
+function numberFromUnknown(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+}
+
+function extensionForMimeType(mimeType: string, fallback: string): string {
+  const normalized = mimeType.toLowerCase();
+  if (normalized === 'image/png') return 'png';
+  if (normalized === 'image/jpeg' || normalized === 'image/jpg') return 'jpg';
+  if (normalized === 'image/gif') return 'gif';
+  if (normalized === 'image/webp') return 'webp';
+  if (normalized === 'application/pdf') return 'pdf';
+  if (normalized === 'audio/mpeg') return 'mp3';
+  if (normalized === 'audio/ogg') return 'ogg';
+  if (normalized === 'audio/wav') return 'wav';
+  return fallback;
+}
+
+function sanitizeFileName(fileName: string): string {
+  return basename(fileName).replace(/[^\w.\- ()[\]]+/g, '_').replace(/^_+/, '') || 'attachment';
+}
+
+function bridgeToolObject(message: Record<string, unknown>): Record<string, unknown> | undefined {
+  return firstRecord(message, ['tool_call', 'toolCall', 'tool_use', 'toolUse', 'tool', 'call']);
+}
+
+function bridgeToolCallId(message: Record<string, unknown>): string {
+  const tool = bridgeToolObject(message);
+  return firstString(message, TOOL_ID_KEYS)
+    || (tool ? firstString(tool, TOOL_ID_KEYS) : undefined)
+    || `tool-${randomUUID()}`;
+}
+
+function bridgeToolName(message: Record<string, unknown>, fallback: string): string {
+  const tool = bridgeToolObject(message);
+  return firstString(message, TOOL_NAME_KEYS)
+    || (tool ? firstString(tool, TOOL_NAME_KEYS) : undefined)
+    || fallback;
+}
+
+function normalizeBridgeToolArgs(message: Record<string, unknown>): unknown {
+  const tool = bridgeToolObject(message);
+  const direct = firstPayloadValue(message, TOOL_ARG_KEYS);
+  if (direct !== undefined) return direct;
+  if (tool) {
+    const nested = firstPayloadValue(tool, TOOL_ARG_KEYS);
+    if (nested !== undefined) return nested;
+  }
+
+  const collected: Record<string, unknown> = {};
+  for (const key of [...FILE_ARG_KEYS, ...EDIT_ARG_KEYS, 'cwd', 'exit_code', 'exitCode', 'output', 'status']) {
+    if (message[key] !== undefined) collected[key] = message[key];
+    if (tool?.[key] !== undefined) collected[key] = tool[key];
+  }
+  return Object.keys(collected).length > 0 ? collected : undefined;
+}
+
+function isBridgeToolMessage(message: Record<string, unknown>): BridgeToolEventKind | null {
+  const type = normalizedType(message);
+  if (TOOL_START_TYPES.has(type) || ARTIFACT_TYPES.has(type)) return 'started';
+  if (TOOL_UPDATE_TYPES.has(type)) return 'updated';
+  if (TOOL_COMPLETE_TYPES.has(type)) return 'completed';
+  if (COMMAND_OUTPUT_TYPES.has(type)) return 'command-output';
+  if (PATCH_COMPLETED_TYPES.has(type)) return 'patch-completed';
+  return null;
+}
+
+function toolArgsMentionFile(args: unknown): boolean {
+  if (!isRecord(args)) return false;
+  for (const key of FILE_ARG_KEYS) {
+    if (typeof args[key] === 'string' && args[key].trim()) return true;
+  }
+  return false;
+}
+
+function looksLikeGeneratedFileTool(message: Record<string, unknown>, name: string, args: unknown): boolean {
+  if (ARTIFACT_TYPES.has(normalizedType(message))) return true;
+  if (toolArgsMentionFile(args)) return true;
+  return /^(write|writefile|write_file|create_file|edit|editfile|edit_file|str_replace|strreplace|multi_edit|multiedit)$/i.test(name);
+}
+
+function mimeTypeForBridgeMedia(kind: BridgeMediaKind, message: Record<string, unknown>): string {
+  const explicit = firstString(message, ['mime_type', 'mimeType', 'content_type', 'contentType']);
+  if (explicit) return explicit;
+  if (kind === 'image') return 'image/png';
+  if (kind === 'audio') {
+    const format = firstString(message, ['format']);
+    return format ? `audio/${format.replace(/^\./, '')}` : 'audio/mpeg';
+  }
+  return 'application/octet-stream';
 }
 
 export function toCcConnectBridgeSessionKey(sessionKey: string): string {
@@ -181,6 +336,21 @@ function displayNameForPersistedSession(key: string, session: PersistedSession, 
   return messageText(firstUser?.content).slice(0, 80) || session.name || key;
 }
 
+function sessionTitleFromHistory(history: RawMessage[]): string | undefined {
+  const firstUser = history.find((message) => message.role === 'user');
+  const title = messageText(firstUser?.content).slice(0, 80).trim();
+  return title || undefined;
+}
+
+function sessionPreviewFromHistory(history: RawMessage[]): string | undefined {
+  const latest = [...history].reverse().find((message) => {
+    const text = messageText(message.content);
+    return Boolean(text);
+  });
+  const preview = messageText(latest?.content).slice(0, 120).trim();
+  return preview || undefined;
+}
+
 function projectNameFromStorePath(path: string): string {
   return basename(path).replace(/_[a-f0-9]{8}\.json$/i, '').replace(/\.json$/i, '');
 }
@@ -200,6 +370,7 @@ export class CcConnectBridgeAdapter {
   private socket: WebSocket | null = null;
   private readonly messagesBySession = new Map<string, RawMessage[]>();
   private readonly pendingRuns = new Map<string, PendingRun>();
+  private readonly abortedRuns = new Map<string, AbortedRun>();
 
   constructor(options: BridgeAdapterOptions) {
     this.port = options.port;
@@ -242,6 +413,7 @@ export class CcConnectBridgeAdapter {
   }
 
   async send(payload: RuntimeSendWithMediaPayload): Promise<{ runId: string }> {
+    this.pruneAbortedRuns();
     await this.connect();
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       throw new Error('cc-connect bridge is not connected');
@@ -282,6 +454,43 @@ export class CcConnectBridgeAdapter {
     return { runId };
   }
 
+  async abort(payload?: unknown): Promise<{ success: true; abortedRuns: string[] }> {
+    const body = isRecord(payload) ? payload : {};
+    const requestedRunId = typeof body.runId === 'string' && body.runId.trim()
+      ? body.runId.trim()
+      : undefined;
+    const requestedSessionKey = typeof body.sessionKey === 'string' && body.sessionKey.trim()
+      ? body.sessionKey.trim()
+      : undefined;
+    const matches = Array.from(this.pendingRuns.entries()).filter(([runId, pending]) => {
+      if (requestedRunId) return runId === requestedRunId;
+      if (requestedSessionKey) {
+        return pending.sessionKey === requestedSessionKey
+          || toCcConnectBridgeSessionKey(pending.sessionKey) === requestedSessionKey
+          || pending.sessionKey === fromBridgeSessionKey(requestedSessionKey);
+      }
+      return true;
+    });
+    const now = Date.now();
+    const abortedRuns: string[] = [];
+    for (const [runId, pending] of matches) {
+      this.pendingRuns.delete(runId);
+      this.abortedRuns.set(runId, { sessionKey: pending.sessionKey, abortedAt: now });
+      abortedRuns.push(runId);
+      this.emitRuntimeEvent('chat:runtime-event', {
+        type: 'run.ended',
+        runId,
+        sessionKey: pending.sessionKey,
+        status: 'aborted',
+        endedAt: now,
+        seq: pending.seq + 1,
+        ts: now,
+        stopReason: 'user',
+      });
+    }
+    return { success: true, abortedRuns };
+  }
+
   async listSessions(): Promise<SessionMetadata[]> {
     const sessionsByKey = new Map<string, SessionMetadata>();
     for (const persisted of await this.readPersistedSessionStores()) {
@@ -298,6 +507,8 @@ export class CcConnectBridgeAdapter {
         const item = {
           key,
           displayName: displayNameForPersistedSession(key, { ...session, history }, persisted.userMeta.get(storedKey)),
+          derivedTitle: sessionTitleFromHistory(history),
+          lastMessagePreview: sessionPreviewFromHistory(history),
           agentId: session.agentId,
           createdAt: session.createdAt,
           updatedAt,
@@ -314,9 +525,12 @@ export class CcConnectBridgeAdapter {
         const ts = normalizeTimestamp(message.timestamp);
         return ts ? Math.max(latest, ts) : latest;
       }, 0);
+      const derivedTitle = sessionTitleFromHistory(messages);
       sessionsByKey.set(key, {
         key,
-        displayName: messageText(firstUser?.content).slice(0, 80) || key,
+        displayName: derivedTitle || messageText(firstUser?.content).slice(0, 80) || key,
+        derivedTitle,
+        lastMessagePreview: sessionPreviewFromHistory(messages),
         createdAt: normalizeTimestamp(messages[0]?.timestamp) ?? lastTimestamp,
         updatedAt: lastTimestamp,
       });
@@ -493,7 +707,22 @@ export class CcConnectBridgeAdapter {
           type: 'register',
           platform: 'clawx',
           project: this.project,
-          capabilities: ['text', 'card', 'buttons', 'typing', 'preview', 'update_message', 'delete_message', 'reconstruct_reply'],
+          capabilities: [
+            'text',
+            'image',
+            'file',
+            'audio',
+            'card',
+            'buttons',
+            'typing',
+            'preview',
+            'update_message',
+            'delete_message',
+            'reconstruct_reply',
+            'tool_events',
+            'command_output',
+            'patch_events',
+          ],
           metadata: {
             protocol_version: 1,
             description: 'ClawX GUI bridge adapter',
@@ -548,6 +777,21 @@ export class CcConnectBridgeAdapter {
       }));
       return;
     }
+    if (message.type === 'update_message') {
+      this.emitAssistantDelta({
+        ...message,
+        full_text: typeof message.content === 'string' ? message.content : '',
+      });
+      return;
+    }
+    if (message.type === 'delete_message' || message.type === 'typing_start' || message.type === 'typing_stop') {
+      return;
+    }
+    const toolEventKind = isBridgeToolMessage(message);
+    if (toolEventKind) {
+      this.handleBridgeToolMessage(message, toolEventKind);
+      return;
+    }
     if (message.type === 'reply') {
       this.finishRun(message, typeof message.content === 'string' ? message.content : '');
       return;
@@ -573,9 +817,246 @@ export class CcConnectBridgeAdapter {
       this.finishRun(message, typeof message.content === 'string' ? message.content : '');
       return;
     }
+    if (message.type === 'image' || message.type === 'file' || message.type === 'audio') {
+      void this.finishMediaRun(message, message.type);
+      return;
+    }
     if (message.type === 'error') {
       this.finishRun(message, typeof message.message === 'string' ? message.message : 'cc-connect bridge error', true);
     }
+  }
+
+  private handleBridgeToolMessage(message: Record<string, unknown>, kind: BridgeToolEventKind): void {
+    if (this.isAbortedBridgeMessage(message)) return;
+    const resolved = this.resolvePendingRun(message);
+    const runId = resolved?.runId || firstString(message, ['reply_ctx', 'run_id', 'runId']) || `cc-connect-${randomUUID()}`;
+    const sessionKey = resolved?.pending.sessionKey
+      || (typeof message.session_key === 'string' ? fromBridgeSessionKey(message.session_key) : 'agent:main:main');
+    const now = Date.now();
+    const seq = resolved ? (resolved.pending.seq += 1) : undefined;
+    const toolCallId = bridgeToolCallId(message);
+    const fallbackName = kind === 'patch-completed' ? 'patch' : kind === 'command-output' ? 'command' : 'tool';
+    const name = bridgeToolName(message, fallbackName);
+    const args = normalizeBridgeToolArgs(message);
+    const result = firstPayloadValue(message, ['result', 'output', 'content', 'data', 'error']);
+    const output = typeof message.output === 'string'
+      ? message.output
+      : typeof message.content === 'string'
+        ? message.content
+        : typeof result === 'string'
+          ? result
+          : undefined;
+
+    if (kind === 'started') {
+      this.emitRuntimeEvent('chat:runtime-event', {
+        type: 'tool.started',
+        runId,
+        sessionKey,
+        toolCallId,
+        name,
+        ...(args !== undefined ? { args } : {}),
+        ...(seq !== undefined ? { seq } : {}),
+        ts: now,
+      });
+      if (looksLikeGeneratedFileTool(message, name, args)) {
+        this.emitToolCallMessage({ runId, sessionKey, toolCallId, name, args, timestamp: now });
+      }
+      return;
+    }
+
+    if (kind === 'updated') {
+      this.emitRuntimeEvent('chat:runtime-event', {
+        type: 'tool.updated',
+        runId,
+        sessionKey,
+        toolCallId,
+        name,
+        ...(result !== undefined ? { partialResult: result } : {}),
+        ...(seq !== undefined ? { seq } : {}),
+        ts: now,
+      });
+      return;
+    }
+
+    if (kind === 'completed') {
+      this.emitRuntimeEvent('chat:runtime-event', {
+        type: 'tool.completed',
+        runId,
+        sessionKey,
+        toolCallId,
+        name,
+        ...(result !== undefined ? { result } : {}),
+        ...(message.meta !== undefined ? { meta: message.meta } : {}),
+        ...(message.is_error === true || message.isError === true ? { isError: true } : {}),
+        ...(seq !== undefined ? { seq } : {}),
+        ts: now,
+      });
+      return;
+    }
+
+    if (kind === 'command-output') {
+      this.emitRuntimeEvent('chat:runtime-event', {
+        type: 'command.output',
+        runId,
+        sessionKey,
+        toolCallId,
+        itemId: firstString(message, ['item_id', 'itemId', 'id']) || toolCallId,
+        name,
+        title: firstString(message, ['title']) || name,
+        ...(output !== undefined ? { output } : {}),
+        ...(firstString(message, ['status', 'phase']) ? { status: firstString(message, ['status', 'phase']) } : {}),
+        ...(typeof message.phase === 'string' ? { phase: message.phase } : {}),
+        ...(typeof message.exit_code === 'number' ? { exitCode: message.exit_code } : {}),
+        ...(typeof message.exitCode === 'number' ? { exitCode: message.exitCode } : {}),
+        ...(typeof message.duration_ms === 'number' ? { durationMs: message.duration_ms } : {}),
+        ...(typeof message.durationMs === 'number' ? { durationMs: message.durationMs } : {}),
+        ...(typeof message.cwd === 'string' ? { cwd: message.cwd } : {}),
+        ...(seq !== undefined ? { seq } : {}),
+        ts: now,
+      });
+      return;
+    }
+
+    this.emitRuntimeEvent('chat:runtime-event', {
+      type: 'patch.completed',
+      runId,
+      sessionKey,
+      toolCallId,
+      itemId: firstString(message, ['item_id', 'itemId', 'id']) || toolCallId,
+      name,
+      title: firstString(message, ['title']) || name,
+      summary: firstString(message, ['summary', 'content', 'output']),
+      added: numberFromUnknown(message.added ?? message.additions),
+      modified: numberFromUnknown(message.modified ?? message.changed),
+      deleted: numberFromUnknown(message.deleted ?? message.deletions),
+      ...(seq !== undefined ? { seq } : {}),
+      ts: now,
+    });
+  }
+
+  private emitToolCallMessage(options: {
+    runId: string;
+    sessionKey: string;
+    toolCallId: string;
+    name: string;
+    args: unknown;
+    timestamp: number;
+  }): void {
+    const message: RawMessage = {
+      id: `${options.runId}:${options.toolCallId}:tool`,
+      role: 'assistant',
+      content: [{
+        type: 'toolCall',
+        id: options.toolCallId,
+        name: options.name,
+        arguments: options.args ?? {},
+      }],
+      timestamp: options.timestamp,
+      stopReason: 'tool_use',
+    };
+    this.appendMessage(options.sessionKey, message);
+    this.emitRuntimeEvent('chat:message', {
+      state: 'final',
+      runId: options.runId,
+      sessionKey: options.sessionKey,
+      message,
+    });
+  }
+
+  private async finishMediaRun(message: Record<string, unknown>, kind: BridgeMediaKind): Promise<void> {
+    if (this.isAbortedBridgeMessage(message)) return;
+    const attachment = await this.normalizeBridgeMediaAttachment(message, kind);
+    const label = firstString(message, ['content', 'caption', 'title', 'file_name', 'fileName', 'name'])
+      || attachment.fileName;
+    const resolved = this.resolvePendingRun(message);
+    if (resolved) {
+      this.finishPendingRun(resolved.pending, {
+        text: label,
+        attachedFiles: [attachment],
+      });
+      return;
+    }
+
+    const runId = typeof message.reply_ctx === 'string' ? message.reply_ctx : '';
+    const sessionKey = typeof message.session_key === 'string'
+      ? fromBridgeSessionKey(message.session_key)
+      : 'agent:main:main';
+    const now = Date.now();
+    const assistantMessage: RawMessage = {
+      id: `${runId || randomUUID()}:${kind}`,
+      role: 'assistant',
+      content: label,
+      timestamp: now,
+      _attachedFiles: [attachment],
+    };
+    this.appendMessage(sessionKey, assistantMessage);
+    this.emitRuntimeEvent('chat:message', {
+      state: 'final',
+      runId,
+      sessionKey,
+      message: assistantMessage,
+    });
+    this.emitRuntimeEvent('chat:runtime-event', {
+      type: 'run.ended',
+      runId,
+      sessionKey,
+      status: 'completed',
+      endedAt: now,
+      ts: now,
+    });
+  }
+
+  private async normalizeBridgeMediaAttachment(
+    message: Record<string, unknown>,
+    kind: BridgeMediaKind,
+  ): Promise<AttachedFileMeta> {
+    const mimeType = mimeTypeForBridgeMedia(kind, message);
+    const fileName = sanitizeFileName(
+      firstString(message, ['file_name', 'fileName', 'name', 'filename'])
+        || `${kind}.${extensionForMimeType(mimeType, kind === 'audio' ? 'mp3' : 'bin')}`,
+    );
+    const filePath = firstString(message, ['path', 'file_path', 'filePath', 'local_path', 'localPath']);
+    const url = firstString(message, ['url', 'file_url', 'fileUrl']);
+    const rawData = firstString(message, ['data', 'base64']);
+    const dataMatch = rawData?.match(/^data:([^;]+);base64,(.*)$/);
+    const base64Data = dataMatch ? dataMatch[2] : rawData;
+    const dataMimeType = dataMatch?.[1] || mimeType;
+
+    if (base64Data) {
+      const buffer = Buffer.from(base64Data, 'base64');
+      const outputDir = join(getCcConnectMediaDir(), 'outgoing', 'bridge');
+      await mkdir(outputDir, { recursive: true });
+      const outputPath = join(outputDir, `${Date.now()}-${randomUUID()}-${fileName}`);
+      await writeFile(outputPath, buffer);
+      return {
+        fileName,
+        mimeType: dataMimeType,
+        fileSize: buffer.byteLength,
+        preview: dataMimeType.startsWith('image/') ? `data:${dataMimeType};base64,${base64Data}` : null,
+        filePath: outputPath,
+        source: 'gateway-media',
+      };
+    }
+
+    if (filePath) {
+      return {
+        fileName,
+        mimeType,
+        fileSize: numberFromUnknown(message.file_size ?? message.fileSize ?? message.size),
+        preview: null,
+        filePath,
+        source: 'gateway-media',
+      };
+    }
+
+    return {
+      fileName,
+      mimeType,
+      fileSize: numberFromUnknown(message.file_size ?? message.fileSize ?? message.size),
+      preview: kind === 'image' && url && !url.startsWith('/') ? url : null,
+      ...(url?.startsWith('/') ? { gatewayUrl: url } : {}),
+      source: 'gateway-media',
+    };
   }
 
   private emitAssistantDelta(message: Record<string, unknown>): void {
@@ -599,6 +1080,7 @@ export class CcConnectBridgeAdapter {
   }
 
   private finishRun(message: Record<string, unknown>, text: string, isError = false): void {
+    if (this.isAbortedBridgeMessage(message)) return;
     const resolved = this.resolvePendingRun(message);
     if (resolved) {
       this.finishPendingRun(resolved.pending, { text, isError });
@@ -670,6 +1152,7 @@ export class CcConnectBridgeAdapter {
     appendMessage?: boolean;
     messageId?: string;
     timestamp?: number;
+    attachedFiles?: AttachedFileMeta[];
   }): void {
     const now = options.timestamp ?? Date.now();
     const isError = options.isError === true;
@@ -679,6 +1162,7 @@ export class CcConnectBridgeAdapter {
       content: options.text,
       timestamp: now,
       ...(isError ? { isError: true, errorMessage: options.text } : {}),
+      ...(options.attachedFiles?.length ? { _attachedFiles: options.attachedFiles } : {}),
     };
     if (options.appendMessage !== false) {
       this.appendMessage(pending.sessionKey, assistantMessage);
@@ -700,6 +1184,28 @@ export class CcConnectBridgeAdapter {
       ...(isError ? { error: options.text } : {}),
     });
     this.pendingRuns.delete(pending.runId);
+  }
+
+  private isAbortedBridgeMessage(message: Record<string, unknown>): boolean {
+    this.pruneAbortedRuns();
+    const replyCtx = typeof message.reply_ctx === 'string' ? message.reply_ctx : '';
+    if (replyCtx && this.abortedRuns.has(replyCtx)) return true;
+    if (replyCtx) return false;
+    const bridgeSessionKey = typeof message.session_key === 'string' ? message.session_key : '';
+    if (!bridgeSessionKey) return false;
+    const sessionKey = fromBridgeSessionKey(bridgeSessionKey);
+    const hasPendingForSession = Array.from(this.pendingRuns.values()).some((pending) => (
+      pending.sessionKey === sessionKey || toCcConnectBridgeSessionKey(pending.sessionKey) === bridgeSessionKey
+    ));
+    if (hasPendingForSession) return false;
+    return Array.from(this.abortedRuns.values()).some((aborted) => aborted.sessionKey === sessionKey);
+  }
+
+  private pruneAbortedRuns(): void {
+    const cutoff = Date.now() - ABORTED_RUN_TTL_MS;
+    for (const [runId, aborted] of this.abortedRuns.entries()) {
+      if (aborted.abortedAt < cutoff) this.abortedRuns.delete(runId);
+    }
   }
 
   private appendMessage(sessionKey: string, message: RawMessage): void {

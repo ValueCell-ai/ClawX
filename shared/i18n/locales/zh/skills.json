@@ -3,6 +3,10 @@
     "subtitle": "浏览和管理 AI 能力",
     "refresh": "刷新",
     "openFolder": "打开技能文件夹",
+    "openRuntimeFolder": "打开运行时技能目录",
+    "runtimeTarget": {
+        "mirror": "运行时镜像目录：{{path}}"
+    },
     "gatewayWarning": "网关未运行。你仍可查看本地技能，但运行时状态暂不可用。",
     "gatewayStarting": "网关正在启动。本地技能已可用，运行时状态会在就绪后自动补充。",
     "tabs": {

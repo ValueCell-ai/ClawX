@@ -9,7 +9,7 @@ import { useGatewayStore } from './gateway';
 import { useAgentsStore } from './agents';
 import type { ChatRuntimeEvent } from '../../shared/chat-runtime-events';
 import { buildBaselineRunKey, captureBaseline, clearBaselines } from './baseline-cache';
-import { isCronSessionKey } from './chat/cron-session-utils';
+import { isCronSessionKey, sessionKeysAreEquivalent } from './chat/cron-session-utils';
 import { fetchCronSessionHistory } from '@/lib/cron-session-history';
 import { pickStartupSessionFallback } from './chat/session-selection';
 import {
@@ -2493,6 +2493,10 @@ function shouldTrackInboundRunLifecycle(
 ): boolean {
   if (state.sending || state.activeRunId != null || state.pendingFinal) return true;
   if (sessionKey && hasCachedActiveUserRun(sessionKey)) return true;
+  // Cron sessions are explicit, user-scheduled tasks. When the user is viewing
+  // the cron session and it fires, surface the live running state — unlike the
+  // background :main heartbeat runs this guard otherwise suppresses.
+  if (sessionKey && isCronSessionKey(sessionKey)) return true;
   if (!state.lastUserMessageAt) return false;
   return Date.now() - toMs(state.lastUserMessageAt) <= USER_INITIATED_RUN_MAX_AGE_MS;
 }
@@ -3932,8 +3936,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const eventSessionKey = event.sessionKey != null ? String(event.sessionKey) : null;
     const { activeRunId, currentSessionKey } = get();
 
-    // Only process events for the current session (when sessionKey is present)
-    if (eventSessionKey != null && eventSessionKey !== currentSessionKey) {
+    // Only process events for the current session (when sessionKey is present).
+    // Cron runtime/chat events arrive under the run-scoped key
+    // (agent:<id>:cron:<jobId>:run:<sessionId>) while the UI tracks the base
+    // cron key — treat those as the same session via equivalence.
+    const matchesCurrentSession = eventSessionKey == null
+      || sessionKeysAreEquivalent(eventSessionKey, currentSessionKey);
+    if (eventSessionKey != null && !matchesCurrentSession) {
       return;
     }
 
@@ -3941,7 +3950,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // Inbound channel traffic (Feishu/Telegram/etc.) on the current session uses a
     // different runId than a stale desktop activeRunId — still refresh history on finals.
     if (activeRunId && runId && runId !== activeRunId) {
-      const isCurrentSession = eventSessionKey == null || eventSessionKey === currentSessionKey;
+      const isCurrentSession = matchesCurrentSession;
       const inboundTerminal = eventState === 'final' || eventState === 'error'
         || (event.message && typeof event.message === 'object'
           && getMessageStopReason(event.message as Record<string, unknown>) != null);
@@ -4377,7 +4386,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const eventSessionKey = event.sessionKey ?? null;
     const initialState = get();
     const { activeRunId, currentSessionKey } = initialState;
-    const matchesCurrentSession = eventSessionKey != null && eventSessionKey === currentSessionKey;
+    // Cron runs stream under the run-scoped session key while the UI tracks the
+    // base cron key; equivalence binds those run-scoped events to the session
+    // the user is viewing so the live graph/Thinking state renders in realtime.
+    const matchesCurrentSession = eventSessionKey != null
+      && sessionKeysAreEquivalent(eventSessionKey, currentSessionKey);
     const matchesActiveRun = activeRunId != null && event.runId === activeRunId;
 
     const runtimeRuns = applyRuntimeEventToRuns(initialState.runtimeRuns, event);
@@ -4410,6 +4423,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       set(nextPatch);
       return;
+    }
+
+    // Adopt an in-progress run when joining it mid-flight. Opening a cron
+    // session whose scheduled run is already executing means `run.started` was
+    // emitted before the renderer began tracking this session, so streamed
+    // delta/tool events arrive with no `activeRunId`. Without adoption the live
+    // execution graph and the running/Thinking indicator never appear until the
+    // user switches sessions. Gated on `shouldTrackInboundRunLifecycle` so
+    // background `:main` heartbeat runs stay silent.
+    if (
+      event.type !== 'run.ended'
+      && matchesCurrentSession
+      && activeRunId == null
+      && !initialState.sending
+      && shouldTrackInboundRunLifecycle(initialState, currentSessionKey)
+    ) {
+      nextPatch.activeRunId = event.runId;
+      nextPatch.sending = true;
+      nextPatch.error = null;
+      nextPatch.runError = null;
     }
 
     if (event.type === 'assistant.delta' || event.type === 'thinking.delta') {

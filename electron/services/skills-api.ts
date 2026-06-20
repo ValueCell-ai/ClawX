@@ -2,7 +2,10 @@ import type { GatewayManager } from '../gateway/manager';
 import type { RuntimeManager } from '../runtime/manager';
 import type { ClawHubService, ClawHubInstallParams, ClawHubSearchParams, ClawHubUninstallParams } from '../gateway/clawhub';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
+import { join } from 'node:path';
+import { getCcConnectCodexHomeDir } from '../runtime/cc-connect-paths';
 import { getAllSkillConfigs, getSkillConfig, updateSkillConfig, updateSkillConfigs } from '../utils/skill-config';
+import { getOpenClawSkillsDir } from '../utils/paths';
 import {
   collectQuickAccessSkills,
   filterEnabledQuickAccessSkills,
@@ -96,6 +99,30 @@ export function createSkillsApi({
   const runtimeSupportsSkills = () => runtimeManager?.listCapabilities().skills === true;
   return {
     local: async () => ({ success: true, skills: await listLocalSkills() }),
+    target: async () => {
+      const sourceDir = getOpenClawSkillsDir();
+      const activeKind = await runtimeManager?.getActiveKind();
+      if (activeKind === 'cc-connect') {
+        const runtimeDir = join(getCcConnectCodexHomeDir(), 'skills');
+        return {
+          success: true,
+          runtimeKind: 'cc-connect',
+          sourceDir,
+          openDir: runtimeDir,
+          runtimeDir,
+          manifestPath: join(runtimeDir, 'manifest.json'),
+          mirrorMode: 'runtime-mirror',
+        };
+      }
+      return {
+        success: true,
+        runtimeKind: 'openclaw',
+        sourceDir,
+        openDir: sourceDir,
+        runtimeDir: sourceDir,
+        mirrorMode: 'source',
+      };
+    },
     configs: async () => getAllSkillConfigs(),
     allConfigs: async () => getAllSkillConfigs(),
     getConfig: async (payload) => {

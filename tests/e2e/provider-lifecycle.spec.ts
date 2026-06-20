@@ -127,6 +127,109 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('add-provider-api-key-input')).toHaveCount(0);
   });
 
+  test('shows cc-connect Codex OAuth status and actions for OpenAI OAuth accounts', async ({ electronApp, page }) => {
+    await completeSetup(page);
+
+    await electronApp.evaluate(async ({ app: _app }) => {
+      const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+      const now = new Date().toISOString();
+      const account = {
+        id: 'openai-oauth',
+        vendorId: 'openai',
+        label: 'OpenAI Codex OAuth',
+        authMode: 'oauth_browser',
+        model: 'gpt-5.5',
+        enabled: true,
+        isDefault: true,
+        createdAt: now,
+        updatedAt: now,
+      };
+      let managedComplete = false;
+      let providerSecret = true;
+      const originalHostInvoke = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers?.get('host:invoke');
+
+      const respond = (id: unknown, data: unknown) => ({
+        id: typeof id === 'string' ? id : undefined,
+        ok: true,
+        data,
+      });
+      const codexStatus = () => ({
+        success: true,
+        managedCodexHome: '/tmp/clawx-e2e/codex-home',
+        authPath: '/tmp/clawx-e2e/codex-home/auth.json',
+        managed: {
+          path: '/tmp/clawx-e2e/codex-home/auth.json',
+          exists: managedComplete,
+          complete: managedComplete,
+          accountId: managedComplete ? 'acct_e2e' : undefined,
+        },
+        user: {
+          path: '/tmp/home/.codex/auth.json',
+          exists: true,
+          complete: true,
+          accountId: 'acct_e2e',
+        },
+        provider: {
+          accountId: 'openai-oauth',
+          vendorId: 'openai',
+          authMode: 'oauth_browser',
+          hasOAuthSecret: providerSecret,
+          managedMatchesAccount: managedComplete,
+          userMatchesAccount: true,
+        },
+      });
+
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', async (event: unknown, request: {
+        id?: string;
+        module?: string;
+        action?: string;
+      }) => {
+        if (request?.module !== 'providers') {
+          return originalHostInvoke?.(event, request) ?? respond(request?.id, undefined);
+        }
+
+        if (request.action === 'accounts') return respond(request.id, [account]);
+        if (request.action === 'accountKeyInfo') return respond(request.id, []);
+        if (request.action === 'vendors') return respond(request.id, []);
+        if (request.action === 'getDefaultAccount') return respond(request.id, { accountId: account.id });
+        if (request.action === 'list') return respond(request.id, []);
+        if (request.action === 'codexOAuthStatus') return respond(request.id, codexStatus());
+        if (request.action === 'importCodexOAuth') {
+          managedComplete = true;
+          return respond(request.id, codexStatus());
+        }
+        if (request.action === 'logoutCodexOAuth') {
+          managedComplete = false;
+          providerSecret = false;
+          return respond(request.id, codexStatus());
+        }
+
+        return respond(request.id, { success: true });
+      });
+    });
+
+    await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('provider-card-openai-oauth')).toContainText('OpenAI Codex OAuth');
+
+    await page.getByTestId('provider-card-openai-oauth').hover();
+    await page.getByTestId('provider-edit-openai-oauth').click();
+
+    await expect(page.getByTestId('provider-codex-oauth-panel-openai-oauth')).toBeVisible();
+    await expect(page.getByTestId('provider-codex-oauth-managed-openai-oauth')).toContainText('Missing');
+    await expect(page.getByTestId('provider-codex-oauth-secret-openai-oauth')).toContainText('OK');
+    await expect(page.getByTestId('provider-codex-oauth-user-openai-oauth')).toContainText('OK');
+
+    await page.getByTestId('provider-codex-oauth-import-openai-oauth').click();
+    await expect(page.getByTestId('provider-codex-oauth-managed-openai-oauth')).toContainText('OK');
+
+    await page.getByTestId('provider-codex-oauth-logout-openai-oauth').click();
+    await expect(page.getByTestId('provider-codex-oauth-managed-openai-oauth')).toContainText('Missing');
+    await expect(page.getByTestId('provider-codex-oauth-secret-openai-oauth')).toContainText('Missing');
+  });
+
   test('trims whitespace before validating and saving a custom provider key', async ({ electronApp, page }) => {
     await completeSetup(page);
 

@@ -13,6 +13,7 @@ import {
 
 const expectedCcConnectNativeMethods = [
   'chat.send',
+  'chat.abort',
   'sessions.list',
   'chat.history',
   'sessions.delete',
@@ -21,11 +22,15 @@ const expectedCcConnectNativeMethods = [
   'skills.status',
   'skills.update',
   'channels.status',
+  'channels.connect',
+  'channels.disconnect',
+  'channels.delete',
   'runtime.controlUi',
   'cron.list',
   'cron.create',
   'cron.update',
   'cron.delete',
+  'cron.toggle',
   'cron.run',
   'doctor.run',
   'logs.list',
@@ -43,14 +48,6 @@ describe('runtime RPC contract', () => {
       });
     }
 
-    expect(byMethod.get('cron.toggle')).toMatchObject({
-      runtime: 'cc-connect',
-      support: 'unsupported',
-    });
-    expect(byMethod.get('chat.abort')).toMatchObject({
-      runtime: 'cc-connect',
-      support: 'unsupported',
-    });
     expect(byMethod.get('doctor.memory.status')).toMatchObject({
       runtime: 'cc-connect',
       support: 'unsupported',
@@ -85,7 +82,7 @@ describe('runtime RPC contract', () => {
     });
     expect(operations['chat.abort']).toMatchObject({
       capability: 'chat',
-      support: 'unsupported',
+      support: 'native',
     });
     expect(operations['doctor.fix']).toMatchObject({
       capability: 'doctor',
@@ -93,7 +90,11 @@ describe('runtime RPC contract', () => {
     });
     expect(operations['channels.disconnect']).toMatchObject({
       capability: 'channels',
-      support: 'unsupported',
+      support: 'native',
+    });
+    expect(operations['cron.toggle']).toMatchObject({
+      capability: 'cron',
+      support: 'native',
     });
   });
 });

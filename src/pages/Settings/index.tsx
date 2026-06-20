@@ -25,6 +25,7 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useUpdateStore } from '@/stores/update';
 import { UpdateSettings } from '@/components/settings/UpdateSettings';
 import { toUserMessage } from '@/lib/error-message';
+import { isRuntimeOperationSupported } from '@/lib/runtime-operation-capabilities';
 import {
   clearUiTelemetry,
   getUiTelemetrySnapshot,
@@ -101,11 +102,12 @@ export function Settings() {
   const [logContent, setLogContent] = useState('');
   const [doctorRunningMode, setDoctorRunningMode] = useState<'diagnose' | 'fix' | null>(null);
   const [doctorResult, setDoctorResult] = useState<OpenClawDoctorResult | null>(null);
+  const [runtimeDiagnosticsLoading, setRuntimeDiagnosticsLoading] = useState(false);
   const activeRuntimeKind = gatewayStatus.runtimeKind ?? runtimeKind ?? 'openclaw';
   const runtimeCapabilities = gatewayStatus.capabilities;
   const runtimeOperationCapabilities = gatewayStatus.operationCapabilities;
   const supportsDoctor = runtimeCapabilities?.doctor ?? true;
-  const supportsDoctorFix = activeRuntimeKind === 'openclaw';
+  const supportsDoctorFix = isRuntimeOperationSupported(gatewayStatus, 'doctor.fix');
   const runtimeCapabilityEntries = [
     ['chat', t('runtime.capabilities.chat')],
     ['sessions', t('runtime.capabilities.sessions')],
@@ -148,6 +150,10 @@ export function Settings() {
   };
 
   const handleRunOpenClawDoctor = async (mode: 'diagnose' | 'fix') => {
+    if (mode === 'fix' && !supportsDoctorFix) {
+      toast.error(t('runtime.openclawOnly'));
+      return;
+    }
     setDoctorRunningMode(mode);
     try {
       const result = await hostApi.app.openClawDoctor(mode);
@@ -196,6 +202,19 @@ export function Settings() {
       toast.success(t('developer.doctorCopied'));
     } catch (error) {
       toast.error(`Failed to copy doctor output: ${String(error)}`);
+    }
+  };
+
+  const handleCopyRuntimeDiagnostics = async () => {
+    setRuntimeDiagnosticsLoading(true);
+    try {
+      const snapshot = await hostApi.diagnostics.gatewaySnapshot();
+      await navigator.clipboard.writeText(JSON.stringify(snapshot, null, 2));
+      toast.success(t('developer.runtimeDiagnosticsCopied'));
+    } catch (error) {
+      toast.error(t('developer.runtimeDiagnosticsCopyFailed', { error: String(error) }));
+    } finally {
+      setRuntimeDiagnosticsLoading(false);
     }
   };
 
@@ -946,6 +965,32 @@ export function Settings() {
                       </div>
                     </div>
                   )}
+
+                  <div className="space-y-3" data-testid="settings-runtime-diagnostics-section">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <Label className="text-sm font-medium text-foreground">{t('developer.runtimeDiagnostics')}</Label>
+                        <p className="text-meta text-muted-foreground mt-1">
+                          {t('developer.runtimeDiagnosticsDesc')}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        data-testid="settings-copy-runtime-diagnostics"
+                        onClick={() => void handleCopyRuntimeDiagnostics()}
+                        disabled={runtimeDiagnosticsLoading}
+                        className="rounded-xl h-10 px-4 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                      >
+                        {runtimeDiagnosticsLoading ? (
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Copy className="h-4 w-4 mr-2" />
+                        )}
+                        {runtimeDiagnosticsLoading ? t('common:status.loading') : t('common:actions.copy')}
+                      </Button>
+                    </div>
+                  </div>
 
                   {supportsDoctor ? (
                   <div className="space-y-4">

@@ -383,6 +383,34 @@ export type ProviderOAuthRequestPayload = {
   label?: string;
 };
 export type ProviderOAuthSubmitPayload = { code: string };
+export type ProviderCodexOAuthPayload = { accountId?: string };
+export type ProviderCodexOAuthLogoutPayload = ProviderCodexOAuthPayload & { managedOnly?: boolean };
+export type ProviderCodexOAuthAuthFileSummary = {
+  path: string;
+  exists: boolean;
+  complete: boolean;
+  accountId?: string;
+  authMode?: string;
+  lastRefresh?: string;
+  updatedAt?: string;
+  error?: string;
+};
+export type ProviderCodexOAuthStatusResult = HostSuccess & {
+  managedCodexHome?: string;
+  authPath?: string;
+  managed?: ProviderCodexOAuthAuthFileSummary;
+  user?: ProviderCodexOAuthAuthFileSummary;
+  provider?: {
+    accountId: string;
+    vendorId: string;
+    authMode?: string;
+    hasOAuthSecret: boolean;
+    subject?: string;
+    email?: string;
+    managedMatchesAccount?: boolean;
+    userMatchesAccount?: boolean;
+  };
+};
 
 export type StagedFileResult = {
   id: string;
@@ -607,6 +635,14 @@ export type SkillsStatusResult = {
   }[];
 };
 export type LocalSkillsResult = HostSuccess & { skills?: Skill[] };
+export type SkillsRuntimeTargetResult = HostSuccess & {
+  runtimeKind: RuntimeKind;
+  sourceDir: string;
+  openDir: string;
+  runtimeDir?: string;
+  manifestPath?: string;
+  mirrorMode: 'source' | 'runtime-mirror';
+};
 export type SkillConfigsResult = Record<string, { enabled?: boolean; apiKey?: string; env?: Record<string, string> }>;
 export type SkillKeyPayload = { skillKey: string };
 export type SkillUpdateConfigPayload = SkillKeyPayload & {
@@ -786,6 +822,9 @@ export type HostApiContract = {
     requestOAuth: (payload: ProviderOAuthRequestPayload) => HostSuccess;
     cancelOAuth: () => HostSuccess;
     submitOAuth: (payload: ProviderOAuthSubmitPayload) => HostSuccess;
+    codexOAuthStatus: (payload?: ProviderCodexOAuthPayload) => ProviderCodexOAuthStatusResult;
+    importCodexOAuth: (payload?: ProviderCodexOAuthPayload) => ProviderCodexOAuthStatusResult;
+    logoutCodexOAuth: (payload?: ProviderCodexOAuthLogoutPayload) => ProviderCodexOAuthStatusResult;
   };
   files: {
     stagePaths: (payload: StagePathsPayload) => StagedFileResult[];
@@ -819,13 +858,14 @@ export type HostApiContract = {
     create: (payload: CronJobCreateInput) => CronJob;
     update: (payload: CronUpdatePayload) => CronJob;
     delete: (payload: CronIdPayload) => HostSuccess;
-    toggle: (payload: CronTogglePayload) => HostSuccess;
+    toggle: (payload: CronTogglePayload) => CronJob | HostSuccess;
     trigger: (payload: CronIdPayload) => HostSuccess;
     sessionHistory: (payload: CronSessionHistoryPayload) => CronSessionHistoryResult;
     deliveryTargets: () => DeliveryTargetsResult;
   };
   skills: {
     local: () => LocalSkillsResult;
+    target: () => SkillsRuntimeTargetResult;
     configs: () => SkillConfigsResult;
     allConfigs: () => SkillConfigsResult;
     getConfig: (payload: SkillKeyPayload) => JsonRecord | undefined;

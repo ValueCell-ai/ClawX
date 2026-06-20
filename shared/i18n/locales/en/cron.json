@@ -29,8 +29,31 @@
         "taskNamePlaceholder": "e.g., Morning briefing",
         "message": "Message / Prompt",
         "messagePlaceholder": "What should the AI do? e.g., Give me a summary of today's news and weather",
+        "pickSkill": "Insert a skill",
+        "skillButton": "Skills",
+        "skillPickerTitle": "Quick skill access for {{agent}}",
+        "skillSearchPlaceholder": "Search skills",
+        "skillLoading": "Loading skills...",
+        "skillEmpty": "No matching skills found",
         "agent": "Agent",
         "schedule": "Schedule",
+        "scheduleMode": {
+            "recurring": "Recurring",
+            "once": "Once"
+        },
+        "recurrence": {
+            "hourly": "Hourly",
+            "daily": "Daily",
+            "weekdays": "Weekdays",
+            "weekly": "Weekly",
+            "custom": "Custom"
+        },
+        "timeLabel": "Time",
+        "hourColumn": "Hour",
+        "minuteColumn": "Min",
+        "dateLabel": "Date",
+        "weekdayLabel": "Day of week",
+        "minuteLabel": "Minute of each hour",
         "cronPlaceholder": "Cron expression (e.g., 0 9 * * *)",
         "usePresets": "Use presets",
         "useCustomCron": "Use custom cron",
@@ -105,7 +128,8 @@
         "failedLoadDeliveryTargets": "Failed to load delivery targets",
         "failedResolveDeliveryTarget": "Failed to resolve the default delivery target",
         "discordIdRequired": "Please enter a Discord Channel ID",
-        "scheduleRequired": "Please select or enter a schedule"
+        "scheduleRequired": "Please select or enter a schedule",
+        "schedulePast": "The selected time is in the past. Please choose a future time."
     },
     "schedule": {
         "everySeconds": "Every {{count}}s",
@@ -114,8 +138,19 @@
         "everyDays": "Every {{count}} days",
         "onceAt": "Once at {{time}}",
         "weeklyAt": "Weekly on {{day}} at {{time}}",
+        "weekdaysAt": "Weekdays at {{time}}",
+        "hourlyAt": "Hourly at :{{minute}}",
         "monthlyAtDay": "Monthly on day {{day}} at {{time}}",
         "dailyAt": "Daily at {{time}}",
         "unknown": "Unknown"
+    },
+    "weekdays": {
+        "sun": "Sunday",
+        "mon": "Monday",
+        "tue": "Tuesday",
+        "wed": "Wednesday",
+        "thu": "Thursday",
+        "fri": "Friday",
+        "sat": "Saturday"
     }
 }
