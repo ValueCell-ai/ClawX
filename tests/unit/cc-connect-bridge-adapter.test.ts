@@ -704,6 +704,46 @@ describe('cc-connect bridge adapter persisted sessions', () => {
         && (payload as { type?: string; toolCallId?: string }).type === 'tool.started'
         && (payload as { type?: string; toolCallId?: string }).toolCallId === 'call-list-skills'
       ))).toHaveLength(1);
+      await expect(adapter.loadHistory('agent:main:main')).resolves.toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: `${result.runId}:call-list-skills:codex-tool`,
+          role: 'assistant',
+          content: [expect.objectContaining({
+            type: 'toolCall',
+            id: 'call-list-skills',
+            name: 'Bash',
+            arguments: '$ find .agents/skills -maxdepth 3 -print | sort',
+          })],
+          stopReason: 'tool_use',
+        }),
+        expect.objectContaining({
+          id: `${result.runId}:call-list-skills:codex-result`,
+          role: 'toolresult',
+          toolCallId: 'call-list-skills',
+          toolName: 'Bash',
+          content: '.agents/skills\n.agents/skills/bytedcli',
+        }),
+      ]));
+
+      const reloadedAdapter = new CcConnectBridgeAdapter({
+        port,
+        token: 'token',
+        project: 'clawx-main',
+        emit: vi.fn(),
+        sessionStoreDir,
+        codexSessionsDir,
+      });
+      await expect(reloadedAdapter.loadHistory('agent:main:main')).resolves.toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: `${result.runId}:call-list-skills:codex-tool`,
+          role: 'assistant',
+        }),
+        expect.objectContaining({
+          id: `${result.runId}:call-list-skills:codex-result`,
+          role: 'toolresult',
+          content: '.agents/skills\n.agents/skills/bytedcli',
+        }),
+      ]));
       await adapter.close();
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
