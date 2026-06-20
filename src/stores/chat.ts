@@ -1731,6 +1731,10 @@ function getAgentIdFromSessionKey(sessionKey: string): string {
   return parts[1] || 'main';
 }
 
+function getAgentIdForSessionKey(sessionKey: string, sessions: ChatSession[]): string {
+  return sessions.find((session) => session.key === sessionKey)?.agentId || getAgentIdFromSessionKey(sessionKey);
+}
+
 function parseSessionUpdatedAtMs(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return toMs(value);
@@ -1916,7 +1920,7 @@ function buildSessionSwitchPatch(
 
   return {
     currentSessionKey: nextSessionKey,
-    currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
+    currentAgentId: getAgentIdForSessionKey(nextSessionKey, nextSessions),
     sessions: ensureSessionEntry(nextSessions, nextSessionKey),
     sessionLabels: leavingEmpty
       ? clearSessionEntryFromMap(state.sessionLabels, state.currentSessionKey)
@@ -2643,6 +2647,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             displayName: s.displayName ? String(s.displayName) : undefined,
             derivedTitle: s.derivedTitle ? String(s.derivedTitle) : undefined,
             lastMessagePreview: s.lastMessagePreview ? String(s.lastMessagePreview) : undefined,
+            agentId: s.agentId ? String(s.agentId) : undefined,
             thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
             model: s.model ? String(s.model) : undefined,
             updatedAt: parseSessionUpdatedAtMs(s.updatedAt),
@@ -2723,7 +2728,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             set((state) => ({
               sessions: sessionsWithCurrent,
               currentSessionKey: nextSessionKey,
-              currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
+              currentAgentId: getAgentIdForSessionKey(nextSessionKey, sessionsWithCurrent),
               sessionLastActivity: {
                 ...state.sessionLastActivity,
                 ...discoveredActivity,
@@ -2871,7 +2876,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         lastUserMessageAt: null,
         pendingToolImages: [],
         currentSessionKey: next?.key ?? DEFAULT_SESSION_KEY,
-        currentAgentId: getAgentIdFromSessionKey(next?.key ?? DEFAULT_SESSION_KEY),
+        currentAgentId: getAgentIdForSessionKey(next?.key ?? DEFAULT_SESSION_KEY, remaining),
       }));
       if (next) {
         get().loadHistory();

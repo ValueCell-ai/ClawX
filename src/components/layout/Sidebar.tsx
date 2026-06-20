@@ -456,7 +456,7 @@ export function Sidebar() {
                   <span>{bucket.label}</span>
                 </button>
                 {isBucketExpanded && bucket.sessions.map((s) => {
-                  const agentId = getAgentIdFromSessionKey(s.key);
+                  const agentId = s.agentId || getAgentIdFromSessionKey(s.key);
                   const agentName = agentNameById[agentId] || agentId;
                   const isEditing = editingSessionKey === s.key;
                   const sessionLabel = getSessionLabel(

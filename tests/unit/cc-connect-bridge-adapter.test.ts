@@ -751,8 +751,16 @@ describe('cc-connect bridge adapter persisted sessions', () => {
   });
 
   it('lists and reads cc-connect channel sessions from the persisted session store', async () => {
-    await writeFile(join(sessionStoreDir, 'clawx-main_abc.json'), JSON.stringify({
+    await writeFile(join(sessionStoreDir, 'clawx-main_1234abcd.json'), JSON.stringify({
       sessions: {
+        s0: {
+          id: 's0',
+          name: 'Stale Empty Feishu DM',
+          agent_type: 'codex',
+          history: [],
+          created_at: 1_780_899_000_000,
+          updated_at: 1_780_899_000_000,
+        },
         s1: {
           id: 's1',
           name: 'Feishu DM',
@@ -777,8 +785,12 @@ describe('cc-connect bridge adapter persisted sessions', () => {
         },
       },
       active_session: {
-        'feishu:oc_chat:ou_user': 's1',
+        'feishu:oc_chat:ou_user': 's0',
         'clawx:research:desk': 's2',
+      },
+      user_sessions: {
+        'feishu:oc_chat:ou_user': ['s0', 's1'],
+        'clawx:research:desk': ['s2'],
       },
       user_meta: {
         'feishu:oc_chat:ou_user': {
@@ -801,6 +813,7 @@ describe('cc-connect bridge adapter persisted sessions', () => {
         displayName: '网关 / channel-user',
         derivedTitle: '你在吗',
         lastMessagePreview: '在。有什么需要我处理？',
+        agentId: 'main',
         updatedAt: 1_780_900_001_000,
       },
       {
@@ -829,6 +842,44 @@ describe('cc-connect bridge adapter persisted sessions', () => {
         firstUserText: 'hello from app',
         lastTimestamp: 1_780_800_000_000,
       },
+    ]);
+  });
+
+  it('keeps the bound agent id for cc-connect channel sessions', async () => {
+    await writeFile(join(sessionStoreDir, 'clawx-coder_1234abcd.json'), JSON.stringify({
+      sessions: {
+        s1: {
+          id: 's1',
+          name: 'Feishu Coder DM',
+          history: [
+            { role: 'user', content: '修一下', timestamp: 1_780_910_000_000 },
+            { role: 'assistant', content: '我来处理。', timestamp: 1_780_910_001_000 },
+          ],
+          created_at: 1_780_910_000_000,
+          updated_at: 1_780_910_001_000,
+        },
+      },
+      active_session: {
+        'feishu:oc_chat:ou_coder': 's1',
+      },
+      user_sessions: {
+        'feishu:oc_chat:ou_coder': ['s1'],
+      },
+    }), 'utf8');
+    const adapter = new CcConnectBridgeAdapter({
+      port: 1,
+      token: 'token',
+      project: 'clawx-main',
+      emit: vi.fn(),
+      sessionStoreDir,
+    });
+
+    await expect(adapter.listSessions()).resolves.toEqual([
+      expect.objectContaining({
+        key: 'feishu:oc_chat:ou_coder',
+        agentId: 'coder',
+        derivedTitle: '修一下',
+      }),
     ]);
   });
 

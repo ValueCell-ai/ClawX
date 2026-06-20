@@ -430,6 +430,30 @@ function sessionPreviewFromHistory(history: RawMessage[]): string | undefined {
   return preview || undefined;
 }
 
+function updatedAtFromHistory(session: PersistedSession, history: RawMessage[] = session.history): number {
+  return history.reduce((latest, message) => {
+    const ts = normalizeTimestamp(message.timestamp);
+    return ts ? Math.max(latest, ts) : latest;
+  }, session.updatedAt);
+}
+
+function sessionIdsForStoreKey(store: PersistedSessionStore, key: string): string[] {
+  const ids = [
+    store.activeSession.get(key),
+    ...(store.userSessions.get(key) ?? []),
+  ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+  return Array.from(new Set(ids));
+}
+
+function sessionsForStoreKey(store: PersistedSessionStore, key: string): PersistedSession[] {
+  return sessionIdsForStoreKey(store, key)
+    .flatMap((sessionId) => {
+      const session = store.sessions.get(sessionId);
+      return session ? [session] : [];
+    })
+    .sort((left, right) => updatedAtFromHistory(right) - updatedAtFromHistory(left));
+}
+
 function projectNameFromStorePath(path: string): string {
   return basename(path).replace(/_[a-f0-9]{8}\.json$/i, '').replace(/\.json$/i, '');
 }
@@ -586,16 +610,16 @@ export class CcConnectBridgeAdapter {
   async listSessions(): Promise<SessionMetadata[]> {
     const sessionsByKey = new Map<string, SessionMetadata>();
     for (const persisted of await this.readPersistedSessionStores()) {
-      for (const [storedKey, sessionId] of persisted.activeSession.entries()) {
-        const session = persisted.sessions.get(sessionId);
+      const storedKeys = new Set([
+        ...persisted.activeSession.keys(),
+        ...persisted.userSessions.keys(),
+      ]);
+      for (const storedKey of storedKeys) {
+        const session = sessionsForStoreKey(persisted, storedKey).find((candidate) => candidate.history.length > 0);
         if (!session) continue;
         const key = fromBridgeSessionKey(storedKey);
         const history = session.history;
-        if (history.length === 0) continue;
-        const updatedAt = history.reduce((latest, message) => {
-          const ts = normalizeTimestamp(message.timestamp);
-          return ts ? Math.max(latest, ts) : latest;
-        }, session.updatedAt);
+        const updatedAt = updatedAtFromHistory(session, history);
         const item = {
           key,
           displayName: displayNameForPersistedSession(key, { ...session, history }, persisted.userMeta.get(storedKey)),
@@ -610,6 +634,25 @@ export class CcConnectBridgeAdapter {
           sessionsByKey.set(key, item);
         }
       }
+    }
+    const supplementalStore = await this.readSupplementalStore();
+    for (const [key, messages] of Object.entries(supplementalStore.sessions)) {
+      if (messages.length === 0) continue;
+      const normalizedKey = fromBridgeSessionKey(key);
+      if (sessionsByKey.has(normalizedKey)) continue;
+      const merged = mergeHistoryMessages(messages);
+      const updatedAt = merged.reduce((latest, message) => Math.max(latest, historyTimestamp(message)), 0);
+      if (!updatedAt) continue;
+      const derivedTitle = sessionTitleFromHistory(merged);
+      sessionsByKey.set(normalizedKey, {
+        key: normalizedKey,
+        displayName: derivedTitle || sessionPreviewFromHistory(merged) || normalizedKey,
+        derivedTitle,
+        lastMessagePreview: sessionPreviewFromHistory(merged),
+        agentId: ccConnectProjectNameForSessionKey(normalizedKey).slice(CLAWX_PROJECT_PREFIX.length) || 'main',
+        createdAt: normalizeTimestamp(merged[0]?.timestamp) ?? updatedAt,
+        updatedAt,
+      });
     }
     for (const [key, messages] of this.messagesBySession.entries()) {
       const firstUser = messages.find((message) => message.role === 'user');
@@ -872,11 +915,9 @@ export class CcConnectBridgeAdapter {
   private async readPersistedMessages(sessionKey: string, limit = 200): Promise<RawMessage[]> {
     for (const store of await this.readPersistedSessionStores()) {
       for (const key of sessionLookupKeys(sessionKey)) {
-        const sessionId = store.activeSession.get(key);
-        const session = sessionId ? store.sessions.get(sessionId) : undefined;
+        const session = sessionsForStoreKey(store, key).find((candidate) => candidate.history.length > 0);
         if (!session) continue;
-        if (session.history.length > 0) return session.history.slice(-Math.max(1, Math.min(Math.floor(limit), 1000)));
-        return [];
+        return session.history.slice(-Math.max(1, Math.min(Math.floor(limit), 1000)));
       }
     }
     return [];
