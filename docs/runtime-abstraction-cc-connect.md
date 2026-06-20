@@ -326,26 +326,80 @@ are covered by automated tests or an explicit release exception.
 
 ![ClawX Runtime Architecture](./assets/clawx-runtime-architecture.png)
 
-The host process owns runtime selection, process lifecycle, and compatibility
-routing. The renderer talks only to `host-api` and `api-client`; it does not
-choose transports, call Gateway HTTP directly, or spawn runtime binaries.
+The architecture is intentionally layered: renderer code sees one ClawX product
+surface, the Electron main process owns runtime selection and process lifecycle,
+and each runtime provider implements the same Host API capability contracts
+underneath. This keeps OpenClaw as the default rollback path while allowing
+cc-connect to be evaluated as a Codex-backed runtime without leaking provider
+details into React pages.
 
-The shared Host API capability surfaces are horizontal:
+### Layered Blueprint
 
-- `Chat`, `Sessions`, `History`, `Channels`, `Cron`, `Skills`, `Providers`,
-  `Models`, `Logs`, `Doctor`, and `Control UI` are renderer-facing contracts.
-- `OpenClawRuntimeProvider` and `CcConnectRuntimeProvider` implement the same
-  contracts underneath, with operation-level capability metadata when a runtime
-  is degraded or unsupported for a sub-operation.
-- OpenClaw remains the default runtime and rollback path. It routes through the
-  existing `GatewayManager` and OpenClaw Gateway on `:18789`.
-- cc-connect runs from ClawX-managed app data, writes managed config/session
-  stores, exposes BridgePlatform on `:9810` and Management API on `:9820` when
-  those ports are available, falls back to nearby free localhost ports when
-  they are occupied,
-  mirrors enabled local skills into managed Codex home, projects channels into
-  cc-connect project platform config, and syncs provider profiles into the
-  Codex launch environment.
+1. **Renderer shell**
+   - React pages, sidebars, settings, channels, cron, skills, providers, and
+     doctor controls remain product UI concerns.
+   - Renderer code calls only `host-api` and `api-client`. It does not choose
+     transports, call Gateway or cc-connect HTTP endpoints directly, or spawn
+     runtime binaries.
+   - Runtime-specific UI differences must come from Host API status and
+     operation-capability metadata, not from hardcoded runtime checks scattered
+     through pages.
+
+2. **Runtime routing**
+   - Electron main owns `RuntimeManager`, typed host services, the legacy
+     `gateway:*` compatibility API, process lifecycle, config materialization,
+     and transport policy.
+   - `RuntimeManager` selects the active provider, forwards status/events, and
+     exposes a stable RPC/chat/session/history/log surface to host services.
+   - `RuntimeProvider` is the internal contract boundary: renderer-facing calls
+     stay stable even when OpenClaw and cc-connect implement a capability
+     differently underneath.
+
+3. **Shared Host API capability surfaces**
+   - `Chat`, `Sessions`, `History`, `Channels`, `Cron`, `Skills`, `Providers`,
+     `Models`, `Logs`, `Doctor`, and `Control UI` are horizontal contracts.
+   - These surfaces must remain runtime-neutral. A page can ask for
+     `cron.run`, `skills.target`, or `providers.oauthStatus`; it should not need
+     to know whether that maps to OpenClaw Gateway, cc-connect Management API,
+     BridgePlatform, or a managed Codex profile.
+   - Each operation carries support metadata (`native`, `degraded`,
+     `unsupported`) so the UI can show a real degraded state instead of implying
+     full parity from a top-level capability flag.
+
+4. **OpenClaw runtime provider**
+   - `OpenClawRuntimeProvider` wraps the existing `GatewayManager` and OpenClaw
+     Gateway on `:18789`.
+   - It remains the default runtime and release rollback path.
+   - OpenClaw-specific features such as OpenClaw Doctor Fix, OpenClaw Skills,
+     Dreams, OpenClaw proxy/config repair, and Control UI stay scoped to this
+     provider and must not become hidden assumptions in shared host services.
+
+5. **cc-connect runtime provider**
+   - `CcConnectRuntimeProvider` runs from ClawX-managed app data, not
+     `~/.cc-connect`.
+   - It writes managed config/session stores, probes and falls back from the
+     default BridgePlatform and Management API ports, starts the process in a
+     killable process tree, captures logs, restarts after bounded crashes, and
+     cleans up on app quit or runtime rollback.
+   - The provider owns cc-connect config projection: app keys, bridge keys,
+     channel account to agent-project mapping, operation support metadata,
+     skills mirroring, provider profile sync, and runtime-aware media roots.
+   - BridgePlatform is the chat/event boundary. Text, streaming deltas,
+     image/file/audio packets, tool/command/patch events, and generated-file
+     `toolCall` blocks are translated into the same shared renderer shapes used
+     by OpenClaw.
+
+6. **Validation and replacement-readiness boundary**
+   - "Validated now" means cc-connect can start and run Codex-backed ClawX core
+     workflows: real bundled startup, managed config, OAuth-backed Codex chat,
+     session/history reload and delete, project `work_dir`, skills mirroring,
+     prompt cron create/list/run/toggle/delete, app-quit cleanup, rollback
+     cleanup, and packaged macOS dir startup.
+   - "Known gap" means not yet OpenClaw replacement-ready: live channel platform
+     credential lifecycle, exec cron edge cases, generated artifact delivery
+     from real bridge/session packets, upstream single-run cancellation,
+     expired-token relogin, Doctor Fix parity, notarized dmg/zip validation, and
+     Windows/Linux packaged smoke.
 
 For cc-connect, Codex is the primary integrated backend today:
 
@@ -362,21 +416,33 @@ Codex-focused. Those backends should stay represented as supported extension
 paths, not as completed ClawX parity, until provider setup, process lifecycle,
 session/history mapping, and UI capability states are implemented.
 
+### Runtime Flow
+
+| Step | Owner | Design rule |
+| --- | --- | --- |
+| User action | Renderer | Call `host-api`/`api-client` only. No direct IPC, HTTP, or process spawning from pages. |
+| API dispatch | Host services | Resolve active runtime through `RuntimeManager`; preserve legacy `gateway:*` compatibility envelopes. |
+| Capability decision | Runtime provider | Return operation-level support before performing degraded or unsupported actions. |
+| Chat execution | Active provider | OpenClaw uses Gateway; cc-connect uses BridgePlatform and lets cc-connect invoke Codex. ClawX never talks to Codex directly for chat. |
+| State persistence | Runtime-owned stores | OpenClaw persists OpenClaw transcripts/media; cc-connect persists cc-connect session stores/media under ClawX-managed userData. |
+| Progress and observability | Shared events/logs | Emit structured runtime events for run lifecycle, assistant deltas, tool progress, command output, patch completion, abort, and errors. |
+| Recovery | Runtime manager/provider | Stop/restart/rollback cleanly; preserve durable session state; do not leave orphan runtime or Codex child processes. |
+
 ### Current Architecture Satisfaction
 
 | Architecture requirement | Current state |
 | --- | --- |
-| Renderer calls Host API only | Satisfied for the runtime abstraction path; renderer goes through `host-api`/`api-client` and main-owned proxy routes. |
-| Runtime routing via `RuntimeManager` | Satisfied. OpenClaw and cc-connect are selected behind the shared provider contract. |
-| Shared Sessions/History surface | Mostly satisfied. Both providers expose list/history/summary/delete flows; cc-connect returns transcript-derived titles and previews for channel/sidebar refresh, and gated real OAuth validates main-agent restart reload plus delete semantics. Cross-agent/title/token fidelity still needs broader validation. |
-| Shared Chat surface | Implemented for cc-connect through BridgePlatform send/history plus restart-based abort. Text, streamed deltas, media packets, tool/command/patch events, and generated-file `toolCall` blocks are mapped into shared renderer shapes. Abort emits renderer-compatible `aborted` events and suppresses late bridge replies, but upstream single-run cancellation would be cleaner than process restart. |
-| Shared Cron surface | Implemented for cc-connect through Management API add/list/edit/delete/toggle. Prompt-job run is validated through real OAuth and falls back to BridgePlatform when the local cc-connect exec endpoint is unavailable. Exec-job manual run, session-mode, timeout, and mute edge cases still need validation. |
-| Shared Skills surface | Implemented as local enabled-skill mirror into managed Codex home. Skills UI is runtime-aware for source versus cc-connect Codex mirror target; slash/custom-command behavior remains future parity work. |
-| Shared Providers/Models surface | Implemented for Codex-compatible profiles. Unsupported vendors, Chat Completions custom providers, runtime model switching, and cc-connect provider API adoption remain partial. |
-| Shared Channels surface | Partially satisfied. Config projection, status probes, channel session history, and lifecycle refresh RPCs are covered; live per-platform connect/disconnect and real credentials are not parity yet. |
-| Shared Doctor/Logs surface | Partially satisfied. cc-connect isolation doctor, process/config logs, runtime diagnostics bundle, bundle metadata, and Management API health exist; OpenClaw Doctor Fix parity, Codex doctor output, and richer runtime error classification are not complete. |
-| cc-connect startup and Codex chat | Satisfied in current smoke scope: bundled cc-connect starts, managed config is written, BridgePlatform chat reaches bundled Codex, managed `CODEX_HOME` OAuth works, and the gated real smoke covers chat/session/project/skill/prompt-cron workflows. |
-| Additional backends: PiAgent/Claude Code | Not integrated in ClawX. They are architecture extension options exposed by cc-connect, while ClawX implementation remains Codex-primary. |
+| Renderer boundary | Satisfied for the runtime abstraction path. Renderer uses `host-api`/`api-client` and main-owned proxy routes. |
+| Runtime routing | Satisfied. `RuntimeManager` selects OpenClaw or cc-connect behind one provider contract. |
+| Shared session/history surface | Mostly satisfied. Both providers expose list/history/summary/delete; cc-connect supplies transcript-derived titles/previews, and gated real OAuth validates main-agent restart reload plus delete. Cross-agent, named-session, and token/cost fidelity need broader validation. |
+| Shared chat surface | Satisfied for current cc-connect/Codex scope. BridgePlatform maps text, streamed deltas, media, tool/command/patch events, and generated-file `toolCall` blocks into shared renderer shapes. Abort works through local run termination plus cc-connect restart; upstream single-run cancellation remains a cleaner future primitive. |
+| Shared cron surface | Satisfied for prompt cron. Management API add/list/edit/delete/toggle is implemented; prompt-job run is validated through real OAuth with BridgePlatform fallback. Exec manual run, session mode, timeout, and mute/silent edge cases remain gaps. |
+| Shared skills surface | Satisfied for local skills. Enabled skills mirror into managed Codex home, and Skills UI opens a runtime-aware source or cc-connect mirror target. Slash/custom-command behavior and setup prompts remain future parity work. |
+| Shared provider/model surface | Satisfied for Codex-compatible profiles. OpenAI API key, OpenAI OAuth/Codex, OpenAI-compatible Responses, ModelHub Responses, and Ollama/custom Responses paths are covered; unsupported vendors, Chat Completions custom providers, runtime model switching, and direct cc-connect provider API adoption remain partial. |
+| Shared channels surface | Partially satisfied. Config projection, status probes, channel session history, and lifecycle refresh RPCs exist; real per-platform credential connect/disconnect semantics are not replacement-ready. |
+| Shared doctor/logs surface | Partially satisfied. cc-connect isolation doctor, process/config logs, runtime diagnostics, bundle metadata, and Management API health exist; OpenClaw Doctor Fix parity, Codex doctor output, and richer structured runtime error classification remain gaps. |
+| cc-connect startup and Codex backend | Satisfied in current smoke scope. Bundled cc-connect starts, managed config is written, BridgePlatform reaches bundled Codex, managed `CODEX_HOME` OAuth works, and real OAuth smoke covers chat/session/project/skill/prompt-cron. |
+| Additional backends: PiAgent/Claude Code | Extension path only. cc-connect may support them underneath, but ClawX has not integrated provider setup, process lifecycle, session/history mapping, or capability states for those backends. |
 
 ### Runtime Contract
 
@@ -499,21 +565,50 @@ The binary is intentionally outside asar so it remains executable.
 
 ## Migration Plan
 
-1. Introduce shared runtime types and `RuntimeManager`.
-2. Wrap existing `GatewayManager` with `OpenClawRuntimeProvider`.
-3. Add `CcConnectRuntimeProvider` with managed config and binary lifecycle.
-4. Move host gateway status/start/stop/restart/health/rpc/chat/session paths through `RuntimeManager`.
-5. Add Settings runtime selector and capability-aware UI.
-6. Add cc-connect bundling scripts and electron-builder resources.
-7. Add tests and harness coverage.
-8. Update README files and developer docs.
-9. Continue migrating provider/channel/cron/skills routes to capability dispatch.
+The migration follows the architecture layers instead of treating cc-connect as
+a one-off alternative binary.
+
+1. **Runtime kernel**
+   - Introduce shared runtime types, `RuntimeProvider`, `RuntimeManager`, status
+     envelopes, and operation-level capability metadata.
+   - Wrap existing `GatewayManager` with `OpenClawRuntimeProvider` first so the
+     default path proves the abstraction does not regress OpenClaw.
+2. **cc-connect provider**
+   - Add `CcConnectRuntimeProvider` with managed config, binary resolution,
+     process lifecycle, crash restart, stop/rollback cleanup, logs, and doctor
+     support.
+   - Keep all cc-connect state under ClawX-managed userData.
+3. **Host API migration**
+   - Move status/start/stop/restart/health/rpc/chat/session/history/log routes
+     through `RuntimeManager`.
+   - Preserve legacy `gateway:*` IPC and event envelopes as compatibility
+     shims, but make the active runtime the owner of behavior.
+4. **Shared capability surfaces**
+   - Migrate providers/models, channels, cron, skills, files/media, diagnostics,
+     and Control UI capability-by-capability.
+   - Each migrated surface must use operation support metadata instead of
+     assuming OpenClaw parity.
+5. **Codex backend integration**
+   - Bundle Codex, create managed `CODEX_HOME`, sync provider profiles, mirror
+     enabled skills, and route agent/project workspace selection into
+     cc-connect project config.
+   - ClawX prepares Codex paths and credentials for cc-connect, but runtime chat
+     and history still flow through cc-connect.
+6. **Packaging and validation**
+   - Bundle cc-connect and Codex outside asar, verify manifests, run real bundle
+     smoke tests, add macOS packaged-dir smoke, and keep Windows/Linux release
+     smoke as release-readiness work.
+7. **Documentation and rollout**
+   - Keep the architecture image, capability matrix, README notes, harness
+     specs, and gap register aligned.
+   - Treat OpenClaw as the default runtime until replacement-readiness gaps have
+     explicit validation or a release exception.
 
 cc-connect runtime mode sends GUI chat through the ClawX BridgePlatform adapter
 into cc-connect. cc-connect then invokes the configured Codex project agent.
-Sessions, history, cron, skills, and supported provider/model selection stay
-behind the same runtime layer so the core chat loop can run without depending on
-OpenClaw Gateway.
+Sessions, history, cron, skills, channels, files/media, diagnostics, and
+supported provider/model selection stay behind the same Host API layer so the
+core product surface can run without depending on OpenClaw Gateway.
 
 In cc-connect runtime mode, ClawX must not communicate with Codex directly. That
 includes direct Codex CLI process execution and direct reads of Codex transcript
@@ -536,6 +631,11 @@ cc-connect BridgePlatform, Management API, or cc-connect-owned session stores.
 	  - `OpenClawRuntimeProvider` preserves Gateway behavior.
 	  - `CcConnectRuntimeProvider` mock binary startup, stop, crash, config path, provider profile, and logs.
 	  - cc-connect provider profile conversion for OpenAI/Codex, OpenAI-compatible Responses Custom providers, Ollama, and unsupported providers.
+  - cc-connect bridge adapter packet mapping for replies, streamed deltas,
+    media, tool/command/patch events, generated-file `toolCall` messages,
+    abort, and late reply suppression.
+  - Runtime operation capability guards for degraded/unsupported sub-operations.
+  - Runtime-aware file/media roots and skills target resolution.
   - cc-connect bundler URL mapping, manifest generation, version mismatch, and failure cases.
 - Integration:
   - Host API returns stable envelopes in both runtimes.
@@ -546,6 +646,10 @@ cc-connect BridgePlatform, Management API, or cc-connect-owned session stores.
   - OpenClaw default smoke.
 	  - cc-connect mock runtime chat smoke, including provider/model args for Codex.
   - OpenClaw-only controls unavailable in cc-connect mode.
+  - Real bundled cc-connect startup, fallback ports, app quit cleanup, and
+    rollback-to-OpenClaw cleanup.
+  - Gated real OAuth comprehensive smoke for chat, sessions/history, project
+    workspace, skills mirroring, and prompt cron create/list/run/toggle/delete.
 - Packaging:
   - `pnpm run package:mac:dir` then `pnpm run smoke:cc-connect:packaged -- --app=release/mac-arm64/ClawX.app`.
   - Windows/Linux CI checks packaged `cc-connect/cc-connect[.exe]` and `codex/bin/codex[.exe]` resource startup and cleanup.
