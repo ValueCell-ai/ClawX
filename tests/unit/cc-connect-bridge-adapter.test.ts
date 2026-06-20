@@ -681,7 +681,7 @@ describe('cc-connect bridge adapter persisted sessions', () => {
           sessionKey: 'agent:main:main',
           toolCallId: 'call-list-skills',
           name: 'Bash',
-          args: expect.objectContaining({ cmd: 'find .agents/skills -maxdepth 3 -print | sort' }),
+          args: '$ find .agents/skills -maxdepth 3 -print | sort',
         })],
         ['chat:runtime-event', expect.objectContaining({
           type: 'tool.completed',
@@ -689,7 +689,13 @@ describe('cc-connect bridge adapter persisted sessions', () => {
           sessionKey: 'agent:main:main',
           toolCallId: 'call-list-skills',
           name: 'Bash',
-          result: '$ find .agents/skills -maxdepth 3 -print | sort\n.agents/skills\n.agents/skills/bytedcli',
+        })],
+      ]));
+      expect(emitted).not.toEqual(expect.arrayContaining([
+        ['chat:runtime-event', expect.objectContaining({
+          type: 'tool.completed',
+          toolCallId: 'call-list-skills',
+          result: expect.anything(),
         })],
       ]));
       expect(emitted.filter(([, payload]) => (
