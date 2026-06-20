@@ -597,6 +597,104 @@ describe('cc-connect bridge adapter persisted sessions', () => {
     }
   });
 
+  it('mirrors Codex transcript function calls into runtime tool events while a bridge run is pending', async () => {
+    const server = new WebSocketServer({ port: 0 });
+    const port = await new Promise<number>((resolve) => {
+      server.once('listening', () => {
+        const address = server.address();
+        resolve(typeof address === 'object' && address ? address.port : 0);
+      });
+    });
+    const emitted: Array<[string, unknown]> = [];
+    const codexSessionsDir = join(tempDir, 'codex-home', 'sessions');
+
+    server.on('connection', (socket) => {
+      socket.on('message', (data) => {
+        const parsed = JSON.parse(String(data)) as Record<string, unknown>;
+        if (parsed.type === 'register') {
+          socket.send(JSON.stringify({ type: 'register_ack', ok: true }));
+        }
+      });
+    });
+
+    try {
+      const adapter = new CcConnectBridgeAdapter({
+        port,
+        token: 'token',
+        project: 'clawx-main',
+        emit: ((event: string, payload: unknown) => emitted.push([event, payload])) as never,
+        sessionStoreDir,
+        codexSessionsDir,
+      });
+
+      const result = await adapter.send({
+        sessionKey: 'agent:main:main',
+        message: 'show .agents skills',
+        idempotencyKey: 'idem-codex-transcript',
+      });
+      const transcriptDir = join(codexSessionsDir, '2026', '06', '20');
+      await mkdir(transcriptDir, { recursive: true });
+      const ts = new Date().toISOString();
+      await writeFile(join(transcriptDir, 'rollout-test.jsonl'), [
+        JSON.stringify({
+          timestamp: ts,
+          type: 'event_msg',
+          payload: { type: 'user_message', message: 'show .agents skills' },
+        }),
+        JSON.stringify({
+          timestamp: ts,
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            name: 'exec_command',
+            call_id: 'call-list-skills',
+            arguments: JSON.stringify({ cmd: 'find .agents/skills -maxdepth 3 -print | sort', workdir: '/workspace' }),
+          },
+        }),
+        JSON.stringify({
+          timestamp: ts,
+          type: 'response_item',
+          payload: {
+            type: 'function_call_output',
+            call_id: 'call-list-skills',
+            output: '.agents/skills\n.agents/skills/bytedcli\n',
+          },
+        }),
+      ].join('\n'), 'utf8');
+
+      await adapter.reconcilePendingRunsFromHistory();
+      await adapter.reconcilePendingRunsFromHistory();
+
+      expect(emitted).toEqual(expect.arrayContaining([
+        ['chat:runtime-event', expect.objectContaining({
+          type: 'tool.started',
+          runId: result.runId,
+          sessionKey: 'agent:main:main',
+          toolCallId: 'call-list-skills',
+          name: 'Bash',
+          args: expect.objectContaining({ cmd: 'find .agents/skills -maxdepth 3 -print | sort' }),
+        })],
+        ['chat:runtime-event', expect.objectContaining({
+          type: 'tool.completed',
+          runId: result.runId,
+          sessionKey: 'agent:main:main',
+          toolCallId: 'call-list-skills',
+          name: 'Bash',
+          result: '.agents/skills\n.agents/skills/bytedcli\n',
+        })],
+      ]));
+      expect(emitted.filter(([, payload]) => (
+        typeof payload === 'object'
+        && payload !== null
+        && (payload as { type?: string; toolCallId?: string }).type === 'tool.started'
+        && (payload as { type?: string; toolCallId?: string }).toolCallId === 'call-list-skills'
+      ))).toHaveLength(1);
+      await adapter.close();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it('lists and reads cc-connect channel sessions from the persisted session store', async () => {
     await writeFile(join(sessionStoreDir, 'clawx-main_abc.json'), JSON.stringify({
       sessions: {

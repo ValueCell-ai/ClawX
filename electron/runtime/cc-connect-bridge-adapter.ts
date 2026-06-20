@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import WebSocket from 'ws';
 import type { AttachedFileMeta, RawMessage } from '@shared/chat/types';
@@ -15,6 +15,7 @@ type BridgeAdapterOptions = {
   projectForSessionKey?: (sessionKey: string) => string;
   emit: EventEmitter['emit'];
   sessionStoreDir?: string;
+  codexSessionsDir?: string;
 };
 
 type SessionMetadata = {
@@ -30,8 +31,12 @@ type SessionMetadata = {
 type PendingRun = {
   runId: string;
   sessionKey: string;
+  prompt: string;
   startedAt: number;
   seq: number;
+  codexToolStarts: Set<string>;
+  codexToolCompletions: Set<string>;
+  codexToolNames: Map<string, string>;
 };
 
 type PendingRunResolution = {
@@ -97,6 +102,9 @@ const EDIT_ARG_KEYS = [
   'diff',
   'patch',
 ];
+const CODEX_TRANSCRIPT_LOOKBACK_MS = 60_000;
+const CODEX_TRANSCRIPT_MAX_FILES = 12;
+const CODEX_TRANSCRIPT_MAX_DEPTH = 5;
 
 function messageText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -305,6 +313,35 @@ function normalizeRawMessage(value: unknown, fallbackId: string): RawMessage | n
   };
 }
 
+function normalizeComparableText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function codexInputText(content: unknown): string {
+  if (!Array.isArray(content)) return '';
+  return content
+    .flatMap((item) => {
+      if (!isRecord(item)) return [];
+      return item.type === 'input_text' && typeof item.text === 'string' ? [item.text] : [];
+    })
+    .join('\n')
+    .trim();
+}
+
+function parseJsonArguments(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
+}
+
+function codexDisplayToolName(name: string, args: unknown): string {
+  if (name === 'exec_command' && isRecord(args) && typeof args.cmd === 'string') return 'Bash';
+  return name || 'tool';
+}
+
 function readStringMap(value: unknown): Map<string, string> {
   if (!isRecord(value)) return new Map();
   return new Map(Object.entries(value).flatMap(([key, item]) => (
@@ -367,6 +404,7 @@ export class CcConnectBridgeAdapter {
   private readonly projectForSessionKey: (sessionKey: string) => string;
   private readonly emitRuntimeEvent: EventEmitter['emit'];
   private readonly sessionStoreDir: string;
+  private readonly codexSessionsDir: string;
   private socket: WebSocket | null = null;
   private readonly messagesBySession = new Map<string, RawMessage[]>();
   private readonly pendingRuns = new Map<string, PendingRun>();
@@ -379,6 +417,7 @@ export class CcConnectBridgeAdapter {
     this.projectForSessionKey = options.projectForSessionKey ?? (() => options.project);
     this.emitRuntimeEvent = options.emit;
     this.sessionStoreDir = options.sessionStoreDir ?? join(getCcConnectManagedDir(), 'data', 'sessions');
+    this.codexSessionsDir = options.codexSessionsDir ?? join(getCcConnectManagedDir(), 'codex-home', 'sessions');
   }
 
   async connect(): Promise<void> {
@@ -427,7 +466,16 @@ export class CcConnectBridgeAdapter {
       timestamp: now,
     };
     this.appendMessage(payload.sessionKey, userMessage);
-    this.pendingRuns.set(runId, { runId, sessionKey: payload.sessionKey, startedAt: now, seq: 0 });
+    this.pendingRuns.set(runId, {
+      runId,
+      sessionKey: payload.sessionKey,
+      prompt: payload.message,
+      startedAt: now,
+      seq: 0,
+      codexToolStarts: new Set(),
+      codexToolCompletions: new Set(),
+      codexToolNames: new Map(),
+    });
     this.emitRuntimeEvent('chat:runtime-event', {
       type: 'run.started',
       runId,
@@ -574,16 +622,125 @@ export class CcConnectBridgeAdapter {
   async reconcilePendingRunsFromHistory(): Promise<void> {
     const pendingRuns = Array.from(this.pendingRuns.values());
     for (const pending of pendingRuns) {
+      await this.emitCodexTranscriptToolEventsForPendingRun(pending);
       const messages = await this.readPersistedMessages(pending.sessionKey, 1000);
       const completion = this.findPersistedCompletionForPendingRun(pending, messages);
       if (!completion) continue;
-      this.finishPendingRun(pending, {
+      await this.finishPendingRun(pending, {
         text: messageText(completion.content),
         isError: completion.isError === true,
         appendMessage: false,
         messageId: completion.id,
         timestamp: normalizeTimestamp(completion.timestamp),
       });
+    }
+  }
+
+  private async emitCodexTranscriptToolEventsForPendingRun(pending: PendingRun): Promise<void> {
+    const files = await this.findRecentCodexTranscriptFiles(pending.startedAt - CODEX_TRANSCRIPT_LOOKBACK_MS);
+    for (const file of files) {
+      const content = await readFile(file, 'utf8').catch(() => '');
+      if (!content) continue;
+      this.emitCodexTranscriptToolEventsFromContent(pending, content);
+    }
+  }
+
+  private async findRecentCodexTranscriptFiles(sinceMs: number): Promise<string[]> {
+    const results: Array<{ path: string; mtimeMs: number }> = [];
+    const visit = async (dir: string, depth: number): Promise<void> => {
+      if (depth > CODEX_TRANSCRIPT_MAX_DEPTH) return;
+      const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+      await Promise.all(entries.map(async (entry) => {
+        const fullPath = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await visit(fullPath, depth + 1);
+          return;
+        }
+        if (!entry.isFile() || !entry.name.endsWith('.jsonl')) return;
+        const info = await stat(fullPath).catch(() => null);
+        if (!info || info.mtimeMs < sinceMs) return;
+        results.push({ path: fullPath, mtimeMs: info.mtimeMs });
+      }));
+    };
+    await visit(this.codexSessionsDir, 0);
+    return results
+      .sort((left, right) => right.mtimeMs - left.mtimeMs)
+      .slice(0, CODEX_TRANSCRIPT_MAX_FILES)
+      .map((item) => item.path);
+  }
+
+  private emitCodexTranscriptToolEventsFromContent(pending: PendingRun, content: string): void {
+    const expectedPrompt = normalizeComparableText(pending.prompt);
+    if (!expectedPrompt) return;
+    let inMatchingTurn = false;
+
+    for (const line of content.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      let record: unknown;
+      try {
+        record = JSON.parse(line) as unknown;
+      } catch {
+        continue;
+      }
+      if (!isRecord(record)) continue;
+      const ts = normalizeTimestamp(record.timestamp);
+      if (ts != null && ts < pending.startedAt - CODEX_TRANSCRIPT_LOOKBACK_MS) continue;
+      const payload = isRecord(record.payload) ? record.payload : null;
+      if (!payload) continue;
+
+      if (record.type === 'event_msg' && payload.type === 'user_message') {
+        inMatchingTurn = normalizeComparableText(typeof payload.message === 'string' ? payload.message : '') === expectedPrompt;
+        continue;
+      }
+      if (record.type === 'response_item' && payload.type === 'message' && payload.role === 'user') {
+        const text = codexInputText(payload.content);
+        inMatchingTurn = normalizeComparableText(text) === expectedPrompt;
+        continue;
+      }
+      if (record.type === 'event_msg' && payload.type === 'task_complete') {
+        inMatchingTurn = false;
+        continue;
+      }
+      if (!inMatchingTurn || record.type !== 'response_item') continue;
+
+      if (payload.type === 'function_call') {
+        const toolCallId = typeof payload.call_id === 'string' ? payload.call_id : '';
+        const rawName = typeof payload.name === 'string' ? payload.name : 'tool';
+        if (!toolCallId || pending.codexToolStarts.has(toolCallId)) continue;
+        const args = parseJsonArguments(payload.arguments);
+        const name = codexDisplayToolName(rawName, args);
+        pending.codexToolStarts.add(toolCallId);
+        pending.codexToolNames.set(toolCallId, name);
+        pending.seq += 1;
+        this.emitRuntimeEvent('chat:runtime-event', {
+          type: 'tool.started',
+          runId: pending.runId,
+          sessionKey: pending.sessionKey,
+          toolCallId,
+          name,
+          ...(args !== undefined ? { args } : {}),
+          seq: pending.seq,
+          ts: ts ?? Date.now(),
+        });
+        continue;
+      }
+
+      if (payload.type === 'function_call_output') {
+        const toolCallId = typeof payload.call_id === 'string' ? payload.call_id : '';
+        if (!toolCallId || pending.codexToolCompletions.has(toolCallId)) continue;
+        pending.codexToolCompletions.add(toolCallId);
+        pending.seq += 1;
+        this.emitRuntimeEvent('chat:runtime-event', {
+          type: 'tool.completed',
+          runId: pending.runId,
+          sessionKey: pending.sessionKey,
+          toolCallId,
+          name: pending.codexToolNames.get(toolCallId) || 'tool',
+          ...(payload.output !== undefined ? { result: payload.output } : {}),
+          seq: pending.seq,
+          ts: ts ?? Date.now(),
+        });
+      }
     }
   }
 
@@ -793,7 +950,7 @@ export class CcConnectBridgeAdapter {
       return;
     }
     if (message.type === 'reply') {
-      this.finishRun(message, typeof message.content === 'string' ? message.content : '');
+      void this.finishRun(message, typeof message.content === 'string' ? message.content : '');
       return;
     }
     if (message.type === 'reply_stream' && message.done !== true) {
@@ -806,15 +963,15 @@ export class CcConnectBridgeAdapter {
         : typeof message.delta === 'string'
           ? message.delta
           : '';
-      this.finishRun(message, text);
+      void this.finishRun(message, text);
       return;
     }
     if (message.type === 'card') {
-      this.finishRun(message, JSON.stringify(message.card ?? {}));
+      void this.finishRun(message, JSON.stringify(message.card ?? {}));
       return;
     }
     if (message.type === 'buttons') {
-      this.finishRun(message, typeof message.content === 'string' ? message.content : '');
+      void this.finishRun(message, typeof message.content === 'string' ? message.content : '');
       return;
     }
     if (message.type === 'image' || message.type === 'file' || message.type === 'audio') {
@@ -822,7 +979,7 @@ export class CcConnectBridgeAdapter {
       return;
     }
     if (message.type === 'error') {
-      this.finishRun(message, typeof message.message === 'string' ? message.message : 'cc-connect bridge error', true);
+      void this.finishRun(message, typeof message.message === 'string' ? message.message : 'cc-connect bridge error', true);
     }
   }
 
@@ -970,7 +1127,7 @@ export class CcConnectBridgeAdapter {
       || attachment.fileName;
     const resolved = this.resolvePendingRun(message);
     if (resolved) {
-      this.finishPendingRun(resolved.pending, {
+      await this.finishPendingRun(resolved.pending, {
         text: label,
         attachedFiles: [attachment],
       });
@@ -1079,11 +1236,11 @@ export class CcConnectBridgeAdapter {
     });
   }
 
-  private finishRun(message: Record<string, unknown>, text: string, isError = false): void {
+  private async finishRun(message: Record<string, unknown>, text: string, isError = false): Promise<void> {
     if (this.isAbortedBridgeMessage(message)) return;
     const resolved = this.resolvePendingRun(message);
     if (resolved) {
-      this.finishPendingRun(resolved.pending, { text, isError });
+      await this.finishPendingRun(resolved.pending, { text, isError });
       return;
     }
     const runId = typeof message.reply_ctx === 'string' ? message.reply_ctx : '';
@@ -1146,14 +1303,15 @@ export class CcConnectBridgeAdapter {
     return candidates.at(-1) ?? null;
   }
 
-  private finishPendingRun(pending: PendingRun, options: {
+  private async finishPendingRun(pending: PendingRun, options: {
     text: string;
     isError?: boolean;
     appendMessage?: boolean;
     messageId?: string;
     timestamp?: number;
     attachedFiles?: AttachedFileMeta[];
-  }): void {
+  }): Promise<void> {
+    await this.emitCodexTranscriptToolEventsForPendingRun(pending);
     const now = options.timestamp ?? Date.now();
     const isError = options.isError === true;
     const assistantMessage: RawMessage = {
