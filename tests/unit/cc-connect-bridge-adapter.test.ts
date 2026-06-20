@@ -657,7 +657,16 @@ describe('cc-connect bridge adapter persisted sessions', () => {
           payload: {
             type: 'function_call_output',
             call_id: 'call-list-skills',
-            output: '.agents/skills\n.agents/skills/bytedcli\n',
+            output: [
+              'Chunk ID: abc123',
+              'Wall time: 0.0000 seconds',
+              'Process exited with code 0',
+              'Original token count: 2',
+              'Output:',
+              '.agents/skills',
+              '.agents/skills/bytedcli',
+              '',
+            ].join('\n'),
           },
         }),
       ].join('\n'), 'utf8');
@@ -680,7 +689,7 @@ describe('cc-connect bridge adapter persisted sessions', () => {
           sessionKey: 'agent:main:main',
           toolCallId: 'call-list-skills',
           name: 'Bash',
-          result: '.agents/skills\n.agents/skills/bytedcli\n',
+          result: '$ find .agents/skills -maxdepth 3 -print | sort\n.agents/skills\n.agents/skills/bytedcli',
         })],
       ]));
       expect(emitted.filter(([, payload]) => (

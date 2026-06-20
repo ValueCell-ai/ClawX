@@ -37,6 +37,7 @@ type PendingRun = {
   codexToolStarts: Set<string>;
   codexToolCompletions: Set<string>;
   codexToolNames: Map<string, string>;
+  codexToolArgs: Map<string, unknown>;
 };
 
 type PendingRunResolution = {
@@ -342,6 +343,23 @@ function codexDisplayToolName(name: string, args: unknown): string {
   return name || 'tool';
 }
 
+function extractCodexFunctionOutput(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const outputMarker = '\nOutput:\n';
+  const markerIndex = value.indexOf(outputMarker);
+  if (markerIndex >= 0) return value.slice(markerIndex + outputMarker.length).trimEnd();
+  if (value.startsWith('Output:\n')) return value.slice('Output:\n'.length).trimEnd();
+  return value.trim();
+}
+
+function formatCodexToolResult(name: string, args: unknown, output: unknown): unknown {
+  const cleanOutput = extractCodexFunctionOutput(output);
+  if (name !== 'Bash' || !isRecord(args) || typeof args.cmd !== 'string') return cleanOutput;
+  const command = args.cmd.trim();
+  const renderedOutput = typeof cleanOutput === 'string' ? cleanOutput.trimEnd() : '';
+  return renderedOutput ? `$ ${command}\n${renderedOutput}` : `$ ${command}`;
+}
+
 function readStringMap(value: unknown): Map<string, string> {
   if (!isRecord(value)) return new Map();
   return new Map(Object.entries(value).flatMap(([key, item]) => (
@@ -475,6 +493,7 @@ export class CcConnectBridgeAdapter {
       codexToolStarts: new Set(),
       codexToolCompletions: new Set(),
       codexToolNames: new Map(),
+      codexToolArgs: new Map(),
     });
     this.emitRuntimeEvent('chat:runtime-event', {
       type: 'run.started',
@@ -711,6 +730,7 @@ export class CcConnectBridgeAdapter {
         const name = codexDisplayToolName(rawName, args);
         pending.codexToolStarts.add(toolCallId);
         pending.codexToolNames.set(toolCallId, name);
+        pending.codexToolArgs.set(toolCallId, args);
         pending.seq += 1;
         this.emitRuntimeEvent('chat:runtime-event', {
           type: 'tool.started',
@@ -736,7 +756,15 @@ export class CcConnectBridgeAdapter {
           sessionKey: pending.sessionKey,
           toolCallId,
           name: pending.codexToolNames.get(toolCallId) || 'tool',
-          ...(payload.output !== undefined ? { result: payload.output } : {}),
+          ...(payload.output !== undefined
+            ? {
+                result: formatCodexToolResult(
+                  pending.codexToolNames.get(toolCallId) || 'tool',
+                  pending.codexToolArgs.get(toolCallId),
+                  payload.output,
+                ),
+              }
+            : {}),
           seq: pending.seq,
           ts: ts ?? Date.now(),
         });
