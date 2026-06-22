@@ -172,9 +172,14 @@ function escapeRegExp(value: string): string {
 function consumeLeadingSegment(text: string, segment: string): number {
   const tokens = segment.trim().split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return 0;
-  const pattern = new RegExp(`^\\s*${tokens.map(escapeRegExp).join('\\s+')}\\s*`, 'u');
-  const match = text.match(pattern);
-  return match ? match[0].length : 0;
+  try {
+    const pattern = new RegExp(`^\\s*${tokens.map(escapeRegExp).join('\\s+')}\\s*`, 'u');
+    const match = text.match(pattern);
+    return match ? match[0].length : 0;
+  } catch {
+    // Gracefully handle invalid regex (e.g. lone surrogates in unicode mode)
+    return 0;
+  }
 }
 
 /** True for OpenClaw internal assistant tokens that must never appear in the chat UI. */
