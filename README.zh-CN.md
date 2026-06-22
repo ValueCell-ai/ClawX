@@ -310,7 +310,7 @@ ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用
 
 ### 前置要求
 
-- **Node.js**：22+（推荐 LTS 版本）
+- **Node.js**：22.19+（推荐 LTS 版本）
 - **包管理器**：pnpm 9+（推荐）或 npm
 - **Linux（Ubuntu/Debian）**：运行 Electron 前，请先安装所需系统库：
   ```bash
