@@ -2916,6 +2916,21 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       toolsModified = true;
     }
 
+    // OpenClaw 6.5 moved Skill Workshop into the core skills surface.
+    // ClawX does not expose that durable-skill proposal flow yet, so keep the
+    // built-in tool denied even under tools.profile="full".
+    const deny = Array.isArray(toolsConfig.deny)
+      ? toolsConfig.deny.filter((value): value is string => typeof value === 'string')
+      : [];
+    if (!deny.includes('skill_workshop')) {
+      toolsConfig.deny = [...deny, 'skill_workshop'];
+      toolsModified = true;
+      console.log('[sanitize] Added "skill_workshop" to tools.deny for ClawX desktop');
+    } else if (!Array.isArray(toolsConfig.deny) || toolsConfig.deny.length !== deny.length) {
+      toolsConfig.deny = deny;
+      toolsModified = true;
+    }
+
     // ── tools.exec approvals (OpenClaw 3.28+) ──────────────────────
     // ClawX is a local desktop app where the user is the trusted operator.
     // Exec approval prompts add unnecessary friction in this context, so we

@@ -26,6 +26,34 @@ async function readConfig(): Promise<Record<string, unknown>> {
   return JSON.parse(raw);
 }
 
+function withClawXToolDefaults<T extends Record<string, unknown>>(config: T): T & { tools: Record<string, unknown> } {
+  const tools = (config.tools && typeof config.tools === 'object' && !Array.isArray(config.tools))
+    ? { ...(config.tools as Record<string, unknown>) }
+    : {};
+  const sessions = (tools.sessions && typeof tools.sessions === 'object' && !Array.isArray(tools.sessions))
+    ? { ...(tools.sessions as Record<string, unknown>) }
+    : {};
+  const exec = (tools.exec && typeof tools.exec === 'object' && !Array.isArray(tools.exec))
+    ? { ...(tools.exec as Record<string, unknown>) }
+    : {};
+  const deny = Array.isArray(tools.deny)
+    ? (tools.deny as unknown[]).filter((value): value is string => typeof value === 'string')
+    : [];
+
+  sessions.visibility = 'all';
+  exec.security = 'full';
+  exec.ask = 'off';
+  tools.profile = 'full';
+  tools.sessions = sessions;
+  tools.exec = exec;
+  tools.deny = deny.includes('skill_workshop') ? deny : [...deny, 'skill_workshop'];
+
+  return {
+    ...config,
+    tools,
+  };
+}
+
 /**
  * Standalone mirror of the sanitization logic in openclaw-auth.ts.
  * Uses the same blocklist approach as the production code.
@@ -307,6 +335,47 @@ async function sanitizeConfig(
     }
   }
 
+  // Mirror: ClawX keeps Skill Workshop disabled even when OpenClaw exposes it
+  // as a built-in tool under permissive tool profiles.
+  const toolsConfig = (config.tools as Record<string, unknown> | undefined) || {};
+  let toolsModified = false;
+
+  if (toolsConfig.profile !== 'full') {
+    toolsConfig.profile = 'full';
+    toolsModified = true;
+  }
+
+  const sessions = (toolsConfig.sessions as Record<string, unknown> | undefined) || {};
+  if (sessions.visibility !== 'all') {
+    sessions.visibility = 'all';
+    toolsConfig.sessions = sessions;
+    toolsModified = true;
+  }
+
+  const deny = Array.isArray(toolsConfig.deny)
+    ? toolsConfig.deny.filter((value): value is string => typeof value === 'string')
+    : [];
+  if (!deny.includes('skill_workshop')) {
+    toolsConfig.deny = [...deny, 'skill_workshop'];
+    toolsModified = true;
+  } else if (!Array.isArray(toolsConfig.deny) || toolsConfig.deny.length !== deny.length) {
+    toolsConfig.deny = deny;
+    toolsModified = true;
+  }
+
+  const execConfig = (toolsConfig.exec as Record<string, unknown> | undefined) || {};
+  if (execConfig.security !== 'full' || execConfig.ask !== 'off') {
+    execConfig.security = 'full';
+    execConfig.ask = 'off';
+    toolsConfig.exec = execConfig;
+    toolsModified = true;
+  }
+
+  if (toolsModified) {
+    config.tools = toolsConfig;
+    modified = true;
+  }
+
   // Mirror: remove stale tools.web.search.kimi.apiKey when moonshot provider exists.
   const providers = ((config.models as Record<string, unknown> | undefined)?.providers as Record<string, unknown> | undefined) || {};
   if (providers.moonshot) {
@@ -431,12 +500,12 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
   });
 
   it('does nothing when config is already valid', async () => {
-    const original = {
+    const original = withClawXToolDefaults({
       skills: {
         entries: { 'my-skill': { enabled: true } },
         allowBundled: ['web-search'],
       },
-    };
+    });
     await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath);
@@ -449,7 +518,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
   it('preserves unknown valid keys (forward-compatible)', async () => {
     // If OpenClaw adds new valid keys to skills in the future,
     // the blocklist approach should NOT strip them.
-    const original = {
+    const original = withClawXToolDefaults({
       skills: {
         entries: { 'x': { enabled: true } },
         allowBundled: ['web-search'],
@@ -458,7 +527,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
         limits: { maxSkillsInPrompt: 5 },
         futureNewKey: { some: 'value' },  // hypothetical future key
       },
-    };
+    });
     await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath);
@@ -473,14 +542,20 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath);
-    expect(modified).toBe(false);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    expect(result).toEqual(withClawXToolDefaults(original));
   });
 
   it('handles empty config', async () => {
     await writeConfig({});
 
     const modified = await sanitizeConfig(configPath);
-    expect(modified).toBe(false);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    expect(result).toEqual(withClawXToolDefaults({}));
   });
 
   it('returns false for missing config file', async () => {
@@ -490,10 +565,14 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
 
   it('handles skills being an array (no-op, no crash)', async () => {
     // Edge case: skills is not an object
-    await writeConfig({ skills: ['something'] });
+    const original = { skills: ['something'] };
+    await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath);
-    expect(modified).toBe(false);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    expect(result).toEqual(withClawXToolDefaults(original));
   });
 
   it('preserves all other top-level config sections', async () => {
@@ -583,7 +662,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
   });
 
   it('keeps tools.web.search.kimi.apiKey when moonshot provider is absent', async () => {
-    const original = {
+    const original = withClawXToolDefaults({
       models: {
         providers: {
           openrouter: { baseUrl: 'https://openrouter.ai/api/v1', api: 'openai-completions' },
@@ -598,7 +677,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
           },
         },
       },
-    };
+    });
     await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath);
@@ -776,7 +855,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
   });
 
   it('does nothing when plugins.load.paths contains only valid paths', async () => {
-    const original = {
+    const original = withClawXToolDefaults({
       plugins: {
         load: {
           paths: [tempDir],
@@ -784,7 +863,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
         },
         entries: { test: { enabled: true } },
       },
-    };
+    });
     await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath);
@@ -818,11 +897,11 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
   });
 
   it('handles plugins.load as empty object (no paths key)', async () => {
-    const original = {
+    const original = withClawXToolDefaults({
       plugins: {
         load: {},
       },
-    };
+    });
     await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath);
@@ -830,11 +909,11 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
   });
 
   it('handles plugins.load.paths as empty array', async () => {
-    const original = {
+    const original = withClawXToolDefaults({
       plugins: {
         load: { paths: [] },
       },
-    };
+    });
     await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath);
@@ -951,9 +1030,9 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
   });
 
   it('does not modify config when no bundled plugins and no allowlist', async () => {
-    const original = {
+    const original = withClawXToolDefaults({
       gateway: { mode: 'local' },
-    };
+    });
     await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath, { all: ['browser'], enabledByDefault: ['browser'] });

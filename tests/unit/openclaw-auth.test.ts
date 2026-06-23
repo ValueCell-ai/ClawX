@@ -377,6 +377,7 @@ describe('sanitizeOpenClawConfig', () => {
     // Fresh install should get tools settings enforced
     const tools = result.tools as Record<string, unknown>;
     expect(tools.profile).toBe('full');
+    expect(tools.deny).toEqual(['skill_workshop']);
 
     logSpy.mockRestore();
   });
@@ -405,8 +406,24 @@ describe('sanitizeOpenClawConfig', () => {
     // tools settings should now be enforced
     const tools = result.tools as Record<string, unknown>;
     expect(tools.profile).toBe('full');
+    expect(tools.deny).toEqual(['skill_workshop']);
 
     logSpy.mockRestore();
+  });
+
+  it('preserves existing denied tools while adding skill_workshop to the deny list', async () => {
+    await writeOpenClawJson({
+      tools: {
+        deny: ['browser'],
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const tools = result.tools as Record<string, unknown>;
+    expect(tools.deny).toEqual(['browser', 'skill_workshop']);
   });
 
   it('migrates legacy tools.web.search.kimi into moonshot plugin config', async () => {
