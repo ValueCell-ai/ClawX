@@ -145,6 +145,45 @@ describe('model option helpers', () => {
     ]);
   });
 
+  it('preserves custom runtime keys that are already normalized', () => {
+    const runtimeKey = resolveRuntimeProviderKey(account({
+      id: 'custom-enterpri',
+      label: 'Enterprise',
+      model: 'custom-enterpri/gpt-5.4',
+      metadata: { customModels: ['gpt-5.4', 'gpt-5.5'] },
+    }));
+
+    const options = buildConfiguredModelOptions(
+      [
+        account({
+          id: 'custom-enterpri',
+          label: 'Enterprise',
+          model: 'custom-enterpri/gpt-5.4',
+          metadata: { customModels: ['gpt-5.4', 'gpt-5.5'] },
+        }),
+      ],
+      [status('custom-enterpri')],
+      vendors,
+      'custom-enterpri',
+    );
+
+    expect(runtimeKey).toBe('custom-enterpri');
+    expect(options).toEqual([
+      {
+        modelRef: 'custom-enterpri/gpt-5.4',
+        label: 'gpt-5.4 (Enterprise)',
+        runtimeProviderKey: 'custom-enterpri',
+        accountId: 'custom-enterpri',
+      },
+      {
+        modelRef: 'custom-enterpri/gpt-5.5',
+        label: 'gpt-5.5 (Enterprise)',
+        runtimeProviderKey: 'custom-enterpri',
+        accountId: 'custom-enterpri',
+      },
+    ]);
+  });
+
   it('treats malformed provider snapshots as empty options', () => {
     expect(
       buildConfiguredModelOptions(

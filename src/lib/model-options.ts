@@ -21,6 +21,14 @@ export function resolveRuntimeProviderKey(account: ProviderAccount): string {
   }
 
   if (account.vendorId === 'custom' || account.vendorId === 'ollama') {
+    const prefix = `${account.vendorId}-`;
+    if (account.id.startsWith(prefix)) {
+      const tail = account.id.slice(prefix.length);
+      if (tail.length === 8 && !tail.includes('-')) {
+        return account.id;
+      }
+    }
+
     const suffix = account.id.replace(/-/g, '').slice(0, 8);
     return `${account.vendorId}-${suffix}`;
   }
