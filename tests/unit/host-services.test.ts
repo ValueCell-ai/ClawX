@@ -778,6 +778,37 @@ describe('host services', () => {
     expect(removeAgentWorkspaceDirectoryMock).toHaveBeenCalledWith(removedEntry);
   });
 
+  it('updates agent model and schedules gateway reload', async () => {
+    const snapshot = {
+      agents: [{ id: 'main', modelRef: 'custom-enterpri/claude-sonnet-4' }],
+      defaultAgentId: 'main',
+      defaultModelRef: 'custom-enterpri/gpt-5.4',
+      configuredChannelTypes: [],
+      channelOwners: {},
+      channelAccountOwners: {},
+    };
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state: 'running' })),
+      debouncedReload: vi.fn(),
+    };
+    const { createAgentsApi } = await import('@electron/services/agents-api');
+    const agentConfig = await import('@electron/utils/agent-config');
+    const providerRuntimeSync = await import('@electron/services/providers/provider-runtime-sync');
+    vi.mocked(agentConfig.updateAgentModel).mockResolvedValue(snapshot as never);
+    vi.mocked(providerRuntimeSync.syncAllProviderAuthToRuntime).mockResolvedValue(undefined);
+    vi.mocked(providerRuntimeSync.syncAgentModelOverrideToRuntime).mockResolvedValue(undefined);
+
+    await expect(createAgentsApi({ gatewayManager: gatewayManager as never }).updateModel({
+      id: 'main',
+      modelRef: 'custom-enterpri/claude-sonnet-4',
+    })).resolves.toEqual({ success: true, ...snapshot });
+
+    expect(agentConfig.updateAgentModel).toHaveBeenCalledWith('main', 'custom-enterpri/claude-sonnet-4');
+    expect(providerRuntimeSync.syncAllProviderAuthToRuntime).toHaveBeenCalledTimes(1);
+    expect(providerRuntimeSync.syncAgentModelOverrideToRuntime).toHaveBeenCalledWith('main');
+    expect(gatewayManager.debouncedReload).toHaveBeenCalledTimes(1);
+  });
+
   it('assigns agent channels and schedules gateway reload', async () => {
     const snapshot = {
       agents: [{ id: 'main', channelTypes: ['feishu'] }],
