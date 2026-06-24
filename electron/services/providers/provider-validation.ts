@@ -216,6 +216,31 @@ async function validateOpenAiCompatibleKey(
     return await performChatCompletionsProbe(providerType, probeUrl, headers);
   }
 
+  // For custom providers, some implementations return 401/403 on GET /models even with a
+  // valid key because they don't implement the OpenAI models listing endpoint. Use the
+  // completions probe as a secondary check: if the server accepts the auth token there,
+  // the key is valid. If the probe also returns an auth failure, the key is genuinely wrong.
+  // Note: 400 auth errors (with explicit error messages) are not retried — those indicate
+  // the server understood the request but rejected the credentials explicitly.
+  if (
+    (modelsResult.status === 401 || modelsResult.status === 403) &&
+    providerType === 'custom'
+  ) {
+    console.log(
+      `[clawx-validate] ${providerType} /models returned auth failure (${modelsResult.status}), ` +
+      `trying ${apiProtocol} probe as secondary check for custom provider`,
+    );
+    const probeResult = apiProtocol === 'openai-responses'
+      ? await performResponsesProbe(providerType, probeUrl, headers)
+      : await performChatCompletionsProbe(providerType, probeUrl, headers);
+    if (probeResult.valid) return probeResult;
+    // Only fall back to the /models auth error when the probe also indicates an
+    // auth failure. If the probe failed for non-auth reasons (5xx, connection
+    // error, unknown), surface that result so we don't misreport a server error
+    // as "Invalid API key".
+    if (!(probeResult as ClassifiedValidationResult).authFailure) return probeResult;
+  }
+
   return modelsResult;
 }
 
