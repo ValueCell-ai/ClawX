@@ -254,6 +254,35 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
     }));
   });
 
+  it('preserves existing non-default provider model while syncing metadata', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([
+      makeAccount({
+        id: 'openrouter-work',
+        vendorId: 'openrouter' as ProviderAccount['vendorId'],
+        label: 'OpenRouter Work',
+        model: 'openrouter/openai/gpt-5.5',
+      }),
+    ]);
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openrouter']));
+    mocks.getOpenClawProvidersConfig.mockResolvedValue({
+      providers: {
+        openrouter: {
+          baseUrl: 'https://openrouter.ai/api/v1',
+          api: 'openai-completions',
+        },
+      },
+      defaultModel: 'openai/gpt-5.4',
+    });
+
+    const result = await service.listAccounts();
+
+    expect(mocks.saveProviderAccount).not.toHaveBeenCalled();
+    expect(result[0]).toEqual(expect.objectContaining({
+      id: 'openrouter-work',
+      model: 'openrouter/openai/gpt-5.5',
+    }));
+  });
+
   it('hides stale OpenAI API key accounts when canonical openai OAuth is configured', async () => {
     mocks.listProviderAccounts.mockResolvedValue([
       makeAccount({

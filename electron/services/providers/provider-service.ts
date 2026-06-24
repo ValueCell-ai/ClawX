@@ -189,12 +189,14 @@ export class ProviderService {
           );
           if (syncedAccount) {
             const nextMetadata = mergeSyncedProviderMetadata(kept.metadata, syncedAccount.metadata);
-            const shouldSyncModelState = kept.model !== syncedAccount.model
+            const shouldSyncSelectedModel = defaultModel?.startsWith(`${key}/`) ?? false;
+            const nextModel = shouldSyncSelectedModel ? syncedAccount.model : kept.model;
+            const shouldSyncModelState = kept.model !== nextModel
               || !providerMetadataEquals(kept.metadata, nextMetadata);
             if (shouldSyncModelState) {
               kept = {
                 ...kept,
-                model: syncedAccount.model,
+                model: nextModel,
                 metadata: nextMetadata,
                 updatedAt: new Date().toISOString(),
               };
