@@ -112,6 +112,39 @@ describe('model option helpers', () => {
     expect(options[0].label).toBe('model-gamma (Alpha)');
   });
 
+  it('builds multiple configured model options from account metadata custom models', () => {
+    const accountId = 'model-hub-01';
+    const runtimeKey = resolveRuntimeProviderKey(account({ id: accountId, label: 'Model Hub' }));
+    const options = buildConfiguredModelOptions(
+      [
+        account({
+          id: accountId,
+          label: 'Model Hub',
+          model: 'model-default',
+          metadata: { customModels: ['gpt-5.4', 'claude-sonnet-4', 'gpt-5.4'] },
+        }),
+      ],
+      [status(accountId)],
+      vendors,
+      accountId,
+    );
+
+    expect(options).toEqual([
+      {
+        modelRef: `${runtimeKey}/gpt-5.4`,
+        label: 'gpt-5.4 (Model Hub)',
+        runtimeProviderKey: runtimeKey,
+        accountId,
+      },
+      {
+        modelRef: `${runtimeKey}/claude-sonnet-4`,
+        label: 'claude-sonnet-4 (Model Hub)',
+        runtimeProviderKey: runtimeKey,
+        accountId,
+      },
+    ]);
+  });
+
   it('treats malformed provider snapshots as empty options', () => {
     expect(
       buildConfiguredModelOptions(
