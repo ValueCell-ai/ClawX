@@ -305,7 +305,14 @@ export function ExecutionGraphCard({
               data-testid="chat-execution-step-thinking-trailing"
               style={{ marginLeft: `${TOOL_ROW_EXTRA_INDENT_PX}px` }}
             >
-              <div className="w-6 shrink-0" />
+              <div className="flex w-6 shrink-0 justify-center">
+                <div
+                  className="flex h-6 w-6 items-center justify-center text-muted-foreground"
+                  data-testid="chat-execution-step-thinking-trailing-icon"
+                >
+                  <CircleDashed className="h-3.5 w-3.5" />
+                </div>
+              </div>
               <div className="min-w-0 flex-1 text-sm text-muted-foreground">
                 <span className="font-medium">{t('executionGraph.thinkingLabel')}</span>
                 <AnimatedDots className="ml-1 inline-flex text-sm" />

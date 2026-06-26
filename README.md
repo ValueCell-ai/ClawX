@@ -93,7 +93,13 @@ ClawX is built directly upon the official **OpenClaw** core. Instead of requirin
 
 We are committed to maintaining strict alignment with the upstream OpenClaw project, ensuring that you always have access to the latest capabilities, stability improvements, and ecosystem compatibility provided by the official releases.
 
-When Developer Mode is enabled, the sidebar also provides a native Dreams page for OpenClaw memory review, dream diary inspection, and basic maintenance actions. The full upstream OpenClaw Dreams UI remains available from that page when deeper diagnostics are needed.
+When Developer Mode is enabled and OpenClaw is the active runtime, the sidebar also provides a native Dreams page for OpenClaw memory review, dream diary inspection, and basic maintenance actions. The full upstream OpenClaw Dreams UI remains available from that page when deeper diagnostics are needed.
+
+ClawX also includes a runtime abstraction layer. OpenClaw remains the default runtime and rollback path, while **Settings → Gateway → Runtime** can switch to an optional bundled `cc-connect` runtime. Packaged builds include both the cc-connect binary and the native OpenAI Codex CLI bundle in app resources; runtime startup does not depend on global installs, PATH binaries, or app-time downloads. cc-connect uses a ClawX-managed configuration directory under app user data instead of modifying `~/.cc-connect`, and GUI chat connects through cc-connect BridgePlatform with Codex as the project agent. ClawX mirrors each configured agent as its own cc-connect project so selected agents keep their OpenClaw workspace. Provider/model selections, cron tasks, and enabled skills are synchronized into the managed cc-connect/Codex runtime.
+
+In cc-connect mode, Codex provider sync supports OpenAI API key, OpenAI OAuth/Codex, Ollama, and Custom OpenAI-compatible providers that expose the Responses API. Custom provider headers are written as environment-variable references so secrets and session headers are not persisted in managed config files. Custom providers configured for Chat Completions are reported as unsupported before chat delivery because Codex accepts the Responses wire API for this path.
+
+cc-connect also owns messaging platform bridges. When cc-connect is the active runtime, channel status probes are routed through the runtime abstraction instead of the OpenClaw Gateway, configured channel accounts are mirrored into the cc-connect project that owns their bound agent, and channel saves/deletes restart the managed cc-connect runtime so platform changes take effect. The Developer Mode sidebar page shortcut opens cc-connect Web Admin, while the OpenClaw Dreams shortcut remains OpenClaw-only.
 
 ---
 
@@ -123,6 +129,7 @@ The Cron page now lets you configure external delivery directly in the task form
 Extend your AI agents with pre-built skills. The integrated Skills page is local-first: it scans managed/workspace skill directories, lets you enable or disable skills without depending on the Gateway, and can optionally expose an extension-provided marketplace in enterprise builds.
 ClawX also pre-bundles full document-processing skills (`pdf`, `xlsx`, `docx`, `pptx`), deploys them automatically to the managed skills directory (default `~/.openclaw/skills`) on startup, and enables them by default on first install. Additional bundled skills (`find-skills`, `self-improving-agent`, `tavily-search`) are also enabled by default; if required API keys are missing, OpenClaw will surface configuration errors in runtime.  
 The Skills page can display skills discovered from multiple OpenClaw sources (managed dir, workspace, and extra skill dirs), and now shows each skill's actual location so you can open the real folder directly. For bundled OpenClaw skills, community builds now ship and expose only `skill-creator`; non-allowlisted bundled skills are physically trimmed in both dev and packaged startup, and any stale `openclaw.json` entries left behind for those removed bundled skills are pruned.
+When cc-connect runtime is active, enabled local skills are mirrored into the managed Codex home under app user data so the bundled Codex agent can use the same skill set without reading global skill directories.
 
 Environment variables for bundled search skills:
 - `TAVILY_API_KEY` for `tavily-search` (OAuth may also be supported by upstream skill runtime)
@@ -189,7 +196,7 @@ The wizard preselects your system language when it is supported, and falls back 
 
 ### Proxy Settings
 
-ClawX includes built-in proxy settings for environments where Electron, the OpenClaw Gateway, or channels such as Telegram need to reach the internet through a local proxy client.
+ClawX includes built-in proxy settings for environments where Electron, the OpenClaw Gateway, the optional cc-connect/Codex runtime, or channels such as Telegram need to reach the internet through a local proxy client.
 
 Open **Settings → Gateway → Proxy** and configure:
 
@@ -210,6 +217,7 @@ Notes:
 - A bare `host:port` value is treated as HTTP.
 - If advanced proxy fields are left empty, ClawX falls back to `Proxy Server`.
 - Saving proxy settings reapplies Electron networking immediately and restarts the Gateway automatically.
+- In cc-connect runtime mode, Codex child processes inherit the same `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and bypass environment values.
 - ClawX also syncs the proxy to OpenClaw's Telegram channel config when Telegram is enabled.
 - Gateway restarts preserve an existing Telegram channel proxy if ClawX proxy is currently disabled.
 - To explicitly clear Telegram channel proxy from OpenClaw config, save proxy settings with proxy disabled.

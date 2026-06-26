@@ -26,6 +26,7 @@ const SUCCESS_HTML = `<!doctype html>
 export interface OpenAICodexOAuthCredentials {
   access: string;
   refresh: string;
+  idToken?: string;
   expires: number;
   accountId: string;
   email?: string;
@@ -219,7 +220,7 @@ function startLocalOAuthServer(state: string): Promise<OpenAICodexLocalServer | 
 async function exchangeAuthorizationCode(
   code: string,
   verifier: string,
-): Promise<{ access: string; refresh: string; expires: number }> {
+): Promise<{ access: string; refresh: string; idToken?: string; expires: number }> {
   const response = await proxyAwareFetch(TOKEN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -240,6 +241,7 @@ async function exchangeAuthorizationCode(
   const json = await response.json() as {
     access_token?: string;
     refresh_token?: string;
+    id_token?: string;
     expires_in?: number;
   };
   if (!json.access_token || !json.refresh_token || typeof json.expires_in !== 'number') {
@@ -249,6 +251,7 @@ async function exchangeAuthorizationCode(
   return {
     access: json.access_token,
     refresh: json.refresh_token,
+    idToken: typeof json.id_token === 'string' && json.id_token.trim() ? json.id_token.trim() : undefined,
     expires: Date.now() + json.expires_in * 1000,
   };
 }
@@ -306,6 +309,7 @@ export async function loginOpenAICodexOAuth(options: {
     return {
       access: token.access,
       refresh: token.refresh,
+      idToken: token.idToken,
       expires: token.expires,
       accountId,
       email: getEmailFromAccessToken(token.access),

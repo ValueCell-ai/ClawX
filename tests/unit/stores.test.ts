@@ -44,6 +44,7 @@ describe('Settings Store', () => {
       sidebarCollapsed: false,
       sidebarWidth: 280,
       devModeUnlocked: false,
+      runtimeKind: 'openclaw',
       gatewayAutoStart: true,
       gatewayPort: 18789,
       autoCheckUpdate: true,
@@ -93,6 +94,31 @@ describe('Settings Store', () => {
 
     expect(useSettingsStore.getState().devModeUnlocked).toBe(true);
     expect(hostApiMock.settings.set).toHaveBeenCalledWith('devModeUnlocked', true);
+  });
+
+  it('should reset cc-connect runtime when developer mode is disabled', () => {
+    useSettingsStore.setState({ devModeUnlocked: true, runtimeKind: 'cc-connect' });
+
+    const { setDevModeUnlocked } = useSettingsStore.getState();
+    setDevModeUnlocked(false);
+
+    expect(useSettingsStore.getState().devModeUnlocked).toBe(false);
+    expect(useSettingsStore.getState().runtimeKind).toBe('openclaw');
+    expect(hostApiMock.settings.set).toHaveBeenCalledWith('devModeUnlocked', false);
+    expect(hostApiMock.settings.set).toHaveBeenCalledWith('runtimeKind', 'openclaw');
+  });
+
+  it('should normalize persisted cc-connect runtime when developer mode is locked', async () => {
+    hostApiMock.settings.getAll.mockResolvedValueOnce({
+      devModeUnlocked: false,
+      runtimeKind: 'cc-connect',
+      language: 'en',
+    });
+
+    await useSettingsStore.getState().init();
+
+    expect(useSettingsStore.getState().runtimeKind).toBe('openclaw');
+    expect(hostApiMock.settings.set).toHaveBeenCalledWith('runtimeKind', 'openclaw');
   });
 
   it('should persist launch-at-startup setting through host api', () => {

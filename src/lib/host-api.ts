@@ -16,6 +16,8 @@ import type {
   OpenClawDoctorMode,
   OpenClawDoctorResult,
   ProviderAccount,
+  ProviderCodexOAuthLogoutPayload,
+  ProviderCodexOAuthPayload,
   ProviderConfig,
   ProviderOAuthRequestPayload,
   ProviderUpdateWithKeyPayload,
@@ -68,6 +70,7 @@ export type {
   SettingsResetResult,
   SettingsSnapshot,
   SkillConfigsResult,
+  SkillsRuntimeTargetResult,
   SkillsStatusResult,
   StagedFileResult,
   UsageHistoryEntry,
@@ -252,6 +255,15 @@ export const hostApi = {
     requestOAuth: (input: ProviderOAuthRequestPayload) => invokeHost('providers', 'requestOAuth', input),
     cancelOAuth: () => invokeHost('providers', 'cancelOAuth'),
     submitOAuth: (input: { code: string }) => invokeHost('providers', 'submitOAuth', input),
+    codexOAuthStatus: (input?: ProviderCodexOAuthPayload) => (
+      invokeHost('providers', 'codexOAuthStatus', input)
+    ),
+    importCodexOAuth: (input?: ProviderCodexOAuthPayload) => (
+      invokeHost('providers', 'importCodexOAuth', input)
+    ),
+    logoutCodexOAuth: (input?: ProviderCodexOAuthLogoutPayload) => (
+      invokeHost('providers', 'logoutCodexOAuth', input)
+    ),
   },
   files: {
     stagePaths: (input: { filePaths: string[] }) => invokeHost('files', 'stagePaths', input),
@@ -308,6 +320,7 @@ export const hostApi = {
   },
   skills: {
     local: () => invokeHost('skills', 'local'),
+    target: () => invokeHost('skills', 'target'),
     configs: () => invokeHost('skills', 'configs'),
     allConfigs: () => invokeHost('skills', 'allConfigs'),
     getConfig: (skillKey: string) => invokeHost('skills', 'getConfig', { skillKey }),

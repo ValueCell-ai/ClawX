@@ -20,6 +20,11 @@ function getAgentIdFromSessionKey(sessionKey: string): string {
   return agentId || 'main';
 }
 
+function getAgentIdForSessionKey(sessionKey: string, sessions: ChatSession[]): string {
+  const sessionAgentId = sessions.find((session) => session.key === sessionKey)?.agentId;
+  return sessionAgentId || getAgentIdFromSessionKey(sessionKey);
+}
+
 function toSessionLabel(text: string, maxLength = 50): string {
   const trimmed = text.trim();
   if (!trimmed) return '';
@@ -124,6 +129,7 @@ export function createSessionActions(
             key: String(s.key || ''),
             label: s.label ? String(s.label) : undefined,
             displayName: s.displayName ? String(s.displayName) : undefined,
+            agentId: s.agentId ? String(s.agentId) : undefined,
             derivedTitle: s.derivedTitle ? String(s.derivedTitle) : undefined,
             lastMessagePreview: s.lastMessagePreview ? String(s.lastMessagePreview) : undefined,
             thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
@@ -187,7 +193,7 @@ export function createSessionActions(
           set((state) => ({
             sessions: sessionsWithCurrent,
             currentSessionKey: nextSessionKey,
-            currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
+            currentAgentId: getAgentIdForSessionKey(nextSessionKey, sessionsWithCurrent),
             sessionLastActivity: {
               ...state.sessionLastActivity,
               ...discoveredActivity,
@@ -276,7 +282,7 @@ export function createSessionActions(
         && !sessionLabels[currentSessionKey];
       set((s) => ({
         currentSessionKey: key,
-        currentAgentId: getAgentIdFromSessionKey(key),
+        currentAgentId: getAgentIdForSessionKey(key, s.sessions),
         messages: [],
         streamingText: '',
         streamingMessage: null,
@@ -344,7 +350,7 @@ export function createSessionActions(
           lastUserMessageAt: null,
           pendingToolImages: [],
           currentSessionKey: next?.key ?? DEFAULT_SESSION_KEY,
-          currentAgentId: getAgentIdFromSessionKey(next?.key ?? DEFAULT_SESSION_KEY),
+          currentAgentId: getAgentIdForSessionKey(next?.key ?? DEFAULT_SESSION_KEY, remaining),
         }));
         if (next) {
           get().loadHistory();

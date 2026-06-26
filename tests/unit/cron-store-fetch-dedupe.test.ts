@@ -88,4 +88,26 @@ describe('cron store fetchJobs dedupe', () => {
 
     expect(useCronStore.getState().jobs.map((job) => job.id)).toEqual(['recurring-job', 'fresh-job']);
   });
+
+  it('does not invoke cron.run when the selected runtime marks it unsupported', async () => {
+    const { useGatewayStore } = await import('@/stores/gateway');
+    const { useCronStore } = await import('@/stores/cron');
+    useGatewayStore.setState({
+      status: {
+        state: 'running',
+        port: 18789,
+        operationCapabilities: {
+          'cron.run': {
+            capability: 'cron',
+            support: 'unsupported',
+            notes: 'manual cron execution is unavailable',
+          },
+        },
+      },
+    });
+
+    await expect(useCronStore.getState().triggerJob('job-1'))
+      .rejects.toThrow('Runtime operation cron.run is unavailable');
+    expect(hostApiFetchMock).not.toHaveBeenCalled();
+  });
 });

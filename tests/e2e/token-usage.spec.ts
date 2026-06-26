@@ -8,6 +8,8 @@ const ZERO_TOKEN_SESSION_ID = 'agent-session-zero-token';
 const NONZERO_TOKEN_SESSION_ID = 'agent-session-nonzero-token';
 const GATEWAY_INJECTED_SESSION_ID = 'agent-session-gateway-injected';
 const DELIVERY_MIRROR_SESSION_ID = 'agent-session-delivery-mirror';
+const CC_CONNECT_SESSION_ID = 'agent:research:desk';
+const CC_CONNECT_CODEX_SESSION_ID = '019ee57f-c0cb-7440-aa79-f3e07489b29f';
 
 async function seedTokenUsageTranscripts(homeDir: string): Promise<void> {
   const sessionDir = join(homeDir, '.openclaw', 'agents', TEST_AGENT_ID, 'sessions');
@@ -99,6 +101,83 @@ async function seedTokenUsageTranscripts(homeDir: string): Promise<void> {
   );
 }
 
+async function seedCcConnectTokenUsageStore(userDataDir: string): Promise<void> {
+  const sessionDir = join(userDataDir, 'runtimes', 'cc-connect', 'data', 'sessions');
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(
+    join(sessionDir, 'clawx-research_1234abcd.json'),
+    JSON.stringify({
+      sessions: {
+        s1: {
+          id: 's1',
+          history: [
+            {
+              role: 'assistant',
+              timestamp: new Date().toISOString(),
+              model: 'gpt-5.1-codex',
+              provider: 'openai',
+              usage: {
+                input_tokens: 31,
+                output_tokens: 11,
+                cache_write_tokens: 2,
+              },
+            },
+          ],
+        },
+      },
+      active_session: {
+        'clawx:research:desk': 's1',
+      },
+    }, null, 2),
+    'utf8',
+  );
+}
+
+async function seedCcConnectCodexTokenUsageTranscript(userDataDir: string): Promise<void> {
+  const sessionDir = join(userDataDir, 'runtimes', 'cc-connect', 'data', 'sessions');
+  const codexTranscriptDir = join(userDataDir, 'runtimes', 'cc-connect', 'codex-home', 'sessions', '2026', '06', '20');
+  await mkdir(sessionDir, { recursive: true });
+  await mkdir(codexTranscriptDir, { recursive: true });
+  await writeFile(
+    join(sessionDir, 'clawx-research_1234abcd.json'),
+    JSON.stringify({
+      sessions: {
+        s1: {
+          id: 's1',
+          agent_session_id: CC_CONNECT_CODEX_SESSION_ID,
+          history: [],
+        },
+      },
+      active_session: {
+        'clawx:research:desk': 's1',
+      },
+    }, null, 2),
+    'utf8',
+  );
+  await writeFile(
+    join(codexTranscriptDir, `rollout-2026-06-20T22-46-55-${CC_CONNECT_CODEX_SESSION_ID}.jsonl`),
+    [
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            last_token_usage: {
+              input_tokens: 51101,
+              cached_input_tokens: 7552,
+              output_tokens: 211,
+              total_tokens: 51312,
+            },
+          },
+        },
+      }),
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+}
+
 test.describe('ClawX token usage history', () => {
 
   async function validateUsageHistory(page: Page): Promise<void> {
@@ -139,6 +218,43 @@ test.describe('ClawX token usage history', () => {
     expect(nonzeroEntry?.agentId).toBe(TEST_AGENT_ID);
     expect(zeroEntry?.provider).toBe('kimi');
     expect(nonzeroEntry?.provider).toBe('kimi');
+  });
+
+  test('includes cc-connect managed session-store usage in IPC history', async ({ page, userDataDir }) => {
+    await seedCcConnectTokenUsageStore(userDataDir);
+    await completeSetup(page);
+
+    const usageHistory = await page.evaluate(async () => {
+      return window.electron.ipcRenderer.invoke('usage:recentTokenHistory', 20);
+    });
+
+    const ccConnectEntry = usageHistory.find((entry) => entry?.sessionId === CC_CONNECT_SESSION_ID);
+    expect(ccConnectEntry).toBeTruthy();
+    expect(ccConnectEntry?.agentId).toBe('research');
+    expect(ccConnectEntry?.provider).toBe('openai');
+    expect(ccConnectEntry?.model).toBe('gpt-5.1-codex');
+    expect(ccConnectEntry?.inputTokens).toBe(31);
+    expect(ccConnectEntry?.outputTokens).toBe(11);
+    expect(ccConnectEntry?.cacheWriteTokens).toBe(2);
+    expect(ccConnectEntry?.totalTokens).toBe(44);
+  });
+
+  test('includes cc-connect Codex token_count transcript usage in IPC history', async ({ page, userDataDir }) => {
+    await seedCcConnectCodexTokenUsageTranscript(userDataDir);
+    await completeSetup(page);
+
+    const usageHistory = await page.evaluate(async () => {
+      return window.electron.ipcRenderer.invoke('usage:recentTokenHistory', 20);
+    });
+
+    const ccConnectEntry = usageHistory.find((entry) => entry?.sessionId === CC_CONNECT_SESSION_ID);
+    expect(ccConnectEntry).toBeTruthy();
+    expect(ccConnectEntry?.agentId).toBe('research');
+    expect(ccConnectEntry?.provider).toBe('codex');
+    expect(ccConnectEntry?.inputTokens).toBe(51101);
+    expect(ccConnectEntry?.outputTokens).toBe(211);
+    expect(ccConnectEntry?.cacheReadTokens).toBe(7552);
+    expect(ccConnectEntry?.totalTokens).toBe(51312);
   });
 
   // TODO: This test needs a reliable way to inject mocked gateway status into

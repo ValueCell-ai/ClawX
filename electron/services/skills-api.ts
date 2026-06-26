@@ -1,7 +1,11 @@
 import type { GatewayManager } from '../gateway/manager';
+import type { RuntimeManager } from '../runtime/manager';
 import type { ClawHubService, ClawHubInstallParams, ClawHubSearchParams, ClawHubUninstallParams } from '../gateway/clawhub';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
+import { join } from 'node:path';
+import { getCcConnectCodexHomeDir } from '../runtime/cc-connect-paths';
 import { getAllSkillConfigs, getSkillConfig, updateSkillConfig, updateSkillConfigs } from '../utils/skill-config';
+import { getOpenClawSkillsDir } from '../utils/paths';
 import {
   collectQuickAccessSkills,
   filterEnabledQuickAccessSkills,
@@ -86,12 +90,39 @@ function getConfigUpdates(payload: unknown): NormalizedSkillConfigUpdate[] {
 export function createSkillsApi({
   clawHubService,
   gatewayManager,
+  runtimeManager,
 }: {
   clawHubService: ClawHubService;
   gatewayManager: GatewayManager;
+  runtimeManager?: RuntimeManager;
 }): CompleteHostServiceRegistry['skills'] {
+  const runtimeSupportsSkills = () => runtimeManager?.listCapabilities().skills === true;
   return {
     local: async () => ({ success: true, skills: await listLocalSkills() }),
+    target: async () => {
+      const sourceDir = getOpenClawSkillsDir();
+      const activeKind = await runtimeManager?.getActiveKind();
+      if (activeKind === 'cc-connect') {
+        const runtimeDir = join(getCcConnectCodexHomeDir(), 'skills');
+        return {
+          success: true,
+          runtimeKind: 'cc-connect',
+          sourceDir,
+          openDir: runtimeDir,
+          runtimeDir,
+          manifestPath: join(runtimeDir, 'manifest.json'),
+          mirrorMode: 'runtime-mirror',
+        };
+      }
+      return {
+        success: true,
+        runtimeKind: 'openclaw',
+        sourceDir,
+        openDir: sourceDir,
+        runtimeDir: sourceDir,
+        mirrorMode: 'source',
+      };
+    },
     configs: async () => getAllSkillConfigs(),
     allConfigs: async () => getAllSkillConfigs(),
     getConfig: async (payload) => {
@@ -103,8 +134,14 @@ export function createSkillsApi({
       return updateSkillConfig(skillKey, updates);
     },
     updateConfigs: async (payload) => updateSkillConfigs(getConfigUpdates(payload)),
-    status: async () => gatewayManager.rpc('skills.status'),
-    update: async (payload) => gatewayManager.rpc('skills.update', isRecord(payload) ? payload : {}),
+    status: async () => {
+      if (runtimeSupportsSkills()) return await runtimeManager!.rpc('skills.status');
+      return gatewayManager.rpc('skills.status');
+    },
+    update: async (payload) => {
+      if (runtimeSupportsSkills()) return await runtimeManager!.rpc('skills.update', isRecord(payload) ? payload : {});
+      return gatewayManager.rpc('skills.update', isRecord(payload) ? payload : {});
+    },
     quickAccess: async (payload) => {
       const body = isRecord(payload) ? payload as QuickAccessPayload : {};
       const [scannedSkills, configs] = await Promise.all([
@@ -114,7 +151,14 @@ export function createSkillsApi({
         getAllSkillConfigs(),
       ]);
       let runtimeSkills: QuickAccessRuntimeSkillStatus[] | undefined;
-      if (gatewayManager.getStatus().state === 'running') {
+      if (runtimeSupportsSkills()) {
+        try {
+          const runtimeStatus = await runtimeManager!.rpc<{ skills?: QuickAccessRuntimeSkillStatus[] }>('skills.status');
+          runtimeSkills = runtimeStatus.skills || [];
+        } catch {
+          runtimeSkills = undefined;
+        }
+      } else if (gatewayManager.getStatus().state === 'running') {
         try {
           const runtimeStatus = await gatewayManager.rpc<{ skills?: QuickAccessRuntimeSkillStatus[] }>('skills.status');
           runtimeSkills = runtimeStatus.skills || [];

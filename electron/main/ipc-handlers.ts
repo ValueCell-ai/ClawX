@@ -8,6 +8,7 @@ import { homedir } from 'node:os';
 import { join, extname, basename, resolve, sep, relative } from 'node:path';
 import { syncMacTrafficLightPosition } from './traffic-light-layout';
 import { GatewayManager } from '../gateway/manager';
+import { RuntimeManager } from '../runtime/manager';
 import { ClawHubService } from '../gateway/clawhub';
 import {
   type ProviderConfig,
@@ -30,6 +31,7 @@ import { browserOAuthManager } from '../utils/browser-oauth';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
 import { getRecentTokenUsageHistory } from '../utils/token-usage';
+import { getCcConnectMediaDir, getOpenClawMediaDir } from '../utils/runtime-media-paths';
 import { getProviderService } from '../services/providers/provider-service';
 import {
   getOpenClawProviderKey,
@@ -80,6 +82,7 @@ const gatewayRpcBackpressure = new GatewayRpcBackpressure();
  */
 export function registerIpcHandlers(
   gatewayManager: GatewayManager,
+  runtimeManager: RuntimeManager,
   clawHubService: ClawHubService,
   mainWindow: BrowserWindow,
   hostApiRegistry: HostApiRegistry,
@@ -88,10 +91,10 @@ export function registerIpcHandlers(
   registerUnifiedRequestHandlers(gatewayManager);
 
   // Typed host invoke handlers (new renderer facade; legacy channels remain available)
-  registerTypedHostHandlers(gatewayManager, clawHubService, mainWindow, hostApiRegistry);
+  registerTypedHostHandlers(gatewayManager, runtimeManager, clawHubService, mainWindow, hostApiRegistry);
 
   // Gateway handlers
-  registerGatewayHandlers(gatewayManager);
+  registerGatewayHandlers(runtimeManager);
 
   // OpenClaw handlers
   registerOpenClawHandlers();
@@ -129,30 +132,31 @@ export function registerIpcHandlers(
 
 function registerTypedHostHandlers(
   gatewayManager: GatewayManager,
+  runtimeManager: RuntimeManager,
   clawHubService: ClawHubService,
   mainWindow: BrowserWindow,
   hostApiRegistry: HostApiRegistry,
 ): void {
   hostApiRegistry.registerCoreServices({
-    app: createAppApi(),
+    app: createAppApi(runtimeManager),
     openclaw: createOpenClawApi(),
     shell: createShellApi(),
     dialog: createDialogApi(),
     window: createWindowApi(mainWindow),
     updates: createUpdatesApi(appUpdater),
     uv: createUvApi(),
-    settings: createSettingsApi(gatewayManager),
-    gateway: createGatewayApi(gatewayManager, gatewayRpcBackpressure),
+    settings: createSettingsApi(gatewayManager, runtimeManager),
+    gateway: createGatewayApi(runtimeManager, gatewayRpcBackpressure, gatewayManager),
     logs: createLogsApi(),
-    channels: createChannelsApi({ gatewayManager, mainWindow }),
+    channels: createChannelsApi({ gatewayManager, runtimeManager, mainWindow }),
     agents: createAgentsApi({ gatewayManager }),
-    providers: createProvidersApi({ gatewayManager, mainWindow }),
-    files: createFilesApi(),
-    media: createMediaApi(),
-    sessions: createSessionsApi(),
-    chat: createChatApi({ gatewayManager }),
-    cron: createCronApi({ gatewayManager }),
-    skills: createSkillsApi({ clawHubService, gatewayManager }),
+    providers: createProvidersApi({ gatewayManager, runtimeManager, mainWindow }),
+    files: createFilesApi({ runtimeManager }),
+    media: createMediaApi({ runtimeManager }),
+    sessions: createSessionsApi(runtimeManager),
+    chat: createChatApi({ gatewayManager, runtimeManager }),
+    cron: createCronApi({ gatewayManager, runtimeManager }),
+    skills: createSkillsApi({ clawHubService, gatewayManager, runtimeManager }),
     usage: createUsageApi(),
   });
   registerHostInvokeHandler(hostApiRegistry);
@@ -686,10 +690,10 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
 /**
  * Gateway-related IPC handlers
  */
-function registerGatewayHandlers(gatewayManager: GatewayManager): void {
+function registerGatewayHandlers(runtimeManager: RuntimeManager): void {
   // Get Gateway status
   ipcMain.handle('gateway:status', () => {
-    return gatewayManager.getStatus();
+    return runtimeManager.getStatus();
   });
 
   // Gateway RPC call
@@ -699,7 +703,7 @@ function registerGatewayHandlers(gatewayManager: GatewayManager): void {
         method,
         params,
         timeoutMs,
-        (rpcMethod, rpcParams, rpcTimeoutMs) => gatewayManager.rpc(rpcMethod, rpcParams, rpcTimeoutMs),
+        (rpcMethod, rpcParams, rpcTimeoutMs) => runtimeManager.rpc(rpcMethod, rpcParams, rpcTimeoutMs),
       );
       return { success: true, result };
     } catch (error) {
@@ -1286,7 +1290,7 @@ function getMimeType(ext: string): string {
   return EXT_MIME_MAP[ext.toLowerCase()] || 'application/octet-stream';
 }
 
-const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
+const OPENCLAW_OUTBOUND_DIR = join(getOpenClawMediaDir(), 'outbound');
 
 // ── File preview (sandboxed) ──────────────────────────────────────────
 //
@@ -1355,14 +1359,14 @@ function isPathInside(child: string, parent: string): boolean {
  */
 function getFilePreviewWriteRoots(): string[] {
   const roots: string[] = [];
-  const openclawDir = join(homedir(), '.openclaw');
-  roots.push(resolve(openclawDir));
+  roots.push(resolve(join(homedir(), '.openclaw')));
+  roots.push(resolve(getCcConnectMediaDir()));
   try {
     roots.push(resolve(app.getPath('userData')));
   } catch {
     // ignore — userData should always exist
   }
-  roots.push(resolve(OUTBOUND_DIR));
+  roots.push(resolve(OPENCLAW_OUTBOUND_DIR));
   return roots;
 }
 

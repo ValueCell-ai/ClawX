@@ -39,6 +39,21 @@ const branchStep: TaskStep = {
 };
 
 describe('ExecutionGraphCard branch badge', () => {
+  it('renders the active empty-run thinking state as a visible graph node', () => {
+    render(
+      <ExecutionGraphCard
+        agentLabel="main"
+        steps={[]}
+        active
+        expanded
+      />,
+    );
+
+    expect(screen.getByTestId('chat-execution-step-thinking-trailing')).toBeInTheDocument();
+    const icon = screen.getByTestId('chat-execution-step-thinking-trailing-icon');
+    expect(icon.querySelector('svg')).not.toBeNull();
+  });
+
   it('renders the localized branch label without intra-badge wrapping', () => {
     render(
       <ExecutionGraphCard

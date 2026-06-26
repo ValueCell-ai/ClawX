@@ -2,7 +2,7 @@
  * Providers Settings Component
  * Manage AI provider configurations and API keys
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Plus,
   Trash2,
@@ -17,6 +17,10 @@ import {
   Copy,
   XCircle,
   ChevronDown,
+  RefreshCw,
+  Import,
+  LogOut,
+  FolderOpen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -54,6 +58,7 @@ import { useSettingsStore } from '@/stores/settings';
 import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
 import type { OAuthCodeEvent, OAuthErrorEvent, OAuthSuccessEvent } from '@shared/host-events/contract';
+import type { ProviderCodexOAuthStatusResult } from '@shared/host-api/contract';
 
 const inputClasses = 'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const labelClasses = 'text-sm text-foreground/80 font-bold';
@@ -129,6 +134,10 @@ function shouldShowUserAgentField(account: ProviderAccount): boolean {
 
 function shouldShowUserAgentFieldForNewProvider(providerType: ProviderType | null): boolean {
   return providerType === 'custom';
+}
+
+function shouldShowCodexOAuthRuntimePanel(account: ProviderAccount): boolean {
+  return account.vendorId === 'openai' && account.authMode === 'oauth_browser';
 }
 
 function getAuthModeLabel(
@@ -793,6 +802,12 @@ function ProviderCard({
               </div>
             )}
           </div>
+          {shouldShowCodexOAuthRuntimePanel(account) && (
+            <CodexOAuthRuntimePanel
+              account={account}
+              currentSectionLabelClasses={currentSectionLabelClasses}
+            />
+          )}
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <div className="space-y-0.5">
@@ -907,6 +922,380 @@ function ProviderCard({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+interface CodexOAuthRuntimePanelProps {
+  account: ProviderAccount;
+  currentSectionLabelClasses: string;
+}
+
+function CodexOAuthRuntimePanel({
+  account,
+  currentSectionLabelClasses,
+}: CodexOAuthRuntimePanelProps) {
+  const { t } = useTranslation('settings');
+  const [status, setStatus] = useState<ProviderCodexOAuthStatusResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [action, setAction] = useState<'import' | 'logout' | 'signin' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [manualOAuth, setManualOAuth] = useState<{
+    authorizationUrl: string;
+    message?: string;
+  } | null>(null);
+  const [manualCodeInput, setManualCodeInput] = useState('');
+
+  const refreshStatus = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await hostApi.providers.codexOAuthStatus({ accountId: account.id });
+      if (!result.success) {
+        throw new Error(result.error || t('aiProviders.codexOAuth.statusFailed'));
+      }
+      setStatus(result);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [account.id, t]);
+
+  useEffect(() => {
+    void refreshStatus();
+  }, [refreshStatus]);
+
+  useEffect(() => {
+    const handleCode = (payload: OAuthCodeEvent) => {
+      if (payload.provider !== 'openai') return;
+      if ('mode' in payload && payload.mode === 'manual') {
+        setManualOAuth({
+          authorizationUrl: payload.authorizationUrl,
+          message: payload.message,
+        });
+        setError(null);
+      }
+    };
+    const handleSuccess = async (payload: OAuthSuccessEvent) => {
+      if (payload.provider !== 'openai' || payload.accountId !== account.id) return;
+      setAction(null);
+      setManualOAuth(null);
+      setManualCodeInput('');
+      setError(null);
+      await useProviderStore.getState().refreshProviderSnapshot();
+      await refreshStatus();
+      toast.success(t('aiProviders.codexOAuth.signInSuccess'));
+    };
+    const handleError = (payload: OAuthErrorEvent) => {
+      setAction(null);
+      setManualOAuth(null);
+      setError(payload.message);
+    };
+
+    const offCode = hostEvents.onOAuthCode(handleCode);
+    const offSuccess = hostEvents.onOAuthSuccess(handleSuccess);
+    const offError = hostEvents.onOAuthError(handleError);
+
+    return () => {
+      offCode();
+      offSuccess();
+      offError();
+    };
+  }, [account.id, refreshStatus, t]);
+
+  const runImport = async () => {
+    setAction('import');
+    setError(null);
+    try {
+      const result = await hostApi.providers.importCodexOAuth({ accountId: account.id });
+      if (!result.success) {
+        throw new Error(result.error || t('aiProviders.codexOAuth.importFailed'));
+      }
+      setStatus(result);
+      toast.success(t('aiProviders.codexOAuth.imported'));
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setAction(null);
+    }
+  };
+
+  const runLogout = async () => {
+    setAction('logout');
+    setError(null);
+    try {
+      const result = await hostApi.providers.logoutCodexOAuth({ accountId: account.id });
+      if (!result.success) {
+        throw new Error(result.error || t('aiProviders.codexOAuth.logoutFailed'));
+      }
+      setStatus(result);
+      await useProviderStore.getState().refreshProviderSnapshot();
+      toast.success(t('aiProviders.codexOAuth.loggedOut'));
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setAction(null);
+    }
+  };
+
+  const startSignIn = async () => {
+    setAction('signin');
+    setManualOAuth(null);
+    setManualCodeInput('');
+    setError(null);
+    try {
+      const result = await hostApi.providers.requestOAuth({
+        provider: 'openai',
+        accountId: account.id,
+        label: account.label,
+      });
+      if (!result.success) {
+        throw new Error(result.error || t('aiProviders.codexOAuth.signInFailed'));
+      }
+    } catch (err) {
+      setAction(null);
+      setError(String(err));
+    }
+  };
+
+  const cancelSignIn = async () => {
+    setAction(null);
+    setManualOAuth(null);
+    setManualCodeInput('');
+    setError(null);
+    await hostApi.providers.cancelOAuth();
+  };
+
+  const submitManualCode = async () => {
+    const value = manualCodeInput.trim();
+    if (!value) return;
+    try {
+      const result = await hostApi.providers.submitOAuth({ code: value });
+      if (!result.success) {
+        throw new Error(result.error || t('aiProviders.codexOAuth.signInFailed'));
+      }
+      setError(null);
+    } catch (err) {
+      setError(String(err));
+    }
+  };
+
+  const copyAuthPath = async () => {
+    const path = status?.authPath;
+    if (!path) return;
+    await navigator.clipboard.writeText(path);
+    toast.success(t('aiProviders.codexOAuth.pathCopied'));
+  };
+
+  const openManagedFolder = async () => {
+    const path = status?.managedCodexHome;
+    if (!path) return;
+    await hostApi.shell.openPath(path);
+  };
+
+  const managedComplete = status?.managed?.complete === true;
+  const userComplete = status?.user?.complete === true;
+  const providerSecret = status?.provider?.hasOAuthSecret === true;
+  const busy = loading || action !== null;
+
+  return (
+    <div
+      data-testid={`provider-codex-oauth-panel-${account.id}`}
+      className="space-y-3 rounded-xl border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.04] p-3"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className={currentSectionLabelClasses}>{t('aiProviders.codexOAuth.title')}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {t('aiProviders.codexOAuth.description')}
+          </p>
+        </div>
+        <Button
+          data-testid={`provider-codex-oauth-refresh-${account.id}`}
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={refreshStatus}
+          disabled={busy}
+          className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
+          title={t('aiProviders.codexOAuth.refresh')}
+        >
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+        </Button>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-3">
+        <CodexOAuthStatusPill
+          testId={`provider-codex-oauth-managed-${account.id}`}
+          label={t('aiProviders.codexOAuth.managedAuth')}
+          ok={managedComplete}
+          statusLabel={managedComplete ? t('aiProviders.codexOAuth.ok') : t('aiProviders.codexOAuth.missing')}
+        />
+        <CodexOAuthStatusPill
+          testId={`provider-codex-oauth-secret-${account.id}`}
+          label={t('aiProviders.codexOAuth.providerSecret')}
+          ok={providerSecret}
+          statusLabel={providerSecret ? t('aiProviders.codexOAuth.ok') : t('aiProviders.codexOAuth.missing')}
+        />
+        <CodexOAuthStatusPill
+          testId={`provider-codex-oauth-user-${account.id}`}
+          label={t('aiProviders.codexOAuth.localAuth')}
+          ok={userComplete}
+          statusLabel={userComplete ? t('aiProviders.codexOAuth.ok') : t('aiProviders.codexOAuth.missing')}
+        />
+      </div>
+
+      {status?.managedCodexHome && (
+        <div className="flex items-center gap-2 rounded-lg bg-black/5 dark:bg-white/5 px-3 py-2 text-xs text-muted-foreground">
+          <span className="truncate font-mono" title={status.authPath || status.managedCodexHome}>
+            {status.authPath || status.managedCodexHome}
+          </span>
+          <Button
+            data-testid={`provider-codex-oauth-copy-path-${account.id}`}
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={copyAuthPath}
+            disabled={!status.authPath}
+            className="h-7 w-7 shrink-0 rounded-full"
+            title={t('aiProviders.codexOAuth.copyPath')}
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            data-testid={`provider-codex-oauth-open-folder-${account.id}`}
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={openManagedFolder}
+            className="h-7 w-7 shrink-0 rounded-full"
+            title={t('aiProviders.codexOAuth.openFolder')}
+          >
+            <FolderOpen className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          data-testid={`provider-codex-oauth-signin-${account.id}`}
+          type="button"
+          variant="outline"
+          onClick={startSignIn}
+          disabled={busy}
+          className="h-9 rounded-full border-black/10 dark:border-white/10 bg-transparent px-3 text-meta"
+        >
+          {action === 'signin' ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Key className="h-4 w-4 mr-2" />}
+          {t('aiProviders.codexOAuth.signInAgain')}
+        </Button>
+        <Button
+          data-testid={`provider-codex-oauth-import-${account.id}`}
+          type="button"
+          variant="outline"
+          onClick={runImport}
+          disabled={busy}
+          className="h-9 rounded-full border-black/10 dark:border-white/10 bg-transparent px-3 text-meta"
+        >
+          {action === 'import' ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Import className="h-4 w-4 mr-2" />}
+          {t('aiProviders.codexOAuth.importLocal')}
+        </Button>
+        <Button
+          data-testid={`provider-codex-oauth-logout-${account.id}`}
+          type="button"
+          variant="outline"
+          onClick={runLogout}
+          disabled={busy || (!managedComplete && !providerSecret)}
+          className="h-9 rounded-full border-black/10 dark:border-white/10 bg-transparent px-3 text-meta text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+        >
+          {action === 'logout' ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <LogOut className="h-4 w-4 mr-2" />}
+          {t('aiProviders.codexOAuth.logout')}
+        </Button>
+      </div>
+
+      {manualOAuth && (
+        <div
+          data-testid={`provider-codex-oauth-manual-${account.id}`}
+          className="space-y-2 rounded-lg border border-blue-500/20 bg-blue-500/10 p-3"
+        >
+          <p className="text-xs text-muted-foreground">
+            {manualOAuth.message || t('aiProviders.codexOAuth.manualPrompt')}
+          </p>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => hostApi.shell.openExternal(manualOAuth.authorizationUrl)}
+            className="h-9 w-full rounded-full text-meta"
+          >
+            <ExternalLink className="h-4 w-4 mr-2" />
+            {t('aiProviders.codexOAuth.openAuthorization')}
+          </Button>
+          <Input
+            data-testid={`provider-codex-oauth-manual-code-${account.id}`}
+            value={manualCodeInput}
+            onChange={(event) => setManualCodeInput(event.target.value)}
+            placeholder={t('aiProviders.codexOAuth.manualCodePlaceholder')}
+            className={inputClasses}
+          />
+          <div className="flex gap-2">
+            <Button
+              data-testid={`provider-codex-oauth-submit-code-${account.id}`}
+              type="button"
+              onClick={submitManualCode}
+              disabled={!manualCodeInput.trim()}
+              className="h-9 flex-1 rounded-full bg-brand text-white hover:bg-brand-hover text-meta"
+            >
+              {t('aiProviders.codexOAuth.submitCode')}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={cancelSignIn}
+              className="h-9 rounded-full text-meta"
+            >
+              {t('aiProviders.oauth.cancel')}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <p
+          data-testid={`provider-codex-oauth-error-${account.id}`}
+          className="text-xs text-red-500 flex items-center gap-1"
+        >
+          <XCircle className="h-3 w-3 shrink-0" />
+          <span>{error}</span>
+        </p>
+      )}
+    </div>
+  );
+}
+
+function CodexOAuthStatusPill({
+  testId,
+  label,
+  ok,
+  statusLabel,
+}: {
+  testId: string;
+  label: string;
+  ok: boolean;
+  statusLabel: string;
+}) {
+  return (
+    <div
+      data-testid={testId}
+      className="flex items-center justify-between gap-2 rounded-lg bg-black/5 dark:bg-white/5 px-3 py-2 text-xs"
+    >
+      <span className="truncate text-muted-foreground">{label}</span>
+      <span className={cn(
+        'inline-flex items-center gap-1 font-medium',
+        ok ? 'text-green-700 dark:text-green-400' : 'text-yellow-700 dark:text-yellow-400',
+      )}>
+        <span className="h-1.5 w-1.5 rounded-full bg-current" />
+        {statusLabel}
+      </span>
     </div>
   );
 }

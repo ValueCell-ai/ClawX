@@ -6,6 +6,7 @@
 import { randomBytes } from 'crypto';
 import { app } from 'electron';
 import { resolveSupportedLanguage } from '@shared/language';
+import type { RuntimeKind } from '@shared/types/gateway';
 
 // Lazy-load electron-store (ESM module)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -33,6 +34,7 @@ export interface AppSettings {
 
   // Gateway
   gatewayAutoStart: boolean;
+  runtimeKind: RuntimeKind;
   gatewayPort: number;
   gatewayToken: string;
   proxyEnabled: boolean;
@@ -84,6 +86,7 @@ function createDefaultSettings(): AppSettings {
 
     // Gateway
     gatewayAutoStart: true,
+    runtimeKind: 'openclaw',
     gatewayPort: 18789,
     gatewayToken: generateToken(),
     proxyEnabled: false,

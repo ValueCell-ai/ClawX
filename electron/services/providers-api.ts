@@ -2,6 +2,7 @@ import type { BrowserWindow } from 'electron';
 import type { HostApiContract } from '@shared/host-api/contract';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { GatewayManager } from '../gateway/manager';
+import type { RuntimeManager } from '../runtime/manager';
 import type { ProviderConfig } from '../utils/secure-storage';
 import { browserOAuthManager, type BrowserOAuthProviderType } from '../utils/browser-oauth';
 import { deviceOAuthManager, type OAuthProviderType } from '../utils/device-oauth';
@@ -22,9 +23,15 @@ import {
 import { validateApiKeyWithProvider } from './providers/provider-validation';
 import type { ProviderAccount } from '../shared/providers/types';
 import { isRecord } from './payload-utils';
+import {
+  getCcConnectCodexOAuthStatus,
+  importUserCodexOAuthToManagedHome,
+  logoutCcConnectCodexOAuth,
+} from '../runtime/cc-connect-provider-profile';
 
 type ProvidersApiContext = {
   gatewayManager: GatewayManager;
+  runtimeManager?: RuntimeManager;
   mainWindow: BrowserWindow;
 };
 
@@ -150,6 +157,95 @@ function getSavePayload(payload: unknown): { config: ProviderConfig; apiKey?: st
   };
 }
 
+async function syncActiveRuntimeProviderProfile(
+  ctx: Pick<ProvidersApiContext, 'runtimeManager'>,
+  payload: { providerId?: string; reason: string },
+): Promise<boolean> {
+  const syncProviderProfile = ctx.runtimeManager?.getActiveProvider().syncProviderProfile;
+  if (!syncProviderProfile) return false;
+  await syncProviderProfile(payload);
+  return true;
+}
+
+async function syncProviderApiKeyToActiveRuntime(
+  providerType: string,
+  providerId: string,
+  apiKey: string,
+  ctx: Pick<ProvidersApiContext, 'runtimeManager'>,
+): Promise<void> {
+  if (await syncActiveRuntimeProviderProfile(ctx, { providerId, reason: 'api-key' })) {
+    return;
+  }
+  await syncProviderApiKeyToRuntime(providerType, providerId, apiKey);
+}
+
+async function syncSavedProviderToActiveRuntime(
+  config: ProviderConfig,
+  apiKey: string | undefined,
+  ctx: Pick<ProvidersApiContext, 'gatewayManager' | 'runtimeManager'>,
+): Promise<void> {
+  if (await syncActiveRuntimeProviderProfile(ctx, { providerId: config.id, reason: 'save' })) {
+    return;
+  }
+  await syncSavedProviderToRuntime(config, apiKey, ctx.gatewayManager);
+}
+
+async function syncUpdatedProviderToActiveRuntime(
+  config: ProviderConfig,
+  apiKey: string | undefined,
+  ctx: Pick<ProvidersApiContext, 'gatewayManager' | 'runtimeManager'>,
+): Promise<void> {
+  if (await syncActiveRuntimeProviderProfile(ctx, { providerId: config.id, reason: 'update' })) {
+    return;
+  }
+  await syncUpdatedProviderToRuntime(config, apiKey, ctx.gatewayManager);
+}
+
+async function syncDeletedProviderToActiveRuntime(
+  provider: ProviderConfig | null,
+  providerId: string,
+  ctx: Pick<ProvidersApiContext, 'gatewayManager' | 'runtimeManager'>,
+  runtimeProviderKey?: string,
+): Promise<void> {
+  if (await syncActiveRuntimeProviderProfile(ctx, { providerId, reason: 'delete' })) {
+    return;
+  }
+  await syncDeletedProviderToRuntime(provider, providerId, ctx.gatewayManager, runtimeProviderKey);
+}
+
+async function syncDeletedProviderApiKeyToActiveRuntime(
+  provider: ProviderConfig | null,
+  providerId: string,
+  ctx: Pick<ProvidersApiContext, 'runtimeManager'>,
+  runtimeProviderKey?: string,
+): Promise<void> {
+  if (await syncActiveRuntimeProviderProfile(ctx, { providerId, reason: 'delete-api-key' })) {
+    return;
+  }
+  await syncDeletedProviderApiKeyToRuntime(provider, providerId, runtimeProviderKey);
+}
+
+async function syncDefaultProviderToActiveRuntime(
+  providerId: string,
+  ctx: Pick<ProvidersApiContext, 'gatewayManager' | 'runtimeManager'>,
+): Promise<void> {
+  if (await syncActiveRuntimeProviderProfile(ctx, { providerId, reason: 'set-default' })) {
+    return;
+  }
+  await syncDefaultProviderToRuntime(providerId, ctx.gatewayManager);
+}
+
+async function removeProviderFromActiveRuntime(
+  providerKey: string,
+  ctx: Pick<ProvidersApiContext, 'runtimeManager'>,
+  providerId: string,
+): Promise<void> {
+  if (await syncActiveRuntimeProviderProfile(ctx, { providerId, reason: 'remove-provider' })) {
+    return;
+  }
+  await removeProviderFromOpenClaw(providerKey);
+}
+
 async function validateKey(payload: ProviderPayload<'validateKey'>): Promise<{ valid: boolean; error?: string }> {
   try {
     const body = getPayloadRecord(payload, 'validateKey');
@@ -189,7 +285,7 @@ async function validateKey(payload: ProviderPayload<'validateKey'>): Promise<{ v
   }
 }
 
-async function saveProvider(payload: ProviderPayload<'save'>, gatewayManager?: GatewayManager) {
+async function saveProvider(payload: ProviderPayload<'save'>, ctx: ProvidersApiContext) {
   const providerService = getProviderService();
   const { config, apiKey } = getSavePayload(payload);
   try {
@@ -198,44 +294,44 @@ async function saveProvider(payload: ProviderPayload<'save'>, gatewayManager?: G
       const trimmedKey = apiKey.trim();
       if (trimmedKey) {
         await providerService._setProviderApiKeyInternal(config.id, trimmedKey);
-        await syncProviderApiKeyToRuntime(config.type, config.id, trimmedKey);
+        await syncProviderApiKeyToActiveRuntime(config.type, config.id, trimmedKey, ctx);
       }
     }
-    await syncSavedProviderToRuntime(config, apiKey, gatewayManager);
+    await syncSavedProviderToActiveRuntime(config, apiKey, ctx);
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
   }
 }
 
-async function deleteProvider(payload: ProviderPayload<'delete'>, gatewayManager?: GatewayManager) {
+async function deleteProvider(payload: ProviderPayload<'delete'>, ctx: ProvidersApiContext) {
   const providerService = getProviderService();
   const providerId = getProviderId(payload, 'delete');
   try {
     const existing = await providerService._getProviderInternal(providerId);
     await providerService._deleteProviderInternal(providerId);
-    await syncDeletedProviderToRuntime(existing, providerId, gatewayManager);
+    await syncDeletedProviderToActiveRuntime(existing, providerId, ctx);
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
   }
 }
 
-async function setProviderApiKey(payload: ProviderPayload<'setApiKey'>) {
+async function setProviderApiKey(payload: ProviderPayload<'setApiKey'>, ctx: ProvidersApiContext) {
   const providerService = getProviderService();
   const { providerId, apiKey } = getApiKeyPayload(payload, 'setApiKey');
   try {
     await providerService._setProviderApiKeyInternal(providerId, apiKey);
     const provider = await providerService._getProviderInternal(providerId);
     const providerType = provider?.type || providerId;
-    await syncProviderApiKeyToRuntime(providerType, providerId, apiKey);
+    await syncProviderApiKeyToActiveRuntime(providerType, providerId, apiKey, ctx);
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
   }
 }
 
-async function updateProviderWithKey(payload: ProviderPayload<'updateWithKey'>, gatewayManager?: GatewayManager) {
+async function updateProviderWithKey(payload: ProviderPayload<'updateWithKey'>, ctx: ProvidersApiContext) {
   const providerService = getProviderService();
   const { providerId, updates, apiKey } = getProviderUpdatePayload(payload);
   const existing = await providerService._getProviderInternal(providerId);
@@ -259,24 +355,26 @@ async function updateProviderWithKey(payload: ProviderPayload<'updateWithKey'>, 
       const trimmedKey = apiKey.trim();
       if (trimmedKey) {
         await providerService._setProviderApiKeyInternal(providerId, trimmedKey);
-        await syncProviderApiKeyToRuntime(nextConfig.type, providerId, trimmedKey);
+        await syncProviderApiKeyToActiveRuntime(nextConfig.type, providerId, trimmedKey, ctx);
       } else {
         await providerService._deleteProviderApiKeyInternal(providerId);
-        await removeProviderFromOpenClaw(ock);
+        await removeProviderFromActiveRuntime(ock, ctx, providerId);
       }
     }
 
-    await syncUpdatedProviderToRuntime(nextConfig, apiKey, gatewayManager);
+    await syncUpdatedProviderToActiveRuntime(nextConfig, apiKey, ctx);
     return { success: true };
   } catch (error) {
     try {
       await providerService._saveProviderInternal(existing);
       if (previousKey) {
         await providerService._setProviderApiKeyInternal(providerId, previousKey);
-        await saveProviderKeyToOpenClaw(previousOck, previousKey);
+        if (!await syncActiveRuntimeProviderProfile(ctx, { providerId, reason: 'rollback' })) {
+          await saveProviderKeyToOpenClaw(previousOck, previousKey);
+        }
       } else {
         await providerService._deleteProviderApiKeyInternal(providerId);
-        await removeProviderFromOpenClaw(previousOck);
+        await removeProviderFromActiveRuntime(previousOck, ctx, providerId);
       }
     } catch (rollbackError) {
       logger.warn('Failed to rollback provider updateWithKey:', rollbackError);
@@ -285,32 +383,32 @@ async function updateProviderWithKey(payload: ProviderPayload<'updateWithKey'>, 
   }
 }
 
-async function deleteProviderApiKey(payload: ProviderPayload<'deleteApiKey'>) {
+async function deleteProviderApiKey(payload: ProviderPayload<'deleteApiKey'>, ctx: ProvidersApiContext) {
   const providerService = getProviderService();
   const providerId = getProviderId(payload, 'deleteApiKey');
   try {
     await providerService._deleteProviderApiKeyInternal(providerId);
     const provider = await providerService._getProviderInternal(providerId);
-    await syncDeletedProviderApiKeyToRuntime(provider, providerId);
+    await syncDeletedProviderApiKeyToActiveRuntime(provider, providerId, ctx);
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
   }
 }
 
-async function setDefaultProvider(payload: ProviderPayload<'setDefault'>, gatewayManager?: GatewayManager) {
+async function setDefaultProvider(payload: ProviderPayload<'setDefault'>, ctx: ProvidersApiContext) {
   const providerService = getProviderService();
   const providerId = getProviderId(payload, 'setDefault');
   try {
     await providerService._setDefaultProviderInternal(providerId);
-    await syncDefaultProviderToRuntime(providerId, gatewayManager);
+    await syncDefaultProviderToActiveRuntime(providerId, ctx);
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
   }
 }
 
-async function createAccount(payload: ProviderPayload<'createAccount'>, gatewayManager?: GatewayManager) {
+async function createAccount(payload: ProviderPayload<'createAccount'>, ctx: ProvidersApiContext) {
   const providerService = getProviderService();
   const body = getPayloadRecord(payload, 'createAccount');
   if (!isRecord(body.account)) {
@@ -319,14 +417,14 @@ async function createAccount(payload: ProviderPayload<'createAccount'>, gatewayM
   const apiKey = typeof body.apiKey === 'string' ? body.apiKey : undefined;
   try {
     const account = await providerService.createAccount(body.account as unknown as ProviderAccount, apiKey);
-    await syncSavedProviderToRuntime(providerAccountToConfig(account), apiKey, gatewayManager);
+    await syncSavedProviderToActiveRuntime(providerAccountToConfig(account), apiKey, ctx);
     return { success: true, account };
   } catch (error) {
     return { success: false, error: String(error) };
   }
 }
 
-async function updateAccount(payload: ProviderPayload<'updateAccount'>, gatewayManager?: GatewayManager) {
+async function updateAccount(payload: ProviderPayload<'updateAccount'>, ctx: ProvidersApiContext) {
   const providerService = getProviderService();
   const body = getPayloadRecord(payload, 'updateAccount');
   const accountId = typeof body.accountId === 'string' ? body.accountId.trim() : '';
@@ -345,7 +443,7 @@ async function updateAccount(payload: ProviderPayload<'updateAccount'>, gatewayM
       return { success: true, noChange: true, account: existing };
     }
     const account = await providerService.updateAccount(accountId, updates, apiKey);
-    await syncUpdatedProviderToRuntime(providerAccountToConfig(account), apiKey, gatewayManager);
+    await syncUpdatedProviderToActiveRuntime(providerAccountToConfig(account), apiKey, ctx);
     return { success: true, account };
   } catch (error) {
     return { success: false, error: String(error) };
@@ -354,7 +452,7 @@ async function updateAccount(payload: ProviderPayload<'updateAccount'>, gatewayM
 
 async function deleteAccount(
   payload: ProviderPayload<'deleteAccount'> & { apiKeyOnly?: boolean },
-  gatewayManager?: GatewayManager,
+  ctx: ProvidersApiContext,
 ) {
   const providerService = getProviderService();
   const body = getPayloadRecord(payload, 'deleteAccount');
@@ -370,9 +468,10 @@ async function deleteAccount(
       : undefined;
     if (apiKeyOnly) {
       await providerService._deleteProviderApiKeyInternal(accountId);
-      await syncDeletedProviderApiKeyToRuntime(
+      await syncDeletedProviderApiKeyToActiveRuntime(
         existing ? providerAccountToConfig(existing) : null,
         accountId,
+        ctx,
         runtimeProviderKey,
       );
       return { success: true };
@@ -385,12 +484,12 @@ async function deleteAccount(
     await providerService.deleteAccount(accountId);
     if (replacementDefault) {
       await providerService.setDefaultAccount(replacementDefault.id);
-      await syncDefaultProviderToRuntime(replacementDefault.id);
+      await syncDefaultProviderToActiveRuntime(replacementDefault.id, ctx);
     }
-    await syncDeletedProviderToRuntime(
+    await syncDeletedProviderToActiveRuntime(
       existing ? providerAccountToConfig(existing) : null,
       accountId,
-      gatewayManager,
+      ctx,
       runtimeProviderKey,
     );
     return { success: true };
@@ -399,7 +498,7 @@ async function deleteAccount(
   }
 }
 
-async function setDefaultAccount(payload: ProviderPayload<'setDefaultAccount'>, gatewayManager?: GatewayManager) {
+async function setDefaultAccount(payload: ProviderPayload<'setDefaultAccount'>, ctx: ProvidersApiContext) {
   const providerService = getProviderService();
   const accountId = getAccountId(payload, 'setDefaultAccount');
   try {
@@ -408,7 +507,7 @@ async function setDefaultAccount(payload: ProviderPayload<'setDefaultAccount'>, 
       return { success: true, noChange: true };
     }
     await providerService.setDefaultAccount(accountId);
-    await syncDefaultProviderToRuntime(accountId, gatewayManager);
+    await syncDefaultProviderToActiveRuntime(accountId, ctx);
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
@@ -464,6 +563,53 @@ async function submitOAuth(payload: ProviderPayload<'submitOAuth'>) {
   }
 }
 
+async function codexOAuthStatus(payload?: ProviderPayload<'codexOAuthStatus'>) {
+  try {
+    const accountId = payloadString(payload, 'accountId');
+    return await getCcConnectCodexOAuthStatus({ accountId });
+  } catch (error) {
+    logger.error('providers.codexOAuthStatus failed', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+async function importCodexOAuth(
+  payload: ProviderPayload<'importCodexOAuth'> | undefined,
+  ctx: Pick<ProvidersApiContext, 'runtimeManager'>,
+) {
+  try {
+    const accountId = payloadString(payload, 'accountId');
+    const result = await importUserCodexOAuthToManagedHome({ accountId });
+    await syncActiveRuntimeProviderProfile(ctx, {
+      providerId: result.provider?.accountId ?? accountId,
+      reason: 'codex-oauth-import',
+    });
+    return result;
+  } catch (error) {
+    logger.error('providers.importCodexOAuth failed', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+async function logoutCodexOAuth(
+  payload: ProviderPayload<'logoutCodexOAuth'> | undefined,
+  ctx: Pick<ProvidersApiContext, 'runtimeManager'>,
+) {
+  try {
+    const accountId = payloadString(payload, 'accountId');
+    const managedOnly = isRecord(payload) && payload.managedOnly === true;
+    const result = await logoutCcConnectCodexOAuth({ accountId, managedOnly });
+    await syncActiveRuntimeProviderProfile(ctx, {
+      providerId: result.provider?.accountId ?? accountId,
+      reason: 'codex-oauth-logout',
+    });
+    return result;
+  } catch (error) {
+    logger.error('providers.logoutCodexOAuth failed', error);
+    return { success: false, error: String(error) };
+  }
+}
+
 export function createProvidersApi(ctx: ProvidersApiContext): CompleteHostServiceRegistry['providers'] {
   const providerService = getProviderService();
   deviceOAuthManager.setWindow(ctx.mainWindow);
@@ -476,12 +622,12 @@ export function createProvidersApi(ctx: ProvidersApiContext): CompleteHostServic
     hasApiKey: async (payload) => providerService._hasProviderApiKeyInternal(getProviderId(payload, 'hasApiKey')),
     getApiKey: async (payload) => providerService._getProviderApiKeyInternal(getProviderId(payload, 'getApiKey')),
     validateKey,
-    save: async (payload) => saveProvider(payload, ctx.gatewayManager),
-    delete: async (payload) => deleteProvider(payload, ctx.gatewayManager),
-    setApiKey: setProviderApiKey,
-    updateWithKey: async (payload) => updateProviderWithKey(payload, ctx.gatewayManager),
-    deleteApiKey: deleteProviderApiKey,
-    setDefault: async (payload) => setDefaultProvider(payload, ctx.gatewayManager),
+    save: async (payload) => saveProvider(payload, ctx),
+    delete: async (payload) => deleteProvider(payload, ctx),
+    setApiKey: async (payload) => setProviderApiKey(payload, ctx),
+    updateWithKey: async (payload) => updateProviderWithKey(payload, ctx),
+    deleteApiKey: async (payload) => deleteProviderApiKey(payload, ctx),
+    setDefault: async (payload) => setDefaultProvider(payload, ctx),
     accounts: async () => providerService.listAccounts(),
     vendors: async () => providerService.listVendors(),
     accountKeyInfo: async () => providerService.listAccountsKeyInfo(),
@@ -489,13 +635,16 @@ export function createProvidersApi(ctx: ProvidersApiContext): CompleteHostServic
     getAccount: async (payload) => providerService.getAccount(getAccountId(payload, 'getAccount')),
     getAccountApiKey: async (payload) => providerService.getAccountApiKey(getAccountId(payload, 'getAccountApiKey')),
     hasAccountApiKey: async (payload) => providerService.hasAccountApiKey(getAccountId(payload, 'hasAccountApiKey')),
-    createAccount: async (payload) => createAccount(payload, ctx.gatewayManager),
-    updateAccount: async (payload) => updateAccount(payload, ctx.gatewayManager),
-    deleteAccount: async (payload) => deleteAccount(payload, ctx.gatewayManager),
-    deleteAccountApiKey: async (payload) => deleteAccount({ accountId: getAccountId(payload, 'deleteAccountApiKey'), apiKeyOnly: true }, ctx.gatewayManager),
-    setDefaultAccount: async (payload) => setDefaultAccount(payload, ctx.gatewayManager),
+    createAccount: async (payload) => createAccount(payload, ctx),
+    updateAccount: async (payload) => updateAccount(payload, ctx),
+    deleteAccount: async (payload) => deleteAccount(payload, ctx),
+    deleteAccountApiKey: async (payload) => deleteAccount({ accountId: getAccountId(payload, 'deleteAccountApiKey'), apiKeyOnly: true }, ctx),
+    setDefaultAccount: async (payload) => setDefaultAccount(payload, ctx),
     requestOAuth,
     cancelOAuth,
     submitOAuth,
+    codexOAuthStatus,
+    importCodexOAuth: async (payload) => importCodexOAuth(payload, ctx),
+    logoutCodexOAuth: async (payload) => logoutCodexOAuth(payload, ctx),
   };
 }

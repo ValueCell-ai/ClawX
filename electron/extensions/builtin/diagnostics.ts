@@ -15,7 +15,10 @@ class DiagnosticsExtension implements HostApiProviderExtension {
   getHostApiContributions(ctx: ExtensionContext) {
     return [{
       module: 'diagnostics',
-      actions: createDiagnosticsApi({ gatewayManager: ctx.gatewayManager }),
+      actions: createDiagnosticsApi({
+        gatewayManager: ctx.gatewayManager,
+        runtimeManager: ctx.runtimeManager,
+      }),
     }];
   }
 }

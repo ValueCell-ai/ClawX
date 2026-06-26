@@ -541,6 +541,41 @@ describe('gateway store event wiring', () => {
     expect(useChatStore.getState().activeRunId).toBeNull();
   });
 
+  it('refreshes sessions and current history when the runtime reports a session update', async () => {
+    const handlers = new Map<string, (payload: unknown) => void>();
+    hostEventSubscriptionMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
+      handlers.set(eventName, handler);
+      return () => {};
+    });
+    const { useChatStore } = await import('@/stores/chat');
+    const loadSessions = vi.fn(async () => {});
+    const loadHistory = vi.fn(async () => {});
+    const handleRuntimeEvent = vi.fn();
+    const channelSessionKey = 'feishu:chat-1:user-1';
+    useChatStore.setState({
+      currentSessionKey: channelSessionKey,
+      sessions: [{ key: channelSessionKey }],
+      loadSessions,
+      loadHistory,
+      handleRuntimeEvent,
+    });
+
+    const { useGatewayStore } = await import('@/stores/gateway');
+    await useGatewayStore.getState().init();
+
+    handlers.get('chat:runtime-event')?.({
+      type: 'session.updated',
+      runId: 'session-sync-1',
+      sessionKey: channelSessionKey,
+      updatedAt: 1773281731000,
+    });
+    await flushAsyncImports();
+
+    expect(loadSessions).toHaveBeenCalledWith(true);
+    expect(loadHistory).toHaveBeenCalledTimes(1);
+    expect(handleRuntimeEvent).not.toHaveBeenCalled();
+  });
+
   it('forwards normalized chat runtime events through the dedicated host event channel', async () => {
     const handlers = new Map<string, (payload: unknown) => void>();
     hostEventSubscriptionMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {

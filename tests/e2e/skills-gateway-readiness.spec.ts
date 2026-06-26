@@ -1,5 +1,14 @@
 import { completeSetup, expect, installIpcMocks, test } from './fixtures/electron';
 
+const openClawSkillsTarget = {
+  success: true,
+  runtimeKind: 'openclaw',
+  sourceDir: '/tmp/.openclaw/skills',
+  openDir: '/tmp/.openclaw/skills',
+  runtimeDir: '/tmp/.openclaw/skills',
+  mirrorMode: 'source',
+};
+
 test.describe('Skills page gateway readiness', () => {
   test('shows local skills even when gateway is stopped', async ({ electronApp, page }) => {
     await completeSetup(page);
@@ -11,6 +20,7 @@ test.describe('Skills page gateway readiness', () => {
       },
       hostApi: {
         '["skills","status",null]': { skills: [] },
+        '["skills","target",null]': openClawSkillsTarget,
         '["skills","clawhubCapability",null]': {
           success: true,
           capability: { canSearch: false, canInstall: false },
@@ -64,6 +74,7 @@ test.describe('Skills page gateway readiness', () => {
       },
       hostApi: {
         '["skills","status",null]': { skills: [] },
+        '["skills","target",null]': openClawSkillsTarget,
         '["skills","clawhubCapability",null]': {
           success: true,
           capability: { canSearch: false, canInstall: false },
@@ -99,6 +110,7 @@ test.describe('Skills page gateway readiness', () => {
       },
       hostApi: {
         '["skills","status",null]': { skills: [] },
+        '["skills","target",null]': openClawSkillsTarget,
         '["skills","clawhubCapability",null]': {
           success: true,
           capability: { canSearch: false, canInstall: false },
@@ -134,6 +146,7 @@ test.describe('Skills page gateway readiness', () => {
       },
       hostApi: {
         '["skills","status",null]': { skills: [] },
+        '["skills","target",null]': openClawSkillsTarget,
         '["skills","local",null]': { success: true, skills: [] },
         '["skills","clawhubCapability",null]': {
           success: true,
@@ -154,5 +167,46 @@ test.describe('Skills page gateway readiness', () => {
     });
 
     await expect(page.getByTestId('skills-gateway-banner')).toHaveCount(0, { timeout: 2_000 });
+  });
+
+  test('shows the cc-connect Codex skills mirror target', async ({ electronApp, page }) => {
+    await completeSetup(page);
+
+    await installIpcMocks(electronApp, {
+      gatewayStatus: { state: 'running', port: 9820, runtimeKind: 'cc-connect', gatewayReady: true },
+      hostApi: {
+        '["skills","status",null]': { skills: [] },
+        '["skills","target",null]': {
+          success: true,
+          runtimeKind: 'cc-connect',
+          sourceDir: '/tmp/.openclaw/skills',
+          openDir: '/tmp/clawx/runtimes/cc-connect/codex-home/skills',
+          runtimeDir: '/tmp/clawx/runtimes/cc-connect/codex-home/skills',
+          manifestPath: '/tmp/clawx/runtimes/cc-connect/codex-home/skills/manifest.json',
+          mirrorMode: 'runtime-mirror',
+        },
+        '["skills","local",null]': {
+          success: true,
+          skills: [{
+            id: 'pdf',
+            slug: 'pdf',
+            name: 'PDF',
+            description: 'Local PDF tools',
+            enabled: true,
+            source: 'openclaw-managed',
+            baseDir: '/tmp/.openclaw/skills/pdf',
+          }],
+        },
+        '["skills","clawhubCapability",null]': {
+          success: true,
+          capability: { canSearch: false, canInstall: false },
+        },
+      },
+    });
+
+    await page.getByTestId('sidebar-nav-skills').click();
+    await expect(page.getByTestId('skills-page')).toBeVisible();
+    await expect(page.getByTestId('skills-runtime-target')).toContainText('/tmp/clawx/runtimes/cc-connect/codex-home/skills');
+    await expect(page.getByRole('button', { name: /Open Runtime Skills Folder/i })).toBeVisible();
   });
 });

@@ -1,10 +1,7 @@
 import type { GatewayManager } from '../gateway/manager';
 import type { GatewayRpcBackpressure } from '../gateway/rpc-backpressure';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
-import { PORTS } from '../utils/config';
-import { scheduleControlUiDeviceAutoApproval } from '../utils/control-ui-device-pairing';
-import { buildOpenClawControlUiUrl } from '../utils/openclaw-control-ui';
-import { getSetting } from '../utils/store';
+import type { RuntimeManager } from '../runtime/manager';
 import { isRecord } from './payload-utils';
 
 type HealthPayload = {
@@ -30,36 +27,41 @@ function parseTimeoutMs(timeoutMs: unknown): number | undefined {
 }
 
 export function createGatewayApi(
-  gatewayManager: GatewayManager,
+  runtimeManager: RuntimeManager,
   gatewayRpcBackpressure: GatewayRpcBackpressure,
+  gatewayManager?: GatewayManager,
 ): CompleteHostServiceRegistry['gateway'] {
   return {
-    status: () => gatewayManager.getStatus(),
+    status: () => runtimeManager.getStatus(),
     start: async () => {
-      await gatewayManager.start();
+      await runtimeManager.start();
       return { success: true };
     },
     stop: async () => {
-      await gatewayManager.stop();
+      await runtimeManager.stop();
       return { success: true };
     },
     restart: async () => {
-      await gatewayManager.restart();
+      await runtimeManager.restart();
       return { success: true };
     },
     health: async (payload) => {
       const body = isRecord(payload) ? payload as HealthPayload : {};
-      return gatewayManager.checkHealth({ probe: body.probe === true });
+      return runtimeManager.checkHealth({ probe: body.probe === true });
     },
     controlUi: async (payload) => {
+      const status = runtimeManager.getStatus();
       const body = isRecord(payload) ? payload as ControlUiPayload : {};
-      const status = gatewayManager.getStatus();
-      const token = await getSetting('gatewayToken');
-      const port = status.port || PORTS.OPENCLAW_GATEWAY;
       const view = body.view === 'dreams' ? 'dreams' : undefined;
-      const url = buildOpenClawControlUiUrl(port, token, { view });
-      scheduleControlUiDeviceAutoApproval(gatewayManager);
-      return { success: true, url, token, port };
+      const provider = runtimeManager.getActiveProvider();
+      if (!status.capabilities?.controlUi || !provider.getControlUi) {
+        return {
+          success: false,
+          error: `${status.runtimeKind ?? 'runtime'} runtime does not support Control UI`,
+        };
+      }
+      void gatewayManager;
+      return provider.getControlUi(view ? { view } : {});
     },
     rpc: async (payload) => {
       const body = isRecord(payload) ? payload as RpcPayload : {};
@@ -72,7 +74,7 @@ export function createGatewayApi(
         method,
         body.params,
         timeoutMs,
-        (rpcMethod, rpcParams, rpcTimeoutMs) => gatewayManager.rpc(rpcMethod, rpcParams, rpcTimeoutMs),
+        (rpcMethod, rpcParams, rpcTimeoutMs) => runtimeManager.rpc(rpcMethod, rpcParams, rpcTimeoutMs),
       );
     },
   };

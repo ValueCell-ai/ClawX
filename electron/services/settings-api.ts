@@ -1,5 +1,7 @@
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { GatewayManager } from '../gateway/manager';
+import type { RuntimeManager } from '../runtime/manager';
+import type { RuntimeKind } from '@shared/types/gateway';
 import { syncLaunchAtStartupSettingFromStore } from '../main/launch-at-startup';
 import { createMenu } from '../main/menu';
 import { applyProxySettings } from '../main/proxy';
@@ -86,7 +88,11 @@ async function handleProxySettingsChange(gatewayManager: GatewayManager): Promis
 async function runSettingsSideEffects(
   gatewayManager: GatewayManager,
   patch: Partial<AppSettings>,
+  runtimeManager?: RuntimeManager,
 ): Promise<void> {
+  if (typeof patch.runtimeKind === 'string' && runtimeManager) {
+    await runtimeManager.setActiveKind(patch.runtimeKind as RuntimeKind);
+  }
   if (patchTouchesProxy(patch)) {
     await handleProxySettingsChange(gatewayManager);
   }
@@ -98,7 +104,10 @@ async function runSettingsSideEffects(
   }
 }
 
-export function createSettingsApi(gatewayManager: GatewayManager): CompleteHostServiceRegistry['settings'] {
+export function createSettingsApi(
+  gatewayManager: GatewayManager,
+  runtimeManager?: RuntimeManager,
+): CompleteHostServiceRegistry['settings'] {
   return {
     getAll: () => getAllSettings(),
     get: async (payload) => {
@@ -109,7 +118,7 @@ export function createSettingsApi(gatewayManager: GatewayManager): CompleteHostS
       const body = payload as SetPayload | undefined;
       const key = await requireSettingKey(body);
       await setSetting(key as never, body?.value as never);
-      await runSettingsSideEffects(gatewayManager, { [key]: body?.value } as Partial<AppSettings>);
+      await runSettingsSideEffects(gatewayManager, { [key]: body?.value } as Partial<AppSettings>, runtimeManager);
       return { success: true };
     },
     setMany: async (payload) => {
@@ -118,7 +127,7 @@ export function createSettingsApi(gatewayManager: GatewayManager): CompleteHostS
       for (const [key, value] of entries) {
         await setSetting(key, value as never);
       }
-      await runSettingsSideEffects(gatewayManager, patch);
+      await runSettingsSideEffects(gatewayManager, patch, runtimeManager);
       return { success: true };
     },
     reset: async () => {

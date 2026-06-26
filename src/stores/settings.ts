@@ -10,6 +10,7 @@ import { resolveSupportedLanguage } from '@shared/language';
 
 type Theme = 'light' | 'dark' | 'system';
 type UpdateChannel = 'stable' | 'beta' | 'dev';
+type RuntimeKind = 'openclaw' | 'cc-connect';
 
 interface SettingsState {
   // General
@@ -21,6 +22,7 @@ interface SettingsState {
 
   // Gateway
   gatewayAutoStart: boolean;
+  runtimeKind: RuntimeKind;
   gatewayPort: number;
   proxyEnabled: boolean;
   proxyServer: string;
@@ -49,6 +51,7 @@ interface SettingsState {
   setLaunchAtStartup: (value: boolean) => void;
   setTelemetryEnabled: (value: boolean) => void;
   setGatewayAutoStart: (value: boolean) => void;
+  setRuntimeKind: (value: RuntimeKind) => void;
   setGatewayPort: (port: number) => void;
   setProxyEnabled: (value: boolean) => void;
   setProxyServer: (value: string) => void;
@@ -72,6 +75,7 @@ const defaultSettings = {
   launchAtStartup: false,
   telemetryEnabled: true,
   gatewayAutoStart: true,
+  runtimeKind: 'openclaw' as RuntimeKind,
   gatewayPort: 18789,
   proxyEnabled: false,
   proxyServer: '',
@@ -100,14 +104,23 @@ export const useSettingsStore = create<SettingsState>()(
           const resolvedLanguage = settings.language
             ? resolveSupportedLanguage(settings.language)
             : undefined;
+          const devModeUnlocked = settings.devModeUnlocked === true;
+          const runtimeKind = !devModeUnlocked && settings.runtimeKind === 'cc-connect'
+            ? 'openclaw'
+            : settings.runtimeKind;
           set((state) => ({
             ...state,
             ...settings,
+            ...(runtimeKind ? { runtimeKind } : {}),
+            ...(settings.devModeUnlocked !== undefined ? { devModeUnlocked } : {}),
             ...(resolvedLanguage ? { language: resolvedLanguage } : {}),
             ...(typeof settings.sidebarWidth === 'number'
               ? { sidebarWidth: clampSidebarWidth(settings.sidebarWidth) }
               : {}),
           }));
+          if (settings.runtimeKind === 'cc-connect' && !devModeUnlocked) {
+            void hostApi.settings.set('runtimeKind', 'openclaw').catch(() => { });
+          }
           if (resolvedLanguage) {
             i18n.changeLanguage(resolvedLanguage);
           }
@@ -140,6 +153,10 @@ export const useSettingsStore = create<SettingsState>()(
         set({ gatewayAutoStart });
         void hostApi.settings.set('gatewayAutoStart', gatewayAutoStart).catch(() => { });
       },
+      setRuntimeKind: (runtimeKind) => {
+        set({ runtimeKind });
+        void hostApi.settings.set('runtimeKind', runtimeKind).catch(() => { });
+      },
       setGatewayPort: (gatewayPort) => {
         set({ gatewayPort });
         void hostApi.settings.set('gatewayPort', gatewayPort).catch(() => { });
@@ -159,8 +176,14 @@ export const useSettingsStore = create<SettingsState>()(
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       setSidebarWidth: (sidebarWidth) => set({ sidebarWidth: clampSidebarWidth(sidebarWidth) }),
       setDevModeUnlocked: (devModeUnlocked) => {
-        set({ devModeUnlocked });
+        set((state) => ({
+          devModeUnlocked,
+          ...(!devModeUnlocked && state.runtimeKind === 'cc-connect' ? { runtimeKind: 'openclaw' as RuntimeKind } : {}),
+        }));
         void hostApi.settings.set('devModeUnlocked', devModeUnlocked).catch(() => { });
+        if (!devModeUnlocked) {
+          void hostApi.settings.set('runtimeKind', 'openclaw').catch(() => { });
+        }
       },
       markSetupComplete: () => set({ setupComplete: true }),
       resetSettings: () => set(defaultSettings),

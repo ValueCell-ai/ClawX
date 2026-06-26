@@ -37,6 +37,8 @@ interface TranscriptUsageShape {
   total_tokens?: number;
   cache_read?: number;
   cache_write?: number;
+  cachedInputTokens?: number;
+  cached_input_tokens?: number;
   prompt_tokens?: number;
   completion_tokens?: number;
   cache_read_tokens?: number;
@@ -141,6 +143,8 @@ function parseUsageFromShape(usage: unknown): ParsedUsageTokens | undefined {
     'cache_read_tokens',
     'cacheReadTokenCount',
     'cache_read_token_count',
+    'cachedInputTokens',
+    'cached_input_tokens',
   ]);
   const cacheWriteTokens = firstUsageNumber(usageShape, [
     'cacheWrite',
@@ -214,7 +218,21 @@ interface TranscriptLineShape {
       };
     };
   };
+  payload?: {
+    type?: string;
+    info?: {
+      last_token_usage?: TranscriptUsageShape;
+      total_token_usage?: TranscriptUsageShape;
+    };
+  };
 }
+
+type UsageMessageShape = NonNullable<TranscriptLineShape['message']> & {
+  timestamp?: string | number;
+  created_at?: string | number;
+  createdAt?: string | number;
+  content?: unknown;
+};
 
 function normalizeUsageContent(value: unknown): string | undefined {
   if (typeof value === 'string') {
@@ -257,6 +275,174 @@ function normalizeUsageContent(value: unknown): string | undefined {
   return undefined;
 }
 
+function normalizeUsageTimestamp(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : value;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value < 1e12 ? value * 1000 : value).toISOString();
+  }
+  return undefined;
+}
+
+function usageEntryFromMessage(
+  message: UsageMessageShape | undefined,
+  timestamp: string | undefined,
+  context: { sessionId: string; agentId: string },
+): TokenUsageHistoryEntry | null {
+  if (!message || !timestamp) return null;
+
+  if (message.role === 'assistant' && 'usage' in message) {
+    const usage = parseUsageFromShape(message.usage);
+    if (!usage) return null;
+
+    const contentText = normalizeUsageContent((message as Record<string, unknown>).content);
+    return {
+      timestamp,
+      sessionId: context.sessionId,
+      agentId: context.agentId,
+      model: message.model ?? message.modelRef,
+      provider: message.provider,
+      ...(contentText ? { content: contentText } : {}),
+      ...usage,
+    };
+  }
+
+  if (message.role !== 'toolResult' && message.role !== 'toolresult') {
+    return null;
+  }
+
+  const details = message.details;
+  if (!details || !('usage' in details)) {
+    return null;
+  }
+
+  const usage = parseUsageFromShape(details.usage);
+  if (!usage) return null;
+
+  const provider = details.provider ?? details.externalContent?.provider ?? message.provider;
+  const model = details.model ?? message.model ?? message.modelRef;
+  const contentText = normalizeUsageContent(details.content)
+    ?? normalizeUsageContent((message as Record<string, unknown>).content);
+
+  return {
+    timestamp,
+    sessionId: context.sessionId,
+    agentId: context.agentId,
+    model,
+    provider,
+    ...(contentText ? { content: contentText } : {}),
+    ...usage,
+  };
+}
+
+function usageEntryFromCodexTokenCount(
+  record: TranscriptLineShape,
+  timestamp: string | undefined,
+  context: { sessionId: string; agentId: string },
+): TokenUsageHistoryEntry | null {
+  if (!timestamp || record.type !== 'event_msg' || record.payload?.type !== 'token_count') {
+    return null;
+  }
+
+  const usage = parseUsageFromShape(record.payload.info?.last_token_usage ?? record.payload.info?.total_token_usage);
+  if (!usage || usage.usageStatus !== 'available') {
+    return null;
+  }
+
+  return {
+    timestamp,
+    sessionId: context.sessionId,
+    agentId: context.agentId,
+    provider: 'codex',
+    ...usage,
+  };
+}
+
+export function parseUsageEntriesFromMessages(
+  messages: unknown[],
+  context: { sessionId: string; agentId: string },
+  limit?: number,
+): TokenUsageHistoryEntry[] {
+  const entries: TokenUsageHistoryEntry[] = [];
+  const maxEntries = typeof limit === 'number' && Number.isFinite(limit)
+    ? Math.max(Math.floor(limit), 0)
+    : Number.POSITIVE_INFINITY;
+
+  for (let i = messages.length - 1; i >= 0 && entries.length < maxEntries; i -= 1) {
+    const item = messages[i];
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const message = item as UsageMessageShape;
+    const timestamp = normalizeUsageTimestamp(message.timestamp ?? message.created_at ?? message.createdAt);
+    const entry = usageEntryFromMessage(message, timestamp, context);
+    if (entry) entries.push(entry);
+  }
+
+  return entries;
+}
+
+function fromCcConnectBridgeSessionKey(sessionKey: string): string {
+  if (sessionKey.startsWith('clawx:')) {
+    const [, scope = 'main', user = 'main'] = sessionKey.split(':');
+    return `agent:${scope || 'main'}:${user || 'main'}`;
+  }
+  return sessionKey;
+}
+
+function readStringMap(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).flatMap(([key, item]) => (
+    typeof item === 'string' ? [[key, item]] : []
+  )));
+}
+
+export function parseUsageEntriesFromCcConnectSessionStore(
+  content: string,
+  fallback: { sessionId: string; agentId: string },
+  limit?: number,
+): TokenUsageHistoryEntry[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content) as unknown;
+  } catch {
+    return [];
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return [];
+  const record = parsed as Record<string, unknown>;
+  const sessions = record.sessions;
+  if (!sessions || typeof sessions !== 'object' || Array.isArray(sessions)) return [];
+
+  const activeSessionById = new Map<string, string>();
+  for (const [key, sessionId] of Object.entries(readStringMap(record.active_session))) {
+    if (!activeSessionById.has(sessionId)) {
+      activeSessionById.set(sessionId, fromCcConnectBridgeSessionKey(key));
+    }
+  }
+
+  const entries: TokenUsageHistoryEntry[] = [];
+  const maxEntries = typeof limit === 'number' && Number.isFinite(limit)
+    ? Math.max(Math.floor(limit), 0)
+    : Number.POSITIVE_INFINITY;
+
+  for (const [storeSessionId, session] of Object.entries(sessions)) {
+    if (!session || typeof session !== 'object' || Array.isArray(session)) continue;
+    const sessionRecord = session as Record<string, unknown>;
+    const history = Array.isArray(sessionRecord.history) ? sessionRecord.history : [];
+    const sessionId = activeSessionById.get(storeSessionId) ?? String(sessionRecord.id || storeSessionId || fallback.sessionId);
+    const agentId = sessionId.startsWith('agent:')
+      ? sessionId.split(':')[1] || fallback.agentId
+      : fallback.agentId;
+    entries.push(...parseUsageEntriesFromMessages(history, {
+      sessionId,
+      agentId,
+    }));
+  }
+
+  entries.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
+  return Number.isFinite(maxEntries) ? entries.slice(0, maxEntries) : entries;
+}
+
 export function parseUsageEntriesFromJsonl(
   content: string,
   context: { sessionId: string; agentId: string },
@@ -276,54 +462,10 @@ export function parseUsageEntriesFromJsonl(
       continue;
     }
 
-    const message = parsed.message;
-    if (!message || !parsed.timestamp) {
-      continue;
-    }
-
-    if (message.role === 'assistant' && 'usage' in message) {
-      const usage = parseUsageFromShape(message.usage);
-      if (!usage) continue;
-
-      const contentText = normalizeUsageContent((message as Record<string, unknown>).content);
-      entries.push({
-        timestamp: parsed.timestamp,
-        sessionId: context.sessionId,
-        agentId: context.agentId,
-        model: message.model ?? message.modelRef,
-        provider: message.provider,
-        ...(contentText ? { content: contentText } : {}),
-        ...usage,
-      });
-      continue;
-    }
-
-    if (message.role !== 'toolResult') {
-      continue;
-    }
-
-    const details = message.details;
-    if (!details || !('usage' in details)) {
-      continue;
-    }
-
-    const usage = parseUsageFromShape(details.usage);
-    if (!usage) continue;
-
-    const provider = details.provider ?? details.externalContent?.provider ?? message.provider;
-    const model = details.model ?? message.model ?? message.modelRef;
-    const contentText = normalizeUsageContent(details.content)
-      ?? normalizeUsageContent((message as Record<string, unknown>).content);
-
-    entries.push({
-      timestamp: parsed.timestamp,
-      sessionId: context.sessionId,
-      agentId: context.agentId,
-      model,
-      provider,
-      ...(contentText ? { content: contentText } : {}),
-      ...usage,
-    });
+    const timestamp = normalizeUsageTimestamp(parsed.timestamp);
+    const entry = usageEntryFromMessage(parsed.message, timestamp, context)
+      ?? usageEntryFromCodexTokenCount(parsed, timestamp, context);
+    if (entry) entries.push(entry);
   }
 
   return entries;

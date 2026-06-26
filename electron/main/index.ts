@@ -5,6 +5,9 @@
 import { app, BrowserWindow, nativeImage, session, shell } from 'electron';
 import { join } from 'path';
 import { GatewayManager } from '../gateway/manager';
+import { RuntimeManager } from '../runtime/manager';
+import { OpenClawRuntimeProvider } from '../runtime/openclaw-provider';
+import { CcConnectRuntimeProvider } from '../runtime/cc-connect-provider';
 import { registerIpcHandlers } from './ipc-handlers';
 import { HostApiRegistry } from './ipc/host-invoke';
 import { createTray } from './tray';
@@ -131,6 +134,7 @@ const gotTheLock = gotElectronLock && gotFileLock;
 // Global references
 let mainWindow: BrowserWindow | null = null;
 let gatewayManager!: GatewayManager;
+let runtimeManager!: RuntimeManager;
 let clawHubService!: ClawHubService;
 const hostApiRegistry = new HostApiRegistry();
 const mainWindowFocusState = createMainWindowFocusState();
@@ -336,6 +340,8 @@ async function initialize(): Promise<void> {
     createTray(window);
   }
 
+  await runtimeManager.getActiveKind();
+
   // Override security headers ONLY for the OpenClaw Gateway Control UI.
   // The URL filter ensures this callback only fires for gateway requests,
   // avoiding unnecessary overhead on every other HTTP response.
@@ -360,11 +366,12 @@ async function initialize(): Promise<void> {
   );
 
   // Register IPC handlers
-  registerIpcHandlers(gatewayManager, clawHubService, window, hostApiRegistry);
+  registerIpcHandlers(gatewayManager, runtimeManager, clawHubService, window, hostApiRegistry);
 
   // Initialize extension system
   await extensionRegistry.initialize({
     gatewayManager,
+    runtimeManager,
     getMainWindow: () => mainWindow,
     hostApi: {
       register: (extensionId, contributions) => (
@@ -441,44 +448,44 @@ async function initialize(): Promise<void> {
 
   // Bridge gateway and host-side events before any auto-start logic runs, so
   // renderer subscribers observe the full startup lifecycle.
-  gatewayManager.on('status', (status: { state: string }) => {
+  runtimeManager.on('status', (status: { state: string; runtimeKind?: string }) => {
     sendMainWindowEvent('gateway:status-changed', status);
-    if (status.state === 'running' && !isE2EMode) {
+    if (status.runtimeKind === 'openclaw' && status.state === 'running' && !isE2EMode) {
       void ensureClawXContext().catch((error) => {
         logger.warn('Failed to re-merge ClawX context after gateway reconnect:', error);
       });
     }
   });
 
-  gatewayManager.on('error', (error) => {
+  runtimeManager.on('error', (error) => {
     sendMainWindowEvent('gateway:error', { message: error.message });
   });
 
-  gatewayManager.on('notification', (notification) => {
+  runtimeManager.on('notification', (notification) => {
     sendMainWindowEvent('gateway:notification', notification);
   });
 
-  gatewayManager.on('gateway:health', (data) => {
+  runtimeManager.on('gateway:health', (data) => {
     sendMainWindowEvent('gateway:health-changed', data);
   });
 
-  gatewayManager.on('gateway:presence', (data) => {
+  runtimeManager.on('gateway:presence', (data) => {
     sendMainWindowEvent('gateway:presence-changed', data);
   });
 
-  gatewayManager.on('chat:message', (data) => {
+  runtimeManager.on('chat:message', (data) => {
     sendMainWindowEvent('gateway:chat-message', data);
   });
 
-  gatewayManager.on('chat:runtime-event', (data) => {
+  runtimeManager.on('chat:runtime-event', (data) => {
     sendMainWindowEvent('chat:runtime-event', data);
   });
 
-  gatewayManager.on('channel:status', (data) => {
+  runtimeManager.on('channel:status', (data) => {
     sendMainWindowEvent('gateway:channel-status', data);
   });
 
-  gatewayManager.on('exit', (code) => {
+  runtimeManager.on('exit', (code) => {
     sendMainWindowEvent('gateway:exit', { code });
   });
 
@@ -522,12 +529,14 @@ async function initialize(): Promise<void> {
   const gatewayAutoStart = await getSetting('gatewayAutoStart');
   if (!isE2EMode && gatewayAutoStart) {
     try {
-      await syncAllProviderAuthToRuntime();
-      logger.debug('Auto-starting Gateway...');
-      await gatewayManager.start();
-      logger.info('Gateway auto-start succeeded');
+      if (await runtimeManager.getActiveKind() === 'openclaw') {
+        await syncAllProviderAuthToRuntime();
+      }
+      logger.debug(`Auto-starting ${await runtimeManager.getActiveKind()} runtime...`);
+      await runtimeManager.start();
+      logger.info('Runtime auto-start succeeded');
     } catch (error) {
-      logger.error('Gateway auto-start failed:', error);
+      logger.error('Runtime auto-start failed:', error);
       mainWindow?.webContents.send('gateway:error', String(error));
     }
   } else if (isE2EMode) {
@@ -580,6 +589,10 @@ if (gotTheLock) {
   }
 
   gatewayManager = new GatewayManager();
+  runtimeManager = new RuntimeManager({
+    openclaw: new OpenClawRuntimeProvider(gatewayManager),
+    ccConnect: new CcConnectRuntimeProvider(),
+  });
   clawHubService = new ClawHubService();
 
   // Register builtin extensions and load manifest
@@ -646,8 +659,8 @@ if (gotTheLock) {
 
     void extensionRegistry.teardownAll();
 
-    const stopPromise = gatewayManager.stop().catch((err) => {
-      logger.warn('gatewayManager.stop() error during quit:', err);
+    const stopPromise = runtimeManager.stop().catch((err) => {
+      logger.warn('runtimeManager.stop() error during quit:', err);
     });
     const timeoutPromise = new Promise<'timeout'>((resolve) => {
       setTimeout(() => resolve('timeout'), 5000);
@@ -655,14 +668,16 @@ if (gotTheLock) {
 
     void Promise.race([stopPromise.then(() => 'stopped' as const), timeoutPromise]).then((result) => {
       if (result === 'timeout') {
-        logger.warn('Gateway shutdown timed out during app quit; proceeding with forced quit');
-        void gatewayManager.forceTerminateOwnedProcessForQuit().then((terminated) => {
-          if (terminated) {
-            logger.warn('Forced gateway process termination completed after quit timeout');
-          }
-        }).catch((err) => {
-          logger.warn('Forced gateway termination failed after quit timeout:', err);
-        });
+        logger.warn('Runtime shutdown timed out during app quit; proceeding with forced quit');
+        if (runtimeManager.getActiveProvider().kind === 'openclaw') {
+          void gatewayManager.forceTerminateOwnedProcessForQuit().then((terminated) => {
+            if (terminated) {
+              logger.warn('Forced gateway process termination completed after quit timeout');
+            }
+          }).catch((err) => {
+            logger.warn('Forced gateway termination failed after quit timeout:', err);
+          });
+        }
       }
       markQuitCleanupCompleted(quitLifecycleState);
       app.quit();
@@ -676,6 +691,7 @@ if (gotTheLock) {
     logger.error(`${reason}:`, error);
     try {
       void gatewayManager?.stop().catch(() => { /* ignore */ });
+      void runtimeManager?.stop().catch(() => { /* ignore */ });
     } catch {
       // ignore — stop() may not be callable if state is corrupted
     }
@@ -695,4 +711,4 @@ if (gotTheLock) {
 }
 
 // Export for testing
-export { mainWindow, gatewayManager };
+export { mainWindow, gatewayManager, runtimeManager };

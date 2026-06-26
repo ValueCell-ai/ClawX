@@ -3,6 +3,10 @@
     "subtitle": "Browse and manage AI capabilities",
     "refresh": "Refresh",
     "openFolder": "Open Skills Folder",
+    "openRuntimeFolder": "Open Runtime Skills Folder",
+    "runtimeTarget": {
+        "mirror": "Runtime mirror: {{path}}"
+    },
     "gatewayWarning": "Gateway is not running. Local skills are still available, but runtime status is unavailable.",
     "gatewayStarting": "Gateway is starting. Local skills are available now; runtime status will appear once it is ready.",
     "tabs": {

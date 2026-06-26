@@ -1201,7 +1201,7 @@ function enrichWithCachedImages(messages: RawMessage[]): RawMessage[] {
     // The renderer cannot fetch the URL directly, so we surface it as an
     // `_attachedFiles` entry whose preview is filled in later by
     // `loadMissingPreviews` -> Main `media:getThumbnails` (which dereferences
-    // the URL to the original file in `~/.openclaw/media/outgoing/`).
+    // the URL through active runtime media records).
     const gatewayMediaFiles: AttachedFileMeta[] = msg.role === 'assistant'
       ? extractImagesAsAttachedFiles(msg.content).filter(file => file.gatewayUrl)
       : [];
@@ -1308,8 +1308,8 @@ function waitForPreviewRetry(ms: number): Promise<void> {
 // Collect all image refs that need previews. The IPC handler accepts:
 //   - { filePath, mimeType }   — local on-disk files
 //   - { gatewayUrl, mimeType } — Gateway-injected outgoing media; the
-//                                handler resolves the URL to a local file
-//                                via `~/.openclaw/media/outgoing/records/`.
+//                                handler resolves the URL through runtime
+//                                media records.
 // We use `filePath || gatewayUrl` as the dedupe / lookup key on the way
 // back; a file always carries at most one of the two.
 function collectMissingPreviewRefs(messages: RawMessage[]): PreviewRef[] {

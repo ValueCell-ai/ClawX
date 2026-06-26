@@ -4,7 +4,9 @@
  */
 import { create } from 'zustand';
 import { hostApi } from '@/lib/host-api';
+import { assertRuntimeOperationSupported } from '@/lib/runtime-operation-capabilities';
 import { useChatStore } from './chat';
+import { useGatewayStore } from './gateway';
 import type { CronJob, CronJobCreateInput, CronJobUpdateInput } from '../types/cron';
 
 let _fetchJobsInFlight: Promise<void> | null = null;
@@ -52,6 +54,7 @@ export const useCronStore = create<CronState>((set) => ({
       }
 
       try {
+        assertRuntimeOperationSupported(useGatewayStore.getState().status, 'cron.list');
         const result = await hostApi.cron.list();
 
         // The Gateway list is authoritative. A job missing from it has either been
@@ -86,6 +89,7 @@ export const useCronStore = create<CronState>((set) => ({
 
   createJob: async (input) => {
     try {
+      assertRuntimeOperationSupported(useGatewayStore.getState().status, 'cron.create');
       // Auto-capture currentAgentId if not provided
       const agentId = input.agentId ?? useChatStore.getState().currentAgentId;
       const job = await hostApi.cron.create({ ...input, agentId });
@@ -99,6 +103,7 @@ export const useCronStore = create<CronState>((set) => ({
 
   updateJob: async (id, input) => {
     try {
+      assertRuntimeOperationSupported(useGatewayStore.getState().status, 'cron.update');
       const updatedJob = await hostApi.cron.update(id, input);
       set((state) => ({
         jobs: state.jobs.map((job) =>
@@ -113,6 +118,7 @@ export const useCronStore = create<CronState>((set) => ({
 
   deleteJob: async (id) => {
     try {
+      assertRuntimeOperationSupported(useGatewayStore.getState().status, 'cron.delete');
       await hostApi.cron.delete(id);
       set((state) => ({
         jobs: state.jobs.filter((job) => job.id !== id),
@@ -125,6 +131,7 @@ export const useCronStore = create<CronState>((set) => ({
 
   toggleJob: async (id, enabled) => {
     try {
+      assertRuntimeOperationSupported(useGatewayStore.getState().status, 'cron.toggle');
       await hostApi.cron.toggle(id, enabled);
       set((state) => ({
         jobs: state.jobs.map((job) =>
@@ -139,6 +146,7 @@ export const useCronStore = create<CronState>((set) => ({
 
   triggerJob: async (id) => {
     try {
+      assertRuntimeOperationSupported(useGatewayStore.getState().status, 'cron.run');
       await hostApi.cron.trigger(id);
       // Refresh jobs after trigger to update lastRun/nextRun state
       try {
