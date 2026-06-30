@@ -92,6 +92,16 @@ function withClawXToolDefaults<T extends Record<string, unknown>>(config: T): T 
     tools,
     gateway,
     skills,
+    session: {
+      ...((config.session && typeof config.session === 'object' && !Array.isArray(config.session))
+        ? (config.session as Record<string, unknown>)
+        : {}),
+      dmScope: ((config.session && typeof config.session === 'object' && !Array.isArray(config.session))
+        ? (config.session as Record<string, unknown>).dmScope
+        : undefined) === 'per-account-channel-peer'
+        ? 'per-account-channel-peer'
+        : 'per-channel-peer',
+    },
   };
 }
 
@@ -414,6 +424,18 @@ async function sanitizeConfig(
 
   if (toolsModified) {
     config.tools = toolsConfig;
+    modified = true;
+  }
+
+  // Mirror: session.dmScope
+  const sessionConfig = (
+    config.session && typeof config.session === 'object' && !Array.isArray(config.session)
+      ? { ...(config.session as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  if (sessionConfig.dmScope !== 'per-channel-peer' && sessionConfig.dmScope !== 'per-account-channel-peer') {
+    sessionConfig.dmScope = 'per-channel-peer';
+    config.session = sessionConfig;
     modified = true;
   }
 
@@ -1147,5 +1169,43 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
 
     const modified = await sanitizeConfig(configPath, { all: ['browser'], enabledByDefault: ['browser'] });
     expect(modified).toBe(false);
+  });
+
+  it('sets session.dmScope to per-channel-peer when unset', async () => {
+    await writeConfig(withClawXToolDefaults({}));
+
+    const modified = await sanitizeConfig(configPath, { all: ['browser'], enabledByDefault: ['browser'] });
+    expect(modified).toBe(false);
+
+    const result = await readConfig();
+    expect((result.session as Record<string, unknown>).dmScope).toBe('per-channel-peer');
+  });
+
+  it('preserves session.dmScope when already set to per-account-channel-peer', async () => {
+    await writeConfig(withClawXToolDefaults({
+      session: { dmScope: 'per-account-channel-peer' },
+    }));
+
+    const modified = await sanitizeConfig(configPath, { all: ['browser'], enabledByDefault: ['browser'] });
+    expect(modified).toBe(false);
+
+    const result = await readConfig();
+    expect((result.session as Record<string, unknown>).dmScope).toBe('per-account-channel-peer');
+  });
+
+  it('overrides session.dmScope when set to main', async () => {
+    // Write config with dmScope: 'main' but otherwise already sanitized,
+    // so only the session.dmScope change should trigger modified=true.
+    const base = withClawXToolDefaults({});
+    await writeConfig({
+      ...base,
+      session: { dmScope: 'main' },
+    });
+
+    const modified = await sanitizeConfig(configPath, { all: ['browser'], enabledByDefault: ['browser'] });
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    expect((result.session as Record<string, unknown>).dmScope).toBe('per-channel-peer');
   });
 });

@@ -2971,6 +2971,24 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       modified = true;
     }
 
+    // ── session.dmScope ─────────────────────────────────────────────
+    // OpenClaw defaults DM session routing to "main" (all channels share
+    // agent:main:main), which makes ClawX sidebar conflate feishu, dingtalk,
+    // and other channel DMs into one entry. Set "per-channel-peer" so each
+    // channel+peer gets its own session key (agent:main:feishu:direct:ou_xxx),
+    // letting the sidebar show them as separate conversations with channel badges.
+    const sessionConfig = (
+      config.session && typeof config.session === 'object' && !Array.isArray(config.session)
+        ? { ...(config.session as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+    if (sessionConfig.dmScope !== 'per-channel-peer' && sessionConfig.dmScope !== 'per-account-channel-peer') {
+      sessionConfig.dmScope = 'per-channel-peer';
+      config.session = sessionConfig;
+      modified = true;
+      console.log('[sanitize] Set session.dmScope="per-channel-peer" so channel DMs appear as separate sessions in ClawX');
+    }
+
     // ── Skill Workshop hard-disable (OpenClaw 6.10+) ─────────────────
     const gateway = (
       config.gateway && typeof config.gateway === 'object'

@@ -5,6 +5,7 @@ import type {
   GatewayChannelStatusEvent,
   GatewayChatMessageEvent,
   GatewayRuntimePayload,
+  GatewaySessionsChangedEvent,
 } from '@shared/host-events/contract';
 
 type GatewayEventEmitter = {
@@ -33,6 +34,9 @@ export function dispatchProtocolEvent(
     case 'channel.status':
     case 'channel.status_changed':
       emitter.emit('channel:status', payload as GatewayChannelStatusEvent);
+      break;
+    case 'sessions.changed':
+      emitter.emit('gateway:sessions-changed', payload as GatewaySessionsChangedEvent);
       break;
     case 'gateway.ready':
     case 'ready':

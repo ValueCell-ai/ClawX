@@ -150,6 +150,7 @@ export interface GatewayManagerEvents {
   'channel:status': (data: GatewayChannelStatusEvent) => void;
   'chat:message': (data: GatewayChatMessageEvent) => void;
   'chat:runtime-event': (data: ChatRuntimeEvent) => void;
+  'gateway:sessions-changed': (data: GatewayRuntimePayload) => void;
 }
 
 /**
@@ -860,6 +861,12 @@ export class GatewayManager extends EventEmitter {
     }
   }
 
+  /** Subscribe to gateway session list change notifications (Feishu/DingTalk DMs, etc.). */
+  private async subscribeToSessionEvents(): Promise<void> {
+    await this.rpc('sessions.subscribe', {});
+    logger.debug('Subscribed to gateway sessions.changed events');
+  }
+
   /**
    * Make an RPC call to the Gateway
    * Uses OpenClaw protocol format: { type: "req", id: "...", method: "...", params: {...} }
@@ -1131,6 +1138,9 @@ export class GatewayManager extends EventEmitter {
         });
         this.startPing();
         this.scheduleGatewayReadyFallback();
+        void this.subscribeToSessionEvents().catch((error) => {
+          logger.warn('Failed to subscribe to gateway session events:', error);
+        });
       },
       onMessage: (message) => {
         this.handleMessage(message);

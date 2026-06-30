@@ -52,6 +52,7 @@ vi.mock('@/lib/host-events', () => ({
     onGatewayHealth: (handler: unknown) => hostEventSubscriptionMock('gateway:health', handler),
     onGatewayPresence: (handler: unknown) => hostEventSubscriptionMock('gateway:presence', handler),
     onGatewayChatMessage: (handler: unknown) => hostEventSubscriptionMock('gateway:chat-message', handler),
+    onGatewaySessionsChanged: (handler: unknown) => hostEventSubscriptionMock('gateway:sessions-changed', handler),
     onChatRuntimeEvent: (handler: unknown) => hostEventSubscriptionMock('chat:runtime-event', handler),
     onGatewayChannelStatus: (handler: unknown) => hostEventSubscriptionMock('gateway:channel-status', handler),
   },
@@ -82,6 +83,7 @@ describe('gateway store event wiring', () => {
     expect(hostEventSubscriptionMock).toHaveBeenCalledWith('gateway:health', expect.any(Function));
     expect(hostEventSubscriptionMock).toHaveBeenCalledWith('gateway:presence', expect.any(Function));
     expect(hostEventSubscriptionMock).toHaveBeenCalledWith('gateway:chat-message', expect.any(Function));
+    expect(hostEventSubscriptionMock).toHaveBeenCalledWith('gateway:sessions-changed', expect.any(Function));
     expect(hostEventSubscriptionMock).toHaveBeenCalledWith('chat:runtime-event', expect.any(Function));
     expect(hostEventSubscriptionMock).toHaveBeenCalledWith('gateway:channel-status', expect.any(Function));
 
@@ -881,5 +883,33 @@ describe('gateway store event wiring', () => {
     // The background heartbeat must not flip the composer into a "Thinking"
     // (sending) state — that gate is what suppresses the indicator.
     expect(useChatStore.getState().sending).toBe(false);
+  });
+
+  it('refreshes the sidebar when gateway sessions.changed arrives for a channel session', async () => {
+    const handlers = new Map<string, (payload: unknown) => void>();
+    hostEventSubscriptionMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
+      handlers.set(eventName, handler);
+      return () => {};
+    });
+    const feishuKey = 'agent:main:feishu:direct:ou_test';
+    const { useChatStore } = await import('@/stores/chat');
+    const loadSessions = vi.fn(async () => {});
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      sessions: [{ key: 'agent:main:main' }],
+      loadSessions,
+    });
+
+    const { useGatewayStore } = await import('@/stores/gateway');
+    await useGatewayStore.getState().init();
+
+    handlers.get('gateway:sessions-changed')?.({
+      sessionKey: feishuKey,
+      phase: 'start',
+      ts: Date.now(),
+    });
+    await flushAsyncImports();
+
+    expect(loadSessions).toHaveBeenCalled();
   });
 });
