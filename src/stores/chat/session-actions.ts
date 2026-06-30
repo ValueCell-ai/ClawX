@@ -1,6 +1,7 @@
 import { hostApi } from '@/lib/host-api';
 import { isClawXDesktopSessionKey, shouldIncludeSessionInSidebarList } from './session-key-utils';
 import { pickStartupSessionFallback } from './session-selection';
+import { clearPendingOptimisticUserMessages, getCanonicalPrefixFromSessions, getMessageText, toMs } from './helpers';
 import { DEFAULT_CANONICAL_PREFIX, DEFAULT_SESSION_KEY, type ChatSession, type RawMessage } from './types';
 import type { ChatGet, ChatSet, SessionHistoryActions } from './store-api';
 
