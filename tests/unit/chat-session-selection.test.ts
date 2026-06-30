@@ -30,6 +30,15 @@ describe('pickStartupSessionFallback', () => {
     expect(pickStartupSessionFallback('agent:main:main', sessions)).toBeNull();
   });
 
+  it('does not auto-select feishu channel sessions on startup', () => {
+    const sessions: ChatSession[] = [
+      { key: 'agent:main:feishu:ou_abc', lastMessagePreview: '你好', updatedAt: 9_000 },
+      { key: 'agent:main:session-new', updatedAt: 5_000 },
+    ];
+
+    expect(pickStartupSessionFallback('agent:main:main', sessions)).toBe('agent:main:session-new');
+  });
+
   it('falls back to non-cron sessions from other agents before cron', () => {
     const sessions: ChatSession[] = [
       { key: 'agent:main:cron:heartbeat', updatedAt: 9_000 },

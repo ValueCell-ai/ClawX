@@ -26,7 +26,11 @@ async function readConfig(): Promise<Record<string, unknown>> {
   return JSON.parse(raw);
 }
 
-function withClawXToolDefaults<T extends Record<string, unknown>>(config: T): T & { tools: Record<string, unknown> } {
+function withClawXToolDefaults<T extends Record<string, unknown>>(config: T): T & {
+  tools: Record<string, unknown>;
+  gateway: Record<string, unknown>;
+  skills: Record<string, unknown>;
+} {
   const tools = (config.tools && typeof config.tools === 'object' && !Array.isArray(config.tools))
     ? { ...(config.tools as Record<string, unknown>) }
     : {};
@@ -48,9 +52,46 @@ function withClawXToolDefaults<T extends Record<string, unknown>>(config: T): T 
   tools.exec = exec;
   tools.deny = deny.includes('skill_workshop') ? deny : [...deny, 'skill_workshop'];
 
+  const gateway = (config.gateway && typeof config.gateway === 'object' && !Array.isArray(config.gateway))
+    ? { ...(config.gateway as Record<string, unknown>) }
+    : {};
+  const gatewayTools = (gateway.tools && typeof gateway.tools === 'object' && !Array.isArray(gateway.tools))
+    ? { ...(gateway.tools as Record<string, unknown>) }
+    : {};
+  const gatewayDeny = Array.isArray(gatewayTools.deny)
+    ? (gatewayTools.deny as unknown[]).filter((value): value is string => typeof value === 'string')
+    : [];
+  gatewayTools.deny = gatewayDeny.includes('skill_workshop') ? gatewayDeny : [...gatewayDeny, 'skill_workshop'];
+  gateway.tools = gatewayTools;
+
+  const skills = (config.skills && typeof config.skills === 'object' && !Array.isArray(config.skills))
+    ? { ...(config.skills as Record<string, unknown>) }
+    : {};
+  const workshop = (skills.workshop && typeof skills.workshop === 'object' && !Array.isArray(skills.workshop))
+    ? { ...(skills.workshop as Record<string, unknown>) }
+    : {};
+  const autonomous = (workshop.autonomous && typeof workshop.autonomous === 'object' && !Array.isArray(workshop.autonomous))
+    ? { ...(workshop.autonomous as Record<string, unknown>) }
+    : {};
+  autonomous.enabled = false;
+  workshop.autonomous = autonomous;
+  skills.workshop = workshop;
+
+  const entries = (skills.entries && typeof skills.entries === 'object' && !Array.isArray(skills.entries))
+    ? { ...(skills.entries as Record<string, unknown>) }
+    : {};
+  const skillCreatorEntry = (entries['skill-creator'] && typeof entries['skill-creator'] === 'object' && !Array.isArray(entries['skill-creator']))
+    ? { ...(entries['skill-creator'] as Record<string, unknown>) }
+    : {};
+  skillCreatorEntry.enabled = true;
+  entries['skill-creator'] = skillCreatorEntry;
+  skills.entries = entries;
+
   return {
     ...config,
     tools,
+    gateway,
+    skills,
   };
 }
 
@@ -376,6 +417,70 @@ async function sanitizeConfig(
     modified = true;
   }
 
+  const gateway = (
+    config.gateway && typeof config.gateway === 'object'
+      ? { ...(config.gateway as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  const gatewayTools = (
+    gateway.tools && typeof gateway.tools === 'object'
+      ? { ...(gateway.tools as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  const gatewayDeny = Array.isArray(gatewayTools.deny)
+    ? gatewayTools.deny.filter((value): value is string => typeof value === 'string')
+    : [];
+  if (!gatewayDeny.includes('skill_workshop')) {
+    gatewayTools.deny = [...gatewayDeny, 'skill_workshop'];
+    gateway.tools = gatewayTools;
+    config.gateway = gateway;
+    modified = true;
+  }
+
+  let skillsConfig = (
+    config.skills && typeof config.skills === 'object' && !Array.isArray(config.skills)
+      ? { ...(config.skills as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  let skillsConfigModified = false;
+
+  const workshop = (
+    skillsConfig.workshop && typeof skillsConfig.workshop === 'object'
+      ? { ...(skillsConfig.workshop as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  const autonomous = (
+    workshop.autonomous && typeof workshop.autonomous === 'object'
+      ? { ...(workshop.autonomous as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  if (autonomous.enabled !== false) {
+    autonomous.enabled = false;
+    workshop.autonomous = autonomous;
+    skillsConfig.workshop = workshop;
+    skillsConfigModified = true;
+  }
+
+  const skillEntries = (
+    skillsConfig.entries && typeof skillsConfig.entries === 'object' && !Array.isArray(skillsConfig.entries)
+      ? { ...(skillsConfig.entries as Record<string, unknown>) }
+      : {}
+  ) as Record<string, Record<string, unknown>>;
+  const skillCreatorEntry = skillEntries['skill-creator'] || {};
+  if (skillCreatorEntry.enabled !== true) {
+    skillEntries['skill-creator'] = {
+      ...skillCreatorEntry,
+      enabled: true,
+    };
+    skillsConfig.entries = skillEntries;
+    skillsConfigModified = true;
+  }
+
+  if (skillsConfigModified) {
+    config.skills = skillsConfig;
+    modified = true;
+  }
+
   // Mirror: remove stale tools.web.search.kimi.apiKey when moonshot provider exists.
   const providers = ((config.models as Record<string, unknown> | undefined)?.providers as Record<string, unknown> | undefined) || {};
   if (providers.moonshot) {
@@ -455,8 +560,8 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     const entries = skills.entries as Record<string, Record<string, unknown>>;
     expect(entries['my-skill'].enabled).toBe(true);
     expect(entries['my-skill'].apiKey).toBe('abc');
-    // Other top-level sections are untouched
-    expect(result.gateway).toEqual({ mode: 'local' });
+    // Other top-level sections are untouched (gateway gets Skill Workshop hardening)
+    expect(result.gateway).toEqual(withClawXToolDefaults({ gateway: { mode: 'local' } }).gateway);
   });
 
   it('removes skills.disabled at the root level of skills', async () => {
@@ -594,7 +699,12 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     // All other sections unchanged
     expect(result.channels).toEqual({ discord: { token: 'abc', enabled: true } });
     expect(result.plugins).toEqual({ entries: { customPlugin: { enabled: true } } });
-    expect(result.gateway).toEqual({ mode: 'local', auth: { token: 'xyz' } });
+    expect(result.gateway).toEqual(withClawXToolDefaults({
+      gateway: {
+        mode: 'local',
+        auth: { token: 'xyz' },
+      },
+    }).gateway);
     expect(result.agents).toEqual({ defaults: { model: { primary: 'gpt-4' } } });
   });
 
@@ -713,7 +823,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     // Other plugin config is preserved
     expect(plugins.entries).toEqual({ customPlugin: { enabled: true } });
     // Other top-level sections untouched
-    expect(result.gateway).toEqual({ mode: 'local' });
+    expect(result.gateway).toEqual(withClawXToolDefaults({ gateway: { mode: 'local' } }).gateway);
   });
 
   it('keeps configured built-in channels in plugins.allow when external plugins are enabled', async () => {

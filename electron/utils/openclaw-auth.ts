@@ -2733,6 +2733,25 @@ export async function updateSingleAgentModelProvider(
  * unknown or future config issues, the reactive auto-repair mechanism
  * (`runOpenClawDoctorRepair`) runs `openclaw doctor --fix` as a fallback.
  */
+const SKILL_WORKSHOP_TOOL_DENY_ENTRY = 'skill_workshop';
+const SKILL_CREATOR_SKILL_KEY = 'skill-creator';
+
+function normalizeToolDenyList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+}
+
+function ensureToolDenyIncludes(
+  deny: string[],
+  entry: string,
+): { deny: string[]; modified: boolean } {
+  if (deny.includes(entry)) {
+    return { deny, modified: false };
+  }
+  return { deny: [...deny, entry], modified: true };
+}
+
 export async function sanitizeOpenClawConfig(): Promise<void> {
   return withConfigLock(async () => {
     // Skip sanitization if the config file does not exist yet.
@@ -2916,18 +2935,19 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       toolsModified = true;
     }
 
-    // OpenClaw 6.5 moved Skill Workshop into the core skills surface.
-    // ClawX does not expose that durable-skill proposal flow yet, so keep the
-    // built-in tool denied even under tools.profile="full".
-    const deny = Array.isArray(toolsConfig.deny)
-      ? toolsConfig.deny.filter((value): value is string => typeof value === 'string')
-      : [];
-    if (!deny.includes('skill_workshop')) {
-      toolsConfig.deny = [...deny, 'skill_workshop'];
+    // OpenClaw 6.5+ routes durable skill edits through the Skill Workshop tool.
+    // ClawX keeps direct skill-creator authoring instead, so deny the workshop
+    // tool even under tools.profile="full".
+    const denyResult = ensureToolDenyIncludes(
+      normalizeToolDenyList(toolsConfig.deny),
+      SKILL_WORKSHOP_TOOL_DENY_ENTRY,
+    );
+    if (denyResult.modified) {
+      toolsConfig.deny = denyResult.deny;
       toolsModified = true;
       console.log('[sanitize] Added "skill_workshop" to tools.deny for ClawX desktop');
-    } else if (!Array.isArray(toolsConfig.deny) || toolsConfig.deny.length !== deny.length) {
-      toolsConfig.deny = deny;
+    } else if (!Array.isArray(toolsConfig.deny) || toolsConfig.deny.length !== denyResult.deny.length) {
+      toolsConfig.deny = denyResult.deny;
       toolsModified = true;
     }
 
@@ -2948,6 +2968,81 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
 
     if (toolsModified) {
       config.tools = toolsConfig;
+      modified = true;
+    }
+
+    // ── Skill Workshop hard-disable (OpenClaw 6.10+) ─────────────────
+    const gateway = (
+      config.gateway && typeof config.gateway === 'object'
+        ? { ...(config.gateway as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+    const gatewayTools = (
+      gateway.tools && typeof gateway.tools === 'object'
+        ? { ...(gateway.tools as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+    const gatewayDenyResult = ensureToolDenyIncludes(
+      normalizeToolDenyList(gatewayTools.deny),
+      SKILL_WORKSHOP_TOOL_DENY_ENTRY,
+    );
+    let gatewayModified = gatewayDenyResult.modified;
+    if (gatewayDenyResult.modified) {
+      gatewayTools.deny = gatewayDenyResult.deny;
+      console.log('[sanitize] Added "skill_workshop" to gateway.tools.deny for ClawX desktop');
+    } else if (!Array.isArray(gatewayTools.deny) || gatewayTools.deny.length !== gatewayDenyResult.deny.length) {
+      gatewayTools.deny = gatewayDenyResult.deny;
+      gatewayModified = true;
+    }
+    if (gatewayModified) {
+      gateway.tools = gatewayTools;
+      config.gateway = gateway;
+      modified = true;
+    }
+
+    let skillsObj = (
+      config.skills && typeof config.skills === 'object' && !Array.isArray(config.skills)
+        ? { ...(config.skills as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+    let skillsModified = false;
+
+    const workshop = (
+      skillsObj.workshop && typeof skillsObj.workshop === 'object'
+        ? { ...(skillsObj.workshop as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+    const autonomous = (
+      workshop.autonomous && typeof workshop.autonomous === 'object'
+        ? { ...(workshop.autonomous as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+    if (autonomous.enabled !== false) {
+      autonomous.enabled = false;
+      workshop.autonomous = autonomous;
+      skillsObj.workshop = workshop;
+      skillsModified = true;
+      console.log('[sanitize] Disabled skills.workshop.autonomous for ClawX desktop');
+    }
+
+    const skillEntries = (
+      skillsObj.entries && typeof skillsObj.entries === 'object' && !Array.isArray(skillsObj.entries)
+        ? { ...(skillsObj.entries as Record<string, unknown>) }
+        : {}
+    ) as Record<string, Record<string, unknown>>;
+    const skillCreatorEntry = skillEntries[SKILL_CREATOR_SKILL_KEY] || {};
+    if (skillCreatorEntry.enabled !== true) {
+      skillEntries[SKILL_CREATOR_SKILL_KEY] = {
+        ...skillCreatorEntry,
+        enabled: true,
+      };
+      skillsObj.entries = skillEntries;
+      skillsModified = true;
+      console.log('[sanitize] Enabled bundled skill-creator for direct skill authoring in ClawX desktop');
+    }
+
+    if (skillsModified) {
+      config.skills = skillsObj;
       modified = true;
     }
 

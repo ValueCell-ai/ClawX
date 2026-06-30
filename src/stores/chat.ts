@@ -10,6 +10,7 @@ import { useAgentsStore } from './agents';
 import type { ChatRuntimeEvent } from '../../shared/chat-runtime-events';
 import { buildBaselineRunKey, captureBaseline, clearBaselines } from './baseline-cache';
 import { isCronSessionKey, sessionKeysAreEquivalent } from './chat/cron-session-utils';
+import { isClawXDesktopSessionKey, shouldIncludeSessionInSidebarList } from './chat/session-key-utils';
 import { fetchCronSessionHistory } from '@/lib/cron-session-history';
 import { pickStartupSessionFallback } from './chat/session-selection';
 import {
@@ -2641,7 +2642,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             updatedAt: parseSessionUpdatedAtMs(s.updatedAt),
             status: parseSessionStatus(s.status),
             hasActiveRun: typeof s.hasActiveRun === 'boolean' ? s.hasActiveRun : undefined,
-          })).filter((s: ChatSession) => s.key);
+          })).filter((s: ChatSession) => shouldIncludeSessionInSidebarList(s));
 
           const canonicalBySuffix = new Map<string, string>();
           for (const session of sessions) {
@@ -2684,6 +2685,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
 
           const sessionsWithCurrent = !dedupedSessions.find((s) => s.key === nextSessionKey) && nextSessionKey
+            && isClawXDesktopSessionKey(nextSessionKey)
             ? [
               ...dedupedSessions,
               { key: nextSessionKey, displayName: nextSessionKey },

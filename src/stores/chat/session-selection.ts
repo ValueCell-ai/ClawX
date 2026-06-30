@@ -1,4 +1,5 @@
 import { isCronSessionKey } from './cron-session-utils';
+import { isChannelSessionKey } from './session-key-utils';
 import type { ChatSession } from './types';
 
 function getAgentIdFromSessionKey(sessionKey: string): string {
@@ -28,11 +29,15 @@ export function pickStartupSessionFallback(
   if (agentMain) return agentMain.key;
 
   const agentNonCron = sortByUpdatedAtDesc(
-    sessions.filter((session) => session.key.startsWith(`agent:${agentId}:`) && !isCronSessionKey(session.key)),
+    sessions.filter((session) => session.key.startsWith(`agent:${agentId}:`)
+      && !isCronSessionKey(session.key)
+      && !isChannelSessionKey(session.key)),
   );
   if (agentNonCron.length > 0) return agentNonCron[0]!.key;
 
-  const nonCron = sortByUpdatedAtDesc(sessions.filter((session) => !isCronSessionKey(session.key)));
+  const nonCron = sortByUpdatedAtDesc(
+    sessions.filter((session) => !isCronSessionKey(session.key) && !isChannelSessionKey(session.key)),
+  );
   if (nonCron.length > 0) return nonCron[0]!.key;
 
   return null;
