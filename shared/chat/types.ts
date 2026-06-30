@@ -82,6 +82,8 @@ export interface ChatSession {
   updatedAt?: number;
   status?: string;
   hasActiveRun?: boolean;
+  /** Channel provider that last delivered to this session (e.g. webchat, feishu, discord). */
+  channel?: string;
 }
 
 export interface ToolStatus {

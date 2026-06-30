@@ -34,6 +34,7 @@ import { useChatStore } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { getSessionActivityMs, getSessionBucket, type SessionBucketKey } from './session-buckets';
+import { CHANNEL_NAMES } from '@shared/types/channel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -447,6 +448,8 @@ export function Sidebar() {
                   const agentName = agentNameById[agentId] || agentId;
                   const isEditing = editingSessionKey === s.key;
                   const sessionLabel = getSessionLabel(s.key, s.displayName, s.label);
+                  const channelType = s.channel && s.channel !== 'webchat' ? s.channel : null;
+                  const channelName = channelType ? CHANNEL_NAMES[channelType as keyof typeof CHANNEL_NAMES] ?? channelType : null;
                   return (
                     <div key={s.key} className="group relative flex items-center">
                       {isEditing ? (
@@ -500,6 +503,15 @@ export function Sidebar() {
                               <span className="shrink-0 rounded-full bg-black/[0.04] px-2 py-0.5 text-2xs font-medium text-foreground/70 dark:bg-white/[0.08]">
                                 {agentName}
                               </span>
+                              {channelType && channelName && (
+                                <span
+                                  title={channelName}
+                                  aria-label={channelName}
+                                  className="shrink-0 truncate rounded-full bg-blue-500/10 px-2 py-0.5 text-2xs font-medium text-blue-700 dark:bg-blue-400/10 dark:text-blue-400"
+                                >
+                                  {channelName}
+                                </span>
+                              )}
                               <span className="truncate">{sessionLabel}</span>
                             </div>
                           </button>
