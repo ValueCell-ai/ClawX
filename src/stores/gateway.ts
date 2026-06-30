@@ -274,26 +274,6 @@ function handleChatRuntimeEvent(event: ChatRuntimeEvent): void {
     .catch(() => {});
 }
 
-function handleGatewaySessionsChanged(data: unknown): void {
-  const payload = data as Record<string, unknown>;
-  const sessionKey = typeof payload.sessionKey === 'string' ? payload.sessionKey : undefined;
-  if (sessionKey) {
-    touchSessionActivity(sessionKey, typeof payload.ts === 'number' ? payload.ts : Date.now());
-  }
-
-  import('./chat')
-    .then(({ useChatStore }) => {
-      const state = useChatStore.getState();
-      // Refresh the sidebar for other sessions only. Current-session history
-      // and run lifecycle stay on chat/runtime events.
-      if (sessionKey && sessionKeysAreEquivalent(sessionKey, state.currentSessionKey)) {
-        return;
-      }
-      maybeLoadSessions(state, true);
-    })
-    .catch(() => {});
-}
-
 function handleGatewayChatMessage(data: unknown): void {
   import('./chat').then(({ useChatStore }) => {
     const chatData = data as Record<string, unknown>;
@@ -388,9 +368,6 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
           }));
           unsubscribers.push(hostEvents.onGatewayChatMessage((payload) => {
             handleGatewayChatMessage(payload);
-          }));
-          unsubscribers.push(hostEvents.onGatewaySessionsChanged((payload) => {
-            handleGatewaySessionsChanged(payload);
           }));
           unsubscribers.push(hostEvents.onChatRuntimeEvent((payload) => {
             handleChatRuntimeEvent(payload);

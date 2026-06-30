@@ -19,12 +19,6 @@ export type GatewayChannelStatusEvent = {
   channelId: string;
   status: string;
 };
-export type GatewaySessionsChangedEvent = GatewayRuntimeRecord & {
-  sessionKey?: string;
-  phase?: string;
-  reason?: string;
-  ts?: number;
-};
 export type GatewayExitEvent = number | null | { code: number | null };
 
 export type OAuthCodeEvent =
@@ -75,7 +69,6 @@ export type HostEventContract = {
     healthChanged: (payload: GatewayRuntimePayload) => void;
     presenceChanged: (payload: GatewayRuntimePayload) => void;
     chatMessage: (payload: GatewayChatMessageEvent) => void;
-    sessionsChanged: (payload: GatewaySessionsChangedEvent) => void;
     channelStatus: (payload: GatewayChannelStatusEvent) => void;
     exit: (payload: GatewayExitEvent) => void;
     error: (payload: GatewayErrorEvent) => void;
@@ -123,7 +116,6 @@ export const HOST_EVENT_CHANNELS = {
     healthChanged: 'gateway:health-changed',
     presenceChanged: 'gateway:presence-changed',
     chatMessage: 'gateway:chat-message',
-    sessionsChanged: 'gateway:sessions-changed',
     channelStatus: 'gateway:channel-status',
     exit: 'gateway:exit',
     error: 'gateway:error',

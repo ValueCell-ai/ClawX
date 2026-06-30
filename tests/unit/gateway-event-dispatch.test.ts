@@ -31,17 +31,6 @@ describe('dispatchProtocolEvent', () => {
     expect(emitter.emit).toHaveBeenCalledWith('channel:status', { channelId: 'telegram', status: 'connected' });
   });
 
-  it('dispatches sessions.changed to gateway:sessions-changed', () => {
-    const emitter = createMockEmitter();
-    const payload = {
-      sessionKey: 'agent:main:feishu:direct:ou_test',
-      phase: 'start',
-      ts: 123,
-    };
-    dispatchProtocolEvent(emitter, 'sessions.changed', payload);
-    expect(emitter.emit).toHaveBeenCalledWith('gateway:sessions-changed', payload);
-  });
-
   it('dispatches native health and presence events separately from generic notifications', () => {
     const emitter = createMockEmitter();
     dispatchProtocolEvent(emitter, 'health', { ok: true });
