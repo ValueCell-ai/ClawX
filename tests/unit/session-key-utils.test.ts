@@ -27,21 +27,29 @@ describe('session-key-utils', () => {
     expect(isClawXDesktopSessionKey('agent:main:cron:heartbeat')).toBe(false);
   });
 
-  it('detects placeholder channel sessions without real messages', () => {
+  it('detects placeholder channel sessions without any preview/title', () => {
     const placeholder: ChatSession = {
       key: 'agent:main:feishu:ou_abc123',
-      lastMessagePreview: 'feishu:ou_abc123',
     };
     expect(isPlaceholderChannelSession(placeholder)).toBe(true);
     expect(shouldIncludeSessionInSidebarList(placeholder)).toBe(false);
   });
 
-  it('includes channel sessions with real message previews', () => {
+  it('includes channel sessions once they have a message preview', () => {
     const active: ChatSession = {
       key: 'agent:main:feishu:ou_abc123',
-      lastMessagePreview: '你好',
+      lastMessagePreview: 'feishu:ou_abc123',
     };
     expect(isPlaceholderChannelSession(active)).toBe(false);
     expect(shouldIncludeSessionInSidebarList(active)).toBe(true);
+  });
+
+  it('includes channel sessions with a derived title', () => {
+    const titled: ChatSession = {
+      key: 'agent:main:feishu:ou_abc123',
+      derivedTitle: '飞书对话',
+    };
+    expect(isPlaceholderChannelSession(titled)).toBe(false);
+    expect(shouldIncludeSessionInSidebarList(titled)).toBe(true);
   });
 });

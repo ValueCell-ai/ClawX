@@ -18,28 +18,17 @@ export function isClawXDesktopSessionKey(sessionKey: string): boolean {
   return !isCronSessionKey(sessionKey) && !isChannelSessionKey(sessionKey);
 }
 
-function getAgentScopedSessionSuffix(sessionKey: string): string | null {
-  if (!sessionKey.startsWith('agent:')) return null;
-  const parts = sessionKey.split(':');
-  if (parts.length < 3) return null;
-  return parts.slice(2).join(':');
-}
-
 /**
- * Gateway may register channel sessions before any user message (preview is just
- * the peer id). Those should not appear in ClawX until there is real activity.
+ * Gateway may register channel sessions before any real user message (e.g. bot
+ * added to a group, webhook ping). Hide those placeholder entries from ClawX
+ * sidebar — they have no preview text, no derived title, and no display name.
  */
 export function isPlaceholderChannelSession(session: ChatSession): boolean {
   if (!isChannelSessionKey(session.key)) return false;
+  if (session.lastMessagePreview?.trim()) return false;
   if (session.derivedTitle?.trim()) return false;
   if (session.displayName?.trim() && session.displayName !== session.key) return false;
-
-  const suffix = getAgentScopedSessionSuffix(session.key);
-  const preview = session.lastMessagePreview?.trim();
-  if (!preview) return true;
-  if (preview === session.key || (suffix != null && preview === suffix)) return true;
-
-  return false;
+  return true;
 }
 
 export function shouldIncludeSessionInSidebarList(session: ChatSession): boolean {

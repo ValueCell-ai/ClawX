@@ -126,7 +126,6 @@ describe('chat store loadSessions startup selection', () => {
           sessions: [
             {
               key: 'agent:main:feishu:ou_69c24802fa248625f7965a',
-              lastMessagePreview: 'feishu:ou_69c24802fa248625f7965a',
               updatedAt: 9_000,
             },
             {
