@@ -238,7 +238,155 @@ const PLUGIN_NPM_NAMES: Record<string, string> = {
   'openclaw-weixin': '@tencent-weixin/openclaw-weixin',
 };
 
-// ── Version helper ───────────────────────────────────────────────────────────
+const OPENCLAW_CONFIG_PATH = join(homedir(), '.openclaw', 'openclaw.json');
+
+/**
+ * Official @openclaw/* channel plugins that ClawX mirrors into
+ * ~/.openclaw/extensions/. OpenClaw 2026.6+ requires matching
+ * plugins.installs metadata so trustedOfficialInstall is true and
+ * runtime APIs such as openKeyedStore are available.
+ */
+const TRUSTED_OFFICIAL_EXTENSION_PLUGINS: Record<string, string> = {
+  whatsapp: '@openclaw/whatsapp',
+  discord: '@openclaw/discord',
+  qqbot: '@openclaw/qqbot',
+};
+
+type TrustedOfficialPluginInstallRecord = {
+  source: 'npm';
+  spec: string;
+  installPath: string;
+  version: string;
+  resolvedName: string;
+  resolvedVersion: string;
+  resolvedSpec: string;
+};
+
+function resolveTrustedInstallPath(targetDir: string): string | null {
+  try {
+    return realpathSync(fsPath(targetDir));
+  } catch {
+    return targetDir;
+  }
+}
+
+function buildTrustedOfficialPluginInstallRecord(
+  pluginDirName: string,
+  targetDir: string,
+): TrustedOfficialPluginInstallRecord | null {
+  const npmName = TRUSTED_OFFICIAL_EXTENSION_PLUGINS[pluginDirName];
+  if (!npmName) return null;
+
+  const version = readPluginVersion(join(targetDir, 'package.json'));
+  const installPath = resolveTrustedInstallPath(targetDir);
+  if (!version || !installPath) return null;
+
+  return {
+    source: 'npm',
+    spec: npmName,
+    installPath,
+    version,
+    resolvedName: npmName,
+    resolvedVersion: version,
+    resolvedSpec: `${npmName}@${version}`,
+  };
+}
+
+function trustedInstallRecordMatches(
+  existing: unknown,
+  expected: TrustedOfficialPluginInstallRecord,
+): boolean {
+  if (!existing || typeof existing !== 'object' || Array.isArray(existing)) {
+    return false;
+  }
+  const record = existing as Record<string, unknown>;
+  return record.source === expected.source
+    && record.spec === expected.spec
+    && record.installPath === expected.installPath
+    && record.version === expected.version
+    && record.resolvedName === expected.resolvedName
+    && record.resolvedVersion === expected.resolvedVersion
+    && record.resolvedSpec === expected.resolvedSpec;
+}
+
+/**
+ * Write or refresh plugins.installs.<id> for a ClawX-mirrored official plugin.
+ * Safe to call repeatedly; no-ops when metadata is already current.
+ */
+export function syncTrustedOfficialPluginInstallRecord(
+  pluginDirName: string,
+  targetDir: string,
+): boolean {
+  const expected = buildTrustedOfficialPluginInstallRecord(pluginDirName, targetDir);
+  if (!expected) return false;
+
+  if (!existsSync(fsPath(join(targetDir, 'openclaw.plugin.json')))) {
+    return false;
+  }
+
+  try {
+    if (!existsSync(fsPath(OPENCLAW_CONFIG_PATH))) {
+      return false;
+    }
+
+    const raw = readFileSync(fsPath(OPENCLAW_CONFIG_PATH), 'utf-8');
+    const config = JSON.parse(raw) as Record<string, unknown>;
+    const plugins = config.plugins;
+    if (!plugins || typeof plugins !== 'object' || Array.isArray(plugins)) {
+      return false;
+    }
+
+    const pluginsRecord = plugins as Record<string, unknown>;
+    const installs = pluginsRecord.installs;
+    const installsRecord = installs && typeof installs === 'object' && !Array.isArray(installs)
+      ? installs as Record<string, unknown>
+      : {};
+
+    const existing = installsRecord[pluginDirName];
+    if (trustedInstallRecordMatches(existing, expected)) {
+      return false;
+    }
+
+    installsRecord[pluginDirName] = expected;
+    pluginsRecord.installs = installsRecord;
+    writeFileSync(
+      fsPath(OPENCLAW_CONFIG_PATH),
+      `${JSON.stringify(config, null, 2)}\n`,
+      'utf-8',
+    );
+    logger.info(`[plugin] Synced trusted install metadata for ${pluginDirName}`);
+    return true;
+  } catch (error) {
+    logger.warn(`[plugin] Failed to sync trusted install metadata for ${pluginDirName}:`, error);
+    return false;
+  }
+}
+
+/** Repair trusted install metadata for all mirrored official plugins on disk. */
+export function repairTrustedOfficialPluginInstallRecords(): void {
+  for (const pluginDirName of Object.keys(TRUSTED_OFFICIAL_EXTENSION_PLUGINS)) {
+    const targetDir = join(homedir(), '.openclaw', 'extensions', pluginDirName);
+    if (!existsSync(fsPath(join(targetDir, 'openclaw.plugin.json')))) {
+      continue;
+    }
+    syncTrustedOfficialPluginInstallRecord(pluginDirName, targetDir);
+  }
+}
+
+export function resolvePluginNpmPackagePath(npmName: string): string | null {
+  const candidateRoots = app.isPackaged
+    ? [app.getAppPath(), process.resourcesPath]
+    : [app.getAppPath(), process.cwd(), join(app.getAppPath(), '..')];
+
+  for (const root of candidateRoots) {
+    const npmPkgPath = join(root, 'node_modules', ...npmName.split('/'));
+    if (existsSync(fsPath(join(npmPkgPath, 'openclaw.plugin.json')))) {
+      return npmPkgPath;
+    }
+  }
+
+  return null;
+}
 
 function readPluginVersion(pkgJsonPath: string): string | null {
   try {
@@ -373,10 +521,14 @@ export function ensurePluginInstalled(
 
   // If already installed, check whether an upgrade is available
   if (existsSync(fsPath(targetManifest))) {
-    if (!sourceDir) return { installed: true }; // no bundled source to compare, keep existing
+    if (!sourceDir) {
+      syncTrustedOfficialPluginInstallRecord(pluginDirName, targetDir);
+      return { installed: true }; // no bundled source to compare, keep existing
+    }
     const installedVersion = readPluginVersion(targetPkgJson);
     const sourceVersion = readPluginVersion(join(sourceDir, 'package.json'));
     if (!sourceVersion || !installedVersion || sourceVersion === installedVersion) {
+      syncTrustedOfficialPluginInstallRecord(pluginDirName, targetDir);
       return { installed: true }; // same version or unable to compare
     }
     // Version differs — fall through to overwrite install
@@ -400,6 +552,7 @@ export function ensurePluginInstalled(
           return { installed: false, warning: `Failed to install ${pluginLabel} plugin mirror (manifest missing).` };
         }
         fixupPluginManifest(targetDir);
+        syncTrustedOfficialPluginInstallRecord(pluginDirName, targetDir);
         logger.info(`Installed ${pluginLabel} plugin from bundled mirror: ${sourceDir}`);
         return { installed: true };
       } catch (error) {
@@ -434,8 +587,8 @@ export function ensurePluginInstalled(
   if (!app.isPackaged) {
     const npmName = PLUGIN_NPM_NAMES[pluginDirName];
     if (npmName) {
-      const npmPkgPath = join(process.cwd(), 'node_modules', ...npmName.split('/'));
-      if (existsSync(fsPath(join(npmPkgPath, 'openclaw.plugin.json')))) {
+      const npmPkgPath = resolvePluginNpmPackagePath(npmName);
+      if (npmPkgPath && existsSync(fsPath(join(npmPkgPath, 'openclaw.plugin.json')))) {
         const installedVersion = existsSync(fsPath(targetPkgJson)) ? readPluginVersion(targetPkgJson) : null;
         const sourceVersion = readPluginVersion(join(npmPkgPath, 'package.json'));
         if (sourceVersion && (!installedVersion || sourceVersion !== installedVersion)) {
@@ -448,6 +601,7 @@ export function ensurePluginInstalled(
             copyPluginFromNodeModules(npmPkgPath, targetDir, npmName);
             fixupPluginManifest(targetDir);
             if (existsSync(fsPath(join(targetDir, 'openclaw.plugin.json')))) {
+              syncTrustedOfficialPluginInstallRecord(pluginDirName, targetDir);
               return { installed: true };
             }
           } catch (err) {
@@ -465,6 +619,7 @@ export function ensurePluginInstalled(
             );
           }
         } else if (existsSync(fsPath(targetManifest))) {
+          syncTrustedOfficialPluginInstallRecord(pluginDirName, targetDir);
           return { installed: true }; // same version, already installed
         }
       }
@@ -575,4 +730,5 @@ export async function ensureAllBundledPluginsInstalled(): Promise<void> {
       logger.warn(`[plugin] Failed to install/upgrade ${label} plugin:`, error);
     }
   }
+  repairTrustedOfficialPluginInstallRecords();
 }
