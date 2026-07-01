@@ -107,7 +107,7 @@ export function buildRuntimeProviderOptions(
     .sort((left, right) => {
       if (left.id === providerDefaultAccountId) return -1;
       if (right.id === providerDefaultAccountId) return 1;
-      return right.updatedAt.localeCompare(left.updatedAt);
+      return (right.updatedAt ?? '').localeCompare(left.updatedAt ?? '');
     });
 
   const deduped = new Map<string, RuntimeProviderOption>();
@@ -154,7 +154,7 @@ export function buildConfiguredModelOptions(
     .sort((left, right) => {
       if (left.id === providerDefaultAccountId) return -1;
       if (right.id === providerDefaultAccountId) return 1;
-      return right.updatedAt.localeCompare(left.updatedAt);
+      return (right.updatedAt ?? '').localeCompare(left.updatedAt ?? '');
     });
 
   const deduped = new Map<string, ConfiguredModelOption>();
