@@ -228,7 +228,7 @@ describe('plugin installer diagnostics', () => {
       return value.includes('openclaw.plugin.json')
         || value === configPath
         || value.includes('/bundle/whatsapp/package.json')
-        || value.includes('/home/test/.openclaw/extensions/whatsapp/package.json');
+        || value.includes(`${targetDir}/package.json`);
     });
     mockReadFileSync.mockImplementation((input: string) => {
       if (String(input) === configPath) {
@@ -252,7 +252,7 @@ describe('plugin installer diagnostics', () => {
     expect(result.installed).toBe(true);
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       configPath,
-      expect.stringContaining('"installPath": "/home/test/.openclaw/extensions/whatsapp"'),
+      expect.stringContaining(`"installPath": "${targetDir}"`),
       'utf-8',
     );
     expect(mockWriteFileSync).toHaveBeenCalledWith(

@@ -171,7 +171,7 @@ describe('bisection 0d794cd vs de3046a', () => {
     it('records whether gateway:sessions-changed is wired (de3046a=false, 0d794cd=true)', async () => {
       await initGatewayHandlers();
       const wired = hasSessionsChangedWiring();
-      // eslint-disable-next-line no-console -- bisection harness output
+       
       console.log(`[bisect] gateway:sessions-changed wired=${wired}`);
       expect([true, false]).toContain(wired);
     });
