@@ -203,6 +203,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean 
         // Same version already installed — still patch manifest ID in case it was
         // never corrected (e.g. installed before MANIFEST_ID_FIXES included this plugin).
         fixupPluginManifest(targetDir);
+        syncTrustedOfficialPluginInstallRecord(dirName, targetDir);
       }
       continue;
     }

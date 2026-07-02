@@ -87,6 +87,11 @@ vi.mock('@electron/utils/logger', () => ({
   },
 }));
 
+vi.mock('@electron/utils/plugin-install-index', () => ({
+  upsertPluginInstallRecordsIntoSqlite: vi.fn(() => true),
+  ensureOpenClawStateDirExists: vi.fn(),
+}));
+
 function setPlatform(platform: NodeJS.Platform): void {
   Object.defineProperty(process, 'platform', {
     value: platform,

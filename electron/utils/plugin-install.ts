@@ -12,6 +12,7 @@ import { readdir, stat, copyFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { logger } from './logger';
+import { upsertPluginInstallRecordsIntoSqlite, ensureOpenClawStateDirExists } from './plugin-install-index';
 
 function normalizeFsPathForWindows(filePath: string): string {
   if (process.platform !== 'win32') return filePath;
@@ -260,13 +261,16 @@ type TrustedOfficialPluginInstallRecord = {
   resolvedName: string;
   resolvedVersion: string;
   resolvedSpec: string;
+  installedAt: string;
 };
 
-function resolveTrustedInstallPath(targetDir: string): string | null {
+/** Store plain paths for OpenClaw install-record matching (no Windows \\?\ prefix). */
+function normalizePluginInstallPathForRecord(targetDir: string): string | null {
   try {
-    return realpathSync(fsPath(targetDir));
+    const resolved = realpathSync(targetDir);
+    return path.normalize(resolved);
   } catch {
-    return targetDir;
+    return path.normalize(targetDir);
   }
 }
 
@@ -278,7 +282,7 @@ function buildTrustedOfficialPluginInstallRecord(
   if (!npmName) return null;
 
   const version = readPluginVersion(join(targetDir, 'package.json'));
-  const installPath = resolveTrustedInstallPath(targetDir);
+  const installPath = normalizePluginInstallPathForRecord(targetDir);
   if (!version || !installPath) return null;
 
   return {
@@ -289,7 +293,14 @@ function buildTrustedOfficialPluginInstallRecord(
     resolvedName: npmName,
     resolvedVersion: version,
     resolvedSpec: `${npmName}@${version}`,
+    installedAt: new Date().toISOString(),
   };
+}
+
+function persistTrustedOfficialPluginInstallRecordsToSqlite(
+  records: Record<string, Record<string, unknown>>,
+): boolean {
+  return upsertPluginInstallRecordsIntoSqlite(records);
 }
 
 function trustedInstallRecordMatches(
@@ -311,6 +322,7 @@ function trustedInstallRecordMatches(
 
 /**
  * Write or refresh plugins.installs.<id> for a ClawX-mirrored official plugin.
+ * Also persists the record into openclaw.sqlite for OpenClaw 2026.6+ trust checks.
  * Safe to call repeatedly; no-ops when metadata is already current.
  */
 export function syncTrustedOfficialPluginInstallRecord(
@@ -324,16 +336,19 @@ export function syncTrustedOfficialPluginInstallRecord(
     return false;
   }
 
+  let jsonChanged = false;
   try {
+    ensureOpenClawStateDirExists();
     if (!existsSync(fsPath(OPENCLAW_CONFIG_PATH))) {
       return false;
     }
 
     const raw = readFileSync(fsPath(OPENCLAW_CONFIG_PATH), 'utf-8');
     const config = JSON.parse(raw) as Record<string, unknown>;
-    const plugins = config.plugins;
+    let plugins = config.plugins;
     if (!plugins || typeof plugins !== 'object' || Array.isArray(plugins)) {
-      return false;
+      plugins = { enabled: true, installs: {} };
+      config.plugins = plugins;
     }
 
     const pluginsRecord = plugins as Record<string, unknown>;
@@ -343,23 +358,26 @@ export function syncTrustedOfficialPluginInstallRecord(
       : {};
 
     const existing = installsRecord[pluginDirName];
-    if (trustedInstallRecordMatches(existing, expected)) {
-      return false;
+    if (!trustedInstallRecordMatches(existing, expected)) {
+      installsRecord[pluginDirName] = expected;
+      pluginsRecord.installs = installsRecord;
+      writeFileSync(
+        fsPath(OPENCLAW_CONFIG_PATH),
+        `${JSON.stringify(config, null, 2)}\n`,
+        'utf-8',
+      );
+      logger.info(`[plugin] Synced trusted install metadata for ${pluginDirName}`);
+      jsonChanged = true;
     }
-
-    installsRecord[pluginDirName] = expected;
-    pluginsRecord.installs = installsRecord;
-    writeFileSync(
-      fsPath(OPENCLAW_CONFIG_PATH),
-      `${JSON.stringify(config, null, 2)}\n`,
-      'utf-8',
-    );
-    logger.info(`[plugin] Synced trusted install metadata for ${pluginDirName}`);
-    return true;
   } catch (error) {
     logger.warn(`[plugin] Failed to sync trusted install metadata for ${pluginDirName}:`, error);
     return false;
   }
+
+  const sqliteChanged = persistTrustedOfficialPluginInstallRecordsToSqlite({
+    [pluginDirName]: expected,
+  });
+  return jsonChanged || sqliteChanged;
 }
 
 /** Repair trusted install metadata for all mirrored official plugins on disk. */
