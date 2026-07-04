@@ -12,6 +12,7 @@ import { getOpenClawResolvedDir } from './paths';
 import * as logger from './logger';
 import { proxyAwareFetch } from './proxy-fetch';
 import { withConfigLock } from './config-mutex';
+import { isOpenClawConfigMutationEnabled } from './runtime-flags';
 import {
     OPENCLAW_WECHAT_CHANNEL_TYPE,
     isWechatChannelType,
@@ -479,6 +480,11 @@ export async function readOpenClawConfig(): Promise<OpenClawConfig> {
 }
 
 export async function writeOpenClawConfig(config: OpenClawConfig): Promise<void> {
+    if (!isOpenClawConfigMutationEnabled()) {
+        logger.info('Skipping OpenClaw config write because config mutation is disabled');
+        return;
+    }
+
     await ensureConfigDir();
 
     try {

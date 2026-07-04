@@ -317,6 +317,68 @@ describe('WeCom plugin configuration', () => {
   });
 });
 
+describe('OpenClaw config writer guard', () => {
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    vi.resetModules();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+    delete process.env.LAH_SAFE_MODE;
+    delete process.env.CLAWX_OPENCLAW_CONFIG_MUTATION;
+    delete process.env.CLAWX_EXTERNAL_GATEWAY_URL;
+    delete process.env.CLAWX_EXTERNAL_GATEWAY_ENABLED;
+  });
+
+  it('skips writing openclaw.json in LAH safe mode', async () => {
+    process.env.LAH_SAFE_MODE = '1';
+    const { writeOpenClawConfig } = await import('@electron/utils/channel-config');
+
+    await writeOpenClawConfig({
+      channels: {
+        telegram: {
+          botToken: 'token',
+          proxy: 'socks5://127.0.0.1:7891',
+        },
+      },
+    });
+
+    expect(existsSync(join(testHome, '.openclaw', 'openclaw.json'))).toBe(false);
+    expect(mockLoggerInfo).toHaveBeenCalledWith('Skipping OpenClaw config write because config mutation is disabled');
+  });
+
+  it('skips writing openclaw.json when config mutation is disabled', async () => {
+    process.env.CLAWX_OPENCLAW_CONFIG_MUTATION = '0';
+    const { writeOpenClawConfig } = await import('@electron/utils/channel-config');
+
+    await writeOpenClawConfig({
+      channels: {
+        telegram: {
+          botToken: 'token',
+          proxy: 'socks5://127.0.0.1:7891',
+        },
+      },
+    });
+
+    expect(existsSync(join(testHome, '.openclaw', 'openclaw.json'))).toBe(false);
+  });
+
+  it('skips writing openclaw.json in external Gateway mode', async () => {
+    process.env.CLAWX_EXTERNAL_GATEWAY_URL = 'ws://127.0.0.1:4000/gateway';
+    const { writeOpenClawConfig } = await import('@electron/utils/channel-config');
+
+    await writeOpenClawConfig({
+      channels: {
+        telegram: {
+          botToken: 'token',
+          proxy: 'socks5://127.0.0.1:7891',
+        },
+      },
+    });
+
+    expect(existsSync(join(testHome, '.openclaw', 'openclaw.json'))).toBe(false);
+  });
+});
+
 describe('WeChat dangling plugin cleanup', () => {
   beforeEach(async () => {
     vi.resetAllMocks();

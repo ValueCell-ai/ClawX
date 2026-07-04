@@ -6,6 +6,7 @@ import { getUvMirrorEnv } from '../utils/uv-env';
 import { isPythonReady, setupManagedPython } from '../utils/uv-setup';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
+import { isGatewayKillOnConflictEnabled } from '../utils/runtime-flags';
 import { probeGatewayReady } from './ws-client';
 
 export function warmupManagedPythonReadiness(): void {
@@ -245,11 +246,15 @@ export async function findExistingGatewayProcess(options: {
     try {
       const pids = await getListeningProcessIds(port);
       if (pids.length > 0 && (!ownedPid || !pids.includes(String(ownedPid)))) {
-        await terminateOrphanedProcessIds(port, pids);
-        if (process.platform === 'win32') {
-          await waitForPortFree(port, 10000);
+        if (isGatewayKillOnConflictEnabled()) {
+          await terminateOrphanedProcessIds(port, pids);
+          if (process.platform === 'win32') {
+            await waitForPortFree(port, 10000);
+          }
+          return null;
         }
-        return null;
+
+        logger.info(`Skipping orphan Gateway cleanup for port ${port} because kill-on-conflict is disabled`);
       }
     } catch (err) {
       logger.warn('Error checking for existing process on port:', err);

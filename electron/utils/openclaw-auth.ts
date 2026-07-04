@@ -21,6 +21,9 @@ import {
   getProviderConfig,
 } from './provider-registry';
 import {
+  isOpenClawConfigMutationEnabled,
+} from './runtime-flags';
+import {
   OPENCLAW_PROVIDER_KEY_MINIMAX,
   OPENCLAW_PROVIDER_KEY_MOONSHOT,
   OPENCLAW_PROVIDER_KEY_MOONSHOT_GLOBAL,
@@ -848,6 +851,10 @@ function normalizeAgentsDefaultsCompactionMode(config: Record<string, unknown>):
 }
 
 async function writeOpenClawJson(config: Record<string, unknown>): Promise<void> {
+  if (!isOpenClawConfigMutationEnabled()) {
+    console.log('[openclaw-auth] Skipping openclaw.json write because config mutation is disabled');
+    return;
+  }
   normalizeAgentsDefaultsCompactionMode(config);
 
   // Ensure SIGUSR1 graceful reload is authorized by OpenClaw config.
@@ -879,6 +886,10 @@ export async function saveOAuthTokenToOpenClaw(
   },
   agentId?: string
 ): Promise<void> {
+  if (!isOpenClawConfigMutationEnabled()) {
+    console.log(`[saveOAuthTokenToOpenClaw] Skipping auth-profiles write for "${provider}" because config mutation is disabled`);
+    return;
+  }
   const agentIds = agentId ? [agentId] : await discoverAgentIds();
   if (agentIds.length === 0) agentIds.push('main');
 
@@ -945,6 +956,10 @@ export async function saveProviderKeyToOpenClaw(
   apiKey: string,
   agentId?: string
 ): Promise<void> {
+  if (!isOpenClawConfigMutationEnabled()) {
+    console.log(`[saveProviderKeyToOpenClaw] Skipping auth-profiles write for "${provider}" because config mutation is disabled`);
+    return;
+  }
   if (isOAuthProviderType(provider) && !apiKey) {
     console.log(`Skipping auth-profiles write for OAuth provider "${provider}" (no API key provided, using OAuth)`);
     return;
@@ -979,6 +994,10 @@ export async function removeProviderKeyFromOpenClaw(
   provider: string,
   agentId?: string
 ): Promise<void> {
+  if (!isOpenClawConfigMutationEnabled()) {
+    console.log(`[removeProviderKeyFromOpenClaw] Skipping auth-profiles write for "${provider}" because config mutation is disabled`);
+    return;
+  }
   const agentIds = agentId ? [agentId] : await discoverAgentIds();
   if (agentIds.length === 0) agentIds.push('main');
 
@@ -1112,6 +1131,10 @@ export async function pruneStaleRuntimeAgentModelRefs(config: Record<string, unk
 }
 
 export async function removeProviderFromOpenClaw(provider: string): Promise<void> {
+  if (!isOpenClawConfigMutationEnabled()) {
+    console.log(`[removeProviderFromOpenClaw] Skipping provider cleanup for "${provider}" because config mutation is disabled`);
+    return;
+  }
   // 1. Remove from auth-profiles.json.
   // We must also remove entries whose raw `provider` field maps to this UI
   // provider key via AUTH_PROFILE_PROVIDER_KEY_MAP (e.g. "openai-codex" → "openai").
@@ -2525,6 +2548,10 @@ export async function syncSessionIdleMinutesToOpenClaw(): Promise<void> {
  * withConfigLock calls during pre-launch sync.
  */
 export async function batchSyncConfigFields(token: string): Promise<void> {
+  if (!isOpenClawConfigMutationEnabled()) {
+    console.log('[batchSyncConfigFields] Skipping openclaw.json writes because config mutation is disabled');
+    return;
+  }
   const DEFAULT_IDLE_MINUTES = 10_080; // 7 days
 
   return withConfigLock(async () => {
@@ -2753,6 +2780,10 @@ function ensureToolDenyIncludes(
 }
 
 export async function sanitizeOpenClawConfig(): Promise<void> {
+  if (!isOpenClawConfigMutationEnabled()) {
+    console.log('[sanitize] Skipping openclaw.json sanitization because config mutation is disabled');
+    return;
+  }
   return withConfigLock(async () => {
     // Skip sanitization if the config file does not exist yet.
     // Creating a skeleton config here would overwrite any data written

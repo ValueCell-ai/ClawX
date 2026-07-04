@@ -2,6 +2,7 @@ import { readOpenClawConfig, writeOpenClawConfig } from './channel-config';
 import { resolveProxySettings, type ProxySettings } from './proxy';
 import { logger } from './logger';
 import { withConfigLock } from './config-mutex';
+import { isOpenClawConfigMutationEnabled } from './runtime-flags';
 
 interface SyncProxyOptions {
   /**
@@ -19,6 +20,11 @@ export async function syncProxyConfigToOpenClaw(
   settings: ProxySettings,
   options: SyncProxyOptions = {},
 ): Promise<void> {
+  if (!isOpenClawConfigMutationEnabled()) {
+    logger.info('Skipping Telegram proxy sync because OpenClaw config mutation is disabled');
+    return;
+  }
+
   return withConfigLock(async () => {
     const config = await readOpenClawConfig();
     const telegramConfig = config.channels?.telegram;

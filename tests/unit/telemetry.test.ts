@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   shutdownMock,
@@ -69,6 +69,10 @@ describe('main telemetry shutdown', () => {
     captureMock.mockReturnValue(undefined);
   });
 
+  afterEach(() => {
+    delete process.env.LAH_SAFE_MODE;
+  });
+
   it('ignores PostHog network timeout errors during shutdown', async () => {
     shutdownMock.mockRejectedValueOnce(
       Object.assign(new Error('Network error while fetching PostHog'), {
@@ -88,5 +92,15 @@ describe('main telemetry shutdown', () => {
       'Ignored telemetry shutdown network error:',
       expect.objectContaining({ name: 'PostHogFetchNetworkError' }),
     );
+  });
+
+  it('does not initialize telemetry when LAH safe mode is enabled', async () => {
+    process.env.LAH_SAFE_MODE = '1';
+
+    const { initTelemetry } = await import('@electron/utils/telemetry');
+    await initTelemetry();
+
+    expect(captureMock).not.toHaveBeenCalled();
+    expect(shutdownMock).not.toHaveBeenCalled();
   });
 });

@@ -12,6 +12,9 @@ import {
   redactGatewayFrameForTrace,
   summarizeGatewayFrameForTrace,
 } from './ws-trace';
+import {
+  isConnectivityProbeEnabledByRuntime,
+} from '../utils/runtime-flags';
 
 export const GATEWAY_CHALLENGE_TIMEOUT_MS = 10_000;
 export const GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS = 20_000;
@@ -20,6 +23,11 @@ export async function probeGatewayReady(
   port: number,
   timeoutMs = 1500,
 ): Promise<boolean> {
+  if (!isConnectivityProbeEnabledByRuntime()) {
+    logger.info(`Skipping Gateway readiness probe for port ${port} because connectivity probes are disabled`);
+    return false;
+  }
+
   return await new Promise<boolean>((resolve) => {
     const testWs = new WebSocket(`ws://localhost:${port}/ws`);
     let settled = false;
@@ -76,6 +84,10 @@ export async function waitForGatewayReady(options: {
   retries?: number;
   intervalMs?: number;
 }): Promise<void> {
+  if (!isConnectivityProbeEnabledByRuntime()) {
+    throw new Error('Gateway connectivity probes are disabled in LAH safe mode');
+  }
+
   const retries = options.retries ?? 2400;
   const intervalMs = options.intervalMs ?? 200;
 
@@ -175,6 +187,7 @@ export function buildGatewayConnectFrame(options: {
 
 export async function connectGatewaySocket(options: {
   port: number;
+  wsUrl?: string;
   deviceIdentity: DeviceIdentity | null;
   platform: string;
   pendingRequests: Map<string, PendingGatewayRequest>;
@@ -185,12 +198,12 @@ export async function connectGatewaySocket(options: {
   challengeTimeoutMs?: number;
   connectTimeoutMs?: number;
 }): Promise<WebSocket> {
-  logger.debug(`Connecting Gateway WebSocket (ws://localhost:${options.port}/ws)`);
+  const wsUrl = options.wsUrl || `ws://localhost:${options.port}/ws`;
+  logger.debug(`Connecting Gateway WebSocket (${wsUrl})`);
   const challengeTimeoutMs = options.challengeTimeoutMs ?? GATEWAY_CHALLENGE_TIMEOUT_MS;
   const connectTimeoutMs = options.connectTimeoutMs ?? GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS;
 
   return await new Promise<WebSocket>((resolve, reject) => {
-    const wsUrl = `ws://localhost:${options.port}/ws`;
     const ws = new WebSocket(wsUrl);
     let handshakeComplete = false;
     let connectId: string | null = null;

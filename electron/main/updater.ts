@@ -11,6 +11,7 @@ import { BrowserWindow, app, ipcMain } from 'electron';
 import { logger } from '../utils/logger';
 import { EventEmitter } from 'events';
 import { setQuitting } from './app-state';
+import { isUpdateChecksEnabledByRuntime } from '../utils/runtime-flags';
 
 /** Base CDN URL (without trailing channel path) */
 const OSS_BASE_URL = 'https://oss.intelli-spectrum.com';
@@ -171,6 +172,14 @@ export class AppUpdater extends EventEmitter {
    */
   async checkForUpdates(): Promise<UpdateInfo | null> {
     try {
+      if (!isUpdateChecksEnabledByRuntime()) {
+        this.updateStatus({
+          status: 'not-available',
+          error: 'Update checks are disabled in LAH safe mode',
+        });
+        return null;
+      }
+
       const result = await autoUpdater.checkForUpdates();
 
       // In dev mode (app not packaged), autoUpdater silently returns null
@@ -202,6 +211,10 @@ export class AppUpdater extends EventEmitter {
    */
   async downloadUpdate(): Promise<void> {
     try {
+      if (!isUpdateChecksEnabledByRuntime()) {
+        logger.info('[Updater] Skipping download request because update checks are disabled');
+        return;
+      }
       await autoUpdater.downloadUpdate();
     } catch (error) {
       logger.error('[Updater] Download update failed:', error);

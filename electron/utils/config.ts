@@ -44,6 +44,23 @@ export const APP_PATHS = {
 } as const;
 
 /**
+ * LAH runtime defaults
+ */
+export const LAH_RUNTIME_DEFAULTS = {
+  externalGatewayEnabled: false,
+  externalGatewayUrl: 'ws://127.0.0.1:4000/gateway',
+  gatewaySpawnEnabled: true,
+  gatewayKillOnConflictEnabled: true,
+  openclawConfigMutationEnabled: true,
+  telemetryEnabled: true,
+  updateChecksEnabled: true,
+  providerValidationEnabled: true,
+  oauthEnabled: true,
+  externalUrlOpeningEnabled: true,
+  connectivityProbeEnabled: true,
+} as const;
+
+/**
  * Update channels
  */
 export const UPDATE_CHANNELS = ['stable', 'beta', 'dev'] as const;

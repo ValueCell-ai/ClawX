@@ -20,6 +20,7 @@ import {
   syncUpdatedProviderToRuntime,
 } from './providers/provider-runtime-sync';
 import { validateApiKeyWithProvider } from './providers/provider-validation';
+import { isOAuthEnabledByRuntime, isProviderValidationEnabledByRuntime } from '../utils/runtime-flags';
 import type { ProviderAccount } from '../shared/providers/types';
 import { isRecord } from './payload-utils';
 
@@ -151,6 +152,10 @@ function getSavePayload(payload: unknown): { config: ProviderConfig; apiKey?: st
 }
 
 async function validateKey(payload: ProviderPayload<'validateKey'>): Promise<{ valid: boolean; error?: string }> {
+  if (!isProviderValidationEnabledByRuntime()) {
+    return { valid: false, error: 'Provider validation is disabled in LAH safe mode' };
+  }
+
   try {
     const body = getPayloadRecord(payload, 'validateKey');
     const accountId = typeof body.accountId === 'string' && body.accountId.trim()
@@ -420,6 +425,9 @@ async function requestOAuth(payload: ProviderPayload<'requestOAuth'>) {
   const provider = typeof body.provider === 'string' ? body.provider : undefined;
   if (!provider) {
     return { success: false, error: 'Invalid providers.requestOAuth payload' };
+  }
+  if (!isOAuthEnabledByRuntime()) {
+    return { success: false, error: 'OAuth flows are disabled in LAH safe mode' };
   }
   const region = body.region === 'global' || body.region === 'cn' ? body.region : undefined;
   const options = {

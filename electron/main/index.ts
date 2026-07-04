@@ -2,8 +2,9 @@
  * Electron Main Process Entry
  * Manages window creation, system tray, and IPC handlers
  */
-import { app, BrowserWindow, nativeImage, session, shell } from 'electron';
+import { app, BrowserWindow, nativeImage, session } from 'electron';
 import { join } from 'path';
+import { ensureDir } from '../utils/paths';
 import { GatewayManager } from '../gateway/manager';
 import { registerIpcHandlers } from './ipc-handlers';
 import { HostApiRegistry } from './ipc/host-invoke';
@@ -15,6 +16,8 @@ import { appUpdater, registerUpdateHandlers } from './updater';
 import { logger } from '../utils/logger';
 import { warmupNetworkOptimization } from '../utils/uv-env';
 import { initTelemetry } from '../utils/telemetry';
+import { getRequestedUserDataDir } from '../utils/runtime-flags';
+import { openExternalUrl } from '../utils/external-links';
 
 import { ClawHubService } from '../gateway/clawhub';
 import { extensionRegistry } from '../extensions/registry';
@@ -54,14 +57,15 @@ import { syncAllProviderAuthToRuntime } from '../services/providers/provider-run
 
 const WINDOWS_APP_USER_MODEL_ID = 'app.clawx.desktop';
 const isE2EMode = process.env.CLAWX_E2E === '1';
-const requestedUserDataDir = process.env.CLAWX_USER_DATA_DIR?.trim();
+const requestedUserDataDir = getRequestedUserDataDir();
 const requestedRemoteDebuggingPort = process.env.CLAWX_REMOTE_DEBUGGING_PORT?.trim();
 
 if (requestedRemoteDebuggingPort) {
   app.commandLine.appendSwitch('remote-debugging-port', requestedRemoteDebuggingPort);
 }
 
-if (isE2EMode && requestedUserDataDir) {
+if (requestedUserDataDir) {
+  ensureDir(requestedUserDataDir);
   app.setPath('userData', requestedUserDataDir);
 }
 
@@ -207,7 +211,7 @@ function createWindow(): BrowserWindow {
     try {
       const parsed = new URL(url);
       if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
-        shell.openExternal(url);
+        void openExternalUrl(url);
       } else {
         logger.warn(`Blocked openExternal for disallowed protocol: ${parsed.protocol}`);
       }

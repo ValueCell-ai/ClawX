@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { join } from 'path';
 import { homedir } from 'os';
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'fs';
+import { getRequestedUserDataDir } from './runtime-flags';
 
 const require = createRequire(import.meta.url);
 
@@ -79,7 +80,7 @@ export function getLogsDir(): string {
  * Get ClawX data directory
  */
 export function getDataDir(): string {
-  return getElectronApp().getPath('userData');
+  return getRequestedUserDataDir() || getElectronApp().getPath('userData');
 }
 
 /**

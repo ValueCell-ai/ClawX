@@ -3,6 +3,7 @@ import { machineIdSync } from 'node-machine-id';
 import { app } from 'electron';
 import { getSetting, setSetting } from './store';
 import { logger } from './logger';
+import { isTelemetryEnabledByRuntime } from './runtime-flags';
 
 const POSTHOG_API_KEY = 'phc_aGNegeJQP5FzNiF2rEoKqQbkuCpiiETMttplibXpB0n';
 const POSTHOG_HOST = 'https://us.i.posthog.com';
@@ -46,6 +47,11 @@ function isIgnorablePostHogShutdownError(error: unknown): boolean {
  */
 export async function initTelemetry(): Promise<void> {
     try {
+        if (!isTelemetryEnabledByRuntime()) {
+            logger.info('Telemetry is disabled in LAH safe mode or via runtime flags');
+            return;
+        }
+
         const telemetryEnabled = await getSetting('telemetryEnabled');
         if (!telemetryEnabled) {
             logger.info('Telemetry is disabled in settings');
@@ -95,7 +101,7 @@ export function trackMetric(event: string, properties: Record<string, unknown> =
 }
 
 export function captureTelemetryEvent(event: string, properties: Record<string, unknown> = {}): void {
-    if (!posthogClient || !distinctId) {
+    if (!isTelemetryEnabledByRuntime() || !posthogClient || !distinctId) {
         return;
     }
 

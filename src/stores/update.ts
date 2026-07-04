@@ -13,6 +13,11 @@ import type {
   UpdateStatusSnapshot,
 } from '@shared/host-api/contract';
 
+function isSafeModeUpdateChecksDisabled(): boolean {
+  const value = (typeof process !== 'undefined' && process.env?.LAH_SAFE_MODE) ? String(process.env.LAH_SAFE_MODE).trim().toLowerCase() : '';
+  return value === '1' || value === 'true' || value === 'yes' || value === 'on';
+}
+
 export type UpdateInfo = UpdateInfoSnapshot;
 export type ProgressInfo = UpdateProgressSnapshot;
 export type UpdateStatus = UpdateStatusSnapshot['status'];
@@ -99,7 +104,7 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
 
       // Auto-check for updates on startup (respects user toggle)
       const autoCheckUpdate = useSettingsStore.getState().autoCheckUpdate;
-      if (autoCheckUpdate) {
+      if (autoCheckUpdate && !isSafeModeUpdateChecksDisabled()) {
         setTimeout(() => {
           get().checkForUpdates().catch(() => {});
         }, 10000);
@@ -116,6 +121,11 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   },
 
   checkForUpdates: async () => {
+    if (isSafeModeUpdateChecksDisabled()) {
+      set({ status: 'not-available', error: null });
+      return;
+    }
+
     set({ status: 'checking', error: null });
     
     try {

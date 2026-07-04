@@ -110,6 +110,17 @@ export type SettingsSnapshot = Partial<{
   proxyHttpsServer: string;
   proxyAllServer: string;
   proxyBypassRules: string;
+  externalGatewayEnabled: boolean;
+  externalGatewayUrl: string;
+  gatewaySpawnEnabled: boolean;
+  gatewayKillOnConflictEnabled: boolean;
+  openclawConfigMutationEnabled: boolean;
+  telemetryEnabled: boolean;
+  updateChecksEnabled: boolean;
+  providerValidationEnabled: boolean;
+  oauthEnabled: boolean;
+  externalUrlOpeningEnabled: boolean;
+  connectivityProbeEnabled: boolean;
   updateChannel: 'stable' | 'beta' | 'dev';
   autoCheckUpdate: boolean;
   sidebarCollapsed: boolean;
