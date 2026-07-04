@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
-import { BrowserWindow, shell } from 'electron';
+import { BrowserWindow } from 'electron';
 import { logger } from './logger';
+import { openExternalUrl } from './external-links';
 import { loginOpenAICodexOAuth, type OpenAICodexOAuthCredentials } from './openai-codex-oauth';
 import { getProviderService } from '../services/providers/provider-service';
 import { getSecretStore } from '../services/secrets/secret-store';
@@ -10,6 +11,7 @@ import {
   saveOAuthTokenToOpenClaw,
   setOpenClawDefaultModelWithOverride,
 } from './openclaw-auth';
+import { isOAuthEnabledByRuntime } from './runtime-flags';
 
 // Google was removed: OpenClaw's `google-gemini-cli` OAuth integration is an
 // unofficial third-party flow that requires the `gemini` CLI binary to be on
@@ -37,6 +39,12 @@ class BrowserOAuthManager extends EventEmitter {
     provider: BrowserOAuthProviderType,
     options?: { accountId?: string; label?: string },
   ): Promise<boolean> {
+    if (!isOAuthEnabledByRuntime()) {
+      logger.warn('[BrowserOAuth] OAuth flow disabled in LAH safe mode');
+      this.emitError('OAuth flows are disabled in LAH safe mode');
+      return false;
+    }
+
     if (this.active) {
       await this.stopFlow();
     }
@@ -55,7 +63,7 @@ class BrowserOAuthManager extends EventEmitter {
     try {
       const token = await loginOpenAICodexOAuth({
         openUrl: async (url) => {
-          await shell.openExternal(url);
+          await openExternalUrl(url);
         },
         onProgress: (message) => logger.info(`[BrowserOAuth] ${message}`),
         onManualCodeRequired: ({ authorizationUrl, reason }) => {

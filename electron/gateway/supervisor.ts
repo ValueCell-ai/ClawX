@@ -6,6 +6,7 @@ import { getUvMirrorEnv } from '../utils/uv-env';
 import { isPythonReady, setupManagedPython } from '../utils/uv-setup';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
+import { isGatewayKillOnConflictEnabled } from '../utils/runtime-flags';
 import { probeGatewayReady } from './ws-client';
 
 export function warmupManagedPythonReadiness(): void {
@@ -240,6 +241,11 @@ export async function findExistingGatewayProcess(options: {
   ownedPid?: number;
 }): Promise<{ port: number; externalToken?: string } | null> {
   const { port, ownedPid } = options;
+
+  if (!isGatewayKillOnConflictEnabled()) {
+    logger.info(`Skipping orphan Gateway cleanup for port ${port} because kill-on-conflict is disabled`);
+    return null;
+  }
 
   try {
     try {

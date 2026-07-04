@@ -2,10 +2,11 @@
  * Application Menu Configuration
  * Creates the native application menu for macOS/Windows/Linux
  */
-import { Menu, app, shell, BrowserWindow } from 'electron';
+import { Menu, app, BrowserWindow } from 'electron';
 import { MENU_LABELS } from '@shared/i18n/resources';
 import { resolveSupportedLanguage, type LanguageCode } from '@shared/language';
 import { getSetting } from '../utils/store';
+import { openExternalUrl } from '../utils/external-links';
 
 function applyAppName(label: string): string {
   return label.replaceAll('{{appName}}', app.name);
@@ -201,20 +202,20 @@ export async function createMenu(language?: string): Promise<void> {
         {
           label: labels.help.documentation,
           click: async () => {
-            await shell.openExternal('https://claw-x.com');
+            await openExternalUrl('https://claw-x.com');
           },
         },
         {
           label: labels.help.reportIssue,
           click: async () => {
-            await shell.openExternal('https://github.com/ValueCell-ai/ClawX/issues');
+            await openExternalUrl('https://github.com/ValueCell-ai/ClawX/issues');
           },
         },
         { type: 'separator' },
         {
           label: labels.help.openClawDocumentation,
           click: async () => {
-            await shell.openExternal('https://docs.openclaw.ai');
+            await openExternalUrl('https://docs.openclaw.ai');
           },
         },
       ],

@@ -6,6 +6,19 @@
 import { randomBytes } from 'crypto';
 import { app } from 'electron';
 import { resolveSupportedLanguage } from '@shared/language';
+import {
+  getExternalGatewayUrl,
+  isConnectivityProbeEnabledByRuntime,
+  isExternalGatewayEnabled,
+  isExternalUrlOpeningEnabledByRuntime,
+  isGatewayKillOnConflictEnabled,
+  isGatewaySpawnEnabled,
+  isOAuthEnabledByRuntime,
+  isOpenClawConfigMutationEnabled,
+  isProviderValidationEnabledByRuntime,
+  isTelemetryEnabledByRuntime,
+  isUpdateChecksEnabledByRuntime,
+} from './runtime-flags';
 
 // Lazy-load electron-store (ESM module)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -41,6 +54,16 @@ export interface AppSettings {
   proxyHttpsServer: string;
   proxyAllServer: string;
   proxyBypassRules: string;
+  externalGatewayEnabled: boolean;
+  externalGatewayUrl: string;
+  gatewaySpawnEnabled: boolean;
+  gatewayKillOnConflictEnabled: boolean;
+  openclawConfigMutationEnabled: boolean;
+  updateChecksEnabled: boolean;
+  providerValidationEnabled: boolean;
+  oauthEnabled: boolean;
+  externalUrlOpeningEnabled: boolean;
+  connectivityProbeEnabled: boolean;
 
   // Update
   updateChannel: 'stable' | 'beta' | 'dev';
@@ -92,6 +115,16 @@ function createDefaultSettings(): AppSettings {
     proxyHttpsServer: '',
     proxyAllServer: '',
     proxyBypassRules: '<local>;localhost;127.0.0.1;::1',
+    externalGatewayEnabled: isExternalGatewayEnabled(),
+    externalGatewayUrl: getExternalGatewayUrl(),
+    gatewaySpawnEnabled: isGatewaySpawnEnabled(),
+    gatewayKillOnConflictEnabled: isGatewayKillOnConflictEnabled(),
+    openclawConfigMutationEnabled: isOpenClawConfigMutationEnabled(),
+    updateChecksEnabled: isUpdateChecksEnabledByRuntime(),
+    providerValidationEnabled: isProviderValidationEnabledByRuntime(),
+    oauthEnabled: isOAuthEnabledByRuntime(),
+    externalUrlOpeningEnabled: isExternalUrlOpeningEnabledByRuntime(),
+    connectivityProbeEnabled: isConnectivityProbeEnabledByRuntime(),
 
     // Update
     updateChannel: 'stable',

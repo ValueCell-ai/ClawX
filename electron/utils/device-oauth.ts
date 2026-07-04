@@ -16,13 +16,15 @@
  * the Electron IPC system to display UI in the ClawX frontend.
  */
 import { EventEmitter } from 'events';
-import { BrowserWindow, shell } from 'electron';
+import { BrowserWindow } from 'electron';
 import { logger } from './logger';
 import { saveProvider, getProvider, ProviderConfig } from './secure-storage';
 import { getProviderDefaultModel } from './provider-registry';
 import { proxyAwareFetch } from './proxy-fetch';
 import { saveOAuthTokenToOpenClaw, setOpenClawDefaultModelWithOverride } from './openclaw-auth';
 import { loginMiniMaxPortalOAuth, type MiniMaxOAuthToken, type MiniMaxRegion } from './minimax-oauth';
+import { openExternalUrl } from './external-links';
+import { isOAuthEnabledByRuntime } from './runtime-flags';
 
 export type OAuthProviderType = 'minimax-portal' | 'minimax-portal-cn';
 
@@ -60,6 +62,12 @@ class DeviceOAuthManager extends EventEmitter {
         region: MiniMaxRegion = 'global',
         options?: { accountId?: string; label?: string },
     ): Promise<boolean> {
+        if (!isOAuthEnabledByRuntime()) {
+            logger.warn('[DeviceOAuth] OAuth flow disabled in LAH safe mode');
+            this.emitError('OAuth flows are disabled in LAH safe mode');
+            return false;
+        }
+
         if (this.active) {
             await this.stopFlow();
         }
@@ -113,7 +121,7 @@ class DeviceOAuthManager extends EventEmitter {
             openUrl: async (url: string) => {
                 logger.info(`[DeviceOAuth] MiniMax opening browser: ${url}`);
                 // Open the authorization URL in the system browser
-                shell.openExternal(url).catch((err: unknown) =>
+                openExternalUrl(url).catch((err: unknown) =>
                     logger.warn(`[DeviceOAuth] Failed to open browser:`, err)
                 );
             },

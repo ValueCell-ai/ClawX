@@ -11,6 +11,11 @@ import { JsonRpcNotification, isNotification, isResponse } from './protocol';
 import { logger } from '../utils/logger';
 import { captureTelemetryEvent, trackMetric } from '../utils/telemetry';
 import {
+  getExternalGatewayUrl,
+  isExternalGatewayEnabled,
+  isGatewaySpawnEnabled,
+} from '../utils/runtime-flags';
+import {
   loadOrCreateDeviceIdentity,
   type DeviceIdentity,
 } from '../utils/device-identity';
@@ -346,18 +351,41 @@ export class GatewayManager extends EventEmitter {
     this.setStatus({ state: 'starting', reconnectAttempts: this.reconnectAttempts, gatewayReady: false });
     this.resetGatewayReadyFallback();
 
-    // Check if Python environment is ready (self-healing) asynchronously.
-    // Fire-and-forget: only needs to run once, not on every retry.
-    warmupManagedPythonReadiness();
+    if (isGatewaySpawnEnabled()) {
+      // Check if Python environment is ready (self-healing) asynchronously.
+      // Fire-and-forget: only needs to run once, not on every retry.
+      warmupManagedPythonReadiness();
+    }
 
     const t0 = Date.now();
     let tSpawned = 0;
     let tReady = 0;
+    const externalGatewayEnabled = isExternalGatewayEnabled();
 
     try {
+      if (externalGatewayEnabled) {
+        const externalGatewayUrl = getExternalGatewayUrl();
+        const parsedUrl = new URL(externalGatewayUrl);
+        const parsedPort = parsedUrl.port ? parseInt(parsedUrl.port, 10) : this.status.port;
+        if (Number.isFinite(parsedPort) && parsedPort > 0) {
+          this.setStatus({ port: parsedPort });
+        }
+        await this.connectExternalGateway(externalGatewayUrl);
+        this.ownsProcess = false;
+        this.process = null;
+        this.startHealthCheck();
+        const tConnected = Date.now();
+        logger.info('[metric] gateway.startup', {
+          mode: 'external',
+          externalGatewayUrl,
+          totalMs: tConnected - t0,
+        });
+        return;
+      }
+
       await runGatewayStartupSequence({
         port: this.status.port,
-        shouldWaitForPortFree: process.platform === 'win32',
+        shouldWaitForPortFree: process.platform === 'win32' && isGatewaySpawnEnabled(),
         hasOwnedProcess: () => this.process?.pid != null && this.ownsProcess,
         resetStartupStderrLines: () => {
           this.recentStartupStderrLines = [];
@@ -477,7 +505,12 @@ export class GatewayManager extends EventEmitter {
 
     // If this manager is attached to an external gateway process, ask it to shut down
     // over protocol before closing the socket.
-    if (!this.ownsProcess && this.ws?.readyState === WebSocket.OPEN && this.externalShutdownSupported !== false) {
+    if (
+      !this.ownsProcess
+      && !isExternalGatewayEnabled()
+      && this.ws?.readyState === WebSocket.OPEN
+      && this.externalShutdownSupported !== false
+    ) {
       try {
         await this.rpc('shutdown', undefined, 5000);
         this.externalShutdownSupported = true;
@@ -1030,6 +1063,10 @@ export class GatewayManager extends EventEmitter {
    * Uses OpenClaw npm package from node_modules (dev) or resources (production)
    */
   private async startProcess(): Promise<void> {
+    if (!isGatewaySpawnEnabled()) {
+      throw new Error('Gateway spawning is disabled in external gateway / safe mode');
+    }
+
     const launchContext = await prepareGatewayLaunchContext(this.status.port);
     await unloadLaunchctlGatewayService();
     this.processExitCode = null;
@@ -1153,6 +1190,44 @@ export class GatewayManager extends EventEmitter {
           if (process.platform !== 'win32' || closeCode === 1012) {
             this.scheduleReconnect();
           }
+        }
+      },
+    });
+  }
+
+  private async connectExternalGateway(wsUrl: string): Promise<void> {
+    this.ws = await connectGatewaySocket({
+      port: this.status.port,
+      wsUrl,
+      deviceIdentity: this.deviceIdentity,
+      platform: process.platform,
+      pendingRequests: this.pendingRequests,
+      getToken: async () => await import('../utils/store').then(({ getSetting }) => getSetting('gatewayToken')),
+      onHandshakeComplete: (ws) => {
+        this.ws = ws;
+        ws.on('pong', () => {
+          this.connectionMonitor.markAlive('pong');
+          this.recordGatewayAlive();
+        });
+        this.recordGatewayAlive();
+        this.setStatus({
+          state: 'running',
+          port: this.status.port,
+          connectedAt: Date.now(),
+        });
+        this.startPing();
+        this.scheduleGatewayReadyFallback();
+      },
+      onMessage: (message) => {
+        this.handleMessage(message);
+      },
+      onCloseAfterHandshake: (closeCode) => {
+        this.connectionMonitor.clear();
+        this.recordSocketClose(closeCode);
+        this.diagnostics.consecutiveHeartbeatMisses = 0;
+        if (this.status.state === 'running') {
+          this.setStatus({ state: 'stopped' });
+          this.scheduleReconnect();
         }
       },
     });

@@ -28,6 +28,16 @@ interface SettingsState {
   proxyHttpsServer: string;
   proxyAllServer: string;
   proxyBypassRules: string;
+  externalGatewayEnabled: boolean;
+  externalGatewayUrl: string;
+  gatewaySpawnEnabled: boolean;
+  gatewayKillOnConflictEnabled: boolean;
+  openclawConfigMutationEnabled: boolean;
+  updateChecksEnabled: boolean;
+  providerValidationEnabled: boolean;
+  oauthEnabled: boolean;
+  externalUrlOpeningEnabled: boolean;
+  connectivityProbeEnabled: boolean;
 
   // Update
   updateChannel: UpdateChannel;
@@ -79,6 +89,16 @@ const defaultSettings = {
   proxyHttpsServer: '',
   proxyAllServer: '',
   proxyBypassRules: '<local>;localhost;127.0.0.1;::1',
+  externalGatewayEnabled: false,
+  externalGatewayUrl: 'ws://127.0.0.1:4000/gateway',
+  gatewaySpawnEnabled: true,
+  gatewayKillOnConflictEnabled: true,
+  openclawConfigMutationEnabled: true,
+  updateChecksEnabled: true,
+  providerValidationEnabled: true,
+  oauthEnabled: true,
+  externalUrlOpeningEnabled: true,
+  connectivityProbeEnabled: true,
   updateChannel: 'stable' as UpdateChannel,
   autoCheckUpdate: true,
   sidebarCollapsed: false,

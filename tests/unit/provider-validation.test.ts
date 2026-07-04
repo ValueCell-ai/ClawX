@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const proxyAwareFetch = vi.fn();
 
@@ -15,6 +15,10 @@ describe('validateApiKeyWithProvider', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
+  });
+
+  afterEach(() => {
+    delete process.env.LAH_SAFE_MODE;
   });
 
   it('validates MiniMax CN keys with Anthropic headers', async () => {
@@ -402,5 +406,18 @@ describe('validateApiKeyWithProvider', () => {
         method: 'POST',
       })
     );
+  });
+
+  it('short-circuits when provider validation is disabled in LAH safe mode', async () => {
+    process.env.LAH_SAFE_MODE = '1';
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('openai', 'sk-safe-mode');
+
+    expect(result).toMatchObject({
+      valid: false,
+      error: 'Provider validation is disabled in LAH safe mode',
+    });
+    expect(proxyAwareFetch).not.toHaveBeenCalled();
   });
 });

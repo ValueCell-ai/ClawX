@@ -5,6 +5,7 @@ import type { GatewayLaunchContext } from './config-sync';
 import type { GatewayLifecycleState } from './process-policy';
 import { logger } from '../utils/logger';
 import { appendNodeRequireToNodeOptions } from '../utils/paths';
+import { isGatewaySpawnEnabled } from '../utils/runtime-flags';
 
 const GATEWAY_FETCH_PRELOAD_SOURCE = `'use strict';
 (function () {
@@ -101,6 +102,10 @@ export async function launchGatewayProcess(options: {
   onExit: (child: Electron.UtilityProcess, code: number | null) => void;
   onError: (error: Error) => void;
 }): Promise<{ child: Electron.UtilityProcess; lastSpawnSummary: string }> {
+  if (!isGatewaySpawnEnabled()) {
+    throw new Error('Gateway spawning is disabled in external gateway / safe mode');
+  }
+
   const {
     openclawDir,
     entryScript,

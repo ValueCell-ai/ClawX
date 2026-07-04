@@ -37,6 +37,7 @@ import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandid
 import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
 import { stripSystemdSupervisorEnv } from './config-sync-env';
 import { cleanupAgentsSymlinkedSkills, cleanupStalePluginRuntimeDeps } from './skills-symlink-cleanup';
+import { isOpenClawConfigMutationEnabled } from '../utils/runtime-flags';
 import {
   buildPrelaunchMaintenanceCacheKey,
   directoryChildrenSignature,
@@ -439,6 +440,15 @@ export async function syncGatewayConfigBeforeLaunch(
   const timingsMs: Record<string, number> = {};
   const maintenance: GatewayPrelaunchSyncSummary['maintenance'] = {};
   let configuredChannels: string[] = [];
+
+  if (!isOpenClawConfigMutationEnabled()) {
+    logger.info('[gateway-config-sync] Skipping prelaunch OpenClaw mutation because config mutation is disabled');
+    return {
+      timingsMs,
+      maintenance,
+      configuredChannels,
+    };
+  }
 
   // Reset the extension-deps cache so that newly installed extensions
   // (e.g. user added a channel while the app was running) get their

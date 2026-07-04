@@ -1,5 +1,6 @@
 import { proxyAwareFetch } from '../../utils/proxy-fetch';
 import { getProviderConfig } from '../../utils/provider-registry';
+import { isProviderValidationEnabledByRuntime } from '../../utils/runtime-flags';
 
 type ValidationProfile =
   | 'openai-completions'
@@ -355,6 +356,10 @@ export async function validateApiKeyWithProvider(
   apiKey: string,
   options?: { baseUrl?: string; apiProtocol?: string },
 ): Promise<ValidationResult> {
+  if (!isProviderValidationEnabledByRuntime()) {
+    return { valid: false, error: 'Provider validation is disabled in LAH safe mode' };
+  }
+
   const profile = getValidationProfile(providerType, options);
   const resolvedBaseUrl = options?.baseUrl || getProviderConfig(providerType)?.baseUrl;
 
