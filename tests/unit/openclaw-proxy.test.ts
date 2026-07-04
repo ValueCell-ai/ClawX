@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   readOpenClawConfigMock,
@@ -31,6 +31,17 @@ vi.mock('@electron/utils/logger', () => ({
 describe('syncProxyConfigToOpenClaw', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.LAH_SAFE_MODE;
+    delete process.env.CLAWX_OPENCLAW_CONFIG_MUTATION;
+    delete process.env.CLAWX_EXTERNAL_GATEWAY_URL;
+    delete process.env.CLAWX_EXTERNAL_GATEWAY_ENABLED;
+  });
+
+  afterEach(() => {
+    delete process.env.LAH_SAFE_MODE;
+    delete process.env.CLAWX_OPENCLAW_CONFIG_MUTATION;
+    delete process.env.CLAWX_EXTERNAL_GATEWAY_URL;
+    delete process.env.CLAWX_EXTERNAL_GATEWAY_ENABLED;
   });
 
   it('preserves existing telegram proxy on startup-style sync when proxy is disabled', async () => {
@@ -85,5 +96,32 @@ describe('syncProxyConfigToOpenClaw', () => {
       channels: { telegram: Record<string, unknown> };
     };
     expect(updatedConfig.channels.telegram.proxy).toBeUndefined();
+  });
+
+  it('skips Telegram proxy sync when OpenClaw config mutation is disabled', async () => {
+    process.env.LAH_SAFE_MODE = '1';
+    readOpenClawConfigMock.mockResolvedValue({
+      channels: {
+        telegram: {
+          botToken: 'token',
+          proxy: 'socks5://127.0.0.1:7891',
+        },
+      },
+    });
+
+    const { syncProxyConfigToOpenClaw } = await import('@electron/utils/openclaw-proxy');
+
+    await syncProxyConfigToOpenClaw({
+      proxyEnabled: true,
+      proxyServer: '127.0.0.1:7891',
+      proxyHttpServer: '',
+      proxyHttpsServer: '',
+      proxyAllServer: '',
+      proxyBypassRules: '',
+    });
+
+    expect(readOpenClawConfigMock).not.toHaveBeenCalled();
+    expect(writeOpenClawConfigMock).not.toHaveBeenCalled();
+    expect(withConfigLockMock).not.toHaveBeenCalled();
   });
 });
