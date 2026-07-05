@@ -29,6 +29,26 @@
     "runError": {
         "title": "模型调用失败"
     },
+    "acp": {
+        "thought": "思考",
+        "tool": "工具",
+        "expandTool": "展开工具结果",
+        "collapseTool": "折叠工具结果",
+        "permission": "权限",
+        "plan": "计划",
+        "running": "进行中",
+        "pending": "待处理",
+        "completed": "已完成",
+        "failed": "失败",
+        "cancelled": "已取消",
+        "loadFailed": "会话加载失败",
+        "promptFailed": "发送提示失败",
+        "unsupportedContent": "不支持的内容",
+        "dismiss": "关闭",
+        "image": "图片",
+        "copy": "复制回复",
+        "copied": "已复制"
+    },
     "artifactPanel": {
         "tabs": {
             "changes": "变更",
@@ -186,6 +206,7 @@
         "gatewayDisconnectedPlaceholder": "网关未连接...",
         "send": "发送",
         "stop": "停止",
+        "working": "AI 正在工作",
         "gatewayConnected": "已连接",
         "gatewayStatus": "gateway {{state}} | port: {{port}} {{pid}}",
         "retryFailedAttachments": "重试失败的附件",

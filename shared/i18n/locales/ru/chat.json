@@ -29,6 +29,26 @@
     "runError": {
         "title": "Ошибка вызова модели"
     },
+    "acp": {
+        "thought": "Размышление",
+        "tool": "Инструмент",
+        "expandTool": "Развернуть результат инструмента",
+        "collapseTool": "Свернуть результат инструмента",
+        "permission": "Разрешение",
+        "plan": "План",
+        "running": "Выполняется",
+        "pending": "Ожидает",
+        "completed": "Завершено",
+        "failed": "Ошибка",
+        "cancelled": "Отменено",
+        "loadFailed": "Не удалось загрузить сеанс",
+        "promptFailed": "Не удалось отправить запрос",
+        "unsupportedContent": "Неподдерживаемое содержимое",
+        "dismiss": "Закрыть",
+        "image": "Изображение",
+        "copy": "Копировать ответ",
+        "copied": "Скопировано"
+    },
     "artifactPanel": {
         "tabs": {
             "changes": "Изменения",
@@ -186,6 +206,7 @@
         "gatewayDisconnectedPlaceholder": "Шлюз не подключён...",
         "send": "Отправить",
         "stop": "Остановить",
+        "working": "AI работает",
         "gatewayConnected": "подключён",
         "gatewayStatus": "шлюз {{state}} | порт: {{port}} {{pid}}",
         "retryFailedAttachments": "Повторить неудавшиеся вложения",

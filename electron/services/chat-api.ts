@@ -1,6 +1,8 @@
+import type { BrowserWindow } from 'electron';
 import type { GatewayManager } from '../gateway/manager';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { logger } from '../utils/logger';
+import { createAcpChatService } from './acp-chat-service';
 import { isRecord } from './payload-utils';
 
 const VISION_MIME_TYPES = new Set([
@@ -38,7 +40,15 @@ function normalizeMedia(media: unknown): Array<{ filePath: string; mimeType: str
   });
 }
 
-export function createChatApi({ gatewayManager }: { gatewayManager: GatewayManager }): CompleteHostServiceRegistry['chat'] {
+export function createChatApi({
+  gatewayManager,
+  mainWindow,
+}: {
+  gatewayManager: GatewayManager;
+  mainWindow: BrowserWindow;
+}): CompleteHostServiceRegistry['chat'] {
+  const acpChat = createAcpChatService(mainWindow);
+
   return {
     sendWithMedia: async (payload) => {
       const body = isRecord(payload) ? payload as ChatSendWithMediaPayload : {};
@@ -59,7 +69,7 @@ export function createChatApi({ gatewayManager }: { gatewayManager: GatewayManag
           for (const item of media) {
             const exists = await fsP.access(item.filePath).then(() => true, () => false);
             logger.info(
-              `[chat:sendWithMedia] Processing file: ${item.fileName} (${item.mimeType}), path: ${item.filePath}, exists: ${exists}, isVision: ${VISION_MIME_TYPES.has(item.mimeType)}`,
+              `[chat:sendWithMedia] Processing media: name=${item.fileName}, mimeType=${item.mimeType}, exists=${exists}, isVision=${VISION_MIME_TYPES.has(item.mimeType)}`,
             );
 
             fileReferences.push(
@@ -95,12 +105,13 @@ export function createChatApi({ gatewayManager }: { gatewayManager: GatewayManag
         }
 
         logger.info(
-          `[chat:sendWithMedia] Sending: message="${message.substring(0, 100)}", attachments=${imageAttachments.length}, fileRefs=${fileReferences.length}`,
+          `[chat:sendWithMedia] Sending: messageLength=${message.length}, attachments=${imageAttachments.length}, fileRefs=${fileReferences.length}`,
         );
         const result = await gatewayManager.rpc('chat.send', rpcParams, 120000);
-        logger.info(`[chat:sendWithMedia] RPC result: ${JSON.stringify(result)}`);
-        const response = isRecord(result) && typeof result.runId === 'string'
-          ? { runId: result.runId }
+        const hasRunId = isRecord(result) && typeof result.runId === 'string';
+        logger.info(`[chat:sendWithMedia] RPC result: runId=${hasRunId ? 'present' : 'absent'}`);
+        const response = hasRunId
+          ? { runId: result.runId as string }
           : undefined;
         return { success: true, ...(response ? { result: response } : {}) };
       } catch (error) {
@@ -108,5 +119,9 @@ export function createChatApi({ gatewayManager }: { gatewayManager: GatewayManag
         return { success: false, error: String(error) };
       }
     },
+    loadAcpSession: (payload) => acpChat.loadSession(payload),
+    sendAcpPrompt: (payload) => acpChat.sendPrompt(payload),
+    cancelAcpSession: (payload) => acpChat.cancelSession(payload),
+    respondAcpPermission: (payload) => acpChat.respondPermission(payload),
   };
 }

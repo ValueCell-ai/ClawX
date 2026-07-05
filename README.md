@@ -219,6 +219,8 @@ Notes:
 
 ClawX employs a **dual-process architecture** with a unified host API layer. The renderer talks to a single client abstraction, while Electron Main owns protocol selection and process lifecycle:
 
+Chat uses an ACP stdio bridge owned by Electron Main. Renderer receives typed host events and renders an in-memory ACP timeline. Gateway remains responsible for non-Chat capabilities such as providers, models, skills, workspace, settings, diagnostics, and media configuration.
+
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                        ClawX Desktop App                         │
@@ -267,7 +269,7 @@ ClawX employs a **dual-process architecture** with a unified host API layer. The
 
 - **Process Isolation**: The AI runtime operates in a separate process, ensuring UI responsiveness even during heavy computation
 - **Single Entry for Frontend Calls**: Renderer requests go through host-api/api-client; protocol details are hidden behind a stable interface
-- **Main-Process Transport Ownership**: Electron Main owns the Gateway WebSocket; the renderer talks to Main over typed IPC
+- **Main-Process Transport Ownership**: Electron Main owns the ACP Chat stdio bridge and Gateway transports; the renderer talks to Main over typed IPC
 - **Extension IPC Contributions**: Main-process extensions contribute host-api actions through the typed IPC registry instead of HTTP routes
 - **Graceful Recovery**: Built-in reconnect, timeout, and backoff logic handles transient failures automatically
 - **Secure Storage**: API keys and sensitive data leverage the operating system's native secure storage mechanisms
@@ -373,7 +375,7 @@ On headless Linux, run Electron tests under a display server such as `xvfb-run -
 
 ### Communication Regression Checks
 
-When a PR changes communication paths (gateway events, chat runtime send/receive flow, channel delivery, or transport fallback), run:
+When a PR changes communication paths (gateway events, ACP Chat bridge send/receive flow, channel delivery, or transport fallback), run:
 
 ```bash
 pnpm run comms:replay

@@ -1,0 +1,313 @@
+import type { BrowserWindow } from 'electron';
+import { fork, type ChildProcess } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { Readable, Writable } from 'node:stream';
+import {
+  ClientSideConnection,
+  ndJsonStream,
+  PROTOCOL_VERSION,
+  type Client,
+  type ContentBlock,
+  type RequestPermissionRequest,
+  type RequestPermissionResponse,
+  type SessionNotification,
+} from '@agentclientprotocol/sdk';
+import { HOST_EVENT_CHANNELS } from '@shared/host-events/contract';
+import type {
+  AcpChatCancelPayload,
+  AcpChatLoadPayload,
+  AcpChatOperationResult,
+  AcpChatPromptPayload,
+  AcpChatRespondPermissionPayload,
+  AcpPermissionRequestEnvelope,
+  AcpSessionUpdateEnvelope,
+} from '@shared/acp-chat/types';
+import { getOpenClawEmbeddedForkSpec } from '../utils/openclaw-cli';
+import { logger } from '../utils/logger';
+
+type AcpConnection = Pick<ClientSideConnection, 'initialize' | 'loadSession' | 'prompt' | 'cancel'>;
+type MainWindowLike = {
+  webContents: Pick<BrowserWindow['webContents'], 'send'>;
+};
+type PermissionWaiter = {
+  sessionKey: string;
+  resolve: (response: RequestPermissionResponse) => void;
+};
+type AcpChildProcess = ChildProcess & {
+  stdin: NonNullable<ChildProcess['stdin']>;
+  stdout: NonNullable<ChildProcess['stdout']>;
+  stderr: NonNullable<ChildProcess['stderr']>;
+};
+
+function ok(generation?: number): AcpChatOperationResult {
+  return { success: true, ...(generation != null ? { generation } : {}) };
+}
+
+function fail(error: unknown): AcpChatOperationResult {
+  return { success: false, error: error instanceof Error ? error.message : String(error) };
+}
+
+function cancelledPermissionResponse(): RequestPermissionResponse {
+  return { outcome: { outcome: 'cancelled' } };
+}
+
+function isValidSessionKey(value: unknown): value is string {
+  return typeof value === 'string' && value.startsWith('agent:') && value.length > 'agent:'.length;
+}
+
+export class AcpChatService {
+  private child: AcpChildProcess | null = null;
+  private connection: AcpConnection | null;
+  private initializing: Promise<AcpConnection> | null = null;
+  private initialized = false;
+  private generation = 0;
+  private activeSessionKey: string | null = null;
+  private loadedSessionKey: string | null = null;
+  private permissionSeq = 0;
+  private readonly permissionWaiters = new Map<string, PermissionWaiter>();
+  readonly client: Client;
+
+  constructor(private readonly mainWindow: MainWindowLike, injectedConnection?: AcpConnection) {
+    this.connection = injectedConnection ?? null;
+    this.client = {
+      sessionUpdate: async (notification) => this.emitSessionUpdate(notification),
+      requestPermission: async (request) => this.requestPermission(request),
+    };
+  }
+
+  async loadSession(payload: AcpChatLoadPayload): Promise<AcpChatOperationResult> {
+    if (!isValidSessionKey(payload.sessionKey) || !payload.cwd) return fail('Invalid ACP session load payload');
+
+    let previousSessionKey = this.activeSessionKey;
+    let previousLoadedSessionKey = this.loadedSessionKey;
+    let previousGeneration = this.generation;
+    let nextGeneration = previousGeneration + 1;
+    let stateAdvanced = false;
+
+    try {
+      const connection = await this.ensureConnection();
+      previousSessionKey = this.activeSessionKey;
+      previousLoadedSessionKey = this.loadedSessionKey;
+      previousGeneration = this.generation;
+      nextGeneration = previousGeneration + 1;
+
+      this.generation = nextGeneration;
+      this.activeSessionKey = payload.sessionKey;
+      this.loadedSessionKey = null;
+      stateAdvanced = true;
+      if (previousSessionKey && previousSessionKey !== payload.sessionKey) {
+        this.resolvePermissionWaitersForSession(previousSessionKey, cancelledPermissionResponse());
+      }
+
+      await connection.loadSession({
+        sessionId: payload.sessionKey,
+        cwd: payload.cwd,
+        mcpServers: [],
+        _meta: { sessionKey: payload.sessionKey, prefixCwd: false },
+      });
+      if (this.activeSessionKey === payload.sessionKey && this.generation === nextGeneration) {
+        this.loadedSessionKey = payload.sessionKey;
+      }
+      return ok(nextGeneration);
+    } catch (error) {
+      this.resolvePermissionWaitersForSession(payload.sessionKey, cancelledPermissionResponse());
+      if (stateAdvanced && this.activeSessionKey === payload.sessionKey && this.generation === nextGeneration) {
+        this.generation = previousGeneration;
+        this.activeSessionKey = previousSessionKey;
+        this.loadedSessionKey = previousLoadedSessionKey;
+      }
+      logger.error(`[acp-chat] loadSession failed: ${String(error)}`);
+      return fail(error);
+    }
+  }
+
+  async sendPrompt(payload: AcpChatPromptPayload): Promise<AcpChatOperationResult> {
+    if (!isValidSessionKey(payload.sessionKey) || !payload.cwd) return fail('Invalid ACP prompt payload');
+    if (!this.activeSessionKey) return fail('No active ACP session');
+    if (payload.sessionKey !== this.activeSessionKey) return fail('ACP prompt session is not active');
+    if (this.loadedSessionKey !== payload.sessionKey) return fail('ACP session is not loaded');
+
+    try {
+      const connection = await this.ensureConnection();
+      const prompt = await this.buildPromptBlocks(payload);
+      await connection.prompt({
+        sessionId: payload.sessionKey,
+        prompt,
+        messageId: payload.messageId ?? randomUUID(),
+        _meta: { sessionKey: payload.sessionKey, prefixCwd: false },
+      });
+      return ok(this.generation);
+    } catch (error) {
+      logger.error(`[acp-chat] prompt failed: ${String(error)}`);
+      return fail(error);
+    }
+  }
+
+  async cancelSession(payload: AcpChatCancelPayload): Promise<AcpChatOperationResult> {
+    if (!isValidSessionKey(payload.sessionKey)) return fail('Invalid ACP cancel payload');
+
+    try {
+      const connection = await this.ensureConnection();
+      await connection.cancel({ sessionId: payload.sessionKey });
+      this.resolvePermissionWaitersForSession(payload.sessionKey, cancelledPermissionResponse());
+      return ok(this.generation);
+    } catch (error) {
+      logger.error(`[acp-chat] cancel failed: ${String(error)}`);
+      return fail(error);
+    }
+  }
+
+  async respondPermission(payload: AcpChatRespondPermissionPayload): Promise<AcpChatOperationResult> {
+    const waiter = this.permissionWaiters.get(payload.requestId);
+    if (!waiter || waiter.sessionKey !== payload.sessionKey) return fail('Unknown ACP permission request');
+
+    waiter.resolve({ outcome: payload.outcome });
+    this.permissionWaiters.delete(payload.requestId);
+    return ok(this.generation);
+  }
+
+  private async ensureConnection(): Promise<AcpConnection> {
+    if (this.connection && this.initialized) return this.connection;
+    if (this.initializing) return this.initializing;
+
+    this.initializing = this.initializeConnection();
+    try {
+      return await this.initializing;
+    } finally {
+      this.initializing = null;
+    }
+  }
+
+  private async initializeConnection(): Promise<AcpConnection> {
+    if (!this.connection) this.connection = this.spawnConnection();
+    const connection = this.connection;
+
+    const result = await connection.initialize({
+      protocolVersion: PROTOCOL_VERSION,
+      clientCapabilities: {},
+    });
+    if (this.connection !== connection) {
+      throw new Error('ACP connection closed during initialization');
+    }
+    if (!result.agentCapabilities?.loadSession) {
+      throw new Error('ACP agent does not support session/load');
+    }
+    this.initialized = true;
+
+    return connection;
+  }
+
+  private spawnConnection(): ClientSideConnection {
+    const spec = getOpenClawEmbeddedForkSpec(['acp']);
+    const forked = fork(spec.modulePath, spec.args, spec.options);
+    if (!forked.stdin || !forked.stdout || !forked.stderr) {
+      forked.kill();
+      throw new Error('ACP process did not expose stdio pipes');
+    }
+    this.child = forked as AcpChildProcess;
+
+    const child = this.child;
+
+    child.stderr.on('data', (chunk) => {
+      const message = String(chunk).trimEnd();
+      if (message) logger.info(`[acp-chat] ${message}`);
+    });
+    child.on('error', (error) => {
+      logger.error(`[acp-chat] ACP process error: ${String(error)}`);
+      this.dropConnectionForChild(child);
+    });
+    child.on('exit', (code) => {
+      logger.info(`[acp-chat] ACP process exited with code ${String(code)}`);
+      this.dropConnectionForChild(child);
+    });
+
+    const input = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>;
+    const output = Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>;
+    const stream = ndJsonStream(input, output);
+    return new ClientSideConnection(() => this.client, stream);
+  }
+
+  private dropConnectionForChild(child: AcpChildProcess): void {
+    if (this.child !== child) return;
+    this.resolveAllPermissionWaiters(cancelledPermissionResponse());
+    this.initialized = false;
+    this.initializing = null;
+    this.connection = null;
+    this.child = null;
+    this.loadedSessionKey = null;
+  }
+
+  private emitSessionUpdate(notification: SessionNotification): void {
+    const sessionKey = notification.sessionId;
+    if (sessionKey !== this.activeSessionKey) return;
+
+    const envelope: AcpSessionUpdateEnvelope = {
+      sessionKey,
+      generation: this.generation,
+      notification,
+    };
+    this.mainWindow.webContents.send(HOST_EVENT_CHANNELS.chat.acpSessionUpdate, envelope);
+  }
+
+  private requestPermission(request: RequestPermissionRequest): Promise<RequestPermissionResponse> {
+    const sessionKey = request.sessionId;
+    if (sessionKey !== this.activeSessionKey) {
+      return Promise.resolve(cancelledPermissionResponse());
+    }
+
+    const requestId = `acp-permission-${Date.now()}-${this.permissionSeq += 1}`;
+    const envelope: AcpPermissionRequestEnvelope = {
+      sessionKey,
+      generation: this.generation,
+      requestId,
+      request,
+    };
+    this.mainWindow.webContents.send(HOST_EVENT_CHANNELS.chat.acpPermissionRequest, envelope);
+
+    return new Promise((resolve) => {
+      this.permissionWaiters.set(requestId, { sessionKey, resolve });
+    });
+  }
+
+  private resolvePermissionWaitersForSession(sessionKey: string, response: RequestPermissionResponse): void {
+    for (const [requestId, waiter] of this.permissionWaiters) {
+      if (waiter.sessionKey !== sessionKey) continue;
+      waiter.resolve(response);
+      this.permissionWaiters.delete(requestId);
+    }
+  }
+
+  private resolveAllPermissionWaiters(response: RequestPermissionResponse): void {
+    for (const [requestId, waiter] of this.permissionWaiters) {
+      waiter.resolve(response);
+      this.permissionWaiters.delete(requestId);
+    }
+  }
+
+  private async buildPromptBlocks(payload: AcpChatPromptPayload): Promise<ContentBlock[]> {
+    const blocks: ContentBlock[] = [];
+    const text = payload.message?.trim();
+    if (text) blocks.push({ type: 'text', text });
+
+    const media = payload.media ?? [];
+    if (media.length > 0) {
+      const fsP = await import('node:fs/promises');
+      for (const item of media) {
+        const mimeType = item.mimeType || 'application/octet-stream';
+        if (mimeType.startsWith('image/')) {
+          const data = await fsP.readFile(item.filePath, 'base64');
+          blocks.push({ type: 'image', data, mimeType, uri: item.filePath });
+        } else {
+          blocks.push({ type: 'resource_link', uri: item.filePath, name: item.fileName ?? item.filePath });
+        }
+      }
+    }
+
+    if (blocks.length === 0) blocks.push({ type: 'text', text: '' });
+    return blocks;
+  }
+}
+
+export function createAcpChatService(mainWindow: MainWindowLike): AcpChatService {
+  return new AcpChatService(mainWindow);
+}

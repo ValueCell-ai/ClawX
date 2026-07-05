@@ -150,7 +150,7 @@ function registerTypedHostHandlers(
     files: createFilesApi(),
     media: createMediaApi(),
     sessions: createSessionsApi(),
-    chat: createChatApi({ gatewayManager }),
+    chat: createChatApi({ gatewayManager, mainWindow }),
     cron: createCronApi({ gatewayManager }),
     skills: createSkillsApi({ clawHubService, gatewayManager }),
     usage: createUsageApi(),

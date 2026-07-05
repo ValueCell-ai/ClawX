@@ -29,6 +29,26 @@
     "runError": {
         "title": "Model call failed"
     },
+    "acp": {
+        "thought": "Thought",
+        "tool": "Tool",
+        "expandTool": "Expand tool result",
+        "collapseTool": "Collapse tool result",
+        "permission": "Permission",
+        "plan": "Plan",
+        "running": "Running",
+        "pending": "Pending",
+        "completed": "Completed",
+        "failed": "Failed",
+        "cancelled": "Cancelled",
+        "loadFailed": "Failed to load session",
+        "promptFailed": "Failed to send prompt",
+        "unsupportedContent": "Unsupported content",
+        "dismiss": "Dismiss",
+        "image": "Image",
+        "copy": "Copy response",
+        "copied": "Copied"
+    },
     "artifactPanel": {
         "tabs": {
             "changes": "Changes",
@@ -186,6 +206,7 @@
         "gatewayDisconnectedPlaceholder": "Gateway not connected...",
         "send": "Send",
         "stop": "Stop",
+        "working": "AI is working",
         "gatewayConnected": "connected",
         "gatewayStatus": "gateway {{state}} | port: {{port}} {{pid}}",
         "retryFailedAttachments": "Retry failed attachments",

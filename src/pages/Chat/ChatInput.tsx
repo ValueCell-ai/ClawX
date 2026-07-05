@@ -268,7 +268,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const showModelPicker = modelOptions.length > 1;
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
   const isGatewayUsable = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
-  const inputDisabled = disabled || !isGatewayUsable;
+  const inputDisabled = disabled;
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
   const openArtifactPreview = useArtifactPanel((s) => s.openPreview);
 
@@ -771,6 +771,19 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
       onDrop={handleDrop}
     >
       <div className="w-full">
+        {sending && (
+          <div
+            data-testid="chat-composer-working-indicator"
+            role="status"
+            aria-live="polite"
+            aria-label={t('composer.working')}
+            className="relative mb-2 h-1 overflow-hidden rounded-full bg-black/5 dark:bg-white/10"
+          >
+            <span className="sr-only">{t('composer.working')}</span>
+            <span className="clawx-chat-working-rail-bar absolute inset-y-0 block w-16 rounded-full bg-primary/70 shadow-[0_0_14px_hsl(var(--primary)/0.28)]" />
+          </div>
+        )}
+
         {/* Attachment Previews */}
         {attachments.length > 0 && (
           <div className="flex gap-2 mb-3 flex-wrap">

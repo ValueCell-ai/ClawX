@@ -29,6 +29,26 @@
     "runError": {
         "title": "モデル呼び出しに失敗しました"
     },
+    "acp": {
+        "thought": "思考",
+        "tool": "ツール",
+        "expandTool": "ツール結果を展開",
+        "collapseTool": "ツール結果を折りたたむ",
+        "permission": "権限",
+        "plan": "計画",
+        "running": "実行中",
+        "pending": "保留中",
+        "completed": "完了",
+        "failed": "失敗",
+        "cancelled": "キャンセル済み",
+        "loadFailed": "セッションの読み込みに失敗しました",
+        "promptFailed": "プロンプトの送信に失敗しました",
+        "unsupportedContent": "未対応のコンテンツ",
+        "dismiss": "閉じる",
+        "image": "画像",
+        "copy": "返信をコピー",
+        "copied": "コピーしました"
+    },
     "artifactPanel": {
         "tabs": {
             "changes": "変更",
@@ -186,6 +206,7 @@
         "gatewayDisconnectedPlaceholder": "ゲートウェイ未接続...",
         "send": "送信",
         "stop": "停止",
+        "working": "AI が処理中です",
         "gatewayConnected": "接続済み",
         "gatewayStatus": "ゲートウェイ {{state}} | ポート: {{port}} {{pid}}",
         "retryFailedAttachments": "失敗した添付を再試行",

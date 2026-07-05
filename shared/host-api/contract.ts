@@ -1,3 +1,10 @@
+import type {
+  AcpChatCancelPayload,
+  AcpChatLoadPayload,
+  AcpChatOperationResult,
+  AcpChatPromptPayload,
+  AcpChatRespondPermissionPayload,
+} from '../acp-chat/types';
 import type { RawMessage } from '../chat/types';
 import type { AgentsSnapshot } from '../types/agent';
 import type { CronJob, CronJobCreateInput, CronJobUpdateInput } from '../types/cron';
@@ -812,6 +819,10 @@ export type HostApiContract = {
   };
   chat: {
     sendWithMedia: (payload: ChatSendWithMediaPayload) => ChatSendWithMediaResult;
+    loadAcpSession: (payload: AcpChatLoadPayload) => AcpChatOperationResult;
+    sendAcpPrompt: (payload: AcpChatPromptPayload) => AcpChatOperationResult;
+    cancelAcpSession: (payload: AcpChatCancelPayload) => AcpChatOperationResult;
+    respondAcpPermission: (payload: AcpChatRespondPermissionPayload) => AcpChatOperationResult;
   };
   cron: {
     list: () => CronJob[];

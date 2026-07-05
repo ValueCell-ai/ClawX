@@ -3,6 +3,23 @@ import { isCronSessionKey } from './cron-session-utils';
 import type { ChatSession } from './types';
 
 const CHANNEL_SESSION_SEGMENTS = new Set<string>(Object.keys(CHANNEL_NAMES));
+const OPENCLAW_HEARTBEAT_POLL_SENTINEL = '[OpenClaw heartbeat poll]';
+const NON_USER_SESSION_LABELS = new Set(['clawx', 'main']);
+
+function stripHeartbeatSentinel(value: string | undefined): string {
+  return (value ?? '').replaceAll(OPENCLAW_HEARTBEAT_POLL_SENTINEL, '').trim();
+}
+
+function containsHeartbeatSentinel(value: string | undefined): boolean {
+  return (value ?? '').includes(OPENCLAW_HEARTBEAT_POLL_SENTINEL);
+}
+
+function hasUserAuthoredSessionText(value: string | undefined, sessionKey: string): boolean {
+  const text = stripHeartbeatSentinel(value);
+  if (!text) return false;
+  if (text === sessionKey) return false;
+  return !NON_USER_SESSION_LABELS.has(text.toLowerCase());
+}
 
 /**
  * OpenClaw channel sessions use `agent:<id>:<channel>:...` (e.g. feishu DM keys).
@@ -31,8 +48,28 @@ export function isPlaceholderChannelSession(session: ChatSession): boolean {
   return true;
 }
 
+export function isOpenClawHeartbeatOnlySession(session: ChatSession): boolean {
+  if (!isClawXDesktopSessionKey(session.key)) return false;
+
+  const hasHeartbeat = [session.label, session.displayName, session.derivedTitle, session.lastMessagePreview]
+    .some(containsHeartbeatSentinel);
+  if (!hasHeartbeat) return false;
+
+  if (hasUserAuthoredSessionText(session.label, session.key)) return false;
+  if (hasUserAuthoredSessionText(session.derivedTitle, session.key)) return false;
+  if (hasUserAuthoredSessionText(session.lastMessagePreview, session.key)) return false;
+
+  return true;
+}
+
+export function findHiddenOpenClawHeartbeatSession(sessionKey: string, sessions: ChatSession[]): ChatSession | null {
+  const session = sessions.find((candidate) => candidate.key === sessionKey);
+  return session && isOpenClawHeartbeatOnlySession(session) ? session : null;
+}
+
 export function shouldIncludeSessionInSidebarList(session: ChatSession): boolean {
   if (!session.key) return false;
+  if (isOpenClawHeartbeatOnlySession(session)) return false;
   if (isChannelSessionKey(session.key)) {
     return !isPlaceholderChannelSession(session);
   }

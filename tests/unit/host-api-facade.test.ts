@@ -250,6 +250,49 @@ describe('hostApi facade', () => {
     }));
   });
 
+  it('routes ACP chat methods through hostInvoke', async () => {
+    hostInvoke
+      .mockResolvedValueOnce({ id: 'req-1', ok: true, data: { success: true, generation: 1 } })
+      .mockResolvedValueOnce({ id: 'req-2', ok: true, data: { success: true, generation: 2 } })
+      .mockResolvedValueOnce({ id: 'req-3', ok: true, data: { success: true } })
+      .mockResolvedValueOnce({ id: 'req-4', ok: true, data: { success: true } });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await hostApi.chat.loadAcpSession({ sessionKey: 'main', cwd: '/workspace/project' });
+    await hostApi.chat.sendAcpPrompt({
+      sessionKey: 'main',
+      cwd: '/workspace/project',
+      message: 'hello',
+    });
+    await hostApi.chat.cancelAcpSession({ sessionKey: 'main' });
+    await hostApi.chat.respondAcpPermission({
+      sessionKey: 'main',
+      requestId: 'perm-1',
+      outcome: { outcome: 'cancelled' },
+    });
+
+    expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      module: 'chat',
+      action: 'loadAcpSession',
+      payload: { sessionKey: 'main', cwd: '/workspace/project' },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      module: 'chat',
+      action: 'sendAcpPrompt',
+      payload: { sessionKey: 'main', cwd: '/workspace/project', message: 'hello' },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      module: 'chat',
+      action: 'cancelAcpSession',
+      payload: { sessionKey: 'main' },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(4, expect.objectContaining({
+      module: 'chat',
+      action: 'respondAcpPermission',
+      payload: { sessionKey: 'main', requestId: 'perm-1', outcome: { outcome: 'cancelled' } },
+    }));
+  });
+
   it('calls sessions.summaries through hostInvoke', async () => {
     hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { success: true, summaries: [] } });
     const { hostApi } = await import('@/lib/host-api');

@@ -92,6 +92,12 @@ export const hostEvents = {
   onChatRuntimeEvent: (handler: HostEventHandler<'chat', 'runtimeEvent'>) => (
     onChatEvent('runtimeEvent', handler)
   ),
+  onAcpSessionUpdate: (handler: HostEventHandler<'chat', 'acpSessionUpdate'>) => (
+    onChatEvent('acpSessionUpdate', handler)
+  ),
+  onAcpPermissionRequest: (handler: HostEventHandler<'chat', 'acpPermissionRequest'>) => (
+    onChatEvent('acpPermissionRequest', handler)
+  ),
   onOAuthCode: (handler: HostEventHandler<'oauth', 'code'>) => onOAuthEvent('code', handler),
   onOAuthSuccess: (handler: HostEventHandler<'oauth', 'success'>) => onOAuthEvent('success', handler),
   onOAuthError: (handler: HostEventHandler<'oauth', 'error'>) => onOAuthEvent('error', handler),

@@ -31,6 +31,12 @@ import type {
   SkillUpdatePayload,
   UpdateChannel,
 } from '@shared/host-api/contract';
+import type {
+  AcpChatCancelPayload,
+  AcpChatLoadPayload,
+  AcpChatPromptPayload,
+  AcpChatRespondPermissionPayload,
+} from '@shared/acp-chat/types';
 import type { CronJobCreateInput, CronJobUpdateInput } from '@shared/types/cron';
 import { invokeHost } from './host-api-client';
 
@@ -295,6 +301,12 @@ export const hostApi = {
   },
   chat: {
     sendWithMedia: (input: ChatSendWithMediaPayload) => invokeHost('chat', 'sendWithMedia', input),
+    loadAcpSession: (input: AcpChatLoadPayload) => invokeHost('chat', 'loadAcpSession', input),
+    sendAcpPrompt: (input: AcpChatPromptPayload) => invokeHost('chat', 'sendAcpPrompt', input),
+    cancelAcpSession: (input: AcpChatCancelPayload) => invokeHost('chat', 'cancelAcpSession', input),
+    respondAcpPermission: (input: AcpChatRespondPermissionPayload) => (
+      invokeHost('chat', 'respondAcpPermission', input)
+    ),
   },
   cron: {
     list: () => invokeHost('cron', 'list'),

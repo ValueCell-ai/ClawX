@@ -273,6 +273,17 @@
       animation: none;
     }
   }
+
+  .clawx-chat-working-rail-bar {
+    animation: clawx-chat-working-rail 1.15s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .clawx-chat-working-rail-bar {
+      animation: none;
+      left: 0;
+    }
+  }
 }
 
 @keyframes clawx-dialog-overlay-in {
@@ -316,6 +327,17 @@
   to {
     opacity: 0;
     transform: translate(-50%, -50%) scale(0.99);
+  }
+}
+
+@keyframes clawx-chat-working-rail {
+  0%,
+  100% {
+    left: 0;
+  }
+
+  50% {
+    left: calc(100% - 4rem);
   }
 }
 

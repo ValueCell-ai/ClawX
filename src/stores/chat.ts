@@ -10,7 +10,11 @@ import { useAgentsStore } from './agents';
 import type { ChatRuntimeEvent } from '../../shared/chat-runtime-events';
 import { buildBaselineRunKey, captureBaseline, clearBaselines } from './baseline-cache';
 import { isCronSessionKey, sessionKeysAreEquivalent } from './chat/cron-session-utils';
-import { isClawXDesktopSessionKey, shouldIncludeSessionInSidebarList } from './chat/session-key-utils';
+import {
+  findHiddenOpenClawHeartbeatSession,
+  isClawXDesktopSessionKey,
+  shouldIncludeSessionInSidebarList,
+} from './chat/session-key-utils';
 import { fetchCronSessionHistory } from '@/lib/cron-session-history';
 import { pickStartupSessionFallback } from './chat/session-selection';
 import {
@@ -2631,7 +2635,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const data = await fetchChatSessionsList();
         if (data) {
           const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
-          const sessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => ({
+          const normalizedSessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => ({
             key: String(s.key || ''),
             label: s.label ? String(s.label) : undefined,
             displayName: s.displayName ? String(s.displayName) : undefined,
@@ -2643,7 +2647,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
             status: parseSessionStatus(s.status),
             hasActiveRun: typeof s.hasActiveRun === 'boolean' ? s.hasActiveRun : undefined,
             channel: s.lastChannel ? String(s.lastChannel) : undefined,
-          })).filter((s: ChatSession) => shouldIncludeSessionInSidebarList(s));
+          }));
+          const sessions = normalizedSessions.filter((s: ChatSession) => shouldIncludeSessionInSidebarList(s));
 
           const canonicalBySuffix = new Map<string, string>();
           for (const session of sessions) {
@@ -2667,13 +2672,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
           const { currentSessionKey, sessions: localSessions } = get();
           let nextSessionKey = currentSessionKey || DEFAULT_SESSION_KEY;
+          let replacedHiddenHeartbeatSession = false;
+          const hiddenCurrentSession = findHiddenOpenClawHeartbeatSession(nextSessionKey, normalizedSessions);
+          if (hiddenCurrentSession) {
+            const prefix = getCanonicalPrefixFromSessionKey(nextSessionKey)
+              ?? getCanonicalPrefixFromSessions(sessions)
+              ?? DEFAULT_CANONICAL_PREFIX;
+            nextSessionKey = `${prefix}:session-${Date.now()}`;
+            replacedHiddenHeartbeatSession = true;
+          }
           if (!nextSessionKey.startsWith('agent:')) {
             const canonicalMatch = canonicalBySuffix.get(nextSessionKey);
             if (canonicalMatch) {
               nextSessionKey = canonicalMatch;
             }
           }
-          if (!dedupedSessions.find((s) => s.key === nextSessionKey) && dedupedSessions.length > 0) {
+          if (!replacedHiddenHeartbeatSession && !dedupedSessions.find((s) => s.key === nextSessionKey) && dedupedSessions.length > 0) {
             // Preserve only locally-created pending sessions. On initial boot the
             // default ghost key (`agent:main:main`) should yield to real history.
             const hasLocalPendingSession = localSessions.some((session) => session.key === nextSessionKey);
@@ -2817,6 +2831,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     clearBaselines();
     set((s) => buildSessionSwitchPatch(s, key));
     get().loadHistory();
+  },
+
+  selectAcpSession: (key: string) => {
+    if (key === get().currentSessionKey) return;
+    clearHistoryPoll();
+    clearBaselines();
+    set((s) => buildSessionSwitchPatch(s, key));
   },
 
   // ── Delete session ──

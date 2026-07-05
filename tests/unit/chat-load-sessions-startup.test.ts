@@ -26,6 +26,11 @@ vi.mock('@/stores/agents', () => ({
 }));
 
 vi.mock('@/lib/host-api', () => ({
+  hostApi: {
+    sessions: {
+      summaries: vi.fn().mockResolvedValue({ summaries: [] }),
+    },
+  },
   hostApiFetch: vi.fn().mockResolvedValue({ success: true, summaries: [] }),
 }));
 
@@ -156,6 +161,54 @@ describe('chat store loadSessions startup selection', () => {
 
     expect(useChatStore.getState().sessions.map((session) => session.key)).toEqual(['agent:main:session-a']);
     expect(useChatStore.getState().currentSessionKey).toBe('agent:main:session-a');
+  });
+
+  it('starts a fresh session when the current default is a hidden heartbeat even if visible history exists', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1711111111111);
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return {
+          sessions: [
+            {
+              key: 'agent:main:main',
+              displayName: 'ClawX',
+              lastMessagePreview: '[OpenClaw heartbeat poll]',
+              updatedAt: 9_000,
+            },
+            {
+              key: 'agent:main:session-a',
+              displayName: 'Visible desktop chat',
+              lastMessagePreview: 'Summarize the repository structure',
+              updatedAt: 5_000,
+            },
+          ],
+        };
+      }
+      if (method === 'chat.history') {
+        return { messages: [] };
+      }
+      throw new Error(`Unexpected gateway RPC: ${method}`);
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessions: [],
+      messages: [{ role: 'assistant', content: 'stale visible content' }],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+
+    await useChatStore.getState().loadSessions();
+
+    expect(useChatStore.getState().currentSessionKey).toBe('agent:main:session-1711111111111');
+    expect(useChatStore.getState().currentSessionKey).not.toBe('agent:main:session-a');
+    expect(useChatStore.getState().sessions.map((session) => session.key)).toEqual([
+      'agent:main:session-a',
+      'agent:main:session-1711111111111',
+    ]);
+    nowSpy.mockRestore();
   });
 
   it('shows feishu sessions when they contain real channel messages', async () => {

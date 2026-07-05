@@ -227,7 +227,8 @@ describe('ChatInput agent targeting', () => {
     expect(onSend).toHaveBeenCalledWith('Hello direct agent', undefined, 'research');
   });
 
-  it('disables the input while gateway is running but not yet ready', () => {
+  it('keeps the ACP composer enabled while gateway is running but not yet ready', () => {
+    const onSend = vi.fn();
     gatewayState.status = { state: 'running', port: 18789, gatewayReady: false };
     agentsState.agents = [
       {
@@ -276,11 +277,17 @@ describe('ChatInput agent targeting', () => {
     ];
     providersState.defaultAccountId = 'aaaaaaaa';
 
-    renderChatInput();
+    renderChatInput(onSend);
 
-    expect(screen.getByTestId('chat-composer-input')).toBeDisabled();
-    expect(screen.getByTestId('chat-composer-skill')).toBeDisabled();
-    expect(screen.getByTestId('chat-model-picker-button')).toBeDisabled();
+    const input = screen.getByTestId('chat-composer-input');
+    expect(input).not.toBeDisabled();
+    expect(screen.getByTestId('chat-composer-skill')).not.toBeDisabled();
+    expect(screen.getByTestId('chat-model-picker-button')).not.toBeDisabled();
+
+    fireEvent.change(input, { target: { value: 'Send through ACP' } });
+    fireEvent.click(screen.getByTitle('Send'));
+
+    expect(onSend).toHaveBeenCalledWith('Send through ACP', undefined, null);
   });
 
   it('shows starting status while gateway is running but not yet ready', () => {

@@ -1,3 +1,5 @@
+// Legacy Gateway Chat visualization retained only for tests or non-ACP migration cleanup.
+// ACP Chat renders ordered inline timeline blocks instead.
 import {
   extractImages,
   extractText,

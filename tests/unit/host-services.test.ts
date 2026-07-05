@@ -201,6 +201,11 @@ vi.mock('@electron/services/providers/provider-runtime-sync', () => ({
   getOpenClawProviderKey: vi.fn((type: string) => type),
 }));
 
+vi.mock('@electron/utils/openclaw-auth', () => ({
+  removeProviderFromOpenClaw: vi.fn(),
+  saveProviderKeyToOpenClaw: vi.fn(),
+}));
+
 vi.mock('@electron/services/providers/provider-service', () => ({
   getProviderService: () => providerServiceMock,
 }));
@@ -920,7 +925,10 @@ describe('host services', () => {
     };
     const { createChatApi } = await import('@electron/services/chat-api');
 
-    await expect(createChatApi({ gatewayManager: gatewayManager as never }).sendWithMedia({
+    await expect(createChatApi({
+      gatewayManager: gatewayManager as never,
+      mainWindow: {} as never,
+    }).sendWithMedia({
       sessionKey: 'agent:main:main',
       message: 'inspect this',
       idempotencyKey: 'idem-123',

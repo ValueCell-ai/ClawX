@@ -1,3 +1,4 @@
+// Legacy Gateway Chat helper coverage retained while non-ACP migration cleanup is still in progress.
 import { describe, expect, it } from 'vitest';
 import {
   deriveRuntimeTaskSteps,

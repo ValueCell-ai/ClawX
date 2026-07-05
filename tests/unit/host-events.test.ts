@@ -47,6 +47,24 @@ describe('hostEvents', () => {
     expect(handler).toHaveBeenCalledWith({ type: 'run.started', runId: 'run-1' });
   });
 
+  it('subscribes to ACP session update events over IPC', async () => {
+    const { hostEvents } = await import('@/lib/host-events');
+    const handler = vi.fn();
+
+    hostEvents.onAcpSessionUpdate(handler);
+
+    expect(on).toHaveBeenCalledWith('chat:acp-session-update', expect.any(Function));
+  });
+
+  it('subscribes to ACP permission request events over IPC', async () => {
+    const { hostEvents } = await import('@/lib/host-events');
+    const handler = vi.fn();
+
+    hostEvents.onAcpPermissionRequest(handler);
+
+    expect(on).toHaveBeenCalledWith('chat:acp-permission-request', expect.any(Function));
+  });
+
   it('subscribes to dynamic channel QR events', async () => {
     const { hostEvents } = await import('@/lib/host-events');
     const handler = vi.fn();
