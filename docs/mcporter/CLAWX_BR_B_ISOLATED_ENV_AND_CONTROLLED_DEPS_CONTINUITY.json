@@ -13,7 +13,8 @@
   "env_prep_executed": true,
   "dependency_install_executed": false,
   "br_b_merge_commit": "99302e06f0a7c1e1ee4986c037e1f5f3dd2972c8",
-  "final_fork_main_head": "99302e06f0a7c1e1ee4986c037e1f5f3dd2972c8",
+  "final_fork_main_head": "ef75cdaeb76ec4b85d40cc696d51ee952802e78c",
+  "continuity_correction": "final_fork_main_head corrected from merge commit to post-continuity-lock HEAD",
   "continuity_lock": "docs/mcporter/CLAWX_BR_B_ISOLATED_ENV_AND_CONTROLLED_DEPS_CONTINUITY.json",
   "checks_run": [
     "git status --short --branch",
