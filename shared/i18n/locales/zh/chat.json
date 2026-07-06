@@ -145,6 +145,7 @@
     },
     "workspace": {
         "title": "工作空间",
+        "header": "Agent：{{agent}} · 目录：{{directory}}",
         "freshBadge": "本轮新增",
         "pickFile": "从左侧选择一个文件预览",
         "empty": "工作空间为空或无法访问",

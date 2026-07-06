@@ -4,9 +4,11 @@ import { WorkspaceBrowserBody } from '@/components/file-preview/WorkspaceBrowser
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (_key: string, options?: string | { defaultValue?: string }) => (
-      typeof options === 'string' ? options : options?.defaultValue ?? _key
-    ),
+    t: (_key: string, options?: string | Record<string, unknown>) => {
+      const template = typeof options === 'string' ? options : String(options?.defaultValue ?? _key);
+      if (!options || typeof options === 'string') return template;
+      return template.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => String(options[key] ?? ''));
+    },
   }),
 }));
 
@@ -137,7 +139,7 @@ describe('WorkspaceBrowserBody', () => {
     vi.clearAllMocks();
   });
 
-  it('loads hidden files by default and shows the workspace path only in the header', async () => {
+  it('loads hidden files by default and shows the agent and directory in one header title', async () => {
     render(
       <WorkspaceBrowserBody
         agent={{ id: 'main', name: 'Main Agent', workspace: '/Users/alex/.openclaw/workspace-main' }}
@@ -150,11 +152,30 @@ describe('WorkspaceBrowserBody', () => {
         expect.objectContaining({ includeHidden: true, runStartedAt: null }),
       );
     });
-    expect(screen.getByTestId('workspace-path')).toHaveTextContent('~/.openclaw/workspace-main');
-    expect(screen.getByTestId('workspace-path')).toHaveAttribute('title', '/Users/alex/.openclaw/workspace-main');
+    expect(screen.getByTestId('workspace-header-title')).toHaveTextContent(
+      'Agent：Main Agent / 目录：~/.openclaw/workspace-main',
+    );
+    expect(screen.getByTestId('workspace-header-title')).toHaveAttribute(
+      'title',
+      'Main Agent / /Users/alex/.openclaw/workspace-main',
+    );
+    expect(screen.queryByTestId('workspace-path')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /hidden files/i })).not.toBeInTheDocument();
     expect(screen.getByText('.env')).toBeVisible();
     expect(screen.getByTestId('workspace-tree')).not.toHaveTextContent('Workspace · Main Agent');
+  });
+
+  it('renders tree item hover targets across the full virtual row height', async () => {
+    render(
+      <WorkspaceBrowserBody
+        agent={{ id: 'main', name: 'Main Agent', workspace: '/workspace' }}
+      />,
+    );
+
+    const folder = await screen.findByRole('button', { name: /^config$/i });
+
+    expect(folder).toHaveClass('h-full', 'items-center');
+    expect(folder.parentElement).toHaveClass('h-full');
   });
 
   it('renders html files as sandboxed HTML preview instead of raw source', async () => {

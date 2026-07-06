@@ -45,6 +45,7 @@ const SheetViewerLazy = lazy(() => import('./SheetViewer'));
 
 /** Inline rich-doc viewers tap out past this — falls back to direct open. */
 const RICH_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
+const TREE_INDENT_PX = 8;
 
 function formatWorkspacePath(workspace: string): string {
   if (!workspace) return '';
@@ -124,6 +125,13 @@ export function WorkspaceBrowserBody({
   const treeScope = `${agent?.id ?? ''}:${workspace}`;
   const openRelPaths = openRelPathState.scope === treeScope ? openRelPathState.paths : null;
   const workspaceDisplayPath = formatWorkspacePath(workspace);
+  const agentDisplayName = agent?.name?.trim() || '-';
+  const directoryDisplayPath = workspaceDisplayPath || '-';
+  const workspaceHeaderTitle = t('workspace.header', {
+    defaultValue: 'Agent：{{agent}} / 目录：{{directory}}',
+    agent: agentDisplayName,
+    directory: directoryDisplayPath,
+  });
 
   const reload = useCallback(() => setRefreshTick((v) => v + 1), []);
 
@@ -353,7 +361,7 @@ export function WorkspaceBrowserBody({
             height={treeHeight}
             width="100%"
             rowHeight={compact ? 24 : 28}
-            indent={14}
+            indent={TREE_INDENT_PX}
             overscanCount={8}
             renderRow={WorkspaceTreeContainerRow}
             onActivate={(node) => {
@@ -571,19 +579,13 @@ export function WorkspaceBrowserBody({
         )}
       >
         <div className="flex min-w-0 items-center gap-2">
-          <h2 className="shrink-0 truncate text-sm font-semibold">
-            {t('workspace.title', 'Workspace')}
-            {agent?.name ? <span className="ml-2 font-normal text-foreground/70">· {agent.name}</span> : null}
+          <h2
+            data-testid="workspace-header-title"
+            title={`${agentDisplayName} / ${workspace || directoryDisplayPath}`}
+            className="min-w-0 truncate text-sm font-semibold"
+          >
+            {workspaceHeaderTitle}
           </h2>
-          {workspaceDisplayPath ? (
-            <code
-              data-testid="workspace-path"
-              title={workspace}
-              className="min-w-0 truncate rounded bg-black/5 px-2 py-0.5 text-2xs text-muted-foreground dark:bg-white/10"
-            >
-              {workspaceDisplayPath}
-            </code>
-          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <Button
@@ -649,7 +651,7 @@ function WorkspaceTreeContainerRow<T>({ attrs, innerRef, children }: RowRenderer
 function WorkspaceTreeRow({ node, style }: NodeRendererProps<WorkspaceTreeNode>) {
   const data = node.data;
   const isOpen = data.isDir && node.isOpen;
-  const indent = node.level * 14;
+  const indent = node.level * TREE_INDENT_PX;
 
   const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -657,7 +659,7 @@ function WorkspaceTreeRow({ node, style }: NodeRendererProps<WorkspaceTreeNode>)
   };
 
   return (
-    <div style={style} className="px-1" onClick={(event) => event.stopPropagation()}>
+    <div style={style} className="h-full px-1" onClick={(event) => event.stopPropagation()}>
       <button
         type="button"
         onClick={handleClick}

@@ -145,6 +145,7 @@
     },
     "workspace": {
         "title": "Workspace",
+        "header": "Agent: {{agent}} · Directory: {{directory}}",
         "freshBadge": "Updated this run",
         "pickFile": "Select a file from the left to preview",
         "empty": "Workspace is empty or inaccessible",
