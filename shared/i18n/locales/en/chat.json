@@ -151,10 +151,7 @@
         "truncated": "Directory truncated — only the first 5000 entries shown",
         "actions": {
             "refresh": "Refresh",
-            "openRootInFinder": "Reveal workspace in file manager",
-            "toggleHidden": "Toggle hidden files",
-            "showHidden": "Show hidden files",
-            "hideHidden": "Hide hidden files"
+            "openRootInFinder": "Reveal workspace in file manager"
         }
     },
     "taskPanel": {

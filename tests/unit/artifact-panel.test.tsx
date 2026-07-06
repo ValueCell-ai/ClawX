@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { ArtifactPanel } from '@/components/file-preview/ArtifactPanel';
 import { ARTIFACT_PANEL_DEFAULT_WIDTH, useArtifactPanel } from '@/stores/artifact-panel';
 import type { GeneratedFile } from '@/lib/generated-files';
@@ -38,16 +38,48 @@ function makeGeneratedFile(overrides: Partial<GeneratedFile> = {}): GeneratedFil
   };
 }
 
+function getActiveFilePreviewBody(): HTMLElement {
+  const activeBody = screen.getAllByTestId('file-preview-body').find((body) => !body.closest('.hidden'));
+  expect(activeBody).toBeDefined();
+  return activeBody as HTMLElement;
+}
+
 afterEach(() => {
-  useArtifactPanel.setState({
-    open: false,
-    tab: 'changes',
-    focusedFile: null,
-    widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
+  act(() => {
+    useArtifactPanel.setState({
+      open: false,
+      tab: 'changes',
+      focusedFile: null,
+      widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
+    });
   });
 });
 
 describe('ArtifactPanel', () => {
+  it('orders workspace before preview and changes', () => {
+    useArtifactPanel.setState({
+      open: true,
+      tab: 'browser',
+      focusedFile: null,
+      widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
+    });
+
+    render(
+      <ArtifactPanel
+        files={[makeGeneratedFile()]}
+        agent={{ id: 'main', name: 'Main Agent', workspace: '/Users/e2e/.openclaw/workspace-main' }}
+      />,
+    );
+
+    const labels = [
+      screen.getByTestId('artifact-panel-tab-browser'),
+      screen.getByTestId('artifact-panel-tab-preview'),
+      screen.getByTestId('artifact-panel-tab-changes'),
+    ].map((button) => button.textContent?.trim());
+
+    expect(labels).toEqual(['Workspace', 'Preview', 'Changes']);
+  });
+
   it('keeps chat-opened SKILL.md focused when switching to changes', () => {
     useArtifactPanel.setState({
       open: true,
@@ -69,9 +101,10 @@ describe('ArtifactPanel', () => {
       />,
     );
 
-    const previewBodies = screen.getAllByTestId('file-preview-body');
-    expect(previewBodies[0]).toHaveTextContent('SKILL.md');
-    expect(previewBodies[0]).toHaveTextContent('~/.openclaw/skills/open-baidu/SKILL.md');
+    const activeBody = getActiveFilePreviewBody();
+    expect(activeBody).toHaveTextContent('diff');
+    expect(activeBody).toHaveTextContent('SKILL.md');
+    expect(activeBody).toHaveTextContent('~/.openclaw/skills/open-baidu/SKILL.md');
     expect(screen.queryByText('test_example.py')).not.toBeInTheDocument();
   });
 
@@ -96,13 +129,13 @@ describe('ArtifactPanel', () => {
       />,
     );
 
-    expect(screen.getAllByTestId('file-preview-body')[1]).toHaveTextContent('SKILL.md');
+    expect(getActiveFilePreviewBody()).toHaveTextContent('SKILL.md');
 
     fireEvent.click(screen.getByRole('button', { name: 'Workspace' }));
     expect(screen.getByTestId('workspace-browser')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
-    expect(screen.getAllByTestId('file-preview-body')[1]).toHaveTextContent('SKILL.md');
+    expect(getActiveFilePreviewBody()).toHaveTextContent('SKILL.md');
     expect(screen.queryByText('No file selected')).not.toBeInTheDocument();
   });
 
@@ -138,7 +171,9 @@ describe('ArtifactPanel', () => {
     expect(changesButton.parentElement?.parentElement?.className).toContain('z-30');
 
     fireEvent.pointerDown(changesButton, { button: 0 });
-    expect(screen.getAllByTestId('file-preview-body')[0]).toHaveTextContent('diff');
+    const activeBody = getActiveFilePreviewBody();
+    expect(activeBody).toHaveTextContent('diff');
+    expect(activeBody).toHaveTextContent('demo.html');
   });
 
   it('marks macOS chrome so preview tabs and content stay clickable', () => {

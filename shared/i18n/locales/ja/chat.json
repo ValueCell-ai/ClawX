@@ -151,10 +151,7 @@
         "truncated": "ディレクトリが大きいため、5000 件までで切り詰めました",
         "actions": {
             "refresh": "更新",
-            "openRootInFinder": "ルートをファイルマネージャーで表示",
-            "toggleHidden": "隠しファイル表示切替",
-            "showHidden": "隠しファイルを表示",
-            "hideHidden": "隠しファイルを隠す"
+            "openRootInFinder": "ルートをファイルマネージャーで表示"
         }
     },
     "taskPanel": {

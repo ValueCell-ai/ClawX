@@ -2,15 +2,15 @@
  * Right-side artifact panel — the WorkBuddy-style split-pane sidebar
  * shown next to the Chat conversation.  Hosts three top-level tabs:
  *
- *   - Changes: side-by-side diff for the focused file only (no
- *     in-panel file list — open a file from the run’s file cards below
- *     the graph, or “View file changes” picks the latest change).
+ *   - Workspace (browser): read-only workspace tree + file preview,
+ *     scoped to the current agent's `agent.workspace`.
  *   - Preview: rendered preview of whichever file is currently
  *     focused (Markdown → rendered, code → syntax-highlighted).  Shares
  *     `focusedFile` with the changes tab so switching tabs keeps
  *     context.
- *   - Workspace (browser): read-only workspace tree + file preview,
- *     scoped to the current agent's `agent.workspace`.
+ *   - Changes: side-by-side diff for the focused file only (no
+ *     in-panel file list — open a file from the run’s file cards below
+ *     the graph, or “View file changes” picks the latest change).
  *
  * Open/close + tab + focused-file state lives in the
  * `useArtifactPanel` zustand store so any part of the page (file cards,
@@ -72,6 +72,22 @@ export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: Art
           />
         )}
         <div className={cn('flex min-w-0 items-center gap-1', isMac && 'no-drag relative z-10')}>
+          {WORKSPACE_BROWSER_ENABLED && (
+            <PanelTabButton
+              testId="artifact-panel-tab-browser"
+              icon={<FolderTree className="h-3.5 w-3.5" />}
+              label={t('artifactPanel.tabs.browser', 'Workspace')}
+              active={visibleTab === 'browser'}
+              onClick={() => setTab('browser')}
+            />
+          )}
+          <PanelTabButton
+            testId="artifact-panel-tab-preview"
+            icon={<Eye className="h-3.5 w-3.5" />}
+            label={t('artifactPanel.tabs.preview', 'Preview')}
+            active={visibleTab === 'preview'}
+            onClick={() => setTab('preview')}
+          />
           {richFocusedFile ? (
             <PanelTabButton
               testId="artifact-panel-action-open-folder"
@@ -89,22 +105,6 @@ export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: Art
               onClick={() => setTab('changes')}
             />
           )}
-          <PanelTabButton
-            testId="artifact-panel-tab-preview"
-            icon={<Eye className="h-3.5 w-3.5" />}
-            label={t('artifactPanel.tabs.preview', 'Preview')}
-            active={visibleTab === 'preview'}
-            onClick={() => setTab('preview')}
-          />
-          {WORKSPACE_BROWSER_ENABLED && (
-            <PanelTabButton
-              testId="artifact-panel-tab-browser"
-              icon={<FolderTree className="h-3.5 w-3.5" />}
-              label={t('artifactPanel.tabs.browser', 'Workspace')}
-              active={visibleTab === 'browser'}
-              onClick={() => setTab('browser')}
-            />
-          )}
         </div>
         <Button
           type="button"
@@ -119,17 +119,6 @@ export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: Art
       </div>
 
       <div className={cn('relative z-0 min-h-0 flex-1 overflow-hidden', isMac && 'no-drag')}>
-        <div className={cn('h-full min-h-0', visibleTab !== 'changes' && 'hidden')}>
-          <ChangesTab
-            files={files}
-            focusedFile={focusedFile}
-            onFocus={(f) => setFocusedFile(f)}
-            active={visibleTab === 'changes'}
-          />
-        </div>
-        <div className={cn('h-full min-h-0', visibleTab !== 'preview' && 'hidden')}>
-          <PreviewTab focusedFile={focusedFile} />
-        </div>
         {WORKSPACE_BROWSER_ENABLED && (
           <div className={cn('h-full min-h-0', visibleTab !== 'browser' && 'hidden')}>
             <WorkspaceBrowserBody
@@ -140,6 +129,17 @@ export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: Art
             />
           </div>
         )}
+        <div className={cn('h-full min-h-0', visibleTab !== 'preview' && 'hidden')}>
+          <PreviewTab focusedFile={focusedFile} />
+        </div>
+        <div className={cn('h-full min-h-0', visibleTab !== 'changes' && 'hidden')}>
+          <ChangesTab
+            files={files}
+            focusedFile={focusedFile}
+            onFocus={(f) => setFocusedFile(f)}
+            active={visibleTab === 'changes'}
+          />
+        </div>
       </div>
     </div>
   );

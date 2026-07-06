@@ -151,10 +151,7 @@
         "truncated": "目录过大，已截断显示前 5000 个节点",
         "actions": {
             "refresh": "刷新",
-            "openRootInFinder": "在文件管理器中显示根目录",
-            "toggleHidden": "显示/隐藏隐藏文件",
-            "showHidden": "显示隐藏文件",
-            "hideHidden": "隐藏隐藏文件"
+            "openRootInFinder": "在文件管理器中显示根目录"
         }
     },
     "taskPanel": {

@@ -282,6 +282,7 @@ export async function installIpcMocks(
       const originalLegacyGatewayRpc = getInvokeHandler('gateway:rpc');
       const originalLegacyFileStat = getInvokeHandler('file:stat');
       const originalLegacyFileReadText = getInvokeHandler('file:readText');
+      const originalLegacyFileListTree = getInvokeHandler('file:listTree');
       const getLegacyOverride = (channel: string, original?: IpcInvokeHandler) => {
         const current = getInvokeHandler(channel);
         return current && current !== original ? current : null;
@@ -404,6 +405,12 @@ export async function installIpcMocks(
               const legacyFileReadText = getLegacyOverride('file:readText', originalLegacyFileReadText);
               if (legacyFileReadText) {
                 return respond(request.id, await legacyFileReadText(event, path));
+              }
+            }
+            if (request.action === 'listTree') {
+              const legacyFileListTree = getLegacyOverride('file:listTree', originalLegacyFileListTree);
+              if (legacyFileListTree) {
+                return respond(request.id, await legacyFileListTree(event, path, payload.opts));
               }
             }
           }

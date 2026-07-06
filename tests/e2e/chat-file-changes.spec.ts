@@ -1,6 +1,7 @@
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 const SESSION_KEY = 'agent:main:main';
+const workspacePath = '/Users/e2e/.openclaw/workspace-main';
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -81,6 +82,119 @@ const htmlFileHistory = [
   },
 ];
 test.describe('ClawX chat file changes', () => {
+  test('shows workspace first with hidden files and compressed path', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [{ key: SESSION_KEY, displayName: 'main' }],
+            },
+          },
+          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
+            success: true,
+            result: { messages: history },
+          },
+          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
+            success: true,
+            result: { messages: history },
+          },
+        },
+        hostApi: {
+          [stableStringify(['/api/gateway/status', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: { state: 'running', port: 18789, pid: 12345 },
+            },
+          },
+          [stableStringify(['/api/agents', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                agents: [{ id: 'main', name: 'Main Agent', workspace: workspacePath }],
+              },
+            },
+          },
+        },
+      });
+
+      await app.evaluate(async ({ app: _app }, { workspacePath: mockedWorkspacePath }) => {
+        const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+        ipcMain.removeHandler('file:listTree');
+        ipcMain.handle('file:listTree', async (_event: unknown, inputPath: string, opts?: { includeHidden?: boolean }) => {
+          if (inputPath !== mockedWorkspacePath || opts?.includeHidden !== true) {
+            return { ok: false, error: 'unexpectedListTreeRequest' };
+          }
+          return {
+            ok: true,
+            root: {
+              name: 'workspace-main',
+              relPath: '',
+              absPath: mockedWorkspacePath,
+              isDir: true,
+              children: [
+                {
+                  name: '.env',
+                  relPath: '.env',
+                  absPath: `${mockedWorkspacePath}/.env`,
+                  isDir: false,
+                  size: 16,
+                  mtime: Date.now(),
+                },
+                {
+                  name: 'demo.ts',
+                  relPath: 'demo.ts',
+                  absPath: `${mockedWorkspacePath}/demo.ts`,
+                  isDir: false,
+                  size: 24,
+                  mtime: Date.now(),
+                },
+              ],
+            },
+            truncated: false,
+          };
+        });
+      }, { workspacePath });
+
+      const page = await getStableWindow(app);
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
+          throw error;
+        }
+      }
+
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+      const fileCard = page.getByRole('button', { name: /demo\.ts/ }).first();
+      await expect(fileCard).toBeVisible({ timeout: 30_000 });
+      await fileCard.click();
+
+      const sidePanel = page.getByTestId('artifact-panel');
+      await expect(sidePanel).toBeVisible({ timeout: 30_000 });
+      const tabLabels = await sidePanel.locator('[data-testid^="artifact-panel-tab-"]').evaluateAll((buttons) => (
+        buttons.map((button) => button.textContent?.trim())
+      ));
+      expect(tabLabels).toEqual(['Workspace', 'Preview', 'Changes']);
+
+      await sidePanel.getByTestId('artifact-panel-tab-browser').click();
+      await expect(sidePanel.getByTestId('workspace-path')).toHaveText('~/.openclaw/workspace-main');
+      await expect(sidePanel.getByRole('button', { name: /hidden files/i })).toHaveCount(0);
+      await expect(sidePanel.getByText('.env')).toBeVisible({ timeout: 30_000 });
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('shows line stats on generated file cards', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 

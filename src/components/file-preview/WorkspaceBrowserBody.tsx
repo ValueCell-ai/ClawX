@@ -4,8 +4,9 @@
  * Strictly scoped to the current agent's `agent.workspace` directory.
  * Used by `ArtifactPanel`'s browser tab (split-pane on the chat page).
  */
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronRight, FolderOpen, RefreshCw } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Tree, type NodeRendererProps, type RowRendererProps } from 'react-arborist';
+import { ChevronRight, Folder, FolderOpen, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -28,12 +29,12 @@ import {
   type WorkspaceTreeNode,
 } from '@/lib/workspace-tree';
 import type { AgentSummary } from '@/types/agent';
-import { FilePreviewIcon } from './file-card-utils';
 import { formatFileSize } from './format';
 import {
   confirmAndOpenFile,
   shouldOfferDirectOpenFallback,
 } from './open-file-utils';
+import { MaterialFileIcon } from './MaterialFileIcon';
 import MarkdownPreview from './MarkdownPreview';
 import HtmlPreview from './HtmlPreview';
 import ImageViewer from './ImageViewer';
@@ -44,6 +45,31 @@ const SheetViewerLazy = lazy(() => import('./SheetViewer'));
 
 /** Inline rich-doc viewers tap out past this — falls back to direct open. */
 const RICH_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
+
+function formatWorkspacePath(workspace: string): string {
+  if (!workspace) return '';
+
+  const windowsHome = workspace.match(/^[A-Za-z]:\\Users\\[^\\]+(?=\\|$)/);
+  if (windowsHome) {
+    return `~${workspace.slice(windowsHome[0].length) || ''}`;
+  }
+
+  const normalized = workspace.replace(/\\/g, '/');
+  const posixHome = normalized.match(/^\/(?:Users|home)\/[^/]+(?=\/|$)/);
+  if (posixHome) {
+    return `~${normalized.slice(posixHome[0].length) || ''}`;
+  }
+
+  return workspace;
+}
+
+function toOpenState(expanded: Set<string>): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (const id of expanded) {
+    if (id) out[id] = true;
+  }
+  return out;
+}
 
 export interface WorkspaceBrowserBodyProps {
   agent: AgentSummary | null;
@@ -84,23 +110,59 @@ export function WorkspaceBrowserBody({
 }: WorkspaceBrowserBodyProps) {
   const { t } = useTranslation('chat');
   const [state, setState] = useState<LoadState>({ status: 'idle' });
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [selectedRel, setSelectedRel] = useState<string | null>(null);
   const [fileState, setFileState] = useState<FileState>({ status: 'idle' });
   const [refreshTick, setRefreshTick] = useState(0);
-  const [showHidden, setShowHidden] = useState(false);
+  const [openRelPathState, setOpenRelPathState] = useState<{ scope: string; paths: Set<string> | null }>({
+    scope: '',
+    paths: null,
+  });
+  const treeContainerRef = useRef<HTMLDivElement | null>(null);
+  const [treeHeight, setTreeHeight] = useState(0);
 
   const workspace = agent?.workspace ?? '';
+  const treeScope = `${agent?.id ?? ''}:${workspace}`;
+  const openRelPaths = openRelPathState.scope === treeScope ? openRelPathState.paths : null;
+  const workspaceDisplayPath = formatWorkspacePath(workspace);
 
   const reload = useCallback(() => setRefreshTick((v) => v + 1), []);
+
+  useLayoutEffect(() => {
+    const updateTreeHeight = () => {
+      const nextHeight = treeContainerRef.current?.clientHeight ?? 0;
+      setTreeHeight(Math.max(1, nextHeight));
+    };
+
+    updateTreeHeight();
+
+    const element = treeContainerRef.current;
+    if (!element) return undefined;
+
+    window.addEventListener('resize', updateTreeHeight);
+
+    if (typeof ResizeObserver === 'undefined') {
+      return () => {
+        window.removeEventListener('resize', updateTreeHeight);
+      };
+    }
+
+    const observer = new ResizeObserver(updateTreeHeight);
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateTreeHeight);
+    };
+  }, [state.status]);
 
   // Reset selection when the agent changes.
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- intentional reset on agent switch */
     setSelectedRel(null);
     setFileState({ status: 'idle' });
+    setOpenRelPathState({ scope: treeScope, paths: null });
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [agent?.id]);
+  }, [treeScope]);
 
   useEffect(() => {
     if (!workspace) return;
@@ -109,7 +171,7 @@ export function WorkspaceBrowserBody({
     setState({ status: 'loading' });
     loadWorkspaceTree(workspace, {
       runStartedAt: runStartedAt ?? null,
-      includeHidden: showHidden,
+      includeHidden: true,
     })
       .then((res) => {
         if (cancelled) return;
@@ -117,8 +179,14 @@ export function WorkspaceBrowserBody({
           setState({ status: 'error', message: 'load' });
           return;
         }
+        setOpenRelPathState((prev) => {
+          const initialExpanded = collectInitialExpanded(res.root, 1);
+          return {
+            scope: treeScope,
+            paths: prev.scope === treeScope ? prev.paths ?? initialExpanded : initialExpanded,
+          };
+        });
         setState({ status: 'ready', root: res.root, truncated: res.truncated });
-        setExpanded((prev) => (prev.size > 0 ? prev : collectInitialExpanded(res.root, 1)));
       })
       .catch((err) => {
         if (cancelled) return;
@@ -127,12 +195,17 @@ export function WorkspaceBrowserBody({
     return () => {
       cancelled = true;
     };
-  }, [workspace, runStartedAt, refreshTick, showHidden, refreshSignal]);
+  }, [workspace, runStartedAt, refreshTick, refreshSignal, treeScope]);
 
   const selectedNode = useMemo(() => {
     if (!selectedRel || state.status !== 'ready') return null;
     return findNode(state.root, selectedRel);
   }, [selectedRel, state]);
+
+  const initialOpenState = useMemo(() => {
+    if (state.status !== 'ready') return {};
+    return toOpenState(openRelPaths ?? collectInitialExpanded(state.root, 1));
+  }, [openRelPaths, state]);
 
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- selection-driven loader */
@@ -245,15 +318,6 @@ export function WorkspaceBrowserBody({
     }
   }, [selectedNode, fileState, t]);
 
-  const toggleNode = useCallback((relPath: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(relPath)) next.delete(relPath);
-      else next.add(relPath);
-      return next;
-    });
-  }, []);
-
   const renderTree = () => {
     if (state.status === 'loading' || state.status === 'idle') {
       return (
@@ -272,21 +336,48 @@ export function WorkspaceBrowserBody({
       );
     }
     return (
-      <div className="space-y-1 overflow-y-auto">
-        <div className="px-3 py-2 text-2xs uppercase tracking-wide text-muted-foreground">
-          {t('workspace.title', 'Workspace')}
-          {agent?.name ? <span className="ml-1 text-foreground/60">· {agent.name}</span> : null}
+      <div data-testid="workspace-tree" className="flex h-full min-h-0 flex-col overflow-hidden">
+        <div ref={treeContainerRef} className="min-h-0 flex-1">
+          <Tree<WorkspaceTreeNode>
+            key={treeScope}
+            data={state.root.children ?? []}
+            idAccessor={(node) => node.relPath}
+            childrenAccessor={(node) => node.children ?? null}
+            selection={selectedRel ?? undefined}
+            initialOpenState={initialOpenState}
+            openByDefault={false}
+            disableDrag
+            disableDrop
+            disableEdit
+            disableMultiSelection
+            height={treeHeight}
+            width="100%"
+            rowHeight={compact ? 24 : 28}
+            indent={14}
+            overscanCount={8}
+            renderRow={WorkspaceTreeContainerRow}
+            onActivate={(node) => {
+              if (node.data.isDir) {
+                node.toggle();
+                return;
+              }
+              setSelectedRel(node.data.relPath);
+            }}
+            onToggle={(id) => {
+              setOpenRelPathState((prev) => {
+                const currentPaths = prev.scope === treeScope ? prev.paths : null;
+                const next = new Set(currentPaths ?? collectInitialExpanded(state.root, 1));
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return { scope: treeScope, paths: next };
+              });
+            }}
+          >
+            {WorkspaceTreeRow}
+          </Tree>
         </div>
-        <FileTreeNodeList
-          nodes={state.root.children ?? []}
-          depth={0}
-          expanded={expanded}
-          selectedRel={selectedRel}
-          onToggle={toggleNode}
-          onSelect={(rel) => setSelectedRel(rel)}
-        />
         {state.truncated && (
-          <div className="mt-2 px-3 py-2 text-2xs text-muted-foreground/80">
+          <div className="shrink-0 px-3 py-2 text-2xs text-muted-foreground/80">
             {t('workspace.truncated', 'Directory too large; truncated to first 5000 nodes')}
           </div>
         )}
@@ -479,29 +570,22 @@ export function WorkspaceBrowserBody({
           compact ? 'px-3 py-1.5' : 'px-4 py-2',
         )}
       >
-        <div className="flex min-w-0 items-center gap-3">
-          <h2 className="truncate text-sm font-semibold">
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="shrink-0 truncate text-sm font-semibold">
             {t('workspace.title', 'Workspace')}
             {agent?.name ? <span className="ml-2 font-normal text-foreground/70">· {agent.name}</span> : null}
           </h2>
-          {workspace && !compact ? (
-            <code className="hidden truncate rounded bg-black/5 px-2 py-0.5 text-2xs text-muted-foreground dark:bg-white/10 sm:inline">
-              {workspace}
+          {workspaceDisplayPath ? (
+            <code
+              data-testid="workspace-path"
+              title={workspace}
+              className="min-w-0 truncate rounded bg-black/5 px-2 py-0.5 text-2xs text-muted-foreground dark:bg-white/10"
+            >
+              {workspaceDisplayPath}
             </code>
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            onClick={() => setShowHidden((v) => !v)}
-            title={t('workspace.actions.toggleHidden', 'Show/hide hidden files')}
-          >
-            {showHidden
-              ? t('workspace.actions.hideHidden', 'Hide hidden files')
-              : t('workspace.actions.showHidden', 'Show hidden files')}
-          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -536,12 +620,7 @@ export function WorkspaceBrowserBody({
           {selectedNode && !selectedNode.isDir && (
             <div className="flex items-center justify-between gap-3 border-b border-black/5 px-4 py-1.5 text-xs text-muted-foreground dark:border-white/10">
               <div className="flex min-w-0 items-center gap-2">
-                <FilePreviewIcon
-                  contentType={selectedNode.contentType}
-                  mimeType={selectedNode.mimeType}
-                  ext={selectedNode.ext}
-                  className="h-4 w-4 shrink-0"
-                />
+                <MaterialFileIcon filename={selectedNode.name} className="h-4 w-4" />
                 <span className="truncate font-mono">{selectedNode.relPath || selectedNode.name}</span>
                 {selectedNode.isFresh && (
                   <Badge variant="default" className="ml-1 text-2xs px-1.5 py-0">
@@ -559,103 +638,66 @@ export function WorkspaceBrowserBody({
   );
 }
 
-interface FileTreeNodeListProps {
-  nodes: WorkspaceTreeNode[];
-  depth: number;
-  expanded: Set<string>;
-  selectedRel: string | null;
-  onToggle: (relPath: string) => void;
-  onSelect: (relPath: string) => void;
-}
-
-function FileTreeNodeList({ nodes, depth, expanded, selectedRel, onToggle, onSelect }: FileTreeNodeListProps) {
+function WorkspaceTreeContainerRow<T>({ attrs, innerRef, children }: RowRendererProps<T>) {
   return (
-    <ul className="space-y-0.5">
-      {nodes.map((node) => (
-        <FileTreeNodeRow
-          key={node.relPath || node.name}
-          node={node}
-          depth={depth}
-          expanded={expanded}
-          selectedRel={selectedRel}
-          onToggle={onToggle}
-          onSelect={onSelect}
-        />
-      ))}
-    </ul>
+    <div {...attrs} ref={innerRef} onClick={undefined}>
+      {children}
+    </div>
   );
 }
 
-interface FileTreeNodeRowProps extends Omit<FileTreeNodeListProps, 'nodes'> {
-  node: WorkspaceTreeNode;
-}
+function WorkspaceTreeRow({ node, style }: NodeRendererProps<WorkspaceTreeNode>) {
+  const data = node.data;
+  const isOpen = data.isDir && node.isOpen;
+  const indent = node.level * 14;
 
-function FileTreeNodeRow({ node, depth, expanded, selectedRel, onToggle, onSelect }: FileTreeNodeRowProps) {
-  const isOpen = node.isDir && expanded.has(node.relPath);
-  const isSelected = selectedRel === node.relPath;
-  const indent = 12 + depth * 14;
-
-  if (node.isDir) {
-    return (
-      <li>
-        <button
-          type="button"
-          onClick={() => onToggle(node.relPath)}
-          className={cn(
-            'flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-xs transition-colors',
-            'hover:bg-black/5 dark:hover:bg-white/10',
-          )}
-          style={{ paddingLeft: indent }}
-          title={node.relPath || node.name}
-        >
-          <ChevronRight
-            className={cn(
-              'h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform',
-              isOpen && 'rotate-90',
-            )}
-          />
-          <span className="truncate font-medium">{node.name}</span>
-        </button>
-        {isOpen && node.children && node.children.length > 0 && (
-          <FileTreeNodeList
-            nodes={node.children}
-            depth={depth + 1}
-            expanded={expanded}
-            selectedRel={selectedRel}
-            onToggle={onToggle}
-            onSelect={onSelect}
-          />
-        )}
-      </li>
-    );
-  }
+  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    node.activate();
+  };
 
   return (
-    <li>
+    <div style={style} className="px-1" onClick={(event) => event.stopPropagation()}>
       <button
         type="button"
-        onClick={() => onSelect(node.relPath)}
+        onClick={handleClick}
+        aria-expanded={data.isDir ? isOpen : undefined}
         className={cn(
-          'flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors',
-          isSelected
-            ? 'bg-primary/10 text-foreground'
+          'flex h-full w-full items-center gap-1 rounded-md pr-2 text-left text-xs transition-colors',
+          node.isSelected
+            ? 'bg-black/5 text-foreground dark:bg-white/10'
             : 'hover:bg-black/5 dark:hover:bg-white/10',
         )}
-        style={{ paddingLeft: indent + 16 }}
-        title={node.relPath || node.name}
+        style={{ paddingLeft: indent }}
+        title={data.relPath || data.name}
       >
-        <FilePreviewIcon
-          contentType={node.contentType}
-          mimeType={node.mimeType}
-          ext={node.ext}
-          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-        />
-        <span className="truncate">{node.name}</span>
-        {node.isFresh && (
+        {data.isDir ? (
+          <>
+            <ChevronRight
+              className={cn(
+                'h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform',
+                isOpen && 'rotate-90',
+              )}
+            />
+            {isOpen ? (
+              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            ) : (
+              <Folder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            )}
+            <span className="min-w-0 flex-1 truncate font-medium">{data.name}</span>
+          </>
+        ) : (
+          <>
+            <span className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <MaterialFileIcon filename={data.name} className="h-3.5 w-3.5" />
+            <span className="min-w-0 flex-1 truncate">{data.name}</span>
+          </>
+        )}
+        {data.isFresh && (
           <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
         )}
       </button>
-    </li>
+    </div>
   );
 }
 
