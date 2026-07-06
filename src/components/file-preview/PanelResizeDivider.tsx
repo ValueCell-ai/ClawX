@@ -90,11 +90,6 @@ export function PanelResizeDivider({ containerRef, className }: PanelResizeDivid
       )}
       title="Drag to resize width"
     >
-      {/* Hairline (visible all the time) */}
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-black/5 transition-colors group-hover:bg-primary/40 dark:bg-white/10"
-      />
       {/* Wider hover hit-state */}
       <span
         aria-hidden
