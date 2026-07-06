@@ -97,7 +97,12 @@ const SKILL_TOKEN_HIGHLIGHT_CLASS =
 
 function renderHighlightedCronMessage(value: string, tokenRanges: SkillTokenRange[]) {
   if (tokenRanges.length === 0) {
-    return <>{value}{value.endsWith('\n') ? '\n' : '\u200b'}</>;
+    return (
+      <>
+        {value}
+        {value.endsWith('\n') ? '\n' : '\u200b'}
+      </>
+    );
   }
 
   const chunks: ReactNode[] = [];
@@ -189,9 +194,10 @@ function parseCronExpr(cron: string, t: TFunction<'cron'>): string {
     return t('schedule.weekdaysAt', { time: `${hour}:${minute.padStart(2, '0')}` });
   }
   if (dayOfWeek !== '*' && dayOfMonth === '*') {
-    const dayLabel = isNum(dayOfWeek) && Number(dayOfWeek) <= 6
-      ? t(`weekdays.${WEEKDAY_KEYS[Number(dayOfWeek)]}` as const)
-      : dayOfWeek;
+    const dayLabel =
+      isNum(dayOfWeek) && Number(dayOfWeek) <= 6
+        ? t(`weekdays.${WEEKDAY_KEYS[Number(dayOfWeek)]}` as const)
+        : dayOfWeek;
     return t('schedule.weeklyAt', { day: dayLabel, time: `${hour}:${minute.padStart(2, '0')}` });
   }
   if (dayOfMonth !== '*') {
@@ -324,12 +330,12 @@ const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 interface ScheduleFormState {
   mode: ScheduleMode;
   recurrence: RecurrenceKind;
-  timeOfDay: string;   // HH:MM for daily/weekdays/weekly
-  weekday: number;     // 0-6 for weekly
-  hourlyMinute: number;// 0-59 for hourly
+  timeOfDay: string; // HH:MM for daily/weekdays/weekly
+  weekday: number; // 0-6 for weekly
+  hourlyMinute: number; // 0-59 for hourly
   customCron: string;
-  onceDate: string;    // YYYY-MM-DD
-  onceTime: string;    // HH:MM
+  onceDate: string; // YYYY-MM-DD
+  onceTime: string; // HH:MM
 }
 
 function pad2(value: number): string {
@@ -367,7 +373,12 @@ function parseCronExprToForm(expr: string, base: ScheduleFormState): ScheduleFor
   }
   const [minute, hour, dom, mon, dow] = parts;
   if (isNum(minute) && hour === '*' && dom === '*' && mon === '*' && dow === '*') {
-    return { ...base, mode: 'recurring', recurrence: 'hourly', hourlyMinute: Math.min(59, Math.max(0, Number(minute))) };
+    return {
+      ...base,
+      mode: 'recurring',
+      recurrence: 'hourly',
+      hourlyMinute: Math.min(59, Math.max(0, Number(minute))),
+    };
   }
   if (isNum(minute) && isNum(hour) && dom === '*' && mon === '*') {
     const timeOfDay = `${pad2(Number(hour))}:${pad2(Number(minute))}`;
@@ -523,7 +534,9 @@ function ScheduleTimePicker({ id, value, onChange, 'data-testid': testId }: Sche
         onClick={() => setOpen((prev) => !prev)}
         className="flex h-[44px] w-full items-center justify-between rounded-xl border border-black/10 dark:border-white/10 bg-transparent px-3 font-mono text-meta text-foreground shadow-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
       >
-        <span>{pad2(selectedHour)}:{pad2(selectedMinute)}</span>
+        <span>
+          {pad2(selectedHour)}:{pad2(selectedMinute)}
+        </span>
         <Clock className="h-4 w-4 opacity-50" />
       </button>
       {open && (
@@ -533,7 +546,10 @@ function ScheduleTimePicker({ id, value, onChange, 'data-testid': testId }: Sche
             <div className="py-1.5">{t('dialog.minuteColumn')}</div>
           </div>
           <div className="grid grid-cols-2">
-            <div ref={hourListRef} className="max-h-[200px] overflow-y-auto border-r border-black/5 dark:border-white/5 px-1 pb-1">
+            <div
+              ref={hourListRef}
+              className="max-h-[200px] overflow-y-auto border-r border-black/5 dark:border-white/5 px-1 pb-1"
+            >
               {Array.from({ length: 24 }, (_, hour) => (
                 <button
                   key={hour}
@@ -576,7 +592,9 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
   const [selectedAgentId, setSelectedAgentId] = useState(job?.agentId || useChatStore.getState().currentAgentId);
   const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>(() => parseScheduleToForm(job));
   const [enabled, setEnabled] = useState(job?.enabled ?? true);
-  const [deliveryMode, setDeliveryMode] = useState<'none' | 'announce'>(job?.delivery?.mode === 'announce' ? 'announce' : 'none');
+  const [deliveryMode, setDeliveryMode] = useState<'none' | 'announce'>(
+    job?.delivery?.mode === 'announce' ? 'announce' : 'none',
+  );
   const [deliveryChannel, setDeliveryChannel] = useState(job?.delivery?.channel || '');
   const [deliveryTarget, setDeliveryTarget] = useState(job?.delivery?.to || '');
   const [selectedDeliveryAccountId, setSelectedDeliveryAccountId] = useState(job?.delivery?.accountId || '');
@@ -622,10 +640,11 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
   const filteredQuickSkills = useMemo(() => {
     const query = skillQuery.trim().toLowerCase();
     if (!query) return quickSkills;
-    return quickSkills.filter((skill) =>
-      skill.name.toLowerCase().includes(query)
-      || skill.description.toLowerCase().includes(query)
-      || skill.sourceLabel.toLowerCase().includes(query),
+    return quickSkills.filter(
+      (skill) =>
+        skill.name.toLowerCase().includes(query) ||
+        skill.description.toLowerCase().includes(query) ||
+        skill.sourceLabel.toLowerCase().includes(query),
     );
   }, [quickSkills, skillQuery]);
 
@@ -705,68 +724,76 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
     }
   }, [moveMessageCaretTo, skillTokenRanges]);
 
-  const handleMessageKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Backspace') {
-      const textarea = messageRef.current;
-      const selectionStart = textarea?.selectionStart ?? 0;
-      const selectionEnd = textarea?.selectionEnd ?? 0;
-      const tokenRange = skillTokenRanges.find((range) =>
-        selectionStart === selectionEnd
-        && selectionStart > range.start
-        && selectionStart <= range.end,
-      );
-      if (tokenRange) {
-        e.preventDefault();
-        const nextValue = `${message.slice(0, tokenRange.start)}${message.slice(tokenRange.end)}`;
-        setMessage(nextValue);
-        moveMessageCaretTo(tokenRange.start);
-        return;
+  const handleMessageKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Backspace') {
+        const textarea = messageRef.current;
+        const selectionStart = textarea?.selectionStart ?? 0;
+        const selectionEnd = textarea?.selectionEnd ?? 0;
+        const tokenRange = skillTokenRanges.find(
+          (range) => selectionStart === selectionEnd && selectionStart > range.start && selectionStart <= range.end,
+        );
+        if (tokenRange) {
+          e.preventDefault();
+          const nextValue = `${message.slice(0, tokenRange.start)}${message.slice(tokenRange.end)}`;
+          setMessage(nextValue);
+          moveMessageCaretTo(tokenRange.start);
+          return;
+        }
       }
-    }
-    if (e.key === 'ArrowLeft' && skillTokenRanges.length > 0) {
-      const textarea = messageRef.current;
-      const selectionStart = textarea?.selectionStart ?? 0;
-      const selectionEnd = textarea?.selectionEnd ?? 0;
-      const tokenRange = skillTokenRanges.find((range) => selectionStart === selectionEnd && selectionStart === range.end);
-      if (tokenRange) {
-        e.preventDefault();
-        moveMessageCaretTo(tokenRange.start);
-        return;
+      if (e.key === 'ArrowLeft' && skillTokenRanges.length > 0) {
+        const textarea = messageRef.current;
+        const selectionStart = textarea?.selectionStart ?? 0;
+        const selectionEnd = textarea?.selectionEnd ?? 0;
+        const tokenRange = skillTokenRanges.find(
+          (range) => selectionStart === selectionEnd && selectionStart === range.end,
+        );
+        if (tokenRange) {
+          e.preventDefault();
+          moveMessageCaretTo(tokenRange.start);
+          return;
+        }
       }
-    }
-    if (e.key === 'ArrowRight' && skillTokenRanges.length > 0) {
-      const textarea = messageRef.current;
-      const selectionStart = textarea?.selectionStart ?? 0;
-      const selectionEnd = textarea?.selectionEnd ?? 0;
-      const tokenRange = skillTokenRanges.find((range) => selectionStart === selectionEnd && selectionStart === range.start);
-      if (tokenRange) {
-        e.preventDefault();
-        moveMessageCaretTo(tokenRange.end);
-        return;
+      if (e.key === 'ArrowRight' && skillTokenRanges.length > 0) {
+        const textarea = messageRef.current;
+        const selectionStart = textarea?.selectionStart ?? 0;
+        const selectionEnd = textarea?.selectionEnd ?? 0;
+        const tokenRange = skillTokenRanges.find(
+          (range) => selectionStart === selectionEnd && selectionStart === range.start,
+        );
+        if (tokenRange) {
+          e.preventDefault();
+          moveMessageCaretTo(tokenRange.end);
+          return;
+        }
       }
-    }
-    if (e.key === 'Escape' && skillPickerOpen) {
-      e.preventDefault();
-      setSkillPickerOpen(false);
-    }
-  }, [message, moveMessageCaretTo, skillPickerOpen, skillTokenRanges]);
+      if (e.key === 'Escape' && skillPickerOpen) {
+        e.preventDefault();
+        setSkillPickerOpen(false);
+      }
+    },
+    [message, moveMessageCaretTo, skillPickerOpen, skillTokenRanges],
+  );
 
-  const handleInsertSkill = useCallback((skill: QuickAccessSkill) => {
-    const textarea = messageRef.current;
-    const nextToken = getSkillPrefix(skill.name);
-    const selectionStart = textarea?.selectionStart ?? message.length;
-    const selectionEnd = textarea?.selectionEnd ?? message.length;
-    const leadingSpace = needsLeadingSkillSpace(message, selectionStart) ? ' ' : '';
-    const nextValue = `${message.slice(0, selectionStart)}${leadingSpace}${nextToken}${message.slice(selectionEnd)}`;
-    setMessage(nextValue);
-    setSkillPickerOpen(false);
-    setSkillQuery('');
-    requestAnimationFrame(() => {
-      messageRef.current?.focus();
-      const cursorPosition = selectionStart + leadingSpace.length + nextToken.length;
-      messageRef.current?.setSelectionRange(cursorPosition, cursorPosition);
-    });
-  }, [message]);
+  const handleInsertSkill = useCallback(
+    (skill: QuickAccessSkill) => {
+      const textarea = messageRef.current;
+      const nextToken = getSkillPrefix(skill.name);
+      const selectionStart = textarea?.selectionStart ?? message.length;
+      const selectionEnd = textarea?.selectionEnd ?? message.length;
+      const leadingSpace = needsLeadingSkillSpace(message, selectionStart) ? ' ' : '';
+      const nextValue = `${message.slice(0, selectionStart)}${leadingSpace}${nextToken}${message.slice(selectionEnd)}`;
+      setMessage(nextValue);
+      setSkillPickerOpen(false);
+      setSkillQuery('');
+      requestAnimationFrame(() => {
+        messageRef.current?.focus();
+        const cursorPosition = selectionStart + leadingSpace.length + nextToken.length;
+        messageRef.current?.setSelectionRange(cursorPosition, cursorPosition);
+      });
+    },
+    [message],
+  );
   const updateSchedule = useCallback(
     (patch: Partial<ScheduleFormState>) => setScheduleForm((prev) => ({ ...prev, ...patch })),
     [],
@@ -780,14 +807,20 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
   const selectableChannels = configuredChannels.filter((group) => isSupportedCronDeliveryChannel(group.channelType));
   const availableChannels = selectableChannels.some((group) => group.channelType === deliveryChannel)
     ? selectableChannels
-    : (
-      deliveryChannel && isSupportedCronDeliveryChannel(deliveryChannel)
-        ? [...selectableChannels, configuredChannels.find((group) => group.channelType === deliveryChannel) || { channelType: deliveryChannel, defaultAccountId: 'default', accounts: [] }]
-        : selectableChannels
-    );
-  const effectiveDeliveryChannel = deliveryChannel
-    || (deliveryMode === 'announce' ? (availableChannels[0]?.channelType || '') : '');
-  const unsupportedDeliveryChannel = !!effectiveDeliveryChannel && !isSupportedCronDeliveryChannel(effectiveDeliveryChannel);
+    : deliveryChannel && isSupportedCronDeliveryChannel(deliveryChannel)
+      ? [
+          ...selectableChannels,
+          configuredChannels.find((group) => group.channelType === deliveryChannel) || {
+            channelType: deliveryChannel,
+            defaultAccountId: 'default',
+            accounts: [],
+          },
+        ]
+      : selectableChannels;
+  const effectiveDeliveryChannel =
+    deliveryChannel || (deliveryMode === 'announce' ? availableChannels[0]?.channelType || '' : '');
+  const unsupportedDeliveryChannel =
+    !!effectiveDeliveryChannel && !isSupportedCronDeliveryChannel(effectiveDeliveryChannel);
   const selectedChannel = availableChannels.find((group) => group.channelType === effectiveDeliveryChannel);
   const deliveryAccountOptions = (selectedChannel?.accounts ?? []).map((account) => ({
     accountId: account.accountId,
@@ -796,15 +829,13 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
   const hasCurrentDeliveryTarget = !!deliveryTarget;
   const currentDeliveryTargetOption = hasCurrentDeliveryTarget
     ? {
-      value: deliveryTarget,
-      label: `${t('dialog.currentTarget')} (${deliveryTarget})`,
-      kind: 'user' as const,
-    }
+        value: deliveryTarget,
+        label: `${t('dialog.currentTarget')} (${deliveryTarget})`,
+        kind: 'user' as const,
+      }
     : null;
-  const effectiveDeliveryAccountId = selectedDeliveryAccountId
-    || selectedChannel?.defaultAccountId
-    || deliveryAccountOptions[0]?.accountId
-    || '';
+  const effectiveDeliveryAccountId =
+    selectedDeliveryAccountId || selectedChannel?.defaultAccountId || deliveryAccountOptions[0]?.accountId || '';
   const showsAccountSelector = (selectedChannel?.accounts.length ?? 0) > 0;
   const selectedResolvedAccountId = effectiveDeliveryAccountId || undefined;
   const availableTargetOptions = currentDeliveryTargetOption
@@ -837,30 +868,40 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
 
     let cancelled = false;
     setLoadingChannelTargets(true);
-    void hostApi.channels.targets({
-      channelType: effectiveDeliveryChannel,
-      accountId: selectedResolvedAccountId,
-    }).then((result) => {
-      if (cancelled) return;
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to load channel targets');
-      }
-      setChannelTargetOptions(result.targets || []);
-    }).catch((error) => {
-      if (!cancelled) {
-        console.warn('Failed to load channel targets:', error);
-        setChannelTargetOptions([]);
-      }
-    }).finally(() => {
-      if (!cancelled) {
-        setLoadingChannelTargets(false);
-      }
-    });
+    void hostApi.channels
+      .targets({
+        channelType: effectiveDeliveryChannel,
+        accountId: selectedResolvedAccountId,
+      })
+      .then((result) => {
+        if (cancelled) return;
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to load channel targets');
+        }
+        setChannelTargetOptions(result.targets || []);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.warn('Failed to load channel targets:', error);
+          setChannelTargetOptions([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingChannelTargets(false);
+        }
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [deliveryMode, effectiveDeliveryChannel, selectedResolvedAccountId, showsAccountSelector, unsupportedDeliveryChannel]);
+  }, [
+    deliveryMode,
+    effectiveDeliveryChannel,
+    selectedResolvedAccountId,
+    showsAccountSelector,
+    unsupportedDeliveryChannel,
+  ]);
 
   const handleSubmit = async () => {
     if (!name.trim()) {
@@ -890,16 +931,15 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
 
     setSaving(true);
     try {
-      const finalDelivery = deliveryMode === 'announce'
-        ? {
-          mode: 'announce' as const,
-          channel: effectiveDeliveryChannel.trim(),
-          ...(selectedResolvedAccountId
-            ? { accountId: effectiveDeliveryAccountId }
-            : {}),
-          to: deliveryTarget.trim(),
-        }
-        : { mode: 'none' as const };
+      const finalDelivery =
+        deliveryMode === 'announce'
+          ? {
+              mode: 'announce' as const,
+              channel: effectiveDeliveryChannel.trim(),
+              ...(selectedResolvedAccountId ? { accountId: effectiveDeliveryAccountId } : {}),
+              to: deliveryTarget.trim(),
+            }
+          : { mode: 'none' as const };
 
       if (finalDelivery.mode === 'announce') {
         if (!finalDelivery.channel) {
@@ -935,452 +975,497 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent asChild className="w-[calc(100%-2rem)] max-w-lg max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden">
+      <DialogContent
+        asChild
+        className="w-[calc(100%-2rem)] max-w-lg max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden"
+      >
         <Card data-testid="cron-task-dialog">
-        <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0">
-          <div>
-            <DialogTitle asChild>
-              <CardTitle className="text-2xl font-serif font-normal">{job ? t('dialog.editTitle') : t('dialog.createTitle')}</CardTitle>
-            </DialogTitle>
-            <DialogDescription asChild>
-              <CardDescription className="text-sm mt-1 text-foreground/70">{t('dialog.description')}</CardDescription>
-            </DialogDescription>
-          </div>
-          <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5">
-            <X className="h-4 w-4" />
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-6 pt-4 overflow-y-auto flex-1 p-6">
-          {/* Name */}
-          <div className="space-y-2.5">
-            <Label htmlFor="name" className="text-sm text-foreground/80 font-bold">{t('dialog.taskName')}</Label>
-            <Input
-              id="name"
-              placeholder={t('dialog.taskNamePlaceholder')}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
-            />
-          </div>
+          <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0">
+            <div>
+              <DialogTitle asChild>
+                <CardTitle className="text-2xl font-serif font-normal">
+                  {job ? t('dialog.editTitle') : t('dialog.createTitle')}
+                </CardTitle>
+              </DialogTitle>
+              <DialogDescription asChild>
+                <CardDescription className="text-sm mt-1 text-foreground/70">{t('dialog.description')}</CardDescription>
+              </DialogDescription>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onClose}
+              className="rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-6 pt-4 overflow-y-auto flex-1 p-6">
+            {/* Name */}
+            <div className="space-y-2.5">
+              <Label htmlFor="name" className="text-sm text-foreground/80 font-bold">
+                {t('dialog.taskName')}
+              </Label>
+              <Input
+                id="name"
+                placeholder={t('dialog.taskNamePlaceholder')}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+              />
+            </div>
 
-          {/* Message */}
-          <div className="space-y-2.5">
-            <Label htmlFor="message" className="text-sm text-foreground/80 font-bold">{t('dialog.message')}</Label>
-            <div className="relative rounded-xl border border-black/10 dark:border-white/10 bg-transparent px-3 pt-2.5 pb-1.5 shadow-sm transition-all focus-within:ring-2 focus-within:ring-primary/50 focus-within:border-primary">
-              {/* Text Row */}
-              <div className="relative">
-                {skillTokenRanges.length > 0 && (
-                  <div
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-0 z-20 overflow-hidden whitespace-pre-wrap break-words font-mono text-meta md:text-sm leading-[18px] text-foreground"
-                  >
-                    {renderHighlightedCronMessage(message, skillTokenRanges)}
-                  </div>
-                )}
-                <Textarea
-                  id="message"
-                  ref={messageRef}
-                  placeholder={t('dialog.messagePlaceholder')}
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  onKeyDown={handleMessageKeyDown}
-                  onSelect={normalizeMessageSelection}
-                  onClick={normalizeMessageSelection}
-                  rows={3}
-                  className={cn(
-                    'relative min-h-[60px] w-full resize-none border-0 bg-transparent p-0 font-mono text-meta md:text-sm leading-[18px] text-foreground placeholder:text-foreground/40 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0',
-                    skillTokenRanges.length > 0 ? 'z-0 text-transparent caret-foreground selection:bg-primary/20' : 'z-10',
-                  )}
-                />
-              </div>
-
-              {/* Action Row */}
-              <div className="mt-1.5 flex items-center gap-1">
-                <div ref={skillPickerRef} className="relative shrink-0">
-                  <button
-                    type="button"
-                    data-testid="cron-skill-button"
-                    onClick={() => setSkillPickerOpen((isOpen) => !isOpen)}
-                    title={t('dialog.pickSkill')}
-                    className={cn(
-                      'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0',
-                      skillPickerOpen && 'text-foreground',
-                    )}
-                  >
-                    <span>{t('dialog.skillButton')}</span>
-                    <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', skillPickerOpen && 'rotate-180')} />
-                  </button>
-                  {skillPickerOpen && (
-                    <div className="absolute left-0 top-full z-30 mt-2 w-80 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
-                      <div className="flex items-center gap-2 rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
-                        <Search className="h-3.5 w-3.5 text-muted-foreground" />
-                        <input
-                          value={skillQuery}
-                          onChange={(event) => setSkillQuery(event.target.value)}
-                          placeholder={t('dialog.skillSearchPlaceholder')}
-                          className="w-full bg-transparent text-meta outline-none placeholder:text-muted-foreground/70"
-                          autoFocus
-                        />
-                      </div>
-                      <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
-                        {t('dialog.skillPickerTitle', { agent: selectedAgent?.name ?? '' })}
-                      </div>
-                      <div className="max-h-64 overflow-y-auto">
-                        {skillsLoading ? (
-                          <div className="px-3 py-4 text-xs text-muted-foreground">{t('dialog.skillLoading')}</div>
-                        ) : skillsError ? (
-                          <div className="px-3 py-4 text-xs text-destructive">{skillsError}</div>
-                        ) : filteredQuickSkills.length === 0 ? (
-                          <div className="px-3 py-4 text-xs text-muted-foreground">{t('dialog.skillEmpty')}</div>
-                        ) : (
-                          filteredQuickSkills.map((skill) => (
-                            <button
-                              key={`${skill.source}:${skill.name}`}
-                              type="button"
-                              data-testid={`cron-skill-option-${skill.name}`}
-                              onClick={() => handleInsertSkill(skill)}
-                              title={skill.description}
-                              className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                            >
-                              <div className="min-w-0">
-                                <div className="truncate text-meta font-semibold text-foreground">
-                                  <span className="font-mono">/{skill.name}</span>
-                                </div>
-                                <div className="truncate text-tiny text-muted-foreground">{skill.sourceLabel}</div>
-                              </div>
-                              <span className="rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-2xs font-medium text-muted-foreground dark:border-white/10 dark:bg-white/[0.04]">
-                                {skill.sourceLabel}
-                              </span>
-                            </button>
-                          ))
-                        )}
-                      </div>
+            {/* Message */}
+            <div className="space-y-2.5">
+              <Label htmlFor="message" className="text-sm text-foreground/80 font-bold">
+                {t('dialog.message')}
+              </Label>
+              <div className="relative rounded-xl border border-black/10 dark:border-white/10 bg-transparent px-3 pt-2.5 pb-1.5 shadow-sm transition-all focus-within:ring-2 focus-within:ring-primary/50 focus-within:border-primary">
+                {/* Text Row */}
+                <div className="relative">
+                  {skillTokenRanges.length > 0 && (
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 z-20 overflow-hidden whitespace-pre-wrap break-words font-mono text-meta md:text-sm leading-[18px] text-foreground"
+                    >
+                      {renderHighlightedCronMessage(message, skillTokenRanges)}
                     </div>
                   )}
+                  <Textarea
+                    id="message"
+                    ref={messageRef}
+                    placeholder={t('dialog.messagePlaceholder')}
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    onKeyDown={handleMessageKeyDown}
+                    onSelect={normalizeMessageSelection}
+                    onClick={normalizeMessageSelection}
+                    rows={3}
+                    className={cn(
+                      'relative min-h-[60px] w-full resize-none border-0 bg-transparent p-0 font-mono text-meta md:text-sm leading-[18px] text-foreground placeholder:text-foreground/40 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0',
+                      skillTokenRanges.length > 0
+                        ? 'z-0 text-transparent caret-foreground selection:bg-primary/20'
+                        : 'z-10',
+                    )}
+                  />
+                </div>
+
+                {/* Action Row */}
+                <div className="mt-1.5 flex items-center gap-1">
+                  <div ref={skillPickerRef} className="relative shrink-0">
+                    <button
+                      type="button"
+                      data-testid="cron-skill-button"
+                      onClick={() => setSkillPickerOpen((isOpen) => !isOpen)}
+                      title={t('dialog.pickSkill')}
+                      className={cn(
+                        'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0',
+                        skillPickerOpen && 'text-foreground',
+                      )}
+                    >
+                      <span>{t('dialog.skillButton')}</span>
+                      <ChevronDown
+                        className={cn('h-3.5 w-3.5 transition-transform', skillPickerOpen && 'rotate-180')}
+                      />
+                    </button>
+                    {skillPickerOpen && (
+                      <div className="absolute left-0 top-full z-30 mt-2 w-80 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
+                        <div className="flex items-center gap-2 rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
+                          <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                          <input
+                            value={skillQuery}
+                            onChange={(event) => setSkillQuery(event.target.value)}
+                            placeholder={t('dialog.skillSearchPlaceholder')}
+                            className="w-full bg-transparent text-meta outline-none placeholder:text-muted-foreground/70"
+                            autoFocus
+                          />
+                        </div>
+                        <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
+                          {t('dialog.skillPickerTitle', { agent: selectedAgent?.name ?? '' })}
+                        </div>
+                        <div className="max-h-64 overflow-y-auto">
+                          {skillsLoading ? (
+                            <div className="px-3 py-4 text-xs text-muted-foreground">{t('dialog.skillLoading')}</div>
+                          ) : skillsError ? (
+                            <div className="px-3 py-4 text-xs text-destructive">{skillsError}</div>
+                          ) : filteredQuickSkills.length === 0 ? (
+                            <div className="px-3 py-4 text-xs text-muted-foreground">{t('dialog.skillEmpty')}</div>
+                          ) : (
+                            filteredQuickSkills.map((skill) => (
+                              <button
+                                key={`${skill.source}:${skill.name}`}
+                                type="button"
+                                data-testid={`cron-skill-option-${skill.name}`}
+                                onClick={() => handleInsertSkill(skill)}
+                                title={skill.description}
+                                className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                              >
+                                <div className="min-w-0">
+                                  <div className="truncate text-meta font-semibold text-foreground">
+                                    <span className="font-mono">/{skill.name}</span>
+                                  </div>
+                                  <div className="truncate text-tiny text-muted-foreground">{skill.sourceLabel}</div>
+                                </div>
+                                <span className="rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-2xs font-medium text-muted-foreground dark:border-white/10 dark:bg-white/[0.04]">
+                                  {skill.sourceLabel}
+                                </span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Agent */}
-          <div className="space-y-2.5">
-            <Label htmlFor="agent" className="text-sm text-foreground/80 font-bold">{t('dialog.agent')}</Label>
-            <SelectField
-              id="agent"
-              value={selectedAgentId}
-              onChange={(e) => {
-                setSelectedAgentId(e.target.value);
-              }}
-              className="h-[44px] rounded-xl border-black/10 dark:border-white/10 bg-transparent text-meta"
-            >
-              {agents.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.name}
-                </option>
-              ))}
-            </SelectField>
-          </div>
-
-          {/* Schedule */}
-          <div className="space-y-2.5">
-            <Label className="text-sm text-foreground/80 font-bold">{t('dialog.schedule')}</Label>
-
-            {/* Mode tabs */}
-            <div className="inline-flex w-full gap-1 rounded-xl bg-black/5 p-1 dark:bg-white/10">
-              {(['recurring', 'once'] as ScheduleMode[]).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  data-testid={`cron-schedule-tab-${mode}`}
-                  onClick={() => updateSchedule({ mode })}
-                  className={cn(
-                    'flex-1 h-8 rounded-lg text-meta font-medium transition-colors',
-                    scheduleForm.mode === mode
-                      ? 'bg-surface-modal text-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {t(`dialog.scheduleMode.${mode}` as const)}
-                </button>
-              ))}
+            {/* Agent */}
+            <div className="space-y-2.5">
+              <Label htmlFor="agent" className="text-sm text-foreground/80 font-bold">
+                {t('dialog.agent')}
+              </Label>
+              <SelectField
+                id="agent"
+                value={selectedAgentId}
+                onChange={(e) => {
+                  setSelectedAgentId(e.target.value);
+                }}
+                className="h-[44px] rounded-xl border-black/10 dark:border-white/10 bg-transparent text-meta"
+              >
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))}
+              </SelectField>
             </div>
 
-            {scheduleForm.mode === 'recurring' ? (
-              <div className="space-y-2.5">
-                <SelectField
-                  data-testid="cron-recurrence-select"
-                  value={scheduleForm.recurrence}
-                  onChange={(e) => updateSchedule({ recurrence: e.target.value as RecurrenceKind })}
-                >
-                  {RECURRENCE_KINDS.map((kind) => (
-                    <option key={kind} value={kind}>
-                      {t(`dialog.recurrence.${kind}` as const)}
-                    </option>
-                  ))}
-                </SelectField>
+            {/* Schedule */}
+            <div className="space-y-2.5">
+              <Label className="text-sm text-foreground/80 font-bold">{t('dialog.schedule')}</Label>
 
-                {scheduleForm.recurrence === 'hourly' && (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="cron-hourly-minute" className="text-meta text-foreground/70 font-medium">{t('dialog.minuteLabel')}</Label>
-                    <Input
-                      id="cron-hourly-minute"
-                      type="number"
-                      min={0}
-                      max={59}
-                      value={scheduleForm.hourlyMinute}
-                      onChange={(e) => updateSchedule({ hourlyMinute: Math.min(59, Math.max(0, Math.floor(Number(e.target.value) || 0))) })}
-                      className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
-                    />
-                  </div>
-                )}
+              {/* Mode tabs */}
+              <div className="inline-flex w-full gap-1 rounded-xl bg-black/5 p-1 dark:bg-white/10">
+                {(['recurring', 'once'] as ScheduleMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    data-testid={`cron-schedule-tab-${mode}`}
+                    onClick={() => updateSchedule({ mode })}
+                    className={cn(
+                      'flex-1 h-8 rounded-lg text-meta font-medium transition-colors',
+                      scheduleForm.mode === mode
+                        ? 'bg-surface-modal text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {t(`dialog.scheduleMode.${mode}` as const)}
+                  </button>
+                ))}
+              </div>
 
-                {(scheduleForm.recurrence === 'daily' || scheduleForm.recurrence === 'weekdays') && (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="cron-time" className="text-meta text-foreground/70 font-medium">{t('dialog.timeLabel')}</Label>
-                    <ScheduleTimePicker
-                      id="cron-time"
-                      value={scheduleForm.timeOfDay}
-                      onChange={(next) => updateSchedule({ timeOfDay: next })}
-                    />
-                  </div>
-                )}
+              {scheduleForm.mode === 'recurring' ? (
+                <div className="space-y-2.5">
+                  <SelectField
+                    data-testid="cron-recurrence-select"
+                    value={scheduleForm.recurrence}
+                    onChange={(e) => updateSchedule({ recurrence: e.target.value as RecurrenceKind })}
+                  >
+                    {RECURRENCE_KINDS.map((kind) => (
+                      <option key={kind} value={kind}>
+                        {t(`dialog.recurrence.${kind}` as const)}
+                      </option>
+                    ))}
+                  </SelectField>
 
-                {scheduleForm.recurrence === 'weekly' && (
-                  <div className="grid grid-cols-2 gap-2">
+                  {scheduleForm.recurrence === 'hourly' && (
                     <div className="space-y-1.5">
-                      <Label htmlFor="cron-weekday" className="text-meta text-foreground/70 font-medium">{t('dialog.weekdayLabel')}</Label>
-                      <SelectField
-                        id="cron-weekday"
-                        data-testid="cron-weekday-select"
-                        value={scheduleForm.weekday}
-                        onChange={(e) => updateSchedule({ weekday: Number(e.target.value) })}
-                      >
-                        {WEEKDAY_KEYS.map((key, index) => (
-                          <option key={key} value={index}>
-                            {t(`weekdays.${key}` as const)}
-                          </option>
-                        ))}
-                      </SelectField>
+                      <Label htmlFor="cron-hourly-minute" className="text-meta text-foreground/70 font-medium">
+                        {t('dialog.minuteLabel')}
+                      </Label>
+                      <Input
+                        id="cron-hourly-minute"
+                        type="number"
+                        min={0}
+                        max={59}
+                        value={scheduleForm.hourlyMinute}
+                        onChange={(e) =>
+                          updateSchedule({
+                            hourlyMinute: Math.min(59, Math.max(0, Math.floor(Number(e.target.value) || 0))),
+                          })
+                        }
+                        className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+                      />
                     </div>
+                  )}
+
+                  {(scheduleForm.recurrence === 'daily' || scheduleForm.recurrence === 'weekdays') && (
                     <div className="space-y-1.5">
-                      <Label htmlFor="cron-weekly-time" className="text-meta text-foreground/70 font-medium">{t('dialog.timeLabel')}</Label>
+                      <Label htmlFor="cron-time" className="text-meta text-foreground/70 font-medium">
+                        {t('dialog.timeLabel')}
+                      </Label>
                       <ScheduleTimePicker
-                        id="cron-weekly-time"
+                        id="cron-time"
                         value={scheduleForm.timeOfDay}
                         onChange={(next) => updateSchedule({ timeOfDay: next })}
                       />
                     </div>
+                  )}
+
+                  {scheduleForm.recurrence === 'weekly' && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="cron-weekday" className="text-meta text-foreground/70 font-medium">
+                          {t('dialog.weekdayLabel')}
+                        </Label>
+                        <SelectField
+                          id="cron-weekday"
+                          data-testid="cron-weekday-select"
+                          value={scheduleForm.weekday}
+                          onChange={(e) => updateSchedule({ weekday: Number(e.target.value) })}
+                        >
+                          {WEEKDAY_KEYS.map((key, index) => (
+                            <option key={key} value={index}>
+                              {t(`weekdays.${key}` as const)}
+                            </option>
+                          ))}
+                        </SelectField>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="cron-weekly-time" className="text-meta text-foreground/70 font-medium">
+                          {t('dialog.timeLabel')}
+                        </Label>
+                        <ScheduleTimePicker
+                          id="cron-weekly-time"
+                          value={scheduleForm.timeOfDay}
+                          onChange={(next) => updateSchedule({ timeOfDay: next })}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {scheduleForm.recurrence === 'custom' && (
+                    <Input
+                      data-testid="cron-custom-input"
+                      placeholder={t('dialog.cronPlaceholder')}
+                      value={scheduleForm.customCron}
+                      onChange={(e) => updateSchedule({ customCron: e.target.value })}
+                      className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+                    />
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cron-once-time" className="text-meta text-foreground/70 font-medium">
+                      {t('dialog.timeLabel')}
+                    </Label>
+                    <ScheduleTimePicker
+                      id="cron-once-time"
+                      value={scheduleForm.onceTime}
+                      onChange={(next) => updateSchedule({ onceTime: next })}
+                    />
                   </div>
-                )}
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cron-once-date" className="text-meta text-foreground/70 font-medium">
+                      {t('dialog.dateLabel')}
+                      {onceWeekdayLabel ? ` · ${onceWeekdayLabel}` : ''}
+                    </Label>
+                    <Input
+                      id="cron-once-date"
+                      type="date"
+                      min={toDateInputValue(new Date())}
+                      value={scheduleForm.onceDate}
+                      onChange={(e) => updateSchedule({ onceDate: e.target.value })}
+                      className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+                    />
+                  </div>
+                </div>
+              )}
 
-                {scheduleForm.recurrence === 'custom' && (
-                  <Input
-                    data-testid="cron-custom-input"
-                    placeholder={t('dialog.cronPlaceholder')}
-                    value={scheduleForm.customCron}
-                    onChange={(e) => updateSchedule({ customCron: e.target.value })}
-                    className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
-                  />
-                )}
+              <p className="mt-2 text-xs text-muted-foreground/80 font-medium">
+                {schedulePreview ? `${t('card.next')}: ${schedulePreview}` : t('dialog.cronPlaceholder')}
+              </p>
+            </div>
+
+            {/* Delivery */}
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label className="text-sm text-foreground/80 font-bold">{t('dialog.deliveryTitle')}</Label>
+                <p className="text-xs text-muted-foreground">{t('dialog.deliveryDescription')}</p>
               </div>
-            ) : (
+
               <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="cron-once-time" className="text-meta text-foreground/70 font-medium">{t('dialog.timeLabel')}</Label>
-                  <ScheduleTimePicker
-                    id="cron-once-time"
-                    value={scheduleForm.onceTime}
-                    onChange={(next) => updateSchedule({ onceTime: next })}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="cron-once-date" className="text-meta text-foreground/70 font-medium">
-                    {t('dialog.dateLabel')}{onceWeekdayLabel ? ` · ${onceWeekdayLabel}` : ''}
-                  </Label>
-                  <Input
-                    id="cron-once-date"
-                    type="date"
-                    min={toDateInputValue(new Date())}
-                    value={scheduleForm.onceDate}
-                    onChange={(e) => updateSchedule({ onceDate: e.target.value })}
-                    className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
-                  />
-                </div>
+                <Button
+                  type="button"
+                  variant={deliveryMode === 'none' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setDeliveryMode('none')}
+                  className={cn(
+                    'justify-start h-auto min-h-12 rounded-xl px-4 py-3 text-left whitespace-normal',
+                    deliveryMode === 'none'
+                      ? 'bg-primary hover:bg-primary/90 text-primary-foreground border-transparent'
+                      : 'bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground',
+                  )}
+                >
+                  <div>
+                    <div className="text-meta font-semibold">{t('dialog.deliveryModeNone')}</div>
+                    <div className="text-tiny opacity-80">{t('dialog.deliveryModeNoneDesc')}</div>
+                  </div>
+                </Button>
+                <Button
+                  type="button"
+                  variant={deliveryMode === 'announce' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setDeliveryMode('announce')}
+                  className={cn(
+                    'justify-start h-auto min-h-12 rounded-xl px-4 py-3 text-left whitespace-normal',
+                    deliveryMode === 'announce'
+                      ? 'bg-primary hover:bg-primary/90 text-primary-foreground border-transparent'
+                      : 'bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground',
+                  )}
+                >
+                  <div>
+                    <div className="text-meta font-semibold">{t('dialog.deliveryModeAnnounce')}</div>
+                    <div className="text-tiny opacity-80">{t('dialog.deliveryModeAnnounceDesc')}</div>
+                  </div>
+                </Button>
               </div>
-            )}
 
-            <p className="mt-2 text-xs text-muted-foreground/80 font-medium">
-              {schedulePreview ? `${t('card.next')}: ${schedulePreview}` : t('dialog.cronPlaceholder')}
-            </p>
-          </div>
-
-          {/* Delivery */}
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label className="text-sm text-foreground/80 font-bold">{t('dialog.deliveryTitle')}</Label>
-              <p className="text-xs text-muted-foreground">{t('dialog.deliveryDescription')}</p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                type="button"
-                variant={deliveryMode === 'none' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setDeliveryMode('none')}
-                className={cn(
-                  'justify-start h-auto min-h-12 rounded-xl px-4 py-3 text-left whitespace-normal',
-                  deliveryMode === 'none'
-                    ? 'bg-primary hover:bg-primary/90 text-primary-foreground border-transparent'
-                    : 'bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground',
-                )}
-              >
-                <div>
-                  <div className="text-meta font-semibold">{t('dialog.deliveryModeNone')}</div>
-                  <div className="text-tiny opacity-80">{t('dialog.deliveryModeNoneDesc')}</div>
-                </div>
-              </Button>
-              <Button
-                type="button"
-                variant={deliveryMode === 'announce' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setDeliveryMode('announce')}
-                className={cn(
-                  'justify-start h-auto min-h-12 rounded-xl px-4 py-3 text-left whitespace-normal',
-                  deliveryMode === 'announce'
-                    ? 'bg-primary hover:bg-primary/90 text-primary-foreground border-transparent'
-                    : 'bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground',
-                )}
-              >
-                <div>
-                  <div className="text-meta font-semibold">{t('dialog.deliveryModeAnnounce')}</div>
-                  <div className="text-tiny opacity-80">{t('dialog.deliveryModeAnnounceDesc')}</div>
-                </div>
-              </Button>
-            </div>
-
-            {deliveryMode === 'announce' && (
-              <div className="space-y-3 rounded-2xl border border-black/5 dark:border-white/5 bg-transparent p-4 shadow-sm">
-                <div className="space-y-2">
-                  <Label htmlFor="delivery-channel" className="text-meta text-foreground/80 font-bold">
-                    {t('dialog.deliveryChannel')}
-                  </Label>
-                  <SelectField
-                    id="delivery-channel"
-                    value={effectiveDeliveryChannel}
-                    onChange={(event) => {
-                      setDeliveryChannel(event.target.value);
-                      setSelectedDeliveryAccountId('');
-                      setDeliveryTarget('');
-                    }}
-                  >
-                    <option value="">{t('dialog.selectChannel')}</option>
-                    {availableChannels.map((group) => (
-                      <option key={group.channelType} value={group.channelType}>
-                        {!isSupportedCronDeliveryChannel(group.channelType)
-                          ? `${getChannelDisplayName(group.channelType)} (${t('dialog.channelUnsupportedTag')})`
-                          : getChannelDisplayName(group.channelType)}
-                      </option>
-                    ))}
-                  </SelectField>
-                  {availableChannels.length === 0 && (
-                    <p className="text-xs text-muted-foreground">{t('dialog.noChannels')}</p>
-                  )}
-                  {unsupportedDeliveryChannel && (
-                    <p className="text-xs text-destructive">{t('dialog.deliveryChannelUnsupported', { channel: getChannelDisplayName(effectiveDeliveryChannel) })}</p>
-                  )}
-                  {selectedChannel && (
-                    <p className="text-xs text-muted-foreground">
-                      {t('dialog.deliveryDefaultAccountHint', { account: selectedChannel.defaultAccountId })}
-                    </p>
-                  )}
-                </div>
-
-                {showsAccountSelector && (
+              {deliveryMode === 'announce' && (
+                <div className="space-y-3 rounded-2xl border border-black/5 dark:border-white/5 bg-transparent p-4 shadow-sm">
                   <div className="space-y-2">
-                    <Label htmlFor="delivery-account" className="text-meta text-foreground/80 font-bold">
-                      {t('dialog.deliveryAccount')}
+                    <Label htmlFor="delivery-channel" className="text-meta text-foreground/80 font-bold">
+                      {t('dialog.deliveryChannel')}
                     </Label>
                     <SelectField
-                      id="delivery-account"
-                      value={effectiveDeliveryAccountId}
+                      id="delivery-channel"
+                      value={effectiveDeliveryChannel}
                       onChange={(event) => {
-                        setSelectedDeliveryAccountId(event.target.value);
+                        setDeliveryChannel(event.target.value);
+                        setSelectedDeliveryAccountId('');
                         setDeliveryTarget('');
                       }}
-                      disabled={deliveryAccountOptions.length === 0}
                     >
-                      <option value="">
-                        {t('dialog.selectDeliveryAccount')}
-                      </option>
-                      {deliveryAccountOptions.map((option) => (
-                        <option key={option.accountId} value={option.accountId}>
-                          {option.displayName}
+                      <option value="">{t('dialog.selectChannel')}</option>
+                      {availableChannels.map((group) => (
+                        <option key={group.channelType} value={group.channelType}>
+                          {!isSupportedCronDeliveryChannel(group.channelType)
+                            ? `${getChannelDisplayName(group.channelType)} (${t('dialog.channelUnsupportedTag')})`
+                            : getChannelDisplayName(group.channelType)}
                         </option>
                       ))}
                     </SelectField>
-                    <p className="text-xs text-muted-foreground">{t('dialog.deliveryAccountDesc')}</p>
+                    {availableChannels.length === 0 && (
+                      <p className="text-xs text-muted-foreground">{t('dialog.noChannels')}</p>
+                    )}
+                    {unsupportedDeliveryChannel && (
+                      <p className="text-xs text-destructive">
+                        {t('dialog.deliveryChannelUnsupported', {
+                          channel: getChannelDisplayName(effectiveDeliveryChannel),
+                        })}
+                      </p>
+                    )}
+                    {selectedChannel && (
+                      <p className="text-xs text-muted-foreground">
+                        {t('dialog.deliveryDefaultAccountHint', { account: selectedChannel.defaultAccountId })}
+                      </p>
+                    )}
                   </div>
-                )}
 
-                <div className="space-y-2">
-                  <Label htmlFor="delivery-target-select" className="text-meta text-foreground/80 font-bold">
-                    {t('dialog.deliveryTarget')}
-                  </Label>
-                  <SelectField
-                    id="delivery-target-select"
-                    value={deliveryTarget}
-                    onChange={(event) => setDeliveryTarget(event.target.value)}
-                    disabled={loadingChannelTargets || availableTargetOptions.length === 0}
-                  >
-                    <option value="">{loadingChannelTargets ? t('dialog.loadingTargets') : t('dialog.selectDeliveryTarget')}</option>
-                    {availableTargetOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
+                  {showsAccountSelector && (
+                    <div className="space-y-2">
+                      <Label htmlFor="delivery-account" className="text-meta text-foreground/80 font-bold">
+                        {t('dialog.deliveryAccount')}
+                      </Label>
+                      <SelectField
+                        id="delivery-account"
+                        value={effectiveDeliveryAccountId}
+                        onChange={(event) => {
+                          setSelectedDeliveryAccountId(event.target.value);
+                          setDeliveryTarget('');
+                        }}
+                        disabled={deliveryAccountOptions.length === 0}
+                      >
+                        <option value="">{t('dialog.selectDeliveryAccount')}</option>
+                        {deliveryAccountOptions.map((option) => (
+                          <option key={option.accountId} value={option.accountId}>
+                            {option.displayName}
+                          </option>
+                        ))}
+                      </SelectField>
+                      <p className="text-xs text-muted-foreground">{t('dialog.deliveryAccountDesc')}</p>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label htmlFor="delivery-target-select" className="text-meta text-foreground/80 font-bold">
+                      {t('dialog.deliveryTarget')}
+                    </Label>
+                    <SelectField
+                      id="delivery-target-select"
+                      value={deliveryTarget}
+                      onChange={(event) => setDeliveryTarget(event.target.value)}
+                      disabled={loadingChannelTargets || availableTargetOptions.length === 0}
+                    >
+                      <option value="">
+                        {loadingChannelTargets ? t('dialog.loadingTargets') : t('dialog.selectDeliveryTarget')}
                       </option>
-                    ))}
-                  </SelectField>
-                  <p className="text-xs text-muted-foreground">
-                    {availableTargetOptions.length > 0
-                      ? t('dialog.deliveryTargetDescAuto')
-                      : t('dialog.noDeliveryTargets', { channel: getChannelDisplayName(effectiveDeliveryChannel) })}
-                  </p>
+                      {availableTargetOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </SelectField>
+                    <p className="text-xs text-muted-foreground">
+                      {availableTargetOptions.length > 0
+                        ? t('dialog.deliveryTargetDescAuto')
+                        : t('dialog.noDeliveryTargets', { channel: getChannelDisplayName(effectiveDeliveryChannel) })}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-
-          {/* Enabled */}
-          <div className="flex items-center justify-between bg-transparent p-4 rounded-2xl shadow-sm border border-black/5 dark:border-white/5">
-            <div>
-              <Label className="text-sm text-foreground/80 font-bold">{t('dialog.enableImmediately')}</Label>
-              <p className="text-meta text-muted-foreground mt-0.5">
-                {t('dialog.enableImmediatelyDesc')}
-              </p>
-            </div>
-            <Switch checked={enabled} onCheckedChange={setEnabled} />
-          </div>
-
-          {/* Actions */}
-          <div className="flex justify-end gap-3 pt-4">
-            <Button variant="outline" onClick={onClose} className="rounded-full px-6 h-[42px] text-meta font-semibold border-black/20 dark:border-white/20 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground shadow-sm">
-              {t('common:actions.cancel', 'Cancel')}
-            </Button>
-            <Button onClick={handleSubmit} disabled={saving} className="rounded-full px-6 h-[42px] text-meta font-semibold shadow-sm border border-transparent transition-all">
-              {saving ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  {t('common:status.saving', 'Saving...')}
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  {job ? t('dialog.saveChanges') : t('dialog.createTitle')}
-                </>
               )}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+            </div>
+
+            {/* Enabled */}
+            <div className="flex items-center justify-between bg-transparent p-4 rounded-2xl shadow-sm border border-black/5 dark:border-white/5">
+              <div>
+                <Label className="text-sm text-foreground/80 font-bold">{t('dialog.enableImmediately')}</Label>
+                <p className="text-meta text-muted-foreground mt-0.5">{t('dialog.enableImmediatelyDesc')}</p>
+              </div>
+              <Switch checked={enabled} onCheckedChange={setEnabled} />
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end gap-3 pt-4">
+              <Button
+                variant="outline"
+                onClick={onClose}
+                className="rounded-full px-6 h-[42px] text-meta font-semibold border-black/20 dark:border-white/20 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80 hover:text-foreground shadow-sm"
+              >
+                {t('common:actions.cancel', 'Cancel')}
+              </Button>
+              <Button
+                onClick={handleSubmit}
+                disabled={saving}
+                className="rounded-full px-6 h-[42px] text-meta font-semibold shadow-sm border border-transparent transition-all"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    {t('common:status.saving', 'Saving...')}
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                    {job ? t('dialog.saveChanges') : t('dialog.createTitle')}
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </DialogContent>
     </Dialog>
   );
@@ -1423,9 +1508,7 @@ function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onT
 
   const deliveryChannel = typeof job.delivery?.channel === 'string' ? job.delivery.channel : '';
   const deliveryLabel = deliveryChannel ? getChannelDisplayName(deliveryChannel) : '';
-  const deliveryIcon = deliveryChannel && isKnownChannelType(deliveryChannel)
-    ? CHANNEL_ICONS[deliveryChannel]
-    : null;
+  const deliveryIcon = deliveryChannel && isKnownChannelType(deliveryChannel) ? CHANNEL_ICONS[deliveryChannel] : null;
 
   return (
     <div
@@ -1436,16 +1519,18 @@ function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onT
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="flex items-center gap-4 min-w-0 flex-1">
           <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm group-hover:scale-105 transition-transform">
-            <Clock className={cn("h-5 w-5", job.enabled ? "text-foreground" : "text-muted-foreground")} />
+            <Clock className={cn('h-5 w-5', job.enabled ? 'text-foreground' : 'text-muted-foreground')} />
           </div>
           <div className="flex flex-col min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-1 min-w-0">
-              <h3 data-testid={`cron-job-card-title-${job.id}`} className="text-base font-semibold text-foreground truncate min-w-0">{job.name}</h3>
+              <h3
+                data-testid={`cron-job-card-title-${job.id}`}
+                className="text-base font-semibold text-foreground truncate min-w-0"
+              >
+                {job.name}
+              </h3>
               <div
-                className={cn(
-                  "w-2 h-2 rounded-full shrink-0",
-                  job.enabled ? "bg-green-500" : "bg-muted-foreground"
-                )}
+                className={cn('w-2 h-2 rounded-full shrink-0', job.enabled ? 'bg-green-500' : 'bg-muted-foreground')}
                 title={job.enabled ? t('stats.active') : t('stats.paused')}
               />
             </div>
@@ -1456,11 +1541,12 @@ function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onT
           </div>
         </div>
 
-        <div data-testid={`cron-job-card-switch-${job.id}`} className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
-          <Switch
-            checked={job.enabled}
-            onCheckedChange={onToggle}
-          />
+        <div
+          data-testid={`cron-job-card-switch-${job.id}`}
+          className="flex items-center gap-2 shrink-0"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Switch checked={job.enabled} onCheckedChange={onToggle} />
         </div>
       </div>
 
@@ -1480,8 +1566,8 @@ function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onT
               <span>{deliveryLabel}</span>
               {deliveryAccountName ? (
                 <span className="max-w-[220px] truncate">{deliveryAccountName}</span>
-              ) : job.delivery.to && (
-                <span className="max-w-[220px] truncate">{job.delivery.to}</span>
+              ) : (
+                job.delivery.to && <span className="max-w-[220px] truncate">{job.delivery.to}</span>
               )}
             </span>
           )}
@@ -1592,45 +1678,53 @@ export function Cron() {
   const pausedJobs = safeJobs.filter((j) => !j.enabled);
   const failedJobs = safeJobs.filter((j) => j.lastRun && !j.lastRun.success);
 
-  const handleSave = useCallback(async (input: CronJobCreateInput) => {
-    if (editingJob) {
-      await updateJob(editingJob.id, input);
-    } else {
-      await createJob(input);
-    }
-  }, [editingJob, createJob, updateJob]);
+  const handleSave = useCallback(
+    async (input: CronJobCreateInput) => {
+      if (editingJob) {
+        await updateJob(editingJob.id, input);
+      } else {
+        await createJob(input);
+      }
+    },
+    [editingJob, createJob, updateJob],
+  );
 
-  const handleToggle = useCallback(async (id: string, enabled: boolean) => {
-    try {
-      await toggleJob(id, enabled);
-      toast.success(enabled ? t('toast.enabled') : t('toast.paused'));
-    } catch {
-      toast.error(t('toast.failedUpdate'));
-    }
-  }, [toggleJob, t]);
-
-
+  const handleToggle = useCallback(
+    async (id: string, enabled: boolean) => {
+      try {
+        await toggleJob(id, enabled);
+        toast.success(enabled ? t('toast.enabled') : t('toast.paused'));
+      } catch {
+        toast.error(t('toast.failedUpdate'));
+      }
+    },
+    [toggleJob, t],
+  );
 
   if (loading) {
     return (
-      <div data-testid="cron-page" className="flex flex-col -m-6 dark:bg-background min-h-[calc(100vh-2.5rem)] items-center justify-center">
+      <div
+        data-testid="cron-page"
+        className="flex flex-col -m-6 dark:bg-background min-h-[calc(100vh-2.5rem)] items-center justify-center"
+      >
         <LoadingSpinner size="lg" />
       </div>
     );
   }
 
   return (
-    <div data-testid="cron-page" className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
-      <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16">
+    <div
+      data-testid="cron-page"
+      className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden"
+    >
+      <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16 pb-0">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-start justify-between mb-12 shrink-0 gap-4">
           <div>
             <h1 className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight">
               {t('title')}
             </h1>
-            <p className="text-subtitle text-foreground/70 font-medium">
-              {t('subtitle')}
-            </p>
+            <p className="text-subtitle text-foreground/70 font-medium">{t('subtitle')}</p>
           </div>
           <div className="flex items-center gap-3 md:mt-2">
             <Button
@@ -1666,9 +1760,7 @@ export function Cron() {
           {showGatewayUnavailableWarning && (
             <div className="mb-8 p-4 rounded-xl border border-yellow-500/50 bg-yellow-500/10 flex items-center gap-3">
               <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
-              <span className="text-yellow-700 dark:text-yellow-400 text-sm font-medium">
-                {t('gatewayWarning')}
-              </span>
+              <span className="text-yellow-700 dark:text-yellow-400 text-sm font-medium">{t('gatewayWarning')}</span>
             </div>
           )}
 
@@ -1676,9 +1768,7 @@ export function Cron() {
           {error && (
             <div className="mb-8 p-4 rounded-xl border border-destructive/50 bg-destructive/10 flex items-center gap-3">
               <AlertCircle className="h-5 w-5 text-destructive" />
-              <span className="text-destructive text-sm font-medium">
-                {error}
-              </span>
+              <span className="text-destructive text-sm font-medium">{error}</span>
             </div>
           )}
 
@@ -1738,9 +1828,7 @@ export function Cron() {
             <div className="flex flex-col items-center justify-center py-20 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-3xl border border-transparent border-dashed">
               <Clock className="h-10 w-10 mb-4 opacity-50" />
               <h3 className="text-lg font-medium mb-2 text-foreground">{t('empty.title')}</h3>
-              <p className="text-sm text-center mb-6 max-w-md">
-                {t('empty.description')}
-              </p>
+              <p className="text-sm text-center mb-6 max-w-md">{t('empty.description')}</p>
               <Button
                 onClick={() => {
                   setEditingJob(undefined);
@@ -1760,23 +1848,22 @@ export function Cron() {
                 const account = channelGroup?.accounts.find((item) => item.accountId === job.delivery?.accountId);
                 const deliveryAccountName = account ? getDeliveryAccountDisplayName(account, t) : undefined;
                 return (
-                <CronJobCard
-                  key={job.id}
-                  job={job}
-                  deliveryAccountName={deliveryAccountName}
-                  onToggle={(enabled) => handleToggle(job.id, enabled)}
-                  onEdit={() => {
-                    setEditingJob(job);
-                    setShowDialog(true);
-                  }}
-                  onDelete={() => setJobToDelete({ id: job.id })}
-                  onTrigger={() => triggerJob(job.id)}
-                />
+                  <CronJobCard
+                    key={job.id}
+                    job={job}
+                    deliveryAccountName={deliveryAccountName}
+                    onToggle={(enabled) => handleToggle(job.id, enabled)}
+                    onEdit={() => {
+                      setEditingJob(job);
+                      setShowDialog(true);
+                    }}
+                    onDelete={() => setJobToDelete({ id: job.id })}
+                    onTrigger={() => triggerJob(job.id)}
+                  />
                 );
               })}
             </div>
           )}
-
         </div>
       </div>
 

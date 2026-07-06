@@ -65,17 +65,13 @@ function NavItem({ to, icon, label, badge, collapsed, onClick, testId }: NavItem
         cn(
           'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
           'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
-          isActive
-            ? 'bg-black/5 dark:bg-white/10 text-foreground'
-            : '',
-          collapsed && 'justify-center px-0'
+          isActive ? 'bg-black/5 dark:bg-white/10 text-foreground' : '',
+          collapsed && 'justify-center px-0',
         )
       }
     >
       <>
-        <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">
-          {icon}
-        </div>
+        <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">{icon}</div>
         {!collapsed && (
           <>
             <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
@@ -189,9 +185,9 @@ export function Sidebar() {
   const [editingSessionKey, setEditingSessionKey] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
   const [nowMs, setNowMs] = useState(INITIAL_NOW_MS);
-  const [expandedSessionBuckets, setExpandedSessionBuckets] = useState<Record<SessionBucketKey, boolean>>(
-    () => ({ ...DEFAULT_EXPANDED_SESSION_BUCKETS }),
-  );
+  const [expandedSessionBuckets, setExpandedSessionBuckets] = useState<Record<SessionBucketKey, boolean>>(() => ({
+    ...DEFAULT_EXPANDED_SESSION_BUCKETS,
+  }));
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -316,16 +312,51 @@ export function Sidebar() {
   const extraNavItems = rendererExtensionRegistry.getExtraNavItems();
 
   const coreNavItems = [
-    { to: '/models', icon: <Cpu className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.models'), testId: 'sidebar-nav-models' },
-    { to: '/agents', icon: <Bot className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.agents'), testId: 'sidebar-nav-agents' },
-    { to: '/channels', icon: <Network className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.channels'), testId: 'sidebar-nav-channels' },
-    { to: '/skills', icon: <Puzzle className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.skills'), testId: 'sidebar-nav-skills' },
-    { to: '/cron', icon: <Clock className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.cronTasks'), testId: 'sidebar-nav-cron' },
+    {
+      to: '/models',
+      icon: <Cpu className="h-4 w-4" strokeWidth={2} />,
+      label: t('sidebar.models'),
+      testId: 'sidebar-nav-models',
+    },
+    {
+      to: '/agents',
+      icon: <Bot className="h-4 w-4" strokeWidth={2} />,
+      label: t('sidebar.agents'),
+      testId: 'sidebar-nav-agents',
+    },
+    {
+      to: '/channels',
+      icon: <Network className="h-4 w-4" strokeWidth={2} />,
+      label: t('sidebar.channels'),
+      testId: 'sidebar-nav-channels',
+    },
+    {
+      to: '/skills',
+      icon: <Puzzle className="h-4 w-4" strokeWidth={2} />,
+      label: t('sidebar.skills'),
+      testId: 'sidebar-nav-skills',
+    },
+    {
+      to: '/cron',
+      icon: <Clock className="h-4 w-4" strokeWidth={2} />,
+      label: t('sidebar.cronTasks'),
+      testId: 'sidebar-nav-cron',
+    },
     ...(devModeUnlocked
       ? [
-        { to: '/image-generation', icon: <ImagePlus className="h-4 w-4" strokeWidth={2} />, label: t('common:sidebar.imageGeneration'), testId: 'sidebar-nav-image-generation' },
-        { to: '/dreams', icon: <Moon className="h-4 w-4" strokeWidth={2} />, label: t('common:sidebar.openClawDreams'), testId: 'sidebar-nav-dreams' },
-      ]
+          {
+            to: '/image-generation',
+            icon: <ImagePlus className="h-4 w-4" strokeWidth={2} />,
+            label: t('common:sidebar.imageGeneration'),
+            testId: 'sidebar-nav-image-generation',
+          },
+          {
+            to: '/dreams',
+            icon: <Moon className="h-4 w-4" strokeWidth={2} />,
+            label: t('common:sidebar.openClawDreams'),
+            testId: 'sidebar-nav-dreams',
+          },
+        ]
       : []),
   ];
 
@@ -359,17 +390,12 @@ export function Sidebar() {
 
       {/* Top Header Toggle */}
       <div
-        className={cn(
-          'flex shrink-0 items-center p-2 h-8',
-          sidebarCollapsed ? 'justify-center' : 'justify-between',
-        )}
+        className={cn('flex shrink-0 items-center p-2 h-8', sidebarCollapsed ? 'justify-center' : 'justify-between')}
       >
         {!sidebarCollapsed && (
           <div className="flex items-center gap-2 px-2 overflow-hidden">
             <img src={logoSvg} alt="ClawX" className="h-5 w-auto shrink-0" />
-            <span className="text-sm font-semibold truncate whitespace-nowrap text-foreground/90">
-              ClawX
-            </span>
+            <span className="text-sm font-semibold truncate whitespace-nowrap text-foreground/90">ClawX</span>
           </div>
         )}
         <Button
@@ -391,13 +417,13 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex flex-col gap-1 px-2">
+      <nav className="flex flex-col gap-1 px-2 mt-2">
         <button
           type="button"
           data-testid="sidebar-new-chat"
           onClick={handleNewChat}
           className={cn(
-            'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-2 transition-colors',
+            'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
             'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
             sidebarCollapsed && 'justify-center px-0',
           )}
@@ -405,15 +431,15 @@ export function Sidebar() {
           <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">
             <Plus className="h-4 w-4" strokeWidth={2} />
           </div>
-          {!sidebarCollapsed && <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">{t('sidebar.newChat')}</span>}
+          {!sidebarCollapsed && (
+            <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">
+              {t('sidebar.newChat')}
+            </span>
+          )}
         </button>
 
         {navItems.map((item) => (
-          <NavItem
-            key={item.to}
-            {...item}
-            collapsed={sidebarCollapsed}
-          />
+          <NavItem key={item.to} {...item} collapsed={sidebarCollapsed} />
         ))}
       </nav>
 
@@ -436,120 +462,131 @@ export function Sidebar() {
                   )}
                 >
                   <ChevronRight
-                    className={cn(
-                      'h-3 w-3 shrink-0 transition-transform',
-                      isBucketExpanded && 'rotate-90',
-                    )}
+                    className={cn('h-3 w-3 shrink-0 transition-transform', isBucketExpanded && 'rotate-90')}
                   />
                   <span>{bucket.label}</span>
                 </button>
-                {isBucketExpanded && bucket.sessions.map((s) => {
-                  const agentId = getAgentIdFromSessionKey(s.key);
-                  const agentName = agentNameById[agentId] || agentId;
-                  const isEditing = editingSessionKey === s.key;
-                  const sessionLabel = getSessionLabel(s.key, s.displayName, s.label);
-                  const channelType = s.channel && s.channel !== 'webchat' ? s.channel : null;
-                  const channelName = channelType ? CHANNEL_NAMES[channelType as keyof typeof CHANNEL_NAMES] ?? channelType : null;
-                  return (
-                    <div key={s.key} className="group relative flex items-center">
-                      {isEditing ? (
-                        <div className="flex w-full items-center gap-1 px-1.5 py-1">
-                          <Input
-                            autoFocus
-                            value={editingLabel}
-                            onChange={(e) => setEditingLabel(e.target.value)}
-                            onKeyDown={handleRenameKeyDown}
-                            onBlur={() => void handleRenameSubmit()}
-                            className="h-7 min-w-0 flex-1 text-meta"
-                            aria-label={t('common:sidebar.renameSessionPlaceholder')}
-                          />
-                          <button
-                            aria-label={t('common:sidebar.saveSessionRename')}
-                            onMouseDown={(e) => { e.preventDefault(); void handleRenameSubmit(); }}
-                            className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground"
-                          >
-                            <Check className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            aria-label={t('common:sidebar.cancelSessionRename')}
-                            onMouseDown={(e) => { e.preventDefault(); handleRenameCancel(); }}
-                            className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-destructive"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <button
-                            data-testid={`sidebar-session-${s.key}`}
-                            onClick={() => {
-                              if (currentSessionKey === s.key) {
-                                void loadHistory(false);
-                              } else {
-                                switchSession(s.key);
-                              }
-                              navigate('/');
-                            }}
-                            onDoubleClick={() => handleStartRename(s.key, sessionLabel)}
-                            className={cn(
-                              'w-full text-left rounded-lg px-2.5 py-1.5 text-meta transition-colors pr-16',
-                              'hover:bg-black/5 dark:hover:bg-white/5',
-                              isOnChat && currentSessionKey === s.key
-                                ? 'bg-black/5 dark:bg-white/10 text-foreground font-medium'
-                                : 'text-foreground/75',
-                            )}
-                          >
-                            <div className="flex min-w-0 items-center gap-2">
-                              <span className="shrink-0 rounded-full bg-black/[0.04] px-2 py-0.5 text-2xs font-medium text-foreground/70 dark:bg-white/[0.08]">
-                                {agentName}
-                              </span>
-                              {channelType && channelName && (
-                                <span
-                                  title={channelName}
-                                  aria-label={channelName}
-                                  className="shrink-0 truncate rounded-full bg-blue-500/10 px-2 py-0.5 text-2xs font-medium text-blue-700 dark:bg-blue-400/10 dark:text-blue-400"
-                                >
-                                  {channelName}
-                                </span>
-                              )}
-                              <span className="truncate">{sessionLabel}</span>
-                            </div>
-                          </button>
-                          <div className={cn(
-                            'absolute right-1 flex items-center gap-0.5 transition-opacity',
-                            'opacity-0 group-hover:opacity-100',
-                          )}>
+                {isBucketExpanded &&
+                  bucket.sessions.map((s) => {
+                    const agentId = getAgentIdFromSessionKey(s.key);
+                    const agentName = agentNameById[agentId] || agentId;
+                    const isEditing = editingSessionKey === s.key;
+                    const sessionLabel = getSessionLabel(s.key, s.displayName, s.label);
+                    const channelType = s.channel && s.channel !== 'webchat' ? s.channel : null;
+                    const channelName = channelType
+                      ? (CHANNEL_NAMES[channelType as keyof typeof CHANNEL_NAMES] ?? channelType)
+                      : null;
+                    return (
+                      <div
+                        key={s.key}
+                        className={cn(
+                          'group flex items-center rounded-lg transition-colors',
+                          'hover:bg-black/5 dark:hover:bg-white/5',
+                          !isEditing && isOnChat && currentSessionKey === s.key
+                            ? 'bg-black/5 dark:bg-white/10'
+                            : '',
+                        )}
+                      >
+                        {isEditing ? (
+                          <div className="flex w-full items-center gap-1 px-1.5 py-1">
+                            <Input
+                              autoFocus
+                              value={editingLabel}
+                              onChange={(e) => setEditingLabel(e.target.value)}
+                              onKeyDown={handleRenameKeyDown}
+                              onBlur={() => void handleRenameSubmit()}
+                              className="h-7 min-w-0 flex-1 text-meta"
+                              aria-label={t('common:sidebar.renameSessionPlaceholder')}
+                            />
                             <button
-                              aria-label={t('common:sidebar.renameSession')}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleStartRename(s.key, sessionLabel);
+                              aria-label={t('common:sidebar.saveSessionRename')}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                void handleRenameSubmit();
                               }}
-                              className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10"
+                              className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground"
                             >
-                              <Pencil className="h-3.5 w-3.5" />
+                              <Check className="h-3.5 w-3.5" />
                             </button>
                             <button
-                              data-testid={`sidebar-session-delete-${s.key}`}
-                              aria-label={t('common:sidebar.deleteSession')}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSessionToDelete({
-                                  key: s.key,
-                                  label: sessionLabel,
-                                });
-                                setDeleteDialogOpen(true);
+                              aria-label={t('common:sidebar.cancelSessionRename')}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                handleRenameCancel();
                               }}
-                              className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                              className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-destructive"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <X className="h-3.5 w-3.5" />
                             </button>
                           </div>
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
+                        ) : (
+                          <>
+                            <button
+                              data-testid={`sidebar-session-${s.key}`}
+                              onClick={() => {
+                                if (currentSessionKey === s.key) {
+                                  void loadHistory(false);
+                                } else {
+                                  switchSession(s.key);
+                                }
+                                navigate('/');
+                              }}
+                              onDoubleClick={() => handleStartRename(s.key, sessionLabel)}
+className={cn(
+  'flex-1 min-w-0 text-left px-2.5 py-1.5 text-meta',
+  isOnChat && currentSessionKey === s.key
+    ? 'text-foreground font-medium'
+    : 'text-foreground/75',
+)}
+                            >
+                              <div className="flex min-w-0 items-center gap-2">
+                                <span className="shrink-0 rounded-full bg-black/[0.04] px-2 py-0.5 text-2xs font-medium text-foreground/70 dark:bg-white/[0.08]">
+                                  {agentName}
+                                </span>
+                                {channelType && channelName && (
+                                  <span
+                                    title={channelName}
+                                    aria-label={channelName}
+                                    className="shrink-0 truncate rounded-full bg-blue-500/10 px-2 py-0.5 text-2xs font-medium text-blue-700 dark:bg-blue-400/10 dark:text-blue-400"
+                                  >
+                                    {channelName}
+                                  </span>
+                                )}
+                                <span className="truncate">{sessionLabel}</span>
+                              </div>
+                            </button>
+                            <div className="hidden group-hover:flex items-center gap-0.5 pr-1.5">
+                              <button
+                                aria-label={t('common:sidebar.renameSession')}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStartRename(s.key, sessionLabel);
+                                }}
+                                className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                data-testid={`sidebar-session-delete-${s.key}`}
+                                aria-label={t('common:sidebar.deleteSession')}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSessionToDelete({
+                                    key: s.key,
+                                    label: sessionLabel,
+                                  });
+                                  setDeleteDialogOpen(true);
+                                }}
+                                className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
               </div>
             );
           })}
@@ -587,22 +624,24 @@ export function Sidebar() {
         </div>
 
         <NavLink
-            to="/settings"
-            data-testid="sidebar-nav-settings"
-            className={({ isActive }) =>
-              cn(
-                'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
-                'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
-                isActive && 'bg-black/5 dark:bg-white/10 text-foreground',
-                sidebarCollapsed ? 'justify-center px-0' : ''
-              )
-            }
-          >
+          to="/settings"
+          data-testid="sidebar-nav-settings"
+          className={({ isActive }) =>
+            cn(
+              'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
+              'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
+              isActive && 'bg-black/5 dark:bg-white/10 text-foreground',
+              sidebarCollapsed ? 'justify-center px-0' : '',
+            )
+          }
+        >
           <>
             <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">
               <SettingsIcon className="h-4 w-4" strokeWidth={2} />
             </div>
-            {!sidebarCollapsed && <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{t('sidebar.settings')}</span>}
+            {!sidebarCollapsed && (
+              <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{t('sidebar.settings')}</span>
+            )}
           </>
         </NavLink>
 
@@ -613,7 +652,7 @@ export function Sidebar() {
             className={cn(
               'sidebar-nav-text flex h-auto w-full items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
               'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
-              sidebarCollapsed ? 'justify-center px-0' : 'justify-start'
+              sidebarCollapsed ? 'justify-center px-0' : 'justify-start',
             )}
             onClick={openDevConsole}
           >
@@ -622,7 +661,9 @@ export function Sidebar() {
             </div>
             {!sidebarCollapsed && (
               <>
-                <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">{t('common:sidebar.openClawPage')}</span>
+                <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">
+                  {t('common:sidebar.openClawPage')}
+                </span>
                 <ExternalLink className="ml-auto h-3 w-3 shrink-0 opacity-50 text-current" />
               </>
             )}

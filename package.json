@@ -4,13 +4,17 @@
     "pnpm": {
         "onlyBuiltDependencies": [
             "@discordjs/opus",
+            "@google/genai",
             "@whiskeysockets/baileys",
             "electron",
+            "electron-winstaller",
             "esbuild",
             "koffi",
             "node-llama-cpp",
+            "openclaw",
             "protobufjs",
-            "sharp"
+            "sharp",
+            "tree-sitter-bash"
         ],
         "overrides": {
             "isbinaryfile": "^5.0.0"

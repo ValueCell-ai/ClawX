@@ -3,17 +3,7 @@
  * Browse and manage AI skills
  */
 import { Suspense, lazy, useEffect, useState, useCallback } from 'react';
-import {
-  Search,
-  Puzzle,
-  Lock,
-  Package,
-  X,
-  AlertCircle,
-  Trash2,
-  FolderOpen,
-  Copy,
-} from 'lucide-react';
+import { Search, Puzzle, Lock, Package, X, AlertCircle, Trash2, FolderOpen, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -83,7 +73,8 @@ function resolveSkillSourceLabel(skill: Skill, t: TFunction<'skills'>): string {
   if (source === 'openclaw-workspace') return t('source.badge.workspace', { defaultValue: 'Workspace' });
   if (source === 'openclaw-extra') return t('source.badge.extra', { defaultValue: 'Extra dirs' });
   if (source === 'openclaw-plugin') return t('source.badge.plugin', { defaultValue: 'Plugin dir' });
-  if (source === 'agents-skills-personal') return t('source.badge.agentsPersonal', { defaultValue: 'Personal .agents' });
+  if (source === 'agents-skills-personal')
+    return t('source.badge.agentsPersonal', { defaultValue: 'Personal .agents' });
   if (source === 'agents-skills-project') return t('source.badge.agentsProject', { defaultValue: 'Project .agents' });
   return source;
 }
@@ -114,11 +105,7 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <Suspense fallback={null}>
-        <FilePreviewOverlayLazy
-          file={openedSkillFile}
-          readOnly
-          onClose={() => setOpenedSkillFile(null)}
-        />
+        <FilePreviewOverlayLazy file={openedSkillFile} readOnly onClose={() => setOpenedSkillFile(null)} />
       </Suspense>
       <SheetContent
         className="w-full sm:max-w-[450px] p-0 flex flex-col border-l border-black/10 dark:border-white/10 bg-surface-modal shadow-[0_0_40px_rgba(0,0,0,0.2)]"
@@ -138,14 +125,27 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
             <h2 className="text-3xl font-serif text-foreground font-normal mb-3 text-center tracking-tight">
               {skill.name}
             </h2>
-            <div data-skill-detail-meta-row="1" className="flex items-center justify-center flex-wrap gap-2.5 mb-6 opacity-80">
+            <div
+              data-skill-detail-meta-row="1"
+              className="flex items-center justify-center flex-wrap gap-2.5 mb-6 opacity-80"
+            >
               {skill.version && (
-                <Badge variant="secondary" className="shrink-0 whitespace-nowrap font-mono text-tiny font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors">
+                <Badge
+                  variant="secondary"
+                  className="shrink-0 whitespace-nowrap font-mono text-tiny font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors"
+                >
                   v{skill.version}
                 </Badge>
               )}
-              <Badge variant="secondary" className="shrink-0 whitespace-nowrap font-mono text-tiny font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors">
-                {skill.isCore ? t('detail.coreSystem') : skill.isBundled ? t('detail.bundled') : t('detail.userInstalled')}
+              <Badge
+                variant="secondary"
+                className="shrink-0 whitespace-nowrap font-mono text-tiny font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] hover:bg-black/[0.08] dark:hover:bg-white/[0.12] border-0 shadow-none text-foreground/70 transition-colors"
+              >
+                {skill.isCore
+                  ? t('detail.coreSystem')
+                  : skill.isBundled
+                    ? t('detail.bundled')
+                    : t('detail.userInstalled')}
               </Badge>
               {detailMetaComponents.map((DetailMetaComponent, index) => (
                 <DetailMetaComponent key={`skill-detail-meta-${index}`} skill={skill} />
@@ -163,7 +163,10 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
             <div className="space-y-2">
               <h3 className="text-meta font-bold text-foreground/80">{t('detail.source')}</h3>
               <div className="flex items-center gap-2 flex-wrap">
-                <Badge variant="secondary" className="shrink-0 whitespace-nowrap font-mono text-tiny font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70">
+                <Badge
+                  variant="secondary"
+                  className="shrink-0 whitespace-nowrap font-mono text-tiny font-medium px-3 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70"
+                >
                   {resolveSkillSourceLabel(skill, t)}
                 </Badge>
               </div>
@@ -208,7 +211,6 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
                 />
               </div>
             )}
-
           </div>
 
           {/* Centered Footer Button — uninstall / disable / enable */}
@@ -228,7 +230,9 @@ function SkillDetailDialog({ skill, isOpen, onClose, onToggle, onUninstall, onOp
               >
                 {uninstallable && onUninstall
                   ? t('detail.uninstall')
-                  : (skill.enabled ? t('detail.disable') : t('detail.enable'))}
+                  : skill.enabled
+                    ? t('detail.disable')
+                    : t('detail.enable')}
               </Button>
             </div>
           )}
@@ -252,7 +256,7 @@ export function Skills() {
     uninstallSkill,
     searching,
     searchError,
-    installing
+    installing,
   } = useSkillsStore();
   const { t } = useTranslation('skills');
   const gatewayStatus = useGatewayStore((state) => state.status);
@@ -314,10 +318,13 @@ export function Skills() {
 
   useEffect(() => {
     let cancelled = false;
-    void hostApi.skills.clawhubCapability()
+    void hostApi.skills
+      .clawhubCapability()
       .then((result) => {
         if (cancelled) return;
-        setMarketplaceAvailable(Boolean(result.success && (result.capability?.canInstall || result.capability?.canSearch)));
+        setMarketplaceAvailable(
+          Boolean(result.success && (result.capability?.canInstall || result.capability?.canSearch)),
+        );
       })
       .catch(() => {
         if (!cancelled) setMarketplaceAvailable(false);
@@ -330,41 +337,45 @@ export function Skills() {
   const safeSkills = Array.isArray(skills) ? skills : [];
   const enabledSkillsCount = safeSkills.filter((skill) => skill.enabled).length;
   const disabledSkillsCount = safeSkills.filter((skill) => !skill.enabled).length;
-  const filteredSkills = safeSkills.filter((skill) => {
-    const q = searchQuery.toLowerCase().trim();
-    const matchesSearch = q.length === 0
-      || skill.name.toLowerCase().includes(q)
-      || skill.description.toLowerCase().includes(q)
-      || skill.id.toLowerCase().includes(q)
-      || (skill.slug || '').toLowerCase().includes(q)
-      || (skill.author || '').toLowerCase().includes(q);
-    const matchesStatus = statusFilter === 'all'
-      || (statusFilter === 'enabled' ? skill.enabled : !skill.enabled);
-    return matchesSearch && matchesStatus;
-  }).sort((a, b) => {
-    if (a.enabled && !b.enabled) return -1;
-    if (!a.enabled && b.enabled) return 1;
-    if (a.isCore && !b.isCore) return -1;
-    if (!a.isCore && b.isCore) return 1;
-    return a.name.localeCompare(b.name);
-  });
+  const filteredSkills = safeSkills
+    .filter((skill) => {
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch =
+        q.length === 0 ||
+        skill.name.toLowerCase().includes(q) ||
+        skill.description.toLowerCase().includes(q) ||
+        skill.id.toLowerCase().includes(q) ||
+        (skill.slug || '').toLowerCase().includes(q) ||
+        (skill.author || '').toLowerCase().includes(q);
+      const matchesStatus = statusFilter === 'all' || (statusFilter === 'enabled' ? skill.enabled : !skill.enabled);
+      return matchesSearch && matchesStatus;
+    })
+    .sort((a, b) => {
+      if (a.enabled && !b.enabled) return -1;
+      if (!a.enabled && b.enabled) return 1;
+      if (a.isCore && !b.isCore) return -1;
+      if (!a.isCore && b.isCore) return 1;
+      return a.name.localeCompare(b.name);
+    });
 
-
-  const handleToggle = useCallback(async (skillId: string, enable: boolean) => {
-    try {
-      if (enable) {
-        await enableSkill(skillId);
-        toast.success(t('toast.enabled'));
-      } else {
-        await disableSkill(skillId);
-        toast.success(t('toast.disabled'));
+  const handleToggle = useCallback(
+    async (skillId: string, enable: boolean) => {
+      try {
+        if (enable) {
+          await enableSkill(skillId);
+          toast.success(t('toast.enabled'));
+        } else {
+          await disableSkill(skillId);
+          toast.success(t('toast.disabled'));
+        }
+      } catch (err) {
+        toast.error(String(err));
       }
-    } catch (err) {
-      toast.error(String(err));
-    }
-  }, [enableSkill, disableSkill, t]);
+    },
+    [enableSkill, disableSkill, t],
+  );
 
-  const hasInstalledSkills = safeSkills.some(s => !s.isBundled);
+  const hasInstalledSkills = safeSkills.some((s) => !s.isBundled);
 
   const handleStatusFilterClick = useCallback((nextFilter: 'enabled' | 'disabled') => {
     setStatusFilter((current) => (current === nextFilter ? 'all' : nextFilter));
@@ -378,7 +389,11 @@ export function Skills() {
       }
       const result = await hostApi.shell.openPath(skillsDir);
       if (result) {
-        if (result.toLowerCase().includes('no such file') || result.toLowerCase().includes('not found') || result.toLowerCase().includes('failed to open')) {
+        if (
+          result.toLowerCase().includes('no such file') ||
+          result.toLowerCase().includes('not found') ||
+          result.toLowerCase().includes('failed to open')
+        ) {
           toast.error(t('toast.failedFolderNotFound'));
         } else {
           throw new Error(result);
@@ -389,25 +404,29 @@ export function Skills() {
     }
   }, [t]);
 
-  const handleOpenSkillFolder = useCallback(async (skill: Skill) => {
-    try {
-      const result = await hostApi.skills.clawhubOpenSkillPath({
-        skillKey: skill.id,
-        slug: skill.slug,
-        baseDir: skill.baseDir,
-      });
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to open folder');
+  const handleOpenSkillFolder = useCallback(
+    async (skill: Skill) => {
+      try {
+        const result = await hostApi.skills.clawhubOpenSkillPath({
+          skillKey: skill.id,
+          slug: skill.slug,
+          baseDir: skill.baseDir,
+        });
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to open folder');
+        }
+      } catch (err) {
+        toast.error(t('toast.failedOpenActualFolder') + ': ' + String(err));
       }
-    } catch (err) {
-      toast.error(t('toast.failedOpenActualFolder') + ': ' + String(err));
-    }
-  }, [t]);
+    },
+    [t],
+  );
 
   const [skillsDirPath, setSkillsDirPath] = useState('~/.openclaw/skills');
 
   useEffect(() => {
-    hostApi.openclaw.getSkillsDir()
+    hostApi.openclaw
+      .getSkillsDir()
       .then((dir) => setSkillsDirPath(dir))
       .catch(console.error);
   }, []);
@@ -429,27 +448,33 @@ export function Skills() {
     return () => clearTimeout(timer);
   }, [installQuery, installSheetOpen, searchSkills]);
 
-  const handleInstall = useCallback(async (slug: string) => {
-    try {
-      await installSkill(slug);
-      toast.success(t('toast.installed'));
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      if (INSTALL_ERROR_CODES.has(errorMessage)) {
-        toast.error(t(`toast.${errorMessage}`, { path: skillsDirPath }), { duration: 10000 });
-      } else {
-        toast.error(t('toast.failedInstall') + ': ' + errorMessage);
+  const handleInstall = useCallback(
+    async (slug: string) => {
+      try {
+        await installSkill(slug);
+        toast.success(t('toast.installed'));
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        if (INSTALL_ERROR_CODES.has(errorMessage)) {
+          toast.error(t(`toast.${errorMessage}`, { path: skillsDirPath }), { duration: 10000 });
+        } else {
+          toast.error(t('toast.failedInstall') + ': ' + errorMessage);
+        }
       }
-    }
-  }, [installSkill, t, skillsDirPath]);
-  const handleUninstall = useCallback(async (slug: string) => {
-    try {
-      await uninstallSkill(slug);
-      toast.success(t('toast.uninstalled'));
-    } catch (err) {
-      toast.error(t('toast.failedUninstall') + ': ' + String(err));
-    }
-  }, [uninstallSkill, t]);
+    },
+    [installSkill, t, skillsDirPath],
+  );
+  const handleUninstall = useCallback(
+    async (slug: string) => {
+      try {
+        await uninstallSkill(slug);
+        toast.success(t('toast.uninstalled'));
+      } catch (err) {
+        toast.error(t('toast.failedUninstall') + ': ' + String(err));
+      }
+    },
+    [uninstallSkill, t],
+  );
 
   if (loading) {
     return (
@@ -460,18 +485,18 @@ export function Skills() {
   }
 
   return (
-    <div data-testid="skills-page" className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
-      <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16">
-
+    <div
+      data-testid="skills-page"
+      className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden"
+    >
+      <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16 pb-0">
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-start justify-between mb-6 shrink-0 gap-4">
           <div>
             <h1 className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight">
               {t('title')}
             </h1>
-            <p className="text-subtitle text-foreground/70 font-medium">
-              {t('subtitle')}
-            </p>
+            <p className="text-subtitle text-foreground/70 font-medium">{t('subtitle')}</p>
           </div>
 
           <div className="flex items-center gap-3 md:mt-2">
@@ -495,9 +520,7 @@ export function Skills() {
             className="mb-6 p-4 rounded-xl border border-yellow-500/50 bg-yellow-500/10 flex items-center gap-3"
           >
             <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
-            <span className="text-sm font-medium text-yellow-700 dark:text-yellow-400">
-              {t('gatewayWarning')}
-            </span>
+            <span className="text-sm font-medium text-yellow-700 dark:text-yellow-400">{t('gatewayWarning')}</span>
           </div>
         )}
 
@@ -576,11 +599,7 @@ export function Skills() {
           {error && (
             <div className="mb-4 p-4 rounded-xl border border-destructive/50 bg-destructive/10 text-destructive text-sm font-medium flex items-center gap-2">
               <AlertCircle className="h-5 w-5 shrink-0" />
-              <span>
-                {FETCH_ERROR_CODES.has(error)
-                  ? t(`toast.${error}`, { path: skillsDirPath })
-                  : error}
-              </span>
+              <span>{FETCH_ERROR_CODES.has(error) ? t(`toast.${error}`, { path: skillsDirPath }) : error}</span>
             </div>
           )}
 
@@ -604,15 +623,16 @@ export function Skills() {
                     <div className="flex flex-col overflow-hidden">
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="text-sm font-semibold text-foreground truncate">{skill.name}</h3>
-                        {skill.isCore ? (
-                          <Lock className="h-3 w-3 text-muted-foreground" />
-                        ) : null}
+                        {skill.isCore ? <Lock className="h-3 w-3 text-muted-foreground" /> : null}
                       </div>
                       <p className="text-sm text-muted-foreground line-clamp-1 pr-6 leading-relaxed">
                         {skill.description}
                       </p>
                       <div className="mt-1 flex items-center gap-2 text-tiny text-foreground/55 min-w-0">
-                        <Badge variant="secondary" className="shrink-0 whitespace-nowrap px-1.5 py-0 h-5 text-2xs font-medium bg-black/5 dark:bg-white/10 border-0 shadow-none">
+                        <Badge
+                          variant="secondary"
+                          className="shrink-0 whitespace-nowrap px-1.5 py-0 h-5 text-2xs font-medium bg-black/5 dark:bg-white/10 border-0 shadow-none"
+                        >
                           {resolveSkillSourceLabel(skill, t)}
                         </Badge>
                         <span className="truncate font-mono min-w-0">
@@ -621,11 +641,9 @@ export function Skills() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-6 shrink-0" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center gap-6 shrink-0" onClick={(e) => e.stopPropagation()}>
                     {skill.version && (
-                      <span className="text-meta font-mono text-muted-foreground">
-                        v{skill.version}
-                      </span>
+                      <span className="text-meta font-mono text-muted-foreground">v{skill.version}</span>
                     )}
                     <Switch
                       checked={skill.enabled}
@@ -646,7 +664,9 @@ export function Skills() {
           side="right"
         >
           <div className="px-7 py-6 border-b border-black/10 dark:border-white/10">
-            <h2 className="text-2xl font-serif text-foreground font-normal tracking-tight">{t('marketplace.installDialogTitle')}</h2>
+            <h2 className="text-2xl font-serif text-foreground font-normal tracking-tight">
+              {t('marketplace.installDialogTitle')}
+            </h2>
             <p className="mt-1 text-meta text-foreground/70">{t('marketplace.installDialogSubtitle')}</p>
             <div className="mt-4 flex flex-col md:flex-row gap-2">
               <div className="relative flex items-center bg-black/5 dark:bg-white/5 rounded-xl px-3 py-2 border border-black/10 dark:border-white/10 flex-1">
@@ -699,7 +719,7 @@ export function Skills() {
             {!searching && searchResults.length > 0 && (
               <div className="flex flex-col gap-1">
                 {searchResults.map((skill) => {
-                  const isInstalled = safeSkills.some(s => s.id === skill.slug || s.name === skill.name);
+                  const isInstalled = safeSkills.some((s) => s.id === skill.slug || s.name === skill.name);
                   const isInstallLoading = !!installing[skill.slug];
 
                   return (
@@ -715,20 +735,16 @@ export function Skills() {
                         <div className="flex flex-col overflow-hidden">
                           <div className="flex items-center gap-2 mb-1">
                             <h3 className="text-sm font-semibold text-foreground truncate">{skill.name}</h3>
-                            {skill.author && (
-                              <span className="text-xs text-muted-foreground">• {skill.author}</span>
-                            )}
+                            {skill.author && <span className="text-xs text-muted-foreground">• {skill.author}</span>}
                           </div>
                           <p className="text-sm text-muted-foreground line-clamp-1 pr-6 leading-relaxed">
                             {skill.description}
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4 shrink-0" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-4 shrink-0" onClick={(e) => e.stopPropagation()}>
                         {skill.version && (
-                          <span className="text-meta font-mono text-muted-foreground mr-2">
-                            v{skill.version}
-                          </span>
+                          <span className="text-meta font-mono text-muted-foreground mr-2">v{skill.version}</span>
                         )}
                         {isInstalled ? (
                           <Button

@@ -16,11 +16,7 @@ import { hostApi, type ChannelGroupItem } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
 import { CHANNEL_ICONS, CHANNEL_NAMES, type ChannelType } from '@/types/channel';
 import type { AgentSummary } from '@/types/agent';
-import {
-  buildRuntimeProviderOptions,
-  splitModelRef,
-  type RuntimeProviderOption,
-} from '@/lib/model-options';
+import { buildRuntimeProviderOptions, splitModelRef, type RuntimeProviderOption } from '@/lib/model-options';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -38,14 +34,7 @@ export function Agents() {
   const gatewayStatus = useGatewayStore((state) => state.status);
   const refreshProviderSnapshot = useProviderStore((state) => state.refreshProviderSnapshot);
   const lastGatewayStateRef = useRef(gatewayStatus.state);
-  const {
-    agents,
-    loading,
-    error,
-    fetchAgents,
-    createAgent,
-    deleteAgent,
-  } = useAgentsStore();
+  const { agents, loading, error, fetchAgents, createAgent, deleteAgent } = useAgentsStore();
   const [channelGroups, setChannelGroups] = useState<ChannelGroupItem[]>([]);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(() => agents.length > 0);
 
@@ -118,8 +107,11 @@ export function Agents() {
   }
 
   return (
-    <div data-testid="agents-page" className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
-      <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16">
+    <div
+      data-testid="agents-page"
+      className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden"
+    >
+      <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16 pb-0">
         <div className="flex flex-col md:flex-row md:items-start justify-between mb-12 shrink-0 gap-4">
           <div>
             <h1 className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight">
@@ -151,9 +143,7 @@ export function Agents() {
           {error && (
             <div className="mb-8 p-4 rounded-xl border border-destructive/50 bg-destructive/10 flex items-center gap-3">
               <AlertCircle className="h-5 w-5 text-destructive" />
-              <span className="text-destructive text-sm font-medium">
-                {error}
-              </span>
+              <span className="text-destructive text-sm font-medium">{error}</span>
             </div>
           )}
 
@@ -238,21 +228,17 @@ function AgentCard({
       .map((account) => {
         const channelName = CHANNEL_NAMES[group.channelType as ChannelType] || group.channelType;
         const accountLabel =
-          account.accountId === 'default'
-            ? t('settingsDialog.mainAccount')
-            : account.name || account.accountId;
+          account.accountId === 'default' ? t('settingsDialog.mainAccount') : account.name || account.accountId;
         return `${channelName} · ${accountLabel}`;
       }),
   );
-  const channelsText = boundChannelAccounts.length > 0
-    ? boundChannelAccounts.join(', ')
-    : t('none');
+  const channelsText = boundChannelAccounts.length > 0 ? boundChannelAccounts.join(', ') : t('none');
 
   return (
     <div
       className={cn(
         'group flex items-start gap-4 p-4 rounded-2xl transition-all text-left border relative overflow-hidden bg-transparent border-transparent hover:bg-black/5 dark:hover:bg-white/5',
-        agent.isDefault && 'bg-black/[0.04] dark:bg-white/[0.06]'
+        agent.isDefault && 'bg-black/[0.04] dark:bg-white/[0.06]',
       )}
     >
       <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-primary bg-primary/10 rounded-full shadow-sm mb-3">
@@ -312,8 +298,10 @@ function AgentCard({
   );
 }
 
-const inputClasses = 'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
-const selectClasses = 'h-[44px] w-full rounded-xl font-mono text-meta bg-transparent border border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground px-3';
+const inputClasses =
+  'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
+const selectClasses =
+  'h-[44px] w-full rounded-xl font-mono text-meta bg-transparent border border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground px-3';
 const labelClasses = 'text-sm text-foreground/80 font-bold';
 
 function ChannelLogo({ type }: { type: ChannelType }) {
@@ -378,67 +366,70 @@ function AddAgentDialog({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent asChild className="w-[calc(100%-2rem)] max-w-md rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden">
+      <DialogContent
+        asChild
+        className="w-[calc(100%-2rem)] max-w-md rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden"
+      >
         <Card data-testid="add-agent-dialog">
-        <CardHeader className="pb-2">
-          <DialogTitle asChild>
-            <CardTitle className="text-2xl font-serif font-normal tracking-tight">
-              {t('createDialog.title')}
-            </CardTitle>
-          </DialogTitle>
-          <DialogDescription asChild>
-            <CardDescription className="text-sm mt-1 text-foreground/70">
-              {t('createDialog.description')}
-            </CardDescription>
-          </DialogDescription>
-        </CardHeader>
-        <CardContent className="space-y-6 pt-4 p-6">
-          <div className="space-y-2.5">
-            <Label htmlFor="agent-name" className={labelClasses}>{t('createDialog.nameLabel')}</Label>
-            <Input
-              id="agent-name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder={t('createDialog.namePlaceholder')}
-              className={inputClasses}
-            />
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label htmlFor="inherit-workspace" className={labelClasses}>{t('createDialog.inheritWorkspaceLabel')}</Label>
-              <p className="text-meta text-foreground/60">{t('createDialog.inheritWorkspaceDescription')}</p>
+          <CardHeader className="pb-2">
+            <DialogTitle asChild>
+              <CardTitle className="text-2xl font-serif font-normal tracking-tight">
+                {t('createDialog.title')}
+              </CardTitle>
+            </DialogTitle>
+            <DialogDescription asChild>
+              <CardDescription className="text-sm mt-1 text-foreground/70">
+                {t('createDialog.description')}
+              </CardDescription>
+            </DialogDescription>
+          </CardHeader>
+          <CardContent className="space-y-6 pt-4 p-6">
+            <div className="space-y-2.5">
+              <Label htmlFor="agent-name" className={labelClasses}>
+                {t('createDialog.nameLabel')}
+              </Label>
+              <Input
+                id="agent-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder={t('createDialog.namePlaceholder')}
+                className={inputClasses}
+              />
             </div>
-            <Switch
-              id="inherit-workspace"
-              checked={inheritWorkspace}
-              onCheckedChange={setInheritWorkspace}
-            />
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={onClose}
-              className="h-9 text-meta font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
-            >
-              {t('common:actions.cancel')}
-            </Button>
-            <Button
-              onClick={() => void handleSubmit()}
-              disabled={saving || !name.trim()}
-              className="h-9 text-meta font-medium rounded-full px-4 shadow-none"
-            >
-              {saving ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  {t('creating')}
-                </>
-              ) : (
-                t('common:actions.save')
-              )}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label htmlFor="inherit-workspace" className={labelClasses}>
+                  {t('createDialog.inheritWorkspaceLabel')}
+                </Label>
+                <p className="text-meta text-foreground/60">{t('createDialog.inheritWorkspaceDescription')}</p>
+              </div>
+              <Switch id="inherit-workspace" checked={inheritWorkspace} onCheckedChange={setInheritWorkspace} />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={onClose}
+                className="h-9 text-meta font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
+              >
+                {t('common:actions.cancel')}
+              </Button>
+              <Button
+                onClick={() => void handleSubmit()}
+                disabled={saving || !name.trim()}
+                className="h-9 text-meta font-medium rounded-full px-4 shadow-none"
+              >
+                {saving ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    {t('creating')}
+                  </>
+                ) : (
+                  t('common:actions.save')
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </DialogContent>
     </Dialog>
   );
@@ -505,146 +496,142 @@ function AgentSettingsModal({
       .map((account) => ({
         channelType: group.channelType as ChannelType,
         accountId: account.accountId,
-        name:
-          account.accountId === 'default'
-            ? t('settingsDialog.mainAccount')
-            : account.name || account.accountId,
+        name: account.accountId === 'default' ? t('settingsDialog.mainAccount') : account.name || account.accountId,
         error: account.lastError,
       })),
   );
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && handleRequestClose()}>
-      <DialogContent asChild className="w-[calc(100%-2rem)] max-w-2xl max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden">
+      <DialogContent
+        asChild
+        className="w-[calc(100%-2rem)] max-w-2xl max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden"
+      >
         <Card>
-        <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0">
-          <div>
-            <DialogTitle asChild>
-              <CardTitle className="text-2xl font-serif font-normal tracking-tight">
-                {t('settingsDialog.title', { name: agent.name })}
-              </CardTitle>
-            </DialogTitle>
-            <DialogDescription asChild>
-              <CardDescription className="text-sm mt-1 text-foreground/70">
-                {t('settingsDialog.description')}
-              </CardDescription>
-            </DialogDescription>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleRequestClose}
-            className="rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-6 pt-4 overflow-y-auto flex-1 p-6">
-          <div className="space-y-4">
-            <div className="space-y-2.5">
-              <Label htmlFor="agent-settings-name" className={labelClasses}>{t('settingsDialog.nameLabel')}</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="agent-settings-name"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  readOnly={agent.isDefault}
-                  className={inputClasses}
-                />
-                {!agent.isDefault && (
-                  <Button
-                    variant="outline"
-                    onClick={() => void handleSaveName()}
-                    disabled={savingName || !name.trim() || name.trim() === agent.name}
-                    className="h-[44px] text-meta font-medium rounded-xl px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
-                  >
-                    {savingName ? (
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                    ) : (
-                      t('common:actions.save')
-                    )}
-                  </Button>
-                )}
+          <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0">
+            <div>
+              <DialogTitle asChild>
+                <CardTitle className="text-2xl font-serif font-normal tracking-tight">
+                  {t('settingsDialog.title', { name: agent.name })}
+                </CardTitle>
+              </DialogTitle>
+              <DialogDescription asChild>
+                <CardDescription className="text-sm mt-1 text-foreground/70">
+                  {t('settingsDialog.description')}
+                </CardDescription>
+              </DialogDescription>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleRequestClose}
+              className="rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-6 pt-4 overflow-y-auto flex-1 p-6">
+            <div className="space-y-4">
+              <div className="space-y-2.5">
+                <Label htmlFor="agent-settings-name" className={labelClasses}>
+                  {t('settingsDialog.nameLabel')}
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="agent-settings-name"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    readOnly={agent.isDefault}
+                    className={inputClasses}
+                  />
+                  {!agent.isDefault && (
+                    <Button
+                      variant="outline"
+                      onClick={() => void handleSaveName()}
+                      disabled={savingName || !name.trim() || name.trim() === agent.name}
+                      className="h-[44px] text-meta font-medium rounded-xl px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
+                    >
+                      {savingName ? <RefreshCw className="h-4 w-4 animate-spin" /> : t('common:actions.save')}
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-1 rounded-2xl bg-black/5 dark:bg-white/5 border border-transparent p-4">
+                  <p className="text-tiny uppercase tracking-[0.08em] text-muted-foreground/80 font-medium">
+                    {t('settingsDialog.agentIdLabel')}
+                  </p>
+                  <p className="font-mono text-meta text-foreground">{agent.id}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowModelModal(true)}
+                  className="space-y-1 rounded-2xl bg-black/5 dark:bg-white/5 border border-transparent p-4 text-left hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                >
+                  <p className="text-tiny uppercase tracking-[0.08em] text-muted-foreground/80 font-medium">
+                    {t('settingsDialog.modelLabel')}
+                  </p>
+                  <p className="text-sm text-foreground">
+                    {agent.modelDisplay}
+                    {agent.inheritedModel ? ` (${t('inherited')})` : ''}
+                  </p>
+                  <p className="font-mono text-xs text-foreground/70 break-all">
+                    {agent.modelRef || defaultModelRef || '-'}
+                  </p>
+                </button>
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-1 rounded-2xl bg-black/5 dark:bg-white/5 border border-transparent p-4">
-                <p className="text-tiny uppercase tracking-[0.08em] text-muted-foreground/80 font-medium">
-                  {t('settingsDialog.agentIdLabel')}
-                </p>
-                <p className="font-mono text-meta text-foreground">{agent.id}</p>
+            <div className="space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-xl font-serif text-foreground font-normal tracking-tight">
+                    {t('settingsDialog.channelsTitle')}
+                  </h3>
+                  <p className="text-sm text-foreground/70 mt-1">{t('settingsDialog.channelsDescription')}</p>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowModelModal(true)}
-                className="space-y-1 rounded-2xl bg-black/5 dark:bg-white/5 border border-transparent p-4 text-left hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
-              >
-                <p className="text-tiny uppercase tracking-[0.08em] text-muted-foreground/80 font-medium">
-                  {t('settingsDialog.modelLabel')}
-                </p>
-                <p className="text-sm text-foreground">
-                  {agent.modelDisplay}
-                  {agent.inheritedModel ? ` (${t('inherited')})` : ''}
-                </p>
-                <p className="font-mono text-xs text-foreground/70 break-all">
-                  {agent.modelRef || defaultModelRef || '-'}
-                </p>
-              </button>
-            </div>
-          </div>
 
-          <div className="space-y-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-xl font-serif text-foreground font-normal tracking-tight">
-                  {t('settingsDialog.channelsTitle')}
-                </h3>
-                <p className="text-sm text-foreground/70 mt-1">{t('settingsDialog.channelsDescription')}</p>
-              </div>
-            </div>
-
-            {assignedChannels.length === 0 && agent.channelTypes.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4 text-sm text-muted-foreground">
-                {t('settingsDialog.noChannels')}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {assignedChannels.map((channel) => (
-                  <div key={`${channel.channelType}-${channel.accountId}`} className="flex items-center justify-between rounded-2xl bg-black/5 dark:bg-white/5 border border-transparent p-4">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="h-[40px] w-[40px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm">
-                        <ChannelLogo type={channel.channelType} />
+              {assignedChannels.length === 0 && agent.channelTypes.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4 text-sm text-muted-foreground">
+                  {t('settingsDialog.noChannels')}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {assignedChannels.map((channel) => (
+                    <div
+                      key={`${channel.channelType}-${channel.accountId}`}
+                      className="flex items-center justify-between rounded-2xl bg-black/5 dark:bg-white/5 border border-transparent p-4"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="h-[40px] w-[40px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm">
+                          <ChannelLogo type={channel.channelType} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-foreground">{channel.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {CHANNEL_NAMES[channel.channelType]} ·{' '}
+                            {channel.accountId === 'default' ? t('settingsDialog.mainAccount') : channel.accountId}
+                          </p>
+                          {channel.error && <p className="text-xs text-destructive mt-1">{channel.error}</p>}
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-foreground">{channel.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {CHANNEL_NAMES[channel.channelType]} · {channel.accountId === 'default' ? t('settingsDialog.mainAccount') : channel.accountId}
-                        </p>
-                        {channel.error && (
-                          <p className="text-xs text-destructive mt-1">{channel.error}</p>
-                        )}
-                      </div>
+                      <div className="shrink-0" />
                     </div>
-                    <div className="shrink-0" />
-                  </div>
-                ))}
-                {assignedChannels.length === 0 && agent.channelTypes.length > 0 && (
-                  <div className="rounded-2xl border border-dashed border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4 text-sm text-muted-foreground">
-                    {t('settingsDialog.channelsManagedInChannels')}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+                  ))}
+                  {assignedChannels.length === 0 && agent.channelTypes.length > 0 && (
+                    <div className="rounded-2xl border border-dashed border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 p-4 text-sm text-muted-foreground">
+                      {t('settingsDialog.channelsManagedInChannels')}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </DialogContent>
-      <AgentModelModal
-        open={showModelModal}
-        agent={agent}
-        onClose={() => setShowModelModal(false)}
-      />
+      <AgentModelModal open={showModelModal} agent={agent} onClose={() => setShowModelModal(false)} />
       <ConfirmDialog
         open={showCloseConfirm}
         title={t('settingsDialog.unsavedChangesTitle')}
@@ -662,15 +649,7 @@ function AgentSettingsModal({
   );
 }
 
-function AgentModelModal({
-  open,
-  agent,
-  onClose,
-}: {
-  open: boolean;
-  agent: AgentSummary;
-  onClose: () => void;
-}) {
+function AgentModelModal({ open, agent, onClose }: { open: boolean; agent: AgentSummary; onClose: () => void }) {
   const { t } = useTranslation('agents');
   const providerAccounts = useProviderStore((state) => state.accounts);
   const providerStatuses = useProviderStore((state) => state.statuses);
@@ -684,12 +663,7 @@ function AgentModelModal({
   const [prevOpen, setPrevOpen] = useState(open);
 
   const runtimeProviderOptions = useMemo<RuntimeProviderOption[]>(
-    () => buildRuntimeProviderOptions(
-      providerAccounts,
-      providerStatuses,
-      providerVendors,
-      providerDefaultAccountId,
-    ),
+    () => buildRuntimeProviderOptions(providerAccounts, providerStatuses, providerVendors, providerDefaultAccountId),
     [providerAccounts, providerDefaultAccountId, providerStatuses, providerVendors],
   );
 
@@ -720,17 +694,15 @@ function AgentModelModal({
     }
   }
 
-  const selectedProvider = runtimeProviderOptions.find((option) => option.runtimeProviderKey === selectedRuntimeProviderKey) || null;
+  const selectedProvider =
+    runtimeProviderOptions.find((option) => option.runtimeProviderKey === selectedRuntimeProviderKey) || null;
   const trimmedModelId = modelIdInput.trim();
-  const nextModelRef = selectedRuntimeProviderKey && trimmedModelId
-    ? `${selectedRuntimeProviderKey}/${trimmedModelId}`
-    : '';
+  const nextModelRef =
+    selectedRuntimeProviderKey && trimmedModelId ? `${selectedRuntimeProviderKey}/${trimmedModelId}` : '';
   const normalizedDefaultModelRef = (defaultModelRef || '').trim();
   const isUsingDefaultModelInForm = Boolean(normalizedDefaultModelRef) && nextModelRef === normalizedDefaultModelRef;
   const currentOverrideModelRef = (agent.overrideModelRef || '').trim();
-  const desiredOverrideModelRef = nextModelRef && nextModelRef !== normalizedDefaultModelRef
-    ? nextModelRef
-    : null;
+  const desiredOverrideModelRef = nextModelRef && nextModelRef !== normalizedDefaultModelRef ? nextModelRef : null;
   const modelChanged = (desiredOverrideModelRef || '') !== currentOverrideModelRef;
 
   const handleRequestClose = () => {
@@ -781,104 +753,111 @@ function AgentModelModal({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && handleRequestClose()}>
-      <DialogContent asChild className="z-[60] w-[calc(100%-2rem)] max-w-xl rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden">
+      <DialogContent
+        asChild
+        className="z-[60] w-[calc(100%-2rem)] max-w-xl rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden"
+      >
         <Card>
-        <CardHeader className="flex flex-row items-start justify-between pb-2">
-          <div>
-            <DialogTitle asChild>
-              <CardTitle className="text-2xl font-serif font-normal tracking-tight">
-                {t('settingsDialog.modelLabel')}
-              </CardTitle>
-            </DialogTitle>
-            <DialogDescription asChild>
-              <CardDescription className="text-sm mt-1 text-foreground/70">
-                {t('settingsDialog.modelOverrideDescription', { defaultModel: defaultModelRef || '-' })}
-              </CardDescription>
-            </DialogDescription>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleRequestClose}
-            className="rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </CardHeader>
-        <CardContent className="space-y-4 p-6 pt-4">
-          <div className="space-y-2">
-            <Label htmlFor="agent-model-provider" className="text-xs text-foreground/70">{t('settingsDialog.modelProviderLabel')}</Label>
-            <select
-              id="agent-model-provider"
-              value={selectedRuntimeProviderKey}
-              onChange={(event) => {
-                const nextProvider = event.target.value;
-                setSelectedRuntimeProviderKey(nextProvider);
-                if (!modelIdInput.trim()) {
-                  const option = runtimeProviderOptions.find((candidate) => candidate.runtimeProviderKey === nextProvider);
-                  setModelIdInput(option?.configuredModelId || '');
-                }
-              }}
-              className={selectClasses}
-            >
-              <option value="">{t('settingsDialog.modelProviderPlaceholder')}</option>
-              {runtimeProviderOptions.map((option) => (
-                <option key={option.runtimeProviderKey} value={option.runtimeProviderKey}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="agent-model-id" className="text-xs text-foreground/70">{t('settingsDialog.modelIdLabel')}</Label>
-            <Input
-              id="agent-model-id"
-              value={modelIdInput}
-              onChange={(event) => setModelIdInput(event.target.value)}
-              placeholder={selectedProvider?.modelIdPlaceholder || selectedProvider?.configuredModelId || t('settingsDialog.modelIdPlaceholder')}
-              className={inputClasses}
-            />
-          </div>
-          {!!nextModelRef && (
-            <p className="text-xs font-mono text-foreground/70 break-all">
-              {t('settingsDialog.modelPreview')}: {nextModelRef}
-            </p>
-          )}
-          {runtimeProviderOptions.length === 0 && (
-            <p className="text-xs text-amber-600 dark:text-amber-400">
-              {t('settingsDialog.modelProviderEmpty')}
-            </p>
-          )}
-          <div className="flex items-center justify-end gap-2 pt-2">
+          <CardHeader className="flex flex-row items-start justify-between pb-2">
+            <div>
+              <DialogTitle asChild>
+                <CardTitle className="text-2xl font-serif font-normal tracking-tight">
+                  {t('settingsDialog.modelLabel')}
+                </CardTitle>
+              </DialogTitle>
+              <DialogDescription asChild>
+                <CardDescription className="text-sm mt-1 text-foreground/70">
+                  {t('settingsDialog.modelOverrideDescription', { defaultModel: defaultModelRef || '-' })}
+                </CardDescription>
+              </DialogDescription>
+            </div>
             <Button
-              variant="outline"
-              onClick={handleUseDefaultModel}
-              disabled={savingModel || !normalizedDefaultModelRef || isUsingDefaultModelInForm}
-              className="h-9 text-meta font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
-            >
-              {t('settingsDialog.useDefaultModel')}
-            </Button>
-            <Button
-              variant="outline"
+              variant="ghost"
+              size="icon"
               onClick={handleRequestClose}
-              className="h-9 text-meta font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
+              className="rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
             >
-              {t('common:actions.cancel')}
+              <X className="h-4 w-4" />
             </Button>
-            <Button
-              onClick={() => void handleSaveModel()}
-              disabled={savingModel || !selectedRuntimeProviderKey || !trimmedModelId || !modelChanged}
-              className="h-9 text-meta font-medium rounded-full px-4 shadow-none"
-            >
-              {savingModel ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
-              ) : (
-                t('common:actions.save')
-              )}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent className="space-y-4 p-6 pt-4">
+            <div className="space-y-2">
+              <Label htmlFor="agent-model-provider" className="text-xs text-foreground/70">
+                {t('settingsDialog.modelProviderLabel')}
+              </Label>
+              <select
+                id="agent-model-provider"
+                value={selectedRuntimeProviderKey}
+                onChange={(event) => {
+                  const nextProvider = event.target.value;
+                  setSelectedRuntimeProviderKey(nextProvider);
+                  if (!modelIdInput.trim()) {
+                    const option = runtimeProviderOptions.find(
+                      (candidate) => candidate.runtimeProviderKey === nextProvider,
+                    );
+                    setModelIdInput(option?.configuredModelId || '');
+                  }
+                }}
+                className={selectClasses}
+              >
+                <option value="">{t('settingsDialog.modelProviderPlaceholder')}</option>
+                {runtimeProviderOptions.map((option) => (
+                  <option key={option.runtimeProviderKey} value={option.runtimeProviderKey}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="agent-model-id" className="text-xs text-foreground/70">
+                {t('settingsDialog.modelIdLabel')}
+              </Label>
+              <Input
+                id="agent-model-id"
+                value={modelIdInput}
+                onChange={(event) => setModelIdInput(event.target.value)}
+                placeholder={
+                  selectedProvider?.modelIdPlaceholder ||
+                  selectedProvider?.configuredModelId ||
+                  t('settingsDialog.modelIdPlaceholder')
+                }
+                className={inputClasses}
+              />
+            </div>
+            {!!nextModelRef && (
+              <p className="text-xs font-mono text-foreground/70 break-all">
+                {t('settingsDialog.modelPreview')}: {nextModelRef}
+              </p>
+            )}
+            {runtimeProviderOptions.length === 0 && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">{t('settingsDialog.modelProviderEmpty')}</p>
+            )}
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={handleUseDefaultModel}
+                disabled={savingModel || !normalizedDefaultModelRef || isUsingDefaultModelInForm}
+                className="h-9 text-meta font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
+              >
+                {t('settingsDialog.useDefaultModel')}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleRequestClose}
+                className="h-9 text-meta font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
+              >
+                {t('common:actions.cancel')}
+              </Button>
+              <Button
+                onClick={() => void handleSaveModel()}
+                disabled={savingModel || !selectedRuntimeProviderKey || !trimmedModelId || !modelChanged}
+                className="h-9 text-meta font-medium rounded-full px-4 shadow-none"
+              >
+                {savingModel ? <RefreshCw className="h-4 w-4 animate-spin" /> : t('common:actions.save')}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </DialogContent>
       <ConfirmDialog
         open={showCloseConfirm}

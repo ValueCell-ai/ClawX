@@ -1079,10 +1079,10 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
                 state: isGatewayUsable
                   ? t('composer.gatewayConnected')
                   : gatewayStatus.state === 'running'
-                    ? 'starting'
+                    ? t('composer.gatewayStarting')
                     : gatewayStatus.state,
                 port: gatewayStatus.port,
-                pid: gatewayStatus.pid ? `| pid: ${gatewayStatus.pid}` : '',
+                pid: gatewayStatus.pid ?? '',
               })}
             </span>
             {chatComposerStatusComponents.map((Component, index) => (
