@@ -51,6 +51,7 @@ vi.mock('node:child_process', () => ({
 function createConnection() {
   return {
     initialize: vi.fn().mockResolvedValue({ protocolVersion: 1, agentCapabilities: { loadSession: true } }),
+    newSession: vi.fn().mockResolvedValue({ sessionId: 'acp-session-1' }),
     loadSession: vi.fn().mockResolvedValue({}),
     prompt: vi.fn().mockResolvedValue({ stopReason: 'end_turn' }),
     cancel: vi.fn().mockResolvedValue(undefined),
@@ -140,7 +141,7 @@ describe('AcpChatService', () => {
     );
   });
 
-  it('loads a session with sessionKey as ACP sessionId and metadata', async () => {
+  it('loads historical sessions without explicit routing metadata so replay can resolve by session key', async () => {
     const { service, connection } = await createService();
 
     await expect(service.loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' })).resolves.toEqual({
@@ -156,7 +157,71 @@ describe('AcpChatService', () => {
       sessionId: 'agent:pi:s1',
       cwd: '/repo',
       mcpServers: [],
-      _meta: { sessionKey: 'agent:pi:s1', prefixCwd: false },
+    });
+    expect(connection.newSession).not.toHaveBeenCalled();
+  });
+
+  it('creates fresh generated sessions with ACP session/new so replay ledgers are complete', async () => {
+    const { service, connection } = await createService();
+
+    await expect(service.loadSession({ sessionKey: 'agent:pi:session-123', cwd: '/repo', createIfMissing: true })).resolves.toEqual({
+      success: true,
+      generation: 1,
+    });
+
+    expect(connection.newSession).toHaveBeenCalledWith({
+      cwd: '/repo',
+      mcpServers: [],
+      _meta: { sessionKey: 'agent:pi:session-123', prefixCwd: false },
+    });
+    expect(connection.loadSession).not.toHaveBeenCalled();
+  });
+
+  it('routes fresh-session prompts through the ACP session id returned by session/new', async () => {
+    const { service, connection } = await createService();
+
+    await service.loadSession({ sessionKey: 'agent:pi:session-123', cwd: '/repo', createIfMissing: true });
+    await expect(service.sendPrompt({
+      sessionKey: 'agent:pi:session-123',
+      cwd: '/repo',
+      message: 'hello',
+      messageId: 'msg-1',
+    })).resolves.toEqual({ success: true, generation: 1 });
+
+    expect(connection.prompt).toHaveBeenCalledWith({
+      sessionId: 'acp-session-1',
+      prompt: [{ type: 'text', text: 'hello' }],
+      messageId: 'msg-1',
+      _meta: { sessionKey: 'agent:pi:session-123', prefixCwd: false },
+    });
+  });
+
+  it('rewrites fresh-session ACP updates to the ClawX session key for the renderer', async () => {
+    const { service, send } = await createService();
+
+    await service.loadSession({ sessionKey: 'agent:pi:session-123', cwd: '/repo', createIfMissing: true });
+    await service.client.sessionUpdate({
+      sessionId: 'acp-session-1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'tool-1',
+        title: 'Read file',
+        status: 'completed',
+      },
+    } as never);
+
+    expect(send).toHaveBeenCalledWith(HOST_EVENT_CHANNELS.chat.acpSessionUpdate, {
+      sessionKey: 'agent:pi:session-123',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:session-123',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'tool-1',
+          title: 'Read file',
+          status: 'completed',
+        },
+      },
     });
   });
 

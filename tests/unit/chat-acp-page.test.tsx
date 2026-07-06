@@ -86,6 +86,7 @@ const { acpState, agentsState, artifactPanelState, artifactPanelProps, chatState
     sendMessage: vi.fn(),
     loadSessions: vi.fn(),
     selectAcpSession: vi.fn(),
+    acknowledgeAcpSessionCreated: vi.fn(),
     abortRun: vi.fn(),
     clearError: vi.fn(),
     loadMoreHistory: vi.fn(),
@@ -307,6 +308,7 @@ describe('ACP Chat page', () => {
       chatState.currentSessionKey = sessionKey;
       chatState.currentAgentId = sessionKey.split(':')[1] || 'main';
     });
+    chatState.acknowledgeAcpSessionCreated.mockReset();
     gatewayState.status = { state: 'running', gatewayReady: true, port: 18789 };
   });
 
@@ -376,7 +378,25 @@ describe('ACP Chat page', () => {
       expect(chatState.loadSessions).toHaveBeenCalledTimes(1);
     });
     await waitFor(() => {
-      expect(acpState.loadSession).toHaveBeenCalledWith({ sessionKey: 'agent:main:main', cwd: '/workspace' });
+      expect(acpState.loadSession).toHaveBeenCalledWith({ sessionKey: 'agent:main:main', cwd: '/workspace', createIfMissing: true });
+    });
+  });
+
+  it('creates a missing ACP session for locally-created sidebar placeholders', async () => {
+    const sessionKey = 'agent:main:session-123';
+    chatState.currentSessionKey = sessionKey;
+    chatState.sessions = [
+      { key: 'agent:main:main' },
+      { key: sessionKey, displayName: sessionKey, createdLocally: true },
+    ];
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(acpState.loadSession).toHaveBeenCalledWith({ sessionKey, cwd: '/workspace', createIfMissing: true });
+    });
+    await waitFor(() => {
+      expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(sessionKey);
     });
   });
 

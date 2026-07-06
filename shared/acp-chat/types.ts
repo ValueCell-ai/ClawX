@@ -13,6 +13,7 @@ export type AcpSessionKeyPayload = {
 
 export type AcpChatLoadPayload = AcpSessionKeyPayload & {
   cwd: string;
+  createIfMissing?: boolean;
 };
 
 export type AcpPromptMediaItem = {

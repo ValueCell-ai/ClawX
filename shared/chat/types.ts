@@ -84,6 +84,8 @@ export interface ChatSession {
   hasActiveRun?: boolean;
   /** Channel provider that last delivered to this session (e.g. webchat, feishu, discord). */
   channel?: string;
+  /** Renderer-local placeholder created by New Chat before ACP has created the backing session. */
+  createdLocally?: boolean;
 }
 
 export interface ToolStatus {
@@ -147,6 +149,7 @@ export interface ChatState {
   switchSession: (key: string) => void;
   selectAcpSession: (key: string) => void;
   newSession: () => void;
+  acknowledgeAcpSessionCreated: (key: string) => void;
   deleteSession: (key: string) => Promise<void>;
   renameSession: (key: string, label: string) => Promise<void>;
   cleanupEmptySession: () => void;

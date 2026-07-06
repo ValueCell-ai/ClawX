@@ -118,7 +118,7 @@ function reconcileCurrentSessionIdleFromBackend(set: ChatSet, get: ChatGet, sess
 export function createSessionActions(
   set: ChatSet,
   get: ChatGet,
-): Pick<SessionHistoryActions, 'loadSessions' | 'switchSession' | 'selectAcpSession' | 'newSession' | 'deleteSession' | 'renameSession' | 'cleanupEmptySession'> {
+): Pick<SessionHistoryActions, 'loadSessions' | 'switchSession' | 'selectAcpSession' | 'newSession' | 'acknowledgeAcpSessionCreated' | 'deleteSession' | 'renameSession' | 'cleanupEmptySession'> {
   return {
     loadSessions: async () => {
       try {
@@ -444,7 +444,7 @@ export function createSessionActions(
         && !sessionLabels[currentSessionKey];
       const prefix = getCanonicalPrefixFromSessions(get().sessions) ?? DEFAULT_CANONICAL_PREFIX;
       const newKey = `${prefix}:session-${Date.now()}`;
-      const newSessionEntry: ChatSession = { key: newKey, displayName: newKey };
+      const newSessionEntry: ChatSession = { key: newKey, displayName: newKey, createdLocally: true };
       set((s) => ({
         currentSessionKey: newKey,
         currentAgentId: getAgentIdFromSessionKey(newKey),
@@ -467,6 +467,16 @@ export function createSessionActions(
         pendingFinal: false,
         lastUserMessageAt: null,
         pendingToolImages: [],
+      }));
+    },
+
+    acknowledgeAcpSessionCreated: (key: string) => {
+      set((s) => ({
+        sessions: s.sessions.map((session) => (
+          session.key === key && session.createdLocally
+            ? { ...session, createdLocally: false }
+            : session
+        )),
       }));
     },
 

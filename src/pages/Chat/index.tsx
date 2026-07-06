@@ -178,6 +178,7 @@ export function Chat() {
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const loadSessions = useChatStore((s) => s.loadSessions);
   const selectAcpSession = useChatStore((s) => s.selectAcpSession);
+  const acknowledgeAcpSessionCreated = useChatStore((s) => s.acknowledgeAcpSessionCreated);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
   const agents = useAgentsStore((s) => s.agents);
   const agentsLoading = useAgentsStore((s) => s.loading);
@@ -247,12 +248,22 @@ export function Chat() {
     if (currentSessionKey === DEFAULT_SESSION_KEY && sessions.length === 0 && acpActiveSessionKey == null && !sessionDiscoveryAttempted) return;
     if (acpLoadInFlightSessionKeyRef.current === currentSessionKey) return;
     acpLoadInFlightSessionKeyRef.current = currentSessionKey;
-    void loadAcpSession({ sessionKey: currentSessionKey, cwd }).finally(() => {
+    const currentSession = sessions.find((session) => session.key === currentSessionKey);
+    const createIfMissing = !currentSession || !!currentSession.createdLocally;
+    void loadAcpSession({
+      sessionKey: currentSessionKey,
+      cwd,
+      ...(createIfMissing ? { createIfMissing: true } : {}),
+    }).then((loaded) => {
+      if (loaded && createIfMissing) {
+        acknowledgeAcpSessionCreated(currentSessionKey);
+      }
+    }).finally(() => {
       if (acpLoadInFlightSessionKeyRef.current === currentSessionKey) {
         acpLoadInFlightSessionKeyRef.current = null;
       }
     });
-  }, [acpActiveSessionKey, currentSessionKey, cwd, loadAcpSession, sessionDiscoveryAttempted, sessions.length]);
+  }, [acknowledgeAcpSessionCreated, acpActiveSessionKey, currentSessionKey, cwd, loadAcpSession, sessionDiscoveryAttempted, sessions]);
 
   const platform = window.electron?.platform;
   const isMac = platform === 'darwin';
@@ -350,7 +361,12 @@ export function Chat() {
                 acpLoadInFlightSessionKeyRef.current = sessionKey;
                 let loaded = false;
                 try {
-                  loaded = await loadAcpSession({ sessionKey, cwd: promptCwd });
+                  const createIfMissing = !targetAgent && !sessions.some((session) => session.key === sessionKey);
+                  loaded = await loadAcpSession({
+                    sessionKey,
+                    cwd: promptCwd,
+                    ...(createIfMissing ? { createIfMissing: true } : {}),
+                  });
                 } finally {
                   if (acpLoadInFlightSessionKeyRef.current === sessionKey) {
                     acpLoadInFlightSessionKeyRef.current = null;

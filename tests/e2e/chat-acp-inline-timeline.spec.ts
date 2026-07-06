@@ -20,7 +20,9 @@ function stableStringify(value: unknown): string {
 function baseHostApiMocks(loadResult: Record<string, unknown> = { success: true, generation: 1 }) {
   return {
     [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: MAIN_WORKSPACE }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: MAIN_WORKSPACE, createIfMissing: true }])]: loadResult,
     [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: '/' }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: '/', createIfMissing: true }])]: loadResult,
     [stableStringify(['/api/agents', 'GET'])]: {
       ok: true,
       data: {

@@ -168,11 +168,14 @@ describe('chat session actions', () => {
     actions.newSession();
     const next = h.read();
     expect(next.currentSessionKey).toBe('agent:foo:session-1711111111111');
-    expect(next.sessions.some((s) => s.key === 'agent:foo:session-1711111111111')).toBe(true);
+    expect(next.sessions.find((s) => s.key === 'agent:foo:session-1711111111111')?.createdLocally).toBe(true);
     expect(next.messages).toEqual([]);
     expect(next.streamingText).toBe('');
     expect(next.activeRunId).toBeNull();
     expect(next.pendingFinal).toBe(false);
+
+    actions.acknowledgeAcpSessionCreated('agent:foo:session-1711111111111');
+    expect(h.read().sessions.find((s) => s.key === 'agent:foo:session-1711111111111')?.createdLocally).toBe(false);
     nowSpy.mockRestore();
   });
 

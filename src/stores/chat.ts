@@ -1858,11 +1858,11 @@ function resolveMainSessionKeyForAgent(agentId: string | undefined | null): stri
   return summary?.mainSessionKey || buildFallbackMainSessionKey(normalizedAgentId);
 }
 
-function ensureSessionEntry(sessions: ChatSession[], sessionKey: string): ChatSession[] {
+function ensureSessionEntry(sessions: ChatSession[], sessionKey: string, createdLocally = false): ChatSession[] {
   if (sessions.some((session) => session.key === sessionKey)) {
     return sessions;
   }
-  return [...sessions, { key: sessionKey, displayName: sessionKey }];
+  return [...sessions, { key: sessionKey, displayName: sessionKey, ...(createdLocally ? { createdLocally: true } : {}) }];
 }
 
 function clearSessionEntryFromMap<T extends Record<string, unknown>>(entries: T, sessionKey: string): T {
@@ -1888,6 +1888,7 @@ function buildSessionSwitchPatch(
     | 'pendingToolImages'
   >,
   nextSessionKey: string,
+  options: { createdLocally?: boolean } = {},
 ): Partial<ChatState> {
   captureSessionRunState(state.currentSessionKey, state);
   if (state.messages.length > 0) {
@@ -1915,7 +1916,7 @@ function buildSessionSwitchPatch(
   return {
     currentSessionKey: nextSessionKey,
     currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
-    sessions: ensureSessionEntry(nextSessions, nextSessionKey),
+    sessions: ensureSessionEntry(nextSessions, nextSessionKey, !!options.createdLocally),
     sessionLabels: leavingEmpty
       ? clearSessionEntryFromMap(state.sessionLabels, state.currentSessionKey)
       : state.sessionLabels,
@@ -2921,7 +2922,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // shows only the local transcript snapshot and loses the live execution UI.
     clearHistoryPoll();
     clearBaselines();
-    set((s) => buildSessionSwitchPatch(s, newKey));
+    set((s) => buildSessionSwitchPatch(s, newKey, { createdLocally: true }));
+  },
+
+  acknowledgeAcpSessionCreated: (key: string) => {
+    set((s) => ({
+      sessions: s.sessions.map((session) => (
+        session.key === key && session.createdLocally
+          ? { ...session, createdLocally: false }
+          : session
+      )),
+    }));
   },
 
   // ── Rename session ──

@@ -30,6 +30,7 @@ const { acpState, agentsState, artifactPanelState, chatState, gatewayState, stic
     close: vi.fn(),
   },
   chatState: {
+    sessions: [{ key: 'agent:main:main' }],
     currentSessionKey: 'agent:main:main',
     currentAgentId: 'main',
   },
