@@ -65,6 +65,8 @@ export class AcpChatService {
   private activeAcpSessionId: string | null = null;
   private loadedSessionKey: string | null = null;
   private loadedAcpSessionId: string | null = null;
+  private historicalSessionKey: string | null = null;
+  private historicalGeneration: number | null = null;
   private permissionSeq = 0;
   private readonly permissionWaiters = new Map<string, PermissionWaiter>();
   readonly client: Client;
@@ -84,6 +86,8 @@ export class AcpChatService {
     let previousAcpSessionId = this.activeAcpSessionId;
     let previousLoadedSessionKey = this.loadedSessionKey;
     let previousLoadedAcpSessionId = this.loadedAcpSessionId;
+    let previousHistoricalSessionKey = this.historicalSessionKey;
+    let previousHistoricalGeneration = this.historicalGeneration;
     let previousGeneration = this.generation;
     let nextGeneration = previousGeneration + 1;
     let stateAdvanced = false;
@@ -94,6 +98,8 @@ export class AcpChatService {
       previousAcpSessionId = this.activeAcpSessionId;
       previousLoadedSessionKey = this.loadedSessionKey;
       previousLoadedAcpSessionId = this.loadedAcpSessionId;
+      previousHistoricalSessionKey = this.historicalSessionKey;
+      previousHistoricalGeneration = this.historicalGeneration;
       previousGeneration = this.generation;
       nextGeneration = previousGeneration + 1;
 
@@ -102,6 +108,8 @@ export class AcpChatService {
       this.activeAcpSessionId = payload.createIfMissing ? null : payload.sessionKey;
       this.loadedSessionKey = null;
       this.loadedAcpSessionId = null;
+      this.historicalSessionKey = payload.createIfMissing ? null : payload.sessionKey;
+      this.historicalGeneration = payload.createIfMissing ? null : nextGeneration;
       stateAdvanced = true;
       if (previousSessionKey && previousSessionKey !== payload.sessionKey) {
         this.resolvePermissionWaitersForSession(previousSessionKey, cancelledPermissionResponse());
@@ -136,6 +144,8 @@ export class AcpChatService {
         this.activeAcpSessionId = previousAcpSessionId;
         this.loadedSessionKey = previousLoadedSessionKey;
         this.loadedAcpSessionId = previousLoadedAcpSessionId;
+        this.historicalSessionKey = previousHistoricalSessionKey;
+        this.historicalGeneration = previousHistoricalGeneration;
       }
       logger.error(`[acp-chat] loadSession failed: ${String(error)}`);
       return fail(error);
@@ -151,6 +161,10 @@ export class AcpChatService {
     try {
       const connection = await this.ensureConnection();
       const prompt = await this.buildPromptBlocks(payload);
+      if (this.historicalSessionKey === payload.sessionKey) {
+        this.historicalSessionKey = null;
+        this.historicalGeneration = null;
+      }
       await connection.prompt({
         sessionId: this.loadedAcpSessionId,
         prompt,
@@ -258,6 +272,8 @@ export class AcpChatService {
     this.child = null;
     this.loadedSessionKey = null;
     this.loadedAcpSessionId = null;
+    this.historicalSessionKey = null;
+    this.historicalGeneration = null;
   }
 
   private emitSessionUpdate(notification: SessionNotification): void {
@@ -269,6 +285,9 @@ export class AcpChatService {
     const envelope: AcpSessionUpdateEnvelope = {
       sessionKey,
       generation: this.generation,
+      ...(this.historicalSessionKey === sessionKey && this.historicalGeneration === this.generation
+        ? { historical: true }
+        : {}),
       notification: { ...notification, sessionId: sessionKey },
     };
     this.mainWindow.webContents.send(HOST_EVENT_CHANNELS.chat.acpSessionUpdate, envelope);

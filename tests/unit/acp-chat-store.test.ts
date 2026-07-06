@@ -143,6 +143,64 @@ describe('ACP Chat store', () => {
     });
   });
 
+  it('marks replay tool updates as historical from the ACP envelope without marking live prompt updates', async () => {
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      historical: true,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'replayed-tool',
+          title: 'Read history',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'historical output' } }],
+        },
+      },
+    });
+
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['tool:replayed-tool']).toMatchObject({
+      kind: 'tool-call',
+      historical: true,
+    });
+
+    const promptDeferred = createDeferred<{ success: true }>();
+    hostApiMock.sendAcpPrompt.mockReturnValueOnce(promptDeferred.promise);
+    const promptPromise = useAcpChatSessionStore.getState().sendPrompt({
+      sessionKey: 'agent:pi:s1',
+      cwd: '/repo',
+      message: 'live prompt',
+      messageId: 'live-message',
+    });
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'live-tool',
+          title: 'Live tool',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'live output' } }],
+        },
+      },
+    });
+
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['tool:live-tool']).toMatchObject({
+      kind: 'tool-call',
+      historical: false,
+    });
+
+    promptDeferred.resolve({ success: true });
+    await promptPromise;
+  });
+
   it('ignores stale loadSession completion after a newer load', async () => {
     const staleLoad = createDeferred<{ success: boolean; error?: string; generation?: number }>();
     const currentLoad = createDeferred<{ success: boolean; error?: string; generation?: number }>();

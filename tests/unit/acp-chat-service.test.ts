@@ -229,6 +229,8 @@ describe('AcpChatService', () => {
     const { service, send } = await createService();
 
     await service.loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await service.sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'live', messageId: 'msg-live' });
+    send.mockClear();
     await service.client.sessionUpdate({
       sessionId: 'agent:pi:s1',
       update: {
@@ -259,6 +261,52 @@ describe('AcpChatService', () => {
         },
       },
     });
+  });
+
+  it('marks ACP session updates from historical loads until the next live prompt starts', async () => {
+    const { service, send } = await createService();
+
+    await service.loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await service.client.sessionUpdate({
+      sessionId: 'agent:pi:s1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'history-tool',
+        title: 'Historical tool',
+        status: 'completed',
+      },
+    } as never);
+
+    expect(send).toHaveBeenCalledWith(HOST_EVENT_CHANNELS.chat.acpSessionUpdate, {
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      historical: true,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool',
+          title: 'Historical tool',
+          status: 'completed',
+        },
+      },
+    });
+
+    await service.sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'live', messageId: 'live-message' });
+    send.mockClear();
+    await service.client.sessionUpdate({
+      sessionId: 'agent:pi:s1',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'live-tool',
+        title: 'Live tool',
+        status: 'completed',
+      },
+    } as never);
+
+    expect(send).toHaveBeenCalledWith(HOST_EVENT_CHANNELS.chat.acpSessionUpdate, expect.not.objectContaining({
+      historical: true,
+    }));
   });
 
   it('emits permission requests separately and resolves them from respondPermission', async () => {
@@ -467,6 +515,7 @@ describe('AcpChatService', () => {
     expect(send).toHaveBeenCalledWith(HOST_EVENT_CHANNELS.chat.acpSessionUpdate, {
       sessionKey: 'agent:pi:s1',
       generation: 1,
+      historical: true,
       notification: {
         sessionId: 'agent:pi:s1',
         update: {
@@ -518,6 +567,7 @@ describe('AcpChatService', () => {
     expect(send).toHaveBeenCalledWith(HOST_EVENT_CHANNELS.chat.acpSessionUpdate, {
       sessionKey: 'agent:pi:s2',
       generation: 2,
+      historical: true,
       notification: {
         sessionId: 'agent:pi:s2',
         update: {

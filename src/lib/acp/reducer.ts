@@ -15,6 +15,10 @@ type UpdateRecord = Record<string, unknown> & {
   sessionUpdate?: unknown;
 };
 
+type ApplyUpdateOptions = {
+  historical?: boolean;
+};
+
 type Role = MessageSegmentItem['role'];
 
 export function createEmptyAcpTimeline(sessionId: string, loadGeneration: number): AcpTimelineSnapshot {
@@ -241,7 +245,11 @@ function existingToolCall(state: AcpTimelineSnapshot, id: string): ToolCallItem 
   return existing?.kind === 'tool-call' ? existing : undefined;
 }
 
-function upsertToolCall(state: AcpTimelineSnapshot, update: UpdateRecord): AcpTimelineSnapshot {
+function upsertToolCall(
+  state: AcpTimelineSnapshot,
+  update: UpdateRecord,
+  options: ApplyUpdateOptions = {},
+): AcpTimelineSnapshot {
   const toolCallId = stringValue(update.toolCallId);
   if (!toolCallId) return state;
 
@@ -268,10 +276,15 @@ function upsertToolCall(state: AcpTimelineSnapshot, update: UpdateRecord): AcpTi
     outputParts: hasContent ? toolContentToRenderParts(toolContentArray(update.content)) : prev?.outputParts ?? [],
     locations: hasLocations ? toolLocations(update.locations) : prev?.locations ?? [],
     error: rawError ?? prev?.error,
+    historical: !!prev?.historical || !!options.historical,
   });
 }
 
-function appendToolContentChunk(state: AcpTimelineSnapshot, update: UpdateRecord): AcpTimelineSnapshot {
+function appendToolContentChunk(
+  state: AcpTimelineSnapshot,
+  update: UpdateRecord,
+  options: ApplyUpdateOptions = {},
+): AcpTimelineSnapshot {
   const toolCallId = stringValue(update.toolCallId);
   if (!toolCallId) return state;
 
@@ -294,6 +307,7 @@ function appendToolContentChunk(state: AcpTimelineSnapshot, update: UpdateRecord
     outputParts: [...(prev?.outputParts ?? []), nextPart],
     locations: prev?.locations ?? [],
     error: prev?.error,
+    historical: !!prev?.historical || !!options.historical,
   });
 }
 
@@ -332,6 +346,7 @@ function usageMetadata(update: UpdateRecord): unknown {
 export function applyAcpSessionUpdate(
   snapshot: AcpTimelineSnapshot,
   notification: SessionNotification,
+  options: ApplyUpdateOptions = {},
 ): AcpTimelineSnapshot {
   if (notification.sessionId !== snapshot.sessionId) return snapshot;
 
@@ -346,7 +361,7 @@ export function applyAcpSessionUpdate(
       return messageId ? replaceMessage(snapshot, 'assistant', messageId, update.content) : snapshot;
     }
     case 'tool_call_content_chunk':
-      return appendToolContentChunk(snapshot, update);
+      return appendToolContentChunk(snapshot, update, options);
     case 'user_message_chunk':
       return appendMessageChunk(snapshot, 'user', update);
     case 'agent_message_chunk':
@@ -355,7 +370,7 @@ export function applyAcpSessionUpdate(
       return appendThoughtChunk(snapshot, update);
     case 'tool_call':
     case 'tool_call_update':
-      return upsertToolCall(snapshot, update);
+      return upsertToolCall(snapshot, update, options);
     case 'plan':
       return appendItem(closeAllMessageSegments(snapshot), {
         kind: 'plan',

@@ -338,7 +338,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
   applyUpdateEnvelope(event) {
     const state = get();
     if (event.sessionKey !== state.activeSessionKey || event.generation !== state.generation) return;
-    set({ timeline: applyAcpSessionUpdate(state.timeline, event.notification) });
+    set({ timeline: applyAcpSessionUpdate(state.timeline, event.notification, { historical: !!event.historical }) });
   },
 
   applyPermissionRequest(event) {

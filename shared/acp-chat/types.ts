@@ -45,6 +45,8 @@ export type AcpChatOperationResult = {
 export type AcpSessionUpdateEnvelope = {
   sessionKey: string;
   generation: number;
+  /** True for ACP updates emitted while session/load is replaying history. */
+  historical?: boolean;
   notification: SessionNotification;
 };
 

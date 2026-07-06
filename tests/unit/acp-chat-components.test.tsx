@@ -154,6 +154,23 @@ describe('ACP chat timeline components', () => {
     }
   });
 
+  it('mounts historical completed tool results collapsed without waiting for auto-collapse', () => {
+    vi.useFakeTimers();
+    try {
+      render(<AcpToolCallCard item={toolCallItem({ historical: true } as Partial<ToolCallItem>)} />);
+
+      const card = screen.getByTestId('acp-tool-call-card');
+      expect(card).toHaveAttribute('data-expanded', 'false');
+
+      act(() => {
+        vi.advanceTimersByTime(1_000);
+      });
+      expect(card).toHaveAttribute('data-expanded', 'false');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('starts a fresh delayed auto-collapse when a completed tool call id changes', () => {
     vi.useFakeTimers();
     try {

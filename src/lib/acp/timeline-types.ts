@@ -35,6 +35,8 @@ export type ToolCallItem = {
   outputParts: RenderPart[];
   locations: ToolCallLocation[];
   error?: string;
+  /** Renderer-only: this item was produced by ACP replay during session load. */
+  historical?: boolean;
 };
 
 export type PermissionItem = {

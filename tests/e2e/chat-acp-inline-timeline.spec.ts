@@ -71,6 +71,7 @@ async function installAcpLoadReplayMock(app: ElectronApplication, updates: AcpSe
             window.webContents.send('chat:acp-session-update', {
               sessionKey: payload.sessionKey,
               generation: 1,
+              historical: true,
               notification: {
                 sessionId: payload.sessionKey,
                 update,
@@ -496,8 +497,12 @@ test.describe('ClawX ACP inline timeline', () => {
       const page = await openChat(app);
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('acp-tool-call-card')).toContainText('Historical tool');
-      await expect(page.getByTestId('acp-tool-call-card')).toContainText('historical output');
+      const card = page.getByTestId('acp-tool-call-card');
+      await expect(card).toContainText('Historical tool');
+      await expect(card).toHaveAttribute('data-expanded', 'false');
+      await page.getByTestId('acp-tool-toggle').click();
+      await expect(card).toHaveAttribute('data-expanded', 'true');
+      await expect(card).toContainText('historical output');
       await expect(page.getByTestId('acp-assistant-turn')).toContainText('Historical answer');
     } finally {
       await closeElectronApp(app);
