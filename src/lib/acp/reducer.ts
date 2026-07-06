@@ -233,6 +233,46 @@ function replaceMessage(
   };
 }
 
+export function appendSyntheticAssistantMessage(
+  snapshot: AcpTimelineSnapshot,
+  input: {
+    messageId: string;
+    evidenceId: string;
+    parts: RenderPart[];
+    afterItemId?: string;
+  },
+): AcpTimelineSnapshot {
+  const id = `${input.messageId}:0`;
+  const item: MessageSegmentItem = {
+    kind: 'message-segment',
+    id,
+    role: 'assistant',
+    messageId: input.messageId,
+    segmentIndex: 0,
+    parts: input.parts,
+    compat: { source: 'image-generation', evidenceId: input.evidenceId },
+  };
+
+  const closed = closeAllMessageSegments(snapshot);
+  const nextOrder = (() => {
+    if (closed.itemOrder.includes(id)) return closed.itemOrder;
+    const anchorIndex = input.afterItemId ? closed.itemOrder.indexOf(input.afterItemId) : -1;
+    if (anchorIndex < 0) return [...closed.itemOrder, id];
+    return [
+      ...closed.itemOrder.slice(0, anchorIndex + 1),
+      id,
+      ...closed.itemOrder.slice(anchorIndex + 1),
+    ];
+  })();
+
+  return {
+    ...closed,
+    itemOrder: nextOrder,
+    itemsById: { ...closed.itemsById, [id]: item },
+    segmentCounts: { ...closed.segmentCounts, [input.messageId]: 1 },
+  };
+}
+
 function normalizeToolStatus(status: ToolCallStatus | null | undefined): ToolCallItem['status'] {
   if (status === 'in_progress') return 'running';
   if (status === 'completed') return 'completed';

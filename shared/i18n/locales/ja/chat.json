@@ -46,6 +46,10 @@
         "unsupportedContent": "未対応のコンテンツ",
         "dismiss": "閉じる",
         "image": "画像",
+        "copyImage": "画像をコピー",
+        "imageCopied": "画像をコピーしました",
+        "saveImage": "画像を別名で保存",
+        "imageSaved": "画像を保存しました",
         "copy": "返信をコピー",
         "copied": "コピーしました"
     },
@@ -182,9 +186,11 @@
         "collapseAction": "実行グラフを折りたたむ"
     },
     "imageGeneration": {
-        "generating": "画像を生成しています。少々お待ちください…",
-        "previewLoading": "画像プレビューを読み込んでいます…",
-        "previewUnavailable": "画像プレビューを一時的に表示できません"
+        "generating": "画像を生成しています。しばらくお待ちください…",
+        "previewLoading": "画像プレビューを読み込み中…",
+        "previewUnavailable": "画像生成は完了しましたが、プレビューを読み込めませんでした。",
+        "generatedReady": "生成された画像の準備ができました。",
+        "generatedReadyWithMissing": "生成された画像の準備ができましたが、一部の画像を読み込めませんでした。"
     },
     "composer": {
         "attachFiles": "ファイルを添付",

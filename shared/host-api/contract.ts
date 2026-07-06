@@ -251,6 +251,30 @@ export type AgentUpdateModelPayload = { id: string; modelRef: string | null };
 export type AgentIdPayload = { id: string };
 export type AgentChannelPayload = { id: string; channelType: string };
 
+export type AcpTraceSource = 'main' | 'renderer';
+export type AcpTraceEntry = {
+  seq: number;
+  timestamp: string;
+  source: AcpTraceSource;
+  event: string;
+  direction?: string;
+  sessionKey?: string;
+  generation?: number;
+  details?: unknown;
+};
+export type AcpTraceRecordPayload = {
+  event: string;
+  direction?: string;
+  sessionKey?: string;
+  generation?: number;
+  details?: unknown;
+};
+export type AcpTraceSnapshot = {
+  capturedAt: number;
+  maxSize: number;
+  size: number;
+  entries: AcpTraceEntry[];
+};
 export type DiagnosticsGatewaySnapshotResult = JsonRecord;
 
 export type ProviderType =
@@ -763,6 +787,8 @@ export type HostApiContract = {
   };
   diagnostics: {
     gatewaySnapshot: () => DiagnosticsGatewaySnapshotResult;
+    acpTrace: () => AcpTraceSnapshot;
+    recordAcpTrace: (payload: AcpTraceRecordPayload) => HostSuccess;
   };
   providers: {
     list: () => ProviderWithKeyInfo[];

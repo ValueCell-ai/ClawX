@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { contentBlockToRenderPart, toolContentToRenderPart } from '@/lib/acp/content-blocks';
-import { applyAcpSessionUpdate, createEmptyAcpTimeline } from '@/lib/acp/reducer';
+import { appendSyntheticAssistantMessage, applyAcpSessionUpdate, createEmptyAcpTimeline } from '@/lib/acp/reducer';
 
 describe('ACP timeline reducer', () => {
   it('segments assistant text when process blocks interleave with the same messageId', () => {
@@ -463,6 +463,59 @@ describe('ACP timeline reducer', () => {
         { kind: 'markdown', text: 'Diff: src/demo.ts\n\nnew text' },
         { kind: 'markdown', text: 'found result' },
       ],
+    });
+  });
+
+  it('appends marked synthetic assistant messages without faking ACP updates', () => {
+    let state = createEmptyAcpTimeline('agent:pi:s1', 1);
+    state = applyAcpSessionUpdate(state, {
+      sessionId: 'agent:pi:s1',
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'live-msg',
+        content: { type: 'text', text: 'Working...' },
+      },
+    });
+
+    state = appendSyntheticAssistantMessage(state, {
+      messageId: 'compat:image-generation:task-1',
+      evidenceId: 'evidence-1',
+      parts: [
+        { kind: 'markdown', text: 'Generated image is ready.' },
+        { kind: 'image', source: 'data:image/png;base64,abc123', mimeType: 'image/png', alt: 'Generated image' },
+      ],
+    });
+
+    expect(state.itemOrder).toEqual(['live-msg:0', 'compat:image-generation:task-1:0']);
+    expect(state.openMessageSegments).toEqual({});
+    expect(state.itemsById['compat:image-generation:task-1:0']).toMatchObject({
+      kind: 'message-segment',
+      role: 'assistant',
+      messageId: 'compat:image-generation:task-1',
+      compat: { source: 'image-generation', evidenceId: 'evidence-1' },
+      parts: [
+        { kind: 'markdown', text: 'Generated image is ready.' },
+        { kind: 'image', source: 'data:image/png;base64,abc123', mimeType: 'image/png' },
+      ],
+    });
+  });
+
+  it('updates an existing synthetic assistant message with the same id', () => {
+    let state = createEmptyAcpTimeline('agent:pi:s1', 1);
+    state = appendSyntheticAssistantMessage(state, {
+      messageId: 'compat:image-generation:task-1',
+      evidenceId: 'evidence-1',
+      parts: [{ kind: 'markdown', text: 'Generated image is ready.' }],
+    });
+    state = appendSyntheticAssistantMessage(state, {
+      messageId: 'compat:image-generation:task-1',
+      evidenceId: 'evidence-1',
+      parts: [{ kind: 'markdown', text: 'Generated image is ready again.' }],
+    });
+
+    expect(state.itemOrder).toEqual(['compat:image-generation:task-1:0']);
+    expect(state.itemsById['compat:image-generation:task-1:0']).toMatchObject({
+      parts: [{ kind: 'markdown', text: 'Generated image is ready again.' }],
     });
   });
 

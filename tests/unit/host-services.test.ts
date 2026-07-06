@@ -903,6 +903,43 @@ describe('host services', () => {
     expect(snapshot.gatewayErrLogTail).toBe('');
   });
 
+  it('records and returns ACP diagnostics trace entries', async () => {
+    const { clearAcpTraceForTests } = await import('@electron/services/acp-trace');
+    const { createDiagnosticsApi } = await import('@electron/services/diagnostics-api');
+    clearAcpTraceForTests();
+    const gatewayManager = { getStatus: vi.fn(() => ({ state: 'running', port: 18789 })) };
+    const diagnosticsApi = createDiagnosticsApi({ gatewayManager: gatewayManager as never });
+
+    await expect(diagnosticsApi.recordAcpTrace({
+      event: 'image-generation:projection-rejected',
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      details: { reason: 'no-fresh-context' },
+    })).resolves.toEqual({ success: true });
+
+    const snapshot = await diagnosticsApi.acpTrace();
+    expect(snapshot.entries).toContainEqual(expect.objectContaining({
+      source: 'renderer',
+      event: 'image-generation:projection-rejected',
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+    }));
+  });
+
+  it('rejects malformed ACP diagnostics trace payloads', async () => {
+    const { clearAcpTraceForTests } = await import('@electron/services/acp-trace');
+    const { createDiagnosticsApi } = await import('@electron/services/diagnostics-api');
+    clearAcpTraceForTests();
+    const gatewayManager = { getStatus: vi.fn(() => ({ state: 'running', port: 18789 })) };
+    const diagnosticsApi = createDiagnosticsApi({ gatewayManager: gatewayManager as never });
+
+    await expect(diagnosticsApi.recordAcpTrace({ event: '' })).resolves.toEqual({
+      success: false,
+      error: 'Invalid ACP trace payload',
+    });
+    await expect(diagnosticsApi.acpTrace()).resolves.toMatchObject({ entries: [] });
+  });
+
   it('reads only selected log files from the log directory', async () => {
     const selectedLog = join(logDir, 'clawx-selected.log');
     writeFileSync(selectedLog, 'one\ntwo\nthree\n');

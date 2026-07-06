@@ -1,6 +1,7 @@
 import type {
   AgentCreatePayload,
   AgentUpdatePayload,
+  AcpTraceRecordPayload,
   ChannelAccountsPayload,
   ChannelSaveConfigPayload,
   ChannelTargetsPayload,
@@ -203,6 +204,8 @@ export const hostApi = {
   },
   diagnostics: {
     gatewaySnapshot: () => invokeHost('diagnostics', 'gatewaySnapshot'),
+    acpTrace: () => invokeHost('diagnostics', 'acpTrace'),
+    recordAcpTrace: (input: AcpTraceRecordPayload) => invokeHost('diagnostics', 'recordAcpTrace', input),
   },
   providers: {
     list: () => invokeHost('providers', 'list'),

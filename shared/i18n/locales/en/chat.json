@@ -46,6 +46,10 @@
         "unsupportedContent": "Unsupported content",
         "dismiss": "Dismiss",
         "image": "Image",
+        "copyImage": "Copy image",
+        "imageCopied": "Image copied",
+        "saveImage": "Save image as",
+        "imageSaved": "Image saved",
         "copy": "Copy response",
         "copied": "Copied"
     },
@@ -184,7 +188,9 @@
     "imageGeneration": {
         "generating": "Generating image, please wait…",
         "previewLoading": "Loading image preview…",
-        "previewUnavailable": "Image preview is temporarily unavailable"
+        "previewUnavailable": "Image generation completed, but the preview could not be loaded.",
+        "generatedReady": "Generated image is ready.",
+        "generatedReadyWithMissing": "Generated image is ready. Some images could not be loaded."
     },
     "composer": {
         "attachFiles": "Attach files",

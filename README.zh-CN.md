@@ -222,6 +222,8 @@ ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用
 
 Chat 使用由 Electron Main 持有的 ACP stdio bridge。Renderer 接收类型化 host events，并渲染内存中的 ACP timeline。Gateway 仍负责 providers、models、skills、workspace、settings、diagnostics 和 media configuration 等非 Chat 能力。
 
+ACP Chat 可在 runtime 以可信结构化媒体投递图像生成结果时显示生成图片预览。历史 OpenClaw 回放中，assistant 的 `MEDIA:/path/to/file.png` 标记只有在同一会话已记录图像生成任务启动后才会被提升为预览。其它纯文本本地路径（如 `MEDIA: /path/to/file.png`）不会被当作图片预览；ClawX 通过 Electron Main 的主机媒体处理加载预览，而不是让 Renderer 任意访问文件系统。标准 ACP 图片内容仍是首选路径，并会直接渲染。
+
 ```
 ┌───────────────────────────────────────────────────────────────────┐
 │                        ClawX 桌面应用                              │

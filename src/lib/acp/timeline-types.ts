@@ -14,6 +14,8 @@ export type MessageSegmentItem = {
   segmentIndex: number;
   parts: RenderPart[];
   optimistic?: boolean;
+  /** Renderer-only compatibility projection, not an ACP protocol event. */
+  compat?: { source: 'image-generation'; evidenceId: string };
 };
 
 export type ThoughtItem = {

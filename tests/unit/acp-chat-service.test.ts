@@ -263,6 +263,70 @@ describe('AcpChatService', () => {
     });
   });
 
+  it('records ACP session load and forwarded update trace entries', async () => {
+    const { clearAcpTraceForTests, getAcpTraceSnapshot } = await import('../../electron/services/acp-trace');
+    clearAcpTraceForTests();
+    const { service } = await createService();
+
+    await service.loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await service.client.sessionUpdate({
+      sessionId: 'agent:pi:s1',
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'msg-1',
+        content: { type: 'text', text: 'hello' },
+      },
+    } as never);
+
+    expect(getAcpTraceSnapshot().entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        source: 'main',
+        event: 'session/load:start',
+        sessionKey: 'agent:pi:s1',
+      }),
+      expect.objectContaining({
+        source: 'main',
+        event: 'session/load:success',
+        sessionKey: 'agent:pi:s1',
+        generation: 1,
+      }),
+      expect.objectContaining({
+        source: 'main',
+        event: 'session-update:received',
+        direction: 'upstream',
+      }),
+      expect.objectContaining({
+        source: 'main',
+        event: 'session-update:forwarded',
+        direction: 'downstream',
+      }),
+    ]));
+  });
+
+  it('records ignored ACP session updates with a mismatch reason', async () => {
+    const { clearAcpTraceForTests, getAcpTraceSnapshot } = await import('../../electron/services/acp-trace');
+    clearAcpTraceForTests();
+    const { service } = await createService();
+
+    await service.loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await service.client.sessionUpdate({
+      sessionId: 'agent:other:s2',
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'msg-2',
+        content: { type: 'text', text: 'ignored' },
+      },
+    } as never);
+
+    expect(getAcpTraceSnapshot().entries).toContainEqual(expect.objectContaining({
+      source: 'main',
+      event: 'session-update:ignored',
+      direction: 'upstream',
+      sessionKey: 'agent:pi:s1',
+      details: expect.objectContaining({ reason: 'session-mismatch' }),
+    }));
+  });
+
   it('marks ACP session updates from historical loads until the next live prompt starts', async () => {
     const { service, send } = await createService();
 

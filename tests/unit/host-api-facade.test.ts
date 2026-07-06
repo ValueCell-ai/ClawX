@@ -192,6 +192,37 @@ describe('hostApi facade', () => {
     }));
   });
 
+  it('routes ACP diagnostics trace calls through hostInvoke', async () => {
+    hostInvoke
+      .mockResolvedValueOnce({ id: 'req-1', ok: true, data: { capturedAt: 123, maxSize: 500, size: 0, entries: [] } })
+      .mockResolvedValueOnce({ id: 'req-2', ok: true, data: { success: true } });
+    const { hostApi } = await import('@/lib/host-api');
+    const payload = {
+      event: 'image-generation:projection-rejected',
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      details: { reason: 'no-fresh-context' },
+    };
+
+    await expect(hostApi.diagnostics.acpTrace()).resolves.toEqual({
+      capturedAt: 123,
+      maxSize: 500,
+      size: 0,
+      entries: [],
+    });
+    await expect(hostApi.diagnostics.recordAcpTrace(payload)).resolves.toEqual({ success: true });
+
+    expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      module: 'diagnostics',
+      action: 'acpTrace',
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      module: 'diagnostics',
+      action: 'recordAcpTrace',
+      payload,
+    }));
+  });
+
   it('calls providers.list through hostInvoke', async () => {
     hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: [] });
     const { hostApi } = await import('@/lib/host-api');

@@ -5,6 +5,9 @@ const MAIN_SESSION_KEY = 'agent:main:main';
 const MAIN_WORKSPACE = '/workspace';
 const REVIEWER_SESSION_KEY = 'agent:reviewer:main';
 const REVIEWER_WORKSPACE = '/workspace/reviewer';
+const IMAGE_TASK_ID = '0d2ee919-2dfd-4b72-9da3-d87e6ee56747';
+const GENERATED_IMAGE_PATH = '/workspace/.openclaw/media/tool-image-generation/generated-image.png';
+const GENERATED_IMAGE_PREVIEW = 'data:image/png;base64,iVBORw0KGgo=';
 
 type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
 
@@ -135,6 +138,37 @@ async function installAcpLoadRecorderMock(app: ElectronApplication) {
 async function getRecordedAcpLoadSessionKeys(app: ElectronApplication) {
   return await app.evaluate(async ({ app: _app }) => {
     return (globalThis as unknown as { __acpLoadSessionKeys?: string[] }).__acpLoadSessionKeys ?? [];
+  });
+}
+
+async function installMediaSaveRecorder(app: ElectronApplication) {
+  await app.evaluate(async ({ app: _app }) => {
+    const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type HostInvokeRequest = {
+      id?: string;
+      module?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+    };
+    type IpcInvokeHandler = (event: unknown, request: HostInvokeRequest) => Promise<unknown>;
+    const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
+    const originalHostInvoke = handlers?.get('host:invoke');
+    const globals = globalThis as unknown as { __mediaSaveImagePayloads?: Record<string, unknown>[] };
+    globals.__mediaSaveImagePayloads = [];
+
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: HostInvokeRequest) => {
+      if (request?.module === 'media' && request.action === 'saveImage' && request.payload) {
+        globals.__mediaSaveImagePayloads?.push(request.payload);
+      }
+      return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
+    });
+  });
+}
+
+async function getRecordedMediaSaveImagePayloads(app: ElectronApplication) {
+  return await app.evaluate(async ({ app: _app }) => {
+    return (globalThis as unknown as { __mediaSaveImagePayloads?: Record<string, unknown>[] }).__mediaSaveImagePayloads ?? [];
   });
 }
 
@@ -504,6 +538,118 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(card).toHaveAttribute('data-expanded', 'true');
       await expect(card).toContainText('historical output');
       await expect(page.getByTestId('acp-assistant-turn')).toContainText('Historical answer');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('hydrates historical image-generation completions from transcript history when ACP replay omits them', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main' }],
+            },
+          },
+        },
+        hostApi: {
+          ...baseHostApiMocks(),
+          [stableStringify(['sessions', 'history', { sessionKey: MAIN_SESSION_KEY, limit: 1000 }])]: {
+            success: true,
+            messages: [
+              {
+                id: 'transcript-image-start',
+                role: 'toolresult',
+                toolName: 'image_generate',
+                toolCallId: 'history-image-tool',
+                content: `Background task started for image generation (${IMAGE_TASK_ID})`,
+                details: { taskId: IMAGE_TASK_ID },
+              },
+              {
+                id: 'transcript-image-complete',
+                role: 'assistant',
+                content: `Here is the generated image.\nMEDIA:${GENERATED_IMAGE_PATH}`,
+              },
+            ],
+          },
+          [stableStringify(['media', 'thumbnails', {
+            paths: [{ filePath: GENERATED_IMAGE_PATH, mimeType: 'image/png' }],
+          }])]: {
+            [GENERATED_IMAGE_PATH]: { preview: GENERATED_IMAGE_PREVIEW, fileSize: 128 },
+          },
+          [stableStringify(['media', 'saveImage', {
+            base64: 'iVBORw0KGgo=',
+            mimeType: 'image/png',
+            defaultFileName: 'generated-image.png',
+          }])]: {
+            success: true,
+            savedPath: '/tmp/generated-image.png',
+          },
+        },
+      });
+      await installMediaSaveRecorder(app);
+      await installAcpLoadReplayMock(app, [
+        {
+          sessionUpdate: 'user_message',
+          messageId: 'history-image-user',
+          content: [{ type: 'text', text: 'Generate an image' }],
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-image-tool',
+          title: 'Generate image',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: `Background task started for image generation (${IMAGE_TASK_ID})` } }],
+          locations: [],
+        },
+      ]);
+
+      const page = await openChat(app);
+      await page.evaluate(() => {
+        class TestClipboardItem {
+          readonly items: Record<string, Blob>;
+          constructor(items: Record<string, Blob>) {
+            this.items = items;
+          }
+        }
+        Object.defineProperty(window, 'ClipboardItem', { value: TestClipboardItem, configurable: true });
+        Object.defineProperty(navigator, 'clipboard', {
+          value: {
+            write: (items: unknown[]) => {
+              const first = items[0] as { items?: Record<string, Blob> } | undefined;
+              (window as unknown as { __imageClipboardTypes?: string[] }).__imageClipboardTypes = Object.keys(first?.items ?? {});
+              return Promise.resolve();
+            },
+          },
+          configurable: true,
+        });
+      });
+
+      await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('acp-tool-call-card')).toContainText('Generate image');
+      await expect(page.getByText('Generated image is ready.')).toBeVisible({ timeout: 30_000 });
+      const imagePart = page.getByTestId('acp-image-part');
+      const image = imagePart.locator('img');
+      await expect(image).toBeVisible();
+      await expect(image).toHaveAttribute('src', GENERATED_IMAGE_PREVIEW);
+      await imagePart.hover();
+      await expect(page.getByTestId('acp-image-copy')).toBeVisible();
+      await expect(page.getByTestId('acp-image-save')).toBeVisible();
+
+      await page.getByTestId('acp-image-copy').click();
+      await expect.poll(() => page.evaluate(() => (window as unknown as { __imageClipboardTypes?: string[] }).__imageClipboardTypes ?? [])).toEqual(['image/png']);
+
+      await page.getByTestId('acp-image-save').click();
+      await expect.poll(async () => await getRecordedMediaSaveImagePayloads(app)).toEqual([{
+        base64: 'iVBORw0KGgo=',
+        mimeType: 'image/png',
+        defaultFileName: 'generated-image.png',
+      }]);
     } finally {
       await closeElectronApp(app);
     }

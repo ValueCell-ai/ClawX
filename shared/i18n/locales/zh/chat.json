@@ -46,6 +46,10 @@
         "unsupportedContent": "不支持的内容",
         "dismiss": "关闭",
         "image": "图片",
+        "copyImage": "复制图片",
+        "imageCopied": "图片已复制",
+        "saveImage": "另存为图片",
+        "imageSaved": "图片已保存",
         "copy": "复制回复",
         "copied": "已复制"
     },
@@ -183,8 +187,10 @@
     },
     "imageGeneration": {
         "generating": "图片生成中，请稍候…",
-        "previewLoading": "正在载入图片预览…",
-        "previewUnavailable": "图片预览暂时不可用"
+        "previewLoading": "正在加载图片预览…",
+        "previewUnavailable": "图片生成已完成，但无法加载预览。",
+        "generatedReady": "生成的图片已准备好。",
+        "generatedReadyWithMissing": "生成的图片已准备好，但有部分图片无法加载。"
     },
     "composer": {
         "attachFiles": "添加文件",

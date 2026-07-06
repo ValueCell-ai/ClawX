@@ -221,6 +221,8 @@ ClawX employs a **dual-process architecture** with a unified host API layer. The
 
 Chat uses an ACP stdio bridge owned by Electron Main. Renderer receives typed host events and renders an in-memory ACP timeline. Gateway remains responsible for non-Chat capabilities such as providers, models, skills, workspace, settings, diagnostics, and media configuration.
 
+ACP Chat can display generated image previews when image-generation media is delivered by the runtime as trusted structured media. During historical OpenClaw replay, assistant `MEDIA:/path/to/file.png` markers are also promoted only when they follow a recorded image-generation task start for that session. Other plain local-path text such as `MEDIA: /path/to/file.png` is not interpreted as a preview; ClawX loads previews through host media handling in Electron Main, not arbitrary renderer filesystem access. Standard ACP image content remains the preferred path and renders directly.
+
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                        ClawX Desktop App                         │
