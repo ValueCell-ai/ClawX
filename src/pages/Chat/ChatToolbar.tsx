@@ -18,12 +18,14 @@ type ChatToolbarProps = {
   questionDirectoryOpen?: boolean;
   questionDirectoryCount?: number;
   onToggleQuestionDirectory?: () => void;
+  workspaceAvailable?: boolean;
 };
 
 export function ChatToolbar({
   questionDirectoryOpen = false,
   questionDirectoryCount = 0,
   onToggleQuestionDirectory,
+  workspaceAvailable = false,
 }: ChatToolbarProps = {}) {
   const refresh = useChatStore((s) => s.refresh);
   const loading = useChatStore((s) => s.loading);
@@ -53,6 +55,7 @@ export function ChatToolbar({
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
+              data-testid="chat-toolbar-workspace"
               variant="ghost"
               size="icon"
               className={cn(
@@ -60,7 +63,7 @@ export function ChatToolbar({
                 browserActive && 'bg-foreground/10 text-foreground',
               )}
               onClick={() => (browserActive ? closePanel() : openBrowser())}
-              disabled={!currentAgent?.workspace}
+              disabled={!workspaceAvailable}
               aria-label={t('toolbar.workspace')}
             >
               <FolderTree className="h-4 w-4" />

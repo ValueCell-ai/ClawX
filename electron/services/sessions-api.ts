@@ -1,4 +1,5 @@
 import { openSync, closeSync, fstatSync, readSync } from 'node:fs';
+import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { RawMessage } from '@shared/chat/types';
@@ -20,6 +21,7 @@ type SessionSummary = {
   sessionKey: string;
   firstUserText: string | null;
   lastTimestamp: number | null;
+  workspacePath: string | null;
 };
 
 type TranscriptMessage = RawMessage;
@@ -89,6 +91,76 @@ function isInternalSummaryText(text: string): boolean {
 function normalizeTimestamp(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
   return value < 1e12 ? value * 1000 : value;
+}
+
+type SqliteDatabaseLike = {
+  prepare: (sql: string) => {
+    get: (...params: unknown[]) => unknown;
+  };
+};
+
+function normalizeCwdValue(value: unknown): string | null {
+  const cwd = typeof value === 'string' ? value.trim() : '';
+  return cwd || null;
+}
+
+function parseRuntimeOptionsCwd(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== 'object') return null;
+    return normalizeCwdValue((parsed as Record<string, unknown>).cwd);
+  } catch {
+    return null;
+  }
+}
+
+function readAcpReplayCwd(db: SqliteDatabaseLike, sessionKey: string): string | null {
+  try {
+    const row = db.prepare(
+      'SELECT cwd FROM acp_replay_sessions WHERE session_key = ? ORDER BY updated_at DESC, session_id ASC LIMIT 1',
+    ).get(sessionKey) as { cwd?: unknown } | undefined;
+    return normalizeCwdValue(row?.cwd);
+  } catch {
+    return null;
+  }
+}
+
+function readAcpRuntimeMetaCwd(db: SqliteDatabaseLike, sessionKey: string): string | null {
+  try {
+    const row = db.prepare('SELECT * FROM acp_sessions WHERE session_key = ?').get(sessionKey) as {
+      runtime_options_json?: unknown;
+      cwd?: unknown;
+    } | undefined;
+    return parseRuntimeOptionsCwd(row?.runtime_options_json) ?? normalizeCwdValue(row?.cwd);
+  } catch {
+    return null;
+  }
+}
+
+async function readOpenClawAcpSessionCwds(sessionKeys: string[]): Promise<Map<string, string>> {
+  const normalizedKeys = Array.from(new Set(sessionKeys.map((sessionKey) => sessionKey.trim()).filter(Boolean)));
+  const workspaceByKey = new Map<string, string>();
+  if (normalizedKeys.length === 0) return workspaceByKey;
+
+  const databasePath = join(getOpenClawConfigDir(), 'state', 'openclaw.sqlite');
+  try {
+    await access(databasePath);
+    const sqliteSpecifier = 'node:sqlite';
+    const { DatabaseSync } = await import(/* @vite-ignore */ sqliteSpecifier);
+    const db = new DatabaseSync(databasePath, { readOnly: true });
+    try {
+      for (const sessionKey of normalizedKeys) {
+        const cwd = readAcpReplayCwd(db, sessionKey) ?? readAcpRuntimeMetaCwd(db, sessionKey);
+        if (cwd) workspaceByKey.set(sessionKey, cwd);
+      }
+      return workspaceByKey;
+    } finally {
+      db.close();
+    }
+  } catch {
+    return new Map();
+  }
 }
 
 function parseMessageLine(line: string): TranscriptMessage | null {
@@ -162,7 +234,11 @@ async function readAllTranscriptMessages(transcriptPath: string): Promise<Transc
   });
 }
 
-function summarizeTranscriptMessages(sessionKey: string, messages: TranscriptMessage[]): SessionSummary {
+function summarizeTranscriptMessages(
+  sessionKey: string,
+  messages: TranscriptMessage[],
+  workspacePath: string | null,
+): SessionSummary {
   let firstUserText: string | null = null;
   let lastTimestamp: number | null = null;
 
@@ -179,7 +255,7 @@ function summarizeTranscriptMessages(sessionKey: string, messages: TranscriptMes
     }
   }
 
-  return { sessionKey, firstUserText, lastTimestamp };
+  return { sessionKey, firstUserText, lastTimestamp, workspacePath };
 }
 
 function parseSessionKey(sessionKey: string): { agentId: string; suffix: string } | null {
@@ -264,10 +340,10 @@ function resolveSessionTranscriptPathByKey(
   return resolvedSrcPath ?? null;
 }
 
-async function loadSessionSummary(sessionKey: string): Promise<SessionSummary> {
+async function loadSessionSummary(sessionKey: string, workspacePath: string | null): Promise<SessionSummary> {
   const parsed = parseSessionKey(sessionKey);
   if (!parsed) {
-    return { sessionKey, firstUserText: null, lastTimestamp: null };
+    return { sessionKey, firstUserText: null, lastTimestamp: null, workspacePath };
   }
 
   try {
@@ -275,13 +351,13 @@ async function loadSessionSummary(sessionKey: string): Promise<SessionSummary> {
     const sessionsJson = await readSessionsJson(parsed.agentId);
     const transcriptPath = resolveSessionTranscriptPathByKey(sessionKey, sessionsDir, sessionsJson);
     if (!transcriptPath) {
-      return { sessionKey, firstUserText: null, lastTimestamp: null };
+      return { sessionKey, firstUserText: null, lastTimestamp: null, workspacePath };
     }
 
     const messages = await readAllTranscriptMessages(transcriptPath);
-    return summarizeTranscriptMessages(sessionKey, messages);
+    return summarizeTranscriptMessages(sessionKey, messages, workspacePath);
   } catch {
-    return { sessionKey, firstUserText: null, lastTimestamp: null };
+    return { sessionKey, firstUserText: null, lastTimestamp: null, workspacePath };
   }
 }
 
@@ -429,9 +505,12 @@ export function createSessionsApi(): CompleteHostServiceRegistry['sessions'] {
         ? body.sessionKeys.filter((value): value is string => typeof value === 'string' && value.startsWith('agent:'))
         : [];
       if (sessionKeys.length === 0) return { success: true, summaries: [] };
+      const workspaceByKey = await readOpenClawAcpSessionCwds(sessionKeys);
       return {
         success: true,
-        summaries: await Promise.all(sessionKeys.map((sessionKey) => loadSessionSummary(sessionKey))),
+        summaries: await Promise.all(sessionKeys.map((sessionKey) => (
+          loadSessionSummary(sessionKey, workspaceByKey.get(sessionKey.trim()) ?? null)
+        ))),
       };
     },
     history: async (payload) => {

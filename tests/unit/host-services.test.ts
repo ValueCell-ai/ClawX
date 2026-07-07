@@ -281,6 +281,8 @@ const baseSettings = {
   proxyBypassRules: '',
   launchAtStartup: false,
   theme: 'system',
+  chatWorkspacePath: '~/.openclaw/workspace',
+  recentWorkspacePaths: ['~/.openclaw/workspace'],
 };
 
 describe('host services', () => {
@@ -360,6 +362,21 @@ describe('host services', () => {
     expect(syncLaunchAtStartupSettingFromStoreMock).toHaveBeenCalledTimes(2);
     expect(syncProxyConfigToOpenClawMock).toHaveBeenCalledTimes(1);
     expect(gatewayManager.restart).not.toHaveBeenCalled();
+  });
+
+  it('accepts chat workspace settings through the typed settings API', async () => {
+    setSettingMock.mockResolvedValue(undefined);
+
+    const { createSettingsApi } = await import('@electron/services/settings-api');
+    const api = createSettingsApi({
+      getStatus: () => ({ state: 'stopped' }),
+      restart: vi.fn(),
+    } as never);
+
+    await expect(api.set({ key: 'chatWorkspacePath', value: '/Users/alex/workspace/ClawX' })).resolves.toEqual({ success: true });
+    await expect(api.set({ key: 'recentWorkspacePaths', value: ['/Users/alex/workspace/ClawX'] })).resolves.toEqual({ success: true });
+    expect(setSettingMock).toHaveBeenCalledWith('chatWorkspacePath', '/Users/alex/workspace/ClawX');
+    expect(setSettingMock).toHaveBeenCalledWith('recentWorkspacePaths', ['/Users/alex/workspace/ClawX']);
   });
 
   it('routes gateway rpc through backpressure', async () => {
@@ -1028,6 +1045,7 @@ describe('host services', () => {
           sessionKey: 'agent:main:abc123',
           firstUserText: 'Hello from transcript',
           lastTimestamp: 1001000,
+          workspacePath: null,
         }],
       });
     await expect(sessionsApi.history({ sessionKey: 'agent:main:abc123', limit: 5 }))

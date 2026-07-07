@@ -1,24 +1,21 @@
 import type { ChatSession } from '@/stores/chat';
+import {
+  DEFAULT_WORKSPACE_CWD,
+  getSessionWorkspaceForGrouping,
+  getWorkspaceDisplayLabel,
+  isDefaultWorkspacePath,
+} from '@/lib/workspace-context';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+export type WorkspaceSessionEntry<TSession> = {
+  session: TSession;
+  activityMs: number;
+};
 
-export type SessionBucketKey =
-  | 'today'
-  | 'withinWeek'
-  | 'withinMonth'
-  | 'older';
-
-export function getSessionBucket(activityMs: number, nowMs: number): SessionBucketKey {
-  if (!activityMs || activityMs <= 0) return 'older';
-
-  const now = new Date(nowMs);
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-
-  if (activityMs >= startOfToday) return 'today';
-  if (activityMs >= startOfToday - 7 * DAY_MS) return 'withinWeek';
-  if (activityMs >= startOfToday - 30 * DAY_MS) return 'withinMonth';
-  return 'older';
-}
+export type WorkspaceSessionGroup<TSession> = {
+  workspacePath: string;
+  label: string;
+  sessions: Array<WorkspaceSessionEntry<TSession>>;
+};
 
 function getSessionCreatedAtMsFromKey(sessionKey: string): number | undefined {
   const match = sessionKey.match(/(?:^|:)session-(\d{11,})(?=$|:)/);
@@ -40,4 +37,60 @@ export function getSessionActivityMs(
   }
 
   return getSessionCreatedAtMsFromKey(session.key) ?? 0;
+}
+
+function getCanonicalWorkspacePathForGrouping(
+  session: ChatSession,
+  globalWorkspace?: string | null,
+): string {
+  const workspacePath = getSessionWorkspaceForGrouping(session, globalWorkspace);
+  return isDefaultWorkspacePath(workspacePath) ? DEFAULT_WORKSPACE_CWD : workspacePath;
+}
+
+function compareWorkspaceGroups<TSession>(
+  left: WorkspaceSessionGroup<TSession>,
+  right: WorkspaceSessionGroup<TSession>,
+): number {
+  const leftDefault = isDefaultWorkspacePath(left.workspacePath);
+  const rightDefault = isDefaultWorkspacePath(right.workspacePath);
+  if (leftDefault && !rightDefault) return -1;
+  if (!leftDefault && rightDefault) return 1;
+
+  const byLabel = left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: 'base' });
+  if (byLabel !== 0) return byLabel;
+  return left.workspacePath.localeCompare(right.workspacePath, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+export function groupSessionsByWorkspace<TSession extends ChatSession>(
+  sessions: readonly TSession[],
+  sessionLastActivity: Record<string, number>,
+  defaultWorkspaceLabel: string,
+  globalWorkspace?: string | null,
+): Array<WorkspaceSessionGroup<TSession>> {
+  const groupByWorkspace = new Map<string, WorkspaceSessionGroup<TSession>>();
+
+  for (const session of sessions) {
+    const workspacePath = getCanonicalWorkspacePathForGrouping(session, globalWorkspace);
+    let group = groupByWorkspace.get(workspacePath);
+    if (!group) {
+      group = {
+        workspacePath,
+        label: getWorkspaceDisplayLabel(workspacePath, defaultWorkspaceLabel),
+        sessions: [],
+      };
+      groupByWorkspace.set(workspacePath, group);
+    }
+
+    group.sessions.push({
+      session,
+      activityMs: getSessionActivityMs(session, sessionLastActivity),
+    });
+  }
+
+  return Array.from(groupByWorkspace.values())
+    .map((group) => ({
+      ...group,
+      sessions: [...group.sessions].sort((left, right) => right.activityMs - left.activityMs),
+    }))
+    .sort(compareWorkspaceGroups);
 }

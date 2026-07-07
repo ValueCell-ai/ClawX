@@ -149,6 +149,7 @@
     },
     "workspace": {
         "title": "Workspace",
+        "defaultLabel": "Default workspace",
         "header": "Agent: {{agent}} · Directory: {{directory}}",
         "freshBadge": "Updated this run",
         "pickFile": "Select a file from the left to preview",
@@ -215,10 +216,24 @@
         "gatewayStarting": "starting",
         "gatewayStatus": "gateway {{state}} | port: {{port}} | pid: {{pid}}",
         "retryFailedAttachments": "Retry failed attachments",
+        "workspacePrefix": "{{workspace}}",
+        "workspacePickerTitle": "Select workspace folder",
+        "workspacePickerButton": "Use workspace",
+        "workspacePickerFailed": "Could not open workspace picker",
+        "defaultWorkspaceOption": "Default workspace",
+        "chooseOtherWorkspaceOption": "Choose another folder...",
         "folderDropUnsupported": "Couldn't attach this folder. Drag it again, or paste the folder path into your message.",
         "folderAttachment": "Folder",
         "skillPreviewTooltip": "Preview SKILL.md",
         "skillPreviewNotFound": "Could not find this skill. Open the skill picker to refresh the list."
+    },
+    "sessionList": {
+        "title": "Sessions",
+        "collapseAll": "Collapse all",
+        "expandAll": "Expand all",
+        "loadMore": "Load {{count}} more",
+        "loadMoreForWorkspace": "Load {{count}} more sessions in {{workspace}}",
+        "workspaceToggle": "Toggle workspace {{workspace}}"
     },
     "historyBuckets": {
         "today": "Today",

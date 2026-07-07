@@ -149,6 +149,7 @@
     },
     "workspace": {
         "title": "ワークスペース",
+        "defaultLabel": "既定のワークスペース",
         "header": "Agent: {{agent}} · ディレクトリ: {{directory}}",
         "freshBadge": "今回の実行で更新",
         "pickFile": "左側のファイルを選択してプレビュー",
@@ -215,10 +216,24 @@
         "gatewayStarting": "起動中",
         "gatewayStatus": "ゲートウェイ {{state}} | ポート: {{port}} | PID: {{pid}}",
         "retryFailedAttachments": "失敗した添付を再試行",
+        "workspacePrefix": "{{workspace}}",
+        "workspacePickerTitle": "ワークスペースフォルダーを選択",
+        "workspacePickerButton": "このワークスペースを使用",
+        "workspacePickerFailed": "ワークスペース選択を開けませんでした",
+        "defaultWorkspaceOption": "既定のワークスペース",
+        "chooseOtherWorkspaceOption": "別のディレクトリを選択…",
         "folderDropUnsupported": "このフォルダを添付できませんでした。もう一度ドラッグするか、メッセージにフォルダパスを貼り付けてください。",
         "folderAttachment": "フォルダ",
         "skillPreviewTooltip": "SKILL.md をプレビュー",
         "skillPreviewNotFound": "この Skill が見つかりません。Skill ピッカーを開いて一覧を更新してください。"
+    },
+    "sessionList": {
+        "title": "セッション一覧",
+        "collapseAll": "すべて折りたたむ",
+        "expandAll": "すべて展開",
+        "loadMore": "さらに {{count}} 件読み込む",
+        "loadMoreForWorkspace": "{{workspace}} でさらに {{count}} 件のセッションを読み込む",
+        "workspaceToggle": "ワークスペース {{workspace}} を切り替え"
     },
     "historyBuckets": {
         "today": "今日",

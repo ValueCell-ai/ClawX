@@ -61,6 +61,7 @@ export type AcpChatSessionState = {
   cancelling: boolean;
   error: string | null;
   timeline: AcpTimelineSnapshot;
+  prepareLocalSession: (input: AcpChatLoadPayload) => void;
   loadSession: (input: AcpChatLoadPayload) => Promise<boolean>;
   sendPrompt: (input: AcpChatPromptPayload) => Promise<boolean>;
   cancel: () => Promise<void>;
@@ -422,6 +423,21 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
   cancelling: false,
   error: null,
   timeline: createEmptyAcpTimeline(EMPTY_SESSION_ID, 0),
+
+  prepareLocalSession(input) {
+    const localGeneration = get().generation + 1;
+    resetImageGenerationCompatSession(input.sessionKey);
+    set({
+      activeSessionKey: input.sessionKey,
+      cwd: input.cwd,
+      generation: localGeneration,
+      loading: false,
+      sending: false,
+      cancelling: false,
+      error: null,
+      timeline: createEmptyAcpTimeline(input.sessionKey, localGeneration),
+    });
+  },
 
   async loadSession(input) {
     const localGeneration = get().generation + 1;

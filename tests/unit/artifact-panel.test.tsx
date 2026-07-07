@@ -20,8 +20,15 @@ vi.mock('@/components/file-preview/FilePreviewBody', () => ({
   ),
 }));
 
+const { workspaceBrowserProps } = vi.hoisted(() => ({
+  workspaceBrowserProps: [] as Array<Record<string, unknown>>,
+}));
+
 vi.mock('@/components/file-preview/WorkspaceBrowserBody', () => ({
-  WorkspaceBrowserBody: () => <div data-testid="workspace-browser" />,
+  WorkspaceBrowserBody: (props: Record<string, unknown>) => {
+    workspaceBrowserProps.push(props);
+    return <div data-testid="workspace-browser" />;
+  },
 }));
 
 function makeGeneratedFile(overrides: Partial<GeneratedFile> = {}): GeneratedFile {
@@ -56,6 +63,30 @@ afterEach(() => {
 });
 
 describe('ArtifactPanel', () => {
+  it('passes effective workspace path to the workspace browser', () => {
+    workspaceBrowserProps.length = 0;
+    useArtifactPanel.setState({
+      open: true,
+      tab: 'browser',
+      focusedFile: null,
+      widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
+    });
+
+    render(
+      <ArtifactPanel
+        files={[makeGeneratedFile()]}
+        agent={{ id: 'main', name: 'Main Agent', workspace: '/agent/workspace' }}
+        workspacePath="/session/workspace"
+        workspaceLabel="~/session/workspace"
+      />,
+    );
+
+    expect(workspaceBrowserProps.at(-1)).toMatchObject({
+      workspacePath: '/session/workspace',
+      workspaceLabel: '~/session/workspace',
+    });
+  });
+
   it('orders workspace before preview and changes', () => {
     useArtifactPanel.setState({
       open: true,

@@ -1,7 +1,14 @@
+import type { ElectronApplication } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 const SESSION_KEY = 'agent:main:main';
 const workspacePath = '/Users/e2e/.openclaw/workspace-main';
+const SESSIONS_LIST_PAYLOAD = {
+  includeDerivedTitles: true,
+  includeLastMessage: true,
+};
+
+type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -12,119 +19,168 @@ function stableStringify(value: unknown): string {
   return `{${entries.join(',')}}`;
 }
 
-const history = [
-  {
-    role: 'user',
-    id: 'user-1',
-    content: [{ type: 'text', text: 'Patch the workspace file' }],
-    timestamp: Date.now(),
-  },
-  {
-    role: 'assistant',
-    id: 'assistant-tool-1',
-    content: [{
-      type: 'toolCall',
-      id: 'edit-1',
-      name: 'Edit',
-      arguments: {
-        file_path: '/workspace/demo.ts',
-        old_string: 'const value = 1\n',
-        new_string: 'const value = 2\n',
-      },
+function hostJson(json: unknown) {
+  return {
+    ok: true,
+    data: {
+      status: 200,
+      ok: true,
+      json,
+    },
+  };
+}
+
+function acpFileUpdates(input: {
+  filePath: string;
+  fileName: string;
+  mimeType: string;
+  prompt: string;
+  response: string;
+}): AcpSessionUpdate[] {
+  const id = input.fileName.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+  return [
+    {
+      sessionUpdate: 'user_message',
+      messageId: `user-${id}`,
+      content: [{ type: 'text', text: input.prompt }],
+    },
+    {
+      sessionUpdate: 'tool_call',
+      toolCallId: `tool-${id}`,
+      title: 'Edit',
+      kind: 'edit',
+      status: 'completed',
+      content: [{ type: 'content', content: { type: 'text', text: input.response } }],
+      locations: [{ path: input.filePath, name: input.fileName }],
+    },
+    {
+      sessionUpdate: 'agent_message',
+      messageId: `assistant-${id}`,
+      content: [
+        { type: 'text', text: input.response },
+        { type: 'resource_link', uri: input.filePath, name: input.fileName, mimeType: input.mimeType },
+      ],
+    },
+  ];
+}
+
+async function installAcpLoadReplayMock(app: ElectronApplication, updates: AcpSessionUpdate[]) {
+  await app.evaluate(async ({ app: _app }, payload) => {
+    const { BrowserWindow, ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type HostInvokeRequest = {
+      id?: string;
+      module?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+    };
+    type IpcInvokeHandler = (event: unknown, request: HostInvokeRequest) => Promise<unknown>;
+    const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
+    const originalHostInvoke = handlers?.get('host:invoke');
+    let generation = 0;
+
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: HostInvokeRequest) => {
+      if (request?.module === 'chat' && request.action === 'loadAcpSession') {
+        generation += 1;
+        const sessionKey = typeof request.payload?.sessionKey === 'string'
+          ? request.payload.sessionKey
+          : payload.sessionKey;
+
+        for (const update of payload.updates as AcpSessionUpdate[]) {
+          for (const window of BrowserWindow.getAllWindows()) {
+            window.webContents.send('chat:acp-session-update', {
+              sessionKey,
+              generation,
+              historical: true,
+              notification: {
+                sessionId: sessionKey,
+                update,
+              },
+            });
+          }
+        }
+        return { id: request.id, ok: true, data: { success: true, generation } };
+      }
+      return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
+    });
+  }, { sessionKey: SESSION_KEY, updates });
+}
+
+async function installChatFileMocks(app: ElectronApplication, options: {
+  updates: AcpSessionUpdate[];
+  workspace: string;
+  agentName?: string;
+}) {
+  const nowMs = Date.now();
+  const settingsSnapshot = {
+    language: 'en',
+    setupComplete: true,
+    chatWorkspacePath: options.workspace,
+    recentWorkspacePaths: [options.workspace],
+  };
+  const sessionSummaries = {
+    summaries: [{
+      sessionKey: SESSION_KEY,
+      firstUserText: 'Patch the workspace file',
+      lastTimestamp: nowMs,
+      workspacePath: options.workspace,
     }],
-    timestamp: Date.now(),
-  },
-  {
-    role: 'assistant',
-    id: 'assistant-final-1',
-    content: [{ type: 'text', text: 'Updated the file.' }],
-    timestamp: Date.now(),
-  },
-];
+  };
 
-const attachedFileHistory = [
-  {
-    role: 'user',
-    id: 'user-attached-1',
-    content: [{ type: 'text', text: '查看这个技能文件' }],
-    timestamp: Date.now(),
-  },
-  {
-    role: 'assistant',
-    id: 'assistant-attached-1',
-    content: [{ type: 'text', text: '这是文件。' }],
-    _attachedFiles: [
-      {
-        fileName: 'SKILL.md',
-        mimeType: 'text/markdown',
-        fileSize: 128,
-        preview: null,
-        filePath: '/workspace/skills/open-xueqiu/SKILL.md',
-        source: 'tool-result',
+  await installIpcMocks(app, {
+    gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345, connectedAt: nowMs },
+    gatewayRpc: {
+      [stableStringify(['sessions.list', SESSIONS_LIST_PAYLOAD])]: {
+        success: true,
+        result: {
+          sessions: [{ key: SESSION_KEY, displayName: 'main', updatedAt: nowMs }],
+        },
       },
-    ],
-    timestamp: Date.now(),
-  },
-];
+      [stableStringify(['sessions.list', {}])]: {
+        success: true,
+        result: {
+          sessions: [{ key: SESSION_KEY, displayName: 'main', updatedAt: nowMs }],
+        },
+      },
+      [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
+        success: true,
+        result: { messages: [] },
+      },
+      [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
+        success: true,
+        result: { messages: [] },
+      },
+    },
+    hostApi: {
+      [stableStringify(['settings', 'getAll', null])]: settingsSnapshot,
+      [stableStringify(['/api/settings', 'GET'])]: hostJson(settingsSnapshot),
+      [stableStringify(['/api/gateway/status', 'GET'])]: hostJson({ state: 'running', gatewayReady: true, port: 18789, pid: 12345, connectedAt: nowMs }),
+      [stableStringify(['/api/agents', 'GET'])]: hostJson({
+        success: true,
+        agents: [{ id: 'main', name: options.agentName ?? 'main', workspace: options.workspace, mainSessionKey: SESSION_KEY }],
+      }),
+      [stableStringify(['sessions', 'summaries', { sessionKeys: [SESSION_KEY] }])]: sessionSummaries,
+      [stableStringify(['/api/sessions/summaries', 'POST'])]: hostJson(sessionSummaries),
+    },
+  });
 
-const htmlFileHistory = [
-  {
-    role: 'user',
-    id: 'user-html-1',
-    content: [{ type: 'text', text: '预览 HTML 页面' }],
-    timestamp: Date.now(),
-  },
-  {
-    role: 'assistant',
-    id: 'assistant-html-1',
-    content: [{ type: 'text', text: '已生成 /workspace/demo.html' }],
-    timestamp: Date.now(),
-  },
-];
+  await installAcpLoadReplayMock(app, options.updates);
+}
 test.describe('ClawX chat file changes', () => {
   test('shows workspace first with hidden files and compressed path', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
-      await installIpcMocks(app, {
-        gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
-        gatewayRpc: {
-          [stableStringify(['sessions.list', {}])]: {
-            success: true,
-            result: {
-              sessions: [{ key: SESSION_KEY, displayName: 'main' }],
-            },
-          },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: history },
-          },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: history },
-          },
-        },
-        hostApi: {
-          [stableStringify(['/api/gateway/status', 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: { state: 'running', port: 18789, pid: 12345 },
-            },
-          },
-          [stableStringify(['/api/agents', 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: {
-                success: true,
-                agents: [{ id: 'main', name: 'Main Agent', workspace: workspacePath }],
-              },
-            },
-          },
-        },
+      await installChatFileMocks(app, {
+        workspace: workspacePath,
+        agentName: 'Main Agent',
+        updates: acpFileUpdates({
+          filePath: `${workspacePath}/demo.ts`,
+          fileName: 'demo.ts',
+          mimeType: 'text/typescript',
+          prompt: 'Patch the workspace file',
+          response: 'Updated demo.ts.',
+        }),
       });
 
       await app.evaluate(async ({ app: _app }, { workspacePath: mockedWorkspacePath }) => {
@@ -175,9 +231,9 @@ test.describe('ClawX chat file changes', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
-      const fileCard = page.getByRole('button', { name: /demo\.ts/ }).first();
-      await expect(fileCard).toBeVisible({ timeout: 30_000 });
-      await fileCard.click();
+      await expect(page.getByText('demo.ts').first()).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('chat-workspace-selector')).toHaveText('~/.openclaw/workspace-main', { timeout: 30_000 });
+      await page.getByTestId('chat-toolbar-workspace').click();
 
       const sidePanel = page.getByTestId('artifact-panel');
       await expect(sidePanel).toBeVisible({ timeout: 30_000 });
@@ -187,7 +243,9 @@ test.describe('ClawX chat file changes', () => {
       expect(tabLabels).toEqual(['Workspace', 'Preview', 'Changes']);
 
       await sidePanel.getByTestId('artifact-panel-tab-browser').click();
-      await expect(sidePanel.getByTestId('workspace-path')).toHaveText('~/.openclaw/workspace-main');
+      await expect(sidePanel.getByTestId('workspace-path-tag')).toHaveText('~/.openclaw/workspace-main');
+      await expect(sidePanel.getByTestId('workspace-path-tag')).toHaveAttribute('title', workspacePath);
+      await expect(sidePanel.getByTestId('workspace-path-final-segment')).toHaveText('workspace-main');
       await expect(sidePanel.getByRole('button', { name: /hidden files/i })).toHaveCount(0);
       await expect(sidePanel.getByText('.env')).toBeVisible({ timeout: 30_000 });
     } finally {
@@ -195,49 +253,19 @@ test.describe('ClawX chat file changes', () => {
     }
   });
 
-  test('shows line stats on generated file cards', async ({ launchElectronApp }) => {
+  test('focuses ACP-generated files in the changes panel', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
-      await installIpcMocks(app, {
-        gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
-        gatewayRpc: {
-          [stableStringify(['sessions.list', {}])]: {
-            success: true,
-            result: {
-              sessions: [{ key: SESSION_KEY, displayName: 'main' }],
-            },
-          },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: history },
-          },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: history },
-          },
-        },
-        hostApi: {
-          [stableStringify(['/api/gateway/status', 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: { state: 'running', port: 18789, pid: 12345 },
-            },
-          },
-          [stableStringify(['/api/agents', 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: {
-                success: true,
-                agents: [{ id: 'main', name: 'main' }],
-              },
-            },
-          },
-        },
+      await installChatFileMocks(app, {
+        workspace: '/workspace',
+        updates: acpFileUpdates({
+          filePath: '/workspace/demo.ts',
+          fileName: 'demo.ts',
+          mimeType: 'text/typescript',
+          prompt: 'Patch the workspace file',
+          response: 'Updated demo.ts.',
+        }),
       });
 
       const page = await getStableWindow(app);
@@ -256,30 +284,15 @@ test.describe('ClawX chat file changes', () => {
         root.classList.add('light');
       });
       await expect(page.getByTestId('artifact-panel')).toHaveCount(0);
+      await expect(page.getByText('demo.ts').first()).toBeVisible({ timeout: 30_000 });
 
-      const fileCard = page.getByRole('button', { name: /demo\.ts/ }).first();
-      await expect(fileCard).toBeVisible({ timeout: 30_000 });
-      await expect(fileCard).toContainText('+1');
-      await expect(fileCard).toContainText('-1');
-
-      await fileCard.click();
+      await page.getByTestId('chat-toolbar-workspace').click();
       const sidePanel = page.getByTestId('artifact-panel');
       await expect(sidePanel).toBeVisible({ timeout: 30_000 });
       await expect(sidePanel.getByTestId('artifact-panel-tab-browser')).toBeVisible();
-      await expect(fileCard).toContainText('demo.ts');
-
-      const diffBackground = page.getByTestId('monaco-diff-viewer').locator('.monaco-editor-background').first();
-      await expect(diffBackground).toBeVisible({ timeout: 30_000 });
-
-      const colors = await diffBackground.evaluate((element) => {
-        return {
-          diffBackground: window.getComputedStyle(element).backgroundColor,
-          appBackground: window.getComputedStyle(document.body).backgroundColor,
-        };
-      });
-
-      expect(colors.diffBackground).toBe(colors.appBackground);
-      expect(colors.diffBackground).not.toBe('rgb(255, 255, 255)');
+      await sidePanel.getByTestId('artifact-panel-tab-changes').click();
+      await expect(sidePanel.getByRole('heading', { name: 'demo.ts' })).toBeVisible({ timeout: 30_000 });
+      await expect(sidePanel.getByText(/no diff is available/i)).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }
@@ -289,45 +302,15 @@ test.describe('ClawX chat file changes', () => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
-      await installIpcMocks(app, {
-        gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
-        gatewayRpc: {
-          [stableStringify(['sessions.list', {}])]: {
-            success: true,
-            result: {
-              sessions: [{ key: SESSION_KEY, displayName: 'main' }],
-            },
-          },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: htmlFileHistory },
-          },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: htmlFileHistory },
-          },
-        },
-        hostApi: {
-          [stableStringify(['/api/gateway/status', 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: { state: 'running', port: 18789, pid: 12345 },
-            },
-          },
-          [stableStringify(['/api/agents', 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: {
-                success: true,
-                agents: [{ id: 'main', name: 'main', workspace: '/workspace' }],
-              },
-            },
-          },
-        },
+      await installChatFileMocks(app, {
+        workspace: '/workspace',
+        updates: acpFileUpdates({
+          filePath: '/workspace/demo.html',
+          fileName: 'demo.html',
+          mimeType: 'text/html',
+          prompt: '预览 HTML 页面',
+          response: '已生成 /workspace/demo.html',
+        }),
       });
 
       await app.evaluate(async () => {
@@ -363,11 +346,14 @@ test.describe('ClawX chat file changes', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
-      const htmlFileCard = page.locator('[title="Open file"]').filter({ hasText: 'demo.html' }).first();
-      await expect(htmlFileCard).toBeVisible({ timeout: 30_000 });
-      await htmlFileCard.click();
+      await expect(page.getByText('demo.html').first()).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('chat-toolbar-workspace').click();
 
       const sidePanel = page.getByTestId('artifact-panel');
+      await expect(sidePanel).toBeVisible({ timeout: 30_000 });
+      await sidePanel.getByTestId('artifact-panel-tab-changes').click();
+      await expect(sidePanel.getByRole('heading', { name: 'demo.html' })).toBeVisible({ timeout: 30_000 });
+      await sidePanel.getByTestId('artifact-panel-tab-preview').click();
       const frame = sidePanel.getByTestId('html-preview-frame');
       await expect(frame).toBeVisible({ timeout: 30_000 });
       await expect(sidePanel.getByText('<!doctype html>')).toHaveCount(0);
@@ -383,45 +369,30 @@ test.describe('ClawX chat file changes', () => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
-      await installIpcMocks(app, {
-        gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
-        gatewayRpc: {
-          [stableStringify(['sessions.list', {}])]: {
-            success: true,
-            result: {
-              sessions: [{ key: SESSION_KEY, displayName: 'main' }],
-            },
-          },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: attachedFileHistory },
-          },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: attachedFileHistory },
-          },
-        },
-        hostApi: {
-          [stableStringify(['/api/gateway/status', 'GET'])]: {
+      await installChatFileMocks(app, {
+        workspace: '/workspace',
+        updates: acpFileUpdates({
+          filePath: '/workspace/skills/open-xueqiu/SKILL.md',
+          fileName: 'SKILL.md',
+          mimeType: 'text/markdown',
+          prompt: '查看这个技能文件',
+          response: '这是文件。',
+        }),
+      });
+
+      await app.evaluate(async () => {
+        const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+        ipcMain.removeHandler('file:readText');
+        ipcMain.handle('file:readText', async (_event: unknown, inputPath: string) => {
+          if (inputPath !== '/workspace/skills/open-xueqiu/SKILL.md') return { ok: false, error: 'notFound' };
+          return {
             ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: { state: 'running', port: 18789, pid: 12345 },
-            },
-          },
-          [stableStringify(['/api/agents', 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: {
-                success: true,
-                agents: [{ id: 'main', name: 'main', workspace: '/workspace' }],
-              },
-            },
-          },
-        },
+            content: '# SKILL\n\nOpen Xueqiu skill details.',
+            size: 36,
+            mimeType: 'text/markdown',
+            readOnly: true,
+          };
+        });
       });
 
       const page = await getStableWindow(app);
@@ -434,11 +405,12 @@ test.describe('ClawX chat file changes', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
-      const skillFileCard = page.locator('[title="Open file"]').filter({ hasText: 'SKILL.md' }).first();
-      await expect(skillFileCard).toBeVisible({ timeout: 30_000 });
-      await skillFileCard.click();
+      await expect(page.getByText('SKILL.md').first()).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('chat-toolbar-workspace').click();
 
       const sidePanel = page.getByTestId('artifact-panel');
+      await expect(sidePanel).toBeVisible({ timeout: 30_000 });
+      await sidePanel.getByTestId('artifact-panel-tab-changes').click();
       await expect(sidePanel.getByRole('heading', { name: 'SKILL.md' })).toBeVisible({ timeout: 30_000 });
 
       await sidePanel.getByTestId('artifact-panel-tab-browser').click();

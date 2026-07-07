@@ -7,8 +7,7 @@ export function useNewChatAction(): () => void {
   const newSession = useChatStore((state) => state.newSession);
 
   return useCallback(() => {
-    const { messages } = useChatStore.getState();
-    if (messages.length > 0) newSession();
+    newSession();
     navigate('/');
   }, [navigate, newSession]);
 }

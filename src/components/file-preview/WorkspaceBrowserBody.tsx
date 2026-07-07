@@ -1,7 +1,7 @@
 /**
  * Inline workspace browser body — left tree + right preview.
  *
- * Strictly scoped to the current agent's `agent.workspace` directory.
+ * Scoped to the effective chat workspace, falling back to the current agent's workspace.
  * Used by `ArtifactPanel`'s browser tab (split-pane on the chat page).
  */
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -72,8 +72,57 @@ function toOpenState(expanded: Set<string>): Record<string, boolean> {
   return out;
 }
 
+function splitDisplayPath(displayPath: string): { prefix: string; finalSegment: string } {
+  const value = displayPath.trim();
+  if (!value) return { prefix: '', finalSegment: '-' };
+
+  const normalized = value.replace(/\\/g, '/');
+  if (/^\/+$/u.test(normalized)) return { prefix: '', finalSegment: '/' };
+  const windowsDriveRoot = normalized.match(/^([A-Za-z]:)\/+$/u);
+  if (windowsDriveRoot) return { prefix: '', finalSegment: `${windowsDriveRoot[1]}/` };
+
+  const trimmed = normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized;
+  const slashIndex = trimmed.lastIndexOf('/');
+  if (slashIndex < 0) return { prefix: '', finalSegment: trimmed };
+  if (slashIndex === 0) return { prefix: '/', finalSegment: trimmed.slice(1) || trimmed };
+  return {
+    prefix: trimmed.slice(0, slashIndex + 1),
+    finalSegment: trimmed.slice(slashIndex + 1) || trimmed,
+  };
+}
+
+function HeaderTag({ children, testId, title }: { children: React.ReactNode; testId: string; title?: string }) {
+  return (
+    <span
+      data-testid={testId}
+      title={title}
+      className="inline-flex h-7 max-w-full min-w-0 items-center overflow-hidden whitespace-nowrap rounded-full border border-black/10 bg-black/[0.03] px-2.5 text-xs font-medium text-foreground/80 dark:border-white/10 dark:bg-white/[0.06]"
+    >
+      {children}
+    </span>
+  );
+}
+
+function WorkspacePathTag({ displayPath, title }: { displayPath: string; title: string }) {
+  const { prefix, finalSegment } = splitDisplayPath(displayPath);
+  return (
+    <HeaderTag testId="workspace-path-tag" title={title}>
+      <span data-testid="workspace-path-prefix" className="min-w-0 shrink-[999] truncate text-muted-foreground">
+        {prefix}
+      </span>
+      <span data-testid="workspace-path-final-segment" className="min-w-0 shrink truncate font-semibold text-foreground">
+        {finalSegment}
+      </span>
+    </HeaderTag>
+  );
+}
+
 export interface WorkspaceBrowserBodyProps {
   agent: AgentSummary | null;
+  /** Effective workspace root. Falls back to agent.workspace for older call sites. */
+  workspacePath?: string | null;
+  /** Optional display label for workspacePath. */
+  workspaceLabel?: string;
   /** Used to mark "Added this run" badges on the tree. */
   runStartedAt?: number | null;
   /** Bumping this number triggers a tree reload (e.g. after AI run idles). */
@@ -103,6 +152,8 @@ type FileState =
 
 export function WorkspaceBrowserBody({
   agent,
+  workspacePath,
+  workspaceLabel,
   runStartedAt,
   refreshSignal,
   compact = false,
@@ -121,14 +172,17 @@ export function WorkspaceBrowserBody({
   const treeContainerRef = useRef<HTMLDivElement | null>(null);
   const [treeHeight, setTreeHeight] = useState(0);
 
-  const workspace = agent?.workspace ?? '';
+  const explicitWorkspace = workspacePath?.trim() ?? '';
+  const workspace = explicitWorkspace || agent?.workspace || '';
   const treeScope = `${agent?.id ?? ''}:${workspace}`;
   const openRelPaths = openRelPathState.scope === treeScope ? openRelPathState.paths : null;
-  const workspaceDisplayPath = formatWorkspacePath(workspace);
+  const workspaceDisplayPath = explicitWorkspace
+    ? workspaceLabel || formatWorkspacePath(workspace)
+    : formatWorkspacePath(workspace);
   const agentDisplayName = agent?.name?.trim() || '-';
   const directoryDisplayPath = workspaceDisplayPath || '-';
-  const workspaceHeaderTitle = t('workspace.header', {
-    defaultValue: 'Agent：{{agent}} / 目录：{{directory}}',
+  const headerTitle = t('workspace.header', {
+    defaultValue: 'Agent: {{agent}} · Directory: {{directory}}',
     agent: agentDisplayName,
     directory: directoryDisplayPath,
   });
@@ -581,10 +635,17 @@ export function WorkspaceBrowserBody({
         <div className="flex min-w-0 items-center gap-2">
           <h2
             data-testid="workspace-header-title"
-            title={`${agentDisplayName} / ${workspace || directoryDisplayPath}`}
-            className="min-w-0 truncate text-sm font-semibold"
+            title={headerTitle}
+            aria-label={headerTitle}
+            className="m-0 flex min-w-0 items-center gap-1.5 overflow-hidden text-sm font-medium"
           >
-            {workspaceHeaderTitle}
+            <HeaderTag testId="workspace-agent-tag" title={agentDisplayName}>
+              <span className="min-w-0 truncate">{agentDisplayName}</span>
+            </HeaderTag>
+            <WorkspacePathTag
+              displayPath={directoryDisplayPath}
+              title={workspace || directoryDisplayPath}
+            />
           </h2>
         </div>
         <div className="flex shrink-0 items-center gap-1">

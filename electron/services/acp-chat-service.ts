@@ -152,7 +152,7 @@ export class AcpChatService {
         const created = await connection.newSession({
           cwd: payload.cwd,
           mcpServers: [],
-          _meta: { sessionKey: payload.sessionKey, prefixCwd: false },
+          _meta: { sessionKey: payload.sessionKey, prefixCwd: true },
         });
         acpSessionId = created.sessionId;
       } else {
@@ -215,7 +215,7 @@ export class AcpChatService {
         sessionId: this.loadedAcpSessionId,
         prompt,
         messageId: payload.messageId ?? randomUUID(),
-        _meta: { sessionKey: payload.sessionKey, prefixCwd: false },
+        _meta: { sessionKey: payload.sessionKey, prefixCwd: true },
       });
       this.trace('session/prompt:success', {
         sessionKey: payload.sessionKey,

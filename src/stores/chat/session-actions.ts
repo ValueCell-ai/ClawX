@@ -168,6 +168,16 @@ export function createSessionActions(
           });
 
           const { currentSessionKey, sessions: localSessions } = get();
+          const localWorkspaceBySessionKey = new Map(
+            localSessions
+              .filter((session) => session.workspacePath)
+              .map((session) => [session.key, session.workspacePath!] as const),
+          );
+          const mergedSessions = dedupedSessions.map((session) => {
+            if (session.workspacePath) return session;
+            const workspacePath = localWorkspaceBySessionKey.get(session.key);
+            return workspacePath ? { ...session, workspacePath } : session;
+          });
           let nextSessionKey = currentSessionKey || DEFAULT_SESSION_KEY;
           let replacedHiddenHeartbeatSession = false;
           const hiddenCurrentSession = findHiddenOpenClawHeartbeatSession(nextSessionKey, normalizedSessions);
@@ -184,23 +194,24 @@ export function createSessionActions(
               nextSessionKey = canonicalMatch;
             }
           }
-          if (!replacedHiddenHeartbeatSession && !dedupedSessions.find((s) => s.key === nextSessionKey) && dedupedSessions.length > 0) {
+          if (!replacedHiddenHeartbeatSession && !mergedSessions.find((s) => s.key === nextSessionKey) && mergedSessions.length > 0) {
             const hasLocalPendingSession = localSessions.some((session) => session.key === nextSessionKey);
             if (!hasLocalPendingSession) {
-              const fallbackKey = pickStartupSessionFallback(nextSessionKey, dedupedSessions);
+              const fallbackKey = pickStartupSessionFallback(nextSessionKey, mergedSessions);
               if (fallbackKey) {
                 nextSessionKey = fallbackKey;
               }
             }
           }
 
-          const sessionsWithCurrent = !dedupedSessions.find((s) => s.key === nextSessionKey) && nextSessionKey
+          const localCurrentSession = localSessions.find((session) => session.key === nextSessionKey);
+          const sessionsWithCurrent = !mergedSessions.find((s) => s.key === nextSessionKey) && nextSessionKey
             && isClawXDesktopSessionKey(nextSessionKey)
             ? [
-              ...dedupedSessions,
-              { key: nextSessionKey, displayName: nextSessionKey },
+              ...mergedSessions,
+              localCurrentSession ?? { key: nextSessionKey, displayName: nextSessionKey },
             ]
-            : dedupedSessions;
+            : mergedSessions;
 
           const discoveredActivity = Object.fromEntries(
             sessionsWithCurrent

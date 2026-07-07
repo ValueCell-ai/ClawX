@@ -191,6 +191,7 @@ function applySessionLabelSummaries(
   set((state) => {
     let nextLabels = state.sessionLabels;
     let nextActivity = state.sessionLastActivity;
+    let nextSessions = state.sessions;
     let changed = false;
 
     for (const summary of summaries) {
@@ -215,14 +216,30 @@ function applySessionLabelSummaries(
           changed = true;
         }
       }
+
+      const workspacePath = typeof summary.workspacePath === 'string'
+        ? summary.workspacePath.trim()
+        : '';
+      if (workspacePath) {
+        const sessionIndex = nextSessions.findIndex((session) => session.key === summary.sessionKey);
+        const existingSession = sessionIndex >= 0 ? nextSessions[sessionIndex] : undefined;
+        if (existingSession && existingSession.workspacePath !== workspacePath) {
+          if (nextSessions === state.sessions) {
+            nextSessions = [...state.sessions];
+          }
+          nextSessions[sessionIndex] = { ...existingSession, workspacePath };
+          changed = true;
+        }
+      }
     }
 
-    return changed
-      ? {
-        sessionLabels: nextLabels,
-        sessionLastActivity: nextActivity,
-      }
-      : {};
+    if (!changed) return {};
+
+    const patch: Partial<ChatState> = {};
+    if (nextLabels !== state.sessionLabels) patch.sessionLabels = nextLabels;
+    if (nextActivity !== state.sessionLastActivity) patch.sessionLastActivity = nextActivity;
+    if (nextSessions !== state.sessions) patch.sessions = nextSessions;
+    return patch;
   });
 }
 
@@ -232,12 +249,10 @@ async function refreshVisibleSessionSummaries(
   sessionKeys?: string[],
 ): Promise<void> {
   const sessions = get().sessions;
-  const currentSessionKey = get().currentSessionKey;
   const targetKeys = (sessionKeys && sessionKeys.length > 0
     ? sessionKeys
     : sessions.map((session) => session.key)
-  )
-    .filter((key) => key && !key.endsWith(':main') && key !== currentSessionKey);
+  ).filter((key) => key && key.startsWith('agent:'));
   if (targetKeys.length === 0) return;
 
   try {
@@ -2672,6 +2687,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
           });
 
           const { currentSessionKey, sessions: localSessions } = get();
+          const localWorkspaceBySessionKey = new Map(
+            localSessions
+              .filter((session) => session.workspacePath)
+              .map((session) => [session.key, session.workspacePath!] as const),
+          );
+          const mergedSessions = dedupedSessions.map((session) => {
+            if (session.workspacePath) return session;
+            const workspacePath = localWorkspaceBySessionKey.get(session.key);
+            return workspacePath ? { ...session, workspacePath } : session;
+          });
           let nextSessionKey = currentSessionKey || DEFAULT_SESSION_KEY;
           let replacedHiddenHeartbeatSession = false;
           const hiddenCurrentSession = findHiddenOpenClawHeartbeatSession(nextSessionKey, normalizedSessions);
@@ -2688,25 +2713,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
               nextSessionKey = canonicalMatch;
             }
           }
-          if (!replacedHiddenHeartbeatSession && !dedupedSessions.find((s) => s.key === nextSessionKey) && dedupedSessions.length > 0) {
+          if (!replacedHiddenHeartbeatSession && !mergedSessions.find((s) => s.key === nextSessionKey) && mergedSessions.length > 0) {
             // Preserve only locally-created pending sessions. On initial boot the
             // default ghost key (`agent:main:main`) should yield to real history.
             const hasLocalPendingSession = localSessions.some((session) => session.key === nextSessionKey);
             if (!hasLocalPendingSession) {
-              const fallbackKey = pickStartupSessionFallback(nextSessionKey, dedupedSessions);
+              const fallbackKey = pickStartupSessionFallback(nextSessionKey, mergedSessions);
               if (fallbackKey) {
                 nextSessionKey = fallbackKey;
               }
             }
           }
 
-          const sessionsWithCurrent = !dedupedSessions.find((s) => s.key === nextSessionKey) && nextSessionKey
+          const localCurrentSession = localSessions.find((session) => session.key === nextSessionKey);
+          const sessionsWithCurrent = !mergedSessions.find((s) => s.key === nextSessionKey) && nextSessionKey
             && isClawXDesktopSessionKey(nextSessionKey)
             ? [
-              ...dedupedSessions,
-              { key: nextSessionKey, displayName: nextSessionKey },
+              ...mergedSessions,
+              localCurrentSession ?? { key: nextSessionKey, displayName: nextSessionKey },
             ]
-            : dedupedSessions;
+            : mergedSessions;
 
           const discoveredActivity = Object.fromEntries(
             sessionsWithCurrent
@@ -2757,6 +2783,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 session,
                 existingSessionLabels,
                 existingSessionActivity,
+                { includeWorkspacePath: true },
               ),
             }))
             .filter((entry) => entry.candidate != null)
@@ -2925,11 +2952,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => buildSessionSwitchPatch(s, newKey, { createdLocally: true }));
   },
 
-  acknowledgeAcpSessionCreated: (key: string) => {
+  acknowledgeAcpSessionCreated: (key: string, workspacePath?: string) => {
+    const normalizedWorkspacePath = workspacePath?.trim();
     set((s) => ({
       sessions: s.sessions.map((session) => (
         session.key === key && session.createdLocally
-          ? { ...session, createdLocally: false }
+          ? {
+            ...session,
+            createdLocally: false,
+            ...(normalizedWorkspacePath ? { workspacePath: normalizedWorkspacePath } : {}),
+          }
           : session
       )),
     }));

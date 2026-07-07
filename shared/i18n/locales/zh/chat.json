@@ -149,6 +149,7 @@
     },
     "workspace": {
         "title": "工作空间",
+        "defaultLabel": "默认工作空间",
         "header": "Agent：{{agent}} · 目录：{{directory}}",
         "freshBadge": "本轮新增",
         "pickFile": "从左侧选择一个文件预览",
@@ -215,10 +216,24 @@
         "gatewayStarting": "启动中",
         "gatewayStatus": "网关{{state}} ｜ 端口：{{port}} ｜ 进程 ID：{{pid}}",
         "retryFailedAttachments": "重试失败的附件",
+        "workspacePrefix": "{{workspace}}",
+        "workspacePickerTitle": "选择工作空间文件夹",
+        "workspacePickerButton": "使用此工作空间",
+        "workspacePickerFailed": "无法打开工作空间选择器",
+        "defaultWorkspaceOption": "默认工作空间",
+        "chooseOtherWorkspaceOption": "选择其他目录…",
         "folderDropUnsupported": "无法添加此文件夹。请重新拖入，或在消息中粘贴文件夹路径。",
         "folderAttachment": "文件夹",
         "skillPreviewTooltip": "预览 SKILL.md",
         "skillPreviewNotFound": "找不到该技能。请打开技能列表以刷新。"
+    },
+    "sessionList": {
+        "title": "会话列表",
+        "collapseAll": "一键折叠",
+        "expandAll": "一键展开",
+        "loadMore": "加载 {{count}} 个更多",
+        "loadMoreForWorkspace": "在 {{workspace}} 中再加载 {{count}} 个会话",
+        "workspaceToggle": "展开或折叠工作空间 {{workspace}}"
     },
     "historyBuckets": {
         "today": "今天",

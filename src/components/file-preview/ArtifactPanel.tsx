@@ -3,7 +3,7 @@
  * shown next to the Chat conversation.  Hosts three top-level tabs:
  *
  *   - Workspace (browser): read-only workspace tree + file preview,
- *     scoped to the current agent's `agent.workspace`.
+ *     scoped to the effective chat workspace.
  *   - Preview: rendered preview of whichever file is currently
  *     focused (Markdown → rendered, code → syntax-highlighted).  Shares
  *     `focusedFile` with the changes tab so switching tabs keeps
@@ -36,13 +36,17 @@ export interface ArtifactPanelProps {
   files: GeneratedFile[];
   /** Currently selected agent (drives the workspace tab). */
   agent: AgentSummary | null;
+  /** Effective chat workspace path resolved from OpenClaw session cwd or global selection. */
+  workspacePath?: string | null;
+  /** Display label for the effective workspace path. */
+  workspaceLabel?: string;
   /** Used to mark "Added this run" badges on the workspace tree. */
   runStartedAt?: number | null;
   /** Bumping this number triggers a workspace tree reload. */
   refreshSignal?: number;
 }
 
-export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: ArtifactPanelProps) {
+export function ArtifactPanel({ files, agent, workspacePath, workspaceLabel, runStartedAt, refreshSignal }: ArtifactPanelProps) {
   const { t } = useTranslation('chat');
   const isMac = window.electron?.platform === 'darwin';
   const tab = useArtifactPanel((s) => s.tab);
@@ -123,6 +127,8 @@ export function ArtifactPanel({ files, agent, runStartedAt, refreshSignal }: Art
           <div className={cn('h-full min-h-0', visibleTab !== 'browser' && 'hidden')}>
             <WorkspaceBrowserBody
               agent={agent}
+              workspacePath={workspacePath}
+              workspaceLabel={workspaceLabel}
               runStartedAt={runStartedAt}
               refreshSignal={refreshSignal}
               compact

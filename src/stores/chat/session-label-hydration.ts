@@ -16,6 +16,10 @@ type SessionLabelHydrationRecord = {
   outcome: SessionLabelHydrationOutcome;
 };
 
+type SessionLabelHydrationCandidateOptions = {
+  includeWorkspacePath?: boolean;
+};
+
 const sessionLabelHydrationInFlight = new Map<string, string>();
 const sessionLabelHydrationHandled = new Map<string, SessionLabelHydrationRecord>();
 const sessionLabelHydrationReadyByRuntime = new Set<string>();
@@ -48,18 +52,31 @@ export function getSessionLabelHydrationVersion(
 }
 
 export function getSessionLabelHydrationCandidate(
-  session: Pick<ChatSession, 'key' | 'updatedAt' | 'label' | 'displayName' | 'derivedTitle'>,
+  session: Pick<ChatSession, 'key' | 'updatedAt' | 'label' | 'displayName' | 'derivedTitle' | 'workspacePath' | 'createdLocally'>,
   sessionLabels: Record<string, string>,
   sessionLastActivity: Record<string, number>,
+  options: SessionLabelHydrationCandidateOptions = {},
 ): { sessionKey: string; version: string } | null {
-  if (session.key.endsWith(':main')) return null;
-  if (normalizeLabelValue(sessionLabels[session.key])) return null;
-
   const version = getSessionLabelHydrationVersion(session, sessionLastActivity);
+  const hasWorkspacePath = normalizeLabelValue(session.workspacePath) != null;
+  const isMainSession = session.key.endsWith(':main');
+  const displayName = normalizeLabelValue(session.displayName);
+  const isLocalOrGhostMainSession = isMainSession
+    && (session.createdLocally || (typeof session.updatedAt !== 'number' && (!displayName || displayName === session.key)));
+  if (isLocalOrGhostMainSession) return null;
+  if (isMainSession && (hasWorkspacePath || !options.includeWorkspacePath)) return null;
+
+  const hasSidebarLabel = normalizeLabelValue(sessionLabels[session.key]) != null;
   const backendLabel = normalizeLabelValue(session.label) ?? normalizeLabelValue(session.derivedTitle);
+  const needsWorkspacePath = options.includeWorkspacePath === true && !hasWorkspacePath;
+  const needsLabel = !hasSidebarLabel && !backendLabel;
+  if (!needsWorkspacePath && !needsLabel) return null;
+
   if (backendLabel) {
-    sessionLabelHydrationHandled.set(session.key, { version, outcome: 'backend-label' });
-    return null;
+    if (!needsWorkspacePath) {
+      sessionLabelHydrationHandled.set(session.key, { version, outcome: 'backend-label' });
+      return null;
+    }
   }
 
   if (sessionLabelHydrationInFlight.get(session.key) === version) return null;

@@ -74,6 +74,35 @@ describe('chat store session label summary hydration', () => {
     vi.useRealTimers();
   });
 
+  it('only includes persisted main sessions missing workspacePath when workspace hydration is requested', async () => {
+    const { getSessionLabelHydrationCandidate } = await import('@/stores/chat/session-label-hydration');
+
+    expect(getSessionLabelHydrationCandidate(
+      { key: 'agent:main:main', displayName: 'Main', updatedAt: 1001 },
+      {},
+      {},
+    )).toBeNull();
+
+    expect(getSessionLabelHydrationCandidate(
+      { key: 'agent:main:main', displayName: 'Main', updatedAt: 1001 },
+      {},
+      {},
+      { includeWorkspacePath: true },
+    )).toEqual({ sessionKey: 'agent:main:main', version: '1001|' });
+
+    expect(getSessionLabelHydrationCandidate(
+      { key: 'agent:main:main', displayName: 'agent:main:main', createdLocally: true },
+      {},
+      {},
+    )).toBeNull();
+
+    expect(getSessionLabelHydrationCandidate(
+      { key: 'agent:main:main', displayName: 'agent:main:main' },
+      {},
+      {},
+    )).toBeNull();
+  });
+
   it('hydrates sidebar titles immediately after sessions load because summaries do not use gateway chat.history', async () => {
     gatewayRpcMock.mockImplementation(async (method: string) => {
       if (method === 'sessions.list') {
@@ -149,7 +178,7 @@ describe('chat store session label summary hydration', () => {
 
     expect(hostApiFetchMock).toHaveBeenCalledWith('/api/sessions/summaries', {
       method: 'POST',
-      body: JSON.stringify({ sessionKeys: ['agent:main:session-a'] }),
+      body: JSON.stringify({ sessionKeys: ['agent:main:session-a', 'agent:main:main'] }),
     });
     expect(useChatStore.getState().sessionLabels['agent:main:session-a']).toBe('should hydrate immediately');
 
@@ -233,7 +262,7 @@ describe('chat store session label summary hydration', () => {
 
     expect(hostApiFetchMock).toHaveBeenCalledWith('/api/sessions/summaries', {
       method: 'POST',
-      body: JSON.stringify({ sessionKeys: ['agent:main:session-a', 'agent:main:session-b'] }),
+      body: JSON.stringify({ sessionKeys: ['agent:main:session-a', 'agent:main:session-b', 'agent:main:main'] }),
     });
     expect(useChatStore.getState().sessionLabels['agent:main:session-a']).toBe('Alpha title');
     expect(useChatStore.getState().sessionLabels['agent:main:session-b']).toBe('Beta title');
@@ -313,7 +342,7 @@ describe('chat store session label summary hydration', () => {
 
     expect(hostApiFetchMock).toHaveBeenCalledWith('/api/sessions/summaries', {
       method: 'POST',
-      body: JSON.stringify({ sessionKeys: ['agent:main:session-c'] }),
+      body: JSON.stringify({ sessionKeys: ['agent:main:session-a', 'agent:main:session-b', 'agent:main:session-c', 'agent:main:main'] }),
     });
     expect(useChatStore.getState().sessionLabels['agent:main:session-c']).toBe('needs label');
     expect(useChatStore.getState().sessionLastActivity['agent:main:session-c']).toBe(1_700_000_000_123);
@@ -494,7 +523,7 @@ describe('chat store session label summary hydration', () => {
       '/api/sessions/summaries',
       {
         method: 'POST',
-        body: JSON.stringify({ sessionKeys: ['agent:main:session-a'] }),
+        body: JSON.stringify({ sessionKeys: ['agent:main:session-a', 'agent:main:main'] }),
       },
     ]);
     expect(summaryCalls[1]).toEqual([

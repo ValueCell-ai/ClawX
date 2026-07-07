@@ -10,9 +10,11 @@ import { DEFAULT_SESSION_KEY } from '@shared/chat/types';
 import { useAgentsStore } from '@/stores/agents';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { useChatStore } from '@/stores/chat';
+import { useSettingsStore } from '@/stores/settings';
 import { ensureAcpChatSubscriptions, useAcpChatSessionStore } from '@/stores/acp-chat-session';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
+import { getWorkspaceDisplayLabel, resolveEffectiveWorkspace } from '@/lib/workspace-context';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
 import type { AcpTimelineSnapshot, RenderPart } from '@/lib/acp/timeline-types';
 import type { FileContentType, GeneratedFile } from '@/lib/generated-files';
@@ -64,8 +66,8 @@ function contentTypeForExt(ext: string): FileContentType {
   if (IMAGE_EXTS.has(ext)) return 'snapshot';
   if (VIDEO_EXTS.has(ext)) return 'video';
   if (AUDIO_EXTS.has(ext)) return 'audio';
-  if (CODE_EXTS.has(ext)) return 'code';
   if (DOCUMENT_EXTS.has(ext)) return 'document';
+  if (CODE_EXTS.has(ext)) return 'code';
   return 'other';
 }
 
@@ -179,19 +181,26 @@ export function Chat() {
   const loadSessions = useChatStore((s) => s.loadSessions);
   const selectAcpSession = useChatStore((s) => s.selectAcpSession);
   const acknowledgeAcpSessionCreated = useChatStore((s) => s.acknowledgeAcpSessionCreated);
+  const chatWorkspacePath = useSettingsStore((s) => s.chatWorkspacePath);
+  const setChatWorkspacePath = useSettingsStore((s) => s.setChatWorkspacePath);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
   const agents = useAgentsStore((s) => s.agents);
-  const agentsLoading = useAgentsStore((s) => s.loading);
-  const agentsError = useAgentsStore((s) => s.error);
-  const [agentsFetchSettled, setAgentsFetchSettled] = useState(false);
   const [sessionDiscoveryAttempted, setSessionDiscoveryAttempted] = useState(false);
   const [lastPromptAttemptSessionKey, setLastPromptAttemptSessionKey] = useState<string | null>(null);
+  const currentSession = useMemo(
+    () => sessions.find((session) => session.key === currentSessionKey) ?? null,
+    [currentSessionKey, sessions],
+  );
+  const effectiveWorkspace = useMemo(
+    () => resolveEffectiveWorkspace({ session: currentSession, globalWorkspace: chatWorkspacePath }),
+    [chatWorkspacePath, currentSession],
+  );
+  const cwd = effectiveWorkspace.cwd;
+  const workspaceLabel = getWorkspaceDisplayLabel(cwd, t('workspace.defaultLabel'));
   const currentAgent = useMemo(
     () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
     [agents, currentAgentId],
   );
-  const agentsSettled = agents.length > 0 || agentsFetchSettled || !!agentsError;
-  const cwd = currentAgent?.workspace || (!agentsLoading && agentsSettled ? '/' : null);
 
   const acpTimeline = useAcpChatSessionStore((s) => s.timeline);
   const acpLoading = useAcpChatSessionStore((s) => s.loading);
@@ -199,6 +208,8 @@ export function Chat() {
   const acpCancelling = useAcpChatSessionStore((s) => s.cancelling);
   const acpError = useAcpChatSessionStore((s) => s.error);
   const acpActiveSessionKey = useAcpChatSessionStore((s) => s.activeSessionKey);
+  const acpCwd = useAcpChatSessionStore((s) => s.cwd);
+  const prepareLocalAcpSession = useAcpChatSessionStore((s) => s.prepareLocalSession);
   const loadAcpSession = useAcpChatSessionStore((s) => s.loadSession);
   const sendAcpPrompt = useAcpChatSessionStore((s) => s.sendPrompt);
   const cancelAcp = useAcpChatSessionStore((s) => s.cancel);
@@ -209,21 +220,14 @@ export function Chat() {
   const panelWidthPct = useArtifactPanel((s) => s.widthPct);
   const closeArtifactPanel = useArtifactPanel((s) => s.close);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
-  const acpLoadInFlightSessionKeyRef = useRef<string | null>(null);
+  const acpLoadInFlightKeyRef = useRef<string | null>(null);
   const { contentRef, scrollRef, scrollToBottom, isAtBottom } = useStickToBottomInstant(
     currentSessionKey,
     acpSending || acpCancelling,
   );
 
   useEffect(() => {
-    let cancelled = false;
-    setAgentsFetchSettled(false);
-    void fetchAgents().finally(() => {
-      if (!cancelled) setAgentsFetchSettled(true);
-    });
-    return () => {
-      cancelled = true;
-    };
+    void fetchAgents().catch(() => undefined);
   }, [fetchAgents]);
 
   useEffect(() => {
@@ -244,12 +248,22 @@ export function Chat() {
   }, [currentSessionKey, loadSessions, sessionDiscoveryAttempted, sessions.length]);
 
   useEffect(() => {
+    if (!currentSessionKey || !cwd || !currentSession?.createdLocally) return;
+    const hasStaleTimeline = acpTimeline.sessionId !== currentSessionKey || acpTimeline.itemOrder.length > 0;
+    if (acpActiveSessionKey === currentSessionKey && acpCwd === cwd && !hasStaleTimeline) return;
+    prepareLocalAcpSession({ sessionKey: currentSessionKey, cwd });
+  }, [acpActiveSessionKey, acpCwd, acpTimeline.itemOrder.length, acpTimeline.sessionId, currentSession, currentSessionKey, cwd, prepareLocalAcpSession]);
+
+  useEffect(() => {
     if (!currentSessionKey || !cwd) return;
     if (currentSessionKey === DEFAULT_SESSION_KEY && sessions.length === 0 && acpActiveSessionKey == null && !sessionDiscoveryAttempted) return;
-    if (acpLoadInFlightSessionKeyRef.current === currentSessionKey) return;
-    acpLoadInFlightSessionKeyRef.current = currentSessionKey;
+    if (acpActiveSessionKey === currentSessionKey && acpCwd === cwd) return;
+    const acpLoadKey = `${currentSessionKey}\0${cwd}`;
+    if (acpLoadInFlightKeyRef.current === acpLoadKey) return;
     const currentSession = sessions.find((session) => session.key === currentSessionKey);
-    const createIfMissing = !currentSession || !!currentSession.createdLocally;
+    if (currentSession?.createdLocally) return;
+    const createIfMissing = !currentSession;
+    acpLoadInFlightKeyRef.current = acpLoadKey;
     void loadAcpSession({
       sessionKey: currentSessionKey,
       cwd,
@@ -259,11 +273,11 @@ export function Chat() {
         acknowledgeAcpSessionCreated(currentSessionKey);
       }
     }).finally(() => {
-      if (acpLoadInFlightSessionKeyRef.current === currentSessionKey) {
-        acpLoadInFlightSessionKeyRef.current = null;
+      if (acpLoadInFlightKeyRef.current === acpLoadKey) {
+        acpLoadInFlightKeyRef.current = null;
       }
     });
-  }, [acknowledgeAcpSessionCreated, acpActiveSessionKey, currentSessionKey, cwd, loadAcpSession, sessionDiscoveryAttempted, sessions]);
+  }, [acknowledgeAcpSessionCreated, acpActiveSessionKey, acpCwd, currentSessionKey, cwd, loadAcpSession, sessionDiscoveryAttempted, sessions]);
 
   const platform = window.electron?.platform;
   const isMac = platform === 'darwin';
@@ -293,7 +307,7 @@ export function Chat() {
         <div className="relative flex shrink-0 items-center justify-end px-4 py-2">
           <div data-testid="chat-toolbar-drag-region" className="drag-region absolute inset-0 z-0" aria-hidden="true" />
           <div data-testid="chat-toolbar-actions" className="no-drag relative z-10">
-            <ChatToolbar />
+            <ChatToolbar workspaceAvailable={!!cwd} />
           </div>
         </div>
 
@@ -357,20 +371,26 @@ export function Chat() {
               selectAcpSession(sessionKey);
             }
             void (async () => {
-              if (acpActiveSessionKey !== sessionKey) {
-                acpLoadInFlightSessionKeyRef.current = sessionKey;
-                let loaded = false;
-                try {
-                  const createIfMissing = !targetAgent && !sessions.some((session) => session.key === sessionKey);
-                  loaded = await loadAcpSession({
-                    sessionKey,
-                    cwd: promptCwd,
-                    ...(createIfMissing ? { createIfMissing: true } : {}),
-                  });
-                } finally {
-                  if (acpLoadInFlightSessionKeyRef.current === sessionKey) {
-                    acpLoadInFlightSessionKeyRef.current = null;
+              const existingSession = sessions.find((session) => session.key === sessionKey);
+              const createIfMissing = !targetAgent && (!existingSession || !!existingSession.createdLocally);
+              if (createIfMissing || acpActiveSessionKey !== sessionKey || acpCwd !== promptCwd) {
+                const acpLoadKey = `${sessionKey}\0${promptCwd}`;
+                acpLoadInFlightKeyRef.current = acpLoadKey;
+                const loaded = await (async () => {
+                  try {
+                    return await loadAcpSession({
+                      sessionKey,
+                      cwd: promptCwd,
+                      ...(createIfMissing ? { createIfMissing: true } : {}),
+                    });
+                  } finally {
+                    if (acpLoadInFlightKeyRef.current === acpLoadKey) {
+                      acpLoadInFlightKeyRef.current = null;
+                    }
                   }
+                })();
+                if (loaded && createIfMissing) {
+                  acknowledgeAcpSessionCreated(sessionKey, promptCwd);
                 }
                 if (!loaded) return;
               }
@@ -385,6 +405,10 @@ export function Chat() {
           onStop={() => void cancelAcp()}
           disabled={acpLoading || acpCancelling || !cwd}
           sending={composerBusy}
+          workspaceLabel={workspaceLabel}
+          workspacePath={cwd}
+          workspaceReadOnly={effectiveWorkspace.readOnly}
+          onSelectWorkspace={setChatWorkspacePath}
         />
       </div>
 
@@ -411,6 +435,8 @@ export function Chat() {
               <ArtifactPanelLazy
                 files={acpGeneratedFiles}
                 agent={currentAgent}
+                workspacePath={cwd}
+                workspaceLabel={workspaceLabel}
                 runStartedAt={null}
               />
             </Suspense>

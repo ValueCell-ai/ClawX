@@ -1,11 +1,24 @@
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 const MAIN_SESSION_KEY = 'agent:main:main';
-const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
+const DEFAULT_WORKSPACE_SEGMENT = '~%2F.openclaw%2Fworkspace';
 const SESSIONS_LIST_PAYLOAD = {
   includeDerivedTitles: true,
   includeLastMessage: true,
 };
+
+function defaultWorkspaceSessionGroupTestId(): string {
+  return `workspace-session-group-${DEFAULT_WORKSPACE_SEGMENT}`;
+}
+
+function defaultWorkspaceSessionGroupToggleTestId(): string {
+  return `workspace-session-group-toggle-${DEFAULT_WORKSPACE_SEGMENT}`;
+}
+
+function defaultWorkspaceSessionLoadMoreTestId(): string {
+  return `workspace-session-load-more-${DEFAULT_WORKSPACE_SEGMENT}`;
+}
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -16,16 +29,15 @@ function stableStringify(value: unknown): string {
   return `{${entries.join(',')}}`;
 }
 
-test.describe('ClawX chat session date grouping', () => {
-  test('shows four collapsible history buckets with only recent buckets expanded', async ({ launchElectronApp }) => {
+test.describe('ClawX chat workspace session list', () => {
+  test('shows the first five default workspace sessions, loads more, and collapses all groups', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     const nowMs = Date.now();
-    const sessions = [
-      { key: MAIN_SESSION_KEY, displayName: 'Today conversation', updatedAt: nowMs - 60 * 60 * 1000 },
-      { key: `agent:main:session-${nowMs - 2 * DAY_MS}`, displayName: 'Week conversation', updatedAt: nowMs - 2 * DAY_MS },
-      { key: `agent:main:session-${nowMs - 10 * DAY_MS}`, displayName: 'Month conversation', updatedAt: nowMs - 10 * DAY_MS },
-      { key: `agent:main:session-${nowMs - 40 * DAY_MS}`, displayName: 'Older conversation', updatedAt: nowMs - 40 * DAY_MS },
-    ];
+    const sessions = Array.from({ length: 6 }, (_entry, index) => ({
+      key: index === 0 ? MAIN_SESSION_KEY : `agent:main:session-${nowMs - index}`,
+      displayName: `Workspace conversation ${index + 1}`,
+      updatedAt: nowMs - index,
+    }));
 
     try {
       await installIpcMocks(app, {
@@ -61,6 +73,10 @@ test.describe('ClawX chat session date grouping', () => {
               json: { success: true, agents: [{ id: 'main', name: 'Main' }] },
             },
           },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: {
+            success: true,
+            generation: 1,
+          },
         },
       });
 
@@ -73,26 +89,37 @@ test.describe('ClawX chat session date grouping', () => {
         }
       }
 
-      await expect(page.getByTestId('session-bucket-toggle-today')).toHaveAttribute('aria-expanded', 'true');
-      await expect(page.getByTestId('session-bucket-toggle-withinWeek')).toHaveAttribute('aria-expanded', 'true');
-      await expect(page.getByTestId('session-bucket-toggle-withinMonth')).toHaveAttribute('aria-expanded', 'false');
-      await expect(page.getByTestId('session-bucket-toggle-older')).toHaveAttribute('aria-expanded', 'false');
-      await expect(page.getByTestId('session-bucket-today').getByText('Today conversation')).toBeVisible();
-      await expect(page.getByTestId('session-bucket-withinWeek').getByText('Week conversation')).toBeVisible();
-      await expect(page.getByText('Month conversation')).toHaveCount(0);
-      await expect(page.getByText('Older conversation')).toHaveCount(0);
+      const defaultWorkspaceGroup = page.getByTestId(defaultWorkspaceSessionGroupTestId());
+      const defaultWorkspaceToggle = page.getByTestId(defaultWorkspaceSessionGroupToggleTestId());
+      const toggleAllButton = page.getByTestId('session-list-toggle-all');
 
-      await page.getByTestId('session-bucket-toggle-withinMonth').click();
-      await page.getByTestId('session-bucket-toggle-older').click();
+      await expect(defaultWorkspaceToggle).toHaveAttribute('aria-expanded', 'true');
+      await expect(toggleAllButton).toHaveAttribute('aria-label', 'Collapse all');
+      await expect(toggleAllButton).toHaveAttribute('title', 'Collapse all');
+      for (let index = 1; index <= 5; index += 1) {
+        await expect(defaultWorkspaceGroup.getByText(`Workspace conversation ${index}`)).toBeVisible();
+      }
+      await expect(defaultWorkspaceGroup.getByText('Workspace conversation 6')).toHaveCount(0);
 
-      await expect(page.getByTestId('session-bucket-withinMonth').getByText('Month conversation')).toBeVisible();
-      await expect(page.getByTestId('session-bucket-older').getByText('Older conversation')).toBeVisible();
+      await page.getByTestId(defaultWorkspaceSessionLoadMoreTestId()).click();
+      await expect(defaultWorkspaceGroup.getByText('Workspace conversation 6')).toBeVisible();
+      await expect(page.getByTestId(defaultWorkspaceSessionLoadMoreTestId())).toHaveCount(0);
+
+      await toggleAllButton.click();
+      await expect(defaultWorkspaceToggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(toggleAllButton).toHaveAttribute('aria-label', 'Expand all');
+      await expect(toggleAllButton).toHaveAttribute('title', 'Expand all');
+      await expect(defaultWorkspaceGroup.getByText('Workspace conversation 1')).toHaveCount(0);
+
+      await toggleAllButton.click();
+      await expect(defaultWorkspaceToggle).toHaveAttribute('aria-expanded', 'true');
+      await expect(defaultWorkspaceGroup.getByText('Workspace conversation 1')).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }
   });
 
-  test('new chat appears in the Today session bucket', async ({ launchElectronApp }) => {
+  test('new chat appears in the default workspace group', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     const oldTimestampMs = Date.now() - 35 * 24 * 60 * 60 * 1000;
     const seededHistory = [
@@ -140,6 +167,10 @@ test.describe('ClawX chat session date grouping', () => {
               json: { success: true, agents: [{ id: 'main', name: 'Main' }] },
             },
           },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: {
+            success: true,
+            generation: 1,
+          },
         },
       });
 
@@ -152,12 +183,14 @@ test.describe('ClawX chat session date grouping', () => {
         }
       }
 
-      await expect(page.getByText('Existing conversation')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+      await expect(page.getByTestId(defaultWorkspaceSessionGroupTestId())).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('sidebar-new-chat')).toBeVisible();
 
       await page.getByTestId('sidebar-new-chat').click();
 
-      await expect(page.getByTestId('session-bucket-today').getByText(/agent:main:session-/)).toBeVisible();
-      await expect(page.getByTestId('session-bucket-older')).toBeVisible();
+      await expect(page.getByTestId(defaultWorkspaceSessionGroupTestId()).getByText(/agent:main:session-/)).toBeVisible();
+      await expect(page.getByTestId(defaultWorkspaceSessionGroupToggleTestId())).toHaveAttribute('aria-expanded', 'true');
     } finally {
       await closeElectronApp(app);
     }

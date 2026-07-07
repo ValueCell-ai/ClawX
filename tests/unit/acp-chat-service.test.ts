@@ -172,7 +172,7 @@ describe('AcpChatService', () => {
     expect(connection.newSession).toHaveBeenCalledWith({
       cwd: '/repo',
       mcpServers: [],
-      _meta: { sessionKey: 'agent:pi:session-123', prefixCwd: false },
+      _meta: { sessionKey: 'agent:pi:session-123', prefixCwd: true },
     });
     expect(connection.loadSession).not.toHaveBeenCalled();
   });
@@ -192,7 +192,7 @@ describe('AcpChatService', () => {
       sessionId: 'acp-session-1',
       prompt: [{ type: 'text', text: 'hello' }],
       messageId: 'msg-1',
-      _meta: { sessionKey: 'agent:pi:session-123', prefixCwd: false },
+      _meta: { sessionKey: 'agent:pi:session-123', prefixCwd: true },
     });
   });
 
@@ -702,7 +702,7 @@ describe('AcpChatService', () => {
             name: 'notes.txt',
           },
         ],
-        _meta: { sessionKey: 'agent:pi:s1', prefixCwd: false },
+        _meta: { sessionKey: 'agent:pi:s1', prefixCwd: true },
       });
     } finally {
       rmSync(imagePath, { force: true });

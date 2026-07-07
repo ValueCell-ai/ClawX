@@ -110,6 +110,46 @@ describe('ACP Chat store', () => {
     hostEventsMock.onChatRuntimeEvent.mockClear();
   });
 
+  it('prepares a local pending session by clearing renderer state without loading ACP', async () => {
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo-a' });
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'msg-1',
+          content: { type: 'text', text: 'old' },
+        },
+      },
+    });
+    expect(useAcpChatSessionStore.getState().timeline.itemOrder).toEqual(['msg-1:0']);
+    hostApiMock.loadAcpSession.mockClear();
+
+    useAcpChatSessionStore.getState().prepareLocalSession({
+      sessionKey: 'agent:pi:session-local',
+      cwd: '/repo-b',
+    });
+
+    expect(hostApiMock.loadAcpSession).not.toHaveBeenCalled();
+    expect(useAcpChatSessionStore.getState()).toMatchObject({
+      activeSessionKey: 'agent:pi:session-local',
+      cwd: '/repo-b',
+      loading: false,
+      sending: false,
+      cancelling: false,
+      error: null,
+    });
+    expect(useAcpChatSessionStore.getState().timeline).toMatchObject({
+      sessionId: 'agent:pi:session-local',
+      itemOrder: [],
+    });
+  });
+
   it('loads a session, resets the timeline, subscribes once, and ignores stale generation updates', async () => {
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();

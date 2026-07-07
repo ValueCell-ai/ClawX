@@ -3,11 +3,13 @@ import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from
 
 const MAIN_SESSION_KEY = 'agent:main:main';
 const MAIN_WORKSPACE = '/workspace';
+const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
 const REVIEWER_SESSION_KEY = 'agent:reviewer:main';
 const REVIEWER_WORKSPACE = '/workspace/reviewer';
 const IMAGE_TASK_ID = '0d2ee919-2dfd-4b72-9da3-d87e6ee56747';
 const GENERATED_IMAGE_PATH = '/workspace/.openclaw/media/tool-image-generation/generated-image.png';
 const GENERATED_IMAGE_PREVIEW = 'data:image/png;base64,iVBORw0KGgo=';
+const DEFAULT_WORKSPACE_SEGMENT = '~%2F.openclaw%2Fworkspace';
 
 type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
 
@@ -20,10 +22,16 @@ function stableStringify(value: unknown): string {
   return `{${entries.join(',')}}`;
 }
 
+function defaultWorkspaceSessionGroupTestId(): string {
+  return `workspace-session-group-${DEFAULT_WORKSPACE_SEGMENT}`;
+}
+
 function baseHostApiMocks(loadResult: Record<string, unknown> = { success: true, generation: 1 }) {
   return {
     [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: MAIN_WORKSPACE }])]: loadResult,
     [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: MAIN_WORKSPACE, createIfMissing: true }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: loadResult,
     [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: '/' }])]: loadResult,
     [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: '/', createIfMissing: true }])]: loadResult,
     [stableStringify(['/api/agents', 'GET'])]: {
@@ -52,7 +60,7 @@ async function installAcpChatMocks(app: ElectronApplication) {
       [stableStringify(['sessions.list', {}])]: {
         success: true,
         result: {
-          sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main' }],
+          sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE }],
         },
       },
     },
@@ -553,7 +561,7 @@ test.describe('ClawX ACP inline timeline', () => {
           [stableStringify(['sessions.list', {}])]: {
             success: true,
             result: {
-              sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main' }],
+              sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE }],
             },
           },
         },
@@ -695,6 +703,7 @@ test.describe('ClawX ACP inline timeline', () => {
               sessions: [{
                 key: MAIN_SESSION_KEY,
                 displayName: 'ClawX',
+                workspacePath: MAIN_WORKSPACE,
                 lastMessagePreview: '[OpenClaw heartbeat poll]',
                 updatedAt: new Date(now).toISOString(),
               }],
@@ -753,7 +762,7 @@ test.describe('ClawX ACP inline timeline', () => {
           [stableStringify(['sessions.list', {}])]: {
             success: true,
             result: {
-              sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main', updatedAt: new Date().toISOString() }],
+              sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE, updatedAt: new Date().toISOString() }],
             },
           },
         },
@@ -784,7 +793,7 @@ test.describe('ClawX ACP inline timeline', () => {
           [stableStringify(['sessions.list', {}])]: {
             success: true,
             result: {
-              sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main', updatedAt: new Date().toISOString() }],
+              sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE, updatedAt: new Date().toISOString() }],
             },
           },
         },
@@ -872,7 +881,7 @@ test.describe('ClawX ACP inline timeline', () => {
 
       const page = await openChat(app);
 
-      await expect(page.getByTestId('session-bucket-today')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId(defaultWorkspaceSessionGroupTestId())).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('sidebar-session-agent:main:heartbeat')).toHaveCount(0);
       await expect(page.getByTestId('sidebar-session-agent:main:session-1710000000000')).toBeVisible();
     } finally {

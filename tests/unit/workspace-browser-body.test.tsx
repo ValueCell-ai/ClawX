@@ -139,7 +139,142 @@ describe('WorkspaceBrowserBody', () => {
     vi.clearAllMocks();
   });
 
-  it('loads hidden files by default and shows the agent and directory in one header title', async () => {
+  it('loads the explicit workspace path instead of the agent workspace', async () => {
+    render(
+      <WorkspaceBrowserBody
+        agent={{ id: 'main', name: 'Main Agent', workspace: '/agent/workspace' }}
+        workspacePath="/session/workspace"
+        workspaceLabel="~/session/workspace"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(loadWorkspaceTree).toHaveBeenCalledWith(
+        '/session/workspace',
+        expect.objectContaining({ includeHidden: true, runStartedAt: null }),
+      );
+    });
+    expect(screen.getByTestId('workspace-agent-tag')).toHaveTextContent('Main Agent');
+    expect(screen.getByTestId('workspace-path-tag')).toHaveTextContent('~/session/workspace');
+    expect(screen.getByTestId('workspace-path-final-segment')).toHaveTextContent('workspace');
+    expect(screen.getByTestId('workspace-path-final-segment')).toHaveClass('font-semibold');
+    const header = screen.getByTestId('workspace-header-title');
+    expect(header).toHaveAttribute('aria-label', 'Agent: Main Agent · Directory: ~/session/workspace');
+    expect(header).toHaveAttribute('title', 'Agent: Main Agent · Directory: ~/session/workspace');
+    expect(header).not.toHaveTextContent('Agent:');
+    expect(screen.getByTestId('workspace-path-tag')).toHaveAttribute('title', '/session/workspace');
+    expect(screen.getByTestId('workspace-header-title')).not.toHaveTextContent('/agent/workspace');
+  });
+
+  it('uses the fallback agent workspace label when the explicit workspace path is blank', async () => {
+    render(
+      <WorkspaceBrowserBody
+        agent={{ id: 'main', name: 'Main Agent', workspace: '/agent/workspace' }}
+        workspacePath="   "
+        workspaceLabel="~/session/workspace"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(loadWorkspaceTree).toHaveBeenCalledWith(
+        '/agent/workspace',
+        expect.objectContaining({ includeHidden: true, runStartedAt: null }),
+      );
+    });
+    expect(screen.getByTestId('workspace-agent-tag')).toHaveTextContent('Main Agent');
+    expect(screen.getByTestId('workspace-path-tag')).toHaveTextContent('/agent/workspace');
+    expect(screen.getByTestId('workspace-path-tag')).not.toHaveTextContent('~/session/workspace');
+    expect(screen.getByTestId('workspace-header-title')).toHaveAttribute(
+      'aria-label',
+      'Agent: Main Agent · Directory: /agent/workspace',
+    );
+    expect(screen.getByTestId('workspace-header-title')).toHaveAttribute(
+      'title',
+      'Agent: Main Agent · Directory: /agent/workspace',
+    );
+  });
+
+  it('renders workspace root paths without duplicated or missing root separators', async () => {
+    const { rerender } = render(
+      <WorkspaceBrowserBody
+        agent={{ id: 'posix-root', name: 'Root Agent', workspace: '/' }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(loadWorkspaceTree).toHaveBeenCalledWith(
+        '/',
+        expect.objectContaining({ includeHidden: true, runStartedAt: null }),
+      );
+    });
+    expect(screen.getByTestId('workspace-path-tag')).toHaveTextContent(/^\/$/);
+    expect(screen.getByTestId('workspace-path-prefix').textContent).toBe('');
+    expect(screen.getByTestId('workspace-path-final-segment')).toHaveTextContent('/');
+
+    vi.clearAllMocks();
+    rerender(
+      <WorkspaceBrowserBody
+        agent={{ id: 'windows-root', name: 'Root Agent', workspace: 'C:\\' }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(loadWorkspaceTree).toHaveBeenCalledWith(
+        'C:\\',
+        expect.objectContaining({ includeHidden: true, runStartedAt: null }),
+      );
+    });
+    expect(screen.getByTestId('workspace-path-tag')).toHaveTextContent(/^C:\/$/);
+    expect(screen.getByTestId('workspace-path-prefix').textContent).toBe('');
+    expect(screen.getByTestId('workspace-path-final-segment')).toHaveTextContent('C:/');
+  });
+
+  it('exposes the workspace browser header as an accessible heading', async () => {
+    render(
+      <WorkspaceBrowserBody
+        agent={{ id: 'main', name: 'Main Agent', workspace: '/workspace' }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('workspace-tree')).toBeVisible();
+    });
+
+    const heading = screen.getByRole('heading', { level: 2 });
+
+    expect(heading).toHaveAttribute('data-testid', 'workspace-header-title');
+    expect(heading).toHaveAttribute('aria-label', 'Agent: Main Agent · Directory: /workspace');
+    expect(heading).toHaveAttribute('title', 'Agent: Main Agent · Directory: /workspace');
+    expect(heading).toHaveTextContent('Main Agent');
+    expect(heading).toHaveTextContent('workspace');
+    expect(heading).not.toHaveTextContent('Directory:');
+  });
+
+  it('constrains long workspace header labels so tags and final segments can truncate', async () => {
+    const longAgentName = 'Agent '.repeat(40).trim();
+    const longFinalSegment = 'workspace-'.repeat(30).replace(/-$/, '');
+
+    render(
+      <WorkspaceBrowserBody
+        agent={{ id: 'main', name: longAgentName, workspace: `/Users/alex/projects/${longFinalSegment}` }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('workspace-tree')).toBeVisible();
+    });
+
+    const agentTag = screen.getByTestId('workspace-agent-tag');
+    const agentLabel = agentTag.firstElementChild;
+
+    expect(agentTag).toHaveClass('min-w-0', 'overflow-hidden');
+    expect(agentLabel).toHaveClass('min-w-0', 'truncate');
+    expect(screen.getByTestId('workspace-path-tag')).toHaveClass('min-w-0', 'overflow-hidden');
+    expect(screen.getByTestId('workspace-path-prefix')).toHaveClass('min-w-0', 'shrink-[999]', 'truncate');
+    expect(screen.getByTestId('workspace-path-final-segment')).toHaveClass('min-w-0', 'shrink', 'truncate');
+  });
+
+  it('loads hidden files by default and shows the agent and directory as header tags', async () => {
     render(
       <WorkspaceBrowserBody
         agent={{ id: 'main', name: 'Main Agent', workspace: '/Users/alex/.openclaw/workspace-main' }}
@@ -152,12 +287,20 @@ describe('WorkspaceBrowserBody', () => {
         expect.objectContaining({ includeHidden: true, runStartedAt: null }),
       );
     });
-    expect(screen.getByTestId('workspace-header-title')).toHaveTextContent(
-      'Agent：Main Agent / 目录：~/.openclaw/workspace-main',
+    expect(screen.getByTestId('workspace-agent-tag')).toHaveTextContent('Main Agent');
+    expect(screen.getByTestId('workspace-path-prefix')).toHaveTextContent('~/.openclaw/');
+    expect(screen.getByTestId('workspace-path-final-segment')).toHaveTextContent('workspace-main');
+    expect(screen.getByTestId('workspace-header-title')).toHaveAttribute(
+      'aria-label',
+      'Agent: Main Agent · Directory: ~/.openclaw/workspace-main',
     );
     expect(screen.getByTestId('workspace-header-title')).toHaveAttribute(
       'title',
-      'Main Agent / /Users/alex/.openclaw/workspace-main',
+      'Agent: Main Agent · Directory: ~/.openclaw/workspace-main',
+    );
+    expect(screen.getByTestId('workspace-path-tag')).toHaveAttribute(
+      'title',
+      '/Users/alex/.openclaw/workspace-main',
     );
     expect(screen.queryByTestId('workspace-path')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /hidden files/i })).not.toBeInTheDocument();

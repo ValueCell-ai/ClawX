@@ -123,6 +123,8 @@ export type SettingsSnapshot = Partial<{
   sidebarWidth: number;
   devModeUnlocked: boolean;
   setupComplete: boolean;
+  chatWorkspacePath: string;
+  recentWorkspacePaths: string[];
 }>;
 export type SettingsKey = keyof SettingsSnapshot & string;
 export type SettingsValue = SettingsSnapshot[SettingsKey];
@@ -591,6 +593,7 @@ export type SessionLabelSummary = {
   sessionKey: string;
   firstUserText: string | null;
   lastTimestamp: number | null;
+  workspacePath: string | null;
 };
 export type SessionSummariesResult = HostSuccess & {
   summaries?: SessionLabelSummary[];

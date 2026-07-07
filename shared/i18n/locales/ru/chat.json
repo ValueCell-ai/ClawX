@@ -149,6 +149,7 @@
     },
     "workspace": {
         "title": "Рабочая область",
+        "defaultLabel": "Рабочая область по умолчанию",
         "header": "Agent: {{agent}} · Каталог: {{directory}}",
         "freshBadge": "Обновлено в этот раз",
         "pickFile": "Выберите файл слева для предпросмотра",
@@ -215,10 +216,24 @@
         "gatewayStarting": "запуск",
         "gatewayStatus": "шлюз {{state}} | порт: {{port}} | PID: {{pid}}",
         "retryFailedAttachments": "Повторить неудавшиеся вложения",
+        "workspacePrefix": "{{workspace}}",
+        "workspacePickerTitle": "Выберите папку рабочей области",
+        "workspacePickerButton": "Использовать рабочую область",
+        "workspacePickerFailed": "Не удалось открыть выбор рабочей области",
+        "defaultWorkspaceOption": "Рабочая область по умолчанию",
+        "chooseOtherWorkspaceOption": "Выбрать другой каталог…",
         "folderDropUnsupported": "Не удалось прикрепить эту папку. Перетащите её снова или вставьте путь к папке в сообщение.",
         "folderAttachment": "Папка",
         "skillPreviewTooltip": "Предпросмотр SKILL.md",
         "skillPreviewNotFound": "Skill не найден. Откройте список Skill, чтобы обновить его."
+    },
+    "sessionList": {
+        "title": "Список сессий",
+        "collapseAll": "Свернуть все",
+        "expandAll": "Развернуть все",
+        "loadMore": "Загрузить еще {{count}}",
+        "loadMoreForWorkspace": "Загрузить еще {{count}} сессий в {{workspace}}",
+        "workspaceToggle": "Переключить рабочую область {{workspace}}"
     },
     "historyBuckets": {
         "today": "Сегодня",

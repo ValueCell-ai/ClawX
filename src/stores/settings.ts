@@ -7,6 +7,7 @@ import { persist } from 'zustand/middleware';
 import i18n from '@/i18n';
 import { hostApi } from '@/lib/host-api';
 import { resolveSupportedLanguage } from '@shared/language';
+import { DEFAULT_WORKSPACE_CWD, MAX_RECENT_WORKSPACES } from '@shared/workspace';
 
 type Theme = 'light' | 'dark' | 'system';
 type UpdateChannel = 'stable' | 'beta' | 'dev';
@@ -37,6 +38,8 @@ interface SettingsState {
   sidebarCollapsed: boolean;
   sidebarWidth: number;
   devModeUnlocked: boolean;
+  chatWorkspacePath: string;
+  recentWorkspacePaths: string[];
 
   // Setup
   setupComplete: boolean;
@@ -61,6 +64,7 @@ interface SettingsState {
   setSidebarCollapsed: (value: boolean) => void;
   setSidebarWidth: (value: number) => void;
   setDevModeUnlocked: (value: boolean) => void;
+  setChatWorkspacePath: (workspacePath: string) => void;
   markSetupComplete: () => void;
   resetSettings: () => void;
 }
@@ -84,6 +88,8 @@ const defaultSettings = {
   sidebarCollapsed: false,
   sidebarWidth: 280,
   devModeUnlocked: false,
+  chatWorkspacePath: DEFAULT_WORKSPACE_CWD,
+  recentWorkspacePaths: [DEFAULT_WORKSPACE_CWD],
   setupComplete: false,
 };
 
@@ -161,6 +167,17 @@ export const useSettingsStore = create<SettingsState>()(
       setDevModeUnlocked: (devModeUnlocked) => {
         set({ devModeUnlocked });
         void hostApi.settings.set('devModeUnlocked', devModeUnlocked).catch(() => { });
+      },
+      setChatWorkspacePath: (chatWorkspacePath) => {
+        const normalized = chatWorkspacePath.trim() || DEFAULT_WORKSPACE_CWD;
+        set((state) => {
+          const recentWorkspacePaths = [
+            normalized,
+            ...state.recentWorkspacePaths.filter((entry) => entry !== normalized),
+          ].slice(0, MAX_RECENT_WORKSPACES);
+          void hostApi.settings.setMany({ chatWorkspacePath: normalized, recentWorkspacePaths }).catch(() => { });
+          return { chatWorkspacePath: normalized, recentWorkspacePaths };
+        });
       },
       markSetupComplete: () => set({ setupComplete: true }),
       resetSettings: () => set(defaultSettings),

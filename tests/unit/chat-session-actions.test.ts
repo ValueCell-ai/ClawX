@@ -37,6 +37,8 @@ type ChatLikeState = {
     updatedAt?: number;
     status?: string;
     hasActiveRun?: boolean;
+    createdLocally?: boolean;
+    workspacePath?: string;
   }>;
   messages: Array<{ role: string; timestamp?: number; content?: unknown }>;
   sessionLabels: Record<string, string>;
@@ -237,6 +239,61 @@ describe('chat session actions', () => {
     const next = h.read();
     expect(next.currentSessionKey).toBe('agent:main:session-a');
     expect(next.sessions.map((session) => session.key)).toEqual(['agent:main:session-a']);
+  });
+
+  it('preserves a locally-created current session across session refreshes before first send', async () => {
+    const { createSessionActions } = await import('@/stores/chat/session-actions');
+    const pendingKey = 'agent:main:session-1711111111111';
+    const h = makeHarness({
+      currentSessionKey: pendingKey,
+      sessions: [{ key: pendingKey, displayName: pendingKey, createdLocally: true }],
+      messages: [],
+    });
+    const actions = createSessionActions(h.set as never, h.get as never);
+
+    gatewayRpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        sessions: [{
+          key: 'agent:main:session-a',
+          displayName: 'Visible chat',
+          updatedAt: 1773281700000,
+        }],
+      },
+    });
+
+    await actions.loadSessions();
+
+    const next = h.read();
+    const pendingSession = next.sessions.find((session) => session.key === pendingKey);
+    expect(next.currentSessionKey).toBe(pendingKey);
+    expect(pendingSession?.createdLocally).toBe(true);
+  });
+
+  it('loadSessions preserves mirrored workspacePath when backend returns the same key without cwd', async () => {
+    const { createSessionActions } = await import('@/stores/chat/session-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:session-a',
+      sessions: [{ key: 'agent:main:session-a', workspacePath: '/Users/alex/workspace/ClawX' }],
+      messages: [],
+    });
+    const actions = createSessionActions(h.set as never, h.get as never);
+
+    gatewayRpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        sessions: [{
+          key: 'agent:main:session-a',
+          displayName: 'Visible chat',
+          updatedAt: 1773281700000,
+        }],
+      },
+    });
+
+    await actions.loadSessions();
+
+    expect(h.read().sessions.find((session) => session.key === 'agent:main:session-a')?.workspacePath)
+      .toBe('/Users/alex/workspace/ClawX');
   });
 
   it('moves away from a heartbeat-only current session during sessions load', async () => {

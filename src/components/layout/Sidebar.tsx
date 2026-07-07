@@ -33,13 +33,14 @@ import { useSettingsStore } from '@/stores/settings';
 import { useChatStore } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
-import { getSessionActivityMs, getSessionBucket, type SessionBucketKey } from './session-buckets';
+import { groupSessionsByWorkspace } from './session-buckets';
 import { CHANNEL_NAMES } from '@shared/types/channel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { hostApi } from '@/lib/host-api';
+import { formatSessionRelativeTime } from '@/lib/relative-time';
 import { SIDEBAR_COLLAPSED_WIDTH, MAC_SIDEBAR_CHROME_HEIGHT } from '@shared/sidebar-layout';
 import { useTranslation } from 'react-i18next';
 import logoSvg from '@/assets/logo.svg';
@@ -88,12 +89,28 @@ function NavItem({ to, icon, label, badge, collapsed, onClick, testId }: NavItem
 }
 
 const INITIAL_NOW_MS = Date.now();
-const DEFAULT_EXPANDED_SESSION_BUCKETS: Record<SessionBucketKey, boolean> = {
-  today: true,
-  withinWeek: true,
-  withinMonth: false,
-  older: false,
-};
+const INITIAL_WORKSPACE_SESSION_LIMIT = 5;
+const WORKSPACE_SESSION_LIMIT_INCREMENT = 5;
+
+function getWorkspaceTestIdSegment(workspacePath: string): string {
+  return encodeURIComponent(workspacePath.trim() || 'workspace');
+}
+
+export function getWorkspaceGroupStateKey(workspacePath: string): string {
+  return workspacePath;
+}
+
+export function getWorkspaceGroupTestId(workspacePath: string): string {
+  return `workspace-session-group-${getWorkspaceTestIdSegment(workspacePath)}`;
+}
+
+export function getWorkspaceGroupToggleTestId(workspacePath: string): string {
+  return `workspace-session-group-toggle-${getWorkspaceTestIdSegment(workspacePath)}`;
+}
+
+function getWorkspaceLoadMoreTestId(workspacePath: string): string {
+  return `workspace-session-load-more-${getWorkspaceTestIdSegment(workspacePath)}`;
+}
 
 function getAgentIdFromSessionKey(sessionKey: string): string {
   if (!sessionKey.startsWith('agent:')) return 'main';
@@ -108,6 +125,7 @@ export function Sidebar() {
   const sidebarWidth = useSettingsStore((state) => state.sidebarWidth);
   const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth);
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
+  const chatWorkspacePath = useSettingsStore((state) => state.chatWorkspacePath);
   const [isResizing, setIsResizing] = useState(false);
   const stopResizeRef = useRef<(() => void) | null>(null);
 
@@ -179,15 +197,14 @@ export function Sidebar() {
     await openControlUi(undefined, 'OpenClaw Page');
   };
 
-  const { t } = useTranslation(['common', 'chat']);
+  const { t, i18n } = useTranslation(['common', 'chat']);
   const [sessionToDelete, setSessionToDelete] = useState<{ key: string; label: string } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingSessionKey, setEditingSessionKey] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
   const [nowMs, setNowMs] = useState(INITIAL_NOW_MS);
-  const [expandedSessionBuckets, setExpandedSessionBuckets] = useState<Record<SessionBucketKey, boolean>>(() => ({
-    ...DEFAULT_EXPANDED_SESSION_BUCKETS,
-  }));
+  const [collapsedWorkspaceGroups, setCollapsedWorkspaceGroups] = useState<Record<string, boolean>>({});
+  const [workspaceVisibleSessionCounts, setWorkspaceVisibleSessionCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -228,6 +245,11 @@ export function Sidebar() {
     setEditingSessionKey(null);
   };
 
+  const handleRenameBlur = (event: React.FocusEvent<HTMLDivElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    void handleRenameSubmit();
+  };
+
   const handleRenameKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -237,10 +259,19 @@ export function Sidebar() {
     }
   };
 
-  const toggleSessionBucket = (bucketKey: SessionBucketKey) => {
-    setExpandedSessionBuckets((current) => ({
+  const toggleWorkspaceGroup = (workspacePath: string) => {
+    const stateKey = getWorkspaceGroupStateKey(workspacePath);
+    setCollapsedWorkspaceGroups((current) => ({
       ...current,
-      [bucketKey]: !current[bucketKey],
+      [stateKey]: !(current[stateKey] ?? false),
+    }));
+  };
+
+  const loadMoreWorkspaceSessions = (workspacePath: string) => {
+    const stateKey = getWorkspaceGroupStateKey(workspacePath);
+    setWorkspaceVisibleSessionCounts((current) => ({
+      ...current,
+      [stateKey]: (current[stateKey] ?? INITIAL_WORKSPACE_SESSION_LIMIT) + WORKSPACE_SESSION_LIMIT_INCREMENT,
     }));
   };
 
@@ -287,26 +318,25 @@ export function Sidebar() {
     () => Object.fromEntries((agents ?? []).map((agent) => [agent.id, agent.name])),
     [agents],
   );
-  const sessionBuckets: Array<{ key: SessionBucketKey; label: string; sessions: typeof sessions }> = [
-    { key: 'today', label: t('chat:historyBuckets.today'), sessions: [] },
-    { key: 'withinWeek', label: t('chat:historyBuckets.withinWeek'), sessions: [] },
-    { key: 'withinMonth', label: t('chat:historyBuckets.withinMonth'), sessions: [] },
-    { key: 'older', label: t('chat:historyBuckets.older'), sessions: [] },
-  ];
-  const sessionBucketMap = Object.fromEntries(sessionBuckets.map((bucket) => [bucket.key, bucket])) as Record<
-    SessionBucketKey,
-    (typeof sessionBuckets)[number]
-  >;
+  const workspaceSessionGroups = groupSessionsByWorkspace(
+    sessions,
+    sessionLastActivity,
+    t('chat:workspace.defaultLabel'),
+    chatWorkspacePath,
+  );
+  const allWorkspaceGroupsCollapsed = workspaceSessionGroups.length > 0
+    && workspaceSessionGroups.every((group) => collapsedWorkspaceGroups[getWorkspaceGroupStateKey(group.workspacePath)] ?? false);
 
-  for (const { session, activityMs } of sessions
-    .map((session) => ({
-      session,
-      activityMs: getSessionActivityMs(session, sessionLastActivity),
-    }))
-    .sort((a, b) => b.activityMs - a.activityMs)) {
-    const bucketKey = getSessionBucket(activityMs, nowMs);
-    sessionBucketMap[bucketKey].sessions.push(session);
-  }
+  const toggleAllWorkspaceGroups = () => {
+    const nextCollapsed = !allWorkspaceGroupsCollapsed;
+    setCollapsedWorkspaceGroups((current) => {
+      const next = { ...current };
+      for (const group of workspaceSessionGroups) {
+        next[getWorkspaceGroupStateKey(group.workspacePath)] = nextCollapsed;
+      }
+      return next;
+    });
+  };
 
   const hiddenRoutes = rendererExtensionRegistry.getHiddenRoutes();
   const extraNavItems = rendererExtensionRegistry.getExtraNavItems();
@@ -445,151 +475,226 @@ export function Sidebar() {
 
       {/* Session list — below Settings, only when expanded */}
       {!sidebarCollapsed && sessions.length > 0 && (
-        <div className="mt-4 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2 space-y-1">
-          {sessionBuckets.map((bucket) => {
-            const isBucketExpanded = expandedSessionBuckets[bucket.key] ?? false;
-            return (
-              <div key={bucket.key} data-testid={`session-bucket-${bucket.key}`} className="pt-2">
-                <button
-                  type="button"
-                  data-testid={`session-bucket-toggle-${bucket.key}`}
-                  aria-expanded={isBucketExpanded}
-                  onClick={() => toggleSessionBucket(bucket.key)}
+        <div className="mt-4 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2">
+          <div className="mb-1 flex items-center justify-between gap-2 px-2.5">
+            <span className="text-tiny font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
+              {t('chat:sessionList.title')}
+            </span>
+            <button
+              type="button"
+              data-testid="session-list-toggle-all"
+              aria-label={allWorkspaceGroupsCollapsed ? t('chat:sessionList.expandAll') : t('chat:sessionList.collapseAll')}
+              title={allWorkspaceGroupsCollapsed ? t('chat:sessionList.expandAll') : t('chat:sessionList.collapseAll')}
+              onClick={toggleAllWorkspaceGroups}
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
+            >
+              <span aria-hidden="true" className="relative flex h-3.5 w-3.5 items-center justify-center">
+                <ChevronRight
                   className={cn(
-                    'flex w-full items-center gap-1 rounded-md px-2.5 py-1 text-left text-tiny font-medium',
-                    'text-muted-foreground/60 tracking-tight transition-colors',
-                    'hover:bg-black/5 hover:text-muted-foreground dark:hover:bg-white/5',
+                    'absolute h-3 w-3 transition-transform',
+                    allWorkspaceGroupsCollapsed ? 'translate-y-0.5 rotate-90' : '-translate-y-0.5 -rotate-90',
                   )}
+                />
+                <ChevronRight
+                  className={cn(
+                    'absolute h-3 w-3 transition-transform',
+                    allWorkspaceGroupsCollapsed ? '-translate-y-0.5 rotate-90' : 'translate-y-0.5 -rotate-90',
+                  )}
+                />
+              </span>
+            </button>
+          </div>
+
+          <div className="space-y-1.5">
+            {workspaceSessionGroups.map((workspaceGroup) => {
+              const workspaceStateKey = getWorkspaceGroupStateKey(workspaceGroup.workspacePath);
+              const collapsed = collapsedWorkspaceGroups[workspaceStateKey] ?? false;
+              const visibleCount = workspaceVisibleSessionCounts[workspaceStateKey] ?? INITIAL_WORKSPACE_SESSION_LIMIT;
+              const visibleSessions = workspaceGroup.sessions.slice(0, visibleCount);
+              const hiddenCount = Math.max(0, workspaceGroup.sessions.length - visibleSessions.length);
+              const loadMoreCount = Math.min(WORKSPACE_SESSION_LIMIT_INCREMENT, hiddenCount);
+
+              return (
+                <div
+                  key={workspaceGroup.workspacePath}
+                  data-testid={getWorkspaceGroupTestId(workspaceGroup.workspacePath)}
+                  className="space-y-1"
                 >
-                  <ChevronRight
-                    className={cn('h-3 w-3 shrink-0 transition-transform', isBucketExpanded && 'rotate-90')}
-                  />
-                  <span>{bucket.label}</span>
-                </button>
-                {isBucketExpanded &&
-                  bucket.sessions.map((s) => {
-                    const agentId = getAgentIdFromSessionKey(s.key);
-                    const agentName = agentNameById[agentId] || agentId;
-                    const isEditing = editingSessionKey === s.key;
-                    const sessionLabel = getSessionLabel(s.key, s.displayName, s.label);
-                    const channelType = s.channel && s.channel !== 'webchat' ? s.channel : null;
-                    const channelName = channelType
-                      ? (CHANNEL_NAMES[channelType as keyof typeof CHANNEL_NAMES] ?? channelType)
-                      : null;
-                    return (
-                      <div
-                        key={s.key}
-                        className={cn(
-                          'group flex items-center rounded-lg transition-colors',
-                          'hover:bg-black/5 dark:hover:bg-white/5',
-                          !isEditing && isOnChat && currentSessionKey === s.key
-                            ? 'bg-black/5 dark:bg-white/10'
-                            : '',
-                        )}
-                      >
-                        {isEditing ? (
-                          <div className="flex w-full items-center gap-1 px-1.5 py-1">
-                            <Input
-                              autoFocus
-                              value={editingLabel}
-                              onChange={(e) => setEditingLabel(e.target.value)}
-                              onKeyDown={handleRenameKeyDown}
-                              onBlur={() => void handleRenameSubmit()}
-                              className="h-7 min-w-0 flex-1 text-meta"
-                              aria-label={t('common:sidebar.renameSessionPlaceholder')}
-                            />
-                            <button
-                              aria-label={t('common:sidebar.saveSessionRename')}
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                void handleRenameSubmit();
-                              }}
-                              className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground"
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              aria-label={t('common:sidebar.cancelSessionRename')}
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                handleRenameCancel();
-                              }}
-                              className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-destructive"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <button
-                              data-testid={`sidebar-session-${s.key}`}
-                              onClick={() => {
-                                if (currentSessionKey === s.key) {
-                                  void loadHistory(false);
-                                } else {
-                                  switchSession(s.key);
-                                }
-                                navigate('/');
-                              }}
-                              onDoubleClick={() => handleStartRename(s.key, sessionLabel)}
-className={cn(
-  'flex-1 min-w-0 text-left px-2.5 py-1.5 text-meta',
-  isOnChat && currentSessionKey === s.key
-    ? 'text-foreground font-medium'
-    : 'text-foreground/75',
-)}
-                            >
-                              <div className="flex min-w-0 items-center gap-2">
-                                <span className="shrink-0 rounded-full bg-black/[0.04] px-2 py-0.5 text-2xs font-medium text-foreground/70 dark:bg-white/[0.08]">
-                                  {agentName}
-                                </span>
-                                {channelType && channelName && (
+                  <button
+                    type="button"
+                    data-testid={getWorkspaceGroupToggleTestId(workspaceGroup.workspacePath)}
+                    aria-expanded={!collapsed}
+                    aria-label={t('chat:sessionList.workspaceToggle', { workspace: workspaceGroup.label })}
+                    onClick={() => toggleWorkspaceGroup(workspaceGroup.workspacePath)}
+                    className="flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-meta font-semibold text-foreground/75 transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5"
+                    title={workspaceGroup.label}
+                  >
+                    <ChevronRight
+                      className={cn(
+                        'h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform',
+                        !collapsed && 'rotate-90',
+                      )}
+                    />
+                    <span className="min-w-0 flex-1 truncate">{workspaceGroup.label}</span>
+                    <span className="shrink-0 text-2xs font-medium text-muted-foreground/60">
+                      {workspaceGroup.sessions.length}
+                    </span>
+                  </button>
+
+                  {!collapsed && (
+                    <div className="space-y-0.5">
+                      {visibleSessions.map(({ session: s, activityMs }) => {
+                        const agentId = getAgentIdFromSessionKey(s.key);
+                        const agentName = agentNameById[agentId] || agentId;
+                        const isEditing = editingSessionKey === s.key;
+                        const isCurrentSession = isOnChat && currentSessionKey === s.key;
+                        const sessionLabel = getSessionLabel(s.key, s.displayName, s.label);
+                        const relativeTime = formatSessionRelativeTime(activityMs, nowMs, i18n.language);
+                        const channelType = s.channel && s.channel !== 'webchat' ? s.channel : null;
+                        const channelName = channelType
+                          ? (CHANNEL_NAMES[channelType as keyof typeof CHANNEL_NAMES] ?? channelType)
+                          : null;
+
+                        return (
+                          <div
+                            key={s.key}
+                            className={cn(
+                              'group flex items-center rounded-lg transition-colors',
+                              'hover:bg-black/5 focus-within:bg-black/5 dark:hover:bg-white/5 dark:focus-within:bg-white/5',
+                              !isEditing && isCurrentSession
+                                ? 'bg-black/5 dark:bg-white/10'
+                                : '',
+                            )}
+                          >
+                            {isEditing ? (
+                              <div className="flex w-full items-center gap-1 px-1.5 py-1" onBlur={handleRenameBlur}>
+                                <Input
+                                  autoFocus
+                                  value={editingLabel}
+                                  onChange={(e) => setEditingLabel(e.target.value)}
+                                  onKeyDown={handleRenameKeyDown}
+                                  className="h-7 min-w-0 flex-1 text-meta"
+                                  aria-label={t('common:sidebar.renameSessionPlaceholder')}
+                                />
+                                <button
+                                  type="button"
+                                  aria-label={t('common:sidebar.saveSessionRename')}
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() => void handleRenameSubmit()}
+                                  className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground"
+                                >
+                                  <Check className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label={t('common:sidebar.cancelSessionRename')}
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={handleRenameCancel}
+                                  className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-destructive"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <button
+                                  data-testid={`sidebar-session-${s.key}`}
+                                  aria-current={isCurrentSession ? 'page' : undefined}
+                                  onClick={() => {
+                                    if (currentSessionKey === s.key) {
+                                      void loadHistory(false);
+                                    } else {
+                                      switchSession(s.key);
+                                    }
+                                    navigate('/');
+                                  }}
+                                  onDoubleClick={() => handleStartRename(s.key, sessionLabel)}
+                                  className={cn(
+                                    'flex-1 min-w-0 text-left px-2.5 py-1.5 text-meta',
+                                    isCurrentSession
+                                      ? 'text-foreground font-medium'
+                                      : 'text-foreground/75',
+                                  )}
+                                >
+                                  <div className="flex min-w-0 items-center gap-2">
+                                    <span className="shrink-0 rounded-full bg-black/[0.04] px-2 py-0.5 text-2xs font-medium text-foreground/70 dark:bg-white/[0.08]">
+                                      {agentName}
+                                    </span>
+                                    {channelType && channelName && (
+                                      <span
+                                        title={channelName}
+                                        aria-label={channelName}
+                                        className="shrink-0 truncate rounded-full bg-blue-500/10 px-2 py-0.5 text-2xs font-medium text-blue-700 dark:bg-blue-400/10 dark:text-blue-400"
+                                      >
+                                        {channelName}
+                                      </span>
+                                    )}
+                                    <span className="truncate">{sessionLabel}</span>
+                                  </div>
+                                </button>
+                                {relativeTime && (
                                   <span
-                                    title={channelName}
-                                    aria-label={channelName}
-                                    className="shrink-0 truncate rounded-full bg-blue-500/10 px-2 py-0.5 text-2xs font-medium text-blue-700 dark:bg-blue-400/10 dark:text-blue-400"
+                                    title={new Date(activityMs).toLocaleString()}
+                                    className="shrink-0 pr-2 text-2xs font-medium text-muted-foreground/55 group-hover:hidden group-focus-within:hidden"
                                   >
-                                    {channelName}
+                                    {relativeTime}
                                   </span>
                                 )}
-                                <span className="truncate">{sessionLabel}</span>
-                              </div>
-                            </button>
-                            <div className="hidden group-hover:flex items-center gap-0.5 pr-1.5">
-                              <button
-                                aria-label={t('common:sidebar.renameSession')}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleStartRename(s.key, sessionLabel);
-                                }}
-                                className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                data-testid={`sidebar-session-delete-${s.key}`}
-                                aria-label={t('common:sidebar.deleteSession')}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSessionToDelete({
-                                    key: s.key,
-                                    label: sessionLabel,
-                                  });
-                                  setDeleteDialogOpen(true);
-                                }}
-                                className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
-              </div>
-            );
-          })}
+                                <div className="hidden items-center gap-0.5 pr-1.5 group-hover:flex group-focus-within:flex">
+                                  <button
+                                    aria-label={t('common:sidebar.renameSession')}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleStartRename(s.key, sessionLabel);
+                                    }}
+                                    className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    data-testid={`sidebar-session-delete-${s.key}`}
+                                    aria-label={t('common:sidebar.deleteSession')}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSessionToDelete({
+                                        key: s.key,
+                                        label: sessionLabel,
+                                      });
+                                      setDeleteDialogOpen(true);
+                                    }}
+                                    className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {hiddenCount > 0 && (
+                        <button
+                          type="button"
+                          data-testid={getWorkspaceLoadMoreTestId(workspaceGroup.workspacePath)}
+                          aria-label={t('chat:sessionList.loadMoreForWorkspace', {
+                            count: loadMoreCount,
+                            workspace: workspaceGroup.label,
+                          })}
+                          onClick={() => loadMoreWorkspaceSessions(workspaceGroup.workspacePath)}
+                          className="ml-7 rounded-md px-2 py-1 text-tiny font-medium text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
+                        >
+                          {t('chat:sessionList.loadMore', {
+                            count: loadMoreCount,
+                          })}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

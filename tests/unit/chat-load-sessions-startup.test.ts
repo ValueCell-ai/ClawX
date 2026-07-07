@@ -84,6 +84,94 @@ describe('chat store loadSessions startup selection', () => {
     expect(useChatStore.getState().currentSessionKey).toBe('agent:main:session-a');
   });
 
+  it('hydrates session workspacePath from host session summaries', async () => {
+    const summariesMock = vi.mocked((await import('@/lib/host-api')).hostApi.sessions.summaries);
+    summariesMock.mockResolvedValueOnce({
+      success: true,
+      summaries: [{
+        sessionKey: 'agent:main:session-a',
+        firstUserText: null,
+        lastTimestamp: null,
+        workspacePath: '/Users/alex/workspace/ClawX',
+      }],
+    });
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return { sessions: [{ key: 'agent:main:session-a', displayName: 'Chat A', updatedAt: 5_000 }] };
+      }
+      if (method === 'chat.history') return { messages: [] };
+      throw new Error(`Unexpected gateway RPC: ${method}`);
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessions: [],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+
+    await useChatStore.getState().loadSessions();
+    await Promise.resolve();
+
+    expect(useChatStore.getState().sessions.find((session) => session.key === 'agent:main:session-a')?.workspacePath)
+      .toBe('/Users/alex/workspace/ClawX');
+  });
+
+  it('preserves a locally-created current session across session refreshes before first send', async () => {
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return { sessions: [{ key: 'agent:main:session-a', displayName: 'Chat A', updatedAt: 5_000 }] };
+      }
+      if (method === 'chat.history') return { messages: [] };
+      throw new Error(`Unexpected gateway RPC: ${method}`);
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    const pendingKey = 'agent:main:session-1711111111111';
+    useChatStore.setState({
+      currentSessionKey: pendingKey,
+      currentAgentId: 'main',
+      sessions: [{ key: pendingKey, displayName: pendingKey, createdLocally: true }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+
+    await useChatStore.getState().loadSessions();
+
+    const pendingSession = useChatStore.getState().sessions.find((session) => session.key === pendingKey);
+    expect(useChatStore.getState().currentSessionKey).toBe(pendingKey);
+    expect(pendingSession?.createdLocally).toBe(true);
+  });
+
+  it('preserves mirrored workspacePath when backend returns the same session without cwd', async () => {
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return { sessions: [{ key: 'agent:main:session-a', displayName: 'Chat A', updatedAt: 5_000 }] };
+      }
+      if (method === 'chat.history') return { messages: [] };
+      throw new Error(`Unexpected gateway RPC: ${method}`);
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-a',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:session-a', workspacePath: '/Users/alex/workspace/ClawX' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+
+    await useChatStore.getState().loadSessions();
+
+    expect(useChatStore.getState().sessions.find((session) => session.key === 'agent:main:session-a')?.workspacePath)
+      .toBe('/Users/alex/workspace/ClawX');
+  });
+
   it('clears the prior conversation when loadSessions retargets to another session', async () => {
     gatewayRpcMock.mockImplementation(async (method: string) => {
       if (method === 'sessions.list') {
