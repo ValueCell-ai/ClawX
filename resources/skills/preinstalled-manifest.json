@@ -31,30 +31,6 @@
       "ref": "main",
       "version": "main",
       "autoEnable": true
-    },
-    {
-      "slug": "find-skills",
-      "repo": "vercel-labs/skills",
-      "repoPath": "skills/find-skills",
-      "ref": "main",
-      "version": "main",
-      "autoEnable": true
-    },
-    {
-      "slug": "self-improving-agent",
-      "repo": "peterskoett/self-improving-agent",
-      "repoPath": ".",
-      "ref": "master",
-      "version": "main",
-      "autoEnable": true
-    },
-    {
-      "slug": "tavily-search",
-      "repo": "tavily-ai/skills",
-      "repoPath": "skills/tavily-search",
-      "ref": "main",
-      "version": "main",
-      "autoEnable": true
     }
   ]
 }
