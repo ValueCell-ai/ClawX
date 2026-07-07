@@ -45,6 +45,17 @@ vi.mock('@electron/utils/paths', async () => {
   };
 });
 
+// ClawX desktop denies these tools in tools.deny / gateway.tools.deny during
+// sanitizeOpenClawConfig(): skill_workshop (ClawX keeps direct skill-creator
+// authoring) plus the subagent workflow (sessions_spawn / sessions_yield /
+// subagents) so the model cannot spawn child agent sessions.
+const CLAWX_DESKTOP_TOOL_DENY = [
+  'skill_workshop',
+  'sessions_spawn',
+  'sessions_yield',
+  'subagents',
+];
+
 async function writeOpenClawJson(config: unknown): Promise<void> {
   const openclawDir = join(testHome, '.openclaw');
   await mkdir(openclawDir, { recursive: true });
@@ -377,10 +388,10 @@ describe('sanitizeOpenClawConfig', () => {
     // Fresh install should get tools settings enforced
     const tools = result.tools as Record<string, unknown>;
     expect(tools.profile).toBe('full');
-    expect(tools.deny).toEqual(['skill_workshop']);
+    expect(tools.deny).toEqual(CLAWX_DESKTOP_TOOL_DENY);
     const gateway = result.gateway as Record<string, unknown>;
     const gatewayTools = gateway.tools as Record<string, unknown>;
-    expect(gatewayTools.deny).toEqual(['skill_workshop']);
+    expect(gatewayTools.deny).toEqual(CLAWX_DESKTOP_TOOL_DENY);
     const skills = result.skills as Record<string, unknown>;
     const workshop = skills.workshop as Record<string, unknown>;
     const autonomous = workshop.autonomous as Record<string, unknown>;
@@ -415,9 +426,9 @@ describe('sanitizeOpenClawConfig', () => {
     // tools settings should now be enforced
     const tools = result.tools as Record<string, unknown>;
     expect(tools.profile).toBe('full');
-    expect(tools.deny).toEqual(['skill_workshop']);
+    expect(tools.deny).toEqual(CLAWX_DESKTOP_TOOL_DENY);
     const gateway = result.gateway as Record<string, unknown>;
-    expect((gateway.tools as Record<string, unknown>).deny).toEqual(['skill_workshop']);
+    expect((gateway.tools as Record<string, unknown>).deny).toEqual(CLAWX_DESKTOP_TOOL_DENY);
     const skills = result.skills as Record<string, unknown>;
     expect(((skills.workshop as Record<string, unknown>).autonomous as Record<string, unknown>).enabled).toBe(false);
     expect((skills.entries as Record<string, Record<string, unknown>>)['skill-creator'].enabled).toBe(true);
@@ -437,9 +448,9 @@ describe('sanitizeOpenClawConfig', () => {
 
     const result = await readOpenClawJson();
     const tools = result.tools as Record<string, unknown>;
-    expect(tools.deny).toEqual(['browser', 'skill_workshop']);
+    expect(tools.deny).toEqual(['browser', ...CLAWX_DESKTOP_TOOL_DENY]);
     const gateway = result.gateway as Record<string, unknown>;
-    expect((gateway.tools as Record<string, unknown>).deny).toEqual(['skill_workshop']);
+    expect((gateway.tools as Record<string, unknown>).deny).toEqual(CLAWX_DESKTOP_TOOL_DENY);
   });
 
   it('migrates legacy tools.web.search.kimi into moonshot plugin config', async () => {
