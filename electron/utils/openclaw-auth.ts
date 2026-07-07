@@ -29,6 +29,7 @@ import {
 } from './provider-keys';
 import { normalizePiAiModelCost, type PiAiModelCostRates } from '../shared/pi-ai-model-cost';
 import { withConfigLock } from './config-mutex';
+import { ensureMemorySearchDisabledDefault, hasUserMemorySearchConfig } from './openclaw-memory-search';
 import { PORTS } from './config';
 import { getSetting } from './store';
 import {
@@ -2673,6 +2674,19 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     if (ensureCompactionSafeguardDefault(config)) {
       modified = true;
       console.log('[batch-sync] Seeded agents.defaults.compaction.mode=safeguard');
+    }
+
+    // ── Memory search default ──
+    // OpenClaw defaults to the openai embedding provider; without a key that
+    // yields doctor errors and a broken memory_search tool. Seed enabled=false
+    // only when the user has no memorySearch config anywhere AND no OpenAI key
+    // (i.e. the default embedding model is unusable). Existing user config is
+    // never modified.
+    if (!hasUserMemorySearchConfig(config)
+      && !(await getProviderApiKeyFromOpenClaw('openai'))
+      && ensureMemorySearchDisabledDefault(config)) {
+      modified = true;
+      console.log('[batch-sync] Seeded agents.defaults.memorySearch.enabled=false (no embedding provider configured)');
     }
 
     // ── Custom provider contextWindow backfill ──
