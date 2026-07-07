@@ -132,6 +132,7 @@ Skills ページでは OpenClaw の複数ソース（管理ディレクトリ、
 開発者モードでは、専用の Image Generation ページで、独立した OpenAI 互換の画像生成エンドポイント（Base URL、API キー、`gpt-image-2` などのモデル名）を設定でき、画像生成だけ専用の `/v1/images/generations` サービスを使い、チャットは通常の OpenAI Provider のまま継続できます。
 OpenAI-compatible ゲートウェイを **Custom プロバイダー** で使う場合、**設定 → AI Providers → Provider 編集** でカスタム `User-Agent` を設定でき、互換性が必要なエンドポイントで有効です。
 プロバイダーの編集や切り替え時、ClawX は `input: ["text", "image"]` など既存のモデル単位の能力メタデータを保持します。新しく選択した Custom プロバイダーのモデルには OpenClaw onboarding と同等の画像入力推論を適用し、不明なモデルはテキスト専用として扱います。
+Custom プロバイダーのモデル行には明示的な `contextWindow` も書き込まれ（モデルファミリーから推定、例：`gpt-5.x` → 272k）、旧バージョンで保存された行は起動時に自動補完されます。これにより OpenClaw は長いセッションを "Context overflow" エラーになる前に圧縮できます。compaction 未設定の場合は `agents.defaults.compaction.mode = "safeguard"` が既定値として設定されますが、ユーザーが自分で設定したモデル行や圧縮設定が変更されることはありません。
 互換ゲートウェイで `/models` が認証以外の理由で使えない場合、ClawX は API キー検証時に軽量な `/chat/completions` または `/responses` プローブへ自動フォールバックします。
 
 ### 🌙 アダプティブテーマ
