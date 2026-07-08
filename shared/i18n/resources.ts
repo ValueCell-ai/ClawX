@@ -52,6 +52,19 @@ import ruDreams from './locales/ru/dreams.json';
 import ruSetup from './locales/ru/setup.json';
 import ruMenu from './locales/ru/menu.json';
 
+// KO
+import koCommon from './locales/ko/common.json';
+import koSettings from './locales/ko/settings.json';
+import koDashboard from './locales/ko/dashboard.json';
+import koChat from './locales/ko/chat.json';
+import koChannels from './locales/ko/channels.json';
+import koAgents from './locales/ko/agents.json';
+import koSkills from './locales/ko/skills.json';
+import koCron from './locales/ko/cron.json';
+import koDreams from './locales/ko/dreams.json';
+import koSetup from './locales/ko/setup.json';
+import koMenu from './locales/ko/menu.json';
+
 export const I18N_NAMESPACES = [
   'common',
   'settings',
@@ -119,6 +132,19 @@ export const I18N_RESOURCES = {
     setup: ruSetup,
     menu: ruMenu,
   },
+  ko: {
+    common: koCommon,
+    settings: koSettings,
+    dashboard: koDashboard,
+    chat: koChat,
+    channels: koChannels,
+    agents: koAgents,
+    skills: koSkills,
+    cron: koCron,
+    dreams: koDreams,
+    setup: koSetup,
+    menu: koMenu,
+  },
 } as const;
 
 export type MenuLabels = typeof enMenu;
@@ -128,4 +154,5 @@ export const MENU_LABELS: Record<LanguageCode, MenuLabels> = {
   zh: zhMenu,
   ja: jaMenu,
   ru: ruMenu,
+  ko: koMenu,
 };

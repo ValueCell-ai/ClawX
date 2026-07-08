@@ -1,0 +1,404 @@
+{
+    "title": "메시징 채널",
+    "subtitle": "메시징 채널, 계정, 계정과 에이전트의 연결, 채널별 기본 계정을 관리합니다.",
+    "refresh": "새로고침",
+    "addChannel": "채널 추가",
+    "stats": {
+        "total": "전체 채널",
+        "connected": "연결됨",
+        "disconnected": "연결 끊김"
+    },
+    "gatewayWarning": "게이트웨이 서비스가 실행되고 있지 않습니다. 채널을 연결할 수 없습니다.",
+    "availableChannels": "사용 가능한 채널",
+    "supportedChannels": "지원되는 채널",
+    "available": "사용 가능한 채널",
+    "availableDesc": "새 채널 연결",
+    "configured": "구성된 채널",
+    "configuredDesc": "이미 구성된 채널을 관리합니다",
+    "configuredBadge": "구성됨",
+    "deleteConfirm": "이 채널을 삭제하시겠습니까?",
+    "showAll": "전체 보기",
+    "pluginBadge": "플러그인",
+    "toast": {
+        "whatsappConnected": "WhatsApp 연결에 성공했습니다",
+        "whatsappFailed": "WhatsApp 연결 실패: {{error}}",
+        "qrConnected": "{{name}} 연결에 성공했습니다",
+        "qrFailed": "{{name}} 연결 실패: {{error}}",
+        "channelSaved": "채널 {{name}}이(가) 저장되었습니다",
+        "channelConnecting": "{{name}}에 연결하는 중...",
+        "savedButRefreshFailed": "설정은 저장되었지만 화면 데이터를 새로고침하지 못했습니다. 수동으로 새로고침해 주세요.",
+        "restartManual": "게이트웨이를 수동으로 재시작해 주세요",
+        "configFailed": "설정 실패: {{error}}",
+        "bindingUpdated": "계정 연동이 업데이트되었습니다",
+        "defaultUpdated": "기본 계정이 업데이트되었습니다",
+        "accountDeleted": "계정이 삭제되었습니다",
+        "channelDeleted": "채널이 삭제되었습니다"
+    },
+    "account": {
+        "add": "계정 추가",
+        "edit": "편집",
+        "delete": "계정 삭제",
+        "deleteChannel": "채널 삭제",
+        "deleteConfirm": "이 계정을 삭제하시겠습니까?",
+        "default": "현재 기본값",
+        "setDefault": "채널 기본값으로 설정",
+        "bindAgentLabel": "연동된 에이전트",
+        "unassigned": "할당되지 않음",
+        "mainAccount": "메인 계정",
+        "customIdLabel": "계정 ID",
+        "customIdPlaceholder": "예: feishu-sales-bot",
+        "customIdHint": "하나의 채널에서 여러 계정을 구분하려면 소문자로 된 계정 ID(영문자, 숫자, 하이픈, 밑줄)를 사용하세요.",
+        "invalidId": "계정 ID는 비워둘 수 없습니다",
+        "invalidCanonicalId": "계정 ID는 소문자, 숫자, 하이픈, 밑줄만 사용할 수 있으며, 영문자나 숫자로 시작해야 하고 최대 64자까지 가능합니다.",
+        "idLabel": "ID: {{id}}",
+        "boundTo": "연동 대상: {{agent}}",
+        "handledBy": "{{agent}}이(가) 처리",
+        "bindingStatusLabel": "연동 상태: {{status}}",
+        "connectionStatusLabel": "연결 상태: {{status}}",
+        "bindingStatus": {
+            "bound": "연동됨",
+            "unbound": "미연동"
+        },
+        "connectionStatus": {
+            "connected": "연결됨",
+            "connecting": "연결 중",
+            "degraded": "저하됨",
+            "disconnected": "연결 끊김",
+            "error": "오류"
+        },
+        "accountIdPrompt": "이 채널의 새 계정 ID를 입력하세요",
+        "accountIdExists": "계정 ID {{accountId}}이(가) 이미 존재합니다"
+    },
+    "dialog": {
+        "updateTitle": "{{name}} 업데이트",
+        "configureTitle": "{{name}} 구성",
+        "addTitle": "채널 추가",
+        "existingDesc": "기존 설정을 업데이트합니다",
+        "selectDesc": "구성할 채널 유형을 선택하세요",
+        "qrCode": "QR 코드",
+        "token": "토큰",
+        "scanQR": "{{name}}(으)로 이 QR 코드를 스캔하세요",
+        "refreshCode": "코드 새로고침",
+        "loadingConfig": "설정을 불러오는 중...",
+        "existingHint": "이 채널에 대한 기존 설정이 있습니다",
+        "howToConnect": "연결 방법",
+        "viewDocs": "문서 보기",
+        "channelName": "채널 이름",
+        "channelNamePlaceholder": "내 {{name}}",
+        "enableChannel": "채널 활성화",
+        "enableChannelDesc": "꺼져 있으면 설정은 저장되지만 채널은 비활성 상태로 유지됩니다",
+        "credentialsVerified": "인증 정보 확인됨",
+        "validationFailed": "검증 실패",
+        "warnings": "경고",
+        "back": "뒤로",
+        "validating": "검증 중...",
+        "validateConfig": "설정 검증",
+        "generatingQR": "QR 코드 생성 중...",
+        "validatingAndSaving": "검증 및 저장 중...",
+        "generateQRCode": "QR 코드 생성",
+        "updateAndReconnect": "업데이트 및 재연결",
+        "saveAndConnect": "저장 및 연결",
+        "envVar": "환경 변수: {{var}}"
+    },
+    "health": {
+        "state": {
+            "degraded": "게이트웨이 성능 저하",
+            "unresponsive": "게이트웨이 응답 없음"
+        },
+        "reasons": {
+            "gateway_degraded": "게이트웨이 하트비트가 최근 저하되었습니다.",
+            "gateway_unresponsive": "게이트웨이 제어 플레인이 응답하지 않는 것으로 보입니다.",
+            "channels_status_timeout": "채널 런타임 상태 확인이 시간 초과되었습니다.",
+            "rpc_timeout": "최근 게이트웨이 RPC 호출이 시간 초과되었습니다.",
+            "gateway_not_running": "게이트웨이가 실행되고 있지 않습니다.",
+            "gateway_error": "게이트웨이가 오류 상태입니다.",
+            "runtime_error": "채널 런타임에서 오류가 보고되었습니다."
+        },
+        "restartGateway": "게이트웨이 재시작",
+        "copyDiagnostics": "진단 정보 복사",
+        "viewDiagnostics": "진단 정보 보기",
+        "hideDiagnostics": "진단 정보 숨기기",
+        "diagnosticsTitle": "게이트웨이 진단 스냅샷",
+        "diagnosticsCopied": "진단 정보가 클립보드에 복사되었습니다",
+        "diagnosticsCopyFailed": "진단 정보 수집 실패: {{error}}",
+        "restartTriggered": "게이트웨이 재시작이 요청되었습니다",
+        "restartFailed": "게이트웨이 재시작 실패: {{error}}"
+    },
+    "meta": {
+        "telegram": {
+            "description": "@BotFather에서 발급받은 봇 토큰으로 Telegram에 연결하세요",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/TjiGwxsMWi7hpDkDAQBc0ydMnEf#MEkKdqXP1orZU2x4SrFcdUHgnl1",
+            "fields": {
+                "botToken": {
+                    "label": "봇 토큰",
+                    "placeholder": "123456:ABC-DEF..."
+                },
+                "allowedUsers": {
+                    "label": "허용된 사용자 ID",
+                    "placeholder": "예: 123456789, 987654321",
+                    "description": "봇 사용을 허용할 사용자 ID 목록(쉼표로 구분)입니다. 보안을 위해 필수입니다."
+                }
+            },
+            "instructions": [
+                "Telegram을 열고 @BotFather를 검색하세요",
+                "/newbot을 전송하고 안내에 따라 진행하세요",
+                "제공된 봇 토큰을 복사하세요",
+                "아래에 토큰을 붙여넣으세요",
+                "@userinfobot에서 사용자 ID를 확인해 아래에 붙여넣으세요"
+            ]
+        },
+        "discord": {
+            "description": "Developer Portal에서 발급받은 봇 토큰으로 Discord에 연결하세요",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/BkOywJYCAiYRN9k4KTTceKPMnxg#QS6LdxnA2oNtfcxtFc8cgabnnNd",
+            "fields": {
+                "token": {
+                    "label": "봇 토큰",
+                    "placeholder": "Discord 봇 토큰"
+                },
+                "guildId": {
+                    "label": "길드/서버 ID",
+                    "placeholder": "예: 123456789012345678",
+                    "description": "봇을 특정 서버로 제한합니다. 서버를 우클릭 → 서버 ID 복사."
+                },
+                "channelId": {
+                    "label": "채널 ID (선택 사항)",
+                    "placeholder": "예: 123456789012345678",
+                    "description": "봇을 특정 채널로 제한합니다. 채널을 우클릭 → 채널 ID 복사."
+                }
+            },
+            "instructions": [
+                "Discord Developer Portal → Applications → New Application으로 이동하세요",
+                "Bot 섹션에서 Add Bot을 클릭한 뒤 Bot Token을 복사하세요",
+                "Bot → Privileged Gateway Intents에서 Message Content Intent와 Server Members Intent를 활성화하세요",
+                "OAuth2 → URL Generator에서 \"bot\" + \"applications.commands\"를 선택하고 메시지 권한을 추가하세요",
+                "생성된 URL로 봇을 서버에 초대하세요",
+                "아래에 봇 토큰을 붙여넣으세요"
+            ]
+        },
+        "whatsapp": {
+            "description": "QR 코드를 스캔해 WhatsApp에 연결하세요 (전화번호 불필요)",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/ES7fwUfH8iGl8FkHYfFcyWB3n4d#doxcnUElomBZLi0NnKLUzn6zLbd",
+            "instructions": [
+                "휴대폰에서 WhatsApp을 여세요",
+                "설정 > 연결된 기기 > 기기 연결로 이동하세요",
+                "아래에 표시된 QR 코드를 스캔하세요",
+                "시스템이 자동으로 전화번호를 인식합니다"
+            ]
+        },
+        "wechat": {
+            "description": "Tencent의 공식 OpenClaw 플러그인을 사용해 QR 코드를 스캔하여 개인 WeChat에 연결하세요",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GHYZwuPCriF0gWkXwkFcJ9zon3b",
+            "instructions": [
+                "QR 코드 생성을 클릭하면 OpenClaw 안에 공식 WeChat 플러그인이 설치 및 활성화됩니다",
+                "WeChat으로 아래 QR 코드를 스캔하고 휴대폰에서 연결을 확인하세요",
+                "연결에 성공하면 WeChat에 새로운 WeChat ClawBot 채팅이 자동으로 나타납니다",
+                "나중에 동일한 QR 절차를 반복해 다른 WeChat 계정을 추가하거나 기존 계정을 다시 연결할 수 있습니다"
+            ]
+        },
+        "dingtalk": {
+            "description": "OpenClaw 채널 플러그인을 통해 DingTalk에 연결하세요 (Stream 모드)",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnDgA78n43DbkiQjI1OqUA7b",
+            "fields": {
+                "clientId": {
+                    "label": "Client ID (AppKey)",
+                    "placeholder": "dingxxxxxx"
+                },
+                "clientSecret": {
+                    "label": "Client Secret (AppSecret)",
+                    "placeholder": "앱 시크릿"
+                }
+            },
+            "instructions": [
+                "OpenClaw에서 dingtalk 플러그인을 설치하고 활성화하세요",
+                "DingTalk 내부 앱을 생성하고 Stream 모드를 활성화하세요",
+                "Client ID (AppKey)와 Client Secret (AppSecret)을 입력하세요"
+            ]
+        },
+        "signal": {
+            "description": "signal-cli를 사용해 Signal에 연결하세요",
+            "docsUrl": "https://docs.openclaw.ai/channels/signal",
+            "fields": {
+                "phoneNumber": {
+                    "label": "전화번호",
+                    "placeholder": "+1234567890"
+                }
+            },
+            "instructions": [
+                "시스템에 signal-cli를 설치하세요",
+                "전화번호를 등록하거나 연결하세요",
+                "아래에 전화번호를 입력하세요"
+            ]
+        },
+        "feishu": {
+            "description": "WebSocket을 통해 Feishu/Lark 봇에 연결하세요",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/GKn8wOvHnibpPNkNkPzcAvGlnzK#GdHUdp9t9oqyegxwV8ScLvVGn1c",
+            "fields": {
+                "appId": {
+                    "label": "App ID",
+                    "placeholder": "cli_xxxxxx"
+                },
+                "appSecret": {
+                    "label": "App Secret",
+                    "placeholder": "앱 시크릿"
+                }
+            },
+            "instructions": [
+                "문서를 읽은 뒤 Feishu Open Platform으로 이동하세요",
+                "새 애플리케이션을 생성하세요",
+                "App ID와 App Secret을 확인하세요",
+                "이벤트 구독을 설정하세요"
+            ]
+        },
+        "wecom": {
+            "description": "플러그인을 통해 WeCom 봇에 연결하세요",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/JTGnwoV0RixKPtkr4w7c7gpAnDc",
+            "fields": {
+                "botId": {
+                    "label": "봇 ID",
+                    "placeholder": "ww_xxxxxx"
+                },
+                "secret": {
+                    "label": "App Secret",
+                    "placeholder": "WeCom 봇 시크릿"
+                }
+            },
+            "instructions": [
+                "WeCom 관리 콘솔에서 애플리케이션을 생성해 구성 정보를 확인하세요",
+                "메시지 수신 서버 설정이 활성화되어 있는지 확인하세요",
+                "봇 ID(또는 기업 ID)와 시크릿을 입력해 연결을 설정하세요"
+            ]
+        },
+        "imessage": {
+            "description": "BlueBubbles(macOS)를 통해 iMessage에 연결하세요",
+            "docsUrl": "https://docs.openclaw.ai/channels/bluebubbles",
+            "fields": {
+                "serverUrl": {
+                    "label": "BlueBubbles 서버 URL",
+                    "placeholder": "http://localhost:1234"
+                },
+                "password": {
+                    "label": "서버 비밀번호",
+                    "placeholder": "서버 비밀번호"
+                }
+            },
+            "instructions": [
+                "Mac에 BlueBubbles 서버를 설치하세요",
+                "서버 URL과 비밀번호를 기록해 두세요",
+                "아래에 연결 정보를 입력하세요"
+            ]
+        },
+        "matrix": {
+            "description": "Matrix 프로토콜에 연결하세요",
+            "docsUrl": "https://docs.openclaw.ai/channels/matrix",
+            "fields": {
+                "homeserver": {
+                    "label": "홈서버 URL",
+                    "placeholder": "https://matrix.org"
+                },
+                "accessToken": {
+                    "label": "액세스 토큰",
+                    "placeholder": "액세스 토큰"
+                }
+            },
+            "instructions": [
+                "Matrix 계정을 생성하거나 기존 계정을 사용하세요",
+                "클라이언트에서 액세스 토큰을 확인하세요",
+                "아래에 홈서버와 토큰을 입력하세요"
+            ]
+        },
+        "line": {
+            "description": "LINE Messaging API에 연결하세요",
+            "docsUrl": "https://docs.openclaw.ai/channels/line",
+            "fields": {
+                "channelAccessToken": {
+                    "label": "채널 액세스 토큰",
+                    "placeholder": "LINE 채널 액세스 토큰"
+                },
+                "channelSecret": {
+                    "label": "채널 시크릿",
+                    "placeholder": "LINE 채널 시크릿"
+                }
+            },
+            "instructions": [
+                "LINE Developers Console로 이동하세요",
+                "Messaging API 채널을 생성하세요",
+                "채널 액세스 토큰과 시크릿을 확인하세요"
+            ]
+        },
+        "msteams": {
+            "description": "Bot Framework를 통해 Microsoft Teams에 연결하세요",
+            "docsUrl": "https://docs.openclaw.ai/channels/msteams",
+            "fields": {
+                "appId": {
+                    "label": "App ID",
+                    "placeholder": "Microsoft App ID"
+                },
+                "appPassword": {
+                    "label": "App Password",
+                    "placeholder": "Microsoft App Password"
+                }
+            },
+            "instructions": [
+                "Azure Portal로 이동하세요",
+                "새 Bot 애플리케이션을 등록하세요",
+                "App ID를 확인하고 비밀번호를 생성하세요",
+                "Teams 채널을 구성하세요"
+            ]
+        },
+        "googlechat": {
+            "description": "웹훅을 통해 Google Chat에 연결하세요",
+            "docsUrl": "https://docs.openclaw.ai/channels/googlechat",
+            "fields": {
+                "serviceAccountKey": {
+                    "label": "서비스 계정 JSON 경로",
+                    "placeholder": "/path/to/service-account.json"
+                }
+            },
+            "instructions": [
+                "Google Cloud 프로젝트를 생성하세요",
+                "Google Chat API를 활성화하세요",
+                "서비스 계정을 생성하세요",
+                "JSON 키 파일을 다운로드하세요"
+            ]
+        },
+        "mattermost": {
+            "description": "Bot API를 통해 Mattermost에 연결하세요",
+            "docsUrl": "https://docs.openclaw.ai/channels/mattermost",
+            "fields": {
+                "serverUrl": {
+                    "label": "서버 URL",
+                    "placeholder": "https://your-mattermost.com"
+                },
+                "botToken": {
+                    "label": "봇 액세스 토큰",
+                    "placeholder": "봇 액세스 토큰"
+                }
+            },
+            "instructions": [
+                "Mattermost Integrations로 이동하세요",
+                "새 봇 계정을 생성하세요",
+                "액세스 토큰을 복사하세요"
+            ]
+        },
+        "qqbot": {
+            "description": "QQ 봇 채널에 연결하세요 (OpenClaw 3.31부터 내장)",
+            "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/KPIJwlyiGiupMrkiS9ice39Zn2c",
+            "fields": {
+                "appId": {
+                    "label": "App ID",
+                    "placeholder": "QQ 봇 App ID"
+                },
+                "clientSecret": {
+                    "label": "Client Secret",
+                    "placeholder": "QQ 봇 Client Secret"
+                }
+            },
+            "instructions": [
+                "QQ 봇 오픈 플랫폼에서 앱을 등록하세요",
+                "App ID와 Client Secret을 확인하세요",
+                "아래에 인증 정보를 입력하세요"
+            ]
+        }
+    },
+    "viewDocs": "문서 보기"
+}

@@ -1,0 +1,59 @@
+{
+  "app": {
+    "about": "{{appName}} 정보",
+    "preferences": "환경설정...",
+    "services": "서비스",
+    "hide": "{{appName}} 숨기기",
+    "hideOthers": "다른 항목 숨기기",
+    "unhide": "모두 보기",
+    "quit": "{{appName}} 종료"
+  },
+  "file": {
+    "label": "파일",
+    "newChat": "새 채팅",
+    "close": "닫기"
+  },
+  "edit": {
+    "label": "편집",
+    "undo": "실행 취소",
+    "redo": "다시 실행",
+    "cut": "잘라내기",
+    "copy": "복사",
+    "paste": "붙여넣기",
+    "pasteAndMatchStyle": "붙여넣기 및 스타일 일치",
+    "delete": "삭제",
+    "selectAll": "전체 선택"
+  },
+  "view": {
+    "label": "보기",
+    "reload": "새로고침",
+    "forceReload": "강제 새로고침",
+    "toggleDevTools": "개발자 도구 전환",
+    "resetZoom": "실제 크기",
+    "zoomIn": "확대",
+    "zoomOut": "축소",
+    "toggleFullscreen": "전체 화면 전환"
+  },
+  "navigate": {
+    "label": "이동",
+    "dashboard": "대시보드",
+    "chat": "채팅",
+    "channels": "채널",
+    "skills": "스킬",
+    "cronTasks": "예약 작업",
+    "settings": "설정"
+  },
+  "window": {
+    "label": "창",
+    "minimize": "최소화",
+    "zoom": "확대/축소",
+    "front": "모두 앞으로 가져오기",
+    "close": "닫기"
+  },
+  "help": {
+    "label": "도움말",
+    "documentation": "문서",
+    "reportIssue": "문제 신고",
+    "openClawDocumentation": "OpenClaw 문서"
+  }
+}

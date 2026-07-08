@@ -12,6 +12,7 @@ export const SUPPORTED_LANGUAGES = [
     { code: 'zh', label: '中文' },
     { code: 'ja', label: '日本語' },
     { code: 'ru', label: 'Русский' },
+    { code: 'ko', label: '한국어' },
 ] as const satisfies ReadonlyArray<{ code: LanguageCode; label: string }>;
 
 i18n

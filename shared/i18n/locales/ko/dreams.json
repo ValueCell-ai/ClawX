@@ -1,0 +1,73 @@
+{
+    "title": "드림",
+    "subtitle": "ClawX에서 OpenClaw의 메모리 신호, 일지 기록, 드림 유지관리 작업을 확인하세요.",
+    "openFullUi": "전체 드림 열기",
+    "gatewayNotReady": "OpenClaw 게이트웨이가 아직 시작 중이거나 연결이 끊어졌습니다. 게이트웨이에 연결되면 드림 데이터가 로드됩니다.",
+    "metrics": {
+        "shortTerm": "단기 항목",
+        "grounded": "고정된 신호",
+        "signals": "전체 신호",
+        "promotedToday": "오늘 승격됨"
+    },
+    "diary": {
+        "title": "드림 일지",
+        "notFound": "DREAMS.md가 아직 생성되지 않았습니다.",
+        "empty": "아직 드림 일지 항목이 없습니다.",
+        "undated": "날짜 없음"
+    },
+    "actions": {
+        "title": "유지관리",
+        "enable": "드림 시작",
+        "disable": "드림 중지",
+        "backfill": "일지 백필",
+        "dedupe": "일지 중복 제거",
+        "repair": "캐시 복구",
+        "resetGrounded": "재생 기록 지우기",
+        "resetDiary": "백필된 일지 초기화",
+        "enableSuccess": "드림이 시작되었습니다. 관리 일정을 적용하기 위해 게이트웨이가 재시작될 수 있습니다.",
+        "disableSuccess": "드림이 중지되었습니다. 관리 일정을 제거하기 위해 게이트웨이가 재시작될 수 있습니다.",
+        "backfillSuccess": "드림 일지 항목 {{count}}개를 백필했습니다.",
+        "dedupeSuccess": "중복된 드림 항목 {{removed}}개를 제거하고 {{kept}}개를 유지했습니다.",
+        "repairSuccess": "드림 캐시 복구가 완료되었습니다.",
+        "resetDiarySuccess": "백필된 드림 일지 항목 {{count}}개를 제거했습니다.",
+        "resetGroundedSuccess": "재생된 단기 항목 {{count}}개를 지웠습니다."
+    },
+    "confirmations": {
+        "dedupe": {
+            "title": "드림 일지의 중복 항목을 제거할까요?",
+            "message": "DREAMS.md를 다시 작성하며, 완전히 동일한 일지 항목만 제거합니다."
+        },
+        "repair": {
+            "title": "드림 캐시를 복구할까요?",
+            "message": "파생된 드림 캐시 파일을 보관한 뒤 정상적인 입력값으로 다시 빌드합니다. 드림 일지는 변경되지 않습니다."
+        },
+        "resetDiary": {
+            "title": "백필된 일지를 초기화할까요?",
+            "message": "DREAMS.md에서 백필된 일지 항목을 제거합니다. 직접 작성한 내용은 대상이 아닙니다."
+        },
+        "resetGrounded": {
+            "title": "재생된 단기 항목을 지울까요?",
+            "message": "이미 고정된 메모리 신호로 재생된 단기 항목을 지웁니다."
+        }
+    },
+    "phases": {
+        "title": "드림 단계",
+        "light": "라이트",
+        "rem": "REM",
+        "deep": "딥",
+        "noSchedule": "관리 일정 없음"
+    },
+    "signals": {
+        "title": "최근 신호",
+        "storageMode": "저장소: {{mode}}",
+        "noStorageMode": "저장소 모드를 사용할 수 없습니다",
+        "empty": "최근 단기 또는 승격된 드림 신호가 없습니다.",
+        "unknownSource": "알 수 없는 출처",
+        "noSnippet": "표시할 발췌 내용이 없습니다."
+    },
+    "errors": {
+        "openFullUi": "전체 OpenClaw 드림 UI를 열 수 없습니다.",
+        "configHashMissing": "설정 기준 해시를 사용할 수 없어 드림을 업데이트할 수 없습니다.",
+        "memoryInitializing": "드림 메모리가 아직 초기화 중입니다. 게이트웨이 시작이 완료된 후 다시 시도해 주세요."
+    }
+}
