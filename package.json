@@ -96,7 +96,8 @@
         "tar": "^6.2.1",
         "timeago.js": "^4.0.2",
         "ws": "^8.19.0",
-        "yaml": "^2.9.0"
+        "yaml": "^2.9.0",
+        "zod": "^4.4.3"
     },
     "devDependencies": {
         "@buape/carbon": "0.16.0",
