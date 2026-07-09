@@ -2,7 +2,8 @@ import type { GatewayManager } from '../gateway/manager';
 import type { GatewayRpcBackpressure } from '../gateway/rpc-backpressure';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { PORTS } from '../utils/config';
-import { scheduleControlUiDeviceAutoApproval } from '../utils/control-ui-device-pairing';
+import { approvePendingLocalDeviceRequests } from '../utils/control-ui-device-pairing';
+import { logger } from '../utils/logger';
 import { buildOpenClawControlUiUrl } from '../utils/openclaw-control-ui';
 import { getSetting } from '../utils/store';
 import { isRecord } from './payload-utils';
@@ -58,7 +59,9 @@ export function createGatewayApi(
       const port = status.port || PORTS.OPENCLAW_GATEWAY;
       const view = body.view === 'dreams' ? 'dreams' : undefined;
       const url = buildOpenClawControlUiUrl(port, token, { view });
-      scheduleControlUiDeviceAutoApproval(gatewayManager);
+      void approvePendingLocalDeviceRequests(gatewayManager).catch((error) => {
+        logger.debug(`[gateway] Control UI device auto-approve skipped: ${String(error)}`);
+      });
       return { success: true, url, token, port };
     },
     rpc: async (payload) => {

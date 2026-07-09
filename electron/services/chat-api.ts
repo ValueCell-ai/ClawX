@@ -47,7 +47,7 @@ export function createChatApi({
   gatewayManager: GatewayManager;
   mainWindow: BrowserWindow;
 }): CompleteHostServiceRegistry['chat'] {
-  const acpChat = createAcpChatService(mainWindow);
+  const acpChat = createAcpChatService(mainWindow, gatewayManager);
 
   return {
     sendWithMedia: async (payload) => {

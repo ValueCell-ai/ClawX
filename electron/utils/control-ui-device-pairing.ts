@@ -12,6 +12,19 @@ import { getUvMirrorEnv } from './uv-env';
 /** Browser Control UI client id used in OpenClaw 2026.5.x connect frames. */
 export const CONTROL_UI_BROWSER_CLIENT_ID = 'openclaw-control-ui';
 
+/** ClawX Gateway WebSocket client id used in connect frames. */
+export const GATEWAY_UI_CLIENT_ID = 'gateway-client';
+
+/** OpenClaw embedded CLI client id (ACP bridge, doctor, etc.). */
+export const OPENCLAW_CLI_CLIENT_ID = 'cli';
+
+/** Loopback-only clients that ClawX auto-approves without user interaction. */
+export const LOCAL_AUTO_APPROVE_CLIENT_IDS = new Set([
+  CONTROL_UI_BROWSER_CLIENT_ID,
+  GATEWAY_UI_CLIENT_ID,
+  OPENCLAW_CLI_CLIENT_ID,
+]);
+
 export type PendingDevicePairingRequest = {
   requestId?: string;
   clientId?: string;
@@ -44,6 +57,11 @@ let activeWatcher: { cancel: () => void } | null = null;
 export function isControlUiBrowserPairingRequest(request: PendingDevicePairingRequest): boolean {
   const clientId = typeof request.clientId === 'string' ? request.clientId.trim() : '';
   return clientId === CONTROL_UI_BROWSER_CLIENT_ID;
+}
+
+export function isLocalLoopbackDeviceAutoApprovalRequest(request: PendingDevicePairingRequest): boolean {
+  const clientId = typeof request.clientId === 'string' ? request.clientId.trim() : '';
+  return LOCAL_AUTO_APPROVE_CLIENT_IDS.has(clientId);
 }
 
 function parseDevicePairingList(value: unknown): DevicePairingList {
@@ -206,10 +224,10 @@ function sleep(ms: number, signal: { cancelled: boolean }): Promise<void> {
 }
 
 /**
- * Approve pending Control UI browser pairing requests.
+ * Approve pending loopback device pairing / scope-upgrade requests for trusted local clients.
  * Uses Gateway RPC when available; falls back to local pending.json + embedded CLI on Windows packaged builds.
  */
-export async function approvePendingControlUiPairingRequests(
+export async function approvePendingLocalDeviceRequests(
   gateway: GatewayPairingRpcClient,
   options?: { approvedRequestIds?: Set<string> },
 ): Promise<string[]> {
@@ -219,7 +237,7 @@ export async function approvePendingControlUiPairingRequests(
 
   const approved: string[] = [];
   for (const request of pending) {
-    if (!isControlUiBrowserPairingRequest(request)) continue;
+    if (!isLocalLoopbackDeviceAutoApprovalRequest(request)) continue;
 
     const requestId = typeof request.requestId === 'string' ? request.requestId.trim() : '';
     if (!requestId || approvedRequestIds.has(requestId)) continue;
@@ -230,11 +248,11 @@ export async function approvePendingControlUiPairingRequests(
       approvedRequestIds.add(requestId);
       approved.push(requestId);
       logger.info(
-        `[control-ui] Auto-approved browser device pairing (requestId=${requestId}, mode=${request.clientMode ?? 'unknown'})`,
+        `[device-auto-approve] Auto-approved local device request (requestId=${requestId}, clientId=${request.clientId ?? 'unknown'}, mode=${request.clientMode ?? 'unknown'})`,
       );
     } catch (error) {
       logger.warn(
-        `[control-ui] Failed to auto-approve pairing request ${requestId}: ${String(error)}`,
+        `[device-auto-approve] Failed to auto-approve request ${requestId}: ${String(error)}`,
       );
     }
   }
@@ -242,24 +260,76 @@ export async function approvePendingControlUiPairingRequests(
   return approved;
 }
 
-async function watchControlUiPairingApprovals(
+/**
+ * Approve pending Control UI browser pairing requests.
+ * @deprecated Prefer approvePendingLocalDeviceRequests.
+ */
+export async function approvePendingControlUiPairingRequests(
+  gateway: GatewayPairingRpcClient,
+  options?: { approvedRequestIds?: Set<string> },
+): Promise<string[]> {
+  return approvePendingLocalDeviceRequests(gateway, options);
+}
+
+async function watchLocalDeviceApprovals(
   gateway: GatewayPairingRpcClient,
   signal: { cancelled: boolean },
-  timeoutMs: number,
+  timeoutMs: number | null,
   pollIntervalMs: number,
 ): Promise<void> {
   const approvedRequestIds = new Set<string>();
-  const deadline = Date.now() + timeoutMs;
+  const deadline = timeoutMs == null ? null : Date.now() + timeoutMs;
 
-  while (!signal.cancelled && Date.now() < deadline) {
+  while (!signal.cancelled && (deadline == null || Date.now() < deadline)) {
     try {
-      await approvePendingControlUiPairingRequests(gateway, { approvedRequestIds });
+      await approvePendingLocalDeviceRequests(gateway, { approvedRequestIds });
     } catch (error) {
-      logger.debug(`[control-ui] Pairing poll error: ${String(error)}`);
+      logger.debug(`[device-auto-approve] Poll error: ${String(error)}`);
     }
 
     await sleep(pollIntervalMs, signal);
   }
+}
+
+export function cancelLocalDeviceAutoApproval(): void {
+  activeWatcher?.cancel();
+  activeWatcher = null;
+}
+
+/**
+ * Poll for loopback device pairing / scope-upgrade requests and approve them locally.
+ * Safe to call repeatedly; only one watcher runs at a time.
+ */
+export function scheduleLocalDeviceAutoApproval(
+  gateway: GatewayPairingRpcClient,
+  options?: {
+    /** Omit or pass null to poll until cancelLocalDeviceAutoApproval() is called. */
+    timeoutMs?: number | null;
+    pollIntervalMs?: number;
+  },
+): void {
+  activeWatcher?.cancel();
+
+  const signal = { cancelled: false };
+  const cancel = () => {
+    signal.cancelled = true;
+  };
+  activeWatcher = { cancel };
+
+  const timeoutMs = options?.timeoutMs === undefined
+    ? null
+    : options.timeoutMs;
+  const pollIntervalMs = options?.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+
+  void watchLocalDeviceApprovals(gateway, signal, timeoutMs, pollIntervalMs)
+    .catch((error) => {
+      logger.warn(`[device-auto-approve] Auto-approval watcher failed: ${String(error)}`);
+    })
+    .finally(() => {
+      if (activeWatcher?.cancel === cancel) {
+        activeWatcher = null;
+      }
+    });
 }
 
 /**
@@ -273,24 +343,8 @@ export function scheduleControlUiDeviceAutoApproval(
     pollIntervalMs?: number;
   },
 ): void {
-  activeWatcher?.cancel();
-
-  const signal = { cancelled: false };
-  const cancel = () => {
-    signal.cancelled = true;
-  };
-  activeWatcher = { cancel };
-
-  const timeoutMs = resolveWatchTimeoutMs(options?.timeoutMs);
-  const pollIntervalMs = options?.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
-
-  void watchControlUiPairingApprovals(gateway, signal, timeoutMs, pollIntervalMs)
-    .catch((error) => {
-      logger.warn(`[control-ui] Auto-approval watcher failed: ${String(error)}`);
-    })
-    .finally(() => {
-      if (activeWatcher?.cancel === cancel) {
-        activeWatcher = null;
-      }
-    });
+  scheduleLocalDeviceAutoApproval(gateway, {
+    timeoutMs: resolveWatchTimeoutMs(options?.timeoutMs),
+    pollIntervalMs: options?.pollIntervalMs,
+  });
 }

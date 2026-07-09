@@ -23,6 +23,10 @@ import type {
   AcpSessionUpdateEnvelope,
 } from '@shared/acp-chat/types';
 import { getOpenClawEmbeddedForkSpec } from '../utils/openclaw-cli';
+import {
+  approvePendingLocalDeviceRequests,
+  type GatewayPairingRpcClient,
+} from '../utils/control-ui-device-pairing';
 import { logger } from '../utils/logger';
 import { recordAcpTrace } from './acp-trace';
 
@@ -77,7 +81,11 @@ export class AcpChatService {
   private readonly permissionWaiters = new Map<string, PermissionWaiter>();
   readonly client: Client;
 
-  constructor(private readonly mainWindow: MainWindowLike, injectedConnection?: AcpConnection) {
+  constructor(
+    private readonly mainWindow: MainWindowLike,
+    injectedConnection?: AcpConnection,
+    private readonly gateway?: GatewayPairingRpcClient,
+  ) {
     this.connection = injectedConnection ?? null;
     this.client = {
       sessionUpdate: async (notification) => this.emitSessionUpdate(notification),
@@ -279,14 +287,45 @@ export class AcpChatService {
   }
 
   private async initializeConnection(): Promise<AcpConnection> {
+    await this.approveLocalDeviceRequests();
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        return await this.initializeConnectionOnce(attempt);
+      } catch (error) {
+        if (attempt >= 2) throw error;
+        logger.info(
+          `[acp-chat] ACP connect failed on attempt ${attempt}; auto-approving local device requests and retrying: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        await this.approveLocalDeviceRequests();
+      }
+    }
+
+    throw new Error('ACP connection failed');
+  }
+
+  private async initializeConnectionOnce(attempt: number): Promise<AcpConnection> {
     if (!this.connection) this.connection = this.spawnConnection();
     const connection = this.connection;
+    const child = this.child;
 
-    this.trace('connection/initialize:start');
-    const result = await connection.initialize({
-      protocolVersion: PROTOCOL_VERSION,
-      clientCapabilities: {},
-    });
+    this.trace('connection/initialize:start', { details: { attempt } });
+    const initOutcome = await Promise.race([
+      connection.initialize({
+        protocolVersion: PROTOCOL_VERSION,
+        clientCapabilities: {},
+      }).then((result) => ({ kind: 'initialized' as const, result })),
+      this.waitForChildExit(child).then((exitCode) => ({ kind: 'exited' as const, exitCode })),
+    ]);
+
+    if (initOutcome.kind === 'exited') {
+      if (child) this.dropConnectionForChild(child);
+      throw new Error(`ACP process exited with code ${String(initOutcome.exitCode)}`);
+    }
+
+    const result = initOutcome.result;
     if (this.connection !== connection) {
       throw new Error('ACP connection closed during initialization');
     }
@@ -295,9 +334,32 @@ export class AcpChatService {
       throw new Error('ACP agent does not support session/load');
     }
     this.initialized = true;
-    this.trace('connection/initialize:success', { details: { protocolVersion: PROTOCOL_VERSION } });
+    this.trace('connection/initialize:success', { details: { protocolVersion: PROTOCOL_VERSION, attempt } });
 
     return connection;
+  }
+
+  private async approveLocalDeviceRequests(): Promise<void> {
+    if (!this.gateway) return;
+    try {
+      await approvePendingLocalDeviceRequests(this.gateway);
+    } catch (error) {
+      logger.debug(`[acp-chat] Local device auto-approve skipped: ${String(error)}`);
+    }
+  }
+
+  private waitForChildExit(child: AcpChildProcess | null): Promise<number | null> {
+    if (!child) return Promise.resolve(null);
+    if (child.exitCode !== null) return Promise.resolve(child.exitCode);
+    if (child.signalCode) return Promise.resolve(child.exitCode);
+
+    return new Promise((resolve) => {
+      const onExit = (code: number | null) => {
+        child.off('exit', onExit);
+        resolve(code);
+      };
+      child.on('exit', onExit);
+    });
   }
 
   private spawnConnection(): ClientSideConnection {
@@ -460,6 +522,9 @@ export class AcpChatService {
   }
 }
 
-export function createAcpChatService(mainWindow: MainWindowLike): AcpChatService {
-  return new AcpChatService(mainWindow);
+export function createAcpChatService(
+  mainWindow: MainWindowLike,
+  gateway?: GatewayPairingRpcClient,
+): AcpChatService {
+  return new AcpChatService(mainWindow, undefined, gateway);
 }
