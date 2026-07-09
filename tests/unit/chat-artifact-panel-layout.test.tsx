@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { Chat } from '@/pages/Chat';
 
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({
     t: (_key: string, defaultValue?: string) => defaultValue ?? '',
   }),
@@ -16,6 +17,7 @@ vi.mock('@/stores/gateway', () => ({
 
 const chatState = {
   messages: [],
+  sessions: [{ key: 'main:test' }],
   currentSessionKey: 'main:test',
   currentAgentId: 'main',
   sessionLabels: {},
@@ -32,6 +34,9 @@ const chatState = {
   sendMessage: vi.fn(),
   abortRun: vi.fn(),
   clearError: vi.fn(),
+  loadSessions: vi.fn().mockResolvedValue(undefined),
+  selectAcpSession: vi.fn(),
+  acknowledgeAcpSessionCreated: vi.fn(),
   loadMoreHistory: vi.fn(),
   loadHistory: vi.fn(),
   refresh: vi.fn(),
@@ -46,7 +51,7 @@ vi.mock('@/stores/chat', () => ({
 vi.mock('@/stores/agents', () => ({
   useAgentsStore: (selector: (state: { agents: Array<{ id: string; name: string; workspace: string }>; fetchAgents: () => void }) => unknown) => selector({
     agents: [{ id: 'main', name: 'main', workspace: '/workspace' }],
-    fetchAgents: vi.fn(),
+    fetchAgents: vi.fn().mockResolvedValue(undefined),
   }),
 }));
 

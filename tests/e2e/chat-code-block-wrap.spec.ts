@@ -1,3 +1,4 @@
+import type { ElectronApplication } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 // Regression: assistant code blocks used to set only `overflow-x-auto`, which
@@ -7,9 +8,13 @@ import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from
 // requiring horizontal scrolling.
 
 const SESSION_KEY = 'agent:main:main';
+const MAIN_WORKSPACE = '/workspace';
+const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
 
 const LONG_LOG_LINE = 'config change requires channel reload (wecom) — deferring until 2 operation(s), 1 reply(ies), 1 embedded run(s) complete';
 const LONG_PATH = '/Users/guoyuliang/.openclaw/agents/main/sessions/6a9f6ff8-91e7-4532-bfe0-4393e6aa120d.jsonl';
+
+type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -20,14 +25,15 @@ function stableStringify(value: unknown): string {
   return `{${entries.join(',')}}`;
 }
 
-const seededHistory = [
+const seededUpdates: AcpSessionUpdate[] = [
   {
-    role: 'user',
+    sessionUpdate: 'user_message',
+    messageId: 'code-wrap-user',
     content: [{ type: 'text', text: 'Show me the gateway log line.' }],
-    timestamp: Date.now(),
   },
   {
-    role: 'assistant',
+    sessionUpdate: 'agent_message',
+    messageId: 'code-wrap-assistant',
     content: [{
       type: 'text',
       text: [
@@ -39,9 +45,30 @@ const seededHistory = [
         '```',
       ].join('\n'),
     }],
-    timestamp: Date.now(),
   },
 ];
+
+async function emitAcpSessionUpdates(app: ElectronApplication, updates: AcpSessionUpdate[]) {
+  await app.evaluate(
+    async ({ app: _app }, payload) => {
+      const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+      for (const update of payload.updates) {
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('chat:acp-session-update', {
+            sessionKey: payload.sessionKey,
+            generation: 1,
+            historical: true,
+            notification: {
+              sessionId: payload.sessionKey,
+              update,
+            },
+          });
+        }
+      }
+    },
+    { sessionKey: SESSION_KEY, updates },
+  );
+}
 
 test.describe('ClawX chat code block wrapping', () => {
   test('soft-wraps long lines inside fenced code blocks instead of overflowing', async ({ launchElectronApp }) => {
@@ -53,18 +80,26 @@ test.describe('ClawX chat code block wrapping', () => {
         gatewayRpc: {
           [stableStringify(['sessions.list', {}])]: {
             success: true,
-            result: { sessions: [{ key: SESSION_KEY, displayName: 'main' }] },
-          },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: seededHistory },
-          },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: seededHistory },
+            result: { sessions: [{ key: SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE }] },
           },
         },
         hostApi: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: MAIN_WORKSPACE }])]: {
+            success: true,
+            generation: 1,
+          },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: MAIN_WORKSPACE, createIfMissing: true }])]: {
+            success: true,
+            generation: 1,
+          },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: {
+            success: true,
+            generation: 1,
+          },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: {
+            success: true,
+            generation: 1,
+          },
           [stableStringify(['/api/gateway/status', 'GET'])]: {
             ok: true,
             data: { status: 200, ok: true, json: { state: 'running', port: 18789, pid: 12345 } },
@@ -74,7 +109,7 @@ test.describe('ClawX chat code block wrapping', () => {
             data: {
               status: 200,
               ok: true,
-              json: { success: true, agents: [{ id: 'main', name: 'main' }] },
+              json: { success: true, agents: [{ id: 'main', name: 'main', workspace: MAIN_WORKSPACE, mainSessionKey: SESSION_KEY }] },
             },
           },
         },
@@ -90,12 +125,14 @@ test.describe('ClawX chat code block wrapping', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+      await emitAcpSessionUpdates(app, seededUpdates);
 
       // Constrain the viewport so the long line cannot fit on a single visual
       // row; without wrapping, this would force horizontal overflow.
       await page.setViewportSize({ width: 720, height: 800 });
 
-      const assistantProse = page.locator('.prose').filter({ hasText: 'Here is the relevant log entry' }).first();
+      const assistantProse = page.getByTestId('acp-assistant-message').filter({ hasText: 'Here is the relevant log entry' }).locator('.prose').first();
       await expect(assistantProse).toBeVisible({ timeout: 30_000 });
 
       const codeBlock = assistantProse.locator('pre').first();

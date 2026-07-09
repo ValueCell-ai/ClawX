@@ -1,9 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Chat } from '@/pages/Chat';
+import type { AcpTimelineSnapshot } from '@/lib/acp/timeline-types';
 
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({
     t: (key: string, options?: string | Record<string, unknown>) => {
       if (typeof options === 'string') return options;
@@ -21,17 +23,57 @@ vi.mock('@/stores/gateway', () => ({
   }),
 }));
 
-const chatState = {
-  messages: [
-    { role: 'user', content: 'hello' },
-    { role: 'assistant', content: 'reply 1' },
-    { role: 'user', content: 'hello' },
-    { role: 'assistant', content: 'reply 2' },
-  ],
+const { acpState, chatState, settingsState } = vi.hoisted(() => ({
+  acpState: {
+    timeline: {
+      sessionId: 'agent:main:main',
+      loadGeneration: 1,
+      itemOrder: [],
+      itemsById: {},
+      metadata: {},
+      openMessageSegments: {},
+      segmentCounts: {},
+    } as AcpTimelineSnapshot,
+    loading: false,
+    sending: false,
+    cancelling: false,
+    error: null as string | null,
+    activeSessionKey: 'agent:main:main' as string | null,
+    cwd: '/workspace' as string | null,
+    prepareLocalSession: vi.fn(),
+    loadSession: vi.fn().mockResolvedValue(true),
+    sendPrompt: vi.fn(),
+    cancel: vi.fn(),
+    respondPermission: vi.fn(),
+    clearError: vi.fn(),
+  },
+  chatState: {
+    sessions: [{ key: 'agent:main:main', workspacePath: '/workspace' }],
+    currentSessionKey: 'agent:main:main',
+    currentAgentId: 'main',
+    loading: false,
+    refresh: vi.fn(),
+    loadSessions: vi.fn().mockResolvedValue(undefined),
+    selectAcpSession: vi.fn(),
+    acknowledgeAcpSessionCreated: vi.fn(),
+  },
+  settingsState: {
+    chatWorkspacePath: '/workspace',
+    setChatWorkspacePath: vi.fn(),
+  },
+}));
+
+const ensureAcpChatSubscriptions = vi.hoisted(() => vi.fn());
+
+vi.mock('@/stores/acp-chat-session', () => ({
+  ensureAcpChatSubscriptions,
+  useAcpChatSessionStore: (selector: (state: typeof acpState) => unknown) => selector(acpState),
+}));
+
+const legacyChatFields = {
   currentSessionKey: 'agent:main:main',
   currentAgentId: 'main',
   sessionLabels: {},
-  loading: false,
   loadingMoreHistory: false,
   hasMoreHistory: false,
   sending: false,
@@ -46,19 +88,25 @@ const chatState = {
   clearError: vi.fn(),
   loadMoreHistory: vi.fn(),
   loadHistory: vi.fn(),
-  refresh: vi.fn(),
   cleanupEmptySession: vi.fn(),
   lastUserMessageAt: null,
 };
 
 vi.mock('@/stores/chat', () => ({
-  useChatStore: (selector: (state: typeof chatState) => unknown) => selector(chatState),
+  useChatStore: (selector: (state: typeof chatState & typeof legacyChatFields) => unknown) => selector({
+    ...legacyChatFields,
+    ...chatState,
+  }),
+}));
+
+vi.mock('@/stores/settings', () => ({
+  useSettingsStore: (selector: (state: typeof settingsState) => unknown) => selector(settingsState),
 }));
 
 vi.mock('@/stores/agents', () => ({
   useAgentsStore: (selector: (state: { agents: Array<{ id: string; name: string; workspace: string }>; fetchAgents: () => void }) => unknown) => selector({
     agents: [{ id: 'main', name: 'main', workspace: '/workspace' }],
-    fetchAgents: vi.fn(),
+    fetchAgents: vi.fn().mockResolvedValue(undefined),
   }),
 }));
 
@@ -89,10 +137,6 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
   ChatInput: () => null,
 }));
 
-vi.mock('@/pages/Chat/ChatMessage', () => ({
-  ChatMessage: ({ message }: { message: { content?: unknown } }) => <div>{typeof message.content === 'string' ? message.content : ''}</div>,
-}));
-
 vi.mock('@/components/file-preview/ArtifactPanel', () => ({
   ArtifactPanel: () => null,
 }));
@@ -101,50 +145,99 @@ vi.mock('@/components/file-preview/PanelResizeDivider', () => ({
   PanelResizeDivider: () => null,
 }));
 
-vi.mock('@/pages/Chat/ExecutionGraphCard', () => ({
-  ExecutionGraphCard: () => null,
-}));
+function emptyTimeline(): AcpTimelineSnapshot {
+  return {
+    sessionId: 'agent:main:main',
+    loadGeneration: 1,
+    itemOrder: [],
+    itemsById: {},
+    metadata: {},
+    openMessageSegments: {},
+    segmentCounts: {},
+  };
+}
+
+function timelineFromQuestions(questions: string[]): AcpTimelineSnapshot {
+  const itemOrder: string[] = [];
+  const itemsById: AcpTimelineSnapshot['itemsById'] = {};
+
+  questions.forEach((question, index) => {
+    const userId = `msg-user:${index}`;
+    const assistantId = `msg-assistant:${index}`;
+    itemOrder.push(userId, assistantId);
+    itemsById[userId] = {
+      kind: 'message-segment',
+      id: userId,
+      role: 'user',
+      messageId: `msg-user-${index}`,
+      segmentIndex: 0,
+      parts: [{ kind: 'markdown', text: question }],
+    };
+    itemsById[assistantId] = {
+      kind: 'message-segment',
+      id: assistantId,
+      role: 'assistant',
+      messageId: `msg-assistant-${index}`,
+      segmentIndex: 0,
+      parts: [{ kind: 'markdown', text: `reply ${index + 1}` }],
+    };
+  });
+
+  return {
+    ...emptyTimeline(),
+    itemOrder,
+    itemsById,
+  };
+}
 
 describe('Chat question directory', () => {
-  it('keeps real repeated questions as separate directory entries', async () => {
+  beforeEach(() => {
+    ensureAcpChatSubscriptions.mockReset();
+    acpState.timeline = emptyTimeline();
+    acpState.loading = false;
+    acpState.sending = false;
+    acpState.cancelling = false;
+    acpState.error = null;
+    acpState.activeSessionKey = 'agent:main:main';
+    acpState.cwd = '/workspace';
+    acpState.loadSession.mockReset();
+    acpState.loadSession.mockResolvedValue(true);
+    chatState.sessions = [{ key: 'agent:main:main', workspacePath: '/workspace' }];
+    chatState.currentSessionKey = 'agent:main:main';
+    chatState.currentAgentId = 'main';
+    chatState.refresh.mockReset();
+    settingsState.chatWorkspacePath = '/workspace';
+  });
+
+  it('renders repeated ACP questions as separate timeline messages while the legacy directory is disabled', () => {
+    acpState.timeline = timelineFromQuestions(['hello', 'hello']);
+
     render(
       <TooltipProvider>
         <Chat />
       </TooltipProvider>,
     );
 
-    fireEvent.click(await screen.findByTestId('chat-question-directory-toggle'));
-
-    const directory = await screen.findByTestId('chat-question-directory');
-    expect(directory).toBeInTheDocument();
-    expect(directory.querySelectorAll('button')).toHaveLength(2);
+    expect(screen.getAllByTestId('acp-user-message')).toHaveLength(2);
+    expect(screen.getAllByText('hello')).toHaveLength(2);
+    expect(screen.getByTestId('chat-question-directory-toggle')).toBeDisabled();
+    expect(screen.queryByTestId('chat-question-directory')).not.toBeInTheDocument();
   });
 
-  it('includes the latest question in the directory list', async () => {
+  it('includes the latest ACP question in the timeline', () => {
     const latestQuestion = '给我生成一只哈密瓜';
-    const originalMessages = chatState.messages;
-    chatState.messages = [
-      ...Array.from({ length: 13 }, (_, idx) => ([
-        { role: 'user', content: `question ${idx + 1}` },
-        { role: 'assistant', content: `reply ${idx + 1}` },
-      ])).flat(),
-      { role: 'user', content: latestQuestion },
-      { role: 'assistant', content: 'generated image' },
-    ];
+    acpState.timeline = timelineFromQuestions([
+      ...Array.from({ length: 13 }, (_, idx) => `question ${idx + 1}`),
+      latestQuestion,
+    ]);
 
-    try {
-      render(
-        <TooltipProvider>
-          <Chat />
-        </TooltipProvider>,
-      );
+    render(
+      <TooltipProvider>
+        <Chat />
+      </TooltipProvider>,
+    );
 
-      fireEvent.click(await screen.findByTestId('chat-question-directory-toggle'));
-
-      const lastUserIndex = chatState.messages.length - 2;
-      expect(screen.getByTestId(`chat-question-directory-item-${lastUserIndex}`)).toHaveTextContent(latestQuestion);
-    } finally {
-      chatState.messages = originalMessages;
-    }
+    expect(screen.getByText(latestQuestion)).toBeInTheDocument();
+    expect(screen.getByTestId('chat-question-directory-toggle')).toBeDisabled();
   });
 });

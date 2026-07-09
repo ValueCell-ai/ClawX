@@ -20,7 +20,7 @@ const { acpState, agentsState, artifactPanelState, chatState, gatewayState, stic
     agents: [{ id: 'main', name: 'main', workspace: '/workspace', mainSessionKey: 'agent:main:main' }],
     loading: false,
     error: null as string | null,
-    fetchAgents: vi.fn(),
+    fetchAgents: vi.fn().mockResolvedValue(undefined),
   },
   artifactPanelState: {
     open: false,
@@ -30,9 +30,12 @@ const { acpState, agentsState, artifactPanelState, chatState, gatewayState, stic
     close: vi.fn(),
   },
   chatState: {
-    sessions: [{ key: 'agent:main:main' }],
+    sessions: [{ key: 'agent:main:main', workspacePath: '/workspace' }],
     currentSessionKey: 'agent:main:main',
     currentAgentId: 'main',
+    loadSessions: vi.fn().mockResolvedValue(undefined),
+    selectAcpSession: vi.fn(),
+    acknowledgeAcpSessionCreated: vi.fn(),
   },
   gatewayState: {
     status: { state: 'running', gatewayReady: true, port: 18789 },
@@ -67,6 +70,7 @@ vi.mock('@/stores/artifact-panel', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({
     t: (key: string, params?: Record<string, unknown> | string) => {
       if (typeof params === 'string') return params;

@@ -1,10 +1,15 @@
 import { mkdirSync, copyFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import type { ElectronApplication } from '@playwright/test';
 
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 const SESSION_KEY = 'agent:main:main';
+const MAIN_WORKSPACE = '/workspace';
+const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
 const CLOUD_ARTIFACT_PATH = '/opt/cursor/artifacts/chat_assistant_plain_markdown.png';
+
+type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -15,14 +20,15 @@ function stableStringify(value: unknown): string {
   return `{${entries.join(',')}}`;
 }
 
-const seededHistory = [
+const seededUpdates: AcpSessionUpdate[] = [
   {
-    role: 'user',
+    sessionUpdate: 'user_message',
+    messageId: 'plain-markdown-user',
     content: [{ type: 'text', text: 'Please render a Markdown reply plainly.' }],
-    timestamp: Date.now(),
   },
   {
-    role: 'assistant',
+    sessionUpdate: 'agent_message',
+    messageId: 'plain-markdown-assistant',
     content: [{
       type: 'text',
       text: [
@@ -34,9 +40,30 @@ const seededHistory = [
         '- Inline code: `worksToo()`',
       ].join('\n'),
     }],
-    timestamp: Date.now(),
   },
 ];
+
+async function emitAcpSessionUpdates(app: ElectronApplication, updates: AcpSessionUpdate[]) {
+  await app.evaluate(
+    async ({ app: _app }, payload) => {
+      const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+      for (const update of payload.updates) {
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('chat:acp-session-update', {
+            sessionKey: payload.sessionKey,
+            generation: 1,
+            historical: true,
+            notification: {
+              sessionId: payload.sessionKey,
+              update,
+            },
+          });
+        }
+      }
+    },
+    { sessionKey: SESSION_KEY, updates },
+  );
+}
 
 test.describe('ClawX assistant reply Markdown styling', () => {
   test('renders assistant text as plain Markdown while keeping user prompts bubbled', async ({ launchElectronApp }, testInfo) => {
@@ -49,19 +76,27 @@ test.describe('ClawX assistant reply Markdown styling', () => {
           [stableStringify(['sessions.list', {}])]: {
             success: true,
             result: {
-              sessions: [{ key: SESSION_KEY, displayName: 'main' }],
+              sessions: [{ key: SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE }],
             },
-          },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: seededHistory },
-          },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: seededHistory },
           },
         },
         hostApi: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: MAIN_WORKSPACE }])]: {
+            success: true,
+            generation: 1,
+          },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: MAIN_WORKSPACE, createIfMissing: true }])]: {
+            success: true,
+            generation: 1,
+          },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: {
+            success: true,
+            generation: 1,
+          },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: {
+            success: true,
+            generation: 1,
+          },
           [stableStringify(['/api/gateway/status', 'GET'])]: {
             ok: true,
             data: {
@@ -77,7 +112,7 @@ test.describe('ClawX assistant reply Markdown styling', () => {
               ok: true,
               json: {
                 success: true,
-                agents: [{ id: 'main', name: 'main' }],
+                agents: [{ id: 'main', name: 'main', workspace: MAIN_WORKSPACE, mainSessionKey: SESSION_KEY }],
               },
             },
           },
@@ -94,6 +129,8 @@ test.describe('ClawX assistant reply Markdown styling', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+      await emitAcpSessionUpdates(app, seededUpdates);
 
       await page.evaluate(() => {
         const root = document.documentElement;
@@ -101,10 +138,10 @@ test.describe('ClawX assistant reply Markdown styling', () => {
         root.classList.add('light');
       });
 
-      const userBubble = page.locator('div.rounded-2xl.bg-brand').filter({ hasText: 'Please render a Markdown reply plainly.' }).first();
+      const userBubble = page.getByTestId('acp-user-message').filter({ hasText: 'Please render a Markdown reply plainly.' }).locator('div.rounded-2xl.bg-brand').first();
       await expect(userBubble).toBeVisible({ timeout: 30_000 });
 
-      const assistantProse = page.locator('.prose').filter({ hasText: 'Plain Markdown reply' }).first();
+      const assistantProse = page.getByTestId('acp-assistant-message').filter({ hasText: 'Plain Markdown reply' }).locator('.prose').first();
       await expect(assistantProse).toBeVisible({ timeout: 30_000 });
       await expect(assistantProse.locator('strong')).toHaveText('works');
       await expect(assistantProse.locator('code')).toHaveText('worksToo()');

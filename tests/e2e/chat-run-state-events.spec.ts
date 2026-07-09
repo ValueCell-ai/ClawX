@@ -3,6 +3,7 @@ import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from
 
 const MAIN_SESSION_KEY = 'agent:main:main';
 const MAIN_WORKSPACE = '/workspace';
+const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
 const IMAGE_GENERATION_TASK_ID = '32aa3a12-a05b-4074-af4e-246cc4a9a303';
 const ONE_PIXEL_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 const ONE_PIXEL_PNG_DATA_URL = `data:image/png;base64,${ONE_PIXEL_PNG_BASE64}`;
@@ -26,6 +27,8 @@ function baseHostApiMocks(
   return {
     [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: MAIN_WORKSPACE }])]: loadResult,
     [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: '/' }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: loadResult,
+    [stableStringify(['sessions', 'summaries', { sessionKeys: [MAIN_SESSION_KEY] }])]: { summaries: [] },
     [stableStringify(['/api/agents', 'GET'])]: {
       ok: true,
       data: {
@@ -57,7 +60,7 @@ async function installAcpChatMocks(
       [stableStringify(['sessions.list', {}])]: {
         success: true,
         result: {
-          sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main' }],
+          sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE }],
         },
       },
     },
@@ -228,10 +231,14 @@ test.describe('ClawX chat run state events', () => {
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
-      await expect(page.getByTestId('acp-tool-call-card')).toContainText('Send generated image');
+      const toolCard = page.getByTestId('acp-tool-call-card');
+      await expect(toolCard).toContainText('Send generated image');
+      if (await toolCard.getAttribute('data-expanded') !== 'true') {
+        await toolCard.getByTestId('acp-tool-toggle').click();
+      }
       await expect(page.getByText('Puppy ready')).toBeVisible();
-      await expect(page.getByTestId('acp-tool-call-card').getByTestId('acp-image-part')).toBeVisible();
-      await expect(page.getByTestId('acp-tool-call-card').getByTestId('acp-image-part').locator('img')).toBeVisible();
+      await expect(toolCard.getByTestId('acp-image-part')).toBeVisible();
+      await expect(toolCard.getByTestId('acp-image-part').locator('img')).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }

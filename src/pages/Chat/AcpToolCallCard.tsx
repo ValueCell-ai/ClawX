@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CheckCircle2, ChevronDown, ChevronRight, CircleDashed, Loader2, Wrench, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { RenderPart, ToolCallItem } from '@/lib/acp/timeline-types';
@@ -6,6 +6,12 @@ import { cn } from '@/lib/utils';
 import { AcpRenderPart } from './AcpMessageSegment';
 
 const TOOL_AUTO_COLLAPSE_DELAY_MS = 1_000;
+
+type ExpansionState = {
+  toolCallId: string;
+  expanded: boolean;
+  manualOverride: boolean;
+};
 
 function statusLabelKey(status: ToolCallItem['status']): string {
   return `acp.${status}`;
@@ -44,35 +50,38 @@ export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
   const { t } = useTranslation('chat');
   const hasDetails = Boolean(item.error) || item.outputParts.length > 0;
   const shouldStartExpanded = !hasDetails || !(item.historical && item.status === 'completed');
-  const [expanded, setExpanded] = useState(() => shouldStartExpanded);
-  const [manualOverride, setManualOverride] = useState(false);
-  const lastToolCallIdRef = useRef(item.toolCallId);
+  const [expansionState, setExpansionState] = useState<ExpansionState>(() => ({
+    toolCallId: item.toolCallId,
+    expanded: shouldStartExpanded,
+    manualOverride: false,
+  }));
+  const currentExpansionState = expansionState.toolCallId === item.toolCallId
+    ? expansionState
+    : { toolCallId: item.toolCallId, expanded: shouldStartExpanded, manualOverride: false };
+  const manualOverride = currentExpansionState.manualOverride;
+  const expanded = (() => {
+    if (!hasDetails) return true;
+    if (manualOverride) return currentExpansionState.expanded;
+    if (item.historical && item.status === 'completed') return false;
+    if (item.status !== 'completed') return true;
+    return currentExpansionState.expanded;
+  })();
 
   useEffect(() => {
-    if (lastToolCallIdRef.current === item.toolCallId) return;
-    lastToolCallIdRef.current = item.toolCallId;
-    setExpanded(shouldStartExpanded);
-    setManualOverride(false);
-  }, [item.toolCallId, shouldStartExpanded]);
-
-  useEffect(() => {
-    if (!hasDetails) {
-      setExpanded(true);
-      return;
-    }
     if (manualOverride) return;
-    if (item.historical && item.status === 'completed') {
-      setExpanded(false);
-      return;
-    }
-    if (item.status !== 'completed') {
-      setExpanded(true);
-      return;
-    }
+    if (!hasDetails || item.historical || item.status !== 'completed') return;
 
-    const timer = window.setTimeout(() => setExpanded(false), TOOL_AUTO_COLLAPSE_DELAY_MS);
+    const timer = window.setTimeout(() => {
+      setExpansionState((state) => {
+        const currentState = state.toolCallId === item.toolCallId
+          ? state
+          : { toolCallId: item.toolCallId, expanded: shouldStartExpanded, manualOverride: false };
+        if (currentState.manualOverride) return currentState;
+        return { ...currentState, expanded: false };
+      });
+    }, TOOL_AUTO_COLLAPSE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [hasDetails, item.historical, item.status, item.toolCallId, manualOverride]);
+  }, [hasDetails, item.historical, item.status, item.toolCallId, manualOverride, shouldStartExpanded]);
 
   const toggleLabel = expanded ? t('acp.collapseTool') : t('acp.expandTool');
 
@@ -88,8 +97,12 @@ export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
             type="button"
             data-testid="acp-tool-toggle"
             onClick={() => {
-              setManualOverride(true);
-              setExpanded((value) => !value);
+              setExpansionState((state) => {
+                const currentState = state.toolCallId === item.toolCallId
+                  ? state
+                  : { toolCallId: item.toolCallId, expanded: shouldStartExpanded, manualOverride: false };
+                return { ...currentState, expanded: !expanded, manualOverride: true };
+              });
             }}
             aria-expanded={expanded}
             aria-label={toggleLabel}

@@ -3,6 +3,7 @@ import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from
 
 const PROJECT_MANAGER_SESSION_KEY = 'agent:main:main';
 const PROJECT_MANAGER_WORKSPACE = '/workspace';
+const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
 
 type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
 
@@ -18,7 +19,10 @@ function stableStringify(value: unknown): string {
 function baseHostApiMocks(loadResult: Record<string, unknown> = { success: true, generation: 1 }) {
   return {
     [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, cwd: PROJECT_MANAGER_WORKSPACE }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, cwd: PROJECT_MANAGER_WORKSPACE, createIfMissing: true }])]: loadResult,
     [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, cwd: '/' }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: loadResult,
     [stableStringify(['/api/agents', 'GET'])]: {
       ok: true,
       data: {

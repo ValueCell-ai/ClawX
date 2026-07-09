@@ -1,29 +1,86 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
+import { Chat } from '@/pages/Chat';
+import type { AcpTimelineSnapshot } from '@/lib/acp/timeline-types';
 
-const { gatewayState, agentsState } = vi.hoisted(() => ({
-  gatewayState: {
-    status: { state: 'running', port: 18789 },
+const { acpState, agentsState, artifactPanelState, chatState, settingsState } = vi.hoisted(() => ({
+  acpState: {
+    timeline: {
+      sessionId: 'agent:main:main',
+      loadGeneration: 1,
+      itemOrder: [],
+      itemsById: {},
+      metadata: {},
+      openMessageSegments: {},
+      segmentCounts: {},
+    } as AcpTimelineSnapshot,
+    loading: false,
+    sending: false,
+    cancelling: false,
+    error: null as string | null,
+    activeSessionKey: 'agent:main:main' as string | null,
+    cwd: '/workspace' as string | null,
+    prepareLocalSession: vi.fn(),
+    loadSession: vi.fn().mockResolvedValue(true),
+    sendPrompt: vi.fn(),
+    cancel: vi.fn(),
+    respondPermission: vi.fn(),
+    clearError: vi.fn(),
   },
   agentsState: {
-    agents: [{ id: 'main', name: 'main' }] as Array<Record<string, unknown>>,
-    fetchAgents: vi.fn(),
+    agents: [{ id: 'main', name: 'main', workspace: '/workspace', mainSessionKey: 'agent:main:main' }] as Array<Record<string, unknown>>,
+    fetchAgents: vi.fn().mockResolvedValue(undefined),
+  },
+  artifactPanelState: {
+    open: false,
+    widthPct: 34,
+    openChanges: vi.fn(),
+    openPreview: vi.fn(),
+    close: vi.fn(),
+    openBrowser: vi.fn(),
+    tab: 'changes',
+  },
+  chatState: {
+    sessions: [{ key: 'agent:main:main', workspacePath: '/workspace' }],
+    currentSessionKey: 'agent:main:main',
+    currentAgentId: 'main',
+    loading: false,
+    refresh: vi.fn(),
+    loadSessions: vi.fn().mockResolvedValue(undefined),
+    selectAcpSession: vi.fn(),
+    acknowledgeAcpSessionCreated: vi.fn(),
+  },
+  settingsState: {
+    chatWorkspacePath: '/workspace',
+    setChatWorkspacePath: vi.fn(),
   },
 }));
 
-vi.mock('@/stores/gateway', () => ({
-  useGatewayStore: (selector: (state: typeof gatewayState) => unknown) => selector(gatewayState),
+const ensureAcpChatSubscriptions = vi.hoisted(() => vi.fn());
+
+vi.mock('@/stores/acp-chat-session', () => ({
+  ensureAcpChatSubscriptions,
+  useAcpChatSessionStore: (selector: (state: typeof acpState) => unknown) => selector(acpState),
 }));
 
 vi.mock('@/stores/agents', () => ({
   useAgentsStore: (selector: (state: typeof agentsState) => unknown) => selector(agentsState),
 }));
 
-vi.mock('@/lib/host-api', () => ({
-  hostApiFetch: vi.fn().mockResolvedValue({ success: true, messages: [] }),
+vi.mock('@/stores/artifact-panel', () => ({
+  useArtifactPanel: (selector: (state: typeof artifactPanelState) => unknown) => selector(artifactPanelState),
+}));
+
+vi.mock('@/stores/chat', () => ({
+  useChatStore: (selector: (state: typeof chatState) => unknown) => selector(chatState),
+}));
+
+vi.mock('@/stores/settings', () => ({
+  useSettingsStore: (selector: (state: typeof settingsState) => unknown) => selector(settingsState),
 }));
 
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({
     t: (key: string, params?: Record<string, unknown> | string) => {
       if (typeof params === 'string') return params;
@@ -34,6 +91,9 @@ vi.mock('react-i18next', () => ({
       if (key === 'executionGraph.title') return 'Execution Graph';
       if (key === 'executionGraph.collapseAction') return 'Collapse';
       if (key === 'executionGraph.thinkingLabel') return 'Thinking';
+      if (key === 'acp.tool') return 'Tool';
+      if (key === 'acp.completed') return 'Completed';
+      if (key === 'welcome.subtitle') return 'What can I do for you?';
       if (key.startsWith('taskPanel.stepStatus.')) return key.split('.').at(-1) ?? key;
       return key;
     },
@@ -61,65 +121,109 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
   ChatInput: () => null,
 }));
 
+vi.mock('@/components/file-preview/ArtifactPanel', () => ({
+  ArtifactPanel: () => null,
+}));
+
+vi.mock('@/components/file-preview/PanelResizeDivider', () => ({
+  PanelResizeDivider: () => null,
+}));
+
+function emptyTimeline(): AcpTimelineSnapshot {
+  return {
+    sessionId: 'agent:main:main',
+    loadGeneration: 1,
+    itemOrder: [],
+    itemsById: {},
+    metadata: {},
+    openMessageSegments: {},
+    segmentCounts: {},
+  };
+}
+
+function timelineWithToolCalls(): AcpTimelineSnapshot {
+  return {
+    ...emptyTimeline(),
+    itemOrder: ['msg-user:0', 'tool:exec-1', 'tool:image-1', 'tool:process-1', 'msg-assistant:0'],
+    itemsById: {
+      'msg-user:0': {
+        kind: 'message-segment',
+        id: 'msg-user:0',
+        role: 'user',
+        messageId: 'msg-user',
+        segmentIndex: 0,
+        parts: [{ kind: 'markdown', text: 'Generate assets' }],
+      },
+      'tool:exec-1': {
+        kind: 'tool-call',
+        id: 'tool:exec-1',
+        toolCallId: 'exec-1',
+        title: 'exec',
+        status: 'completed',
+        outputParts: [{ kind: 'markdown', text: 'listed files' }],
+        locations: [],
+      },
+      'tool:image-1': {
+        kind: 'tool-call',
+        id: 'tool:image-1',
+        toolCallId: 'image-1',
+        title: 'image',
+        status: 'completed',
+        outputParts: [],
+        locations: [],
+      },
+      'tool:process-1': {
+        kind: 'tool-call',
+        id: 'tool:process-1',
+        toolCallId: 'process-1',
+        title: 'process',
+        status: 'completed',
+        outputParts: [],
+        locations: [],
+      },
+      'msg-assistant:0': {
+        kind: 'message-segment',
+        id: 'msg-assistant:0',
+        role: 'assistant',
+        messageId: 'msg-assistant',
+        segmentIndex: 0,
+        parts: [{ kind: 'markdown', text: 'All done.' }],
+      },
+    },
+  };
+}
+
 describe('Chat tool card suppression', () => {
   beforeEach(() => {
-    vi.resetModules();
+    ensureAcpChatSubscriptions.mockReset();
+    acpState.timeline = timelineWithToolCalls();
+    acpState.loading = false;
+    acpState.sending = false;
+    acpState.cancelling = false;
+    acpState.error = null;
+    acpState.activeSessionKey = 'agent:main:main';
+    acpState.cwd = '/workspace';
+    acpState.loadSession.mockReset();
+    acpState.loadSession.mockResolvedValue(true);
+    agentsState.fetchAgents.mockReset();
+    agentsState.fetchAgents.mockResolvedValue(undefined);
+    artifactPanelState.open = false;
+    artifactPanelState.close.mockReset();
+    chatState.sessions = [{ key: 'agent:main:main', workspacePath: '/workspace' }];
+    chatState.currentSessionKey = 'agent:main:main';
+    chatState.currentAgentId = 'main';
+    settingsState.chatWorkspacePath = '/workspace';
   });
 
-  it('does not render standalone tool cards for messages inside a user run segment', async () => {
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      messages: [
-        { role: 'user', content: 'Generate assets' },
-        {
-          role: 'assistant',
-          id: 'tool-exec',
-          content: [{ type: 'tool_use', id: 'exec-1', name: 'exec', input: { command: 'ls' } }],
-        },
-        {
-          role: 'assistant',
-          id: 'tool-image',
-          content: [{ type: 'tool_use', id: 'image-1', name: 'image', input: { path: '/tmp/a.png' } }],
-        },
-        {
-          role: 'assistant',
-          id: 'tool-process',
-          content: [{ type: 'tool_use', id: 'process-1', name: 'process', input: { action: 'list' } }],
-        },
-        {
-          role: 'assistant',
-          id: 'reply',
-          content: [{ type: 'text', text: 'All done.' }],
-        },
-      ],
-      loading: false,
-      error: null,
-      runError: null,
-      sending: false,
-      activeRunId: null,
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      pendingFinal: false,
-      lastUserMessageAt: Date.now(),
-      pendingToolImages: [],
-      sessions: [{ key: 'agent:main:main' }],
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessionLabels: {},
-      sessionLastActivity: {},
-      thinkingLevel: null,
-    });
-
-    const { Chat } = await import('@/pages/Chat/index');
+  it('renders ACP tool calls inline without the legacy execution graph', () => {
     render(<Chat />);
 
-    await waitFor(() => {
-      expect(screen.getByTestId('chat-execution-graph')).toBeInTheDocument();
-    });
-
-    expect(screen.queryByText('exec')).not.toBeInTheDocument();
+    expect(screen.getByTestId('acp-chat-timeline')).toBeInTheDocument();
+    expect(screen.getAllByTestId('acp-tool-call-card')).toHaveLength(3);
+    expect(screen.getByText('exec')).toBeInTheDocument();
+    expect(screen.getByText('image')).toBeInTheDocument();
+    expect(screen.getByText('process')).toBeInTheDocument();
     expect(screen.getByText('All done.')).toBeInTheDocument();
-    expect(screen.getByTestId('chat-execution-graph')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-execution-graph')).not.toBeInTheDocument();
   });
 });
