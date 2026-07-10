@@ -3,7 +3,7 @@ id: custom-provider-context-window-defaults
 title: Explicit contextWindow defaults and compaction safeguard for custom providers
 scenario: gateway-backend-communication
 taskType: runtime-bridge
-intent: Give custom-provider model rows an explicit contextWindow (inferred by model family) and seed agents.defaults.compaction.mode=safeguard so OpenClaw can compact long sessions before they fail with "Context overflow: prompt too large for the model".
+intent: Give custom-provider model rows an explicit contextWindow (inferred by model family) and seed agents.defaults.compaction.mode=safeguard with reserveTokensFloor=50000 so OpenClaw can compact long sessions before they fail with "Context overflow: prompt too large for the model".
 touchedAreas:
   - harness/specs/tasks/custom-provider-context-window-defaults.md
   - harness/specs/rules/provider-model-metadata-preservation.md
@@ -33,7 +33,7 @@ requiredTests:
 acceptance:
   - New custom-provider model rows written by explicit provider sync include an inferred contextWindow matching the model-family table in model-capabilities.
   - The startup batch sync backfills contextWindow only on models.providers.custom-* rows lacking both contextWindow and contextTokens; registry and non-custom providers are never touched.
-  - agents.defaults.compaction is seeded to { mode: "safeguard" } only when no compaction config exists; explicit compaction config is preserved verbatim.
+  - agents.defaults.compaction is seeded to { mode: "safeguard", reserveTokensFloor: 50000 } only when no compaction config exists; explicit compaction config is preserved verbatim except missing reserveTokensFloor may be backfilled.
   - Renderer transport boundaries remain unchanged.
   - Focused tests, harness validation, communication replay, and communication compare pass.
 docs:
@@ -58,6 +58,9 @@ for the model. Try /reset (or /new) ...". Users also had no
   rows during the startup batch config sync.
 - Seed `agents.defaults.compaction.mode = "safeguard"` when the user has no
   compaction config.
+- Seed `agents.defaults.compaction.reserveTokensFloor = 50000` alongside
+  safeguard mode (and backfill when an existing compaction config lacks a floor)
+  so auto-compaction has enough buffer for 200k+ context models.
 - Add regression tests and translated documentation.
 
 ## Out Of Scope

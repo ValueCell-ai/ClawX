@@ -523,6 +523,8 @@ async function discoverAgentIds(): Promise<string[]> {
 const OPENCLAW_CONFIG_PATH = join(homedir(), '.openclaw', 'openclaw.json');
 const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
 const VALID_COMPACTION_MODES = new Set(['default', 'safeguard']);
+/** Matches OpenClaw's 200k+ context-window recommendation (see computeContextAwareReserveTokensFloor). */
+const DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR = 50_000;
 const BUILTIN_CHANNEL_IDS = new Set([
   'discord',
   'telegram',
@@ -862,7 +864,38 @@ function ensureCompactionSafeguardDefault(config: Record<string, unknown>): bool
     : {});
   if (defaults.compaction !== undefined) return false;
 
-  defaults.compaction = { mode: 'safeguard' };
+  defaults.compaction = {
+    mode: 'safeguard',
+    reserveTokensFloor: DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR,
+  };
+  agents.defaults = defaults;
+  config.agents = agents;
+  return true;
+}
+
+/**
+ * Backfill `reserveTokensFloor` on compaction configs that ClawX or OpenClaw
+ * seeded without one. OpenClaw's built-in default (20k) is too low once
+ * contextWindow backfill activates safeguard compaction on 200k+ models.
+ */
+function backfillCompactionReserveTokensFloor(config: Record<string, unknown>): boolean {
+  const agents = (config.agents && typeof config.agents === 'object'
+    ? config.agents as Record<string, unknown>
+    : null);
+  if (!agents) return false;
+
+  const defaults = (agents.defaults && typeof agents.defaults === 'object'
+    ? agents.defaults as Record<string, unknown>
+    : null);
+  if (!defaults) return false;
+
+  const compaction = (defaults.compaction && typeof defaults.compaction === 'object'
+    ? defaults.compaction as Record<string, unknown>
+    : null);
+  if (!compaction || compaction.reserveTokensFloor !== undefined) return false;
+
+  compaction.reserveTokensFloor = DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR;
+  defaults.compaction = compaction;
   agents.defaults = defaults;
   config.agents = agents;
   return true;
@@ -2673,7 +2706,10 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     // ── Compaction safeguard default ──
     if (ensureCompactionSafeguardDefault(config)) {
       modified = true;
-      console.log('[batch-sync] Seeded agents.defaults.compaction.mode=safeguard');
+      console.log(`[batch-sync] Seeded agents.defaults.compaction.mode=safeguard reserveTokensFloor=${DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR}`);
+    } else if (backfillCompactionReserveTokensFloor(config)) {
+      modified = true;
+      console.log(`[batch-sync] Backfilled agents.defaults.compaction.reserveTokensFloor=${DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR}`);
     }
 
     // ── Memory search default ──

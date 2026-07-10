@@ -2355,7 +2355,31 @@ describe('batchSyncConfigFields', () => {
 
     const config = await readOpenClawJson();
     const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
-    expect(defaults.compaction).toEqual({ mode: 'safeguard' });
+    expect(defaults.compaction).toEqual({
+      mode: 'safeguard',
+      reserveTokensFloor: 50_000,
+    });
+  });
+
+  it('backfills reserveTokensFloor on safeguard compaction seeded without a floor', async () => {
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      agents: {
+        defaults: {
+          compaction: { mode: 'safeguard' },
+        },
+      },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
+    expect(defaults.compaction).toEqual({
+      mode: 'safeguard',
+      reserveTokensFloor: 50_000,
+    });
   });
 
   it('does not touch an explicit compaction config', async () => {
