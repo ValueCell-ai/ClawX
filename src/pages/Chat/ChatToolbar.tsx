@@ -87,6 +87,8 @@ export function ChatToolbar({
             onClick={onToggleQuestionDirectory}
             disabled={!questionDirectoryAvailable}
             aria-label={t('questionDirectory.title')}
+            aria-controls="chat-question-directory"
+            aria-expanded={questionDirectoryOpen}
           >
             <ListTree className="h-4 w-4" />
           </Button>

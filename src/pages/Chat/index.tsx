@@ -16,7 +16,8 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
 import { getWorkspaceDisplayLabel, resolveEffectiveWorkspace } from '@/lib/workspace-context';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
-import type { AcpTimelineSnapshot, RenderPart } from '@/lib/acp/timeline-types';
+import { getAcpUserMessageAnchorId } from '@/lib/acp/timeline-anchors';
+import type { AcpTimelineSnapshot, MessageSegmentItem, RenderPart } from '@/lib/acp/timeline-types';
 import type { FileContentType, GeneratedFile } from '@/lib/generated-files';
 import { ChatInput, type FileAttachment } from './ChatInput';
 import { ChatToolbar } from './ChatToolbar';
@@ -51,6 +52,27 @@ const MIME_BY_EXT: Record<string, string> = {
   '.svg': 'image/svg+xml',
   '.pdf': 'application/pdf',
 };
+
+type QuestionDirectoryItem = {
+  itemId: string;
+  anchorId: string;
+  title: string;
+};
+
+const QUESTION_DIRECTORY_RENDER_LIMIT = 300;
+
+function buildQuestionDirectoryTitle(item: MessageSegmentItem, fallback: string): string {
+  const markdown = item.parts.find(
+    (part): part is Extract<RenderPart, { kind: 'markdown' }> => part.kind === 'markdown' && part.text.trim().length > 0,
+  );
+  const normalized = markdown?.text.replace(/\s+/g, ' ').trim();
+  if (!normalized) return fallback;
+  const graphemes = Array.from(
+    new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(normalized),
+    ({ segment }) => segment,
+  );
+  return graphemes.length > 64 ? `${graphemes.slice(0, 61).join('')}...` : normalized;
+}
 
 function basenameOf(filePath: string): string {
   return filePath.split(/[\\/]/).filter(Boolean).at(-1) || filePath;
@@ -159,6 +181,52 @@ function deriveAcpGeneratedFiles(timeline: AcpTimelineSnapshot): GeneratedFile[]
   return Array.from(files.values()).sort((a, b) => a.lastSeenIndex - b.lastSeenIndex);
 }
 
+function QuestionDirectory({ items }: { items: QuestionDirectoryItem[] }) {
+  const { t } = useTranslation('chat');
+  const navRef = useRef<HTMLElement | null>(null);
+  const visibleItems = items.slice(-QUESTION_DIRECTORY_RENDER_LIMIT);
+  const hiddenCount = items.length - visibleItems.length;
+
+  useEffect(() => {
+    const nav = navRef.current;
+    if (nav) nav.scrollTop = nav.scrollHeight;
+  }, [items.length]);
+
+  return (
+    <aside
+      id="chat-question-directory"
+      data-testid="chat-question-directory"
+      aria-label={t('questionDirectory.title')}
+      className="flex max-h-[40vh] w-full shrink-0 flex-col overflow-hidden rounded-2xl border border-black/10 bg-surface-input p-3 dark:border-white/10 lg:max-h-none lg:w-64 xl:w-72"
+    >
+      <h2 className="px-1 pb-2 text-sm font-medium text-foreground">{t('questionDirectory.title')}</h2>
+      <nav
+        ref={navRef}
+        className="min-h-0 max-h-[calc(40vh-5rem)] flex-1 space-y-1 overflow-y-auto lg:max-h-[calc(100vh-13rem)]"
+        aria-label={t('questionDirectory.title')}
+      >
+        {visibleItems.map((item) => (
+          <button
+            key={item.itemId}
+            type="button"
+            data-testid={`chat-question-directory-item-${item.itemId}`}
+            title={item.title}
+            onClick={() => document.getElementById(item.anchorId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            className="block w-full rounded-lg px-2 py-1.5 text-left text-sm text-foreground/80 transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10"
+          >
+            <span className="block truncate">{item.title}</span>
+          </button>
+        ))}
+      </nav>
+      {hiddenCount > 0 && (
+        <p className="px-1 pt-2 text-xs text-muted-foreground">
+          {t('questionDirectory.moreHint', { count: hiddenCount })}
+        </p>
+      )}
+    </aside>
+  );
+}
+
 function AcpEmptyState() {
   const { t } = useTranslation('chat');
   return (
@@ -187,6 +255,7 @@ export function Chat() {
   const agents = useAgentsStore((s) => s.agents);
   const [sessionDiscoveryAttempted, setSessionDiscoveryAttempted] = useState(false);
   const [lastPromptAttemptSessionKey, setLastPromptAttemptSessionKey] = useState<string | null>(null);
+  const [questionDirectoryOpenSessionKey, setQuestionDirectoryOpenSessionKey] = useState<string | null>(null);
   const currentSession = useMemo(
     () => sessions.find((session) => session.key === currentSessionKey) ?? null,
     [currentSessionKey, sessions],
@@ -290,6 +359,21 @@ export function Chat() {
     ? acpError
     : null;
   const acpGeneratedFiles = useMemo(() => deriveAcpGeneratedFiles(acpTimeline), [acpTimeline]);
+  const questionDirectoryItems = useMemo(() => {
+    let ordinal = 0;
+    return acpTimeline.itemOrder.flatMap((itemId) => {
+      const item = acpTimeline.itemsById[itemId];
+      if (item?.kind !== 'message-segment' || item.role !== 'user') return [];
+      ordinal += 1;
+      return [{
+        itemId: item.id,
+        anchorId: getAcpUserMessageAnchorId(item.id),
+        title: buildQuestionDirectoryTitle(item, t('questionDirectory.fallback', { number: ordinal })),
+      }];
+    });
+  }, [acpTimeline, t]);
+  const questionDirectoryVisible = questionDirectoryOpenSessionKey === currentSessionKey
+    && questionDirectoryItems.length > 1;
 
   return (
     <div
@@ -307,45 +391,56 @@ export function Chat() {
         <div className="relative flex shrink-0 items-center justify-end px-4 py-2">
           <div data-testid="chat-toolbar-drag-region" className="drag-region absolute inset-0 z-0" aria-hidden="true" />
           <div data-testid="chat-toolbar-actions" className="no-drag relative z-10">
-            <ChatToolbar workspaceAvailable={!!cwd} />
+            <ChatToolbar
+              questionDirectoryOpen={questionDirectoryVisible}
+              questionDirectoryCount={questionDirectoryItems.length}
+              onToggleQuestionDirectory={() => setQuestionDirectoryOpenSessionKey((openSessionKey) => (
+                openSessionKey === currentSessionKey ? null : currentSessionKey
+              ))}
+              workspaceAvailable={!!cwd}
+            />
           </div>
         </div>
 
         <div className="relative min-h-0 flex-1 overflow-hidden px-4 py-4">
           <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col gap-4 lg:flex-row lg:items-stretch">
-            <div ref={scrollRef} className="min-h-0 min-w-0 flex-1 overflow-y-auto" data-testid="chat-scroll-container">
-              <div ref={contentRef} className="mx-auto max-w-4xl space-y-4">
-                {visibleAcpError && <AcpErrorBanner message={visibleAcpError} onDismiss={clearAcpError} />}
-                {acpLoading ? (
-                  <div className="flex min-h-[40vh] items-center justify-center" data-testid="acp-chat-loading">
-                    <LoadingSpinner size="md" />
-                  </div>
-                ) : acpTimeline.itemOrder.length === 0 ? (
-                  <AcpEmptyState />
-                ) : (
-                  <AcpTimeline
-                    snapshot={acpTimeline}
-                    onPermissionSelect={(requestId, optionId) => {
-                      void respondAcpPermission(requestId, optionId);
-                    }}
-                  />
-                )}
+            <div data-testid="chat-scroll-column" className="relative min-h-0 min-w-0 flex-1">
+              <div ref={scrollRef} className="h-full min-h-0 min-w-0 overflow-y-auto" data-testid="chat-scroll-container">
+                <div ref={contentRef} className="mx-auto max-w-4xl space-y-4">
+                  {visibleAcpError && <AcpErrorBanner message={visibleAcpError} onDismiss={clearAcpError} />}
+                  {acpLoading ? (
+                    <div className="flex min-h-[40vh] items-center justify-center" data-testid="acp-chat-loading">
+                      <LoadingSpinner size="md" />
+                    </div>
+                  ) : acpTimeline.itemOrder.length === 0 ? (
+                    <AcpEmptyState />
+                  ) : (
+                    <AcpTimeline
+                      snapshot={acpTimeline}
+                      onPermissionSelect={(requestId, optionId) => {
+                        void respondAcpPermission(requestId, optionId);
+                      }}
+                    />
+                  )}
+                </div>
               </div>
+
+              {showScrollToLatest && (
+                <button
+                  type="button"
+                  onClick={() => void scrollToBottom({ animation: 'smooth', ignoreEscapes: true })}
+                  className="absolute bottom-4 right-4 z-20 inline-flex items-center gap-2 rounded-full border border-border bg-background/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-lg shadow-black/10 backdrop-blur transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10 dark:shadow-black/30"
+                  aria-label={t('scrollToLatest')}
+                  title={t('scrollToLatest')}
+                  data-testid="chat-scroll-to-latest"
+                >
+                  <ArrowDownToLine className="h-3.5 w-3.5" />
+                  <span>{t('scrollToLatest')}</span>
+                </button>
+              )}
             </div>
 
-            {showScrollToLatest && (
-              <button
-                type="button"
-                onClick={() => void scrollToBottom({ animation: 'smooth', ignoreEscapes: true })}
-                className="absolute bottom-4 right-4 z-20 inline-flex items-center gap-2 rounded-full border border-border bg-background/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-lg shadow-black/10 backdrop-blur transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10 dark:shadow-black/30"
-                aria-label={t('scrollToLatest')}
-                title={t('scrollToLatest')}
-                data-testid="chat-scroll-to-latest"
-              >
-                <ArrowDownToLine className="h-3.5 w-3.5" />
-                <span>{t('scrollToLatest')}</span>
-              </button>
-            )}
+            {questionDirectoryVisible && <QuestionDirectory items={questionDirectoryItems} />}
           </div>
         </div>
 

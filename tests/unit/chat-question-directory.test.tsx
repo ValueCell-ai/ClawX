@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Chat } from '@/pages/Chat';
 import type { AcpTimelineSnapshot } from '@/lib/acp/timeline-types';
@@ -209,7 +209,7 @@ describe('Chat question directory', () => {
     settingsState.chatWorkspacePath = '/workspace';
   });
 
-  it('renders repeated ACP questions as separate timeline messages while the legacy directory is disabled', () => {
+  it('lists repeated ACP questions and smoothly scrolls to the selected user message', () => {
     acpState.timeline = timelineFromQuestions(['hello', 'hello']);
 
     render(
@@ -218,10 +218,106 @@ describe('Chat question directory', () => {
       </TooltipProvider>,
     );
 
+    const toggle = screen.getByTestId('chat-question-directory-toggle');
+    expect(toggle).toBeEnabled();
+    expect(toggle).toHaveAttribute('aria-controls', 'chat-question-directory');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getAllByTestId('acp-user-message')).toHaveLength(2);
     expect(screen.getAllByText('hello')).toHaveLength(2);
+
+    fireEvent.click(toggle);
+
+    const directory = screen.getByTestId('chat-question-directory');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(directory).toHaveAttribute('id', 'chat-question-directory');
+    expect(directory).toHaveClass('max-h-[40vh]', 'overflow-hidden');
+    expect(within(directory).getByRole('navigation')).toHaveClass(
+      'max-h-[calc(40vh-5rem)]',
+      'lg:max-h-[calc(100vh-13rem)]',
+      'overflow-y-auto',
+    );
+    expect(within(directory).getAllByTestId(/^chat-question-directory-item-/)).toHaveLength(2);
+    const scrollColumn = screen.getByTestId('chat-scroll-column');
+    const scrollToLatest = screen.getByTestId('chat-scroll-to-latest');
+    expect(scrollColumn).toContainElement(scrollToLatest);
+    expect(directory).not.toContainElement(scrollToLatest);
+
+    const firstUserMessage = document.getElementById('acp-user-message-msg-user:0');
+    const secondUserMessage = document.getElementById('acp-user-message-msg-user:1');
+    expect(firstUserMessage).toBeInTheDocument();
+    expect(secondUserMessage).toBeInTheDocument();
+    if (!firstUserMessage) throw new Error('Expected the first ACP user message anchor');
+
+    const scrollIntoView = vi.fn();
+    firstUserMessage.scrollIntoView = scrollIntoView;
+
+    fireEvent.click(screen.getByTestId('chat-question-directory-item-msg-user:0'));
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+  });
+
+  it('disables the question directory for zero and one ACP user messages', () => {
+    const { rerender } = render(
+      <TooltipProvider>
+        <Chat />
+      </TooltipProvider>,
+    );
+
     expect(screen.getByTestId('chat-question-directory-toggle')).toBeDisabled();
-    expect(screen.queryByTestId('chat-question-directory')).not.toBeInTheDocument();
+
+    acpState.timeline = timelineFromQuestions(['hello']);
+    rerender(
+      <TooltipProvider>
+        <Chat />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByTestId('chat-question-directory-toggle')).toBeDisabled();
+  });
+
+  it('caps long question directory titles without changing their scroll target', () => {
+    const longQuestion = 'a'.repeat(65);
+    const expectedTitle = `${longQuestion.slice(0, 61)}...`;
+    acpState.timeline = timelineFromQuestions([longQuestion, 'another question']);
+
+    render(
+      <TooltipProvider>
+        <Chat />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId('chat-question-directory-toggle'));
+
+    const entry = screen.getByTestId('chat-question-directory-item-msg-user:0');
+    expect(entry.textContent).toBe(expectedTitle);
+    expect(entry).toHaveAttribute('title', expectedTitle);
+
+    const userMessage = document.getElementById('acp-user-message-msg-user:0');
+    if (!userMessage) throw new Error('Expected the long ACP user message anchor');
+    const scrollIntoView = vi.fn();
+    userMessage.scrollIntoView = scrollIntoView;
+
+    fireEvent.click(entry);
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+  });
+
+  it('keeps grapheme clusters intact when truncating question directory titles', () => {
+    const emoji = '👩‍💻';
+    const question = `${'a'.repeat(60)}${emoji} with additional detail`;
+    const expectedTitle = `${'a'.repeat(60)}${emoji}...`;
+    acpState.timeline = timelineFromQuestions([question, 'another question']);
+
+    render(
+      <TooltipProvider>
+        <Chat />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId('chat-question-directory-toggle'));
+
+    const entry = screen.getByTestId('chat-question-directory-item-msg-user:0');
+    expect(entry.textContent).toBe(expectedTitle);
+    expect(entry.textContent).not.toContain('\uFFFD');
   });
 
   it('includes the latest ACP question in the timeline', () => {
@@ -238,6 +334,6 @@ describe('Chat question directory', () => {
     );
 
     expect(screen.getByText(latestQuestion)).toBeInTheDocument();
-    expect(screen.getByTestId('chat-question-directory-toggle')).toBeDisabled();
+    expect(screen.getByTestId('chat-question-directory-toggle')).toBeEnabled();
   });
 });

@@ -1,5 +1,6 @@
 import type { AcpTimelineSnapshot } from '@/lib/acp/timeline-types';
 import { groupAcpTimelineItems } from '@/lib/acp/timeline-groups';
+import { getAcpUserMessageAnchorId } from '@/lib/acp/timeline-anchors';
 import { AcpAssistantTurn } from './AcpAssistantTurn';
 import { AcpErrorBanner } from './AcpErrorBanner';
 import { AcpMessageSegment } from './AcpMessageSegment';
@@ -27,7 +28,11 @@ export function AcpTimeline({
           return (
             <div key={group.id} data-acp-group-id={group.id} className="flex flex-col gap-3">
               {group.items.map((item) => (
-                <div key={item.id} data-acp-item-id={item.id}>
+                <div
+                  key={item.id}
+                  id={getAcpUserMessageAnchorId(item.id)}
+                  data-acp-item-id={item.id}
+                >
                   <AcpMessageSegment item={item} />
                 </div>
               ))}

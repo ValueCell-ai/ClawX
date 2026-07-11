@@ -128,7 +128,7 @@ async function emitAcpSessionUpdates(app: ElectronApplication, updates: AcpSessi
 }
 
 test.describe('ClawX chat question directory', () => {
-  test('renders repeated ACP questions while the legacy question directory is disabled', async ({ launchElectronApp }) => {
+  test('opens the ACP question directory for seeded history', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -150,18 +150,42 @@ test.describe('ClawX chat question directory', () => {
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
 
       const toggle = page.getByTestId('chat-question-directory-toggle');
-      await expect(toggle).toBeVisible();
-      await expect(toggle).toBeDisabled();
-      await expect(page.getByTestId('chat-question-directory')).toHaveCount(0);
+      await expect(toggle).toBeEnabled();
+      await toggle.click();
+
+      const directory = page.getByTestId('chat-question-directory');
+      await expect(directory).toBeVisible();
+      await expect(directory).toContainText('Question directory');
+      await expect(directory.getByTestId(/^chat-question-directory-item-/)).toHaveCount(4);
+      await expect(directory).toContainText('First question: summarize the market opening.');
+      await expect(directory).toContainText('Second question: list the strongest sectors.');
+      await expect(directory).toContainText('Third question: explain notable risks.');
+      await expect(directory).toContainText('Fourth question: prepare the final action plan.');
+
+      const userMessageAnchorIds = [
+        'acp-user-message-question-directory-0:0',
+        'acp-user-message-question-directory-2:0',
+        'acp-user-message-question-directory-4:0',
+        'acp-user-message-question-directory-6:0',
+      ];
+      for (const id of userMessageAnchorIds) {
+        await expect(page.locator(`[id="${id}"]`)).toHaveCount(1);
+      }
+
+      const firstUserMessage = page.locator('[id="acp-user-message-question-directory-0:0"]');
+      await expect(firstUserMessage).not.toBeInViewport();
+      await page.getByTestId('chat-question-directory-item-question-directory-0:0').click();
+      await expect(firstUserMessage).toBeInViewport();
       await expect(page.getByTestId('acp-user-message')).toHaveCount(4);
-      await expect(page.getByText('First question: summarize the market opening.')).toBeVisible();
-      await expect(page.getByText('Fourth question: prepare the final action plan.')).toBeVisible();
+      const timeline = page.getByTestId('acp-chat-timeline');
+      await expect(timeline.getByText('First question: summarize the market opening.')).toBeVisible();
+      await expect(timeline.getByText('Fourth question: prepare the final action plan.')).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }
   });
 
-  test('renders the latest ACP question in the timeline while the legacy directory remains disabled', async ({ launchElectronApp }) => {
+  test('opens the restored question directory with the latest ACP question in long history', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -183,8 +207,10 @@ test.describe('ClawX chat question directory', () => {
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('acp-user-message')).toHaveCount(15);
       await expect(page.getByText(latestQuestion, { exact: true })).toBeVisible();
-      await expect(page.getByTestId('chat-question-directory-toggle')).toBeDisabled();
-      await expect(page.getByTestId('chat-question-directory')).toHaveCount(0);
+      const toggle = page.getByTestId('chat-question-directory-toggle');
+      await expect(toggle).toBeEnabled();
+      await toggle.click();
+      await expect(page.getByTestId('chat-question-directory')).toContainText(latestQuestion);
     } finally {
       await closeElectronApp(app);
     }
