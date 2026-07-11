@@ -87,6 +87,11 @@ vi.mock('@electron/utils/logger', () => ({
   },
 }));
 
+vi.mock('@electron/utils/plugin-install-index', () => ({
+  upsertPluginInstallRecordsIntoSqlite: vi.fn(() => true),
+  ensureOpenClawStateDirExists: vi.fn(),
+}));
+
 function setPlatform(platform: NodeJS.Platform): void {
   Object.defineProperty(process, 'platform', {
     value: platform,
@@ -215,6 +220,50 @@ describe('plugin installer diagnostics', () => {
           expect.objectContaining({ attempt: 2, code: 'EPERM' }),
         ],
       }),
+    );
+  });
+
+  it('writes trusted install metadata for mirrored official whatsapp plugin', async () => {
+    const configPath = '/home/test/.openclaw/openclaw.json';
+    const targetDir = '/home/test/.openclaw/extensions/whatsapp';
+    const sourceDir = '/bundle/whatsapp';
+
+    mockExistsSync.mockImplementation((input: string) => {
+      const value = String(input);
+      return value.includes('openclaw.plugin.json')
+        || value === configPath
+        || value.includes('/bundle/whatsapp/package.json')
+        || value.includes(`${targetDir}/package.json`);
+    });
+    mockReadFileSync.mockImplementation((input: string) => {
+      if (String(input) === configPath) {
+        return JSON.stringify({
+          plugins: {
+            allow: ['whatsapp'],
+            enabled: true,
+          },
+        });
+      }
+      if (String(input).endsWith('package.json')) {
+        return JSON.stringify({ version: '2026.6.10' });
+      }
+      return '{}';
+    });
+    mockRealpathSync.mockImplementation((input: string) => input);
+
+    const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');
+    const result = ensurePluginInstalled('whatsapp', [sourceDir], 'WhatsApp');
+
+    expect(result.installed).toBe(true);
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      configPath,
+      expect.stringContaining(`"installPath": "${targetDir}"`),
+      'utf-8',
+    );
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      configPath,
+      expect.stringContaining('"resolvedName": "@openclaw/whatsapp"'),
+      'utf-8',
     );
   });
 });

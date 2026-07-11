@@ -26,6 +26,97 @@ async function readConfig(): Promise<Record<string, unknown>> {
   return JSON.parse(raw);
 }
 
+function withClawXToolDefaults<T extends Record<string, unknown>>(config: T): T & {
+  tools: Record<string, unknown>;
+  gateway: Record<string, unknown>;
+  skills: Record<string, unknown>;
+} {
+  const tools = (config.tools && typeof config.tools === 'object' && !Array.isArray(config.tools))
+    ? { ...(config.tools as Record<string, unknown>) }
+    : {};
+  const sessions = (tools.sessions && typeof tools.sessions === 'object' && !Array.isArray(tools.sessions))
+    ? { ...(tools.sessions as Record<string, unknown>) }
+    : {};
+  const exec = (tools.exec && typeof tools.exec === 'object' && !Array.isArray(tools.exec))
+    ? { ...(tools.exec as Record<string, unknown>) }
+    : {};
+  const deny = Array.isArray(tools.deny)
+    ? (tools.deny as unknown[]).filter((value): value is string => typeof value === 'string')
+    : [];
+
+  sessions.visibility = 'all';
+  exec.security = 'full';
+  exec.ask = 'off';
+  tools.profile = 'full';
+  tools.sessions = sessions;
+  tools.exec = exec;
+  tools.deny = deny.includes('skill_workshop') ? deny : [...deny, 'skill_workshop'];
+  // Mirror production: also deny the subagent workflow tools.
+  for (const entry of ['sessions_spawn', 'sessions_yield', 'subagents']) {
+    if (!(tools.deny as string[]).includes(entry)) {
+      (tools.deny as string[]).push(entry);
+    }
+  }
+
+  const gateway = (config.gateway && typeof config.gateway === 'object' && !Array.isArray(config.gateway))
+    ? { ...(config.gateway as Record<string, unknown>) }
+    : {};
+  const gatewayTools = (gateway.tools && typeof gateway.tools === 'object' && !Array.isArray(gateway.tools))
+    ? { ...(gateway.tools as Record<string, unknown>) }
+    : {};
+  const gatewayDeny = Array.isArray(gatewayTools.deny)
+    ? (gatewayTools.deny as unknown[]).filter((value): value is string => typeof value === 'string')
+    : [];
+  gatewayTools.deny = gatewayDeny.includes('skill_workshop') ? gatewayDeny : [...gatewayDeny, 'skill_workshop'];
+  // Mirror production: also deny the subagent workflow tools (gateway side).
+  for (const entry of ['sessions_spawn', 'sessions_yield', 'subagents']) {
+    if (!(gatewayTools.deny as string[]).includes(entry)) {
+      (gatewayTools.deny as string[]).push(entry);
+    }
+  }
+  gateway.tools = gatewayTools;
+
+  const skills = (config.skills && typeof config.skills === 'object' && !Array.isArray(config.skills))
+    ? { ...(config.skills as Record<string, unknown>) }
+    : {};
+  const workshop = (skills.workshop && typeof skills.workshop === 'object' && !Array.isArray(skills.workshop))
+    ? { ...(skills.workshop as Record<string, unknown>) }
+    : {};
+  const autonomous = (workshop.autonomous && typeof workshop.autonomous === 'object' && !Array.isArray(workshop.autonomous))
+    ? { ...(workshop.autonomous as Record<string, unknown>) }
+    : {};
+  autonomous.enabled = false;
+  workshop.autonomous = autonomous;
+  skills.workshop = workshop;
+
+  const entries = (skills.entries && typeof skills.entries === 'object' && !Array.isArray(skills.entries))
+    ? { ...(skills.entries as Record<string, unknown>) }
+    : {};
+  const skillCreatorEntry = (entries['skill-creator'] && typeof entries['skill-creator'] === 'object' && !Array.isArray(entries['skill-creator']))
+    ? { ...(entries['skill-creator'] as Record<string, unknown>) }
+    : {};
+  skillCreatorEntry.enabled = true;
+  entries['skill-creator'] = skillCreatorEntry;
+  skills.entries = entries;
+
+  return {
+    ...config,
+    tools,
+    gateway,
+    skills,
+    session: {
+      ...((config.session && typeof config.session === 'object' && !Array.isArray(config.session))
+        ? (config.session as Record<string, unknown>)
+        : {}),
+      dmScope: ((config.session && typeof config.session === 'object' && !Array.isArray(config.session))
+        ? (config.session as Record<string, unknown>).dmScope
+        : undefined) === 'per-account-channel-peer'
+        ? 'per-account-channel-peer'
+        : 'per-channel-peer',
+    },
+  };
+}
+
 /**
  * Standalone mirror of the sanitization logic in openclaw-auth.ts.
  * Uses the same blocklist approach as the production code.
@@ -307,6 +398,167 @@ async function sanitizeConfig(
     }
   }
 
+  // Mirror: ClawX keeps Skill Workshop disabled even when OpenClaw exposes it
+  // as a built-in tool under permissive tool profiles.
+  const toolsConfig = (config.tools as Record<string, unknown> | undefined) || {};
+  let toolsModified = false;
+
+  if (toolsConfig.profile !== 'full') {
+    toolsConfig.profile = 'full';
+    toolsModified = true;
+  }
+
+  const sessions = (toolsConfig.sessions as Record<string, unknown> | undefined) || {};
+  if (sessions.visibility !== 'all') {
+    sessions.visibility = 'all';
+    toolsConfig.sessions = sessions;
+    toolsModified = true;
+  }
+
+  const deny = Array.isArray(toolsConfig.deny)
+    ? toolsConfig.deny.filter((value): value is string => typeof value === 'string')
+    : [];
+  if (!deny.includes('skill_workshop')) {
+    toolsConfig.deny = [...deny, 'skill_workshop'];
+    toolsModified = true;
+  } else if (!Array.isArray(toolsConfig.deny) || toolsConfig.deny.length !== deny.length) {
+    toolsConfig.deny = deny;
+    toolsModified = true;
+  }
+
+  // Mirror production: deny the subagent workflow tools (sessions_spawn /
+  // sessions_yield / subagents) so the model cannot spawn child agent sessions.
+  const subagentEntries = ['sessions_spawn', 'sessions_yield', 'subagents'];
+  let subagentDeny = Array.isArray(toolsConfig.deny)
+    ? toolsConfig.deny.filter((value): value is string => typeof value === 'string')
+    : [];
+  let subagentDenyChanged = false;
+  for (const entry of subagentEntries) {
+    if (!subagentDeny.includes(entry)) {
+      subagentDeny = [...subagentDeny, entry];
+      subagentDenyChanged = true;
+    }
+  }
+  if (subagentDenyChanged) {
+    toolsConfig.deny = subagentDeny;
+    toolsModified = true;
+  } else if (!Array.isArray(toolsConfig.deny) || toolsConfig.deny.length !== subagentDeny.length) {
+    toolsConfig.deny = subagentDeny;
+    toolsModified = true;
+  }
+
+  const execConfig = (toolsConfig.exec as Record<string, unknown> | undefined) || {};
+  if (execConfig.security !== 'full' || execConfig.ask !== 'off') {
+    execConfig.security = 'full';
+    execConfig.ask = 'off';
+    toolsConfig.exec = execConfig;
+    toolsModified = true;
+  }
+
+  if (toolsModified) {
+    config.tools = toolsConfig;
+    modified = true;
+  }
+
+  // Mirror: session.dmScope
+  const sessionConfig = (
+    config.session && typeof config.session === 'object' && !Array.isArray(config.session)
+      ? { ...(config.session as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  if (sessionConfig.dmScope !== 'per-channel-peer' && sessionConfig.dmScope !== 'per-account-channel-peer') {
+    sessionConfig.dmScope = 'per-channel-peer';
+    config.session = sessionConfig;
+    modified = true;
+  }
+
+  const gateway = (
+    config.gateway && typeof config.gateway === 'object'
+      ? { ...(config.gateway as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  const gatewayTools = (
+    gateway.tools && typeof gateway.tools === 'object'
+      ? { ...(gateway.tools as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  const gatewayDeny = Array.isArray(gatewayTools.deny)
+    ? gatewayTools.deny.filter((value): value is string => typeof value === 'string')
+    : [];
+  if (!gatewayDeny.includes('skill_workshop')) {
+    gatewayTools.deny = [...gatewayDeny, 'skill_workshop'];
+    gateway.tools = gatewayTools;
+    config.gateway = gateway;
+    modified = true;
+  }
+
+  // Mirror production: deny the subagent workflow tools on the gateway side too.
+  let gatewaySubagentDeny = Array.isArray(gatewayTools.deny)
+    ? gatewayTools.deny.filter((value): value is string => typeof value === 'string')
+    : [];
+  let gatewaySubagentChanged = false;
+  for (const entry of ['sessions_spawn', 'sessions_yield', 'subagents']) {
+    if (!gatewaySubagentDeny.includes(entry)) {
+      gatewaySubagentDeny = [...gatewaySubagentDeny, entry];
+      gatewaySubagentChanged = true;
+    }
+  }
+  if (gatewaySubagentChanged) {
+    gatewayTools.deny = gatewaySubagentDeny;
+    gateway.tools = gatewayTools;
+    config.gateway = gateway;
+    modified = true;
+  } else if (!Array.isArray(gatewayTools.deny) || gatewayTools.deny.length !== gatewaySubagentDeny.length) {
+    gatewayTools.deny = gatewaySubagentDeny;
+    gateway.tools = gatewayTools;
+    config.gateway = gateway;
+    modified = true;
+  }
+
+  let skillsConfig = (
+    config.skills && typeof config.skills === 'object' && !Array.isArray(config.skills)
+      ? { ...(config.skills as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  let skillsConfigModified = false;
+
+  const workshop = (
+    skillsConfig.workshop && typeof skillsConfig.workshop === 'object'
+      ? { ...(skillsConfig.workshop as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  const autonomous = (
+    workshop.autonomous && typeof workshop.autonomous === 'object'
+      ? { ...(workshop.autonomous as Record<string, unknown>) }
+      : {}
+  ) as Record<string, unknown>;
+  if (autonomous.enabled !== false) {
+    autonomous.enabled = false;
+    workshop.autonomous = autonomous;
+    skillsConfig.workshop = workshop;
+    skillsConfigModified = true;
+  }
+
+  const skillEntries = (
+    skillsConfig.entries && typeof skillsConfig.entries === 'object' && !Array.isArray(skillsConfig.entries)
+      ? { ...(skillsConfig.entries as Record<string, unknown>) }
+      : {}
+  ) as Record<string, Record<string, unknown>>;
+  const skillCreatorEntry = skillEntries['skill-creator'] || {};
+  if (skillCreatorEntry.enabled !== true) {
+    skillEntries['skill-creator'] = {
+      ...skillCreatorEntry,
+      enabled: true,
+    };
+    skillsConfig.entries = skillEntries;
+    skillsConfigModified = true;
+  }
+
+  if (skillsConfigModified) {
+    config.skills = skillsConfig;
+    modified = true;
+  }
+
   // Mirror: remove stale tools.web.search.kimi.apiKey when moonshot provider exists.
   const providers = ((config.models as Record<string, unknown> | undefined)?.providers as Record<string, unknown> | undefined) || {};
   if (providers.moonshot) {
@@ -386,8 +638,8 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     const entries = skills.entries as Record<string, Record<string, unknown>>;
     expect(entries['my-skill'].enabled).toBe(true);
     expect(entries['my-skill'].apiKey).toBe('abc');
-    // Other top-level sections are untouched
-    expect(result.gateway).toEqual({ mode: 'local' });
+    // Other top-level sections are untouched (gateway gets Skill Workshop hardening)
+    expect(result.gateway).toEqual(withClawXToolDefaults({ gateway: { mode: 'local' } }).gateway);
   });
 
   it('removes skills.disabled at the root level of skills', async () => {
@@ -431,12 +683,12 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
   });
 
   it('does nothing when config is already valid', async () => {
-    const original = {
+    const original = withClawXToolDefaults({
       skills: {
         entries: { 'my-skill': { enabled: true } },
         allowBundled: ['web-search'],
       },
-    };
+    });
     await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath);
@@ -449,7 +701,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
   it('preserves unknown valid keys (forward-compatible)', async () => {
     // If OpenClaw adds new valid keys to skills in the future,
     // the blocklist approach should NOT strip them.
-    const original = {
+    const original = withClawXToolDefaults({
       skills: {
         entries: { 'x': { enabled: true } },
         allowBundled: ['web-search'],
@@ -458,7 +710,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
         limits: { maxSkillsInPrompt: 5 },
         futureNewKey: { some: 'value' },  // hypothetical future key
       },
-    };
+    });
     await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath);
@@ -473,14 +725,20 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath);
-    expect(modified).toBe(false);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    expect(result).toEqual(withClawXToolDefaults(original));
   });
 
   it('handles empty config', async () => {
     await writeConfig({});
 
     const modified = await sanitizeConfig(configPath);
-    expect(modified).toBe(false);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    expect(result).toEqual(withClawXToolDefaults({}));
   });
 
   it('returns false for missing config file', async () => {
@@ -490,10 +748,14 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
 
   it('handles skills being an array (no-op, no crash)', async () => {
     // Edge case: skills is not an object
-    await writeConfig({ skills: ['something'] });
+    const original = { skills: ['something'] };
+    await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath);
-    expect(modified).toBe(false);
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    expect(result).toEqual(withClawXToolDefaults(original));
   });
 
   it('preserves all other top-level config sections', async () => {
@@ -515,7 +777,12 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     // All other sections unchanged
     expect(result.channels).toEqual({ discord: { token: 'abc', enabled: true } });
     expect(result.plugins).toEqual({ entries: { customPlugin: { enabled: true } } });
-    expect(result.gateway).toEqual({ mode: 'local', auth: { token: 'xyz' } });
+    expect(result.gateway).toEqual(withClawXToolDefaults({
+      gateway: {
+        mode: 'local',
+        auth: { token: 'xyz' },
+      },
+    }).gateway);
     expect(result.agents).toEqual({ defaults: { model: { primary: 'gpt-4' } } });
   });
 
@@ -583,7 +850,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
   });
 
   it('keeps tools.web.search.kimi.apiKey when moonshot provider is absent', async () => {
-    const original = {
+    const original = withClawXToolDefaults({
       models: {
         providers: {
           openrouter: { baseUrl: 'https://openrouter.ai/api/v1', api: 'openai-completions' },
@@ -598,7 +865,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
           },
         },
       },
-    };
+    });
     await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath);
@@ -634,7 +901,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
     // Other plugin config is preserved
     expect(plugins.entries).toEqual({ customPlugin: { enabled: true } });
     // Other top-level sections untouched
-    expect(result.gateway).toEqual({ mode: 'local' });
+    expect(result.gateway).toEqual(withClawXToolDefaults({ gateway: { mode: 'local' } }).gateway);
   });
 
   it('keeps configured built-in channels in plugins.allow when external plugins are enabled', async () => {
@@ -776,7 +1043,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
   });
 
   it('does nothing when plugins.load.paths contains only valid paths', async () => {
-    const original = {
+    const original = withClawXToolDefaults({
       plugins: {
         load: {
           paths: [tempDir],
@@ -784,7 +1051,7 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
         },
         entries: { test: { enabled: true } },
       },
-    };
+    });
     await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath);
@@ -818,11 +1085,11 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
   });
 
   it('handles plugins.load as empty object (no paths key)', async () => {
-    const original = {
+    const original = withClawXToolDefaults({
       plugins: {
         load: {},
       },
-    };
+    });
     await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath);
@@ -830,11 +1097,11 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
   });
 
   it('handles plugins.load.paths as empty array', async () => {
-    const original = {
+    const original = withClawXToolDefaults({
       plugins: {
         load: { paths: [] },
       },
-    };
+    });
     await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath);
@@ -951,12 +1218,50 @@ describe('sanitizeOpenClawConfig (blocklist approach)', () => {
   });
 
   it('does not modify config when no bundled plugins and no allowlist', async () => {
-    const original = {
+    const original = withClawXToolDefaults({
       gateway: { mode: 'local' },
-    };
+    });
     await writeConfig(original);
 
     const modified = await sanitizeConfig(configPath, { all: ['browser'], enabledByDefault: ['browser'] });
     expect(modified).toBe(false);
+  });
+
+  it('sets session.dmScope to per-channel-peer when unset', async () => {
+    await writeConfig(withClawXToolDefaults({}));
+
+    const modified = await sanitizeConfig(configPath, { all: ['browser'], enabledByDefault: ['browser'] });
+    expect(modified).toBe(false);
+
+    const result = await readConfig();
+    expect((result.session as Record<string, unknown>).dmScope).toBe('per-channel-peer');
+  });
+
+  it('preserves session.dmScope when already set to per-account-channel-peer', async () => {
+    await writeConfig(withClawXToolDefaults({
+      session: { dmScope: 'per-account-channel-peer' },
+    }));
+
+    const modified = await sanitizeConfig(configPath, { all: ['browser'], enabledByDefault: ['browser'] });
+    expect(modified).toBe(false);
+
+    const result = await readConfig();
+    expect((result.session as Record<string, unknown>).dmScope).toBe('per-account-channel-peer');
+  });
+
+  it('overrides session.dmScope when set to main', async () => {
+    // Write config with dmScope: 'main' but otherwise already sanitized,
+    // so only the session.dmScope change should trigger modified=true.
+    const base = withClawXToolDefaults({});
+    await writeConfig({
+      ...base,
+      session: { dmScope: 'main' },
+    });
+
+    const modified = await sanitizeConfig(configPath, { all: ['browser'], enabledByDefault: ['browser'] });
+    expect(modified).toBe(true);
+
+    const result = await readConfig();
+    expect((result.session as Record<string, unknown>).dmScope).toBe('per-channel-peer');
   });
 });

@@ -76,6 +76,26 @@ function inferProviderVendorIdFromOpenClawEntry(
   return ((BUILTIN_PROVIDER_TYPES as readonly string[]).includes(key) ? key : 'custom') as ProviderType | 'custom';
 }
 
+function providerMetadataEquals(
+  left: ProviderAccount['metadata'] | undefined,
+  right: ProviderAccount['metadata'] | undefined,
+): boolean {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function mergeSyncedProviderMetadata(
+  existing: ProviderAccount['metadata'] | undefined,
+  synced: ProviderAccount['metadata'] | undefined,
+): ProviderAccount['metadata'] | undefined {
+  const next = { ...(existing ?? {}) };
+  if (synced?.customModels && synced.customModels.length > 0) {
+    next.customModels = synced.customModels;
+  } else {
+    delete next.customModels;
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
 export class ProviderService {
   async listVendors(): Promise<ProviderDefinition[]> {
     return PROVIDER_DEFINITIONS;
@@ -147,10 +167,9 @@ export class ProviderService {
         const aliasAccounts = storeGroup.filter((a) => a.vendorId !== key);
         const candidates = aliasAccounts.length > 0 ? aliasAccounts : storeGroup;
         candidates.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-        result.push(candidates[0]);
 
         // Clean up orphaned duplicates from the store.
-        const kept = candidates[0];
+        let kept = candidates[0];
         for (const account of storeGroup) {
           if (account.id !== kept.id) {
             logger.info(
@@ -159,6 +178,34 @@ export class ProviderService {
             await deleteProviderAccount(account.id);
           }
         }
+
+        const entry = openClawProviders[key];
+        if (entry) {
+          const [syncedAccount] = ProviderService.buildAccountsFromOpenClawEntries(
+            { [key]: entry },
+            new Set(),
+            new Set(),
+            defaultModel,
+          );
+          if (syncedAccount) {
+            const nextMetadata = mergeSyncedProviderMetadata(kept.metadata, syncedAccount.metadata);
+            const shouldSyncSelectedModel = defaultModel?.startsWith(`${key}/`) ?? false;
+            const nextModel = shouldSyncSelectedModel ? syncedAccount.model : kept.model;
+            const shouldSyncModelState = kept.model !== nextModel
+              || !providerMetadataEquals(kept.metadata, nextMetadata);
+            if (shouldSyncModelState) {
+              kept = {
+                ...kept,
+                model: nextModel,
+                metadata: nextMetadata,
+                updatedAt: new Date().toISOString(),
+              };
+              await saveProviderAccount(kept);
+            }
+          }
+        }
+
+        result.push(kept);
       } else {
         // No store account for this key — create a seed from openclaw.json.
         const entry = openClawProviders[key];
@@ -242,6 +289,15 @@ export class ProviderService {
       }
 
       const baseUrl = typeof entry.baseUrl === 'string' ? entry.baseUrl : definition?.providerConfig?.baseUrl;
+      const customModels = Array.isArray(entry.models)
+        ? Array.from(new Set(entry.models
+          .map((item) => {
+            if (!item || typeof item !== 'object' || Array.isArray(item)) return '';
+            const raw = (item as Record<string, unknown>).id;
+            return typeof raw === 'string' ? raw.trim() : '';
+          })
+          .filter(Boolean)))
+        : undefined;
 
       // Infer model from the default model if it belongs to this provider
       let model: string | undefined;
@@ -262,6 +318,9 @@ export class ProviderService {
           ? (entry.headers as Record<string, string>)
           : undefined),
         model,
+        metadata: customModels && customModels.length > 0
+          ? { customModels }
+          : undefined,
         enabled: true,
         isDefault: false,
         createdAt: now,

@@ -119,6 +119,88 @@ describe('chat store loadSessions startup selection', () => {
     expect(useChatStore.getState().messages).toEqual([]);
   });
 
+  it('hides placeholder feishu sessions but keeps real desktop history', async () => {
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return {
+          sessions: [
+            {
+              key: 'agent:main:feishu:ou_69c24802fa248625f7965a',
+              updatedAt: 9_000,
+            },
+            {
+              key: 'agent:main:session-a',
+              displayName: 'Desktop chat',
+              updatedAt: 5_000,
+            },
+          ],
+        };
+      }
+      if (method === 'chat.history') {
+        return { messages: [] };
+      }
+      throw new Error(`Unexpected gateway RPC: ${method}`);
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessions: [],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+
+    await useChatStore.getState().loadSessions();
+
+    expect(useChatStore.getState().sessions.map((session) => session.key)).toEqual(['agent:main:session-a']);
+    expect(useChatStore.getState().currentSessionKey).toBe('agent:main:session-a');
+  });
+
+  it('shows feishu sessions when they contain real channel messages', async () => {
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return {
+          sessions: [
+            {
+              key: 'agent:main:feishu:ou_69c24802fa248625f7965a',
+              lastMessagePreview: '你好，来自飞书',
+              updatedAt: 9_000,
+            },
+            {
+              key: 'agent:main:session-a',
+              displayName: 'Desktop chat',
+              updatedAt: 5_000,
+            },
+          ],
+        };
+      }
+      if (method === 'chat.history') {
+        return { messages: [] };
+      }
+      throw new Error(`Unexpected gateway RPC: ${method}`);
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessions: [],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+
+    await useChatStore.getState().loadSessions();
+
+    expect(useChatStore.getState().sessions.map((session) => session.key)).toEqual([
+      'agent:main:feishu:ou_69c24802fa248625f7965a',
+      'agent:main:session-a',
+    ]);
+    expect(useChatStore.getState().currentSessionKey).toBe('agent:main:session-a');
+  });
+
   it('keeps the default main ghost session when only cron sessions exist', async () => {
     gatewayRpcMock.mockImplementation(async (method: string) => {
       if (method === 'sessions.list') {

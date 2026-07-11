@@ -167,6 +167,37 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
     expect(result).toHaveLength(1);
   });
 
+  it('seeds custom model metadata from openclaw provider model lists', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([]);
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['custom-model-hub']));
+    mocks.getOpenClawProvidersConfig.mockResolvedValue({
+      providers: {
+        'custom-model-hub': {
+          baseUrl: 'http://127.0.0.1:3100/v1',
+          api: 'openai-completions',
+          models: [
+            { id: 'gpt-5.4', name: 'gpt-5.4' },
+            { id: 'claude-sonnet-4', name: 'claude-sonnet-4' },
+            { id: 'gpt-5.4', name: 'duplicate' },
+          ],
+        },
+      },
+      defaultModel: 'custom-model-hub/gpt-5.4',
+    });
+
+    const result = await service.listAccounts();
+
+    expect(mocks.saveProviderAccount).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'custom-model-hub',
+      model: 'custom-model-hub/gpt-5.4',
+      metadata: { customModels: ['gpt-5.4', 'claude-sonnet-4'] },
+    }));
+    expect(result[0]).toEqual(expect.objectContaining({
+      id: 'custom-model-hub',
+      metadata: { customModels: ['gpt-5.4', 'claude-sonnet-4'] },
+    }));
+  });
+
   it('uses store metadata when match exists (does not re-seed)', async () => {
     mocks.listProviderAccounts.mockResolvedValue([
       makeAccount({ id: 'moonshot', vendorId: 'moonshot' as ProviderAccount['vendorId'], label: 'My Moonshot' }),
@@ -182,6 +213,74 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
     expect(mocks.saveProviderAccount).not.toHaveBeenCalled();
     expect(result).toHaveLength(1);
     expect(result[0].label).toBe('My Moonshot');
+  });
+
+  it('syncs custom model metadata and default model from openclaw.json for existing accounts', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([
+      makeAccount({
+        id: 'custom-model-hub',
+        vendorId: 'custom' as ProviderAccount['vendorId'],
+        label: 'Model Hub',
+        model: 'custom-model-hub/gpt-5.4',
+        metadata: { customModels: ['gpt-5.4', 'claude-sonnet-4', 'gemini-2.5-pro'] },
+      }),
+    ]);
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['custom-model-hub']));
+    mocks.getOpenClawProvidersConfig.mockResolvedValue({
+      providers: {
+        'custom-model-hub': {
+          baseUrl: 'http://127.0.0.1:3100/v1',
+          api: 'openai-completions',
+          models: [
+            { id: 'claude-sonnet-4', name: 'claude-sonnet-4' },
+            { id: 'gpt-5.4', name: 'gpt-5.4' },
+          ],
+        },
+      },
+      defaultModel: 'custom-model-hub/claude-sonnet-4',
+    });
+
+    const result = await service.listAccounts();
+
+    expect(mocks.saveProviderAccount).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'custom-model-hub',
+      model: 'custom-model-hub/claude-sonnet-4',
+      metadata: { customModels: ['claude-sonnet-4', 'gpt-5.4'] },
+    }));
+    expect(result[0]).toEqual(expect.objectContaining({
+      id: 'custom-model-hub',
+      model: 'custom-model-hub/claude-sonnet-4',
+      metadata: { customModels: ['claude-sonnet-4', 'gpt-5.4'] },
+    }));
+  });
+
+  it('preserves existing non-default provider model while syncing metadata', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([
+      makeAccount({
+        id: 'openrouter-work',
+        vendorId: 'openrouter' as ProviderAccount['vendorId'],
+        label: 'OpenRouter Work',
+        model: 'openrouter/openai/gpt-5.5',
+      }),
+    ]);
+    mocks.getActiveOpenClawProviders.mockResolvedValue(new Set(['openrouter']));
+    mocks.getOpenClawProvidersConfig.mockResolvedValue({
+      providers: {
+        openrouter: {
+          baseUrl: 'https://openrouter.ai/api/v1',
+          api: 'openai-completions',
+        },
+      },
+      defaultModel: 'openai/gpt-5.4',
+    });
+
+    const result = await service.listAccounts();
+
+    expect(mocks.saveProviderAccount).not.toHaveBeenCalled();
+    expect(result[0]).toEqual(expect.objectContaining({
+      id: 'openrouter-work',
+      model: 'openrouter/openai/gpt-5.5',
+    }));
   });
 
   it('hides stale OpenAI API key accounts when canonical openai OAuth is configured', async () => {

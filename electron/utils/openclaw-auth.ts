@@ -29,13 +29,14 @@ import {
 } from './provider-keys';
 import { normalizePiAiModelCost, type PiAiModelCostRates } from '../shared/pi-ai-model-cost';
 import { withConfigLock } from './config-mutex';
+import { ensureMemorySearchDisabledDefault, hasUserMemorySearchConfig } from './openclaw-memory-search';
 import { PORTS } from './config';
 import { getSetting } from './store';
 import {
   assertValidApiProtocol,
   normalizeOpenClawApiProtocol,
 } from '../shared/providers/types';
-import { inferCustomModelInputModalities } from '../shared/providers/model-capabilities';
+import { inferCustomModelContextWindow, inferCustomModelInputModalities } from '../shared/providers/model-capabilities';
 import {
   CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
@@ -522,6 +523,8 @@ async function discoverAgentIds(): Promise<string[]> {
 const OPENCLAW_CONFIG_PATH = join(homedir(), '.openclaw', 'openclaw.json');
 const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
 const VALID_COMPACTION_MODES = new Set(['default', 'safeguard']);
+/** Matches OpenClaw's 200k+ context-window recommendation (see computeContextAwareReserveTokensFloor). */
+const DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR = 50_000;
 const BUILTIN_CHANNEL_IDS = new Set([
   'discord',
   'telegram',
@@ -845,6 +848,86 @@ function normalizeAgentsDefaultsCompactionMode(config: Record<string, unknown>):
   if (typeof mode === 'string' && mode.length > 0 && !VALID_COMPACTION_MODES.has(mode)) {
     compaction.mode = 'default';
   }
+}
+
+/**
+ * Seed `agents.defaults.compaction.mode = "safeguard"` when the user has no
+ * compaction config at all, so long sessions are compacted before they hit the
+ * provider's context limit. Never touches an existing compaction object.
+ */
+function ensureCompactionSafeguardDefault(config: Record<string, unknown>): boolean {
+  const agents = (config.agents && typeof config.agents === 'object'
+    ? config.agents as Record<string, unknown>
+    : {});
+  const defaults = (agents.defaults && typeof agents.defaults === 'object'
+    ? agents.defaults as Record<string, unknown>
+    : {});
+  if (defaults.compaction !== undefined) return false;
+
+  defaults.compaction = {
+    mode: 'safeguard',
+    reserveTokensFloor: DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR,
+  };
+  agents.defaults = defaults;
+  config.agents = agents;
+  return true;
+}
+
+/**
+ * Backfill `reserveTokensFloor` on compaction configs that ClawX or OpenClaw
+ * seeded without one. OpenClaw's built-in default (20k) is too low once
+ * contextWindow backfill activates safeguard compaction on 200k+ models.
+ */
+function backfillCompactionReserveTokensFloor(config: Record<string, unknown>): boolean {
+  const agents = (config.agents && typeof config.agents === 'object'
+    ? config.agents as Record<string, unknown>
+    : null);
+  if (!agents) return false;
+
+  const defaults = (agents.defaults && typeof agents.defaults === 'object'
+    ? agents.defaults as Record<string, unknown>
+    : null);
+  if (!defaults) return false;
+
+  const compaction = (defaults.compaction && typeof defaults.compaction === 'object'
+    ? defaults.compaction as Record<string, unknown>
+    : null);
+  if (!compaction || compaction.reserveTokensFloor !== undefined) return false;
+
+  compaction.reserveTokensFloor = DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR;
+  defaults.compaction = compaction;
+  agents.defaults = defaults;
+  config.agents = agents;
+  return true;
+}
+
+/**
+ * Self-heal helper: walk `models.providers.custom-*` entries and fill in an
+ * inferred `contextWindow` on model rows that have neither `contextWindow`
+ * nor `contextTokens`. Rows written by older ClawX versions only carried
+ * `{ id, name, input }`, which disables OpenClaw's preemptive compaction and
+ * context-window guard for custom providers.
+ *
+ * Deliberately scoped to `custom-` keys: registry providers own their
+ * metadata, and small local models (ollama) must not inherit a large window.
+ */
+function backfillCustomProviderModelContextWindows(config: Record<string, unknown>): string[] {
+  const models = (config.models || {}) as Record<string, unknown>;
+  const providers = (models.providers || {}) as Record<string, unknown>;
+  const backfilled: string[] = [];
+
+  for (const [providerKey, entry] of Object.entries(providers)) {
+    if (!providerKey.startsWith('custom-') || !isPlainRecord(entry)) continue;
+    const rows = Array.isArray(entry.models) ? entry.models : [];
+    for (const row of rows) {
+      if (!isPlainRecord(row) || typeof row.id !== 'string' || !row.id) continue;
+      if (typeof row.contextWindow === 'number' || typeof row.contextTokens === 'number') continue;
+      row.contextWindow = inferCustomModelContextWindow(row.id);
+      backfilled.push(`${providerKey}/${row.id}`);
+    }
+  }
+
+  return backfilled;
 }
 
 async function writeOpenClawJson(config: Record<string, unknown>): Promise<void> {
@@ -1828,7 +1911,12 @@ function upsertOpenClawProviderEntry(
     id,
     name: id,
     ...(options.inferRuntimeModelInputs
-      ? { input: inferCustomModelInputModalities(id) }
+      ? {
+        input: inferCustomModelInputModalities(id),
+        // Without an explicit contextWindow OpenClaw cannot budget compaction
+        // for custom providers and long sessions die with context overflow.
+        contextWindow: inferCustomModelContextWindow(id),
+      }
       : {}),
   }));
   let mergedModels = mergeProviderModels(registryModels, existingModels, runtimeModels);
@@ -2615,6 +2703,35 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
       modified = true;
     }
 
+    // ── Compaction safeguard default ──
+    if (ensureCompactionSafeguardDefault(config)) {
+      modified = true;
+      console.log(`[batch-sync] Seeded agents.defaults.compaction.mode=safeguard reserveTokensFloor=${DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR}`);
+    } else if (backfillCompactionReserveTokensFloor(config)) {
+      modified = true;
+      console.log(`[batch-sync] Backfilled agents.defaults.compaction.reserveTokensFloor=${DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR}`);
+    }
+
+    // ── Memory search default ──
+    // OpenClaw defaults to the openai embedding provider; without a key that
+    // yields doctor errors and a broken memory_search tool. Seed enabled=false
+    // only when the user has no memorySearch config anywhere AND no OpenAI key
+    // (i.e. the default embedding model is unusable). Existing user config is
+    // never modified.
+    if (!hasUserMemorySearchConfig(config)
+      && !(await getProviderApiKeyFromOpenClaw('openai'))
+      && ensureMemorySearchDisabledDefault(config)) {
+      modified = true;
+      console.log('[batch-sync] Seeded agents.defaults.memorySearch.enabled=false (no embedding provider configured)');
+    }
+
+    // ── Custom provider contextWindow backfill ──
+    const backfilledContextWindows = backfillCustomProviderModelContextWindows(config);
+    if (backfilledContextWindows.length > 0) {
+      modified = true;
+      console.log(`[batch-sync] Backfilled contextWindow for custom provider models: ${backfilledContextWindows.join(', ')}`);
+    }
+
     if (modified) {
       await writeOpenClawJson(config);
       console.log('Synced gateway token, browser config, web_fetch SSRF policy, and session idle to openclaw.json');
@@ -2670,6 +2787,15 @@ async function updateModelsJsonProviderEntriesForAgents(
     const mergedModels = (entry.models ?? []).map((m) => {
       const prev = existingModels.find((e) => e.id === m.id);
       const base = prev ? { ...prev, id: m.id, name: m.name } : { ...m };
+      // Custom-provider rows need an explicit contextWindow so the embedded
+      // runner can budget compaction (see backfillCustomProviderModelContextWindows).
+      if (
+        providerType.startsWith('custom-')
+        && typeof base.contextWindow !== 'number'
+        && typeof base.contextTokens !== 'number'
+      ) {
+        base.contextWindow = inferCustomModelContextWindow(m.id);
+      }
       return {
         ...base,
         cost: normalizePiAiModelCost((base as { cost?: unknown }).cost),
@@ -2733,6 +2859,48 @@ export async function updateSingleAgentModelProvider(
  * unknown or future config issues, the reactive auto-repair mechanism
  * (`runOpenClawDoctorRepair`) runs `openclaw doctor --fix` as a fallback.
  */
+const SKILL_WORKSHOP_TOOL_DENY_ENTRY = 'skill_workshop';
+const SKILL_CREATOR_SKILL_KEY = 'skill-creator';
+
+// ClawX desktop does not expose the subagent workflow. Deny the spawn entry
+// point and its companion tools so the model cannot spawn child agent
+// sessions (runtime="subagent") even under tools.profile="full".
+// `sessions_spawn` is the only tool that creates a subagent; `sessions_yield`
+// and `subagents` are the receive/list companions and are useless without it.
+const SUBAGENT_TOOL_DENY_ENTRIES = ['sessions_spawn', 'sessions_yield', 'subagents'] as const;
+
+function normalizeToolDenyList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+}
+
+function ensureToolDenyIncludes(
+  deny: string[],
+  entry: string,
+): { deny: string[]; modified: boolean } {
+  if (deny.includes(entry)) {
+    return { deny, modified: false };
+  }
+  return { deny: [...deny, entry], modified: true };
+}
+
+function ensureToolDenyIncludesAll(
+  deny: string[],
+  entries: readonly string[],
+): { deny: string[]; modified: boolean } {
+  let current = deny;
+  let modified = false;
+  for (const entry of entries) {
+    const result = ensureToolDenyIncludes(current, entry);
+    if (result.modified) {
+      current = result.deny;
+      modified = true;
+    }
+  }
+  return { deny: current, modified };
+}
+
 export async function sanitizeOpenClawConfig(): Promise<void> {
   return withConfigLock(async () => {
     // Skip sanitization if the config file does not exist yet.
@@ -2916,6 +3084,38 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       toolsModified = true;
     }
 
+    // OpenClaw 6.5+ routes durable skill edits through the Skill Workshop tool.
+    // ClawX keeps direct skill-creator authoring instead, so deny the workshop
+    // tool even under tools.profile="full".
+    const denyResult = ensureToolDenyIncludes(
+      normalizeToolDenyList(toolsConfig.deny),
+      SKILL_WORKSHOP_TOOL_DENY_ENTRY,
+    );
+    if (denyResult.modified) {
+      toolsConfig.deny = denyResult.deny;
+      toolsModified = true;
+      console.log('[sanitize] Added "skill_workshop" to tools.deny for ClawX desktop');
+    } else if (!Array.isArray(toolsConfig.deny) || toolsConfig.deny.length !== denyResult.deny.length) {
+      toolsConfig.deny = denyResult.deny;
+      toolsModified = true;
+    }
+
+    // ClawX desktop does not expose the subagent workflow. Deny the spawn
+    // entry point and its companions even under tools.profile="full" so the
+    // model cannot spawn child agent sessions (runtime="subagent").
+    const subagentDenyResult = ensureToolDenyIncludesAll(
+      normalizeToolDenyList(toolsConfig.deny),
+      SUBAGENT_TOOL_DENY_ENTRIES,
+    );
+    if (subagentDenyResult.modified) {
+      toolsConfig.deny = subagentDenyResult.deny;
+      toolsModified = true;
+      console.log(`[sanitize] Added subagent tool(s) to tools.deny for ClawX desktop: ${SUBAGENT_TOOL_DENY_ENTRIES.join(', ')}`);
+    } else if (!Array.isArray(toolsConfig.deny) || toolsConfig.deny.length !== subagentDenyResult.deny.length) {
+      toolsConfig.deny = subagentDenyResult.deny;
+      toolsModified = true;
+    }
+
     // ── tools.exec approvals (OpenClaw 3.28+) ──────────────────────
     // ClawX is a local desktop app where the user is the trusted operator.
     // Exec approval prompts add unnecessary friction in this context, so we
@@ -2933,6 +3133,114 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
 
     if (toolsModified) {
       config.tools = toolsConfig;
+      modified = true;
+    }
+
+    // ── session.dmScope ─────────────────────────────────────────────
+    // OpenClaw defaults DM session routing to "main" (all channels share
+    // agent:main:main), which makes ClawX sidebar conflate feishu, dingtalk,
+    // and other channel DMs into one entry. Set "per-channel-peer" so each
+    // channel+peer gets its own session key (agent:main:feishu:direct:ou_xxx),
+    // letting the sidebar show them as separate conversations with channel badges.
+    const sessionConfig = (
+      config.session && typeof config.session === 'object' && !Array.isArray(config.session)
+        ? { ...(config.session as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+    if (sessionConfig.dmScope !== 'per-channel-peer' && sessionConfig.dmScope !== 'per-account-channel-peer') {
+      sessionConfig.dmScope = 'per-channel-peer';
+      config.session = sessionConfig;
+      modified = true;
+      console.log('[sanitize] Set session.dmScope="per-channel-peer" so channel DMs appear as separate sessions in ClawX');
+    }
+
+    // ── Skill Workshop hard-disable (OpenClaw 6.10+) ─────────────────
+    const gateway = (
+      config.gateway && typeof config.gateway === 'object'
+        ? { ...(config.gateway as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+    const gatewayTools = (
+      gateway.tools && typeof gateway.tools === 'object'
+        ? { ...(gateway.tools as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+    const gatewayDenyResult = ensureToolDenyIncludes(
+      normalizeToolDenyList(gatewayTools.deny),
+      SKILL_WORKSHOP_TOOL_DENY_ENTRY,
+    );
+    let gatewayModified = gatewayDenyResult.modified;
+    if (gatewayDenyResult.modified) {
+      gatewayTools.deny = gatewayDenyResult.deny;
+      console.log('[sanitize] Added "skill_workshop" to gateway.tools.deny for ClawX desktop');
+    } else if (!Array.isArray(gatewayTools.deny) || gatewayTools.deny.length !== gatewayDenyResult.deny.length) {
+      gatewayTools.deny = gatewayDenyResult.deny;
+      gatewayModified = true;
+    }
+
+    // Mirror the subagent tool deny into gateway.tools.deny so gateway-side
+    // sessions cannot spawn subagents either.
+    const gatewaySubagentDenyResult = ensureToolDenyIncludesAll(
+      normalizeToolDenyList(gatewayTools.deny),
+      SUBAGENT_TOOL_DENY_ENTRIES,
+    );
+    if (gatewaySubagentDenyResult.modified) {
+      gatewayTools.deny = gatewaySubagentDenyResult.deny;
+      gatewayModified = true;
+      console.log(`[sanitize] Added subagent tool(s) to gateway.tools.deny for ClawX desktop: ${SUBAGENT_TOOL_DENY_ENTRIES.join(', ')}`);
+    } else if (!Array.isArray(gatewayTools.deny) || gatewayTools.deny.length !== gatewaySubagentDenyResult.deny.length) {
+      gatewayTools.deny = gatewaySubagentDenyResult.deny;
+      gatewayModified = true;
+    }
+    if (gatewayModified) {
+      gateway.tools = gatewayTools;
+      config.gateway = gateway;
+      modified = true;
+    }
+
+    let skillsObj = (
+      config.skills && typeof config.skills === 'object' && !Array.isArray(config.skills)
+        ? { ...(config.skills as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+    let skillsModified = false;
+
+    const workshop = (
+      skillsObj.workshop && typeof skillsObj.workshop === 'object'
+        ? { ...(skillsObj.workshop as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+    const autonomous = (
+      workshop.autonomous && typeof workshop.autonomous === 'object'
+        ? { ...(workshop.autonomous as Record<string, unknown>) }
+        : {}
+    ) as Record<string, unknown>;
+    if (autonomous.enabled !== false) {
+      autonomous.enabled = false;
+      workshop.autonomous = autonomous;
+      skillsObj.workshop = workshop;
+      skillsModified = true;
+      console.log('[sanitize] Disabled skills.workshop.autonomous for ClawX desktop');
+    }
+
+    const skillEntries = (
+      skillsObj.entries && typeof skillsObj.entries === 'object' && !Array.isArray(skillsObj.entries)
+        ? { ...(skillsObj.entries as Record<string, unknown>) }
+        : {}
+    ) as Record<string, Record<string, unknown>>;
+    const skillCreatorEntry = skillEntries[SKILL_CREATOR_SKILL_KEY] || {};
+    if (skillCreatorEntry.enabled !== true) {
+      skillEntries[SKILL_CREATOR_SKILL_KEY] = {
+        ...skillCreatorEntry,
+        enabled: true,
+      };
+      skillsObj.entries = skillEntries;
+      skillsModified = true;
+      console.log('[sanitize] Enabled bundled skill-creator for direct skill authoring in ClawX desktop');
+    }
+
+    if (skillsModified) {
+      config.skills = skillsObj;
       modified = true;
     }
 

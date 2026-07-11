@@ -77,6 +77,10 @@ export function createAgentsApi(ctx: AgentsApiContext): CompleteHostServiceRegis
       } catch (syncError) {
         console.warn('[agents] Failed to sync runtime after updating agent model:', syncError);
       }
+      // Agent model changes must be picked up by the running Gateway before
+      // the next send; otherwise the UI can show the new selection while the
+      // active runtime still answers with the previous model.
+      scheduleGatewayReload(ctx, 'update-agent-model');
       return { success: true, ...snapshot };
     },
     delete: async (payload) => {

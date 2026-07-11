@@ -112,6 +112,78 @@ describe('model option helpers', () => {
     expect(options[0].label).toBe('model-gamma (Alpha)');
   });
 
+  it('builds multiple configured model options from account metadata custom models', () => {
+    const accountId = 'model-hub-01';
+    const runtimeKey = resolveRuntimeProviderKey(account({ id: accountId, label: 'Model Hub' }));
+    const options = buildConfiguredModelOptions(
+      [
+        account({
+          id: accountId,
+          label: 'Model Hub',
+          model: 'model-default',
+          metadata: { customModels: ['gpt-5.4', 'claude-sonnet-4', 'gpt-5.4'] },
+        }),
+      ],
+      [status(accountId)],
+      vendors,
+      accountId,
+    );
+
+    expect(options).toEqual([
+      {
+        modelRef: `${runtimeKey}/gpt-5.4`,
+        label: 'gpt-5.4 (Model Hub)',
+        runtimeProviderKey: runtimeKey,
+        accountId,
+      },
+      {
+        modelRef: `${runtimeKey}/claude-sonnet-4`,
+        label: 'claude-sonnet-4 (Model Hub)',
+        runtimeProviderKey: runtimeKey,
+        accountId,
+      },
+    ]);
+  });
+
+  it('preserves custom runtime keys that are already normalized', () => {
+    const runtimeKey = resolveRuntimeProviderKey(account({
+      id: 'custom-enterpri',
+      label: 'Enterprise',
+      model: 'custom-enterpri/gpt-5.4',
+      metadata: { customModels: ['gpt-5.4', 'gpt-5.5'] },
+    }));
+
+    const options = buildConfiguredModelOptions(
+      [
+        account({
+          id: 'custom-enterpri',
+          label: 'Enterprise',
+          model: 'custom-enterpri/gpt-5.4',
+          metadata: { customModels: ['gpt-5.4', 'gpt-5.5'] },
+        }),
+      ],
+      [status('custom-enterpri')],
+      vendors,
+      'custom-enterpri',
+    );
+
+    expect(runtimeKey).toBe('custom-enterpri');
+    expect(options).toEqual([
+      {
+        modelRef: 'custom-enterpri/gpt-5.4',
+        label: 'gpt-5.4 (Enterprise)',
+        runtimeProviderKey: 'custom-enterpri',
+        accountId: 'custom-enterpri',
+      },
+      {
+        modelRef: 'custom-enterpri/gpt-5.5',
+        label: 'gpt-5.5 (Enterprise)',
+        runtimeProviderKey: 'custom-enterpri',
+        accountId: 'custom-enterpri',
+      },
+    ]);
+  });
+
   it('treats malformed provider snapshots as empty options', () => {
     expect(
       buildConfiguredModelOptions(

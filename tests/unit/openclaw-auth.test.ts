@@ -45,6 +45,17 @@ vi.mock('@electron/utils/paths', async () => {
   };
 });
 
+// ClawX desktop denies these tools in tools.deny / gateway.tools.deny during
+// sanitizeOpenClawConfig(): skill_workshop (ClawX keeps direct skill-creator
+// authoring) plus the subagent workflow (sessions_spawn / sessions_yield /
+// subagents) so the model cannot spawn child agent sessions.
+const CLAWX_DESKTOP_TOOL_DENY = [
+  'skill_workshop',
+  'sessions_spawn',
+  'sessions_yield',
+  'subagents',
+];
+
 async function writeOpenClawJson(config: unknown): Promise<void> {
   const openclawDir = join(testHome, '.openclaw');
   await mkdir(openclawDir, { recursive: true });
@@ -377,6 +388,16 @@ describe('sanitizeOpenClawConfig', () => {
     // Fresh install should get tools settings enforced
     const tools = result.tools as Record<string, unknown>;
     expect(tools.profile).toBe('full');
+    expect(tools.deny).toEqual(CLAWX_DESKTOP_TOOL_DENY);
+    const gateway = result.gateway as Record<string, unknown>;
+    const gatewayTools = gateway.tools as Record<string, unknown>;
+    expect(gatewayTools.deny).toEqual(CLAWX_DESKTOP_TOOL_DENY);
+    const skills = result.skills as Record<string, unknown>;
+    const workshop = skills.workshop as Record<string, unknown>;
+    const autonomous = workshop.autonomous as Record<string, unknown>;
+    expect(autonomous.enabled).toBe(false);
+    const entries = skills.entries as Record<string, Record<string, unknown>>;
+    expect(entries['skill-creator'].enabled).toBe(true);
 
     logSpy.mockRestore();
   });
@@ -405,8 +426,31 @@ describe('sanitizeOpenClawConfig', () => {
     // tools settings should now be enforced
     const tools = result.tools as Record<string, unknown>;
     expect(tools.profile).toBe('full');
+    expect(tools.deny).toEqual(CLAWX_DESKTOP_TOOL_DENY);
+    const gateway = result.gateway as Record<string, unknown>;
+    expect((gateway.tools as Record<string, unknown>).deny).toEqual(CLAWX_DESKTOP_TOOL_DENY);
+    const skills = result.skills as Record<string, unknown>;
+    expect(((skills.workshop as Record<string, unknown>).autonomous as Record<string, unknown>).enabled).toBe(false);
+    expect((skills.entries as Record<string, Record<string, unknown>>)['skill-creator'].enabled).toBe(true);
 
     logSpy.mockRestore();
+  });
+
+  it('preserves existing denied tools while adding skill_workshop to the deny list', async () => {
+    await writeOpenClawJson({
+      tools: {
+        deny: ['browser'],
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const tools = result.tools as Record<string, unknown>;
+    expect(tools.deny).toEqual(['browser', ...CLAWX_DESKTOP_TOOL_DENY]);
+    const gateway = result.gateway as Record<string, unknown>;
+    expect((gateway.tools as Record<string, unknown>).deny).toEqual(CLAWX_DESKTOP_TOOL_DENY);
   });
 
   it('migrates legacy tools.web.search.kimi into moonshot plugin config', async () => {
@@ -928,6 +972,59 @@ describe('syncProviderConfigToOpenClaw', () => {
         id: 'private-model-x',
         input: ['text'],
       }),
+    ]);
+  });
+
+  it('writes an inferred contextWindow for new custom-provider model rows', async () => {
+    await writeOpenClawJson({ models: { providers: {} } });
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await syncProviderConfigToOpenClaw('custom-example', 'gpt-5.5', {
+      baseUrl: 'https://example.com/v1',
+      api: 'openai-completions',
+    });
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const entry = providers['custom-example'] as Record<string, unknown>;
+    const models = entry.models as Array<Record<string, unknown>>;
+
+    expect(models).toEqual([
+      expect.objectContaining({
+        id: 'gpt-5.5',
+        contextWindow: 272000,
+      }),
+    ]);
+  });
+
+  it('does not overwrite an existing contextWindow on re-sync', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          'custom-example': {
+            baseUrl: 'https://example.com/v1',
+            api: 'openai-completions',
+            models: [
+              { id: 'gpt-5.5', name: 'gpt-5.5', input: ['text'], contextWindow: 64000 },
+            ],
+          },
+        },
+      },
+    });
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await syncProviderConfigToOpenClaw('custom-example', 'gpt-5.5', {
+      baseUrl: 'https://example.com/v1',
+      api: 'openai-completions',
+    });
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const entry = providers['custom-example'] as Record<string, unknown>;
+    const models = entry.models as Array<Record<string, unknown>>;
+
+    expect(models).toEqual([
+      expect.objectContaining({ id: 'gpt-5.5', contextWindow: 64000 }),
     ]);
   });
 
@@ -2248,5 +2345,96 @@ describe('batchSyncConfigFields', () => {
     const ssrfPolicy = (fetch.fetch as Record<string, unknown>).ssrfPolicy as Record<string, unknown>;
     expect(ssrfPolicy.allowRfc2544BenchmarkRange).toBe(false);
     expect(ssrfPolicy.allowIpv6UniqueLocalRange).toBe(false);
+  });
+
+  it('seeds compaction safeguard default when compaction is unset', async () => {
+    await writeOpenClawJson({ gateway: { auth: { mode: 'token', token: 'old' } } });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
+    expect(defaults.compaction).toEqual({
+      mode: 'safeguard',
+      reserveTokensFloor: 50_000,
+    });
+  });
+
+  it('backfills reserveTokensFloor on safeguard compaction seeded without a floor', async () => {
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      agents: {
+        defaults: {
+          compaction: { mode: 'safeguard' },
+        },
+      },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
+    expect(defaults.compaction).toEqual({
+      mode: 'safeguard',
+      reserveTokensFloor: 50_000,
+    });
+  });
+
+  it('does not touch an explicit compaction config', async () => {
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      agents: {
+        defaults: {
+          compaction: { mode: 'default', reserveTokensFloor: 30000 },
+        },
+      },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
+    expect(defaults.compaction).toEqual({ mode: 'default', reserveTokensFloor: 30000 });
+  });
+
+  it('backfills contextWindow on custom provider model rows that lack one', async () => {
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      models: {
+        providers: {
+          'custom-enterpri': {
+            baseUrl: 'https://example.com/v1',
+            api: 'openai-completions',
+            models: [
+              { id: 'gpt-5.5', name: 'gpt-5.5', input: ['text', 'image'] },
+              { id: 'private-x', name: 'private-x', input: ['text'], contextTokens: 32000 },
+            ],
+          },
+          moonshot: {
+            baseUrl: 'https://api.moonshot.cn/v1',
+            api: 'openai-completions',
+            models: [{ id: 'kimi-k2.6', name: 'Kimi K2.6' }],
+          },
+        },
+      },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const providers = (config.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const custom = (providers['custom-enterpri'] as Record<string, unknown>).models as Array<Record<string, unknown>>;
+    const moonshot = (providers.moonshot as Record<string, unknown>).models as Array<Record<string, unknown>>;
+
+    expect(custom[0]).toEqual(expect.objectContaining({ id: 'gpt-5.5', contextWindow: 272000 }));
+    // Rows with explicit contextTokens are user-owned — leave untouched.
+    expect(custom[1].contextWindow).toBeUndefined();
+    expect(custom[1].contextTokens).toBe(32000);
+    // Non custom-* providers own their metadata — never backfilled.
+    expect(moonshot[0].contextWindow).toBeUndefined();
   });
 });
