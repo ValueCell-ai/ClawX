@@ -3,11 +3,12 @@ import { mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { testHome, testUserData, mockLoggerWarn, mockLoggerInfo, mockLoggerError } = vi.hoisted(() => {
+const { testHome, testUserData, runtimeState, mockLoggerWarn, mockLoggerInfo, mockLoggerError } = vi.hoisted(() => {
   const suffix = Math.random().toString(36).slice(2);
   return {
     testHome: `/tmp/clawx-channel-config-${suffix}`,
     testUserData: `/tmp/clawx-channel-config-user-data-${suffix}`,
+    runtimeState: { kind: 'openclaw' as 'openclaw' | 'cc-connect' },
     mockLoggerWarn: vi.fn(),
     mockLoggerInfo: vi.fn(),
     mockLoggerError: vi.fn(),
@@ -46,6 +47,15 @@ vi.mock('@electron/utils/logger', () => ({
   error: mockLoggerError,
 }));
 
+vi.mock('@electron/utils/store', () => ({
+  getSetting: vi.fn(async (key: string) => key === 'runtimeKind' ? runtimeState.kind : undefined),
+  setSetting: vi.fn(async (key: string, value: unknown) => {
+    if (key === 'runtimeKind' && (value === 'openclaw' || value === 'cc-connect')) {
+      runtimeState.kind = value;
+    }
+  }),
+}));
+
 async function readOpenClawJson(): Promise<Record<string, unknown>> {
   const content = await readFile(join(testHome, '.openclaw', 'openclaw.json'), 'utf8');
   return JSON.parse(content) as Record<string, unknown>;
@@ -55,6 +65,7 @@ describe('channel credential normalization and duplicate checks', () => {
   beforeEach(async () => {
     vi.resetAllMocks();
     vi.resetModules();
+    runtimeState.kind = 'openclaw';
     await rm(testHome, { recursive: true, force: true });
     await rm(testUserData, { recursive: true, force: true });
   });
