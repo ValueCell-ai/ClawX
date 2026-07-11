@@ -65,6 +65,46 @@ function sessionUpdateType(notification: SessionNotification): string | undefine
   return typeof update?.sessionUpdate === 'string' ? update.sessionUpdate : undefined;
 }
 
+// OpenClaw can emit clack/doctor diagnostics to stdout during ACP startup.
+// Keep those lines away from the SDK's strict NDJSON parser.
+// Upstream fixed this in https://github.com/openclaw/openclaw/pull/89997 .
+function filterAcpStdoutDiagnostics(output: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const reader = output.getReader();
+      let buffered = '';
+
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (!value) continue;
+
+          buffered += decoder.decode(value, { stream: true });
+          const lines = buffered.split('\n');
+          buffered = lines.pop() ?? '';
+
+          for (const line of lines) {
+            const trimmedLine = line.trim();
+            if (!trimmedLine) continue;
+            if (trimmedLine.startsWith('{')) {
+              controller.enqueue(encoder.encode(`${line}\n`));
+            } else {
+              logger.info(`[acp-chat] [stdout] ${line}`);
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+        controller.close();
+      }
+    },
+  });
+}
+
 export class AcpChatService {
   private child: AcpChildProcess | null = null;
   private connection: AcpConnection | null;
@@ -387,7 +427,7 @@ export class AcpChatService {
     });
 
     const input = Writable.toWeb(child.stdin) as WritableStream<Uint8Array>;
-    const output = Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>;
+    const output = filterAcpStdoutDiagnostics(Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>);
     const stream = ndJsonStream(input, output);
     return new ClientSideConnection(() => this.client, stream);
   }

@@ -141,6 +141,24 @@ describe('AcpChatService', () => {
     );
   });
 
+  it('filters non-JSON stdout diagnostics before the ACP SDK parser sees them', async () => {
+    const { service, child } = await createSpawnedService();
+
+    await service.loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+
+    const output = acpSdkMock.ndJsonStream.mock.calls[0]?.[1] as ReadableStream<Uint8Array>;
+    const reader = output.getReader();
+    const nextChunk = reader.read();
+    child.stdout.write('│ startup doctor note\n{"jsonrpc":"2.0","id":1,"result":{}}\n');
+
+    const { done, value } = await nextChunk;
+    reader.releaseLock();
+
+    expect(done).toBe(false);
+    expect(new TextDecoder().decode(value)).toBe('{"jsonrpc":"2.0","id":1,"result":{}}\n');
+    expect(loggerMock.info).toHaveBeenCalledWith('[acp-chat] [stdout] │ startup doctor note');
+  });
+
   it('loads historical sessions without explicit routing metadata so replay can resolve by session key', async () => {
     const { service, connection } = await createService();
 
