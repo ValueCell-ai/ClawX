@@ -271,7 +271,15 @@ test.describe('cc-connect real Feishu channel runtime smoke', () => {
       expect(managedConfig).toContain(`app_id = "${appId}"`);
       expect(managedConfig).toContain(`domain = "${expectedDomain}"`);
       expect(managedConfig).toContain(`allow_from = "${allowFrom}"`);
-      expect(managedConfig).toContain(`admin_from = "${adminFrom}"`);
+      const opsProjectConfig = managedConfig
+        .split('[[projects]]')
+        .find((section) => section.includes('name = "clawx-ops"')) ?? '';
+      const projectedAdmins = opsProjectConfig
+        .match(/^admin_from = "([^"]*)"$/m)?.[1]
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean) ?? [];
+      expect(projectedAdmins).toEqual(expect.arrayContaining(['clawx-desktop', adminFrom]));
       expect(managedConfig).toContain('share_session_in_channel = true');
       expect(managedConfig).toContain('enable_feishu_card = false');
       const workDirLines = managedConfig.split('\n').filter((line) => line.startsWith('work_dir =')).join('\n');

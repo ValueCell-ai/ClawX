@@ -696,6 +696,8 @@ describe('cc-connect local real verifier', () => {
     const originalSingle = process.env.CLAWX_REAL_ENV_FILE;
     const originalMultiple = process.env.CLAWX_REAL_ENV_FILES;
     const originalKey = process.env.CLAWX_REAL_OPENAI_API_KEY;
+    const originalFeishuDomain = process.env.CLAWX_REAL_FEISHU_DOMAIN;
+    const originalFeishuAppId = process.env.CLAWX_REAL_FEISHU_APP_ID;
     try {
       const firstFile = join(firstDir, 'real-one.env');
       const secondFile = join(secondDir, 'real-two.env');
@@ -710,6 +712,8 @@ describe('cc-connect local real verifier', () => {
       process.env.CLAWX_REAL_ENV_FILE = firstFile;
       process.env.CLAWX_REAL_ENV_FILES = `${delimiter}${secondFile}${delimiter}${firstFile}`;
       process.env.CLAWX_REAL_OPENAI_API_KEY = 'from-process';
+      delete process.env.CLAWX_REAL_FEISHU_DOMAIN;
+      delete process.env.CLAWX_REAL_FEISHU_APP_ID;
 
       expect(extraLocalRealEnvFiles(process.env)).toEqual([firstFile, secondFile]);
       const { env, summaries } = await loadLocalEnvFiles({ envFiles: [] });
@@ -740,6 +744,10 @@ describe('cc-connect local real verifier', () => {
       else process.env.CLAWX_REAL_ENV_FILES = originalMultiple;
       if (originalKey === undefined) delete process.env.CLAWX_REAL_OPENAI_API_KEY;
       else process.env.CLAWX_REAL_OPENAI_API_KEY = originalKey;
+      if (originalFeishuDomain === undefined) delete process.env.CLAWX_REAL_FEISHU_DOMAIN;
+      else process.env.CLAWX_REAL_FEISHU_DOMAIN = originalFeishuDomain;
+      if (originalFeishuAppId === undefined) delete process.env.CLAWX_REAL_FEISHU_APP_ID;
+      else process.env.CLAWX_REAL_FEISHU_APP_ID = originalFeishuAppId;
       await Promise.all([
         rm(firstDir, { recursive: true, force: true }),
         rm(secondDir, { recursive: true, force: true }),

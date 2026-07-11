@@ -475,6 +475,14 @@ sessions must appear in ClawX history and usage under the bound Agent.
 Channel mutations require account-scoped authorization. Runtime hooks may be
 used as an evidence collector, not as a second message processor.
 
+Current live-credential evidence proves the Feishu platform reaches
+`connected`/`running` through cc-connect, survives Host API disconnect/connect
+reload, preserves both the ClawX desktop administrator and configured Channel
+administrators, removes the account from managed config on delete, and cleans
+up the runtime process. A tenant-originated inbound marker and its reply remain
+a separate manual gate; lifecycle success alone does not claim message-delivery
+parity.
+
 ## 11. Cron
 
 For the first replacement milestone, cc-connect native cron-expression jobs
@@ -503,6 +511,15 @@ target platform and recipient key.
 Capability metadata exposes `scheduleKinds: ['cron']`, Channel commands, and
 the actual support state of manual execution. Unsupported operations are
 non-mutating.
+
+Current real-runtime evidence covers both native scheduler paths with the
+bundled cc-connect binary. An enabled exec job fired on an actual minute tick
+and wrote its marker from the configured `work_dir`. A Codex OAuth prompt job
+also fired on an actual minute tick, entered cc-connect through the managed
+project, and exposed its prompt and assistant reply through the public
+session-summary/history APIs. The evidence command is
+`pnpm run verify:cc-connect:local-real:scheduled-cron`; it does not claim live
+tenant-channel delivery, which remains a separate Feishu/Lark credential gate.
 
 ## 12. Health, Doctor, and logs
 
