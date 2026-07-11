@@ -2,6 +2,7 @@ import { openSync, closeSync, fstatSync, readSync } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
+import { stripAcpWorkingDirectoryPrefix } from '@shared/chat/session-title';
 import type { RawMessage } from '@shared/chat/types';
 import { getOpenClawConfigDir } from '../utils/paths';
 import { logger } from '../utils/logger';
@@ -53,7 +54,8 @@ function extractMessageText(content: unknown): string {
 }
 
 function cleanSummaryUserText(text: string): string {
-  return text
+  const textAfterInitialPrefix = stripAcpWorkingDirectoryPrefix(text);
+  const cleaned = textAfterInitialPrefix
     .replace(/^Sender\s*\([^)]*\)\s*:\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
     .replace(/^Sender\s*\([^)]*\)\s*:\s*\{[\s\S]*?\}\s*/i, '')
     .replace(/^Sender\s*\([^)]*\)\s*:[^\n]*(?:\n\s*)*/i, '')
@@ -68,6 +70,9 @@ function cleanSummaryUserText(text: string): string {
     .replace(/^Conversation info\s*\([^)]*\):\s*\{[\s\S]*?\}\s*/i, '')
     .replace(/^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+[^\]]+\]\s*/i, '')
     .trim();
+  const stripCwdExposedByCleanup = !textAfterInitialPrefix.startsWith('[Working directory: ')
+    && cleaned.startsWith('[Working directory: ');
+  return (stripCwdExposedByCleanup ? stripAcpWorkingDirectoryPrefix(cleaned) : cleaned).trim();
 }
 
 function isInternalSummaryText(text: string): boolean {

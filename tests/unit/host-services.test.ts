@@ -1022,7 +1022,7 @@ describe('host services', () => {
         type: 'message',
         message: {
           role: 'user',
-          content: 'Hello from transcript',
+          content: '[Working directory: ~/.openclaw/workspace]\n\nSender: test-user\n[Working directory: ~/.openclaw/workspace]\n\nHello from transcript',
           timestamp: 1000,
         },
       }),
@@ -1052,7 +1052,11 @@ describe('host services', () => {
       .resolves.toMatchObject({
         success: true,
         messages: [
-          { role: 'user', content: 'Hello from transcript', timestamp: 1000 },
+          {
+            role: 'user',
+            content: '[Working directory: ~/.openclaw/workspace]\n\nSender: test-user\n[Working directory: ~/.openclaw/workspace]\n\nHello from transcript',
+            timestamp: 1000,
+          },
           { role: 'assistant', content: 'Hi', timestamp: 1001 },
         ],
       });

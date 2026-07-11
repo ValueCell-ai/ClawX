@@ -5,6 +5,10 @@
  */
 import { create } from 'zustand';
 import { hostApi, type ChatSendWithMediaResult, type SessionLabelSummary } from '@/lib/host-api';
+import {
+  isAcpWorkingDirectoryTruncatedTitle,
+  stripAcpWorkingDirectoryPrefix,
+} from '@shared/chat/session-title';
 import { useGatewayStore } from './gateway';
 import { useAgentsStore } from './agents';
 import type { ChatRuntimeEvent } from '../../shared/chat-runtime-events';
@@ -155,26 +159,43 @@ type PendingOptimisticUserMessage = {
 
 const _pendingOptimisticUserMessages = new Map<string, PendingOptimisticUserMessage[]>();
 
-function getSessionBackendLabel(session: ChatSession): string {
-  return toSessionLabel(session.label || session.derivedTitle || '');
+function hasExplicitSessionLabel(session: ChatSession | undefined): boolean {
+  return typeof session?.label === 'string' && Boolean(session.label.trim());
 }
 
 function applySessionBackendLabels(set: ChatSet, sessions: ChatSession[]): void {
-  const labels = Object.fromEntries(
-    sessions
-      .filter((session) => !session.key.endsWith(':main'))
-      .map((session) => [session.key, getSessionBackendLabel(session)] as const)
-      .filter((entry): entry is [string, string] => Boolean(entry[1])),
-  );
-  if (Object.keys(labels).length === 0) return;
-  set((state) => ({
-    sessionLabels: {
-      ...state.sessionLabels,
-      ...Object.fromEntries(
-        Object.entries(labels).filter(([key]) => !state.sessionLabels[key]),
-      ),
-    },
-  }));
+  set((state) => {
+    let nextLabels = state.sessionLabels;
+
+    for (const session of sessions) {
+      if (session.key.endsWith(':main')) continue;
+
+      if (hasExplicitSessionLabel(session)) {
+        const label = toSessionLabel(session.label || '');
+        if (nextLabels[session.key] !== label) {
+          if (nextLabels === state.sessionLabels) nextLabels = { ...state.sessionLabels };
+          nextLabels[session.key] = label;
+        }
+        continue;
+      }
+
+      const derivedTitle = session.derivedTitle || '';
+      const label = toAutomaticSessionLabel(derivedTitle);
+      if (!label && isAcpWorkingDirectoryTruncatedTitle(derivedTitle)) {
+        if (nextLabels[session.key] === '…') {
+          if (nextLabels === state.sessionLabels) nextLabels = { ...state.sessionLabels };
+          delete nextLabels[session.key];
+        }
+        continue;
+      }
+      if (label && !nextLabels[session.key]) {
+        if (nextLabels === state.sessionLabels) nextLabels = { ...state.sessionLabels };
+        nextLabels[session.key] = label;
+      }
+    }
+
+    return nextLabels === state.sessionLabels ? {} : { sessionLabels: nextLabels };
+  });
 }
 
 async function fetchSessionLabelSummaries(sessionKeys: string[]): Promise<SessionLabelSummary[]> {
@@ -195,11 +216,12 @@ function applySessionLabelSummaries(
     let changed = false;
 
     for (const summary of summaries) {
-      const labelText = toSessionLabel(summary.firstUserText || '');
+      const session = nextSessions.find((entry) => entry.key === summary.sessionKey);
+      const labelText = toAutomaticSessionLabel(summary.firstUserText || '');
       // Only auto-hydrate missing labels. Existing entries include user renames
       // and must not be overwritten by transcript-derived titles.
       const existingLabel = nextLabels[summary.sessionKey]?.trim();
-      if (labelText && !existingLabel) {
+      if (labelText && !existingLabel && !hasExplicitSessionLabel(session)) {
         if (nextLabels === state.sessionLabels) {
           nextLabels = { ...state.sessionLabels };
         }
@@ -285,6 +307,20 @@ function toSessionLabel(text: string, maxLength = 50): string {
   const cleaned = cleanSessionLabelText(text).trim();
   if (!cleaned) return '';
   return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength)}…` : cleaned;
+}
+
+function toAutomaticSessionLabel(text: string, maxLength = 50): string {
+  if (isAcpWorkingDirectoryTruncatedTitle(text)) return '';
+  const textAfterInitialPrefix = stripAcpWorkingDirectoryPrefix(text);
+  const cleaned = cleanSessionLabelText(textAfterInitialPrefix);
+  const stripCwdExposedByCleanup = !textAfterInitialPrefix.startsWith('[Working directory: ')
+    && cleaned.startsWith('[Working directory: ');
+  const normalized = stripCwdExposedByCleanup
+    ? stripAcpWorkingDirectoryPrefix(cleaned)
+    : cleaned;
+  const title = normalized.trim();
+  if (!title) return '';
+  return title.length > maxLength ? `${title.slice(0, maxLength)}…` : title;
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -1920,7 +1956,8 @@ function buildSessionSwitchPatch(
   const leavingEmpty = !state.currentSessionKey.endsWith(':main')
     && state.messages.length === 0
     && !state.sessionLastActivity[state.currentSessionKey]
-    && !state.sessionLabels[state.currentSessionKey];
+    && !state.sessionLabels[state.currentSessionKey]
+    && !hasExplicitSessionLabel(state.sessions.find((session) => session.key === state.currentSessionKey));
 
   const nextSessions = leavingEmpty
     ? state.sessions.filter((session) => session.key !== state.currentSessionKey)
@@ -2806,7 +2843,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
                   for (const { session, version } of pending) {
                     const summary = summaryBySessionKey.get(session.key);
-                    const labelText = toSessionLabel(summary?.firstUserText || '');
+                    const labelText = toAutomaticSessionLabel(summary?.firstUserText || '');
                     finishSessionLabelHydration(session.key, version, labelText ? 'labeled' : 'empty');
                   }
                   break;
@@ -3005,7 +3042,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   // ── Cleanup empty session on navigate away ──
 
   cleanupEmptySession: () => {
-    const { currentSessionKey, messages, sessionLastActivity, sessionLabels } = get();
+    const { currentSessionKey, messages, sessions, sessionLastActivity, sessionLabels } = get();
     // Only remove non-main sessions that were never used (no messages sent).
     // This mirrors the "leavingEmpty" logic in switchSession so that creating
     // a new session and immediately navigating away doesn't leave a ghost entry
@@ -3015,7 +3052,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const isEmptyNonMain = !currentSessionKey.endsWith(':main')
       && messages.length === 0
       && !sessionLastActivity[currentSessionKey]
-      && !sessionLabels[currentSessionKey];
+      && !sessionLabels[currentSessionKey]
+      && !hasExplicitSessionLabel(sessions.find((session) => session.key === currentSessionKey));
     if (!isEmptyNonMain) return;
     set((s) => ({
       sessions: s.sessions.filter((sess) => sess.key !== currentSessionKey),
@@ -3249,10 +3287,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // perceive the sidebar title as a stable conversation identifier, not a
       // live summary of the latest turn.
       const isMainSession = currentSessionKey.endsWith(':main');
-      if (!isMainSession && !get().sessionLabels[currentSessionKey]) {
+      const currentSession = get().sessions.find((session) => session.key === currentSessionKey);
+      if (!isMainSession && !hasExplicitSessionLabel(currentSession) && !get().sessionLabels[currentSessionKey]) {
         const firstUserMsg = finalMessages.find((m) => m.role === 'user');
         if (firstUserMsg) {
-          const labelText = toSessionLabel(getMessageText(firstUserMsg.content));
+          const labelText = toAutomaticSessionLabel(getMessageText(firstUserMsg.content));
           if (labelText) {
             set((s) => (
               s.sessionLabels[currentSessionKey]
@@ -3745,9 +3784,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
 
     // Update session label with first user message text as soon as it's sent
-    const { sessionLabels, messages } = get();
+    const { sessionLabels, messages, sessions } = get();
     const isFirstMessage = !messages.slice(0, -1).some((m) => m.role === 'user');
-    if (!currentSessionKey.endsWith(':main') && isFirstMessage && !sessionLabels[currentSessionKey] && trimmed) {
+    const currentSession = sessions.find((session) => session.key === currentSessionKey);
+    if (!currentSessionKey.endsWith(':main') && !hasExplicitSessionLabel(currentSession) && isFirstMessage && !sessionLabels[currentSessionKey] && trimmed) {
       const labelText = toSessionLabel(trimmed);
       if (labelText) {
         set((s) => ({ sessionLabels: { ...s.sessionLabels, [currentSessionKey]: labelText } }));

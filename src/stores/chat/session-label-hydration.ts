@@ -1,3 +1,4 @@
+import { isAcpWorkingDirectoryTruncatedTitle } from '@shared/chat/session-title';
 import type { ChatSession } from './types';
 
 export const LABEL_FETCH_CONCURRENCY = 5;
@@ -67,7 +68,11 @@ export function getSessionLabelHydrationCandidate(
   if (isMainSession && (hasWorkspacePath || !options.includeWorkspacePath)) return null;
 
   const hasSidebarLabel = normalizeLabelValue(sessionLabels[session.key]) != null;
-  const backendLabel = normalizeLabelValue(session.label) ?? normalizeLabelValue(session.derivedTitle);
+  const explicitLabel = normalizeLabelValue(session.label);
+  const derivedTitle = isAcpWorkingDirectoryTruncatedTitle(session.derivedTitle || '')
+    ? null
+    : normalizeLabelValue(session.derivedTitle);
+  const backendLabel = explicitLabel ?? derivedTitle;
   const needsWorkspacePath = options.includeWorkspacePath === true && !hasWorkspacePath;
   const needsLabel = !hasSidebarLabel && !backendLabel;
   if (!needsWorkspacePath && !needsLabel) return null;

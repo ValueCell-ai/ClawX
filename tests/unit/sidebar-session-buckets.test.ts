@@ -78,6 +78,27 @@ describe('sidebar session helpers', () => {
     expect(screen.getByTestId(`sidebar-session-${sidebarSessionKey}`)).toHaveAttribute('aria-current', 'page');
   });
 
+  it('uses the formatted cache for long explicit labels with working-directory markers', () => {
+    const rawLabel = '[Working directory: /user-chosen]\n  A deliberately long manual label that must use the cache display text.  ';
+    const displayLabel = '[Working directory: /user-chosen]\n  A deliberately…';
+    seedSidebarState();
+    useChatStore.setState({
+      sessions: [{
+        key: sidebarSessionKey,
+        displayName: 'Original title',
+        label: rawLabel,
+        updatedAt: 1,
+      }],
+      sessionLabels: { [sidebarSessionKey]: displayLabel },
+    });
+
+    renderSidebar();
+
+    const sessionRow = screen.getByTestId(`sidebar-session-${sidebarSessionKey}`);
+    expect(sessionRow).toHaveTextContent(displayLabel.replace(/\s+/g, ' '));
+    expect(sessionRow).not.toHaveTextContent('long manual label that must use the cache display text');
+  });
+
   it('uses an icon-only collapse-all control with an accessible label', () => {
     seedSidebarState();
 

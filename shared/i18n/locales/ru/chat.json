@@ -231,7 +231,7 @@
         "title": "Список сессий",
         "collapseAll": "Свернуть все",
         "expandAll": "Развернуть все",
-        "loadMore": "Загрузить еще {{count}}",
+        "loadMore": "Загрузить еще",
         "loadMoreForWorkspace": "Загрузить еще {{count}} сессий в {{workspace}}",
         "workspaceToggle": "Переключить рабочую область {{workspace}}"
     },

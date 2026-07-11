@@ -231,7 +231,7 @@
         "title": "Sessions",
         "collapseAll": "Collapse all",
         "expandAll": "Expand all",
-        "loadMore": "Load {{count}} more",
+        "loadMore": "Load more",
         "loadMoreForWorkspace": "Load {{count}} more sessions in {{workspace}}",
         "workspaceToggle": "Toggle workspace {{workspace}}"
     },

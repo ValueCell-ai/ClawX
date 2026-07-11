@@ -231,7 +231,7 @@
         "title": "会话列表",
         "collapseAll": "一键折叠",
         "expandAll": "一键展开",
-        "loadMore": "加载 {{count}} 个更多",
+        "loadMore": "加载更多",
         "loadMoreForWorkspace": "在 {{workspace}} 中再加载 {{count}} 个会话",
         "workspaceToggle": "展开或折叠工作空间 {{workspace}}"
     },

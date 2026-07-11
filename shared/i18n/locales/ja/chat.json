@@ -231,7 +231,7 @@
         "title": "セッション一覧",
         "collapseAll": "すべて折りたたむ",
         "expandAll": "すべて展開",
-        "loadMore": "さらに {{count}} 件読み込む",
+        "loadMore": "もっと読み込む",
         "loadMoreForWorkspace": "{{workspace}} でさらに {{count}} 件のセッションを読み込む",
         "workspaceToggle": "ワークスペース {{workspace}} を切り替え"
     },

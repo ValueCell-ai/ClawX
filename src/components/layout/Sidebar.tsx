@@ -24,6 +24,8 @@ import {
   ImagePlus,
   Moon,
   ChevronRight,
+  ChevronsUpDown,
+  ChevronsDownUp,
   Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -178,7 +180,7 @@ export function Sidebar() {
   const isOnChat = useLocation().pathname === '/';
 
   const getSessionLabel = (key: string, displayName?: string, label?: string) =>
-    sessionLabels[key] ?? label ?? displayName ?? key;
+    sessionLabels[key] ?? (label?.trim() ? label : displayName ?? key);
 
   const openControlUi = async (view?: 'dreams', label = 'OpenClaw Page') => {
     try {
@@ -476,7 +478,7 @@ export function Sidebar() {
       {/* Session list — below Settings, only when expanded */}
       {!sidebarCollapsed && sessions.length > 0 && (
         <div className="mt-4 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2">
-          <div className="mb-1 flex items-center justify-between gap-2 px-2.5">
+          <div className="mb-1 flex items-center justify-between gap-2 pl-2.5">
             <span className="text-tiny font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
               {t('chat:sessionList.title')}
             </span>
@@ -488,19 +490,12 @@ export function Sidebar() {
               onClick={toggleAllWorkspaceGroups}
               className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
             >
-              <span aria-hidden="true" className="relative flex h-3.5 w-3.5 items-center justify-center">
-                <ChevronRight
-                  className={cn(
-                    'absolute h-3 w-3 transition-transform',
-                    allWorkspaceGroupsCollapsed ? 'translate-y-0.5 rotate-90' : '-translate-y-0.5 -rotate-90',
-                  )}
-                />
-                <ChevronRight
-                  className={cn(
-                    'absolute h-3 w-3 transition-transform',
-                    allWorkspaceGroupsCollapsed ? '-translate-y-0.5 rotate-90' : 'translate-y-0.5 -rotate-90',
-                  )}
-                />
+              <span aria-hidden="true" className="flex h-3.5 w-3.5 items-center justify-center">
+                {allWorkspaceGroupsCollapsed ? (
+                  <ChevronsUpDown className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronsDownUp className="h-3.5 w-3.5" />
+                )}
               </span>
             </button>
           </div>
@@ -682,11 +677,9 @@ export function Sidebar() {
                             workspace: workspaceGroup.label,
                           })}
                           onClick={() => loadMoreWorkspaceSessions(workspaceGroup.workspacePath)}
-                          className="ml-7 rounded-md px-2 py-1 text-tiny font-medium text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
+                          className="ml-2 rounded-md px-2 py-1 text-tiny font-medium text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
                         >
-                          {t('chat:sessionList.loadMore', {
-                            count: loadMoreCount,
-                          })}
+                          {t('chat:sessionList.loadMore')}
                         </button>
                       )}
                     </div>

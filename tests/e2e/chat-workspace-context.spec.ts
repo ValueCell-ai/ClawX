@@ -7,6 +7,7 @@ const SESSION_WORKSPACE_LABEL = '~/workspace/ClawX';
 const GLOBAL_WORKSPACE = '/Users/e2e/workspace/GlobalProject';
 const GLOBAL_WORKSPACE_LABEL = '~/workspace/GlobalProject';
 const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
+const AUTO_TITLE_WITH_CWD = `[Working directory: ${DEFAULT_WORKSPACE}]\n\nWorkspace chat`;
 const SESSIONS_LIST_PAYLOAD = {
   includeDerivedTitles: true,
   includeLastMessage: true,
@@ -88,6 +89,8 @@ type WorkspaceMockOptions = {
   chatWorkspacePath?: string;
   recentWorkspacePaths?: string[];
   sessionHistory?: Array<{ role: string; content: unknown; timestamp?: number }>;
+  sessionDerivedTitle?: string | null;
+  sessionSummaryFirstUserText?: string | null;
 };
 
 async function installWorkspaceMocks(app: ElectronApplication, options: WorkspaceMockOptions = {}) {
@@ -100,10 +103,16 @@ async function installWorkspaceMocks(app: ElectronApplication, options: Workspac
     chatWorkspacePath: options.chatWorkspacePath ?? DEFAULT_WORKSPACE,
     recentWorkspacePaths: options.recentWorkspacePaths ?? [DEFAULT_WORKSPACE],
   };
+  const sessionRow = {
+    key: SESSION_KEY,
+    displayName: 'Gateway session display name',
+    updatedAt: nowMs,
+    ...(typeof options.sessionDerivedTitle === 'string' ? { derivedTitle: options.sessionDerivedTitle } : {}),
+  };
   const sessionSummaries = {
     summaries: [{
       sessionKey: SESSION_KEY,
-      firstUserText: 'Workspace chat',
+      firstUserText: options.sessionSummaryFirstUserText ?? null,
       lastTimestamp: nowMs,
       workspacePath: SESSION_WORKSPACE,
     }],
@@ -116,13 +125,13 @@ async function installWorkspaceMocks(app: ElectronApplication, options: Workspac
       [stableStringify(['sessions.list', SESSIONS_LIST_PAYLOAD])]: {
         success: true,
         result: {
-          sessions: [{ key: SESSION_KEY, displayName: 'Workspace chat', updatedAt: nowMs }],
+          sessions: [sessionRow],
         },
       },
       [stableStringify(['sessions.list', {}])]: {
         success: true,
         result: {
-          sessions: [{ key: SESSION_KEY, displayName: 'Workspace chat', updatedAt: nowMs }],
+          sessions: [sessionRow],
         },
       },
       [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
@@ -163,7 +172,10 @@ test.describe('ClawX chat workspace context', () => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
-      await installWorkspaceMocks(app);
+      await installWorkspaceMocks(app, {
+        sessionDerivedTitle: AUTO_TITLE_WITH_CWD,
+        sessionSummaryFirstUserText: null,
+      });
 
       const page = await getStableWindow(app);
       try {
@@ -184,9 +196,10 @@ test.describe('ClawX chat workspace context', () => {
       await expect(workspaceSelector).toHaveAttribute('aria-disabled', 'true');
 
       const sidebar = page.getByTestId('sidebar');
-      const workspaceGroup = sidebar.getByTestId(workspaceSessionGroupTestId(SESSION_WORKSPACE))
-        .filter({ hasText: 'Workspace chat' });
+      const workspaceGroup = sidebar.getByTestId(workspaceSessionGroupTestId(SESSION_WORKSPACE));
       await expect(workspaceGroup).toBeVisible();
+      await expect(workspaceGroup).toContainText('Workspace chat');
+      await expect(workspaceGroup).not.toContainText('[Working directory:');
 
       await page.getByTestId('chat-toolbar-workspace').click();
 
@@ -210,6 +223,34 @@ test.describe('ClawX chat workspace context', () => {
         const requests = await getWorkspaceTreeRequests(app);
         return requests.some((request) => request.path === SESSION_WORKSPACE && request.includeHidden === true);
       }).toBe(true);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('host summary title stays clean when a derived title is unavailable', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installWorkspaceMocks(app, {
+        sessionDerivedTitle: null,
+        sessionSummaryFirstUserText: AUTO_TITLE_WITH_CWD,
+      });
+
+      const page = await getStableWindow(app);
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
+          throw error;
+        }
+      }
+
+      const sidebar = page.getByTestId('sidebar');
+      const workspaceGroup = sidebar.getByTestId(workspaceSessionGroupTestId(SESSION_WORKSPACE));
+      await expect(workspaceGroup).toBeVisible({ timeout: 30_000 });
+      await expect(workspaceGroup).toContainText('Workspace chat');
+      await expect(workspaceGroup).not.toContainText('[Working directory:');
     } finally {
       await closeElectronApp(app);
     }

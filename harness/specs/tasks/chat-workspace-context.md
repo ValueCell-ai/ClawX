@@ -21,6 +21,7 @@ touchedAreas:
   - src/**
   - tests/**
   - shared/workspace.ts
+  - shared/chat/session-title.ts
   - shared/chat/types.ts
   - shared/host-api/contract.ts
   - electron/utils/store.ts
@@ -41,6 +42,10 @@ touchedAreas:
   - shared/i18n/locales/ja/chat.json
   - shared/i18n/locales/ru/chat.json
   - tests/unit/workspace-context.test.ts
+  - tests/unit/session-title.test.ts
+  - tests/unit/host-services.test.ts
+  - tests/unit/chat-store-session-label-fetch.test.ts
+  - tests/unit/chat-store-history-retry.test.ts
   - tests/unit/sessions-api-workspace.test.ts
   - tests/unit/chat-acp-page.test.tsx
   - tests/unit/workspace-browser-body.test.tsx
@@ -52,6 +57,7 @@ expectedUserBehavior:
   - Existing sessions use OpenClaw ACP cwd as their read-only workspace context.
   - Historical sessions with recoverable OpenClaw cwd group under their real cwd.
   - Sessions without recoverable cwd group under the default workspace label.
+  - OpenClaw ACP cwd injection remains enabled, while automatic conversation titles omit its leading working-directory envelope.
   - Renderer continues to use host-api and never calls direct IPC or Gateway HTTP.
 requiredProfiles:
   - fast
@@ -65,7 +71,7 @@ requiredRules:
 requiredTests:
   - pnpm harness validate --spec harness/specs/tasks/chat-workspace-context.md
   - pnpm run typecheck
-  - pnpm exec vitest run tests/unit/workspace-context.test.ts tests/unit/sessions-api-workspace.test.ts tests/unit/session-buckets.test.ts tests/unit/chat-acp-page.test.tsx tests/unit/workspace-browser-body.test.tsx
+  - pnpm exec vitest run tests/unit/workspace-context.test.ts tests/unit/session-title.test.ts tests/unit/host-services.test.ts tests/unit/chat-store-session-label-fetch.test.ts tests/unit/chat-store-history-retry.test.ts tests/unit/sidebar-session-buckets.test.ts tests/unit/sessions-api-workspace.test.ts tests/unit/session-buckets.test.ts tests/unit/chat-acp-page.test.tsx tests/unit/workspace-browser-body.test.tsx
   - pnpm run build:vite
   - pnpm exec playwright test tests/e2e/chat-workspace-context.spec.ts
   - pnpm run comms:replay
@@ -76,6 +82,7 @@ acceptance:
   - Bound session footer workspace is read-only.
   - Right workspace tree root matches effective chat workspace.
   - Sidebar groups sessions by workspace and then recency.
+  - Explicit user session labels remain unchanged even when they begin with a working-directory-looking string.
 docs:
   required: true
 ---
