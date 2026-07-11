@@ -214,7 +214,6 @@ async function buildRuntimeDiagnostics(ctx: DiagnosticsApiContext) {
 
   const managedDir = getCcConnectManagedDir();
   const configPath = getCcConnectConfigPath();
-  const codexHomeDir = getCcConnectCodexHomeDir();
   const providerProfilePath = getCcConnectProviderProfilePath();
   const ccConnectBinaryPath = getCcConnectBinaryPath();
   const codexBundle = getCodexBundle();
@@ -232,6 +231,11 @@ async function buildRuntimeDiagnostics(ctx: DiagnosticsApiContext) {
     probeCcConnectManagement(activeProvider),
     buildCcConnectCronDiagnostics(activeProvider),
   ]);
+  const codexHomeDir = providerProfile
+    && typeof providerProfile === 'object'
+    && typeof (providerProfile as Record<string, unknown>).codexHomeDir === 'string'
+    ? (providerProfile as Record<string, string>).codexHomeDir
+    : getCcConnectCodexHomeDir();
 
   return {
     ...base,

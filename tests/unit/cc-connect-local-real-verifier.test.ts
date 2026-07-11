@@ -203,7 +203,7 @@ describe('cc-connect local real verifier', () => {
     expect(requiredCoverageIds(['oauth-core-runtime-parity', 'oauth-core-runtime-parity,packaged-oauth-runtime-smoke']))
       .toEqual(['oauth-core-runtime-parity', 'packaged-oauth-runtime-smoke']);
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('provider-model-profile-local-diagnostics');
-    expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('token-usage-contract-local-diagnostics');
+    expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).toContain('token-usage-contract-local-diagnostics');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('runtime-management-bundle-local-diagnostics');
     expect(COVERAGE_IDS).toContain('bridge-media-packets-local-diagnostics');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('bridge-media-packets-local-diagnostics');
@@ -388,13 +388,12 @@ describe('cc-connect local real verifier', () => {
       }),
       expect.objectContaining({
         id: 'token-usage-contract-local-diagnostics',
-        status: 'pass',
+        status: 'partial',
         evidence: 'pnpm exec vitest run tests/unit/token-usage-scan.test.ts && pnpm run test:e2e -- tests/e2e/token-usage.spec.ts',
         covers: expect.arrayContaining([
-          'runtimeKind tagging and filtering',
-          'OpenClaw-compatible cron session ids',
-          'agent named/orphan session ids',
-          'channel-session key preservation',
+          'cc-connect private session-store exclusion',
+          'managed and user-global Codex transcript exclusion',
+          'runtimeKind filtering without OpenClaw data leakage',
         ]),
       }),
       expect.objectContaining({
@@ -459,7 +458,7 @@ describe('cc-connect local real verifier', () => {
         evidence: 'pnpm run test:e2e:cc-connect:real-comprehensive',
         covers: expect.arrayContaining([
           'real Codex apply_patch tool turn',
-          'cc-connect history tool evidence',
+          'run-correlated cc-connect Bridge tool lifecycle',
           'generated-file card rendered in GUI chat',
         ]),
       }),
@@ -489,7 +488,6 @@ describe('cc-connect local real verifier', () => {
         covers: expect.arrayContaining([
           'OpenAI API-key provider with custom baseUrl',
           'chat through real cc-connect and bundled Codex',
-          'cc-connect runtimeKind token usage collection from the same chat',
         ]),
       }),
       expect.objectContaining({
@@ -498,8 +496,10 @@ describe('cc-connect local real verifier', () => {
         evidence: 'pnpm run test:e2e -- tests/e2e/cc-connect-real-openai-api-key.spec.ts tests/e2e/cc-connect-real-feishu-channel.spec.ts',
         covers: expect.arrayContaining([
           'GUI Stop button through Host API chat.abort',
+          'session-scoped cc-connect BridgePlatform /stop cancellation',
+          'upstream stream closure before completion release',
           'late assistant output suppression',
-          'runtime recovery to running state',
+          'unchanged cc-connect PID and runtime recovery to running state',
         ]),
       }),
       expect.objectContaining({
@@ -1279,8 +1279,8 @@ describe('cc-connect local real verifier', () => {
       }),
       expect.objectContaining({
         id: 'token-usage-contract',
-        status: 'pass',
-        requiredForLocalReplacementGate: false,
+        status: 'partial',
+        requiredForLocalReplacementGate: true,
       }),
       expect.objectContaining({
         id: 'real-validation-opt-in',
@@ -1295,10 +1295,10 @@ describe('cc-connect local real verifier', () => {
     ]));
   });
 
-  it('does not let local provider/model diagnostics satisfy replacement readiness', () => {
+  it('does not let local diagnostics satisfy live provider or public usage readiness', () => {
     const readiness = buildReplacementReadiness(coverageRows({
       'provider-model-profile-local-diagnostics': 'pass',
-      'token-usage-contract-local-diagnostics': 'pass',
+      'token-usage-contract-local-diagnostics': 'partial',
       'runtime-management-bundle-local-diagnostics': 'pass',
       'channel-lifecycle-local-bundle': 'pass',
       'cron-lifecycle-local-bundle': 'pass',
@@ -1309,18 +1309,22 @@ describe('cc-connect local real verifier', () => {
       status: 'partial',
       replacementReady: false,
       requiredCoverageIds: REPLACEMENT_REQUIRED_COVERAGE_IDS,
-      missingCoverage: [
+      missingCoverage: expect.arrayContaining([
         expect.objectContaining({
           id: 'openai-api-key-provider-model-chat',
           status: 'skipped',
           nextCommand: 'pnpm run verify:cc-connect:local-real:api-key',
         }),
-      ],
+        expect.objectContaining({
+          id: 'token-usage-contract-local-diagnostics',
+          status: 'partial',
+        }),
+      ]),
     });
     expect(readiness.missingCoverage.map((item) => item.id))
       .not.toContain('provider-model-profile-local-diagnostics');
     expect(readiness.missingCoverage.map((item) => item.id))
-      .not.toContain('token-usage-contract-local-diagnostics');
+      .toContain('token-usage-contract-local-diagnostics');
     expect(readiness.missingCoverage.map((item) => item.id))
       .not.toContain('runtime-management-bundle-local-diagnostics');
     expect(readiness.missingCoverage.map((item) => item.id))
@@ -1458,6 +1462,13 @@ describe('cc-connect local real verifier', () => {
         status: 'unverified',
         requiredForLocalReplacementGate: false,
       }),
+      expect.objectContaining({
+        id: 'upstream-public-token-usage',
+        area: 'usage',
+        priority: 'required',
+        status: 'upstream-blocked',
+        requiredForLocalReplacementGate: true,
+      }),
     ]));
     expect(gaps.filter((gap) => gap.requiredForLocalReplacementGate).map((gap) => gap.id))
       .toEqual([
@@ -1466,9 +1477,12 @@ describe('cc-connect local real verifier', () => {
         'coverage-openai-api-key-provider-model-chat',
         'coverage-feishu-live-channel-lifecycle',
         'coverage-feishu-live-inbound-delivery',
+        'upstream-public-token-usage',
       ]);
     expect(gaps.filter((gap) => gap.requiredForLocalReplacementGate === false).map((gap) => gap.id))
-      .toEqual(expect.arrayContaining(RESIDUAL_VALIDATION_GAPS.map((gap) => gap.id)));
+      .toEqual(expect.arrayContaining(RESIDUAL_VALIDATION_GAPS
+        .filter((gap) => !gap.requiredForLocalReplacementGate)
+        .map((gap) => gap.id)));
 
     const gapsAfterScheduledCron = buildValidationGaps(readiness, readiness.missingPreconditions, surface, coverageRows({
       'openai-api-key-provider-model-chat': 'skipped',

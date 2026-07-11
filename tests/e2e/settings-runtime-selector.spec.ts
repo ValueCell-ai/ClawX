@@ -23,8 +23,8 @@ test.describe('Settings runtime selector', () => {
         },
         operationCapabilities: {
           'chat.send': { capability: 'chat', support: 'native', notes: 'Delivered through cc-connect BridgePlatform into Codex.' },
-          'chat.abort': { capability: 'chat', support: 'native', notes: 'Marks the active bridge run aborted and restarts cc-connect to terminate in-flight Codex work.' },
-          'doctor.fix': { capability: 'doctor', support: 'unsupported', notes: 'cc-connect v1.3.2 does not support doctor fix mode.' },
+          'chat.abort': { capability: 'chat', support: 'native', notes: 'Stops the active cc-connect Bridge session.' },
+          'doctor.fix': { capability: 'doctor', support: 'unsupported', notes: 'cc-connect Doctor does not support fix mode.' },
         },
       },
       hostApi: {
@@ -93,6 +93,7 @@ test.describe('Settings runtime selector', () => {
       },
     });
     await expect(page.getByTestId('settings-runtime-operation-gaps')).not.toContainText('chat.abort');
+    await expect(page.getByTestId('settings-runtime-operation-gaps')).toContainText('Limited');
     await expect(page.getByTestId('settings-runtime-operation-gaps')).toContainText('doctor.fix');
 
     await expect(page.getByTestId('settings-run-doctor-button')).toBeVisible();

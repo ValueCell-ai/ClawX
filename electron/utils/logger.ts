@@ -11,6 +11,7 @@ import { app } from 'electron';
 import { join } from 'path';
 import { existsSync, mkdirSync, appendFileSync } from 'fs';
 import { appendFile, open, readdir, stat } from 'fs/promises';
+import { getClawXDataLayout } from './clawx-data-layout';
 
 /**
  * Log levels
@@ -114,7 +115,7 @@ export function initLogger(): void {
       currentLevel = LogLevel.INFO;
     }
 
-    logDir = join(app.getPath('userData'), 'logs');
+    logDir = getClawXDataLayout().logsDir;
 
     if (!existsSync(logDir)) {
       mkdirSync(logDir, { recursive: true });

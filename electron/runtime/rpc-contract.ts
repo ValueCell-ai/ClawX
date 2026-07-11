@@ -45,11 +45,12 @@ const OPENCLAW_PROXY_METHODS: Array<[string, keyof RuntimeCapabilities, string]>
 
 const CC_CONNECT_NATIVE_METHODS: Array<[string, keyof RuntimeCapabilities, string]> = [
   ['chat.send', 'chat', 'Delivered through cc-connect BridgePlatform into Codex.'],
-  ['chat.abort', 'chat', 'Marks the active bridge run aborted and restarts cc-connect to terminate in-flight Codex work.'],
-  ['sessions.list', 'sessions', 'Loaded from cc-connect bridge session state.'],
-  ['chat.history', 'history', 'Loaded from cc-connect bridge session history.'],
-  ['sessions.delete', 'sessions', 'Deletes cc-connect bridge session state.'],
-  ['sessions.rename', 'sessions', 'Renames cc-connect bridge session state without mutating OpenClaw session files.'],
+  ['chat.abort', 'chat', 'Sends cc-connect /stop to the active Bridge session; runtime restart is only a disconnected-Bridge fallback.'],
+  ['chat.approval.respond', 'chat', 'Returns a validated card_action through cc-connect BridgePlatform for the pending Codex approval.'],
+  ['sessions.list', 'sessions', 'Loaded from the cc-connect public Management session API.'],
+  ['chat.history', 'history', 'Loaded from the cc-connect public Management session history API.'],
+  ['sessions.delete', 'sessions', 'Deletes the runtime session through the cc-connect public Management API.'],
+  ['sessions.rename', 'sessions', 'Stores a ClawX display label without mutating cc-connect private session files.'],
   ['providers.sync', 'providers', 'Writes the managed Codex provider profile and restarts when needed.'],
   ['providers.profile', 'providers', 'Returns the managed Codex provider profile.'],
   ['models.sync', 'models', 'Aliases provider sync for the active Codex model profile.'],
@@ -72,7 +73,7 @@ const CC_CONNECT_NATIVE_METHODS: Array<[string, keyof RuntimeCapabilities, strin
 ];
 
 const CC_CONNECT_UNSUPPORTED_METHODS: Array<[string, keyof RuntimeCapabilities, string]> = [
-  ['doctor.fix', 'doctor', 'cc-connect v1.3.2 does not support doctor fix mode.'],
+  ['doctor.fix', 'doctor', 'cc-connect Doctor does not support fix mode.'],
   ['doctor.memory.status', 'doctor', 'OpenClaw Dreams memory doctor RPCs do not have a cc-connect equivalent.'],
 ];
 

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,8 +14,10 @@ const bdProviderKey = `${bdRouteSegment}_openapi`;
 const bdHost = ['aidp', 'bytedance', 'net'].join('.');
 const bdApiPath = ['api', bdRouteSegment, 'online'].join('/');
 const bdBaseUrl = `https://${bdHost}/${bdApiPath}`;
-const bdExtraHeaderEnv = `CODEX_${bdRouteSegment.toUpperCase()}_EXTRA_HEADER`;
-const bdStickySessionEnv = `CODEX_${bdRouteSegment.toUpperCase()}_STICKY_SESSION_ID`;
+const bdApiKeyEnv = 'CLAWX_CODEX_BD_RESPONSES_API_KEY';
+const bdExtraHeaderEnv = 'CLAWX_CODEX_BD_RESPONSES_EXTRA_HEADER';
+const bdStickySessionEnv = 'CLAWX_CODEX_BD_RESPONSES_STICKY_SESSION_ID';
+const bdTtEnvHeader = 'CLAWX_CODEX_BD_RESPONSES_HEADER_X_TT_ENV';
 
 vi.mock('electron', () => ({
   app: {
@@ -38,6 +40,7 @@ vi.mock('@electron/services/secrets/secret-store', () => ({
 
 describe('cc-connect provider profile sync', () => {
   let tempDir: string;
+  const accountCodexHome = (accountId: string) => join(tempDir, 'credentials', 'oauth', accountId, 'codex-home');
 
   beforeEach(async () => {
     vi.resetModules();
@@ -81,13 +84,17 @@ describe('cc-connect provider profile sync', () => {
       vendorId: 'openai',
       model: 'gpt-5.5',
       codexArgs: ['--model', 'gpt-5.5'],
-      env: { OPENAI_API_KEY: 'sk-secret-value' },
+      env: {
+        CLAWX_CODEX_OPENAI_MAIN_API_KEY: 'sk-secret-value',
+        CODEX_HOME: accountCodexHome('openai-main'),
+      },
+      launcherEnv: { OPENAI_API_KEY: 'CLAWX_CODEX_OPENAI_MAIN_API_KEY' },
       secretAvailable: true,
       supported: true,
     });
     const profileFile = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'provider-profile.json'), 'utf8');
     expect(profileFile).toContain('"envKeys"');
-    expect(profileFile).toContain('OPENAI_API_KEY');
+    expect(profileFile).toContain('CLAWX_CODEX_OPENAI_MAIN_API_KEY');
     expect(profileFile).not.toContain('sk-secret-value');
   });
 
@@ -153,7 +160,7 @@ describe('cc-connect provider profile sync', () => {
       providerId: 'openai-local',
       vendorId: 'openai',
       model: 'gpt-local',
-      codexHomeDir: join(tempDir, 'runtimes', 'cc-connect', 'codex-home'),
+      codexHomeDir: accountCodexHome('openai-local'),
       codexArgs: [
         '-c',
         'model_provider="clawx-openai"',
@@ -162,19 +169,20 @@ describe('cc-connect provider profile sync', () => {
         '-c',
         'model_providers.clawx-openai.base_url="http://127.0.0.1:45123/v1"',
         '-c',
-        'model_providers.clawx-openai.env_key="OPENAI_API_KEY"',
+        'model_providers.clawx-openai.env_key="CLAWX_CODEX_OPENAI_LOCAL_API_KEY"',
         '-c',
         'model_providers.clawx-openai.wire_api="responses"',
         '--model',
         'gpt-local',
       ],
       env: {
-        OPENAI_API_KEY: 'sk-local-secret-value',
-        CODEX_HOME: join(tempDir, 'runtimes', 'cc-connect', 'codex-home'),
+        CLAWX_CODEX_OPENAI_LOCAL_API_KEY: 'sk-local-secret-value',
+        CODEX_HOME: accountCodexHome('openai-local'),
       },
+      launcherEnv: { OPENAI_API_KEY: 'CLAWX_CODEX_OPENAI_LOCAL_API_KEY' },
       ccConnectProvider: {
         name: 'clawx-openai',
-        apiKeyEnvKey: 'OPENAI_API_KEY',
+        apiKeyEnvKey: 'CLAWX_CODEX_OPENAI_LOCAL_API_KEY',
         baseUrl: 'http://127.0.0.1:45123/v1',
         model: 'gpt-local',
         wireApi: 'responses',
@@ -183,17 +191,17 @@ describe('cc-connect provider profile sync', () => {
       supported: true,
     });
 
-    const codexConfig = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'codex-home', 'config.toml'), 'utf8');
+    const codexConfig = await readFile(join(accountCodexHome('openai-local'), 'config.toml'), 'utf8');
     expect(codexConfig).toContain('model = "gpt-local"');
     expect(codexConfig).toContain('model_provider = "clawx-openai"');
     expect(codexConfig).toContain('[model_providers.clawx-openai]');
     expect(codexConfig).toContain('base_url = "http://127.0.0.1:45123/v1"');
-    expect(codexConfig).toContain('env_key = "OPENAI_API_KEY"');
+    expect(codexConfig).toContain('env_key = "CLAWX_CODEX_OPENAI_LOCAL_API_KEY"');
     expect(codexConfig).toContain('wire_api = "responses"');
     expect(codexConfig).not.toContain('sk-local-secret-value');
 
     const profileFile = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'provider-profile.json'), 'utf8');
-    expect(profileFile).toContain('OPENAI_API_KEY');
+    expect(profileFile).toContain('CLAWX_CODEX_OPENAI_LOCAL_API_KEY');
     expect(profileFile).toContain('http://127.0.0.1:45123/v1');
     expect(profileFile).not.toContain('sk-local-secret-value');
   });
@@ -226,7 +234,7 @@ describe('cc-connect provider profile sync', () => {
 
     const profile = await syncCcConnectProviderProfile({ reason: 'oauth-login' });
 
-    const codexHome = join(tempDir, 'runtimes', 'cc-connect', 'codex-home');
+    const codexHome = accountCodexHome('openai-oauth');
     expect(profile).toMatchObject({
       providerId: 'openai-oauth',
       vendorId: 'openai',
@@ -263,9 +271,10 @@ describe('cc-connect provider profile sync', () => {
   });
 
   it('uses an existing managed Codex OAuth home without requiring a ClawX OAuth secret', async () => {
-    const codexHome = join(tempDir, 'runtimes', 'cc-connect', 'codex-home');
-    await mkdir(codexHome, { recursive: true });
-    await writeFile(join(codexHome, 'auth.json'), JSON.stringify({
+    const legacyCodexHome = join(tempDir, 'runtimes', 'cc-connect', 'codex-home');
+    const codexHome = accountCodexHome('openai-oauth');
+    await mkdir(legacyCodexHome, { recursive: true });
+    await writeFile(join(legacyCodexHome, 'auth.json'), JSON.stringify({
       auth_mode: 'chatgpt',
       OPENAI_API_KEY: null,
       tokens: {
@@ -320,9 +329,28 @@ describe('cc-connect provider profile sync', () => {
     expect(profileFile).not.toContain('managed-id-token');
     expect(profileFile).not.toContain('managed-access-token');
     expect(profileFile).not.toContain('managed-refresh-token');
+    await expect(access(legacyCodexHome)).rejects.toThrow();
+
+    getDefaultProviderAccountIdMock.mockResolvedValue('openai-oauth-second');
+    getProviderAccountMock.mockResolvedValue({
+      id: 'openai-oauth-second',
+      vendorId: 'openai',
+      label: 'Second OpenAI Codex OAuth',
+      authMode: 'oauth_browser',
+      model: 'gpt-5.5',
+      enabled: true,
+      isDefault: true,
+      createdAt: '2026-06-07T00:00:00.000Z',
+      updatedAt: '2026-06-07T00:00:00.000Z',
+    });
+    await expect(syncCcConnectProviderProfile({ reason: 'second-account' })).resolves.toMatchObject({
+      providerId: 'openai-oauth-second',
+      supported: false,
+    });
+    await expect(readFile(join(accountCodexHome('openai-oauth-second'), 'auth.json'), 'utf8')).rejects.toThrow();
   });
 
-  it('imports a matching Codex id token for existing OpenAI OAuth secrets that predate idToken storage', async () => {
+  it('does not implicitly import global Codex auth for OAuth secrets that lack an id token', async () => {
     await mkdir(join(tempDir, '.codex'), { recursive: true });
     await writeFile(join(tempDir, '.codex', 'auth.json'), JSON.stringify({
       auth_mode: 'chatgpt',
@@ -360,13 +388,10 @@ describe('cc-connect provider profile sync', () => {
     const profile = await syncCcConnectProviderProfile({ reason: 'runtime-start' });
 
     expect(profile).toMatchObject({
-      supported: true,
-      env: { CODEX_HOME: join(tempDir, 'runtimes', 'cc-connect', 'codex-home') },
+      supported: false,
+      unsupportedReason: expect.stringContaining('credentials are missing'),
     });
-    const authFile = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'codex-home', 'auth.json'), 'utf8');
-    expect(authFile).toContain('"id_token": "imported-id-token"');
-    expect(authFile).toContain('"access_token": "imported-access-token"');
-    expect(authFile).toContain('"refresh_token": "imported-refresh-token"');
+    await expect(readFile(join(accountCodexHome('openai-oauth'), 'auth.json'), 'utf8')).rejects.toThrow();
     const profileFile = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'provider-profile.json'), 'utf8');
     expect(profileFile).not.toContain('imported-id-token');
     expect(profileFile).not.toContain('imported-access-token');
@@ -374,7 +399,7 @@ describe('cc-connect provider profile sync', () => {
   });
 
   it('reports managed and user Codex OAuth status without exposing token values', async () => {
-    const managedHome = join(tempDir, 'runtimes', 'cc-connect', 'codex-home');
+    const managedHome = accountCodexHome('openai-oauth');
     await mkdir(managedHome, { recursive: true });
     await writeFile(join(managedHome, 'auth.json'), JSON.stringify({
       auth_mode: 'chatgpt',
@@ -489,14 +514,14 @@ describe('cc-connect provider profile sync', () => {
       complete: true,
       accountId: 'acct_123',
     });
-    const managedAuth = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'codex-home', 'auth.json'), 'utf8');
+    const managedAuth = await readFile(join(accountCodexHome('openai-oauth'), 'auth.json'), 'utf8');
     expect(managedAuth).toContain('local-id-token');
     expect(JSON.stringify(status)).not.toContain('local-id-token');
     expect(JSON.stringify(status)).not.toContain('local-access-token');
   });
 
   it('logs out Codex OAuth by clearing the managed auth file and provider OAuth secret', async () => {
-    const managedHome = join(tempDir, 'runtimes', 'cc-connect', 'codex-home');
+    const managedHome = accountCodexHome('openai-oauth');
     await mkdir(managedHome, { recursive: true });
     await writeFile(join(managedHome, 'auth.json'), JSON.stringify({
       auth_mode: 'chatgpt',
@@ -594,14 +619,15 @@ describe('cc-connect provider profile sync', () => {
       model: 'gpt-custom',
       supported: true,
       env: {
-        CLAWX_CODEX_CUSTOM_API_KEY: 'custom-secret-value',
-        CLAWX_CODEX_HEADER_X_ROUTE: 'route-secret',
-        CLAWX_CODEX_HEADER_X_TRACE_ID: 'trace-visible-but-secret',
+        CLAWX_CODEX_CUSTOM_RESPONSES_API_KEY: 'custom-secret-value',
+        CLAWX_CODEX_CUSTOM_RESPONSES_HEADER_X_ROUTE: 'route-secret',
+        CLAWX_CODEX_CUSTOM_RESPONSES_HEADER_X_TRACE_ID: 'trace-visible-but-secret',
+        CODEX_HOME: accountCodexHome('custom-responses'),
       },
-      codexHomeDir: join(tempDir, 'runtimes', 'cc-connect', 'codex-home'),
+      codexHomeDir: accountCodexHome('custom-responses'),
       ccConnectProvider: {
         name: 'clawx-custom',
-        apiKeyEnvKey: 'CLAWX_CODEX_CUSTOM_API_KEY',
+        apiKeyEnvKey: 'CLAWX_CODEX_CUSTOM_RESPONSES_API_KEY',
         baseUrl: 'https://gateway.example/openai',
         model: 'gpt-custom',
         wireApi: 'responses',
@@ -616,24 +642,24 @@ describe('cc-connect provider profile sync', () => {
       '-c',
       'model_providers.clawx-custom.base_url="https://gateway.example/openai"',
       '-c',
-      'model_providers.clawx-custom.env_key="CLAWX_CODEX_CUSTOM_API_KEY"',
+      'model_providers.clawx-custom.env_key="CLAWX_CODEX_CUSTOM_RESPONSES_API_KEY"',
       '-c',
       'model_providers.clawx-custom.wire_api="responses"',
       '-c',
-      'model_providers.clawx-custom.env_http_headers={ "X-Route" = "CLAWX_CODEX_HEADER_X_ROUTE", "X-Trace-Id" = "CLAWX_CODEX_HEADER_X_TRACE_ID" }',
+      'model_providers.clawx-custom.env_http_headers={ "X-Route" = "CLAWX_CODEX_CUSTOM_RESPONSES_HEADER_X_ROUTE", "X-Trace-Id" = "CLAWX_CODEX_CUSTOM_RESPONSES_HEADER_X_TRACE_ID" }',
       '--model',
       'gpt-custom',
     ]);
     const profileFile = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'provider-profile.json'), 'utf8');
-    expect(profileFile).toContain('CLAWX_CODEX_CUSTOM_API_KEY');
-    expect(profileFile).toContain('CLAWX_CODEX_HEADER_X_ROUTE');
+    expect(profileFile).toContain('CLAWX_CODEX_CUSTOM_RESPONSES_API_KEY');
+    expect(profileFile).toContain('CLAWX_CODEX_CUSTOM_RESPONSES_HEADER_X_ROUTE');
     expect(profileFile).not.toContain('custom-secret-value');
     expect(profileFile).not.toContain('route-secret');
     expect(profileFile).not.toContain('trace-visible-but-secret');
-    const codexConfig = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'codex-home', 'config.toml'), 'utf8');
+    const codexConfig = await readFile(join(accountCodexHome('custom-responses'), 'config.toml'), 'utf8');
     expect(codexConfig).toContain('model_provider = "clawx-custom"');
     expect(codexConfig).toContain('base_url = "https://gateway.example/openai"');
-    expect(codexConfig).toContain('env_http_headers = { "X-Route" = "CLAWX_CODEX_HEADER_X_ROUTE", "X-Trace-Id" = "CLAWX_CODEX_HEADER_X_TRACE_ID" }');
+    expect(codexConfig).toContain('env_http_headers = { "X-Route" = "CLAWX_CODEX_CUSTOM_RESPONSES_HEADER_X_ROUTE", "X-Trace-Id" = "CLAWX_CODEX_CUSTOM_RESPONSES_HEADER_X_TRACE_ID" }');
     expect(codexConfig).not.toContain('custom-secret-value');
     expect(codexConfig).not.toContain('route-secret');
     expect(codexConfig).not.toContain('trace-visible-but-secret');
@@ -673,15 +699,15 @@ describe('cc-connect provider profile sync', () => {
       supported: true,
       model: 'gpt-5.5-2026-04-24',
       env: {
-        BYTEDANCE_OPENAI_API_KEY: 'bd-secret-value',
+        [bdApiKeyEnv]: 'bd-secret-value',
         [bdExtraHeaderEnv]: '{"session_id":"custom-sticky-session"}',
         [bdStickySessionEnv]: 'custom-sticky-session',
-        CLAWX_CODEX_HEADER_X_TT_ENV: 'boe-secret',
-        CODEX_HOME: join(tempDir, 'runtimes', 'cc-connect', 'codex-home'),
+        [bdTtEnvHeader]: 'boe-secret',
+        CODEX_HOME: accountCodexHome('bd-responses'),
       },
       ccConnectProvider: {
         name: bdProviderKey,
-        apiKeyEnvKey: 'BYTEDANCE_OPENAI_API_KEY',
+        apiKeyEnvKey: bdApiKeyEnv,
         baseUrl: bdBaseUrl,
         model: 'gpt-5.5-2026-04-24',
         wireApi: 'responses',
@@ -690,22 +716,22 @@ describe('cc-connect provider profile sync', () => {
     expect(profile.codexArgs).toContain(`model_provider="${bdProviderKey}"`);
     expect(profile.codexArgs).toContain(`model_providers.${bdProviderKey}.base_url="${bdBaseUrl}"`);
     expect(profile.codexArgs).toContain('model_reasoning_effort="none"');
-    expect(profile.codexArgs).toContain(`model_providers.${bdProviderKey}.env_http_headers={ "X-TT-Env" = "CLAWX_CODEX_HEADER_X_TT_ENV", "Api-Key" = "BYTEDANCE_OPENAI_API_KEY", "extra" = "${bdExtraHeaderEnv}" }`);
+    expect(profile.codexArgs).toContain(`model_providers.${bdProviderKey}.env_http_headers={ "X-TT-Env" = "${bdTtEnvHeader}", "Api-Key" = "${bdApiKeyEnv}", "extra" = "${bdExtraHeaderEnv}" }`);
 
-    const codexConfig = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'codex-home', 'config.toml'), 'utf8');
+    const codexConfig = await readFile(join(accountCodexHome('bd-responses'), 'config.toml'), 'utf8');
     expect(codexConfig).toContain(`model_provider = "${bdProviderKey}"`);
     expect(codexConfig).toContain('model_reasoning_effort = "none"');
     expect(codexConfig).toContain(`base_url = "${bdBaseUrl}"`);
-    expect(codexConfig).toContain(`env_http_headers = { "X-TT-Env" = "CLAWX_CODEX_HEADER_X_TT_ENV", "Api-Key" = "BYTEDANCE_OPENAI_API_KEY", "extra" = "${bdExtraHeaderEnv}" }`);
+    expect(codexConfig).toContain(`env_http_headers = { "X-TT-Env" = "${bdTtEnvHeader}", "Api-Key" = "${bdApiKeyEnv}", "extra" = "${bdExtraHeaderEnv}" }`);
     expect(codexConfig).not.toContain('bd-secret-value');
     expect(codexConfig).not.toContain('custom-sticky-session');
     expect(codexConfig).not.toContain('boe-secret');
 
     const profileFile = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'provider-profile.json'), 'utf8');
-    expect(profileFile).toContain('BYTEDANCE_OPENAI_API_KEY');
+    expect(profileFile).toContain(bdApiKeyEnv);
     expect(profileFile).toContain(bdExtraHeaderEnv);
     expect(profileFile).toContain(bdStickySessionEnv);
-    expect(profileFile).toContain('CLAWX_CODEX_HEADER_X_TT_ENV');
+    expect(profileFile).toContain(bdTtEnvHeader);
     expect(profileFile).not.toContain('bd-secret-value');
     expect(profileFile).not.toContain('custom-sticky-session');
     expect(profileFile).not.toContain('boe-secret');

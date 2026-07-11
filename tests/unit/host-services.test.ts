@@ -33,6 +33,9 @@ const {
   removeAgentWorkspaceDirectoryMock,
   resetSettingsMock,
   saveChannelConfigMock,
+  deleteCcConnectAgentBindingMock,
+  setCcConnectAgentProviderBindingMock,
+  setCcConnectAgentPermissionModeMock,
   setSettingMock,
   syncDefaultProviderToRuntimeMock,
   syncDeletedProviderToRuntimeMock,
@@ -103,7 +106,10 @@ const {
   logoutCodexOAuthMock: vi.fn(),
   removeAgentWorkspaceDirectoryMock: vi.fn(),
   resetSettingsMock: vi.fn(),
-  saveChannelConfigMock: vi.fn(),
+    saveChannelConfigMock: vi.fn(),
+    deleteCcConnectAgentBindingMock: vi.fn(),
+    setCcConnectAgentProviderBindingMock: vi.fn(),
+    setCcConnectAgentPermissionModeMock: vi.fn(),
   setSettingMock: vi.fn(),
   syncDefaultProviderToRuntimeMock: vi.fn(),
   syncDeletedProviderToRuntimeMock: vi.fn(),
@@ -243,6 +249,12 @@ vi.mock('@electron/runtime/cc-connect-provider-profile', () => ({
   getCcConnectCodexOAuthStatus: (...args: unknown[]) => codexOAuthStatusMock(...args),
   importUserCodexOAuthToManagedHome: (...args: unknown[]) => importCodexOAuthMock(...args),
   logoutCcConnectCodexOAuth: (...args: unknown[]) => logoutCodexOAuthMock(...args),
+}));
+
+vi.mock('@electron/runtime/cc-connect-agent-bindings', () => ({
+  deleteCcConnectAgentBinding: (...args: unknown[]) => deleteCcConnectAgentBindingMock(...args),
+  setCcConnectAgentProviderBinding: (...args: unknown[]) => setCcConnectAgentProviderBindingMock(...args),
+  setCcConnectAgentPermissionMode: (...args: unknown[]) => setCcConnectAgentPermissionModeMock(...args),
 }));
 
 vi.mock('@electron/utils/browser-oauth', () => ({
@@ -437,6 +449,27 @@ describe('host services', () => {
       manifestPath: join(runtimeDir, 'manifest.json'),
       mirrorMode: 'runtime-mirror',
     });
+  });
+
+  it('refreshes every cc-connect skill mirror after a ClawHub install', async () => {
+    const install = vi.fn().mockResolvedValue(undefined);
+    const rpc = vi.fn().mockResolvedValue({ success: true });
+    const { createSkillsApi } = await import('@electron/services/skills-api');
+    const skillsApi = createSkillsApi({
+      clawHubService: { install } as never,
+      gatewayManager: {} as never,
+      runtimeManager: {
+        getActiveProvider: vi.fn(() => ({ kind: 'cc-connect' })),
+        listCapabilities: vi.fn(() => ({ skills: true })),
+        rpc,
+      } as never,
+    });
+
+    await expect(skillsApi.clawhubInstall({ slug: 'shared-skill', version: '1.2.3' }))
+      .resolves.toEqual({ success: true });
+
+    expect(install).toHaveBeenCalledWith({ slug: 'shared-skill', version: '1.2.3' });
+    expect(rpc).toHaveBeenCalledWith('skills.update', {});
   });
 
   it('runs launch-at-startup side effects after settings.setMany and reset', async () => {
@@ -1142,6 +1175,7 @@ describe('host services', () => {
       .resolves.toEqual({ success: true, ...snapshot });
 
     expect(deleteAgentConfigMock).toHaveBeenCalledWith('code');
+    expect(deleteCcConnectAgentBindingMock).toHaveBeenCalledWith('code');
     expect(gatewayManager.restart).toHaveBeenCalledTimes(1);
     expect(removeAgentWorkspaceDirectoryMock).toHaveBeenCalledWith(removedEntry);
   });
@@ -1175,6 +1209,46 @@ describe('host services', () => {
     expect(providerRuntimeSync.syncAllProviderAuthToRuntime).toHaveBeenCalledTimes(1);
     expect(providerRuntimeSync.syncAgentModelOverrideToRuntime).toHaveBeenCalledWith('main');
     expect(gatewayManager.debouncedReload).toHaveBeenCalledTimes(1);
+  });
+
+  it('updates a cc-connect Agent binding through the active runtime without OpenClaw projection', async () => {
+    const snapshot = {
+      agents: [{ id: 'reviewer', modelRef: 'openai/gpt-reviewer' }],
+      defaultAgentId: 'main',
+      defaultModelRef: null,
+      configuredChannelTypes: [],
+      channelOwners: {},
+      channelAccountOwners: {},
+    };
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state: 'running' })),
+      debouncedReload: vi.fn(),
+    };
+    const refreshConfig = vi.fn().mockResolvedValue(undefined);
+    const runtimeManager = {
+      getActiveProvider: vi.fn(() => ({ kind: 'cc-connect', refreshConfig })),
+    };
+    const { createAgentsApi } = await import('@electron/services/agents-api');
+    const agentConfig = await import('@electron/utils/agent-config');
+    const providerRuntimeSync = await import('@electron/services/providers/provider-runtime-sync');
+    vi.mocked(agentConfig.updateAgentModel).mockResolvedValue(snapshot as never);
+
+    await expect(createAgentsApi({
+      gatewayManager: gatewayManager as never,
+      runtimeManager: runtimeManager as never,
+    }).updateModel({
+      id: 'reviewer',
+      modelRef: 'openai/gpt-reviewer',
+      providerAccountId: 'reviewer-account',
+    })).resolves.toMatchObject({ success: true });
+
+    expect(providerRuntimeSync.syncAllProviderAuthToRuntime).not.toHaveBeenCalled();
+    expect(providerRuntimeSync.syncAgentModelOverrideToRuntime).not.toHaveBeenCalled();
+    expect(refreshConfig).toHaveBeenCalledWith({
+      scope: 'runtime',
+      reason: 'update-agent-model',
+    });
+    expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
   });
 
   it('assigns agent channels and schedules gateway reload', async () => {

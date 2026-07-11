@@ -23,6 +23,14 @@ export interface TaskStep {
   parentId?: string;
   /** Extracted URL for web_fetch tool, used to render a clickable link icon. */
   url?: string;
+  approval?: {
+    runId: string;
+    status?: string;
+    actions: Array<{
+      action: string;
+      label?: string;
+    }>;
+  };
 }
 
 /**
@@ -454,6 +462,13 @@ export function deriveRuntimeTaskSteps(runState: ChatRuntimeRunState | null | un
           kind: 'system',
           detail: runtimeDetail(event.message),
           depth: 1,
+          approval: event.actions?.length
+            ? {
+                runId: event.runId,
+                status: event.status,
+                actions: event.actions,
+              }
+            : undefined,
         });
         break;
       }

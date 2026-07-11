@@ -191,7 +191,8 @@
     "configDir": "配置目录",
     "supported": "支持",
     "unsupported": "不可用",
-    "operationGapsTitle": "当前不可用的 runtime 子操作",
+    "operationGapsTitle": "当前受限或不可用的 runtime 子操作",
+    "degraded": "受限",
     "openclawOnly": "当前 runtime 不支持此 OpenClaw 专属工具。",
     "kinds": {
       "openclaw": "OpenClaw",

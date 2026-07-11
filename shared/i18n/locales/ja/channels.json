@@ -240,6 +240,11 @@
                 "appSecret": {
                     "label": "App Secret",
                     "placeholder": "アプリのシークレット"
+                },
+                "adminUsers": {
+                    "label": "Cron 管理者 ID",
+                    "placeholder": "ou_xxx, ou_yyy",
+                    "description": "Feishu/Lark から cc-connect の Cron ジョブを作成、編集、実行、削除できるユーザー ID をカンマ区切りで指定します。"
                 }
             },
             "instructions": [

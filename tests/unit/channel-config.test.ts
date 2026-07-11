@@ -33,6 +33,11 @@ vi.mock('electron', () => ({
     getVersion: () => '0.0.0-test',
     getAppPath: () => '/tmp',
   },
+  safeStorage: {
+    isEncryptionAvailable: () => true,
+    encryptString: (value: string) => Buffer.from(value, 'utf8'),
+    decryptString: (value: Buffer) => value.toString('utf8'),
+  },
 }));
 
 vi.mock('@electron/utils/logger', () => ({
@@ -101,6 +106,99 @@ describe('channel credential normalization and duplicate checks', () => {
       'Normalizing channel credential value before save',
       expect.objectContaining({ channelType: 'feishu', accountId: 'agent-a', key: 'appId' }),
     );
+  });
+
+  it('stores Feishu cron administrators separately from chat allow-list users', async () => {
+    const { getChannelFormValues, saveChannelConfig } = await import('@electron/utils/channel-config');
+
+    await saveChannelConfig('feishu', {
+      appId: 'cli-admin-test',
+      appSecret: 'secret',
+      adminUsers: 'ou_cron_admin, ou_ops_admin',
+    }, 'ops');
+
+    const config = await readOpenClawJson();
+    const channels = config.channels as Record<string, {
+      accounts: Record<string, { allowFrom?: string[]; adminFrom?: string[]; adminUsers?: string }>;
+    }>;
+    expect(channels.feishu.accounts.ops.allowFrom).toEqual(['*']);
+    expect(channels.feishu.accounts.ops.adminFrom).toEqual(['ou_cron_admin', 'ou_ops_admin']);
+    expect(channels.feishu.accounts.ops.adminUsers).toBeUndefined();
+    expect(channels.feishu.accounts.ops).toMatchObject({ appSecret: 'secret' });
+    const canonical = await readFile(join(testUserData, 'app', 'runtime-config.json'), 'utf8');
+    expect(canonical).toContain('cli-admin-test');
+    expect(canonical).not.toContain('"appSecret"');
+    expect(canonical).not.toContain('secret');
+    await expect(getChannelFormValues('feishu', 'ops')).resolves.toMatchObject({
+      adminUsers: 'ou_cron_admin, ou_ops_admin',
+    });
+  });
+
+  it('preserves an explicit Feishu allow-list without widening it to wildcard access', async () => {
+    const { readOpenClawConfig, saveChannelConfig } = await import('@electron/utils/channel-config');
+
+    await saveChannelConfig('feishu', {
+      appId: 'cli-allow-list',
+      appSecret: 'secret',
+      allowFrom: ['ou_user_a', 'ou_user_b'],
+    }, 'ops');
+
+    const config = await readOpenClawConfig();
+    expect(config.channels?.feishu.accounts?.ops).toMatchObject({
+      dmPolicy: 'allowlist',
+      allowFrom: ['ou_user_a', 'ou_user_b'],
+    });
+  });
+
+  it('keeps cc-connect saves canonical and projects them only when OpenClaw becomes active', async () => {
+    const { setSetting } = await import('@electron/utils/store');
+    const {
+      saveChannelConfig,
+      writeOpenClawCompatibilityProjection,
+    } = await import('@electron/utils/channel-config');
+    await setSetting('runtimeKind', 'cc-connect');
+
+    await saveChannelConfig('feishu', {
+      appId: 'cli-canonical-only',
+      appSecret: 'vault-only-secret',
+    }, 'ops');
+
+    await expect(readFile(join(testHome, '.openclaw', 'openclaw.json'), 'utf8')).rejects.toThrow();
+    const canonical = await readFile(join(testUserData, 'app', 'runtime-config.json'), 'utf8');
+    expect(canonical).toContain('cli-canonical-only');
+    expect(canonical).not.toContain('vault-only-secret');
+
+    await setSetting('runtimeKind', 'openclaw');
+    await writeOpenClawCompatibilityProjection();
+    const projection = await readOpenClawJson();
+    expect(projection).toMatchObject({
+      channels: {
+        feishu: {
+          accounts: {
+            ops: {
+              appId: 'cli-canonical-only',
+              appSecret: 'vault-only-secret',
+            },
+          },
+        },
+      },
+    });
+  });
+
+  it('does not create a ghost default account when deleting the current Feishu default', async () => {
+    const { deleteChannelAccountConfig, readOpenClawConfig, saveChannelConfig } = await import('@electron/utils/channel-config');
+    await saveChannelConfig('feishu', { appId: 'cli-cn', appSecret: 'secret-cn' }, 'cn_bot');
+    await saveChannelConfig('feishu', { appId: 'cli-global', appSecret: 'secret-global' }, 'global_bot');
+
+    await deleteChannelAccountConfig('feishu', 'cn_bot');
+
+    const config = await readOpenClawConfig();
+    const section = config.channels?.feishu;
+    expect(section?.defaultAccount).toBe('global_bot');
+    expect(section?.accounts).toEqual({
+      global_bot: expect.objectContaining({ appId: 'cli-global', appSecret: 'secret-global' }),
+    });
+    expect(section?.accounts?.default).toBeUndefined();
   });
 });
 

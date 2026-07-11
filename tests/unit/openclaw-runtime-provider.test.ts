@@ -1,8 +1,9 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { renameSessionMock } = vi.hoisted(() => ({
+const { renameSessionMock, writeOpenClawCompatibilityProjectionMock } = vi.hoisted(() => ({
   renameSessionMock: vi.fn(),
+  writeOpenClawCompatibilityProjectionMock: vi.fn(async () => undefined),
 }));
 
 vi.mock('@electron/services/sessions-api', () => ({
@@ -12,6 +13,10 @@ vi.mock('@electron/services/sessions-api', () => ({
     rename: renameSessionMock,
     summaries: vi.fn(async () => ({ success: true, summaries: [] })),
   }),
+}));
+
+vi.mock('@electron/utils/channel-config', () => ({
+  writeOpenClawCompatibilityProjection: writeOpenClawCompatibilityProjectionMock,
 }));
 
 function createGatewayManagerMock() {
@@ -63,6 +68,27 @@ describe('OpenClawRuntimeProvider runtime contract adapters', () => {
       label: 'Renamed OpenClaw',
     });
     expect(gatewayManager.rpc).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the canonical OpenClaw projection before start and restart', async () => {
+    const order: string[] = [];
+    writeOpenClawCompatibilityProjectionMock.mockImplementation(async () => {
+      order.push('project');
+    });
+    const gatewayManager = createGatewayManagerMock();
+    gatewayManager.start.mockImplementation(async () => {
+      order.push('start');
+    });
+    gatewayManager.restart.mockImplementation(async () => {
+      order.push('restart');
+    });
+    const { OpenClawRuntimeProvider } = await import('@electron/runtime/openclaw-provider');
+    const provider = new OpenClawRuntimeProvider(gatewayManager as never);
+
+    await provider.start();
+    await provider.restart();
+
+    expect(order).toEqual(['project', 'start', 'project', 'restart']);
   });
 
   it('accepts Host cron.create payloads and adapts them to Gateway cron.add', async () => {

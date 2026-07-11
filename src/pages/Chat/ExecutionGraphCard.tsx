@@ -17,6 +17,7 @@ interface ExecutionGraphCardProps {
    */
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
+  onApprovalAction?: (runId: string, action: string) => Promise<void>;
 }
 
 const TOOL_ROW_EXTRA_INDENT_PX = 8;
@@ -37,9 +38,16 @@ function GraphStatusIcon({ status }: { status: TaskStep['status'] }) {
   return <CircleDashed className="h-4 w-4" />;
 }
 
-function StepDetailCard({ step }: { step: TaskStep }) {
+function StepDetailCard({
+  step,
+  onApprovalAction,
+}: {
+  step: TaskStep;
+  onApprovalAction?: ExecutionGraphCardProps['onApprovalAction'];
+}) {
   const { t } = useTranslation('chat');
   const [expanded, setExpanded] = useState(false);
+  const [submittingAction, setSubmittingAction] = useState<string | null>(null);
   const hasDetail = !!step.detail;
   // Narration steps (intermediate pure-text assistant messages folded from
   // the chat stream) are rendered without a label/status pill: the message
@@ -59,7 +67,18 @@ function StepDetailCard({ step }: { step: TaskStep }) {
   const hideStatusText = (isTool || isSystem) && step.status === 'completed';
   const detailPreview = step.detail?.replace(/\s+/g, ' ').trim();
   const canExpand = hasDetail;
-    const displayLabel = isThinking ? t('executionGraph.thinkingLabel') : (isTool ? displayToolLabel : step.label);
+  const displayLabel = isThinking ? t('executionGraph.thinkingLabel') : (isTool ? displayToolLabel : step.label);
+  const canRespondToApproval = step.approval?.status === 'pending'
+    && step.approval.actions.length > 0
+    && onApprovalAction;
+  const approvalActionLabel = (action: string, label?: string) => {
+    if (label) return label;
+    if (action === 'perm:allow') return t('executionGraph.approval.allow');
+    if (action === 'perm:allow_all') return t('executionGraph.approval.allowAll');
+    if (action === 'perm:deny') return t('executionGraph.approval.deny');
+    if (action.startsWith('askq:')) return action.slice('askq:'.length) || t('executionGraph.approval.answer');
+    return action;
+  };
 
   return (
     <div
@@ -165,6 +184,34 @@ function StepDetailCard({ step }: { step: TaskStep }) {
               </pre>
             </div>
           )}
+      {canRespondToApproval && (
+        <div className="mt-2 flex flex-wrap gap-2" data-testid="chat-approval-actions">
+          {step.approval!.actions.map(({ action, label }) => (
+            <button
+              key={action}
+              type="button"
+              data-testid={`chat-approval-action-${action}`}
+              disabled={submittingAction !== null}
+              className={cn(
+                'min-h-8 rounded-md border px-3 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                action === 'perm:deny'
+                  ? 'border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30'
+                  : 'border-black/10 bg-surface-input text-foreground hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10',
+              )}
+              onClick={async () => {
+                setSubmittingAction(action);
+                try {
+                  await onApprovalAction(step.approval!.runId, action);
+                } finally {
+                  setSubmittingAction(null);
+                }
+              }}
+            >
+              {approvalActionLabel(action, label)}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -176,6 +223,7 @@ export function ExecutionGraphCard({
   suppressThinking = false,
   expanded: controlledExpanded,
   onExpandedChange,
+  onApprovalAction,
 }: ExecutionGraphCardProps) {
   const { t } = useTranslation('chat');
 
@@ -291,7 +339,7 @@ export function ExecutionGraphCard({
                   </div>
                 </div>
               </div>
-              <StepDetailCard step={step} />
+              <StepDetailCard step={step} onApprovalAction={onApprovalAction} />
             </div>
           </div>
         )})}

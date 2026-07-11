@@ -1014,6 +1014,15 @@ export function Chat() {
                                 onExpandedChange={(next) =>
                                   setGraphExpandedOverrides((prev) => ({ ...prev, [runKey]: next }))
                                 }
+                                onApprovalAction={async (runId, action) => {
+                                  try {
+                                    await hostApi.gateway.rpc('chat.approval.respond', { runId, action });
+                                  } catch (error) {
+                                    toast.error(error instanceof Error
+                                      ? error.message
+                                      : t('executionGraph.approval.failed'));
+                                  }
+                                }}
                               />
                               {generatedFiles.length > 0 && (
                                 <GeneratedFilesPanel

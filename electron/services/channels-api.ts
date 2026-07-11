@@ -1198,7 +1198,9 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       const accountId = optionalString(payload, 'accountId');
       await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
       const storedChannelType = resolveStoredChannelType(channelType);
-      await ensureChannelPluginInstalled(storedChannelType);
+      if (ctx.runtimeManager?.getActiveProvider().kind !== 'cc-connect') {
+        await ensureChannelPluginInstalled(storedChannelType);
+      }
       const existingValues = await getChannelFormValues(channelType, accountId);
       if (isSameConfigValues(existingValues, config)) {
         await ensureScopedChannelBinding(channelType, accountId);

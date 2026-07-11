@@ -31,7 +31,7 @@ export type RuntimeCapabilityName =
 
 export type RuntimeCapabilities = Record<RuntimeCapabilityName, boolean>;
 
-export type RuntimeOperationSupport = 'native' | 'proxy' | 'unsupported';
+export type RuntimeOperationSupport = 'native' | 'proxy' | 'degraded' | 'unsupported';
 
 export type RuntimeOperationCapability = {
   capability: RuntimeCapabilityName;

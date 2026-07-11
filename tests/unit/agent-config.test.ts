@@ -28,6 +28,11 @@ vi.mock('electron', () => ({
     getPath: () => testUserData,
     getVersion: () => '0.0.0-test',
   },
+  safeStorage: {
+    isEncryptionAvailable: () => true,
+    encryptString: (value: string) => Buffer.from(value, 'utf8'),
+    decryptString: (value: Buffer) => value.toString('utf8'),
+  },
 }));
 
 async function writeOpenClawJson(config: unknown): Promise<void> {
@@ -567,6 +572,35 @@ describe('agent config lifecycle', () => {
 
     await createAgent('Research');
 
-    await expect(readFile(join(testHome, '.openclaw', 'workspace-research', 'IDENTITY.md'), 'utf8')).resolves.toContain('ClawX');
+    const workspace = join(testUserData, 'workspaces', 'agents', 'research');
+    await expect(readFile(join(workspace, 'IDENTITY.md'), 'utf8')).resolves.toContain('ClawX');
+    const config = await readOpenClawJson();
+    const research = ((config.agents as { list: Array<{ id: string; workspace?: string }> }).list)
+      .find((agent) => agent.id === 'research');
+    expect(research?.workspace).toBe(workspace);
+  });
+
+  it('reuses an existing OpenClaw workspace as the inheritance source without owning it', async () => {
+    const openClawWorkspace = join(testHome, '.openclaw', 'workspace');
+    await mkdir(openClawWorkspace, { recursive: true });
+    await writeFile(join(openClawWorkspace, 'AGENTS.md'), '# Existing OpenClaw instructions', 'utf8');
+    await writeOpenClawJson({
+      agents: {
+        defaults: { workspace: '~/.openclaw/workspace' },
+        list: [{ id: 'main', name: 'Main', default: true }],
+      },
+    });
+
+    const { createAgent } = await import('@electron/utils/agent-config');
+    await createAgent('Research', { inheritWorkspace: true });
+
+    const clawXWorkspace = join(testUserData, 'workspaces', 'agents', 'research');
+    await expect(readFile(join(clawXWorkspace, 'AGENTS.md'), 'utf8')).resolves.toBe(
+      '# Existing OpenClaw instructions',
+    );
+    await expect(readFile(join(openClawWorkspace, 'AGENTS.md'), 'utf8')).resolves.toBe(
+      '# Existing OpenClaw instructions',
+    );
+    expect(clawXWorkspace).not.toContain(process.cwd());
   });
 });

@@ -1,15 +1,37 @@
+import { randomUUID } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 const LOCK_SCHEMA = 'clawx-instance-lock';
-const LOCK_VERSION = 1;
+const LEGACY_LOCK_VERSION = 1;
+const STRUCTURED_LOCK_VERSION = 2;
+
+export interface StructuredLockContent {
+  schema: string;
+  version: number;
+  pid: number;
+  ownerToken?: string;
+  appVersion?: string;
+  channel?: string;
+  executable?: string;
+  startedAt?: string;
+  heartbeatAt?: string;
+}
 
 export interface ProcessInstanceFileLock {
   acquired: boolean;
   lockPath: string;
   ownerPid?: number;
   ownerFormat?: 'legacy' | 'structured' | 'unknown';
+  ownerDetails?: StructuredLockContent;
   release: () => void;
+}
+
+export interface ProcessInstanceLockMetadata {
+  appVersion: string;
+  channel: string;
+  executable: string;
+  startedAt?: string;
 }
 
 export interface ProcessInstanceFileLockOptions {
@@ -17,14 +39,12 @@ export interface ProcessInstanceFileLockOptions {
   lockName: string;
   pid?: number;
   isPidAlive?: (pid: number) => boolean;
-  /**
-   * When true, unconditionally remove any existing lock file before attempting
-   * to acquire.  Use this when an external mechanism (e.g. Electron's
-   * `requestSingleInstanceLock`) already guarantees that no other real instance
-   * is running, so a surviving lock file can only be stale (orphan child
-   * process, PID recycling on Windows, etc.).
-   */
+  /** Legacy escape hatch. New shared-data-root callers must not use it. */
   force?: boolean;
+  lockPath?: string;
+  metadata?: ProcessInstanceLockMetadata;
+  heartbeatIntervalMs?: number;
+  heartbeatExpiryMs?: number;
 }
 
 function defaultPidAlive(pid: number): boolean {
@@ -32,51 +52,35 @@ function defaultPidAlive(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    const errno = (error as NodeJS.ErrnoException).code;
-    return errno !== 'ESRCH';
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
   }
 }
 
 type ParsedLockOwner =
   | { kind: 'legacy'; pid: number }
-  | { kind: 'structured'; pid: number }
+  | { kind: 'structured'; pid: number; details: StructuredLockContent }
   | { kind: 'unknown' };
 
-interface StructuredLockContent {
-  schema: string;
-  version: number;
-  pid: number;
-}
-
 function parsePositivePid(raw: string): number | undefined {
-  if (!/^\d+$/.test(raw)) {
-    return undefined;
-  }
+  if (!/^\d+$/.test(raw)) return undefined;
   const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return undefined;
-  }
-  return parsed;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function parseStructuredLockContent(raw: string): StructuredLockContent | undefined {
   try {
     const parsed = JSON.parse(raw) as Partial<StructuredLockContent>;
     if (
-      parsed?.schema === LOCK_SCHEMA
-      && parsed?.version === LOCK_VERSION
-      && typeof parsed?.pid === 'number'
+      parsed.schema === LOCK_SCHEMA
+      && (parsed.version === LEGACY_LOCK_VERSION || parsed.version === STRUCTURED_LOCK_VERSION)
+      && typeof parsed.pid === 'number'
       && Number.isFinite(parsed.pid)
       && parsed.pid > 0
     ) {
-      return {
-        schema: parsed.schema,
-        version: parsed.version,
-        pid: parsed.pid,
-      };
+      return parsed as StructuredLockContent;
     }
   } catch {
-    // ignore parse errors
+    // Unknown content is never removed automatically.
   }
   return undefined;
 }
@@ -85,19 +89,20 @@ function readLockOwner(lockPath: string): ParsedLockOwner {
   try {
     const raw = readFileSync(lockPath, 'utf8').trim();
     const legacyPid = parsePositivePid(raw);
-    if (legacyPid !== undefined) {
-      return { kind: 'legacy', pid: legacyPid };
-    }
-
+    if (legacyPid !== undefined) return { kind: 'legacy', pid: legacyPid };
     const structured = parseStructuredLockContent(raw);
-    if (structured) {
-      return { kind: 'structured', pid: structured.pid };
-    }
+    if (structured) return { kind: 'structured', pid: structured.pid, details: structured };
   } catch {
-    // ignore read errors
+    // Missing and unreadable lock files have unknown ownership.
   }
-
   return { kind: 'unknown' };
+}
+
+function heartbeatExpired(owner: ParsedLockOwner, expiryMs: number): boolean {
+  if (owner.kind !== 'structured') return true;
+  if (!owner.details.heartbeatAt) return true;
+  const heartbeat = Date.parse(owner.details.heartbeatAt);
+  return !Number.isFinite(heartbeat) || Date.now() - heartbeat > expiryMs;
 }
 
 export function acquireProcessInstanceFileLock(
@@ -105,91 +110,103 @@ export function acquireProcessInstanceFileLock(
 ): ProcessInstanceFileLock {
   const pid = options.pid ?? process.pid;
   const isPidAlive = options.isPidAlive ?? defaultPidAlive;
+  const lockPath = options.lockPath ?? join(options.userDataDir, `${options.lockName}.instance.lock`);
+  const heartbeatExpiryMs = options.heartbeatExpiryMs ?? 30_000;
+  mkdirSync(dirname(lockPath), { recursive: true });
 
-  mkdirSync(options.userDataDir, { recursive: true });
-  const lockPath = join(options.userDataDir, `${options.lockName}.instance.lock`);
-
-  // When force mode is enabled, unconditionally remove any existing lock file
-  // before attempting acquisition.  This is safe because an external mechanism
-  // (Electron's requestSingleInstanceLock) already guarantees exclusivity.
   if (options.force && existsSync(lockPath)) {
-    const staleOwner = readLockOwner(lockPath);
-    try {
-      rmSync(lockPath, { force: true });
-    } catch {
-      // best-effort; fall through to normal acquisition
-    }
-    if (staleOwner.kind !== 'unknown') {
-      console.info(
-        `[ClawX] Force-cleaned stale instance lock (pid=${staleOwner.pid}, format=${staleOwner.kind})`,
-      );
-    }
+    rmSync(lockPath, { force: true });
   }
 
   let ownerPid: number | undefined;
   let ownerFormat: ProcessInstanceFileLock['ownerFormat'] = 'unknown';
+  let ownerDetails: StructuredLockContent | undefined;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const fd = openSync(lockPath, 'wx');
+      const ownerToken = randomUUID();
+      const startedAt = options.metadata?.startedAt ?? new Date().toISOString();
+      const structuredContent: StructuredLockContent | undefined = options.metadata
+        ? {
+            schema: LOCK_SCHEMA,
+            version: STRUCTURED_LOCK_VERSION,
+            pid,
+            ownerToken,
+            appVersion: options.metadata.appVersion,
+            channel: options.metadata.channel,
+            executable: options.metadata.executable,
+            startedAt,
+            heartbeatAt: startedAt,
+          }
+        : undefined;
       try {
-        // Keep writing legacy numeric format for broad backward compatibility.
-        // Parser accepts both legacy numeric and structured JSON formats.
-        writeFileSync(fd, String(pid), 'utf8');
+        writeFileSync(fd, structuredContent ? JSON.stringify(structuredContent) : String(pid), 'utf8');
       } finally {
         closeSync(fd);
       }
 
       let released = false;
+      const heartbeatTimer = structuredContent
+        ? setInterval(() => {
+            const currentOwner = readLockOwner(lockPath);
+            if (currentOwner.kind !== 'structured' || currentOwner.details.ownerToken !== ownerToken) return;
+            structuredContent.heartbeatAt = new Date().toISOString();
+            try {
+              writeFileSync(lockPath, JSON.stringify(structuredContent), { encoding: 'utf8', mode: 0o600 });
+            } catch {
+              // A missed heartbeat never transfers ownership.
+            }
+          }, options.heartbeatIntervalMs ?? 5_000)
+        : undefined;
+      heartbeatTimer?.unref();
+
       return {
         acquired: true,
         lockPath,
         release: () => {
           if (released) return;
           released = true;
+          if (heartbeatTimer) clearInterval(heartbeatTimer);
           try {
             const currentOwner = readLockOwner(lockPath);
+            if (currentOwner.kind === 'unknown' || currentOwner.pid !== pid) return;
             if (
-              (currentOwner.kind === 'legacy' || currentOwner.kind === 'structured')
-              && currentOwner.pid !== pid
-            ) {
-              return;
-            }
-            if (currentOwner.kind === 'unknown') {
-              return;
-            }
+              currentOwner.kind === 'structured'
+              && currentOwner.details.ownerToken
+              && currentOwner.details.ownerToken !== ownerToken
+            ) return;
             rmSync(lockPath, { force: true });
           } catch {
-            // best-effort
+            // Best effort during shutdown.
           }
         },
       };
     } catch (error) {
-      const errno = (error as NodeJS.ErrnoException).code;
-      if (errno !== 'EEXIST') {
-        break;
-      }
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') break;
 
       const owner = readLockOwner(lockPath);
       if (owner.kind === 'legacy' || owner.kind === 'structured') {
         ownerPid = owner.pid;
         ownerFormat = owner.kind;
+        ownerDetails = owner.kind === 'structured' ? owner.details : undefined;
       } else {
         ownerPid = undefined;
         ownerFormat = 'unknown';
+        ownerDetails = undefined;
       }
-      const shouldTreatAsStale =
-        (owner.kind === 'legacy' || owner.kind === 'structured')
-        && !isPidAlive(owner.pid);
-      if (shouldTreatAsStale && existsSync(lockPath)) {
+
+      const stale = (owner.kind === 'legacy' || owner.kind === 'structured')
+        && !isPidAlive(owner.pid)
+        && heartbeatExpired(owner, heartbeatExpiryMs);
+      if (stale && existsSync(lockPath)) {
         try {
           rmSync(lockPath, { force: true });
           continue;
         } catch {
-          // If deletion fails, treat as held lock.
+          // Treat an undeletable stale lock as held.
         }
       }
-
       break;
     }
   }
@@ -199,8 +216,7 @@ export function acquireProcessInstanceFileLock(
     lockPath,
     ownerPid,
     ownerFormat,
-    release: () => {
-      // no-op when lock wasn't acquired
-    },
+    ownerDetails,
+    release: () => {},
   };
 }

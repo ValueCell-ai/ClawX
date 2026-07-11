@@ -6,11 +6,17 @@ import { createConnection, createServer } from 'node:net';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
+import {
+  defaultPackagedAppPath,
+  packagedExecutablePath,
+  packagedResourcesPath,
+} from './packaged-runtime-layout.mjs';
 
 const execFileAsync = promisify(execFile);
-const root = resolve(new URL('..', import.meta.url).pathname);
+const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
 function parseArgs(argv) {
   const result = {};
@@ -24,25 +30,6 @@ function parseArgs(argv) {
     }
   }
   return result;
-}
-
-function defaultAppPath() {
-  if (process.platform !== 'darwin') {
-    throw new Error('Packaged cc-connect smoke currently supports macOS .app bundles only.');
-  }
-  return join(root, 'release', `mac-${process.arch}`, 'ClawX.app');
-}
-
-function packagedExecutablePath(appPath) {
-  if (process.platform === 'darwin') {
-    return join(appPath, 'Contents', 'MacOS', 'ClawX');
-  }
-  throw new Error(`Unsupported packaged smoke platform: ${process.platform}`);
-}
-
-function packagedResourcesPath(appPath) {
-  if (process.platform === 'darwin') return join(appPath, 'Contents', 'Resources');
-  throw new Error(`Unsupported packaged smoke platform: ${process.platform}`);
 }
 
 function binaryName(base) {
@@ -93,7 +80,19 @@ function isPidAlive(pid) {
 }
 
 async function listProcessCommandsContaining(needle) {
-  if (process.platform === 'win32') return [];
+  if (process.platform === 'win32') {
+    const command = [
+      '$needle = $env:CLAWX_SMOKE_PROCESS_NEEDLE;',
+      'Get-CimInstance Win32_Process',
+      '| Where-Object { $_.CommandLine -and $_.CommandLine.Contains($needle) }',
+      '| ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) $($_.CommandLine)" }',
+    ].join(' ');
+    const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
+      env: { ...process.env, CLAWX_SMOKE_PROCESS_NEEDLE: needle },
+      maxBuffer: 2 * 1024 * 1024,
+    });
+    return stdout.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  }
   const { stdout } = await execFileAsync('ps', ['-axo', 'pid=,ppid=,command='], {
     maxBuffer: 2 * 1024 * 1024,
   });
@@ -209,7 +208,7 @@ async function copyLocalCodexAuthToManagedHome(userDataDir) {
   if (!source) {
     throw new Error('Set CLAWX_REAL_CODEX_AUTH_JSON before running packaged real OAuth smoke.');
   }
-  const managedCodexHome = join(userDataDir, 'runtimes', 'cc-connect', 'codex-home');
+  const managedCodexHome = join(userDataDir, 'credentials', 'oauth', 'openai-oauth', 'codex-home');
   await mkdir(managedCodexHome, { recursive: true });
   await copyFile(source, join(managedCodexHome, 'auth.json'));
   return source;
@@ -289,7 +288,7 @@ async function waitForCleanup({ pid, runtimeDir, ports }) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const appPath = resolve(args.app || defaultAppPath());
+  const appPath = resolve(args.app || defaultPackagedAppPath({ rootDir: root }));
   const executablePath = packagedExecutablePath(appPath);
   const resourcesPath = packagedResourcesPath(appPath);
   const ccConnectPath = join(resourcesPath, 'cc-connect', binaryName('cc-connect'));
@@ -405,7 +404,14 @@ async function main() {
     expect(managementPort).toBeGreaterThan(0);
 
     const managedConfig = await readFile(join(runtimeDir, 'config.toml'), 'utf8');
-    expect(managedConfig).toContain(`cmd = "${codexPath.replace(/\\/g, '\\\\')}"`);
+    const managedLauncherPath = join(
+      runtimeDir,
+      'config',
+      'launchers',
+      process.platform === 'win32' ? 'codex-openai-oauth.cmd' : 'codex-openai-oauth',
+    );
+    const expectedCodexCommand = realOAuth ? managedLauncherPath : codexPath;
+    expect(managedConfig).toContain(`cmd = "${expectedCodexCommand.replace(/\\/g, '\\\\')}"`);
     expect(managedConfig).toContain(`work_dir = "${mainWorkspace}"`);
     expect(managedConfig).toContain('name = "clawx-research"');
     expect(managedConfig).toContain(`work_dir = "${researchWorkspace}"`);
@@ -416,7 +422,17 @@ async function main() {
       expect(managedConfig).not.toContain('access_token');
       expect(managedConfig).not.toContain('refresh_token');
       expect(managedConfig).not.toContain('id_token');
-      await access(join(runtimeDir, 'codex-home', 'auth.json'));
+      await access(join(userDataDir, 'credentials', 'oauth', 'openai-oauth', 'codex-home', 'auth.json'));
+      await access(managedLauncherPath, fsConstants.X_OK);
+      const managedLauncher = await readFile(managedLauncherPath, 'utf8');
+      const managedCodexHome = join(userDataDir, 'credentials', 'oauth', 'openai-oauth', 'codex-home');
+      if (process.platform === 'win32') {
+        expect(managedLauncher).toContain(`set "CODEX_HOME=${managedCodexHome}"`);
+        expect(managedLauncher).toContain(`"${codexPath}" %*`);
+      } else {
+        expect(managedLauncher).toContain(`export CODEX_HOME='${managedCodexHome}'`);
+        expect(managedLauncher).toContain(`exec '${codexPath}' "$@"`);
+      }
       const publicProfile = await readFile(join(runtimeDir, 'provider-profile.json'), 'utf8');
       expect(publicProfile).toContain('"authMode": "oauth_browser"');
       expect(publicProfile).toContain('"CODEX_HOME"');
@@ -596,10 +612,42 @@ async function main() {
     await rm(homeDir, { recursive: true, force: true });
   }
   if (smokeError) throw smokeError;
-  console.log(`Packaged cc-connect smoke passed for ${basename(appPath)}.`);
+  const evidencePath = resolve(args.report || join(
+    root,
+    'artifacts',
+    'cc-connect',
+    `packaged-smoke-${process.platform}-${process.arch}.json`,
+  ));
+  const evidence = {
+    schema: 'clawx-packaged-runtime-smoke',
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    target: `${process.platform}-${process.arch}`,
+    application: basename(appPath),
+    ccConnectVersion: ccConnectManifest.version,
+    codexVersion: codexManifest.version,
+    realOAuth,
+    checks: [
+      'runtime-binary-version',
+      ...(process.platform === 'darwin' ? ['code-signature'] : []),
+      'packaged-electron-start',
+      'runtime-start-status',
+      'workspace-projection',
+      'cron-crud',
+      'doctor',
+      'openclaw-rollback',
+      'pid-port-process-cleanup',
+    ],
+    status: 'pass',
+  };
+  await mkdir(dirname(evidencePath), { recursive: true });
+  await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
+  console.log(`Packaged cc-connect smoke passed for ${evidence.target}; evidence: ${evidencePath}`);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

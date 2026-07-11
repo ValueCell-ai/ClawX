@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  parseUsageEntriesFromCcConnectSessionStore,
   parseUsageEntriesFromJsonl,
   parseUsageEntriesFromMessages,
 } from '@electron/utils/token-usage-core';
@@ -249,103 +248,6 @@ describe('parseUsageEntriesFromJsonl', () => {
         totalTokens: 59,
         costUsd: undefined,
       },
-    ]);
-  });
-
-  it('extracts usage from cc-connect owned session stores', () => {
-    const store = JSON.stringify({
-      sessions: {
-        s1: {
-          id: 's1',
-          history: [
-            {
-              id: 'u1',
-              role: 'user',
-              content: 'hello',
-              timestamp: '2026-06-14T01:00:00.000Z',
-            },
-            {
-              id: 'a1',
-              role: 'assistant',
-              content: [{ type: 'text', text: 'tracked by cc-connect' }],
-              timestamp: '2026-06-14T01:00:02.000Z',
-              modelRef: 'gpt-5.1-codex',
-              provider: 'openai',
-              usage: {
-                promptTokens: 101,
-                completionTokens: 37,
-                cacheWriteTokens: 5,
-              },
-            },
-          ],
-        },
-      },
-      active_session: {
-        'clawx:research:desk': 's1',
-      },
-    });
-
-    expect(parseUsageEntriesFromCcConnectSessionStore(store, {
-      sessionId: 'clawx-research',
-      agentId: 'research',
-    })).toEqual([
-      {
-        timestamp: '2026-06-14T01:00:02.000Z',
-        sessionId: 'agent:research:desk',
-        agentId: 'research',
-        model: 'gpt-5.1-codex',
-        provider: 'openai',
-        content: 'tracked by cc-connect',
-        usageStatus: 'available',
-        inputTokens: 101,
-        outputTokens: 37,
-        cacheReadTokens: 0,
-        cacheWriteTokens: 5,
-        totalTokens: 143,
-        costUsd: undefined,
-      },
-    ]);
-  });
-
-  it('sorts cc-connect session store usage before applying limits', () => {
-    const store = JSON.stringify({
-      sessions: {
-        old: {
-          id: 'old',
-          history: [{
-            role: 'assistant',
-            timestamp: '2026-06-14T01:00:00.000Z',
-            model: 'gpt-5.1-codex',
-            usage: { input_tokens: 1, output_tokens: 1 },
-          }],
-        },
-        new: {
-          id: 'new',
-          history: [{
-            role: 'assistant',
-            created_at: '2026-06-14T02:00:00.000Z',
-            model: 'gpt-5.1-codex',
-            usage: { input_tokens: 2, output_tokens: 2 },
-          }],
-        },
-      },
-      active_session: {
-        'clawx:main:old': 'old',
-        'clawx:main:new': 'new',
-      },
-    });
-
-    expect(parseUsageEntriesFromCcConnectSessionStore(store, {
-      sessionId: 'clawx-main',
-      agentId: 'main',
-    }, 1)).toEqual([
-      expect.objectContaining({
-        timestamp: '2026-06-14T02:00:00.000Z',
-        sessionId: 'agent:main:new',
-        inputTokens: 2,
-        outputTokens: 2,
-        totalTokens: 4,
-      }),
     ]);
   });
 

@@ -1,13 +1,14 @@
 import { app } from 'electron';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { getClawXDataLayout, resolveClawXDataRoot } from '../utils/clawx-data-layout';
 
 function binaryName(): string {
   return process.platform === 'win32' ? 'cc-connect.exe' : 'cc-connect';
 }
 
 export function getCcConnectManagedDir(): string {
-  return join(app.getPath('userData'), 'runtimes', 'cc-connect');
+  return getClawXDataLayout(resolveClawXDataRoot(process.env, app.getPath('userData'))).ccConnectRuntimeDir;
 }
 
 export function getCcConnectConfigPath(): string {
@@ -18,8 +19,15 @@ export function getCcConnectCodexHomeDir(): string {
   return join(getCcConnectManagedDir(), 'codex-home');
 }
 
+export function getCcConnectAccountCodexHomeDir(accountId: string): string {
+  const normalized = accountId.trim() || 'default';
+  const safeAccountId = encodeURIComponent(normalized).replace(/%/g, '_');
+  const layout = getClawXDataLayout(resolveClawXDataRoot(process.env, app.getPath('userData')));
+  return join(layout.credentialsDir, 'oauth', safeAccountId, 'codex-home');
+}
+
 export function getCcConnectWorkspacesDir(): string {
-  return join(getCcConnectManagedDir(), 'workspaces');
+  return getClawXDataLayout(resolveClawXDataRoot(process.env, app.getPath('userData'))).agentWorkspacesDir;
 }
 
 export function getCcConnectAgentWorkspaceDir(agentId = 'main'): string {

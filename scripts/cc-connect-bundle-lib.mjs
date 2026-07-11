@@ -1,6 +1,6 @@
 import os from 'node:os';
 
-export const CC_CONNECT_VERSION_FALLBACK = '1.3.2';
+export const CC_CONNECT_VERSION_FALLBACK = '1.4.1';
 
 const PLATFORM_MAP = {
   darwin: 'darwin',

@@ -3,6 +3,7 @@ import { createConnection } from 'node:net';
 import { join } from 'node:path';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
 import { loadDefaultCcConnectLocalRealEnv } from './helpers/local-real-env';
+import type { Page } from '@playwright/test';
 
 loadDefaultCcConnectLocalRealEnv();
 
@@ -118,7 +119,7 @@ async function seedCcConnectOauthRuntimeSettings(userDataDir: string): Promise<v
 async function copyLocalCodexAuthToManagedHome(userDataDir: string): Promise<string> {
   const source = process.env.CLAWX_REAL_CODEX_AUTH_JSON?.trim();
   test.skip(!source, 'Set CLAWX_REAL_CODEX_AUTH_JSON to the auth.json that may be copied into the managed CODEX_HOME.');
-  const managedCodexHome = join(userDataDir, 'runtimes', 'cc-connect', 'codex-home');
+  const managedCodexHome = join(userDataDir, 'credentials', 'oauth', 'openai-oauth', 'codex-home');
   await mkdir(managedCodexHome, { recursive: true });
   await copyFile(source, join(managedCodexHome, 'auth.json'));
   return source ?? '';
@@ -131,6 +132,96 @@ function scheduledMarkerCommand(markerPath: string): string {
     JSON.stringify("require('fs').writeFileSync(process.argv[1], 'CLAWX_SCHEDULED_EXEC_CRON_OK')"),
     JSON.stringify(markerPath),
   ].join(' ');
+}
+
+function nextSafeMinuteCronExpression(now = new Date()): string {
+  const target = new Date(now);
+  target.setMilliseconds(0);
+  target.setSeconds(0);
+  target.setMinutes(target.getMinutes() + (now.getSeconds() >= 45 ? 2 : 1));
+  return `${target.getMinutes()} ${target.getHours()} ${target.getDate()} ${target.getMonth() + 1} *`;
+}
+
+async function findPromptCronHistory(page: Page, marker: string): Promise<{
+  found: boolean;
+  matchingSessionKeys: string[];
+}> {
+  const summaries = await page.evaluate(async () => window.clawx.hostInvoke({
+    id: `runtime-scheduled-prompt-summaries-${Date.now()}`,
+    module: 'sessions',
+    action: 'summaries',
+    payload: {},
+  })) as { ok?: boolean; data?: { sessions?: Array<{ key?: string }> } };
+  const sessionKeys = (summaries.data?.sessions ?? [])
+    .map((session) => session.key)
+    .filter((key): key is string => Boolean(key));
+  const matchingSessionKeys: string[] = [];
+  for (const sessionKey of sessionKeys) {
+    const history = await page.evaluate(async (key) => window.clawx.hostInvoke({
+      id: `runtime-scheduled-prompt-history-${Date.now()}`,
+      module: 'sessions',
+      action: 'history',
+      payload: { sessionKey: key, limit: 200 },
+    }), sessionKey) as {
+      ok?: boolean;
+      data?: { success?: boolean; messages?: Array<{ role?: string; content?: unknown }> };
+    };
+    const messages = history.data?.messages ?? [];
+    const hasPrompt = messages.some((message) => (
+      message.role === 'user' && JSON.stringify(message.content).includes(marker)
+    ));
+    const hasReply = messages.some((message) => (
+      message.role === 'assistant' && JSON.stringify(message.content).includes(marker)
+    ));
+    if (history.ok && history.data?.success && hasPrompt && hasReply) {
+      matchingSessionKeys.push(sessionKey);
+    }
+  }
+  return { found: matchingSessionKeys.length > 0, matchingSessionKeys };
+}
+
+async function collectPromptCronDiagnostics(page: Page, cronId: string) {
+  return await page.evaluate(async (id) => {
+    const [cronList, health, snapshot, sessions] = await Promise.all([
+      window.clawx.hostInvoke({
+        id: `runtime-scheduled-prompt-cron-list-${Date.now()}`,
+        module: 'gateway',
+        action: 'rpc',
+        payload: { method: 'cron.list' },
+      }),
+      window.clawx.hostInvoke({
+        id: `runtime-scheduled-prompt-health-${Date.now()}`,
+        module: 'gateway',
+        action: 'health',
+        payload: { probe: true },
+      }),
+      window.clawx.hostInvoke({
+        id: `runtime-scheduled-prompt-diagnostics-${Date.now()}`,
+        module: 'diagnostics',
+        action: 'gatewaySnapshot',
+      }),
+      window.clawx.hostInvoke({
+        id: `runtime-scheduled-prompt-session-list-${Date.now()}`,
+        module: 'sessions',
+        action: 'summaries',
+        payload: {},
+      }),
+    ]);
+    const jobs = Array.isArray(cronList.data) ? cronList.data : [];
+    const sessionRows = sessions.data && typeof sessions.data === 'object'
+      && Array.isArray((sessions.data as { sessions?: unknown[] }).sessions)
+      ? (sessions.data as { sessions: unknown[] }).sessions
+      : [];
+    const runtime = snapshot.data && typeof snapshot.data === 'object'
+      ? (snapshot.data as { runtime?: { ccConnect?: { logTail?: string } } }).runtime
+      : undefined;
+    return {
+      job: jobs.find((job) => job && typeof job === 'object' && (job as { id?: string }).id === id) ?? null,
+      health,
+      sessionRows,
+      logTail: runtime?.ccConnect?.logTail?.slice(-4_000) ?? '',
+    };
+  }, cronId);
 }
 
 test.describe('cc-connect real scheduled cron delivery smoke', () => {
@@ -257,16 +348,16 @@ test.describe('cc-connect real scheduled cron delivery smoke', () => {
     }
   });
 
-  test('delivers scheduled prompt cron through the ClawX cc-connect bridge fallback', async ({
+  test('delivers scheduled prompt cron through the cc-connect runtime', async ({
     launchElectronApp,
     homeDir,
     userDataDir,
-  }) => {
+  }, testInfo) => {
     test.skip(
       process.env.CLAWX_REAL_SCHEDULED_PROMPT_CRON_E2E !== '1',
       'Set CLAWX_REAL_SCHEDULED_PROMPT_CRON_E2E=1 with an explicit CLAWX_REAL_CODEX_AUTH_JSON to probe scheduled prompt delivery.',
     );
-    test.setTimeout(240_000);
+    test.setTimeout(300_000);
 
     const bundles = await realRuntimeBundles();
     test.skip(!bundles, 'Run pnpm run bundle:cc-connect:current && pnpm run bundle:codex:current first.');
@@ -312,7 +403,8 @@ test.describe('cc-connect real scheduled cron delivery smoke', () => {
       });
       expect(startResult).toMatchObject({ ok: true, data: { success: true } });
 
-      const createResult = await page.evaluate(async () => {
+      const promptCronExpression = nextSafeMinuteCronExpression();
+      const createResult = await page.evaluate(async (cronExpression) => {
         return await window.clawx.hostInvoke({
           id: 'runtime-cron-create-real-scheduled-prompt',
           module: 'cron',
@@ -322,13 +414,13 @@ test.describe('cc-connect real scheduled cron delivery smoke', () => {
             message: 'Reply exactly: CLAWX_SCHEDULED_PROMPT_CRON_OK',
             sessionMode: 'new_per_run',
             timeoutMins: 2,
-            schedule: { kind: 'cron', expr: '*/1 * * * *' },
+            schedule: { kind: 'cron', expr: cronExpression },
             enabled: true,
             delivery: { mode: 'none' },
             agentId: 'main',
           },
         });
-      });
+      }, promptCronExpression);
       expect(createResult).toMatchObject({
         ok: true,
         data: expect.objectContaining({
@@ -341,29 +433,23 @@ test.describe('cc-connect real scheduled cron delivery smoke', () => {
       cronId = (createResult as { data?: { id?: string } }).data?.id ?? '';
       expect(cronId).toBeTruthy();
 
-      await expect.poll(async () => {
-        return await page.evaluate(async () => {
-          return await window.clawx.hostInvoke({
-            id: 'runtime-history-after-real-scheduled-prompt',
-            module: 'sessions',
-            action: 'history',
-            payload: { sessionKey: 'agent:main:main', limit: 20 },
-          });
+      try {
+        await expect.poll(async () => await findPromptCronHistory(page, 'CLAWX_SCHEDULED_PROMPT_CRON_OK'), {
+          timeout: 225_000,
+          intervals: [1_000, 2_000, 5_000, 10_000],
+          message: 'enabled real cc-connect prompt cron should fire into a public runtime session on a scheduler tick',
+        }).toMatchObject({ found: true, matchingSessionKeys: expect.any(Array) });
+      } catch (error) {
+        const diagnostics = await collectPromptCronDiagnostics(page, cronId);
+        await testInfo.attach('scheduled-prompt-diagnostics', {
+          body: Buffer.from(JSON.stringify(diagnostics, null, 2)),
+          contentType: 'application/json',
         });
-      }, {
-        timeout: 150_000,
-        intervals: [1_000, 2_000, 5_000, 10_000],
-        message: 'enabled real cc-connect prompt cron should fire through the ClawX bridge on a real scheduler tick',
-      }).toMatchObject({
-        ok: true,
-        data: {
-          success: true,
-          messages: expect.arrayContaining([
-            expect.objectContaining({ role: 'user', content: 'Reply exactly: CLAWX_SCHEDULED_PROMPT_CRON_OK' }),
-            expect.objectContaining({ role: 'assistant', content: expect.stringContaining('CLAWX_SCHEDULED_PROMPT_CRON_OK') }),
-          ]),
-        },
-      });
+        throw new Error(
+          `Scheduled prompt cron did not produce a public reply. Diagnostics: ${JSON.stringify(diagnostics)}`,
+          { cause: error },
+        );
+      }
     } finally {
       if (cronId) {
         const page = await getStableWindow(app).catch(() => null);

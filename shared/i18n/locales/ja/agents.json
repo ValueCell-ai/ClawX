@@ -44,6 +44,15 @@
         "closeWithoutSaving": "保存せずに閉じる",
         "saveModelOverride": "モデルを保存",
         "useDefaultModel": "デフォルトモデルを使用",
+        "permissionModeLabel": "ツール権限",
+        "permissionModes": {
+            "full-auto": "フルオート",
+            "suggest": "承認を求める"
+        },
+        "permissionModeDescriptions": {
+            "full-auto": "Codex は管理 workspace 内で確認なしにツールを使用できます。",
+            "suggest": "Codex はツール使用前に承認を求め、承認までは読み取り専用サンドボックスで実行します。"
+        },
         "channelsTitle": "Channels",
         "channelsDescription": "この一覧は読み取り専用です。チャンネルアカウントと紐付けは Channels ページで管理してください。",
         "mainAccount": "メインアカウント",
@@ -69,6 +78,7 @@
         "agentModelUpdateFailed": "Agent モデルの更新に失敗しました: {{error}}",
         "agentModelReset": "Agent モデルをデフォルトに戻しました",
         "agentModelResetFailed": "Agent モデルのリセットに失敗しました: {{error}}",
+        "agentRuntimeUpdated": "Agent runtime 設定を更新しました",
         "channelAssigned": "{{channel}} を Agent に割り当てました",
         "channelAssignFailed": "Channel の割り当てに失敗しました: {{error}}",
         "channelRemoved": "{{channel}} を削除しました",

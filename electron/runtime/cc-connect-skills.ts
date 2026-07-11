@@ -9,8 +9,15 @@ function safeSkillDirName(skill: Pick<LocalSkillRecord, 'id' | 'slug' | 'baseDir
   return candidate.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'skill';
 }
 
-export async function syncCcConnectSkillRecords(records: LocalSkillRecord[]): Promise<SkillsStatusResult> {
-  const skillsRoot = join(getCcConnectCodexHomeDir(), 'skills');
+function isCodexNativeSkill(skill: LocalSkillRecord): boolean {
+  return skill.source === 'agents-skills-personal' || skill.source === 'agents-skills-project';
+}
+
+export async function syncCcConnectSkillRecords(
+  records: LocalSkillRecord[],
+  codexHomeDir = getCcConnectCodexHomeDir(),
+): Promise<SkillsStatusResult> {
+  const skillsRoot = join(codexHomeDir, 'skills');
   await mkdir(skillsRoot, { recursive: true });
   const enabled = records.filter((skill) => skill.enabled !== false && skill.baseDir);
   const manifest: Array<Record<string, unknown>> = [];
@@ -19,15 +26,20 @@ export async function syncCcConnectSkillRecords(records: LocalSkillRecord[]): Pr
     const targetDirName = safeSkillDirName(skill);
     const targetDir = join(skillsRoot, targetDirName);
     await rm(targetDir, { recursive: true, force: true });
-    await cp(skill.baseDir!, targetDir, { recursive: true, force: true });
+    const native = isCodexNativeSkill(skill);
+    if (!native) {
+      await cp(skill.baseDir!, targetDir, { recursive: true, force: true });
+    }
+    const runtimeDir = native ? skill.baseDir! : targetDir;
     manifest.push({
       skillKey: skill.id,
       slug: skill.slug,
       name: skill.name,
       description: skill.description,
       source: skill.source,
-      baseDir: targetDir,
-      filePath: join(targetDir, 'SKILL.md'),
+      baseDir: runtimeDir,
+      filePath: join(runtimeDir, 'SKILL.md'),
+      projection: native ? 'codex-native' : 'mirrored',
       version: skill.version,
       bundled: skill.isBundled,
       always: skill.isCore,
@@ -56,6 +68,6 @@ export async function syncCcConnectSkillRecords(records: LocalSkillRecord[]): Pr
   };
 }
 
-export async function syncCcConnectSkills(): Promise<SkillsStatusResult> {
-  return syncCcConnectSkillRecords(await listLocalSkills());
+export async function syncCcConnectSkills(codexHomeDir?: string): Promise<SkillsStatusResult> {
+  return syncCcConnectSkillRecords(await listLocalSkills(), codexHomeDir);
 }

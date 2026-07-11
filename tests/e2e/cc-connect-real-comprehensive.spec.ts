@@ -96,22 +96,10 @@ async function waitForNoRuntimeProcesses(runtimeDir: string): Promise<void> {
 async function copyLocalCodexAuthToManagedHome(userDataDir: string): Promise<string> {
   const source = process.env.CLAWX_REAL_CODEX_AUTH_JSON?.trim();
   test.skip(!source, 'Set CLAWX_REAL_CODEX_AUTH_JSON to the auth.json that may be copied into the managed CODEX_HOME.');
-  const managedCodexHome = join(userDataDir, 'runtimes', 'cc-connect', 'codex-home');
+  const managedCodexHome = join(userDataDir, 'credentials', 'oauth', 'openai-oauth', 'codex-home');
   await mkdir(managedCodexHome, { recursive: true });
   await copyFile(source, join(managedCodexHome, 'auth.json'));
   return source ?? '';
-}
-
-function hasToolEvidence(messages: HistoryPayload['messages']): boolean {
-  return (messages ?? []).some((message) => {
-    if (message.role === 'toolresult' || message.toolCallId || message.toolName) return true;
-    if (!Array.isArray(message.content)) return false;
-    return message.content.some((block) => {
-      if (!block || typeof block !== 'object') return false;
-      const type = (block as { type?: unknown }).type;
-      return type === 'toolCall' || type === 'tool_use' || type === 'tool_result' || type === 'toolResult';
-    });
-  });
 }
 
 function historyContentText(content: unknown): string {
@@ -136,7 +124,7 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
     homeDir,
     userDataDir,
   }) => {
-    test.setTimeout(360_000);
+    test.setTimeout(720_000);
     test.skip(process.env.CLAWX_REAL_OAUTH_E2E !== '1', 'Set CLAWX_REAL_OAUTH_E2E=1 with an explicit CLAWX_REAL_CODEX_AUTH_JSON.');
     const bundles = await realRuntimeBundles();
     test.skip(!bundles, 'Run pnpm run bundle:cc-connect:current && pnpm run bundle:codex:current first.');
@@ -213,6 +201,15 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
     try {
       const page = await getStableWindow(app);
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.evaluate(() => {
+        const testWindow = window as typeof window & {
+          __ccConnectRuntimeEvents?: Array<{ type?: unknown; runId?: unknown }>;
+        };
+        testWindow.__ccConnectRuntimeEvents = [];
+        window.electron.ipcRenderer.on('chat:runtime-event', (payload) => {
+          testWindow.__ccConnectRuntimeEvents!.push(payload as { type?: unknown; runId?: unknown });
+        });
+      });
 
       const startResult = await page.evaluate(async () => {
         return await window.clawx.hostInvoke({
@@ -339,10 +336,10 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
       await expect.poll(async () => {
         return await page.evaluate(async () => {
           return await window.clawx.hostInvoke({
-            id: 'runtime-history-research-chat-real-comprehensive',
-            module: 'sessions',
-            action: 'history',
-            payload: { sessionKey: 'agent:research:main', limit: 20 },
+              id: 'runtime-history-research-chat-real-comprehensive',
+              module: 'sessions',
+              action: 'history',
+              payload: { sessionKey: 'agent:research:main', limit: 20 },
           });
         });
       }, {
@@ -423,7 +420,7 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
 
       const toolSmokeFile = join(researchWorkspace, 'clawx-real-tool-smoke.txt');
       const toolSmokePrompt = [
-        'Create or overwrite a file named clawx-real-tool-smoke.txt in the current workspace.',
+        'Use the apply_patch tool to create or overwrite a file named clawx-real-tool-smoke.txt in the current workspace.',
         'The file content must be exactly: CLAWX_REAL_TOOL_FILE_OK',
         'After writing the file, reply exactly: CLAWX_REAL_TOOL_FILE_DONE',
       ].join(' ');
@@ -446,6 +443,8 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
         ok: true,
         data: expect.objectContaining({ runId: expect.any(String) }),
       });
+      const toolSmokeRunId = (toolSmoke as { data?: { runId?: string } }).data?.runId;
+      expect(toolSmokeRunId).toBeTruthy();
 
       await expect.poll(async () => {
         const [historyResult, fileContent] = await Promise.all([
@@ -461,7 +460,6 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
         ]);
         return {
           fileContent: fileContent.trim(),
-          hasToolEvidence: hasToolEvidence(historyResult.data?.messages),
           hasFinalReply: (historyResult.data?.messages ?? []).some((message) =>
             historyContentText(message.content).includes('CLAWX_REAL_TOOL_FILE_DONE')
           ),
@@ -471,9 +469,20 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
         intervals: [2_000, 5_000, 10_000],
       }).toEqual({
         fileContent: 'CLAWX_REAL_TOOL_FILE_OK',
-        hasToolEvidence: true,
         hasFinalReply: true,
       });
+      await expect.poll(async () => await page.evaluate((runId) => {
+        const testWindow = window as typeof window & {
+          __ccConnectRuntimeEvents?: Array<{ type?: unknown; runId?: unknown }>;
+        };
+        const eventTypes = (testWindow.__ccConnectRuntimeEvents ?? [])
+          .filter((event) => event.runId === runId)
+          .map((event) => event.type);
+        return eventTypes.includes('tool.started') && eventTypes.includes('tool.completed');
+      }, toolSmokeRunId), {
+        timeout: 60_000,
+        message: 'the direct research tool turn should expose run-correlated cc-connect Bridge tool events',
+      }).toBe(true);
 
       await expect.poll(async () => {
         return await page.evaluate(async () => {
@@ -518,10 +527,13 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
           ]),
         },
       });
-      await expect(readFile(join(runtimeDir, 'codex-home', 'skills', 'real-smoke-skill', 'SKILL.md'), 'utf8'))
+      const accountCodexHome = join(userDataDir, 'credentials', 'oauth', 'openai-oauth', 'codex-home');
+      await expect(readFile(join(skillDir, 'SKILL.md'), 'utf8'))
         .resolves.toContain('Real cc-connect smoke skill');
-      await expect(readFile(join(runtimeDir, 'codex-home', 'skills', 'manifest.json'), 'utf8'))
-        .resolves.toContain('real-smoke-skill');
+      const skillManifest = await readFile(join(accountCodexHome, 'skills', 'manifest.json'), 'utf8');
+      expect(skillManifest).toContain('real-smoke-skill');
+      expect(skillManifest).toContain('codex-native');
+      expect(skillManifest).toContain(skillDir);
 
       const cronCreate = await page.evaluate(async () => {
         return await window.clawx.hostInvoke({
@@ -656,7 +668,7 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
             id: 'runtime-history-research-cron-real-comprehensive',
             module: 'sessions',
             action: 'history',
-            payload: { sessionKey: 'agent:research:main', limit: 20 },
+            payload: { sessionKey: 'agent:research:cron:scheduled', limit: 20 },
           });
         });
       }, {

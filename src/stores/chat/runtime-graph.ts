@@ -71,7 +71,8 @@ function sameRuntimeEvent(left: ChatRuntimeEvent | undefined, right: ChatRuntime
       && right.toolCallId === left.toolCallId
       && right.status === left.status
       && right.phase === left.phase
-      && right.message === left.message;
+      && right.message === left.message
+      && stableRuntimeFingerprint(right.actions) === stableRuntimeFingerprint(left.actions);
   }
   if (left.type === 'assistant.delta') {
     return right.type === left.type && right.text === left.text && right.delta === left.delta;

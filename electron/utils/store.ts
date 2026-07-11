@@ -7,6 +7,7 @@ import { randomBytes } from 'crypto';
 import { app } from 'electron';
 import { resolveSupportedLanguage } from '@shared/language';
 import type { RuntimeKind } from '@shared/types/gateway';
+import { getClawXDataLayout, resolveClawXDataRoot } from './clawx-data-layout';
 
 // Lazy-load electron-store (ESM module)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -121,6 +122,7 @@ async function getSettingsStore() {
     const Store = (await import('electron-store')).default;
     settingsStoreInstance = new Store<AppSettings>({
       name: 'settings',
+      cwd: getClawXDataLayout(resolveClawXDataRoot(process.env, app.getPath('userData'))).appDir,
       defaults: createDefaultSettings(),
     });
   }

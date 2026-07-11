@@ -90,4 +90,8 @@ export type ChatRuntimeEvent =
       phase?: string;
       status?: string;
       message?: string;
+      actions?: Array<{
+        action: string;
+        label?: string;
+      }>;
     });

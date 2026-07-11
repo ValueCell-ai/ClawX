@@ -29,7 +29,16 @@ vi.mock('electron', () => ({
     getPath: () => testUserData,
     getVersion: () => '0.0.0-test',
   },
+  safeStorage: {
+    isEncryptionAvailable: () => true,
+    encryptString: (value: string) => Buffer.from(value, 'utf8'),
+    decryptString: (value: Buffer) => value.toString('utf8'),
+  },
 }));
+
+beforeEach(async () => {
+  await rm(testUserData, { recursive: true, force: true });
+});
 
 vi.mock('@electron/utils/store', () => ({
   getSetting: getSettingMock,

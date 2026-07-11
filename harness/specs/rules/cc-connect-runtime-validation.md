@@ -1,6 +1,6 @@
 ---
 id: cc-connect-runtime-validation
-title: cc-connect Runtime Validation
+title: cc-connect Replacement Runtime Validation
 type: ai-coding-rule
 appliesTo:
   - gateway-backend-communication
@@ -9,51 +9,84 @@ requiredProfiles:
   - comms
 requiredTests:
   - pnpm run verify:runtime-bundles
+  - pnpm run verify:packaged-runtime-resources -- --resources=<target-resources> --platform=<target-platform> --arch=<target-arch>
   - pnpm run test:e2e:cc-connect
 ---
 
-cc-connect runtime work must validate both mocked integration behavior and real bundled runtime startup.
+cc-connect runtime changes must preserve one execution boundary: Renderer calls
+Host API, Host API calls `RuntimeManager`, and `CcConnectRuntimeProvider` talks
+to cc-connect Bridge or Management API. Codex is only a cc-connect child.
 
 Rules:
 
-- Unit tests must cover provider profile conversion, capability fallback, bridge adapter behavior, and packaging path resolution.
-- E2E tests must cover chat delivery through cc-connect BridgePlatform with mock binaries.
-- In cc-connect runtime mode, ClawX must not invoke Codex directly for chat/session/history/tool execution. Codex executable path, `CODEX_HOME`, and provider profile materialization are allowed only as cc-connect launch/config inputs.
-- Models token usage in cc-connect mode must be sourced from cc-connect-owned session stores, cc-connect APIs, or ClawX-managed Codex transcripts that are attributable to cc-connect runtime work. Managed Codex `token_count` transcript rows may be used only when either the Codex session id is linked from a cc-connect-owned session store or `session_meta.cwd` matches a configured cc-connect project workspace or the ClawX-managed `runtimes/cc-connect/workspaces/<agent>` tree. User-global `~/.codex` transcripts and managed Codex transcripts without session-store linkage or managed-workspace attribution must be ignored. Usage history entries must carry a runtime discriminator when the source is known, preserve agent named/orphan session ids as stable `agent:<agent>:<storeSessionId>` keys, preserve OpenClaw-compatible multi-segment keys such as `agent:<agent>:cron:<jobId>`, keep channel conversations on their channel keys, and Host API/IPC callers must be able to filter by `runtimeKind` so cc-connect mode cannot silently mix OpenClaw-only data into the runtime view. Session rename in cc-connect mode must be runtime-routed and must update only cc-connect-owned session store or supplemental label state, never OpenClaw `sessions.json`.
-- E2E tests must cover real `build/cc-connect/<platform>-<arch>/cc-connect` and `build/codex/<platform>-<arch>/bin/codex` startup without replacing them with mock binaries.
-- Real bundled-runtime E2E must cover cc-connect Management API reload and project platform status for at least one local channel platform without requiring external credentials, and must cover credential-free Feishu/Lark config projection for domain aliases, agent binding, account-scoped status, and workspace isolation.
-- Unit or E2E coverage must protect same-project multi-account channel status mapping so same-type Feishu/Lark platform status is not collapsed into one account.
-- Cron coverage must protect prompt and exec Management API fields plus explicit external delivery pass-through when channel and target are supplied; the local lifecycle row still must not claim real scheduled delivery or tenant channel delivery parity without live evidence. Real scheduled exec delivery requires the dedicated opt-in scheduled-cron smoke. Real scheduled prompt BridgePlatform delivery requires the dedicated opt-in scheduled-prompt smoke and may be satisfied by the ClawX cc-connect bridge fallback, but live tenant-channel scheduled delivery remains separate evidence.
-- Real OpenAI/Codex OAuth chat, OpenAI API-key chat, Feishu/Lark channel lifecycle, and Feishu/Lark inbound tenant-message checks must be available as explicit opt-in E2E paths gated by their environment variables and must assert managed runtime process cleanup after app shutdown. They must not become default CI gates without a separate release decision.
-- Feishu/Lark inbound tenant-message E2E must provide a stable sanitized marker handoff artifact under `artifacts/cc-connect/` so a human can send the exact marker without reading transient Playwright stdout. The artifact must not include app secrets, OAuth tokens, API keys, or generated auth contents.
-- A credential-free local OpenAI-compatible API-key E2E may run by default as local real-runtime evidence when it uses real Electron, real cc-connect, and bundled Codex against a local Responses-compatible server. It must be reported separately from real external OpenAI API-key evidence and must not satisfy replacement readiness for the opt-in real OpenAI API-key row.
-- If chat abort parity is claimed for cc-connect, credential-free local real-runtime coverage must exercise a delayed OpenAI-compatible Responses stream through real Electron, real cc-connect, and bundled Codex, click the GUI Stop button, verify Host API `chat.abort` suppresses late assistant output, and verify the runtime recovers after restart-based cancellation. This local abort row may satisfy replacement readiness for ClawX's current abstraction surface, but it must still document upstream single-run cancellation as a remaining primitive gap.
-- Real OAuth E2E must not copy tokens from user `~/.codex` unless the test/user explicitly requests that import path with `CLAWX_REAL_CODEX_AUTH_JSON`, must not commit generated auth files, and must assert that public provider profiles do not contain token material. The local verifier must treat explicit Codex auth files as usable only when `tokens.access_token`, `tokens.account_id`, `tokens.id_token`, and `tokens.refresh_token` are non-empty strings and the sanitized expiry summary is not clearly expired.
-- Codex OAuth Host API lifecycle must have a credential-free real Electron E2E for `providers.codexOAuthStatus`, `providers.importCodexOAuth`, and `providers.logoutCodexOAuth` using isolated synthetic auth state. The E2E may use a `CLAWX_E2E`-only auth path override, but production import paths must continue to default to user Codex home. Responses and public provider profiles must not expose OAuth token values.
-- Local real-validation reports must be sanitized: they may record credential precondition presence, value length, auth token key names, loaded env-file names, env variable names, check status, and artifact paths, but must not write API keys, OAuth tokens, app secrets, management tokens, or generated auth files.
-- Any local env file loaded by the real verifier from inside the repository must be gitignored. Explicit `--env-file` inputs outside the repository are allowed, but reports must identify them only as outside-repo summaries without absolute paths.
-- Checked-in local real-validation env templates may list variable names and placeholders only. They must not contain real API keys, OAuth tokens, app secrets, or generated auth file paths.
-- When a local real-validation command is explicitly requested but a local credential or packaged-app precondition is missing, the report must include a sanitized `skipped` command record instead of silently omitting that path.
-- Missing-precondition summaries may list required environment variable names, optional variable names, and next validation commands, but must not include credential values or generated auth file contents.
-- Credential-gated coverage rows must use missing-precondition state to distinguish impossible local validation from merely unrequested validation. When a required local precondition is absent, the corresponding coverage row must be `skipped` with a sanitized reason even if the opt-in child command was not requested; when preconditions are present but the command was not requested, the row must remain `not-run`.
-- Local real-validation reports must include a runtime parity coverage matrix that maps core claims such as Codex OAuth lifecycle local diagnostics, Codex OAuth Host API lifecycle, OAuth chat/session/history/token usage/cron, local OpenAI-compatible API-key chat, local OpenAI-compatible chat abort, real OpenAI API-key provider/model chat, Feishu/Lark channel lifecycle, Feishu/Lark inbound tenant-message delivery, and packaged OAuth startup to concrete evidence commands, skipped reasons, or not-run status.
-- Local real-validation reports must include a `runtime-boundary-bridgeplatform-only` row proving that cc-connect mode chat/session/history/tool execution is routed through `CcConnectRuntimeProvider` plus `CcConnectBridgeAdapter`, that GUI chat reaches cc-connect BridgePlatform over its WebSocket boundary, and that Codex is only configured as the cc-connect project agent command with managed `CODEX_HOME`.
-- Local real-validation reports must include a `session-history-parity-local-diagnostics` row proving cross-agent, named/active, title/rename, delete, and channel metadata session paths operate on cc-connect-owned session stores through Host API/runtime provider routes.
-- Local real-validation reports must include a dedicated `bridge-media-packets-local-diagnostics` row for deterministic BridgePlatform adapter coverage of image/file/audio packets, managed media writes, image preview preservation, and file/audio preview suppression. This row must not satisfy real rich card/button/preview/update/delete packet evidence.
-- Local real-validation reports must include a dedicated `bridge-rich-packets-local-diagnostics` row for deterministic BridgePlatform adapter coverage of card/buttons, preview acknowledgements, update-message deltas, delete-message no-op stability, and typing no-op stability. This row must not satisfy real upstream rich card/button/preview/update/delete packet evidence.
-- Local real-validation reports must include a cc-connect upstream CLI surface probe from the bundled binary, covering command availability for send, cron, sessions, provider, Feishu/Lark setup/bind, config examples, and doctor user-isolation evidence. The probe must record unsupported upstream primitives such as missing documented per-platform channel connect/disconnect instead of letting broad channel capability imply parity.
-- Local real-validation reports must include an explicit replacement-readiness summary derived from the required coverage rows, including missing coverage rows and next commands. A partial report must not be treated as replacement-ready.
-- Local real-validation reports must include a `replacement-readiness` check row even when the hard gate is not requested. In an informational partial report this row must be `PARTIAL`; it may be `FAIL` only when `--require-replacement-ready` is requested.
-- The verifier must support non-destructive hard-gate checks with `--no-write`; this mode must preserve the previous JSON/Markdown report artifacts while still returning the same replacement-readiness exit status and printing only sanitized missing-precondition ids, required variable names, coverage ids, and next commands.
-- Local real-validation reports must include a `replacementContract` checklist that separately audits the current cc-connect replacement decisions: Developer Mode gating, Doctor Fix non-parity, BridgePlatform-only runtime ownership with no direct ClawX-to-Codex chat path, OAuth/API-key verification, provider/model matrix limits, Feishu/Lark lifecycle plus inbound marker delivery, cron main path versus scheduled prompt/channel delivery, session/history parity, token usage runtime ownership, opt-in real validation, and current-platform versus all-platform packaging smoke. The checklist must preserve partial statuses for external-credential or release-platform evidence gaps instead of collapsing local projection, lifecycle reload, or local OpenAI-compatible smokes into full OpenClaw parity.
-- Local real-validation reports must include sanitized `nextActions` entries that merge missing credential preconditions, non-PASS replacement-readiness coverage rows, and upstream cc-connect primitive gaps into concrete follow-up commands or actions without writing secret values.
-- The external gate handoff artifacts generated from the latest local real-validation report must remain sanitized. They may list follow-up commands, required environment variable names, optional environment variable names, skipped coverage status, missing precondition ids, and the sanitized Feishu/Lark inbound marker artifact path, but they must not include API-key values, OAuth token values, app secret values, generated auth file contents, or tenant-private message contents. The Markdown handoff is for humans; the JSON handoff must be machine-readable without parsing Markdown.
-- When the verifier is run with `--write-handoff`, it must generate the external gate handoff artifacts from the same in-memory sanitized report that is written to JSON and Markdown, so a just-run validation cannot leave stale handoffs. `--no-write` must suppress both report and handoff artifact writes.
-- Local real-validation helpers must not load repo-local credential env files unless those files are both untracked and gitignored. Unsafe repo-local env files must be reported as failed preconditions without exposing variable names or passing values to child validation commands.
-- Direct real E2E env helpers must follow the same repo-local env-file safety rule. Unsafe repo-local env files must be skipped without parsing variable names or values and without throwing absolute-path errors during test module import; missing credentials should then produce normal E2E skips.
-- The verifier must expose a hard replacement-readiness gate. When requested, any skipped, failed, missing, or not-run required coverage row must fail the command even if the report was otherwise written successfully.
-- The verifier must expose a focused external-gates path for real OpenAI API-key chat, real Feishu/Lark lifecycle, and real Feishu/Lark inbound tenant-message delivery. This path may skip the safe local baseline commands, but it must keep the same sanitized precondition reporting and hard required-coverage failure semantics. A non-destructive check variant must use `--no-write`; the report-writing variant must emit the Markdown and JSON external gate handoff outputs.
-- Release-candidate local real validation must be able to require selected coverage rows to be `PASS`; missing, skipped, failed, or not-run required coverage must fail the verifier instead of producing only a partial report.
-- Runtime bundle verification must run after bundling cc-connect/Codex and before claiming local dev or packaged runtime validation.
-- Runtime capability claims must distinguish top-level availability from unsupported sub-operations. A cc-connect capability group must not be treated as full OpenClaw parity while RPCs or upstream primitives such as OpenClaw Doctor Fix, documented per-platform channel connect/disconnect endpoints, exec cron manual run, or single-run chat cancellation remain unsupported.
-- Architecture docs or task specs must record any real-runtime gaps still covered only by mocks or opt-in credentials, especially live tenant-channel scheduled cron delivery, real upstream rich card/button/preview/update/delete packet delivery beyond generated-file cards and adapter-level media/rich packet fixtures, process cleanup, packaged app resources, and live browser Codex OAuth relogin or expired-token recovery. Feishu/Lark inbound tenant-message delivery must not remain a passive documentation-only gap when replacement readiness is claimed; it needs the dedicated opt-in inbound marker coverage row.
+- ClawX must not spawn Codex or invoke Codex session/chat commands in
+  cc-connect mode.
+- Production chat events, tools, approvals, cancellation, session history, and
+  usage must come from cc-connect public APIs/events. Codex transcripts may be
+  test oracles but not production transports.
+- Approval responses must use cc-connect's public Bridge `card_action` packet,
+  validate against actions offered for the pending run, and remain unavailable
+  after that run resolves or aborts.
+- Chat cancellation must use cc-connect's public session-scoped `/stop` command
+  over Bridge. The normal path must close the selected Codex child without
+  restarting cc-connect; a whole-runtime restart is allowed only when Bridge is
+  disconnected and the stop command cannot be delivered.
+- Agent permission mode must be stored in ClawX-owned runtime metadata, default
+  to `full-auto`, expose only `full-auto` and `suggest`, and project `suggest`
+  into the matching cc-connect project without mutating OpenClaw config.
+- Managed Codex projects must select cc-connect's `app_server` backend over
+  `stdio://`; the default `exec` backend is not sufficient evidence for Codex
+  0.137 custom tool lifecycle parity.
+- ClawX must not write cc-connect private session JSON. Unsupported official
+  mutations remain unsupported or use ClawX logical display metadata.
+- cc-connect mode must not mutate OpenClaw config. Existing OpenClaw workspaces
+  may be referenced as external Agent workspaces.
+- New ClawX state belongs under `~/.clawx` through the shared data-layout API.
+  Runtime code must not derive durable paths from `process.cwd()` or scattered
+  `app.getPath('userData')` calls.
+- Provider bindings are account-specific. OAuth accounts use independent
+  complete `CODEX_HOME` directories; API keys and OAuth recovery material are
+  encrypted and never returned to Renderer.
+- GUI and Channel Cron operate one cc-connect native scheduler. ClawX must not
+  emulate `at`, `every`, or scheduled prompts in a second scheduler.
+- Tool events must include stable run, turn, event, sequence, session, Agent,
+  and project identity. Reconnect/replay must not duplicate cards.
+- Cached input is part of input and reasoning is part of output. Usage totals
+  must not add either category twice.
+- When public cc-connect history exposes a turn without counters, Host API must
+  return an explicit `missing` usage record for that turn; it must not estimate
+  counts from cc-connect private state or Codex transcripts.
+- Feishu/Lark parity requires a real inbound marker and real outbound reply
+  through cc-connect, not only config projection or connected status.
+- Every user-visible change must include Electron E2E and all locale files.
+- Mock, local-real, external-credential, and packaged evidence are separate
+  rows. One tier must not be used to claim another.
+- Packaging must verify both the downloaded bundle and the copied Electron
+  resources. `afterPack` enforces exact manifest/SHA/permission checks before
+  signing. Final Windows/Linux resources keep exact SHA equality; signed macOS
+  resources must match the source bundle's Mach-O section payloads and pass
+  strict code-signature verification.
+- Evidence reports and screenshots must be sanitized. API keys, OAuth tokens,
+  app secrets, management/bridge tokens, and Authorization headers must never
+  be written to artifacts or git.
+- Replacement readiness stays PARTIAL while any required real-runtime row is
+  skipped, not run, failed, or only indirectly covered.
+
+Minimum required scenarios:
+
+1. OpenClaw remains the default and rollback path.
+2. cc-connect starts from packaged resources with no runtime download.
+3. Real API-key and OAuth GUI chat pass through Bridge; a real OAuth native tool
+   turn shows the execution graph from cc-connect progress-card events.
+4. Two Agents with different accounts and workspaces do not cross-contaminate.
+5. Named, cross-Agent, Channel, restart, rename, and hard-delete sessions use
+   public runtime APIs.
+6. Usage is per-turn, deduplicated, and attributable to runtime, Agent, account,
+   model, and logical session.
+7. Feishu/Lark inbound, response, session, and usage attribution pass.
+8. Channel and GUI native Cron mutations are bidirectionally visible and a
+   scheduled response returns to the Channel.
+9. Doctor, logs, health, crash recovery, port collision, and single-writer lock
+   produce real evidence.
+10. macOS, Windows, and Linux packaged resources/startup/cleanup are checked
+    before release readiness.

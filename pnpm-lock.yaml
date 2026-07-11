@@ -169,8 +169,8 @@ importers:
         specifier: ^10.4.24
         version: 10.4.27(postcss@8.5.8)
       cc-connect:
-        specifier: 1.3.2
-        version: 1.3.2
+        specifier: 1.4.1
+        version: 1.4.1
       chokidar:
         specifier: ^5.0.0
         version: 5.0.0
@@ -2977,8 +2977,8 @@ packages:
   caniuse-lite@1.0.30001781:
     resolution: {integrity: sha512-RdwNCyMsNBftLjW6w01z8bKEvT6e/5tpPVEgtn22TiLGlstHOVecsX2KHFkD5e/vRnIE4EGzpuIODb3mtswtkw==}
 
-  cc-connect@1.3.2:
-    resolution: {integrity: sha512-IexOVNPS0aIGKyYaRwwFrupk/Lq7BkqvqpwkADbSy69+QE88OkZRxTAs7PFCn7qvYaHAoMx6+pauuHLlEEMKFQ==}
+  cc-connect@1.4.1:
+    resolution: {integrity: sha512-acoRJzBZGo9wSbOv0jykR3vp9VvrJCZ0poJtPyiK+BGjgcUZa0Mq1p3RcrDxmGPBxxneyaXacR3nQId+HFmBMA==}
     hasBin: true
 
   ccount@2.0.1:
@@ -9247,7 +9247,7 @@ snapshots:
 
   caniuse-lite@1.0.30001781: {}
 
-  cc-connect@1.3.2: {}
+  cc-connect@1.4.1: {}
 
   ccount@2.0.1: {}
 

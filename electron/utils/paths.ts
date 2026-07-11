@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { join } from 'path';
 import { homedir } from 'os';
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'fs';
+import { getClawXDataLayout, resolveClawXDataRoot } from './clawx-data-layout';
 
 const require = createRequire(import.meta.url);
 
@@ -65,21 +66,21 @@ export function getOpenClawSkillsDir(): string {
  * Get ClawX config directory
  */
 export function getClawXConfigDir(): string {
-  return join(homedir(), '.clawx');
+  return resolveClawXDataRoot();
 }
 
 /**
  * Get ClawX logs directory
  */
 export function getLogsDir(): string {
-  return join(getElectronApp().getPath('userData'), 'logs');
+  return getClawXDataLayout().logsDir;
 }
 
 /**
  * Get ClawX data directory
  */
 export function getDataDir(): string {
-  return getElectronApp().getPath('userData');
+  return resolveClawXDataRoot();
 }
 
 /**

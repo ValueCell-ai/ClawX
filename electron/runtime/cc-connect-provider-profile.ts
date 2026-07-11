@@ -1,11 +1,15 @@
-import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { access, chmod, cp, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { app } from 'electron';
 import { getProviderAccount, getDefaultProviderAccountId } from '@electron/services/providers/provider-store';
 import { getProviderSecret, getSecretStore } from '@electron/services/secrets/secret-store';
 import { getProviderDefaultModel } from '@electron/utils/provider-registry';
 import type { ProviderAccount, ProviderSecret } from '@electron/shared/providers/types';
-import { getCcConnectCodexHomeDir, getCcConnectProviderProfilePath } from './cc-connect-paths';
+import {
+  getCcConnectAccountCodexHomeDir,
+  getCcConnectCodexHomeDir,
+  getCcConnectProviderProfilePath,
+} from './cc-connect-paths';
 
 export type CodexProviderProfile = {
   providerId: string | null;
@@ -19,6 +23,7 @@ export type CodexProviderProfile = {
   codexArgs: string[];
   env?: Record<string, string>;
   envKeys?: string[];
+  launcherEnv?: Record<string, string>;
   ccConnectProvider?: {
     name: string;
     apiKeyEnvKey?: string;
@@ -40,7 +45,7 @@ type OpenAIOAuthTokenSet = {
 
 type OpenAIOAuthTokenResolution = {
   tokens: OpenAIOAuthTokenSet;
-  source: 'managed' | 'secret' | 'user-codex';
+  source: 'managed' | 'secret';
 };
 
 export type CodexOAuthAuthFileSummary = {
@@ -117,6 +122,7 @@ function normalizeModelHubCodexResponsesBaseUrl(baseUrl: string): string | null 
 }
 
 async function writeManagedCodexResponsesConfig(options: {
+  accountId: string;
   providerKey: string;
   providerName: string;
   baseUrl: string;
@@ -125,7 +131,7 @@ async function writeManagedCodexResponsesConfig(options: {
   envHttpHeaders?: Record<string, string>;
   modelReasoningEffort?: string;
 }): Promise<string> {
-  const codexHomeDir = getCcConnectCodexHomeDir();
+  const codexHomeDir = getCcConnectAccountCodexHomeDir(options.accountId);
   await mkdir(codexHomeDir, { recursive: true });
   const configPath = join(codexHomeDir, 'config.toml');
   const tableKey = /^[A-Za-z_][A-Za-z0-9_-]*$/.test(options.providerKey)
@@ -165,6 +171,10 @@ function sanitizedEnvKeyPart(value: string): string {
   return sanitized || 'HEADER';
 }
 
+function accountScopedEnvKey(accountId: string, purpose: string): string {
+  return `CLAWX_CODEX_${sanitizedEnvKeyPart(accountId)}_${sanitizedEnvKeyPart(purpose)}`;
+}
+
 function buildCustomHeaderEnv(account: ProviderAccount, options?: { exclude?: Set<string> }): {
   env: Record<string, string>;
   envHttpHeaders: Record<string, string>;
@@ -177,7 +187,7 @@ function buildCustomHeaderEnv(account: ProviderAccount, options?: { exclude?: Se
   const envHttpHeaders: Record<string, string> = {};
   const used = new Set<string>();
   for (const [name, value] of entries) {
-    const baseKey = `CLAWX_CODEX_HEADER_${sanitizedEnvKeyPart(name)}`;
+    const baseKey = accountScopedEnvKey(account.id, `HEADER_${name}`);
     let envKey = baseKey;
     let index = 2;
     while (used.has(envKey)) {
@@ -206,9 +216,9 @@ function buildModelHubEnv(account: ProviderAccount, apiKey: string): {
   env: Record<string, string>;
   envHttpHeaders: Record<string, string>;
 } {
-  const apiKeyEnvKey = 'BYTEDANCE_OPENAI_API_KEY';
-  const extraHeaderEnvKey = 'CODEX_MODELHUB_EXTRA_HEADER';
-  const stickySessionEnvKey = 'CODEX_MODELHUB_STICKY_SESSION_ID';
+  const apiKeyEnvKey = accountScopedEnvKey(account.id, 'API_KEY');
+  const extraHeaderEnvKey = accountScopedEnvKey(account.id, 'EXTRA_HEADER');
+  const stickySessionEnvKey = accountScopedEnvKey(account.id, 'STICKY_SESSION_ID');
   const customHeaders = buildCustomHeaderEnv(account, { exclude: new Set(['api-key', 'extra']) });
   const existingExtraHeader = account.headers?.extra?.trim();
   const sessionId = existingExtraHeader
@@ -238,10 +248,37 @@ function getUserCodexAuthPath(): string {
   return join(app.getPath('home'), '.codex', 'auth.json');
 }
 
+async function ensureAccountCodexHome(accountId: string): Promise<string> {
+  const accountHome = getCcConnectAccountCodexHomeDir(accountId);
+  await mkdir(accountHome, { recursive: true });
+  return accountHome;
+}
+
+async function migrateLegacyCodexHomeToAccount(accountId: string): Promise<void> {
+  const accountHome = getCcConnectAccountCodexHomeDir(accountId);
+  const legacyHome = getCcConnectCodexHomeDir();
+  const accountExists = await access(accountHome).then(() => true).catch(() => false);
+  if (accountExists) return;
+  const legacyExists = await access(legacyHome).then(() => true).catch(() => false);
+  if (!legacyExists) return;
+  await mkdir(dirname(accountHome), { recursive: true });
+  try {
+    await rename(legacyHome, accountHome);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EXDEV') {
+      await cp(legacyHome, accountHome, { recursive: true, force: false, errorOnExist: false });
+      await rm(legacyHome, { recursive: true, force: true });
+      return;
+    }
+    throw error;
+  }
+}
+
 async function writeManagedOpenAIOAuthAuthFile(
   tokens: OpenAIOAuthTokenSet,
+  accountId: string,
 ): Promise<string> {
-  const codexHomeDir = getCcConnectCodexHomeDir();
+  const codexHomeDir = getCcConnectAccountCodexHomeDir(accountId);
   await mkdir(codexHomeDir, { recursive: true });
   const authPath = join(codexHomeDir, 'auth.json');
 
@@ -372,7 +409,7 @@ async function resolveOpenAIOAuthTokens(
   account: ProviderAccount,
   secret?: Extract<ProviderSecret, { type: 'oauth' }>,
 ): Promise<OpenAIOAuthTokenResolution | undefined> {
-  const managedAuthPath = join(getCcConnectCodexHomeDir(), 'auth.json');
+  const managedAuthPath = join(await ensureAccountCodexHome(account.id), 'auth.json');
   const managedTokens = await readCompleteCodexAuthTokens(managedAuthPath);
   if (managedTokens && codexTokensMatchAccount(managedTokens, account, secret)) {
     return { tokens: managedTokens, source: 'managed' };
@@ -393,25 +430,20 @@ async function resolveOpenAIOAuthTokens(
     };
   }
 
-  const authPath = getUserCodexAuthPath();
-  const userCodexTokens = await readCompleteCodexAuthTokens(authPath);
-  if (userCodexTokens && codexTokensMatchAccount(userCodexTokens, account, secret)) {
-    return { tokens: userCodexTokens, source: 'user-codex' };
-  }
-
   return undefined;
 }
 
 export async function getCcConnectCodexOAuthStatus(payload?: {
   accountId?: string;
 }): Promise<CodexOAuthStatus> {
-  const managedCodexHome = getCcConnectCodexHomeDir();
+  const { account, secret } = await resolveProviderAccount(payload?.accountId);
+  const resolvedAccountId = account?.id ?? payload?.accountId?.trim() ?? 'default';
+  const managedCodexHome = await ensureAccountCodexHome(resolvedAccountId);
   const authPath = join(managedCodexHome, 'auth.json');
   const userAuthPath = getUserCodexAuthPath();
-  const [managed, user, { account, secret }] = await Promise.all([
+  const [managed, user] = await Promise.all([
     readCodexAuthSummary(authPath),
     readCodexAuthSummary(userAuthPath),
-    resolveProviderAccount(payload?.accountId),
   ]);
 
   const managedTokens = account ? await readCompleteCodexAuthTokens(authPath) : undefined;
@@ -450,7 +482,7 @@ export async function importUserCodexOAuthToManagedHome(payload?: {
   if (account && !codexTokensMatchAccount(tokens, account, secret)) {
     throw new Error('Local Codex OAuth credentials do not match the selected provider account');
   }
-  await writeManagedOpenAIOAuthAuthFile(tokens);
+  await writeManagedOpenAIOAuthAuthFile(tokens, account?.id ?? payload?.accountId?.trim() ?? 'default');
   return getCcConnectCodexOAuthStatus({ accountId: account?.id ?? payload?.accountId });
 }
 
@@ -459,11 +491,13 @@ export async function logoutCcConnectCodexOAuth(payload?: {
   managedOnly?: boolean;
 }): Promise<CodexOAuthStatus> {
   const { account } = await resolveProviderAccount(payload?.accountId);
-  await rm(join(getCcConnectCodexHomeDir(), 'auth.json'), { force: true });
+  const accountId = account?.id ?? payload?.accountId?.trim() ?? 'default';
+  const managedHome = await ensureAccountCodexHome(accountId);
+  await rm(join(managedHome, 'auth.json'), { force: true });
   if (!payload?.managedOnly && account?.authMode === 'oauth_browser') {
     await getSecretStore().delete(account.id);
   }
-  return getCcConnectCodexOAuthStatus({ accountId: account?.id ?? payload?.accountId });
+  return getCcConnectCodexOAuthStatus({ accountId });
 }
 
 async function buildProfileForAccount(account: ProviderAccount): Promise<CodexProviderProfile> {
@@ -495,8 +529,8 @@ async function buildProfileForAccount(account: ProviderAccount): Promise<CodexPr
         };
       }
       const codexHomeDir = tokenResolution.source === 'managed'
-        ? getCcConnectCodexHomeDir()
-        : await writeManagedOpenAIOAuthAuthFile(tokenResolution.tokens);
+        ? await ensureAccountCodexHome(account.id)
+        : await writeManagedOpenAIOAuthAuthFile(tokenResolution.tokens, account.id);
       return {
         ...base,
         supported: true,
@@ -508,10 +542,11 @@ async function buildProfileForAccount(account: ProviderAccount): Promise<CodexPr
     }
 
     const env: Record<string, string> = {};
+    const apiKeyEnvKey = accountScopedEnvKey(account.id, 'API_KEY');
     if ((secret?.type === 'api_key' || secret?.type === 'local') && secret.apiKey) {
-      env.OPENAI_API_KEY = secret.apiKey;
+      env[apiKeyEnvKey] = secret.apiKey;
     }
-    if (!env.OPENAI_API_KEY) {
+    if (!env[apiKeyEnvKey]) {
       return {
         ...base,
         supported: false,
@@ -524,10 +559,11 @@ async function buildProfileForAccount(account: ProviderAccount): Promise<CodexPr
       const providerKey = 'clawx-openai';
       const normalizedBaseUrl = normalizeOpenAIResponsesBaseUrl(baseUrl);
       const codexHomeDir = await writeManagedCodexResponsesConfig({
+        accountId: account.id,
         providerKey,
         providerName: 'OpenAI',
         baseUrl: normalizedBaseUrl,
-        envKey: 'OPENAI_API_KEY',
+        envKey: apiKeyEnvKey,
         model,
       });
       return {
@@ -541,7 +577,7 @@ async function buildProfileForAccount(account: ProviderAccount): Promise<CodexPr
           '-c',
           `model_providers.${providerKey}.base_url=${tomlString(normalizedBaseUrl)}`,
           '-c',
-          `model_providers.${providerKey}.env_key="OPENAI_API_KEY"`,
+          `model_providers.${providerKey}.env_key=${tomlString(apiKeyEnvKey)}`,
           '-c',
           `model_providers.${providerKey}.wire_api="responses"`,
           ...(model ? ['--model', model] : []),
@@ -551,23 +587,27 @@ async function buildProfileForAccount(account: ProviderAccount): Promise<CodexPr
           CODEX_HOME: codexHomeDir,
         },
         codexHomeDir,
+        launcherEnv: { OPENAI_API_KEY: apiKeyEnvKey },
         ccConnectProvider: {
           name: providerKey,
-          apiKeyEnvKey: 'OPENAI_API_KEY',
+          apiKeyEnvKey,
           baseUrl: normalizedBaseUrl,
           wireApi: 'responses',
           ...(model ? { model } : {}),
         },
       };
     }
+    const codexHomeDir = await ensureAccountCodexHome(account.id);
     return {
       ...base,
       supported: true,
       codexArgs: model ? ['--model', model] : [],
-      env,
+      env: { ...env, CODEX_HOME: codexHomeDir },
+      codexHomeDir,
+      launcherEnv: { OPENAI_API_KEY: apiKeyEnvKey },
       ccConnectProvider: {
         name: 'openai',
-        ...(env.OPENAI_API_KEY ? { apiKeyEnvKey: 'OPENAI_API_KEY' } : {}),
+        apiKeyEnvKey,
         ...(model ? { model } : {}),
       },
     };
@@ -605,7 +645,7 @@ async function buildProfileForAccount(account: ProviderAccount): Promise<CodexPr
 
     const modelHubBaseUrl = normalizeModelHubCodexResponsesBaseUrl(baseUrl);
     const providerKey = modelHubBaseUrl ? 'modelhub_openapi' : 'clawx-custom';
-    const envKey = modelHubBaseUrl ? 'BYTEDANCE_OPENAI_API_KEY' : 'CLAWX_CODEX_CUSTOM_API_KEY';
+    const envKey = accountScopedEnvKey(account.id, 'API_KEY');
     const normalizedBaseUrl = modelHubBaseUrl ?? normalizeOpenAIResponsesBaseUrl(baseUrl);
     const customHeaders = modelHubBaseUrl
       ? buildModelHubEnv(account, secret.apiKey)
@@ -617,6 +657,7 @@ async function buildProfileForAccount(account: ProviderAccount): Promise<CodexPr
       ? customHeaders.envHttpHeaders
       : undefined;
     const codexHomeDir = await writeManagedCodexResponsesConfig({
+      accountId: account.id,
       providerKey,
       providerName: modelHubBaseUrl ? 'ByteDance ModelHub OpenAPI' : (account.label || 'Custom'),
       baseUrl: normalizedBaseUrl,
@@ -685,11 +726,30 @@ async function buildProfileForAccount(account: ProviderAccount): Promise<CodexPr
   };
 }
 
+export async function buildCcConnectProviderProfileForAccount(
+  accountId: string,
+): Promise<CodexProviderProfile> {
+  const account = await getProviderAccount(accountId);
+  if (account) return buildProfileForAccount(account);
+  return {
+    providerId: accountId,
+    vendorId: null,
+    supported: false,
+    unsupportedReason: `Provider account "${accountId}" was not found`,
+    codexArgs: [],
+    secretAvailable: false,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 export async function syncCcConnectProviderProfile(
   payload?: { providerId?: string; reason?: string },
 ): Promise<CodexProviderProfile> {
   const providerId = payload?.providerId?.trim() || await getDefaultProviderAccountId();
   const account = providerId ? await getProviderAccount(providerId) : null;
+  if (account?.vendorId === 'openai' && account.authMode === 'oauth_browser') {
+    await migrateLegacyCodexHomeToAccount(account.id);
+  }
   const profile: CodexProviderProfile = account
     ? await buildProfileForAccount(account)
     : {

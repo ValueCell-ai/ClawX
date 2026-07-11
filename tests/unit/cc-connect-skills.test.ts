@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -57,6 +57,32 @@ describe('cc-connect skill sync', () => {
       .resolves.toContain('demo/skill');
     expect(result.skills).toEqual([
       expect.objectContaining({ skillKey: 'demo/skill', name: 'Demo Skill', disabled: false }),
+    ]);
+  });
+
+  it('does not duplicate skills that Codex discovers natively from .agents', async () => {
+    const sourceDir = join(tempDir, '.agents', 'skills', 'native-skill');
+    const codexHome = join(tempDir, 'codex-home');
+    await mkdir(sourceDir, { recursive: true });
+    await writeFile(join(sourceDir, 'SKILL.md'), '---\nname: native-skill\n---\nNative skill', 'utf8');
+    await mkdir(join(codexHome, 'skills', 'native-skill'), { recursive: true });
+    await writeFile(join(codexHome, 'skills', 'native-skill', 'SKILL.md'), 'stale duplicate', 'utf8');
+
+    const { syncCcConnectSkillRecords } = await import('@electron/runtime/cc-connect-skills');
+    const result = await syncCcConnectSkillRecords([{
+      id: 'native-skill',
+      name: 'Native Skill',
+      description: 'Native',
+      enabled: true,
+      source: 'agents-skills-personal',
+      baseDir: sourceDir,
+    }], codexHome);
+
+    await expect(access(join(codexHome, 'skills', 'native-skill'))).rejects.toThrow();
+    await expect(readFile(join(codexHome, 'skills', 'manifest.json'), 'utf8'))
+      .resolves.toContain('codex-native');
+    expect(result.skills).toEqual([
+      expect.objectContaining({ skillKey: 'native-skill', baseDir: sourceDir }),
     ]);
   });
 });

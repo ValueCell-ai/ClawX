@@ -365,6 +365,13 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
         required: true,
         envVar: 'FEISHU_APP_SECRET',
       },
+      {
+        key: 'adminUsers',
+        label: 'channels:meta.feishu.fields.adminUsers.label',
+        type: 'text',
+        placeholder: 'channels:meta.feishu.fields.adminUsers.placeholder',
+        description: 'channels:meta.feishu.fields.adminUsers.description',
+      },
     ],
     instructions: [
       'channels:meta.feishu.instructions.0',

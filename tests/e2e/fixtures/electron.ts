@@ -4,6 +4,7 @@ import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 type LaunchElectronOptions = {
   skipSetup?: boolean;
@@ -196,6 +197,7 @@ async function launchClawXElectron(
       LC_ALL: 'en_US.UTF-8',
       LANGUAGE: 'en',
       CLAWX_E2E: '1',
+      CLAWX_E2E_CREDENTIAL_KEY: randomUUID(),
       CLAWX_USER_DATA_DIR: userDataDir,
       ...(options.skipSetup ? { CLAWX_E2E_SKIP_SETUP: '1' } : {}),
       CLAWX_PORT_CLAWX_HOST_API: String(hostApiPort),

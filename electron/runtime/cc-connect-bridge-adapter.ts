@@ -1,12 +1,12 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import WebSocket from 'ws';
 import type { AttachedFileMeta, RawMessage } from '@shared/chat/types';
-import { getCcConnectManagedDir } from './cc-connect-paths';
 import type { RuntimeSendWithMediaPayload } from './types';
 import { getCcConnectMediaDir } from '../utils/runtime-media-paths';
+import * as logger from '../utils/logger';
 
 type BridgeAdapterOptions = {
   port: number;
@@ -14,9 +14,8 @@ type BridgeAdapterOptions = {
   project: string;
   projectForSessionKey?: (sessionKey: string) => string;
   emit: EventEmitter['emit'];
-  sessionStoreDir?: string;
-  codexSessionsDir?: string;
-  supplementalHistoryPath?: string;
+  heartbeatIntervalMs?: number;
+  reconnectDelayMs?: number;
 };
 
 type SessionMetadata = {
@@ -35,22 +34,11 @@ type PendingRun = {
   prompt: string;
   startedAt: number;
   seq: number;
-  codexToolStarts: Set<string>;
-  codexToolCompletions: Set<string>;
-  codexToolNames: Map<string, string>;
 };
 
 type PendingRunResolution = {
   runId: string;
   pending: PendingRun;
-};
-
-type CodexTranscriptToolMessage = {
-  sessionKey: string;
-  runId: string;
-  toolCallId: string;
-  toolMessage?: RawMessage;
-  toolResultMessage?: RawMessage;
 };
 
 type AbortedRun = {
@@ -62,37 +50,51 @@ type BridgeMediaKind = 'image' | 'file' | 'audio';
 
 type BridgeToolEventKind = 'started' | 'updated' | 'completed' | 'command-output' | 'patch-completed';
 
-type PersistedSession = {
-  id: string;
-  name?: string;
-  agentSessionId?: string;
-  projectName: string;
-  agentId: string;
-  history: RawMessage[];
-  createdAt: number;
-  updatedAt: number;
+type BridgeProgressItem = {
+  kind: 'info' | 'thinking' | 'tool_use' | 'tool_result' | 'error';
+  text: string;
+  tool?: string;
+  status?: string;
+  exit_code?: number;
+  success?: boolean;
 };
 
-type PersistedSessionStore = {
-  path: string;
-  projectName: string;
-  agentId: string;
-  sessions: Map<string, PersistedSession>;
-  rawSessions: Map<string, Record<string, unknown>>;
-  activeSession: Map<string, string>;
-  userSessions: Map<string, string[]>;
-  userMeta: Map<string, Record<string, unknown>>;
-  raw: Record<string, unknown>;
+type BridgeProgressState = {
+  runId: string;
+  sessionKey: string;
+  seenByIndex: Map<number, string>;
+  toolCallIdByIndex: Map<number, string>;
+  toolNameByIndex: Map<number, string>;
+  completedToolIndexes: Set<number>;
+  windowBase: number;
+  windowFingerprints: string[];
 };
 
-type SupplementalHistoryStore = {
-  sessions: Record<string, RawMessage[]>;
-  labels: Record<string, string>;
+type BridgeApprovalAction = {
+  action: string;
+  label?: string;
+};
+
+type PendingApproval = {
+  runId: string;
+  sessionKey: string;
+  bridgeSessionKey: string;
+  replyCtx: string;
+  project: string;
+  itemId: string;
+  title: string;
+  kind: 'permission' | 'question';
+  message: string;
+  actions: BridgeApprovalAction[];
 };
 
 const CONNECT_TIMEOUT_MS = 15_000;
+const BRIDGE_HEARTBEAT_INTERVAL_MS = 25_000;
+const BRIDGE_RECONNECT_DELAY_MS = 3_000;
 const CLAWX_PROJECT_PREFIX = 'clawx-';
+export const CLAWX_BRIDGE_ADMIN_USER_ID = 'clawx-desktop';
 const ABORTED_RUN_TTL_MS = 10 * 60_000;
+const PROGRESS_CARD_PAYLOAD_PREFIX = '__cc_connect_progress_card_v1__:';
 const TOOL_START_TYPES = new Set(['tool_start', 'tool.started', 'tool_call', 'tool_call_start', 'tool_use', 'tool_use_start']);
 const TOOL_UPDATE_TYPES = new Set(['tool_update', 'tool.updated', 'tool_call_update', 'tool_use_update']);
 const TOOL_COMPLETE_TYPES = new Set(['tool_result', 'tool.completed', 'tool_finish', 'tool_end', 'tool_call_result', 'tool_use_result']);
@@ -117,14 +119,6 @@ const EDIT_ARG_KEYS = [
   'diff',
   'patch',
 ];
-const CODEX_TRANSCRIPT_LOOKBACK_MS = 60_000;
-const CODEX_TRANSCRIPT_MAX_FILES = 12;
-const CODEX_TRANSCRIPT_MAX_DEPTH = 5;
-const CODEX_TRANSCRIPT_FINISH_SCAN_ATTEMPTS = 5;
-const CODEX_TRANSCRIPT_FINISH_SCAN_DELAY_MS = 350;
-const CODEX_TRANSCRIPT_BACKFILL_DELAYS_MS = [1_000, 3_000, 6_000];
-const CODEX_TOOL_CALL_TYPES = new Set(['function_call', 'custom_tool_call']);
-const CODEX_TOOL_OUTPUT_TYPES = new Set(['function_call_output', 'custom_tool_call_output']);
 
 function messageText(content: unknown): string {
   if (typeof content === 'string') return content;
@@ -187,10 +181,6 @@ function numberFromUnknown(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function extensionForMimeType(mimeType: string, fallback: string): string {
   const normalized = mimeType.toLowerCase();
   if (normalized === 'image/png') return 'png';
@@ -229,10 +219,10 @@ function bridgeToolName(message: Record<string, unknown>, fallback: string): str
 function normalizeBridgeToolArgs(message: Record<string, unknown>): unknown {
   const tool = bridgeToolObject(message);
   const direct = firstPayloadValue(message, TOOL_ARG_KEYS);
-  if (direct !== undefined) return direct;
+  if (direct !== undefined) return parseJsonToolArgs(direct);
   if (tool) {
     const nested = firstPayloadValue(tool, TOOL_ARG_KEYS);
-    if (nested !== undefined) return nested;
+    if (nested !== undefined) return parseJsonToolArgs(nested);
   }
 
   const collected: Record<string, unknown> = {};
@@ -243,6 +233,20 @@ function normalizeBridgeToolArgs(message: Record<string, unknown>): unknown {
   return Object.keys(collected).length > 0 ? collected : undefined;
 }
 
+function parseJsonToolArgs(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if ((!trimmed.startsWith('{') || !trimmed.endsWith('}'))
+    && (!trimmed.startsWith('[') || !trimmed.endsWith(']'))) {
+    return value;
+  }
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+}
+
 function isBridgeToolMessage(message: Record<string, unknown>): BridgeToolEventKind | null {
   const type = normalizedType(message);
   if (TOOL_START_TYPES.has(type) || ARTIFACT_TYPES.has(type)) return 'started';
@@ -251,6 +255,44 @@ function isBridgeToolMessage(message: Record<string, unknown>): BridgeToolEventK
   if (COMMAND_OUTPUT_TYPES.has(type)) return 'command-output';
   if (PATCH_COMPLETED_TYPES.has(type)) return 'patch-completed';
   return null;
+}
+
+function parseBridgeProgressItems(content: unknown): BridgeProgressItem[] | null {
+  if (typeof content !== 'string' || !content.startsWith(PROGRESS_CARD_PAYLOAD_PREFIX)) return null;
+  try {
+    const payload = JSON.parse(content.slice(PROGRESS_CARD_PAYLOAD_PREFIX.length));
+    if (!isRecord(payload) || !Array.isArray(payload.items)) return null;
+    return payload.items.flatMap((value): BridgeProgressItem[] => {
+      if (!isRecord(value)) return [];
+      const kind = firstString(value, ['kind']);
+      const text = firstString(value, ['text']);
+      if (!kind || !text || !['info', 'thinking', 'tool_use', 'tool_result', 'error'].includes(kind)) return [];
+      return [{
+        kind: kind as BridgeProgressItem['kind'],
+        text,
+        tool: firstString(value, ['tool']),
+        status: firstString(value, ['status']),
+        ...(typeof value.exit_code === 'number' ? { exit_code: value.exit_code } : {}),
+        ...(typeof value.success === 'boolean' ? { success: value.success } : {}),
+      }];
+    });
+  } catch {
+    return null;
+  }
+}
+
+function bridgeButtonActions(message: Record<string, unknown>): BridgeApprovalAction[] {
+  if (!Array.isArray(message.buttons)) return [];
+  return message.buttons.flatMap((row) => {
+    const entries = Array.isArray(row) ? row : [row];
+    return entries.flatMap((button) => {
+      if (!isRecord(button)) return [];
+      const action = firstString(button, ['data', 'Data', 'value', 'Value', 'action', 'Action']);
+      if (!action) return [];
+      const label = firstString(button, ['text', 'Text', 'label', 'Label', 'title', 'Title']);
+      return [{ action, ...(label ? { label } : {}) }];
+    });
+  });
 }
 
 function toolArgsMentionFile(args: unknown): boolean {
@@ -264,7 +306,7 @@ function toolArgsMentionFile(args: unknown): boolean {
 function looksLikeGeneratedFileTool(message: Record<string, unknown>, name: string, args: unknown): boolean {
   if (ARTIFACT_TYPES.has(normalizedType(message))) return true;
   if (toolArgsMentionFile(args)) return true;
-  return /^(write|writefile|write_file|create_file|edit|editfile|edit_file|str_replace|strreplace|multi_edit|multiedit)$/i.test(name);
+  return /^(write|writefile|write_file|create_file|edit|editfile|edit_file|str_replace|strreplace|multi_edit|multiedit|apply_patch|applypatch|patch)$/i.test(name);
 }
 
 function mimeTypeForBridgeMedia(kind: BridgeMediaKind, message: Record<string, unknown>): string {
@@ -316,208 +358,25 @@ function fromBridgeSessionKey(sessionKey: string): string {
   return sessionKey;
 }
 
-function sessionLookupKeys(sessionKey: string): string[] {
-  const bridgeKey = toCcConnectBridgeSessionKey(sessionKey);
-  return Array.from(new Set([sessionKey, bridgeKey, fromBridgeSessionKey(sessionKey)]));
-}
-
-function normalizeRawMessage(value: unknown, fallbackId: string): RawMessage | null {
-  if (!isRecord(value)) return null;
-  const role = typeof value.role === 'string' ? value.role : '';
-  if (!['user', 'assistant', 'system', 'toolresult'].includes(role)) return null;
-  const content = typeof value.content === 'string' || Array.isArray(value.content)
-    ? value.content
-    : '';
-  const timestamp = normalizeTimestamp(value.timestamp ?? value.created_at ?? value.createdAt) ?? Date.now();
-  return {
-    id: typeof value.id === 'string' && value.id ? value.id : fallbackId,
-    role: role as RawMessage['role'],
-    content,
-    timestamp,
-    ...(typeof value.toolCallId === 'string' ? { toolCallId: value.toolCallId } : {}),
-    ...(typeof value.toolName === 'string' ? { toolName: value.toolName } : {}),
-    ...(value.details !== undefined ? { details: value.details } : {}),
-    ...(value.isError === true ? { isError: true } : {}),
-    ...(typeof value.stopReason === 'string' ? { stopReason: value.stopReason } : {}),
-    ...(typeof value.stop_reason === 'string' ? { stop_reason: value.stop_reason } : {}),
-    ...(typeof value.errorMessage === 'string' ? { errorMessage: value.errorMessage } : {}),
-    ...(typeof value.error_message === 'string' ? { error_message: value.error_message } : {}),
-  };
-}
-
-function historyTimestamp(message: RawMessage): number {
-  return normalizeTimestamp(message.timestamp) ?? 0;
-}
-
-function mergeHistoryMessages(...groups: RawMessage[][]): RawMessage[] {
-  const byId = new Map<string, RawMessage>();
-  const anonymous: RawMessage[] = [];
-  for (const message of groups.flat()) {
-    if (typeof message.id === 'string' && message.id) {
-      byId.set(message.id, message);
-    } else {
-      anonymous.push(message);
-    }
-  }
-  return [...byId.values(), ...anonymous].sort((left, right) => historyTimestamp(left) - historyTimestamp(right));
-}
-
-function normalizeComparableText(value: string): string {
-  return value.replace(/\s+/g, ' ').trim();
-}
-
-function codexInputText(content: unknown): string {
-  if (!Array.isArray(content)) return '';
-  return content
-    .flatMap((item) => {
-      if (!isRecord(item)) return [];
-      return item.type === 'input_text' && typeof item.text === 'string' ? [item.text] : [];
-    })
-    .join('\n')
-    .trim();
-}
-
-function parseJsonArguments(value: unknown): unknown {
-  if (typeof value !== 'string') return value;
-  try {
-    return JSON.parse(value) as unknown;
-  } catch {
-    return value;
-  }
-}
-
-function codexDisplayToolName(name: string, args: unknown): string {
-  if (name === 'exec_command' && isRecord(args) && typeof args.cmd === 'string') return 'Bash';
-  return name || 'tool';
-}
-
-function formatCodexToolArgs(name: string, args: unknown): unknown {
-  if (name === 'Bash' && isRecord(args) && typeof args.cmd === 'string') {
-    return `$ ${args.cmd.trim()}`;
-  }
-  return args;
-}
-
-function cleanCodexFunctionOutput(value: unknown): string {
-  if (typeof value !== 'string') return '';
-  const marker = value.match(/(?:^|\n)Output:\r?\n/);
-  if (!marker || marker.index == null) return value.trimEnd();
-  return value.slice(marker.index + marker[0].length).trimEnd();
-}
-
-function readStringMap(value: unknown): Map<string, string> {
-  if (!isRecord(value)) return new Map();
-  return new Map(Object.entries(value).flatMap(([key, item]) => (
-    typeof item === 'string' ? [[key, item]] : []
-  )));
-}
-
-function readUserSessions(value: unknown): Map<string, string[]> {
-  if (!isRecord(value)) return new Map();
-  return new Map(Object.entries(value).map(([key, item]) => [
-    key,
-    Array.isArray(item) ? item.filter((entry): entry is string => typeof entry === 'string') : [],
-  ]));
-}
-
-function readUserMeta(value: unknown): Map<string, Record<string, unknown>> {
-  if (!isRecord(value)) return new Map();
-  return new Map(Object.entries(value).flatMap(([key, item]) => (
-    isRecord(item) ? [[key, item]] : []
-  )));
-}
-
-function displayNameForPersistedSession(key: string, session: PersistedSession, meta?: Record<string, unknown>): string {
-  const chatName = typeof meta?.chat_name === 'string' ? meta.chat_name.trim() : '';
-  const userName = typeof meta?.user_name === 'string' ? meta.user_name.trim() : '';
-  const metaName = [chatName, userName].filter(Boolean).join(' / ');
-  if (metaName) return metaName.slice(0, 80);
-  if (session.name?.trim()) return session.name.trim().slice(0, 80);
-  const firstUser = session.history.find((message) => message.role === 'user');
-  return messageText(firstUser?.content).slice(0, 80) || key;
-}
-
-function titleForPersistedSession(session: PersistedSession, history: RawMessage[]): string | undefined {
-  const explicitName = session.name?.trim().slice(0, 80);
-  return explicitName || sessionTitleFromHistory(history);
-}
-
-function sessionTitleFromHistory(history: RawMessage[]): string | undefined {
-  const firstUser = history.find((message) => message.role === 'user');
-  const title = messageText(firstUser?.content).slice(0, 80).trim();
-  return title || undefined;
-}
-
-function sessionPreviewFromHistory(history: RawMessage[]): string | undefined {
-  const latest = [...history].reverse().find((message) => {
-    const text = messageText(message.content);
-    return Boolean(text);
-  });
-  const preview = messageText(latest?.content).slice(0, 120).trim();
-  return preview || undefined;
-}
-
-function updatedAtFromHistory(session: PersistedSession, history: RawMessage[] = session.history): number {
-  return history.reduce((latest, message) => {
-    const ts = normalizeTimestamp(message.timestamp);
-    return ts ? Math.max(latest, ts) : latest;
-  }, session.updatedAt);
-}
-
-function sessionIdsForStoreKey(store: PersistedSessionStore, key: string): string[] {
-  const ids = [
-    store.activeSession.get(key),
-    ...(store.userSessions.get(key) ?? []),
-  ].filter((value): value is string => typeof value === 'string' && value.length > 0);
-  return Array.from(new Set(ids));
-}
-
-function sessionsForStoreKey(store: PersistedSessionStore, key: string): PersistedSession[] {
-  return sessionIdsForStoreKey(store, key)
-    .flatMap((sessionId) => {
-      const session = store.sessions.get(sessionId);
-      return session ? [session] : [];
-    })
-    .sort((left, right) => updatedAtFromHistory(right) - updatedAtFromHistory(left));
-}
-
-function keyForPersistedSession(session: PersistedSession): string {
-  return `agent:${session.agentId || 'main'}:${session.id}`;
-}
-
-function directSessionIdForKey(store: PersistedSessionStore, key: string): string | null {
-  const normalized = fromBridgeSessionKey(key);
-  if (!normalized.startsWith('agent:')) return null;
-  const [, agentId = 'main', ...sessionIdParts] = normalized.split(':');
-  const sessionId = sessionIdParts.join(':');
-  if (!sessionId || sessionId === 'main') return null;
-  if ((agentId || 'main') !== store.agentId) return null;
-  return store.sessions.has(sessionId) ? sessionId : null;
-}
-
-function projectNameFromStorePath(path: string): string {
-  return basename(path).replace(/_[a-f0-9]{8}\.json$/i, '').replace(/\.json$/i, '');
-}
-
-function agentIdFromProjectName(projectName: string): string {
-  if (!projectName.startsWith(CLAWX_PROJECT_PREFIX)) return 'main';
-  return projectName.slice(CLAWX_PROJECT_PREFIX.length) || 'main';
-}
-
 export class CcConnectBridgeAdapter {
   private readonly port: number;
   private readonly token: string;
   private readonly project: string;
   private readonly projectForSessionKey: (sessionKey: string) => string;
   private readonly emitRuntimeEvent: EventEmitter['emit'];
-  private readonly sessionStoreDir: string;
-  private readonly codexSessionsDir: string;
-  private readonly supplementalHistoryPath: string;
-  private readonly pollCodexTranscriptsOnFinish: boolean;
+  private readonly heartbeatIntervalMs: number;
+  private readonly reconnectDelayMs: number;
   private socket: WebSocket | null = null;
+  private readonly connectingSockets = new Set<WebSocket>();
+  private connectInFlight: Promise<void> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private shouldReconnect = false;
   private readonly messagesBySession = new Map<string, RawMessage[]>();
   private readonly pendingRuns = new Map<string, PendingRun>();
   private readonly abortedRuns = new Map<string, AbortedRun>();
+  private readonly progressByHandle = new Map<string, BridgeProgressState>();
+  private readonly pendingApprovals = new Map<string, PendingApproval>();
 
   constructor(options: BridgeAdapterOptions) {
     this.port = options.port;
@@ -525,17 +384,27 @@ export class CcConnectBridgeAdapter {
     this.project = options.project;
     this.projectForSessionKey = options.projectForSessionKey ?? (() => options.project);
     this.emitRuntimeEvent = options.emit;
-    this.sessionStoreDir = options.sessionStoreDir ?? join(getCcConnectManagedDir(), 'data', 'sessions');
-    this.codexSessionsDir = options.codexSessionsDir ?? join(getCcConnectManagedDir(), 'codex-home', 'sessions');
-    this.supplementalHistoryPath = options.supplementalHistoryPath ?? join(this.sessionStoreDir, '.clawx-supplemental-history.json');
-    this.pollCodexTranscriptsOnFinish = options.codexSessionsDir != null;
+    this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? BRIDGE_HEARTBEAT_INTERVAL_MS;
+    this.reconnectDelayMs = options.reconnectDelayMs ?? BRIDGE_RECONNECT_DELAY_MS;
   }
 
   async connect(): Promise<void> {
+    this.shouldReconnect = true;
     if (this.socket?.readyState === WebSocket.OPEN) return;
+    if (this.connectInFlight) return await this.connectInFlight;
+    const attempt = this.connectWithRetry();
+    this.connectInFlight = attempt;
+    try {
+      await attempt;
+    } finally {
+      if (this.connectInFlight === attempt) this.connectInFlight = null;
+    }
+  }
+
+  private async connectWithRetry(): Promise<void> {
     const startedAt = Date.now();
     let lastError: unknown;
-    while (Date.now() - startedAt < CONNECT_TIMEOUT_MS) {
+    while (this.shouldReconnect && Date.now() - startedAt < CONNECT_TIMEOUT_MS) {
       try {
         await this.connectOnce();
         return;
@@ -548,18 +417,31 @@ export class CcConnectBridgeAdapter {
   }
 
   async close(): Promise<void> {
-    const socket = this.socket;
+    this.shouldReconnect = false;
+    this.clearHeartbeat();
+    this.clearReconnectTimer();
+    const sockets = new Set([
+      ...this.connectingSockets,
+      ...(this.socket ? [this.socket] : []),
+    ]);
     this.socket = null;
-    if (!socket) return;
-    await new Promise<void>((resolve) => {
-      if (socket.readyState === WebSocket.CLOSED) {
-        resolve();
-        return;
-      }
-      socket.once('close', () => resolve());
-      socket.close();
-      setTimeout(resolve, 500);
-    });
+    await Promise.all(Array.from(sockets, async (socket) => {
+      await new Promise<void>((resolve) => {
+        if (socket.readyState === WebSocket.CLOSED) {
+          resolve();
+          return;
+        }
+        socket.once('close', () => resolve());
+        socket.close();
+        setTimeout(resolve, 500);
+      });
+    }));
+    await this.connectInFlight?.catch(() => undefined);
+    this.pendingApprovals.clear();
+  }
+
+  isConnected(): boolean {
+    return this.socket?.readyState === WebSocket.OPEN;
   }
 
   async send(payload: RuntimeSendWithMediaPayload): Promise<{ runId: string }> {
@@ -583,9 +465,6 @@ export class CcConnectBridgeAdapter {
       prompt: payload.message,
       startedAt: now,
       seq: 0,
-      codexToolStarts: new Set(),
-      codexToolCompletions: new Set(),
-      codexToolNames: new Map(),
     });
     this.emitRuntimeEvent('chat:runtime-event', {
       type: 'run.started',
@@ -598,7 +477,7 @@ export class CcConnectBridgeAdapter {
       type: 'message',
       msg_id: payload.idempotencyKey || runId,
       session_key: toCcConnectBridgeSessionKey(payload.sessionKey),
-      user_id: 'main',
+      user_id: CLAWX_BRIDGE_ADMIN_USER_ID,
       user_name: 'ClawX',
       content: payload.message,
       reply_ctx: runId,
@@ -613,7 +492,12 @@ export class CcConnectBridgeAdapter {
     return { runId };
   }
 
-  async abort(payload?: unknown): Promise<{ success: true; abortedRuns: string[] }> {
+  async abort(payload?: unknown): Promise<{
+    success: true;
+    abortedRuns: string[];
+    stoppedSessions: string[];
+    upstreamStopRequested: boolean;
+  }> {
     const body = isRecord(payload) ? payload : {};
     const requestedRunId = typeof body.runId === 'string' && body.runId.trim()
       ? body.runId.trim()
@@ -632,10 +516,16 @@ export class CcConnectBridgeAdapter {
     });
     const now = Date.now();
     const abortedRuns: string[] = [];
+    const controlRunsBySession = new Map<string, string>();
     for (const [runId, pending] of matches) {
       this.pendingRuns.delete(runId);
       this.abortedRuns.set(runId, { sessionKey: pending.sessionKey, abortedAt: now });
+      this.clearProgressForRun(runId);
+      this.clearApprovalsForRun(runId);
       abortedRuns.push(runId);
+      if (!controlRunsBySession.has(pending.sessionKey)) {
+        controlRunsBySession.set(pending.sessionKey, runId);
+      }
       this.emitRuntimeEvent('chat:runtime-event', {
         type: 'run.ended',
         runId,
@@ -647,836 +537,151 @@ export class CcConnectBridgeAdapter {
         stopReason: 'user',
       });
     }
-    return { success: true, abortedRuns };
+    const stoppedSessions: string[] = [];
+    let upstreamStopRequested = true;
+    for (const [sessionKey, runId] of controlRunsBySession.entries()) {
+      if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+        upstreamStopRequested = false;
+        continue;
+      }
+      try {
+        const socket = this.socket;
+        await new Promise<void>((resolve, reject) => {
+          socket.send(JSON.stringify({
+            type: 'message',
+            msg_id: `cc-connect-stop-${randomUUID()}`,
+            session_key: toCcConnectBridgeSessionKey(sessionKey),
+            user_id: CLAWX_BRIDGE_ADMIN_USER_ID,
+            user_name: 'ClawX',
+            content: '/stop',
+            reply_ctx: runId,
+            project: this.projectForSessionKey(sessionKey),
+            images: [],
+            files: [],
+          }), (error) => error ? reject(error) : resolve());
+        });
+        stoppedSessions.push(sessionKey);
+      } catch (error) {
+        upstreamStopRequested = false;
+        logger.warn('[cc-connect bridge] failed to send session stop command', {
+          sessionKey,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return { success: true, abortedRuns, stoppedSessions, upstreamStopRequested };
+  }
+
+  async respondApproval(payload?: unknown): Promise<{
+    success: true;
+    runId: string;
+    action: string;
+    status: 'approved' | 'denied' | 'answered';
+  }> {
+    const body = isRecord(payload) ? payload : {};
+    const runId = firstString(body, ['runId']);
+    const action = firstString(body, ['action']);
+    if (!runId || !action) {
+      throw new Error('cc-connect approval response requires runId and action');
+    }
+    const pending = this.pendingApprovals.get(runId);
+    if (!pending) {
+      throw new Error(`No pending cc-connect approval for run ${runId}`);
+    }
+    if (!pending.actions.some((candidate) => candidate.action === action)) {
+      throw new Error(`cc-connect approval action is not available for run ${runId}`);
+    }
+    if (!this.pendingRuns.has(runId)) {
+      this.pendingApprovals.delete(runId);
+      throw new Error(`cc-connect run ${runId} is no longer active`);
+    }
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      throw new Error('cc-connect bridge is not connected');
+    }
+
+    this.socket.send(JSON.stringify({
+      type: 'card_action',
+      session_key: pending.bridgeSessionKey,
+      action,
+      reply_ctx: pending.replyCtx,
+      project: pending.project,
+    }));
+    this.pendingApprovals.delete(runId);
+
+    const status = action === 'perm:deny'
+      ? 'denied'
+      : action.startsWith('askq:')
+        ? 'answered'
+        : 'approved';
+    const run = this.pendingRuns.get(runId);
+    const now = Date.now();
+    if (run) run.seq += 1;
+    this.emitRuntimeEvent('chat:runtime-event', {
+      type: 'approval.updated',
+      runId,
+      sessionKey: pending.sessionKey,
+      itemId: pending.itemId,
+      title: pending.title,
+      kind: pending.kind,
+      phase: 'resolved',
+      status,
+      message: pending.message,
+      actions: pending.actions,
+      ...(run ? { seq: run.seq } : {}),
+      ts: now,
+    });
+    return { success: true, runId, action, status };
   }
 
   async listSessions(): Promise<SessionMetadata[]> {
-    const sessionsByKey = new Map<string, SessionMetadata>();
-    for (const persisted of await this.readPersistedSessionStores()) {
-      const storedKeys = new Set([
-        ...persisted.activeSession.keys(),
-        ...persisted.userSessions.keys(),
-      ]);
-      const listedSessionIds = new Set<string>();
-      for (const storedKey of storedKeys) {
-        const sessions = sessionsForStoreKey(persisted, storedKey).filter((candidate) => candidate.history.length > 0);
-        const normalizedStoredKey = fromBridgeSessionKey(storedKey);
-        const isAgentStoredKey = normalizedStoredKey.startsWith('agent:');
-        if (!isAgentStoredKey) {
-          for (const session of sessions) listedSessionIds.add(session.id);
-          const session = sessions[0];
-          if (!session) continue;
-          const history = session.history;
-          const updatedAt = updatedAtFromHistory(session, history);
-          const derivedTitle = titleForPersistedSession(session, history);
-          const item = {
-            key: normalizedStoredKey,
-            displayName: displayNameForPersistedSession(normalizedStoredKey, { ...session, history }, persisted.userMeta.get(storedKey)),
-            derivedTitle,
-            lastMessagePreview: sessionPreviewFromHistory(history),
-            agentId: session.agentId,
-            createdAt: session.createdAt,
-            updatedAt,
-          };
-          const existing = sessionsByKey.get(normalizedStoredKey);
-          if (!existing || item.updatedAt >= existing.updatedAt) {
-            sessionsByKey.set(normalizedStoredKey, item);
-          }
-          continue;
-        }
-        const activeSessionId = persisted.activeSession.get(storedKey);
-        for (const session of sessions) {
-          const key = session.id === activeSessionId
-            ? normalizedStoredKey
-            : keyForPersistedSession(session);
-          listedSessionIds.add(session.id);
-          const history = session.history;
-          const updatedAt = updatedAtFromHistory(session, history);
-          const derivedTitle = titleForPersistedSession(session, history);
-          const meta = key === normalizedStoredKey ? persisted.userMeta.get(storedKey) : undefined;
-          const item = {
-            key,
-            displayName: displayNameForPersistedSession(key, { ...session, history }, meta),
-            derivedTitle,
-            lastMessagePreview: sessionPreviewFromHistory(history),
-            agentId: session.agentId,
-            createdAt: session.createdAt,
-            updatedAt,
-          };
-          const existing = sessionsByKey.get(key);
-          if (!existing || item.updatedAt >= existing.updatedAt) {
-            sessionsByKey.set(key, item);
-          }
-        }
-      }
-
-      for (const session of persisted.sessions.values()) {
-        if (listedSessionIds.has(session.id) || session.history.length === 0) continue;
-        const key = keyForPersistedSession(session);
-        const history = session.history;
-        const updatedAt = updatedAtFromHistory(session, history);
-        const derivedTitle = titleForPersistedSession(session, history);
-        const item = {
+    return Array.from(this.messagesBySession.entries())
+      .filter(([, messages]) => messages.length > 0)
+      .map(([key, messages]) => {
+        const firstUser = messages.find((message) => message.role === 'user');
+        const updatedAt = messages.reduce((latest, message) => {
+          const timestamp = normalizeTimestamp(message.timestamp);
+          return timestamp ? Math.max(latest, timestamp) : latest;
+        }, 0);
+        return {
           key,
-          displayName: displayNameForPersistedSession(key, { ...session, history }),
-          derivedTitle,
-          lastMessagePreview: sessionPreviewFromHistory(history),
-          agentId: session.agentId,
-          createdAt: session.createdAt,
+          displayName: messageText(firstUser?.content).slice(0, 80) || key,
+          derivedTitle: messageText(firstUser?.content).slice(0, 80) || undefined,
+          lastMessagePreview: messageText(messages.at(-1)?.content).slice(0, 160) || undefined,
+          agentId: ccConnectProjectNameForSessionKey(key).slice(CLAWX_PROJECT_PREFIX.length) || 'main',
+          createdAt: normalizeTimestamp(messages[0]?.timestamp) ?? updatedAt,
           updatedAt,
         };
-        const existing = sessionsByKey.get(key);
-        if (!existing || item.updatedAt >= existing.updatedAt) {
-          sessionsByKey.set(key, item);
-        }
-      }
-    }
-    const supplementalStore = await this.readSupplementalStore();
-    const supplementalLabels = supplementalStore.labels;
-    for (const [key, messages] of Object.entries(supplementalStore.sessions)) {
-      if (messages.length === 0) continue;
-      const normalizedKey = fromBridgeSessionKey(key);
-      if (sessionsByKey.has(normalizedKey)) continue;
-      const merged = mergeHistoryMessages(messages);
-      const updatedAt = merged.reduce((latest, message) => Math.max(latest, historyTimestamp(message)), 0);
-      if (!updatedAt) continue;
-      const derivedTitle = sessionTitleFromHistory(merged);
-      const label = supplementalLabels[key] || supplementalLabels[normalizedKey];
-      sessionsByKey.set(normalizedKey, {
-        key: normalizedKey,
-        displayName: label || derivedTitle || sessionPreviewFromHistory(merged) || normalizedKey,
-        derivedTitle: label || derivedTitle,
-        lastMessagePreview: sessionPreviewFromHistory(merged),
-        agentId: ccConnectProjectNameForSessionKey(normalizedKey).slice(CLAWX_PROJECT_PREFIX.length) || 'main',
-        createdAt: normalizeTimestamp(merged[0]?.timestamp) ?? updatedAt,
-        updatedAt,
-      });
-    }
-    for (const [key, messages] of this.messagesBySession.entries()) {
-      const firstUser = messages.find((message) => message.role === 'user');
-      const lastTimestamp = messages.reduce((latest, message) => {
-        const ts = normalizeTimestamp(message.timestamp);
-        return ts ? Math.max(latest, ts) : latest;
-      }, 0);
-      const derivedTitle = sessionTitleFromHistory(messages);
-      const label = supplementalLabels[key] || supplementalLabels[fromBridgeSessionKey(key)];
-      sessionsByKey.set(key, {
-        key,
-        displayName: label || derivedTitle || messageText(firstUser?.content).slice(0, 80) || key,
-        derivedTitle: label || derivedTitle,
-        lastMessagePreview: sessionPreviewFromHistory(messages),
-        agentId: ccConnectProjectNameForSessionKey(key).slice(CLAWX_PROJECT_PREFIX.length) || 'main',
-        createdAt: normalizeTimestamp(messages[0]?.timestamp) ?? lastTimestamp,
-        updatedAt: lastTimestamp,
-      });
-    }
-    return Array.from(sessionsByKey.values()).sort((left, right) => right.updatedAt - left.updatedAt);
+      })
+      .sort((left, right) => right.updatedAt - left.updatedAt);
   }
 
   async loadHistory(sessionKey: string, limit = 200): Promise<RawMessage[]> {
-    await this.syncPersistedCodexTranscriptToolMessages();
-    const messages = mergeHistoryMessages(
-      await this.readPersistedMessages(sessionKey, limit),
-      await this.readSupplementalMessages(sessionKey, limit),
-      this.messagesBySession.get(sessionKey) ?? [],
-    );
+    const messages = this.messagesBySession.get(sessionKey) ?? [];
     return messages.slice(-Math.max(1, Math.min(Math.floor(limit), 1000)));
   }
 
-  async deleteSession(sessionKey: string): Promise<void> {
+  forgetSession(sessionKey: string): void {
     this.messagesBySession.delete(sessionKey);
-    await this.deletePersistedSession(sessionKey);
-  }
-
-  async renameSession(sessionKey: string, label: string): Promise<void> {
-    const trimmedLabel = label.trim();
-    if (!trimmedLabel) throw new Error('Label cannot be empty');
-    await this.renameSupplementalSession(sessionKey, trimmedLabel);
-    await this.renamePersistedSession(sessionKey, trimmedLabel);
-  }
-
-  async summarizeSessions(sessionKeys: string[]): Promise<Array<{ sessionKey: string; firstUserText: string | null; lastTimestamp: number | null }>> {
-    return Promise.all(sessionKeys.map(async (sessionKey) => {
-      const messages = [
-        ...mergeHistoryMessages(
-          await this.readPersistedMessages(sessionKey, 1000),
-          await this.readSupplementalMessages(sessionKey, 1000),
-          this.messagesBySession.get(sessionKey) ?? [],
-        ),
-      ];
-      const firstUser = messages.find((message) => message.role === 'user');
-      const lastTimestamp = messages.reduce<number | null>((latest, message) => {
-        const ts = normalizeTimestamp(message.timestamp);
-        if (!ts) return latest;
-        return latest == null ? ts : Math.max(latest, ts);
-      }, null);
-      return {
-        sessionKey,
-        firstUserText: messageText(firstUser?.content) || null,
-        lastTimestamp,
-      };
-    }));
-  }
-
-  async reconcilePendingRunsFromHistory(): Promise<void> {
-    const pendingRuns = Array.from(this.pendingRuns.values());
-    for (const pending of pendingRuns) {
-      await this.emitCodexTranscriptToolEventsForPendingRun(pending);
-      const messages = await this.readPersistedMessages(pending.sessionKey, 1000);
-      const completion = this.findPersistedCompletionForPendingRun(pending, messages);
-      if (!completion) continue;
-      await this.finishPendingRun(pending, {
-        text: messageText(completion.content),
-        isError: completion.isError === true,
-        appendMessage: false,
-        messageId: completion.id,
-        timestamp: normalizeTimestamp(completion.timestamp),
-      });
-    }
-    await this.syncPersistedCodexTranscriptToolMessages();
-  }
-
-  private async emitCodexTranscriptToolEventsForPendingRun(pending: PendingRun): Promise<number> {
-    const files = await this.findRecentCodexTranscriptFiles(pending.startedAt - CODEX_TRANSCRIPT_LOOKBACK_MS);
-    let emittedCount = 0;
-    for (const file of files) {
-      const content = await readFile(file, 'utf8').catch(() => '');
-      if (!content) continue;
-      emittedCount += await this.emitCodexTranscriptToolEventsFromContent(pending, content);
-    }
-    return emittedCount;
-  }
-
-  private async waitForCodexTranscriptToolEventsForPendingRun(pending: PendingRun): Promise<void> {
-    if (!this.pollCodexTranscriptsOnFinish) {
-      await this.emitCodexTranscriptToolEventsForPendingRun(pending);
-      return;
-    }
-    for (let attempt = 0; attempt < CODEX_TRANSCRIPT_FINISH_SCAN_ATTEMPTS; attempt += 1) {
-      const emittedCount = await this.emitCodexTranscriptToolEventsForPendingRun(pending);
-      if (emittedCount > 0) return;
-      if (attempt < CODEX_TRANSCRIPT_FINISH_SCAN_ATTEMPTS - 1) {
-        await delay(CODEX_TRANSCRIPT_FINISH_SCAN_DELAY_MS);
-      }
-    }
-  }
-
-  private scheduleCodexTranscriptToolEventBackfill(pending: PendingRun): void {
-    if (!this.pollCodexTranscriptsOnFinish) return;
-    for (const delayMs of CODEX_TRANSCRIPT_BACKFILL_DELAYS_MS) {
-      setTimeout(async () => {
-        const emittedCount = await this.emitCodexTranscriptToolEventsForPendingRun(pending);
-        if (emittedCount === 0) return;
-        const now = Date.now();
-        this.emitRuntimeEvent('chat:runtime-event', {
-          type: 'session.updated',
-          runId: pending.runId,
-          sessionKey: pending.sessionKey,
-          updatedAt: now,
-          reason: 'codex-transcript-backfill',
-          ts: now,
-        });
-      }, delayMs).unref?.();
-    }
-  }
-
-  private async findRecentCodexTranscriptFiles(sinceMs: number): Promise<string[]> {
-    const results: Array<{ path: string; mtimeMs: number }> = [];
-    const visit = async (dir: string, depth: number): Promise<void> => {
-      if (depth > CODEX_TRANSCRIPT_MAX_DEPTH) return;
-      const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
-      await Promise.all(entries.map(async (entry) => {
-        const fullPath = join(dir, entry.name);
-        if (entry.isDirectory()) {
-          await visit(fullPath, depth + 1);
-          return;
-        }
-        if (!entry.isFile() || !entry.name.endsWith('.jsonl')) return;
-        const info = await stat(fullPath).catch(() => null);
-        if (!info || info.mtimeMs < sinceMs) return;
-        results.push({ path: fullPath, mtimeMs: info.mtimeMs });
-      }));
-    };
-    await visit(this.codexSessionsDir, 0);
-    return results
-      .sort((left, right) => right.mtimeMs - left.mtimeMs)
-      .slice(0, CODEX_TRANSCRIPT_MAX_FILES)
-      .map((item) => item.path);
-  }
-
-  private async emitCodexTranscriptToolEventsFromContent(pending: PendingRun, content: string): Promise<number> {
-    const messages = this.collectCodexTranscriptToolMessagesFromContent({
-      content,
-      sessionKey: pending.sessionKey,
-      runId: pending.runId,
-      prompts: new Set([normalizeComparableText(pending.prompt)]),
-      seenStarts: pending.codexToolStarts,
-      seenCompletions: pending.codexToolCompletions,
-      toolNames: pending.codexToolNames,
-      sinceMs: pending.startedAt - CODEX_TRANSCRIPT_LOOKBACK_MS,
-    });
-    let emittedCount = 0;
-    for (const item of messages) {
-      if (item.toolMessage) {
-        await this.appendSupplementalMessage(pending.sessionKey, item.toolMessage);
-        pending.seq += 1;
-        this.emitRuntimeEvent('chat:message', {
-          state: 'final',
-          runId: pending.runId,
-          sessionKey: pending.sessionKey,
-          message: item.toolMessage,
-        });
-        const block = Array.isArray(item.toolMessage.content) ? item.toolMessage.content[0] : undefined;
-        const args = isRecord(block) ? block.arguments : undefined;
-        this.emitRuntimeEvent('chat:runtime-event', {
-          type: 'tool.started',
-          runId: pending.runId,
-          sessionKey: pending.sessionKey,
-          toolCallId: item.toolCallId,
-          name: pending.codexToolNames.get(item.toolCallId) || 'tool',
-          ...(args !== undefined ? { args } : {}),
-          seq: pending.seq,
-          ts: normalizeTimestamp(item.toolMessage.timestamp) ?? Date.now(),
-        });
-        emittedCount += 1;
-      }
-      if (item.toolResultMessage) {
-        await this.appendSupplementalMessage(pending.sessionKey, item.toolResultMessage);
-        pending.seq += 1;
-        this.emitRuntimeEvent('chat:message', {
-          state: 'final',
-          runId: pending.runId,
-          sessionKey: pending.sessionKey,
-          message: item.toolResultMessage,
-        });
-        this.emitRuntimeEvent('chat:runtime-event', {
-          type: 'tool.completed',
-          runId: pending.runId,
-          sessionKey: pending.sessionKey,
-          toolCallId: item.toolCallId,
-          name: pending.codexToolNames.get(item.toolCallId) || item.toolResultMessage.toolName || 'tool',
-          seq: pending.seq,
-          ts: normalizeTimestamp(item.toolResultMessage.timestamp) ?? Date.now(),
-        });
-        emittedCount += 1;
-      }
-    }
-    return emittedCount;
-  }
-
-  private collectCodexTranscriptToolMessagesFromContent(options: {
-    content: string;
-    sessionKey: string;
-    runId: string;
-    prompts: Set<string>;
-    seenStarts?: Set<string>;
-    seenCompletions?: Set<string>;
-    toolNames?: Map<string, string>;
-    sinceMs?: number;
-  }): CodexTranscriptToolMessage[] {
-    const prompts = new Set(Array.from(options.prompts).filter(Boolean));
-    if (prompts.size === 0) return [];
-    const seenStarts = options.seenStarts ?? new Set<string>();
-    const seenCompletions = options.seenCompletions ?? new Set<string>();
-    const toolNames = options.toolNames ?? new Map<string, string>();
-    const messages: CodexTranscriptToolMessage[] = [];
-    let inMatchingTurn = false;
-
-    for (const line of options.content.split(/\r?\n/)) {
-      if (!line.trim()) continue;
-      let record: unknown;
-      try {
-        record = JSON.parse(line) as unknown;
-      } catch {
-        continue;
-      }
-      if (!isRecord(record)) continue;
-      const ts = normalizeTimestamp(record.timestamp);
-      if (options.sinceMs != null && ts != null && ts < options.sinceMs) continue;
-      const payload = isRecord(record.payload) ? record.payload : null;
-      if (!payload) continue;
-
-      if (record.type === 'event_msg' && payload.type === 'user_message') {
-        inMatchingTurn = prompts.has(normalizeComparableText(typeof payload.message === 'string' ? payload.message : ''));
-        continue;
-      }
-      if (record.type === 'response_item' && payload.type === 'message' && payload.role === 'user') {
-        const text = codexInputText(payload.content);
-        inMatchingTurn = prompts.has(normalizeComparableText(text));
-        continue;
-      }
-      if (record.type === 'event_msg' && payload.type === 'task_complete') {
-        inMatchingTurn = false;
-        continue;
-      }
-      if (!inMatchingTurn || record.type !== 'response_item') continue;
-
-      if (typeof payload.type === 'string' && CODEX_TOOL_CALL_TYPES.has(payload.type)) {
-        const toolCallId = typeof payload.call_id === 'string' ? payload.call_id : '';
-        const rawName = typeof payload.name === 'string' ? payload.name : 'tool';
-        if (!toolCallId || seenStarts.has(toolCallId)) continue;
-        const args = parseJsonArguments(payload.arguments ?? payload.input);
-        const name = codexDisplayToolName(rawName, args);
-        const displayArgs = formatCodexToolArgs(name, args);
-        seenStarts.add(toolCallId);
-        toolNames.set(toolCallId, name);
-        const toolMessage: RawMessage = {
-          id: `${options.runId}:${toolCallId}:codex-tool`,
-          role: 'assistant',
-          content: [{
-            type: 'toolCall',
-            id: toolCallId,
-            name,
-            arguments: displayArgs ?? {},
-          }],
-          timestamp: ts ?? Date.now(),
-          stopReason: 'tool_use',
-        };
-        messages.push({
-          sessionKey: options.sessionKey,
-          runId: options.runId,
-          toolCallId,
-          toolMessage,
-        });
-        continue;
-      }
-
-      if (typeof payload.type === 'string' && CODEX_TOOL_OUTPUT_TYPES.has(payload.type)) {
-        const toolCallId = typeof payload.call_id === 'string' ? payload.call_id : '';
-        if (!toolCallId || seenCompletions.has(toolCallId)) continue;
-        seenCompletions.add(toolCallId);
-        const name = toolNames.get(toolCallId) || 'tool';
-        const toolResultMessage: RawMessage = {
-          id: `${options.runId}:${toolCallId}:codex-result`,
-          role: 'toolresult',
-          toolCallId,
-          toolName: name,
-          content: cleanCodexFunctionOutput(payload.output),
-          timestamp: ts ?? Date.now(),
-        };
-        messages.push({
-          sessionKey: options.sessionKey,
-          runId: options.runId,
-          toolCallId,
-          toolResultMessage,
-        });
-      }
-    }
-    return messages;
-  }
-
-  private async syncPersistedCodexTranscriptToolMessages(): Promise<number> {
-    const stores = await this.readPersistedSessionStores();
-    const targetsByAgentSessionId = new Map<string, Array<{
-      sessionKey: string;
-      runId: string;
-      prompts: Set<string>;
-    }>>();
-
-    for (const store of stores) {
-      for (const session of store.sessions.values()) {
-        if (!session.agentSessionId) continue;
-        const prompts = new Set(session.history
-          .filter((message) => message.role === 'user')
-          .map((message) => normalizeComparableText(messageText(message.content)))
-          .filter(Boolean));
-        if (prompts.size === 0) continue;
-        const sessionKeys = this.sessionKeysForPersistedSession(store, session);
-        for (const sessionKey of sessionKeys) {
-          const entries = targetsByAgentSessionId.get(session.agentSessionId) ?? [];
-          entries.push({
-            sessionKey,
-            runId: `cc-connect-transcript-${session.agentSessionId}`,
-            prompts,
-          });
-          targetsByAgentSessionId.set(session.agentSessionId, entries);
-        }
-      }
-    }
-
-    if (targetsByAgentSessionId.size === 0) return 0;
-
-    const transcriptFiles = await this.readCodexTranscriptFilesForSessionIds(new Set(targetsByAgentSessionId.keys()));
-    let changedCount = 0;
-    const changedSessionKeys = new Set<string>();
-    for (const transcript of transcriptFiles) {
-      const targets = targetsByAgentSessionId.get(transcript.sessionId) ?? [];
-      for (const target of targets) {
-        const messages = this.collectCodexTranscriptToolMessagesFromContent({
-          content: transcript.content,
-          sessionKey: target.sessionKey,
-          runId: target.runId,
-          prompts: target.prompts,
-        });
-        for (const item of messages) {
-          if (item.toolMessage && await this.appendSupplementalMessage(target.sessionKey, item.toolMessage)) {
-            changedCount += 1;
-            changedSessionKeys.add(target.sessionKey);
-          }
-          if (item.toolResultMessage && await this.appendSupplementalMessage(target.sessionKey, item.toolResultMessage)) {
-            changedCount += 1;
-            changedSessionKeys.add(target.sessionKey);
-          }
-        }
-      }
-    }
-
-    for (const sessionKey of changedSessionKeys) {
-      const now = Date.now();
-      this.emitRuntimeEvent('chat:runtime-event', {
-        type: 'session.updated',
-        runId: `cc-connect-transcript-sync-${now}`,
-        sessionKey,
-        updatedAt: now,
-        reason: 'codex-transcript-store-sync',
-        ts: now,
-      });
-    }
-
-    return changedCount;
-  }
-
-  private sessionKeysForPersistedSession(store: PersistedSessionStore, session: PersistedSession): string[] {
-    const keys: string[] = [];
-    for (const [key, sessionId] of store.activeSession.entries()) {
-      if (sessionId === session.id) keys.push(fromBridgeSessionKey(key));
-    }
-    for (const [key, sessionIds] of store.userSessions.entries()) {
-      if (sessionIds.includes(session.id)) keys.push(fromBridgeSessionKey(key));
-    }
-    if (keys.length === 0) keys.push(keyForPersistedSession(session));
-    return Array.from(new Set(keys));
-  }
-
-  private async readCodexTranscriptFilesForSessionIds(sessionIds: Set<string>): Promise<Array<{
-    path: string;
-    sessionId: string;
-    content: string;
-  }>> {
-    const results: Array<{ path: string; mtimeMs: number }> = [];
-    const visit = async (dir: string, depth: number): Promise<void> => {
-      if (depth > CODEX_TRANSCRIPT_MAX_DEPTH) return;
-      const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
-      await Promise.all(entries.map(async (entry) => {
-        const fullPath = join(dir, entry.name);
-        if (entry.isDirectory()) {
-          await visit(fullPath, depth + 1);
-          return;
-        }
-        if (!entry.isFile() || !entry.name.endsWith('.jsonl')) return;
-        const info = await stat(fullPath).catch(() => null);
-        if (!info) return;
-        results.push({ path: fullPath, mtimeMs: info.mtimeMs });
-      }));
-    };
-    await visit(this.codexSessionsDir, 0);
-
-    const matched: Array<{ path: string; sessionId: string; content: string }> = [];
-    for (const file of results.sort((left, right) => right.mtimeMs - left.mtimeMs).slice(0, 200)) {
-      const content = await readFile(file.path, 'utf8').catch(() => '');
-      if (!content) continue;
-      const sessionId = this.codexTranscriptSessionId(content);
-      if (!sessionId || !sessionIds.has(sessionId)) continue;
-      matched.push({ path: file.path, sessionId, content });
-    }
-    return matched;
-  }
-
-  private codexTranscriptSessionId(content: string): string | null {
-    for (const line of content.split(/\r?\n/)) {
-      if (!line.trim()) continue;
-      try {
-        const record = JSON.parse(line) as unknown;
-        if (!isRecord(record) || record.type !== 'session_meta') continue;
-        const payload = isRecord(record.payload) ? record.payload : null;
-        return typeof payload?.id === 'string' && payload.id ? payload.id : null;
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
-
-  private async readPersistedSessionStores(): Promise<PersistedSessionStore[]> {
-    const names = await readdir(this.sessionStoreDir).catch(() => []);
-    return (await Promise.all(names
-      .filter((name) => name.endsWith('.json'))
-      .map((name) => this.readPersistedSessionStore(join(this.sessionStoreDir, name)))))
-      .filter((store): store is PersistedSessionStore => Boolean(store));
-  }
-
-  private async readPersistedSessionStore(path: string): Promise<PersistedSessionStore | null> {
-    try {
-      const raw = JSON.parse(await readFile(path, 'utf8')) as unknown;
-      if (!isRecord(raw) || !isRecord(raw.sessions)) return null;
-      const projectName = projectNameFromStorePath(path);
-      const agentId = agentIdFromProjectName(projectName);
-      const sessions = new Map<string, PersistedSession>();
-      const rawSessions = new Map<string, Record<string, unknown>>();
-      for (const [id, value] of Object.entries(raw.sessions)) {
-        if (!isRecord(value)) continue;
-        rawSessions.set(id, value);
-        const history = Array.isArray(value.history)
-          ? value.history.flatMap((message, index) => {
-              const normalized = normalizeRawMessage(message, `${id}:${index}`);
-              return normalized ? [normalized] : [];
-            })
-          : [];
-        const updatedAt = normalizeTimestamp(value.updated_at ?? value.updatedAt)
-          ?? history.reduce((latest, message) => Math.max(latest, normalizeTimestamp(message.timestamp) ?? 0), 0);
-        const createdAt = normalizeTimestamp(value.created_at ?? value.createdAt)
-          ?? normalizeTimestamp(history[0]?.timestamp)
-          ?? updatedAt;
-        sessions.set(id, {
-          id,
-          name: typeof value.name === 'string' ? value.name : undefined,
-          agentSessionId: typeof value.agent_session_id === 'string' ? value.agent_session_id : undefined,
-          projectName,
-          agentId,
-          history,
-          createdAt,
-          updatedAt,
-        });
-      }
-      return {
-        path,
-        projectName,
-        agentId,
-        sessions,
-        rawSessions,
-        activeSession: readStringMap(raw.active_session),
-        userSessions: readUserSessions(raw.user_sessions),
-        userMeta: readUserMeta(raw.user_meta),
-        raw,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  private async readPersistedMessages(sessionKey: string, limit = 200): Promise<RawMessage[]> {
-    const messages: RawMessage[][] = [];
-    const seenSessions = new Set<string>();
-    for (const store of await this.readPersistedSessionStores()) {
-      for (const key of sessionLookupKeys(sessionKey)) {
-        for (const session of sessionsForStoreKey(store, key)) {
-          if (session.history.length === 0) continue;
-          const dedupeKey = `${store.path}:${session.id}`;
-          if (seenSessions.has(dedupeKey)) continue;
-          seenSessions.add(dedupeKey);
-          messages.push(session.history);
-        }
-      }
-      const directSessionId = directSessionIdForKey(store, sessionKey);
-      const directSession = directSessionId ? store.sessions.get(directSessionId) : undefined;
-      if (directSession?.history.length) {
-        const dedupeKey = `${store.path}:${directSession.id}`;
-        if (!seenSessions.has(dedupeKey)) {
-          seenSessions.add(dedupeKey);
-          messages.push(directSession.history);
-        }
-      }
-    }
-    return mergeHistoryMessages(...messages).slice(-Math.max(1, Math.min(Math.floor(limit), 1000)));
-  }
-
-  private async readSupplementalStore(): Promise<SupplementalHistoryStore> {
-    try {
-      const raw = JSON.parse(await readFile(this.supplementalHistoryPath, 'utf8')) as unknown;
-      if (!isRecord(raw) || !isRecord(raw.sessions)) return { sessions: {}, labels: {} };
-      const sessions: Record<string, RawMessage[]> = {};
-      for (const [key, value] of Object.entries(raw.sessions)) {
-        if (!Array.isArray(value)) continue;
-        sessions[key] = value.flatMap((message, index) => {
-          const normalized = normalizeRawMessage(message, `${key}:supplemental:${index}`);
-          return normalized ? [normalized] : [];
-        });
-      }
-      const labels = isRecord(raw.labels)
-        ? Object.fromEntries(Object.entries(raw.labels).flatMap(([key, value]) => (
-            typeof value === 'string' && value.trim() ? [[key, value.trim()]] : []
-          )))
-        : {};
-      return { sessions, labels };
-    } catch {
-      return { sessions: {}, labels: {} };
-    }
-  }
-
-  private async writeSupplementalStore(store: SupplementalHistoryStore): Promise<void> {
-    await mkdir(dirname(this.supplementalHistoryPath), { recursive: true });
-    await writeFile(this.supplementalHistoryPath, JSON.stringify(store, null, 2), 'utf8');
-  }
-
-  private async readSupplementalMessages(sessionKey: string, limit = 200): Promise<RawMessage[]> {
-    const store = await this.readSupplementalStore();
-    const merged = mergeHistoryMessages(...sessionLookupKeys(sessionKey).map((key) => store.sessions[key] ?? []));
-    return merged.slice(-Math.max(1, Math.min(Math.floor(limit), 1000)));
-  }
-
-  private async appendSupplementalMessage(sessionKey: string, message: RawMessage): Promise<boolean> {
-    const store = await this.readSupplementalStore();
-    const keys = sessionLookupKeys(sessionKey);
-    const key = keys[0];
-    const existing = store.sessions[key] ?? [];
-    const normalizedMessage = normalizeRawMessage(message, typeof message.id === 'string' ? message.id : `${key}:supplemental`);
-    if (!normalizedMessage) return false;
-    const previous = typeof normalizedMessage.id === 'string' && normalizedMessage.id
-      ? existing.find((candidate) => candidate.id === normalizedMessage.id)
-      : undefined;
-    const changed = !previous || JSON.stringify(previous) !== JSON.stringify(normalizedMessage);
-    if (!changed) return false;
-    const merged = mergeHistoryMessages(existing, [normalizedMessage]);
-    const next = merged.slice(-1000);
-    store.sessions[key] = next;
-    for (const alias of keys.slice(1)) {
-      if (alias !== key) delete store.sessions[alias];
-    }
-    await this.writeSupplementalStore(store);
-    return changed;
-  }
-
-  private async deletePersistedSession(sessionKey: string): Promise<void> {
-    await this.deleteSupplementalSession(sessionKey);
-    for (const store of await this.readPersistedSessionStores()) {
-      let changed = false;
-      const directSessionId = directSessionIdForKey(store, sessionKey);
-      const sessionIdsToDelete = new Set<string>();
-      for (const key of sessionLookupKeys(sessionKey)) {
-        const sessionIds = sessionIdsForStoreKey(store, key);
-        if (sessionIds.length === 0 && !store.activeSession.has(key) && !store.userSessions.has(key) && !store.userMeta.has(key)) {
-          continue;
-        }
-        for (const sessionId of sessionIds) {
-          sessionIdsToDelete.add(sessionId);
-        }
-        store.activeSession.delete(key);
-        store.userSessions.delete(key);
-        store.userMeta.delete(key);
-        changed = true;
-      }
-      if (directSessionId) {
-        sessionIdsToDelete.add(directSessionId);
-      }
-      if (sessionIdsToDelete.size > 0) {
-        for (const sessionId of sessionIdsToDelete) {
-          store.sessions.delete(sessionId);
-          store.rawSessions.delete(sessionId);
-        }
-        for (const [key, sessionId] of store.activeSession.entries()) {
-          if (sessionIdsToDelete.has(sessionId)) {
-            store.activeSession.delete(key);
-            store.userMeta.delete(key);
-          }
-        }
-        for (const [key, sessionIds] of store.userSessions.entries()) {
-          const nextSessionIds = sessionIds.filter((sessionId) => !sessionIdsToDelete.has(sessionId));
-          if (nextSessionIds.length === 0) {
-            store.userSessions.delete(key);
-            store.userMeta.delete(key);
-          } else if (nextSessionIds.length !== sessionIds.length) {
-            store.userSessions.set(key, nextSessionIds);
-          }
-        }
-        changed = true;
-      }
-      if (!changed) continue;
-      const next = {
-        ...store.raw,
-        sessions: Object.fromEntries(store.rawSessions.entries()),
-        active_session: Object.fromEntries(store.activeSession.entries()),
-        user_sessions: Object.fromEntries(store.userSessions.entries()),
-        user_meta: Object.fromEntries(store.userMeta.entries()),
-      };
-      await mkdir(this.sessionStoreDir, { recursive: true });
-      await writeFile(store.path, JSON.stringify(next, null, 2), 'utf8');
-    }
-  }
-
-  private async deleteSupplementalSession(sessionKey: string): Promise<void> {
-    const store = await this.readSupplementalStore();
-    let changed = false;
-    for (const key of sessionLookupKeys(sessionKey)) {
-      if (store.sessions[key]) {
-        delete store.sessions[key];
-        changed = true;
-      }
-      if (store.labels[key]) {
-        delete store.labels[key];
-        changed = true;
-      }
-    }
-    if (changed) await this.writeSupplementalStore(store);
-  }
-
-  private async renameSupplementalSession(sessionKey: string, label: string): Promise<void> {
-    const store = await this.readSupplementalStore();
-    const keys = sessionLookupKeys(sessionKey);
-    const key = keys[0];
-    store.labels[key] = label;
-    for (const alias of keys.slice(1)) {
-      if (alias !== key) delete store.labels[alias];
-    }
-    await this.writeSupplementalStore(store);
-  }
-
-  private async renamePersistedSession(sessionKey: string, label: string): Promise<void> {
-    for (const store of await this.readPersistedSessionStores()) {
-      let changed = false;
-      const directSessionId = directSessionIdForKey(store, sessionKey);
-      if (directSessionId) {
-        const directSession = store.rawSessions.get(directSessionId);
-        if (directSession) {
-          directSession.name = label;
-          changed = true;
-        }
-      }
-
-      for (const key of sessionLookupKeys(sessionKey)) {
-        if (store.activeSession.has(key) || store.userSessions.has(key)) {
-          const meta = store.userMeta.get(key) ?? {};
-          meta.chat_name = label;
-          store.userMeta.set(key, meta);
-          changed = true;
-        }
-        const activeSessionId = store.activeSession.get(key);
-        if (activeSessionId) {
-          const activeSession = store.rawSessions.get(activeSessionId);
-          if (activeSession) {
-            activeSession.name = label;
-            changed = true;
-          }
-        }
-      }
-
-      if (!changed) continue;
-      const next = {
-        ...store.raw,
-        sessions: Object.fromEntries(store.rawSessions.entries()),
-        active_session: Object.fromEntries(store.activeSession.entries()),
-        user_sessions: Object.fromEntries(store.userSessions.entries()),
-        user_meta: Object.fromEntries(store.userMeta.entries()),
-      };
-      await mkdir(this.sessionStoreDir, { recursive: true });
-      await writeFile(store.path, JSON.stringify(next, null, 2), 'utf8');
+    for (const [runId, approval] of this.pendingApprovals.entries()) {
+      if (approval.sessionKey === sessionKey) this.pendingApprovals.delete(runId);
     }
   }
 
   private connectOnce(): Promise<void> {
     return new Promise((resolve, reject) => {
       const socket = new WebSocket(`ws://127.0.0.1:${this.port}/bridge/ws?token=${encodeURIComponent(this.token)}`);
+      this.connectingSockets.add(socket);
       let settled = false;
       const timeout = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        socket.close();
-        reject(new Error('cc-connect bridge connection timed out'));
+        finish(new Error('cc-connect bridge connection timed out'));
       }, 1500);
       const finish = (error?: Error) => {
         if (settled) return;
         settled = true;
         clearTimeout(timeout);
+        this.connectingSockets.delete(socket);
         if (error) {
+          if (socket.readyState !== WebSocket.CLOSING && socket.readyState !== WebSocket.CLOSED) socket.close();
           reject(error);
         } else {
           resolve();
@@ -1499,12 +704,12 @@ export class CcConnectBridgeAdapter {
             'update_message',
             'delete_message',
             'reconstruct_reply',
-            'tool_events',
-            'command_output',
-            'patch_events',
           ],
           metadata: {
             protocol_version: 1,
+            adapter: 'clawx',
+            progress_style: 'card',
+            supports_progress_card_payload: true,
             description: 'ClawX GUI bridge adapter',
           },
         }));
@@ -1515,6 +720,7 @@ export class CcConnectBridgeAdapter {
         if (parsed.type === 'register_ack') {
           if (parsed.ok === true) {
             this.socket = socket;
+            this.startHeartbeat(socket);
             finish();
           } else {
             finish(new Error(typeof parsed.error === 'string' ? parsed.error : 'cc-connect bridge registration failed'));
@@ -1525,9 +731,49 @@ export class CcConnectBridgeAdapter {
       });
       socket.once('error', (error) => finish(error));
       socket.once('close', () => {
-        if (this.socket === socket) this.socket = null;
+        if (this.socket === socket) {
+          this.socket = null;
+          this.clearHeartbeat();
+          this.scheduleReconnect();
+        }
+        finish(new Error('cc-connect bridge connection closed'));
       });
     });
+  }
+
+  private startHeartbeat(socket: WebSocket): void {
+    this.clearHeartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      if (this.socket !== socket || socket.readyState !== WebSocket.OPEN) return;
+      try {
+        socket.send(JSON.stringify({ type: 'ping', ts: Date.now() }));
+      } catch {
+        socket.terminate();
+      }
+    }, this.heartbeatIntervalMs);
+    this.heartbeatTimer.unref?.();
+  }
+
+  private clearHeartbeat(): void {
+    if (!this.heartbeatTimer) return;
+    clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = null;
+  }
+
+  private scheduleReconnect(): void {
+    if (!this.shouldReconnect || this.reconnectTimer) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (!this.shouldReconnect || this.socket?.readyState === WebSocket.OPEN) return;
+      void this.connect().catch(() => this.scheduleReconnect());
+    }, this.reconnectDelayMs);
+    this.reconnectTimer.unref?.();
+  }
+
+  private clearReconnectTimer(): void {
+    if (!this.reconnectTimer) return;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
   }
 
   private parseMessage(data: WebSocket.RawData): Record<string, unknown> | null {
@@ -1545,19 +791,30 @@ export class CcConnectBridgeAdapter {
   }
 
   private handleServerMessage(message: Record<string, unknown>): void {
+    const progressItems = parseBridgeProgressItems(message.content);
+    if (progressItems) {
+      logger.debug(
+        `[cc-connect bridge] progress packet type=${String(message.type || 'unknown')}`
+        + ` itemKinds=${progressItems.map((item) => item.kind).join(',')}`,
+      );
+    }
     if (message.type === 'ping') {
       this.socket?.send(JSON.stringify({ type: 'pong', ts: Date.now() }));
       return;
     }
     if (message.type === 'preview_start') {
+      const handle = String(message.ref_id || randomUUID());
+      this.handleBridgeProgress(message, handle);
       this.socket?.send(JSON.stringify({
         type: 'preview_ack',
         ref_id: message.ref_id,
-        preview_handle: String(message.ref_id || randomUUID()),
+        preview_handle: handle,
       }));
       return;
     }
     if (message.type === 'update_message') {
+      const handle = firstString(message, ['preview_handle', 'previewHandle']);
+      if (handle && this.handleBridgeProgress(message, handle)) return;
       this.emitAssistantDelta({
         ...message,
         full_text: typeof message.content === 'string' ? message.content : '',
@@ -1594,6 +851,7 @@ export class CcConnectBridgeAdapter {
       return;
     }
     if (message.type === 'buttons') {
+      if (this.handleBridgeApproval(message)) return;
       void this.finishRun(message, typeof message.content === 'string' ? message.content : '');
       return;
     }
@@ -1604,6 +862,182 @@ export class CcConnectBridgeAdapter {
     if (message.type === 'error') {
       void this.finishRun(message, typeof message.message === 'string' ? message.message : 'cc-connect bridge error', true);
     }
+  }
+
+  private handleBridgeProgress(message: Record<string, unknown>, handle: string): boolean {
+    const items = parseBridgeProgressItems(message.content);
+    if (!items) return false;
+    let state = this.progressByHandle.get(handle);
+    if (!state) {
+      const resolved = this.resolvePendingRun(message);
+      if (!resolved) return true;
+      state = {
+        runId: resolved.runId,
+        sessionKey: resolved.pending.sessionKey,
+        seenByIndex: new Map(),
+        toolCallIdByIndex: new Map(),
+        toolNameByIndex: new Map(),
+        completedToolIndexes: new Set(),
+        windowBase: 0,
+        windowFingerprints: [],
+      };
+      this.progressByHandle.set(handle, state);
+    }
+    const pending = this.pendingRuns.get(state.runId);
+    if (!pending || this.abortedRuns.has(state.runId)) return true;
+
+    const windowBase = this.reconcileProgressWindow(state, items);
+    for (let localIndex = 0; localIndex < items.length; localIndex += 1) {
+      const item = items[localIndex];
+      const index = windowBase + localIndex;
+      const fingerprint = JSON.stringify(item);
+      const previous = state.seenByIndex.get(index);
+      if (previous === fingerprint) continue;
+      state.seenByIndex.set(index, fingerprint);
+      const now = Date.now();
+
+      if (item.kind === 'thinking' || item.kind === 'info') {
+        pending.seq += 1;
+        this.emitRuntimeEvent('chat:runtime-event', {
+          type: 'thinking.delta',
+          runId: state.runId,
+          sessionKey: state.sessionKey,
+          text: item.text,
+          seq: pending.seq,
+          ts: now,
+        });
+        continue;
+      }
+
+      if (item.kind === 'tool_use') {
+        if (previous !== undefined) continue;
+        const toolCallId = `${state.runId}:progress:${index}`;
+        state.toolCallIdByIndex.set(index, toolCallId);
+        state.toolNameByIndex.set(index, item.tool || 'tool');
+        this.handleBridgeToolMessage({
+          type: 'tool_call',
+          reply_ctx: state.runId,
+          session_key: toCcConnectBridgeSessionKey(state.sessionKey),
+          tool_call_id: toolCallId,
+          tool_name: item.tool || 'tool',
+          args: item.text,
+        }, 'started');
+        continue;
+      }
+
+      const matchingToolIndex = this.findProgressToolIndex(items, state, localIndex, windowBase, item.tool);
+      const toolCallId = matchingToolIndex === null
+        ? `${state.runId}:progress:${index}`
+        : state.toolCallIdByIndex.get(matchingToolIndex) || `${state.runId}:progress:${matchingToolIndex}`;
+      if (matchingToolIndex !== null) state.completedToolIndexes.add(matchingToolIndex);
+      this.handleBridgeToolMessage({
+        type: 'tool_result',
+        reply_ctx: state.runId,
+        session_key: toCcConnectBridgeSessionKey(state.sessionKey),
+        tool_call_id: toolCallId,
+        tool_name: item.tool || 'tool',
+        result: item.text,
+        status: item.status,
+        exit_code: item.exit_code,
+        is_error: item.kind === 'error' || item.success === false,
+        meta: {
+          status: item.status,
+          exitCode: item.exit_code,
+          success: item.success,
+        },
+      }, 'completed');
+    }
+    return true;
+  }
+
+  private findProgressToolIndex(
+    items: BridgeProgressItem[],
+    state: BridgeProgressState,
+    resultLocalIndex: number,
+    windowBase: number,
+    toolName?: string,
+  ): number | null {
+    for (let localIndex = resultLocalIndex - 1; localIndex >= 0; localIndex -= 1) {
+      if (items[localIndex]?.kind !== 'tool_use') continue;
+      if (toolName && items[localIndex]?.tool && items[localIndex].tool !== toolName) continue;
+      const index = windowBase + localIndex;
+      if (state.toolCallIdByIndex.has(index)) return index;
+    }
+    const knownIndexes = Array.from(state.toolCallIdByIndex.keys()).sort((left, right) => right - left);
+    for (const index of knownIndexes) {
+      if (state.completedToolIndexes.has(index)) continue;
+      const knownName = state.toolNameByIndex.get(index);
+      if (!toolName || !knownName || knownName === toolName) return index;
+    }
+    return null;
+  }
+
+  private reconcileProgressWindow(state: BridgeProgressState, items: BridgeProgressItem[]): number {
+    const next = items.map((item) => JSON.stringify(item));
+    const previous = state.windowFingerprints;
+    let overlap = Math.min(previous.length, next.length);
+    while (overlap > 0) {
+      const previousStart = previous.length - overlap;
+      let matches = true;
+      for (let index = 0; index < overlap; index += 1) {
+        if (previous[previousStart + index] !== next[index]) {
+          matches = false;
+          break;
+        }
+      }
+      if (matches) break;
+      overlap -= 1;
+    }
+    const nextBase = previous.length === 0
+      ? 0
+      : state.windowBase + previous.length - overlap;
+    state.windowBase = nextBase;
+    state.windowFingerprints = next;
+    return nextBase;
+  }
+
+  private handleBridgeApproval(message: Record<string, unknown>): boolean {
+    const actions = bridgeButtonActions(message);
+    if (!actions.some(({ action }) => action.startsWith('perm:') || action.startsWith('askq:'))) return false;
+    const resolved = this.resolvePendingRun(message);
+    if (!resolved) return true;
+    const supportedActions = actions.filter(({ action }) => action.startsWith('perm:') || action.startsWith('askq:'));
+    const itemId = `${resolved.runId}:approval`;
+    const title = 'Codex approval';
+    const kind = supportedActions.some(({ action }) => action.startsWith('askq:')) ? 'question' : 'permission';
+    const content = typeof message.content === 'string' ? message.content : '';
+    const bridgeSessionKey = typeof message.session_key === 'string'
+      ? message.session_key
+      : toCcConnectBridgeSessionKey(resolved.pending.sessionKey);
+    this.pendingApprovals.set(resolved.runId, {
+      runId: resolved.runId,
+      sessionKey: resolved.pending.sessionKey,
+      bridgeSessionKey,
+      replyCtx: firstString(message, ['reply_ctx']) || resolved.runId,
+      project: firstString(message, ['project']) || this.projectForSessionKey(resolved.pending.sessionKey),
+      itemId,
+      title,
+      kind,
+      message: content,
+      actions: supportedActions,
+    });
+    resolved.pending.seq += 1;
+    const now = Date.now();
+    this.emitRuntimeEvent('chat:runtime-event', {
+      type: 'approval.updated',
+      runId: resolved.runId,
+      sessionKey: resolved.pending.sessionKey,
+      itemId,
+      title,
+      kind,
+      phase: 'requested',
+      status: 'pending',
+      message: content,
+      actions: supportedActions,
+      seq: resolved.pending.seq,
+      ts: now,
+    });
+    return true;
   }
 
   private handleBridgeToolMessage(message: Record<string, unknown>, kind: BridgeToolEventKind): void {
@@ -1915,17 +1349,6 @@ export class CcConnectBridgeAdapter {
     return null;
   }
 
-  private findPersistedCompletionForPendingRun(pending: PendingRun, messages: RawMessage[]): RawMessage | null {
-    const startedAt = pending.startedAt - 5_000;
-    const candidates = messages.filter((message) => {
-      if (message.role !== 'assistant' && message.role !== 'system') return false;
-      if (!messageText(message.content)) return false;
-      const timestamp = normalizeTimestamp(message.timestamp);
-      return timestamp == null || timestamp >= startedAt;
-    });
-    return candidates.at(-1) ?? null;
-  }
-
   private async finishPendingRun(pending: PendingRun, options: {
     text: string;
     isError?: boolean;
@@ -1934,9 +1357,9 @@ export class CcConnectBridgeAdapter {
     timestamp?: number;
     attachedFiles?: AttachedFileMeta[];
   }): Promise<void> {
-    await this.waitForCodexTranscriptToolEventsForPendingRun(pending);
     const now = options.timestamp ?? Date.now();
     const isError = options.isError === true;
+    this.completeOpenProgressTools(pending.runId, isError);
     const assistantMessage: RawMessage = {
       id: options.messageId || `${pending.runId}:assistant`,
       role: isError ? 'system' : 'assistant',
@@ -1964,8 +1387,34 @@ export class CcConnectBridgeAdapter {
       ts: now,
       ...(isError ? { error: options.text } : {}),
     });
-    this.scheduleCodexTranscriptToolEventBackfill(pending);
     this.pendingRuns.delete(pending.runId);
+    this.clearProgressForRun(pending.runId);
+    this.clearApprovalsForRun(pending.runId);
+  }
+
+  private completeOpenProgressTools(runId: string, isError: boolean): void {
+    for (const state of this.progressByHandle.values()) {
+      if (state.runId !== runId) continue;
+      for (const [index, toolCallId] of state.toolCallIdByIndex.entries()) {
+        if (state.completedToolIndexes.has(index)) continue;
+        state.completedToolIndexes.add(index);
+        this.handleBridgeToolMessage({
+          type: 'tool_result',
+          reply_ctx: runId,
+          session_key: toCcConnectBridgeSessionKey(state.sessionKey),
+          tool_call_id: toolCallId,
+          tool_name: state.toolNameByIndex.get(index) || 'tool',
+          result: '',
+          status: isError ? 'failed' : 'completed',
+          is_error: isError,
+          meta: {
+            status: isError ? 'failed' : 'completed',
+            success: !isError,
+            inferredFromRunCompletion: true,
+          },
+        }, 'completed');
+      }
+    }
   }
 
   private isAbortedBridgeMessage(message: Record<string, unknown>): boolean {
@@ -1988,6 +1437,16 @@ export class CcConnectBridgeAdapter {
     for (const [runId, aborted] of this.abortedRuns.entries()) {
       if (aborted.abortedAt < cutoff) this.abortedRuns.delete(runId);
     }
+  }
+
+  private clearProgressForRun(runId: string): void {
+    for (const [handle, state] of this.progressByHandle.entries()) {
+      if (state.runId === runId) this.progressByHandle.delete(handle);
+    }
+  }
+
+  private clearApprovalsForRun(runId: string): void {
+    this.pendingApprovals.delete(runId);
   }
 
   private appendMessage(sessionKey: string, message: RawMessage): void {

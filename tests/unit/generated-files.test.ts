@@ -252,6 +252,38 @@ describe('generated-files utilities', () => {
     expect(computeLineStats(files[0])).toEqual({ added: 1, removed: 1 });
   });
 
+  it('extracts files from cc-connect structured Patch tool calls', () => {
+    const messages: RawMessage[] = [
+      { role: 'user', content: 'create file through cc-connect', timestamp: 1 },
+      {
+        role: 'assistant',
+        content: [{
+          type: 'toolCall',
+          id: 'call-bridge-patch',
+          name: 'Patch',
+          arguments: [{
+            diff: '# ClawX UI Artifact\nCLAWX_REAL_UI_ARTIFACT_OK\n',
+            kind: { type: 'add' },
+            path: '/tmp/clawx-real-ui-artifact.md',
+          }],
+        }],
+      },
+    ];
+
+    const files = extractGeneratedFiles(messages, 0, 1);
+
+    expect(files).toEqual([
+      expect.objectContaining({
+        filePath: '/tmp/clawx-real-ui-artifact.md',
+        fileName: 'clawx-real-ui-artifact.md',
+        action: 'created',
+        fullContent: '# ClawX UI Artifact\nCLAWX_REAL_UI_ARTIFACT_OK\n',
+        baseline: { status: 'missing' },
+      }),
+    ]);
+    expect(computeLineStats(files[0])).toEqual({ added: 2, removed: 0 });
+  });
+
   it('computes edit snippet stats from joined edit hunks', () => {
     const stats = computeLineStats({
       filePath: '/tmp/example.ts',

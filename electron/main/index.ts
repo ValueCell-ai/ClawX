@@ -54,19 +54,22 @@ import { deviceOAuthManager } from '../utils/device-oauth';
 import { browserOAuthManager } from '../utils/browser-oauth';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { syncAllProviderAuthToRuntime } from '../services/providers/provider-runtime-sync';
+import { getClawXDataLayout, initializeClawXDataLayout } from '../utils/clawx-data-layout';
+import { migrateLegacyProviderSecretsToVault } from '../services/secrets/secret-store';
+import { migrateLegacyClawXData } from '../utils/clawx-data-migration';
 
 const WINDOWS_APP_USER_MODEL_ID = 'app.clawx.desktop';
 const isE2EMode = process.env.CLAWX_E2E === '1';
-const requestedUserDataDir = process.env.CLAWX_USER_DATA_DIR?.trim();
 const requestedRemoteDebuggingPort = process.env.CLAWX_REMOTE_DEBUGGING_PORT?.trim();
+const legacyElectronUserDataDir = app.getPath('userData');
+const clawXDataLayout = getClawXDataLayout();
 
 if (requestedRemoteDebuggingPort) {
   app.commandLine.appendSwitch('remote-debugging-port', requestedRemoteDebuggingPort);
 }
 
-if (isE2EMode && requestedUserDataDir) {
-  app.setPath('userData', requestedUserDataDir);
-}
+app.setPath('userData', clawXDataLayout.electronUserDataDir);
+initializeClawXDataLayout(clawXDataLayout);
 
 // Disable GPU hardware acceleration globally for maximum stability across
 // all GPU configurations (no GPU, integrated, discrete).
@@ -108,9 +111,14 @@ let gotFileLock = true;
 if (gotElectronLock && !isE2EMode) {
   try {
     const fileLock = acquireProcessInstanceFileLock({
-      userDataDir: app.getPath('userData'),
-      lockName: 'clawx',
-      force: true, // Electron lock already guarantees exclusivity; force-clean orphan/recycled-PID locks
+      userDataDir: clawXDataLayout.locksDir,
+      lockName: 'writer',
+      lockPath: clawXDataLayout.writerLockPath,
+      metadata: {
+        appVersion: app.getVersion(),
+        channel: process.env.CLAWX_RELEASE_CHANNEL?.trim() || (app.isPackaged ? 'stable' : 'dev'),
+        executable: process.execPath,
+      },
     });
     gotFileLock = fileLock.acquired;
     releaseProcessInstanceFileLock = fileLock.release;
@@ -314,6 +322,17 @@ async function initialize(): Promise<void> {
   logger.debug(
     `Runtime: platform=${process.platform}/${process.arch}, electron=${process.versions.electron}, node=${process.versions.node}, packaged=${app.isPackaged}, pid=${process.pid}, ppid=${process.ppid}`
   );
+  const legacyMigration = await migrateLegacyClawXData({
+    legacyElectronUserDataDir,
+    layout: clawXDataLayout,
+  });
+  if (legacyMigration.copied.length > 0) {
+    logger.info(`Imported ${legacyMigration.copied.length} legacy ClawX data path(s) into ${clawXDataLayout.root}`);
+  }
+  const migratedSecretCount = await migrateLegacyProviderSecretsToVault();
+  if (migratedSecretCount > 0) {
+    logger.info(`Migrated ${migratedSecretCount} provider credential account(s) into the encrypted ClawX vault`);
+  }
 
   if (!isE2EMode) {
     // Warm up network optimization (non-blocking)

@@ -241,7 +241,12 @@ export type ChannelConfiguredResult = HostSuccess & { channels?: Array<string | 
 export type AgentSnapshotResult = AgentsSnapshot & OptionalHostSuccess;
 export type AgentCreatePayload = { name: string; inheritWorkspace?: boolean };
 export type AgentUpdatePayload = { id: string; name: string };
-export type AgentUpdateModelPayload = { id: string; modelRef: string | null };
+export type AgentUpdateModelPayload = {
+  id: string;
+  modelRef: string | null;
+  providerAccountId?: string | null;
+  permissionMode?: 'suggest' | 'full-auto';
+};
 export type AgentIdPayload = { id: string };
 export type AgentChannelPayload = { id: string; channelType: string };
 

@@ -203,6 +203,16 @@ export function normalizeGatewayChatRuntimeEvent(payload: unknown): ChatRuntimeE
           phase: readString(data.phase),
           status: readString(data.status),
           message: readString(data.message),
+          actions: Array.isArray(data.actions)
+            ? data.actions.flatMap((action) => {
+                if (!action || typeof action !== 'object') return [];
+                const record = action as Record<string, unknown>;
+                const value = readString(record.action);
+                if (!value) return [];
+                const label = readString(record.label);
+                return [{ action: value, ...(label ? { label } : {}) }];
+              })
+            : undefined,
         }
       : null;
   }

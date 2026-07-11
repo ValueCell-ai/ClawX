@@ -109,6 +109,8 @@ const APPLY_PATCH_TOOLS = new Set([
   'applyPatch',
 ]);
 
+const STRUCTURED_PATCH_TOOLS = new Set(['Patch', 'patch']);
+
 const FILE_PATH_KEYS = ['file_path', 'filepath', 'path', 'fileName', 'file_name', 'target_path'];
 
 /** Best-effort detector that mirrors the buckets WorkBuddy uses internally. */
@@ -401,6 +403,34 @@ function parseApplyPatchFiles(input: unknown): ApplyPatchFileChange[] {
   return changes.filter((change) => change.filePath);
 }
 
+function parseStructuredPatchFiles(input: unknown): ApplyPatchFileChange[] {
+  const parsed = typeof input === 'string'
+    ? (() => {
+        try {
+          return JSON.parse(input) as unknown;
+        } catch {
+          return input;
+        }
+      })()
+    : input;
+  const entries = Array.isArray(parsed) ? parsed : [parsed];
+
+  return entries.flatMap((entry): ApplyPatchFileChange[] => {
+    const record = asRecord(entry);
+    if (!record) return [];
+    const filePath = pickStringByKeys(record, FILE_PATH_KEYS);
+    const diff = typeof record.diff === 'string' ? record.diff : undefined;
+    if (!filePath || diff === undefined) return [];
+    const kind = asRecord(record.kind);
+    const patchType = (typeof kind?.type === 'string' ? kind.type : typeof record.kind === 'string' ? record.kind : '')
+      .toLowerCase();
+    if (patchType === 'add' || patchType === 'create') {
+      return [{ filePath, action: 'created', fullContent: diff }];
+    }
+    return [{ filePath, action: 'modified', edits: [{ old: '', new: diff }] }];
+  });
+}
+
 function determineWriteAction(
   existing: GeneratedFile | undefined,
   baseline: GeneratedFileBaseline | undefined,
@@ -516,8 +546,10 @@ export function extractGeneratedFiles(
       if (!name) continue;
       const input = block.input ?? block.arguments;
       const isApplyPatch = APPLY_PATCH_TOOLS.has(name);
-      if (isApplyPatch) {
-        for (const patchFile of parseApplyPatchFiles(input)) {
+      const isStructuredPatch = STRUCTURED_PATCH_TOOLS.has(name);
+      if (isApplyPatch || isStructuredPatch) {
+        const patchFiles = isStructuredPatch ? parseStructuredPatchFiles(input) : parseApplyPatchFiles(input);
+        for (const patchFile of patchFiles) {
           const existing = map.get(patchFile.filePath);
           map.set(patchFile.filePath, buildGeneratedFile(
             patchFile.filePath,

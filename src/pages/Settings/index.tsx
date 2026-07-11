@@ -122,7 +122,7 @@ export function Settings() {
   const unsupportedRuntimeOperations = useMemo(() => {
     if (!runtimeOperationCapabilities) return [];
     return Object.entries(runtimeOperationCapabilities)
-      .filter(([, operation]) => operation.support === 'unsupported')
+      .filter(([, operation]) => operation.support === 'unsupported' || operation.support === 'degraded')
       .sort(([left], [right]) => left.localeCompare(right))
       .slice(0, 8);
   }, [runtimeOperationCapabilities]);
@@ -733,13 +733,13 @@ export function Settings() {
                         {t('runtime.operationGapsTitle')}
                       </p>
                       <div className="flex flex-wrap gap-2">
-                        {unsupportedRuntimeOperations.map(([method]) => (
+                        {unsupportedRuntimeOperations.map(([method, operation]) => (
                           <Badge
                             key={method}
                             variant="secondary"
                             className="rounded-full px-3 py-1 bg-black/5 dark:bg-white/10 text-muted-foreground border border-black/5 dark:border-white/5 font-mono"
                           >
-                            {method}: {t('runtime.unsupported')}
+                            {method}: {t(operation.support === 'degraded' ? 'runtime.degraded' : 'runtime.unsupported')}
                           </Badge>
                         ))}
                       </div>

@@ -1,4 +1,4 @@
-import { access, copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { createConnection } from 'node:net';
 import { join } from 'node:path';
@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
 import { loadDefaultCcConnectLocalRealEnv } from './helpers/local-real-env';
 import { writeFeishuInboundMarkerArtifact } from './helpers/feishu-inbound-marker';
+import type { Page } from '@playwright/test';
 
 const execFileAsync = promisify(execFile);
 
@@ -86,39 +87,40 @@ async function waitForNoRuntimeProcesses(runtimeDir: string): Promise<void> {
   }).toEqual([]);
 }
 
-async function listJsonFiles(dir: string): Promise<string[]> {
-  let entries;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  const files = await Promise.all(entries.map(async (entry) => {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) return await listJsonFiles(path);
-    return entry.name.endsWith('.json') ? [path] : [];
-  }));
-  return files.flat();
-}
-
-async function findMarkerInSessionStore(runtimeDir: string, marker: string): Promise<{
+async function findMarkerThroughHostApi(page: Page, marker: string): Promise<{
   found: boolean;
-  matchingFiles: string[];
+  matchingSessionKeys: string[];
 }> {
-  const sessionDir = join(runtimeDir, 'data', 'sessions');
-  const files = await listJsonFiles(sessionDir);
-  const matchingFiles: string[] = [];
-  for (const file of files) {
-    const content = await readFile(file, 'utf8').catch(() => '');
-    if (content.includes(marker)) matchingFiles.push(file);
+  const summaries = await page.evaluate(async () => window.clawx.hostInvoke({
+    id: `runtime-feishu-inbound-summaries-${Date.now()}`,
+    module: 'sessions',
+    action: 'summaries',
+    payload: {},
+  })) as { ok?: boolean; data?: { sessions?: Array<{ key?: string }> } };
+  if (!summaries.ok) return { found: false, matchingSessionKeys: [] };
+
+  const sessionKeys = (summaries.data?.sessions ?? [])
+    .map((session) => session.key)
+    .filter((key): key is string => Boolean(key));
+  const matchingSessionKeys: string[] = [];
+  for (const sessionKey of sessionKeys) {
+    const history = await page.evaluate(async (key) => window.clawx.hostInvoke({
+      id: `runtime-feishu-inbound-history-${Date.now()}`,
+      module: 'sessions',
+      action: 'history',
+      payload: { sessionKey: key, limit: 200 },
+    }), sessionKey) as { ok?: boolean; data?: { success?: boolean; messages?: unknown[] } };
+    if (history.ok && history.data?.success && JSON.stringify(history.data.messages ?? []).includes(marker)) {
+      matchingSessionKeys.push(sessionKey);
+    }
   }
-  return { found: matchingFiles.length > 0, matchingFiles };
+  return { found: matchingSessionKeys.length > 0, matchingSessionKeys };
 }
 
 async function copyLocalCodexAuthToManagedHome(userDataDir: string): Promise<string> {
   const source = process.env.CLAWX_REAL_CODEX_AUTH_JSON?.trim();
   test.skip(!source, 'Set CLAWX_REAL_CODEX_AUTH_JSON to the auth.json that may be copied into the managed CODEX_HOME.');
-  const managedCodexHome = join(userDataDir, 'runtimes', 'cc-connect', 'codex-home');
+  const managedCodexHome = join(userDataDir, 'credentials', 'oauth', 'openai-oauth', 'codex-home');
   await mkdir(managedCodexHome, { recursive: true });
   await copyFile(source, join(managedCodexHome, 'auth.json'));
   return source ?? '';
@@ -167,6 +169,7 @@ test.describe('cc-connect real Feishu channel runtime smoke', () => {
     const appSecret = requiredEnv('CLAWX_REAL_FEISHU_APP_SECRET');
     const accountId = process.env.CLAWX_REAL_FEISHU_ACCOUNT_ID?.trim() || 'real_feishu_bot';
     const allowFrom = process.env.CLAWX_REAL_FEISHU_ALLOW_FROM?.trim() || '*';
+    const adminFrom = requiredEnv('CLAWX_REAL_FEISHU_ADMIN_FROM');
     const domain = feishuDomainInput();
     const platformType = expectedPlatformType(domain);
     const expectedDomain = expectedDomainUrl(domain, platformType);
@@ -230,6 +233,7 @@ test.describe('cc-connect real Feishu channel runtime smoke', () => {
               appSecret,
               domain,
               allowFrom,
+              adminFrom,
               shareSessionInChannel: true,
               enableFeishuCard: false,
             },
@@ -267,6 +271,7 @@ test.describe('cc-connect real Feishu channel runtime smoke', () => {
       expect(managedConfig).toContain(`app_id = "${appId}"`);
       expect(managedConfig).toContain(`domain = "${expectedDomain}"`);
       expect(managedConfig).toContain(`allow_from = "${allowFrom}"`);
+      expect(managedConfig).toContain(`admin_from = "${adminFrom}"`);
       expect(managedConfig).toContain('share_session_in_channel = true');
       expect(managedConfig).toContain('enable_feishu_card = false');
       const workDirLines = managedConfig.split('\n').filter((line) => line.startsWith('work_dir =')).join('\n');
@@ -402,7 +407,7 @@ test.describe('cc-connect real Feishu channel runtime smoke', () => {
     }
   });
 
-  test('observes a real inbound Feishu/Lark tenant message in the cc-connect session store', async ({
+  test('observes a real inbound Feishu/Lark tenant message through the public session API', async ({
     launchElectronApp,
     homeDir,
     userDataDir,
@@ -552,10 +557,10 @@ test.describe('cc-connect real Feishu channel runtime smoke', () => {
       console.log(`[cc-connect-real-feishu-inbound] Send this exact message to the configured Feishu/Lark bot before timeout: ${marker}`);
       console.log(`[cc-connect-real-feishu-inbound] Marker artifact: ${markerArtifactPath}`);
 
-      await expect.poll(async () => await findMarkerInSessionStore(runtimeDir, marker), {
+      await expect.poll(async () => await findMarkerThroughHostApi(page, marker), {
         timeout: timeoutMs,
         intervals: [1_000, 2_000, 5_000],
-        message: `real Feishu/Lark tenant message "${marker}" should appear in the cc-connect session store`,
+        message: `real Feishu/Lark tenant message "${marker}" should appear through ClawX public session history`,
       }).toMatchObject({ found: true });
     } finally {
       await closeElectronApp(app);

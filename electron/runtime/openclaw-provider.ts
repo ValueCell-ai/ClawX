@@ -27,6 +27,7 @@ import { PORTS } from '../utils/config';
 import { scheduleControlUiDeviceAutoApproval } from '../utils/control-ui-device-pairing';
 import { buildOpenClawControlUiUrl } from '../utils/openclaw-control-ui';
 import { getSetting } from '../utils/store';
+import { writeOpenClawCompatibilityProjection } from '../utils/channel-config';
 import type { OpenClawDoctorMode } from '@shared/host-api/contract';
 
 export class OpenClawRuntimeProvider extends EventEmitter implements RuntimeProvider {
@@ -71,16 +72,18 @@ export class OpenClawRuntimeProvider extends EventEmitter implements RuntimeProv
     );
   }
 
-  start() {
-    return this.gatewayManager.start();
+  async start() {
+    await writeOpenClawCompatibilityProjection();
+    return await this.gatewayManager.start();
   }
 
   stop() {
     return this.gatewayManager.stop();
   }
 
-  restart() {
-    return this.gatewayManager.restart();
+  async restart() {
+    await writeOpenClawCompatibilityProjection();
+    return await this.gatewayManager.restart();
   }
 
   checkHealth(options?: { probe?: boolean }) {

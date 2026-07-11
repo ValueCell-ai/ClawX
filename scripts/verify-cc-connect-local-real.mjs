@@ -4,16 +4,20 @@ import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { execFile, spawn } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import { basename, delimiter, join, relative, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import {
   toJson as toExternalGateHandoffJson,
   toMarkdown as toExternalGateHandoffMarkdown,
 } from './cc-connect-real-gate-handoff.mjs';
 import { collectMissingRuntimeBundles } from './verify-runtime-bundles.mjs';
+import {
+  defaultPackagedAppPath,
+  packagedExecutablePath,
+} from './packaged-runtime-layout.mjs';
 
 const execFileAsync = promisify(execFile);
-const root = resolve(new URL('..', import.meta.url).pathname);
+const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const reportDir = join(root, 'artifacts', 'cc-connect');
 const jsonReportPath = join(reportDir, 'local-real-validation-report.json');
 const markdownReportPath = join(reportDir, 'local-real-validation-report.md');
@@ -52,6 +56,7 @@ const REPLACEMENT_REQUIRED_COVERAGE_IDS = [
   'codex-oauth-lifecycle-local-diagnostics',
   'codex-oauth-host-api-lifecycle-local',
   'chat-abort-local-openai-compatible',
+  'token-usage-contract-local-diagnostics',
   'oauth-core-runtime-parity',
   'openai-api-key-provider-model-chat',
   'feishu-live-channel-lifecycle',
@@ -62,6 +67,15 @@ const REPLACEMENT_REQUIRED_COVERAGE_IDS = [
 const REQUIRED_CODEX_AUTH_TOKEN_KEYS = ['access_token', 'account_id', 'id_token', 'refresh_token'];
 
 const RESIDUAL_VALIDATION_GAPS = [
+  {
+    id: 'upstream-public-token-usage',
+    area: 'usage',
+    priority: 'required',
+    status: 'upstream-blocked',
+    requiredForLocalReplacementGate: true,
+    nextCommand: 'Upgrade to a pinned cc-connect release with a public per-turn usage API/event, then implement and verify RuntimeUsageRecord mapping.',
+    reason: 'cc-connect v1.4.1 exposes no versioned Bridge or Management usage payload. ClawX intentionally returns no cc-connect usage instead of reading private session or Codex transcript files.',
+  },
   {
     id: 'real-scheduled-prompt-channel-cron-delivery',
     area: 'cron',
@@ -90,13 +104,13 @@ const RESIDUAL_VALIDATION_GAPS = [
     reason: 'Current packaged smoke targets a macOS dir app; notarized dmg/zip installation behavior is not covered by the local verifier.',
   },
   {
-    id: 'windows-linux-packaged-smoke',
+    id: 'native-target-release-smoke-observation',
     area: 'packaging',
     priority: 'follow-up',
     status: 'unverified',
     requiredForLocalReplacementGate: false,
-    nextCommand: 'Run Windows and Linux packaged resource startup/cleanup smoke in CI or platform VMs.',
-    reason: 'The local verifier runs on the current platform and does not prove Windows/Linux packaged cc-connect and Codex resource behavior.',
+    nextCommand: 'Observe the macOS x64/arm64, Windows x64, and Linux x64/arm64 native packaged smoke jobs in a release workflow run.',
+    reason: 'The release workflow defines native startup/health/rollback/cleanup jobs for all supported targets, but a local verifier run cannot attest to their remote outcome.',
   },
 ];
 
@@ -161,8 +175,8 @@ const REPLACEMENT_CONTRACT_ITEMS = [
     id: 'token-usage-contract',
     area: 'usage',
     requirement: 'Token usage follows the runtime contract and does not silently mix OpenClaw or user-global Codex data.',
-    expectedState: 'runtime-owned-usage',
-    requiredForLocalReplacementGate: false,
+    expectedState: 'public-runtime-usage-required',
+    requiredForLocalReplacementGate: true,
   },
   {
     id: 'real-validation-opt-in',
@@ -401,8 +415,7 @@ async function readCcConnectCliSurface(binaryPath) {
 }
 
 function packagedAppPath() {
-  if (process.platform !== 'darwin') return null;
-  return join(root, 'release', `mac-${process.arch}`, 'ClawX.app');
+  return defaultPackagedAppPath({ rootDir: root });
 }
 
 function defaultCodexAuthPath() {
@@ -733,6 +746,8 @@ function readinessNextCommand(id) {
       return 'pnpm run verify:cc-connect:local-real:feishu-inbound';
     case 'scheduled-cron-delivery-local-bundle':
       return 'pnpm run verify:cc-connect:local-real:scheduled-cron';
+    case 'token-usage-contract-local-diagnostics':
+      return 'Upgrade to a pinned cc-connect release with a public per-turn usage API/event, then implement RuntimeUsageRecord mapping.';
     case 'packaged-oauth-runtime-smoke':
       return 'pnpm run verify:cc-connect:local-real:packaged-oauth';
     default:
@@ -917,9 +932,9 @@ function buildReplacementContract(coverage, replacementReadiness, validationGaps
         const usage = row('token-usage-contract-local-diagnostics');
         return {
           ...item,
-          status: usage.status === 'pass' ? 'pass' : 'partial',
-          evidence: `Token usage diagnostics: ${usage.status} (${coverageEvidence(usage)}).`,
-          nextAction: usage.status === 'pass' ? '' : 'pnpm exec vitest run tests/unit/token-usage-scan.test.ts && pnpm run test:e2e -- tests/e2e/token-usage.spec.ts',
+          status: 'partial',
+          evidence: `Private-data boundary diagnostics: ${usage.status} (${coverageEvidence(usage)}). Public per-turn cc-connect usage remains upstream-blocked.`,
+          nextAction: 'Upgrade to a pinned cc-connect release with a public per-turn usage API/event, then implement RuntimeUsageRecord mapping.',
         };
       }
       case 'real-validation-opt-in':
@@ -931,12 +946,12 @@ function buildReplacementContract(coverage, replacementReadiness, validationGaps
         };
       case 'packaging-platform-smoke': {
         const packaged = row('packaged-oauth-runtime-smoke');
-        const allPlatformOpen = gapIds.has('windows-linux-packaged-smoke') || gapIds.has('notarized-macos-dmg-zip-smoke');
+        const allPlatformOpen = gapIds.has('native-target-release-smoke-observation') || gapIds.has('notarized-macos-dmg-zip-smoke');
         return {
           ...item,
           status: packaged.status === 'pass' && !allPlatformOpen ? 'pass' : 'partial',
           evidence: `Current packaged smoke: ${packaged.status} (${coverageEvidence(packaged)}); all-platform/release artifact gaps: ${allPlatformOpen ? 'open' : 'closed'}.`,
-          nextAction: allPlatformOpen ? 'Run notarized macOS plus Windows/Linux packaged resource smoke in release validation.' : '',
+          nextAction: allPlatformOpen ? 'Observe all native target smoke jobs and notarized macOS artifact smoke in release validation.' : '',
         };
       }
       default:
@@ -1267,13 +1282,13 @@ function missingPreconditions({
       note: 'Set CLAWX_REAL_FEISHU_INBOUND_E2E=1 only when a sandbox tenant chat can send the verifier marker to the configured Feishu/Lark bot during the test timeout.',
     });
   }
-  if (process.platform === 'darwin' && (!appPath || !packagedExecutableExists)) {
+  if (!appPath || !packagedExecutableExists) {
     missing.push({
-      id: 'packaged-macos-app',
+      id: 'packaged-native-app',
       status: 'missing',
-      required: ['release/mac-<arch>/ClawX.app'],
-      nextCommand: 'pnpm run package:mac:dir',
-      note: 'Build a macOS dir package before packaged runtime smoke.',
+      required: [appPath ?? 'native unpacked application'],
+      nextCommand: 'Build the current-platform unpacked application before packaged runtime smoke.',
+      note: 'Packaged smoke requires a native unpacked application built from the current source tree.',
     });
   }
   return missing;
@@ -1426,11 +1441,11 @@ async function buildReport(args, effectiveEnv, envFileSummaries) {
       },
     ),
     createCheck(
-      'packaged-macos-app',
+      'packaged-native-app',
       appPath && await pathExists(appPath) ? 'pass' : 'skipped',
       appPath && await pathExists(appPath)
-        ? 'Packaged macOS .app is available for optional packaged smoke.'
-        : 'Packaged macOS .app is not available or this platform is not macOS.',
+        ? 'Native packaged application is available for optional packaged smoke.'
+        : 'Native packaged application is unavailable.',
       { appPath },
     ),
     createCheck(
@@ -1511,6 +1526,28 @@ async function buildReport(args, effectiveEnv, envFileSummaries) {
     if (authImportAllowed) {
       commands.push(await runCommandWithRetry(
         'pnpm',
+        ['run', 'test:e2e:cc-connect:real-oauth'],
+        ({ attemptNumber }) => {
+          const oauthRunId = `${Date.now()}-${process.pid}-tool-${attemptNumber}`;
+          const oauthHomeDir = join(tmpdir(), `clawx-local-real-oauth-tool-home-${oauthRunId}`);
+          const oauthUserDataDir = join(tmpdir(), `clawx-local-real-oauth-tool-user-data-${oauthRunId}`);
+          return {
+            baseEnv: effectiveEnv,
+            env: {
+              CLAWX_REAL_OAUTH_E2E: '1',
+              CLAWX_E2E_HOME_DIR: oauthHomeDir,
+              CLAWX_E2E_USER_DATA_DIR: oauthUserDataDir,
+            },
+            cleanup: () => Promise.all([
+              rm(oauthHomeDir, { recursive: true, force: true }),
+              rm(oauthUserDataDir, { recursive: true, force: true }),
+            ]),
+          };
+        },
+        { retries: 1 },
+      ));
+      commands.push(await runCommandWithRetry(
+        'pnpm',
         ['run', 'test:e2e:cc-connect:real-comprehensive'],
         ({ attemptNumber }) => {
           const oauthRunId = `${Date.now()}-${process.pid}-${attemptNumber}`;
@@ -1532,6 +1569,11 @@ async function buildReport(args, effectiveEnv, envFileSummaries) {
         { retries: 1 },
       ));
     } else {
+      commands.push(skippedCommand(
+        'pnpm',
+        ['run', 'test:e2e:cc-connect:real-oauth'],
+        'CLAWX_REAL_CODEX_AUTH_JSON is missing or incomplete; user-global ~/.codex/auth.json is not copied implicitly.',
+      ));
       commands.push(skippedCommand(
         'pnpm',
         ['run', 'test:e2e:cc-connect:real-comprehensive'],
@@ -1614,7 +1656,7 @@ async function buildReport(args, effectiveEnv, envFileSummaries) {
     }
   }
   const packagedExecutableExists = appPath
-    ? await executableExists(join(appPath, 'Contents', 'MacOS', 'ClawX'))
+    ? await executableExists(packagedExecutablePath(appPath))
     : false;
   if (args.run && args.includePackaged) {
     if (appPath && packagedExecutableExists) {
@@ -1628,7 +1670,7 @@ async function buildReport(args, effectiveEnv, envFileSummaries) {
       commands.push(skippedCommand(
         'pnpm',
         ['run', 'smoke:cc-connect:packaged', '--', `--app=${appPath ?? '<unavailable>'}`],
-        'Packaged macOS .app executable is unavailable.',
+        'Native packaged application executable is unavailable.',
       ));
     }
   }
@@ -1645,7 +1687,7 @@ async function buildReport(args, effectiveEnv, envFileSummaries) {
       commands.push(skippedCommand(
         'pnpm',
         ['run', 'smoke:cc-connect:packaged', '--', `--app=${appPath ?? '<unavailable>'}`, '--real-oauth=1'],
-        'Packaged macOS .app executable or CLAWX_REAL_CODEX_AUTH_JSON is unavailable.',
+        'Native packaged application executable or CLAWX_REAL_CODEX_AUTH_JSON is unavailable.',
       ));
     }
   }
@@ -1783,6 +1825,8 @@ function buildCoverage(report) {
   const mockBridgeE2e = commandCoverage(commands, 'tests/e2e/cc-connect-codex-runtime.spec.ts');
   const runtimeManagementBundle = commandCoverage(commands, 'tests/e2e/cc-connect-real-bundle-smoke.spec.ts');
   const oauth = commandCoverageWithPreconditions(report, commands, 'test:e2e:cc-connect:real-comprehensive', ['codex-oauth-auth-json']);
+  const oauthTool = commandCoverageWithPreconditions(report, commands, 'test:e2e:cc-connect:real-oauth', ['codex-oauth-auth-json']);
+  const generatedFileOAuth = oauthTool.status === 'not-run' ? oauth : oauthTool;
   const apiKey = commandCoverageWithPreconditions(report, commands, 'test:e2e:cc-connect:real-openai-api-key', ['openai-api-key-env']);
   const feishu = commandCoverageWithPreconditions(report, commands, 'test:e2e:cc-connect:real-feishu', ['feishu-env', 'codex-oauth-auth-json']);
   const feishuInbound = commandCoverageWithPreconditions(
@@ -1798,7 +1842,7 @@ function buildCoverage(report) {
     'test:e2e:cc-connect:real-scheduled-prompt-cron',
     ['codex-oauth-auth-json'],
   );
-  const packaged = commandCoverageWithPreconditions(report, commands, 'smoke:cc-connect:packaged', ['packaged-macos-app', 'codex-oauth-auth-json']);
+  const packaged = commandCoverageWithPreconditions(report, commands, 'smoke:cc-connect:packaged', ['packaged-native-app', 'codex-oauth-auth-json']);
 
   return [
     {
@@ -1901,29 +1945,26 @@ function buildCoverage(report) {
     {
       id: 'token-usage-contract-local-diagnostics',
       status: tokenUsageUnit.status === 'pass' && tokenUsageE2e.status === 'pass'
-        ? 'pass'
+        ? 'partial'
         : tokenUsageUnit.status === 'fail' || tokenUsageE2e.status === 'fail'
           ? 'fail'
           : tokenUsageUnit.status === 'not-run' && tokenUsageE2e.status === 'not-run'
             ? 'not-run'
             : 'skipped',
       covers: [
-        'cc-connect-owned session-store usage',
-        'managed CODEX_HOME token_count session-store linkage',
-        'managed CODEX_HOME token_count workspace attribution',
-        'runtimeKind tagging and filtering',
-        'cross-agent session ids',
-        'OpenClaw-compatible cron session ids',
-        'agent named/orphan session ids',
-        'channel-session key preservation',
-        'user-global Codex transcript exclusion',
-        'unattributed managed transcript exclusion',
-        'Electron IPC usage history shape',
+        'cc-connect private session-store exclusion',
+        'managed and user-global Codex transcript exclusion',
+        'explicit empty usage result while the public runtime API is unavailable',
+        'runtimeKind filtering without OpenClaw data leakage',
+        'OpenClaw transcript usage remains unaffected',
+        'Electron IPC unavailable-usage shape',
       ],
       evidence: [tokenUsageUnit.command, tokenUsageE2e.command].filter(Boolean).join(' && ')
         || tokenUsageUnit.reason
         || tokenUsageE2e.reason,
-      reason: [tokenUsageUnit.reason, tokenUsageE2e.reason].filter(Boolean).join('; '),
+      reason: tokenUsageUnit.status === 'pass' && tokenUsageE2e.status === 'pass'
+        ? 'Boundary diagnostics pass, but cc-connect v1.4.1 has no public per-turn usage API or event.'
+        : [tokenUsageUnit.reason, tokenUsageE2e.reason].filter(Boolean).join('; '),
     },
     {
       id: 'runtime-management-bundle-local-diagnostics',
@@ -2040,7 +2081,6 @@ function buildCoverage(report) {
         'workspace isolation',
         'tool events',
         'apply_patch generated file card',
-        'token usage',
         'skills sync',
         'cron create/list/trigger/toggle/delete',
       ],
@@ -2049,14 +2089,14 @@ function buildCoverage(report) {
     },
     {
       id: 'generated-file-card-real-oauth',
-      status: oauth.status,
+      status: generatedFileOAuth.status,
       covers: [
         'real Codex apply_patch tool turn',
-        'cc-connect history tool evidence',
+        'run-correlated cc-connect Bridge tool lifecycle',
         'generated-file card rendered in GUI chat',
       ],
-      evidence: oauth.command || oauth.reason,
-      reason: oauth.reason,
+      evidence: generatedFileOAuth.command || generatedFileOAuth.reason,
+      reason: generatedFileOAuth.reason,
     },
     {
       id: 'local-openai-compatible-api-key-chat',
@@ -2068,7 +2108,6 @@ function buildCoverage(report) {
         'Authorization bearer header',
         'secret redaction',
         'chat through real cc-connect and bundled Codex',
-        'cc-connect runtimeKind token usage collection from the same chat',
       ],
       evidence: compile.command || compile.reason,
       reason: compile.reason,
@@ -2079,9 +2118,10 @@ function buildCoverage(report) {
       covers: [
         'long-running local OpenAI-compatible Responses stream',
         'GUI Stop button through Host API chat.abort',
-        'cc-connect restart-based cancellation',
+        'session-scoped cc-connect BridgePlatform /stop cancellation',
+        'upstream stream closure before completion release',
         'late assistant output suppression',
-        'runtime recovery to running state',
+        'unchanged cc-connect PID and runtime recovery to running state',
       ],
       evidence: compile.command || compile.reason,
       reason: compile.reason,

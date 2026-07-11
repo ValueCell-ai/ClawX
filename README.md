@@ -95,9 +95,13 @@ We are committed to maintaining strict alignment with the upstream OpenClaw proj
 
 When Developer Mode is enabled and OpenClaw is the active runtime, the sidebar also provides a native Dreams page for OpenClaw memory review, dream diary inspection, and basic maintenance actions. The full upstream OpenClaw Dreams UI remains available from that page when deeper diagnostics are needed.
 
-ClawX also includes a runtime abstraction layer. OpenClaw remains the default runtime and rollback path, while **Settings → Gateway → Runtime** can switch to an optional bundled `cc-connect` runtime. Packaged builds include both the cc-connect binary and the native OpenAI Codex CLI bundle in app resources; runtime startup does not depend on global installs, PATH binaries, or app-time downloads. cc-connect uses a ClawX-managed configuration directory under app user data instead of modifying `~/.cc-connect`, and GUI chat connects through cc-connect BridgePlatform with Codex as the project agent. ClawX mirrors each configured agent as its own cc-connect project so selected agents keep their OpenClaw workspace. Provider/model selections, cron tasks, and enabled skills are synchronized into the managed cc-connect/Codex runtime.
+ClawX also includes a runtime abstraction layer. OpenClaw remains the default runtime and rollback path, while **Settings → Gateway → Runtime** can switch to an optional bundled `cc-connect` runtime. Packaged builds include both the cc-connect binary and the native OpenAI Codex CLI bundle in app resources; runtime startup does not depend on global installs, PATH binaries, or app-time downloads. ClawX keeps upgrade-stable app config, credentials, runtime data, skills, and workspaces under `~/.clawx` (or `CLAWX_DATA_HOME`) instead of modifying `~/.cc-connect`. GUI chat connects through cc-connect BridgePlatform with Codex as the project agent; managed projects use cc-connect's Codex app-server backend over stdio so tool progress can drive the shared Chat execution graph without reading Codex transcripts. Approval buttons are rendered in that graph and responses return through cc-connect's public `card_action` protocol. Each Agent defaults to Full Auto and can independently select Ask for approval (`suggest`) in Agent model/runtime settings. New agents use `~/.clawx/workspaces/agents/<id>`; existing OpenClaw workspaces can be reused by reference without being moved or owned by ClawX. Provider/model selections, native cron tasks, and enabled skills are synchronized into the managed cc-connect/Codex runtime.
+
+Agent and channel settings are canonical under `~/.clawx`. While cc-connect is active, saving them does not rewrite `~/.openclaw/openclaw.json`; switching back to OpenClaw rebuilds that compatibility projection before the Gateway starts.
 
 In cc-connect mode, Codex provider sync supports OpenAI API key, OpenAI OAuth/Codex, Ollama, and Custom OpenAI-compatible providers that expose the Responses API. Custom provider headers are written as environment-variable references so secrets and session headers are not persisted in managed config files. Custom providers configured for Chat Completions are reported as unsupported before chat delivery because Codex accepts the Responses wire API for this path.
+
+Each OAuth provider account has an isolated managed `CODEX_HOME`. An existing user-global Codex login is never adopted during runtime startup; importing it requires the explicit Codex OAuth import action for the selected account.
 
 cc-connect also owns messaging platform bridges. When cc-connect is the active runtime, channel status probes are routed through the runtime abstraction instead of the OpenClaw Gateway, configured channel accounts are mirrored into the cc-connect project that owns their bound agent, and channel saves/deletes reload the managed cc-connect config through its Management API so platform changes take effect without a full runtime restart when possible. The Developer Mode sidebar page shortcut opens cc-connect Web Admin, while the OpenClaw Dreams shortcut remains OpenClaw-only.
 
@@ -218,7 +222,7 @@ Notes:
 - ClawX also syncs the proxy to OpenClaw's Telegram channel config when Telegram is enabled.
 - Gateway restarts preserve an existing Telegram channel proxy if ClawX proxy is currently disabled.
 - To explicitly clear Telegram channel proxy from OpenClaw config, save proxy settings with proxy disabled.
-- In **Settings → Advanced → Developer**, you can run **OpenClaw Doctor** to execute `openclaw doctor --json` and inspect the diagnostic output without leaving the app.
+- In **Settings → Advanced → Developer**, Runtime Doctor runs `openclaw doctor --json` for OpenClaw or bundled `cc-connect doctor user-isolation` for cc-connect. Doctor Fix remains OpenClaw-only.
 - On packaged Windows builds, the bundled `openclaw` CLI/TUI runs via the shipped `node.exe` entrypoint to keep terminal input behavior stable.
 
 ---
@@ -366,6 +370,7 @@ pnpm typecheck            # TypeScript validation
 pnpm test                 # Run unit tests
 pnpm run test:e2e         # Run Electron E2E smoke tests with Playwright
 pnpm run test:e2e:cc-connect:codex-oauth-lifecycle # Verify cc-connect Codex OAuth Host API status/import/logout without real credentials
+CLAWX_REAL_OAUTH_E2E=1 CLAWX_REAL_CODEX_AUTH_JSON="$HOME/.codex/auth.json" pnpm run test:e2e:cc-connect:real-oauth # Verify real OAuth tool execution and the Chat execution graph
 pnpm run test:e2e:headed  # Run Electron E2E tests with a visible window
 pnpm run comms:replay     # Compute communication replay metrics
 pnpm run comms:baseline   # Refresh communication baseline snapshot
@@ -377,7 +382,7 @@ pnpm run verify:cc-connect:local-real:oauth-all # Also run dev and packaged cc-c
 pnpm run verify:cc-connect:local-real:api-key # Run local OpenAI-compatible API-key chat/abort smokes; also run real OpenAI API-key smoke when credentials are available
 pnpm run verify:cc-connect:local-real:feishu # Also run real Feishu/Lark lifecycle smoke when credentials and CLAWX_REAL_CODEX_AUTH_JSON are available
 pnpm run verify:cc-connect:local-real:feishu-inbound # Also run the manual real Feishu/Lark inbound marker smoke when the sandbox tenant fixture is enabled
-pnpm run verify:cc-connect:local-real:scheduled-cron # Also run real scheduled exec cron; with Codex auth, verify scheduled prompt delivery through the ClawX cc-connect bridge fallback
+pnpm run verify:cc-connect:local-real:scheduled-cron # Also run real native exec cron; with Codex auth, verify native prompt scheduling through public cc-connect session history
 pnpm run verify:cc-connect:local-real:all # Run every available local real cc-connect validation path and write the external gate handoff
 pnpm run verify:cc-connect:local-real:all-strict # Require all real credentials and runtime parity coverage for release-candidate validation; writes the handoff before failing
 pnpm run verify:cc-connect:local-real:replacement-ready # Require replacement readiness without making missing credentials a separate preflight failure; writes the handoff before failing
@@ -405,6 +410,9 @@ pnpm package              # Package for current platform (includes bundled prein
 pnpm package:mac          # Package for macOS
 pnpm package:win          # Package for Windows
 pnpm package:linux        # Package for Linux
+pnpm run verify:runtime-bundles # Verify downloaded cc-connect/Codex bundle manifests and binaries
+pnpm run verify:packaged-runtime-resources -- --resources=<path> --platform=<darwin|win32|linux> --arch=<x64|arm64> # Verify final Electron runtime resources
+pnpm run smoke:cc-connect:packaged # Launch the native unpacked app and verify cc-connect start/status/Cron/Doctor/rollback/cleanup
 ```
 
 On headless Linux, run Electron tests under a display server such as `xvfb-run -a pnpm run test:e2e`.

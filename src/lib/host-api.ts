@@ -188,9 +188,17 @@ export const hostApi = {
         ...input,
       })
     ),
-    updateModel: (id: string, modelRef: string | null) => (
-      invokeHost('agents', 'updateModel', { id, modelRef })
-    ),
+    updateModel: (
+      id: string,
+      modelRef: string | null,
+      providerAccountId?: string | null,
+      permissionMode?: 'suggest' | 'full-auto',
+    ) => invokeHost('agents', 'updateModel', {
+      id,
+      modelRef,
+      ...(providerAccountId !== undefined ? { providerAccountId } : {}),
+      ...(permissionMode ? { permissionMode } : {}),
+    }),
     delete: (id: string) => invokeHost('agents', 'delete', { id }),
     assignChannel: (id: string, channelType: string) => (
       invokeHost('agents', 'assignChannel', { id, channelType })

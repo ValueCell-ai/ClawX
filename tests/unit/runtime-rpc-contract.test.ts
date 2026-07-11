@@ -13,7 +13,6 @@ import {
 
 const expectedCcConnectNativeMethods = [
   'chat.send',
-  'chat.abort',
   'sessions.list',
   'chat.history',
   'sessions.delete',
@@ -78,6 +77,10 @@ describe('runtime RPC contract', () => {
     const operations = getRuntimeOperationCapabilities('cc-connect');
 
     expect(operations['chat.send']).toMatchObject({
+      capability: 'chat',
+      support: 'native',
+    });
+    expect(operations['chat.approval.respond']).toMatchObject({
       capability: 'chat',
       support: 'native',
     });

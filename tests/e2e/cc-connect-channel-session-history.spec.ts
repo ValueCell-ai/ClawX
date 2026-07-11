@@ -12,9 +12,10 @@ function stableStringify(value: unknown): string {
 test.describe('cc-connect channel session history', () => {
   test('renders channel sessions in the sidebar and loads their history', async ({ launchElectronApp }) => {
     const sessionKey = 'feishu:oc_probe:ou_probe';
+    const sessionUpdatedAt = Date.now();
     const seededHistory = [
-      { id: 'm1', role: 'user', content: '飞书 hello', timestamp: 1_781_959_500_000 },
-      { id: 'm2', role: 'assistant', content: '飞书 reply', timestamp: 1_781_959_501_000 },
+      { id: 'm1', role: 'user', content: '飞书 hello', timestamp: sessionUpdatedAt - 1_000 },
+      { id: 'm2', role: 'assistant', content: '飞书 reply', timestamp: sessionUpdatedAt },
     ];
     const app = await launchElectronApp({ skipSetup: true });
     try {
@@ -36,7 +37,7 @@ test.describe('cc-connect channel session history', () => {
                 derivedTitle: '飞书 hello',
                 lastMessagePreview: '飞书 reply',
                 agentId: 'coder',
-                updatedAt: 1_781_959_501_000,
+                updatedAt: sessionUpdatedAt,
               }],
             },
           },

@@ -240,6 +240,11 @@
                 "appSecret": {
                     "label": "App Secret",
                     "placeholder": "Секрет вашего приложения"
+                },
+                "adminUsers": {
+                    "label": "ID администраторов Cron",
+                    "placeholder": "ou_xxx, ou_yyy",
+                    "description": "ID пользователей через запятую, которым разрешено создавать, изменять, запускать и удалять задания cc-connect Cron из Feishu/Lark."
                 }
             },
             "instructions": [

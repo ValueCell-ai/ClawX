@@ -92,7 +92,7 @@ if (args[0] === 'doctor') {
 }
 if (process.env.CLAWX_E2E_CC_CONNECT_ENV_PATH) {
   fs.writeFileSync(process.env.CLAWX_E2E_CC_CONNECT_ENV_PATH, JSON.stringify({
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY || null,
+    CLAWX_CODEX_OPENAI_MAIN_API_KEY: process.env.CLAWX_CODEX_OPENAI_MAIN_API_KEY || null,
     CODEX_HOME: process.env.CODEX_HOME || null,
   }, null, 2));
 }
@@ -121,6 +121,9 @@ if (configIndex >= 0 && args[configIndex + 1]) {
 }
 let cronSeq = 0;
 let jobs = [];
+const sessionsByProject = new Map();
+const deletedSessionIds = new Set();
+const pendingApprovals = new Map();
 function json(res, status, payload) {
   res.writeHead(status, { 'content-type': 'application/json' });
   res.end(JSON.stringify(payload));
@@ -147,17 +150,99 @@ function writeBridgeMessage(message) {
   if (!process.env.CLAWX_E2E_CC_CONNECT_MESSAGES_PATH) return;
   fs.appendFileSync(process.env.CLAWX_E2E_CC_CONNECT_MESSAGES_PATH, JSON.stringify(message) + '\\n');
 }
+function fixtureSessions() {
+  const path = process.env.CLAWX_E2E_CC_CONNECT_SESSION_FIXTURE_PATH;
+  if (!path) return [];
+  try {
+    const value = JSON.parse(fs.readFileSync(path, 'utf8'));
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+function projectSessions(project) {
+  return [...(sessionsByProject.get(project) || []), ...fixtureSessions().filter((item) => item.project === project)]
+    .filter((item) => !deletedSessionIds.has(item.id));
+}
+function storeBridgeSession(message, assistantText) {
+  const project = message.project || 'clawx-main';
+  const sessionKey = message.session_key || 'clawx:main:main';
+  const sessions = sessionsByProject.get(project) || [];
+  let session = sessions.find((item) => item.session_key === sessionKey);
+  const now = Date.now();
+  if (!session) {
+    session = {
+      id: 'session-' + Buffer.from(project + ':' + sessionKey).toString('hex').slice(0, 24),
+      project,
+      session_key: sessionKey,
+      name: sessionKey,
+      active: true,
+      created_at: now,
+      updated_at: now,
+      history: [],
+    };
+    sessions.push(session);
+    sessionsByProject.set(project, sessions);
+  }
+  session.history.push(
+    { id: 'user-' + now, role: 'user', content: message.content || '', timestamp: now },
+    { id: 'assistant-' + now, role: 'assistant', content: assistantText, timestamp: now + 1 },
+  );
+  session.updated_at = now + 1;
+  session.last_message = session.history[session.history.length - 1];
+}
 const handleHttpRequest = async (req, res) => {
   if (req.url && req.url.startsWith('/api/v1/status')) {
     json(res, 200, { ok: true });
     return;
+  }
+  if (req.url && req.url.startsWith('/api/v1/projects/')) {
+    const url = new URL(req.url, 'http://127.0.0.1:' + managementPort);
+    const parts = url.pathname.split('/').filter(Boolean);
+    const project = decodeURIComponent(parts[3] || 'clawx-main');
+    if (parts.length === 4 && req.method === 'GET') {
+      json(res, 200, { name: project, platforms: [] });
+      return;
+    }
+    if (parts[4] === 'sessions' && parts.length === 5 && req.method === 'GET') {
+      json(res, 200, { sessions: projectSessions(project).map((session) => ({
+        id: session.id,
+        session_key: session.session_key,
+        name: session.name,
+        user_name: session.user_name,
+        chat_name: session.chat_name,
+        active: session.active !== false,
+        created_at: session.created_at,
+        updated_at: session.updated_at,
+        last_message: session.last_message,
+      })) });
+      return;
+    }
+    if (parts[4] === 'sessions' && parts.length === 6) {
+      const id = decodeURIComponent(parts[5]);
+      const session = projectSessions(project).find((candidate) => candidate.id === id);
+      if (!session) {
+        json(res, 404, { error: 'session not found' });
+        return;
+      }
+      if (req.method === 'GET') {
+        json(res, 200, { ...session, history: session.history || [] });
+        return;
+      }
+      if (req.method === 'DELETE') {
+        deletedSessionIds.add(id);
+        json(res, 200, { success: true });
+        return;
+      }
+    }
   }
   if (req.url && req.url.startsWith('/api/v1/cron')) {
     const url = new URL(req.url, 'http://127.0.0.1:' + managementPort);
     const parts = url.pathname.split('/').filter(Boolean);
     const id = parts[3];
     if (req.method === 'GET' && parts.length === 3) {
-      json(res, 200, { jobs });
+      const project = url.searchParams.get('project');
+      json(res, 200, { jobs: project ? jobs.filter((job) => job.project === project) : jobs });
       return;
     }
     if (req.method === 'POST' && parts.length === 3) {
@@ -224,10 +309,43 @@ wss.on('connection', (ws) => {
     }
     if (msg.type === 'message') {
       writeBridgeMessage(msg);
+      if (String(msg.content || '').includes('require approval')) {
+        pendingApprovals.set(msg.reply_ctx, msg);
+        ws.send(JSON.stringify({
+          type: 'buttons',
+          session_key: msg.session_key,
+          reply_ctx: msg.reply_ctx,
+          project: msg.project,
+          content: 'Allow Codex to run the requested command?',
+          buttons: [[
+            { Text: 'Allow once', Data: 'perm:allow' },
+            { Text: 'Deny', Data: 'perm:deny' },
+          ]],
+        }));
+        return;
+      }
+      storeBridgeSession(msg, 'cc-connect bridge E2E response');
       ws.send(JSON.stringify({
         type: 'reply',
         reply_ctx: msg.reply_ctx,
         content: 'cc-connect bridge E2E response',
+      }));
+      return;
+    }
+    if (msg.type === 'card_action') {
+      writeBridgeMessage(msg);
+      const original = pendingApprovals.get(msg.reply_ctx);
+      if (!original) return;
+      const response = msg.action === 'perm:deny'
+        ? 'cc-connect approval denied'
+        : 'cc-connect approval accepted';
+      storeBridgeSession(original, response);
+      pendingApprovals.delete(msg.reply_ctx);
+      ws.send(JSON.stringify({
+        type: 'reply',
+        session_key: msg.session_key,
+        reply_ctx: msg.reply_ctx,
+        content: response,
       }));
     }
   });
@@ -263,17 +381,26 @@ async function prepareMockBundles(userDataDir: string): Promise<{ ccConnectPath:
 }
 
 async function writeMockCcConnectChannelSession(userDataDir: string): Promise<void> {
-  const sessionDir = join(userDataDir, 'runtimes', 'cc-connect', 'data', 'sessions');
-  await mkdir(sessionDir, { recursive: true });
   const createdAt = Date.now() - 60_000;
   const updatedAt = createdAt + 1_000;
-  await writeFile(join(sessionDir, 'support-channel.json'), JSON.stringify({
-    sessions: {
-      'session-support-1': {
-        name: 'Support Channel',
-        created_at: createdAt,
-        updated_at: updatedAt,
-        history: [
+  await writeFile(join(userDataDir, 'cc-connect-session-fixtures.json'), JSON.stringify([
+    {
+      project: 'clawx-support',
+      id: 'session-support-1',
+      session_key: 'clawx:support:member-1',
+      name: 'Support Channel',
+      chat_name: 'Support Channel',
+      user_name: 'Member One',
+      active: true,
+      created_at: createdAt,
+      updated_at: updatedAt,
+      last_message: {
+        id: 'support-assistant-1',
+        role: 'assistant',
+        content: 'reply synced from cc-connect channel',
+        timestamp: updatedAt,
+      },
+      history: [
           {
             id: 'support-user-1',
             role: 'user',
@@ -287,21 +414,8 @@ async function writeMockCcConnectChannelSession(userDataDir: string): Promise<vo
             timestamp: updatedAt,
           },
         ],
-      },
     },
-    active_session: {
-      'clawx:support:member-1': 'session-support-1',
-    },
-    user_sessions: {
-      'clawx:support:member-1': ['session-support-1'],
-    },
-    user_meta: {
-      'clawx:support:member-1': {
-        chat_name: 'Support Channel',
-        user_name: 'Member One',
-      },
-    },
-  }, null, 2), 'utf8');
+  ], null, 2), 'utf8');
 }
 
 test.describe('cc-connect + Codex runtime E2E', () => {
@@ -309,10 +423,22 @@ test.describe('cc-connect + Codex runtime E2E', () => {
 
   test('starts cc-connect runtime, writes managed config, and sends chat through cc-connect BridgePlatform', async ({
     launchElectronApp,
+    homeDir,
     userDataDir,
-  }) => {
+  }, testInfo) => {
     const mockBundles = await prepareMockBundles(userDataDir);
     const bridgeMessagesPath = join(userDataDir, 'cc-connect-bridge-messages.jsonl');
+    const openClawDir = join(homeDir, '.openclaw');
+    await mkdir(openClawDir, { recursive: true });
+    await writeFile(join(openClawDir, 'openclaw.json'), JSON.stringify({
+      agents: {
+        list: [
+          { id: 'main', name: 'Main', default: true },
+          { id: 'support', name: 'Support' },
+          { id: 'analysis', name: 'Analysis' },
+        ],
+      },
+    }, null, 2), 'utf8');
 
     await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({
       language: 'en',
@@ -345,6 +471,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
         CLAWX_CC_CONNECT_PATH: mockBundles.ccConnectPath,
         CLAWX_CODEX_PATH: mockBundles.codexPath,
         CLAWX_E2E_CC_CONNECT_MESSAGES_PATH: bridgeMessagesPath,
+        CLAWX_E2E_CC_CONNECT_SESSION_FIXTURE_PATH: join(userDataDir, 'cc-connect-session-fixtures.json'),
       },
     });
 
@@ -388,6 +515,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
           }),
           operationCapabilities: expect.objectContaining({
             'chat.send': expect.objectContaining({ support: 'native' }),
+            'chat.approval.respond': expect.objectContaining({ support: 'native' }),
             'chat.abort': expect.objectContaining({ support: 'native' }),
             'doctor.fix': expect.objectContaining({ support: 'unsupported' }),
           }),
@@ -398,12 +526,27 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       await expect.poll(async () => await readFile(managedConfig, 'utf8')).toContain('path = "/bridge/ws"');
       await expect.poll(async () => await readFile(managedConfig, 'utf8')).toContain('cmd = "');
       await expect.poll(async () => await readFile(managedConfig, 'utf8')).toContain(
-        `work_dir = "${join(userDataDir, 'runtimes', 'cc-connect', 'workspaces', 'main')}"`,
+        `work_dir = "${join(userDataDir, 'workspaces', 'agents', 'main')}"`,
       );
       await expect.poll(async () => {
         const content = await readFile(managedConfig, 'utf8');
         return content.split('\n').filter((line) => line.startsWith('work_dir =')).join('\n');
       }).not.toContain(process.cwd());
+
+      await page.getByTestId('sidebar-nav-agents').click();
+      await expect(page.getByTestId('agents-page')).toBeVisible();
+      await page.getByTestId('agent-settings-main').click();
+      await page.getByTestId('agent-runtime-settings-main').click();
+      await expect(page.getByTestId('agent-cc-connect-permission-mode')).toBeVisible();
+      await page.getByTestId('agent-permission-mode-suggest').click();
+      await expect(page.getByTestId('agent-permission-mode-suggest')).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.getByTestId('agent-runtime-settings-save')).toBeEnabled();
+      await page.getByTestId('agent-runtime-settings-save').click();
+      await expect.poll(async () => await readFile(managedConfig, 'utf8'), { timeout: 30_000 })
+        .toContain('mode = "suggest"');
+      await page.getByTestId('agent-settings-close').click();
+      await page.getByTestId('sidebar-new-chat').click();
+      await expect(page.getByTestId('chat-page')).toBeVisible();
 
       await expect(page.getByTestId('chat-composer-input')).toBeEnabled({ timeout: 30_000 });
       await page.getByTestId('chat-composer-input').fill('hello codex runtime');
@@ -449,6 +592,35 @@ test.describe('cc-connect + Codex runtime E2E', () => {
             expect.objectContaining({ role: 'assistant', content: 'cc-connect bridge E2E response' }),
           ]),
         },
+      });
+
+      await page.getByTestId('chat-composer-input').fill('please require approval before the command');
+      await page.getByTestId('chat-composer-send').click();
+      const allowApproval = page.getByTestId('chat-approval-action-perm:allow');
+      await expect(allowApproval).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByText('Allow Codex to run the requested command?')).toBeVisible();
+      await testInfo.attach('cc-connect-approval-request', {
+        body: await page.screenshot(),
+        contentType: 'image/png',
+      });
+      await allowApproval.click();
+      await expect(page.getByText('cc-connect approval accepted')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('chat-approval-actions')).toHaveCount(0);
+
+      const approvalBridgeMessages = (await readFile(bridgeMessagesPath, 'utf8'))
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => JSON.parse(line));
+      const approvalPacket = approvalBridgeMessages.find((message) => message.type === 'card_action');
+      expect(approvalPacket).toMatchObject({
+        type: 'card_action',
+        session_key: 'clawx:main:main',
+        project: 'clawx-main',
+        action: 'perm:allow',
+      });
+      await testInfo.attach('cc-connect-approval-bridge-packet', {
+        body: Buffer.from(JSON.stringify(approvalPacket, null, 2)),
+        contentType: 'application/json',
       });
 
       await writeMockCcConnectChannelSession(userDataDir);
@@ -521,7 +693,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
           sessions: expect.arrayContaining([
             expect.objectContaining({
               key: 'agent:support:member-1',
-              displayName: 'Renamed support channel / Member One',
+              displayName: 'Renamed support channel',
               derivedTitle: 'Renamed support channel',
             }),
           ]),
@@ -568,8 +740,8 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       expect(channelHistoryAfterDelete).toMatchObject({
         ok: true,
         data: {
-          success: true,
-          messages: [],
+          success: false,
+          error: 'Session not found',
         },
       });
 
@@ -752,19 +924,28 @@ test.describe('cc-connect + Codex runtime E2E', () => {
 
       const managedConfig = await readFile(join(userDataDir, 'runtimes', 'cc-connect', 'config.toml'), 'utf8');
       expect(managedConfig).toContain('provider = "openai"');
-      expect(managedConfig).toContain('api_key = "${OPENAI_API_KEY}"');
+      expect(managedConfig).toContain('api_key = "${CLAWX_CODEX_OPENAI_MAIN_API_KEY}"');
       expect(managedConfig).toContain('model = "gpt-5.5"');
       expect(managedConfig).not.toContain('sk-e2e-openai-secret');
 
       const envCapture = JSON.parse(await readFile(envCapturePath, 'utf8'));
       expect(envCapture).toMatchObject({
-        OPENAI_API_KEY: 'sk-e2e-openai-secret',
+        CLAWX_CODEX_OPENAI_MAIN_API_KEY: 'sk-e2e-openai-secret',
       });
-      expect(String(envCapture.CODEX_HOME)).toContain(join(userDataDir, 'runtimes', 'cc-connect', 'codex-home'));
+      expect(String(envCapture.CODEX_HOME)).toContain(join(userDataDir, 'credentials', 'oauth', 'openai-main', 'codex-home'));
 
       const publicProfile = await readFile(join(userDataDir, 'runtimes', 'cc-connect', 'provider-profile.json'), 'utf8');
-      expect(publicProfile).toContain('OPENAI_API_KEY');
+      expect(publicProfile).toContain('CLAWX_CODEX_OPENAI_MAIN_API_KEY');
       expect(publicProfile).not.toContain('sk-e2e-openai-secret');
+
+      const migratedProviderStore = JSON.parse(await readFile(join(userDataDir, 'clawx-providers.json'), 'utf8'));
+      expect(migratedProviderStore.providerSecrets).toEqual({});
+      expect(migratedProviderStore.apiKeys).toEqual({});
+      const encryptedVault = await readFile(join(userDataDir, 'credentials', 'secrets.enc'));
+      expect(encryptedVault.toString('utf8')).not.toContain('sk-e2e-openai-secret');
+      const credentialIndex = await readFile(join(userDataDir, 'credentials', 'index.json'), 'utf8');
+      expect(credentialIndex).toContain('openai-main');
+      expect(credentialIndex).not.toContain('sk-e2e-openai-secret');
     } finally {
       await closeElectronApp(app);
     }
@@ -838,7 +1019,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
         data: { success: true },
       });
 
-      const managedCodexHome = join(userDataDir, 'runtimes', 'cc-connect', 'codex-home');
+      const managedCodexHome = join(userDataDir, 'credentials', 'oauth', 'openai-oauth', 'codex-home');
 
       const authJson = JSON.parse(await readFile(join(managedCodexHome, 'auth.json'), 'utf8'));
       expect(authJson).toMatchObject({
@@ -868,10 +1049,11 @@ test.describe('cc-connect + Codex runtime E2E', () => {
   }) => {
     const mockBundles = await prepareMockBundles(userDataDir);
     const createdAt = '2026-06-07T00:00:00.000Z';
-    const managedCodexHome = join(userDataDir, 'runtimes', 'cc-connect', 'codex-home');
+    const legacyCodexHome = join(userDataDir, 'runtimes', 'cc-connect', 'codex-home');
+    const managedCodexHome = join(userDataDir, 'credentials', 'oauth', 'openai-oauth', 'codex-home');
 
-    await mkdir(managedCodexHome, { recursive: true });
-    await writeFile(join(managedCodexHome, 'auth.json'), JSON.stringify({
+    await mkdir(legacyCodexHome, { recursive: true });
+    await writeFile(join(legacyCodexHome, 'auth.json'), JSON.stringify({
       auth_mode: 'chatgpt',
       OPENAI_API_KEY: null,
       tokens: {

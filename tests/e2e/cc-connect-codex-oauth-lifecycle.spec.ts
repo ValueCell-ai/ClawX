@@ -180,7 +180,7 @@ test.describe('cc-connect Codex OAuth Host API lifecycle', () => {
       });
       expectNoTokenLeak(imported);
 
-      const managedAuthPath = join(userDataDir, 'runtimes', 'cc-connect', 'codex-home', 'auth.json');
+      const managedAuthPath = join(userDataDir, 'credentials', 'oauth', accountId, 'codex-home', 'auth.json');
       const managedAuth = JSON.parse(await readFile(managedAuthPath, 'utf8')) as {
         tokens?: Record<string, string>;
       };

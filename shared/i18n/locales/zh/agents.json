@@ -44,6 +44,15 @@
         "closeWithoutSaving": "不保存并关闭",
         "saveModelOverride": "保存模型",
         "useDefaultModel": "使用默认模型",
+        "permissionModeLabel": "工具权限",
+        "permissionModes": {
+            "full-auto": "全自动",
+            "suggest": "需要审批"
+        },
+        "permissionModeDescriptions": {
+            "full-auto": "Codex 可在托管 workspace 内直接使用工具，无需逐次确认。",
+            "suggest": "Codex 使用工具前会请求审批，批准前运行在只读沙箱中。"
+        },
         "channelsTitle": "频道",
         "channelsDescription": "该列表为只读。频道账号与绑定关系请在 Channels 页面管理。",
         "mainAccount": "主账号",
@@ -69,6 +78,7 @@
         "agentModelUpdateFailed": "更新 Agent 模型失败：{{error}}",
         "agentModelReset": "Agent 模型已恢复为默认",
         "agentModelResetFailed": "恢复 Agent 默认模型失败：{{error}}",
+        "agentRuntimeUpdated": "Agent runtime 设置已更新",
         "channelAssigned": "{{channel}} 已分配给 Agent",
         "channelAssignFailed": "分配频道失败：{{error}}",
         "channelRemoved": "{{channel}} 已移除",

@@ -3,7 +3,8 @@ import type { RuntimeManager } from '../runtime/manager';
 import type { ClawHubService, ClawHubInstallParams, ClawHubSearchParams, ClawHubUninstallParams } from '../gateway/clawhub';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { join } from 'node:path';
-import { getCcConnectCodexHomeDir } from '../runtime/cc-connect-paths';
+import { readFile } from 'node:fs/promises';
+import { getCcConnectCodexHomeDir, getCcConnectProviderProfilePath } from '../runtime/cc-connect-paths';
 import { getAllSkillConfigs, getSkillConfig, updateSkillConfig, updateSkillConfigs } from '../utils/skill-config';
 import { getOpenClawSkillsDir } from '../utils/paths';
 import {
@@ -97,13 +98,24 @@ export function createSkillsApi({
   runtimeManager?: RuntimeManager;
 }): CompleteHostServiceRegistry['skills'] {
   const runtimeSupportsSkills = () => runtimeManager?.listCapabilities().skills === true;
+  const refreshCcConnectSkills = async () => {
+    if (runtimeManager?.getActiveProvider().kind === 'cc-connect') {
+      await runtimeManager.rpc('skills.update', {});
+    }
+  };
   return {
     local: async () => ({ success: true, skills: await listLocalSkills() }),
     target: async () => {
       const sourceDir = getOpenClawSkillsDir();
       const activeKind = await runtimeManager?.getActiveKind();
       if (activeKind === 'cc-connect') {
-        const runtimeDir = join(getCcConnectCodexHomeDir(), 'skills');
+        const profile: { codexHomeDir?: unknown } = await readFile(getCcConnectProviderProfilePath(), 'utf8')
+          .then((content) => JSON.parse(content) as { codexHomeDir?: unknown })
+          .catch(() => ({} as { codexHomeDir?: unknown }));
+        const codexHomeDir = typeof profile.codexHomeDir === 'string'
+          ? profile.codexHomeDir
+          : getCcConnectCodexHomeDir();
+        const runtimeDir = join(codexHomeDir, 'skills');
         return {
           success: true,
           runtimeKind: 'cc-connect',
@@ -131,9 +143,15 @@ export function createSkillsApi({
     },
     updateConfig: async (payload) => {
       const { skillKey, ...updates } = getConfigUpdate(payload);
-      return updateSkillConfig(skillKey, updates);
+      const result = await updateSkillConfig(skillKey, updates);
+      await refreshCcConnectSkills();
+      return result;
     },
-    updateConfigs: async (payload) => updateSkillConfigs(getConfigUpdates(payload)),
+    updateConfigs: async (payload) => {
+      const result = await updateSkillConfigs(getConfigUpdates(payload));
+      await refreshCcConnectSkills();
+      return result;
+    },
     status: async () => {
       if (runtimeSupportsSkills()) return await runtimeManager!.rpc('skills.status');
       return gatewayManager.rpc('skills.status');
@@ -195,6 +213,7 @@ export function createSkillsApi({
     clawhubInstall: async (payload) => {
       try {
         await clawHubService.install((isRecord(payload) ? payload : {}) as ClawHubInstallParams);
+        await refreshCcConnectSkills();
         return { success: true };
       } catch (error) {
         return { success: false, error: errorMessage(error) };
@@ -203,6 +222,7 @@ export function createSkillsApi({
     clawhubUninstall: async (payload) => {
       try {
         await clawHubService.uninstall((isRecord(payload) ? payload : {}) as ClawHubUninstallParams);
+        await refreshCcConnectSkills();
         return { success: true };
       } catch (error) {
         return { success: false, error: errorMessage(error) };
