@@ -10,6 +10,7 @@ const GATEWAY_INJECTED_SESSION_ID = 'agent-session-gateway-injected';
 const DELIVERY_MIRROR_SESSION_ID = 'agent-session-delivery-mirror';
 const CC_CONNECT_SESSION_ID = 'agent:research:desk';
 const CC_CONNECT_CODEX_SESSION_ID = '019ee57f-c0cb-7440-aa79-f3e07489b29f';
+const CC_CONNECT_UNLINKED_CODEX_SESSION_ID = '019ee57f-c0cb-7440-aa79-f3e07489b2aa';
 
 async function seedTokenUsageTranscripts(homeDir: string): Promise<void> {
   const sessionDir = join(homeDir, '.openclaw', 'agents', TEST_AGENT_ID, 'sessions');
@@ -176,6 +177,27 @@ async function seedCcConnectCodexTokenUsageTranscript(userDataDir: string): Prom
     ].join('\n'),
     'utf8',
   );
+  await writeFile(
+    join(codexTranscriptDir, `rollout-2026-06-20T22-47-55-${CC_CONNECT_UNLINKED_CODEX_SESSION_ID}.jsonl`),
+    [
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        type: 'event_msg',
+        payload: {
+          type: 'token_count',
+          info: {
+            last_token_usage: {
+              input_tokens: 9,
+              output_tokens: 1,
+              total_tokens: 10,
+            },
+          },
+        },
+      }),
+      '',
+    ].join('\n'),
+    'utf8',
+  );
 }
 
 test.describe('ClawX token usage history', () => {
@@ -225,7 +247,7 @@ test.describe('ClawX token usage history', () => {
     await completeSetup(page);
 
     const usageHistory = await page.evaluate(async () => {
-      return window.electron.ipcRenderer.invoke('usage:recentTokenHistory', 20);
+      return window.electron.ipcRenderer.invoke('usage:recentTokenHistory', { limit: 20, runtimeKind: 'cc-connect' });
     });
 
     const ccConnectEntry = usageHistory.find((entry) => entry?.sessionId === CC_CONNECT_SESSION_ID);
@@ -239,12 +261,30 @@ test.describe('ClawX token usage history', () => {
     expect(ccConnectEntry?.totalTokens).toBe(44);
   });
 
+  test('filters IPC token usage history by runtime kind', async ({ page, homeDir, userDataDir }) => {
+    await seedTokenUsageTranscripts(homeDir);
+    await seedCcConnectTokenUsageStore(userDataDir);
+    await completeSetup(page);
+
+    const openclawUsageHistory = await page.evaluate(async () => {
+      return window.electron.ipcRenderer.invoke('usage:recentTokenHistory', { limit: 20, runtimeKind: 'openclaw' });
+    });
+    const ccConnectUsageHistory = await page.evaluate(async () => {
+      return window.electron.ipcRenderer.invoke('usage:recentTokenHistory', { limit: 20, runtimeKind: 'cc-connect' });
+    });
+
+    expect(openclawUsageHistory.some((entry) => entry?.runtimeKind === 'openclaw')).toBe(true);
+    expect(openclawUsageHistory.some((entry) => entry?.runtimeKind === 'cc-connect')).toBe(false);
+    expect(ccConnectUsageHistory.some((entry) => entry?.runtimeKind === 'cc-connect')).toBe(true);
+    expect(ccConnectUsageHistory.some((entry) => entry?.runtimeKind === 'openclaw')).toBe(false);
+  });
+
   test('includes cc-connect Codex token_count transcript usage in IPC history', async ({ page, userDataDir }) => {
     await seedCcConnectCodexTokenUsageTranscript(userDataDir);
     await completeSetup(page);
 
     const usageHistory = await page.evaluate(async () => {
-      return window.electron.ipcRenderer.invoke('usage:recentTokenHistory', 20);
+      return window.electron.ipcRenderer.invoke('usage:recentTokenHistory', { limit: 20, runtimeKind: 'cc-connect' });
     });
 
     const ccConnectEntry = usageHistory.find((entry) => entry?.sessionId === CC_CONNECT_SESSION_ID);
@@ -255,6 +295,7 @@ test.describe('ClawX token usage history', () => {
     expect(ccConnectEntry?.outputTokens).toBe(211);
     expect(ccConnectEntry?.cacheReadTokens).toBe(7552);
     expect(ccConnectEntry?.totalTokens).toBe(51312);
+    expect(usageHistory.find((entry) => entry?.sessionId === CC_CONNECT_UNLINKED_CODEX_SESSION_ID)).toBeFalsy();
   });
 
   // TODO: This test needs a reliable way to inject mocked gateway status into

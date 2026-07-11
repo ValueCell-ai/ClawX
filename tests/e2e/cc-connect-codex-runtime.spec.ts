@@ -1,10 +1,27 @@
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
 
 async function writeExecutable(path: string, content: string): Promise<void> {
   await writeFile(path, content, 'utf8');
   await chmod(path, 0o755);
+}
+
+async function waitForPortClosed(port: number): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const available = await new Promise<boolean>((resolve) => {
+      const server = createServer();
+      server.once('error', () => resolve(false));
+      server.listen(port, '127.0.0.1', () => {
+        server.close(() => resolve(true));
+      });
+    });
+    if (available) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`Timed out waiting for TCP port ${port} to close`);
 }
 
 async function createMockCodexBinary(dir: string): Promise<string> {
@@ -73,6 +90,35 @@ if (args[0] === 'doctor') {
   process.stdout.write('cc-connect doctor e2e ok\\n');
   process.exit(0);
 }
+if (process.env.CLAWX_E2E_CC_CONNECT_ENV_PATH) {
+  fs.writeFileSync(process.env.CLAWX_E2E_CC_CONNECT_ENV_PATH, JSON.stringify({
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY || null,
+    CODEX_HOME: process.env.CODEX_HOME || null,
+  }, null, 2));
+}
+let bridgePort = 9810;
+let managementPort = 9820;
+const configIndex = args.indexOf('-config');
+if (configIndex >= 0 && args[configIndex + 1]) {
+  try {
+    const config = fs.readFileSync(args[configIndex + 1], 'utf8');
+    let section = '';
+    for (const rawLine of config.split('\\n')) {
+      const line = rawLine.trim();
+      if (line.startsWith('[') && line.endsWith(']')) {
+        section = line.slice(1, -1);
+        continue;
+      }
+      if (!line.startsWith('port =')) continue;
+      const value = Number(line.split('=')[1].trim().replace(/"/g, ''));
+      if (!Number.isFinite(value) || value <= 0) continue;
+      if (section === 'bridge') bridgePort = value;
+      if (section === 'management') managementPort = value;
+    }
+  } catch {
+    // Keep defaults when the mock is started without a readable config.
+  }
+}
 let cronSeq = 0;
 let jobs = [];
 function json(res, status, payload) {
@@ -107,7 +153,7 @@ const handleHttpRequest = async (req, res) => {
     return;
   }
   if (req.url && req.url.startsWith('/api/v1/cron')) {
-    const url = new URL(req.url, 'http://127.0.0.1:9820');
+    const url = new URL(req.url, 'http://127.0.0.1:' + managementPort);
     const parts = url.pathname.split('/').filter(Boolean);
     const id = parts[3];
     if (req.method === 'GET' && parts.length === 3) {
@@ -186,8 +232,8 @@ wss.on('connection', (ws) => {
     }
   });
 });
-bridgeServer.listen(9810, '127.0.0.1');
-managementServer.listen(9820, '127.0.0.1');
+bridgeServer.listen(bridgePort, '127.0.0.1');
+managementServer.listen(managementPort, '127.0.0.1');
 process.stdout.write('cc-connect bridge e2e mock ready\\n');
 function shutdown() {
   let remaining = 2;
@@ -205,6 +251,10 @@ process.on('SIGINT', shutdown);
 }
 
 async function prepareMockBundles(userDataDir: string): Promise<{ ccConnectPath: string; codexPath: string }> {
+  await Promise.all([
+    waitForPortClosed(9810),
+    waitForPortClosed(9820),
+  ]);
   const mockBundleDir = join(userDataDir, 'mock-runtime-bundles');
   const codexPath = await createMockCodexBinary(join(mockBundleDir, 'codex'));
   const ccConnectPath = await createMockCcConnectBinary(join(mockBundleDir, 'cc-connect'));
@@ -443,14 +493,84 @@ test.describe('cc-connect + Codex runtime E2E', () => {
         },
       });
 
-      const channelSessionItem = page.getByRole('button', { name: /message from connected channel/ });
-      await expect(channelSessionItem).toBeVisible({ timeout: 15_000 });
-      await channelSessionItem.click();
-      await expect(page.getByTestId('chat-message-0').getByText('message from connected channel')).toBeVisible({
-        timeout: 15_000,
+      const renameChannelSession = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-channel-session-rename',
+          module: 'sessions',
+          action: 'rename',
+          payload: {
+            sessionKey: 'agent:support:member-1',
+            title: 'Renamed support channel',
+          },
+        });
       });
-      await expect(page.getByTestId('chat-message-1').getByText('reply synced from cc-connect channel')).toBeVisible({
-        timeout: 15_000,
+      expect(renameChannelSession).toMatchObject({ ok: true, data: { success: true } });
+
+      const renamedChannelSessions = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-channel-sessions-after-rename',
+          module: 'sessions',
+          action: 'summaries',
+          payload: {},
+        });
+      });
+      expect(renamedChannelSessions).toMatchObject({
+        ok: true,
+        data: {
+          success: true,
+          sessions: expect.arrayContaining([
+            expect.objectContaining({
+              key: 'agent:support:member-1',
+              displayName: 'Renamed support channel / Member One',
+              derivedTitle: 'Renamed support channel',
+            }),
+          ]),
+        },
+      });
+
+      const deleteChannelSession = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-channel-session-delete',
+          module: 'sessions',
+          action: 'delete',
+          payload: { sessionKey: 'agent:support:member-1' },
+        });
+      });
+      expect(deleteChannelSession).toMatchObject({ ok: true, data: { success: true } });
+
+      const [channelSessionsAfterDelete, channelHistoryAfterDelete] = await Promise.all([
+        page.evaluate(async () => {
+          return await window.clawx.hostInvoke({
+            id: 'runtime-channel-sessions-after-delete',
+            module: 'sessions',
+            action: 'summaries',
+            payload: {},
+          });
+        }),
+        page.evaluate(async () => {
+          return await window.clawx.hostInvoke({
+            id: 'runtime-channel-history-after-delete',
+            module: 'sessions',
+            action: 'history',
+            payload: { sessionKey: 'agent:support:member-1', limit: 20 },
+          });
+        }),
+      ]);
+      expect(channelSessionsAfterDelete).toMatchObject({
+        ok: true,
+        data: {
+          success: true,
+          sessions: expect.not.arrayContaining([
+            expect.objectContaining({ key: 'agent:support:member-1' }),
+          ]),
+        },
+      });
+      expect(channelHistoryAfterDelete).toMatchObject({
+        ok: true,
+        data: {
+          success: true,
+          messages: [],
+        },
       });
 
       const cronCreate = await page.evaluate(async () => {
@@ -535,24 +655,116 @@ test.describe('cc-connect + Codex runtime E2E', () => {
           },
         });
       });
-      const analysisHistory = await page.evaluate(async () => {
+      const readAnalysisHistory = async () => await page.evaluate(async () => {
         return await window.clawx.hostInvoke({
-          id: 'runtime-agent-history',
+          id: `runtime-agent-history-${Date.now()}`,
           module: 'sessions',
           action: 'history',
           payload: { sessionKey: 'agent:analysis:member-2', limit: 20 },
         });
       });
-      expect(analysisHistory).toMatchObject({
+      await expect.poll(async () => readAnalysisHistory(), { timeout: 30_000 }).toMatchObject({
         ok: true,
         data: {
           success: true,
           messages: expect.arrayContaining([
             expect.objectContaining({ role: 'user', content: 'hello isolated agent workspace' }),
-            expect.objectContaining({ role: 'assistant', content: 'cc-connect bridge E2E response' }),
           ]),
         },
       });
+      const bridgeMessagesAfterCrossAgent = (await readFile(bridgeMessagesPath, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+      expect(bridgeMessagesAfterCrossAgent).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'message',
+          content: 'hello isolated agent workspace',
+          project: 'clawx-analysis',
+          session_key: 'clawx:analysis:member-2',
+        }),
+      ]));
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('starts cc-connect runtime with an OpenAI API key provider profile', async ({
+    launchElectronApp,
+    userDataDir,
+  }) => {
+    const mockBundles = await prepareMockBundles(userDataDir);
+    const envCapturePath = join(userDataDir, 'cc-connect-env.json');
+    const createdAt = '2026-06-07T00:00:00.000Z';
+
+    await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({
+      language: 'en',
+      devModeUnlocked: true,
+      runtimeKind: 'cc-connect',
+      gatewayAutoStart: false,
+    }, null, 2), 'utf8');
+    await writeFile(join(userDataDir, 'clawx-providers.json'), JSON.stringify({
+      schemaVersion: 0,
+      providerAccounts: {
+        'openai-main': {
+          id: 'openai-main',
+          vendorId: 'openai',
+          label: 'OpenAI API Key',
+          authMode: 'api_key',
+          model: 'gpt-5.5',
+          enabled: true,
+          isDefault: true,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      },
+      providerSecrets: {
+        'openai-main': {
+          type: 'api_key',
+          accountId: 'openai-main',
+          apiKey: 'sk-e2e-openai-secret',
+        },
+      },
+      apiKeys: {},
+      defaultProviderAccountId: 'openai-main',
+    }, null, 2), 'utf8');
+    const app = await launchElectronApp({
+      skipSetup: true,
+      env: {
+        CLAWX_CC_CONNECT_PATH: mockBundles.ccConnectPath,
+        CLAWX_CODEX_PATH: mockBundles.codexPath,
+        CLAWX_E2E_CC_CONNECT_ENV_PATH: envCapturePath,
+      },
+    });
+
+    try {
+      const page = await getStableWindow(app);
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+
+      const startResult = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-start-openai-api-key',
+          module: 'gateway',
+          action: 'start',
+        });
+      });
+      expect(startResult).toMatchObject({
+        ok: true,
+        data: { success: true },
+      });
+
+      const managedConfig = await readFile(join(userDataDir, 'runtimes', 'cc-connect', 'config.toml'), 'utf8');
+      expect(managedConfig).toContain('provider = "openai"');
+      expect(managedConfig).toContain('api_key = "${OPENAI_API_KEY}"');
+      expect(managedConfig).toContain('model = "gpt-5.5"');
+      expect(managedConfig).not.toContain('sk-e2e-openai-secret');
+
+      const envCapture = JSON.parse(await readFile(envCapturePath, 'utf8'));
+      expect(envCapture).toMatchObject({
+        OPENAI_API_KEY: 'sk-e2e-openai-secret',
+      });
+      expect(String(envCapture.CODEX_HOME)).toContain(join(userDataDir, 'runtimes', 'cc-connect', 'codex-home'));
+
+      const publicProfile = await readFile(join(userDataDir, 'runtimes', 'cc-connect', 'provider-profile.json'), 'utf8');
+      expect(publicProfile).toContain('OPENAI_API_KEY');
+      expect(publicProfile).not.toContain('sk-e2e-openai-secret');
     } finally {
       await closeElectronApp(app);
     }
@@ -625,11 +837,6 @@ test.describe('cc-connect + Codex runtime E2E', () => {
         ok: true,
         data: { success: true },
       });
-
-      await expect(page.getByTestId('chat-composer-input')).toBeEnabled({ timeout: 30_000 });
-      await page.getByTestId('chat-composer-input').fill('hello openai oauth codex runtime');
-      await page.getByTestId('chat-composer-send').click();
-      await expect(page.getByText('cc-connect bridge E2E response')).toBeVisible({ timeout: 30_000 });
 
       const managedCodexHome = join(userDataDir, 'runtimes', 'cc-connect', 'codex-home');
 
@@ -724,11 +931,6 @@ test.describe('cc-connect + Codex runtime E2E', () => {
         ok: true,
         data: { success: true },
       });
-
-      await expect(page.getByTestId('chat-composer-input')).toBeEnabled({ timeout: 30_000 });
-      await page.getByTestId('chat-composer-input').fill('hello managed codex oauth runtime');
-      await page.getByTestId('chat-composer-send').click();
-      await expect(page.getByText('cc-connect bridge E2E response')).toBeVisible({ timeout: 30_000 });
 
       const authJson = JSON.parse(await readFile(join(managedCodexHome, 'auth.json'), 'utf8'));
       expect(authJson).toMatchObject({

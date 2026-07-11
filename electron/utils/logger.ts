@@ -80,8 +80,27 @@ function flushBufferSync(): void {
   writeBuffer = [];
 }
 
-// Ensure all buffered data reaches disk before the process exits.
-process.on('exit', flushBufferSync);
+type LoggerGlobalState = typeof globalThis & {
+  __clawxLoggerExitFlushers?: Set<() => void>;
+  __clawxLoggerExitHandlerRegistered?: boolean;
+};
+
+const loggerGlobalState = globalThis as LoggerGlobalState;
+const loggerExitFlushers = loggerGlobalState.__clawxLoggerExitFlushers ?? new Set<() => void>();
+loggerGlobalState.__clawxLoggerExitFlushers = loggerExitFlushers;
+loggerExitFlushers.add(flushBufferSync);
+
+// Ensure all buffered data reaches disk before the process exits. Vitest can
+// reload this module many times, so keep one process listener and fan out to
+// each module instance's buffer flusher.
+if (!loggerGlobalState.__clawxLoggerExitHandlerRegistered) {
+  process.on('exit', () => {
+    for (const flush of loggerExitFlushers) {
+      flush();
+    }
+  });
+  loggerGlobalState.__clawxLoggerExitHandlerRegistered = true;
+}
 
 // ── Initialisation ───────────────────────────────────────────────
 

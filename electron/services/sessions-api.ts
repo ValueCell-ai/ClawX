@@ -428,6 +428,10 @@ export function createSessionsApi(runtimeManager?: RuntimeManager): CompleteHost
       if (typeof label !== 'string') {
         throw new Error('Label cannot be empty');
       }
+      const provider = runtimeManager?.getActiveProvider();
+      if (provider?.listCapabilities().sessions) {
+        return provider.rpc('sessions.rename', { sessionKey, label }) as Promise<{ success: boolean; error?: string }>;
+      }
       return renameSession(sessionKey, label);
     },
     summaries: async (payload) => {

@@ -676,6 +676,7 @@ export type ClawHubOpenPayload = {
 };
 
 export type UsageHistoryEntry = {
+  runtimeKind?: 'openclaw' | 'cc-connect';
   timestamp: string;
   sessionId: string;
   agentId: string;
@@ -690,7 +691,7 @@ export type UsageHistoryEntry = {
   totalTokens: number;
   costUsd?: number;
 };
-export type UsageHistoryPayload = { limit?: number };
+export type UsageHistoryPayload = { limit?: number; runtimeKind?: RuntimeKind };
 
 export type DeliveryChannelAccount = {
   accountId: string;

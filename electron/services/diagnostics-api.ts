@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { GatewayManager } from '../gateway/manager';
 import type { RuntimeManager } from '../runtime/manager';
+import type { RuntimeProvider } from '../runtime/types';
+import type { CronJob } from '@shared/types/cron';
 import { logger } from '../utils/logger';
 import { getOpenClawConfigDir } from '../utils/paths';
 import { buildGatewayHealthSummary } from '../utils/gateway-health';
@@ -146,6 +148,57 @@ async function probeCcConnectManagement(activeProvider: ReturnType<RuntimeManage
   }
 }
 
+async function buildCcConnectCronDiagnostics(activeProvider: RuntimeProvider | undefined): Promise<Record<string, unknown>> {
+  const knownGaps = [
+    'scheduled-prompt-delivery-unproven',
+    'heartbeat-unproven',
+    'external-channel-delivery-targets-unproven',
+    'muted-scheduled-delivery-behavior-unproven',
+  ];
+  if (!activeProvider?.rpc) {
+    return {
+      success: false,
+      knownGaps,
+      error: 'active runtime provider RPC is unavailable',
+    };
+  }
+  try {
+    const jobs = await activeProvider.rpc<CronJob[]>('cron.list');
+    const list = Array.isArray(jobs) ? jobs : [];
+    return {
+      success: true,
+      jobCount: list.length,
+      jobs: list.slice(0, 50).map((job) => ({
+        id: job.id,
+        name: job.name,
+        agentId: job.agentId,
+        enabled: job.enabled,
+        deliveryMode: job.delivery?.mode,
+        hasPrompt: Boolean(job.message && !job.exec),
+        hasExec: Boolean(job.exec),
+        sessionMode: job.sessionMode,
+        timeoutMins: job.timeoutMins,
+        mute: job.mute,
+        nextRun: job.nextRun,
+        lastRun: job.lastRun ? {
+          time: job.lastRun.time,
+          success: job.lastRun.success,
+          hasError: Boolean(job.lastRun.error),
+          duration: job.lastRun.duration,
+        } : undefined,
+      })),
+      truncated: list.length > 50,
+      knownGaps,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      knownGaps,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 async function buildRuntimeDiagnostics(ctx: DiagnosticsApiContext) {
   const runtimeStatus = ctx.runtimeManager?.getStatus();
   const activeProvider = ctx.runtimeManager?.getActiveProvider();
@@ -165,7 +218,7 @@ async function buildRuntimeDiagnostics(ctx: DiagnosticsApiContext) {
   const providerProfilePath = getCcConnectProviderProfilePath();
   const ccConnectBinaryPath = getCcConnectBinaryPath();
   const codexBundle = getCodexBundle();
-  const [oauth, providerProfile, runtimeLogs, ccConnectBinary, codexBinary, managementApi] = await Promise.all([
+  const [oauth, providerProfile, runtimeLogs, ccConnectBinary, codexBinary, managementApi, cron] = await Promise.all([
     getCcConnectCodexOAuthStatus().catch((error) => ({
       success: false,
       error: error instanceof Error ? error.message : String(error),
@@ -177,6 +230,7 @@ async function buildRuntimeDiagnostics(ctx: DiagnosticsApiContext) {
     buildBinaryDiagnostics(ccConnectBinaryPath, join(dirname(ccConnectBinaryPath), 'manifest.json')),
     buildBinaryDiagnostics(codexBundle.binaryPath, join(codexBundle.baseDir, 'manifest.json')),
     probeCcConnectManagement(activeProvider),
+    buildCcConnectCronDiagnostics(activeProvider),
   ]);
 
   return {
@@ -193,6 +247,7 @@ async function buildRuntimeDiagnostics(ctx: DiagnosticsApiContext) {
         codex: codexBinary,
       },
       managementApi,
+      cron,
       logTail: runtimeLogs?.content ?? '',
     },
   };

@@ -99,7 +99,7 @@ ClawX also includes a runtime abstraction layer. OpenClaw remains the default ru
 
 In cc-connect mode, Codex provider sync supports OpenAI API key, OpenAI OAuth/Codex, Ollama, and Custom OpenAI-compatible providers that expose the Responses API. Custom provider headers are written as environment-variable references so secrets and session headers are not persisted in managed config files. Custom providers configured for Chat Completions are reported as unsupported before chat delivery because Codex accepts the Responses wire API for this path.
 
-cc-connect also owns messaging platform bridges. When cc-connect is the active runtime, channel status probes are routed through the runtime abstraction instead of the OpenClaw Gateway, configured channel accounts are mirrored into the cc-connect project that owns their bound agent, and channel saves/deletes restart the managed cc-connect runtime so platform changes take effect. The Developer Mode sidebar page shortcut opens cc-connect Web Admin, while the OpenClaw Dreams shortcut remains OpenClaw-only.
+cc-connect also owns messaging platform bridges. When cc-connect is the active runtime, channel status probes are routed through the runtime abstraction instead of the OpenClaw Gateway, configured channel accounts are mirrored into the cc-connect project that owns their bound agent, and channel saves/deletes reload the managed cc-connect config through its Management API so platform changes take effect without a full runtime restart when possible. The Developer Mode sidebar page shortcut opens cc-connect Web Admin, while the OpenClaw Dreams shortcut remains OpenClaw-only.
 
 ---
 
@@ -351,6 +351,8 @@ Chain multiple skills together to create sophisticated automation pipelines. Pro
 ```
 ### Available Commands
 
+Real cc-connect verification can load local env files, but repo-local credential files must be gitignored; external `--env-file` paths are allowed without being written to reports. Use `.env.cc-connect.local.example` as the field template for `.env.cc-connect.local`.
+
 ```bash
 # Development
 pnpm run init             # Install dependencies + download bundled binaries (uv, agent-browser)
@@ -363,10 +365,38 @@ pnpm typecheck            # TypeScript validation
 # Testing
 pnpm test                 # Run unit tests
 pnpm run test:e2e         # Run Electron E2E smoke tests with Playwright
+pnpm run test:e2e:cc-connect:codex-oauth-lifecycle # Verify cc-connect Codex OAuth Host API status/import/logout without real credentials
 pnpm run test:e2e:headed  # Run Electron E2E tests with a visible window
 pnpm run comms:replay     # Compute communication replay metrics
 pnpm run comms:baseline   # Refresh communication baseline snapshot
 pnpm run comms:compare    # Compare replay metrics against baseline thresholds
+pnpm run verify:cc-connect:local-real      # Write a local cc-connect real-validation preflight report
+pnpm run verify:cc-connect:local-real:run  # Run safe local cc-connect real-validation checks and write the report
+pnpm run verify:cc-connect:local-real:oauth # Also run dev cc-connect real OAuth comprehensive smoke when CLAWX_REAL_CODEX_AUTH_JSON is complete and non-expired
+pnpm run verify:cc-connect:local-real:oauth-all # Also run dev and packaged cc-connect real OAuth smokes when CLAWX_REAL_CODEX_AUTH_JSON is complete and non-expired
+pnpm run verify:cc-connect:local-real:api-key # Run local OpenAI-compatible API-key chat/abort smokes; also run real OpenAI API-key smoke when credentials are available
+pnpm run verify:cc-connect:local-real:feishu # Also run real Feishu/Lark lifecycle smoke when credentials and CLAWX_REAL_CODEX_AUTH_JSON are available
+pnpm run verify:cc-connect:local-real:feishu-inbound # Also run the manual real Feishu/Lark inbound marker smoke when the sandbox tenant fixture is enabled
+pnpm run verify:cc-connect:local-real:scheduled-cron # Also run real scheduled exec cron; with Codex auth, verify scheduled prompt delivery through the ClawX cc-connect bridge fallback
+pnpm run verify:cc-connect:local-real:all # Run every available local real cc-connect validation path and write the external gate handoff
+pnpm run verify:cc-connect:local-real:all-strict # Require all real credentials and runtime parity coverage for release-candidate validation; writes the handoff before failing
+pnpm run verify:cc-connect:local-real:replacement-ready # Require replacement readiness without making missing credentials a separate preflight failure; writes the handoff before failing
+pnpm run verify:cc-connect:local-real:replacement-ready:check # Same readiness gate without overwriting the last report artifacts
+pnpm run verify:cc-connect:local-real:packaged-oauth # Also run packaged cc-connect real OAuth smoke when CLAWX_REAL_CODEX_AUTH_JSON is complete and non-expired
+pnpm run verify:cc-connect:local-real:external-gates:check # Check remaining required external gates without overwriting report artifacts
+pnpm run verify:cc-connect:local-real:external-gates # Run only the remaining required external gates and fail unless all three pass
+pnpm run verify:cc-connect:local-real:handoff # Generate a credential-free handoff checklist for remaining external gates
+
+# The report is written to artifacts/cc-connect/local-real-validation-report.{json,md};
+# The external gate handoff is written to artifacts/cc-connect/local-real-external-gates.{md,json} by :all, :all-strict, :replacement-ready, :external-gates, or :handoff.
+# The JSON handoff is machine-readable and contains only sanitized status, env-var names, commands, and safety notes.
+# runtimeMatrixStatus shows pass/partial/fail coverage separately from hard-gate exit status.
+# Use --no-write, replacement-ready:check, or external-gates:check for non-destructive gate checks; missing preconditions and next commands are printed without secret values.
+# validationGaps records required local gate gaps separately from follow-up full-parity evidence gaps.
+# partial reports include Next Actions with follow-up commands and no secret values.
+# Real credentials can be supplied through untracked/gitignored .env.cc-connect.local,
+# --env-file=<path>, or CLAWX_REAL_ENV_FILE / CLAWX_REAL_ENV_FILES; process env values win.
+# API-key smoke can set CLAWX_REAL_OPENAI_MODEL when the default model is not available.
 
 # Build & Package
 pnpm run build:vite       # Build frontend only

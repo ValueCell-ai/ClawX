@@ -1,4 +1,4 @@
-import { access, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { createConnection, createServer, type Server } from 'node:net';
 import { join } from 'node:path';
@@ -209,6 +209,77 @@ test.describe('cc-connect real runtime bundle smoke', () => {
       const publicProfile = await readFile(join(userDataDir, 'runtimes', 'cc-connect', 'provider-profile.json'), 'utf8');
       expect(publicProfile).toContain('"vendorId": "ollama"');
       expect(publicProfile).toContain('qwen3:latest');
+
+      const diagnostics = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-diagnostics-real-bundle',
+          module: 'diagnostics',
+          action: 'gatewaySnapshot',
+        });
+      }) as {
+        ok: boolean;
+        data?: {
+          runtime?: {
+            activeKind?: string;
+            status?: { runtimeKind?: string; state?: string };
+            operationCapabilities?: Record<string, { support?: string }>;
+            ccConnect?: {
+              managedDir?: string;
+              configPath?: string;
+              codexHomeDir?: string;
+              providerProfilePath?: string;
+              providerProfile?: { vendorId?: string; envKeys?: string[] };
+              managementApi?: { success?: boolean; port?: number };
+              cron?: { success?: boolean; jobCount?: number; knownGaps?: string[]; jobs?: unknown[] };
+              binaries?: {
+                ccConnect?: { versionCommand?: { success?: boolean; output?: string } };
+                codex?: { versionCommand?: { success?: boolean; output?: string } };
+              };
+              logTail?: string;
+            };
+          };
+        };
+      };
+      expect(diagnostics).toMatchObject({
+        ok: true,
+        data: {
+          runtime: {
+            activeKind: 'cc-connect',
+            status: { runtimeKind: 'cc-connect', state: 'running' },
+            operationCapabilities: expect.objectContaining({
+              'chat.send': expect.objectContaining({ support: 'native' }),
+              'doctor.fix': expect.objectContaining({ support: 'unsupported' }),
+            }),
+            ccConnect: expect.objectContaining({
+              managedDir: join(userDataDir, 'runtimes', 'cc-connect'),
+              configPath: join(userDataDir, 'runtimes', 'cc-connect', 'config.toml'),
+              codexHomeDir: join(userDataDir, 'runtimes', 'cc-connect', 'codex-home'),
+              providerProfilePath: join(userDataDir, 'runtimes', 'cc-connect', 'provider-profile.json'),
+              providerProfile: expect.objectContaining({ vendorId: 'ollama' }),
+              managementApi: expect.objectContaining({ success: true }),
+              cron: expect.objectContaining({
+                success: true,
+                jobCount: 0,
+                jobs: [],
+                knownGaps: expect.arrayContaining([
+                  'scheduled-prompt-delivery-unproven',
+                ]),
+              }),
+              binaries: expect.objectContaining({
+                ccConnect: expect.objectContaining({
+                  versionCommand: expect.objectContaining({ success: true }),
+                }),
+                codex: expect.objectContaining({
+                  versionCommand: expect.objectContaining({ success: true }),
+                }),
+              }),
+            }),
+          },
+        },
+      });
+      const diagnosticsText = JSON.stringify(diagnostics);
+      expect(diagnosticsText).not.toContain('runtime-management-token');
+      expect(diagnosticsText).not.toContain('token = "');
     } finally {
       await closeElectronApp(app);
     }
@@ -287,6 +358,784 @@ test.describe('cc-connect real runtime bundle smoke', () => {
       await closeElectronApp(app);
       await closeServer(occupiedBridge);
       await closeServer(occupiedManagement);
+    }
+  });
+
+  test('reloads managed channel config and reads live project platform status without restarting cc-connect', async ({
+    launchElectronApp,
+    homeDir,
+    userDataDir,
+  }) => {
+    const bundles = await realRuntimeBundles();
+    test.skip(!bundles, 'Run pnpm run bundle:cc-connect:current && pnpm run bundle:codex:current first.');
+    await waitForPortClosed(9810);
+    await waitForPortClosed(9820);
+
+    await seedCcConnectRuntimeSettings(userDataDir);
+    const openClawConfigDir = join(homeDir, '.openclaw');
+    await mkdir(openClawConfigDir, { recursive: true });
+
+    const app = await launchElectronApp({
+      skipSetup: true,
+      env: {
+        CLAWX_CC_CONNECT_PATH: bundles!.ccConnectPath,
+        CLAWX_CODEX_PATH: bundles!.codexPath,
+      },
+    });
+
+    try {
+      const page = await getStableWindow(app);
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+
+      const startResult = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-start-real-bundle-channel-reload',
+          module: 'gateway',
+          action: 'start',
+        });
+      });
+      expect(startResult).toMatchObject({
+        ok: true,
+        data: { success: true },
+      });
+
+      const beforeReloadStatus = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-status-before-channel-reload',
+          module: 'gateway',
+          action: 'status',
+        });
+      }) as { ok: boolean; data?: { pid?: number; port?: number; runtimeKind?: string } };
+      expect(beforeReloadStatus).toMatchObject({
+        ok: true,
+        data: { runtimeKind: 'cc-connect' },
+      });
+      expect(beforeReloadStatus.data?.pid).toBeGreaterThan(0);
+
+      await writeFile(join(openClawConfigDir, 'openclaw.json'), JSON.stringify({
+        agents: {
+          defaults: { workspace: join(userDataDir, 'line-reload-workspace') },
+          list: [
+            { id: 'main', name: 'Main Agent', default: true, workspace: join(userDataDir, 'line-reload-workspace') },
+          ],
+        },
+        channels: {
+          line: {
+            enabled: true,
+            defaultAccount: 'local_line',
+            accounts: {
+              local_line: {
+                channelSecret: 'line-secret',
+                channelToken: 'line-token',
+                port: '0',
+                callbackPath: '/callback',
+              },
+            },
+          },
+        },
+      }, null, 2), 'utf8');
+
+      const connectResult = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-channel-connect-real-bundle-line-reload',
+          module: 'gateway',
+          action: 'rpc',
+          payload: {
+            method: 'channels.connect',
+            params: { channelType: 'line' },
+            timeoutMs: 60_000,
+          },
+        });
+      });
+      expect(connectResult).toMatchObject({ ok: true, data: { success: true } });
+
+      const afterReloadStatus = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-status-after-channel-reload',
+          module: 'gateway',
+          action: 'status',
+        });
+      }) as { ok: boolean; data?: { pid?: number; port?: number; runtimeKind?: string } };
+      expect(afterReloadStatus).toMatchObject({
+        ok: true,
+        data: {
+          runtimeKind: 'cc-connect',
+          pid: beforeReloadStatus.data?.pid,
+          port: beforeReloadStatus.data?.port,
+        },
+      });
+
+      const managedConfig = await readFile(join(userDataDir, 'runtimes', 'cc-connect', 'config.toml'), 'utf8');
+      expect(managedConfig).toContain('type = "line"');
+      expect(managedConfig).toContain('channel_secret = "line-secret"');
+      expect(managedConfig).toContain('channel_token = "line-token"');
+
+      const channelsAccounts = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-channels-accounts-real-bundle-line-reload',
+          module: 'channels',
+          action: 'accounts',
+          payload: { probe: true },
+        });
+      });
+      expect(channelsAccounts).toMatchObject({
+        ok: true,
+        data: {
+          success: true,
+          channels: expect.arrayContaining([
+            expect.objectContaining({
+              channelType: 'line',
+              accounts: expect.arrayContaining([
+                expect.objectContaining({
+                  accountId: 'local_line',
+                  configured: true,
+                  connected: true,
+                  running: true,
+                  linked: true,
+                }),
+              ]),
+            }),
+          ]),
+        },
+      });
+
+      await writeFile(join(openClawConfigDir, 'openclaw.json'), JSON.stringify({
+        agents: {
+          defaults: { workspace: join(userDataDir, 'line-reload-workspace') },
+          list: [
+            { id: 'main', name: 'Main Agent', default: true, workspace: join(userDataDir, 'line-reload-workspace') },
+          ],
+        },
+        channels: {
+          line: {
+            enabled: false,
+            defaultAccount: 'local_line',
+            accounts: {
+              local_line: {
+                channelSecret: 'line-secret',
+                channelToken: 'line-token',
+                port: '0',
+                callbackPath: '/callback',
+              },
+            },
+          },
+        },
+      }, null, 2), 'utf8');
+
+      const disconnectResult = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-channel-disconnect-real-bundle-line-reload',
+          module: 'gateway',
+          action: 'rpc',
+          payload: {
+            method: 'channels.disconnect',
+            params: { channelType: 'line' },
+            timeoutMs: 60_000,
+          },
+        });
+      });
+      expect(disconnectResult).toMatchObject({ ok: true, data: { success: true } });
+
+      const afterDisconnectStatus = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-status-after-channel-disconnect',
+          module: 'gateway',
+          action: 'status',
+        });
+      }) as { ok: boolean; data?: { pid?: number; port?: number; runtimeKind?: string } };
+      expect(afterDisconnectStatus).toMatchObject({
+        ok: true,
+        data: {
+          runtimeKind: 'cc-connect',
+          pid: beforeReloadStatus.data?.pid,
+          port: beforeReloadStatus.data?.port,
+        },
+      });
+
+      const managedConfigAfterDisconnect = await readFile(join(userDataDir, 'runtimes', 'cc-connect', 'config.toml'), 'utf8');
+      expect(managedConfigAfterDisconnect).not.toContain('channel_secret = "line-secret"');
+      expect(managedConfigAfterDisconnect).not.toContain('channel_token = "line-token"');
+      expect(managedConfigAfterDisconnect).toContain('channel_secret = "clawx-local-placeholder"');
+      expect(managedConfigAfterDisconnect).toContain('channel_token = "clawx-local-placeholder"');
+
+      const channelsAccountsAfterDisconnect = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-channels-accounts-after-disconnect-real-bundle-line-reload',
+          module: 'channels',
+          action: 'accounts',
+          payload: { probe: true },
+        });
+      });
+      expect(channelsAccountsAfterDisconnect).toMatchObject({
+        ok: true,
+        data: {
+          success: true,
+          channels: expect.not.arrayContaining([
+            expect.objectContaining({ channelType: 'line' }),
+          ]),
+        },
+      });
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('projects Feishu and Lark channel config through cc-connect runtime lifecycle without tenant credentials', async ({
+    launchElectronApp,
+    homeDir,
+    userDataDir,
+  }) => {
+    const bundles = await realRuntimeBundles();
+    test.skip(!bundles, 'Run pnpm run bundle:cc-connect:current && pnpm run bundle:codex:current first.');
+    await waitForPortClosed(9810);
+    await waitForPortClosed(9820);
+
+    await seedCcConnectRuntimeSettings(userDataDir);
+    const openClawConfigDir = join(homeDir, '.openclaw');
+    await mkdir(openClawConfigDir, { recursive: true });
+    const mainWorkspace = join(userDataDir, 'feishu-main-workspace');
+    const opsWorkspace = join(userDataDir, 'feishu-ops-workspace');
+    await mkdir(mainWorkspace, { recursive: true });
+    await mkdir(opsWorkspace, { recursive: true });
+
+    const app = await launchElectronApp({
+      skipSetup: true,
+      env: {
+        CLAWX_CC_CONNECT_PATH: bundles!.ccConnectPath,
+        CLAWX_CODEX_PATH: bundles!.codexPath,
+      },
+    });
+
+    try {
+      const page = await getStableWindow(app);
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+
+      const startResult = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-start-real-bundle-feishu-projection',
+          module: 'gateway',
+          action: 'start',
+        });
+      });
+      expect(startResult).toMatchObject({
+        ok: true,
+        data: { success: true },
+      });
+
+      const beforeReloadStatus = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-status-before-feishu-projection',
+          module: 'gateway',
+          action: 'status',
+        });
+      }) as { ok: boolean; data?: { pid?: number; port?: number; runtimeKind?: string } };
+      expect(beforeReloadStatus).toMatchObject({
+        ok: true,
+        data: { runtimeKind: 'cc-connect' },
+      });
+      expect(beforeReloadStatus.data?.pid).toBeGreaterThan(0);
+
+      await writeFile(join(openClawConfigDir, 'openclaw.json'), JSON.stringify({
+        agents: {
+          defaults: { workspace: mainWorkspace },
+          list: [
+            { id: 'main', name: 'Main Agent', default: true, workspace: mainWorkspace },
+            { id: 'ops', name: 'Ops Agent', workspace: opsWorkspace },
+          ],
+        },
+        bindings: [
+          { match: { channel: 'feishu', accountId: 'cn_bot' }, agentId: 'ops' },
+          { match: { channel: 'feishu', accountId: 'global_bot' }, agentId: 'main' },
+        ],
+        channels: {
+          feishu: {
+            enabled: true,
+            defaultAccount: 'cn_bot',
+            accounts: {
+              cn_bot: {
+                appId: 'cli_feishu_cn',
+                appSecret: 'feishu-secret-cn',
+                domain: 'feishu',
+                allowFrom: ['oc_main', 'ou_user'],
+                shareSessionInChannel: true,
+                enableFeishuCard: false,
+                callbackPath: '/feishu/callback',
+              },
+              global_bot: {
+                appId: 'cli_lark_global',
+                appSecret: 'lark-secret-global',
+                domain: 'global',
+                allowFrom: '*',
+                shareSessionInChannel: false,
+                enableFeishuCard: true,
+              },
+            },
+          },
+        },
+      }, null, 2), 'utf8');
+
+      const connectResult = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-channel-connect-real-bundle-feishu-projection',
+          module: 'gateway',
+          action: 'rpc',
+          payload: {
+            method: 'channels.connect',
+            params: { channelType: 'feishu' },
+            timeoutMs: 60_000,
+          },
+        });
+      });
+      expect(connectResult).toMatchObject({ ok: true, data: { success: true } });
+
+      const afterReloadStatus = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-status-after-feishu-projection',
+          module: 'gateway',
+          action: 'status',
+        });
+      }) as { ok: boolean; data?: { pid?: number; port?: number; runtimeKind?: string } };
+      expect(afterReloadStatus).toMatchObject({
+        ok: true,
+        data: {
+          runtimeKind: 'cc-connect',
+          pid: beforeReloadStatus.data?.pid,
+          port: beforeReloadStatus.data?.port,
+        },
+      });
+
+      const managedConfigPath = join(userDataDir, 'runtimes', 'cc-connect', 'config.toml');
+      const managedConfig = await readFile(managedConfigPath, 'utf8');
+      expect(managedConfig).toContain('name = "clawx-ops"');
+      expect(managedConfig).toContain('name = "clawx-main"');
+      expect(managedConfig).toContain(`work_dir = "${opsWorkspace}"`);
+      expect(managedConfig).toContain(`work_dir = "${mainWorkspace}"`);
+      expect(managedConfig).toContain('type = "feishu"');
+      expect(managedConfig).toContain('type = "lark"');
+      expect(managedConfig).toContain('app_id = "cli_feishu_cn"');
+      expect(managedConfig).toContain('app_id = "cli_lark_global"');
+      expect(managedConfig).toContain('domain = "https://open.feishu.cn"');
+      expect(managedConfig).toContain('domain = "https://open.larksuite.com"');
+      expect(managedConfig).toContain('allow_from = "oc_main,ou_user"');
+      expect(managedConfig).toContain('allow_from = "*"');
+      expect(managedConfig).toContain('share_session_in_channel = true');
+      expect(managedConfig).toContain('share_session_in_channel = false');
+      expect(managedConfig).toContain('enable_feishu_card = false');
+      expect(managedConfig).toContain('enable_feishu_card = true');
+      expect(managedConfig).toContain('callback_path = "/feishu/callback"');
+      const workDirLines = managedConfig.split('\n').filter((line) => line.startsWith('work_dir =')).join('\n');
+      expect(workDirLines).not.toContain(process.cwd());
+
+      const channelsAccounts = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-channels-accounts-real-bundle-feishu-projection',
+          module: 'channels',
+          action: 'accounts',
+          payload: { probe: true },
+        });
+      });
+      expect(channelsAccounts).toMatchObject({
+        ok: true,
+        data: {
+          success: true,
+          channels: expect.arrayContaining([
+            expect.objectContaining({
+              channelType: 'feishu',
+              defaultAccountId: 'cn_bot',
+              accounts: expect.arrayContaining([
+                expect.objectContaining({
+                  accountId: 'cn_bot',
+                  configured: true,
+                  linked: true,
+                  name: 'feishu',
+                }),
+                expect.objectContaining({
+                  accountId: 'global_bot',
+                  configured: true,
+                  linked: true,
+                  name: 'lark',
+                }),
+              ]),
+            }),
+          ]),
+        },
+      });
+
+      const deleteConfigResult = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-channel-delete-config-real-bundle-feishu-projection',
+          module: 'channels',
+          action: 'deleteConfig',
+          payload: { channelType: 'feishu', accountId: 'cn_bot' },
+        });
+      });
+      expect(deleteConfigResult).toMatchObject({ ok: true, data: { success: true } });
+
+      await expect.poll(async () => {
+        const refreshedConfig = await readFile(managedConfigPath, 'utf8');
+        return {
+          hasCnBot: refreshedConfig.includes('cli_feishu_cn') || refreshedConfig.includes('feishu-secret-cn'),
+          hasGlobalBot: refreshedConfig.includes('cli_lark_global') && refreshedConfig.includes('lark-secret-global'),
+        };
+      }, {
+        timeout: 60_000,
+        intervals: [1_000, 2_000, 5_000],
+      }).toEqual({ hasCnBot: false, hasGlobalBot: true });
+
+      const channelsAfterDelete = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-channels-after-delete-real-bundle-feishu-projection',
+          module: 'channels',
+          action: 'accounts',
+          payload: { probe: true },
+        });
+      });
+      expect(channelsAfterDelete).toMatchObject({
+        ok: true,
+        data: {
+          success: true,
+          channels: expect.arrayContaining([
+            expect.objectContaining({
+              channelType: 'feishu',
+              defaultAccountId: 'global_bot',
+              accounts: [
+                expect.objectContaining({
+                  accountId: 'global_bot',
+                  configured: true,
+                  linked: true,
+                  name: 'lark',
+                }),
+              ],
+            }),
+          ]),
+        },
+      });
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('manages cron lifecycle through the real cc-connect Management API without model credentials', async ({
+    launchElectronApp,
+    homeDir,
+    userDataDir,
+  }) => {
+    const bundles = await realRuntimeBundles();
+    test.skip(!bundles, 'Run pnpm run bundle:cc-connect:current && pnpm run bundle:codex:current first.');
+    await waitForPortClosed(9810);
+    await waitForPortClosed(9820);
+
+    await seedCcConnectRuntimeSettings(userDataDir);
+    const openClawConfigDir = join(homeDir, '.openclaw');
+    const researchWorkspace = join(userDataDir, 'cron-research-workspace');
+    await mkdir(openClawConfigDir, { recursive: true });
+    await mkdir(researchWorkspace, { recursive: true });
+    await writeFile(join(openClawConfigDir, 'openclaw.json'), JSON.stringify({
+      agents: {
+        defaults: { workspace: join(userDataDir, 'cron-main-workspace') },
+        list: [
+          { id: 'main', name: 'Main Agent', default: true, workspace: join(userDataDir, 'cron-main-workspace') },
+          { id: 'research', name: 'Research Agent', workspace: researchWorkspace },
+        ],
+      },
+    }, null, 2), 'utf8');
+
+    const app = await launchElectronApp({
+      skipSetup: true,
+      env: {
+        CLAWX_CC_CONNECT_PATH: bundles!.ccConnectPath,
+        CLAWX_CODEX_PATH: bundles!.codexPath,
+      },
+    });
+
+    try {
+      const page = await getStableWindow(app);
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+
+      const startResult = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-start-real-bundle-cron-lifecycle',
+          module: 'gateway',
+          action: 'start',
+        });
+      });
+      expect(startResult).toMatchObject({ ok: true, data: { success: true } });
+
+      const createResult = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-create-real-bundle-lifecycle',
+          module: 'cron',
+          action: 'create',
+          payload: {
+            name: 'Real bundle research cron',
+            message: 'Local real bundle cron prompt',
+            schedule: { kind: 'cron', expr: '0 11 * * *' },
+            enabled: true,
+            delivery: { mode: 'none' },
+            mute: true,
+            agentId: 'research',
+          },
+        });
+      });
+      expect(createResult).toMatchObject({
+        ok: true,
+        data: expect.objectContaining({
+          name: 'Real bundle research cron',
+          message: 'Local real bundle cron prompt',
+          enabled: true,
+          agentId: 'research',
+          mute: true,
+        }),
+      });
+      const cronId = (createResult as { data?: { id?: string } }).data?.id;
+      expect(cronId).toBeTruthy();
+
+      const listResult = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-list-real-bundle-lifecycle',
+          module: 'cron',
+          action: 'list',
+        });
+      });
+      expect(listResult).toMatchObject({
+        ok: true,
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            id: cronId,
+            agentId: 'research',
+            message: 'Local real bundle cron prompt',
+          }),
+        ]),
+      });
+
+      const updateResult = await page.evaluate(async (id) => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-update-real-bundle-lifecycle',
+          module: 'cron',
+          action: 'update',
+          payload: {
+            id,
+            input: {
+              name: 'Real bundle research cron updated',
+              message: 'Updated real bundle cron prompt',
+              schedule: { kind: 'cron', expr: '30 11 * * *' },
+              delivery: { mode: 'announce' },
+              enabled: true,
+              mute: false,
+              agentId: 'research',
+            },
+          },
+        });
+      }, cronId);
+      expect(updateResult).toMatchObject({
+        ok: true,
+        data: expect.objectContaining({
+          id: cronId,
+          name: 'Real bundle research cron updated',
+          message: 'Updated real bundle cron prompt',
+          enabled: true,
+          agentId: 'research',
+          delivery: { mode: 'announce' },
+        }),
+      });
+
+      const toggleResult = await page.evaluate(async (id) => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-toggle-real-bundle-lifecycle',
+          module: 'cron',
+          action: 'toggle',
+          payload: { id, enabled: false },
+        });
+      }, cronId);
+      expect(toggleResult).toMatchObject({
+        ok: true,
+        data: expect.objectContaining({
+          id: cronId,
+          enabled: false,
+          agentId: 'research',
+        }),
+      });
+
+      const execMarkerPath = join(researchWorkspace, 'cc-connect-exec-cron-marker.txt');
+      const execCreateResult = await page.evaluate(async (workDir) => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-create-exec-real-bundle-lifecycle',
+          module: 'cron',
+          action: 'create',
+          payload: {
+            name: 'Real bundle research exec cron',
+            exec: "node -e \"require('fs').writeFileSync('cc-connect-exec-cron-marker.txt', 'CLAWX_EXEC_CRON_OK')\"",
+            workDir,
+            sessionMode: 'new_per_run',
+            timeoutMins: 3,
+            schedule: { kind: 'cron', expr: '15 12 * * *' },
+            enabled: true,
+            delivery: { mode: 'none' },
+            agentId: 'research',
+          },
+        });
+      }, researchWorkspace);
+      expect(execCreateResult).toMatchObject({
+        ok: true,
+        data: expect.objectContaining({
+          name: 'Real bundle research exec cron',
+          enabled: true,
+          agentId: 'research',
+          exec: expect.stringContaining('cc-connect-exec-cron-marker.txt'),
+          workDir: researchWorkspace,
+          sessionMode: 'new_per_run',
+          timeoutMins: 3,
+        }),
+      });
+      const execCronId = (execCreateResult as { data?: { id?: string } }).data?.id;
+      expect(execCronId).toBeTruthy();
+
+      const execUpdateResult = await page.evaluate(async ({ id, workDir }) => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-update-exec-real-bundle-lifecycle',
+          module: 'cron',
+          action: 'update',
+          payload: {
+            id,
+            input: {
+              exec: "node -e \"require('fs').writeFileSync('cc-connect-exec-cron-marker.txt', 'CLAWX_EXEC_CRON_UPDATED_OK')\"",
+              workDir,
+              sessionMode: 'continue',
+              timeoutMins: 4,
+              agentId: 'research',
+            },
+          },
+        });
+      }, { id: execCronId, workDir: researchWorkspace });
+      expect(execUpdateResult, JSON.stringify(execUpdateResult)).toMatchObject({
+        ok: true,
+        data: expect.objectContaining({
+          id: execCronId,
+          agentId: 'research',
+          exec: expect.stringContaining('CLAWX_EXEC_CRON_UPDATED_OK'),
+          workDir: researchWorkspace,
+          sessionMode: 'continue',
+          timeoutMins: 4,
+        }),
+      });
+
+      const execListResult = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-list-exec-real-bundle-lifecycle',
+          module: 'cron',
+          action: 'list',
+        });
+      });
+      expect(execListResult).toMatchObject({
+        ok: true,
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            id: execCronId,
+            agentId: 'research',
+            exec: expect.stringContaining('CLAWX_EXEC_CRON_UPDATED_OK'),
+            workDir: researchWorkspace,
+            sessionMode: 'continue',
+            timeoutMins: 4,
+          }),
+        ]),
+      });
+
+      const execRunResult = await page.evaluate(async (id) => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-run-exec-real-bundle-lifecycle',
+          module: 'cron',
+          action: 'trigger',
+          payload: { id },
+        });
+      }, execCronId) as { ok?: boolean; data?: unknown; error?: string };
+      if (execRunResult.ok) {
+        await expect.poll(async () => (await readFile(execMarkerPath, 'utf8').catch(() => '')).trim(), {
+          timeout: 30_000,
+          intervals: [500, 1_000, 2_000],
+        }).toBe('CLAWX_EXEC_CRON_UPDATED_OK');
+      } else {
+        const errorText = typeof execRunResult.error === 'string'
+          ? execRunResult.error
+          : JSON.stringify(execRunResult.error ?? execRunResult);
+        expect(errorText).toContain('manual exec cron jobs');
+      }
+
+      const execDeleteResult = await page.evaluate(async (id) => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-delete-exec-real-bundle-lifecycle',
+          module: 'cron',
+          action: 'delete',
+          payload: { id },
+        });
+      }, execCronId);
+      expect(execDeleteResult).toMatchObject({ ok: true, data: { success: true } });
+
+      const deleteResult = await page.evaluate(async (id) => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-delete-real-bundle-lifecycle',
+          module: 'cron',
+          action: 'delete',
+          payload: { id },
+        });
+      }, cronId);
+      expect(deleteResult).toMatchObject({ ok: true, data: { success: true } });
+
+      const listAfterDelete = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-list-after-delete-real-bundle-lifecycle',
+          module: 'cron',
+          action: 'list',
+        });
+      });
+      const jobs = (listAfterDelete as { data?: Array<{ id?: string }> }).data ?? [];
+      expect(jobs.some((job) => job.id === cronId)).toBe(false);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('runs cc-connect doctor against the managed config through the Host API', async ({
+    launchElectronApp,
+    userDataDir,
+  }) => {
+    const bundles = await realRuntimeBundles();
+    test.skip(!bundles, 'Run pnpm run bundle:cc-connect:current && pnpm run bundle:codex:current first.');
+
+    await seedCcConnectRuntimeSettings(userDataDir);
+    const app = await launchElectronApp({
+      skipSetup: true,
+      env: {
+        CLAWX_CC_CONNECT_PATH: bundles!.ccConnectPath,
+        CLAWX_CODEX_PATH: bundles!.codexPath,
+      },
+    });
+
+    try {
+      const page = await getStableWindow(app);
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+
+      const doctorResult = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-doctor-real-bundle',
+          module: 'app',
+          action: 'openClawDoctor',
+          payload: { mode: 'diagnose' },
+        });
+      });
+      expect(doctorResult).toMatchObject({
+        ok: true,
+        data: expect.objectContaining({
+          mode: 'diagnose',
+          command: expect.stringContaining('cc-connect doctor user-isolation --config'),
+          cwd: expect.stringContaining(join('runtimes', 'cc-connect')),
+          stdout: expect.any(String),
+          stderr: expect.any(String),
+        }),
+      });
+      expect((doctorResult as { data?: { error?: string; timedOut?: boolean } }).data?.timedOut).not.toBe(true);
+      expect((doctorResult as { data?: { error?: string } }).data?.error || '').not.toContain('spawn');
+    } finally {
+      await closeElectronApp(app);
     }
   });
 

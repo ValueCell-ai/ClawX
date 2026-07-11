@@ -230,6 +230,14 @@ function buildModelHubEnv(account: ProviderAccount, apiKey: string): {
   };
 }
 
+function getUserCodexAuthPath(): string {
+  const e2eOverride = process.env.CLAWX_E2E_USER_CODEX_AUTH_JSON?.trim();
+  if (process.env.CLAWX_E2E === '1' && e2eOverride) {
+    return e2eOverride;
+  }
+  return join(app.getPath('home'), '.codex', 'auth.json');
+}
+
 async function writeManagedOpenAIOAuthAuthFile(
   tokens: OpenAIOAuthTokenSet,
 ): Promise<string> {
@@ -385,7 +393,7 @@ async function resolveOpenAIOAuthTokens(
     };
   }
 
-  const authPath = join(app.getPath('home'), '.codex', 'auth.json');
+  const authPath = getUserCodexAuthPath();
   const userCodexTokens = await readCompleteCodexAuthTokens(authPath);
   if (userCodexTokens && codexTokensMatchAccount(userCodexTokens, account, secret)) {
     return { tokens: userCodexTokens, source: 'user-codex' };
@@ -399,7 +407,7 @@ export async function getCcConnectCodexOAuthStatus(payload?: {
 }): Promise<CodexOAuthStatus> {
   const managedCodexHome = getCcConnectCodexHomeDir();
   const authPath = join(managedCodexHome, 'auth.json');
-  const userAuthPath = join(app.getPath('home'), '.codex', 'auth.json');
+  const userAuthPath = getUserCodexAuthPath();
   const [managed, user, { account, secret }] = await Promise.all([
     readCodexAuthSummary(authPath),
     readCodexAuthSummary(userAuthPath),
@@ -434,7 +442,7 @@ export async function importUserCodexOAuthToManagedHome(payload?: {
   accountId?: string;
 }): Promise<CodexOAuthStatus> {
   const { account, secret } = await resolveProviderAccount(payload?.accountId);
-  const userAuthPath = join(app.getPath('home'), '.codex', 'auth.json');
+  const userAuthPath = getUserCodexAuthPath();
   const tokens = await readCompleteCodexAuthTokens(userAuthPath);
   if (!tokens) {
     throw new Error(`No complete Codex OAuth auth.json found at ${userAuthPath}`);
@@ -502,6 +510,55 @@ async function buildProfileForAccount(account: ProviderAccount): Promise<CodexPr
     const env: Record<string, string> = {};
     if ((secret?.type === 'api_key' || secret?.type === 'local') && secret.apiKey) {
       env.OPENAI_API_KEY = secret.apiKey;
+    }
+    if (!env.OPENAI_API_KEY) {
+      return {
+        ...base,
+        supported: false,
+        unsupportedReason: 'OpenAI API key credentials are missing. Add an OpenAI API key before using the cc-connect Codex runtime with this provider.',
+        codexArgs: [],
+      };
+    }
+    const baseUrl = account.baseUrl?.trim();
+    if (baseUrl) {
+      const providerKey = 'clawx-openai';
+      const normalizedBaseUrl = normalizeOpenAIResponsesBaseUrl(baseUrl);
+      const codexHomeDir = await writeManagedCodexResponsesConfig({
+        providerKey,
+        providerName: 'OpenAI',
+        baseUrl: normalizedBaseUrl,
+        envKey: 'OPENAI_API_KEY',
+        model,
+      });
+      return {
+        ...base,
+        supported: true,
+        codexArgs: [
+          '-c',
+          `model_provider=${tomlString(providerKey)}`,
+          '-c',
+          `model_providers.${providerKey}.name="OpenAI"`,
+          '-c',
+          `model_providers.${providerKey}.base_url=${tomlString(normalizedBaseUrl)}`,
+          '-c',
+          `model_providers.${providerKey}.env_key="OPENAI_API_KEY"`,
+          '-c',
+          `model_providers.${providerKey}.wire_api="responses"`,
+          ...(model ? ['--model', model] : []),
+        ],
+        env: {
+          ...env,
+          CODEX_HOME: codexHomeDir,
+        },
+        codexHomeDir,
+        ccConnectProvider: {
+          name: providerKey,
+          apiKeyEnvKey: 'OPENAI_API_KEY',
+          baseUrl: normalizedBaseUrl,
+          wireApi: 'responses',
+          ...(model ? { model } : {}),
+        },
+      };
     }
     return {
       ...base,

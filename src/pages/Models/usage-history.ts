@@ -1,4 +1,5 @@
 export type UsageHistoryEntry = {
+  runtimeKind?: 'openclaw' | 'cc-connect';
   timestamp: string;
   sessionId: string;
   agentId: string;

@@ -32,6 +32,7 @@ import type {
   SkillUpdateConfigPayload,
   SkillUpdatePayload,
   UpdateChannel,
+  UsageHistoryPayload,
 } from '@shared/host-api/contract';
 import type { CronJobCreateInput, CronJobUpdateInput } from '@shared/types/cron';
 import { invokeHost } from './host-api-client';
@@ -342,8 +343,8 @@ export const hostApi = {
     ),
   },
   usage: {
-    recentTokenHistory: (limit?: number) => (
-      invokeHost('usage', 'recentTokenHistory', { limit })
+    recentTokenHistory: (input?: number | UsageHistoryPayload) => (
+      invokeHost('usage', 'recentTokenHistory', typeof input === 'number' ? { limit: input } : input)
     ),
   },
 };

@@ -30,7 +30,6 @@ import { deviceOAuthManager } from '../utils/device-oauth';
 import { browserOAuthManager } from '../utils/browser-oauth';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
-import { getRecentTokenUsageHistory } from '../utils/token-usage';
 import { getCcConnectMediaDir, getOpenClawMediaDir } from '../utils/runtime-media-paths';
 import { getProviderService } from '../services/providers/provider-service';
 import {
@@ -65,7 +64,7 @@ import { createMediaApi } from '../services/media-api';
 import { createProvidersApi } from '../services/providers-api';
 import { createSessionsApi } from '../services/sessions-api';
 import { createSkillsApi } from '../services/skills-api';
-import { createUsageApi } from '../services/usage-api';
+import { createUsageApi, getRecentTokenHistoryForRuntime } from '../services/usage-api';
 import {
   isLaunchAtStartupKey,
   isProxyKey,
@@ -88,7 +87,7 @@ export function registerIpcHandlers(
   hostApiRegistry: HostApiRegistry,
 ): void {
   // Unified request protocol (non-breaking: legacy channels remain available)
-  registerUnifiedRequestHandlers(gatewayManager);
+  registerUnifiedRequestHandlers(gatewayManager, runtimeManager);
 
   // Typed host invoke handlers (new renderer facade; legacy channels remain available)
   registerTypedHostHandlers(gatewayManager, runtimeManager, clawHubService, mainWindow, hostApiRegistry);
@@ -115,7 +114,7 @@ export function registerIpcHandlers(
   registerSettingsHandlers(gatewayManager);
 
   // Usage handlers
-  registerUsageHandlers();
+  registerUsageHandlers(runtimeManager);
 
   // Cron task handlers (proxy to Gateway RPC)
   registerCronHandlers(gatewayManager);
@@ -157,12 +156,12 @@ function registerTypedHostHandlers(
     chat: createChatApi({ gatewayManager, runtimeManager }),
     cron: createCronApi({ gatewayManager, runtimeManager }),
     skills: createSkillsApi({ clawHubService, gatewayManager, runtimeManager }),
-    usage: createUsageApi(),
+    usage: createUsageApi(runtimeManager),
   });
   registerHostInvokeHandler(hostApiRegistry);
 }
 
-function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
+function registerUnifiedRequestHandlers(gatewayManager: GatewayManager, runtimeManager: RuntimeManager): void {
   const providerService = getProviderService();
   const handleProxySettingsChange = async () => {
     const settings = await getAllSettings();
@@ -512,12 +511,7 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
         }
         case 'usage': {
           if (request.action === 'recentTokenHistory') {
-            const payload = request.payload as { limit?: number } | number | undefined;
-            const limit = typeof payload === 'number' ? payload : payload?.limit;
-            const safeLimit = typeof limit === 'number' && Number.isFinite(limit)
-              ? Math.max(Math.floor(limit), 1)
-              : undefined;
-            data = await getRecentTokenUsageHistory(safeLimit);
+            data = await getRecentTokenHistoryForRuntime(request.payload, runtimeManager);
             break;
           }
           return {
@@ -1201,12 +1195,9 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     return { success: true, settings };
   });
 }
-function registerUsageHandlers(): void {
-  ipcMain.handle('usage:recentTokenHistory', async (_, limit?: number) => {
-    const safeLimit = typeof limit === 'number' && Number.isFinite(limit)
-      ? Math.max(Math.floor(limit), 1)
-      : undefined;
-    return await getRecentTokenUsageHistory(safeLimit);
+function registerUsageHandlers(runtimeManager: RuntimeManager): void {
+  ipcMain.handle('usage:recentTokenHistory', async (_, payload?: number | { limit?: number; runtimeKind?: unknown }) => {
+    return await getRecentTokenHistoryForRuntime(payload, runtimeManager);
   });
 }
 /**

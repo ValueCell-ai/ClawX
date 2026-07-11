@@ -344,6 +344,8 @@ export const ChatMessage = memo(function ChatMessage({
         'flex gap-3 group',
         isUser ? 'flex-row-reverse' : 'flex-row',
       )}
+      data-message-role={role || (isUser ? 'user' : 'assistant')}
+      data-testid={`chat-message-role-${role || (isUser ? 'user' : 'assistant')}`}
     >
       {/* Avatar — vertical center aligned with the first line of the reply.
           The outer slot is sized to one prose-sm line (h-6 = 24px) so its

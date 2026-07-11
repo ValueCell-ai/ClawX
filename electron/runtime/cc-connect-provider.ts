@@ -1,10 +1,12 @@
 import { EventEmitter } from 'node:events';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { dirname, join } from 'node:path';
+import { promisify } from 'node:util';
+import { Cron } from 'croner';
 import type { OpenClawDoctorMode, OpenClawDoctorResult } from '@shared/host-api/contract';
 import type { CronJob, CronJobCreateInput, CronJobUpdateInput } from '@shared/types/cron';
 import type {
@@ -31,6 +33,7 @@ import {
   ccConnectProjectNameForAgent,
   ccConnectProjectNameForSessionKey,
   CcConnectBridgeAdapter,
+  toCcConnectBridgeSessionKey,
 } from './cc-connect-bridge-adapter';
 import { syncCcConnectSkills } from './cc-connect-skills';
 import { assertCodexBundle, prependCodexPathDir, type CodexBundle } from './codex-paths';
@@ -47,7 +50,7 @@ type CcConnectRuntimeProviderOptions = {
   codexPath?: string;
   workDir?: string;
   codexBundle?: CodexBundle;
-  bridgeAdapter?: Pick<CcConnectBridgeAdapter, 'connect' | 'close' | 'send' | 'abort' | 'listSessions' | 'loadHistory' | 'deleteSession' | 'summarizeSessions' | 'reconcilePendingRunsFromHistory'>;
+  bridgeAdapter?: Pick<CcConnectBridgeAdapter, 'connect' | 'close' | 'send' | 'abort' | 'listSessions' | 'loadHistory' | 'deleteSession' | 'renameSession' | 'summarizeSessions' | 'reconcilePendingRunsFromHistory'>;
   skillSyncer?: typeof syncCcConnectSkills;
   providerProfileLoader?: (payload?: { providerId?: string; reason?: string }) => Promise<CodexProviderProfile>;
 };
@@ -60,9 +63,13 @@ const CC_CONNECT_PORT_SCAN_LIMIT = 50;
 const CC_CONNECT_CRASH_RESTART_DELAY_MS = 1_000;
 const CC_CONNECT_CRASH_RESTART_WINDOW_MS = 60_000;
 const CC_CONNECT_MAX_CRASH_RESTARTS = 3;
+const CC_CONNECT_ORPHAN_CLEANUP_DELAY_MS = 500;
 const CLAWX_LOCAL_PLACEHOLDER_SECRET = 'clawx-local-placeholder';
+const CLAWX_LOCAL_CRON_EXEC_SESSION_KEY = 'line:clawx-scheduled-cron';
 const CODEX_AGENT_SESSION_RESET_MARKER = 'codex-agent-session-reset-v1.json';
 const SESSION_SYNC_POLL_INTERVAL_MS = 2_000;
+const PROMPT_CRON_FALLBACK_POLL_INTERVAL_MS = 5_000;
+const PROMPT_CRON_FALLBACK_DUE_WINDOW_MS = 15_000;
 const CC_CONNECT_SUPPORTED_CHANNELS = new Set([
   'dingtalk',
   'discord',
@@ -76,6 +83,8 @@ const CC_CONNECT_SUPPORTED_CHANNELS = new Set([
   'wecom',
   'weixin',
 ]);
+
+const execFileAsync = promisify(execFile);
 
 type CcConnectChannelPlatform = {
   channelType: string;
@@ -91,6 +100,19 @@ type CcConnectAgentProject = {
   agentId: string;
   projectName: string;
   workDir: string;
+};
+
+type CcConnectProjectPlatformStatus = {
+  type?: string;
+  connected: boolean;
+  running: boolean;
+  error?: string;
+};
+
+type CcConnectProjectRuntimeStatus = {
+  platforms: Map<string, CcConnectProjectPlatformStatus>;
+  platformList: CcConnectProjectPlatformStatus[];
+  error?: string;
 };
 
 function unsupported(method: string): never {
@@ -162,6 +184,56 @@ function terminateProcessTree(child: ChildProcess): void {
   } catch {
     // ignore
   }
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function listProcessCommandsContaining(needle: string): Promise<Array<{ pid: number; command: string }>> {
+  if (process.platform === 'win32') return [];
+  let stdout: string;
+  try {
+    const result = await execFileAsync('ps', ['-axo', 'pid=,command='], {
+      maxBuffer: 2 * 1024 * 1024,
+    });
+    stdout = typeof result === 'string'
+      ? result
+      : typeof result.stdout === 'string'
+        ? result.stdout
+        : '';
+  } catch {
+    return [];
+  }
+  return stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .flatMap((line) => {
+      const match = line.match(/^(\d+)\s+(.+)$/);
+      if (!match) return [];
+      const pid = Number(match[1]);
+      const command = match[2] || '';
+      if (!Number.isFinite(pid) || pid <= 0 || pid === process.pid) return [];
+      if (!command.includes(needle)) return [];
+      if (command.includes('ps -axo')) return [];
+      return [{ pid, command }];
+    });
+}
+
+async function terminateManagedRuntimeProcesses(runtimeDir: string): Promise<void> {
+  const terminate = (signal: NodeJS.Signals) => async (entry: { pid: number }) => {
+    try {
+      process.kill(entry.pid, signal);
+    } catch {
+      // Process may have already exited.
+    }
+  };
+  const matches = await listProcessCommandsContaining(runtimeDir);
+  await Promise.all(matches.map(terminate('SIGTERM')));
+  if (matches.length === 0) return;
+  await delay(CC_CONNECT_ORPHAN_CLEANUP_DELAY_MS);
+  const remaining = await listProcessCommandsContaining(runtimeDir);
+  await Promise.all(remaining.map(terminate('SIGKILL')));
 }
 
 function existingConfiguredWorkspace(value: unknown): string | null {
@@ -343,6 +415,9 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
   private sessionSyncPolling = false;
   private sessionSyncSeq = 0;
   private sessionSyncSnapshot = new Map<string, number>();
+  private promptCronFallbackTimer: ReturnType<typeof setInterval> | null = null;
+  private promptCronFallbackPolling = false;
+  private promptCronFallbackSlots = new Map<string, string>();
   private crashRestartTimer: ReturnType<typeof setTimeout> | null = null;
   private crashRestartTimestamps: number[] = [];
 
@@ -396,17 +471,20 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       error: undefined,
     });
     this.startSessionSyncWatcher();
+    this.startPromptCronFallbackScheduler();
   }
 
   async stop(): Promise<void> {
     this.clearCrashRestartTimer();
     this.stopSessionSyncWatcher();
+    this.stopPromptCronFallbackScheduler();
     const child = this.child;
     this.child = null;
     if (child) {
       terminateProcessTree(child);
     }
     await this.bridgeAdapter.close();
+    await terminateManagedRuntimeProcesses(getCcConnectManagedDir());
     this.setStatus({ state: 'stopped', pid: undefined, connectedAt: undefined, gatewayReady: undefined });
   }
 
@@ -437,6 +515,9 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       case 'session.delete':
       case 'chat.session.delete':
         return await this.deleteSession(params) as T;
+      case 'sessions.rename':
+      case 'session.rename':
+        return await this.renameSession(params) as T;
       case 'providers.sync':
       case 'models.sync':
         return await this.syncProviderProfile(toProviderSyncPayload(params)) as T;
@@ -540,6 +621,21 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     return { success: true };
   }
 
+  async renameSession(payload?: unknown) {
+    const body = isRecord(payload) ? payload : {};
+    const sessionKey = getSessionKey(body);
+    const label = typeof body.label === 'string'
+      ? body.label
+      : typeof body.title === 'string'
+        ? body.title
+        : '';
+    if (!label.trim()) {
+      return { success: false, error: 'Label cannot be empty' };
+    }
+    await this.bridgeAdapter.renameSession(sessionKey, label);
+    return { success: true };
+  }
+
   async getChannelStatus(): Promise<{
     channels: Record<string, { configured: boolean; running: boolean }>;
     channelAccounts: Record<string, Array<{
@@ -556,6 +652,9 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     const openClawConfig = await readOpenClawConfig().catch(() => ({} as OpenClawConfig));
     const configuredPlatforms = collectCcConnectChannelPlatforms(openClawConfig);
     const running = this.status.state === 'running';
+    const runtimeProjectStatus = running
+      ? await this.getCcConnectProjectRuntimeStatus(configuredPlatforms)
+      : new Map<string, CcConnectProjectRuntimeStatus>();
     const channels: Record<string, { configured: boolean; running: boolean }> = {};
     const channelAccounts: Record<string, Array<{
       accountId: string;
@@ -567,18 +666,33 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       lastError?: string;
     }>> = {};
     const channelDefaultAccountId: Record<string, string> = {};
+    const platformStatusCursor = new Map<string, number>();
 
     for (const platform of configuredPlatforms) {
-      channels[platform.channelType] = { configured: true, running: running && !platform.error };
+      const projectStatus = runtimeProjectStatus.get(platform.projectName);
+      const platformStatusKey = `${platform.projectName}:${platform.platformType}`;
+      const platformStatusIndex = platformStatusCursor.get(platformStatusKey) ?? 0;
+      platformStatusCursor.set(platformStatusKey, platformStatusIndex + 1);
+      const platformStatusCandidates = projectStatus?.platformList.filter((status) => status.type === platform.platformType) ?? [];
+      const platformStatus = platformStatusCandidates[platformStatusIndex]
+        ?? projectStatus?.platforms.get(platform.platformType);
+      const statusError = platform.error || platformStatus?.error || projectStatus?.error;
+      const platformRunning = Boolean(running && !platform.error && (platformStatus ? platformStatus.running : false));
+      const platformConnected = Boolean(running && !platform.error && (platformStatus ? platformStatus.connected : false));
+      const existingChannel = channels[platform.channelType];
+      channels[platform.channelType] = {
+        configured: true,
+        running: Boolean(existingChannel?.running || platformRunning),
+      };
       const accounts = channelAccounts[platform.channelType] ?? [];
       accounts.push({
         accountId: platform.accountId,
         configured: true,
-        connected: running && !platform.error,
-        running: running && !platform.error,
+        connected: platformConnected,
+        running: platformRunning,
         linked: !platform.error,
         name: platform.platformType,
-        ...(platform.error ? { lastError: platform.error } : {}),
+        ...(statusError ? { lastError: statusError } : {}),
       });
       channelAccounts[platform.channelType] = accounts;
       channelDefaultAccountId[platform.channelType] = getDefaultChannelAccountId(
@@ -591,13 +705,12 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
   }
 
   async refreshChannelLifecycle(method: string, payload?: unknown): Promise<{ success: true }> {
-    const channelType = isRecord(payload) && typeof payload.channelType === 'string'
-      ? payload.channelType.trim()
-      : undefined;
+    const target = getChannelLifecycleTarget(payload);
     await this.refreshConfig({
       scope: 'channels',
-      reason: `runtime:${method}${channelType ? `:${channelType}` : ''}`,
-      ...(channelType ? { channelType } : {}),
+      reason: `runtime:${method}${target.channelType ? `:${target.channelType}` : ''}${target.accountId ? `:${target.accountId}` : ''}`,
+      ...(target.channelType ? { channelType: target.channelType } : {}),
+      ...(target.accountId ? { accountId: target.accountId } : {}),
       forceRestart: true,
     });
     return { success: true };
@@ -742,7 +855,11 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     if (this.status.state === 'running') {
       await this.restart();
     } else {
-      await this.ensureManagedConfig(profile, this.resolveCodexPath()).catch(() => undefined);
+      try {
+        await this.ensureManagedConfig(profile, this.resolveCodexPath());
+      } catch {
+        // Stopped-runtime profile sync must not require the optional dev Codex bundle.
+      }
     }
     return {
       success: true,
@@ -752,6 +869,21 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
 
   async refreshConfig(_payload: RuntimeConfigRefreshPayload): Promise<void> {
     if (this.status.state === 'stopped') return;
+    await this.reloadManagedConfig();
+  }
+
+  private async reloadManagedConfig(): Promise<void> {
+    await this.ensureManagedConfig(this.currentProviderProfile, this.resolveCodexPath());
+    try {
+      await this.managementRequest('POST', '/reload');
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.emit('notification', {
+        type: 'log',
+        message: `[cc-connect] config reload failed; restarting runtime instead: ${message}`,
+      });
+    }
     await this.restart();
   }
 
@@ -777,6 +909,8 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       project: CLAWX_PROJECT_NAME,
       projectForSessionKey: ccConnectProjectNameForSessionKey,
       emit: this.emit.bind(this),
+      sessionStoreDir: join(getCcConnectManagedDir(), 'data', 'sessions'),
+      codexSessionsDir: join(getCcConnectCodexHomeDir(), 'sessions'),
     });
   }
 
@@ -866,48 +1000,134 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     return data as T;
   }
 
+  private async getCcConnectProjectRuntimeStatus(
+    platforms: CcConnectChannelPlatform[],
+  ): Promise<Map<string, CcConnectProjectRuntimeStatus>> {
+    const projectNames = Array.from(new Set(platforms.filter((platform) => !platform.error).map((platform) => platform.projectName)));
+    const entries = await Promise.all(projectNames.map(async (projectName) => {
+      try {
+        const result = await this.managementRequest<unknown>('GET', `/projects/${encodeURIComponent(projectName)}`);
+        return [projectName, parseCcConnectProjectRuntimeStatus(result)] as const;
+      } catch (error) {
+        const fallbackStatus: CcConnectProjectRuntimeStatus = {
+          platforms: new Map<string, CcConnectProjectPlatformStatus>(),
+          platformList: [],
+          error: error instanceof Error ? error.message : String(error),
+        };
+        return [projectName, fallbackStatus] as const;
+      }
+    }));
+    return new Map(entries);
+  }
+
   private async listCronJobs(): Promise<CronJob[]> {
     return (await this.listCcConnectCronJobRecords()).map((job) => transformCcConnectCronJob(job));
   }
 
+  private async listCcConnectCronProjectNames(): Promise<string[]> {
+    try {
+      const config = await readOpenClawConfig();
+      const defaultWorkspace = resolveCcConnectWorkspace('main', this.workDir);
+      const projects = collectCcConnectAgentProjects(config, defaultWorkspace)
+        .map((project) => project.projectName);
+      return Array.from(new Set([CLAWX_PROJECT_NAME, ...projects]));
+    } catch {
+      return [CLAWX_PROJECT_NAME];
+    }
+  }
+
   private async listCcConnectCronJobRecords(): Promise<unknown[]> {
-    const result = await this.managementRequest<unknown>('GET', `/cron?project=${encodeURIComponent(CLAWX_PROJECT_NAME)}`);
-    return Array.isArray(result)
-      ? result
-      : isRecord(result) && Array.isArray(result.jobs)
-        ? result.jobs
-        : [];
+    const projects = await this.listCcConnectCronProjectNames();
+    const results = await Promise.all(projects.map(async (project) => {
+      const result = await this.managementRequest<unknown>('GET', `/cron?project=${encodeURIComponent(project)}`);
+      const jobs = Array.isArray(result)
+        ? result
+        : isRecord(result) && Array.isArray(result.jobs)
+          ? result.jobs
+          : [];
+      return jobs.map((job) => isRecord(job) && !ccString(job, ['project'])
+        ? { ...job, project }
+        : job);
+    }));
+    return results.flat();
   }
 
   private async createCronJob(payload: unknown): Promise<CronJob> {
     const input = isRecord(payload) ? payload as unknown as CronJobCreateInput : {} as CronJobCreateInput;
-    const schedule = cronExprFromInput(input.schedule);
-    if (!schedule) throw new Error('cron schedule is required');
-    const result = await this.managementRequest<unknown>('POST', '/cron', {
-      project: CLAWX_PROJECT_NAME,
-      session_key: 'clawx:main:main',
+    const schedule = assertCcConnectCronSchedule(input.schedule);
+    const agentId = normalizeAgentId(input.agentId);
+    const inputRecord = input as unknown as Record<string, unknown>;
+    const sessionKey = ccConnectCronSessionKey(inputRecord, agentId);
+    const requestBody: Record<string, unknown> = {
+      project: ccConnectProjectNameForAgent(agentId),
+      session_key: sessionKey,
       cron_expr: schedule,
-      prompt: input.message || '',
+      ...ccConnectCronExecutionFields(inputRecord, { includePrompt: true }),
+      ...ccConnectCronDeliveryFields(inputRecord),
       description: input.name || 'Scheduled task',
       silent: input.delivery?.mode !== 'announce',
       enabled: input.enabled !== false,
+    };
+    const result = await this.managementRequest<unknown>('POST', '/cron', requestBody);
+    const createdJob = transformCcConnectCronJob(isRecord(result) && 'job' in result ? result.job : result);
+    if (input.mute === undefined) return createdJob;
+    const patched = await this.managementRequest<unknown>('PATCH', `/cron/${encodeURIComponent(createdJob.id)}`, {
+      mute: input.mute === true,
     });
-    return transformCcConnectCronJob(isRecord(result) && 'job' in result ? result.job : result);
+    return transformCcConnectCronJob(isRecord(patched) && 'job' in patched ? patched.job : patched);
   }
 
   private async updateCronJob(payload: unknown): Promise<CronJob> {
     const body = isRecord(payload) ? payload : {};
     const id = getPayloadId(body);
     const input = isRecord(body.input) ? body.input as unknown as CronJobUpdateInput : {};
-    const patch: Record<string, unknown> = {};
+    const inputRecord = input as unknown as Record<string, unknown>;
+    const patch: Record<string, unknown> = await this.shouldHydrateCronUpdate(inputRecord)
+      ? await this.createCronUpdateBaseline(id)
+      : {};
     if (input.name !== undefined) patch.description = input.name;
     if (input.message !== undefined) patch.prompt = input.message;
-    const schedule = cronExprFromInput(input.schedule);
-    if (schedule) patch.cron_expr = schedule;
+    if (input.schedule !== undefined) {
+      patch.cron_expr = assertCcConnectCronSchedule(input.schedule);
+    }
     if (input.enabled !== undefined) patch.enabled = input.enabled === true;
     if (input.delivery?.mode !== undefined) patch.silent = input.delivery.mode !== 'announce';
+    if (input.mute !== undefined) patch.mute = input.mute === true;
+    Object.assign(patch, ccConnectCronExecutionFields(inputRecord));
+    Object.assign(patch, ccConnectCronDeliveryFields(inputRecord));
+    if (ccString(patch, ['exec'])) delete patch.prompt;
+    if (ccString(patch, ['prompt'])) delete patch.exec;
+    if (input.agentId !== undefined || hasOwn(inputRecord, 'exec') || hasOwn(inputRecord, 'command') || hasOwn(inputRecord, 'delivery')) {
+      const agentId = input.agentId !== undefined
+        ? normalizeAgentId(input.agentId)
+        : agentIdFromCcConnectProjectName(ccString(patch, ['project']) || '') || 'main';
+      patch.project = ccConnectProjectNameForAgent(agentId);
+      patch.session_key = ccConnectCronSessionKey(inputRecord, agentId);
+    }
     const result = await this.managementRequest<unknown>('PATCH', `/cron/${encodeURIComponent(id)}`, patch);
     return transformCcConnectCronJob(isRecord(result) && 'job' in result ? result.job : result);
+  }
+
+  private async createCronUpdateBaseline(id: string): Promise<Record<string, unknown>> {
+    try {
+      const jobs = await this.listCcConnectCronJobRecords();
+      const rawJob = jobs.find((job) => transformCcConnectCronJob(job).id === id);
+      return ccConnectCronUpdateBaseline(rawJob);
+    } catch {
+      return {};
+    }
+  }
+
+  private shouldHydrateCronUpdate(input: Record<string, unknown>): boolean {
+    return hasOwn(input, 'exec')
+      || hasOwn(input, 'command')
+      || hasOwn(input, 'workDir')
+      || hasOwn(input, 'work_dir')
+      || hasOwn(input, 'sessionMode')
+      || hasOwn(input, 'session_mode')
+      || hasOwn(input, 'timeoutMins')
+      || hasOwn(input, 'timeout_mins')
+      || hasOwn(input, 'agentId');
   }
 
   private async toggleCronJob(payload: unknown): Promise<CronJob> {
@@ -941,11 +1161,14 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     const rawJob = jobs.find((item) => transformCcConnectCronJob(item).id === id);
     if (!rawJob) throw new Error(`cc-connect cron job not found: ${id}`);
     const job = isRecord(rawJob) ? rawJob : {};
+    if (ccBoolean(job, ['enabled'], true) === false) {
+      throw new Error('cc-connect cron job is disabled and cannot be run manually');
+    }
     const prompt = ccString(job, ['prompt', 'message', 'content']);
     if (!prompt) {
       throw new Error('cc-connect runtime does not support manual exec cron jobs in this version');
     }
-    const sessionKey = ccString(job, ['session_key', 'sessionKey']) || 'clawx:main:main';
+    const sessionKey = ccString(job, ['session_key', 'sessionKey']) || toCcConnectBridgeSessionKey(`agent:${agentIdFromCcConnectCronJob(job)}:main`);
     await this.bridgeAdapter.send({
       message: prompt,
       sessionKey,
@@ -988,6 +1211,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       if (this.child !== child) return;
       this.child = null;
       this.stopSessionSyncWatcher();
+      this.stopPromptCronFallbackScheduler();
       void this.bridgeAdapter.close().catch(() => undefined);
       const error = code === 0
         ? undefined
@@ -1082,6 +1306,71 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     }
     this.sessionSyncPolling = false;
     this.sessionSyncSnapshot = new Map();
+  }
+
+  private startPromptCronFallbackScheduler(): void {
+    this.stopPromptCronFallbackScheduler();
+    void this.pollPromptCronFallback(false);
+    this.promptCronFallbackTimer = setInterval(() => {
+      void this.pollPromptCronFallback(true);
+    }, PROMPT_CRON_FALLBACK_POLL_INTERVAL_MS);
+    this.promptCronFallbackTimer.unref?.();
+  }
+
+  private stopPromptCronFallbackScheduler(): void {
+    if (this.promptCronFallbackTimer) {
+      clearInterval(this.promptCronFallbackTimer);
+      this.promptCronFallbackTimer = null;
+    }
+    this.promptCronFallbackPolling = false;
+    this.promptCronFallbackSlots = new Map();
+  }
+
+  private async pollPromptCronFallback(deliverDue: boolean, now = new Date()): Promise<void> {
+    if (this.promptCronFallbackPolling) return;
+    if (this.status.state !== 'running') return;
+    this.promptCronFallbackPolling = true;
+    try {
+      const jobs = await this.listCcConnectCronJobRecords();
+      const liveJobIds = new Set<string>();
+      for (const rawJob of jobs) {
+        const job = isRecord(rawJob) ? rawJob : {};
+        const id = ccString(job, ['id', 'task_id', 'job_id']);
+        if (!id) continue;
+        liveJobIds.add(id);
+        const prompt = ccString(job, ['prompt', 'message', 'content']);
+        if (!prompt) continue;
+        if (ccString(job, ['exec', 'command'])) continue;
+        if (ccBoolean(job, ['enabled'], true) === false) continue;
+        const dueSlot = ccConnectCronDueSlot(job, now);
+        if (!dueSlot) continue;
+        if (this.promptCronFallbackSlots.get(id) === dueSlot) continue;
+        this.promptCronFallbackSlots.set(id, dueSlot);
+        if (!deliverDue) continue;
+        const sessionKey = ccString(job, ['session_key', 'sessionKey']) || toCcConnectBridgeSessionKey(`agent:${agentIdFromCcConnectCronJob(job)}:main`);
+        try {
+          await this.bridgeAdapter.send({
+            message: prompt,
+            sessionKey,
+            idempotencyKey: `cron:${id}:${dueSlot}`,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.emit('notification', {
+            type: 'log',
+            message: `[cc-connect] prompt cron fallback failed for ${id}: ${message}`,
+          });
+        }
+      }
+      for (const id of this.promptCronFallbackSlots.keys()) {
+        if (!liveJobIds.has(id)) this.promptCronFallbackSlots.delete(id);
+      }
+    } catch {
+      // cc-connect native cron remains authoritative; this fallback only fills
+      // the v1.3.2 prompt-to-bridge scheduling gap while the runtime is healthy.
+    } finally {
+      this.promptCronFallbackPolling = false;
+    }
   }
 
   private async refreshSessionSyncSnapshot(emitChanges: boolean): Promise<void> {
@@ -1310,7 +1599,12 @@ function resolveCcConnectPlatformType(channelType: string, accountConfig: Channe
 
 function isLarkAccount(accountConfig: ChannelConfigData): boolean {
   const domain = getStringOption(accountConfig, 'domain');
-  return Boolean(domain && (domain.toLowerCase() === 'lark' || domain.includes('larksuite.com')));
+  const normalized = domain?.toLowerCase();
+  return Boolean(normalized && (
+    normalized === 'lark'
+    || normalized === 'global'
+    || normalized.includes('larksuite.com')
+  ));
 }
 
 function getStringOption(record: Record<string, unknown>, ...keys: string[]): string | undefined {
@@ -1386,6 +1680,15 @@ function mapCcConnectPlatformOptions(
       setStringOption(options, 'app_secret', accountConfig, 'appSecret', 'app_secret');
       setFeishuDomainOption(options, platformType, accountConfig);
       setBooleanOption(options, 'enable_feishu_card', accountConfig, 'enableFeishuCard', 'enable_feishu_card');
+      setBooleanOption(options, 'group_reply_all', accountConfig, 'groupReplyAll', 'group_reply_all');
+      setBooleanOption(options, 'thread_isolation', accountConfig, 'threadIsolation', 'thread_isolation');
+      setBooleanOption(options, 'reply_in_thread', accountConfig, 'replyInThread', 'reply_in_thread');
+      setStringOption(options, 'reaction_emoji', accountConfig, 'reactionEmoji', 'reaction_emoji');
+      setStringOption(options, 'done_emoji', accountConfig, 'doneEmoji', 'done_emoji');
+      setStringOption(options, 'progress_style', accountConfig, 'progressStyle', 'progress_style');
+      setStringOption(options, 'port', accountConfig, 'port');
+      setStringOption(options, 'callback_path', accountConfig, 'callbackPath', 'callback_path');
+      setStringOption(options, 'encrypt_key', accountConfig, 'encryptKey', 'encrypt_key');
       setCommonSessionOptions(options, accountConfig);
       break;
     case 'dingtalk':
@@ -1450,11 +1753,12 @@ function setFeishuDomainOption(
 ): void {
   const domain = getStringOption(source, 'domain');
   if (!domain) return;
-  if (domain.toLowerCase() === 'lark') {
+  const normalized = domain.toLowerCase();
+  if (normalized === 'lark' || normalized === 'global') {
     target.domain = 'https://open.larksuite.com';
     return;
   }
-  if (domain.toLowerCase() === 'feishu') {
+  if (normalized === 'feishu' || normalized === 'cn') {
     target.domain = 'https://open.feishu.cn';
     return;
   }
@@ -1523,7 +1827,7 @@ function getMissingRequiredOptions(
 }
 
 function redactCcConnectConfigForLogs(content: string): string {
-  const sensitiveKeyPattern = /^(?<prefix>\s*(?:api_key|app_id|app_secret|app_token|bot_id|bot_secret|bot_token|callback_aes_key|callback_token|channel_secret|channel_token|client_id|client_secret|corp_id|corp_secret|agent_id|token|ws_url)\s*=\s*)"[^"]*"/i;
+  const sensitiveKeyPattern = /^(?<prefix>\s*(?:api_key|app_id|app_secret|app_token|bot_id|bot_secret|bot_token|callback_aes_key|callback_token|channel_secret|channel_token|client_id|client_secret|corp_id|corp_secret|agent_id|encrypt_key|token|ws_url)\s*=\s*)"[^"]*"/i;
   return content.split('\n').map((line) => line.replace(sensitiveKeyPattern, '$<prefix>"<redacted>"')).join('\n');
 }
 
@@ -1540,6 +1844,29 @@ function getPayloadId(payload: unknown): string {
   if (typeof payload === 'string' && payload.trim()) return payload.trim();
   if (isRecord(payload) && typeof payload.id === 'string' && payload.id.trim()) return payload.id.trim();
   throw new Error('id is required');
+}
+
+function getChannelLifecycleTarget(payload: unknown): { channelType?: string; accountId?: string } {
+  if (!isRecord(payload)) return {};
+  const directChannelType = typeof payload.channelType === 'string' ? payload.channelType.trim() : '';
+  const directAccountId = typeof payload.accountId === 'string' ? payload.accountId.trim() : '';
+  if (directChannelType) {
+    return {
+      channelType: directChannelType,
+      ...(directAccountId ? { accountId: directAccountId } : {}),
+    };
+  }
+
+  const channelId = typeof payload.channelId === 'string' ? payload.channelId.trim() : '';
+  if (!channelId) return {};
+  const separatorIndex = channelId.indexOf('-');
+  if (separatorIndex <= 0) return { channelType: channelId };
+  const channelType = channelId.slice(0, separatorIndex).trim();
+  const accountId = channelId.slice(separatorIndex + 1).trim();
+  return {
+    ...(channelType ? { channelType } : {}),
+    ...(accountId ? { accountId } : {}),
+  };
 }
 
 function toSendPayload(payload: unknown): RuntimeSendWithMediaPayload {
@@ -1581,6 +1908,15 @@ function cronExprFromInput(schedule: unknown): string {
   return '';
 }
 
+function assertCcConnectCronSchedule(schedule: unknown): string {
+  const expr = cronExprFromInput(schedule);
+  if (expr) return expr;
+  if (isRecord(schedule) && (schedule.kind === 'at' || schedule.kind === 'every')) {
+    throw new Error('cc-connect cron currently supports only cron expression schedules');
+  }
+  throw new Error('cron schedule is required');
+}
+
 function ccString(record: Record<string, unknown>, keys: string[]): string {
   for (const key of keys) {
     const value = record[key];
@@ -1596,6 +1932,18 @@ function ccBoolean(record: Record<string, unknown>, keys: string[], fallback: bo
   return fallback;
 }
 
+function ccNumber(record: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim()) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return undefined;
+}
+
 function ccTimestamp(value: unknown, fallback = Date.now()): string {
   if (typeof value === 'string' && value.trim()) {
     const parsed = Date.parse(value);
@@ -1607,29 +1955,248 @@ function ccTimestamp(value: unknown, fallback = Date.now()): string {
   return new Date(fallback).toISOString();
 }
 
+function parseCcConnectProjectRuntimeStatus(value: unknown): CcConnectProjectRuntimeStatus {
+  const project = isRecord(value) ? value : {};
+  const platformsValue = Array.isArray(project.platforms) ? project.platforms : [];
+  const platforms = new Map<string, CcConnectProjectPlatformStatus>();
+  const platformList: CcConnectProjectPlatformStatus[] = [];
+  for (const entry of platformsValue) {
+    if (!isRecord(entry)) continue;
+    const type = ccString(entry, ['type', 'platform', 'name']);
+    if (!type) continue;
+    const connected = ccBoolean(entry, ['connected', 'live', 'running'], false);
+    const running = ccBoolean(entry, ['running', 'live', 'connected'], connected);
+    const error = ccString(entry, ['error', 'last_error', 'lastError']);
+    const status = {
+      type,
+      connected,
+      running,
+      ...(error ? { error } : {}),
+    };
+    platformList.push(status);
+    if (!platforms.has(type)) {
+      platforms.set(type, status);
+    }
+  }
+  return { platforms, platformList };
+}
+
+function ccConnectCronExecutionFields(
+  input: Record<string, unknown>,
+  options: { includePrompt?: boolean } = {},
+): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  const exec = ccString(input, ['exec', 'command']);
+  const message = ccString(input, ['message', 'prompt', 'content']);
+  if (exec) {
+    fields.exec = exec;
+  } else if (message || options.includePrompt) {
+    fields.prompt = message;
+  }
+  const workDir = ccString(input, ['workDir', 'work_dir']);
+  if (workDir) fields.work_dir = expandPath(workDir);
+  const sessionMode = ccString(input, ['sessionMode', 'session_mode']);
+  if (sessionMode) fields.session_mode = toCcConnectCronSessionMode(sessionMode);
+  const timeoutMins = ccNumber(input, ['timeoutMins', 'timeout_mins']);
+  if (timeoutMins !== undefined) fields.timeout_mins = Math.max(0, Math.floor(timeoutMins));
+  return fields;
+}
+
+function ccConnectCronSessionKey(input: Record<string, unknown>, agentId: string): string {
+  const delivery = isRecord(input.delivery) ? input.delivery : {};
+  const deliveryMode = ccString(delivery, ['mode']);
+  const deliveryChannel = ccString(delivery, ['channel', 'channel_type', 'channelType']);
+  const deliveryTarget = ccString(delivery, ['to', 'target', 'recipient']);
+  if (deliveryMode === 'announce' && deliveryChannel && deliveryTarget) {
+    return `${ccConnectCronPlatformType(deliveryChannel)}:${deliveryTarget}`;
+  }
+
+  const exec = ccString(input, ['exec', 'command']);
+  if (exec) return CLAWX_LOCAL_CRON_EXEC_SESSION_KEY;
+
+  return toCcConnectBridgeSessionKey(`agent:${agentId}:main`);
+}
+
+function ccConnectCronPlatformType(channel: string): string {
+  const normalized = channel.trim().toLowerCase();
+  if (normalized === 'openclaw-weixin' || normalized === 'wechat') return 'weixin';
+  return normalized;
+}
+
+function ccConnectCronDeliveryFields(input: Record<string, unknown>): Record<string, unknown> {
+  if (!isRecord(input.delivery)) return {};
+  const delivery = input.delivery;
+  const mode = ccString(delivery, ['mode']);
+  const channel = ccString(delivery, ['channel', 'channel_type', 'channelType']);
+  const to = ccString(delivery, ['to', 'target', 'recipient']);
+  const accountId = ccString(delivery, ['accountId', 'account_id']);
+  if (mode !== 'announce' || !channel || !to) return {};
+  return {
+    delivery: {
+      mode: 'announce',
+      channel,
+      to,
+      ...(accountId ? { account_id: accountId } : {}),
+    },
+  };
+}
+
+function ccConnectCronDueSlot(job: Record<string, unknown>, now: Date): string | null {
+  const expr = ccString(job, ['cron_expr', 'cron', 'schedule']);
+  if (!expr) return null;
+  try {
+    const timezone = ccString(job, ['timezone', 'time_zone', 'tz']);
+    const cron = new Cron(expr, {
+      paused: true,
+      ...(timezone ? { timezone } : {}),
+    });
+    const [previous] = cron.previousRuns(1, now);
+    if (!previous) return null;
+    const scheduledAt = previous.getTime();
+    const delta = now.getTime() - scheduledAt;
+    if (delta < 0 || delta > PROMPT_CRON_FALLBACK_DUE_WINDOW_MS) return null;
+    return previous.toISOString();
+  } catch {
+    return null;
+  }
+}
+
+function ccConnectCronUpdateBaseline(value: unknown): Record<string, unknown> {
+  const job = isRecord(value) ? value : {};
+  const baseline: Record<string, unknown> = {};
+  copyCcConnectCronStringField(job, baseline, ['project', 'project_name', 'projectName'], 'project');
+  copyCcConnectCronStringField(job, baseline, ['session_key', 'sessionKey'], 'session_key');
+  copyCcConnectCronStringField(job, baseline, ['cron_expr', 'cron', 'schedule'], 'cron_expr');
+  copyCcConnectCronStringField(job, baseline, ['description', 'desc', 'name'], 'description');
+  copyCcConnectCronStringField(job, baseline, ['prompt', 'message', 'content'], 'prompt');
+  copyCcConnectCronStringField(job, baseline, ['exec', 'command'], 'exec');
+  copyCcConnectCronStringField(job, baseline, ['work_dir', 'workDir'], 'work_dir');
+  const sessionMode = ccString(job, ['session_mode', 'sessionMode']);
+  if (sessionMode) baseline.session_mode = toCcConnectCronSessionMode(sessionMode);
+  const timeoutMins = ccNumber(job, ['timeout_mins', 'timeoutMins']);
+  if (timeoutMins !== undefined) baseline.timeout_mins = timeoutMins;
+  if (hasOwn(job, 'enabled')) baseline.enabled = ccBoolean(job, ['enabled'], true);
+  if (hasOwn(job, 'silent')) baseline.silent = ccBoolean(job, ['silent'], true);
+  if (hasOwn(job, 'mute')) baseline.mute = ccBoolean(job, ['mute'], false);
+  const delivery = ccConnectCronDeliveryFromJob(job);
+  if (delivery.mode === 'announce' && delivery.channel && delivery.to) {
+    baseline.delivery = {
+      mode: 'announce',
+      channel: delivery.channel,
+      to: delivery.to,
+      ...(delivery.accountId ? { account_id: delivery.accountId } : {}),
+    };
+  }
+  return baseline;
+}
+
+function copyCcConnectCronStringField(
+  source: Record<string, unknown>,
+  target: Record<string, unknown>,
+  aliases: string[],
+  targetKey: string,
+): void {
+  const value = ccString(source, aliases);
+  if (value) target[targetKey] = value;
+}
+
+function hasOwn(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function toCcConnectCronSessionMode(sessionMode: string): string {
+  const normalized = sessionMode.trim();
+  if (normalized === 'continue') return 'reuse';
+  if (normalized === 'new-per-run') return 'new_per_run';
+  return normalized;
+}
+
+function fromCcConnectCronSessionMode(sessionMode: string): string {
+  const normalized = sessionMode.trim();
+  if (normalized === 'reuse') return 'continue';
+  if (normalized === 'new-per-run') return 'new_per_run';
+  return normalized;
+}
+
+function agentIdFromCcConnectSessionKey(sessionKey: string): string | null {
+  if (!sessionKey.startsWith('clawx:')) return null;
+  const [, agentId] = sessionKey.split(':');
+  return normalizeAgentId(agentId);
+}
+
+function agentIdFromCcConnectProjectName(projectName: string): string | null {
+  if (!projectName.startsWith('clawx-')) return null;
+  return normalizeAgentId(projectName.slice('clawx-'.length));
+}
+
+function agentIdFromCcConnectCronJob(job: Record<string, unknown>): string {
+  const sessionKey = ccString(job, ['session_key', 'sessionKey']);
+  const projectName = ccString(job, ['project', 'project_name', 'projectName']);
+  return agentIdFromCcConnectSessionKey(sessionKey)
+    || agentIdFromCcConnectProjectName(projectName)
+    || 'main';
+}
+
+function ccConnectCronDeliveryFromJob(job: Record<string, unknown>): NonNullable<CronJob['delivery']> {
+  const rawDelivery = isRecord(job.delivery) ? job.delivery : {};
+  const mode = ccString(rawDelivery, ['mode']) === 'announce' || job.silent === false
+    ? 'announce'
+    : 'none';
+  const channel = ccString(rawDelivery, ['channel', 'channel_type', 'channelType'])
+    || ccString(job, ['channel', 'channel_type', 'channelType']);
+  const to = ccString(rawDelivery, ['to', 'target', 'recipient'])
+    || ccString(job, ['to', 'target', 'recipient']);
+  const accountId = ccString(rawDelivery, ['accountId', 'account_id'])
+    || ccString(job, ['accountId', 'account_id']);
+  if (mode !== 'announce') return { mode: 'none' };
+  return {
+    mode: 'announce',
+    ...(channel ? { channel } : {}),
+    ...(to ? { to } : {}),
+    ...(accountId ? { accountId } : {}),
+  };
+}
+
 function transformCcConnectCronJob(value: unknown): CronJob {
   const job = isRecord(value) ? value : {};
   const id = ccString(job, ['id', 'task_id', 'job_id']) || `cc-connect-cron-${Date.now()}`;
   const name = ccString(job, ['description', 'desc', 'name']) || 'Scheduled task';
   const message = ccString(job, ['prompt', 'message', 'content']);
+  const exec = ccString(job, ['exec', 'command']);
   const expr = ccString(job, ['cron_expr', 'cron', 'schedule']);
   const enabled = ccBoolean(job, ['enabled'], true);
+  const delivery = ccConnectCronDeliveryFromJob(job);
+  const target = delivery.mode === 'announce' && delivery.channel
+    ? {
+        channelType: delivery.channel,
+        channelId: delivery.accountId || delivery.channel,
+        channelName: delivery.channel,
+        ...(delivery.to ? { recipient: delivery.to } : {}),
+      }
+    : undefined;
   const createdAt = ccTimestamp(job.created_at ?? job.createdAt ?? job.created_at_ms);
   const updatedAt = ccTimestamp(job.updated_at ?? job.updatedAt ?? job.updated_at_ms, Date.parse(createdAt));
   const nextRunAt = job.next_run_at ?? job.nextRunAt ?? job.next_run_at_ms;
   const lastRunAt = job.last_run_at ?? job.lastRunAt ?? job.last_run_at_ms;
   const lastRunIso = typeof lastRunAt === 'undefined' ? undefined : ccTimestamp(lastRunAt);
-  return {
+  const result: CronJob & Record<string, unknown> = {
     id,
     name,
-    message,
+    message: message || exec,
     schedule: expr ? { kind: 'cron', expr } : '',
-    delivery: { mode: job.silent === false ? 'announce' : 'none' },
+    delivery,
+    ...(target ? { target } : {}),
     enabled,
     createdAt,
     updatedAt,
     ...(typeof nextRunAt === 'undefined' ? {} : { nextRun: ccTimestamp(nextRunAt) }),
     ...(lastRunIso ? { lastRun: { time: lastRunIso, success: job.last_status !== 'error', error: ccString(job, ['last_error']) || undefined } } : {}),
-    agentId: 'main',
+    agentId: agentIdFromCcConnectCronJob(job),
+    ...(exec ? { exec } : {}),
+    ...(ccString(job, ['work_dir', 'workDir']) ? { workDir: ccString(job, ['work_dir', 'workDir']) } : {}),
+    ...(ccString(job, ['session_mode', 'sessionMode']) ? { sessionMode: fromCcConnectCronSessionMode(ccString(job, ['session_mode', 'sessionMode'])) } : {}),
+    ...(ccNumber(job, ['timeout_mins', 'timeoutMins']) !== undefined ? { timeoutMins: ccNumber(job, ['timeout_mins', 'timeoutMins']) } : {}),
+    ...(hasOwn(job, 'mute') ? { mute: ccBoolean(job, ['mute'], false) } : {}),
   };
+  return result;
 }

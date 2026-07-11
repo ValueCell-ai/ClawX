@@ -39,6 +39,7 @@ export function Models() {
   const gatewayStatus = useGatewayStore((state) => state.status);
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
   const isGatewayRunning = gatewayStatus.state === 'running';
+  const activeRuntimeKind = gatewayStatus.runtimeKind;
   const usageFetchMaxAttempts = window.electron.platform === 'win32'
     ? WINDOWS_USAGE_FETCH_MAX_ATTEMPTS
     : DEFAULT_USAGE_FETCH_MAX_ATTEMPTS;
@@ -179,7 +180,7 @@ export function Models() {
         restartMarker,
       });
       try {
-        const entries = await hostApi.usage.recentTokenHistory();
+        const entries = await hostApi.usage.recentTokenHistory({ runtimeKind: activeRuntimeKind });
         if (usageFetchGenerationRef.current !== generation) return;
 
         const normalized = Array.isArray(entries) ? entries : [];
@@ -251,7 +252,7 @@ export function Models() {
         usageFetchTimerRef.current = null;
       }
     };
-  }, [isGatewayRunning, gatewayStatus.connectedAt, gatewayStatus.pid, usageFetchMaxAttempts, usageRefreshNonce]);
+  }, [isGatewayRunning, gatewayStatus.connectedAt, gatewayStatus.pid, activeRuntimeKind, usageFetchMaxAttempts, usageRefreshNonce]);
 
   const usageHistory = isGatewayRunning
     ? fetchState.data.filter((entry) => !shouldHideUsageEntry(entry))

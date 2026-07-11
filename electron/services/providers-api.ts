@@ -161,9 +161,9 @@ async function syncActiveRuntimeProviderProfile(
   ctx: Pick<ProvidersApiContext, 'runtimeManager'>,
   payload: { providerId?: string; reason: string },
 ): Promise<boolean> {
-  const syncProviderProfile = ctx.runtimeManager?.getActiveProvider().syncProviderProfile;
-  if (!syncProviderProfile) return false;
-  await syncProviderProfile(payload);
+  const provider = ctx.runtimeManager?.getActiveProvider();
+  if (!provider?.syncProviderProfile) return false;
+  await provider.syncProviderProfile(payload);
   return true;
 }
 

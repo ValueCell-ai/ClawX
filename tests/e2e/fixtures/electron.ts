@@ -49,6 +49,20 @@ async function allocatePort(): Promise<number> {
   });
 }
 
+async function removeDirWithRetry(path: string): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await rm(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
+    }
+  }
+  throw lastError;
+}
+
 async function getStableWindow(app: ElectronApplication): Promise<Page> {
   const deadline = Date.now() + 30_000;
   let page = await app.firstWindow();
@@ -80,6 +94,30 @@ async function getStableWindow(app: ElectronApplication): Promise<Page> {
 
 async function closeElectronApp(app: ElectronApplication, timeoutMs = 5_000): Promise<void> {
   let closed = false;
+  const waitForProcessExit = async (processTimeoutMs = 2_000): Promise<boolean> => {
+    try {
+      const child = app.process();
+      if (child.exitCode !== null || child.killed) return true;
+      return await Promise.race([
+        new Promise<boolean>((resolve) => child.once('exit', () => resolve(true))),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), processTimeoutMs)),
+      ]);
+    } catch {
+      // Ignore process inspection failures during e2e teardown.
+      return true;
+    }
+  };
+  const forceKillProcess = async () => {
+    try {
+      const child = app.process();
+      if (child.exitCode === null && !child.killed) {
+        child.kill('SIGKILL');
+      }
+      await waitForProcessExit(1_000);
+    } catch {
+      // Ignore process kill failures during e2e teardown.
+    }
+  };
 
   await Promise.race([
     (async () => {
@@ -98,21 +136,23 @@ async function closeElectronApp(app: ElectronApplication, timeoutMs = 5_000): Pr
   ]);
 
   if (closed) {
+    if (!await waitForProcessExit()) {
+      await forceKillProcess();
+    }
     return;
   }
 
   try {
     await app.close();
+    if (!await waitForProcessExit()) {
+      await forceKillProcess();
+    }
     return;
   } catch {
     // Fall through to process kill if Playwright cannot close the app cleanly.
   }
 
-  try {
-    app.process().kill('SIGKILL');
-  } catch {
-    // Ignore process kill failures during e2e teardown.
-  }
+  await forceKillProcess();
 }
 
 async function seedE2eSettings(userDataDir: string): Promise<void> {
@@ -176,7 +216,7 @@ export const test = base.extend<ElectronFixtures>({
       await provideHomeDir(homeDir);
     } finally {
       if (!overrideHomeDir) {
-        await rm(homeDir, { recursive: true, force: true });
+        await removeDirWithRetry(homeDir);
       }
     }
   },
@@ -188,7 +228,7 @@ export const test = base.extend<ElectronFixtures>({
       await provideUserDataDir(userDataDir);
     } finally {
       if (!overrideUserDataDir) {
-        await rm(userDataDir, { recursive: true, force: true });
+        await removeDirWithRetry(userDataDir);
       }
     }
   },

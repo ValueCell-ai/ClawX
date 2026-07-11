@@ -91,6 +91,113 @@ describe('cc-connect provider profile sync', () => {
     expect(profileFile).not.toContain('sk-secret-value');
   });
 
+  it('marks OpenAI API-key providers unsupported when the API key is missing', async () => {
+    getDefaultProviderAccountIdMock.mockResolvedValue('openai-missing-key');
+    getProviderAccountMock.mockResolvedValue({
+      id: 'openai-missing-key',
+      vendorId: 'openai',
+      label: 'OpenAI Missing Key',
+      authMode: 'api_key',
+      model: 'gpt-5.5',
+      enabled: true,
+      isDefault: true,
+      createdAt: '2026-06-07T00:00:00.000Z',
+      updatedAt: '2026-06-07T00:00:00.000Z',
+    });
+    getProviderSecretMock.mockResolvedValue(null);
+    const { syncCcConnectProviderProfile } = await import('@electron/runtime/cc-connect-provider-profile');
+
+    const profile = await syncCcConnectProviderProfile({ reason: 'runtime-start' });
+
+    expect(profile).toMatchObject({
+      providerId: 'openai-missing-key',
+      vendorId: 'openai',
+      model: 'gpt-5.5',
+      supported: false,
+      unsupportedReason: expect.stringContaining('OpenAI API key credentials are missing'),
+      codexArgs: [],
+      secretAvailable: false,
+    });
+    expect(profile.env).toBeUndefined();
+    expect(profile.ccConnectProvider).toBeUndefined();
+    const profileFile = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'provider-profile.json'), 'utf8');
+    expect(profileFile).toContain('OpenAI API key credentials are missing');
+    expect(profileFile).not.toContain('OPENAI_API_KEY');
+    expect(profileFile).not.toContain('api_key =');
+  });
+
+  it('converts OpenAI API-key providers with custom baseUrl to managed Responses config', async () => {
+    getDefaultProviderAccountIdMock.mockResolvedValue('openai-local');
+    getProviderAccountMock.mockResolvedValue({
+      id: 'openai-local',
+      vendorId: 'openai',
+      label: 'OpenAI Local',
+      authMode: 'api_key',
+      baseUrl: 'http://127.0.0.1:45123/v1/responses',
+      model: 'gpt-local',
+      enabled: true,
+      isDefault: true,
+      createdAt: '2026-06-07T00:00:00.000Z',
+      updatedAt: '2026-06-07T00:00:00.000Z',
+    });
+    getProviderSecretMock.mockResolvedValue({
+      type: 'api_key',
+      accountId: 'openai-local',
+      apiKey: 'sk-local-secret-value',
+    });
+    const { syncCcConnectProviderProfile } = await import('@electron/runtime/cc-connect-provider-profile');
+
+    const profile = await syncCcConnectProviderProfile({ reason: 'local-api-key' });
+
+    expect(profile).toMatchObject({
+      providerId: 'openai-local',
+      vendorId: 'openai',
+      model: 'gpt-local',
+      codexHomeDir: join(tempDir, 'runtimes', 'cc-connect', 'codex-home'),
+      codexArgs: [
+        '-c',
+        'model_provider="clawx-openai"',
+        '-c',
+        'model_providers.clawx-openai.name="OpenAI"',
+        '-c',
+        'model_providers.clawx-openai.base_url="http://127.0.0.1:45123/v1"',
+        '-c',
+        'model_providers.clawx-openai.env_key="OPENAI_API_KEY"',
+        '-c',
+        'model_providers.clawx-openai.wire_api="responses"',
+        '--model',
+        'gpt-local',
+      ],
+      env: {
+        OPENAI_API_KEY: 'sk-local-secret-value',
+        CODEX_HOME: join(tempDir, 'runtimes', 'cc-connect', 'codex-home'),
+      },
+      ccConnectProvider: {
+        name: 'clawx-openai',
+        apiKeyEnvKey: 'OPENAI_API_KEY',
+        baseUrl: 'http://127.0.0.1:45123/v1',
+        model: 'gpt-local',
+        wireApi: 'responses',
+      },
+      secretAvailable: true,
+      supported: true,
+    });
+
+    const codexConfig = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'codex-home', 'config.toml'), 'utf8');
+    expect(codexConfig).toContain('model = "gpt-local"');
+    expect(codexConfig).toContain('model_provider = "clawx-openai"');
+    expect(codexConfig).toContain('[model_providers.clawx-openai]');
+    expect(codexConfig).toContain('base_url = "http://127.0.0.1:45123/v1"');
+    expect(codexConfig).toContain('env_key = "OPENAI_API_KEY"');
+    expect(codexConfig).toContain('wire_api = "responses"');
+    expect(codexConfig).not.toContain('sk-local-secret-value');
+
+    const profileFile = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'provider-profile.json'), 'utf8');
+    expect(profileFile).toContain('OPENAI_API_KEY');
+    expect(profileFile).toContain('http://127.0.0.1:45123/v1');
+    expect(profileFile).not.toContain('sk-local-secret-value');
+  });
+
   it('converts OpenAI OAuth accounts to a managed Codex auth home without writing tokens to the public profile', async () => {
     getDefaultProviderAccountIdMock.mockResolvedValue('openai-oauth');
     getProviderAccountMock.mockResolvedValue({

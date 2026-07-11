@@ -15,6 +15,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const OUTPUT_ROOT = path.join(ROOT, 'build', 'cc-connect');
+const DOWNLOAD_TIMEOUT_MS = Number.parseInt(process.env.CLAWX_CC_CONNECT_DOWNLOAD_TIMEOUT_MS || '30000', 10);
 
 function readCcConnectVersion() {
   const pkgPath = path.join(ROOT, 'node_modules', 'cc-connect', 'package.json');
@@ -28,14 +29,21 @@ function nodeTargetDir(nodePlatform, nodeArch) {
 
 async function download(urls) {
   for (const url of urls) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), Number.isFinite(DOWNLOAD_TIMEOUT_MS) ? DOWNLOAD_TIMEOUT_MS : 30000);
     try {
       echo`   Downloading ${url}`;
-      return { url, data: await fetch(url).then((res) => {
+      return { url, data: await fetch(url, { signal: controller.signal }).then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.arrayBuffer();
       }).then((buffer) => Buffer.from(buffer)) };
     } catch (error) {
-      echo`   WARN ${url} failed: ${error.message}`;
+      const message = error?.name === 'AbortError'
+        ? `timed out after ${DOWNLOAD_TIMEOUT_MS}ms`
+        : error.message;
+      echo`   WARN ${url} failed: ${message}`;
+    } finally {
+      clearTimeout(timeout);
     }
   }
   throw new Error(`Could not download cc-connect from ${urls.join(', ')}`);

@@ -1,5 +1,18 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { renameSessionMock } = vi.hoisted(() => ({
+  renameSessionMock: vi.fn(),
+}));
+
+vi.mock('@electron/services/sessions-api', () => ({
+  createSessionsApi: () => ({
+    delete: vi.fn(async () => ({ success: true })),
+    history: vi.fn(async () => ({ success: true, messages: [] })),
+    rename: renameSessionMock,
+    summaries: vi.fn(async () => ({ success: true, summaries: [] })),
+  }),
+}));
 
 function createGatewayManagerMock() {
   return {
@@ -30,6 +43,28 @@ function gatewayCronJob(overrides: Record<string, unknown> = {}) {
 }
 
 describe('OpenClawRuntimeProvider runtime contract adapters', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('routes session rename through the OpenClaw session API facade', async () => {
+    const gatewayManager = createGatewayManagerMock();
+    renameSessionMock.mockResolvedValueOnce({ success: true });
+    const { OpenClawRuntimeProvider } = await import('@electron/runtime/openclaw-provider');
+    const provider = new OpenClawRuntimeProvider(gatewayManager as never);
+
+    await expect(provider.rpc('sessions.rename', {
+      sessionKey: 'agent:main:abc123',
+      label: 'Renamed OpenClaw',
+    })).resolves.toEqual({ success: true });
+
+    expect(renameSessionMock).toHaveBeenCalledWith({
+      sessionKey: 'agent:main:abc123',
+      label: 'Renamed OpenClaw',
+    });
+    expect(gatewayManager.rpc).not.toHaveBeenCalled();
+  });
+
   it('accepts Host cron.create payloads and adapts them to Gateway cron.add', async () => {
     const gatewayManager = createGatewayManagerMock();
     gatewayManager.rpc.mockResolvedValueOnce(gatewayCronJob());

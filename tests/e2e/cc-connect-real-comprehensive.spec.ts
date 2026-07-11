@@ -1,8 +1,27 @@
 import { access, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import { createConnection } from 'node:net';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
+import type { Page } from '@playwright/test';
+
+const execFileAsync = promisify(execFile);
+
+type HostInvokeResult<T = unknown> = {
+  ok?: boolean;
+  data?: T;
+};
+
+type HistoryPayload = {
+  success?: boolean;
+  messages?: Array<{
+    role?: string;
+    content?: unknown;
+    toolCallId?: string;
+    toolName?: string;
+  }>;
+};
 
 async function realRuntimeBundles(): Promise<{ ccConnectPath: string; codexPath: string } | null> {
   const platformArch = `${process.platform}-${process.arch}`;
@@ -53,12 +72,62 @@ async function waitForPortClosed(port: number): Promise<void> {
   }).toBe(false);
 }
 
+async function listProcessCommandsContaining(needle: string): Promise<string[]> {
+  if (process.platform === 'win32') return [];
+  const { stdout } = await execFileAsync('ps', ['-axo', 'pid=,ppid=,command='], {
+    maxBuffer: 2 * 1024 * 1024,
+  });
+  return stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.includes(needle))
+    .filter((line) => !line.includes('ps -axo'));
+}
+
+async function waitForNoRuntimeProcesses(runtimeDir: string): Promise<void> {
+  if (process.platform === 'win32') return;
+  await expect.poll(async () => await listProcessCommandsContaining(runtimeDir), {
+    timeout: 15_000,
+    intervals: [250, 500, 1_000],
+    message: `no real comprehensive runtime process should reference ${runtimeDir}`,
+  }).toEqual([]);
+}
+
 async function copyLocalCodexAuthToManagedHome(userDataDir: string): Promise<string> {
-  const source = process.env.CLAWX_REAL_CODEX_AUTH_JSON?.trim() || join(homedir(), '.codex', 'auth.json');
+  const source = process.env.CLAWX_REAL_CODEX_AUTH_JSON?.trim();
+  test.skip(!source, 'Set CLAWX_REAL_CODEX_AUTH_JSON to the auth.json that may be copied into the managed CODEX_HOME.');
   const managedCodexHome = join(userDataDir, 'runtimes', 'cc-connect', 'codex-home');
   await mkdir(managedCodexHome, { recursive: true });
   await copyFile(source, join(managedCodexHome, 'auth.json'));
-  return source;
+  return source ?? '';
+}
+
+function hasToolEvidence(messages: HistoryPayload['messages']): boolean {
+  return (messages ?? []).some((message) => {
+    if (message.role === 'toolresult' || message.toolCallId || message.toolName) return true;
+    if (!Array.isArray(message.content)) return false;
+    return message.content.some((block) => {
+      if (!block || typeof block !== 'object') return false;
+      const type = (block as { type?: unknown }).type;
+      return type === 'toolCall' || type === 'tool_use' || type === 'tool_result' || type === 'toolResult';
+    });
+  });
+}
+
+function historyContentText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content.map((block) => {
+    if (!block || typeof block !== 'object') return '';
+    const record = block as { text?: unknown; content?: unknown };
+    if (typeof record.text === 'string') return record.text;
+    if (typeof record.content === 'string') return record.content;
+    return '';
+  }).filter(Boolean).join('\n');
+}
+
+async function expectAssistantText(page: Page, text: string, timeout = 180_000): Promise<void> {
+  await expect(page.getByTestId('chat-message-role-assistant').filter({ hasText: text }).last()).toBeVisible({ timeout });
 }
 
 test.describe('cc-connect real comprehensive runtime smoke', () => {
@@ -67,7 +136,8 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
     homeDir,
     userDataDir,
   }) => {
-    test.skip(process.env.CLAWX_REAL_OAUTH_E2E !== '1', 'Set CLAWX_REAL_OAUTH_E2E=1 with a logged-in Codex auth.json.');
+    test.setTimeout(360_000);
+    test.skip(process.env.CLAWX_REAL_OAUTH_E2E !== '1', 'Set CLAWX_REAL_OAUTH_E2E=1 with an explicit CLAWX_REAL_CODEX_AUTH_JSON.');
     const bundles = await realRuntimeBundles();
     test.skip(!bundles, 'Run pnpm run bundle:cc-connect:current && pnpm run bundle:codex:current first.');
     await waitForPortClosed(9810);
@@ -86,6 +156,14 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
       'Use this skill only as a local sync sentinel.',
       '',
     ].join('\n'), 'utf8');
+
+    const openClawConfigDir = join(homeDir, '.openclaw');
+    const runtimeDir = join(userDataDir, 'runtimes', 'cc-connect');
+    const mainWorkspace = join(userDataDir, 'real-workspaces', 'main');
+    const researchWorkspace = join(userDataDir, 'real-workspaces', 'research');
+    await mkdir(openClawConfigDir, { recursive: true });
+    await mkdir(mainWorkspace, { recursive: true });
+    await mkdir(researchWorkspace, { recursive: true });
 
     const createdAt = new Date().toISOString();
     await writeFile(join(userDataDir, 'settings.json'), JSON.stringify({
@@ -114,6 +192,15 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
       apiKeys: {},
       defaultProviderAccountId: 'openai-oauth',
     }, null, 2), 'utf8');
+    await writeFile(join(openClawConfigDir, 'openclaw.json'), JSON.stringify({
+      agents: {
+        defaults: { workspace: mainWorkspace },
+        list: [
+          { id: 'main', name: 'Main Agent', default: true, workspace: mainWorkspace },
+          { id: 'research', name: 'Research Agent', workspace: researchWorkspace },
+        ],
+      },
+    }, null, 2), 'utf8');
 
     const app = await launchElectronApp({
       skipSetup: true,
@@ -139,7 +226,23 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
       await expect(page.getByTestId('chat-composer-input')).toBeEnabled({ timeout: 60_000 });
       await page.getByTestId('chat-composer-input').fill('Reply exactly: CLAWX_REAL_COMPREHENSIVE_CHAT_OK');
       await page.getByTestId('chat-composer-send').click();
-      await expect(page.getByText('CLAWX_REAL_COMPREHENSIVE_CHAT_OK')).toBeVisible({ timeout: 180_000 });
+      await expectAssistantText(page, 'CLAWX_REAL_COMPREHENSIVE_CHAT_OK');
+
+      const uiArtifactFile = join(mainWorkspace, 'clawx-real-ui-artifact.md');
+      await page.getByTestId('chat-composer-input').fill([
+        'Use the apply_patch tool to create a file named clawx-real-ui-artifact.md in the current workspace.',
+        'The file content must be exactly two lines:',
+        '# ClawX UI Artifact',
+        'CLAWX_REAL_UI_ARTIFACT_OK',
+        'After creating the file, finish the turn.',
+      ].join('\n'));
+      await page.getByTestId('chat-composer-send').click();
+      await expect.poll(async () => (await readFile(uiArtifactFile, 'utf8').catch(() => '')).trim(), {
+        timeout: 180_000,
+        intervals: [1_000, 2_000, 5_000, 10_000],
+      }).toBe('# ClawX UI Artifact\nCLAWX_REAL_UI_ARTIFACT_OK');
+      await expect(page.getByTestId('generated-files-panel')).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByTestId('generated-file-card-clawx-real-ui-artifact.md')).toBeVisible({ timeout: 60_000 });
 
       const sessionsResult = await page.evaluate(async () => {
         return await window.clawx.hostInvoke({
@@ -204,13 +307,201 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
         },
       });
 
-      const runtimeDir = join(userDataDir, 'runtimes', 'cc-connect');
-      const mainWorkspace = join(runtimeDir, 'workspaces', 'main');
       await access(mainWorkspace);
+      await access(researchWorkspace);
       const managedConfig = await readFile(join(runtimeDir, 'config.toml'), 'utf8');
       expect(managedConfig).toContain(`work_dir = "${mainWorkspace}"`);
+      expect(managedConfig).toContain('name = "clawx-research"');
+      expect(managedConfig).toContain(`work_dir = "${researchWorkspace}"`);
       const workDirLines = managedConfig.split('\n').filter((line) => line.startsWith('work_dir =')).join('\n');
       expect(workDirLines).not.toContain(process.cwd());
+
+      const researchChat = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-chat-send-research-real-comprehensive',
+          module: 'gateway',
+          action: 'rpc',
+          payload: {
+            method: 'chat.send',
+            params: {
+              sessionKey: 'agent:research:main',
+              message: 'Reply exactly: CLAWX_REAL_RESEARCH_CHAT_OK',
+            },
+            timeoutMs: 60_000,
+          },
+        });
+      });
+      expect(researchChat).toMatchObject({
+        ok: true,
+        data: expect.objectContaining({ runId: expect.any(String) }),
+      });
+
+      await expect.poll(async () => {
+        return await page.evaluate(async () => {
+          return await window.clawx.hostInvoke({
+            id: 'runtime-history-research-chat-real-comprehensive',
+            module: 'sessions',
+            action: 'history',
+            payload: { sessionKey: 'agent:research:main', limit: 20 },
+          });
+        });
+      }, {
+        timeout: 180_000,
+        intervals: [1_000, 2_000, 5_000],
+      }).toMatchObject({
+        ok: true,
+        data: {
+          success: true,
+          messages: expect.arrayContaining([
+            expect.objectContaining({ role: 'user', content: 'Reply exactly: CLAWX_REAL_RESEARCH_CHAT_OK' }),
+            expect.objectContaining({ role: 'assistant' }),
+          ]),
+        },
+      });
+
+      const crossAgentSessions = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cross-agent-sessions-real-comprehensive',
+          module: 'sessions',
+          action: 'summaries',
+          payload: {},
+        });
+      });
+      expect(crossAgentSessions).toMatchObject({
+        ok: true,
+        data: {
+          success: true,
+          sessions: expect.arrayContaining([
+            expect.objectContaining({
+              key: 'agent:research:main',
+              agentId: 'research',
+              derivedTitle: expect.stringContaining('CLAWX_REAL_RESEARCH_CHAT_OK'),
+              lastMessagePreview: expect.any(String),
+            }),
+          ]),
+        },
+      });
+
+      const renameResearchSession = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-session-rename-research-real-comprehensive',
+          module: 'sessions',
+          action: 'rename',
+          payload: {
+            sessionKey: 'agent:research:main',
+            title: 'Renamed research runtime session',
+          },
+        });
+      });
+      expect(renameResearchSession).toMatchObject({ ok: true, data: { success: true } });
+
+      await expect.poll(async () => {
+        return await page.evaluate(async () => {
+          return await window.clawx.hostInvoke({
+            id: 'runtime-sessions-after-rename-real-comprehensive',
+            module: 'sessions',
+            action: 'summaries',
+            payload: {},
+          });
+        });
+      }, {
+        timeout: 60_000,
+        intervals: [1_000, 2_000, 5_000],
+      }).toMatchObject({
+        ok: true,
+        data: {
+          success: true,
+          sessions: expect.arrayContaining([
+            expect.objectContaining({
+              key: 'agent:research:main',
+              displayName: 'Renamed research runtime session',
+              derivedTitle: 'Renamed research runtime session',
+            }),
+          ]),
+        },
+      });
+
+      const toolSmokeFile = join(researchWorkspace, 'clawx-real-tool-smoke.txt');
+      const toolSmokePrompt = [
+        'Create or overwrite a file named clawx-real-tool-smoke.txt in the current workspace.',
+        'The file content must be exactly: CLAWX_REAL_TOOL_FILE_OK',
+        'After writing the file, reply exactly: CLAWX_REAL_TOOL_FILE_DONE',
+      ].join(' ');
+      const toolSmoke = await page.evaluate(async (message) => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-chat-send-tool-smoke-real-comprehensive',
+          module: 'gateway',
+          action: 'rpc',
+          payload: {
+            method: 'chat.send',
+            params: {
+              sessionKey: 'agent:research:tool-smoke',
+              message,
+            },
+            timeoutMs: 60_000,
+          },
+        });
+      }, toolSmokePrompt);
+      expect(toolSmoke).toMatchObject({
+        ok: true,
+        data: expect.objectContaining({ runId: expect.any(String) }),
+      });
+
+      await expect.poll(async () => {
+        const [historyResult, fileContent] = await Promise.all([
+          page.evaluate(async () => {
+            return await window.clawx.hostInvoke({
+              id: 'runtime-history-tool-smoke-real-comprehensive',
+              module: 'sessions',
+              action: 'history',
+              payload: { sessionKey: 'agent:research:tool-smoke', limit: 50 },
+            });
+          }) as Promise<HostInvokeResult<HistoryPayload>>,
+          readFile(toolSmokeFile, 'utf8').catch(() => ''),
+        ]);
+        return {
+          fileContent: fileContent.trim(),
+          hasToolEvidence: hasToolEvidence(historyResult.data?.messages),
+          hasFinalReply: (historyResult.data?.messages ?? []).some((message) =>
+            historyContentText(message.content).includes('CLAWX_REAL_TOOL_FILE_DONE')
+          ),
+        };
+      }, {
+        timeout: 180_000,
+        intervals: [2_000, 5_000, 10_000],
+      }).toEqual({
+        fileContent: 'CLAWX_REAL_TOOL_FILE_OK',
+        hasToolEvidence: true,
+        hasFinalReply: true,
+      });
+
+      await expect.poll(async () => {
+        return await page.evaluate(async () => {
+          return await window.clawx.hostInvoke({
+            id: 'runtime-token-usage-real-comprehensive',
+            module: 'usage',
+            action: 'recentTokenHistory',
+            payload: { limit: 50 },
+          });
+        });
+      }, {
+        timeout: 120_000,
+        intervals: [1_000, 2_000, 5_000],
+      }).toMatchObject({
+        ok: true,
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            sessionId: 'agent:main:main',
+            agentId: 'main',
+            totalTokens: expect.any(Number),
+          }),
+          expect.objectContaining({
+            sessionId: 'agent:research:main',
+            agentId: 'research',
+            totalTokens: expect.any(Number),
+          }),
+        ]),
+      });
 
       const skillsStatus = await page.evaluate(async () => {
         return await window.clawx.hostInvoke({
@@ -306,6 +597,92 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
       }, cronId);
       expect(cronDelete).toMatchObject({ ok: true, data: { success: true } });
 
+      const researchCronCreate = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-create-research-real-comprehensive',
+          module: 'cron',
+          action: 'create',
+          payload: {
+            name: 'Real cc-connect research cron',
+            message: 'Reply exactly: CLAWX_REAL_RESEARCH_CRON_OK',
+            schedule: { kind: 'cron', expr: '0 10 * * *' },
+            enabled: true,
+            delivery: { mode: 'none' },
+            agentId: 'research',
+          },
+        });
+      });
+      expect(researchCronCreate).toMatchObject({
+        ok: true,
+        data: expect.objectContaining({
+          name: 'Real cc-connect research cron',
+          enabled: true,
+          agentId: 'research',
+        }),
+      });
+      const researchCronId = (researchCronCreate as { data?: { id?: string } }).data?.id;
+      expect(researchCronId).toBeTruthy();
+
+      const researchCronList = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-list-research-real-comprehensive',
+          module: 'cron',
+          action: 'list',
+        });
+      });
+      expect(researchCronList).toMatchObject({
+        ok: true,
+        data: expect.arrayContaining([
+          expect.objectContaining({ id: researchCronId, agentId: 'research' }),
+        ]),
+      });
+
+      const researchCronRun = await page.evaluate(async (id) => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-run-research-real-comprehensive',
+          module: 'cron',
+          action: 'trigger',
+          payload: { id },
+        });
+      }, researchCronId);
+      if (!researchCronRun.ok) {
+        throw new Error(`research cron trigger failed: ${JSON.stringify(researchCronRun)}`);
+      }
+      expect(researchCronRun).toMatchObject({ ok: true, data: { success: true } });
+
+      await expect.poll(async () => {
+        return await page.evaluate(async () => {
+          return await window.clawx.hostInvoke({
+            id: 'runtime-history-research-cron-real-comprehensive',
+            module: 'sessions',
+            action: 'history',
+            payload: { sessionKey: 'agent:research:main', limit: 20 },
+          });
+        });
+      }, {
+        timeout: 120_000,
+        intervals: [1_000, 2_000, 5_000],
+      }).toMatchObject({
+        ok: true,
+        data: {
+          success: true,
+          messages: expect.arrayContaining([
+            expect.objectContaining({ role: 'user', content: 'Reply exactly: CLAWX_REAL_RESEARCH_CRON_OK' }),
+            expect.objectContaining({ role: 'assistant' }),
+          ]),
+        },
+      });
+
+      const researchCronDelete = await page.evaluate(async (id) => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-cron-delete-research-real-comprehensive',
+          module: 'cron',
+          action: 'delete',
+          payload: { id },
+        });
+      }, researchCronId);
+      expect(researchCronDelete).toMatchObject({ ok: true, data: { success: true } });
+
       const publicProfile = await readFile(join(runtimeDir, 'provider-profile.json'), 'utf8');
       expect(publicProfile).toContain('CODEX_HOME');
       expect(publicProfile).not.toContain('access_token');
@@ -353,6 +730,7 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
       }).toEqual({ sessionRemoved: true, historyEmpty: true });
     } finally {
       await closeElectronApp(app);
+      await waitForNoRuntimeProcesses(runtimeDir);
     }
   });
 });

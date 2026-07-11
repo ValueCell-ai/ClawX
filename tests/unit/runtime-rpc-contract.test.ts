@@ -17,6 +17,7 @@ const expectedCcConnectNativeMethods = [
   'sessions.list',
   'chat.history',
   'sessions.delete',
+  'sessions.rename',
   'providers.sync',
   'providers.profile',
   'skills.status',

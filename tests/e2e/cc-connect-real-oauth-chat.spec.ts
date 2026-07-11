@@ -1,6 +1,7 @@
 import { access, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
+import type { Page } from '@playwright/test';
 
 async function realRuntimeBundles(): Promise<{ ccConnectPath: string; codexPath: string } | null> {
   const platformArch = `${process.platform}-${process.arch}`;
@@ -26,6 +27,10 @@ async function realRuntimeBundles(): Promise<{ ccConnectPath: string; codexPath:
   } catch {
     return null;
   }
+}
+
+async function expectAssistantText(page: Page, text: string, timeout = 180_000): Promise<void> {
+  await expect(page.getByTestId('chat-message-role-assistant').filter({ hasText: text }).last()).toBeVisible({ timeout });
 }
 
 test.describe('cc-connect real OpenAI OAuth chat', () => {
@@ -95,7 +100,7 @@ test.describe('cc-connect real OpenAI OAuth chat', () => {
       await expect(page.getByTestId('chat-composer-input')).toBeEnabled({ timeout: 60_000 });
       await page.getByTestId('chat-composer-input').fill('Reply exactly: CLAWX_REAL_OAUTH_E2E_OK');
       await page.getByTestId('chat-composer-send').click();
-      await expect(page.getByText('CLAWX_REAL_OAUTH_E2E_OK')).toBeVisible({ timeout: 180_000 });
+      await expectAssistantText(page, 'CLAWX_REAL_OAUTH_E2E_OK');
 
       const publicProfile = await readFile(join(userDataDir, 'runtimes', 'cc-connect', 'provider-profile.json'), 'utf8');
       expect(publicProfile).toContain('CODEX_HOME');

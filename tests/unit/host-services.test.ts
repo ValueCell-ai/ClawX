@@ -1270,6 +1270,31 @@ describe('host services', () => {
       })),
       getActiveProvider: vi.fn(() => ({
         kind: 'cc-connect',
+        rpc: vi.fn(async (method: string) => {
+          if (method === 'cron.list') {
+            return [{
+              id: 'cron-1',
+              name: 'Daily build',
+              message: 'secret prompt should not be copied',
+              agentId: 'research',
+              enabled: true,
+              delivery: { mode: 'none' },
+              createdAt: '2026-06-13T00:00:00.000Z',
+              updatedAt: '2026-06-13T00:00:00.000Z',
+              exec: 'node -e "secret command should not be copied"',
+              workDir: '/tmp/diagnostics-workdir',
+              sessionMode: 'continue',
+              timeoutMins: 5,
+              mute: true,
+              lastRun: {
+                time: '2026-06-13T00:01:00.000Z',
+                success: false,
+                error: 'secret runtime error should not be copied',
+              },
+            }];
+          }
+          return undefined;
+        }),
         listOperationCapabilities: vi.fn(() => ({
           'doctor.fix': { support: 'unsupported', reason: 'cc-connect v1.3.2' },
         })),
@@ -1343,6 +1368,31 @@ describe('host services', () => {
             status: 200,
             body: '{"ok":true}',
           }),
+          cron: expect.objectContaining({
+            success: true,
+            jobCount: 1,
+            jobs: [
+              expect.objectContaining({
+                id: 'cron-1',
+                name: 'Daily build',
+                agentId: 'research',
+                enabled: true,
+                deliveryMode: 'none',
+                hasExec: true,
+                hasPrompt: false,
+                sessionMode: 'continue',
+                timeoutMins: 5,
+                mute: true,
+                lastRun: expect.objectContaining({
+                  success: false,
+                  hasError: true,
+                }),
+              }),
+            ],
+            knownGaps: expect.arrayContaining([
+              'scheduled-prompt-delivery-unproven',
+            ]),
+          }),
           logTail: 'cc-connect-log-tail',
         }),
       },
@@ -1350,6 +1400,9 @@ describe('host services', () => {
     expect(fetchMock).toHaveBeenCalledWith(new URL('http://127.0.0.1:9820/api/v1/status'), {
       headers: { Authorization: 'Bearer diagnostics-management-token' },
     });
+    expect(JSON.stringify(snapshot)).not.toContain('secret prompt should not be copied');
+    expect(JSON.stringify(snapshot)).not.toContain('secret command should not be copied');
+    expect(JSON.stringify(snapshot)).not.toContain('secret runtime error should not be copied');
     expect(snapshot.gatewayLogTail).toContain('gateway-one');
     expect(snapshot.gatewayErrLogTail).toBe('');
   });
@@ -1449,5 +1502,28 @@ describe('host services', () => {
           { role: 'assistant', content: 'Hi', timestamp: 1001 },
         ],
       });
+  });
+
+  it('routes session rename through the active runtime session RPC', async () => {
+    const rpc = vi.fn(async () => ({ success: true }));
+    const runtimeManager = {
+      getActiveProvider: vi.fn(() => ({
+        kind: 'openclaw',
+        listCapabilities: vi.fn(() => ({ sessions: true })),
+        rpc,
+      })),
+    };
+    const { createSessionsApi } = await import('@electron/services/sessions-api');
+    const sessionsApi = createSessionsApi(runtimeManager as never);
+
+    await expect(sessionsApi.rename({
+      sessionKey: 'agent:research:named',
+      title: 'Renamed research',
+    })).resolves.toEqual({ success: true });
+
+    expect(rpc).toHaveBeenCalledWith('sessions.rename', {
+      sessionKey: 'agent:research:named',
+      label: 'Renamed research',
+    });
   });
 });

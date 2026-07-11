@@ -110,6 +110,9 @@ export class OpenClawRuntimeProvider extends EventEmitter implements RuntimeProv
         return triggerOpenClawCronJob(this.gatewayManager, params) as Promise<T>;
       case 'runtime.controlUi':
         return this.getControlUi(params as never) as Promise<T>;
+      case 'sessions.rename':
+      case 'session.rename':
+        return this.sessionsApi.rename(params as never) as Promise<T>;
       default:
         return this.gatewayManager.rpc(method, params, timeoutMs);
     }
