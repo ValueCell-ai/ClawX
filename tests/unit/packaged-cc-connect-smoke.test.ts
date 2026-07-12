@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import {
   defaultPackagedAppPath,
+  escapeTomlBasicString,
   packagedExecutablePath,
   packagedResourcesPath,
   shouldVerifyPackagedCodeSignature,
@@ -42,6 +43,11 @@ describe('packaged cc-connect smoke paths', () => {
     expect(shouldVerifyPackagedCodeSignature('darwin', true)).toBe(false);
     expect(shouldVerifyPackagedCodeSignature('win32', false)).toBe(false);
     expect(shouldVerifyPackagedCodeSignature('linux', false)).toBe(false);
+  });
+
+  it('escapes Windows paths for TOML config assertions', () => {
+    expect(escapeTomlBasicString(String.raw`C:\Users\runner\workspace`))
+      .toBe(String.raw`C:\\Users\\runner\\workspace`);
   });
 
   it('keeps the Windows residual-process PowerShell command syntactically separated', async () => {

@@ -11,6 +11,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import {
   defaultPackagedAppPath,
+  escapeTomlBasicString,
   packagedExecutablePath,
   packagedResourcesPath,
   shouldVerifyPackagedCodeSignature,
@@ -425,10 +426,10 @@ async function main() {
       process.platform === 'win32' ? 'codex-openai-oauth.cmd' : 'codex-openai-oauth',
     );
     const expectedCodexCommand = realOAuth ? managedLauncherPath : codexPath;
-    expect(managedConfig).toContain(`cmd = "${expectedCodexCommand.replace(/\\/g, '\\\\')}"`);
-    expect(managedConfig).toContain(`work_dir = "${mainWorkspace}"`);
+    expect(managedConfig).toContain(`cmd = "${escapeTomlBasicString(expectedCodexCommand)}"`);
+    expect(managedConfig).toContain(`work_dir = "${escapeTomlBasicString(mainWorkspace)}"`);
     expect(managedConfig).toContain('name = "clawx-research"');
-    expect(managedConfig).toContain(`work_dir = "${researchWorkspace}"`);
+    expect(managedConfig).toContain(`work_dir = "${escapeTomlBasicString(researchWorkspace)}"`);
     const bridgeMatch = managedConfig.match(/\[bridge\][\s\S]*?port = (\d+)/);
     bridgePort = bridgeMatch ? Number(bridgeMatch[1]) : undefined;
 

@@ -28,3 +28,11 @@ export function packagedResourcesPath(appPath, platform = process.platform) {
 export function shouldVerifyPackagedCodeSignature(platform = process.platform, allowUnsigned = false) {
   return platform === 'darwin' && !allowUnsigned;
 }
+
+export function escapeTomlBasicString(value) {
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r');
+}
