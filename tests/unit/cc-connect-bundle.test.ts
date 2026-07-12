@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildArchiveExtractionCommand,
   buildCcConnectAssetName,
+  buildVersionCommand,
   normalizeCcConnectTarget,
   parseCcConnectBundleArgs,
 } from '../fixtures/cc-connect-bundle-api';
@@ -30,6 +31,10 @@ describe('cc-connect bundle helpers', () => {
     expect(buildArchiveExtractionCommand(archivePath, outputDir, true)).toEqual({
       command: 'tar',
       args: ['-xf', archivePath, '-C', outputDir],
+    });
+    expect(buildVersionCommand(String.raw`D:\a\ClawX\build\cc-connect\cc-connect.exe`)).toEqual({
+      command: String.raw`D:\a\ClawX\build\cc-connect\cc-connect.exe`,
+      args: ['--version'],
     });
   });
 });

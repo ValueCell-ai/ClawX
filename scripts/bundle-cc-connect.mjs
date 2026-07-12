@@ -10,6 +10,7 @@ import {
   CC_CONNECT_VERSION_FALLBACK,
   buildArchiveExtractionCommand,
   buildCcConnectAssetName,
+  buildVersionCommand,
   getCcConnectDownloadUrls,
   normalizeCcConnectTarget,
   parseCcConnectBundleArgs,
@@ -91,7 +92,9 @@ async function bundleTarget(version, nodePlatform, nodeArch) {
 
   let verifiedWithVersionCommand = false;
   if (canExecuteTargetOnHost(nodePlatform, nodeArch)) {
-    const versionOutput = await $`${binaryPath} --version`.text();
+    const { command, args } = buildVersionCommand(binaryPath);
+    const { stdout, stderr } = await execFileAsync(command, args);
+    const versionOutput = `${stdout}${stderr}`;
     if (!versionOutput.includes(version)) {
       throw new Error(`cc-connect version mismatch: expected ${version}, got ${versionOutput.trim()}`);
     }

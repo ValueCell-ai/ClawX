@@ -54,6 +54,10 @@ export function buildArchiveExtractionCommand(archivePath, outputDir, isWindows)
   };
 }
 
+export function buildVersionCommand(binaryPath) {
+  return { command: binaryPath, args: ['--version'] };
+}
+
 export function parseCcConnectBundleArgs(argv = process.argv.slice(2)) {
   let preset = 'current';
   for (const arg of argv) {
