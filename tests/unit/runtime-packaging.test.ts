@@ -44,6 +44,7 @@ describe('runtime packaging guardrails', () => {
     expect(releaseWorkflow).toContain('runs-on: macos-15-intel');
     expect(releaseWorkflow).toContain('runs-on: ubuntu-24.04-arm');
     expect(releaseWorkflow.match(/smoke:cc-connect:packaged/g)).toHaveLength(5);
+    expect(releaseWorkflow.match(/--allow-unsigned=\$\{\{ github\.event_name == 'workflow_dispatch'/g)).toHaveLength(2);
     expect(releaseWorkflow).toContain('artifacts/cc-connect/packaged-smoke-*.json');
     expect(releaseWorkflow).toContain('artifacts/cc-connect/packaged-smoke-darwin-x64.json');
     expect(releaseWorkflow).toContain('artifacts/cc-connect/packaged-smoke-linux-arm64.json');
@@ -52,9 +53,11 @@ describe('runtime packaging guardrails', () => {
     const workflow = parse(releaseWorkflow) as {
       jobs?: Record<string, {
         if?: string;
+        strategy?: { 'fail-fast'?: boolean };
         steps?: Array<{ name?: string; env?: Record<string, string> }>;
       }>;
     };
+    expect(workflow.jobs?.release?.strategy?.['fail-fast']).toBe(false);
     expect(workflow.jobs?.publish?.if).toBe("startsWith(github.ref, 'refs/tags/')");
     expect(workflow.jobs?.['upload-oss']?.if).toBe("startsWith(github.ref, 'refs/tags/')");
     const macBuild = workflow.jobs?.release?.steps?.find((step) => step.name === 'Build macOS');

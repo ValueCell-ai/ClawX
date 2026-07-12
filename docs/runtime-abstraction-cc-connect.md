@@ -70,7 +70,9 @@ Packaging requirements:
 - A manual `Release` workflow dispatch is evidence-only: it disables macOS
   signing discovery and never creates a GitHub Release, uploads to OSS, or runs
   final promotion. Publishing remains tag-only. Use an alpha/beta version label
-  for manual smoke so Windows also skips SignPath.
+  for manual smoke so Windows also skips SignPath. Manual macOS smoke explicitly
+  records that signature validation was skipped; tag builds still require strict
+  signature verification before publishing.
 
 Primary upstream contracts:
 

@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import {
+  buildArchiveExtractionCommand,
   buildCcConnectAssetName,
   normalizeCcConnectTarget,
   parseCcConnectBundleArgs,
@@ -20,5 +21,15 @@ describe('cc-connect bundle helpers', () => {
       { nodePlatform: 'darwin', nodeArch: 'arm64' },
     ]);
     expect(parseCcConnectBundleArgs(['--all']).targets).toContainEqual({ nodePlatform: 'win32', nodeArch: 'x64' });
+  });
+
+  it('passes Windows archive paths as opaque process arguments', () => {
+    const archivePath = String.raw`D:\a\ClawX\build\cc-connect\win32-x64\cc-connect.zip`;
+    const outputDir = String.raw`D:\a\ClawX\build\cc-connect\win32-x64`;
+
+    expect(buildArchiveExtractionCommand(archivePath, outputDir, true)).toEqual({
+      command: 'tar',
+      args: ['-xf', archivePath, '-C', outputDir],
+    });
   });
 });

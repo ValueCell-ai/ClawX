@@ -13,6 +13,7 @@ import {
   defaultPackagedAppPath,
   packagedExecutablePath,
   packagedResourcesPath,
+  shouldVerifyPackagedCodeSignature,
 } from './packaged-runtime-layout.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -235,12 +236,19 @@ async function pathExists(path) {
   }
 }
 
-async function verifyCodeSignature(binaryPath) {
-  if (process.platform !== 'darwin') return;
+async function verifyCodeSignature(binaryPath, allowUnsigned) {
+  if (!shouldVerifyPackagedCodeSignature(process.platform, allowUnsigned)) return;
   await execFileAsync('codesign', ['--verify', '--deep', '--strict', binaryPath], { timeout: 30_000 });
 }
 
-async function verifyBundleManifest({ manifestPath, binaryPath, sourceBinaryPath, expectedName, expectedBinaryName }) {
+async function verifyBundleManifest({
+  manifestPath,
+  binaryPath,
+  sourceBinaryPath,
+  expectedName,
+  expectedBinaryName,
+  allowUnsigned,
+}) {
   const manifest = await readManifest(manifestPath);
   expect(manifest).toMatchObject({
     name: expectedName,
@@ -258,7 +266,7 @@ async function verifyBundleManifest({ manifestPath, binaryPath, sourceBinaryPath
 
   const { stdout } = await execFileAsync(binaryPath, ['--version'], { timeout: 30_000 });
   expect(stdout).toContain(manifest.version);
-  await verifyCodeSignature(binaryPath);
+  await verifyCodeSignature(binaryPath, allowUnsigned);
   return manifest;
 }
 
@@ -298,6 +306,7 @@ async function main() {
   const sourceCcConnectPath = join(root, 'build', 'cc-connect', platformArch, binaryName('cc-connect'));
   const sourceCodexPath = join(root, 'build', 'codex', platformArch, 'bin', binaryName('codex'));
   const realOAuth = args['real-oauth'] === '1' || args['real-oauth'] === 'true';
+  const allowUnsigned = args['allow-unsigned'] === '1' || args['allow-unsigned'] === 'true';
 
   await verifyExecutable(executablePath);
   await verifyExecutable(ccConnectPath);
@@ -309,6 +318,7 @@ async function main() {
     sourceBinaryPath: sourceCcConnectPath,
     expectedName: 'cc-connect',
     expectedBinaryName: binaryName('cc-connect'),
+    allowUnsigned,
   });
   const codexManifest = await verifyBundleManifest({
     manifestPath: join(resourcesPath, 'codex', 'manifest.json'),
@@ -316,6 +326,7 @@ async function main() {
     sourceBinaryPath: sourceCodexPath,
     expectedName: 'codex',
     expectedBinaryName: binaryName('codex'),
+    allowUnsigned,
   });
   expect(ccConnectManifest.sourceUrl).toContain(ccConnectManifest.assetName);
   expect(codexManifest.packageSuffix).toContain(process.arch === 'arm64' ? 'arm64' : 'x64');
@@ -627,9 +638,12 @@ async function main() {
     ccConnectVersion: ccConnectManifest.version,
     codexVersion: codexManifest.version,
     realOAuth,
+    codeSignature: process.platform === 'darwin'
+      ? allowUnsigned ? 'explicitly-skipped-unsigned-smoke' : 'verified'
+      : 'not-applicable',
     checks: [
       'runtime-binary-version',
-      ...(process.platform === 'darwin' ? ['code-signature'] : []),
+      ...(shouldVerifyPackagedCodeSignature(process.platform, allowUnsigned) ? ['code-signature'] : []),
       'packaged-electron-start',
       'runtime-start-status',
       'workspace-projection',

@@ -24,3 +24,7 @@ export function packagedResourcesPath(appPath, platform = process.platform) {
   if (platform === 'win32' || platform === 'linux') return path.join(appPath, 'resources');
   throw new Error(`Unsupported packaged smoke platform: ${platform}`);
 }
+
+export function shouldVerifyPackagedCodeSignature(platform = process.platform, allowUnsigned = false) {
+  return platform === 'darwin' && !allowUnsigned;
+}

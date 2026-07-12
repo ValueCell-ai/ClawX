@@ -31,6 +31,7 @@ jobs:
   release:
     needs: validate-release
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
@@ -133,7 +134,7 @@ jobs:
 
       - name: Smoke native macOS packaged cc-connect runtime
         if: matrix.platform == 'mac'
-        run: pnpm run smoke:cc-connect:packaged
+        run: pnpm run smoke:cc-connect:packaged -- --allow-unsigned=${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
 
       # Windows specific steps
       - name: Build Windows
@@ -363,7 +364,7 @@ jobs:
       - name: Verify and smoke native macOS x64 runtime
         run: |
           pnpm run verify:packaged-runtime-resources -- --resources=release/mac/ClawX.app/Contents/Resources --platform=darwin --arch=x64
-          pnpm run smoke:cc-connect:packaged
+          pnpm run smoke:cc-connect:packaged -- --allow-unsigned=${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
 
       - name: Upload macOS x64 runtime smoke evidence
         uses: actions/upload-artifact@v4

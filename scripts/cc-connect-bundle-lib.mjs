@@ -47,6 +47,13 @@ export function buildCcConnectAssetName(version, target) {
   return `cc-connect-v${version}-${target.platform}-${target.arch}${ext}`;
 }
 
+export function buildArchiveExtractionCommand(archivePath, outputDir, isWindows) {
+  return {
+    command: 'tar',
+    args: [isWindows ? '-xf' : '-xzf', archivePath, '-C', outputDir],
+  };
+}
+
 export function parseCcConnectBundleArgs(argv = process.argv.slice(2)) {
   let preset = 'current';
   for (const arg of argv) {

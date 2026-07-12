@@ -3,9 +3,12 @@ import 'zx/globals';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import {
   CC_CONNECT_VERSION_FALLBACK,
+  buildArchiveExtractionCommand,
   buildCcConnectAssetName,
   getCcConnectDownloadUrls,
   normalizeCcConnectTarget,
@@ -16,6 +19,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const OUTPUT_ROOT = path.join(ROOT, 'build', 'cc-connect');
 const DOWNLOAD_TIMEOUT_MS = Number.parseInt(process.env.CLAWX_CC_CONNECT_DOWNLOAD_TIMEOUT_MS || '30000', 10);
+const execFileAsync = promisify(execFile);
 
 function readCcConnectVersion() {
   const pkgPath = path.join(ROOT, 'node_modules', 'cc-connect', 'package.json');
@@ -50,15 +54,8 @@ async function download(urls) {
 }
 
 async function extractArchive(archivePath, outputDir, isWindows) {
-  if (isWindows) {
-    try {
-      await $`unzip -o ${archivePath} -d ${outputDir}`;
-    } catch {
-      await $`powershell -NoProfile -Command Expand-Archive -Force ${archivePath} ${outputDir}`;
-    }
-    return;
-  }
-  await $`tar xzf ${archivePath} -C ${outputDir}`;
+  const { command, args } = buildArchiveExtractionCommand(archivePath, outputDir, isWindows);
+  await execFileAsync(command, args);
 }
 
 function canExecuteTargetOnHost(nodePlatform, nodeArch) {

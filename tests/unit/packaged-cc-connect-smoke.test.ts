@@ -6,6 +6,7 @@ import {
   defaultPackagedAppPath,
   packagedExecutablePath,
   packagedResourcesPath,
+  shouldVerifyPackagedCodeSignature,
 } from '../../scripts/packaged-runtime-layout.mjs';
 
 describe('packaged cc-connect smoke paths', () => {
@@ -34,6 +35,13 @@ describe('packaged cc-connect smoke paths', () => {
     expect(() => defaultPackagedAppPath({ platform: 'freebsd', arch: 'x64', rootDir })).toThrow('Unsupported packaged smoke platform');
     expect(() => packagedExecutablePath('/app', 'freebsd')).toThrow('Unsupported packaged smoke platform');
     expect(() => packagedResourcesPath('/app', 'freebsd')).toThrow('Unsupported packaged smoke platform');
+  });
+
+  it('requires macOS signatures unless unsigned smoke is explicit', () => {
+    expect(shouldVerifyPackagedCodeSignature('darwin', false)).toBe(true);
+    expect(shouldVerifyPackagedCodeSignature('darwin', true)).toBe(false);
+    expect(shouldVerifyPackagedCodeSignature('win32', false)).toBe(false);
+    expect(shouldVerifyPackagedCodeSignature('linux', false)).toBe(false);
   });
 
   it('keeps the Windows residual-process PowerShell command syntactically separated', async () => {
