@@ -1161,6 +1161,67 @@ describe('CcConnectRuntimeProvider', () => {
     ]);
   });
 
+  it('maps official cc-connect cron completion fields without inventing a run for Go zero time', async () => {
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/v1/cron?project=') && init?.method === 'GET') {
+        return new Response(JSON.stringify({
+          ok: true,
+          data: {
+            jobs: url.endsWith('clawx-main') ? [
+              {
+                id: 'cron-success',
+                project: 'clawx-main',
+                cron_expr: '0 9 * * *',
+                prompt: 'success',
+                last_run: '2026-07-13T08:01:02Z',
+                last_error: '',
+              },
+              {
+                id: 'cron-error',
+                project: 'clawx-main',
+                cron_expr: '0 10 * * *',
+                prompt: 'failure',
+                last_run: '2026-07-13T08:03:04Z',
+                last_error: 'provider request failed',
+              },
+              {
+                id: 'cron-never-run',
+                project: 'clawx-main',
+                cron_expr: '0 11 * * *',
+                prompt: 'pending',
+                last_run: '0001-01-01T00:00:00Z',
+                last_error: '',
+              },
+            ] : [],
+          },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: false, error: `unexpected ${init?.method} ${url}` }), { status: 500 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+    });
+
+    const jobs = await provider.rpc<Array<{ id: string; lastRun?: { time: string; success: boolean; error?: string } }>>('cron.list');
+    expect(jobs.find((job) => job.id === 'cron-success')?.lastRun).toEqual({
+      time: '2026-07-13T08:01:02.000Z',
+      success: true,
+    });
+    expect(jobs.find((job) => job.id === 'cron-error')?.lastRun).toEqual({
+      time: '2026-07-13T08:03:04.000Z',
+      success: false,
+      error: 'provider request failed',
+    });
+    expect(jobs.find((job) => job.id === 'cron-never-run')?.lastRun).toBeUndefined();
+  });
+
   it('rejects non-cron schedules for cc-connect cron create and update', async () => {
     const binaryPath = join(tempDir, 'cc-connect');
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });

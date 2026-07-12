@@ -2645,6 +2645,17 @@ function ccTimestamp(value: unknown, fallback = Date.now()): string {
   return new Date(fallback).toISOString();
 }
 
+function ccOptionalTimestamp(value: unknown): string | undefined {
+  let timestamp: number | undefined;
+  if (typeof value === 'string' && value.trim()) {
+    timestamp = Date.parse(value);
+  } else if (typeof value === 'number' && Number.isFinite(value)) {
+    timestamp = value < 1e12 ? value * 1000 : value;
+  }
+  if (timestamp === undefined || !Number.isFinite(timestamp) || timestamp <= 0) return undefined;
+  return new Date(timestamp).toISOString();
+}
+
 function parseCcConnectProjectRuntimeStatus(value: unknown): CcConnectProjectRuntimeStatus {
   const project = isRecord(value) ? value : {};
   const platformsValue = Array.isArray(project.platforms) ? project.platforms : [];
@@ -2844,8 +2855,10 @@ function transformCcConnectCronJob(value: unknown): CronJob {
   const createdAt = ccTimestamp(job.created_at ?? job.createdAt ?? job.created_at_ms);
   const updatedAt = ccTimestamp(job.updated_at ?? job.updatedAt ?? job.updated_at_ms, Date.parse(createdAt));
   const nextRunAt = job.next_run_at ?? job.nextRunAt ?? job.next_run_at_ms;
-  const lastRunAt = job.last_run_at ?? job.lastRunAt ?? job.last_run_at_ms;
-  const lastRunIso = typeof lastRunAt === 'undefined' ? undefined : ccTimestamp(lastRunAt);
+  const lastRunAt = job.last_run ?? job.last_run_at ?? job.lastRun ?? job.lastRunAt ?? job.last_run_at_ms;
+  const lastRunIso = ccOptionalTimestamp(lastRunAt);
+  const lastRunError = ccString(job, ['last_error', 'lastError']);
+  const lastRunStatus = ccString(job, ['last_status', 'lastStatus']);
   const result: CronJob & Record<string, unknown> = {
     id,
     name,
@@ -2857,7 +2870,13 @@ function transformCcConnectCronJob(value: unknown): CronJob {
     createdAt,
     updatedAt,
     ...(typeof nextRunAt === 'undefined' ? {} : { nextRun: ccTimestamp(nextRunAt) }),
-    ...(lastRunIso ? { lastRun: { time: lastRunIso, success: job.last_status !== 'error', error: ccString(job, ['last_error']) || undefined } } : {}),
+    ...(lastRunIso ? {
+      lastRun: {
+        time: lastRunIso,
+        success: lastRunStatus !== 'error' && !lastRunError,
+        ...(lastRunError ? { error: lastRunError } : {}),
+      },
+    } : {}),
     agentId: agentIdFromCcConnectCronJob(job),
     ...(exec ? { exec } : {}),
     ...(ccString(job, ['work_dir', 'workDir']) ? { workDir: ccString(job, ['work_dir', 'workDir']) } : {}),

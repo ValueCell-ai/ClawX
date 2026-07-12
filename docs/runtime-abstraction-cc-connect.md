@@ -605,6 +605,14 @@ Capability metadata exposes `scheduleKinds: ['cron']`, Channel commands, and
 the actual support state of manual execution. Unsupported operations are
 non-mutating.
 
+cc-connect manual execution is asynchronous: `POST /api/v1/cron/{id}/exec`
+acknowledges that a run was triggered, but does not mean the run completed.
+ClawX observes completion through the runtime-owned Cron list and maps the
+official `last_run` and `last_error` fields to `CronJob.lastRun`; Go's zero
+timestamp means the job has never run and is not exposed as a completed run.
+Validation must wait for a successful `lastRun` before using public
+session/history as delivery evidence.
+
 Current real-runtime evidence covers both native scheduler paths with the
 bundled cc-connect binary. An enabled exec job fired on an actual minute tick
 and wrote its marker from the configured `work_dir`. A Codex OAuth prompt job

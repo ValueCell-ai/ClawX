@@ -23,6 +23,82 @@ type HistoryPayload = {
   }>;
 };
 
+type CronCompletion = {
+  id?: string;
+  lastRun?: {
+    time?: string;
+    success?: boolean;
+    error?: string;
+  };
+};
+
+async function collectCronCompletionDiagnostics(page: Page, cronId: string) {
+  return await page.evaluate(async (id) => {
+    const [cronList, health, snapshot, sessions] = await Promise.all([
+      window.clawx.hostInvoke({
+        id: `runtime-comprehensive-cron-list-diagnostics-${Date.now()}`,
+        module: 'cron',
+        action: 'list',
+      }),
+      window.clawx.hostInvoke({
+        id: `runtime-comprehensive-health-diagnostics-${Date.now()}`,
+        module: 'gateway',
+        action: 'health',
+        payload: { probe: true },
+      }),
+      window.clawx.hostInvoke({
+        id: `runtime-comprehensive-snapshot-diagnostics-${Date.now()}`,
+        module: 'diagnostics',
+        action: 'gatewaySnapshot',
+      }),
+      window.clawx.hostInvoke({
+        id: `runtime-comprehensive-sessions-diagnostics-${Date.now()}`,
+        module: 'sessions',
+        action: 'summaries',
+        payload: {},
+      }),
+    ]);
+    const jobs = Array.isArray(cronList.data) ? cronList.data : [];
+    const runtime = snapshot.data && typeof snapshot.data === 'object'
+      ? (snapshot.data as { runtime?: { ccConnect?: { logTail?: string } } }).runtime
+      : undefined;
+    return {
+      job: jobs.find((job) => job && typeof job === 'object' && (job as { id?: string }).id === id) ?? null,
+      health,
+      sessions,
+      logTail: runtime?.ccConnect?.logTail?.slice(-4_000) ?? '',
+    };
+  }, cronId);
+}
+
+async function waitForCronCompletion(page: Page, cronId: string, timeoutMs: number): Promise<CronCompletion> {
+  const deadline = Date.now() + timeoutMs;
+  let lastListError = 'no completion state observed';
+  while (Date.now() < deadline) {
+    const result = await page.evaluate(async () => {
+      return await window.clawx.hostInvoke({
+        id: `runtime-cron-completion-research-real-comprehensive-${Date.now()}`,
+        module: 'cron',
+        action: 'list',
+      });
+    }) as HostInvokeResult<CronCompletion[]>;
+    if (result.ok && Array.isArray(result.data)) {
+      const job = result.data.find((candidate) => candidate.id === cronId);
+      if (job?.lastRun) {
+        if (!job.lastRun.success) {
+          throw new Error(`cc-connect cron failed: ${job.lastRun.error || 'unknown runtime error'}`);
+        }
+        return job;
+      }
+      lastListError = job ? 'job has not completed' : 'job is absent from cron.list';
+    } else {
+      lastListError = `cron.list failed: ${JSON.stringify(result)}`;
+    }
+    await page.waitForTimeout(1_000);
+  }
+  throw new Error(`cc-connect cron did not complete within ${timeoutMs}ms: ${lastListError}`);
+}
+
 async function realRuntimeBundles(): Promise<{ ccConnectPath: string; codexPath: string } | null> {
   const platformArch = `${process.platform}-${process.arch}`;
   const ccConnectPath = join(
@@ -123,8 +199,8 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
     launchElectronApp,
     homeDir,
     userDataDir,
-  }) => {
-    test.setTimeout(720_000);
+  }, testInfo) => {
+    test.setTimeout(900_000);
     test.skip(process.env.CLAWX_REAL_OAUTH_E2E !== '1', 'Set CLAWX_REAL_OAUTH_E2E=1 with an explicit CLAWX_REAL_CODEX_AUTH_JSON.');
     const bundles = await realRuntimeBundles();
     test.skip(!bundles, 'Run pnpm run bundle:cc-connect:current && pnpm run bundle:codex:current first.');
@@ -621,6 +697,7 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
             enabled: true,
             delivery: { mode: 'none' },
             agentId: 'research',
+            timeoutMins: 3,
           },
         });
       });
@@ -662,28 +739,50 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
       }
       expect(researchCronRun).toMatchObject({ ok: true, data: { success: true } });
 
-      await expect.poll(async () => {
-        return await page.evaluate(async () => {
-          return await window.clawx.hostInvoke({
-            id: 'runtime-history-research-cron-real-comprehensive',
-            module: 'sessions',
-            action: 'history',
-            payload: { sessionKey: 'agent:research:cron:scheduled', limit: 20 },
-          });
+      let completedResearchCron: CronCompletion | undefined;
+      try {
+        completedResearchCron = await waitForCronCompletion(page, researchCronId!, 210_000);
+      } catch (error) {
+        const diagnostics = await collectCronCompletionDiagnostics(page, researchCronId!);
+        await testInfo.attach('research-cron-completion-diagnostics', {
+          body: Buffer.from(JSON.stringify(diagnostics, null, 2)),
+          contentType: 'application/json',
         });
-      }, {
-        timeout: 120_000,
-        intervals: [1_000, 2_000, 5_000],
-      }).toMatchObject({
-        ok: true,
-        data: {
-          success: true,
-          messages: expect.arrayContaining([
-            expect.objectContaining({ role: 'user', content: 'Reply exactly: CLAWX_REAL_RESEARCH_CRON_OK' }),
-            expect.objectContaining({ role: 'assistant' }),
-          ]),
-        },
-      });
+        throw error;
+      }
+      expect(completedResearchCron?.lastRun?.error).toBeUndefined();
+
+      try {
+        await expect.poll(async () => {
+          return await page.evaluate(async () => {
+            return await window.clawx.hostInvoke({
+              id: 'runtime-history-research-cron-real-comprehensive',
+              module: 'sessions',
+              action: 'history',
+              payload: { sessionKey: 'agent:research:cron:scheduled', limit: 20 },
+            });
+          });
+        }, {
+          timeout: 60_000,
+          intervals: [1_000, 2_000, 5_000],
+        }).toMatchObject({
+          ok: true,
+          data: {
+            success: true,
+            messages: expect.arrayContaining([
+              expect.objectContaining({ role: 'user', content: 'Reply exactly: CLAWX_REAL_RESEARCH_CRON_OK' }),
+              expect.objectContaining({ role: 'assistant' }),
+            ]),
+          },
+        });
+      } catch (error) {
+        const diagnostics = await collectCronCompletionDiagnostics(page, researchCronId!);
+        await testInfo.attach('research-cron-history-diagnostics', {
+          body: Buffer.from(JSON.stringify(diagnostics, null, 2)),
+          contentType: 'application/json',
+        });
+        throw error;
+      }
 
       const researchCronDelete = await page.evaluate(async (id) => {
         return await window.clawx.hostInvoke({
