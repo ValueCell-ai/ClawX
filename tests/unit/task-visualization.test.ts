@@ -87,6 +87,23 @@ describe('runtime graph state', () => {
 
     expect(second['run-1'].assistantText).toBe('corrected');
   });
+
+  it('clears a transient assistant preview when the runtime replaces it with empty text', () => {
+    const preview = applyRuntimeEventToRuns({}, {
+      type: 'assistant.delta',
+      runId: 'run-preview',
+      text: 'working draft',
+      replace: true,
+    });
+    const cleared = applyRuntimeEventToRuns(preview, {
+      type: 'assistant.delta',
+      runId: 'run-preview',
+      text: '',
+      replace: true,
+    });
+
+    expect(cleared['run-preview'].assistantText).toBe('');
+  });
 });
 
 describe('deriveTaskSteps', () => {

@@ -110,10 +110,10 @@ export function applyRuntimeEventToRuns(
       break;
     case 'assistant.delta': {
       const incoming = event.text ?? event.delta ?? '';
-      if (incoming) {
-        if (event.replace) {
-          nextRun.assistantText = incoming;
-        } else if (event.text) {
+      if (event.replace) {
+        nextRun.assistantText = incoming;
+      } else if (incoming) {
+        if (event.text) {
           nextRun.assistantText = event.text.startsWith(nextRun.assistantText)
             ? event.text
             : event.text;

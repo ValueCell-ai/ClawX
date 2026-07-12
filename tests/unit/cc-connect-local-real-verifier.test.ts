@@ -231,6 +231,8 @@ describe('cc-connect local real verifier', () => {
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('bridge-media-send-real-bundle');
     expect(COVERAGE_IDS).toContain('bridge-rich-packets-local-diagnostics');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('bridge-rich-packets-local-diagnostics');
+    expect(COVERAGE_IDS).toContain('bridge-rich-progress-real-bundle');
+    expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('bridge-rich-progress-real-bundle');
     expect(COVERAGE_IDS).toContain('bridge-rich-card-action-real-bundle');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('bridge-rich-card-action-real-bundle');
     expect(COVERAGE_IDS).toContain('session-history-parity-local-diagnostics');
@@ -490,7 +492,17 @@ describe('cc-connect local real verifier', () => {
           'BridgePlatform buttons packet to shared assistant message',
           'BridgePlatform preview_start acknowledgement',
           'BridgePlatform update_message assistant delta',
-          'BridgePlatform delete_message no-op stability',
+          'BridgePlatform text preview delete clears transient assistant content',
+        ]),
+      }),
+      expect.objectContaining({
+        id: 'bridge-rich-progress-real-bundle',
+        status: 'pass',
+        evidence: 'pnpm run test:e2e -- tests/e2e/cc-connect-real-bundle-smoke.spec.ts',
+        covers: expect.arrayContaining([
+          'real bundled cc-connect v1.4.1 engine process',
+          'public Bridge preview_start and update_message packets observed in runtime diagnostics',
+          'GUI execution graph and final assistant reply',
         ]),
       }),
       expect.objectContaining({
@@ -687,6 +699,11 @@ describe('cc-connect local real verifier', () => {
         id: 'bridge-rich-packets-local-diagnostics',
         status: 'pass',
         evidence: 'pnpm exec vitest run tests/unit/cc-connect-provider-profile.test.ts tests/unit/cc-connect-runtime-provider.test.ts tests/unit/cc-connect-bridge-adapter.test.ts',
+      }),
+      expect.objectContaining({
+        id: 'bridge-rich-progress-real-bundle',
+        status: 'not-run',
+        evidence: 'Command was not requested.',
       }),
     ]));
   });

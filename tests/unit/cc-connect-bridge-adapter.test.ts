@@ -319,7 +319,15 @@ describe('cc-connect BridgePlatform adapter', () => {
           messageCount += 1;
           if (messageCount === 1) {
             socket.send(JSON.stringify({
+              type: 'preview_start',
+              ref_id: 'text-preview-1',
+              session_key: parsed.session_key,
+              reply_ctx: parsed.reply_ctx,
+              content: 'initial preview text',
+            }));
+            socket.send(JSON.stringify({
               type: 'update_message',
+              preview_handle: 'text-preview-1',
               session_key: parsed.session_key,
               reply_ctx: parsed.reply_ctx,
               content: 'draft preview text',
@@ -332,8 +340,7 @@ describe('cc-connect BridgePlatform adapter', () => {
             socket.send(JSON.stringify({
               type: 'delete_message',
               session_key: parsed.session_key,
-              reply_ctx: parsed.reply_ctx,
-              message_id: 'transient-message',
+              preview_handle: 'text-preview-1',
             }));
             socket.send(JSON.stringify({
               type: 'card',
@@ -373,7 +380,21 @@ describe('cc-connect BridgePlatform adapter', () => {
             type: 'assistant.delta',
             runId: cardRun.runId,
             sessionKey: 'agent:main:main',
+            text: 'initial preview text',
+            replace: true,
+          })],
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'assistant.delta',
+            runId: cardRun.runId,
+            sessionKey: 'agent:main:main',
             text: 'draft preview text',
+            replace: true,
+          })],
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'assistant.delta',
+            runId: cardRun.runId,
+            sessionKey: 'agent:main:main',
+            text: '',
             replace: true,
           })],
           ['chat:message', expect.objectContaining({
@@ -435,6 +456,11 @@ describe('cc-connect BridgePlatform adapter', () => {
           ref_id: 'preview-1',
           preview_handle: 'preview-1',
         }),
+        expect.objectContaining({
+          type: 'preview_ack',
+          ref_id: 'text-preview-1',
+          preview_handle: 'text-preview-1',
+        }),
       ]));
       expect(emitted).not.toEqual(expect.arrayContaining([
         ['chat:message', expect.objectContaining({
@@ -442,6 +468,86 @@ describe('cc-connect BridgePlatform adapter', () => {
           message: expect.objectContaining({ content: 'transient-message' }),
         })],
       ]));
+      await adapter.close();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('routes handle-only text preview updates to the correct concurrent Agent run', async () => {
+    const server = new WebSocketServer({ port: 0 });
+    const port = await new Promise<number>((resolve) => {
+      server.once('listening', () => {
+        const address = server.address();
+        resolve(typeof address === 'object' && address ? address.port : 0);
+      });
+    });
+    const emitted: Array<[string, unknown]> = [];
+    const inbound: Record<string, unknown>[] = [];
+
+    server.on('connection', (socket) => {
+      socket.on('message', (data) => {
+        const parsed = JSON.parse(String(data)) as Record<string, unknown>;
+        if (parsed.type === 'register') {
+          socket.send(JSON.stringify({ type: 'register_ack', ok: true }));
+          return;
+        }
+        if (parsed.type !== 'message') return;
+        inbound.push(parsed);
+        if (inbound.length !== 2) return;
+        for (const [index, message] of inbound.entries()) {
+          const handle = `concurrent-preview-${index + 1}`;
+          socket.send(JSON.stringify({
+            type: 'preview_start',
+            ref_id: handle,
+            session_key: message.session_key,
+            reply_ctx: message.reply_ctx,
+            content: `initial-${index + 1}`,
+          }));
+          socket.send(JSON.stringify({
+            type: 'update_message',
+            preview_handle: handle,
+            content: `updated-${index + 1}`,
+          }));
+        }
+      });
+    });
+
+    try {
+      const adapter = new CcConnectBridgeAdapter({
+        port,
+        token: 'token',
+        project: 'clawx-main',
+        projectForSessionKey: (sessionKey) => sessionKey.includes('research') ? 'clawx-research' : 'clawx-main',
+        emit: ((event: string, payload: unknown) => emitted.push([event, payload])) as never,
+      });
+      const mainRun = await adapter.send({
+        sessionKey: 'agent:main:main',
+        message: 'main preview',
+        idempotencyKey: 'main-preview',
+      });
+      const researchRun = await adapter.send({
+        sessionKey: 'agent:research:main',
+        message: 'research preview',
+        idempotencyKey: 'research-preview',
+      });
+
+      await vi.waitFor(() => {
+        expect(emitted).toEqual(expect.arrayContaining([
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'assistant.delta',
+            runId: mainRun.runId,
+            sessionKey: 'agent:main:main',
+            text: 'updated-1',
+          })],
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'assistant.delta',
+            runId: researchRun.runId,
+            sessionKey: 'agent:research:main',
+            text: 'updated-2',
+          })],
+        ]));
+      });
       await adapter.close();
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -513,6 +619,10 @@ describe('cc-connect BridgePlatform adapter', () => {
               content: progress(completedItems),
             }));
           }
+          socket.send(JSON.stringify({
+            type: 'delete_message',
+            preview_handle: refId,
+          }));
           socket.send(JSON.stringify({
             type: 'reply',
             session_key: parsed.session_key,

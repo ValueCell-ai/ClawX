@@ -345,6 +345,13 @@ Bridge reply closes any still-open tool with
 `meta.inferredFromRunCompletion = true`. Explicit tool results always win and
 are never replaced by the inferred terminal event.
 
+Plain-text previews use the same normalized `assistant.delta` contract. ClawX
+emits the initial `preview_start` immediately, applies each `update_message` as
+an in-place replacement, and clears only that transient assistant text when
+cc-connect sends `delete_message`. Structured progress is intentionally kept as
+semantic thinking/tool lifecycle in the execution graph; deleting cc-connect's
+temporary platform message must not erase the completed tool relationship.
+
 The opt-in real OAuth E2E proves the full path: GUI send -> RuntimeManager ->
 cc-connect Bridge -> cc-connect-owned Codex app-server -> Patch -> progress
 payload -> Main runtime event -> Renderer execution graph. It asserts
@@ -582,8 +589,15 @@ The probe advertises Bridge `card` and `buttons` capabilities. Pinned
 cc-connect v1.4.1 returns `/cron add` as a usable text acknowledgement and the
 `/cron` list as a real card; the test invokes its disable, enable, and delete
 callbacks through `card_action` and verifies each mutation through Host API.
-Standalone button and preview/update/delete-message evidence remain separate
-from this card/action proof. Real media is covered independently: the bundled
+Non-approval standalone-button and upstream-triggered delete-message evidence
+remain separate from this card/action proof. Preview/update now have an
+independent local-real proof: the bundled cc-connect v1.4.1 engine runs against
+a deterministic Codex app-server protocol boundary, emits public
+`preview_start`/`update_message`, and drives the GUI execution graph plus final
+assistant reply. Sanitized evidence is written to
+`artifacts/cc-connect/real-rich-progress-bridge.{json,png}`. This proves the
+runtime/Bridge/UI integration without claiming a real OpenAI credential; real
+OAuth remains a separate gate. Real media is covered independently: the bundled
 `cc-connect send` CLI targets an active managed session and emits public Bridge
 image/file/audio/video packets. The adapter copies decoded bytes under
 `runtimes/cc-connect/media/outgoing/bridge`, session history merges these

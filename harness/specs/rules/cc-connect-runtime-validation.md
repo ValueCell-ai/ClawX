@@ -55,6 +55,10 @@ Rules:
   emulate `at`, `every`, or scheduled prompts in a second scheduler.
 - Tool events must include stable run, turn, event, sequence, session, Agent,
   and project identity. Reconnect/replay must not duplicate cards.
+- Bridge text previews must render the initial `preview_start`, replace content
+  on `update_message`, and clear transient text on `delete_message`. Structured
+  progress deletion must not erase semantic thinking/tool lifecycle from the
+  shared execution graph.
 - Cached input is part of input and reasoning is part of output. Usage totals
   must not add either category twice.
 - When public cc-connect history exposes a turn without counters, Host API must

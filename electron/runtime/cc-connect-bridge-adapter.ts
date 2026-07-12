@@ -70,6 +70,11 @@ type BridgeProgressState = {
   windowFingerprints: string[];
 };
 
+type BridgeTextPreviewState = {
+  runId: string;
+  sessionKey: string;
+};
+
 type BridgeApprovalAction = {
   action: string;
   label?: string;
@@ -380,6 +385,7 @@ export class CcConnectBridgeAdapter {
   private readonly pendingRuns = new Map<string, PendingRun>();
   private readonly abortedRuns = new Map<string, AbortedRun>();
   private readonly progressByHandle = new Map<string, BridgeProgressState>();
+  private readonly textPreviewByHandle = new Map<string, BridgeTextPreviewState>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
 
   constructor(options: BridgeAdapterOptions) {
@@ -441,6 +447,8 @@ export class CcConnectBridgeAdapter {
       });
     }));
     await this.connectInFlight?.catch(() => undefined);
+    this.progressByHandle.clear();
+    this.textPreviewByHandle.clear();
     this.pendingApprovals.clear();
   }
 
@@ -809,7 +817,8 @@ export class CcConnectBridgeAdapter {
     }
     if (message.type === 'preview_start') {
       const handle = String(message.ref_id || randomUUID());
-      this.handleBridgeProgress(message, handle);
+      const handledAsProgress = this.handleBridgeProgress(message, handle);
+      if (!handledAsProgress) this.emitTextPreview(message, handle);
       this.socket?.send(JSON.stringify({
         type: 'preview_ack',
         ref_id: message.ref_id,
@@ -820,13 +829,22 @@ export class CcConnectBridgeAdapter {
     if (message.type === 'update_message') {
       const handle = firstString(message, ['preview_handle', 'previewHandle']);
       if (handle && this.handleBridgeProgress(message, handle)) return;
-      this.emitAssistantDelta({
-        ...message,
-        full_text: typeof message.content === 'string' ? message.content : '',
-      });
+      if (handle) {
+        this.emitTextPreview(message, handle);
+      } else {
+        this.emitAssistantDelta({
+          ...message,
+          full_text: typeof message.content === 'string' ? message.content : '',
+        });
+      }
       return;
     }
-    if (message.type === 'delete_message' || message.type === 'typing_start' || message.type === 'typing_stop') {
+    if (message.type === 'delete_message') {
+      const handle = firstString(message, ['preview_handle', 'previewHandle']);
+      if (handle) this.deletePreview(handle);
+      return;
+    }
+    if (message.type === 'typing_start' || message.type === 'typing_stop') {
       return;
     }
     const toolEventKind = isBridgeToolMessage(message);
@@ -953,6 +971,44 @@ export class CcConnectBridgeAdapter {
       }, 'completed');
     }
     return true;
+  }
+
+  private emitTextPreview(message: Record<string, unknown>, handle: string): void {
+    const known = this.textPreviewByHandle.get(handle);
+    const pending = known ? this.pendingRuns.get(known.runId) : undefined;
+    const resolved = known && pending
+      ? { runId: known.runId, pending }
+      : this.resolvePendingRun(message);
+    if (!resolved || this.abortedRuns.has(resolved.runId)) return;
+    this.textPreviewByHandle.set(handle, {
+      runId: resolved.runId,
+      sessionKey: resolved.pending.sessionKey,
+    });
+    this.emitAssistantDelta({
+      ...message,
+      reply_ctx: resolved.runId,
+      session_key: toCcConnectBridgeSessionKey(resolved.pending.sessionKey),
+      full_text: typeof message.content === 'string' ? message.content : '',
+    });
+  }
+
+  private deletePreview(handle: string): void {
+    const preview = this.textPreviewByHandle.get(handle);
+    if (!preview) return;
+    this.textPreviewByHandle.delete(handle);
+    const pending = this.pendingRuns.get(preview.runId);
+    if (!pending || this.abortedRuns.has(preview.runId)) return;
+    const now = Date.now();
+    pending.seq += 1;
+    this.emitRuntimeEvent('chat:runtime-event', {
+      type: 'assistant.delta',
+      runId: preview.runId,
+      sessionKey: preview.sessionKey,
+      text: '',
+      replace: true,
+      seq: pending.seq,
+      ts: now,
+    });
   }
 
   private findProgressToolIndex(
@@ -1447,6 +1503,9 @@ export class CcConnectBridgeAdapter {
   private clearProgressForRun(runId: string): void {
     for (const [handle, state] of this.progressByHandle.entries()) {
       if (state.runId === runId) this.progressByHandle.delete(handle);
+    }
+    for (const [handle, state] of this.textPreviewByHandle.entries()) {
+      if (state.runId === runId) this.textPreviewByHandle.delete(handle);
     }
   }
 
