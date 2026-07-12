@@ -377,8 +377,8 @@ pnpm run comms:baseline   # Refresh communication baseline snapshot
 pnpm run comms:compare    # Compare replay metrics against baseline thresholds
 pnpm run verify:cc-connect:local-real      # Write a local cc-connect real-validation preflight report
 pnpm run verify:cc-connect:local-real:run  # Run safe local cc-connect real-validation checks and write the report
-pnpm run verify:cc-connect:local-real:oauth # Also run dev cc-connect real OAuth comprehensive smoke when CLAWX_REAL_CODEX_AUTH_JSON is complete and non-expired
-pnpm run verify:cc-connect:local-real:oauth-all # Also run dev and packaged cc-connect real OAuth smokes when CLAWX_REAL_CODEX_AUTH_JSON is complete and non-expired
+pnpm run verify:cc-connect:local-real:oauth # Also run dev cc-connect real OAuth comprehensive smoke when CLAWX_REAL_CODEX_AUTH_JSON has a complete refresh-token set
+pnpm run verify:cc-connect:local-real:oauth-all # Also run dev and packaged cc-connect real OAuth smokes when CLAWX_REAL_CODEX_AUTH_JSON has a complete refresh-token set
 pnpm run verify:cc-connect:local-real:api-key # Run local OpenAI-compatible API-key chat/abort smokes; also run real OpenAI API-key smoke when credentials are available
 pnpm run verify:cc-connect:local-real:feishu # Also run real Feishu/Lark lifecycle smoke when credentials and CLAWX_REAL_CODEX_AUTH_JSON are available
 pnpm run verify:cc-connect:local-real:feishu-inbound # Also run the manual real Feishu/Lark inbound marker smoke when the sandbox tenant fixture is enabled
@@ -387,7 +387,7 @@ pnpm run verify:cc-connect:local-real:all # Run every available local real cc-co
 pnpm run verify:cc-connect:local-real:all-strict # Require all real credentials and runtime parity coverage for release-candidate validation; writes the handoff before failing
 pnpm run verify:cc-connect:local-real:replacement-ready # Require replacement readiness without making missing credentials a separate preflight failure; writes the handoff before failing
 pnpm run verify:cc-connect:local-real:replacement-ready:check # Same readiness gate without overwriting the last report artifacts
-pnpm run verify:cc-connect:local-real:packaged-oauth # Also run packaged cc-connect real OAuth smoke when CLAWX_REAL_CODEX_AUTH_JSON is complete and non-expired
+pnpm run verify:cc-connect:local-real:packaged-oauth # Also run packaged cc-connect real OAuth smoke when CLAWX_REAL_CODEX_AUTH_JSON has a complete refresh-token set
 pnpm run verify:cc-connect:local-real:external-gates:check # Check remaining required external gates without overwriting report artifacts
 pnpm run verify:cc-connect:local-real:external-gates # Run only the remaining required external gates and fail unless all three pass
 pnpm run verify:cc-connect:local-real:handoff # Generate a credential-free handoff checklist for remaining external gates

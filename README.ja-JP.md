@@ -374,8 +374,8 @@ pnpm run comms:baseline   # 通信ベースラインを更新
 pnpm run comms:compare    # リプレイ指標をベースライン閾値と比較
 pnpm run verify:cc-connect:local-real      # ローカル cc-connect 実環境検証の事前レポートを書き出す
 pnpm run verify:cc-connect:local-real:run  # 安全なローカル cc-connect 実環境検証を実行してレポートを書き出す
-pnpm run verify:cc-connect:local-real:oauth # CLAWX_REAL_CODEX_AUTH_JSON が完全かつ未期限切れの場合、開発版 cc-connect の実 OAuth 総合スモークも実行
-pnpm run verify:cc-connect:local-real:oauth-all # CLAWX_REAL_CODEX_AUTH_JSON が完全かつ未期限切れの場合、開発版とパッケージ版 cc-connect の実 OAuth スモークも実行
+pnpm run verify:cc-connect:local-real:oauth # CLAWX_REAL_CODEX_AUTH_JSON に完全な refresh token フィールドがある場合、開発版 cc-connect の実 OAuth 総合スモークも実行
+pnpm run verify:cc-connect:local-real:oauth-all # CLAWX_REAL_CODEX_AUTH_JSON に完全な refresh token フィールドがある場合、開発版とパッケージ版 cc-connect の実 OAuth スモークも実行
 pnpm run verify:cc-connect:local-real:api-key # ローカル OpenAI-compatible API-key chat/abort スモークを実行し、認証情報がある場合は実 OpenAI API-key スモークも実行
 pnpm run verify:cc-connect:local-real:feishu # 認証情報と CLAWX_REAL_CODEX_AUTH_JSON がある場合に実 Feishu/Lark ライフサイクルスモークも実行
 pnpm run verify:cc-connect:local-real:feishu-inbound # サンドボックス tenant fixture が有効な場合に実 Feishu/Lark inbound marker スモークも実行
@@ -384,7 +384,7 @@ pnpm run verify:cc-connect:local-real:all # 利用可能なローカル cc-conne
 pnpm run verify:cc-connect:local-real:all-strict # リリース候補検証では全実認証情報と runtime parity coverage の PASS を必須にし、失敗前にも handoff を書き出す
 pnpm run verify:cc-connect:local-real:replacement-ready # replacement readiness を必須にし、不足認証情報を別の事前失敗にはしない。失敗前にも handoff を書き出す
 pnpm run verify:cc-connect:local-real:replacement-ready:check # 同じ readiness gate を実行し、前回のレポート成果物は上書きしない
-pnpm run verify:cc-connect:local-real:packaged-oauth # CLAWX_REAL_CODEX_AUTH_JSON が完全かつ未期限切れの場合、パッケージ版 cc-connect の実 OAuth スモークも実行
+pnpm run verify:cc-connect:local-real:packaged-oauth # CLAWX_REAL_CODEX_AUTH_JSON に完全な refresh token フィールドがある場合、パッケージ版 cc-connect の実 OAuth スモークも実行
 pnpm run verify:cc-connect:local-real:external-gates:check # 残りの required external gates を非破壊で確認し、レポート成果物は上書きしない
 pnpm run verify:cc-connect:local-real:external-gates # 残りの required external gates のみを実行し、3件すべて PASS の場合だけ成功
 pnpm run verify:cc-connect:local-real:handoff # 残りの外部 gate 向けに認証情報を含まない handoff checklist を生成

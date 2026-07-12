@@ -378,8 +378,8 @@ pnpm run comms:baseline   # 刷新通信基线快照
 pnpm run comms:compare    # 将回放指标与基线阈值对比
 pnpm run verify:cc-connect:local-real      # 写入本地 cc-connect 真实验证前置报告
 pnpm run verify:cc-connect:local-real:run  # 执行安全的本地 cc-connect 真实验证检查并写入报告
-pnpm run verify:cc-connect:local-real:oauth # CLAWX_REAL_CODEX_AUTH_JSON 完整且未过期时额外执行开发版 cc-connect 真实 OAuth 综合冒烟
-pnpm run verify:cc-connect:local-real:oauth-all # CLAWX_REAL_CODEX_AUTH_JSON 完整且未过期时额外执行开发版和打包版 cc-connect 真实 OAuth 冒烟
+pnpm run verify:cc-connect:local-real:oauth # CLAWX_REAL_CODEX_AUTH_JSON 包含完整 refresh token 字段时额外执行开发版 cc-connect 真实 OAuth 综合冒烟
+pnpm run verify:cc-connect:local-real:oauth-all # CLAWX_REAL_CODEX_AUTH_JSON 包含完整 refresh token 字段时额外执行开发版和打包版 cc-connect 真实 OAuth 冒烟
 pnpm run verify:cc-connect:local-real:api-key # 执行本地 OpenAI-compatible API-key chat/abort 冒烟；有真实凭证时额外执行真实 OpenAI API-key 冒烟
 pnpm run verify:cc-connect:local-real:feishu # 有凭证和 CLAWX_REAL_CODEX_AUTH_JSON 时额外执行真实飞书/Lark 生命周期冒烟
 pnpm run verify:cc-connect:local-real:feishu-inbound # 沙箱租户入站 fixture 启用时额外执行真实飞书/Lark inbound marker 冒烟
@@ -388,7 +388,7 @@ pnpm run verify:cc-connect:local-real:all # 执行所有可用的本地 cc-conne
 pnpm run verify:cc-connect:local-real:all-strict # 发布候选验证要求所有真实凭证和 runtime parity 覆盖都通过；失败前也会写入交接清单
 pnpm run verify:cc-connect:local-real:replacement-ready # 要求 replacement readiness 通过，但不把缺失凭证单独作为前置失败；失败前也会写入交接清单
 pnpm run verify:cc-connect:local-real:replacement-ready:check # 同样检查 readiness，但不覆盖上一次报告产物
-pnpm run verify:cc-connect:local-real:packaged-oauth # CLAWX_REAL_CODEX_AUTH_JSON 完整且未过期时额外执行打包版 cc-connect 真实 OAuth 冒烟
+pnpm run verify:cc-connect:local-real:packaged-oauth # CLAWX_REAL_CODEX_AUTH_JSON 包含完整 refresh token 字段时额外执行打包版 cc-connect 真实 OAuth 冒烟
 pnpm run verify:cc-connect:local-real:external-gates:check # 非破坏性检查剩余 required external gates，不覆盖报告产物
 pnpm run verify:cc-connect:local-real:external-gates # 只运行剩余 required external gates，三项全部通过才成功
 pnpm run verify:cc-connect:local-real:handoff # 生成不含凭证的剩余外部门禁交接清单

@@ -535,6 +535,18 @@ function parseAuthExpiryTimestamp(value) {
   return undefined;
 }
 
+function parseJwtExpiryTimestamp(value) {
+  if (typeof value !== 'string') return undefined;
+  const segments = value.split('.');
+  if (segments.length !== 3 || !segments[1]) return undefined;
+  try {
+    const payload = JSON.parse(Buffer.from(segments[1], 'base64url').toString('utf8'));
+    return parseAuthExpiryTimestamp(payload?.exp);
+  } catch {
+    return undefined;
+  }
+}
+
 function codexAuthExpirySummary(value, nowMs = Date.now()) {
   const expirations = [];
   const visit = (node) => {
@@ -542,6 +554,10 @@ function codexAuthExpirySummary(value, nowMs = Date.now()) {
     for (const [key, child] of Object.entries(node)) {
       if (/^(expires_at|expiresAt|expiry|expires|expiration|expiration_time|expirationTime)$/i.test(key)) {
         const ts = parseAuthExpiryTimestamp(child);
+        if (ts !== undefined) expirations.push(ts);
+      }
+      if (/^(access_token|id_token)$/i.test(key)) {
+        const ts = parseJwtExpiryTimestamp(child);
         if (ts !== undefined) expirations.push(ts);
       }
       if (child && typeof child === 'object') visit(child);
@@ -1273,17 +1289,15 @@ function missingPreconditions({
   packagedExecutableExists,
 }) {
   const missing = [];
-  if (!authImportExplicit || !authSummary.exists || !authSummary.completeTokens || authSummary.expired) {
+  if (!authImportExplicit || !authSummary.exists || !authSummary.completeTokens) {
     missing.push({
       id: 'codex-oauth-auth-json',
       status: 'missing',
-      required: ['CLAWX_REAL_CODEX_AUTH_JSON with complete non-expired tokens'],
+      required: ['CLAWX_REAL_CODEX_AUTH_JSON with a complete refresh-token set'],
       nextCommand: 'pnpm run verify:cc-connect:local-real:oauth',
-      note: authSummary.expired
-        ? 'The explicit Codex auth.json appears expired. Refresh Codex OAuth before running real OAuth validation.'
-        : authSummary.exists && !authSummary.completeTokens
+      note: authSummary.exists && !authSummary.completeTokens
           ? `The explicit Codex auth.json is missing required token fields: ${(authSummary.missingTokenKeys ?? []).join(', ')}. Refresh Codex OAuth before running real OAuth validation.`
-        : 'Point CLAWX_REAL_CODEX_AUTH_JSON at the auth.json that this verifier may explicitly import into an isolated managed CODEX_HOME; set it to ~/.codex/auth.json only when that import is intentional.',
+          : 'Point CLAWX_REAL_CODEX_AUTH_JSON at the auth.json that this verifier may explicitly import into an isolated managed CODEX_HOME; set it to ~/.codex/auth.json only when that import is intentional.',
     });
   }
   if (!openAiConfigured) {
@@ -1341,7 +1355,7 @@ async function buildReport(args, effectiveEnv, envFileSummaries) {
   const authSummary = await readCodexAuthSummary(authPath);
   const defaultAuthSummary = explicitAuthPath ? await readCodexAuthSummary(defaultCodexAuthPath()) : authSummary;
   const authImportExplicit = Boolean(explicitAuthPath);
-  const authImportAllowed = authImportExplicit && authSummary.exists && authSummary.completeTokens && !authSummary.expired;
+  const authImportAllowed = authImportExplicit && authSummary.exists && authSummary.completeTokens;
   const codexAuthOpenAiApiKey = await readCodexAuthOpenAiApiKey(authPath);
   const openAiApiKey = resolveOpenAiApiKeyEnv(effectiveEnv, {
     source: explicitAuthPath ? 'CLAWX_REAL_CODEX_AUTH_JSON OPENAI_API_KEY' : 'default Codex auth.json OPENAI_API_KEY',
@@ -1420,7 +1434,9 @@ async function buildReport(args, effectiveEnv, envFileSummaries) {
       'codex-oauth-auth-json',
       authImportAllowed ? 'pass' : 'skipped',
       authImportAllowed
-        ? 'Explicit Codex auth.json is available for real OAuth validation.'
+        ? authSummary.expired
+          ? 'Explicit Codex auth.json has a complete refresh-token set; real OAuth validation must prove Codex can refresh it inside the isolated managed CODEX_HOME.'
+          : 'Explicit Codex auth.json is available for real OAuth validation.'
         : 'CLAWX_REAL_CODEX_AUTH_JSON is missing or incomplete; real OAuth validation will not copy user-global Codex auth implicitly.',
       {
         source: explicitAuthPath ? 'CLAWX_REAL_CODEX_AUTH_JSON' : 'default-codex-auth-json-observed-only',
@@ -1952,7 +1968,7 @@ function buildCoverage(report) {
       covers: [
         'explicit auth import requirement',
         'complete Codex token field requirement',
-        'expired auth rejection',
+        'expired access-token refresh through isolated real execution',
         'sanitized expiry metadata',
         'missing token key reporting without token values',
       ],

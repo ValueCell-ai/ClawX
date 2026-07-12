@@ -253,6 +253,11 @@ Credential rules:
   cc-connect/Codex owns refresh-token rotation there; a failed refresh is
   surfaced on that Agent's runtime turn and can be recovered with browser
   re-login, without changing another Agent's credentials.
+- Validation may import a complete token set with an expired access or ID token
+  into an isolated managed `CODEX_HOME`. The verifier records only sanitized JWT
+  expiry metadata; only a successful real cc-connect -> Codex turn proves that
+  refresh-token rotation worked. Passing the static precondition alone is not
+  refresh evidence.
 - Proxy variables are supplied to cc-connect and inherited by its children;
   localhost, `127.0.0.1`, and `::1` are always added to `NO_PROXY`.
 

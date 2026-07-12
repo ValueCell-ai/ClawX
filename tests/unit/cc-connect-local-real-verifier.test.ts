@@ -418,7 +418,7 @@ describe('cc-connect local real verifier', () => {
         covers: expect.arrayContaining([
           'explicit auth import requirement',
           'complete Codex token field requirement',
-          'expired auth rejection',
+          'expired access-token refresh through isolated real execution',
         ]),
       }),
       expect.objectContaining({
@@ -1084,7 +1084,7 @@ describe('cc-connect local real verifier', () => {
     })).toEqual([
       expect.objectContaining({
         id: 'codex-oauth-auth-json',
-        required: ['CLAWX_REAL_CODEX_AUTH_JSON with complete non-expired tokens'],
+        required: ['CLAWX_REAL_CODEX_AUTH_JSON with a complete refresh-token set'],
         nextCommand: 'pnpm run verify:cc-connect:local-real:oauth',
       }),
     ]);
@@ -1092,6 +1092,11 @@ describe('cc-connect local real verifier', () => {
 
   it('summarizes Codex auth expiry without exposing token values', () => {
     const now = Date.parse('2026-06-21T12:00:00.000Z');
+    const jwt = (expiresAt: string) => [
+      Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url'),
+      Buffer.from(JSON.stringify({ exp: Math.floor(Date.parse(expiresAt) / 1000) })).toString('base64url'),
+      'signature',
+    ].join('.');
 
     expect(codexAuthExpirySummary({
       tokens: {
@@ -1123,9 +1128,25 @@ describe('cc-connect local real verifier', () => {
       expiresAt: null,
       expired: false,
     });
+
+    const encodedToken = jwt('2026-06-21T10:00:00.000Z');
+    const jwtSummary = codexAuthExpirySummary({
+      tokens: {
+        access_token: encodedToken,
+        id_token: 'malformed-token',
+        refresh_token: 'must-not-appear',
+      },
+    }, now);
+    expect(jwtSummary).toEqual({
+      expiryStatus: 'expired',
+      expiresAt: '2026-06-21T10:00:00.000Z',
+      expired: true,
+    });
+    expect(JSON.stringify(jwtSummary)).not.toContain(encodedToken);
+    expect(JSON.stringify(jwtSummary)).not.toContain('must-not-appear');
   });
 
-  it('treats clearly expired Codex auth as a missing real OAuth precondition', () => {
+  it('allows a complete expired Codex auth set so real execution can prove refresh', () => {
     expect(missingPreconditions({
       authSummary: {
         exists: true,
@@ -1140,13 +1161,7 @@ describe('cc-connect local real verifier', () => {
       feishuInboundConfigured: true,
       appPath: '/tmp/ClawX.app',
       packagedExecutableExists: true,
-    })).toEqual([
-      expect.objectContaining({
-        id: 'codex-oauth-auth-json',
-        required: ['CLAWX_REAL_CODEX_AUTH_JSON with complete non-expired tokens'],
-        note: expect.stringContaining('appears expired'),
-      }),
-    ]);
+    })).toEqual([]);
   });
 
   it('treats incomplete Codex auth tokens as a missing real OAuth precondition', () => {
@@ -1168,7 +1183,7 @@ describe('cc-connect local real verifier', () => {
     })).toEqual([
       expect.objectContaining({
         id: 'codex-oauth-auth-json',
-        required: ['CLAWX_REAL_CODEX_AUTH_JSON with complete non-expired tokens'],
+        required: ['CLAWX_REAL_CODEX_AUTH_JSON with a complete refresh-token set'],
         note: expect.stringContaining('account_id, id_token'),
       }),
     ]);
