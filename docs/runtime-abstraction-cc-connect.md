@@ -442,10 +442,23 @@ per-turn payload. ClawX must not parse that display string or reach into
 cc-connect's internal agent/session state. This is why upgrading to the beta or
 enabling `reply_footer` does not close the contract.
 
+Upstream PR [cc-connect#1428](https://github.com/chenhg5/cc-connect/pull/1428)
+proposes an opt-in Bridge `usage` observer. It is useful directionally, but its
+current head is conflicting and is not included in either published version.
+Its unversioned event contains `session_key`, `turn_id`, input/output/cache
+counts and user metadata, but omits `project`, provider/model identity,
+reasoning tokens, durable history semantics and replay after reconnect. Those
+omissions prevent reliable multi-Agent attribution and historical dashboard
+reconstruction, so ClawX must not implement production parity against that
+unmerged schema. A future release may use the observer design provided the
+published contract addresses these fields or exposes an equivalent durable
+Management history field.
+
 Completion requires a pinned cc-connect release to expose a versioned usage
-event or history field containing project, session/turn, model, and token
-counts. ClawX must then map that public payload to `RuntimeUsageRecord`, add a
-real API-key/OAuth oracle comparison, and remove the checked-in E2E `fixme`.
+event or history field containing project, session/turn, provider/model, and
+token counts, plus documented reconnect/replay behavior or durable history.
+ClawX must then map that public payload to `RuntimeUsageRecord`, add a real
+API-key/OAuth oracle comparison, and remove the checked-in E2E `fixme`.
 
 `cachedInputTokens` is a subset of input and `reasoningTokens` is a subset of
 output. If total is absent, calculate `input + output`; never add cache again.

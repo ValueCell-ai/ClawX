@@ -73,8 +73,8 @@ const RESIDUAL_VALIDATION_GAPS = [
     priority: 'required',
     status: 'upstream-blocked',
     requiredForLocalReplacementGate: true,
-    nextCommand: 'Upgrade to a pinned cc-connect release with a public per-turn usage API/event, then implement and verify RuntimeUsageRecord mapping.',
-    reason: 'cc-connect v1.4.1 exposes no versioned Bridge or Management usage payload. ClawX intentionally returns no cc-connect usage instead of reading private session or Codex transcript files.',
+    nextCommand: 'Upgrade to a pinned cc-connect release with a versioned, attributable, replayable per-turn usage API/event, then implement and verify RuntimeUsageRecord mapping.',
+    reason: 'cc-connect v1.4.1 and v1.5.0-beta.1 expose no versioned Bridge or Management usage payload. Upstream PR #1428 proposes an unmerged observer, but omits project/provider/model attribution and durable reconnect/replay semantics. ClawX intentionally returns missing cc-connect usage instead of parsing footers or reading private session/Codex transcript files.',
   },
   {
     id: 'real-scheduled-prompt-channel-cron-delivery',
@@ -747,7 +747,7 @@ function readinessNextCommand(id) {
     case 'scheduled-cron-delivery-local-bundle':
       return 'pnpm run verify:cc-connect:local-real:scheduled-cron';
     case 'token-usage-contract-local-diagnostics':
-      return 'Upgrade to a pinned cc-connect release with a public per-turn usage API/event, then implement RuntimeUsageRecord mapping.';
+      return 'Upgrade to a pinned cc-connect release with a versioned, attributable, replayable per-turn usage API/event, then implement RuntimeUsageRecord mapping.';
     case 'packaged-oauth-runtime-smoke':
       return 'pnpm run verify:cc-connect:local-real:packaged-oauth';
     default:
@@ -934,7 +934,7 @@ function buildReplacementContract(coverage, replacementReadiness, validationGaps
           ...item,
           status: 'partial',
           evidence: `Private-data boundary diagnostics: ${usage.status} (${coverageEvidence(usage)}). Public per-turn cc-connect usage remains upstream-blocked.`,
-          nextAction: 'Upgrade to a pinned cc-connect release with a public per-turn usage API/event, then implement RuntimeUsageRecord mapping.',
+          nextAction: 'Upgrade to a pinned cc-connect release with a versioned, attributable, replayable per-turn usage API/event, then implement RuntimeUsageRecord mapping.',
         };
       }
       case 'real-validation-opt-in':
@@ -1146,11 +1146,18 @@ function resolveOpenAiApiKeyEnv(env, codexAuthCandidate = {}) {
 function runCommand(command, args, options = {}) {
   const startedAt = Date.now();
   return new Promise((resolveResult) => {
+    let outputTail = '';
+    const appendOutput = (stream, chunk) => {
+      stream.write(chunk);
+      outputTail = `${outputTail}${String(chunk)}`.slice(-512 * 1024);
+    };
     const child = spawn(command, args, {
       cwd: root,
-      stdio: 'inherit',
+      stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...(options.baseEnv || process.env), ...(options.env || {}) },
     });
+    child.stdout?.on('data', (chunk) => appendOutput(process.stdout, chunk));
+    child.stderr?.on('data', (chunk) => appendOutput(process.stderr, chunk));
     child.on('error', (error) => {
       resolveResult({
         command: commandLabel(command, args),
@@ -1162,16 +1169,35 @@ function runCommand(command, args, options = {}) {
       });
     });
     child.on('exit', (code, signal) => {
+      const classification = classifyCommandExit(code, outputTail);
       resolveResult({
         command: commandLabel(command, args),
-        status: code === 0 ? 'pass' : 'fail',
+        status: classification.status,
         exitCode: code,
         signal,
         durationMs: Date.now() - startedAt,
+        ...(classification.reason ? { reason: classification.reason } : {}),
         coverageAliases: options.coverageAliases ?? [],
       });
     });
   });
+}
+
+function classifyCommandExit(code, output) {
+  if (code !== 0) return { status: 'fail', reason: '' };
+  const ansiPattern = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, 'g');
+  const summaryOutput = output.replace(ansiPattern, '');
+  const passed = Array.from(summaryOutput.matchAll(/^\s*(\d+)\s+passed(?:\s|$)/gim))
+    .reduce((total, match) => total + Number(match[1]), 0);
+  const skipped = Array.from(summaryOutput.matchAll(/^\s*(\d+)\s+skipped(?:\s|$)/gim))
+    .reduce((total, match) => total + Number(match[1]), 0);
+  if (skipped > 0 && passed === 0) {
+    return {
+      status: 'skipped',
+      reason: `Test command exited successfully but executed no passing tests (${skipped} skipped).`,
+    };
+  }
+  return { status: 'pass', reason: '' };
 }
 
 function summarizeCommandAttempts(command, args, attempts) {
@@ -1266,7 +1292,7 @@ function missingPreconditions({
     missing.push({
       id: 'feishu-env',
       status: 'missing',
-      required: ['CLAWX_REAL_FEISHU_APP_ID', 'CLAWX_REAL_FEISHU_APP_SECRET'],
+      required: ['CLAWX_REAL_FEISHU_APP_ID', 'CLAWX_REAL_FEISHU_APP_SECRET', 'CLAWX_REAL_FEISHU_ADMIN_FROM'],
       optional: ['CLAWX_REAL_FEISHU_DOMAIN', 'CLAWX_REAL_FEISHU_ACCOUNT_ID', 'CLAWX_REAL_FEISHU_ALLOW_FROM'],
       nextCommand: 'pnpm run verify:cc-connect:local-real:feishu',
       note: 'Set Feishu/Lark app credentials in process env or an untracked and gitignored local env file; see .env.cc-connect.local.example for fields.',
@@ -1325,10 +1351,13 @@ async function buildReport(args, effectiveEnv, envFileSummaries) {
     redactEnvStatus(effectiveEnv, 'CLAWX_REAL_FEISHU_INBOUND_E2E'),
     redactEnvStatus(effectiveEnv, 'CLAWX_REAL_FEISHU_APP_ID'),
     redactEnvStatus(effectiveEnv, 'CLAWX_REAL_FEISHU_APP_SECRET'),
+    redactEnvStatus(effectiveEnv, 'CLAWX_REAL_FEISHU_ADMIN_FROM'),
+    redactEnvStatus(effectiveEnv, 'CLAWX_REAL_FEISHU_ALLOW_FROM'),
     redactEnvStatus(effectiveEnv, 'CLAWX_REAL_FEISHU_INBOUND_MARKER'),
   ];
   const feishuConfigured = Boolean(effectiveEnv.CLAWX_REAL_FEISHU_APP_ID?.trim())
-    && Boolean(effectiveEnv.CLAWX_REAL_FEISHU_APP_SECRET?.trim());
+    && Boolean(effectiveEnv.CLAWX_REAL_FEISHU_APP_SECRET?.trim())
+    && Boolean(effectiveEnv.CLAWX_REAL_FEISHU_ADMIN_FROM?.trim());
   const feishuRequested = effectiveEnv.CLAWX_REAL_FEISHU_E2E === '1' || args.includeFeishu;
   const feishuInboundRequested = effectiveEnv.CLAWX_REAL_FEISHU_INBOUND_E2E === '1' || args.includeFeishuInbound;
   const feishuInboundConfigured = feishuConfigured && authImportAllowed && effectiveEnv.CLAWX_REAL_FEISHU_INBOUND_E2E === '1';
@@ -1600,9 +1629,7 @@ async function buildReport(args, effectiveEnv, envFileSummaries) {
   }
   if (args.run && args.includeFeishu) {
     if (
-      effectiveEnv.CLAWX_REAL_FEISHU_APP_ID?.trim()
-      && effectiveEnv.CLAWX_REAL_FEISHU_APP_SECRET?.trim()
-      && authImportAllowed
+      feishuConfigured && authImportAllowed
     ) {
       commands.push(await runCommand('pnpm', ['run', 'test:e2e:cc-connect:real-feishu'], {
         baseEnv: effectiveEnv,
@@ -1618,8 +1645,7 @@ async function buildReport(args, effectiveEnv, envFileSummaries) {
   }
   if (args.run && args.includeFeishuInbound) {
     if (
-      effectiveEnv.CLAWX_REAL_FEISHU_APP_ID?.trim()
-      && effectiveEnv.CLAWX_REAL_FEISHU_APP_SECRET?.trim()
+      feishuConfigured
       && authImportAllowed
       && effectiveEnv.CLAWX_REAL_FEISHU_INBOUND_E2E === '1'
     ) {
@@ -1963,7 +1989,7 @@ function buildCoverage(report) {
         || tokenUsageUnit.reason
         || tokenUsageE2e.reason,
       reason: tokenUsageUnit.status === 'pass' && tokenUsageE2e.status === 'pass'
-        ? 'Boundary diagnostics pass, but cc-connect v1.4.1 has no public per-turn usage API or event.'
+        ? 'Boundary diagnostics pass, but published cc-connect releases have no versioned, attributable, replayable per-turn usage API or event; unmerged upstream PR #1428 is insufficient for production parity.'
         : [tokenUsageUnit.reason, tokenUsageE2e.reason].filter(Boolean).join('; '),
     },
     {
@@ -2465,6 +2491,7 @@ export {
   buildReplacementReadiness,
   buildValidationGaps,
   analyzeCcConnectCliSurface,
+  classifyCommandExit,
   codexAuthExpirySummary,
   extraLocalRealEnvFiles,
   isPathInsideRoot,

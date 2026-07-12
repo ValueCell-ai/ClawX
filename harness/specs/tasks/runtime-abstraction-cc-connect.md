@@ -71,7 +71,8 @@ acceptance:
   - cc-connect project work_dir always resolves from the Agent workspace registry and never from process.cwd or the source checkout.
   - Native cron-expression jobs and manual run are shared between GUI and Channel; at/every remain capability-aware and non-mutating because cc-connect v1.4.1 does not expose equivalent schedule kinds.
   - Pinned cc-connect Bridge capabilities match its public protocol; ClawX opts into progress-card payloads and maps only events emitted by cc-connect, with an explicitly marked terminal inference when a final reply closes a tool lacking a result entry.
-  - Token usage maps public runtime payloads without double-counting cached input or reasoning output; absent cc-connect counters produce explicit `missing` turn records and never transcript-derived estimates.
+  - Token usage maps only a published, versioned runtime payload with project, session/turn, provider/model, counters, and reconnect/replay or durable-history semantics; absent cc-connect counters produce explicit `missing` turn records and never footer- or transcript-derived estimates.
+  - The unmerged cc-connect usage-observer proposal in upstream PR #1428 is tracked as design evidence, not treated as a supported API, because it lacks release provenance, project/provider/model attribution, and durable replay semantics.
   - Real OAuth, real external API-key, Feishu inbound/reply, native Channel Cron, Doctor, workspace, and packaged evidence paths are recorded in a sanitized report.
   - pnpm harness validate --spec harness/specs/tasks/runtime-abstraction-cc-connect.md passes.
   - pnpm harness run --spec harness/specs/tasks/runtime-abstraction-cc-connect.md passes or records explicit external-credential/release-platform gaps without claiming replacement readiness.

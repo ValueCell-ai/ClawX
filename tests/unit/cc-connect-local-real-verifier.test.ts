@@ -11,6 +11,7 @@ import {
   buildReplacementContract,
   buildReplacementReadiness,
   buildValidationGaps,
+  classifyCommandExit,
   codexAuthExpirySummary,
   coverageRecords,
   extraLocalRealEnvFiles,
@@ -47,6 +48,25 @@ function coverageRows(statusById: Record<string, string>) {
 }
 
 describe('cc-connect local real verifier', () => {
+  it('does not treat an all-skipped Playwright command as real passing evidence', () => {
+    expect(classifyCommandExit(0, '  2 skipped\n')).toEqual({
+      status: 'skipped',
+      reason: 'Test command exited successfully but executed no passing tests (2 skipped).',
+    });
+    expect(classifyCommandExit(0, '  3 passed\n  1 skipped\n')).toEqual({
+      status: 'pass',
+      reason: '',
+    });
+    expect(classifyCommandExit(1, '  2 skipped\n')).toEqual({
+      status: 'fail',
+      reason: '',
+    });
+    expect(classifyCommandExit(0, '\u001B[33m  2 skipped\u001B[39m\n')).toEqual({
+      status: 'skipped',
+      reason: 'Test command exited successfully but executed no passing tests (2 skipped).',
+    });
+  });
+
   it('parses required coverage ids from CLI flags', () => {
     expect(parseArgs(['--run', '--external-gates-only', '--include-feishu-inbound', '--require-coverage=all', '--require-replacement-ready', '--write-handoff', '--no-write'])).toMatchObject({
       run: true,
@@ -925,6 +945,11 @@ describe('cc-connect local real verifier', () => {
       }),
       expect.objectContaining({
         id: 'feishu-env',
+        required: [
+          'CLAWX_REAL_FEISHU_APP_ID',
+          'CLAWX_REAL_FEISHU_APP_SECRET',
+          'CLAWX_REAL_FEISHU_ADMIN_FROM',
+        ],
         nextCommand: 'pnpm run verify:cc-connect:local-real:feishu',
       }),
     ]));
@@ -1487,6 +1512,11 @@ describe('cc-connect local real verifier', () => {
         'coverage-feishu-live-inbound-delivery',
         'upstream-public-token-usage',
       ]);
+    const publicUsageGap = gaps.find((gap) => gap.id === 'upstream-public-token-usage');
+    expect(publicUsageGap?.reason).toContain('v1.5.0-beta.1');
+    expect(publicUsageGap?.reason).toContain('PR #1428');
+    expect(publicUsageGap?.reason).toContain('project/provider/model');
+    expect(publicUsageGap?.reason).toContain('reconnect/replay');
     expect(gaps.filter((gap) => gap.requiredForLocalReplacementGate === false).map((gap) => gap.id))
       .toEqual(expect.arrayContaining(RESIDUAL_VALIDATION_GAPS
         .filter((gap) => !gap.requiredForLocalReplacementGate)
