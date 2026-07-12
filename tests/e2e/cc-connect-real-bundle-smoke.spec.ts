@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { createConnection, createServer, type Server } from 'node:net';
 import { join } from 'node:path';
@@ -165,6 +165,7 @@ async function seedCanonicalRuntimeConfig(userDataDir: string, config: Record<st
 test.describe('cc-connect real runtime bundle smoke', () => {
   test('probes the public Management and Bridge session APIs exposed by the bundled runtime', async ({
     launchElectronApp,
+    homeDir,
     userDataDir,
   }) => {
     const bundles = await realRuntimeBundles();
@@ -173,6 +174,20 @@ test.describe('cc-connect real runtime bundle smoke', () => {
     await waitForPortClosed(9820);
 
     await seedCcConnectRuntimeSettings(userDataDir);
+    const mainWorkspace = join(userDataDir, 'workspaces', 'agents', 'main');
+    const researchWorkspace = join(userDataDir, 'workspaces', 'agents', 'research');
+    await mkdir(join(homeDir, '.openclaw'), { recursive: true });
+    await mkdir(mainWorkspace, { recursive: true });
+    await mkdir(researchWorkspace, { recursive: true });
+    await writeFile(join(homeDir, '.openclaw', 'openclaw.json'), JSON.stringify({
+      agents: {
+        defaults: { workspace: mainWorkspace },
+        list: [
+          { id: 'main', name: 'Main Agent', default: true, workspace: mainWorkspace },
+          { id: 'research', name: 'Research Agent', workspace: researchWorkspace },
+        ],
+      },
+    }, null, 2), 'utf8');
     const app = await launchElectronApp({
       skipSetup: true,
       env: {
@@ -210,6 +225,89 @@ test.describe('cc-connect real runtime bundle smoke', () => {
       });
       expect(managementSessions.status).toBe(200);
       await expect(managementSessions.json()).resolves.toMatchObject({ ok: true });
+
+      const managementProviders = await fetch(`http://127.0.0.1:${managementPort}/api/v1/projects/clawx-main/providers`, {
+        headers: { Authorization: `Bearer ${managementToken}` },
+      });
+      expect(managementProviders.status).toBe(200);
+      await expect(managementProviders.json()).resolves.toMatchObject({ ok: true });
+
+      const managementModels = await fetch(`http://127.0.0.1:${managementPort}/api/v1/projects/clawx-main/models`, {
+        headers: { Authorization: `Bearer ${managementToken}` },
+      });
+      expect(managementModels.status).toBe(200);
+      await expect(managementModels.json()).resolves.toMatchObject({ ok: true });
+
+      const researchProviders = await fetch(`http://127.0.0.1:${managementPort}/api/v1/projects/clawx-research/providers`, {
+        headers: { Authorization: `Bearer ${managementToken}` },
+      });
+      expect(researchProviders.status).toBe(200);
+      await expect(researchProviders.json()).resolves.toMatchObject({ ok: true });
+
+      const researchModels = await fetch(`http://127.0.0.1:${managementPort}/api/v1/projects/clawx-research/models`, {
+        headers: { Authorization: `Bearer ${managementToken}` },
+      });
+      expect(researchModels.status).toBe(200);
+      await expect(researchModels.json()).resolves.toMatchObject({ ok: true });
+
+      const statusBeforeProfiles = await page.evaluate(async () => window.clawx.hostInvoke({
+        id: 'runtime-status-before-public-profiles',
+        module: 'gateway',
+        action: 'status',
+      }));
+      const providerProfileResult = await page.evaluate(async () => window.clawx.hostInvoke({
+        id: 'runtime-public-provider-profile',
+        module: 'gateway',
+        action: 'rpc',
+        payload: { method: 'providers.profile' },
+      }));
+      const modelProfileResult = await page.evaluate(async () => window.clawx.hostInvoke({
+        id: 'runtime-public-model-profile',
+        module: 'gateway',
+        action: 'rpc',
+        payload: { method: 'models.profile' },
+      }));
+      const statusAfterProfiles = await page.evaluate(async () => window.clawx.hostInvoke({
+        id: 'runtime-status-after-public-profiles',
+        module: 'gateway',
+        action: 'status',
+      }));
+      for (const result of [providerProfileResult, modelProfileResult]) {
+        expect(result).toMatchObject({
+          ok: true,
+          data: {
+            success: true,
+            runtimeState: 'running',
+            projects: expect.arrayContaining([
+              expect.objectContaining({ projectName: 'clawx-main' }),
+              expect.objectContaining({ projectName: 'clawx-research' }),
+            ]),
+          },
+        });
+      }
+      expect(statusAfterProfiles).toMatchObject({
+        ok: true,
+        data: expect.objectContaining({
+          pid: (statusBeforeProfiles as { data?: { pid?: number } }).data?.pid,
+        }),
+      });
+      const providerProjects = (providerProfileResult as {
+        data?: { projects?: Array<{ projectName?: string }> };
+      }).data?.projects?.map((project) => project.projectName).filter(Boolean) ?? [];
+      const profileEvidenceDir = join(process.cwd(), 'artifacts', 'cc-connect');
+      await mkdir(profileEvidenceDir, { recursive: true });
+      await writeFile(join(profileEvidenceDir, 'real-management-profiles.json'), `${JSON.stringify({
+        schema: 'clawx-cc-connect-management-profile-evidence',
+        version: 1,
+        runtimeKind: 'cc-connect',
+        projects: providerProjects,
+        providersEndpoint: true,
+        modelsEndpoint: true,
+        hostApiProviderProfile: providerProfileResult.ok === true,
+        hostApiModelProfile: modelProfileResult.ok === true,
+        pidPreserved: (statusBeforeProfiles as { data?: { pid?: number } }).data?.pid
+          === (statusAfterProfiles as { data?: { pid?: number } }).data?.pid,
+      }, null, 2)}\n`, 'utf8');
 
       const createResponse = await fetch(`http://127.0.0.1:${bridgePort}/bridge/sessions`, {
         method: 'POST',
@@ -1329,10 +1427,54 @@ test.describe('cc-connect real runtime bundle smoke', () => {
           cwd: expect.stringContaining(join('runtimes', 'cc-connect')),
           stdout: expect.any(String),
           stderr: expect.any(String),
+          auditPath: expect.stringContaining(join('runtimes', 'cc-connect', 'audits', 'runtime-')),
+          audit: expect.objectContaining({
+            schema: 'clawx-cc-connect-runtime-doctor',
+            runtimeKind: 'cc-connect',
+            ccConnect: expect.objectContaining({ auditGenerated: false }),
+            codex: expect.objectContaining({ report: expect.any(Object) }),
+          }),
         }),
       });
       expect((doctorResult as { data?: { error?: string; timedOut?: boolean } }).data?.timedOut).not.toBe(true);
       expect((doctorResult as { data?: { error?: string } }).data?.error || '').not.toContain('spawn');
+      const doctorData = (doctorResult as {
+        data?: {
+          auditPath?: string;
+          stdout?: string;
+          audit?: {
+            schema?: string;
+            ccConnect?: { success?: boolean; auditGenerated?: boolean };
+            codex?: { success?: boolean; exitCode?: number | null; report?: unknown };
+          };
+        };
+      }).data;
+      expect(doctorData?.auditPath).toBeTruthy();
+      expect(doctorData?.auditPath?.startsWith(join(userDataDir, 'runtimes', 'cc-connect', 'audits'))).toBe(true);
+      expect(doctorData?.auditPath).not.toContain(join(userDataDir, '.cc-connect'));
+      const auditText = await readFile(doctorData!.auditPath!, 'utf8');
+      expect(JSON.parse(auditText)).toMatchObject({
+        schema: 'clawx-cc-connect-runtime-doctor',
+        ccConnect: { auditGenerated: false },
+        codex: { report: expect.any(Object) },
+      });
+      expect((await stat(doctorData!.auditPath!)).mode & 0o777).toBe(0o600);
+      expect(doctorData?.stdout).toContain('## Codex doctor');
+      const doctorEvidenceDir = join(process.cwd(), 'artifacts', 'cc-connect');
+      await mkdir(doctorEvidenceDir, { recursive: true });
+      await writeFile(join(doctorEvidenceDir, 'real-runtime-doctor.json'), `${JSON.stringify({
+        schema: 'clawx-cc-connect-runtime-doctor-evidence',
+        version: 1,
+        runtimeKind: 'cc-connect',
+        managedAuditPath: doctorData?.auditPath?.startsWith(join(userDataDir, 'runtimes', 'cc-connect', 'audits')) === true,
+        auditMode: (await stat(doctorData!.auditPath!)).mode & 0o777,
+        ccConnect: doctorData?.audit?.ccConnect,
+        codex: {
+          success: doctorData?.audit?.codex?.success,
+          exitCode: doctorData?.audit?.codex?.exitCode,
+          reportPresent: Boolean(doctorData?.audit?.codex?.report),
+        },
+      }, null, 2)}\n`, 'utf8');
     } finally {
       await closeElectronApp(app);
     }

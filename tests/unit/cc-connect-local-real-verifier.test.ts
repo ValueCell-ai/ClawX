@@ -446,6 +446,12 @@ describe('cc-connect local real verifier', () => {
         id: 'runtime-management-bundle-local-diagnostics',
         status: 'pass',
         evidence: 'pnpm run test:e2e -- tests/e2e/cc-connect-real-bundle-smoke.spec.ts',
+        covers: expect.arrayContaining([
+          'Management API sessions/providers/models across managed projects',
+          'read-only Host API provider/model profiles without runtime restart',
+          'provider/model Management response field allowlist without secret pass-through',
+          'managed cc-connect user-isolation plus Codex doctor JSON audit',
+        ]),
       }),
       expect.objectContaining({
         id: 'bridge-media-packets-local-diagnostics',

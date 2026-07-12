@@ -18,6 +18,8 @@ export type OpenClawDoctorResult = HostSuccess & {
   cwd: string;
   durationMs: number;
   timedOut?: boolean;
+  auditPath?: string;
+  audit?: JsonRecord;
 };
 export type OpenClawDoctorPayload = { mode: OpenClawDoctorMode };
 

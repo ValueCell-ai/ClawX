@@ -75,6 +75,7 @@ type CcConnectRuntimeProviderOptions = {
 
 const CC_CONNECT_DOCTOR_TIMEOUT_MS = 60_000;
 const MAX_DOCTOR_OUTPUT_BYTES = 10 * 1024 * 1024;
+const CC_CONNECT_DOCTOR_AUDIT_SCHEMA = 'clawx-cc-connect-runtime-doctor';
 const CLAWX_PROJECT_NAME = ccConnectProjectNameForAgent('main');
 const CC_CONNECT_BRIDGE_PORT = 9810;
 const CC_CONNECT_PORT_SCAN_LIMIT = 50;
@@ -309,6 +310,71 @@ function appendBoundedOutput(current: string, currentBytes: number, data: Buffer
   return {
     output: current + (remaining > 0 ? chunk.subarray(0, remaining).toString() : ''),
     bytes: MAX_DOCTOR_OUTPUT_BYTES,
+  };
+}
+
+function doctorOutput(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Buffer.isBuffer(value)) return value.toString();
+  return '';
+}
+
+function doctorExitCode(error: unknown): number | null {
+  return isRecord(error) && typeof error.code === 'number' ? error.code : null;
+}
+
+function execDoctorCommand(
+  file: string,
+  args: string[],
+  options: Parameters<typeof execFile>[2],
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, options, (error, stdout, stderr) => {
+      if (error) {
+        Object.assign(error, { stdout, stderr });
+        reject(error);
+        return;
+      }
+      resolve({ stdout: doctorOutput(stdout), stderr: doctorOutput(stderr) });
+    });
+  });
+}
+
+async function readDoctorJson(path: string): Promise<Record<string, unknown> | undefined> {
+  try {
+    const value = JSON.parse(await readFile(path, 'utf8')) as unknown;
+    return isRecord(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function publicManagementProviders(value: unknown) {
+  const body = isRecord(value) ? value : {};
+  const providers = Array.isArray(body.providers)
+    ? body.providers.flatMap((entry) => {
+        if (!isRecord(entry) || typeof entry.name !== 'string') return [];
+        return [{
+          name: entry.name,
+          ...(typeof entry.active === 'boolean' ? { active: entry.active } : {}),
+          ...(typeof entry.model === 'string' ? { model: entry.model } : {}),
+          ...(typeof entry.base_url === 'string' ? { baseUrl: entry.base_url } : {}),
+        }];
+      })
+    : [];
+  return {
+    providers,
+    ...(typeof body.active_provider === 'string' ? { activeProvider: body.active_provider } : {}),
+  };
+}
+
+function publicManagementModels(value: unknown) {
+  const body = isRecord(value) ? value : {};
+  return {
+    models: Array.isArray(body.models)
+      ? body.models.filter((model): model is string => typeof model === 'string')
+      : [],
+    ...(typeof body.current === 'string' ? { current: body.current } : {}),
   };
 }
 
@@ -651,7 +717,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
         return await this.syncProviderProfile(toProviderSyncPayload(params)) as T;
       case 'providers.profile':
       case 'models.profile':
-        return await this.syncProviderProfile(toProviderSyncPayload(params)) as T;
+        return await this.getProviderModelProfile() as T;
       case 'skills.status':
         return await this.syncSkillsForCurrentProjects() as T;
       case 'skills.update':
@@ -916,7 +982,12 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     const cwd = getCcConnectManagedDir();
     const configPath = await this.ensureManagedConfig(null, this.resolveCodexPath());
     const binaryPath = assertCcConnectBinaryPath(this.binaryPath);
-    const args = ['doctor', 'user-isolation', '--config', configPath];
+    const auditDir = join(cwd, 'audits');
+    await mkdir(auditDir, { recursive: true });
+    const auditId = `${Date.now()}-${randomUUID()}`;
+    const nativeAuditPath = join(auditDir, `cc-connect-${auditId}.json`);
+    const auditPath = join(auditDir, `runtime-${auditId}.json`);
+    const args = ['doctor', 'user-isolation', '--config', configPath, '--out', nativeAuditPath];
     const command = `cc-connect ${args.join(' ')}`;
 
     if (mode === 'fix') {
@@ -933,7 +1004,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       };
     }
 
-    return await new Promise<OpenClawDoctorResult>((resolve) => {
+    const nativeResult = await new Promise<OpenClawDoctorResult>((resolve) => {
       const child = spawn(binaryPath, args, {
         cwd,
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -1008,6 +1079,106 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
         });
       });
     });
+
+    const profile = this.currentProjectProfileByAgent.get('main') ?? this.currentProjectProfiles[0];
+    const codexPath = this.resolveCodexPath();
+    const codexArgs = ['doctor', '--json'];
+    const codexExecution: {
+      stdout: string;
+      stderr: string;
+      success: boolean;
+      exitCode: number | null;
+      error?: string;
+    } = await (async () => {
+      try {
+        const result = await execDoctorCommand(codexPath, codexArgs, {
+          cwd,
+          env: prependCodexPathDir({
+            ...process.env,
+            ...(profile?.env ?? {}),
+            CODEX_HOME: profile?.codexHomeDir ?? getCcConnectCodexHomeDir(),
+          }, this.codexBundle),
+          encoding: 'utf8',
+          maxBuffer: MAX_DOCTOR_OUTPUT_BYTES,
+          timeout: CC_CONNECT_DOCTOR_TIMEOUT_MS,
+        });
+        return {
+          stdout: doctorOutput(result.stdout),
+          stderr: doctorOutput(result.stderr),
+          success: true,
+          exitCode: 0,
+        };
+      } catch (error) {
+        return {
+          stdout: isRecord(error) ? doctorOutput(error.stdout) : '',
+          stderr: isRecord(error) ? doctorOutput(error.stderr) : '',
+          success: false,
+          exitCode: doctorExitCode(error),
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    })();
+    const { stdout: codexStdout, stderr: codexStderr, exitCode: codexExitCode } = codexExecution;
+    let codexSuccess = codexExecution.success;
+    let codexError = codexExecution.error;
+
+    let codexReport: Record<string, unknown> | undefined;
+    try {
+      const parsed = JSON.parse(codexStdout) as unknown;
+      if (!isRecord(parsed)) throw new Error('Codex doctor did not return a JSON object');
+      codexReport = parsed;
+    } catch {
+      if (!codexError) codexError = 'Codex doctor did not return a JSON object';
+      codexSuccess = false;
+    }
+
+    const nativeAudit = await readDoctorJson(nativeAuditPath);
+    const audit = {
+      schema: CC_CONNECT_DOCTOR_AUDIT_SCHEMA,
+      version: 1,
+      generatedAt: new Date().toISOString(),
+      runtimeKind: this.kind,
+      managedConfigPath: configPath,
+      ccConnect: {
+        success: nativeResult.success,
+        exitCode: nativeResult.exitCode,
+        auditGenerated: Boolean(nativeAudit),
+        ...(nativeAudit ? { auditPath: nativeAuditPath, report: nativeAudit } : {}),
+      },
+      codex: {
+        success: codexSuccess,
+        exitCode: codexExitCode,
+        ...(codexReport ? { report: codexReport } : {}),
+        ...(codexError ? { error: codexError } : {}),
+      },
+    } satisfies Record<string, unknown>;
+    await writeFile(auditPath, `${JSON.stringify(audit, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+    await chmod(auditPath, 0o600);
+
+    const stdout = [
+      '## cc-connect doctor',
+      nativeResult.stdout.trim() || '(empty)',
+      '## Codex doctor',
+      codexStdout.trim() || '(empty)',
+    ].join('\n');
+    const stderr = [
+      nativeResult.stderr.trim(),
+      codexStderr.trim(),
+    ].filter(Boolean).join('\n');
+    const errors = [nativeResult.error, codexError].filter(Boolean);
+
+    return {
+      ...nativeResult,
+      success: nativeResult.success && codexSuccess,
+      exitCode: nativeResult.success ? codexExitCode : nativeResult.exitCode,
+      stdout,
+      stderr,
+      command: `${command}; codex ${codexArgs.join(' ')}`,
+      durationMs: Date.now() - startedAt,
+      auditPath,
+      audit,
+      ...(errors.length ? { error: errors.join('; ') } : {}),
+    };
   }
 
   private async ensureManagedConfig(providerProfile: CodexProviderProfile | null, codexPath: string): Promise<string> {
@@ -1080,6 +1251,39 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     return {
       success: true,
       profile: toPublicCodexProviderProfile(profile),
+    };
+  }
+
+  private async getProviderModelProfile() {
+    const profile = this.currentProviderProfile ?? await this.loadAndApplyProviderProfile({ reason: 'profile-read' });
+    if (this.status.state !== 'running') {
+      return {
+        success: true,
+        profile: toPublicCodexProviderProfile(profile),
+        runtimeState: this.status.state,
+        projects: [],
+      };
+    }
+
+    const projectNames = await this.listCcConnectCronProjectNames();
+    const projects = await Promise.all(projectNames.map(async (projectName) => {
+      const encodedProject = encodeURIComponent(projectName);
+      const [providers, models] = await Promise.all([
+        this.managementRequest<unknown>('GET', `/projects/${encodedProject}/providers`),
+        this.managementRequest<unknown>('GET', `/projects/${encodedProject}/models`),
+      ]);
+      return {
+        projectName,
+        providers: publicManagementProviders(providers),
+        models: publicManagementModels(models),
+      };
+    }));
+
+    return {
+      success: true,
+      profile: toPublicCodexProviderProfile(profile),
+      runtimeState: this.status.state,
+      projects,
     };
   }
 

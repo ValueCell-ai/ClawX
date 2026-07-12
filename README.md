@@ -222,7 +222,7 @@ Notes:
 - ClawX also syncs the proxy to OpenClaw's Telegram channel config when Telegram is enabled.
 - Gateway restarts preserve an existing Telegram channel proxy if ClawX proxy is currently disabled.
 - To explicitly clear Telegram channel proxy from OpenClaw config, save proxy settings with proxy disabled.
-- In **Settings → Advanced → Developer**, Runtime Doctor runs `openclaw doctor --json` for OpenClaw or bundled `cc-connect doctor user-isolation` for cc-connect. Doctor Fix remains OpenClaw-only.
+- In **Settings → Advanced → Developer**, Runtime Doctor runs `openclaw doctor --json` for OpenClaw. For cc-connect it combines bundled `cc-connect doctor user-isolation` with bundled `codex doctor --json` and stores a mode-0600 audit under the ClawX-managed runtime directory. Doctor Fix remains OpenClaw-only.
 - On packaged Windows builds, the bundled `openclaw` CLI/TUI runs via the shipped `node.exe` entrypoint to keep terminal input behavior stable.
 
 ---

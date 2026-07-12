@@ -260,6 +260,17 @@ Initial verified matrix: OpenAI API key, OpenAI Codex OAuth, OpenAI-compatible
 Responses, and Ollama. Unsupported providers return a stable capability error
 without mutating OpenClaw config.
 
+`providers.profile` and `models.profile` are read-only runtime operations. While
+cc-connect is running they return the ClawX-managed public profile together
+with each managed project's public Management API `/providers` and `/models`
+state. They never reuse the sync path and therefore never restart cc-connect.
+The adapter maps only provider name, active state, model, base URL, model list,
+and current model; unknown Management fields and secret-like fields never cross
+the Host API.
+Provider/model writes remain ClawX-owned: ClawX updates the account-scoped
+Codex profile and cc-connect project config, then reloads or restarts through
+the runtime provider.
+
 ## 6. Workspace, skills, and plugins
 
 New Agents use `~/.clawx/workspaces/agents/<agent-id>`. If an existing OpenClaw
@@ -602,9 +613,18 @@ redacted managed config. Renderer never reads the process pipe or log path
 directly.
 
 cc-connect Doctor runs native `doctor user-isolation` against managed config
-and stores its JSON audit. `doctor.fix` is unsupported in cc-connect mode and
-is hidden/disabled. Runtime-neutral Settings strings must not report an
-OpenClaw Doctor result for cc-connect.
+with an explicit managed `--out` path, then runs bundled `codex doctor --json`
+inside the main project's managed `CODEX_HOME`. The adapter writes a
+mode-0600 composite JSON audit under `runtimes/cc-connect/audits`; it never uses
+the native default `~/.cc-connect/audits`. A Codex project without
+`run_as_user` legitimately produces no native user-isolation file, which is
+recorded as `auditGenerated: false` rather than treated as missing evidence.
+The Codex Doctor subprocess is a provider-owned diagnostic exception only: it
+accepts no prompt, creates no chat/session/tool run, and cannot replace or
+bypass BridgePlatform delivery.
+`doctor.fix` is unsupported in cc-connect mode and is hidden/disabled.
+Runtime-neutral Settings strings must not report an OpenClaw Doctor result for
+cc-connect.
 
 cc-connect stdout, stderr, structured events, and doctor audits are captured
 under `~/.clawx/logs/runtimes/cc-connect` with rotation and pre-write secret

@@ -387,6 +387,85 @@ describe('CcConnectRuntimeProvider', () => {
     });
   });
 
+  it('reads provider and model profiles from every live cc-connect project without restarting', async () => {
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    readOpenClawConfigMock.mockResolvedValue({
+      agents: {
+        list: [
+          { id: 'main', default: true },
+          { id: 'research' },
+        ],
+      },
+    });
+    const bridgeAdapter = createBridgeAdapterMock();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      expect(init?.method).toBe('GET');
+      const projectName = url.includes('clawx-research') ? 'clawx-research' : 'clawx-main';
+      if (url.endsWith('/providers')) {
+        return new Response(JSON.stringify({
+          ok: true,
+          data: {
+            providers: [{
+              name: `provider-${projectName}`,
+              active: true,
+              model: `model-${projectName}`,
+              api_key: 'must-not-cross-host-api',
+            }],
+            active_provider: `provider-${projectName}`,
+            token: 'must-not-cross-host-api',
+          },
+        }), { status: 200 });
+      }
+      if (url.endsWith('/models')) {
+        return new Response(JSON.stringify({
+          ok: true,
+          data: { models: [`model-${projectName}`], current: `model-${projectName}` },
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ ok: false, error: `unexpected ${url}` }), { status: 500 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexPath: join(tempDir, 'codex'),
+      bridgeAdapter: bridgeAdapter as never,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+      providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
+    });
+    const child = createChild();
+    forkMock.mockReturnValueOnce(child);
+    const startPromise = provider.start();
+    await vi.waitFor(() => expect(forkMock).toHaveBeenCalledOnce());
+    child.emit('spawn');
+    await startPromise;
+
+    await expect(provider.rpc('providers.profile')).resolves.toMatchObject({
+      success: true,
+      runtimeState: 'running',
+      profile: expect.objectContaining({ providerId: 'ollama-local' }),
+      projects: [
+        expect.objectContaining({
+          projectName: 'clawx-main',
+          providers: expect.objectContaining({ activeProvider: 'provider-clawx-main' }),
+          models: expect.objectContaining({ current: 'model-clawx-main' }),
+        }),
+        expect.objectContaining({
+          projectName: 'clawx-research',
+          providers: expect.objectContaining({ activeProvider: 'provider-clawx-research' }),
+          models: expect.objectContaining({ current: 'model-clawx-research' }),
+        }),
+      ],
+    });
+    const publicResult = await provider.rpc('models.profile');
+    expect(JSON.stringify(publicResult)).not.toContain('must-not-cross-host-api');
+    expect(forkMock).toHaveBeenCalledOnce();
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+
   it('configures different cc-connect projects with isolated OAuth account launchers', async () => {
     readOpenClawConfigMock.mockResolvedValue({
       agents: {
@@ -2618,6 +2697,14 @@ describe('CcConnectRuntimeProvider', () => {
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
     const child = createChild();
     forkMock.mockReturnValueOnce(child);
+    execFileMock.mockImplementation((_file, args, _options, callback) => {
+      if (args[0] === 'doctor') {
+        expect(args).toEqual(['doctor', '--json']);
+        callback(null, JSON.stringify({ status: 'ok', checks: [] }), '');
+        return;
+      }
+      callback(null, '', '');
+    });
 
     const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
     const provider = new CcConnectRuntimeProvider({
@@ -2629,22 +2716,74 @@ describe('CcConnectRuntimeProvider', () => {
     child.writeStdout('doctor ok\n');
     child.emit('exit', 0);
 
-    await expect(resultPromise).resolves.toMatchObject({
+    const result = await resultPromise;
+    expect(execFileMock).toHaveBeenCalledWith(
+      join(tempDir, 'codex'),
+      ['doctor', '--json'],
+      expect.objectContaining({
+        cwd: join(tempDir, 'runtimes', 'cc-connect'),
+      }),
+      expect.any(Function),
+    );
+    expect(result).toMatchObject({
       mode: 'diagnose',
       success: true,
       exitCode: 0,
       stdout: expect.stringContaining('doctor ok\n'),
       command: expect.stringContaining('doctor user-isolation'),
+      auditPath: expect.stringContaining(join('runtimes', 'cc-connect', 'audits', 'runtime-')),
+      audit: expect.objectContaining({
+        schema: 'clawx-cc-connect-runtime-doctor',
+        runtimeKind: 'cc-connect',
+        ccConnect: expect.objectContaining({ success: true, auditGenerated: false }),
+        codex: expect.objectContaining({
+          success: true,
+          report: { status: 'ok', checks: [] },
+        }),
+      }),
     });
-    expect(forkMock).toHaveBeenCalledWith(binaryPath, [
+    expect(forkMock).toHaveBeenCalledWith(binaryPath, expect.arrayContaining([
       'doctor',
       'user-isolation',
       '--config',
       join(tempDir, 'runtimes', 'cc-connect', 'config.toml'),
-    ], expect.objectContaining({
+      '--out',
+    ]), expect.objectContaining({
       cwd: join(tempDir, 'runtimes', 'cc-connect'),
       stdio: ['ignore', 'pipe', 'pipe'],
     }));
+    await expect(readFile(result.auditPath!, 'utf8')).resolves.toContain('clawx-cc-connect-runtime-doctor');
+    expect((await stat(result.auditPath!)).mode & 0o777).toBe(0o600);
+  });
+
+  it('fails Doctor when Codex returns JSON that is not an object', async () => {
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const child = createChild();
+    forkMock.mockReturnValueOnce(child);
+    execFileMock.mockImplementation((_file, args, _options, callback) => {
+      callback(null, args[0] === 'doctor' ? '[]' : '', '');
+    });
+
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexPath: join(tempDir, 'codex'),
+    });
+    const resultPromise = provider.runDoctor('diagnose');
+    await vi.waitFor(() => expect(forkMock).toHaveBeenCalledOnce());
+    child.emit('exit', 0);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      success: false,
+      error: 'Codex doctor did not return a JSON object',
+      audit: expect.objectContaining({
+        codex: expect.objectContaining({
+          success: false,
+          error: 'Codex doctor did not return a JSON object',
+        }),
+      }),
+    });
   });
 
   it('returns a stable unsupported result for cc-connect doctor fix', async () => {
