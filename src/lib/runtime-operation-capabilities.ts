@@ -11,7 +11,9 @@ export function isRuntimeOperationSupported(
   status: Pick<GatewayStatus, 'operationCapabilities'> | null | undefined,
   method: string,
 ): boolean {
-  return getRuntimeOperationCapability(status, method)?.support !== 'unsupported';
+  const operations = status?.operationCapabilities;
+  if (!operations) return true;
+  return method in operations && operations[method]?.support !== 'unsupported';
 }
 
 export function getUnsupportedRuntimeOperation(
@@ -27,7 +29,10 @@ export function assertRuntimeOperationSupported(
   method: string,
 ): void {
   const unsupported = getUnsupportedRuntimeOperation(status, method);
-  if (!unsupported) return;
+  if (!unsupported) {
+    if (!status?.operationCapabilities || method in status.operationCapabilities) return;
+    throw new Error(`Runtime operation ${method} is not declared by the selected runtime.`);
+  }
   const detail = unsupported.notes ? ` ${unsupported.notes}` : '';
   throw new Error(`Runtime operation ${method} is unavailable for the selected runtime.${detail}`);
 }

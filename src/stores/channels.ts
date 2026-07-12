@@ -142,6 +142,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   },
 
   addChannel: async (params) => {
+    assertRuntimeOperationSupported(useGatewayStore.getState().status, 'channels.add');
     try {
       const result = await useGatewayStore.getState().rpc<Channel>('channels.add', params);
 
@@ -240,6 +241,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   },
 
   requestQrCode: async (channelType) => {
+    assertRuntimeOperationSupported(useGatewayStore.getState().status, 'channels.requestQr');
     return await useGatewayStore.getState().rpc<{ qrCode: string; sessionId: string }>(
       'channels.requestQr',
       { type: toOpenClawChannelType(channelType) },

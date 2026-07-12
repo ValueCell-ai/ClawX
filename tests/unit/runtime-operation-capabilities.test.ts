@@ -13,6 +13,22 @@ describe('runtime operation capability helpers', () => {
     expect(() => assertRuntimeOperationSupported(undefined, 'cron.run')).not.toThrow();
   });
 
+  it('blocks undeclared operations after the runtime publishes its operation contract', () => {
+    const status: Pick<GatewayStatus, 'operationCapabilities'> = {
+      operationCapabilities: {
+        'cron.run': {
+          capability: 'cron',
+          support: 'native',
+          notes: 'Uses runtime cron API.',
+        },
+      },
+    };
+
+    expect(isRuntimeOperationSupported(status, 'cron.create')).toBe(false);
+    expect(() => assertRuntimeOperationSupported(status, 'cron.create'))
+      .toThrow('Runtime operation cron.create is not declared');
+  });
+
   it('returns the declared operation support entry', () => {
     const status: Pick<GatewayStatus, 'operationCapabilities'> = {
       operationCapabilities: {

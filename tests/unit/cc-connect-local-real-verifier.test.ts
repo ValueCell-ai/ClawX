@@ -239,6 +239,7 @@ describe('cc-connect local real verifier', () => {
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).toContain('chat-abort-local-openai-compatible');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).toContain('codex-oauth-lifecycle-local-diagnostics');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).toContain('codex-oauth-host-api-lifecycle-local');
+    expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).toContain('operation-capabilities-local-diagnostics');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).toContain('feishu-live-inbound-delivery');
   });
 
@@ -332,6 +333,10 @@ describe('cc-connect local real verifier', () => {
                 status: 'pass',
               },
               {
+                command: 'pnpm exec vitest run tests/unit/runtime-rpc-contract.test.ts tests/unit/runtime-operation-capabilities.test.ts tests/unit/channel-store-operation-capabilities.test.ts',
+                status: 'pass',
+              },
+              {
                 command: 'pnpm run test:e2e:cc-connect:codex-oauth-lifecycle',
                 status: 'pass',
               },
@@ -415,6 +420,16 @@ describe('cc-connect local real verifier', () => {
           'Electron Host API providers.importCodexOAuth',
           'provider OAuth secret cleanup',
           'token redaction in Host API responses and public provider profile',
+        ]),
+      }),
+      expect.objectContaining({
+        id: 'operation-capabilities-local-diagnostics',
+        status: 'pass',
+        evidence: 'pnpm exec vitest run tests/unit/runtime-rpc-contract.test.ts tests/unit/runtime-operation-capabilities.test.ts tests/unit/channel-store-operation-capabilities.test.ts && pnpm run test:e2e -- tests/e2e/cc-connect-real-bundle-smoke.spec.ts',
+        covers: expect.arrayContaining([
+          'renderer fail-closed behavior for undeclared operations after status publication',
+          'channel add and QR entry points stop before runtime RPC when explicitly unsupported',
+          'real bundled cc-connect operation capabilities exposed through runtime status',
         ]),
       }),
       expect.objectContaining({

@@ -31,6 +31,7 @@ const COVERAGE_IDS = [
   'codex-oauth-lifecycle-local-diagnostics',
   'codex-oauth-host-api-lifecycle-local',
   'provider-model-profile-local-diagnostics',
+  'operation-capabilities-local-diagnostics',
   'token-usage-contract-local-diagnostics',
   'runtime-management-bundle-local-diagnostics',
   'bridge-media-packets-local-diagnostics',
@@ -55,6 +56,7 @@ const REPLACEMENT_REQUIRED_COVERAGE_IDS = [
   'real-spec-compile-and-skip-paths',
   'codex-oauth-lifecycle-local-diagnostics',
   'codex-oauth-host-api-lifecycle-local',
+  'operation-capabilities-local-diagnostics',
   'chat-abort-local-openai-compatible',
   'token-usage-contract-local-diagnostics',
   'oauth-core-runtime-parity',
@@ -1513,6 +1515,14 @@ async function buildReport(args, effectiveEnv, envFileSummaries) {
       'exec',
       'vitest',
       'run',
+      'tests/unit/runtime-rpc-contract.test.ts',
+      'tests/unit/runtime-operation-capabilities.test.ts',
+      'tests/unit/channel-store-operation-capabilities.test.ts',
+    ], { baseEnv: effectiveEnv }));
+    commands.push(await runCommand('pnpm', [
+      'exec',
+      'vitest',
+      'run',
       'tests/unit/cc-connect-bridge-adapter.test.ts',
     ], { baseEnv: effectiveEnv }));
     commands.push(await runCommand('pnpm', [
@@ -1843,6 +1853,7 @@ function buildCoverage(report) {
   const compile = commandCoverage(commands, 'tests/e2e/cc-connect-real-openai-api-key.spec.ts');
   const providerProfile = commandCoverage(commands, 'tests/unit/cc-connect-provider-profile.test.ts');
   const runtimeProviderUnit = commandCoverage(commands, 'tests/unit/cc-connect-runtime-provider.test.ts');
+  const operationCapabilitiesUnit = commandCoverage(commands, 'tests/unit/runtime-rpc-contract.test.ts');
   const oauthHostApiLifecycle = commandCoverage(commands, 'test:e2e:cc-connect:codex-oauth-lifecycle');
   const verifierUnit = commandCoverage(commands, 'tests/unit/cc-connect-local-real-verifier.test.ts');
   const tokenUsageUnit = commandCoverage(commands, 'tests/unit/token-usage-scan.test.ts');
@@ -1971,6 +1982,27 @@ function buildCoverage(report) {
       ],
       evidence: providerProfile.command || providerProfile.reason,
       reason: providerProfile.reason,
+    },
+    {
+      id: 'operation-capabilities-local-diagnostics',
+      status: operationCapabilitiesUnit.status === 'pass' && runtimeManagementBundle.status === 'pass'
+        ? 'pass'
+        : operationCapabilitiesUnit.status === 'fail' || runtimeManagementBundle.status === 'fail'
+          ? 'fail'
+          : operationCapabilitiesUnit.status === 'not-run' && runtimeManagementBundle.status === 'not-run'
+            ? 'not-run'
+            : 'skipped',
+      covers: [
+        'OpenClaw proxy and cc-connect native/unsupported operation declarations',
+        'cc-connect compatibility alias declarations',
+        'renderer fail-closed behavior for undeclared operations after status publication',
+        'channel add and QR entry points stop before runtime RPC when explicitly unsupported',
+        'real bundled cc-connect operation capabilities exposed through runtime status',
+      ],
+      evidence: [operationCapabilitiesUnit.command, runtimeManagementBundle.command].filter(Boolean).join(' && ')
+        || operationCapabilitiesUnit.reason
+        || runtimeManagementBundle.reason,
+      reason: [operationCapabilitiesUnit.reason, runtimeManagementBundle.reason].filter(Boolean).join('; '),
     },
     {
       id: 'token-usage-contract-local-diagnostics',

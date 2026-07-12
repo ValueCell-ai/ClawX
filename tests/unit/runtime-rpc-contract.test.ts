@@ -16,7 +16,10 @@ const expectedCcConnectNativeMethods = [
   'sessions.list',
   'chat.history',
   'sessions.delete',
+  'session.delete',
+  'chat.session.delete',
   'sessions.rename',
+  'session.rename',
   'providers.sync',
   'providers.profile',
   'skills.status',
@@ -28,8 +31,10 @@ const expectedCcConnectNativeMethods = [
   'runtime.controlUi',
   'cron.list',
   'cron.create',
+  'cron.add',
   'cron.update',
   'cron.delete',
+  'cron.remove',
   'cron.toggle',
   'cron.run',
   'doctor.run',
@@ -49,6 +54,14 @@ describe('runtime RPC contract', () => {
     }
 
     expect(byMethod.get('doctor.memory.status')).toMatchObject({
+      runtime: 'cc-connect',
+      support: 'unsupported',
+    });
+    expect(byMethod.get('channels.add')).toMatchObject({
+      runtime: 'cc-connect',
+      support: 'unsupported',
+    });
+    expect(byMethod.get('channels.requestQr')).toMatchObject({
       runtime: 'cc-connect',
       support: 'unsupported',
     });

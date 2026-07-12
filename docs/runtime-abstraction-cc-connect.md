@@ -184,6 +184,11 @@ The whole runtime is restarted only as a disconnected-Bridge fallback when the
 stop command cannot be delivered. Settings displays degraded and unsupported
 operations separately from top-level capability availability.
 
+Before a runtime status has published operation capabilities, renderer helpers
+retain compatibility with legacy Gateway status. Once the operation map is
+present, any undeclared method is treated as unsupported; this makes contract
+drift visible instead of allowing an unreviewed runtime call to pass through.
+
 OpenClaw-specific auth, proxy mutation, Doctor Fix, Skills implementation,
 Dreams, memory repair, and Control UI remain inside the OpenClaw adapter.
 Shared services must not call `GatewayManager` or write `~/.openclaw` when
