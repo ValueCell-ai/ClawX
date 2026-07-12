@@ -46,7 +46,7 @@ type AbortedRun = {
   abortedAt: number;
 };
 
-type BridgeMediaKind = 'image' | 'file' | 'audio';
+type BridgeMediaKind = 'image' | 'file' | 'audio' | 'video';
 
 type BridgeToolEventKind = 'started' | 'updated' | 'completed' | 'command-output' | 'patch-completed';
 
@@ -316,6 +316,10 @@ function mimeTypeForBridgeMedia(kind: BridgeMediaKind, message: Record<string, u
   if (kind === 'audio') {
     const format = firstString(message, ['format']);
     return format ? `audio/${format.replace(/^\./, '')}` : 'audio/mpeg';
+  }
+  if (kind === 'video') {
+    const format = firstString(message, ['format']);
+    return format ? `video/${format.replace(/^\./, '')}` : 'video/mp4';
   }
   return 'application/octet-stream';
 }
@@ -697,6 +701,7 @@ export class CcConnectBridgeAdapter {
             'image',
             'file',
             'audio',
+            'video',
             'card',
             'buttons',
             'typing',
@@ -855,7 +860,7 @@ export class CcConnectBridgeAdapter {
       void this.finishRun(message, typeof message.content === 'string' ? message.content : '');
       return;
     }
-    if (message.type === 'image' || message.type === 'file' || message.type === 'audio') {
+    if (message.type === 'image' || message.type === 'file' || message.type === 'audio' || message.type === 'video') {
       void this.finishMediaRun(message, message.type);
       return;
     }
@@ -1227,7 +1232,7 @@ export class CcConnectBridgeAdapter {
     const mimeType = mimeTypeForBridgeMedia(kind, message);
     const fileName = sanitizeFileName(
       firstString(message, ['file_name', 'fileName', 'name', 'filename'])
-        || `${kind}.${extensionForMimeType(mimeType, kind === 'audio' ? 'mp3' : 'bin')}`,
+        || `${kind}.${extensionForMimeType(mimeType, kind === 'audio' ? 'mp3' : kind === 'video' ? 'mp4' : 'bin')}`,
     );
     const filePath = firstString(message, ['path', 'file_path', 'filePath', 'local_path', 'localPath']);
     const url = firstString(message, ['url', 'file_url', 'fileUrl']);

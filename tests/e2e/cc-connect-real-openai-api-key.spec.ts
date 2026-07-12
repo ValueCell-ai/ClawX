@@ -1,7 +1,8 @@
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createConnection } from 'node:net';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
@@ -422,6 +423,8 @@ test.describe('cc-connect real OpenAI API key runtime smoke', () => {
       },
     });
     const port = await listen(server);
+    const shortDataRoot = join(process.platform === 'win32' ? tmpdir() : '/tmp', `cx-${process.pid}-${Date.now().toString(36)}`);
+    await symlink(userDataDir, shortDataRoot, process.platform === 'win32' ? 'junction' : 'dir');
 
     const skillDir = join(homeDir, '.openclaw', 'skills', 'clawx-local-proof');
     await mkdir(skillDir, { recursive: true });
@@ -473,8 +476,8 @@ test.describe('cc-connect real OpenAI API key runtime smoke', () => {
     const app = await launchElectronApp({
       skipSetup: true,
       env: {
-        CLAWX_DATA_HOME: userDataDir,
-        CLAWX_USER_DATA_DIR: join(userDataDir, 'system', 'electron'),
+        CLAWX_DATA_HOME: shortDataRoot,
+        CLAWX_USER_DATA_DIR: join(shortDataRoot, 'system', 'electron'),
         CLAWX_CC_CONNECT_PATH: bundles!.ccConnectPath,
         CLAWX_CODEX_PATH: bundles!.codexPath,
       },
@@ -529,7 +532,7 @@ test.describe('cc-connect real OpenAI API key runtime smoke', () => {
         .toHaveCount(2, { timeout: 30_000 });
 
       const managedConfig = await readFile(join(runtimeDir, 'config.toml'), 'utf8');
-      const managedMainWorkspace = join(userDataDir, 'workspaces', 'agents', 'main');
+      const managedMainWorkspace = join(shortDataRoot, 'workspaces', 'agents', 'main');
       expect(managedConfig).toContain('provider = "clawx-openai"');
       expect(managedConfig).toContain('api_key = "${CLAWX_CODEX_OPENAI_LOCAL_API_KEY_API_KEY}"');
       expect(managedConfig).toContain(`base_url = "http://127.0.0.1:${port}/v1"`);
@@ -650,6 +653,146 @@ test.describe('cc-connect real OpenAI API key runtime smoke', () => {
         },
       });
 
+      const mediaFixtureDir = join(managedMainWorkspace, 'cc-connect-cli-media');
+      const imagePath = join(mediaFixtureDir, 'real-bridge-image.png');
+      const filePath = join(mediaFixtureDir, 'real-bridge-report.pdf');
+      const audioPath = join(mediaFixtureDir, 'real-bridge-audio.wav');
+      const videoPath = join(mediaFixtureDir, 'real-bridge-video.mp4');
+      const imageBytes = await readFile(join(process.cwd(), 'src', 'assets', 'community', '20260212-185822.png'));
+      const fileBytes = Buffer.from('%PDF-1.4\n% CLAWX_REAL_CC_CONNECT_FILE\n', 'utf8');
+      const audioBytes = Buffer.from('RIFF0000WAVEfmt CLAWX_REAL_CC_CONNECT_AUDIO', 'utf8');
+      const videoBytes = Buffer.from('0000ftypisomCLAWX_REAL_CC_CONNECT_VIDEO', 'utf8');
+      await mkdir(mediaFixtureDir, { recursive: true });
+      await Promise.all([
+        writeFile(imagePath, imageBytes),
+        writeFile(filePath, fileBytes),
+        writeFile(audioPath, audioBytes),
+        writeFile(videoPath, videoBytes),
+      ]);
+      const managedDataDir = managedConfig.match(/^data_dir\s*=\s*"([^"]+)"/m)?.[1]?.replace(/\\\\/g, '\\');
+      expect(managedDataDir).toBeTruthy();
+      await expect.poll(async () => {
+        try {
+          await access(join(managedDataDir!, 'run', 'api.sock'));
+          return true;
+        } catch {
+          return false;
+        }
+      }, {
+        timeout: 10_000,
+        intervals: [100, 250, 500],
+        message: 'cc-connect local send API socket should be ready',
+      }).toBe(true);
+      const mediaMarker = 'CLAWX_REAL_CC_CONNECT_CLI_MEDIA';
+      const mediaCli = await execFileAsync(bundles!.ccConnectPath, [
+        'send',
+        '--data-dir', managedDataDir!,
+        '--project', 'clawx-main',
+        '--session', 'clawx:main:main',
+        '--message', mediaMarker,
+        '--image', imagePath,
+        '--file', filePath,
+        '--audio', audioPath,
+        '--video', videoPath,
+      ], {
+        env: { ...process.env, HOME: homeDir },
+        timeout: 15_000,
+      });
+      expect(mediaCli.stdout).toContain('Message sent successfully.');
+      expect(mediaCli.stderr).toBe('');
+      const expectedMedia = [
+        { fileName: 'real-bridge-image.png', mimeType: 'image/png', bytes: imageBytes },
+        { fileName: 'real-bridge-report.pdf', mimeType: 'application/pdf', bytes: fileBytes },
+        { fileName: 'audio.wav', mimeType: 'audio/wav', bytes: audioBytes },
+        { fileName: 'real-bridge-video.mp4', mimeType: 'video/mp4', bytes: videoBytes },
+      ];
+      const readMediaHistory = async () => await page.evaluate(async () => window.clawx.hostInvoke({
+        id: `runtime-real-cli-media-history-${Date.now()}`,
+        module: 'sessions',
+        action: 'history',
+        payload: { sessionKey: 'agent:main:main', limit: 50 },
+      })) as {
+        data?: {
+          messages?: Array<{
+            content?: unknown;
+            _attachedFiles?: Array<{
+              fileName?: string;
+              mimeType?: string;
+              fileSize?: number;
+              filePath?: string;
+              preview?: string | null;
+            }>;
+          }>;
+        };
+      };
+      await expect.poll(async () => {
+        const history = await readMediaHistory();
+        return (history.data?.messages ?? []).flatMap((message) => message._attachedFiles ?? []).map((file) => ({
+          fileName: file.fileName,
+          mimeType: file.mimeType,
+        }));
+      }, {
+        timeout: 10_000,
+        intervals: [100, 250, 500],
+      }).toEqual(expect.arrayContaining(expectedMedia.map(({ fileName, mimeType }) => ({ fileName, mimeType }))));
+      const mediaHistory = await readMediaHistory();
+      const attachedMedia = (mediaHistory.data?.messages ?? []).flatMap((message) => message._attachedFiles ?? []);
+      for (const expected of expectedMedia) {
+        const attachment = attachedMedia.find((candidate) => candidate.fileName === expected.fileName);
+        expect(attachment).toMatchObject({
+          fileName: expected.fileName,
+          mimeType: expected.mimeType,
+          fileSize: expected.bytes.byteLength,
+          filePath: expect.stringContaining(join('runtimes', 'cc-connect', 'media', 'outgoing', 'bridge')),
+        });
+        await expect(readFile(attachment!.filePath!)).resolves.toEqual(expected.bytes);
+      }
+      expect(attachedMedia.find((attachment) => attachment.fileName === 'real-bridge-image.png')?.preview)
+        .toMatch(/^data:image\/png;base64,/);
+      await expect(page.getByRole('img', { name: 'real-bridge-image.png' }).last())
+        .toBeVisible({ timeout: 10_000 });
+      for (const expected of expectedMedia.filter(({ mimeType }) => !mimeType.startsWith('image/'))) {
+        await expect(page.getByText(expected.fileName, { exact: true }).last())
+          .toBeVisible({ timeout: 10_000 });
+      }
+      const evidenceDir = join(process.cwd(), 'artifacts', 'cc-connect');
+      await mkdir(evidenceDir, { recursive: true });
+      await page.evaluate(() => {
+        document.body.style.zoom = '0.45';
+        const scrollContainer = document.querySelector<HTMLElement>('[data-testid="chat-scroll-container"]');
+        const imagePreview = document.querySelector<HTMLImageElement>('img[alt="real-bridge-image.png"]');
+        if (imagePreview) {
+          imagePreview.style.width = '160px';
+          imagePreview.style.maxHeight = '160px';
+          imagePreview.style.objectFit = 'contain';
+        }
+        const mediaNames = ['real-bridge-image.png', 'real-bridge-report.pdf', 'audio.wav', 'real-bridge-video.mp4'];
+        const firstMediaMessage = Array.from(document.querySelectorAll<HTMLElement>('[data-testid^="chat-message-"]'))
+          .find((element) => mediaNames.some((name) => (
+            element.textContent?.includes(name) || element.querySelector(`img[alt="${name}"]`)
+          )));
+        if (scrollContainer && firstMediaMessage) {
+          scrollContainer.scrollTop += firstMediaMessage.getBoundingClientRect().top
+            - scrollContainer.getBoundingClientRect().top;
+        }
+      });
+      await page.getByTestId('chat-scroll-container')
+        .screenshot({ path: join(evidenceDir, 'real-cli-media-bridge.png') });
+      await writeFile(join(evidenceDir, 'real-cli-media-bridge.json'), `${JSON.stringify({
+        schema: 'clawx-cc-connect-real-cli-media-evidence',
+        version: 1,
+        runtimeKind: 'cc-connect',
+        source: 'bundled-cc-connect-send-cli',
+        publicBridgeProtocol: true,
+        cliAcknowledged: true,
+        bridgeMediaKinds: ['image', 'file', 'audio', 'video'],
+        hostHistoryObserved: true,
+        guiAttachmentsObserved: true,
+        managedMediaCopiesObserved: true,
+        imagePreviewObserved: true,
+        screenshot: 'artifacts/cc-connect/real-cli-media-bridge.png',
+      }, null, 2)}\n`, 'utf8');
+
       const renameResult = await page.evaluate(async () => window.clawx.hostInvoke({
         id: 'runtime-session-rename-local-openai-compatible',
         module: 'sessions',
@@ -686,7 +829,8 @@ test.describe('cc-connect real OpenAI API key runtime smoke', () => {
       if (page) await stopRuntime(page);
       await closeElectronApp(app);
       await closeServer(server);
-      await waitForNoRuntimeProcesses(runtimeDir);
+      await waitForNoRuntimeProcesses(join(shortDataRoot, 'runtimes', 'cc-connect'));
+      await rm(shortDataRoot, { force: true });
     }
   });
 

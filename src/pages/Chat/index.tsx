@@ -122,8 +122,10 @@ function isRealUserMessage(msg: RawMessage): boolean {
   return blocks.length === 0 || !blocks.every((b) => b.type === 'tool_result' || b.type === 'toolResult');
 }
 
-function hasUserFacingImageAttachments(msg: RawMessage): boolean {
-  return (msg._attachedFiles ?? []).some((file) => file.mimeType.startsWith('image/'));
+function hasUserFacingRuntimeAttachments(msg: RawMessage): boolean {
+  return (msg._attachedFiles ?? []).some((file) => (
+    file.source === 'gateway-media' || file.mimeType.startsWith('image/')
+  ));
 }
 
 function generatedFileToTarget(file: GeneratedFile): FilePreviewTarget {
@@ -958,9 +960,9 @@ export function Chat() {
                     </div>
                   )}
                   {messages.map((msg, idx) => {
-                    if (isInternalMessage(msg) && !hasUserFacingImageAttachments(msg)) return null;
+                    if (isInternalMessage(msg) && !hasUserFacingRuntimeAttachments(msg)) return null;
                     const isFoldedNarration = foldedNarrationIndices.has(idx);
-                    if (isFoldedNarration && !hasUserFacingImageAttachments(msg)) return null;
+                    if (isFoldedNarration && !hasUserFacingRuntimeAttachments(msg)) return null;
                     const suppressToolCards = runSegmentMessageIndices.has(idx);
                     const isToolOnlyAssistant = normalizeMessageRole(msg.role) === 'assistant'
                       && extractToolUse(msg).length > 0

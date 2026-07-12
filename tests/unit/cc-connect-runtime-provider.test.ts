@@ -2190,6 +2190,19 @@ describe('CcConnectRuntimeProvider', () => {
               arguments: [{ path: '/tmp/generated.md', diff: '# generated\n', kind: { type: 'add' } }],
             }],
             timestamp: 2.5,
+          }, {
+            id: 'bridge-file',
+            role: 'assistant',
+            content: 'report.pdf',
+            timestamp: 2.75,
+            _attachedFiles: [{
+              fileName: 'report.pdf',
+              mimeType: 'application/pdf',
+              fileSize: 24,
+              filePath: '/tmp/report.pdf',
+              preview: null,
+              source: 'gateway-media',
+            }],
           }]
         : [{ role: 'assistant', content: 'channel ok', timestamp: 3 }]),
     });
@@ -2264,6 +2277,10 @@ describe('CcConnectRuntimeProvider', () => {
         expect.objectContaining({
           id: 'bridge-patch',
           content: [expect.objectContaining({ name: 'Patch' })],
+        }),
+        expect.objectContaining({
+          id: 'bridge-file',
+          _attachedFiles: [expect.objectContaining({ fileName: 'report.pdf' })],
         }),
         { role: 'assistant', content: 'bridge ok', timestamp: 3 },
       ],

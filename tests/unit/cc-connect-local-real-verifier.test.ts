@@ -227,6 +227,8 @@ describe('cc-connect local real verifier', () => {
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('runtime-management-bundle-local-diagnostics');
     expect(COVERAGE_IDS).toContain('bridge-media-packets-local-diagnostics');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('bridge-media-packets-local-diagnostics');
+    expect(COVERAGE_IDS).toContain('bridge-media-send-real-bundle');
+    expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('bridge-media-send-real-bundle');
     expect(COVERAGE_IDS).toContain('bridge-rich-packets-local-diagnostics');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('bridge-rich-packets-local-diagnostics');
     expect(COVERAGE_IDS).toContain('bridge-rich-card-action-real-bundle');
@@ -464,7 +466,19 @@ describe('cc-connect local real verifier', () => {
           'BridgePlatform image packet to renderer attached file',
           'BridgePlatform file packet to renderer attached file',
           'BridgePlatform audio packet to renderer attached file',
+          'BridgePlatform video packet to renderer attached file',
           'cc-connect managed media directory writes',
+        ]),
+      }),
+      expect.objectContaining({
+        id: 'bridge-media-send-real-bundle',
+        status: 'pass',
+        evidence: 'pnpm run test:e2e -- tests/e2e/cc-connect-real-openai-api-key.spec.ts tests/e2e/cc-connect-real-feishu-channel.spec.ts',
+        covers: expect.arrayContaining([
+          'real bundled cc-connect send CLI against an active managed session',
+          'public Bridge image/file/audio/video packets',
+          'Host API session history attachment merge',
+          'GUI image preview plus PDF/audio/video file cards',
         ]),
       }),
       expect.objectContaining({
@@ -663,6 +677,11 @@ describe('cc-connect local real verifier', () => {
         id: 'bridge-media-packets-local-diagnostics',
         status: 'pass',
         evidence: 'pnpm exec vitest run tests/unit/cc-connect-provider-profile.test.ts tests/unit/cc-connect-runtime-provider.test.ts tests/unit/cc-connect-bridge-adapter.test.ts',
+      }),
+      expect.objectContaining({
+        id: 'bridge-media-send-real-bundle',
+        status: 'not-run',
+        evidence: 'Command was not requested.',
       }),
       expect.objectContaining({
         id: 'bridge-rich-packets-local-diagnostics',

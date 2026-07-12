@@ -582,8 +582,17 @@ The probe advertises Bridge `card` and `buttons` capabilities. Pinned
 cc-connect v1.4.1 returns `/cron add` as a usable text acknowledgement and the
 `/cron` list as a real card; the test invokes its disable, enable, and delete
 callbacks through `card_action` and verifies each mutation through Host API.
-Standalone button, preview/update/delete-message, and media packet evidence
-remain separate from this card/action proof.
+Standalone button and preview/update/delete-message evidence remain separate
+from this card/action proof. Real media is covered independently: the bundled
+`cc-connect send` CLI targets an active managed session and emits public Bridge
+image/file/audio/video packets. The adapter copies decoded bytes under
+`runtimes/cc-connect/media/outgoing/bridge`, session history merges these
+runtime-owned attachments with Management API history, renderer final-event
+deduplication uses each message id, and Chat keeps `gateway-media` cards visible
+even when surrounding process narration is folded into the execution graph.
+The real local OpenAI-compatible E2E verifies exact bytes, image preview, all
+four GUI cards, and writes sanitized evidence to
+`artifacts/cc-connect/real-cli-media-bridge.{json,png}`.
 
 ## 12. Health, Doctor, and logs
 

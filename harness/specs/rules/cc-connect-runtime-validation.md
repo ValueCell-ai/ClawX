@@ -27,6 +27,10 @@ Rules:
 - Approval responses must use cc-connect's public Bridge `card_action` packet,
   validate against actions offered for the pending run, and remain unavailable
   after that run resolves or aborts.
+- Proactive runtime media must enter through cc-connect's public Bridge packets.
+  Host history must preserve every image/file/audio/video attachment, final-event
+  deduplication must distinguish packet message ids, and execution-graph folding
+  must not hide runtime-owned `gateway-media` cards.
 - Chat cancellation must use cc-connect's public session-scoped `/stop` command
   over Bridge. The normal path must close the selected Codex child without
   restarting cc-connect; a whole-runtime restart is allowed only when Bridge is

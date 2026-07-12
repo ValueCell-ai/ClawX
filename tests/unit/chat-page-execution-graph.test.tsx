@@ -95,7 +95,7 @@ vi.mock('@/pages/Chat/ChatMessage', () => ({
     isStreaming,
     suppressAssistantText,
   }: {
-    message: { content?: unknown };
+    message: { content?: unknown; _attachedFiles?: Array<{ fileName: string }> };
     textOverride?: string;
     isStreaming?: boolean;
     suppressAssistantText?: boolean;
@@ -114,6 +114,7 @@ vi.mock('@/pages/Chat/ChatMessage', () => ({
     return (
       <div data-testid={isStreaming ? 'mock-streaming-message' : 'mock-chat-message'}>
         {suppressAssistantText ? '' : text}
+        {(message._attachedFiles ?? []).map((file) => <span key={file.fileName}>{file.fileName}</span>)}
       </div>
     );
   },
@@ -722,6 +723,63 @@ describe('Chat execution graph lifecycle', () => {
     expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chat-typing-indicator')).not.toBeInTheDocument();
     expect(screen.queryByTestId('chat-activity-indicator')).not.toBeInTheDocument();
+  });
+
+  it('keeps runtime media attachments visible when their narration is folded into the execution graph', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      messages: [
+        { role: 'user', content: 'Generate the media package' },
+        {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: 'media-1', name: 'exec', input: { command: 'generate' } }],
+        },
+        ...[
+          ['image.png', 'image/png'],
+          ['report.pdf', 'application/pdf'],
+          ['audio.wav', 'audio/wav'],
+          ['video.mp4', 'video/mp4'],
+        ].map(([fileName, mimeType]) => ({
+          role: 'assistant' as const,
+          content: fileName,
+          _attachedFiles: [{
+            fileName,
+            mimeType,
+            fileSize: 1,
+            preview: mimeType.startsWith('image/') ? 'data:image/png;base64,ok' : null,
+            filePath: `/tmp/${fileName}`,
+            source: 'gateway-media' as const,
+          }],
+        })),
+      ],
+      loading: false,
+      error: null,
+      runError: null,
+      sending: false,
+      activeRunId: null,
+      runtimeRuns: {},
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      sessions: [{ key: 'agent:main:main' }],
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessionLabels: {},
+      sessionLastActivity: {},
+      thinkingLevel: null,
+    });
+
+    const { Chat } = await import('@/pages/Chat/index');
+    render(<Chat />);
+
+    expect(screen.getByTestId('chat-execution-graph')).toBeInTheDocument();
+    expect(screen.getAllByText('image.png').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('report.pdf').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('audio.wav').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('video.mp4').length).toBeGreaterThan(0);
   });
 
   it('stops trailing thinking when generated image media arrives but session wake is missed', async () => {

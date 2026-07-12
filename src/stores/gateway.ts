@@ -88,16 +88,21 @@ function buildGatewayEventDedupeKey(event: Record<string, unknown>): string | nu
   const sessionKey = event.sessionKey != null ? String(event.sessionKey) : '';
   const seq = event.seq != null ? String(event.seq) : '';
   const state = event.state != null ? String(event.state) : '';
+  const message = event.message;
+  const messageId = message && typeof message === 'object' && (message as Record<string, unknown>).id != null
+    ? String((message as Record<string, unknown>).id)
+    : '';
   if (state === 'delta' && !seq) {
     return ['delta-nosq', runId, sessionKey, stableGatewayEventFingerprint(event.message ?? event)].join('|');
+  }
+  if (state === 'final' && messageId) {
+    return [runId, sessionKey, seq, state, messageId].join('|');
   }
   if (runId || sessionKey || seq || state) {
     return [runId, sessionKey, seq, state].join('|');
   }
-  const message = event.message;
   if (message && typeof message === 'object') {
     const msg = message as Record<string, unknown>;
-    const messageId = msg.id != null ? String(msg.id) : '';
     const stopReason = msg.stopReason ?? msg.stop_reason;
     if (messageId || stopReason) {
       return `msg|${messageId}|${String(stopReason ?? '')}`;
@@ -328,6 +333,8 @@ function handleGatewayChatMessage(data: unknown): void {
       state: 'final',
       message: payload,
       runId: chatData.runId ?? payload.runId,
+      sessionKey: chatData.sessionKey ?? payload.sessionKey,
+      seq: chatData.seq ?? payload.seq,
     };
     if (!shouldProcessGatewayEvent(normalized)) return;
     useChatStore.getState().handleChatEvent(normalized);

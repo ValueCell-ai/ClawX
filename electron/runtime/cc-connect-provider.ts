@@ -2326,15 +2326,38 @@ function runtimeToolCallKey(message: RawMessage): string {
   return ids.join('|') || String(message.id || '');
 }
 
+function hasRuntimeAttachments(message: RawMessage): boolean {
+  return Array.isArray(message._attachedFiles) && message._attachedFiles.length > 0;
+}
+
+function runtimeSupplementKey(message: RawMessage): string {
+  if (hasRuntimeToolCall(message)) return `tool:${runtimeToolCallKey(message)}`;
+  if (message.id) return `attachment:${message.id}`;
+  const attachments = (message._attachedFiles ?? []).map((file) => [
+    file.filePath,
+    file.gatewayUrl,
+    file.fileName,
+    file.mimeType,
+    file.fileSize,
+  ]);
+  return `attachment:${String(message.timestamp ?? '')}:${JSON.stringify(attachments)}`;
+}
+
 function mergeCcConnectHistory(publicMessages: RawMessage[], bridgeMessages: RawMessage[]): RawMessage[] {
-  const toolMessages = bridgeMessages.filter(hasRuntimeToolCall);
-  if (toolMessages.length === 0) return publicMessages;
-  const seenToolCalls = new Set<string>();
+  const supplementalMessages = bridgeMessages.filter((message) => (
+    hasRuntimeToolCall(message) || hasRuntimeAttachments(message)
+  ));
+  if (supplementalMessages.length === 0) return publicMessages;
+  const seenSupplements = new Set(
+    publicMessages
+      .filter((message) => hasRuntimeToolCall(message) || hasRuntimeAttachments(message))
+      .map(runtimeSupplementKey),
+  );
   const merged = [...publicMessages];
-  for (const message of toolMessages) {
-    const key = runtimeToolCallKey(message);
-    if (seenToolCalls.has(key)) continue;
-    seenToolCalls.add(key);
+  for (const message of supplementalMessages) {
+    const key = runtimeSupplementKey(message);
+    if (seenSupplements.has(key)) continue;
+    seenSupplements.add(key);
     merged.push(message);
   }
   return merged

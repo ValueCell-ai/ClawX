@@ -192,6 +192,13 @@ describe('cc-connect BridgePlatform adapter', () => {
       content: 'fake audio bytes',
       expectedPreview: false,
     },
+    {
+      kind: 'video',
+      mimeType: 'video/mp4',
+      fileName: 'demo.mp4',
+      content: 'fake video bytes',
+      expectedPreview: false,
+    },
   ])('declares media capabilities and converts bridge $kind packets to attached files', async ({
     kind,
     mimeType,
@@ -274,7 +281,7 @@ describe('cc-connect BridgePlatform adapter', () => {
       });
 
       const register = received.find((message) => message.type === 'register');
-      expect(register?.capabilities).toEqual(expect.arrayContaining(['image', 'file', 'audio']));
+      expect(register?.capabilities).toEqual(expect.arrayContaining(['image', 'file', 'audio', 'video']));
       const messageEvent = emitted.find(([event]) => event === 'chat:message')?.[1] as {
         message?: { _attachedFiles?: Array<{ filePath?: string }> };
       } | undefined;

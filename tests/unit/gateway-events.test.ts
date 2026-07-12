@@ -714,6 +714,64 @@ describe('gateway store event wiring', () => {
     expect(handleChatEvent).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps distinct proactive final attachments for one run and dedupes exact replays', async () => {
+    const handlers = new Map<string, (payload: unknown) => void>();
+    hostEventSubscriptionMock.mockImplementation((eventName: string, handler: (payload: unknown) => void) => {
+      handlers.set(eventName, handler);
+      return () => {};
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    const handleChatEvent = vi.fn();
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      sessions: [{ key: 'agent:main:main' }],
+      handleChatEvent,
+    });
+
+    const { useGatewayStore } = await import('@/stores/gateway');
+    await useGatewayStore.getState().init();
+
+    const imageEvent = {
+      state: 'final',
+      runId: 'proactive-media-run',
+      sessionKey: 'agent:main:main',
+      message: {
+        id: 'proactive-media-run:image',
+        role: 'assistant',
+        content: 'image.png',
+        _attachedFiles: [{ fileName: 'image.png', mimeType: 'image/png' }],
+      },
+    };
+    const fileEvent = {
+      state: 'final',
+      runId: 'proactive-media-run',
+      sessionKey: 'agent:main:main',
+      message: {
+        id: 'proactive-media-run:file',
+        role: 'assistant',
+        content: 'report.pdf',
+        _attachedFiles: [{ fileName: 'report.pdf', mimeType: 'application/pdf' }],
+      },
+    };
+    handlers.get('gateway:chat-message')?.(imageEvent);
+    handlers.get('gateway:chat-message')?.(fileEvent);
+    handlers.get('gateway:chat-message')?.(imageEvent);
+    await flushAsyncImports();
+
+    expect(handleChatEvent).toHaveBeenCalledTimes(2);
+    expect(handleChatEvent).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      runId: 'proactive-media-run',
+      sessionKey: 'agent:main:main',
+      message: expect.objectContaining({ id: 'proactive-media-run:image' }),
+    }));
+    expect(handleChatEvent).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      runId: 'proactive-media-run',
+      sessionKey: 'agent:main:main',
+      message: expect.objectContaining({ id: 'proactive-media-run:file' }),
+    }));
+  });
+
   it('renders a cron run live when its run-scoped events bind to the base cron session in view', async () => {
     const baseKey = 'agent:product:cron:294717ee-6dde-45a8-8f67-900e2831cc4f';
     const runKey = `${baseKey}:run:0bfbc08a-7582-4c88-9fd3-47c484e17660`;
