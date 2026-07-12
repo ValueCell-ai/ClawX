@@ -25,6 +25,7 @@ export interface TaskStep {
   url?: string;
   approval?: {
     runId: string;
+    kind?: string;
     status?: string;
     actions: Array<{
       action: string;
@@ -465,6 +466,7 @@ export function deriveRuntimeTaskSteps(runState: ChatRuntimeRunState | null | un
           approval: event.actions?.length
             ? {
                 runId: event.runId,
+                kind: event.kind,
                 status: event.status,
                 actions: event.actions,
               }

@@ -54,7 +54,7 @@ const OPENCLAW_PROXY_METHODS: Array<[string, keyof RuntimeCapabilities, string]>
 const CC_CONNECT_NATIVE_METHODS: Array<[string, keyof RuntimeCapabilities, string]> = [
   ['chat.send', 'chat', 'Delivered through cc-connect BridgePlatform into Codex.'],
   ['chat.abort', 'chat', 'Sends cc-connect /stop to the active Bridge session; runtime restart is only a disconnected-Bridge fallback.'],
-  ['chat.approval.respond', 'chat', 'Returns a validated card_action through cc-connect BridgePlatform for the pending Codex approval.'],
+  ['chat.approval.respond', 'chat', 'Returns a validated card_action through cc-connect BridgePlatform for a pending approval, question, or runtime choice.'],
   ['sessions.list', 'sessions', 'Loaded from the cc-connect public Management session API.'],
   ['chat.history', 'history', 'Loaded from the cc-connect public Management session history API.'],
   ['sessions.delete', 'sessions', 'Deletes the runtime session through the cc-connect public Management API.'],

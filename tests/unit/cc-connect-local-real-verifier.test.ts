@@ -235,6 +235,8 @@ describe('cc-connect local real verifier', () => {
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('bridge-rich-progress-real-bundle');
     expect(COVERAGE_IDS).toContain('bridge-rich-card-action-real-bundle');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('bridge-rich-card-action-real-bundle');
+    expect(COVERAGE_IDS).toContain('bridge-runtime-choice-real-bundle');
+    expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('bridge-runtime-choice-real-bundle');
     expect(COVERAGE_IDS).toContain('session-history-parity-local-diagnostics');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).toContain('session-history-parity-local-diagnostics');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('channel-lifecycle-local-bundle');
@@ -515,6 +517,16 @@ describe('cc-connect local real verifier', () => {
           'card_action disable callback observed through Host API',
           'card_action enable callback observed through Host API',
           'card_action delete callback observed through Host API',
+        ]),
+      }),
+      expect.objectContaining({
+        id: 'bridge-runtime-choice-real-bundle',
+        status: 'pass',
+        evidence: 'pnpm run test:e2e -- tests/e2e/cc-connect-real-bundle-smoke.spec.ts',
+        covers: expect.arrayContaining([
+          'real bundled cc-connect /lang card rendered as a shared runtime choice',
+          'GUI action returned through the public card_action packet',
+          'live language state verified through the public Management project API',
         ]),
       }),
       expect.objectContaining({

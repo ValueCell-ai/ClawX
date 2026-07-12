@@ -157,6 +157,7 @@
         "title": "Execution Graph",
         "branchLabel": "branch",
         "thinkingLabel": "Thinking",
+        "interactionLabel": "Choose an action",
         "errorLabel": "Error",
         "imageGenerateLabel": "Image generation",
         "agentRun": "{{agent}} execution",

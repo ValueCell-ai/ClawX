@@ -380,6 +380,18 @@ proves the same flow through bundled cc-connect 1.4.1 and bundled Codex: a real
 Patch approval is rendered, allowed, resolved by cc-connect, and followed by a
 workspace write and final assistant response.
 
+The same validated path handles non-approval runtime choices from cc-connect
+cards. Action rows, list buttons, and select options are parsed from the public
+card schema; only `perm:`, `askq:`, `cmd:`, `nav:`, and `act:` values are
+eligible. Select options complete the current Chat run when cc-connect returns
+the updated state card, while navigation/button cards can continue the same
+interaction until cc-connect emits a reply or the user aborts. The real bundled
+`/lang -> card -> card_action -> card` E2E verifies the live language through
+the public Management project API and preserves the runtime PID. Pinned v1.4.1
+does not persist manual `/lang` selections to `config.toml`: its save callback
+is registered only for automatic language detection, so ClawX does not infer a
+durable write that the runtime did not perform.
+
 Permission mode is Agent-owned runtime metadata in
 `~/.clawx/app/agent-bindings.json`, alongside but independent from the Agent's
 provider-account binding. `full-auto` remains the default; `suggest` selects

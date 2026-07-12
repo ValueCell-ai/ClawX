@@ -1235,6 +1235,206 @@ describe('cc-connect BridgePlatform adapter', () => {
     }
   });
 
+  it('round-trips a validated runtime card choice without ending the run early', async () => {
+    const server = new WebSocketServer({ port: 0 });
+    const port = await new Promise<number>((resolve) => {
+      server.once('listening', () => {
+        const address = server.address();
+        resolve(typeof address === 'object' && address ? address.port : 0);
+      });
+    });
+    const emitted: Array<[string, unknown]> = [];
+    const received: Record<string, unknown>[] = [];
+
+    server.on('connection', (socket) => {
+      socket.on('message', (data) => {
+        const parsed = JSON.parse(String(data)) as Record<string, unknown>;
+        received.push(parsed);
+        if (parsed.type === 'register') {
+          socket.send(JSON.stringify({ type: 'register_ack', ok: true }));
+          return;
+        }
+        if (parsed.type === 'message') {
+          socket.send(JSON.stringify({
+            type: 'card',
+            session_key: parsed.session_key,
+            reply_ctx: parsed.reply_ctx,
+            project: parsed.project,
+            card: {
+              header: { title: 'Language', color: 'blue' },
+              elements: [
+                { type: 'markdown', content: 'Choose a language.' },
+                {
+                  type: 'actions',
+                  buttons: [
+                    { text: 'English', value: 'cmd:/lang en' },
+                    { text: 'Unsafe', value: 'javascript:alert(1)' },
+                  ],
+                },
+              ],
+            },
+          }));
+          return;
+        }
+        if (parsed.type === 'card_action') {
+          socket.send(JSON.stringify({
+            type: 'reply',
+            session_key: parsed.session_key,
+            reply_ctx: parsed.reply_ctx,
+            content: 'Language switched to English.',
+          }));
+        }
+      });
+    });
+
+    try {
+      const adapter = new CcConnectBridgeAdapter({
+        port,
+        token: 'token',
+        project: 'clawx-main',
+        emit: ((event: string, payload: unknown) => emitted.push([event, payload])) as never,
+      });
+      const result = await adapter.send({
+        sessionKey: 'agent:main:main',
+        message: '/lang',
+        idempotencyKey: 'idem-language-card',
+      });
+
+      await vi.waitFor(() => expect(emitted).toEqual(expect.arrayContaining([
+        ['chat:runtime-event', expect.objectContaining({
+          type: 'approval.updated',
+          runId: result.runId,
+          kind: 'choice',
+          phase: 'requested',
+          status: 'pending',
+          message: '**Language**\n\nChoose a language.',
+          actions: [{ action: 'cmd:/lang en', label: 'English' }],
+        })],
+      ])));
+      expect(emitted).not.toEqual(expect.arrayContaining([
+        ['chat:runtime-event', expect.objectContaining({
+          type: 'run.ended',
+          runId: result.runId,
+        })],
+      ]));
+
+      await expect(adapter.respondApproval({
+        runId: result.runId,
+        action: 'cmd:/lang en',
+      })).resolves.toMatchObject({ status: 'answered' });
+      await vi.waitFor(() => expect(received).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'card_action',
+          session_key: 'clawx:main:main',
+          action: 'cmd:/lang en',
+          project: 'clawx-main',
+        }),
+      ])));
+      await vi.waitFor(() => expect(emitted).toEqual(expect.arrayContaining([
+        ['chat:message', expect.objectContaining({
+          runId: result.runId,
+          message: expect.objectContaining({ content: 'Language switched to English.' }),
+        })],
+        ['chat:runtime-event', expect.objectContaining({
+          type: 'run.ended',
+          runId: result.runId,
+          status: 'completed',
+        })],
+      ])));
+      await adapter.close();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('completes a select-card run after cc-connect returns the selected state card', async () => {
+    const server = new WebSocketServer({ port: 0 });
+    const port = await new Promise<number>((resolve) => {
+      server.once('listening', () => {
+        const address = server.address();
+        resolve(typeof address === 'object' && address ? address.port : 0);
+      });
+    });
+    const emitted: Array<[string, unknown]> = [];
+
+    server.on('connection', (socket) => {
+      socket.on('message', (data) => {
+        const parsed = JSON.parse(String(data)) as Record<string, unknown>;
+        if (parsed.type === 'register') {
+          socket.send(JSON.stringify({ type: 'register_ack', ok: true }));
+          return;
+        }
+        if (parsed.type === 'message') {
+          socket.send(JSON.stringify({
+            type: 'card',
+            session_key: parsed.session_key,
+            reply_ctx: parsed.reply_ctx,
+            project: parsed.project,
+            card: {
+              header: { title: 'Language' },
+              elements: [{
+                type: 'select',
+                placeholder: 'Choose a language',
+                options: [{ text: '日本語', value: 'act:/lang ja' }],
+              }],
+            },
+          }));
+          return;
+        }
+        if (parsed.type === 'card_action') {
+          socket.send(JSON.stringify({
+            type: 'card',
+            session_key: parsed.session_key,
+            reply_ctx: parsed.reply_ctx,
+            project: parsed.project,
+            card: {
+              header: { title: '言語' },
+              elements: [{ type: 'markdown', content: '現在の言語: 日本語' }],
+            },
+          }));
+        }
+      });
+    });
+
+    try {
+      const adapter = new CcConnectBridgeAdapter({
+        port,
+        token: 'token',
+        project: 'clawx-main',
+        emit: ((event: string, payload: unknown) => emitted.push([event, payload])) as never,
+      });
+      const result = await adapter.send({
+        sessionKey: 'agent:main:main',
+        message: '/lang',
+        idempotencyKey: 'idem-language-select-card',
+      });
+
+      await vi.waitFor(() => expect(emitted).toEqual(expect.arrayContaining([
+        ['chat:runtime-event', expect.objectContaining({
+          type: 'approval.updated',
+          runId: result.runId,
+          kind: 'choice',
+          actions: [{ action: 'act:/lang ja', label: '日本語' }],
+        })],
+      ])));
+      await adapter.respondApproval({ runId: result.runId, action: 'act:/lang ja' });
+      await vi.waitFor(() => expect(emitted).toEqual(expect.arrayContaining([
+        ['chat:message', expect.objectContaining({
+          runId: result.runId,
+          message: expect.objectContaining({ content: '**言語**\n\n現在の言語: 日本語' }),
+        })],
+        ['chat:runtime-event', expect.objectContaining({
+          type: 'run.ended',
+          runId: result.runId,
+          status: 'completed',
+        })],
+      ])));
+      await adapter.close();
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it('does not expose Codex transcript reconciliation as a runtime transport', () => {
     const adapter = new CcConnectBridgeAdapter({
       port: 0,

@@ -1858,6 +1858,139 @@ test.describe('cc-connect real runtime bundle smoke', () => {
     }
   });
 
+  test('executes a real cc-connect card choice through the GUI card_action loop', async ({
+    launchElectronApp,
+    userDataDir,
+  }) => {
+    test.setTimeout(120_000);
+    const bundles = await realRuntimeBundles();
+    test.skip(!bundles, 'Run pnpm run bundle:cc-connect:current && pnpm run bundle:codex:current first.');
+    await waitForPortClosed(9810);
+    await waitForPortClosed(9820);
+    await seedCcConnectRuntimeSettings(userDataDir);
+
+    const app = await launchElectronApp({
+      skipSetup: true,
+      env: {
+        CLAWX_CC_CONNECT_PATH: bundles!.ccConnectPath,
+        CLAWX_CODEX_PATH: bundles!.codexPath,
+      },
+    });
+
+    try {
+      const page = await getStableWindow(app);
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+      await page.evaluate(() => {
+        const testWindow = window as typeof window & {
+          __ccConnectCardChoiceEvents?: Array<Record<string, unknown>>;
+        };
+        testWindow.__ccConnectCardChoiceEvents = [];
+        window.electron.ipcRenderer.on('chat:runtime-event', (payload) => {
+          testWindow.__ccConnectCardChoiceEvents!.push(payload as Record<string, unknown>);
+        });
+      });
+
+      await expect.poll(async () => await page.evaluate(async () => window.clawx.hostInvoke({
+        id: 'runtime-start-real-card-choice',
+        module: 'gateway',
+        action: 'start',
+      })), { timeout: 30_000 }).toMatchObject({ ok: true, data: { success: true } });
+      const statusBefore = await page.evaluate(async () => window.clawx.hostInvoke({
+        id: 'runtime-status-before-real-card-choice',
+        module: 'gateway',
+        action: 'status',
+      })) as { ok: boolean; data?: { pid?: number } };
+
+      await expect(page.getByTestId('chat-composer-input')).toBeEnabled({ timeout: 60_000 });
+      await page.getByTestId('chat-composer-input').fill('/lang');
+      await page.getByTestId('chat-composer-send').click();
+      const japaneseAction = page.getByTestId('chat-approval-action-act:/lang ja');
+      await expect(japaneseAction).toBeVisible({ timeout: 30_000 });
+      await expect(japaneseAction).toHaveText('日本語');
+      await expect(page.getByText('Choose an action')).toBeVisible();
+
+      const evidenceDir = join(process.cwd(), 'artifacts', 'cc-connect');
+      await mkdir(evidenceDir, { recursive: true });
+      await page.screenshot({
+        path: join(evidenceDir, 'real-card-choice-request.png'),
+        fullPage: true,
+      });
+      await japaneseAction.click();
+      await expect(page.getByTestId('chat-message-role-assistant').filter({ hasText: '言語を' }).last())
+        .toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('chat-approval-actions')).toHaveCount(0);
+      const configPath = join(userDataDir, 'runtimes', 'cc-connect', 'config.toml');
+      const config = await readFile(configPath, 'utf8');
+      const managementBlock = config.match(/\[management\]([\s\S]*?)(?=\n\[|$)/)?.[1] ?? '';
+      const managementPort = Number(managementBlock.match(/^port\s*=\s*(\d+)/m)?.[1]);
+      const managementToken = managementBlock.match(/^token\s*=\s*"([^"]+)"/m)?.[1] ?? '';
+      expect(managementPort).toBeGreaterThan(0);
+      expect(managementToken).not.toBe('');
+      await expect.poll(async () => {
+        const response = await fetch(`http://127.0.0.1:${managementPort}/api/v1/projects/clawx-main`, {
+          headers: { Authorization: `Bearer ${managementToken}` },
+        });
+        if (!response.ok) return null;
+        return await response.json() as unknown;
+      }, { timeout: 30_000 }).toMatchObject({
+        ok: true,
+        data: { settings: { language: 'ja' } },
+      });
+
+      const statusAfter = await page.evaluate(async () => window.clawx.hostInvoke({
+        id: 'runtime-status-after-real-card-choice',
+        module: 'gateway',
+        action: 'status',
+      })) as { ok: boolean; data?: { pid?: number } };
+      expect(statusAfter.data?.pid).toBe(statusBefore.data?.pid);
+      const events = await page.evaluate(() => {
+        const testWindow = window as typeof window & {
+          __ccConnectCardChoiceEvents?: Array<Record<string, unknown>>;
+        };
+        return testWindow.__ccConnectCardChoiceEvents ?? [];
+      });
+      expect(events).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'approval.updated',
+          kind: 'choice',
+          phase: 'requested',
+          status: 'pending',
+          actions: expect.arrayContaining([
+            expect.objectContaining({ action: 'act:/lang ja', label: '日本語' }),
+          ]),
+        }),
+        expect.objectContaining({
+          type: 'approval.updated',
+          kind: 'choice',
+          phase: 'resolved',
+          status: 'answered',
+        }),
+        expect.objectContaining({ type: 'run.ended', status: 'completed' }),
+      ]));
+      await page.screenshot({
+        path: join(evidenceDir, 'real-card-choice-bridge.png'),
+        fullPage: true,
+      });
+      await writeFile(join(evidenceDir, 'real-card-choice-bridge.json'), `${JSON.stringify({
+        schema: 'clawx-cc-connect-real-card-choice-evidence',
+        version: 1,
+        runtimeKind: 'cc-connect',
+        runtimeBinary: 'real-bundled-v1.4.1',
+        command: '/lang',
+        selectedAction: 'act:/lang ja',
+        publicBridgePackets: ['card', 'card_action', 'card'],
+        runtimeChoiceRequested: true,
+        runtimeChoiceResolved: true,
+        managementApiLanguage: 'ja',
+        pidPreserved: statusAfter.data?.pid === statusBefore.data?.pid,
+        requestScreenshot: 'artifacts/cc-connect/real-card-choice-request.png',
+        resultScreenshot: 'artifacts/cc-connect/real-card-choice-bridge.png',
+      }, null, 2)}\n`, 'utf8');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('cleans up the bundled cc-connect process tree on app quit', async ({
     launchElectronApp,
     userDataDir,

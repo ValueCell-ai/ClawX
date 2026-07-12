@@ -157,6 +157,7 @@
         "title": "実行グラフ",
         "branchLabel": "branch",
         "thinkingLabel": "考え中",
+        "interactionLabel": "操作を選択",
         "errorLabel": "エラー",
         "imageGenerateLabel": "画像生成",
         "agentRun": "{{agent}} の実行",

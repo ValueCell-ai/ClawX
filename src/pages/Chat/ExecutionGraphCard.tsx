@@ -67,7 +67,11 @@ function StepDetailCard({
   const hideStatusText = (isTool || isSystem) && step.status === 'completed';
   const detailPreview = step.detail?.replace(/\s+/g, ' ').trim();
   const canExpand = hasDetail;
-  const displayLabel = isThinking ? t('executionGraph.thinkingLabel') : (isTool ? displayToolLabel : step.label);
+  const displayLabel = step.approval?.kind === 'choice'
+    ? t('executionGraph.interactionLabel')
+    : isThinking
+      ? t('executionGraph.thinkingLabel')
+      : (isTool ? displayToolLabel : step.label);
   const canRespondToApproval = step.approval?.status === 'pending'
     && step.approval.actions.length > 0
     && onApprovalAction;

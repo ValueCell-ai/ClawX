@@ -80,6 +80,8 @@ type BridgeApprovalAction = {
   label?: string;
 };
 
+type BridgeInteractionKind = 'permission' | 'question' | 'choice';
+
 type PendingApproval = {
   runId: string;
   sessionKey: string;
@@ -88,9 +90,15 @@ type PendingApproval = {
   project: string;
   itemId: string;
   title: string;
-  kind: 'permission' | 'question';
+  kind: BridgeInteractionKind;
   message: string;
   actions: BridgeApprovalAction[];
+  terminalCardActions: string[];
+};
+
+type BridgeCardActionSet = {
+  actions: BridgeApprovalAction[];
+  terminalCardActions: string[];
 };
 
 const CONNECT_TIMEOUT_MS = 15_000;
@@ -300,6 +308,69 @@ function bridgeButtonActions(message: Record<string, unknown>): BridgeApprovalAc
   });
 }
 
+function bridgeCardContent(card: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const header = isRecord(card.header) ? card.header : undefined;
+  const title = header ? firstString(header, ['title', 'Title']) : undefined;
+  if (title) parts.push(`**${title}**`);
+  if (!Array.isArray(card.elements)) return parts.join('\n\n');
+  for (const value of card.elements) {
+    if (!isRecord(value)) continue;
+    const type = normalizedType(value);
+    if (type === 'markdown') {
+      const content = firstString(value, ['content', 'text']);
+      if (content) parts.push(content);
+      continue;
+    }
+    if (type === 'note' || type === 'list_item') {
+      const text = firstString(value, ['text', 'content']);
+      if (text) parts.push(text);
+      continue;
+    }
+    if (type === 'select') {
+      const placeholder = firstString(value, ['placeholder']);
+      if (placeholder) parts.push(placeholder);
+    }
+  }
+  return parts.join('\n\n').trim();
+}
+
+function bridgeCardActions(card: Record<string, unknown>): BridgeCardActionSet {
+  if (!Array.isArray(card.elements)) return { actions: [], terminalCardActions: [] };
+  const actions: BridgeApprovalAction[] = [];
+  const terminalCardActions: string[] = [];
+  for (const value of card.elements) {
+    if (!isRecord(value)) continue;
+    const type = normalizedType(value);
+    if (type === 'actions') {
+      actions.push(...bridgeButtonActions({ buttons: value.buttons }));
+      continue;
+    }
+    if (type === 'list_item') {
+      const action = firstString(value, ['btn_value', 'btnValue']);
+      if (!action) continue;
+      const label = firstString(value, ['btn_text', 'btnText']);
+      actions.push({ action, ...(label ? { label } : {}) });
+      continue;
+    }
+    if (type === 'select' && Array.isArray(value.options)) {
+      for (const option of value.options) {
+        if (!isRecord(option)) continue;
+        const action = firstString(option, ['value', 'Value']);
+        if (!action) continue;
+        const label = firstString(option, ['text', 'Text', 'label', 'Label']);
+        actions.push({ action, ...(label ? { label } : {}) });
+        terminalCardActions.push(action);
+      }
+    }
+  }
+  return { actions, terminalCardActions };
+}
+
+function supportedBridgeActions(actions: BridgeApprovalAction[]): BridgeApprovalAction[] {
+  return actions.filter(({ action }) => /^(perm:|askq:|cmd:|nav:|act:)/.test(action));
+}
+
 function toolArgsMentionFile(args: unknown): boolean {
   if (!isRecord(args)) return false;
   for (const key of FILE_ARG_KEYS) {
@@ -387,6 +458,7 @@ export class CcConnectBridgeAdapter {
   private readonly progressByHandle = new Map<string, BridgeProgressState>();
   private readonly textPreviewByHandle = new Map<string, BridgeTextPreviewState>();
   private readonly pendingApprovals = new Map<string, PendingApproval>();
+  private readonly terminalCardRuns = new Set<string>();
 
   constructor(options: BridgeAdapterOptions) {
     this.port = options.port;
@@ -450,6 +522,7 @@ export class CcConnectBridgeAdapter {
     this.progressByHandle.clear();
     this.textPreviewByHandle.clear();
     this.pendingApprovals.clear();
+    this.terminalCardRuns.clear();
   }
 
   isConnected(): boolean {
@@ -534,6 +607,7 @@ export class CcConnectBridgeAdapter {
       this.abortedRuns.set(runId, { sessionKey: pending.sessionKey, abortedAt: now });
       this.clearProgressForRun(runId);
       this.clearApprovalsForRun(runId);
+      this.terminalCardRuns.delete(runId);
       abortedRuns.push(runId);
       if (!controlRunsBySession.has(pending.sessionKey)) {
         controlRunsBySession.set(pending.sessionKey, runId);
@@ -619,10 +693,11 @@ export class CcConnectBridgeAdapter {
       project: pending.project,
     }));
     this.pendingApprovals.delete(runId);
+    if (pending.terminalCardActions.includes(action)) this.terminalCardRuns.add(runId);
 
     const status = action === 'perm:deny'
       ? 'denied'
-      : action.startsWith('askq:')
+      : pending.kind === 'choice' || action.startsWith('askq:')
         ? 'answered'
         : 'approved';
     const run = this.pendingRuns.get(runId);
@@ -870,11 +945,25 @@ export class CcConnectBridgeAdapter {
       return;
     }
     if (message.type === 'card') {
-      void this.finishRun(message, JSON.stringify(message.card ?? {}));
+      const card = isRecord(message.card) ? message.card : {};
+      const content = bridgeCardContent(card);
+      const resolved = this.resolvePendingRun(message);
+      if (resolved && this.terminalCardRuns.delete(resolved.runId)) {
+        void this.finishPendingRun(resolved.pending, { text: content || JSON.stringify(card) });
+        return;
+      }
+      const header = isRecord(card.header) ? card.header : undefined;
+      const cardActions = bridgeCardActions(card);
+      if (this.handleBridgeInteraction({
+        ...message,
+        content,
+        interaction_title: header ? firstString(header, ['title', 'Title']) : undefined,
+      }, cardActions.actions, cardActions.terminalCardActions)) return;
+      void this.finishRun(message, content || JSON.stringify(card));
       return;
     }
     if (message.type === 'buttons') {
-      if (this.handleBridgeApproval(message)) return;
+      if (this.handleBridgeInteraction(message)) return;
       void this.finishRun(message, typeof message.content === 'string' ? message.content : '');
       return;
     }
@@ -1057,15 +1146,30 @@ export class CcConnectBridgeAdapter {
     return nextBase;
   }
 
-  private handleBridgeApproval(message: Record<string, unknown>): boolean {
-    const actions = bridgeButtonActions(message);
-    if (!actions.some(({ action }) => action.startsWith('perm:') || action.startsWith('askq:'))) return false;
+  private handleBridgeInteraction(
+    message: Record<string, unknown>,
+    candidateActions = bridgeButtonActions(message),
+    terminalCardActions: string[] = [],
+  ): boolean {
+    const actions = supportedBridgeActions(candidateActions);
+    if (actions.length === 0) return false;
     const resolved = this.resolvePendingRun(message);
     if (!resolved) return true;
-    const supportedActions = actions.filter(({ action }) => action.startsWith('perm:') || action.startsWith('askq:'));
-    const itemId = `${resolved.runId}:approval`;
-    const title = 'Codex approval';
-    const kind = supportedActions.some(({ action }) => action.startsWith('askq:')) ? 'question' : 'permission';
+    const hasPermission = actions.some(({ action }) => action.startsWith('perm:'));
+    const kind: BridgeInteractionKind = hasPermission
+      ? 'permission'
+      : actions.some(({ action }) => action.startsWith('askq:'))
+        ? 'question'
+        : 'choice';
+    const supportedActions = kind === 'permission'
+      ? actions.filter(({ action }) => action.startsWith('perm:'))
+      : kind === 'question'
+        ? actions.filter(({ action }) => action.startsWith('askq:'))
+        : actions;
+    const itemId = `${resolved.runId}:${kind === 'choice' ? 'interaction' : 'approval'}`;
+    const title = kind === 'choice'
+      ? firstString(message, ['interaction_title']) || ''
+      : 'Codex approval';
     const content = typeof message.content === 'string' ? message.content : '';
     const bridgeSessionKey = typeof message.session_key === 'string'
       ? message.session_key
@@ -1081,6 +1185,9 @@ export class CcConnectBridgeAdapter {
       kind,
       message: content,
       actions: supportedActions,
+      terminalCardActions: terminalCardActions.filter((action) => (
+        supportedActions.some((candidate) => candidate.action === action)
+      )),
     });
     resolved.pending.seq += 1;
     const now = Date.now();
@@ -1451,6 +1558,7 @@ export class CcConnectBridgeAdapter {
     this.pendingRuns.delete(pending.runId);
     this.clearProgressForRun(pending.runId);
     this.clearApprovalsForRun(pending.runId);
+    this.terminalCardRuns.delete(pending.runId);
   }
 
   private completeOpenProgressTools(runId: string, isError: boolean): void {

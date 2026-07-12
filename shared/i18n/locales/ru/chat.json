@@ -157,6 +157,7 @@
         "title": "Граф выполнения",
         "branchLabel": "ветвь",
         "thinkingLabel": "Думаю",
+        "interactionLabel": "Выберите действие",
         "errorLabel": "Ошибка модели",
         "imageGenerateLabel": "Генерация изображения",
         "agentRun": "Выполнение {{agent}}",

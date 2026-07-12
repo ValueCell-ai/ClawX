@@ -24,9 +24,11 @@ Rules:
 - Production chat events, tools, approvals, cancellation, session history, and
   usage must come from cc-connect public APIs/events. Codex transcripts may be
   test oracles but not production transports.
-- Approval responses must use cc-connect's public Bridge `card_action` packet,
-  validate against actions offered for the pending run, and remain unavailable
-  after that run resolves or aborts.
+- Approval, question, and runtime-choice responses must use cc-connect's public
+  Bridge `card_action` packet and validate against actions offered for the
+  pending run. A returned select-state card may close the Chat run; navigation
+  and button cards remain interactive until cc-connect emits a terminal reply,
+  the user chooses a select state, or the run aborts.
 - Proactive runtime media must enter through cc-connect's public Bridge packets.
   Host history must preserve every image/file/audio/video attachment, final-event
   deduplication must distinguish packet message ids, and execution-graph folding
