@@ -88,7 +88,7 @@
         "postversion": "node scripts/post-version-push.mjs"
     },
     "dependencies": {
-        "@agentclientprotocol/sdk": "0.17.0",
+        "@agentclientprotocol/sdk": "~0.17.0",
         "electron-store": "^11.0.2",
         "electron-updater": "^6.8.3",
         "node-machine-id": "^1.1.12",
