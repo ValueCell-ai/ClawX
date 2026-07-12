@@ -6,6 +6,9 @@ taskType: runtime-bridge
 intent: Restore generated image display in ClawX ACP Chat without modifying OpenClaw by projecting trusted Gateway media delivery evidence into the in-memory ACP timeline.
 touchedAreas:
   - harness/specs/tasks/acp-image-generation-compatibility.md
+  - harness/reference/acp-generated-media-and-diagnostics.md
+  - harness/specs/scenarios/acp-chat-experience.md
+  - harness/specs/rules/acp-compatibility-content-safety.md
   - src/lib/acp/image-generation-compat.ts
   - src/lib/acp/reducer.ts
   - src/lib/acp/timeline-types.ts
@@ -24,7 +27,7 @@ touchedAreas:
 expectedUserBehavior:
   - ACP Chat first shows the image_generate background task start tool result.
   - When OpenClaw later exposes structured generated-image media through Gateway host events, ClawX appends a new assistant reply containing the hydrated image preview.
-  - Arbitrary local paths and generic MEDIA: prose are not rendered as images.
+  - Arbitrary local paths and generic MEDIA: prose without approved image-generation context are not rendered as images.
   - Renderer continues to use host-api/host-events and does not call Gateway HTTP directly.
 requiredProfiles:
   - fast
@@ -35,6 +38,9 @@ requiredRules:
   - api-client-transport-policy
   - host-events-fallback-policy
   - gateway-readiness-policy
+  - acp-chat-state-and-history
+  - acp-compatibility-content-safety
+  - diagnostics-trace-safety
   - docs-sync
 requiredTests:
   - pnpm exec vitest run tests/unit/acp-image-generation-compat.test.ts tests/unit/acp-reducer.test.ts tests/unit/acp-chat-store.test.ts

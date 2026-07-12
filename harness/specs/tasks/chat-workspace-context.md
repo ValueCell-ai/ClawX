@@ -12,7 +12,9 @@ touchedAreas:
   - tailwind.config.js
   - harness/specs/tasks/chat-workspace-context.md
   - harness/**
-  - docs/superpowers/**
+  - harness/reference/chat-workspace-and-navigation.md
+  - harness/specs/scenarios/chat-workspace-and-navigation.md
+  - harness/specs/rules/session-workspace-authority.md
   - README.md
   - README.zh-CN.md
   - README.ja-JP.md
@@ -66,6 +68,8 @@ requiredRules:
   - renderer-main-boundary
   - backend-communication-boundary
   - api-client-transport-policy
+  - session-workspace-authority
+  - ui-i18n-design-tokens
   - comms-regression
   - docs-sync
 requiredTests:
@@ -81,7 +85,7 @@ acceptance:
   - ClawX only persists global workspace selection and recent workspaces.
   - Bound session footer workspace is read-only.
   - Right workspace tree root matches effective chat workspace.
-  - Sidebar groups sessions by workspace and then recency.
+  - Sidebar groups sessions by workspace, then sorts each flat group by the shared activity timestamp without date buckets.
   - Explicit user session labels remain unchanged even when they begin with a working-directory-looking string.
 docs:
   required: true

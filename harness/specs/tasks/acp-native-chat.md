@@ -8,7 +8,10 @@ touchedAreas:
   - harness/specs/tasks/acp-native-chat.md
   - package.json
   - pnpm-lock.yaml
-  - docs/superpowers/**
+  - harness/reference/acp-chat.md
+  - harness/reference/acp-generated-media-and-diagnostics.md
+  - harness/specs/scenarios/acp-chat-experience.md
+  - harness/specs/rules/acp-chat-state-and-history.md
   - shared/acp-chat/**
   - shared/chat/types.ts
   - shared/host-api/contract.ts
@@ -41,7 +44,7 @@ touchedAreas:
   - README.ja-JP.md
 expectedUserBehavior:
   - Opening a Chat session loads history through ACP session/load replay.
-  - Sending a Chat prompt uses ACP session/prompt and waits for ACP user/agent updates rather than inserting an optimistic user bubble.
+  - Sending a Chat prompt uses ACP session/prompt, shows an optimistic user segment, and coalesces it with the ACP user echo.
   - Thinking, tool calls, permission requests, plans, generated files, and generated images appear as inline timeline blocks in ACP event order.
   - The old Execution Graph aggregation is not used for the ACP Chat path.
   - Renderer does not call Gateway HTTP or WebSocket endpoints directly.
@@ -56,6 +59,10 @@ requiredRules:
   - host-api-fallback-policy
   - host-events-fallback-policy
   - gateway-readiness-policy
+  - acp-chat-state-and-history
+  - acp-compatibility-content-safety
+  - diagnostics-trace-safety
+  - ui-i18n-design-tokens
   - docs-sync
 requiredTests:
   - pnpm run typecheck
@@ -70,7 +77,7 @@ acceptance:
   - Main forwards ACP SessionNotification envelopes and permission request envelopes without translating text, thinking, tools, or media into legacy Chat events.
   - Renderer reduces ACP notifications into an in-memory ordered timeline.
   - No ClawX ACP replay ledger, Chat history cache, or reduced timeline persistence is introduced.
-  - The primary Chat page no longer subscribes to gateway:chat-message or chat:runtime-event for Chat timeline rendering.
+  - The primary Chat page does not use gateway:chat-message or chat:runtime-event as ordinary Chat timeline sources; restricted image-generation compatibility evidence remains allowed.
   - Inline process blocks preserve ordering between assistant message segments.
 docs:
   required: true

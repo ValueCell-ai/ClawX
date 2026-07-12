@@ -6,8 +6,9 @@ taskType: runtime-bridge
 intent: Restore historical ACP image-generation previews when OpenClaw ACP loadSession omits async completion assistant messages by cross-checking Main-owned transcript history.
 touchedAreas:
   - harness/specs/tasks/acp-historical-transcript-supplement.md
-  - docs/superpowers/specs/2026-07-08-acp-historical-transcript-supplement-design.md
-  - docs/superpowers/plans/2026-07-08-acp-historical-transcript-supplement.md
+  - harness/reference/acp-generated-media-and-diagnostics.md
+  - harness/specs/scenarios/acp-chat-experience.md
+  - harness/specs/rules/acp-chat-state-and-history.md
   - src/lib/acp/image-generation-compat.ts
   - src/stores/acp-chat-session.ts
   - tests/unit/acp-image-generation-compat.test.ts
@@ -26,6 +27,8 @@ requiredRules:
   - api-client-transport-policy
   - host-events-fallback-policy
   - gateway-readiness-policy
+  - acp-chat-state-and-history
+  - acp-compatibility-content-safety
   - docs-sync
 requiredTests:
   - pnpm exec vitest run tests/unit/acp-image-generation-compat.test.ts tests/unit/acp-chat-store.test.ts

@@ -5,8 +5,9 @@ scenario: gateway-backend-communication
 taskType: runtime-bridge
 intent: Restore per-turn and session-level OpenClaw file activity in ACP Chat while keeping tool-derived file access inside the bound workspace.
 touchedAreas:
-  - docs/plans/2026-07-12-openclaw-file-activity.md
-  - docs/specs/2026-07-12-openclaw-file-activity-design.md
+  - harness/reference/openclaw-file-activity.md
+  - harness/specs/scenarios/acp-file-activity.md
+  - harness/specs/rules/tool-derived-file-safety.md
   - harness/specs/tasks/restore-acp-file-activity.md
   - harness/src/runner.mjs
   - shared/host-api/contract.ts
@@ -75,6 +76,10 @@ requiredRules:
   - api-client-transport-policy
   - host-api-fallback-policy
   - host-events-fallback-policy
+  - acp-chat-state-and-history
+  - session-workspace-authority
+  - tool-derived-file-safety
+  - ui-i18n-design-tokens
   - comms-regression
   - docs-sync
 requiredTests:

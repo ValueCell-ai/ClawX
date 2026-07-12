@@ -6,8 +6,9 @@ taskType: runtime-bridge
 intent: Add a bounded redacted diagnostics trace for ACP bridge events and renderer image-projection decisions so ClawX can diagnose ACP image rendering failures without modifying OpenClaw.
 touchedAreas:
   - harness/specs/tasks/acp-debug-trace-channel.md
-  - docs/superpowers/specs/2026-07-08-acp-debug-trace-channel-design.md
-  - docs/superpowers/plans/2026-07-08-acp-debug-trace-channel.md
+  - harness/reference/acp-generated-media-and-diagnostics.md
+  - harness/specs/scenarios/acp-chat-experience.md
+  - harness/specs/rules/diagnostics-trace-safety.md
   - electron/services/acp-chat-service.ts
   - electron/services/chat-api.ts
   - electron/services/diagnostics-api.ts
@@ -34,6 +35,7 @@ requiredRules:
   - api-client-transport-policy
   - host-events-fallback-policy
   - gateway-readiness-policy
+  - diagnostics-trace-safety
   - docs-sync
 requiredTests:
   - pnpm exec vitest run tests/unit/acp-trace.test.ts tests/unit/acp-chat-service.test.ts tests/unit/acp-chat-store.test.ts tests/unit/host-api-facade.test.ts tests/unit/host-services.test.ts
