@@ -3,9 +3,111 @@ import { execFile } from 'node:child_process';
 import { createConnection, createServer, type Server } from 'node:net';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import WebSocket from 'ws';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
 
 const execFileAsync = promisify(execFile);
+
+type BridgePacket = {
+  type?: string;
+  ok?: boolean;
+  reply_ctx?: string;
+  content?: string;
+  card?: unknown;
+  error?: string;
+};
+
+async function connectChannelCronProbe(options: {
+  port: number;
+  token: string;
+  project: string;
+}): Promise<{
+  socket: WebSocket;
+  packets: BridgePacket[];
+  command: (content: string) => Promise<BridgePacket>;
+}> {
+  const socket = new WebSocket(`ws://127.0.0.1:${options.port}/bridge/ws?token=${encodeURIComponent(options.token)}`);
+  const packets: BridgePacket[] = [];
+  socket.on('message', (data) => {
+    try {
+      packets.push(JSON.parse(data.toString()) as BridgePacket);
+    } catch {
+      // The public protocol is JSON-only; malformed packets are ignored so the assertion times out with context.
+    }
+  });
+  await new Promise<void>((resolve, reject) => {
+    socket.once('open', resolve);
+    socket.once('error', reject);
+  });
+  socket.send(JSON.stringify({
+    type: 'register',
+    platform: 'feishu',
+    project: options.project,
+    capabilities: ['text'],
+    metadata: { protocol_version: 1, description: 'ClawX channel Cron E2E probe' },
+  }));
+  await expect.poll(() => packets.find((packet) => packet.type === 'register_ack'), {
+    timeout: 10_000,
+    intervals: [100, 250, 500],
+  }).toMatchObject({ ok: true });
+
+  return {
+    socket,
+    packets,
+    command: async (content) => {
+      const replyContext = `cron-probe-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const packetOffset = packets.length;
+      socket.send(JSON.stringify({
+        type: 'message',
+        msg_id: replyContext,
+        session_key: 'feishu:cron-admin',
+        user_id: 'clawx-desktop',
+        user_name: 'ClawX Admin',
+        content,
+        reply_ctx: replyContext,
+        project: options.project,
+      }));
+      try {
+        await expect.poll(() => packets.find((packet) => (
+          packet.reply_ctx === replyContext
+          && ['reply', 'card', 'buttons', 'error'].includes(packet.type ?? '')
+        )), {
+          timeout: 10_000,
+          intervals: [100, 250, 500],
+          message: `cc-connect should answer channel command: ${content}`,
+        }).toBeTruthy();
+      } catch (error) {
+        const packetSummary = packets.slice(packetOffset).map((packet) => ({
+          type: packet.type,
+          reply_ctx: packet.reply_ctx,
+          content: packet.content,
+          hasCard: packet.card !== undefined,
+          error: packet.error,
+        }));
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)}; packets=${JSON.stringify(packetSummary)}`,
+          { cause: error },
+        );
+      }
+      return packets.find((packet) => (
+        packet.reply_ctx === replyContext
+        && ['reply', 'card', 'buttons', 'error'].includes(packet.type ?? '')
+      ))!;
+    },
+  };
+}
+
+async function closeBridgeSocket(socket: WebSocket | undefined): Promise<void> {
+  if (!socket || socket.readyState === WebSocket.CLOSED) return;
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(resolve, 2_000);
+    socket.once('close', () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+    socket.close();
+  });
+}
 
 async function realRuntimeBundles(): Promise<{ ccConnectPath: string; codexPath: string } | null> {
   const platformArch = `${process.platform}-${process.arch}`;
@@ -195,6 +297,7 @@ test.describe('cc-connect real runtime bundle smoke', () => {
         CLAWX_CODEX_PATH: bundles!.codexPath,
       },
     });
+    let channelCronProbe: Awaited<ReturnType<typeof connectChannelCronProbe>> | undefined;
 
     try {
       const page = await getStableWindow(app);
@@ -219,6 +322,7 @@ test.describe('cc-connect real runtime bundle smoke', () => {
       expect(bridgePort).toBeGreaterThan(0);
       expect(managementToken).not.toBe('');
       expect(bridgeToken).not.toBe('');
+      expect(config).toContain('admin_from = "clawx-desktop"');
 
       const managementSessions = await fetch(`http://127.0.0.1:${managementPort}/api/v1/projects/clawx-main/sessions`, {
         headers: { Authorization: `Bearer ${managementToken}` },
@@ -309,6 +413,86 @@ test.describe('cc-connect real runtime bundle smoke', () => {
           === (statusAfterProfiles as { data?: { pid?: number } }).data?.pid,
       }, null, 2)}\n`, 'utf8');
 
+      channelCronProbe = await connectChannelCronProbe({
+        port: bridgePort,
+        token: bridgeToken,
+        project: 'clawx-main',
+      });
+      const listCron = async () => await page.evaluate(async () => window.clawx.hostInvoke({
+        id: `runtime-channel-cron-list-${Date.now()}`,
+        module: 'cron',
+        action: 'list',
+      })) as { ok?: boolean; data?: Array<{ id?: string; message?: string; enabled?: boolean }> };
+      const channelMarker = 'CLAWX_CHANNEL_CRON_SHARED_SCHEDULER';
+      await channelCronProbe.command(`/cron add 0 0 1 1 * ${channelMarker}`);
+      await expect.poll(listCron, {
+        timeout: 10_000,
+        intervals: [100, 250, 500],
+      }).toMatchObject({
+        ok: true,
+        data: expect.arrayContaining([
+          expect.objectContaining({ message: channelMarker, enabled: true }),
+        ]),
+      });
+      const channelJob = (await listCron()).data?.find((job) => job.message === channelMarker);
+      expect(channelJob?.id).toBeTruthy();
+
+      const guiCron = await page.evaluate(async () => window.clawx.hostInvoke({
+        id: 'runtime-gui-cron-create-for-channel-list',
+        module: 'cron',
+        action: 'create',
+        payload: {
+          name: 'GUI Cron visible to Channel',
+          message: 'CLAWX_GUI_CRON_VISIBLE_IN_CHANNEL',
+          schedule: { kind: 'cron', expr: '30 0 1 1 *' },
+          enabled: true,
+          delivery: { mode: 'announce', channel: 'feishu', to: 'cron-admin' },
+          agentId: 'main',
+        },
+      })) as { ok?: boolean; data?: { id?: string } };
+      expect(guiCron).toMatchObject({ ok: true, data: { id: expect.any(String) } });
+      const channelListReply = await channelCronProbe.command('/cron');
+      expect(JSON.stringify(channelListReply)).toContain(guiCron.data!.id!);
+
+      await channelCronProbe.command(`/cron disable ${channelJob!.id}`);
+      await expect.poll(async () => (await listCron()).data?.find((job) => job.id === channelJob!.id)?.enabled)
+        .toBe(false);
+      await channelCronProbe.command(`/cron enable ${channelJob!.id}`);
+      await expect.poll(async () => (await listCron()).data?.find((job) => job.id === channelJob!.id)?.enabled)
+        .toBe(true);
+      await channelCronProbe.command(`/cron del ${channelJob!.id}`);
+      await expect.poll(async () => (await listCron()).data?.some((job) => job.id === channelJob!.id))
+        .toBe(false);
+      await expect(page.evaluate(async (id) => window.clawx.hostInvoke({
+        id: 'runtime-gui-cron-delete-after-channel-list',
+        module: 'cron',
+        action: 'delete',
+        payload: { id },
+      }), guiCron.data!.id)).resolves.toMatchObject({ ok: true, data: { success: true } });
+
+      const statusAfterChannelCron = await page.evaluate(async () => window.clawx.hostInvoke({
+        id: 'runtime-status-after-channel-cron',
+        module: 'gateway',
+        action: 'status',
+      })) as { data?: { pid?: number } };
+      expect(statusAfterChannelCron.data?.pid)
+        .toBe((statusBeforeProfiles as { data?: { pid?: number } }).data?.pid);
+      await writeFile(join(profileEvidenceDir, 'real-channel-cron-bridge.json'), `${JSON.stringify({
+        schema: 'clawx-cc-connect-channel-cron-evidence',
+        version: 1,
+        runtimeKind: 'cc-connect',
+        platform: 'feishu',
+        transport: 'public-bridge-simulation',
+        publicBridgeProtocol: true,
+        authorizedAdminIdentity: true,
+        channelCreatedHostObserved: true,
+        guiCreatedChannelObserved: true,
+        channelToggleObserved: true,
+        channelDeleteObserved: true,
+        pidPreserved: statusAfterChannelCron.data?.pid
+          === (statusBeforeProfiles as { data?: { pid?: number } }).data?.pid,
+      }, null, 2)}\n`, 'utf8');
+
       const createResponse = await fetch(`http://127.0.0.1:${bridgePort}/bridge/sessions`, {
         method: 'POST',
         headers: {
@@ -358,6 +542,7 @@ test.describe('cc-connect real runtime bundle smoke', () => {
       expect(listAfterDelete.status).toBe(200);
       expect(JSON.stringify(await listAfterDelete.json())).not.toContain(String(sessionId));
     } finally {
+      await closeBridgeSocket(channelCronProbe?.socket);
       await closeElectronApp(app);
     }
   });

@@ -569,6 +569,16 @@ session-summary/history APIs. The evidence command is
 `pnpm run verify:cc-connect:local-real:scheduled-cron`; it does not claim live
 tenant-channel delivery, which remains a separate Feishu/Lark credential gate.
 
+The bundled-runtime E2E also registers a simulated Feishu transport through the
+public Bridge protocol and proves Channel `/cron add`, list, disable, enable,
+and delete as the projected managed admin are reflected by Host API Cron
+operations. A GUI-created announce
+job targeting the same Feishu session is visible from Channel `/cron`, and the
+runtime PID remains unchanged. Sanitized evidence is written to
+`artifacts/cc-connect/real-channel-cron-bridge.json`. This verifies cc-connect
+core/platform command routing and one shared native scheduler; it does not
+replace live Feishu tenant inbound or scheduled-reply evidence.
+
 ## 12. Health, Doctor, and logs
 
 Runtime ready requires a live process, Management API, Bridge registration,

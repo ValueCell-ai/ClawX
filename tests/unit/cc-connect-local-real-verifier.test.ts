@@ -232,6 +232,7 @@ describe('cc-connect local real verifier', () => {
     expect(COVERAGE_IDS).toContain('session-history-parity-local-diagnostics');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).toContain('session-history-parity-local-diagnostics');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('channel-lifecycle-local-bundle');
+    expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).toContain('channel-cron-command-local-diagnostics');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('cron-lifecycle-local-bundle');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('local-openai-compatible-api-key-chat');
     expect(COVERAGE_IDS).toContain('generated-file-card-real-oauth');
@@ -486,6 +487,19 @@ describe('cc-connect local real verifier', () => {
           'Feishu/Lark local config projection',
           'Feishu/Lark agent binding and workspace projection',
           'real user channel credential removal',
+        ]),
+      }),
+      expect.objectContaining({
+        id: 'channel-cron-command-local-diagnostics',
+        status: 'pass',
+        evidence: 'pnpm run test:e2e -- tests/e2e/cc-connect-real-bundle-smoke.spec.ts',
+        covers: expect.arrayContaining([
+          'managed admin identity for Channel Cron mutation commands',
+          'Channel /cron add observed through Host API Cron list',
+          'GUI announce Cron observed through Channel /cron list for the same Feishu target',
+          'Channel /cron disable and enable observed through Host API',
+          'Channel /cron delete observed through Host API',
+          'single native cc-connect scheduler and unchanged runtime PID',
         ]),
       }),
       expect.objectContaining({
