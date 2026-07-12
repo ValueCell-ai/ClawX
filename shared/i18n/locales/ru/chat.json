@@ -26,6 +26,15 @@
         "openFolder": "Открыть папку",
         "viewAll": "Все изменения"
     },
+    "fileActivity": {
+        "created": "Создан",
+        "modified": "Изменён",
+        "deleted": "Удалён",
+        "fileButton": "{{action}}: {{path}}",
+        "changeRecord": "Показать изменения {{path}}",
+        "fileUnavailable": "Файл недоступен",
+        "outsideWorkspace": "Файл находится вне рабочей области"
+    },
     "runError": {
         "title": "Ошибка вызова модели"
     },
@@ -64,8 +73,10 @@
         },
         "changes": {
             "heading": "Изменения файлов ({{count}})",
-            "empty": "В этом разговоре пока нет изменений файлов",
-            "selectFileHint": "Нажмите на карточку файла в чате или «Просмотр изменений», чтобы открыть diff."
+            "empty": "В этом сеансе пока нет изменений файлов.",
+            "selectFileHint": "Нажмите на карточку файла в чате или «Просмотр изменений», чтобы открыть diff.",
+            "changeRecord": "Изменение {{number}}",
+            "diffUnavailable": "Diff для этого изменения недоступен."
         },
         "preview": {
             "emptyTitle": "Файл не выбран",

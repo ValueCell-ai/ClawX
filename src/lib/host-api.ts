@@ -31,6 +31,8 @@ import type {
   SkillUpdateConfigPayload,
   SkillUpdatePayload,
   UpdateChannel,
+  WorkspaceContextInput,
+  WorkspaceFileRef,
 } from '@shared/host-api/contract';
 import type {
   AcpChatCancelPayload,
@@ -78,6 +80,8 @@ export type {
   SkillsStatusResult,
   StagedFileResult,
   UsageHistoryEntry,
+  WorkspaceContextInput,
+  WorkspaceFileRef,
 } from '@shared/host-api/contract';
 
 export const hostApi = {
@@ -279,6 +283,14 @@ export const hostApi = {
     listTree: (path: string, opts?: FilePreviewTreeOptions) => (
       invokeHost('files', 'listTree', { path, opts })
     ),
+    resolveWorkspaceContext: (input: WorkspaceContextInput) => (
+      invokeHost('files', 'resolveWorkspaceContext', input)
+    ),
+    readWorkspaceText: (ref: WorkspaceFileRef) => invokeHost('files', 'readWorkspaceText', ref),
+    readWorkspaceBinary: (input: WorkspaceFileRef & { maxBytes?: number }) => (
+      invokeHost('files', 'readWorkspaceBinary', input)
+    ),
+    statWorkspaceFile: (ref: WorkspaceFileRef) => invokeHost('files', 'statWorkspaceFile', ref),
   },
   media: {
     thumbnails: (input: { paths: MediaThumbnailEntry[] }) => invokeHost('media', 'thumbnails', input),

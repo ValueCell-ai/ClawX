@@ -2,8 +2,8 @@
  * Artifact panel state.
  *
  * Drives the right-side split panel on the Chat page: which tab is
- * active (变更 / 预览 / 工作空间), the focused file shared across the
- * 变更 and 预览 tabs, and the open/close state.
+ * active (变更 / 预览 / 工作空间), independent preview/change focus, and
+ * the open/close state.
  *
  * The actual content (file lists, workspace tree, etc.) is provided by
  * the chat page as props — we only track UI state here so the panel can
@@ -19,6 +19,16 @@ import type { FilePreviewTarget } from '@/components/file-preview/types';
 
 export type ArtifactTab = 'changes' | 'preview' | 'browser';
 
+export type ArtifactChangeFocus = {
+  relativePath: string;
+  turnId?: string;
+  activitySequence?: number;
+};
+
+export type ArtifactChangeNavigation = ArtifactChangeFocus & {
+  navigationId: number;
+};
+
 /** Width clamp (% of the chat container). */
 export const ARTIFACT_PANEL_MIN_WIDTH = 28;
 export const ARTIFACT_PANEL_MAX_WIDTH = 70;
@@ -28,18 +38,18 @@ interface ArtifactPanelState {
   open: boolean;
   tab: ArtifactTab;
   /**
-   * The currently selected file inside the panel.  Shared between the
-   * 变更 tab (drives the right-pane diff) and the 预览 tab (drives the
-   * rendered preview).  `null` means "no selection" — the changes tab
-   * may auto-select the first file in that case.
+   * The currently selected Preview file. Changes navigation is tracked
+   * separately in `focusedChange`.
    */
   focusedFile: FilePreviewTarget | null;
+  focusedChange: ArtifactChangeNavigation | null;
+  changeNavigationId: number;
   /** Persisted panel width as a % of the chat container (clamped on read). */
   widthPct: number;
   setTab: (tab: ArtifactTab) => void;
   setFocusedFile: (file: FilePreviewTarget | null) => void;
-  /** Open the changes tab. Optionally focus a single file. */
-  openChanges: (file?: FilePreviewTarget | null) => void;
+  /** Open the changes tab. Optionally focus a projected change. */
+  openChanges: (focus?: ArtifactChangeFocus | null) => void;
   /** Open the preview tab on a specific file. */
   openPreview: (file?: FilePreviewTarget | null) => void;
   /** Open the workspace browser tab. */
@@ -63,6 +73,8 @@ export const useArtifactPanel = create<ArtifactPanelState>()(
       open: false,
       tab: 'changes',
       focusedFile: null,
+      focusedChange: null,
+      changeNavigationId: 0,
       widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
       setTab: (tab) => {
         // The browser tab has its own internal workspace-tree selection, so
@@ -70,11 +82,19 @@ export const useArtifactPanel = create<ArtifactPanelState>()(
         set({ tab, focusedFile: get().focusedFile });
       },
       setFocusedFile: (focusedFile) => set({ focusedFile }),
-      openChanges: (file = null) => set({ open: true, tab: 'changes', focusedFile: file ?? null }),
+      openChanges: (focus = null) => set((state) => {
+        const navigationId = state.changeNavigationId + 1;
+        return {
+          open: true,
+          tab: 'changes',
+          focusedChange: focus ? { ...focus, navigationId } : null,
+          changeNavigationId: navigationId,
+        };
+      }),
       openPreview: (file = null) => set({ open: true, tab: 'preview', focusedFile: file ?? null }),
       openBrowser: () => set({ open: true, tab: 'browser', focusedFile: get().focusedFile }),
       toggle: () => set((s) => ({ open: !s.open })),
-      close: () => set({ open: false, focusedFile: null }),
+      close: () => set({ open: false, focusedFile: null, focusedChange: null }),
       setWidthPct: (pct) => set({ widthPct: clampWidth(pct) }),
     }),
     {

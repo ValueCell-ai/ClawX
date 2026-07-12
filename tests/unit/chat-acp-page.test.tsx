@@ -67,7 +67,7 @@ const { acpState, agentsState, artifactPanelState, artifactPanelProps, chatState
     openPreview: vi.fn(),
     close: vi.fn(),
   },
-  artifactPanelProps: [] as Array<{ files: unknown[]; agent: unknown; runStartedAt?: number | null }>,
+  artifactPanelProps: [] as Array<{ fileGroups: unknown[]; uniqueFileCount: number; agent: unknown; runStartedAt?: number | null }>,
   chatState: {
     messages: [],
     sessions: [],
@@ -105,6 +105,11 @@ const { acpState, agentsState, artifactPanelState, artifactPanelProps, chatState
 }));
 
 const ensureAcpChatSubscriptions = vi.hoisted(() => vi.fn());
+const resolveWorkspaceContext = vi.hoisted(() => vi.fn());
+
+vi.mock('@/lib/host-api', () => ({
+  hostApi: { files: { resolveWorkspaceContext } },
+}));
 
 vi.mock('@/stores/acp-chat-session', () => ({
   ensureAcpChatSubscriptions,
@@ -198,7 +203,7 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
 }));
 
 vi.mock('@/components/file-preview/ArtifactPanel', () => ({
-  ArtifactPanel: (props: { files: unknown[]; agent: unknown; runStartedAt?: number | null }) => {
+  ArtifactPanel: (props: { fileGroups: unknown[]; uniqueFileCount: number; agent: unknown; runStartedAt?: number | null }) => {
     artifactPanelProps.push(props);
     return <div data-testid="mock-artifact-panel" />;
   },
@@ -326,6 +331,8 @@ describe('ACP Chat page', () => {
     artifactPanelState.open = false;
     artifactPanelState.close.mockReset();
     artifactPanelProps.length = 0;
+    resolveWorkspaceContext.mockReset();
+    resolveWorkspaceContext.mockReturnValue(new Promise(() => undefined));
     chatState.sessions = [{ key: 'agent:main:main', workspacePath: '/workspace' }];
     chatState.currentSessionKey = 'agent:main:main';
     chatState.currentAgentId = 'main';
@@ -676,8 +683,16 @@ describe('ACP Chat page', () => {
     expect(screen.queryByTestId('acp-chat-timeline')).not.toBeInTheDocument();
   });
 
-  it('passes generated ACP file render parts to the artifact panel without user attachments', async () => {
+  it('projects only completed file tools after Main resolves the canonical workspace context', async () => {
     artifactPanelState.open = true;
+    settingsState.chatWorkspacePath = '~/.openclaw/workspace';
+    chatState.sessions = [{ key: 'agent:main:main' }];
+    acpState.cwd = '~/.openclaw/workspace';
+    resolveWorkspaceContext.mockResolvedValueOnce({
+      ok: true,
+      workspaceRoot: '/Users/test/.openclaw/workspace',
+      executionCwd: '/Users/test/.openclaw/workspace',
+    });
     acpState.timeline = {
       ...emptyTimeline(),
       itemOrder: ['msg-user:0', 'msg-assistant:0', 'tool:write-file'],
@@ -702,8 +717,9 @@ describe('ACP Chat page', () => {
           kind: 'tool-call',
           id: 'tool:write-file',
           toolCallId: 'write-file',
-          title: 'Write file',
+          title: 'write: app',
           status: 'completed',
+          input: { path: '/Users/test/.openclaw/workspace/src/app.tsx', content: 'export {}' },
           outputParts: [{ kind: 'file', path: '/workspace/src/app.tsx', name: 'app.tsx' }],
           locations: [],
         },
@@ -713,13 +729,35 @@ describe('ACP Chat page', () => {
     render(<Chat />);
 
     await waitFor(() => {
-      expect(artifactPanelProps.at(-1)?.files).toEqual([
-        expect.objectContaining({ filePath: '/workspace/report.md', fileName: 'report.md', mimeType: 'text/markdown' }),
-        expect.objectContaining({ filePath: '/workspace/src/app.tsx', fileName: 'app.tsx' }),
+      expect(resolveWorkspaceContext).toHaveBeenCalledWith({
+        workspaceRoot: '~/.openclaw/workspace',
+        executionCwd: '~/.openclaw/workspace',
+      });
+      expect(artifactPanelProps.at(-1)?.fileGroups).toEqual([
+        expect.objectContaining({ relativePath: 'src/app.tsx' }),
       ]);
-      expect(artifactPanelProps.at(-1)?.files).not.toEqual(
-        expect.arrayContaining([expect.objectContaining({ filePath: '/workspace/user-upload.md' })]),
-      );
+      expect(artifactPanelProps.at(-1)?.uniqueFileCount).toBe(1);
+      expect(screen.getByText('report.md')).toBeInTheDocument();
     });
+  });
+
+  it('discards stale workspace resolver results after a session switch', async () => {
+    artifactPanelState.open = true;
+    let resolveFirst!: (value: unknown) => void;
+    resolveWorkspaceContext
+      .mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve; }))
+      .mockResolvedValueOnce({ ok: true, workspaceRoot: '/workspace-b', executionCwd: '/workspace-b' });
+
+    const { rerender } = render(<Chat />);
+    chatState.currentSessionKey = 'agent:main:second';
+    chatState.sessions = [{ key: 'agent:main:second', workspacePath: '/workspace-b' }];
+    acpState.activeSessionKey = 'agent:main:second';
+    acpState.cwd = '/workspace-b';
+    acpState.timeline = { ...emptyTimeline(), sessionId: 'agent:main:second' };
+    rerender(<Chat />);
+
+    await waitFor(() => expect(resolveWorkspaceContext).toHaveBeenCalledTimes(2));
+    resolveFirst({ ok: true, workspaceRoot: '/workspace', executionCwd: '/workspace' });
+    await waitFor(() => expect(artifactPanelProps.at(-1)?.fileGroups).toEqual([]));
   });
 });

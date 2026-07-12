@@ -13,6 +13,20 @@ type IpcMockConfig = {
   gatewayStatus?: Record<string, unknown>;
   gatewayRpc?: Record<string, unknown>;
   hostApi?: Record<string, unknown>;
+  hostApiErrors?: Record<string, string>;
+  recordHostInvocations?: boolean;
+  recordLegacyIpcInvocations?: boolean;
+};
+
+export type RecordedHostInvocation = {
+  module?: string;
+  action?: string;
+  payload?: Record<string, unknown>;
+};
+
+export type RecordedLegacyIpcInvocation = {
+  channel: string;
+  args: unknown[];
 };
 
 type ElectronFixtures = {
@@ -240,6 +254,12 @@ export async function installIpcMocks(
       const originalHostInvoke = (ipcMain as unknown as {
         _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
       })._invokeHandlers?.get('host:invoke');
+      const globals = globalThis as unknown as {
+        __e2eHostInvocations?: RecordedHostInvocation[];
+        __e2eLegacyIpcInvocations?: RecordedLegacyIpcInvocation[];
+      };
+      if (mockConfig.recordHostInvocations) globals.__e2eHostInvocations = [];
+      if (mockConfig.recordLegacyIpcInvocations) globals.__e2eLegacyIpcInvocations = [];
       type IpcInvokeHandler = (event: unknown, ...args: unknown[]) => Promise<unknown>;
       const getInvokeHandler = (channel: string): IpcInvokeHandler | undefined => {
         return (ipcMain as unknown as {
@@ -287,6 +307,29 @@ export async function installIpcMocks(
         const current = getInvokeHandler(channel);
         return current && current !== original ? current : null;
       };
+
+      if (mockConfig.recordLegacyIpcInvocations) {
+        const forbiddenLegacyChannels = [
+          'file:readText',
+          'file:readBinary',
+          'file:writeText',
+          'file:stat',
+          'file:listDir',
+          'file:listTree',
+          'shell:openExternal',
+          'shell:showItemInFolder',
+          'shell:openPath',
+        ];
+        for (const channel of forbiddenLegacyChannels) {
+          ipcMain.removeHandler(channel);
+          ipcMain.handle(channel, async (_event: unknown, ...args: unknown[]) => {
+            globals.__e2eLegacyIpcInvocations?.push({ channel, args });
+            if (channel === 'shell:openPath') return 'legacyIpcForbidden';
+            if (channel.startsWith('file:')) return { ok: false, error: 'legacyIpcForbidden' };
+            return undefined;
+          });
+        }
+      }
 
       const legacyPathForHostRequest = (request: {
         module?: string;
@@ -337,7 +380,7 @@ export async function installIpcMocks(
         return null;
       };
 
-      if (mockConfig.gatewayRpc || mockConfig.hostApi || mockConfig.gatewayStatus) {
+      if (mockConfig.gatewayRpc || mockConfig.hostApi || mockConfig.hostApiErrors || mockConfig.gatewayStatus) {
         ipcMain.removeHandler('host:invoke');
         ipcMain.handle('host:invoke', async (event: unknown, request: {
           id?: string;
@@ -345,6 +388,23 @@ export async function installIpcMocks(
           action?: string;
           payload?: Record<string, unknown>;
         }) => {
+          if (mockConfig.recordHostInvocations) {
+            globals.__e2eHostInvocations?.push({
+              module: request?.module,
+              action: request?.action,
+              payload: request?.payload,
+            });
+          }
+
+          const typedKey = stableStringify([
+            request?.module ?? null,
+            request?.action ?? null,
+            request?.payload ?? null,
+          ]);
+          if (mockConfig.hostApiErrors && typedKey in mockConfig.hostApiErrors) {
+            return fail(request.id, mockConfig.hostApiErrors[typedKey]);
+          }
+
           if (mockConfig.gatewayStatus && request?.module === 'gateway' && request.action === 'status') {
             return respond(request.id, mockConfig.gatewayStatus);
           }
@@ -374,11 +434,6 @@ export async function installIpcMocks(
           }
 
           if (mockConfig.hostApi) {
-            const typedKey = stableStringify([
-              request?.module ?? null,
-              request?.action ?? null,
-              request?.payload ?? null,
-            ]);
             if (typedKey in mockConfig.hostApi) {
               return respond(request.id, unwrapLegacyResponse(mockConfig.hostApi[typedKey]));
             }
@@ -426,4 +481,28 @@ export async function installIpcMocks(
     },
     config,
   );
+}
+
+export async function getRecordedHostInvocations(app: ElectronApplication): Promise<RecordedHostInvocation[]> {
+  return await app.evaluate(async ({ app: _app }) => (
+    (globalThis as unknown as { __e2eHostInvocations?: RecordedHostInvocation[] }).__e2eHostInvocations ?? []
+  ));
+}
+
+export async function getRecordedLegacyIpcInvocations(app: ElectronApplication): Promise<RecordedLegacyIpcInvocation[]> {
+  return await app.evaluate(async ({ app: _app }) => (
+    (globalThis as unknown as { __e2eLegacyIpcInvocations?: RecordedLegacyIpcInvocation[] })
+      .__e2eLegacyIpcInvocations ?? []
+  ));
+}
+
+export async function clearRecordedFileAccessInvocations(app: ElectronApplication): Promise<void> {
+  await app.evaluate(async ({ app: _app }) => {
+    const globals = globalThis as unknown as {
+      __e2eHostInvocations?: RecordedHostInvocation[];
+      __e2eLegacyIpcInvocations?: RecordedLegacyIpcInvocation[];
+    };
+    globals.__e2eHostInvocations = [];
+    globals.__e2eLegacyIpcInvocations = [];
+  });
 }

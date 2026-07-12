@@ -15,9 +15,11 @@ vi.mock('react-i18next', () => ({
 }));
 
 const readBinaryFile = vi.fn();
+const readWorkspaceBinary = vi.fn();
 
 vi.mock('@/lib/file-preview-client', () => ({
   readBinaryFile: (...args: unknown[]) => readBinaryFile(...args),
+  readWorkspaceBinary: (...args: unknown[]) => readWorkspaceBinary(...args),
 }));
 
 describe('ImageViewer', () => {
@@ -53,5 +55,51 @@ describe('ImageViewer', () => {
     await waitFor(() => {
       expect(screen.getByText('Image failed to load: notFound')).toBeVisible();
     });
+  });
+
+  it('uses only the scoped binary API for workspace targets, including errors', async () => {
+    const workspaceFileRef = { workspaceRoot: '/workspace', relativePath: 'images/demo.png' };
+    readWorkspaceBinary.mockResolvedValueOnce({ ok: false, error: 'outsideSandbox' });
+
+    render(
+      <ImageViewer
+        filePath="images/demo.png"
+        fileName="demo.png"
+        workspaceFileRef={workspaceFileRef}
+      />,
+    );
+
+    expect(await screen.findByText('Image failed to load: outsideSandbox')).toBeVisible();
+    expect(readWorkspaceBinary).toHaveBeenCalledWith({
+      ...workspaceFileRef,
+      maxBytes: 50 * 1024 * 1024,
+    });
+    expect(readBinaryFile).not.toHaveBeenCalledWith('images/demo.png', expect.anything());
+  });
+
+  it('does not keep a blob from another workspace current while the replacement read is pending', async () => {
+    const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL');
+    const nextRead = new Promise<never>(() => undefined);
+    const firstRef = { workspaceRoot: '/workspace-a', relativePath: 'images/demo.png' };
+    const secondRef = { workspaceRoot: '/workspace-b', relativePath: 'images/demo.png' };
+    readWorkspaceBinary
+      .mockResolvedValueOnce({ ok: true, data: Uint8Array.from([1]), mimeType: 'image/png' })
+      .mockReturnValueOnce(nextRead);
+
+    const { rerender } = render(
+      <ImageViewer filePath="images/demo.png" fileName="demo.png" workspaceFileRef={firstRef} />,
+    );
+    const oldImage = await screen.findByTestId('image-preview');
+    const oldUrl = oldImage.getAttribute('src');
+
+    rerender(
+      <ImageViewer filePath="images/demo.png" fileName="demo.png" workspaceFileRef={secondRef} />,
+    );
+
+    expect(screen.queryByTestId('image-preview')).not.toBeInTheDocument();
+    expect(readWorkspaceBinary).toHaveBeenLastCalledWith({ ...secondRef, maxBytes: 50 * 1024 * 1024 });
+    expect(oldUrl).toMatch(/^blob:/);
+    expect(revokeObjectUrl).toHaveBeenCalledWith(oldUrl);
+    revokeObjectUrl.mockRestore();
   });
 });

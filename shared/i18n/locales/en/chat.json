@@ -26,6 +26,15 @@
         "openFolder": "Open folder",
         "viewAll": "View all changes"
     },
+    "fileActivity": {
+        "created": "Created",
+        "modified": "Modified",
+        "deleted": "Deleted",
+        "fileButton": "{{action}} {{path}}",
+        "changeRecord": "View changes for {{path}}",
+        "fileUnavailable": "File unavailable",
+        "outsideWorkspace": "File is outside the workspace"
+    },
     "runError": {
         "title": "Model call failed"
     },
@@ -64,8 +73,10 @@
         },
         "changes": {
             "heading": "File changes ({{count}})",
-            "empty": "No file changes in this conversation yet",
-            "selectFileHint": "Click a file card in the chat or “View changes” to open a diff."
+            "empty": "This session has no file changes yet.",
+            "selectFileHint": "Click a file card in the chat or “View changes” to open a diff.",
+            "changeRecord": "Change {{number}}",
+            "diffUnavailable": "Diff unavailable for this change."
         },
         "preview": {
             "emptyTitle": "No file selected",

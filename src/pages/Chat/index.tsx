@@ -17,8 +17,9 @@ import { cn } from '@/lib/utils';
 import { getWorkspaceDisplayLabel, resolveEffectiveWorkspace } from '@/lib/workspace-context';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
 import { getAcpUserMessageAnchorId } from '@/lib/acp/timeline-anchors';
-import type { AcpTimelineSnapshot, MessageSegmentItem, RenderPart } from '@/lib/acp/timeline-types';
-import type { FileContentType, GeneratedFile } from '@/lib/generated-files';
+import type { MessageSegmentItem, RenderPart } from '@/lib/acp/timeline-types';
+import { projectOpenClawFileActivities, type AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
+import { hostApi } from '@/lib/host-api';
 import { ChatInput, type FileAttachment } from './ChatInput';
 import { ChatToolbar } from './ChatToolbar';
 import { AcpTimeline } from './AcpTimeline';
@@ -31,26 +32,11 @@ const PanelResizeDividerLazy = lazy(() =>
   import('@/components/file-preview/PanelResizeDivider').then((m) => ({ default: m.PanelResizeDivider })),
 );
 
-const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.ico']);
-const VIDEO_EXTS = new Set(['.mp4', '.webm', '.mov', '.avi', '.mkv']);
-const AUDIO_EXTS = new Set(['.mp3', '.wav', '.ogg', '.flac', '.m4a']);
-const DOCUMENT_EXTS = new Set(['.md', '.markdown', '.txt', '.rst', '.adoc', '.html', '.htm', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx']);
-const CODE_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.rb', '.go', '.rs', '.java', '.json', '.yaml', '.yml', '.toml', '.xml', '.sh', '.html', '.css', '.scss', '.sql']);
-const MIME_BY_EXT: Record<string, string> = {
-  '.md': 'text/markdown',
-  '.txt': 'text/plain',
-  '.json': 'application/json',
-  '.ts': 'text/typescript',
-  '.tsx': 'text/typescript',
-  '.js': 'text/javascript',
-  '.jsx': 'text/javascript',
-  '.html': 'text/html',
-  '.css': 'text/css',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.svg': 'image/svg+xml',
-  '.pdf': 'application/pdf',
+const EMPTY_FILE_ACTIVITY: AcpFileActivityProjection = {
+  activities: [],
+  turnSummariesByTurnId: {},
+  fileGroups: [],
+  uniqueFileCount: 0,
 };
 
 type QuestionDirectoryItem = {
@@ -74,111 +60,8 @@ function buildQuestionDirectoryTitle(item: MessageSegmentItem, fallback: string)
   return graphemes.length > 64 ? `${graphemes.slice(0, 61).join('')}...` : normalized;
 }
 
-function basenameOf(filePath: string): string {
-  return filePath.split(/[\\/]/).filter(Boolean).at(-1) || filePath;
-}
-
-function extnameOf(filePath: string): string {
-  const name = basenameOf(filePath);
-  const index = name.lastIndexOf('.');
-  return index >= 0 ? name.slice(index).toLowerCase() : '';
-}
-
-function contentTypeForExt(ext: string): FileContentType {
-  if (IMAGE_EXTS.has(ext)) return 'snapshot';
-  if (VIDEO_EXTS.has(ext)) return 'video';
-  if (AUDIO_EXTS.has(ext)) return 'audio';
-  if (DOCUMENT_EXTS.has(ext)) return 'document';
-  if (CODE_EXTS.has(ext)) return 'code';
-  return 'other';
-}
-
-function normalizeAcpFilePath(value: string | undefined): string | null {
-  if (!value) return null;
-  if (value.startsWith('file://')) {
-    try {
-      return decodeURIComponent(new URL(value).pathname);
-    } catch {
-      return value.replace(/^file:\/\//, '');
-    }
-  }
-  return value;
-}
-
 function isRecoverableInitialAcpLoadError(message: string | null): boolean {
   return !!message && message.includes("reply was never sent");
-}
-
-function buildAcpGeneratedFile(
-  filePath: string,
-  fileName: string | undefined,
-  mimeType: string | undefined,
-  lastSeenIndex: number,
-): GeneratedFile {
-  const ext = extnameOf(filePath);
-  return {
-    filePath,
-    fileName: fileName || basenameOf(filePath),
-    ext,
-    mimeType: mimeType || MIME_BY_EXT[ext] || 'application/octet-stream',
-    contentType: contentTypeForExt(ext),
-    action: 'modified',
-    lastSeenIndex,
-  };
-}
-
-function addAcpGeneratedFile(
-  map: Map<string, GeneratedFile>,
-  filePath: string | null,
-  fileName: string | undefined,
-  mimeType: string | undefined,
-  index: number,
-) {
-  if (!filePath) return;
-  map.set(filePath, buildAcpGeneratedFile(filePath, fileName, mimeType, index));
-}
-
-function addAcpFilePart(map: Map<string, GeneratedFile>, part: RenderPart, index: number) {
-  if (part.kind !== 'file') return;
-  addAcpGeneratedFile(map, normalizeAcpFilePath(part.path), part.name, part.mimeType, index);
-}
-
-function stringField(record: Record<string, unknown>, keys: string[]): string | undefined {
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === 'string' && value.trim()) return value;
-  }
-  return undefined;
-}
-
-function addAcpLocationFile(map: Map<string, GeneratedFile>, location: unknown, index: number) {
-  if (!location || typeof location !== 'object') return;
-  const record = location as Record<string, unknown>;
-  const filePath = normalizeAcpFilePath(stringField(record, ['path', 'uri', 'filePath', 'file_path']));
-  addAcpGeneratedFile(map, filePath, stringField(record, ['name', 'fileName', 'file_name']), undefined, index);
-}
-
-function deriveAcpGeneratedFiles(timeline: AcpTimelineSnapshot): GeneratedFile[] {
-  const files = new Map<string, GeneratedFile>();
-  timeline.itemOrder.forEach((id, itemIndex) => {
-    const item = timeline.itemsById[id];
-    if (!item) return;
-    if (item.kind === 'message-segment') {
-      if (item.role !== 'user') {
-        item.parts.forEach((part, partIndex) => addAcpFilePart(files, part, itemIndex * 100 + partIndex));
-      }
-      return;
-    }
-    if (item.kind === 'thought') {
-      item.parts.forEach((part, partIndex) => addAcpFilePart(files, part, itemIndex * 100 + partIndex));
-      return;
-    }
-    if (item.kind === 'tool-call') {
-      item.outputParts.forEach((part, partIndex) => addAcpFilePart(files, part, itemIndex * 100 + partIndex));
-      item.locations.forEach((location, locationIndex) => addAcpLocationFile(files, location, itemIndex * 100 + 50 + locationIndex));
-    }
-  });
-  return Array.from(files.values()).sort((a, b) => a.lastSeenIndex - b.lastSeenIndex);
 }
 
 function QuestionDirectory({ items }: { items: QuestionDirectoryItem[] }) {
@@ -256,6 +139,12 @@ export function Chat() {
   const [sessionDiscoveryAttempted, setSessionDiscoveryAttempted] = useState(false);
   const [lastPromptAttemptSessionKey, setLastPromptAttemptSessionKey] = useState<string | null>(null);
   const [questionDirectoryOpenSessionKey, setQuestionDirectoryOpenSessionKey] = useState<string | null>(null);
+  const [resolvedWorkspaceContext, setResolvedWorkspaceContext] = useState<{
+    key: string;
+    sessionKey: string;
+    workspaceRoot: string;
+    executionCwd: string;
+  } | null>(null);
   const currentSession = useMemo(
     () => sessions.find((session) => session.key === currentSessionKey) ?? null,
     [currentSessionKey, sessions],
@@ -302,6 +191,32 @@ export function Chat() {
   useEffect(() => {
     closeArtifactPanel();
   }, [currentSessionKey, closeArtifactPanel]);
+
+  const projectionExecutionCwd = acpActiveSessionKey === currentSessionKey && acpCwd ? acpCwd : cwd;
+  const workspaceContextKey = currentSessionKey && cwd && projectionExecutionCwd
+    ? `${currentSessionKey}\0${cwd}\0${projectionExecutionCwd}`
+    : null;
+
+  useEffect(() => {
+    setResolvedWorkspaceContext(null);
+    if (!workspaceContextKey || !currentSessionKey || !cwd || !projectionExecutionCwd) return;
+    let stale = false;
+    void hostApi.files.resolveWorkspaceContext({
+      workspaceRoot: cwd,
+      executionCwd: projectionExecutionCwd,
+    }).then((result) => {
+      if (stale || !result.ok || !result.workspaceRoot || !result.executionCwd) return;
+      setResolvedWorkspaceContext({
+        key: workspaceContextKey,
+        sessionKey: currentSessionKey,
+        workspaceRoot: result.workspaceRoot,
+        executionCwd: result.executionCwd,
+      });
+    }).catch(() => undefined);
+    return () => {
+      stale = true;
+    };
+  }, [currentSessionKey, cwd, projectionExecutionCwd, workspaceContextKey]);
 
   useEffect(() => {
     if (currentSessionKey !== DEFAULT_SESSION_KEY || sessions.length > 0 || sessionDiscoveryAttempted) return;
@@ -358,7 +273,20 @@ export function Chat() {
     && !(acpTimeline.itemOrder.length === 0 && !hasAttemptedAcpPromptForCurrentSession && isRecoverableInitialAcpLoadError(acpError))
     ? acpError
     : null;
-  const acpGeneratedFiles = useMemo(() => deriveAcpGeneratedFiles(acpTimeline), [acpTimeline]);
+  const fileActivity = useMemo(() => {
+    if (
+      !workspaceContextKey
+      || resolvedWorkspaceContext?.key !== workspaceContextKey
+      || resolvedWorkspaceContext.sessionKey !== currentSessionKey
+      || acpActiveSessionKey !== currentSessionKey
+      || acpTimeline.sessionId !== currentSessionKey
+    ) return EMPTY_FILE_ACTIVITY;
+    return projectOpenClawFileActivities({
+      timeline: acpTimeline,
+      workspaceRoot: resolvedWorkspaceContext.workspaceRoot,
+      executionCwd: resolvedWorkspaceContext.executionCwd,
+    });
+  }, [acpActiveSessionKey, acpTimeline, currentSessionKey, resolvedWorkspaceContext, workspaceContextKey]);
   const questionDirectoryItems = useMemo(() => {
     let ordinal = 0;
     return acpTimeline.itemOrder.flatMap((itemId) => {
@@ -417,6 +345,8 @@ export function Chat() {
                   ) : (
                     <AcpTimeline
                       snapshot={acpTimeline}
+                      fileActivity={fileActivity}
+                      workspaceRoot={resolvedWorkspaceContext?.workspaceRoot}
                       onPermissionSelect={(requestId, optionId) => {
                         void respondAcpPermission(requestId, optionId);
                       }}
@@ -528,7 +458,8 @@ export function Chat() {
               )}
             >
               <ArtifactPanelLazy
-                files={acpGeneratedFiles}
+                fileGroups={fileActivity.fileGroups}
+                uniqueFileCount={fileActivity.uniqueFileCount}
                 agent={currentAgent}
                 workspacePath={cwd}
                 workspaceLabel={workspaceLabel}

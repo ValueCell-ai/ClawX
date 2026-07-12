@@ -793,7 +793,10 @@ test.describe('ClawX ACP inline timeline', () => {
           [stableStringify(['sessions.list', {}])]: {
             success: true,
             result: {
-              sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE, updatedAt: new Date().toISOString() }],
+              sessions: [
+                { key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE, updatedAt: new Date().toISOString() },
+                { key: REVIEWER_SESSION_KEY, displayName: 'reviewer', workspacePath: REVIEWER_WORKSPACE, updatedAt: new Date().toISOString() },
+              ],
             },
           },
         },
@@ -802,6 +805,16 @@ test.describe('ClawX ACP inline timeline', () => {
           [stableStringify(['chat', 'loadAcpSession', { sessionKey: REVIEWER_SESSION_KEY, cwd: REVIEWER_WORKSPACE }])]: {
             success: true,
             generation: 1,
+          },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: REVIEWER_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: {
+            success: true,
+            generation: 1,
+          },
+          [stableStringify(['sessions', 'summaries', { sessionKeys: [MAIN_SESSION_KEY, REVIEWER_SESSION_KEY] }])]: {
+            summaries: [
+              { sessionKey: MAIN_SESSION_KEY, workspacePath: MAIN_WORKSPACE },
+              { sessionKey: REVIEWER_SESSION_KEY, workspacePath: REVIEWER_WORKSPACE },
+            ],
           },
           [stableStringify(['/api/agents', 'GET'])]: {
             ok: true,
@@ -834,9 +847,10 @@ test.describe('ClawX ACP inline timeline', () => {
 
       const page = await openChat(app);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('workspace-session-group-%2Fworkspace%2Freviewer')).toBeVisible({ timeout: 30_000 });
 
       await page.getByTestId('chat-composer-agent').click();
-      await page.getByText('reviewer', { exact: true }).click();
+      await page.getByRole('button', { name: 'reviewer mock-model' }).click();
       await page.getByTestId('chat-composer-input').fill('Trigger target send failure');
       await page.getByTestId('chat-composer-send').click();
 

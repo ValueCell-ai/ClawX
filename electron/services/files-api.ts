@@ -1,11 +1,27 @@
 import { app, nativeImage } from 'electron';
 import crypto from 'node:crypto';
+import { constants } from 'node:fs';
+import type { Stats } from 'node:fs';
+import type { FileHandle } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, extname, join, relative, resolve, sep } from 'node:path';
+import {
+  basename,
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  posix,
+  relative,
+  resolve,
+  sep,
+  win32,
+} from 'node:path';
 import type {
+  FilePreviewError,
   FilePreviewTreeNode,
   FilePreviewTreeOptions,
   FileReadBinaryOptions,
+  WorkspaceFileRef,
 } from '@shared/host-api/contract';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { expandPath } from '../utils/paths';
@@ -93,6 +109,26 @@ type ResolvedSandboxedPath = {
   readOnly: boolean;
 };
 
+type ResolvedWorkspaceTarget = {
+  root: string;
+  target: string;
+};
+
+type OpenWorkspaceTarget = ResolvedWorkspaceTarget & {
+  handle: FileHandle;
+  stat: Stats;
+};
+
+type WorkspaceFs = {
+  open: (path: string, flags: number) => Promise<FileHandle>;
+  realpath: (path: string) => Promise<string>;
+  stat: (path: string) => Promise<Stats>;
+};
+
+type FilesApiDependencies = {
+  workspaceFs?: WorkspaceFs;
+};
+
 function getMimeType(ext: string): string {
   return EXT_MIME_MAP[ext.toLowerCase()] || 'application/octet-stream';
 }
@@ -132,15 +168,145 @@ function requirePath(payload: unknown): string {
   return path;
 }
 
-function isPathInside(child: string, parent: string): boolean {
-  const c = resolve(child);
-  const p = resolve(parent);
-  if (process.platform === 'win32') {
-    const cl = c.toLowerCase();
-    const pl = p.toLowerCase();
-    return cl === pl || cl.startsWith(pl + sep);
+export function isPathInside(
+  child: string,
+  parent: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  const pathApi = platform === 'win32' ? win32 : posix;
+  const c = pathApi.resolve(child);
+  const p = pathApi.resolve(parent);
+  const childFromParent = pathApi.relative(p, c);
+  return childFromParent === ''
+    || (!childFromParent.startsWith(`..${pathApi.sep}`)
+      && childFromParent !== '..'
+      && !pathApi.isAbsolute(childFromParent));
+}
+
+function workspaceError(error: unknown): FilePreviewError {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message === 'outsideSandbox' || message === 'notFound' || message === 'notDirectory') {
+    return message;
   }
-  return c === p || c.startsWith(p + sep);
+  const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+  if (code === 'ENOENT') return 'notFound';
+  if (code === 'ENOTDIR') return 'notDirectory';
+  if (code === 'ELOOP') return 'outsideSandbox';
+  return 'operationFailed';
+}
+
+function isSamePath(left: string, right: string): boolean {
+  const normalizedLeft = resolve(left);
+  const normalizedRight = resolve(right);
+  return process.platform === 'win32'
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight;
+}
+
+async function resolveWorkspaceTarget(
+  ref: WorkspaceFileRef,
+  fsP: WorkspaceFs,
+): Promise<ResolvedWorkspaceTarget> {
+  if (!ref || typeof ref.workspaceRoot !== 'string' || !ref.workspaceRoot.trim()
+    || typeof ref.relativePath !== 'string' || !ref.relativePath.trim()) {
+    throw new Error('outsideSandbox');
+  }
+  const relativePath = ref.relativePath;
+  if (isAbsolute(relativePath) || posix.isAbsolute(relativePath) || win32.isAbsolute(relativePath)
+    || relativePath.split(/[\\/]+/).includes('..')) {
+    throw new Error('outsideSandbox');
+  }
+
+  let root: string;
+  try {
+    root = await fsP.realpath(expandPath(ref.workspaceRoot));
+    if (!(await fsP.stat(root)).isDirectory()) throw new Error('outsideSandbox');
+  } catch (error) {
+    if (error instanceof Error && error.message === 'outsideSandbox') throw error;
+    throw new Error('outsideSandbox', { cause: error });
+  }
+
+  const candidate = resolve(root, relativePath);
+  if (!isPathInside(candidate, root)) throw new Error('outsideSandbox');
+
+  try {
+    const target = await fsP.realpath(candidate);
+    if (!isPathInside(target, root)) throw new Error('outsideSandbox');
+    return { root, target };
+  } catch (error) {
+    if (error instanceof Error && error.message === 'outsideSandbox') throw error;
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
+  }
+
+  let parent = dirname(candidate);
+  while (true) {
+    try {
+      const existingParent = await fsP.realpath(parent);
+      if (!isPathInside(existingParent, root)) throw new Error('outsideSandbox');
+      throw new Error('notFound');
+    } catch (error) {
+      if (error instanceof Error && (error.message === 'outsideSandbox' || error.message === 'notFound')) {
+        throw error;
+      }
+      if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
+      const nextParent = dirname(parent);
+      if (nextParent === parent) throw new Error('outsideSandbox', { cause: error });
+      parent = nextParent;
+    }
+  }
+}
+
+async function revalidateWorkspaceTarget(
+  resolvedTarget: ResolvedWorkspaceTarget,
+  fsP: WorkspaceFs,
+): Promise<string> {
+  const root = await fsP.realpath(resolvedTarget.root);
+  if (!isSamePath(root, resolvedTarget.root)) throw new Error('outsideSandbox');
+  if (!(await fsP.stat(root)).isDirectory()) throw new Error('outsideSandbox');
+
+  const target = await fsP.realpath(resolvedTarget.target);
+  if (!isSamePath(target, resolvedTarget.target) || !isPathInside(target, root)) {
+    throw new Error('outsideSandbox');
+  }
+  return target;
+}
+
+async function openWorkspaceTarget(ref: WorkspaceFileRef, fsP: WorkspaceFs): Promise<OpenWorkspaceTarget> {
+  const resolvedTarget = await resolveWorkspaceTarget(ref, fsP);
+  let handle: FileHandle | undefined;
+  try {
+    const noFollow = process.platform === 'win32' ? 0 : constants.O_NOFOLLOW;
+    handle = await fsP.open(resolvedTarget.target, constants.O_RDONLY | noFollow);
+    const stat = await handle.stat();
+    const target = await revalidateWorkspaceTarget(resolvedTarget, fsP);
+    const pathStat = await fsP.stat(target);
+    if (stat.dev !== pathStat.dev || stat.ino !== pathStat.ino) {
+      throw new Error('outsideSandbox');
+    }
+    return { ...resolvedTarget, handle, stat };
+  } catch (error) {
+    await handle?.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+async function readOpenedFile(handle: FileHandle, maxBytes: number): Promise<Buffer | null> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  while (total <= maxBytes) {
+    const length = Math.min(64 * 1024, maxBytes + 1 - total);
+    const chunk = Buffer.allocUnsafe(length);
+    const { bytesRead } = await handle.read(chunk, 0, length, total);
+    if (bytesRead === 0) break;
+    chunks.push(chunk.subarray(0, bytesRead));
+    total += bytesRead;
+  }
+  return total > maxBytes ? null : Buffer.concat(chunks, total);
+}
+
+function getWorkspaceBinaryCap(value: unknown): number {
+  const maxBytes = typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  return Math.max(1, Math.min(maxBytes ?? FILE_PREVIEW_MAX_BINARY_BYTES, FILE_PREVIEW_MAX_BINARY_BYTES));
 }
 
 function getFilePreviewWriteRoots(): string[] {
@@ -207,7 +373,9 @@ function getBinaryOptions(opts: unknown): FileReadBinaryOptions {
   return isRecord(opts) ? opts as FileReadBinaryOptions : {};
 }
 
-export function createFilesApi(): CompleteHostServiceRegistry['files'] {
+export function createFilesApi(dependencies: FilesApiDependencies = {}): CompleteHostServiceRegistry['files'] {
+  const getWorkspaceFs = async (): Promise<WorkspaceFs> => dependencies.workspaceFs
+    ?? await import('node:fs/promises');
   return {
     stagePaths: async (payload) => {
       const body = isRecord(payload) ? payload as StagePathsPayload : {};
@@ -273,6 +441,99 @@ export function createFilesApi(): CompleteHostServiceRegistry['files'] {
         stagedPath,
         preview,
       };
+    },
+    resolveWorkspaceContext: async (input) => {
+      if (!input || typeof input.workspaceRoot !== 'string' || !input.workspaceRoot.trim()
+        || typeof input.executionCwd !== 'string' || !input.executionCwd.trim()) {
+        return { ok: false, error: 'outsideSandbox' };
+      }
+      const fsP = await getWorkspaceFs();
+      try {
+        const [workspaceRoot, executionCwd] = await Promise.all([
+          fsP.realpath(expandPath(input.workspaceRoot)),
+          fsP.realpath(expandPath(input.executionCwd)),
+        ]);
+        const [rootStat, cwdStat] = await Promise.all([
+          fsP.stat(workspaceRoot),
+          fsP.stat(executionCwd),
+        ]);
+        if (!rootStat.isDirectory() || !cwdStat.isDirectory()) {
+          return { ok: false, error: 'notDirectory' };
+        }
+        if (!isPathInside(executionCwd, workspaceRoot)) {
+          return { ok: false, error: 'outsideSandbox' };
+        }
+        return { ok: true, workspaceRoot, executionCwd };
+      } catch (error) {
+        return { ok: false, error: workspaceError(error) };
+      }
+    },
+    readWorkspaceText: async (ref) => {
+      let opened: OpenWorkspaceTarget | undefined;
+      try {
+        opened = await openWorkspaceTarget(ref, await getWorkspaceFs());
+        const { stat, target } = opened;
+        if (!stat.isFile()) return { ok: false, error: 'notFound' };
+        if (stat.size > FILE_PREVIEW_MAX_TEXT_BYTES) {
+          return { ok: false, error: 'tooLarge', size: stat.size };
+        }
+        const buf = await readOpenedFile(opened.handle, FILE_PREVIEW_MAX_TEXT_BYTES);
+        if (!buf) return { ok: false, error: 'tooLarge', size: FILE_PREVIEW_MAX_TEXT_BYTES + 1 };
+        if (looksLikeBinary(buf)) return { ok: false, error: 'binary', size: buf.length };
+        return {
+          ok: true,
+          content: buf.toString('utf8'),
+          mimeType: getMimeType(extname(target)),
+          size: buf.length,
+          readOnly: true,
+        };
+      } catch (error) {
+        return { ok: false, error: workspaceError(error) };
+      } finally {
+        await opened?.handle.close().catch(() => undefined);
+      }
+    },
+    readWorkspaceBinary: async (input) => {
+      let opened: OpenWorkspaceTarget | undefined;
+      try {
+        opened = await openWorkspaceTarget(input, await getWorkspaceFs());
+        const { stat, target } = opened;
+        if (!stat.isFile()) return { ok: false, error: 'notFound' };
+        const cap = getWorkspaceBinaryCap(input.maxBytes);
+        if (stat.size > cap) return { ok: false, error: 'tooLarge', size: stat.size };
+        const buf = await readOpenedFile(opened.handle, cap);
+        if (!buf) return { ok: false, error: 'tooLarge', size: cap + 1 };
+        return {
+          ok: true,
+          data: new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength),
+          mimeType: getMimeType(extname(target)),
+          size: buf.length,
+          readOnly: true,
+        };
+      } catch (error) {
+        return { ok: false, error: workspaceError(error) };
+      } finally {
+        await opened?.handle.close().catch(() => undefined);
+      }
+    },
+    statWorkspaceFile: async (ref) => {
+      let opened: OpenWorkspaceTarget | undefined;
+      try {
+        opened = await openWorkspaceTarget(ref, await getWorkspaceFs());
+        const { stat } = opened;
+        return {
+          ok: true,
+          size: stat.size,
+          mtime: stat.mtimeMs,
+          isFile: stat.isFile(),
+          isDir: stat.isDirectory(),
+          readOnly: true,
+        };
+      } catch (error) {
+        return { ok: false, error: workspaceError(error) };
+      } finally {
+        await opened?.handle.close().catch(() => undefined);
+      }
     },
     readText: async (payload) => {
       try {

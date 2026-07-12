@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { AcpToolCallCard } from '@/pages/Chat/AcpToolCallCard';
 import { AcpTimeline } from '@/pages/Chat/AcpTimeline';
 import type { AcpTimelineSnapshot, ToolCallItem } from '@/lib/acp/timeline-types';
+import type { AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
+import { useArtifactPanel } from '@/stores/artifact-panel';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -23,6 +25,11 @@ vi.mock('react-i18next', () => ({
         'acp.promptFailed': 'Prompt failed',
         'acp.unsupportedContent': 'Unsupported content',
         'acp.dismiss': 'Dismiss',
+        'fileActivity.created': 'Created',
+        'fileActivity.modified': 'Modified',
+        'fileActivity.deleted': 'Deleted',
+        'fileActivity.fileButton': '{{action}} {{path}}',
+        'fileActivity.changeRecord': 'View changes for {{path}}',
       };
       return labels[key] ?? key;
     },
@@ -56,6 +63,104 @@ function toolCallItem(overrides: Partial<ToolCallItem>): ToolCallItem {
 }
 
 describe('ACP chat timeline components', () => {
+  it('renders tool-only turn file controls once after timeline items and routes preview and changes', () => {
+    const state = snapshot({
+      itemOrder: ['tool:write-file'],
+      itemsById: {
+        'tool:write-file': toolCallItem({
+          id: 'tool:write-file',
+          toolCallId: 'write-file',
+          title: 'write: report',
+          input: { path: 'report.md', content: '# Report' },
+        }),
+      },
+    });
+    const turnId = 'assistant-turn:tool:write-file';
+    const activity = {
+      turnId,
+      toolCallId: 'write-file',
+      toolName: 'write' as const,
+      relativePath: 'report.md',
+      action: 'created' as const,
+      fragments: [{ oldText: '', newText: '# Report', sequence: 0 }],
+      sequence: 0,
+    };
+    const projection: AcpFileActivityProjection = {
+      activities: [activity],
+      turnSummariesByTurnId: {
+        [turnId]: [{
+          turnId,
+          relativePath: 'report.md',
+          action: 'created',
+          activities: [activity],
+          added: 1,
+          removed: 0,
+        }],
+      },
+      fileGroups: [{ relativePath: 'report.md', activities: [activity] }],
+      uniqueFileCount: 1,
+    };
+
+    render(<AcpTimeline snapshot={state} fileActivity={projection} workspaceRoot="/workspace" />);
+
+    const turn = screen.getByTestId('acp-assistant-turn');
+    const tool = screen.getByTestId('acp-tool-call-card');
+    const controls = screen.getByTestId('acp-turn-file-activity');
+    expect(tool.compareDocumentPosition(controls) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getAllByTestId('acp-file-button')).toHaveLength(1);
+    expect(screen.getAllByTestId('acp-file-summary-row')).toHaveLength(1);
+    expect(turn).toHaveTextContent('Created');
+    expect(turn).toHaveTextContent('+1');
+    expect(turn).toHaveTextContent('-0');
+
+    fireEvent.click(screen.getByTestId('acp-file-button'));
+    expect(useArtifactPanel.getState().focusedFile).toMatchObject({
+      filePath: 'report.md',
+      workspaceFileRef: { workspaceRoot: '/workspace', relativePath: 'report.md' },
+    });
+    fireEvent.click(screen.getByTestId('acp-file-summary-row'));
+    expect(useArtifactPanel.getState().focusedChange).toMatchObject({
+      relativePath: 'report.md',
+      turnId,
+      navigationId: expect.any(Number),
+    });
+  });
+
+  it('routes deleted path-only activity to Changes without rendering counts', () => {
+    const state = snapshot({
+      itemOrder: ['tool:delete-file'],
+      itemsById: { 'tool:delete-file': toolCallItem({ id: 'tool:delete-file', toolCallId: 'delete-file' }) },
+    });
+    const turnId = 'assistant-turn:tool:delete-file';
+    const activity = {
+      turnId,
+      toolCallId: 'delete-file',
+      toolName: 'apply_patch' as const,
+      relativePath: 'old.md',
+      action: 'deleted' as const,
+      fragments: [],
+      sequence: 0,
+    };
+    const projection: AcpFileActivityProjection = {
+      activities: [activity],
+      turnSummariesByTurnId: {
+        [turnId]: [{ turnId, relativePath: 'old.md', action: 'deleted', activities: [activity], added: null, removed: null }],
+      },
+      fileGroups: [{ relativePath: 'old.md', activities: [activity] }],
+      uniqueFileCount: 1,
+    };
+
+    render(<AcpTimeline snapshot={state} fileActivity={projection} workspaceRoot="/workspace" />);
+    expect(screen.getByTestId('acp-turn-file-activity')).not.toHaveTextContent('+');
+    expect(screen.getByTestId('acp-turn-file-activity')).not.toHaveTextContent('-');
+    fireEvent.click(screen.getByTestId('acp-file-button'));
+    expect(useArtifactPanel.getState().focusedChange).toMatchObject({
+      relativePath: 'old.md',
+      turnId,
+      navigationId: expect.any(Number),
+    });
+  });
+
   it('renders process blocks between assistant text segments in timeline order', () => {
     const state = snapshot({
       itemOrder: ['msg-a:0', 'thought:msg-a', 'tool:read-file', 'plan:current', 'msg-a:1'],

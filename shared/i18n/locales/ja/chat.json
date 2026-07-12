@@ -26,6 +26,15 @@
         "openFolder": "フォルダーを開く",
         "viewAll": "ファイル変更を見る"
     },
+    "fileActivity": {
+        "created": "作成済み",
+        "modified": "変更済み",
+        "deleted": "削除済み",
+        "fileButton": "{{action}} {{path}}",
+        "changeRecord": "{{path}} の変更を表示",
+        "fileUnavailable": "ファイルを利用できません",
+        "outsideWorkspace": "ファイルはワークスペース外にあります"
+    },
     "runError": {
         "title": "モデル呼び出しに失敗しました"
     },
@@ -64,8 +73,10 @@
         },
         "changes": {
             "heading": "ファイルの変更（{{count}} 件）",
-            "empty": "この会話にはまだファイルの変更がありません",
-            "selectFileHint": "会話内のファイルカード、または「変更を表示」をクリックして diff を開きます。"
+            "empty": "このセッションにはまだファイルの変更がありません。",
+            "selectFileHint": "会話内のファイルカード、または「変更を表示」をクリックして diff を開きます。",
+            "changeRecord": "変更 {{number}}",
+            "diffUnavailable": "この変更の差分は利用できません。"
         },
         "preview": {
             "emptyTitle": "ファイルが選択されていません",

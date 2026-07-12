@@ -1,14 +1,28 @@
-import type { ElectronApplication } from '@playwright/test';
-import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
+import type { ElectronApplication, Page } from '@playwright/test';
+import {
+  clearRecordedFileAccessInvocations,
+  closeElectronApp,
+  expect,
+  getRecordedHostInvocations,
+  getRecordedLegacyIpcInvocations,
+  getStableWindow,
+  installIpcMocks,
+  test,
+} from './fixtures/electron';
 
-const SESSION_KEY = 'agent:main:main';
-const workspacePath = '/Users/e2e/.openclaw/workspace-main';
-const SESSIONS_LIST_PAYLOAD = {
-  includeDerivedTitles: true,
-  includeLastMessage: true,
-};
+const MAIN_SESSION_KEY = 'agent:main:main';
+const OTHER_SESSION_KEY = 'agent:main:other';
+const WORKSPACE = '/workspace';
+const SESSIONS_LIST_PAYLOAD = { includeDerivedTitles: true, includeLastMessage: true };
 
 type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
+type SessionFixture = { key: string; title: string; updates?: AcpSessionUpdate[] };
+type AcpEventRecord = {
+  sessionKey: string;
+  generation: number;
+  historical: boolean;
+  update: AcpSessionUpdate;
+};
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -19,404 +33,506 @@ function stableStringify(value: unknown): string {
   return `{${entries.join(',')}}`;
 }
 
-function hostJson(json: unknown) {
-  return {
-    ok: true,
-    data: {
-      status: 200,
-      ok: true,
-      json,
-    },
-  };
+function user(messageId: string, text: string): AcpSessionUpdate {
+  return { sessionUpdate: 'user_message', messageId, content: [{ type: 'text', text }] };
 }
 
-function acpFileUpdates(input: {
-  filePath: string;
-  fileName: string;
-  mimeType: string;
-  prompt: string;
-  response: string;
+function toolSequence(input: {
+  id: string;
+  title: string;
+  rawInput?: Record<string, unknown>;
+  finalStatus?: 'completed' | 'failed';
 }): AcpSessionUpdate[] {
-  const id = input.fileName.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
   return [
     {
-      sessionUpdate: 'user_message',
-      messageId: `user-${id}`,
-      content: [{ type: 'text', text: input.prompt }],
-    },
-    {
       sessionUpdate: 'tool_call',
-      toolCallId: `tool-${id}`,
-      title: 'Edit',
-      kind: 'edit',
-      status: 'completed',
-      content: [{ type: 'content', content: { type: 'text', text: input.response } }],
-      locations: [{ path: input.filePath, name: input.fileName }],
+      toolCallId: input.id,
+      title: input.title,
+      status: 'in_progress',
+      ...(input.rawInput === undefined ? {} : { rawInput: input.rawInput }),
+      content: [{ type: 'content', content: { type: 'text', text: `${input.title} started` } }],
     },
     {
-      sessionUpdate: 'agent_message',
-      messageId: `assistant-${id}`,
-      content: [
-        { type: 'text', text: input.response },
-        { type: 'resource_link', uri: input.filePath, name: input.fileName, mimeType: input.mimeType },
-      ],
+      sessionUpdate: 'tool_call_update',
+      toolCallId: input.id,
+      status: input.finalStatus ?? 'completed',
+      content: [{ type: 'content', content: { type: 'text', text: `${input.title} finished` } }],
     },
   ];
 }
 
-async function installAcpLoadReplayMock(app: ElectronApplication, updates: AcpSessionUpdate[]) {
-  await app.evaluate(async ({ app: _app }, payload) => {
-    const { BrowserWindow, ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
-    type HostInvokeRequest = {
-      id?: string;
-      module?: string;
-      action?: string;
-      payload?: Record<string, unknown>;
-    };
-    type IpcInvokeHandler = (event: unknown, request: HostInvokeRequest) => Promise<unknown>;
-    const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
-    const originalHostInvoke = handlers?.get('host:invoke');
-    let generation = 0;
-
-    ipcMain.removeHandler('host:invoke');
-    ipcMain.handle('host:invoke', async (event: unknown, request: HostInvokeRequest) => {
-      if (request?.module === 'chat' && request.action === 'loadAcpSession') {
-        generation += 1;
-        const sessionKey = typeof request.payload?.sessionKey === 'string'
-          ? request.payload.sessionKey
-          : payload.sessionKey;
-
-        for (const update of payload.updates as AcpSessionUpdate[]) {
-          for (const window of BrowserWindow.getAllWindows()) {
-            window.webContents.send('chat:acp-session-update', {
-              sessionKey,
-              generation,
-              historical: true,
-              notification: {
-                sessionId: sessionKey,
-                update,
-              },
-            });
-          }
-        }
-        return { id: request.id, ok: true, data: { success: true, generation } };
-      }
-      return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
-    });
-  }, { sessionKey: SESSION_KEY, updates });
+function writeSequence(id: string, path: string, content: string): AcpSessionUpdate[] {
+  return toolSequence({ id, title: `Write: ${path}`, rawInput: { path, content } });
 }
 
-async function installChatFileMocks(app: ElectronApplication, options: {
-  updates: AcpSessionUpdate[];
-  workspace: string;
-  agentName?: string;
+function editSequence(id: string, path: string, oldText: string, newText: string): AcpSessionUpdate[] {
+  return toolSequence({ id, title: `Edit: ${path}`, rawInput: { path, oldText, newText } });
+}
+
+function patchSequence(id: string, patch: string): AcpSessionUpdate[] {
+  return toolSequence({ id, title: 'apply_patch: workspace files', rawInput: { input: patch } });
+}
+
+async function installFileActivityMocks(app: ElectronApplication, options: {
+  sessions?: SessionFixture[];
+  liveByPrompt?: Record<string, AcpSessionUpdate[]>;
+  liveDelayMs?: number;
+  scopedRead?: Record<string, unknown>;
+  scopedReadError?: string;
 }) {
-  const nowMs = Date.now();
-  const settingsSnapshot = {
+  const now = Date.now();
+  const sessions = options.sessions ?? [{ key: MAIN_SESSION_KEY, title: 'Main session' }];
+  const settings = {
     language: 'en',
     setupComplete: true,
-    chatWorkspacePath: options.workspace,
-    recentWorkspacePaths: [options.workspace],
+    chatWorkspacePath: WORKSPACE,
+    recentWorkspacePaths: [WORKSPACE],
   };
-  const sessionSummaries = {
-    summaries: [{
-      sessionKey: SESSION_KEY,
-      firstUserText: 'Patch the workspace file',
-      lastTimestamp: nowMs,
-      workspacePath: options.workspace,
-    }],
+  const hostApi: Record<string, unknown> = {
+    [stableStringify(['settings', 'getAll', null])]: settings,
+    [stableStringify(['agents', 'list', null])]: {
+      success: true,
+      agents: [{ id: 'main', name: 'main', workspace: WORKSPACE, mainSessionKey: MAIN_SESSION_KEY }],
+    },
+    [stableStringify(['files', 'resolveWorkspaceContext', {
+      workspaceRoot: WORKSPACE,
+      executionCwd: WORKSPACE,
+    }])]: { ok: true, workspaceRoot: WORKSPACE, executionCwd: WORKSPACE },
+    [stableStringify(['sessions', 'summaries', { sessionKeys: sessions.map((session) => session.key) }])]: {
+      summaries: sessions.map((session, index) => ({
+        sessionKey: session.key,
+        firstUserText: session.title,
+        lastTimestamp: now - index,
+        workspacePath: WORKSPACE,
+      })),
+    },
   };
+  for (const [relativePath, response] of Object.entries(options.scopedRead ?? {})) {
+    hostApi[stableStringify(['files', 'readWorkspaceText', { workspaceRoot: WORKSPACE, relativePath }])] = response;
+  }
+  const scopedReadKey = stableStringify(['files', 'readWorkspaceText', {
+    workspaceRoot: WORKSPACE,
+    relativePath: 'blocked.ts',
+  }]);
 
   await installIpcMocks(app, {
-    gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345, connectedAt: nowMs },
+    gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345, connectedAt: now },
     gatewayRpc: {
       [stableStringify(['sessions.list', SESSIONS_LIST_PAYLOAD])]: {
         success: true,
         result: {
-          sessions: [{ key: SESSION_KEY, displayName: 'main', updatedAt: nowMs }],
+          sessions: sessions.map((session, index) => ({
+            key: session.key,
+            displayName: session.title,
+            derivedTitle: session.title,
+            workspacePath: WORKSPACE,
+            updatedAt: new Date(now - index).toISOString(),
+          })),
         },
       },
       [stableStringify(['sessions.list', {}])]: {
         success: true,
         result: {
-          sessions: [{ key: SESSION_KEY, displayName: 'main', updatedAt: nowMs }],
+          sessions: sessions.map((session, index) => ({
+            key: session.key,
+            displayName: session.title,
+            derivedTitle: session.title,
+            workspacePath: WORKSPACE,
+            updatedAt: new Date(now - index).toISOString(),
+          })),
         },
       },
-      [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-        success: true,
-        result: { messages: [] },
-      },
-      [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
+      [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
         success: true,
         result: { messages: [] },
       },
     },
-    hostApi: {
-      [stableStringify(['settings', 'getAll', null])]: settingsSnapshot,
-      [stableStringify(['/api/settings', 'GET'])]: hostJson(settingsSnapshot),
-      [stableStringify(['/api/gateway/status', 'GET'])]: hostJson({ state: 'running', gatewayReady: true, port: 18789, pid: 12345, connectedAt: nowMs }),
-      [stableStringify(['/api/agents', 'GET'])]: hostJson({
-        success: true,
-        agents: [{ id: 'main', name: options.agentName ?? 'main', workspace: options.workspace, mainSessionKey: SESSION_KEY }],
-      }),
-      [stableStringify(['sessions', 'summaries', { sessionKeys: [SESSION_KEY] }])]: sessionSummaries,
-      [stableStringify(['/api/sessions/summaries', 'POST'])]: hostJson(sessionSummaries),
-    },
+    hostApi,
+    hostApiErrors: options.scopedReadError ? { [scopedReadKey]: options.scopedReadError } : undefined,
+    recordHostInvocations: true,
+    recordLegacyIpcInvocations: true,
   });
 
-  await installAcpLoadReplayMock(app, options.updates);
+  await app.evaluate(async ({ app: _app }, payload) => {
+    const { BrowserWindow, ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type HostRequest = {
+      id?: string;
+      module?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+    };
+    type Handler = (event: unknown, request: HostRequest) => Promise<unknown>;
+    const original = (ipcMain as unknown as { _invokeHandlers?: Map<string, Handler> })._invokeHandlers?.get('host:invoke');
+    const globals = globalThis as unknown as { __fileActivityAcpEvents?: AcpEventRecord[] };
+    globals.__fileActivityAcpEvents = [];
+    let generation = 0;
+    let activeSessionKey = '';
+    const replayBySession = new Map((payload.sessions as SessionFixture[]).map((session) => [session.key, session.updates ?? []]));
+    const sendUpdates = (sessionKey: string, generation: number, historical: boolean, updates: AcpSessionUpdate[]) => {
+      for (const update of updates) {
+        globals.__fileActivityAcpEvents?.push({ sessionKey, generation, historical, update });
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('chat:acp-session-update', {
+            sessionKey,
+            generation,
+            historical,
+            notification: { sessionId: sessionKey, update },
+          });
+        }
+      }
+    };
+
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: HostRequest) => {
+      if (request.module === 'chat' && request.action === 'loadAcpSession') {
+        const sessionKey = String(request.payload?.sessionKey ?? '');
+        generation += 1;
+        activeSessionKey = sessionKey;
+        sendUpdates(sessionKey, generation, true, replayBySession.get(sessionKey) ?? []);
+        return { id: request.id, ok: true, data: { success: true, generation } };
+      }
+      if (request.module === 'chat' && request.action === 'sendAcpPrompt') {
+        const sessionKey = String(request.payload?.sessionKey ?? '');
+        const promptGeneration = generation;
+        const message = String(request.payload?.message ?? '');
+        const updates = (payload.liveByPrompt as Record<string, AcpSessionUpdate[]>)[message] ?? [];
+        if (sessionKey === activeSessionKey) {
+          setTimeout(() => sendUpdates(sessionKey, promptGeneration, false, updates), payload.liveDelayMs);
+        }
+        return { id: request.id, ok: true, data: { success: true, generation: promptGeneration } };
+      }
+      return original?.(event, request) ?? { id: request.id, ok: true, data: {} };
+    });
+  }, { sessions, liveByPrompt: options.liveByPrompt ?? {}, liveDelayMs: options.liveDelayMs ?? 0 });
 }
+
+async function getRecordedAcpEvents(app: ElectronApplication): Promise<AcpEventRecord[]> {
+  return await app.evaluate(async ({ app: _app }) => (
+    (globalThis as unknown as { __fileActivityAcpEvents?: AcpEventRecord[] }).__fileActivityAcpEvents ?? []
+  ));
+}
+
+async function openChat(app: ElectronApplication): Promise<Page> {
+  const page = await getStableWindow(app);
+  try {
+    await page.reload();
+  } catch (error) {
+    if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
+  }
+  await expect(page.getByTestId('main-layout')).toBeVisible();
+  await expect(page.getByTestId('chat-page')).toBeVisible();
+  return page;
+}
+
+async function sendPrompt(page: Page, prompt: string) {
+  await page.getByTestId('chat-composer-input').fill(prompt);
+  await page.getByTestId('chat-composer-send').click();
+}
+
+async function openChanges(page: Page) {
+  await page.getByTestId('chat-toolbar-workspace').click();
+  const panel = page.getByTestId('artifact-panel');
+  await expect(panel).toBeVisible();
+  await panel.getByTestId('artifact-panel-tab-changes').click();
+  return panel;
+}
+
 test.describe('ClawX chat file changes', () => {
-  test('shows workspace first with hidden files and compressed path', async ({ launchElectronApp }) => {
+  test('renders a live completed Write with counts, scoped Preview, and a session record', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
-
     try {
-      await installChatFileMocks(app, {
-        workspace: workspacePath,
-        agentName: 'Main Agent',
-        updates: acpFileUpdates({
-          filePath: `${workspacePath}/demo.ts`,
-          fileName: 'demo.ts',
-          mimeType: 'text/typescript',
-          prompt: 'Patch the workspace file',
-          response: 'Updated demo.ts.',
-        }),
+      await installFileActivityMocks(app, {
+        liveByPrompt: { 'Create the file': writeSequence('write-live', 'src/live.ts', 'one\ntwo\n') },
+        scopedRead: {
+          'src/live.ts': { ok: true, content: 'one\ntwo\n', size: 8, mimeType: 'text/typescript', readOnly: true },
+        },
       });
+      const page = await openChat(app);
+      await sendPrompt(page, 'Create the file');
 
-      await app.evaluate(async ({ app: _app }, { workspacePath: mockedWorkspacePath }) => {
-        const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
-        ipcMain.removeHandler('file:listTree');
-        ipcMain.handle('file:listTree', async (_event: unknown, inputPath: string, opts?: { includeHidden?: boolean }) => {
-          if (inputPath !== mockedWorkspacePath || opts?.includeHidden !== true) {
-            return { ok: false, error: 'unexpectedListTreeRequest' };
-          }
-          return {
-            ok: true,
-            root: {
-              name: 'workspace-main',
-              relPath: '',
-              absPath: mockedWorkspacePath,
-              isDir: true,
-              children: [
-                {
-                  name: '.env',
-                  relPath: '.env',
-                  absPath: `${mockedWorkspacePath}/.env`,
-                  isDir: false,
-                  size: 16,
-                  mtime: Date.now(),
-                },
-                {
-                  name: 'demo.ts',
-                  relPath: 'demo.ts',
-                  absPath: `${mockedWorkspacePath}/demo.ts`,
-                  isDir: false,
-                  size: 24,
-                  mtime: Date.now(),
-                },
-              ],
-            },
-            truncated: false,
-          };
-        });
-      }, { workspacePath });
+      await expect(page.getByTestId('acp-file-button')).toHaveCount(1, { timeout: 30_000 });
+      await expect(page.getByTestId('acp-file-button')).toHaveAccessibleName('Created src/live.ts');
+      await expect(page.getByTestId('acp-file-summary-row')).toContainText('+2');
+      await expect(page.getByTestId('acp-file-summary-row')).toContainText('-0');
+      await page.getByTestId('acp-file-button').click();
 
-      const page = await getStableWindow(app);
-      try {
-        await page.reload();
-      } catch (error) {
-        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
-          throw error;
-        }
-      }
+      const panel = page.getByTestId('artifact-panel');
+      await expect(panel.getByRole('heading', { name: 'live.ts' })).toBeVisible();
+      await expect(panel.getByText('File changes (1)')).not.toBeVisible();
+      await expect.poll(async () => (await getRecordedHostInvocations(app)).some((request) => (
+        request.module === 'files'
+        && request.action === 'readWorkspaceText'
+        && request.payload?.relativePath === 'src/live.ts'
+      ))).toBe(true);
 
-      await expect(page.getByTestId('main-layout')).toBeVisible();
-      await expect(page.getByText('demo.ts').first()).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('chat-workspace-selector')).toHaveText('~/.openclaw/workspace-main', { timeout: 30_000 });
-      await page.getByTestId('chat-toolbar-workspace').click();
-
-      const sidePanel = page.getByTestId('artifact-panel');
-      await expect(sidePanel).toBeVisible({ timeout: 30_000 });
-      const tabLabels = await sidePanel.locator('[data-testid^="artifact-panel-tab-"]').evaluateAll((buttons) => (
-        buttons.map((button) => button.textContent?.trim())
-      ));
-      expect(tabLabels).toEqual(['Workspace', 'Preview', 'Changes']);
-
-      await sidePanel.getByTestId('artifact-panel-tab-browser').click();
-      await expect(sidePanel.getByTestId('workspace-path-tag')).toHaveText('~/.openclaw/workspace-main');
-      await expect(sidePanel.getByTestId('workspace-path-tag')).toHaveAttribute('title', workspacePath);
-      await expect(sidePanel.getByTestId('workspace-path-final-segment')).toHaveText('workspace-main');
-      await expect(sidePanel.getByRole('button', { name: /hidden files/i })).toHaveCount(0);
-      await expect(sidePanel.getByText('.env')).toBeVisible({ timeout: 30_000 });
+      await panel.getByTestId('artifact-panel-tab-changes').click();
+      await expect(panel.getByText('File changes (1)')).toBeVisible();
+      const changedFile = panel.getByTestId('acp-change-file-src/live.ts');
+      await expect(changedFile).toBeVisible();
+      await expect(changedFile.locator('span[aria-hidden="true"] > svg')).toHaveCount(1);
+      await expect(panel.getByTestId('acp-change-activity-0')).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }
   });
 
-  test('focuses ACP-generated files in the changes panel', async ({ launchElectronApp }) => {
+  test('renders declared Edit and apply-patch fragments from live completions', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
-
+    const patch = [
+      '*** Begin Patch',
+      '*** Update File: src/patched.ts',
+      '@@',
+      '-patch before',
+      '+patch after',
+      '@@ later',
+      '-second before',
+      '+second after',
+      '*** End Patch',
+    ].join('\n');
     try {
-      await installChatFileMocks(app, {
-        workspace: '/workspace',
-        updates: acpFileUpdates({
-          filePath: '/workspace/demo.ts',
-          fileName: 'demo.ts',
-          mimeType: 'text/typescript',
-          prompt: 'Patch the workspace file',
-          response: 'Updated demo.ts.',
-        }),
+      await installFileActivityMocks(app, {
+        liveByPrompt: {
+          'Edit two files': [
+            ...editSequence('edit-live', 'src/edited.ts', 'edit before', 'edit after'),
+            ...patchSequence('patch-live', patch),
+          ],
+        },
       });
+      const page = await openChat(app);
+      await sendPrompt(page, 'Edit two files');
 
-      const page = await getStableWindow(app);
-      try {
-        await page.reload();
-      } catch (error) {
-        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
-          throw error;
-        }
-      }
-
-      await expect(page.getByTestId('main-layout')).toBeVisible();
-      await page.evaluate(() => {
-        const root = document.documentElement;
-        root.classList.remove('dark');
-        root.classList.add('light');
-      });
-      await expect(page.getByTestId('artifact-panel')).toHaveCount(0);
-      await expect(page.getByText('demo.ts').first()).toBeVisible({ timeout: 30_000 });
-
-      await page.getByTestId('chat-toolbar-workspace').click();
-      const sidePanel = page.getByTestId('artifact-panel');
-      await expect(sidePanel).toBeVisible({ timeout: 30_000 });
-      await expect(sidePanel.getByTestId('artifact-panel-tab-browser')).toBeVisible();
-      await sidePanel.getByTestId('artifact-panel-tab-changes').click();
-      await expect(sidePanel.getByRole('heading', { name: 'demo.ts' })).toBeVisible({ timeout: 30_000 });
-      await expect(sidePanel.getByText(/no diff is available/i)).toBeVisible();
+      await expect(page.getByTestId('acp-file-button')).toHaveCount(2, { timeout: 30_000 });
+      const panel = await openChanges(page);
+      await expect(panel.getByTestId('acp-change-file-group')).toHaveCount(2);
+      await expect(panel.getByTestId('monaco-diff-viewer')).toHaveCount(2);
+      await expect(panel.locator('.monaco-editor').filter({ hasText: 'edit before' })).toBeVisible({ timeout: 30_000 });
+      await expect(panel.locator('.monaco-editor').filter({ hasText: 'edit after' })).toBeVisible();
+      await expect(panel.locator('.monaco-editor').filter({ hasText: 'patch before' })).toBeVisible();
+      await expect(panel.locator('.monaco-editor').filter({ hasText: 'patch after' })).toBeVisible();
+      await expect(panel.locator('.monaco-editor').filter({ hasText: 'second before' })).toBeVisible();
+      await expect(panel.locator('.monaco-editor').filter({ hasText: 'second after' })).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }
   });
 
-  test('opens html files from chat as rendered previews', async ({ launchElectronApp }) => {
+  test('keeps failed supported and completed unsupported tools ordinary with no file activity', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
-
     try {
-      await installChatFileMocks(app, {
-        workspace: '/workspace',
-        updates: acpFileUpdates({
-          filePath: '/workspace/demo.html',
-          fileName: 'demo.html',
-          mimeType: 'text/html',
-          prompt: '预览 HTML 页面',
-          response: '已生成 /workspace/demo.html',
-        }),
+      await installFileActivityMocks(app, {
+        liveByPrompt: {
+          'Run non-file activity': [
+            ...toolSequence({
+              id: 'failed-write',
+              title: 'Write: failed.ts',
+              rawInput: { path: 'failed.ts', content: 'nope' },
+              finalStatus: 'failed',
+            }),
+            ...toolSequence({
+              id: 'unsupported-read',
+              title: 'Read: unsupported.ts',
+              rawInput: { path: 'unsupported.ts' },
+            }),
+          ],
+        },
       });
+      const page = await openChat(app);
+      await sendPrompt(page, 'Run non-file activity');
 
-      await app.evaluate(async () => {
-        const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
-        ipcMain.removeHandler('file:stat');
-        ipcMain.handle('file:stat', async (_event: unknown, inputPath: string) => ({
-          ok: inputPath === '/workspace/demo.html',
-          size: 154,
-          isFile: inputPath === '/workspace/demo.html',
-          isDir: false,
-          readOnly: true,
-        }));
-        ipcMain.removeHandler('file:readText');
-        ipcMain.handle('file:readText', async (_event: unknown, inputPath: string) => {
-          if (inputPath !== '/workspace/demo.html') return { ok: false, error: 'notFound' };
-          return {
-            ok: true,
-            content: '<!doctype html><html><body><h1 id="title">HTML Rendered Preview</h1><script>document.body.dataset.htmlPreview = "ok";</script></body></html>',
-            size: 154,
-            mimeType: 'text/html',
-            readOnly: true,
-          };
-        });
-      });
+      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(2, { timeout: 30_000 });
+      const failedWrite = page.getByTestId('acp-tool-call-card').filter({ hasText: 'Write: failed.ts' });
+      const unsupportedRead = page.getByTestId('acp-tool-call-card').filter({ hasText: 'Read: unsupported.ts' });
+      await expect(failedWrite).toContainText('Failed');
+      await expect(unsupportedRead).toContainText('Completed');
+      await expect(page.getByTestId('acp-turn-file-activity')).toHaveCount(0);
+      await expect(page.getByTestId('acp-file-button')).toHaveCount(0);
+      await expect(page.getByTestId('acp-file-summary-row')).toHaveCount(0);
 
-      const page = await getStableWindow(app);
-      try {
-        await page.reload();
-      } catch (error) {
-        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
-          throw error;
-        }
-      }
-
-      await expect(page.getByTestId('main-layout')).toBeVisible();
-      await expect(page.getByText('demo.html').first()).toBeVisible({ timeout: 30_000 });
-      await page.getByTestId('chat-toolbar-workspace').click();
-
-      const sidePanel = page.getByTestId('artifact-panel');
-      await expect(sidePanel).toBeVisible({ timeout: 30_000 });
-      await sidePanel.getByTestId('artifact-panel-tab-changes').click();
-      await expect(sidePanel.getByRole('heading', { name: 'demo.html' })).toBeVisible({ timeout: 30_000 });
-      await sidePanel.getByTestId('artifact-panel-tab-preview').click();
-      const frame = sidePanel.getByTestId('html-preview-frame');
-      await expect(frame).toBeVisible({ timeout: 30_000 });
-      await expect(sidePanel.getByText('<!doctype html>')).toHaveCount(0);
-      const htmlFrame = frame.contentFrame();
-      await expect(htmlFrame.locator('#title')).toHaveText('HTML Rendered Preview');
-      await expect(htmlFrame.locator('body')).toHaveAttribute('data-html-preview', 'ok');
+      const panel = await openChanges(page);
+      await expect(panel.getByText('This session has no file changes yet.')).toBeVisible();
+      await expect(panel.getByTestId('acp-change-file-group')).toHaveCount(0);
+      await expect(panel.getByText(/File changes \(/)).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
   });
 
-  test('keeps an attached file selected after switching through workspace', async ({ launchElectronApp }) => {
+  test('opens Changes instead of Preview from a deleted file button', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
-
     try {
-      await installChatFileMocks(app, {
-        workspace: '/workspace',
-        updates: acpFileUpdates({
-          filePath: '/workspace/skills/open-xueqiu/SKILL.md',
-          fileName: 'SKILL.md',
-          mimeType: 'text/markdown',
-          prompt: '查看这个技能文件',
-          response: '这是文件。',
-        }),
+      await installFileActivityMocks(app, {
+        liveByPrompt: {
+          'Delete the file': patchSequence(
+            'delete-live',
+            '*** Begin Patch\n*** Delete File: src/deleted.ts\n*** End Patch',
+          ),
+        },
       });
+      const page = await openChat(app);
+      await sendPrompt(page, 'Delete the file');
+      const fileButton = page.getByTestId('acp-file-button');
+      await expect(fileButton).toHaveAccessibleName('Deleted src/deleted.ts', { timeout: 30_000 });
+      await fileButton.click();
 
-      await app.evaluate(async () => {
-        const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
-        ipcMain.removeHandler('file:readText');
-        ipcMain.handle('file:readText', async (_event: unknown, inputPath: string) => {
-          if (inputPath !== '/workspace/skills/open-xueqiu/SKILL.md') return { ok: false, error: 'notFound' };
-          return {
-            ok: true,
-            content: '# SKILL\n\nOpen Xueqiu skill details.',
-            size: 36,
-            mimeType: 'text/markdown',
-            readOnly: true,
-          };
-        });
+      const panel = page.getByTestId('artifact-panel');
+      await expect(panel.getByTestId('acp-change-file-src/deleted.ts')).toBeVisible();
+      await expect(panel.getByText('No file selected')).not.toBeVisible();
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('preserves both fragment sections when two live turns edit one path', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    try {
+      await installFileActivityMocks(app, {
+        liveByPrompt: {
+          'First edit': editSequence('edit-first', 'src/shared.ts', 'first old', 'first new'),
+          'Second edit': editSequence('edit-second', 'src/shared.ts', 'second old', 'second new'),
+        },
       });
+      const page = await openChat(app);
+      await sendPrompt(page, 'First edit');
+      await expect(page.getByTestId('acp-file-button')).toHaveCount(1, { timeout: 30_000 });
+      await sendPrompt(page, 'Second edit');
+      await expect(page.getByTestId('acp-file-button')).toHaveCount(2, { timeout: 30_000 });
 
-      const page = await getStableWindow(app);
-      try {
-        await page.reload();
-      } catch (error) {
-        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
-          throw error;
-        }
-      }
+      const panel = await openChanges(page);
+      await expect(panel.getByTestId('acp-change-file-group')).toHaveCount(1);
+      await expect(panel.locator('[data-testid^="acp-change-activity-"]')).toHaveCount(2);
+      await expect(panel.getByTestId('monaco-diff-viewer')).toHaveCount(2);
+      await expect(panel.getByText('Change 1')).toBeVisible();
+      await expect(panel.getByText('Change 2')).toBeVisible();
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
 
-      await expect(page.getByTestId('main-layout')).toBeVisible();
-      await expect(page.getByText('SKILL.md').first()).toBeVisible({ timeout: 30_000 });
+  test('restores the full ledger after switching away and replaying the session', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const replay = [
+      user('replay-user-one', 'First historical edit'),
+      ...editSequence('replay-first', 'src/replayed.ts', 'one old', 'one new'),
+      user('replay-user-two', 'Second historical edit'),
+      ...editSequence('replay-second', 'src/replayed.ts', 'two old', 'two new'),
+    ];
+    try {
+      await installFileActivityMocks(app, {
+        sessions: [
+          { key: MAIN_SESSION_KEY, title: 'Ledger session', updates: replay },
+          { key: OTHER_SESSION_KEY, title: 'Other session', updates: [user('other-user', 'Other history')] },
+        ],
+        liveByPrompt: {
+          'Delayed generation check': writeSequence('delayed-generation', 'src/delayed.ts', 'delayed'),
+        },
+        liveDelayMs: 1_000,
+      });
+      const page = await openChat(app);
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await expect(page.getByTestId('acp-file-button')).toHaveCount(2, { timeout: 30_000 });
+      await sendPrompt(page, 'Delayed generation check');
+      await page.getByTestId(`sidebar-session-${OTHER_SESSION_KEY}`).click();
+      await expect(page.getByText('Other history', { exact: true })).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('acp-file-button')).toHaveCount(0, { timeout: 30_000 });
+      await expect.poll(async () => (await getRecordedAcpEvents(app)).filter(
+        (event) => !event.historical && event.sessionKey === MAIN_SESSION_KEY,
+      ).length).toBe(2);
+      const events = await getRecordedAcpEvents(app);
+      const liveGeneration = events.find((event) => !event.historical)?.generation;
+      const otherGeneration = events.find((event) => event.historical && event.sessionKey === OTHER_SESSION_KEY)?.generation;
+      expect(liveGeneration).toBeLessThan(otherGeneration as number);
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await expect(page.getByTestId('acp-file-button')).toHaveCount(2, { timeout: 30_000 });
+
+      const panel = await openChanges(page);
+      await expect(panel.locator('[data-testid^="acp-change-activity-"]')).toHaveCount(2);
+      await expect(panel.getByTestId('monaco-diff-viewer')).toHaveCount(2);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('does not invent file activity when replay omits raw input', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    try {
+      await installFileActivityMocks(app, {
+        sessions: [{
+          key: MAIN_SESSION_KEY,
+          title: 'Incomplete replay',
+          updates: [
+            user('missing-input-user', 'Replay incomplete Write'),
+            ...toolSequence({ id: 'missing-input', title: 'Write: missing.ts' }),
+          ],
+        }],
+      });
+      const page = await openChat(app);
+
+      const missingInputWrite = page.getByTestId('acp-tool-call-card').filter({ hasText: 'Write: missing.ts' });
+      await expect(missingInputWrite).toContainText('Completed', { timeout: 30_000 });
+      await expect(page.getByTestId('acp-turn-file-activity')).toHaveCount(0);
+      const panel = await openChanges(page);
+      await expect(panel.getByText('This session has no file changes yet.')).toBeVisible();
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('shows an empty Changes view for New Session', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    try {
+      await installFileActivityMocks(app, {
+        sessions: [{
+          key: MAIN_SESSION_KEY,
+          title: 'Changed session',
+          updates: [user('changed-user', 'Changed history'), ...writeSequence('changed-write', 'changed.ts', 'changed')],
+        }],
+      });
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-file-button')).toHaveCount(1, { timeout: 30_000 });
+      await page.getByTestId('sidebar-new-chat').click();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+
+      const panel = await openChanges(page);
+      await expect(panel.getByText('This session has no file changes yet.')).toBeVisible();
+      await expect(panel.getByTestId('acp-change-file-group')).toHaveCount(0);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('shows scoped read rejection without invoking unscoped file or shell actions', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    try {
+      await installFileActivityMocks(app, {
+        liveByPrompt: { 'Write blocked file': writeSequence('blocked-write', 'blocked.ts', 'blocked') },
+        scopedReadError: 'Scoped file access unavailable',
+      });
+      const page = await openChat(app);
+      await sendPrompt(page, 'Write blocked file');
+      await expect(page.getByTestId('acp-file-button')).toBeVisible({ timeout: 30_000 });
       await page.getByTestId('chat-toolbar-workspace').click();
+      await expect(page.getByTestId('artifact-panel')).toBeVisible();
+      await expect.poll(async () => (await getRecordedLegacyIpcInvocations(app)).some(
+        (request) => request.channel === 'file:listTree',
+      )).toBe(true);
+      await clearRecordedFileAccessInvocations(app);
+      await page.getByTestId('acp-file-button').click();
 
-      const sidePanel = page.getByTestId('artifact-panel');
-      await expect(sidePanel).toBeVisible({ timeout: 30_000 });
-      await sidePanel.getByTestId('artifact-panel-tab-changes').click();
-      await expect(sidePanel.getByRole('heading', { name: 'SKILL.md' })).toBeVisible({ timeout: 30_000 });
-
-      await sidePanel.getByTestId('artifact-panel-tab-browser').click();
-      await sidePanel.getByTestId('artifact-panel-tab-preview').click();
-      await expect(sidePanel.getByRole('heading', { name: 'SKILL.md' })).toBeVisible();
-      await expect(sidePanel.getByText('No file selected')).toHaveCount(0);
+      const panel = page.getByTestId('artifact-panel');
+      await expect(panel.getByText(/Load failed:.*Scoped file access unavailable/i)).toBeVisible({ timeout: 30_000 });
+      await expect(panel.getByRole('button', { name: 'Show in file manager' })).toHaveCount(0);
+      await expect(panel.getByRole('button', { name: 'Open directly' })).toHaveCount(0);
+      const invocations = await getRecordedHostInvocations(app);
+      expect(invocations).toEqual(expect.arrayContaining([expect.objectContaining({
+        module: 'files',
+        action: 'readWorkspaceText',
+        payload: { workspaceRoot: WORKSPACE, relativePath: 'blocked.ts' },
+      })]));
+      expect(invocations.filter((request) => (
+        (request.module === 'files' && request.action !== 'readWorkspaceText')
+        || request.module === 'shell'
+      ))).toEqual([]);
+      expect(await getRecordedLegacyIpcInvocations(app)).toEqual([]);
     } finally {
       await closeElectronApp(app);
     }

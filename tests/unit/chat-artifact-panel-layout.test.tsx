@@ -15,6 +15,14 @@ vi.mock('@/stores/gateway', () => ({
   }),
 }));
 
+vi.mock('@/lib/host-api', () => ({
+  hostApi: {
+    files: {
+      resolveWorkspaceContext: vi.fn(async ({ workspaceRoot, executionCwd }) => ({ ok: true, workspaceRoot, executionCwd })),
+    },
+  },
+}));
+
 const chatState = {
   messages: [],
   sessions: [{ key: 'main:test' }],

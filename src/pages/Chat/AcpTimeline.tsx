@@ -4,6 +4,7 @@ import { getAcpUserMessageAnchorId } from '@/lib/acp/timeline-anchors';
 import { AcpAssistantTurn } from './AcpAssistantTurn';
 import { AcpErrorBanner } from './AcpErrorBanner';
 import { AcpMessageSegment } from './AcpMessageSegment';
+import type { AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 
 export function AcpTimeline({
   snapshot,
@@ -11,12 +12,16 @@ export function AcpTimeline({
   errorKind = 'load',
   onDismissError,
   onPermissionSelect,
+  fileActivity,
+  workspaceRoot,
 }: {
   snapshot: AcpTimelineSnapshot;
   error?: string | null;
   errorKind?: 'load' | 'prompt';
   onDismissError?: () => void;
   onPermissionSelect?: (requestId: string, optionId: string) => void;
+  fileActivity?: AcpFileActivityProjection;
+  workspaceRoot?: string;
 }) {
   const groups = groupAcpTimelineItems(snapshot);
 
@@ -42,7 +47,12 @@ export function AcpTimeline({
 
         return (
           <div key={group.id} data-acp-group-id={group.id}>
-            <AcpAssistantTurn group={group} onPermissionSelect={onPermissionSelect} />
+            <AcpAssistantTurn
+              group={group}
+              fileSummaries={fileActivity?.turnSummariesByTurnId[group.id]}
+              workspaceRoot={workspaceRoot}
+              onPermissionSelect={onPermissionSelect}
+            />
           </div>
         );
       })}

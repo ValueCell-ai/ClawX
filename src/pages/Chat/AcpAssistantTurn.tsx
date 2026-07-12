@@ -6,6 +6,8 @@ import { AcpPermissionCard } from './AcpPermissionCard';
 import { AcpPlanItem } from './AcpPlanItem';
 import { AcpThoughtBlock } from './AcpThoughtBlock';
 import { AcpToolCallCard } from './AcpToolCallCard';
+import type { AcpTurnFileSummary } from '@/lib/acp/openclaw-file-activities';
+import { AcpTurnFileActivity } from './AcpTurnFileActivity';
 
 function assistantTurnClipboardText(group: AcpAssistantTurnDisplayGroup): string {
   const textSegments: string[] = [];
@@ -22,9 +24,13 @@ function assistantTurnClipboardText(group: AcpAssistantTurnDisplayGroup): string
 
 export function AcpAssistantTurn({
   group,
+  fileSummaries = [],
+  workspaceRoot,
   onPermissionSelect,
 }: {
   group: AcpAssistantTurnDisplayGroup;
+  fileSummaries?: AcpTurnFileSummary[];
+  workspaceRoot?: string;
   onPermissionSelect?: (requestId: string, optionId: string) => void;
 }) {
   const clipboardText = useMemo(() => assistantTurnClipboardText(group), [group]);
@@ -84,6 +90,8 @@ export function AcpAssistantTurn({
 
           return null;
         })}
+
+        {workspaceRoot && <AcpTurnFileActivity summaries={fileSummaries} workspaceRoot={workspaceRoot} />}
 
         {clipboardText.trim().length > 0 && (
           <div className="w-full">

@@ -10,11 +10,13 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
+import type { WorkspaceFileRef } from '@/lib/file-preview-client';
 
 export interface HtmlPreviewProps {
   source: string;
   filePath: string;
   fileName?: string;
+  workspaceFileRef?: WorkspaceFileRef;
   className?: string;
 }
 
@@ -51,9 +53,18 @@ function injectBaseHref(source: string, filePath: string): string {
   return `<!doctype html><html><head>${baseTag}</head><body>${source}</body></html>`;
 }
 
-export default function HtmlPreview({ source, filePath, fileName, className }: HtmlPreviewProps) {
+export default function HtmlPreview({
+  source,
+  filePath,
+  fileName,
+  workspaceFileRef,
+  className,
+}: HtmlPreviewProps) {
   const { t } = useTranslation('chat');
-  const srcDoc = useMemo(() => injectBaseHref(source, filePath), [source, filePath]);
+  const srcDoc = useMemo(
+    () => workspaceFileRef ? source : injectBaseHref(source, filePath),
+    [source, filePath, workspaceFileRef],
+  );
 
   return (
     <div className={cn('h-full min-h-0 bg-white', className)}>

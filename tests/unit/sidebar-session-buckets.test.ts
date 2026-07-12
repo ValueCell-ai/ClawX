@@ -218,8 +218,8 @@ describe('sidebar session helpers', () => {
     const alphaLoadMore = screen.getByRole('button', { name: 'Load 1 more sessions in /repo/alpha' });
     const betaLoadMore = screen.getByRole('button', { name: 'Load 1 more sessions in /repo/beta' });
 
-    expect(alphaLoadMore).toHaveTextContent('Load 1 more');
-    expect(betaLoadMore).toHaveTextContent('Load 1 more');
+    expect(alphaLoadMore).toHaveTextContent('Load more');
+    expect(betaLoadMore).toHaveTextContent('Load more');
   });
 
   it('formats activity timestamps through timeago with locale mapping', () => {

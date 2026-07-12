@@ -270,6 +270,40 @@ describe('hostApi facade', () => {
     }));
   });
 
+  it('passes workspace-scoped file payloads unchanged through hostInvoke', async () => {
+    hostInvoke.mockResolvedValue({ id: 'req', ok: true, data: { ok: true } });
+    const { hostApi } = await import('@/lib/host-api');
+    const context = { workspaceRoot: '~/.openclaw/workspace', executionCwd: 'projects/demo' };
+    const ref = { workspaceRoot: '/workspace', relativePath: 'src/index.ts' };
+    const binaryInput = { ...ref, maxBytes: 2048 };
+
+    await hostApi.files.resolveWorkspaceContext(context);
+    await hostApi.files.readWorkspaceText(ref);
+    await hostApi.files.readWorkspaceBinary(binaryInput);
+    await hostApi.files.statWorkspaceFile(ref);
+
+    const actions = [
+      ['resolveWorkspaceContext', context],
+      ['readWorkspaceText', ref],
+      ['readWorkspaceBinary', binaryInput],
+      ['statWorkspaceFile', ref],
+    ];
+    actions.forEach(([action, payload], index) => {
+      expect(hostInvoke).toHaveBeenNthCalledWith(index + 1, expect.objectContaining({
+        module: 'files',
+        action,
+        payload,
+      }));
+    });
+  });
+
+  it('does not expose workspace-scoped shell actions', async () => {
+    const { hostApi } = await import('@/lib/host-api');
+
+    expect(hostApi.files).not.toHaveProperty('openWorkspaceFile');
+    expect(hostApi.files).not.toHaveProperty('revealWorkspaceFile');
+  });
+
   it('calls chat.sendWithMedia through hostInvoke', async () => {
     hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { success: true } });
     const { hostApi } = await import('@/lib/host-api');

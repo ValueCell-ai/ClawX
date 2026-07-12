@@ -26,6 +26,15 @@
         "openFolder": "打开文件夹",
         "viewAll": "查看文件变更"
     },
+    "fileActivity": {
+        "created": "已创建",
+        "modified": "已修改",
+        "deleted": "已删除",
+        "fileButton": "{{action}} {{path}}",
+        "changeRecord": "查看 {{path}} 的变更",
+        "fileUnavailable": "文件不可用",
+        "outsideWorkspace": "文件位于工作空间之外"
+    },
     "runError": {
         "title": "模型调用失败"
     },
@@ -64,8 +73,10 @@
         },
         "changes": {
             "heading": "文件变更（{{count}} 个）",
-            "empty": "本会话尚无文件变更",
-            "selectFileHint": "请点击对话中的文件卡片，或「查看文件变更」打开 diff。"
+            "empty": "此会话尚无文件变更。",
+            "selectFileHint": "请点击对话中的文件卡片，或「查看文件变更」打开 diff。",
+            "changeRecord": "变更 {{number}}",
+            "diffUnavailable": "此变更无法显示差异。"
         },
         "preview": {
             "emptyTitle": "尚未选择文件",

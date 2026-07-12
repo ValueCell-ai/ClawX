@@ -224,6 +224,15 @@ Chat uses an ACP stdio bridge owned by Electron Main. Renderer receives typed ho
 
 ACP Chat can display generated image previews when image-generation media is delivered by the runtime as trusted structured media. During historical OpenClaw replay, assistant `MEDIA:/path/to/file.png` markers are also promoted only when they follow a recorded image-generation task start for that session. Other plain local-path text such as `MEDIA: /path/to/file.png` is not interpreted as a preview; ClawX loads previews through host media handling in Electron Main, not arbitrary renderer filesystem access. Standard ACP image content remains the preferred path and renders directly.
 
+### ACP File Activity Semantics
+
+- File activity is projected from successful, completed OpenClaw `write`, `edit`, and `apply_patch` calls. Tool recognition follows the official OpenClaw Chat UI; filtering to completed calls is specific to ClawX.
+- A `write` is shown as the tool declares it: a creation with an all-added diff, even if the path may already exist.
+- **Changes** is a chronological, session-level record of tool-declared activity. It is not Git output or a verified diff against a source baseline.
+- For each file, Changes renders at most one diff editor per assistant turn. Sequential fragments are composed when safe; independent fragments share one concatenated editor without claiming a complete-file baseline.
+- Side effects made by shell commands, scripts, users, or IDEs are not detected.
+- A full ACP replay can restore recorded file activity. If replay is incomplete, ClawX does not infer missing activity through fallback behavior.
+
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                        ClawX Desktop App                         │

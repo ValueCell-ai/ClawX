@@ -428,6 +428,14 @@ export type StagedFileResult = {
 export type StagePathsPayload = { filePaths: string[] };
 export type StageBufferPayload = { base64: string; fileName: string; mimeType?: string };
 export type FilePathPayload = { path: string };
+export type WorkspaceFileRef = {
+  workspaceRoot: string;
+  relativePath: string;
+};
+export type WorkspaceContextInput = {
+  workspaceRoot: string;
+  executionCwd: string;
+};
 export type FileReadBinaryOptions = { maxBytes?: number };
 export type FilePreviewTreeOptions = {
   maxDepth?: number;
@@ -445,6 +453,7 @@ export type FilePreviewError =
   | 'notFound'
   | 'notDirectory'
   | 'invalidContent'
+  | 'operationFailed'
   | (string & {});
 export type ReadTextFileResult = {
   ok: boolean;
@@ -831,6 +840,15 @@ export type HostApiContract = {
     stat: (payload: FilePathPayload) => StatFileResult;
     listDir: (payload: FilePathPayload) => FileListDirResult;
     listTree: (payload: FileListTreePayload) => FileListTreeResult;
+    resolveWorkspaceContext: (input: WorkspaceContextInput) => Promise<{
+      ok: boolean;
+      workspaceRoot?: string;
+      executionCwd?: string;
+      error?: FilePreviewError;
+    }>;
+    readWorkspaceText: (ref: WorkspaceFileRef) => Promise<ReadTextFileResult>;
+    readWorkspaceBinary: (input: WorkspaceFileRef & { maxBytes?: number }) => Promise<ReadBinaryFileResult>;
+    statWorkspaceFile: (ref: WorkspaceFileRef) => Promise<StatFileResult>;
   };
   media: {
     thumbnails: (payload: MediaThumbnailsPayload) => MediaThumbnailResult;
