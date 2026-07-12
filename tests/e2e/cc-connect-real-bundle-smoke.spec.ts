@@ -25,6 +25,7 @@ async function connectChannelCronProbe(options: {
   socket: WebSocket;
   packets: BridgePacket[];
   command: (content: string) => Promise<BridgePacket>;
+  cardAction: (action: string) => void;
 }> {
   const socket = new WebSocket(`ws://127.0.0.1:${options.port}/bridge/ws?token=${encodeURIComponent(options.token)}`);
   const packets: BridgePacket[] = [];
@@ -43,7 +44,7 @@ async function connectChannelCronProbe(options: {
     type: 'register',
     platform: 'feishu',
     project: options.project,
-    capabilities: ['text'],
+    capabilities: ['text', 'card', 'buttons'],
     metadata: { protocol_version: 1, description: 'ClawX channel Cron E2E probe' },
   }));
   await expect.poll(() => packets.find((packet) => packet.type === 'register_ack'), {
@@ -93,6 +94,15 @@ async function connectChannelCronProbe(options: {
         packet.reply_ctx === replyContext
         && ['reply', 'card', 'buttons', 'error'].includes(packet.type ?? '')
       ))!;
+    },
+    cardAction: (action) => {
+      socket.send(JSON.stringify({
+        type: 'card_action',
+        session_key: 'feishu:cron-admin',
+        action,
+        reply_ctx: `cron-action-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        project: options.project,
+      }));
     },
   };
 }
@@ -424,7 +434,7 @@ test.describe('cc-connect real runtime bundle smoke', () => {
         action: 'list',
       })) as { ok?: boolean; data?: Array<{ id?: string; message?: string; enabled?: boolean }> };
       const channelMarker = 'CLAWX_CHANNEL_CRON_SHARED_SCHEDULER';
-      await channelCronProbe.command(`/cron add 0 0 1 1 * ${channelMarker}`);
+      const channelAddReply = await channelCronProbe.command(`/cron add 0 0 1 1 * ${channelMarker}`);
       await expect.poll(listCron, {
         timeout: 10_000,
         intervals: [100, 250, 500],
@@ -452,15 +462,19 @@ test.describe('cc-connect real runtime bundle smoke', () => {
       })) as { ok?: boolean; data?: { id?: string } };
       expect(guiCron).toMatchObject({ ok: true, data: { id: expect.any(String) } });
       const channelListReply = await channelCronProbe.command('/cron');
+      expect(channelAddReply.type).toBe('reply');
+      expect(channelListReply.type).toBe('card');
       expect(JSON.stringify(channelListReply)).toContain(guiCron.data!.id!);
+      expect(JSON.stringify(channelListReply.card)).toContain(`act:/cron disable ${channelJob!.id}`);
+      expect(JSON.stringify(channelListReply.card)).toContain(`act:/cron delete ${channelJob!.id}`);
 
-      await channelCronProbe.command(`/cron disable ${channelJob!.id}`);
+      channelCronProbe.cardAction(`act:/cron disable ${channelJob!.id}`);
       await expect.poll(async () => (await listCron()).data?.find((job) => job.id === channelJob!.id)?.enabled)
         .toBe(false);
-      await channelCronProbe.command(`/cron enable ${channelJob!.id}`);
+      channelCronProbe.cardAction(`act:/cron enable ${channelJob!.id}`);
       await expect.poll(async () => (await listCron()).data?.find((job) => job.id === channelJob!.id)?.enabled)
         .toBe(true);
-      await channelCronProbe.command(`/cron del ${channelJob!.id}`);
+      channelCronProbe.cardAction(`act:/cron delete ${channelJob!.id}`);
       await expect.poll(async () => (await listCron()).data?.some((job) => job.id === channelJob!.id))
         .toBe(false);
       await expect(page.evaluate(async (id) => window.clawx.hostInvoke({
@@ -489,6 +503,11 @@ test.describe('cc-connect real runtime bundle smoke', () => {
         guiCreatedChannelObserved: true,
         channelToggleObserved: true,
         channelDeleteObserved: true,
+        declaredRichCapabilities: ['card', 'buttons'],
+        cronCommandPacketTypes: [channelAddReply.type, channelListReply.type],
+        richCommandCardAvailable: true,
+        cardActionsObserved: true,
+        textFallbackUsable: true,
         pidPreserved: statusAfterChannelCron.data?.pid
           === (statusBeforeProfiles as { data?: { pid?: number } }).data?.pid,
       }, null, 2)}\n`, 'utf8');

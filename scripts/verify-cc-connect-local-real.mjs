@@ -36,6 +36,7 @@ const COVERAGE_IDS = [
   'runtime-management-bundle-local-diagnostics',
   'bridge-media-packets-local-diagnostics',
   'bridge-rich-packets-local-diagnostics',
+  'bridge-rich-card-action-real-bundle',
   'channel-lifecycle-local-bundle',
   'channel-cron-command-local-diagnostics',
   'cron-lifecycle-local-bundle',
@@ -95,8 +96,8 @@ const RESIDUAL_VALIDATION_GAPS = [
     priority: 'follow-up',
     status: 'unverified',
     requiredForLocalReplacementGate: false,
-    nextCommand: 'Add a real cc-connect rich media/card packet delivery smoke once the upstream packet path is stable.',
-    reason: 'Real OAuth covers Codex apply_patch-generated file cards through cc-connect, and adapter diagnostics cover media/rich packet mapping. Real upstream rich media/card/button/preview/update/delete packet delivery beyond generated-file cards remains unverified.',
+    nextCommand: 'Add real cc-connect media, standalone buttons, preview, update-message, and delete-message packet smokes once those upstream paths are stable.',
+    reason: 'Real OAuth covers Codex apply_patch-generated file cards, and a real v1.4.1 Bridge channel probe proves a /cron list card plus actionable disable/enable/delete callbacks. Real upstream media, standalone buttons, preview/update/delete-message packet delivery remains unverified beyond adapter diagnostics.',
   },
   {
     id: 'notarized-macos-dmg-zip-smoke',
@@ -2078,6 +2079,20 @@ function buildCoverage(report) {
       reason: bridgeAdapterUnit.reason,
     },
     {
+      id: 'bridge-rich-card-action-real-bundle',
+      status: runtimeManagementBundle.status,
+      covers: [
+        'real bundled cc-connect Bridge card packet from /cron list',
+        'real card action values emitted by cc-connect',
+        'card_action disable callback observed through Host API',
+        'card_action enable callback observed through Host API',
+        'card_action delete callback observed through Host API',
+        'usable text reply fallback for /cron add acknowledgement',
+      ],
+      evidence: runtimeManagementBundle.command || runtimeManagementBundle.reason,
+      reason: runtimeManagementBundle.reason,
+    },
+    {
       id: 'channel-lifecycle-local-bundle',
       status: runtimeManagementBundle.status,
       covers: [
@@ -2104,6 +2119,8 @@ function buildCoverage(report) {
         'Channel /cron disable and enable observed through Host API',
         'Channel /cron delete observed through Host API',
         'single native cc-connect scheduler and unchanged runtime PID',
+        'real cc-connect /cron card packet and actionable disable/enable/delete callbacks',
+        'usable text fallback for the /cron add acknowledgement',
         'sanitized channel Cron evidence without tenant credentials',
       ],
       evidence: runtimeManagementBundle.command || runtimeManagementBundle.reason,

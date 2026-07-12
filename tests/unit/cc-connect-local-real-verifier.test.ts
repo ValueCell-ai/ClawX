@@ -229,6 +229,8 @@ describe('cc-connect local real verifier', () => {
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('bridge-media-packets-local-diagnostics');
     expect(COVERAGE_IDS).toContain('bridge-rich-packets-local-diagnostics');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('bridge-rich-packets-local-diagnostics');
+    expect(COVERAGE_IDS).toContain('bridge-rich-card-action-real-bundle');
+    expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('bridge-rich-card-action-real-bundle');
     expect(COVERAGE_IDS).toContain('session-history-parity-local-diagnostics');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).toContain('session-history-parity-local-diagnostics');
     expect(REPLACEMENT_REQUIRED_COVERAGE_IDS).not.toContain('channel-lifecycle-local-bundle');
@@ -478,6 +480,18 @@ describe('cc-connect local real verifier', () => {
         ]),
       }),
       expect.objectContaining({
+        id: 'bridge-rich-card-action-real-bundle',
+        status: 'pass',
+        evidence: 'pnpm run test:e2e -- tests/e2e/cc-connect-real-bundle-smoke.spec.ts',
+        covers: expect.arrayContaining([
+          'real bundled cc-connect Bridge card packet from /cron list',
+          'real card action values emitted by cc-connect',
+          'card_action disable callback observed through Host API',
+          'card_action enable callback observed through Host API',
+          'card_action delete callback observed through Host API',
+        ]),
+      }),
+      expect.objectContaining({
         id: 'channel-lifecycle-local-bundle',
         status: 'pass',
         evidence: 'pnpm run test:e2e -- tests/e2e/cc-connect-real-bundle-smoke.spec.ts',
@@ -500,6 +514,8 @@ describe('cc-connect local real verifier', () => {
           'Channel /cron disable and enable observed through Host API',
           'Channel /cron delete observed through Host API',
           'single native cc-connect scheduler and unchanged runtime PID',
+          'real cc-connect /cron card packet and actionable disable/enable/delete callbacks',
+          'usable text fallback for the /cron add acknowledgement',
         ]),
       }),
       expect.objectContaining({

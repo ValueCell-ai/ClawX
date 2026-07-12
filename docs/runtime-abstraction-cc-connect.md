@@ -578,6 +578,12 @@ runtime PID remains unchanged. Sanitized evidence is written to
 `artifacts/cc-connect/real-channel-cron-bridge.json`. This verifies cc-connect
 core/platform command routing and one shared native scheduler; it does not
 replace live Feishu tenant inbound or scheduled-reply evidence.
+The probe advertises Bridge `card` and `buttons` capabilities. Pinned
+cc-connect v1.4.1 returns `/cron add` as a usable text acknowledgement and the
+`/cron` list as a real card; the test invokes its disable, enable, and delete
+callbacks through `card_action` and verifies each mutation through Host API.
+Standalone button, preview/update/delete-message, and media packet evidence
+remain separate from this card/action proof.
 
 ## 12. Health, Doctor, and logs
 
