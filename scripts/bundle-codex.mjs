@@ -3,9 +3,13 @@ import 'zx/globals';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import {
   CODEX_VERSION_FALLBACK,
+  buildCodexArchiveExtractionCommand,
+  buildCodexVersionCommand,
   getCodexNativeTarballUrl,
   normalizeCodexTarget,
   parseCodexBundleArgs,
@@ -14,6 +18,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 const OUTPUT_ROOT = path.join(ROOT, 'build', 'codex');
+const execFileAsync = promisify(execFile);
 
 function readCodexVersion() {
   const pkgPath = path.join(ROOT, 'node_modules', '.pnpm', '@openai+codex@0.137.0', 'node_modules', '@openai', 'codex', 'package.json');
@@ -55,7 +60,8 @@ async function extractNativePackage(version, packageSuffix, tempDir) {
     return res.arrayBuffer();
   }).then((buffer) => Buffer.from(buffer));
   fs.writeFileSync(archivePath, data);
-  await $`tar xzf ${archivePath} -C ${tempDir}`;
+  const { command, args } = buildCodexArchiveExtractionCommand(archivePath, tempDir);
+  await execFileAsync(command, args);
   return path.join(tempDir, 'package');
 }
 
@@ -90,7 +96,9 @@ async function bundleTarget(version, nodePlatform, nodeArch) {
   let verifiedWithVersionCommand = false;
   if (canExecuteTargetOnHost(nodePlatform, nodeArch)) {
     const binaryPath = path.join(outputDir, 'bin', target.binaryName);
-    const versionOutput = await $`${binaryPath} --version`.text();
+    const { command, args } = buildCodexVersionCommand(binaryPath);
+    const { stdout, stderr } = await execFileAsync(command, args);
+    const versionOutput = `${stdout}${stderr}`;
     if (!versionOutput.includes(version)) {
       throw new Error(`Codex version mismatch: expected ${version}, got ${versionOutput.trim()}`);
     }

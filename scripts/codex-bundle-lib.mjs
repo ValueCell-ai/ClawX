@@ -103,3 +103,11 @@ export function buildCodexNativeTarballName(version, packageSuffix) {
 export function getCodexNativeTarballUrl(version, packageSuffix) {
   return `https://registry.npmjs.org/@openai/codex/-/${buildCodexNativeTarballName(version, packageSuffix)}`;
 }
+
+export function buildCodexArchiveExtractionCommand(archivePath, outputDir) {
+  return { command: 'tar', args: ['-xzf', archivePath, '-C', outputDir] };
+}
+
+export function buildCodexVersionCommand(binaryPath) {
+  return { command: binaryPath, args: ['--version'] };
+}
