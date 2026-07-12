@@ -54,7 +54,7 @@ describe('runtime packaging guardrails', () => {
       jobs?: Record<string, {
         if?: string;
         strategy?: { 'fail-fast'?: boolean };
-        steps?: Array<{ name?: string; env?: Record<string, string> }>;
+        steps?: Array<{ name?: string; env?: Record<string, string>; run?: string }>;
       }>;
     };
     expect(workflow.jobs?.release?.strategy?.['fail-fast']).toBe(false);
@@ -65,6 +65,7 @@ describe('runtime packaging guardrails', () => {
       .toBe("${{ github.event_name == 'workflow_dispatch' && 'false' || 'true' }}");
     expect(macBuild?.env?.CSC_LINK)
       .toBe("${{ github.event_name == 'push' && secrets.MAC_CERTS || '' }}");
+    expect(macBuild?.run).toContain('unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID');
   });
 
   it('verifies every packaged arch when a platform preset is requested explicitly', () => {

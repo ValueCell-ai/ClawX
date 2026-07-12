@@ -124,6 +124,9 @@ jobs:
         run: |
           ulimit -n 65536
           echo "File descriptor limit: $(ulimit -n)"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+          fi
           pnpm run package:mac
 
       - name: Verify macOS packaged runtime resources
