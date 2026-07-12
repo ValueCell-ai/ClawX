@@ -364,8 +364,16 @@ payload -> Main runtime event -> Renderer execution graph. It asserts
 lifecycle events, real approval request/resolution, and the visible graph. It
 writes sanitized evidence under
 `artifacts/cc-connect/real-oauth-tool-events.{png,json}` plus
-`artifacts/cc-connect/real-oauth-approval-request.png`. Reading Codex JSONL,
+`artifacts/cc-connect/real-oauth-approval-request.png`. These screenshots keep
+the tool type, approval controls, lifecycle state, generated filename, and
+assistant result visible while masking the isolated managed workspace path.
+Reading Codex JSONL,
 wrapping Codex stdout, or spawning a second Codex bridge remains forbidden.
+
+The local-real verifier performs runtime checks with real filesystem paths but
+replaces repository, home, and temporary roots with `<repo>`, `<home>`, and
+`<tmp>` before persisting JSON or Markdown. A passing evidence row must not
+publish a developer's worktree, credential-home, or isolated runtime path.
 
 Only Codex-provided reasoning summaries are shown. Hidden chain-of-thought is
 never requested or inferred. `eventId` deduplicates; `runId + seq` orders and

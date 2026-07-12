@@ -27,6 +27,7 @@ import {
   requiredCoverageIds,
   resolveOpenAiApiKeyEnv,
   runtimeMatrixStatus,
+  sanitizeReportPaths,
   shouldWriteHandoff,
   shouldWriteReport,
   summarizeCommandAttempts,
@@ -157,6 +158,32 @@ describe('cc-connect local real verifier', () => {
     expect(lines.join('\n')).not.toContain('redacted-secret-value-that-must-not-leak');
     expect(lines.join('\n')).not.toContain('access_token');
     expect(lines.join('\n')).not.toContain('refresh_token');
+  });
+
+  it('redacts local absolute paths from persisted verifier evidence', () => {
+    const report = sanitizeReportPaths({
+      command: 'pnpm run smoke -- --app=/workspace/clawx/release/mac/ClawX.app',
+      details: {
+        bundle: '/workspace/clawx/build/cc-connect/darwin-arm64/cc-connect',
+        auth: '/Users/example/.codex/auth.json',
+        temp: ['/private/var/folders/test/runtime/config.toml'],
+        source: 'https://github.com/example/release',
+      },
+    }, {
+      repoRoot: '/workspace/clawx',
+      homeDir: '/Users/example',
+      tempDir: '/var/folders/test',
+    });
+
+    expect(report).toEqual({
+      command: 'pnpm run smoke -- --app=<repo>/release/mac/ClawX.app',
+      details: {
+        bundle: '<repo>/build/cc-connect/darwin-arm64/cc-connect',
+        auth: '<home>/.codex/auth.json',
+        temp: ['<tmp>/runtime/config.toml'],
+        source: 'https://github.com/example/release',
+      },
+    });
   });
 
   it('can focus console summary coverage on selected external gates', () => {

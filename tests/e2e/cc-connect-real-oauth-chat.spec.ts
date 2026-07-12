@@ -33,6 +33,15 @@ async function expectAssistantText(page: Page, text: string, timeout = 180_000):
   await expect(page.getByTestId('chat-message-role-assistant').filter({ hasText: text }).last()).toBeVisible({ timeout });
 }
 
+function oauthEvidencePathMasks(page: Page, workspace: string) {
+  return [
+    page.getByTestId('chat-execution-step').filter({ hasText: workspace }),
+    page.getByTestId('generated-file-card-clawx-real-oauth-tool.txt')
+      .locator('span')
+      .filter({ hasText: workspace }),
+  ];
+}
+
 test.describe('cc-connect real OpenAI OAuth chat', () => {
   test('sends a chat message through real cc-connect and Codex OAuth', async ({
     launchElectronApp,
@@ -159,12 +168,16 @@ test.describe('cc-connect real OpenAI OAuth chat', () => {
         await page.screenshot({
           path: join(evidenceDir, 'real-oauth-approval-failure.png'),
           fullPage: true,
+          mask: oauthEvidencePathMasks(page, workspace),
+          maskColor: '#e5e7eb',
         });
         throw error;
       }
       await page.screenshot({
         path: join(evidenceDir, 'real-oauth-approval-request.png'),
         fullPage: true,
+        mask: oauthEvidencePathMasks(page, workspace),
+        maskColor: '#e5e7eb',
       });
       await allowApproval.click();
       await expect.poll(async () => await readFile(join(workspace, 'clawx-real-oauth-tool.txt'), 'utf8').catch(() => ''), {
@@ -202,6 +215,8 @@ test.describe('cc-connect real OpenAI OAuth chat', () => {
       await page.screenshot({
         path: join(evidenceDir, 'real-oauth-tool-events.png'),
         fullPage: true,
+        mask: oauthEvidencePathMasks(page, workspace),
+        maskColor: '#e5e7eb',
       });
       await writeFile(join(evidenceDir, 'real-oauth-tool-events.json'), JSON.stringify({
         runtime: 'cc-connect',

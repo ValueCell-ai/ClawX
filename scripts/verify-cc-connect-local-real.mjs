@@ -1268,6 +1268,36 @@ function commandLabel(command, args) {
   return [command, ...args].join(' ');
 }
 
+function sanitizeReportPaths(value, options = {}) {
+  const repoRoot = options.repoRoot ?? root;
+  const homeDir = options.homeDir ?? homedir();
+  const tempDir = options.tempDir ?? tmpdir();
+  const replacements = [
+    [repoRoot, '<repo>'],
+    [homeDir, '<home>'],
+    [tempDir, '<tmp>'],
+    ...(tempDir.startsWith('/var/') ? [[`/private${tempDir}`, '<tmp>']] : []),
+  ]
+    .filter(([path]) => path)
+    .sort(([left], [right]) => right.length - left.length);
+
+  const visit = (candidate) => {
+    if (typeof candidate === 'string') {
+      return replacements.reduce(
+        (sanitized, [path, label]) => sanitized.replaceAll(path, label),
+        candidate,
+      );
+    }
+    if (Array.isArray(candidate)) return candidate.map(visit);
+    if (candidate && typeof candidate === 'object') {
+      return Object.fromEntries(Object.entries(candidate).map(([key, entry]) => [key, visit(entry)]));
+    }
+    return candidate;
+  };
+
+  return visit(value);
+}
+
 function skippedCommand(command, args, reason) {
   return {
     command: commandLabel(command, args),
@@ -1795,7 +1825,7 @@ async function buildReport(args, effectiveEnv, envFileSummaries) {
       : 'pass';
   const matrixStatus = runtimeMatrixStatus(coverage, replacementReadiness);
 
-  return {
+  return sanitizeReportPaths({
     generatedAt: new Date().toISOString(),
     status,
     runtimeMatrixStatus: matrixStatus,
@@ -1808,7 +1838,7 @@ async function buildReport(args, effectiveEnv, envFileSummaries) {
     ccConnectCliSurface,
     coverage,
     checks,
-  };
+  });
 }
 
 function markdownStatus(status) {
@@ -2661,6 +2691,7 @@ export {
   requiredCoverageIds,
   resolveOpenAiApiKeyEnv,
   runtimeMatrixStatus,
+  sanitizeReportPaths,
   shouldWriteHandoff,
   shouldWriteReport,
   toConsoleSummaryLines,
