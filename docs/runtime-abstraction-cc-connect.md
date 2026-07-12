@@ -605,6 +605,12 @@ project, and exposed its prompt and assistant reply through the public
 session-summary/history APIs. The evidence command is
 `pnpm run verify:cc-connect:local-real:scheduled-cron`; it does not claim live
 tenant-channel delivery, which remains a separate Feishu/Lark credential gate.
+Both jobs preserve the cc-connect PID, remain visible through Host API and the
+Cron page until cleanup, require delete success plus a second Host API list that
+proves the job is absent, and write sanitized machine/visual evidence to
+`artifacts/cc-connect/real-scheduled-{exec,prompt}-cron.{json,png}`. The prompt
+artifact records only public session keys and success flags; it never records
+OAuth material, Management tokens, or temporary absolute paths.
 
 The bundled-runtime E2E also registers a simulated Feishu transport through the
 public Bridge protocol and proves Channel `/cron add`, list, disable, enable,

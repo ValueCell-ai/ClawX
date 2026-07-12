@@ -224,6 +224,32 @@ async function collectPromptCronDiagnostics(page: Page, cronId: string) {
   }, cronId);
 }
 
+async function deleteCronAndVerify(page: Page, cronId: string, requestId: string): Promise<void> {
+  const deleteResult = await page.evaluate(async ({ id, requestId: deleteRequestId }) => {
+    return await window.clawx.hostInvoke({
+      id: deleteRequestId,
+      module: 'cron',
+      action: 'delete',
+      payload: { id },
+    });
+  }, { id: cronId, requestId });
+  expect(deleteResult).toMatchObject({ ok: true, data: { success: true } });
+
+  await expect.poll(async () => {
+    const listResult = await page.evaluate(async () => window.clawx.hostInvoke({
+      id: `runtime-cron-list-after-scheduled-cleanup-${Date.now()}`,
+      module: 'cron',
+      action: 'list',
+    })) as { ok?: boolean; data?: Array<{ id?: string }> };
+    expect(listResult.ok).toBe(true);
+    return (listResult.data ?? []).some((job) => job.id === cronId);
+  }, {
+    timeout: 15_000,
+    intervals: [250, 500, 1_000],
+    message: `scheduled cron ${cronId} should be absent after deletion`,
+  }).toBe(false);
+}
+
 test.describe('cc-connect real scheduled cron delivery smoke', () => {
   test('delivers an enabled exec cron through the real cc-connect scheduler', async ({
     launchElectronApp,
@@ -277,6 +303,12 @@ test.describe('cc-connect real scheduled cron delivery smoke', () => {
         });
       });
       expect(startResult).toMatchObject({ ok: true, data: { success: true } });
+      const statusBefore = await page.evaluate(async () => window.clawx.hostInvoke({
+        id: 'runtime-status-before-real-scheduled-exec',
+        module: 'gateway',
+        action: 'status',
+      })) as { ok?: boolean; data?: { pid?: number; runtimeKind?: string } };
+      expect(statusBefore).toMatchObject({ ok: true, data: { runtimeKind: 'cc-connect', pid: expect.any(Number) } });
 
       const createResult = await page.evaluate(async ({ command, workDir }) => {
         return await window.clawx.hostInvoke({
@@ -332,6 +364,45 @@ test.describe('cc-connect real scheduled cron delivery smoke', () => {
           }),
         ]),
       });
+
+      const statusAfter = await page.evaluate(async () => window.clawx.hostInvoke({
+        id: 'runtime-status-after-real-scheduled-exec',
+        module: 'gateway',
+        action: 'status',
+      })) as { ok?: boolean; data?: { pid?: number; runtimeKind?: string } };
+      expect(statusAfter.data?.pid).toBe(statusBefore.data?.pid);
+
+      await page.getByTestId('sidebar-nav-cron').click();
+      await expect(page.getByTestId('cron-page')).toBeVisible();
+      const jobCard = page.getByTestId(`cron-job-card-${cronId}`);
+      await expect(jobCard).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId(`cron-job-card-title-${cronId}`)).toHaveText('Real scheduled exec cron smoke');
+      await jobCard.scrollIntoViewIfNeeded();
+      const commandLine = jobCard.locator('p').filter({ hasText: process.execPath });
+      await expect(commandLine).toBeVisible();
+      const evidenceDir = join(process.cwd(), 'artifacts', 'cc-connect');
+      await mkdir(evidenceDir, { recursive: true });
+      await page.screenshot({
+        path: join(evidenceDir, 'real-scheduled-exec-cron.png'),
+        fullPage: false,
+        mask: [commandLine],
+        maskColor: '#e5e7eb',
+      });
+      await deleteCronAndVerify(page, cronId, 'runtime-cron-delete-real-scheduled-exec');
+      cronId = '';
+      await writeFile(join(evidenceDir, 'real-scheduled-exec-cron.json'), `${JSON.stringify({
+        schema: 'clawx-cc-connect-real-scheduled-exec-cron-evidence',
+        version: 1,
+        runtimeKind: 'cc-connect',
+        runtimeBinary: 'real-bundled-v1.4.1',
+        schedulerTickObserved: true,
+        marker: 'CLAWX_SCHEDULED_EXEC_CRON_OK',
+        markerWrittenInConfiguredWorkspace: true,
+        jobListedThroughHostApi: true,
+        runtimePidPreserved: statusAfter.data?.pid === statusBefore.data?.pid,
+        scheduledJobCleanupObserved: true,
+        screenshot: 'artifacts/cc-connect/real-scheduled-exec-cron.png',
+      }, null, 2)}\n`, 'utf8');
     } finally {
       if (cronId) {
         const page = await getStableWindow(app).catch(() => null);
@@ -402,6 +473,12 @@ test.describe('cc-connect real scheduled cron delivery smoke', () => {
         });
       });
       expect(startResult).toMatchObject({ ok: true, data: { success: true } });
+      const statusBefore = await page.evaluate(async () => window.clawx.hostInvoke({
+        id: 'runtime-status-before-real-scheduled-prompt',
+        module: 'gateway',
+        action: 'status',
+      })) as { ok?: boolean; data?: { pid?: number; runtimeKind?: string } };
+      expect(statusBefore).toMatchObject({ ok: true, data: { runtimeKind: 'cc-connect', pid: expect.any(Number) } });
 
       const promptCronExpression = nextSafeMinuteCronExpression();
       const createResult = await page.evaluate(async (cronExpression) => {
@@ -450,6 +527,44 @@ test.describe('cc-connect real scheduled cron delivery smoke', () => {
           { cause: error },
         );
       }
+
+      const promptHistory = await findPromptCronHistory(page, 'CLAWX_SCHEDULED_PROMPT_CRON_OK');
+      expect(promptHistory).toMatchObject({ found: true, matchingSessionKeys: expect.any(Array) });
+      const statusAfter = await page.evaluate(async () => window.clawx.hostInvoke({
+        id: 'runtime-status-after-real-scheduled-prompt',
+        module: 'gateway',
+        action: 'status',
+      })) as { ok?: boolean; data?: { pid?: number; runtimeKind?: string } };
+      expect(statusAfter.data?.pid).toBe(statusBefore.data?.pid);
+
+      await page.getByTestId('sidebar-nav-cron').click();
+      await expect(page.getByTestId('cron-page')).toBeVisible();
+      const jobCard = page.getByTestId(`cron-job-card-${cronId}`);
+      await expect(jobCard).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId(`cron-job-card-title-${cronId}`)).toHaveText('Real scheduled prompt cron smoke');
+      await jobCard.scrollIntoViewIfNeeded();
+      const evidenceDir = join(process.cwd(), 'artifacts', 'cc-connect');
+      await mkdir(evidenceDir, { recursive: true });
+      await page.screenshot({
+        path: join(evidenceDir, 'real-scheduled-prompt-cron.png'),
+        fullPage: false,
+      });
+      await deleteCronAndVerify(page, cronId, 'runtime-cron-delete-real-scheduled-prompt');
+      cronId = '';
+      await writeFile(join(evidenceDir, 'real-scheduled-prompt-cron.json'), `${JSON.stringify({
+        schema: 'clawx-cc-connect-real-scheduled-prompt-cron-evidence',
+        version: 1,
+        runtimeKind: 'cc-connect',
+        runtimeBinary: 'real-bundled-v1.4.1',
+        schedulerTickObserved: true,
+        promptMarker: 'CLAWX_SCHEDULED_PROMPT_CRON_OK',
+        publicSessionHistoryObserved: promptHistory.found,
+        matchingSessionKeys: promptHistory.matchingSessionKeys,
+        codexReachedOnlyThroughCcConnect: true,
+        runtimePidPreserved: statusAfter.data?.pid === statusBefore.data?.pid,
+        scheduledJobCleanupObserved: true,
+        screenshot: 'artifacts/cc-connect/real-scheduled-prompt-cron.png',
+      }, null, 2)}\n`, 'utf8');
     } finally {
       if (cronId) {
         const page = await getStableWindow(app).catch(() => null);
