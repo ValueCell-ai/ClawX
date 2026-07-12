@@ -1891,6 +1891,8 @@ function buildCoverage(report) {
         'BridgePlatform WebSocket message delivery carries the GUI chat payload into cc-connect',
         'Codex is configured only as the cc-connect project agent command and managed CODEX_HOME',
         'Mock Electron E2E proves chat box delivery through cc-connect BridgePlatform',
+        'Electron Host API provider sync replaces stale same-account managed OAuth after browser re-login',
+        'ordinary runtime start preserves Codex-refreshed managed OAuth over an older vault snapshot',
       ],
       evidence: [runtimeProviderUnit.command, bridgeAdapterUnit.command, mockBridgeE2e.command].filter(Boolean).join(' && ')
         || runtimeProviderUnit.reason
@@ -1964,6 +1966,8 @@ function buildCoverage(report) {
         'unsupported provider diagnostics',
         'secret redaction',
         'running runtime provider/model sync restart',
+        'browser OAuth re-login secret precedence over stale same-account managed auth',
+        'Codex-refreshed managed auth precedence during ordinary runtime start',
       ],
       evidence: providerProfile.command || providerProfile.reason,
       reason: providerProfile.reason,

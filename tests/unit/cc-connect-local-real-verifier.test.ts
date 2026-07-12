@@ -385,6 +385,17 @@ describe('cc-connect local real verifier', () => {
         id: 'provider-model-profile-local-diagnostics',
         status: 'pass',
         evidence: 'pnpm exec vitest run tests/unit/cc-connect-provider-profile.test.ts tests/unit/cc-connect-runtime-provider.test.ts tests/unit/cc-connect-bridge-adapter.test.ts',
+        covers: expect.arrayContaining([
+          'browser OAuth re-login secret precedence over stale same-account managed auth',
+          'Codex-refreshed managed auth precedence during ordinary runtime start',
+        ]),
+      }),
+      expect.objectContaining({
+        id: 'runtime-boundary-bridgeplatform-only',
+        covers: expect.arrayContaining([
+          'Electron Host API provider sync replaces stale same-account managed OAuth after browser re-login',
+          'ordinary runtime start preserves Codex-refreshed managed OAuth over an older vault snapshot',
+        ]),
       }),
       expect.objectContaining({
         id: 'codex-oauth-lifecycle-local-diagnostics',

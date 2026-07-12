@@ -221,6 +221,10 @@ Credential rules:
   `CODEX_HOME`, while OpenClaw retains its existing auth/config projection. A
   cc-connect OAuth success must never write OpenClaw config or schedule an
   OpenClaw Gateway restart.
+- A successful cc-connect browser re-login (`reason=oauth`) replaces that
+  account's managed Codex auth with the newly acquired vault secret. Ordinary
+  runtime startup keeps managed auth first so Codex refresh-token rotation is
+  not rolled back by an older vault snapshot.
 - API keys and reusable OAuth recovery material are encrypted with Electron
   `safeStorage` in `credentials/secrets.enc`.
 - Channel account secrets share the encrypted vault under account-scoped IDs;
@@ -239,8 +243,11 @@ Credential rules:
 - Provider/model/account changes detach the old runtime session and create a
   new cc-connect/Codex session on the next turn while preserving visible ClawX
   history.
-- Invalid or expired credentials block only bound Agents. Other projects remain
-  available.
+- Missing or incomplete credentials block only bound Agents. Access-token
+  expiry does not invalidate a complete managed OAuth home because
+  cc-connect/Codex owns refresh-token rotation there; a failed refresh is
+  surfaced on that Agent's runtime turn and can be recovered with browser
+  re-login, without changing another Agent's credentials.
 - Proxy variables are supplied to cc-connect and inherited by its children;
   localhost, `127.0.0.1`, and `::1` are always added to `NO_PROXY`.
 
@@ -644,6 +651,11 @@ Mock-only evidence cannot close a real-runtime row. Opt-in credentials may stay
 outside normal CI, but replacement readiness remains partial until the latest
 report contains PASS evidence for real OAuth, external OpenAI API key, Feishu
 inbound/reply, native Channel Cron, and packaged target platforms.
+
+Deterministic Electron evidence covers same-account browser re-login projection
+and protects Codex-refreshed managed auth from stale-vault rollback. A live
+expired-token refresh failure followed by browser re-login still requires an
+explicit real OAuth fixture and remains an external validation row.
 
 ## 15. Acceptance and explicit non-parity
 

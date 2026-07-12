@@ -48,6 +48,10 @@ type OpenAIOAuthTokenResolution = {
   source: 'managed' | 'secret';
 };
 
+type OpenAIOAuthTokenResolutionOptions = {
+  preferSecret?: boolean;
+};
+
 export type CodexOAuthAuthFileSummary = {
   path: string;
   exists: boolean;
@@ -408,29 +412,33 @@ async function resolveProviderAccount(accountId?: string): Promise<{
 async function resolveOpenAIOAuthTokens(
   account: ProviderAccount,
   secret?: Extract<ProviderSecret, { type: 'oauth' }>,
+  options?: OpenAIOAuthTokenResolutionOptions,
 ): Promise<OpenAIOAuthTokenResolution | undefined> {
+  const secretIdToken = secret?.idToken?.trim();
+  const secretResolution: OpenAIOAuthTokenResolution | undefined = secret && secretIdToken
+    ? {
+        tokens: {
+          idToken: secretIdToken,
+          accessToken: secret.accessToken,
+          refreshToken: secret.refreshToken,
+          accountId: secret.subject?.trim() || account.id,
+        },
+        source: 'secret',
+      }
+    : undefined;
+
+  // Browser re-login is authoritative once; normal starts keep Codex-rotated managed tokens.
+  if (options?.preferSecret && secretResolution) {
+    return secretResolution;
+  }
+
   const managedAuthPath = join(await ensureAccountCodexHome(account.id), 'auth.json');
   const managedTokens = await readCompleteCodexAuthTokens(managedAuthPath);
   if (managedTokens && codexTokensMatchAccount(managedTokens, account, secret)) {
     return { tokens: managedTokens, source: 'managed' };
   }
 
-  if (!secret) return undefined;
-
-  const stored = secret.idToken?.trim();
-  if (stored) {
-    return {
-      tokens: {
-        idToken: stored,
-        accessToken: secret.accessToken,
-        refreshToken: secret.refreshToken,
-        accountId: secret.subject?.trim() || account.id,
-      },
-      source: 'secret',
-    };
-  }
-
-  return undefined;
+  return secretResolution;
 }
 
 export async function getCcConnectCodexOAuthStatus(payload?: {
@@ -500,7 +508,10 @@ export async function logoutCcConnectCodexOAuth(payload?: {
   return getCcConnectCodexOAuthStatus({ accountId });
 }
 
-async function buildProfileForAccount(account: ProviderAccount): Promise<CodexProviderProfile> {
+async function buildProfileForAccount(
+  account: ProviderAccount,
+  options?: OpenAIOAuthTokenResolutionOptions,
+): Promise<CodexProviderProfile> {
   const secret = await getProviderSecret(account.id);
   const model = resolveModel(account);
   const base = {
@@ -519,7 +530,7 @@ async function buildProfileForAccount(account: ProviderAccount): Promise<CodexPr
       const oauthSecret = secret?.type === 'oauth' && secret.accessToken && secret.refreshToken
         ? secret
         : undefined;
-      const tokenResolution = await resolveOpenAIOAuthTokens(account, oauthSecret);
+      const tokenResolution = await resolveOpenAIOAuthTokens(account, oauthSecret, options);
       if (!tokenResolution) {
         return {
           ...base,
@@ -751,7 +762,7 @@ export async function syncCcConnectProviderProfile(
     await migrateLegacyCodexHomeToAccount(account.id);
   }
   const profile: CodexProviderProfile = account
-    ? await buildProfileForAccount(account)
+    ? await buildProfileForAccount(account, { preferSecret: payload?.reason === 'oauth' })
     : {
         providerId: null,
         vendorId: null,

@@ -270,6 +270,151 @@ describe('cc-connect provider profile sync', () => {
     expect(profileFile).not.toContain('oauth-id-token');
   });
 
+  it('replaces stale managed Codex auth with the new browser OAuth secret', async () => {
+    const codexHome = accountCodexHome('openai-oauth');
+    await mkdir(codexHome, { recursive: true });
+    await writeFile(join(codexHome, 'auth.json'), JSON.stringify({
+      auth_mode: 'chatgpt',
+      OPENAI_API_KEY: null,
+      tokens: {
+        id_token: 'stale-managed-id-token',
+        access_token: 'stale-managed-access-token',
+        refresh_token: 'stale-managed-refresh-token',
+        account_id: 'acct_123',
+      },
+      last_refresh: '2026-06-07T00:00:00.000Z',
+    }, null, 2), 'utf8');
+    getDefaultProviderAccountIdMock.mockResolvedValue('openai-oauth');
+    getProviderAccountMock.mockResolvedValue({
+      id: 'openai-oauth',
+      vendorId: 'openai',
+      label: 'OpenAI OAuth',
+      authMode: 'oauth_browser',
+      model: 'gpt-5.5',
+      enabled: true,
+      isDefault: true,
+      createdAt: '2026-06-07T00:00:00.000Z',
+      updatedAt: '2026-07-12T00:00:00.000Z',
+    });
+    getProviderSecretMock.mockResolvedValue({
+      type: 'oauth',
+      accountId: 'openai-oauth',
+      accessToken: 'new-browser-access-token',
+      refreshToken: 'new-browser-refresh-token',
+      idToken: 'new-browser-id-token',
+      expiresAt: 1_820_000_000_000,
+      subject: 'acct_123',
+    });
+    const { syncCcConnectProviderProfile } = await import('@electron/runtime/cc-connect-provider-profile');
+
+    await expect(syncCcConnectProviderProfile({
+      providerId: 'openai-oauth',
+      reason: 'oauth',
+    })).resolves.toMatchObject({
+      providerId: 'openai-oauth',
+      supported: true,
+      codexHomeDir: codexHome,
+    });
+
+    const authFile = await readFile(join(codexHome, 'auth.json'), 'utf8');
+    expect(authFile).toContain('new-browser-access-token');
+    expect(authFile).toContain('new-browser-refresh-token');
+    expect(authFile).toContain('new-browser-id-token');
+    expect(authFile).not.toContain('stale-managed-access-token');
+    const profileFile = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'provider-profile.json'), 'utf8');
+    expect(profileFile).not.toContain('new-browser-access-token');
+    expect(profileFile).not.toContain('new-browser-refresh-token');
+    expect(profileFile).not.toContain('new-browser-id-token');
+  });
+
+  it('preserves Codex-refreshed managed auth during ordinary runtime start', async () => {
+    const codexHome = accountCodexHome('openai-oauth');
+    await mkdir(codexHome, { recursive: true });
+    await writeFile(join(codexHome, 'auth.json'), JSON.stringify({
+      auth_mode: 'chatgpt',
+      OPENAI_API_KEY: null,
+      tokens: {
+        id_token: 'refreshed-managed-id-token',
+        access_token: 'refreshed-managed-access-token',
+        refresh_token: 'refreshed-managed-refresh-token',
+        account_id: 'acct_123',
+      },
+      last_refresh: '2026-07-12T00:00:00.000Z',
+    }, null, 2), 'utf8');
+    getDefaultProviderAccountIdMock.mockResolvedValue('openai-oauth');
+    getProviderAccountMock.mockResolvedValue({
+      id: 'openai-oauth',
+      vendorId: 'openai',
+      label: 'OpenAI OAuth',
+      authMode: 'oauth_browser',
+      model: 'gpt-5.5',
+      enabled: true,
+      isDefault: true,
+      createdAt: '2026-06-07T00:00:00.000Z',
+      updatedAt: '2026-06-07T00:00:00.000Z',
+    });
+    getProviderSecretMock.mockResolvedValue({
+      type: 'oauth',
+      accountId: 'openai-oauth',
+      accessToken: 'stale-vault-access-token',
+      refreshToken: 'stale-vault-refresh-token',
+      idToken: 'stale-vault-id-token',
+      expiresAt: 1_780_000_000_000,
+      subject: 'acct_123',
+    });
+    const { syncCcConnectProviderProfile } = await import('@electron/runtime/cc-connect-provider-profile');
+
+    await syncCcConnectProviderProfile({ reason: 'runtime-start' });
+
+    const authFile = await readFile(join(codexHome, 'auth.json'), 'utf8');
+    expect(authFile).toContain('refreshed-managed-access-token');
+    expect(authFile).toContain('refreshed-managed-refresh-token');
+    expect(authFile).not.toContain('stale-vault-access-token');
+  });
+
+  it('does not replace complete managed auth when browser OAuth lacks an id token', async () => {
+    const codexHome = accountCodexHome('openai-oauth');
+    await mkdir(codexHome, { recursive: true });
+    await writeFile(join(codexHome, 'auth.json'), JSON.stringify({
+      auth_mode: 'chatgpt',
+      OPENAI_API_KEY: null,
+      tokens: {
+        id_token: 'managed-id-token',
+        access_token: 'managed-access-token',
+        refresh_token: 'managed-refresh-token',
+        account_id: 'acct_123',
+      },
+      last_refresh: '2026-07-12T00:00:00.000Z',
+    }, null, 2), 'utf8');
+    getDefaultProviderAccountIdMock.mockResolvedValue('openai-oauth');
+    getProviderAccountMock.mockResolvedValue({
+      id: 'openai-oauth',
+      vendorId: 'openai',
+      label: 'OpenAI OAuth',
+      authMode: 'oauth_browser',
+      model: 'gpt-5.5',
+      enabled: true,
+      isDefault: true,
+      createdAt: '2026-06-07T00:00:00.000Z',
+      updatedAt: '2026-07-12T00:00:00.000Z',
+    });
+    getProviderSecretMock.mockResolvedValue({
+      type: 'oauth',
+      accountId: 'openai-oauth',
+      accessToken: 'incomplete-browser-access-token',
+      refreshToken: 'incomplete-browser-refresh-token',
+      expiresAt: 1_820_000_000_000,
+      subject: 'acct_123',
+    });
+    const { syncCcConnectProviderProfile } = await import('@electron/runtime/cc-connect-provider-profile');
+
+    await syncCcConnectProviderProfile({ reason: 'oauth' });
+
+    const authFile = await readFile(join(codexHome, 'auth.json'), 'utf8');
+    expect(authFile).toContain('managed-access-token');
+    expect(authFile).not.toContain('incomplete-browser-access-token');
+  });
+
   it('uses an existing managed Codex OAuth home without requiring a ClawX OAuth secret', async () => {
     const legacyCodexHome = join(tempDir, 'runtimes', 'cc-connect', 'codex-home');
     const codexHome = accountCodexHome('openai-oauth');
