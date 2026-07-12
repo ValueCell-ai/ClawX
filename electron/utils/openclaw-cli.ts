@@ -340,6 +340,12 @@ function getNodeExecForCli(): string {
     );
     if (existsSync(helperPath)) return helperPath;
   }
+
+  if (process.platform === 'win32' && app.isPackaged) {
+    const bundledNode = getPackagedWindowsNodePath();
+    if (bundledNode) return bundledNode;
+  }
+
   return process.execPath;
 }
 
@@ -357,6 +363,7 @@ export function generateCompletionCache(): void {
       ELECTRON_RUN_AS_NODE: '1',
       OPENCLAW_NO_RESPAWN: '1',
       OPENCLAW_EMBEDDED_IN: 'ClawX',
+      NODE_DISABLE_COMPILE_CACHE: '1',
     },
     stdio: 'ignore',
     detached: false,
@@ -394,6 +401,7 @@ export function installCompletionToProfile(): void {
         ELECTRON_RUN_AS_NODE: '1',
         OPENCLAW_NO_RESPAWN: '1',
         OPENCLAW_EMBEDDED_IN: 'ClawX',
+        NODE_DISABLE_COMPILE_CACHE: '1',
       },
       stdio: 'ignore',
       detached: false,
