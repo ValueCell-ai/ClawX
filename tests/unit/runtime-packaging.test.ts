@@ -13,10 +13,18 @@ import {
   hashMachOSections,
   parsePackagedResourceArgs,
 } from '../../scripts/verify-packaged-runtime-resources.mjs';
+import { packagedSmokeChecks } from '../../scripts/smoke-packaged-cc-connect.mjs';
 
 const repoRoot = process.cwd();
 
 describe('runtime packaging guardrails', () => {
+  it('records real packaged OAuth chat only when the smoke executes it', () => {
+    expect(packagedSmokeChecks({ platform: 'darwin', realOAuthChatCompleted: true }))
+      .toContain('real-oauth-chat-through-managed-launcher');
+    expect(packagedSmokeChecks({ platform: 'darwin', realOAuthChatCompleted: false }))
+      .not.toContain('real-oauth-chat-through-managed-launcher');
+  });
+
   it('keeps cc-connect and Codex bundle verification wired into packaging scripts', async () => {
     const packageJson = JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>;

@@ -582,6 +582,7 @@ describe('cc-connect local real verifier', () => {
           'packaged Codex manifest and source sha256 integrity',
           'packaged signed executable version checks',
           'packaged Codex ripgrep helper executable',
+          'packaged GUI Chat through cc-connect and the managed Codex OAuth launcher',
         ]),
       }),
     ]));

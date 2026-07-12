@@ -2228,7 +2228,7 @@ function buildCoverage(report) {
         'packaged signed executable version checks',
         'packaged Codex ripgrep helper executable',
         'packaged cc-connect startup',
-        'packaged Codex OAuth smoke',
+        'packaged GUI Chat through cc-connect and the managed Codex OAuth launcher',
       ],
       evidence: packaged.command || packaged.reason,
       reason: packaged.reason,

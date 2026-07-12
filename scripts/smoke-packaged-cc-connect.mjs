@@ -34,6 +34,25 @@ function parseArgs(argv) {
   return result;
 }
 
+export function packagedSmokeChecks({
+  platform = process.platform,
+  allowUnsigned = false,
+  realOAuthChatCompleted = false,
+} = {}) {
+  return [
+    'runtime-binary-version',
+    ...(shouldVerifyPackagedCodeSignature(platform, allowUnsigned) ? ['code-signature'] : []),
+    'packaged-electron-start',
+    'runtime-start-status',
+    'workspace-projection',
+    ...(realOAuthChatCompleted ? ['real-oauth-chat-through-managed-launcher'] : []),
+    'cron-crud',
+    'doctor',
+    'openclaw-rollback',
+    'pid-port-process-cleanup',
+  ];
+}
+
 function binaryName(base) {
   return process.platform === 'win32' ? `${base}.exe` : base;
 }
@@ -343,6 +362,7 @@ async function main() {
   let bridgePort;
   let app;
   let smokeError;
+  let realOAuthChatCompleted = false;
 
   try {
     await mkdir(join(homeDir, '.config'), { recursive: true });
@@ -458,6 +478,7 @@ async function main() {
       await page.getByTestId('chat-composer-input').fill('Reply exactly: CLAWX_PACKAGED_REAL_OAUTH_OK');
       await page.getByTestId('chat-composer-send').click();
       await expect(page.getByText('CLAWX_PACKAGED_REAL_OAUTH_OK')).toBeVisible({ timeout: 180_000 });
+      realOAuthChatCompleted = true;
     }
 
     const createCron = await page.evaluate(async () => {
@@ -645,17 +666,7 @@ async function main() {
     codeSignature: process.platform === 'darwin'
       ? allowUnsigned ? 'explicitly-skipped-unsigned-smoke' : 'verified'
       : 'not-applicable',
-    checks: [
-      'runtime-binary-version',
-      ...(shouldVerifyPackagedCodeSignature(process.platform, allowUnsigned) ? ['code-signature'] : []),
-      'packaged-electron-start',
-      'runtime-start-status',
-      'workspace-projection',
-      'cron-crud',
-      'doctor',
-      'openclaw-rollback',
-      'pid-port-process-cleanup',
-    ],
+    checks: packagedSmokeChecks({ allowUnsigned, realOAuthChatCompleted }),
     status: 'pass',
   };
   await mkdir(dirname(evidencePath), { recursive: true });
