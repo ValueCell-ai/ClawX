@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., 1.0.0)'
+        description: 'Version label for an unsigned smoke build (e.g., 1.0.0-beta.smoke)'
         required: true
 
 permissions:
@@ -114,11 +114,12 @@ jobs:
         if: matrix.platform == 'mac'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.MAC_CERTS }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ github.event_name == 'workflow_dispatch' && 'false' || 'true' }}
+          CSC_LINK: ${{ github.event_name == 'push' && secrets.MAC_CERTS || '' }}
+          CSC_KEY_PASSWORD: ${{ github.event_name == 'push' && secrets.MAC_CERTS_PASSWORD || '' }}
+          APPLE_ID: ${{ github.event_name == 'push' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ github.event_name == 'push' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ github.event_name == 'push' && secrets.APPLE_TEAM_ID || '' }}
         run: |
           ulimit -n 65536
           echo "File descriptor limit: $(ulimit -n)"
@@ -423,6 +424,7 @@ jobs:
   publish:
     needs: [release, runtime-smoke-macos-x64, runtime-smoke-linux-arm64]
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
     
     steps:
       - name: Download release artifacts only
@@ -516,6 +518,7 @@ jobs:
   upload-oss:
     needs: [release, runtime-smoke-macos-x64, runtime-smoke-linux-arm64]
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
 
     steps:
       - name: Download release artifacts only

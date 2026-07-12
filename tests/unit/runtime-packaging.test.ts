@@ -48,6 +48,20 @@ describe('runtime packaging guardrails', () => {
     expect(releaseWorkflow).toContain('artifacts/cc-connect/packaged-smoke-darwin-x64.json');
     expect(releaseWorkflow).toContain('artifacts/cc-connect/packaged-smoke-linux-arm64.json');
     expect(releaseWorkflow).toContain('needs: [release, runtime-smoke-macos-x64, runtime-smoke-linux-arm64]');
+
+    const workflow = parse(releaseWorkflow) as {
+      jobs?: Record<string, {
+        if?: string;
+        steps?: Array<{ name?: string; env?: Record<string, string> }>;
+      }>;
+    };
+    expect(workflow.jobs?.publish?.if).toBe("startsWith(github.ref, 'refs/tags/')");
+    expect(workflow.jobs?.['upload-oss']?.if).toBe("startsWith(github.ref, 'refs/tags/')");
+    const macBuild = workflow.jobs?.release?.steps?.find((step) => step.name === 'Build macOS');
+    expect(macBuild?.env?.CSC_IDENTITY_AUTO_DISCOVERY)
+      .toBe("${{ github.event_name == 'workflow_dispatch' && 'false' || 'true' }}");
+    expect(macBuild?.env?.CSC_LINK)
+      .toBe("${{ github.event_name == 'push' && secrets.MAC_CERTS || '' }}");
   });
 
   it('verifies every packaged arch when a platform preset is requested explicitly', () => {

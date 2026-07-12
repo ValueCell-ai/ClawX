@@ -67,6 +67,10 @@ Packaging requirements:
   `ubuntu-24.04-arm` jobs for macOS x64 and Linux arm64. Publishing depends on
   all five jobs. A local run cannot replace observed CI evidence. Runner labels
   follow the [GitHub-hosted runners reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+- A manual `Release` workflow dispatch is evidence-only: it disables macOS
+  signing discovery and never creates a GitHub Release, uploads to OSS, or runs
+  final promotion. Publishing remains tag-only. Use an alpha/beta version label
+  for manual smoke so Windows also skips SignPath.
 
 Primary upstream contracts:
 

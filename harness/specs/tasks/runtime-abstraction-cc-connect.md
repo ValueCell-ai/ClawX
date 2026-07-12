@@ -74,6 +74,7 @@ acceptance:
   - Token usage maps only a published, versioned runtime payload with project, session/turn, provider/model, counters, and reconnect/replay or durable-history semantics; absent cc-connect counters produce explicit `missing` turn records and never footer- or transcript-derived estimates.
   - The unmerged cc-connect usage-observer proposal in upstream PR #1428 is tracked as design evidence, not treated as a supported API, because it lacks release provenance, project/provider/model attribution, and durable replay semantics.
   - Real OAuth, real external API-key, Feishu inbound/reply, native Channel Cron, Doctor, workspace, and packaged evidence paths are recorded in a sanitized report.
+  - Manual release-workflow validation is evidence-only and cannot publish GitHub or OSS artifacts; tag pushes remain the only publishing path.
   - pnpm harness validate --spec harness/specs/tasks/runtime-abstraction-cc-connect.md passes.
   - pnpm harness run --spec harness/specs/tasks/runtime-abstraction-cc-connect.md passes or records explicit external-credential/release-platform gaps without claiming replacement readiness.
 docs:
