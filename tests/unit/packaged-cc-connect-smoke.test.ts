@@ -48,5 +48,8 @@ describe('packaged cc-connect smoke paths', () => {
     const source = await readFile(join(process.cwd(), 'scripts', 'smoke-packaged-cc-connect.mjs'), 'utf8');
     expect(source).toContain("'$needle = $env:CLAWX_SMOKE_PROCESS_NEEDLE;'");
     expect(source).toContain("execFileAsync('powershell.exe'");
+    expect(source).toContain('CLAWX_E2E_CREDENTIAL_KEY: randomUUID()');
+    expect(source).toContain("join(homeDir, 'AppData', 'Local')");
+    expect(source).toContain("join(homeDir, 'AppData', 'Roaming')");
   });
 });

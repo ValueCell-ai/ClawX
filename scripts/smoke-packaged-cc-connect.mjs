@@ -4,7 +4,7 @@ import { constants as fsConstants } from 'node:fs';
 import { access, copyFile, mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import { createConnection, createServer } from 'node:net';
 import { execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -345,6 +345,8 @@ async function main() {
 
   try {
     await mkdir(join(homeDir, '.config'), { recursive: true });
+    await mkdir(join(homeDir, 'AppData', 'Local'), { recursive: true });
+    await mkdir(join(homeDir, 'AppData', 'Roaming'), { recursive: true });
     await seedCcConnectSettings(userDataDir, { realOAuth });
     if (realOAuth) {
       await access(await copyLocalCodexAuthToManagedHome(userDataDir));
@@ -378,6 +380,7 @@ async function main() {
         LC_ALL: 'en_US.UTF-8',
         LANGUAGE: 'en',
         CLAWX_E2E: '1',
+        CLAWX_E2E_CREDENTIAL_KEY: randomUUID(),
         CLAWX_E2E_SKIP_SETUP: '1',
         CLAWX_USER_DATA_DIR: userDataDir,
         CLAWX_PORT_CLAWX_HOST_API: String(hostApiPort),
