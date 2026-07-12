@@ -8,6 +8,8 @@ import { randomUUID } from 'node:crypto';
 
 type LaunchElectronOptions = {
   skipSetup?: boolean;
+  omitUserDataOverride?: boolean;
+  initialUserDataDir?: string;
   env?: Record<string, string>;
 };
 
@@ -184,7 +186,11 @@ async function launchClawXElectron(
     : {};
   return await electron.launch({
     executablePath: electronBinaryPath,
-    args: ['--lang=en-US', electronEntry],
+    args: [
+      '--lang=en-US',
+      ...(options.initialUserDataDir ? [`--user-data-dir=${options.initialUserDataDir}`] : []),
+      electronEntry,
+    ],
     env: {
       ...process.env,
       ...electronEnv,
@@ -198,7 +204,7 @@ async function launchClawXElectron(
       LANGUAGE: 'en',
       CLAWX_E2E: '1',
       CLAWX_E2E_CREDENTIAL_KEY: randomUUID(),
-      CLAWX_USER_DATA_DIR: userDataDir,
+      ...(options.omitUserDataOverride ? {} : { CLAWX_USER_DATA_DIR: userDataDir }),
       ...(options.skipSetup ? { CLAWX_E2E_SKIP_SETUP: '1' } : {}),
       CLAWX_PORT_CLAWX_HOST_API: String(hostApiPort),
       ...(options.env ?? {}),

@@ -133,6 +133,15 @@ write. Existing Electron data is imported into `~/.clawx`; existing
 `~/.openclaw` remains external compatibility data and is never moved or
 deleted.
 
+`tests/e2e/clawx-data-layout-migration.spec.ts` exercises this production
+startup order without the flat `CLAWX_USER_DATA_DIR` test compatibility
+override. It supplies an isolated legacy `--user-data-dir` before Main startup,
+uses an isolated `CLAWX_DATA_HOME`, launches Electron, and verifies `app/`,
+`system/electron`, the data version, migration journal, and retained legacy
+source on every CI platform without reading the developer's real userData. It
+then changes the legacy settings and launches again to prove the canonical
+`app/` state wins across upgrades and repeated migration attempts.
+
 `app/runtime-config.json` is the canonical Agent, binding, channel-account, and
 OpenClaw-compatible runtime metadata document. Sensitive channel fields are
 removed before this file is written and are hydrated from
