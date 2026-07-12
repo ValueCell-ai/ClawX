@@ -99,7 +99,7 @@ export function registerIpcHandlers(
   registerOpenClawHandlers();
 
   // Provider handlers
-  registerProviderHandlers(gatewayManager);
+  registerProviderHandlers(gatewayManager, runtimeManager);
 
   // Shell handlers
   registerShellHandlers();
@@ -776,7 +776,10 @@ function registerWhatsAppHandlers(mainWindow: BrowserWindow): void {
 /**
  * Provider-related IPC handlers
  */
-function registerProviderHandlers(gatewayManager: GatewayManager): void {
+function registerProviderHandlers(
+  gatewayManager: GatewayManager,
+  runtimeManager: RuntimeManager,
+): void {
   const providerService = getProviderService();
   const legacyProviderChannelsWarned = new Set<string>();
   const logLegacyProviderChannel = (channel: string): void => {
@@ -794,9 +797,14 @@ function registerProviderHandlers(gatewayManager: GatewayManager): void {
     logger.info(`[IPC] Scheduling Gateway restart after ${provider} OAuth success for ${accountId}...`);
     gatewayManager.debouncedRestart(8000);
   });
-  browserOAuthManager.on('oauth:success', ({ provider, accountId }) => {
-    logger.info(`[IPC] Scheduling Gateway restart after ${provider} OAuth success for ${accountId}...`);
-    gatewayManager.debouncedRestart(8000);
+  browserOAuthManager.on('oauth:success', async ({ provider, accountId }) => {
+    try {
+      if (await runtimeManager.getActiveKind() !== 'openclaw') return;
+      logger.info(`[IPC] Scheduling Gateway restart after ${provider} OAuth success for ${accountId}...`);
+      gatewayManager.debouncedRestart(8000);
+    } catch (error) {
+      logger.warn('[IPC] Failed to resolve active runtime after browser OAuth success:', error);
+    }
   });
 
   // Get all providers with key info

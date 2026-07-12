@@ -194,8 +194,9 @@ async function syncUpdatedProviderToActiveRuntime(
   config: ProviderConfig,
   apiKey: string | undefined,
   ctx: Pick<ProvidersApiContext, 'gatewayManager' | 'runtimeManager'>,
+  reason = 'update',
 ): Promise<void> {
-  if (await syncActiveRuntimeProviderProfile(ctx, { providerId: config.id, reason: 'update' })) {
+  if (await syncActiveRuntimeProviderProfile(ctx, { providerId: config.id, reason })) {
     return;
   }
   await syncUpdatedProviderToRuntime(config, apiKey, ctx.gatewayManager);
@@ -614,6 +615,18 @@ export function createProvidersApi(ctx: ProvidersApiContext): CompleteHostServic
   const providerService = getProviderService();
   deviceOAuthManager.setWindow(ctx.mainWindow);
   browserOAuthManager.setWindow(ctx.mainWindow);
+  browserOAuthManager.setSuccessHandler(async ({ accountId }) => {
+    const account = await providerService.getAccount(accountId);
+    if (!account) {
+      throw new Error(`Provider account not found after OAuth success: ${accountId}`);
+    }
+    await syncUpdatedProviderToActiveRuntime(
+      providerAccountToConfig(account),
+      undefined,
+      ctx,
+      'oauth',
+    );
+  });
 
   return {
     list: async () => providerService._listProvidersWithKeyInfoInternal(),

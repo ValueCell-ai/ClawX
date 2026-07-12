@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   applyProxySettingsMock,
+  browserOAuthSetSuccessHandlerMock,
   assignChannelAccountToAgentMock,
   assignChannelToAgentMock,
   clearChannelBindingMock,
@@ -40,6 +41,7 @@ const {
   syncDefaultProviderToRuntimeMock,
   syncDeletedProviderToRuntimeMock,
   syncSavedProviderToRuntimeMock,
+  syncUpdatedProviderToRuntimeMock,
   syncLaunchAtStartupSettingFromStoreMock,
   syncProxyConfigToOpenClawMock,
   testOpenClawConfigDir,
@@ -47,6 +49,7 @@ const {
   validateApiKeyWithProviderMock,
 } = vi.hoisted(() => ({
   applyProxySettingsMock: vi.fn(),
+  browserOAuthSetSuccessHandlerMock: vi.fn(),
   assignChannelAccountToAgentMock: vi.fn(),
   assignChannelToAgentMock: vi.fn(),
   clearChannelBindingMock: vi.fn(),
@@ -114,6 +117,7 @@ const {
   syncDefaultProviderToRuntimeMock: vi.fn(),
   syncDeletedProviderToRuntimeMock: vi.fn(),
   syncSavedProviderToRuntimeMock: vi.fn(),
+  syncUpdatedProviderToRuntimeMock: vi.fn(),
   syncLaunchAtStartupSettingFromStoreMock: vi.fn(),
   syncProxyConfigToOpenClawMock: vi.fn(),
   testOpenClawConfigDir: '/tmp/clawx-host-services-openclaw',
@@ -229,7 +233,7 @@ vi.mock('@electron/services/providers/provider-runtime-sync', () => ({
   syncDeletedProviderToRuntime: (...args: unknown[]) => syncDeletedProviderToRuntimeMock(...args),
   syncProviderApiKeyToRuntime: vi.fn(),
   syncSavedProviderToRuntime: (...args: unknown[]) => syncSavedProviderToRuntimeMock(...args),
-  syncUpdatedProviderToRuntime: vi.fn(),
+  syncUpdatedProviderToRuntime: (...args: unknown[]) => syncUpdatedProviderToRuntimeMock(...args),
   getOpenClawProviderKey: vi.fn((type: string) => type),
 }));
 
@@ -260,6 +264,7 @@ vi.mock('@electron/runtime/cc-connect-agent-bindings', () => ({
 vi.mock('@electron/utils/browser-oauth', () => ({
   browserOAuthManager: {
     setWindow: vi.fn(),
+    setSuccessHandler: (...args: unknown[]) => browserOAuthSetSuccessHandlerMock(...args),
     startFlow: vi.fn(),
     stopFlow: vi.fn(),
     submitManualCode: vi.fn(),
@@ -666,6 +671,75 @@ describe('host services', () => {
       reason: 'save',
     });
     expect(syncSavedProviderToRuntimeMock).not.toHaveBeenCalled();
+  });
+
+  it('dispatches browser OAuth success through the active runtime provider', async () => {
+    const account = {
+      id: 'openai-oauth',
+      vendorId: 'openai',
+      label: 'OpenAI Codex',
+      authMode: 'oauth_browser',
+      model: 'gpt-5.5',
+      enabled: true,
+      createdAt: '2026-07-12T00:00:00.000Z',
+      updatedAt: '2026-07-12T00:00:00.000Z',
+    };
+    providerServiceMock.getAccount.mockResolvedValue(account);
+    const syncProviderProfile = vi.fn(async () => ({ success: true }));
+    const runtimeManager = {
+      getActiveProvider: vi.fn(() => ({ kind: 'cc-connect', syncProviderProfile })),
+    };
+    const { createProvidersApi } = await import('@electron/services/providers-api');
+
+    createProvidersApi({
+      gatewayManager: { debouncedReload: vi.fn() } as never,
+      runtimeManager: runtimeManager as never,
+      mainWindow: {} as never,
+    });
+    const successHandler = browserOAuthSetSuccessHandlerMock.mock.calls.at(-1)?.[0];
+    expect(successHandler).toBeTypeOf('function');
+    await successHandler({ provider: 'openai', accountId: account.id });
+
+    expect(providerAccountToConfigMock).toHaveBeenCalledWith(account);
+    expect(syncProviderProfile).toHaveBeenCalledWith({
+      providerId: account.id,
+      reason: 'oauth',
+    });
+    expect(syncUpdatedProviderToRuntimeMock).not.toHaveBeenCalled();
+  });
+
+  it('retains OpenClaw provider projection when browser OAuth has no runtime sync capability', async () => {
+    const account = {
+      id: 'openai-oauth',
+      vendorId: 'openai',
+      label: 'OpenAI Codex',
+      authMode: 'oauth_browser',
+      model: 'gpt-5.5',
+      enabled: true,
+      createdAt: '2026-07-12T00:00:00.000Z',
+      updatedAt: '2026-07-12T00:00:00.000Z',
+    };
+    providerServiceMock.getAccount.mockResolvedValue(account);
+    const gatewayManager = { debouncedRestart: vi.fn() };
+    const runtimeManager = {
+      getActiveProvider: vi.fn(() => ({ kind: 'openclaw' })),
+    };
+    const { createProvidersApi } = await import('@electron/services/providers-api');
+
+    createProvidersApi({
+      gatewayManager: gatewayManager as never,
+      runtimeManager: runtimeManager as never,
+      mainWindow: {} as never,
+    });
+    const successHandler = browserOAuthSetSuccessHandlerMock.mock.calls.at(-1)?.[0];
+    expect(successHandler).toBeTypeOf('function');
+    await successHandler({ provider: 'openai', accountId: account.id });
+
+    expect(syncUpdatedProviderToRuntimeMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: account.id, type: 'openai' }),
+      undefined,
+      gatewayManager,
+    );
   });
 
   it('exposes cc-connect Codex OAuth lifecycle through providers service and syncs active runtime', async () => {

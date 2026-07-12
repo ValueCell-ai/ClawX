@@ -4,12 +4,6 @@ import { logger } from './logger';
 import { loginOpenAICodexOAuth, type OpenAICodexOAuthCredentials } from './openai-codex-oauth';
 import { getProviderService } from '../services/providers/provider-service';
 import { getSecretStore } from '../services/secrets/secret-store';
-import {
-  ensureOpenClawProviderAgentRuntimePins,
-  OPENAI_CODEX_OAUTH_PROVIDER_CONFIG,
-  saveOAuthTokenToOpenClaw,
-  setOpenClawDefaultModelWithOverride,
-} from './openclaw-auth';
 
 // Google was removed: OpenClaw's `google-gemini-cli` OAuth integration is an
 // unofficial third-party flow that requires the `gemini` CLI binary to be on
@@ -17,20 +11,31 @@ import {
 // account suspensions. ClawX does not bundle that binary, so the only
 // browser-OAuth provider we currently expose end-to-end is OpenAI Codex.
 export type BrowserOAuthProviderType = 'openai';
+export type BrowserOAuthSuccessPayload = {
+  provider: BrowserOAuthProviderType;
+  accountId: string;
+};
 
 const OPENAI_RUNTIME_PROVIDER_ID = 'openai';
 const OPENAI_OAUTH_DEFAULT_MODEL = 'gpt-5.5';
 
-class BrowserOAuthManager extends EventEmitter {
+export class BrowserOAuthManager extends EventEmitter {
   private activeAccountId: string | null = null;
   private activeLabel: string | null = null;
   private active = false;
   private mainWindow: BrowserWindow | null = null;
   private pendingManualCodeResolve: ((value: string) => void) | null = null;
   private pendingManualCodeReject: ((reason?: unknown) => void) | null = null;
+  private successHandler: ((payload: BrowserOAuthSuccessPayload) => Promise<void>) | null = null;
 
   setWindow(window: BrowserWindow) {
     this.mainWindow = window;
+  }
+
+  setSuccessHandler(
+    handler: ((payload: BrowserOAuthSuccessPayload) => Promise<void>) | null,
+  ): void {
+    this.successHandler = handler;
   }
 
   async startFlow(
@@ -125,12 +130,6 @@ class BrowserOAuthManager extends EventEmitter {
   ) {
     const accountId = this.activeAccountId || providerType;
     const accountLabel = this.activeLabel;
-    this.active = false;
-    this.activeAccountId = null;
-    this.activeLabel = null;
-    this.pendingManualCodeResolve = null;
-    this.pendingManualCodeReject = null;
-    logger.info(`[BrowserOAuth] Successfully completed OAuth for ${providerType}`);
 
     const providerService = getProviderService();
     const existing = await providerService.getAccount(accountId);
@@ -181,44 +180,15 @@ class BrowserOAuthManager extends EventEmitter {
       subject: oauthTokenSubject,
     });
 
-    await saveOAuthTokenToOpenClaw(runtimeProviderId, {
-      access: token.access,
-      refresh: token.refresh,
-      expires: token.expires,
-      email: oauthTokenEmail,
-      projectId: oauthTokenSubject,
-      accountId: oauthTokenSubject,
-    });
-
-    const modelId = normalizedExistingModel || defaultModel;
-    const modelRef = `${runtimeProviderId}/${modelId}`;
-    const fallbackModelRefs = (nextAccount.fallbackModels ?? [])
-      .map((fallback) => fallback.trim())
-      .filter(Boolean)
-      .map((fallback) => (
-        fallback.replace(/^openai-codex\//, `${runtimeProviderId}/`).startsWith(`${runtimeProviderId}/`)
-          ? fallback.replace(/^openai-codex\//, `${runtimeProviderId}/`)
-          : `${runtimeProviderId}/${fallback}`
-      ));
-
-    try {
-      await setOpenClawDefaultModelWithOverride(
-        runtimeProviderId,
-        modelRef,
-        {
-          baseUrl: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.baseUrl,
-          api: OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.api,
-        },
-        fallbackModelRefs,
-      );
-      await ensureOpenClawProviderAgentRuntimePins();
-      logger.info(`[BrowserOAuth] Registered ${runtimeProviderId} in openclaw.json (default model: ${modelRef})`);
-    } catch (err) {
-      logger.warn('[BrowserOAuth] Failed to register OpenAI OAuth provider in openclaw.json:', err);
-      throw err;
-    }
-
-    this.emit('oauth:success', { provider: providerType, accountId: nextAccount.id });
+    const successPayload = { provider: providerType, accountId: nextAccount.id };
+    await this.successHandler?.(successPayload);
+    this.active = false;
+    this.activeAccountId = null;
+    this.activeLabel = null;
+    this.pendingManualCodeResolve = null;
+    this.pendingManualCodeReject = null;
+    logger.info(`[BrowserOAuth] Successfully completed OAuth for ${providerType}`);
+    this.emit('oauth:success', successPayload);
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send('oauth:success', {
         provider: providerType,

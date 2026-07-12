@@ -215,6 +215,12 @@ bound account's OAuth home or API-key environment.
 
 Credential rules:
 
+- Browser OAuth acquisition writes only the ClawX-owned provider account and
+  encrypted secret. Runtime projection is dispatched through the active
+  `RuntimeProvider`: cc-connect materializes its account-scoped managed
+  `CODEX_HOME`, while OpenClaw retains its existing auth/config projection. A
+  cc-connect OAuth success must never write OpenClaw config or schedule an
+  OpenClaw Gateway restart.
 - API keys and reusable OAuth recovery material are encrypted with Electron
   `safeStorage` in `credentials/secrets.enc`.
 - Channel account secrets share the encrypted vault under account-scoped IDs;
