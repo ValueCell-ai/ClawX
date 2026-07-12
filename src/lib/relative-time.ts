@@ -24,5 +24,7 @@ export function getTimeagoLocale(language?: string): string {
 export function formatSessionRelativeTime(timestampMs: number, nowMs: number, language?: string): string {
   if (!Number.isFinite(timestampMs) || timestampMs <= 0) return '';
   ensureTimeagoLocalesRegistered();
-  return format(timestampMs, getTimeagoLocale(language), { relativeDate: nowMs });
+  const safeNowMs = Number.isFinite(nowMs) && nowMs > 0 ? nowMs : Date.now();
+  const safeTimestampMs = Math.min(timestampMs, safeNowMs);
+  return format(safeTimestampMs, getTimeagoLocale(language), { relativeDate: safeNowMs });
 }

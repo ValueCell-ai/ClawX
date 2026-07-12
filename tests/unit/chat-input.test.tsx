@@ -230,6 +230,17 @@ describe('ChatInput agent targeting', () => {
     artifactPanelMocks.openPreview.mockReset();
   });
 
+  it('renders the Zoomies working indicator while a message is sending', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput onSend={vi.fn()} sending />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByTestId('chat-composer-working-indicator')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-composer-zoomies')).toBeInTheDocument();
+  });
+
   it('renders editable workspace selector in the composer footer', () => {
     render(
       <TooltipProvider>

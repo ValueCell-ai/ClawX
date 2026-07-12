@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
@@ -48,6 +48,17 @@ function seedAcpRuntimeOptionsCwd(sessionKey: string, cwd: string) {
   } finally {
     db.close();
   }
+}
+
+function seedTranscript(sessionKey: string, messages: unknown[]) {
+  const sessionsDir = join(testOpenClawDir, 'agents', 'main', 'sessions');
+  mkdirSync(sessionsDir, { recursive: true });
+  writeFileSync(join(sessionsDir, 'sessions.json'), JSON.stringify({ [sessionKey]: 'heartbeat.jsonl' }), 'utf8');
+  writeFileSync(
+    join(sessionsDir, 'heartbeat.jsonl'),
+    messages.map((message) => JSON.stringify({ type: 'message', message })).join('\n'),
+    'utf8',
+  );
 }
 
 describe('sessions API workspace summaries', () => {
@@ -108,5 +119,49 @@ describe('sessions API workspace summaries', () => {
       sessionKey: 'agent:main:session-missing',
       workspacePath: null,
     });
+  });
+
+  it('marks heartbeat-only transcripts without using them as titles', async () => {
+    seedTranscript('agent:main:session-heartbeat', [
+      {
+        role: 'user',
+        content: '[OpenClaw heartbeat poll]',
+        timestamp: 9_000,
+      },
+    ]);
+    const { createSessionsApi } = await import('@electron/services/sessions-api');
+    const api = createSessionsApi();
+
+    const result = await api.summaries({ sessionKeys: ['agent:main:session-heartbeat'] });
+
+    expect(result.success).toBe(true);
+    expect(result.summaries?.[0]).toMatchObject({
+      sessionKey: 'agent:main:session-heartbeat',
+      firstUserText: null,
+      lastTimestamp: 9_000_000,
+      heartbeatOnly: true,
+    });
+  });
+
+  it('does not mark other internal-only transcript prompts as heartbeat sessions', async () => {
+    seedTranscript('agent:main:session-time-poll', [
+      {
+        role: 'user',
+        content: 'Current time: local / 2026-05-06 12:00 UTC',
+        timestamp: 9_001,
+      },
+    ]);
+    const { createSessionsApi } = await import('@electron/services/sessions-api');
+    const api = createSessionsApi();
+
+    const result = await api.summaries({ sessionKeys: ['agent:main:session-time-poll'] });
+
+    expect(result.success).toBe(true);
+    expect(result.summaries?.[0]).toMatchObject({
+      sessionKey: 'agent:main:session-time-poll',
+      firstUserText: null,
+      lastTimestamp: 9_001_000,
+    });
+    expect(result.summaries?.[0]?.heartbeatOnly).toBeUndefined();
   });
 });

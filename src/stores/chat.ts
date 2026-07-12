@@ -17,8 +17,13 @@ import { isCronSessionKey, sessionKeysAreEquivalent } from './chat/cron-session-
 import {
   findHiddenOpenClawHeartbeatSession,
   isClawXDesktopSessionKey,
+  isOpenClawHeartbeatOnlySession,
   shouldIncludeSessionInSidebarList,
 } from './chat/session-key-utils';
+import {
+  isOpenClawHeartbeatPollText,
+  OPENCLAW_HEARTBEAT_POLL_SENTINEL,
+} from '@shared/chat/openclaw-internal';
 import { fetchCronSessionHistory } from '@/lib/cron-session-history';
 import { pickStartupSessionFallback } from './chat/session-selection';
 import {
@@ -198,6 +203,59 @@ function applySessionBackendLabels(set: ChatSet, sessions: ChatSession[]): void 
   });
 }
 
+function isHeartbeatOnlySummaryForSession(
+  session: ChatSession | undefined,
+  summary: SessionLabelSummary,
+): boolean {
+  if (!session || !isClawXDesktopSessionKey(session.key)) return false;
+  if (!summary.heartbeatOnly && !isOpenClawHeartbeatPollText(summary.firstUserText)) return false;
+  return isOpenClawHeartbeatOnlySession({
+    ...session,
+    lastMessagePreview: summary.firstUserText || OPENCLAW_HEARTBEAT_POLL_SENTINEL,
+  });
+}
+
+function getHeartbeatCachedLabelCleanup(
+  sessions: ChatSession[],
+  sessionLabels: Record<string, string>,
+): { hiddenSessionKeys: Set<string>; staleLabelKeys: Set<string>; labelKeys: Set<string> } {
+  const hiddenSessionKeys = new Set<string>();
+  const staleLabelKeys = new Set<string>();
+
+  for (const session of sessions) {
+    if (!isOpenClawHeartbeatPollText(sessionLabels[session.key])) continue;
+    const heartbeatMarkedSession = {
+      ...session,
+      lastMessagePreview: OPENCLAW_HEARTBEAT_POLL_SENTINEL,
+    };
+    if (isOpenClawHeartbeatOnlySession(heartbeatMarkedSession)) {
+      hiddenSessionKeys.add(session.key);
+    } else {
+      staleLabelKeys.add(session.key);
+    }
+  }
+
+  return {
+    hiddenSessionKeys,
+    staleLabelKeys,
+    labelKeys: new Set([...hiddenSessionKeys, ...staleLabelKeys]),
+  };
+}
+
+function omitRecordKeys<T>(entries: Record<string, T>, keys: Set<string>): Record<string, T> {
+  if (keys.size === 0) return entries;
+  let changed = false;
+  const next: Record<string, T> = {};
+  for (const [key, value] of Object.entries(entries)) {
+    if (keys.has(key)) {
+      changed = true;
+      continue;
+    }
+    next[key] = value;
+  }
+  return changed ? next : entries;
+}
+
 async function fetchSessionLabelSummaries(sessionKeys: string[]): Promise<SessionLabelSummary[]> {
   if (sessionKeys.length === 0) return [];
   const response = await hostApi.sessions.summaries({ sessionKeys });
@@ -213,10 +271,51 @@ function applySessionLabelSummaries(
     let nextLabels = state.sessionLabels;
     let nextActivity = state.sessionLastActivity;
     let nextSessions = state.sessions;
+    let switchPatch: Partial<ChatState> | null = null;
     let changed = false;
 
     for (const summary of summaries) {
       const session = nextSessions.find((entry) => entry.key === summary.sessionKey);
+      if (isHeartbeatOnlySummaryForSession(session, summary)) {
+        if (nextSessions === state.sessions) {
+          nextSessions = [...state.sessions];
+        }
+        nextSessions = nextSessions.filter((entry) => entry.key !== summary.sessionKey);
+        if (nextLabels === state.sessionLabels) {
+          nextLabels = { ...state.sessionLabels };
+        }
+        delete nextLabels[summary.sessionKey];
+        if (nextActivity === state.sessionLastActivity) {
+          nextActivity = { ...state.sessionLastActivity };
+        }
+        delete nextActivity[summary.sessionKey];
+        clearCachedSessionHistory(summary.sessionKey);
+        clearCachedSessionRunState(summary.sessionKey);
+        changed = true;
+
+        if (state.currentSessionKey === summary.sessionKey) {
+          clearHistoryPoll();
+          const prefix = getCanonicalPrefixFromSessionKey(summary.sessionKey) ?? DEFAULT_CANONICAL_PREFIX;
+          const replacementKey = `${prefix}:session-${Date.now()}`;
+          switchPatch = buildSessionSwitchPatch(
+            {
+              ...state,
+              sessions: nextSessions,
+              sessionLabels: nextLabels,
+              sessionLastActivity: nextActivity,
+            },
+            replacementKey,
+            { createdLocally: true },
+          );
+          clearCachedSessionHistory(summary.sessionKey);
+          clearCachedSessionRunState(summary.sessionKey);
+          if (switchPatch.sessions) nextSessions = switchPatch.sessions;
+          if (switchPatch.sessionLabels) nextLabels = switchPatch.sessionLabels;
+          if (switchPatch.sessionLastActivity) nextActivity = switchPatch.sessionLastActivity;
+        }
+        continue;
+      }
+
       const labelText = toAutomaticSessionLabel(summary.firstUserText || '');
       // Only auto-hydrate missing labels. Existing entries include user renames
       // and must not be overwritten by transcript-derived titles.
@@ -257,7 +356,7 @@ function applySessionLabelSummaries(
 
     if (!changed) return {};
 
-    const patch: Partial<ChatState> = {};
+    const patch: Partial<ChatState> = switchPatch ? { ...switchPatch } : {};
     if (nextLabels !== state.sessionLabels) patch.sessionLabels = nextLabels;
     if (nextActivity !== state.sessionLastActivity) patch.sessionLastActivity = nextActivity;
     if (nextSessions !== state.sessions) patch.sessions = nextSessions;
@@ -310,6 +409,7 @@ function toSessionLabel(text: string, maxLength = 50): string {
 }
 
 function toAutomaticSessionLabel(text: string, maxLength = 50): string {
+  if (isOpenClawHeartbeatPollText(text)) return '';
   if (isAcpWorkingDirectoryTruncatedTitle(text)) return '';
   const textAfterInitialPrefix = stripAcpWorkingDirectoryPrefix(text);
   const cleaned = cleanSessionLabelText(textAfterInitialPrefix);
@@ -319,6 +419,7 @@ function toAutomaticSessionLabel(text: string, maxLength = 50): string {
     ? stripAcpWorkingDirectoryPrefix(cleaned)
     : cleaned;
   const title = normalized.trim();
+  if (isOpenClawHeartbeatPollText(title)) return '';
   if (!title) return '';
   return title.length > maxLength ? `${title.slice(0, maxLength)}…` : title;
 }
@@ -2723,7 +2824,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             return true;
           });
 
-          const { currentSessionKey, sessions: localSessions } = get();
+          const { currentSessionKey, sessions: localSessions, sessionLabels: currentSessionLabels } = get();
           const localWorkspaceBySessionKey = new Map(
             localSessions
               .filter((session) => session.workspacePath)
@@ -2734,10 +2835,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
             const workspacePath = localWorkspaceBySessionKey.get(session.key);
             return workspacePath ? { ...session, workspacePath } : session;
           });
+          const heartbeatLabelCleanup = getHeartbeatCachedLabelCleanup(mergedSessions, currentSessionLabels);
+          for (const sessionKey of heartbeatLabelCleanup.hiddenSessionKeys) {
+            clearCachedSessionHistory(sessionKey);
+            clearCachedSessionRunState(sessionKey);
+            clearSessionLabelHydrationTracking(sessionKey);
+          }
+          const visibleMergedSessions = heartbeatLabelCleanup.hiddenSessionKeys.size > 0
+            ? mergedSessions.filter((session) => !heartbeatLabelCleanup.hiddenSessionKeys.has(session.key))
+            : mergedSessions;
           let nextSessionKey = currentSessionKey || DEFAULT_SESSION_KEY;
           let replacedHiddenHeartbeatSession = false;
           const hiddenCurrentSession = findHiddenOpenClawHeartbeatSession(nextSessionKey, normalizedSessions);
-          if (hiddenCurrentSession) {
+          if (hiddenCurrentSession || heartbeatLabelCleanup.hiddenSessionKeys.has(nextSessionKey)) {
             const prefix = getCanonicalPrefixFromSessionKey(nextSessionKey)
               ?? getCanonicalPrefixFromSessions(sessions)
               ?? DEFAULT_CANONICAL_PREFIX;
@@ -2750,12 +2860,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
               nextSessionKey = canonicalMatch;
             }
           }
-          if (!replacedHiddenHeartbeatSession && !mergedSessions.find((s) => s.key === nextSessionKey) && mergedSessions.length > 0) {
+          if (!replacedHiddenHeartbeatSession && !visibleMergedSessions.find((s) => s.key === nextSessionKey) && visibleMergedSessions.length > 0) {
             // Preserve only locally-created pending sessions. On initial boot the
             // default ghost key (`agent:main:main`) should yield to real history.
             const hasLocalPendingSession = localSessions.some((session) => session.key === nextSessionKey);
             if (!hasLocalPendingSession) {
-              const fallbackKey = pickStartupSessionFallback(nextSessionKey, mergedSessions);
+              const fallbackKey = pickStartupSessionFallback(nextSessionKey, visibleMergedSessions);
               if (fallbackKey) {
                 nextSessionKey = fallbackKey;
               }
@@ -2763,13 +2873,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
 
           const localCurrentSession = localSessions.find((session) => session.key === nextSessionKey);
-          const sessionsWithCurrent = !mergedSessions.find((s) => s.key === nextSessionKey) && nextSessionKey
+          const sessionsWithCurrent = !visibleMergedSessions.find((s) => s.key === nextSessionKey) && nextSessionKey
             && isClawXDesktopSessionKey(nextSessionKey)
             ? [
-              ...mergedSessions,
+              ...visibleMergedSessions,
               localCurrentSession ?? { key: nextSessionKey, displayName: nextSessionKey },
             ]
-            : mergedSessions;
+            : visibleMergedSessions;
 
           const discoveredActivity = Object.fromEntries(
             sessionsWithCurrent
@@ -2785,23 +2895,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
             // while messages[] still holds the prior conversation until
             // chat.history returns — which looks like cross-session contamination.
             clearHistoryPoll();
-            set((state) => ({
-              ...buildSessionSwitchPatch(state, nextSessionKey),
-              sessions: sessionsWithCurrent,
-              sessionLastActivity: {
-                ...state.sessionLastActivity,
-                ...discoveredActivity,
-              },
-            }));
+            set((state) => {
+              const switchPatch = buildSessionSwitchPatch(state, nextSessionKey);
+              return {
+                ...switchPatch,
+                sessions: sessionsWithCurrent,
+                sessionLabels: omitRecordKeys(
+                  switchPatch.sessionLabels ?? state.sessionLabels,
+                  heartbeatLabelCleanup.labelKeys,
+                ),
+                sessionLastActivity: omitRecordKeys(
+                  {
+                    ...(switchPatch.sessionLastActivity ?? state.sessionLastActivity),
+                    ...discoveredActivity,
+                  },
+                  heartbeatLabelCleanup.hiddenSessionKeys,
+                ),
+              };
+            });
           } else {
             set((state) => ({
               sessions: sessionsWithCurrent,
               currentSessionKey: nextSessionKey,
               currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
-              sessionLastActivity: {
-                ...state.sessionLastActivity,
-                ...discoveredActivity,
-              },
+              sessionLabels: omitRecordKeys(state.sessionLabels, heartbeatLabelCleanup.labelKeys),
+              sessionLastActivity: omitRecordKeys(
+                {
+                  ...state.sessionLastActivity,
+                  ...discoveredActivity,
+                },
+                heartbeatLabelCleanup.hiddenSessionKeys,
+              ),
             }));
           }
           reconcileCurrentSessionIdleFromBackend(set, get, sessionsWithCurrent);

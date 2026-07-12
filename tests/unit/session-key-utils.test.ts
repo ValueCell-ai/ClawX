@@ -75,6 +75,18 @@ describe('session-key-utils', () => {
     expect(shouldIncludeSessionInSidebarList(heartbeatOnly)).toBe(false);
   });
 
+  it('hides heartbeat sessions whose preview is only the OpenClaw heartbeat acknowledgement', () => {
+    const heartbeatOnly: ChatSession = {
+      key: 'agent:main:main',
+      label: '[OpenClaw heartbeat poll]',
+      displayName: '[OpenClaw heartbeat poll]',
+      derivedTitle: '[OpenClaw heartbeat poll]',
+      lastMessagePreview: 'HEARTBEAT_OK',
+    };
+
+    expect(shouldIncludeSessionInSidebarList(heartbeatOnly)).toBe(false);
+  });
+
   it('finds a hidden heartbeat session by current key', () => {
     const sessions: ChatSession[] = [
       {
@@ -107,6 +119,16 @@ describe('session-key-utils', () => {
     };
 
     expect(shouldIncludeSessionInSidebarList(realConversation)).toBe(true);
+  });
+
+  it('keeps heartbeat-marked sessions when displayName carries a real title', () => {
+    const titledConversation: ChatSession = {
+      key: 'agent:main:session-1710000000002',
+      displayName: 'Project kickoff notes',
+      lastMessagePreview: '[OpenClaw heartbeat poll]',
+    };
+
+    expect(shouldIncludeSessionInSidebarList(titledConversation)).toBe(true);
   });
 
   it('keeps sessions that contain user-authored text near the heartbeat sentinel', () => {

@@ -3,6 +3,7 @@ import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { stripAcpWorkingDirectoryPrefix } from '@shared/chat/session-title';
+import { isOpenClawHeartbeatPollText } from '@shared/chat/openclaw-internal';
 import type { RawMessage } from '@shared/chat/types';
 import { getOpenClawConfigDir } from '../utils/paths';
 import { logger } from '../utils/logger';
@@ -23,6 +24,7 @@ type SessionSummary = {
   firstUserText: string | null;
   lastTimestamp: number | null;
   workspacePath: string | null;
+  heartbeatOnly?: boolean;
 };
 
 type TranscriptMessage = RawMessage;
@@ -77,6 +79,7 @@ function cleanSummaryUserText(text: string): string {
 
 function isInternalSummaryText(text: string): boolean {
   if (!text) return true;
+  if (isOpenClawHeartbeatPollText(text)) return true;
   if (/^\s*System\s*\(untrusted\)\s*:/i.test(text)) return true;
   if (
     /An async command you ran earlier has completed/i.test(text)
@@ -246,6 +249,7 @@ function summarizeTranscriptMessages(
 ): SessionSummary {
   let firstUserText: string | null = null;
   let lastTimestamp: number | null = null;
+  let sawHeartbeatPollText = false;
 
   for (const message of messages) {
     const normalizedTs = normalizeTimestamp(message.timestamp);
@@ -254,13 +258,24 @@ function summarizeTranscriptMessages(
     }
     if (firstUserText == null && message.role === 'user') {
       const text = cleanSummaryUserText(extractMessageText(message.content));
-      if (text && !isInternalSummaryText(text)) {
+      if (text && isInternalSummaryText(text)) {
+        if (isOpenClawHeartbeatPollText(text)) {
+          sawHeartbeatPollText = true;
+        }
+      } else if (text) {
         firstUserText = text;
       }
     }
   }
 
-  return { sessionKey, firstUserText, lastTimestamp, workspacePath };
+  const heartbeatOnly = firstUserText == null && sawHeartbeatPollText;
+  return {
+    sessionKey,
+    firstUserText,
+    lastTimestamp,
+    workspacePath,
+    ...(heartbeatOnly ? { heartbeatOnly: true } : {}),
+  };
 }
 
 function parseSessionKey(sessionKey: string): { agentId: string; suffix: string } | null {

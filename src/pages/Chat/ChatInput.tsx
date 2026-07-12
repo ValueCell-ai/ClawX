@@ -860,10 +860,16 @@ export function ChatInput({
             role="status"
             aria-live="polite"
             aria-label={t('composer.working')}
-            className="relative mb-2 h-1 overflow-hidden rounded-full bg-black/5 dark:bg-white/10"
+            className="relative mb-2 flex h-1 overflow-hidden rounded-full"
           >
             <span className="sr-only">{t('composer.working')}</span>
-            <span className="clawx-chat-working-rail-bar absolute inset-y-0 block w-16 rounded-full bg-primary/70 shadow-[0_0_14px_hsl(var(--primary)/0.28)]" />
+            <span
+              data-testid="chat-composer-zoomies"
+              aria-hidden="true"
+              className="clawx-chat-working-zoomies"
+            >
+              <span className="clawx-chat-working-zoomies-inner" />
+            </span>
           </div>
         )}
 

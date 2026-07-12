@@ -230,4 +230,11 @@ describe('sidebar session helpers', () => {
     expect(formatSessionRelativeTime(activityMs, nowMs, 'zh')).toContain('2');
     expect(formatSessionRelativeTime(0, nowMs, 'en')).toBe('');
   });
+
+  it('clamps future activity timestamps to avoid future relative labels', () => {
+    const nowMs = new Date('2026-05-06T12:00:00.000Z').getTime();
+
+    expect(formatSessionRelativeTime(nowMs + 30_000, nowMs, 'en')).toBe('just now');
+    expect(formatSessionRelativeTime(nowMs + 30_000, nowMs, 'zh')).toBe('刚刚');
+  });
 });

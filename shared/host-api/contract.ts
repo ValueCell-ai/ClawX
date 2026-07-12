@@ -603,6 +603,7 @@ export type SessionLabelSummary = {
   firstUserText: string | null;
   lastTimestamp: number | null;
   workspacePath: string | null;
+  heartbeatOnly?: boolean;
 };
 export type SessionSummariesResult = HostSuccess & {
   summaries?: SessionLabelSummary[];

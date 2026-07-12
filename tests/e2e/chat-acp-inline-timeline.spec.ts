@@ -730,7 +730,7 @@ test.describe('ClawX ACP inline timeline', () => {
     }
   });
 
-  test('shows the composer working rail only while sending', async ({ launchElectronApp }) => {
+  test('shows the composer Zoomies indicator only while sending', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -739,14 +739,17 @@ test.describe('ClawX ACP inline timeline', () => {
       const page = await openChat(app);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('chat-composer-working-indicator')).toHaveCount(0);
+      await expect(page.getByTestId('chat-composer-zoomies')).toHaveCount(0);
 
       await page.getByTestId('chat-composer-input').fill('Hold the send state');
       await page.getByTestId('chat-composer-send').click();
 
       await expect(page.getByTestId('chat-composer-working-indicator')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('chat-composer-zoomies')).toBeVisible();
 
       await resolveDeferredAcpPrompt(app);
       await expect(page.getByTestId('chat-composer-working-indicator')).toHaveCount(0, { timeout: 30_000 });
+      await expect(page.getByTestId('chat-composer-zoomies')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
