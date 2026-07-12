@@ -1834,6 +1834,33 @@ test.describe('cc-connect real runtime bundle smoke', () => {
       expect(logTail).toContain('progress packet type=update_message');
       expect(logTail).toContain('codex app-server session started');
 
+      await expect.poll(async () => await page.evaluate(async () => window.clawx.hostInvoke({
+        id: 'runtime-usage-real-rich-progress',
+        module: 'usage',
+        action: 'recentTokenHistory',
+        payload: { limit: 20, runtimeKind: 'cc-connect' },
+      })), {
+        timeout: 30_000,
+        intervals: [500, 1_000, 2_000],
+      }).toMatchObject({
+        ok: true,
+        data: expect.arrayContaining([expect.objectContaining({
+          runtimeKind: 'cc-connect',
+          sessionId: 'agent:main:main',
+          agentId: 'main',
+          usageStatus: 'missing',
+          totalTokens: 0,
+        })]),
+      });
+      const usageResult = await page.evaluate(async () => window.clawx.hostInvoke({
+        id: 'runtime-usage-real-rich-progress-evidence',
+        module: 'usage',
+        action: 'recentTokenHistory',
+        payload: { limit: 20, runtimeKind: 'cc-connect' },
+      }));
+      const usageRows = (usageResult as { data?: Array<Record<string, unknown>> }).data ?? [];
+      expect(usageRows.some((entry) => entry.usageStatus === 'available')).toBe(false);
+
       const evidenceDir = join(process.cwd(), 'artifacts', 'cc-connect');
       await mkdir(evidenceDir, { recursive: true });
       await page.screenshot({
@@ -1852,6 +1879,30 @@ test.describe('cc-connect real runtime bundle smoke', () => {
         guiExecutionGraphObserved: true,
         finalAssistantObserved: true,
         screenshot: 'artifacts/cc-connect/real-rich-progress-bridge.png',
+      }, null, 2)}\n`, 'utf8');
+
+      await page.getByTestId('sidebar-nav-models').click();
+      await expect(page.getByTestId('models-page')).toBeVisible();
+      const missingUsageRow = page.getByTestId('token-usage-entry').filter({ hasText: 'agent:main:main' }).first();
+      await expect(missingUsageRow).toBeVisible({ timeout: 30_000 });
+      await expect(missingUsageRow.getByText('No usage').first()).toBeVisible();
+      await missingUsageRow.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: join(evidenceDir, 'real-token-usage-runtime-contract.png'),
+        fullPage: false,
+      });
+      await writeFile(join(evidenceDir, 'real-token-usage-runtime-contract.json'), `${JSON.stringify({
+        schema: 'clawx-cc-connect-runtime-usage-evidence',
+        version: 1,
+        runtimeKind: 'cc-connect',
+        source: 'public-management-history-via-runtime-provider',
+        logicalSessionId: 'agent:main:main',
+        assistantTurnObserved: true,
+        usageStatus: 'missing',
+        availableCounterRows: usageRows.filter((entry) => entry.usageStatus === 'available').length,
+        privateRuntimeFilesRead: false,
+        guiMissingStateObserved: true,
+        screenshot: 'artifacts/cc-connect/real-token-usage-runtime-contract.png',
       }, null, 2)}\n`, 'utf8');
     } finally {
       await closeElectronApp(app);

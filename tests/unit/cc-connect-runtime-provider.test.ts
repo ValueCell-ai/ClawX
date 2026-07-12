@@ -2302,6 +2302,68 @@ describe('CcConnectRuntimeProvider', () => {
     expect(sessionApi.deleteSession).toHaveBeenCalledWith(expect.objectContaining({ logicalKey: 'agent:main:main' }));
   });
 
+  it('maps only public cc-connect history into the RuntimeProvider usage contract', async () => {
+    const sessionApi = createSessionApiMock({
+      sessions: () => [createApiSession('agent:main:main', { id: 'runtime-session-1' })],
+      histories: {
+        'agent:main:main': [{
+          role: 'assistant',
+          content: 'metered public reply',
+          timestamp: 1_780_000_002_000,
+          provider: 'openai',
+          model: 'gpt-5.4',
+          usage: {
+            input_tokens: 100,
+            cached_input_tokens: 80,
+            output_tokens: 20,
+            reasoning_output_tokens: 5,
+          },
+        }, {
+          role: 'assistant',
+          content: 'public reply without counters',
+          timestamp: 1_780_000_001_000,
+        }],
+      },
+    });
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      bridgeAdapter: createBridgeAdapterMock() as never,
+      sessionApi: sessionApi as never,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+      providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
+    });
+
+    await expect(provider.listUsage({ limit: 10 })).resolves.toEqual({
+      success: true,
+      records: [
+        expect.objectContaining({
+          runtimeKind: 'cc-connect',
+          logicalSessionId: 'agent:main:main',
+          runtimeSessionId: 'runtime-session-1',
+          agentId: 'main',
+          provider: 'openai',
+          model: 'gpt-5.4',
+          status: 'available',
+          inputTokens: 100,
+          cachedInputTokens: 80,
+          outputTokens: 20,
+          reasoningTokens: 5,
+          totalTokens: 120,
+        }),
+        expect.objectContaining({
+          logicalSessionId: 'agent:main:main',
+          status: 'missing',
+          totalTokens: 0,
+        }),
+      ],
+    });
+    expect(sessionApi.listSessions).toHaveBeenCalledOnce();
+    expect(sessionApi.loadHistory).toHaveBeenCalledWith(expect.objectContaining({
+      logicalKey: 'agent:main:main',
+      id: 'runtime-session-1',
+    }));
+  });
+
   it('aborts active cc-connect chat runs through Bridge without restarting the runtime', async () => {
     const binaryPath = join(tempDir, 'cc-connect');
     await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });

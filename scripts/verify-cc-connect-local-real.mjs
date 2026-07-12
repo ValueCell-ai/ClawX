@@ -81,7 +81,7 @@ const RESIDUAL_VALIDATION_GAPS = [
     priority: 'required',
     status: 'upstream-blocked',
     requiredForLocalReplacementGate: true,
-    nextCommand: 'Upgrade to a pinned cc-connect release with a versioned, attributable, replayable per-turn usage API/event, then implement and verify RuntimeUsageRecord mapping.',
+    nextCommand: 'Upgrade to a pinned cc-connect release with a versioned, attributable, replayable per-turn usage API/event, wire it into RuntimeProvider.listUsage, and verify counters against a real provider oracle.',
     reason: 'cc-connect v1.4.1 and v1.5.0-beta.1 expose no versioned Bridge or Management usage payload. Upstream PR #1428 proposes an unmerged observer, but omits project/provider/model attribution and durable reconnect/replay semantics. ClawX intentionally returns missing cc-connect usage instead of parsing footers or reading private session/Codex transcript files.',
   },
   {
@@ -771,7 +771,7 @@ function readinessNextCommand(id) {
     case 'scheduled-cron-delivery-local-bundle':
       return 'pnpm run verify:cc-connect:local-real:scheduled-cron';
     case 'token-usage-contract-local-diagnostics':
-      return 'Upgrade to a pinned cc-connect release with a versioned, attributable, replayable per-turn usage API/event, then implement RuntimeUsageRecord mapping.';
+      return 'Upgrade to a pinned cc-connect release with a versioned, attributable, replayable per-turn usage API/event, wire it into RuntimeProvider.listUsage, and verify counters against a real provider oracle.';
     case 'packaged-oauth-runtime-smoke':
       return 'pnpm run verify:cc-connect:local-real:packaged-oauth';
     default:
@@ -958,7 +958,7 @@ function buildReplacementContract(coverage, replacementReadiness, validationGaps
           ...item,
           status: 'partial',
           evidence: `Private-data boundary diagnostics: ${usage.status} (${coverageEvidence(usage)}). Public per-turn cc-connect usage remains upstream-blocked.`,
-          nextAction: 'Upgrade to a pinned cc-connect release with a versioned, attributable, replayable per-turn usage API/event, then implement RuntimeUsageRecord mapping.',
+          nextAction: 'Upgrade to a pinned cc-connect release with a versioned, attributable, replayable per-turn usage API/event, wire it into RuntimeProvider.listUsage, and verify counters against a real provider oracle.',
         };
       }
       case 'real-validation-opt-in':
@@ -1561,7 +1561,12 @@ async function buildReport(args, effectiveEnv, envFileSummaries) {
       'exec',
       'vitest',
       'run',
+      'tests/unit/token-usage.test.ts',
       'tests/unit/token-usage-scan.test.ts',
+      'tests/unit/runtime-usage.test.ts',
+      'tests/unit/usage-api.test.ts',
+      'tests/unit/openclaw-runtime-provider.test.ts',
+      'tests/unit/cc-connect-runtime-provider.test.ts',
     ], { baseEnv: effectiveEnv }));
     commands.push(await runCommand('pnpm', [
       'run',
@@ -1902,6 +1907,14 @@ function buildCoverage(report) {
     ['codex-oauth-auth-json'],
   );
   const packaged = commandCoverageWithPreconditions(report, commands, 'smoke:cc-connect:packaged', ['packaged-native-app', 'codex-oauth-auth-json']);
+  const tokenUsageChecks = [tokenUsageUnit, tokenUsageE2e, runtimeManagementBundle];
+  const tokenUsageStatus = tokenUsageChecks.every((check) => check.status === 'pass')
+    ? 'partial'
+    : tokenUsageChecks.some((check) => check.status === 'fail')
+      ? 'fail'
+      : tokenUsageChecks.every((check) => check.status === 'not-run')
+        ? 'not-run'
+        : 'skipped';
 
   return [
     {
@@ -2028,27 +2041,26 @@ function buildCoverage(report) {
     },
     {
       id: 'token-usage-contract-local-diagnostics',
-      status: tokenUsageUnit.status === 'pass' && tokenUsageE2e.status === 'pass'
-        ? 'partial'
-        : tokenUsageUnit.status === 'fail' || tokenUsageE2e.status === 'fail'
-          ? 'fail'
-          : tokenUsageUnit.status === 'not-run' && tokenUsageE2e.status === 'not-run'
-            ? 'not-run'
-            : 'skipped',
+      status: tokenUsageStatus,
       covers: [
+        'RuntimeProvider.listUsage ownership for OpenClaw and cc-connect',
+        'cache tokens remain an input subset and are not added twice to inferred totals',
+        'reasoning-token mapping without double-counting output',
         'cc-connect private session-store exclusion',
         'managed and user-global Codex transcript exclusion',
-        'explicit empty usage result while the public runtime API is unavailable',
+        'explicit missing usage rows for public cc-connect assistant history without counters',
+        'real bundled cc-connect Host API and GUI missing-usage evidence',
         'runtimeKind filtering without OpenClaw data leakage',
         'OpenClaw transcript usage remains unaffected',
         'Electron IPC unavailable-usage shape',
       ],
-      evidence: [tokenUsageUnit.command, tokenUsageE2e.command].filter(Boolean).join(' && ')
+      evidence: [tokenUsageUnit.command, tokenUsageE2e.command, runtimeManagementBundle.command].filter(Boolean).join(' && ')
         || tokenUsageUnit.reason
-        || tokenUsageE2e.reason,
-      reason: tokenUsageUnit.status === 'pass' && tokenUsageE2e.status === 'pass'
+        || tokenUsageE2e.reason
+        || runtimeManagementBundle.reason,
+      reason: tokenUsageChecks.every((check) => check.status === 'pass')
         ? 'Boundary diagnostics pass, but published cc-connect releases have no versioned, attributable, replayable per-turn usage API or event; unmerged upstream PR #1428 is insufficient for production parity.'
-        : [tokenUsageUnit.reason, tokenUsageE2e.reason].filter(Boolean).join('; '),
+        : tokenUsageChecks.map((check) => check.reason).filter(Boolean).join('; '),
     },
     {
       id: 'runtime-management-bundle-local-diagnostics',

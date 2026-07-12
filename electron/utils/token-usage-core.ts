@@ -2,15 +2,19 @@ export interface TokenUsageHistoryEntry {
   runtimeKind?: 'openclaw' | 'cc-connect';
   timestamp: string;
   sessionId: string;
+  runtimeSessionId?: string;
   agentId: string;
+  providerAccountId?: string;
   model?: string;
   provider?: string;
   content?: string;
+  turnId?: string;
   usageStatus: 'available' | 'missing' | 'error';
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  reasoningTokens?: number;
   totalTokens: number;
   costUsd?: number;
 }
@@ -65,6 +69,10 @@ interface TranscriptUsageShape {
   cacheReadTokenCount?: number;
   cacheReadTokens?: number;
   cache_write_token_count?: number;
+  reasoningTokens?: number;
+  reasoning_tokens?: number;
+  reasoningOutputTokens?: number;
+  reasoning_output_tokens?: number;
   cost?: number | string | {
     total?: number;
     usd?: number;
@@ -88,6 +96,7 @@ interface ParsedUsageTokens {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  reasoningTokens?: number;
   totalTokens: number;
   costUsd?: number;
   usageStatus: UsageRecordStatus;
@@ -207,12 +216,19 @@ function parseUsageFromShape(usage: unknown): ParsedUsageTokens | undefined {
     'totalTokenCount',
     'total_token_count',
   ]);
+  const reasoningTokens = firstUsageNumber(usageShape, [
+    'reasoningTokens',
+    'reasoning_tokens',
+    'reasoningOutputTokens',
+    'reasoning_output_tokens',
+  ]);
 
   const hasUsageValue =
     inputTokens !== undefined
     || outputTokens !== undefined
     || cacheReadTokens !== undefined
     || cacheWriteTokens !== undefined
+    || reasoningTokens !== undefined
     || explicitTotalTokens !== undefined
     || parseUsageCostUsd(usageShape) !== undefined;
 
@@ -230,8 +246,6 @@ function parseUsageFromShape(usage: unknown): ParsedUsageTokens | undefined {
   const totalTokens = explicitTotalTokens ?? (
     (inputTokens ?? 0)
       + (outputTokens ?? 0)
-      + (cacheReadTokens ?? 0)
-      + (cacheWriteTokens ?? 0)
   );
 
   return {
@@ -240,6 +254,7 @@ function parseUsageFromShape(usage: unknown): ParsedUsageTokens | undefined {
     outputTokens: outputTokens ?? 0,
     cacheReadTokens: cacheReadTokens ?? 0,
     cacheWriteTokens: cacheWriteTokens ?? 0,
+    ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
     totalTokens,
     costUsd: parseUsageCostUsd(usageShape),
   };
@@ -276,6 +291,7 @@ interface TranscriptLineShape {
 }
 
 type UsageMessageShape = NonNullable<TranscriptLineShape['message']> & {
+  id?: string;
   timestamp?: string | number;
   created_at?: string | number;
   createdAt?: string | number;
@@ -354,6 +370,7 @@ function usageEntryFromMessage(
       model: message.model ?? message.modelRef,
       provider: message.provider,
       ...(contentText ? { content: contentText } : {}),
+      ...(message.id ? { turnId: message.id } : {}),
       ...usage,
     };
   }
@@ -383,6 +400,7 @@ function usageEntryFromMessage(
     model,
     provider,
     ...(contentText ? { content: contentText } : {}),
+    ...(message.id ? { turnId: message.id } : {}),
     ...usage,
   };
 }

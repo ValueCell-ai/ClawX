@@ -1,9 +1,9 @@
-import { getRecentTokenUsageHistory } from '../utils/token-usage';
-import { parseUsageEntriesFromMessages, type TokenUsageHistoryEntry } from '../utils/token-usage-core';
+import type { TokenUsageHistoryEntry } from '../utils/token-usage-core';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { RuntimeManager } from '../runtime/manager';
 import type { RuntimeKind } from '@shared/types/gateway';
 import { isRecord } from './payload-utils';
+import { toTokenUsageHistoryEntry } from '../runtime/usage';
 
 type RecentTokenHistoryPayload = {
   limit?: unknown;
@@ -34,26 +34,17 @@ function getActiveRuntimeKind(runtimeManager?: RuntimeManager): RuntimeKind | un
   return runtimeManager?.getActiveProvider().kind;
 }
 
-async function getCcConnectTokenHistory(
+async function getRuntimeTokenHistory(
   limit: number | undefined,
+  runtimeKind: RuntimeKind,
   runtimeManager: RuntimeManager | undefined,
 ): Promise<TokenUsageHistoryEntry[]> {
-  const provider = runtimeManager?.getActiveProvider();
-  if (!provider || provider.kind !== 'cc-connect') return [];
-  const sessionResult = await provider.listSessions();
-  const sessions = sessionResult.sessions ?? [];
-  const entries = (await Promise.all(sessions.map(async (session) => {
-    const history = await provider.loadHistory({ sessionKey: session.key, limit: 1000 });
-    const messages = (history.messages ?? []).map((message) => {
-      if (message.role !== 'assistant' || 'usage' in message) return message;
-      return { ...message, usage: {} };
-    });
-    return parseUsageEntriesFromMessages(messages, {
-      runtimeKind: 'cc-connect',
-      sessionId: session.key,
-      agentId: session.agentId || session.key.split(':')[1] || 'main',
-    });
-  }))).flat();
+  const provider = runtimeManager?.getProvider(runtimeKind);
+  if (!provider) return [];
+  if (runtimeKind === 'cc-connect' && provider !== runtimeManager?.getActiveProvider()) return [];
+  const result = await provider.listUsage({ ...(limit !== undefined ? { limit } : {}) });
+  if (!result.success) return [];
+  const entries = result.records.map(toTokenUsageHistoryEntry);
   entries.sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
   return entries.slice(0, limit ?? entries.length);
 }
@@ -64,13 +55,8 @@ export async function getRecentTokenHistoryForRuntime(
 ) {
   const limit = getSafeLimit(payload);
   const runtimeKind = getExplicitRuntimeKind(payload) ?? getActiveRuntimeKind(runtimeManager);
-  if (runtimeKind === 'cc-connect') {
-    return getCcConnectTokenHistory(limit, runtimeManager);
-  }
-  return getRecentTokenUsageHistory({
-    ...(limit !== undefined ? { limit } : {}),
-    ...(runtimeKind ? { runtimeKind } : {}),
-  });
+  if (!runtimeKind) return [];
+  return getRuntimeTokenHistory(limit, runtimeKind, runtimeManager);
 }
 
 export function createUsageApi(runtimeManager?: RuntimeManager): CompleteHostServiceRegistry['usage'] {

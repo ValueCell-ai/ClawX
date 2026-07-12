@@ -491,7 +491,15 @@ does not fill those counters from private cc-connect stores or Codex JSONL.
 Test code may use a managed transcript or provider response as an oracle, but
 that evidence cannot close the exact-usage runtime-contract row.
 
-The upstream audit was refreshed on 2026-07-12. npm still marks `1.4.1` as
+`RuntimeProvider.listUsage` is the only Host API usage source. The OpenClaw
+adapter owns its existing structured transcript scan; the cc-connect adapter
+owns public Management session/history reads and emits one normalized record
+per assistant turn. `usage-api` does not call `listSessions`/`loadHistory`
+itself and does not know either runtime's storage layout. Runtime records carry
+logical and runtime session ids, a stable turn identity, Agent/provider/model
+attribution, status, counters, and optional cost/content compatibility fields.
+
+The upstream audit was refreshed on 2026-07-13. npm still marks `1.4.1` as
 `latest`; `1.5.0-beta.1` is prerelease. Both source trees parse Codex
 `thread/tokenUsage/updated` into an internal `ContextUsageReporter`, but the
 documented Management and Bridge session detail responses still expose only
@@ -524,6 +532,11 @@ output. If total is absent, calculate `input + output`; never add cache again.
 Cost is shown only when runtime/provider returns an explicit historical value.
 Dashboard defaults to the active runtime and offers OpenClaw, cc-connect, and
 combined filters.
+
+The shared parser enforces this total rule for both adapters. Public payloads
+may expose cache-read/cache-write and reasoning counters independently for
+display, but inferred `totalTokens` remains `inputTokens + outputTokens` so
+cache and reasoning subsets are never counted twice.
 
 ## 10. Channels and Feishu/Lark
 

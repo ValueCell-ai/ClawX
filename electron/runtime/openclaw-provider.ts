@@ -27,8 +27,10 @@ import { PORTS } from '../utils/config';
 import { scheduleControlUiDeviceAutoApproval } from '../utils/control-ui-device-pairing';
 import { buildOpenClawControlUiUrl } from '../utils/openclaw-control-ui';
 import { getSetting } from '../utils/store';
+import { getRecentTokenUsageHistory } from '../utils/token-usage';
 import { writeOpenClawCompatibilityProjection } from '../utils/channel-config';
 import type { OpenClawDoctorMode } from '@shared/host-api/contract';
+import { runtimeUsageLimit, toRuntimeUsageRecords } from './usage';
 
 export class OpenClawRuntimeProvider extends EventEmitter implements RuntimeProvider {
   readonly kind = 'openclaw' as const;
@@ -140,6 +142,18 @@ export class OpenClawRuntimeProvider extends EventEmitter implements RuntimeProv
 
   async deleteSession(payload?: unknown) {
     return await this.sessionsApi.delete(payload as never);
+  }
+
+  async listUsage(payload?: unknown) {
+    const limit = runtimeUsageLimit(payload);
+    const entries = await getRecentTokenUsageHistory({
+      ...(limit !== undefined ? { limit } : {}),
+      runtimeKind: 'openclaw',
+    });
+    return {
+      success: true,
+      records: toRuntimeUsageRecords(entries, { runtimeKind: this.kind }),
+    };
   }
 
   async listLogs() {

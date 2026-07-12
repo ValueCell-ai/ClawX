@@ -48,6 +48,10 @@ export class RuntimeManager extends EventEmitter {
     return this.providers[this.activeKind ?? 'openclaw'];
   }
 
+  getProvider(kind: RuntimeKind): RuntimeProvider {
+    return this.providers[kind];
+  }
+
   async setActiveKind(kind: RuntimeKind): Promise<void> {
     const requestedKind = normalizeRuntimeKind(kind);
     const devModeUnlocked = await getSetting('devModeUnlocked');

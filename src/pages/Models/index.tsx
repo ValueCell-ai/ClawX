@@ -395,7 +395,7 @@ export function Models() {
                   <div className="space-y-3 pt-2">
                     {pagedUsageHistory.map((entry) => (
                       <div
-                        key={`${entry.sessionId}-${entry.timestamp}`}
+                        key={`${entry.sessionId}-${entry.turnId ?? entry.timestamp}`}
                         data-testid="token-usage-entry"
                         className="rounded-2xl bg-transparent border border-black/10 dark:border-white/10 p-5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                       >

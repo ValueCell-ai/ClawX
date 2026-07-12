@@ -56,6 +56,8 @@ import {
 import { readOpenClawConfig, type ChannelConfigData, type OpenClawConfig } from '../utils/channel-config';
 import { expandPath, getOpenClawConfigDir } from '../utils/paths';
 import * as logger from '../utils/logger';
+import { parseUsageEntriesFromMessages } from '../utils/token-usage-core';
+import { runtimeUsageLimit, toRuntimeUsageRecords } from './usage';
 
 type CcConnectRuntimeProviderOptions = {
   binaryPath?: string;
@@ -838,6 +840,39 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     return {
       success: true,
       messages,
+    };
+  }
+
+  async listUsage(payload?: unknown) {
+    const limit = runtimeUsageLimit(payload);
+    const sessions = await this.sessionApi.listSessions();
+    const records = (await Promise.all(sessions.map(async (session) => {
+      const profile = this.profileForSessionKey(session.logicalKey);
+      const messages = (await this.sessionApi.loadHistory(session)).map((message) => (
+        message.role === 'assistant' && !('usage' in message)
+          ? { ...message, usage: {} }
+          : message
+      ));
+      const entries = parseUsageEntriesFromMessages(messages, {
+        runtimeKind: this.kind,
+        sessionId: session.logicalKey,
+        agentId: session.agentId,
+        provider: profile?.vendorId ?? profile?.ccConnectProvider?.name,
+        model: profile?.model,
+      });
+      return toRuntimeUsageRecords(entries, {
+        runtimeKind: this.kind,
+        logicalSessionId: session.logicalKey,
+        runtimeSessionId: session.id,
+        ...(profile?.providerId ? { providerAccountId: profile.providerId } : {}),
+        provider: profile?.vendorId ?? profile?.ccConnectProvider?.name,
+        model: profile?.model,
+      });
+    }))).flat();
+    records.sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
+    return {
+      success: true,
+      records: records.slice(0, limit ?? records.length),
     };
   }
 

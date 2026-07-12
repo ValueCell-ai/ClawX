@@ -1,8 +1,9 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { renameSessionMock, writeOpenClawCompatibilityProjectionMock } = vi.hoisted(() => ({
+const { renameSessionMock, tokenUsageHistoryMock, writeOpenClawCompatibilityProjectionMock } = vi.hoisted(() => ({
   renameSessionMock: vi.fn(),
+  tokenUsageHistoryMock: vi.fn(),
   writeOpenClawCompatibilityProjectionMock: vi.fn(async () => undefined),
 }));
 
@@ -17,6 +18,10 @@ vi.mock('@electron/services/sessions-api', () => ({
 
 vi.mock('@electron/utils/channel-config', () => ({
   writeOpenClawCompatibilityProjection: writeOpenClawCompatibilityProjectionMock,
+}));
+
+vi.mock('@electron/utils/token-usage', () => ({
+  getRecentTokenUsageHistory: (...args: unknown[]) => tokenUsageHistoryMock(...args),
 }));
 
 function createGatewayManagerMock() {
@@ -50,6 +55,41 @@ function gatewayCronJob(overrides: Record<string, unknown> = {}) {
 describe('OpenClawRuntimeProvider runtime contract adapters', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    tokenUsageHistoryMock.mockResolvedValue([]);
+  });
+
+  it('owns OpenClaw transcript usage behind the RuntimeProvider contract', async () => {
+    tokenUsageHistoryMock.mockResolvedValueOnce([{
+      runtimeKind: 'openclaw',
+      timestamp: '2026-07-13T00:00:00.000Z',
+      sessionId: 'session-1',
+      agentId: 'main',
+      provider: 'openai',
+      model: 'gpt-5.4',
+      usageStatus: 'available',
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheReadTokens: 80,
+      cacheWriteTokens: 0,
+      reasoningTokens: 5,
+      totalTokens: 120,
+    }]);
+    const gatewayManager = createGatewayManagerMock();
+    const { OpenClawRuntimeProvider } = await import('@electron/runtime/openclaw-provider');
+    const provider = new OpenClawRuntimeProvider(gatewayManager as never);
+
+    await expect(provider.listUsage({ limit: 5 })).resolves.toMatchObject({
+      success: true,
+      records: [expect.objectContaining({
+        runtimeKind: 'openclaw',
+        logicalSessionId: 'session-1',
+        status: 'available',
+        cachedInputTokens: 80,
+        reasoningTokens: 5,
+        totalTokens: 120,
+      })],
+    });
+    expect(tokenUsageHistoryMock).toHaveBeenCalledWith({ limit: 5, runtimeKind: 'openclaw' });
   });
 
   it('routes session rename through the OpenClaw session API facade', async () => {

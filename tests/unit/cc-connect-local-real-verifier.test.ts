@@ -354,7 +354,7 @@ describe('cc-connect local real verifier', () => {
                 status: 'pass',
               },
               {
-                command: 'pnpm exec vitest run tests/unit/token-usage-scan.test.ts',
+                command: 'pnpm exec vitest run tests/unit/token-usage.test.ts tests/unit/token-usage-scan.test.ts tests/unit/runtime-usage.test.ts tests/unit/usage-api.test.ts tests/unit/openclaw-runtime-provider.test.ts tests/unit/cc-connect-runtime-provider.test.ts',
                 status: 'pass',
               },
               {
@@ -444,10 +444,13 @@ describe('cc-connect local real verifier', () => {
       expect.objectContaining({
         id: 'token-usage-contract-local-diagnostics',
         status: 'partial',
-        evidence: 'pnpm exec vitest run tests/unit/token-usage-scan.test.ts && pnpm run test:e2e -- tests/e2e/token-usage.spec.ts',
+        evidence: 'pnpm exec vitest run tests/unit/token-usage.test.ts tests/unit/token-usage-scan.test.ts tests/unit/runtime-usage.test.ts tests/unit/usage-api.test.ts tests/unit/openclaw-runtime-provider.test.ts tests/unit/cc-connect-runtime-provider.test.ts && pnpm run test:e2e -- tests/e2e/token-usage.spec.ts && pnpm run test:e2e -- tests/e2e/cc-connect-real-bundle-smoke.spec.ts',
         covers: expect.arrayContaining([
+          'RuntimeProvider.listUsage ownership for OpenClaw and cc-connect',
+          'cache tokens remain an input subset and are not added twice to inferred totals',
           'cc-connect private session-store exclusion',
           'managed and user-global Codex transcript exclusion',
+          'real bundled cc-connect Host API and GUI missing-usage evidence',
           'runtimeKind filtering without OpenClaw data leakage',
         ]),
       }),

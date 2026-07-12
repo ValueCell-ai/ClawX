@@ -46,6 +46,34 @@ export type RuntimeLogResult = {
   content: string;
 };
 
+export type RuntimeUsageRecord = {
+  id: string;
+  runtimeKind: RuntimeKind;
+  logicalSessionId: string;
+  runtimeSessionId: string;
+  turnId: string;
+  agentId: string;
+  providerAccountId?: string;
+  provider: string;
+  model: string;
+  timestamp: string;
+  status: 'available' | 'missing' | 'error';
+  inputTokens: number;
+  cachedInputTokens: number;
+  cacheWriteTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+  costUsd?: number;
+  content?: string;
+};
+
+export type RuntimeUsageListResult = {
+  success: boolean;
+  records: RuntimeUsageRecord[];
+  error?: string;
+};
+
 export type RuntimeSendWithMediaPayload = {
   sessionKey: string;
   message: string;
@@ -107,6 +135,7 @@ export type RuntimeProvider = {
   listSessions: (payload?: unknown) => Promise<RuntimeSessionListResult>;
   loadHistory: (payload?: unknown) => Promise<RuntimeHistoryResult>;
   deleteSession: (payload?: unknown) => Promise<RuntimeDeleteSessionResult>;
+  listUsage: (payload?: unknown) => Promise<RuntimeUsageListResult>;
   listLogs: (payload?: { tailLines?: number }) => Promise<RuntimeLogResult>;
   runDoctor: (mode: OpenClawDoctorMode) => Promise<OpenClawDoctorResult>;
   listCapabilities: () => RuntimeCapabilities;
