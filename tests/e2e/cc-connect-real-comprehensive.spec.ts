@@ -23,15 +23,6 @@ type HistoryPayload = {
   }>;
 };
 
-type CronCompletion = {
-  id?: string;
-  lastRun?: {
-    time?: string;
-    success?: boolean;
-    error?: string;
-  };
-};
-
 async function collectCronCompletionDiagnostics(page: Page, cronId: string) {
   return await page.evaluate(async (id) => {
     const [cronList, health, snapshot, sessions] = await Promise.all([
@@ -69,34 +60,6 @@ async function collectCronCompletionDiagnostics(page: Page, cronId: string) {
       logTail: runtime?.ccConnect?.logTail?.slice(-4_000) ?? '',
     };
   }, cronId);
-}
-
-async function waitForCronCompletion(page: Page, cronId: string, timeoutMs: number): Promise<CronCompletion> {
-  const deadline = Date.now() + timeoutMs;
-  let lastListError = 'no completion state observed';
-  while (Date.now() < deadline) {
-    const result = await page.evaluate(async () => {
-      return await window.clawx.hostInvoke({
-        id: `runtime-cron-completion-research-real-comprehensive-${Date.now()}`,
-        module: 'cron',
-        action: 'list',
-      });
-    }) as HostInvokeResult<CronCompletion[]>;
-    if (result.ok && Array.isArray(result.data)) {
-      const job = result.data.find((candidate) => candidate.id === cronId);
-      if (job?.lastRun) {
-        if (!job.lastRun.success) {
-          throw new Error(`cc-connect cron failed: ${job.lastRun.error || 'unknown runtime error'}`);
-        }
-        return job;
-      }
-      lastListError = job ? 'job has not completed' : 'job is absent from cron.list';
-    } else {
-      lastListError = `cron.list failed: ${JSON.stringify(result)}`;
-    }
-    await page.waitForTimeout(1_000);
-  }
-  throw new Error(`cc-connect cron did not complete within ${timeoutMs}ms: ${lastListError}`);
 }
 
 async function realRuntimeBundles(): Promise<{ ccConnectPath: string; codexPath: string } | null> {
@@ -726,22 +689,15 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
         ]),
       });
 
-      const researchCronRun = await page.evaluate(async (id) => {
-        return await window.clawx.hostInvoke({
-          id: 'runtime-cron-run-research-real-comprehensive',
-          module: 'cron',
-          action: 'trigger',
-          payload: { id },
-        });
-      }, researchCronId);
-      if (!researchCronRun.ok) {
-        throw new Error(`research cron trigger failed: ${JSON.stringify(researchCronRun)}`);
-      }
-      expect(researchCronRun).toMatchObject({ ok: true, data: { success: true } });
-
-      let completedResearchCron: CronCompletion | undefined;
+      await page.getByTestId('sidebar-nav-cron').click();
+      const researchCronCard = page.getByTestId(`cron-job-card-${researchCronId}`);
+      await expect(researchCronCard).toBeVisible();
+      await researchCronCard.hover();
+      await researchCronCard.getByRole('button', { name: 'Run Now' }).click();
+      await expect(page.getByText('Task triggered successfully')).toBeVisible();
       try {
-        completedResearchCron = await waitForCronCompletion(page, researchCronId!, 210_000);
+        await expect(page.getByTestId(`cron-job-card-last-run-${researchCronId}`))
+          .toHaveAttribute('data-run-status', 'success', { timeout: 210_000 });
       } catch (error) {
         const diagnostics = await collectCronCompletionDiagnostics(page, researchCronId!);
         await testInfo.attach('research-cron-completion-diagnostics', {
@@ -750,7 +706,6 @@ test.describe('cc-connect real comprehensive runtime smoke', () => {
         });
         throw error;
       }
-      expect(completedResearchCron?.lastRun?.error).toBeUndefined();
 
       try {
         await expect.poll(async () => {

@@ -613,6 +613,14 @@ timestamp means the job has never run and is not exposed as a completed run.
 Validation must wait for a successful `lastRun` before using public
 session/history as delivery evidence.
 
+The Cron UI keeps trigger acknowledgement non-blocking. After the immediate
+list refresh, its store observes an unchanged run in the background with a
+bounded exponential-backoff refresh until `lastRun` changes, the runtime
+auto-removes the job, the user deletes it, the selected runtime changes, or the
+job timeout elapses. A repeated trigger supersedes the prior observation. This
+polling only observes the runtime-owned scheduler; it never executes the job in
+ClawX.
+
 Current real-runtime evidence covers both native scheduler paths with the
 bundled cc-connect binary. An enabled exec job fired on an actual minute tick
 and wrote its marker from the configured `work_dir`. A Codex OAuth prompt job

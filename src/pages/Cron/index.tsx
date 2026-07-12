@@ -1507,7 +1507,11 @@ function CronJobCard({
           )}
 
           {job.lastRun && (
-            <span className="flex items-center gap-1.5">
+            <span
+              data-testid={`cron-job-card-last-run-${job.id}`}
+              data-run-status={job.lastRun.success ? 'success' : 'error'}
+              className="flex items-center gap-1.5"
+            >
               <History className="h-3.5 w-3.5" />
               {t('card.last')}: {formatRelativeTime(job.lastRun.time)}
               {job.lastRun.success ? (
