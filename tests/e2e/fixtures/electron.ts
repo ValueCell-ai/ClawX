@@ -10,6 +10,7 @@ type LaunchElectronOptions = {
   skipSetup?: boolean;
   omitUserDataOverride?: boolean;
   initialUserDataDir?: string;
+  timeoutMs?: number;
   env?: Record<string, string>;
 };
 
@@ -209,7 +210,7 @@ async function launchClawXElectron(
       CLAWX_PORT_CLAWX_HOST_API: String(hostApiPort),
       ...(options.env ?? {}),
     },
-    timeout: 90_000,
+    timeout: options.timeoutMs ?? 90_000,
   });
 }
 

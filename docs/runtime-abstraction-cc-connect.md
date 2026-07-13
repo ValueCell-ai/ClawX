@@ -124,8 +124,11 @@ application logs use `~/.clawx/logs`.
 
 `writer.lock` is created atomically and contains pid, owner token, app version,
 channel, executable, start time, and heartbeat time. A second installation
-shows the current owner and exits. Stale lock recovery requires both a dead pid
-and an expired heartbeat; `force: true` deletion is forbidden.
+shows the current owner and exits before the data layout, migrations, runtime
+manager, or scheduler can start. Failure to acquire or inspect the lock is
+fail-closed; ClawX never falls back to an uncoordinated shared-root writer.
+Stale lock recovery requires both a dead pid and an expired heartbeat;
+`force: true` deletion is forbidden.
 
 Migrations are version-gated, journaled, additive, backed up, and atomic. An
 older application that cannot understand the current data version refuses to
@@ -141,6 +144,11 @@ uses an isolated `CLAWX_DATA_HOME`, launches Electron, and verifies `app/`,
 source on every CI platform without reading the developer's real userData. It
 then changes the legacy settings and launches again to prove the canonical
 `app/` state wins across upgrades and repeated migration attempts.
+
+`tests/e2e/clawx-shared-root-single-writer.spec.ts` launches two real Electron
+processes against the same root, proves the duplicate cannot replace the live
+owner or create a window, captures first-writer UI evidence, then closes the
+owner and proves a successor process acquires the released lock.
 
 `app/runtime-config.json` is the canonical Agent, binding, channel-account, and
 OpenClaw-compatible runtime metadata document. Sensitive channel fields are
@@ -763,7 +771,7 @@ data version writable by the prior application.
 | Phase | Goal and implementation | Required verification | Impact |
 | --- | --- | --- | --- |
 | A. Contract and dependency | Pin/probe stable cc-connect; add runtime contracts and API client | Binary contract test, bundle manifest, type/unit tests | Shared types; no behavior switch |
-| B. Data root and credentials | Add layout, writer lock, migrations, encrypted vault, OAuth homes | vN to vN+1 and rollback packaged run; two-instance lock; secret scan | All persistent paths |
+| B. Data root and credentials | Add layout, fail-closed pre-write lock, migrations, encrypted vault, OAuth homes | vN to vN+1 and rollback packaged run; real two-Electron ownership/handover; secret scan | All persistent paths and runtime/scheduler startup |
 | C. Workspace and skills | Registry, OpenClaw reuse, project `work_dir`, shared skill projection | Two-Agent isolation; real skill invocation; source-checkout negative test | Agent create/delete and files |
 | D. Bridge chat/events | Official Bridge send, tools, approvals, cancellation, replay | Real API-key and OAuth tool-heavy chats; disconnect/replay; screenshots | Core communication path |
 | E. Sessions and usage | Official APIs, logical binding, per-turn usage | Named/cross-Agent/Channel/restart/delete; token oracle comparison | Sidebar, history, Models |

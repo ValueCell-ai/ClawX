@@ -60,6 +60,7 @@ import { migrateLegacyClawXData } from '../utils/clawx-data-migration';
 
 const WINDOWS_APP_USER_MODEL_ID = 'app.clawx.desktop';
 const isE2EMode = process.env.CLAWX_E2E === '1';
+const enforceWriterLockInE2E = process.env.CLAWX_E2E_ENFORCE_WRITER_LOCK === '1';
 const requestedRemoteDebuggingPort = process.env.CLAWX_REMOTE_DEBUGGING_PORT?.trim();
 const legacyElectronUserDataDir = app.getPath('userData');
 const clawXDataLayout = getClawXDataLayout();
@@ -69,7 +70,6 @@ if (requestedRemoteDebuggingPort) {
 }
 
 app.setPath('userData', clawXDataLayout.electronUserDataDir);
-initializeClawXDataLayout(clawXDataLayout);
 
 // Disable GPU hardware acceleration globally for maximum stability across
 // all GPU configurations (no GPU, integrated, discrete).
@@ -108,7 +108,7 @@ if (!gotElectronLock) {
 }
 let releaseProcessInstanceFileLock: () => void = () => {};
 let gotFileLock = true;
-if (gotElectronLock && !isE2EMode) {
+if (gotElectronLock && (!isE2EMode || enforceWriterLockInE2E)) {
   try {
     const fileLock = acquireProcessInstanceFileLock({
       userDataDir: clawXDataLayout.locksDir,
@@ -134,10 +134,23 @@ if (gotElectronLock && !isE2EMode) {
       app.exit(0);
     }
   } catch (error) {
-    console.warn('[ClawX] Failed to acquire process instance file lock; continuing with Electron single-instance lock only', error);
+    gotFileLock = false;
+    console.error('[ClawX] Failed to acquire process instance file lock; refusing to start a shared-root writer', error);
+    app.exit(1);
   }
 }
 const gotTheLock = gotElectronLock && gotFileLock;
+
+if (gotTheLock) {
+  try {
+    // No shared-root state may be created or migrated until this process owns
+    // the cross-install writer lock.
+    initializeClawXDataLayout(clawXDataLayout);
+  } catch (error) {
+    releaseProcessInstanceFileLock();
+    throw error;
+  }
+}
 
 // Global references
 let mainWindow: BrowserWindow | null = null;

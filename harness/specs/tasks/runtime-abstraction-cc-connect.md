@@ -49,8 +49,10 @@ requiredTests:
   - tests/unit/runtime-packaging.test.ts
   - tests/unit/packaged-cc-connect-smoke.test.ts
   - tests/unit/cc-connect-paths.test.ts
+  - tests/unit/process-instance-lock.test.ts
   - tests/unit/token-usage.test.ts
   - tests/unit/token-usage-scan.test.ts
+  - tests/e2e/clawx-shared-root-single-writer.spec.ts
   - tests/e2e/cc-connect-codex-runtime.spec.ts
   - tests/e2e/cc-connect-real-bundle-smoke.spec.ts
   - tests/e2e/cc-connect-real-comprehensive.spec.ts
@@ -64,6 +66,7 @@ acceptance:
   - No cc-connect runtime code launches Codex for chat or uses Codex transcript polling as a production event/history/usage path.
   - No cc-connect runtime code writes OpenClaw config or cc-connect private session stores.
   - Canonical Agent/channel saves in cc-connect mode update only the ClawX runtime config and encrypted vault; OpenClaw start/restart explicitly rebuilds the compatibility projection before Gateway startup, and a newer projection never overrides existing canonical state by mtime.
+  - The shared-root writer lock is acquired before layout initialization or migration and fails closed on acquisition errors. A real two-Electron E2E proves the duplicate exits before runtime/scheduler construction, cannot replace the live owner, and a successor acquires the lock after clean shutdown.
   - Host API calls are routed through RuntimeManager and the active RuntimeProvider.
   - Runtime events carry stable event/run/turn/session/project sequencing and survive Bridge reconnect without duplication.
   - The cc-connect Bridge adapter sends the protocol-compatible 25-second client ping, reconnects after an unexpected disconnect, and never reconnects after an intentional runtime stop.

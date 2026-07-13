@@ -289,7 +289,7 @@ ClawX employs a **dual-process architecture** with a unified host API layer. The
 ### Process Model & Gateway Troubleshooting
 
 - ClawX is an Electron app, so **one app instance normally appears as multiple OS processes** (main/renderer/zygote/utility). This is expected.
-- Single-instance protection uses Electron's lock plus a local process-file lock fallback, preventing duplicate app launch in environments where desktop IPC/session bus is unstable.
+- Single-instance protection uses Electron's lock plus a cross-install writer lock under `~/.clawx/locks`. ClawX acquires that file lock before shared data initialization, migration, runtime, or scheduler startup and refuses to start if ownership cannot be established.
 - During rolling upgrades, mixed old/new app versions can still have asymmetric protection behavior. For best reliability, upgrade all desktop clients to the same version.
 - The OpenClaw Gateway listener should still be **single-owner**: only one process should listen on `127.0.0.1:18789`.
 - Gateway readiness is based on OpenClaw core signals such as `system-presence`, `health`, and `status`; memory, Dreams, or channel failures are shown as capability degradation instead of global Gateway failure.

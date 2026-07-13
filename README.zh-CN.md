@@ -290,7 +290,7 @@ ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用
 ### 进程模型与 Gateway 排障
 
 - ClawX 基于 Electron，**单个应用实例出现多个系统进程是正常现象**（main/renderer/zygote/utility）。
-- 单实例保护同时使用 Electron 自带锁与本地进程文件锁回退机制，可在桌面会话总线异常时避免重复启动。
+- 单实例保护同时使用 Electron 自带锁和 `~/.clawx/locks` 下的跨安装 writer lock。ClawX 会在共享数据初始化、迁移、runtime 或 scheduler 启动前取得文件锁；无法确认所有权时会拒绝启动。
 - 滚动升级期间若新旧版本混跑，单实例保护仍可能出现不对称行为。为保证稳定性，建议桌面客户端尽量统一升级到同一版本。
 - 但 OpenClaw Gateway 监听应始终保持**单实例**：`127.0.0.1:18789` 只能有一个监听者。
 - Gateway readiness 以 OpenClaw 的 `system-presence`、`health`、`status` 等核心信号为准；memory、Dreams 或频道失败会显示为能力降级，而不是全局 Gateway 故障。

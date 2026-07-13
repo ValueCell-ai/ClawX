@@ -67,7 +67,9 @@ requiredTests:
   - tests/unit/runtime-rpc-contract.test.ts
   - tests/unit/runtime-packaging.test.ts
   - tests/unit/packaged-cc-connect-smoke.test.ts
+  - tests/unit/process-instance-lock.test.ts
   - tests/unit/cc-connect-local-real-verifier.test.ts
+  - tests/e2e/clawx-shared-root-single-writer.spec.ts
   - tests/e2e/cc-connect-codex-oauth-lifecycle.spec.ts
   - tests/e2e/cc-connect-codex-runtime.spec.ts
   - tests/e2e/cc-connect-real-bundle-smoke.spec.ts
@@ -109,6 +111,7 @@ acceptance:
   - `pnpm run verify:runtime-bundles` passes for the current platform.
   - electron-builder `afterPack` rejects missing, stale, corrupted, or non-executable cc-connect/Codex resources, and every release target invokes `verify:packaged-runtime-resources` against the final unpacked resources. Windows/Linux require exact binary SHA; signed macOS binaries require source SHA, Mach-O section equivalence, and strict code-signature verification.
   - A production-like Electron startup E2E omits the `CLAWX_USER_DATA_DIR` compatibility override, supplies an isolated legacy Electron `--user-data-dir` before Main startup, points `CLAWX_DATA_HOME` at an isolated shared root, imports legacy state into `app/`, sets Electron userData to `system/electron`, writes version/journal evidence, preserves the legacy source, proves a second launch keeps canonical state when legacy data changes, never reads the developer's real userData, and passes on macOS, Windows, and Linux.
+  - Shared-root startup acquires `locks/writer.lock` before layout initialization, migration, runtime-manager construction, or scheduler startup and fails closed when lock acquisition throws. A real two-Electron E2E proves the duplicate cannot replace the live owner or open a window, the owner remains usable, shutdown releases the lock, and a successor process acquires it.
   - `smoke:cc-connect:packaged` resolves the native unpacked layout on macOS, Windows, and Linux and verifies packaged Electron startup, runtime start/status, managed project workspaces, native Cron CRUD, cc-connect Doctor, rollback to OpenClaw, and PID/port/runtime-directory process cleanup without model credentials.
   - Release publishing is blocked on native smoke jobs for macOS arm64, Windows x64, Linux x64, macOS x64 on `macos-15-intel`, and Linux arm64 on `ubuntu-24.04-arm`; Linux jobs run Electron through Xvfb. Manual unsigned macOS smoke must explicitly record skipped signature validation, while tag builds keep strict signature validation as a release gate.
   - `pnpm run verify:cc-connect:local-real` writes a sanitized local real-validation report that records available bundles, local OAuth state, opt-in credential preconditions, packaged app availability, local env-file presence plus untracked/gitignore safety, residual process cleanup status, and a runtime parity coverage matrix without writing secret values or machine-local absolute repository/home/temp paths. Persisted paths use `<repo>`, `<home>`, and `<tmp>` placeholders; child validation commands still receive the real paths.
