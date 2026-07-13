@@ -46,6 +46,7 @@ test.describe('ClawX shared-root writer ownership', () => {
     let successor: Awaited<ReturnType<typeof launchElectronApp>> | undefined;
     try {
       const firstPage = await getStableWindow(first);
+      const firstMainPid = await first.evaluate(() => process.pid);
       await expect(firstPage.getByTestId('main-layout')).toBeVisible();
 
       const firstOwner = JSON.parse(await readFile(lockPath, 'utf8')) as {
@@ -57,7 +58,7 @@ test.describe('ClawX shared-root writer ownership', () => {
       expect(firstOwner).toMatchObject({
         schema: 'clawx-instance-lock',
         version: 2,
-        pid: first.process().pid,
+        pid: firstMainPid,
         channel: 'stable',
       });
 
@@ -71,7 +72,7 @@ test.describe('ClawX shared-root writer ownership', () => {
       expect(duplicateLaunchError).toBeDefined();
 
       const ownerAfterDuplicate = JSON.parse(await readFile(lockPath, 'utf8')) as { pid?: number };
-      expect(ownerAfterDuplicate.pid).toBe(first.process().pid);
+      expect(ownerAfterDuplicate.pid).toBe(firstMainPid);
       expect(await pathExists(duplicateUserDataDir)).toBe(false);
       await expect(firstPage.getByTestId('main-layout')).toBeVisible();
 
@@ -86,9 +87,10 @@ test.describe('ClawX shared-root writer ownership', () => {
 
       successor = await launchElectronApp(launchOptions(join(homeDir, 'electron-dev'), 'dev'));
       const successorPage = await getStableWindow(successor);
+      const successorMainPid = await successor.evaluate(() => process.pid);
       await expect(successorPage.getByTestId('main-layout')).toBeVisible();
       const successorOwner = JSON.parse(await readFile(lockPath, 'utf8')) as { pid?: number; channel?: string };
-      expect(successorOwner).toMatchObject({ pid: successor.process().pid, channel: 'dev' });
+      expect(successorOwner).toMatchObject({ pid: successorMainPid, channel: 'dev' });
       expect(successorOwner.pid).not.toBe(firstOwner.pid);
 
       await closeElectronApp(successor);
