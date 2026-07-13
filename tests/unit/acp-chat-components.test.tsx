@@ -276,6 +276,45 @@ describe('ACP chat timeline components', () => {
     }
   });
 
+  it('auto-collapses failed tool results on the same delay as completed ones', () => {
+    vi.useFakeTimers();
+    try {
+      render(<AcpToolCallCard item={toolCallItem({ status: 'failed', error: 'Boom.' })} />);
+
+      const card = screen.getByTestId('acp-tool-call-card');
+      expect(card).toHaveAttribute('data-expanded', 'true');
+
+      act(() => {
+        vi.advanceTimersByTime(999);
+      });
+      expect(card).toHaveAttribute('data-expanded', 'true');
+
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(card).toHaveAttribute('data-expanded', 'false');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('mounts historical failed tool results collapsed without waiting for auto-collapse', () => {
+    vi.useFakeTimers();
+    try {
+      render(<AcpToolCallCard item={toolCallItem({ status: 'failed', error: 'Boom.', historical: true })} />);
+
+      const card = screen.getByTestId('acp-tool-call-card');
+      expect(card).toHaveAttribute('data-expanded', 'false');
+
+      act(() => {
+        vi.advanceTimersByTime(1_000);
+      });
+      expect(card).toHaveAttribute('data-expanded', 'false');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('starts a fresh delayed auto-collapse when a completed tool call id changes', () => {
     vi.useFakeTimers();
     try {

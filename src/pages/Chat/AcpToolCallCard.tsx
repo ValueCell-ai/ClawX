@@ -49,7 +49,8 @@ function AcpToolOutputPart({ part }: { part: RenderPart }) {
 export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
   const { t } = useTranslation('chat');
   const hasDetails = Boolean(item.error) || item.outputParts.length > 0;
-  const shouldStartExpanded = !hasDetails || !(item.historical && item.status === 'completed');
+  const isFinished = item.status === 'completed' || item.status === 'failed';
+  const shouldStartExpanded = !hasDetails || !(item.historical && isFinished);
   const [expansionState, setExpansionState] = useState<ExpansionState>(() => ({
     toolCallId: item.toolCallId,
     expanded: shouldStartExpanded,
@@ -62,14 +63,14 @@ export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
   const expanded = (() => {
     if (!hasDetails) return true;
     if (manualOverride) return currentExpansionState.expanded;
-    if (item.historical && item.status === 'completed') return false;
-    if (item.status !== 'completed') return true;
+    if (item.historical && isFinished) return false;
+    if (!isFinished) return true;
     return currentExpansionState.expanded;
   })();
 
   useEffect(() => {
     if (manualOverride) return;
-    if (!hasDetails || item.historical || item.status !== 'completed') return;
+    if (!hasDetails || item.historical || !isFinished) return;
 
     const timer = window.setTimeout(() => {
       setExpansionState((state) => {
@@ -81,7 +82,7 @@ export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
       });
     }, TOOL_AUTO_COLLAPSE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [hasDetails, item.historical, item.status, item.toolCallId, manualOverride, shouldStartExpanded]);
+  }, [hasDetails, item.historical, isFinished, item.toolCallId, manualOverride, shouldStartExpanded]);
 
   const toggleLabel = expanded ? t('acp.collapseTool') : t('acp.expandTool');
 
