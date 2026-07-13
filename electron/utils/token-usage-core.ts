@@ -1,18 +1,31 @@
 export interface TokenUsageHistoryEntry {
+  runtimeKind?: 'openclaw' | 'cc-connect';
   timestamp: string;
   sessionId: string;
+  runtimeSessionId?: string;
   agentId: string;
+  providerAccountId?: string;
   model?: string;
   provider?: string;
   content?: string;
+  turnId?: string;
   usageStatus: 'available' | 'missing' | 'error';
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  reasoningTokens?: number;
   totalTokens: number;
   costUsd?: number;
 }
+
+type UsageParseContext = {
+  sessionId: string;
+  agentId: string;
+  runtimeKind?: TokenUsageHistoryEntry['runtimeKind'];
+  model?: string;
+  provider?: string;
+};
 
 export function extractSessionIdFromTranscriptFileName(fileName: string): string | undefined {
   if (!fileName.endsWith('.jsonl') && !fileName.includes('.jsonl.reset.')) return undefined;
@@ -37,6 +50,8 @@ interface TranscriptUsageShape {
   total_tokens?: number;
   cache_read?: number;
   cache_write?: number;
+  cachedInputTokens?: number;
+  cached_input_tokens?: number;
   prompt_tokens?: number;
   completion_tokens?: number;
   cache_read_tokens?: number;
@@ -54,9 +69,24 @@ interface TranscriptUsageShape {
   cacheReadTokenCount?: number;
   cacheReadTokens?: number;
   cache_write_token_count?: number;
-  cost?: {
+  reasoningTokens?: number;
+  reasoning_tokens?: number;
+  reasoningOutputTokens?: number;
+  reasoning_output_tokens?: number;
+  cost?: number | string | {
     total?: number;
+    usd?: number;
+    total_usd?: number;
+    totalUsd?: number;
+    amount?: number;
   };
+  costUsd?: number;
+  cost_usd?: number;
+  costUSD?: number;
+  totalCost?: number;
+  total_cost?: number;
+  totalCostUsd?: number;
+  total_cost_usd?: number;
 }
 
 type UsageRecordStatus = 'available' | 'missing' | 'error';
@@ -66,6 +96,7 @@ interface ParsedUsageTokens {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  reasoningTokens?: number;
   totalTokens: number;
   costUsd?: number;
   usageStatus: UsageRecordStatus;
@@ -93,6 +124,32 @@ function firstUsageNumber(usage: TranscriptUsageShape | undefined, candidates: s
     const parsed = normalizeUsageNumber(value);
     if (parsed !== undefined) return parsed;
   }
+  return undefined;
+}
+
+function parseUsageCostUsd(usage: TranscriptUsageShape): number | undefined {
+  const direct = firstUsageNumber(usage, [
+    'costUsd',
+    'cost_usd',
+    'costUSD',
+    'totalCostUsd',
+    'total_cost_usd',
+    'totalCost',
+    'total_cost',
+    'cost',
+  ]);
+  if (direct !== undefined) return direct;
+
+  if (usage.cost && typeof usage.cost === 'object' && !Array.isArray(usage.cost)) {
+    return firstUsageNumber(usage.cost as TranscriptUsageShape, [
+      'total',
+      'usd',
+      'total_usd',
+      'totalUsd',
+      'amount',
+    ]);
+  }
+
   return undefined;
 }
 
@@ -141,6 +198,8 @@ function parseUsageFromShape(usage: unknown): ParsedUsageTokens | undefined {
     'cache_read_tokens',
     'cacheReadTokenCount',
     'cache_read_token_count',
+    'cachedInputTokens',
+    'cached_input_tokens',
   ]);
   const cacheWriteTokens = firstUsageNumber(usageShape, [
     'cacheWrite',
@@ -157,14 +216,21 @@ function parseUsageFromShape(usage: unknown): ParsedUsageTokens | undefined {
     'totalTokenCount',
     'total_token_count',
   ]);
+  const reasoningTokens = firstUsageNumber(usageShape, [
+    'reasoningTokens',
+    'reasoning_tokens',
+    'reasoningOutputTokens',
+    'reasoning_output_tokens',
+  ]);
 
   const hasUsageValue =
     inputTokens !== undefined
     || outputTokens !== undefined
     || cacheReadTokens !== undefined
     || cacheWriteTokens !== undefined
+    || reasoningTokens !== undefined
     || explicitTotalTokens !== undefined
-    || normalizeUsageNumber(usageShape.cost?.total) !== undefined;
+    || parseUsageCostUsd(usageShape) !== undefined;
 
   if (!hasUsageValue) {
     return {
@@ -180,8 +246,6 @@ function parseUsageFromShape(usage: unknown): ParsedUsageTokens | undefined {
   const totalTokens = explicitTotalTokens ?? (
     (inputTokens ?? 0)
       + (outputTokens ?? 0)
-      + (cacheReadTokens ?? 0)
-      + (cacheWriteTokens ?? 0)
   );
 
   return {
@@ -190,8 +254,9 @@ function parseUsageFromShape(usage: unknown): ParsedUsageTokens | undefined {
     outputTokens: outputTokens ?? 0,
     cacheReadTokens: cacheReadTokens ?? 0,
     cacheWriteTokens: cacheWriteTokens ?? 0,
+    ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
     totalTokens,
-    costUsd: normalizeUsageNumber(usageShape.cost?.total),
+    costUsd: parseUsageCostUsd(usageShape),
   };
 }
 
@@ -214,7 +279,24 @@ interface TranscriptLineShape {
       };
     };
   };
+  payload?: {
+    type?: string;
+    model?: string;
+    model_provider?: string;
+    info?: {
+      last_token_usage?: TranscriptUsageShape;
+      total_token_usage?: TranscriptUsageShape;
+    };
+  };
 }
+
+type UsageMessageShape = NonNullable<TranscriptLineShape['message']> & {
+  id?: string;
+  timestamp?: string | number;
+  created_at?: string | number;
+  createdAt?: string | number;
+  content?: unknown;
+};
 
 function normalizeUsageContent(value: unknown): string | undefined {
   if (typeof value === 'string') {
@@ -257,13 +339,155 @@ function normalizeUsageContent(value: unknown): string | undefined {
   return undefined;
 }
 
+function normalizeUsageTimestamp(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : value;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value < 1e12 ? value * 1000 : value).toISOString();
+  }
+  return undefined;
+}
+
+function usageEntryFromMessage(
+  message: UsageMessageShape | undefined,
+  timestamp: string | undefined,
+  context: UsageParseContext,
+): TokenUsageHistoryEntry | null {
+  if (!message || !timestamp) return null;
+
+  if (message.role === 'assistant' && 'usage' in message) {
+    const usage = parseUsageFromShape(message.usage);
+    if (!usage) return null;
+
+    const contentText = normalizeUsageContent((message as Record<string, unknown>).content);
+    return {
+      timestamp,
+      ...(context.runtimeKind ? { runtimeKind: context.runtimeKind } : {}),
+      sessionId: context.sessionId,
+      agentId: context.agentId,
+      model: message.model ?? message.modelRef,
+      provider: message.provider,
+      ...(contentText ? { content: contentText } : {}),
+      ...(message.id ? { turnId: message.id } : {}),
+      ...usage,
+    };
+  }
+
+  if (message.role !== 'toolResult' && message.role !== 'toolresult') {
+    return null;
+  }
+
+  const details = message.details;
+  if (!details || !('usage' in details)) {
+    return null;
+  }
+
+  const usage = parseUsageFromShape(details.usage);
+  if (!usage) return null;
+
+  const provider = details.provider ?? details.externalContent?.provider ?? message.provider;
+  const model = details.model ?? message.model ?? message.modelRef;
+  const contentText = normalizeUsageContent(details.content)
+    ?? normalizeUsageContent((message as Record<string, unknown>).content);
+
+  return {
+    timestamp,
+    ...(context.runtimeKind ? { runtimeKind: context.runtimeKind } : {}),
+    sessionId: context.sessionId,
+    agentId: context.agentId,
+    model,
+    provider,
+    ...(contentText ? { content: contentText } : {}),
+    ...(message.id ? { turnId: message.id } : {}),
+    ...usage,
+  };
+}
+
+function usageEntryFromCodexTokenCount(
+  record: TranscriptLineShape,
+  timestamp: string | undefined,
+  context: UsageParseContext,
+): TokenUsageHistoryEntry | null {
+  if (!timestamp || record.type !== 'event_msg' || record.payload?.type !== 'token_count') {
+    return null;
+  }
+
+  const usage = parseUsageFromShape(record.payload.info?.last_token_usage ?? record.payload.info?.total_token_usage);
+  if (!usage || usage.usageStatus !== 'available') {
+    return null;
+  }
+
+  return {
+    timestamp,
+    ...(context.runtimeKind ? { runtimeKind: context.runtimeKind } : {}),
+    sessionId: context.sessionId,
+    agentId: context.agentId,
+    ...(context.model ? { model: context.model } : {}),
+    provider: context.provider ?? 'codex',
+    ...usage,
+  };
+}
+
+function usageContextWithJsonlMetadata(lines: string[], context: UsageParseContext): UsageParseContext {
+  let model = context.model;
+  let provider = context.provider;
+  for (const line of lines) {
+    let parsed: TranscriptLineShape;
+    try {
+      parsed = JSON.parse(line) as TranscriptLineShape;
+    } catch {
+      continue;
+    }
+    if (parsed.type !== 'session_meta' && parsed.type !== 'turn_context') continue;
+    const payload = parsed.payload as Record<string, unknown> | undefined;
+    if (!payload || typeof payload !== 'object') continue;
+    if (!model && typeof payload.model === 'string' && payload.model.trim()) {
+      model = payload.model.trim();
+    }
+    if (!provider && typeof payload.model_provider === 'string' && payload.model_provider.trim()) {
+      provider = payload.model_provider.trim();
+    }
+    if (model && provider) break;
+  }
+  return {
+    ...context,
+    ...(model ? { model } : {}),
+    ...(provider ? { provider } : {}),
+  };
+}
+
+export function parseUsageEntriesFromMessages(
+  messages: unknown[],
+  context: UsageParseContext,
+  limit?: number,
+): TokenUsageHistoryEntry[] {
+  const entries: TokenUsageHistoryEntry[] = [];
+  const maxEntries = typeof limit === 'number' && Number.isFinite(limit)
+    ? Math.max(Math.floor(limit), 0)
+    : Number.POSITIVE_INFINITY;
+
+  for (let i = messages.length - 1; i >= 0 && entries.length < maxEntries; i -= 1) {
+    const item = messages[i];
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const message = item as UsageMessageShape;
+    const timestamp = normalizeUsageTimestamp(message.timestamp ?? message.created_at ?? message.createdAt);
+    const entry = usageEntryFromMessage(message, timestamp, context);
+    if (entry) entries.push(entry);
+  }
+
+  return entries;
+}
+
 export function parseUsageEntriesFromJsonl(
   content: string,
-  context: { sessionId: string; agentId: string },
+  context: UsageParseContext,
   limit?: number,
 ): TokenUsageHistoryEntry[] {
   const entries: TokenUsageHistoryEntry[] = [];
   const lines = content.split(/\r?\n/).filter(Boolean);
+  const enrichedContext = usageContextWithJsonlMetadata(lines, context);
   const maxEntries = typeof limit === 'number' && Number.isFinite(limit)
     ? Math.max(Math.floor(limit), 0)
     : Number.POSITIVE_INFINITY;
@@ -276,54 +500,10 @@ export function parseUsageEntriesFromJsonl(
       continue;
     }
 
-    const message = parsed.message;
-    if (!message || !parsed.timestamp) {
-      continue;
-    }
-
-    if (message.role === 'assistant' && 'usage' in message) {
-      const usage = parseUsageFromShape(message.usage);
-      if (!usage) continue;
-
-      const contentText = normalizeUsageContent((message as Record<string, unknown>).content);
-      entries.push({
-        timestamp: parsed.timestamp,
-        sessionId: context.sessionId,
-        agentId: context.agentId,
-        model: message.model ?? message.modelRef,
-        provider: message.provider,
-        ...(contentText ? { content: contentText } : {}),
-        ...usage,
-      });
-      continue;
-    }
-
-    if (message.role !== 'toolResult') {
-      continue;
-    }
-
-    const details = message.details;
-    if (!details || !('usage' in details)) {
-      continue;
-    }
-
-    const usage = parseUsageFromShape(details.usage);
-    if (!usage) continue;
-
-    const provider = details.provider ?? details.externalContent?.provider ?? message.provider;
-    const model = details.model ?? message.model ?? message.modelRef;
-    const contentText = normalizeUsageContent(details.content)
-      ?? normalizeUsageContent((message as Record<string, unknown>).content);
-
-    entries.push({
-      timestamp: parsed.timestamp,
-      sessionId: context.sessionId,
-      agentId: context.agentId,
-      model,
-      provider,
-      ...(contentText ? { content: contentText } : {}),
-      ...usage,
-    });
+    const timestamp = normalizeUsageTimestamp(parsed.timestamp);
+    const entry = usageEntryFromMessage(parsed.message, timestamp, enrichedContext)
+      ?? usageEntryFromCodexTokenCount(parsed, timestamp, enrichedContext);
+    if (entry) entries.push(entry);
   }
 
   return entries;

@@ -68,6 +68,10 @@ mac:
       to: bin
     - from: resources/cli/posix/
       to: cli/
+    - from: build/cc-connect/darwin-${arch}/
+      to: cc-connect/
+    - from: build/codex/darwin-${arch}/
+      to: codex/
   category: public.app-category.productivity
   icon: resources/icons/icon.icns
   target:
@@ -119,6 +123,10 @@ win:
       to: bin
     - from: resources/cli/win32/
       to: cli/
+    - from: build/cc-connect/win32-${arch}/
+      to: cc-connect/
+    - from: build/codex/win32-${arch}/
+      to: codex/
   icon: resources/icons/icon.ico
   target:
     - target: nsis
@@ -147,6 +155,10 @@ linux:
       to: bin
     - from: resources/cli/posix/
       to: cli/
+    - from: build/cc-connect/linux-${arch}/
+      to: cc-connect/
+    - from: build/codex/linux-${arch}/
+      to: codex/
   icon: resources/icons
   target:
     - target: AppImage

@@ -1,5 +1,7 @@
 import type { GatewayManager } from '../gateway/manager';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
+import type { RuntimeManager } from '../runtime/manager';
+import type { RuntimeSendWithMediaPayload } from '../runtime/types';
 import { logger } from '../utils/logger';
 import { isRecord } from './payload-utils';
 
@@ -38,9 +40,11 @@ function normalizeMedia(media: unknown): Array<{ filePath: string; mimeType: str
   });
 }
 
-export function createChatApi({ gatewayManager }: { gatewayManager: GatewayManager }): CompleteHostServiceRegistry['chat'] {
-  return {
-    sendWithMedia: async (payload) => {
+export function createChatSendWithMediaHandler(
+  gatewayManager: GatewayManager,
+  log = logger,
+): (payload?: unknown) => ReturnType<CompleteHostServiceRegistry['chat']['sendWithMedia']> {
+  return async (payload) => {
       const body = isRecord(payload) ? payload as ChatSendWithMediaPayload : {};
       const sessionKey = typeof body.sessionKey === 'string' ? body.sessionKey : '';
       const idempotencyKey = typeof body.idempotencyKey === 'string' ? body.idempotencyKey : '';
@@ -58,7 +62,7 @@ export function createChatApi({ gatewayManager }: { gatewayManager: GatewayManag
           const fsP = await import('node:fs/promises');
           for (const item of media) {
             const exists = await fsP.access(item.filePath).then(() => true, () => false);
-            logger.info(
+            log.info(
               `[chat:sendWithMedia] Processing file: ${item.fileName} (${item.mimeType}), path: ${item.filePath}, exists: ${exists}, isVision: ${VISION_MIME_TYPES.has(item.mimeType)}`,
             );
 
@@ -69,7 +73,7 @@ export function createChatApi({ gatewayManager }: { gatewayManager: GatewayManag
             if (VISION_MIME_TYPES.has(item.mimeType)) {
               const fileBuffer = await fsP.readFile(item.filePath);
               const base64Data = fileBuffer.toString('base64');
-              logger.info(`[chat:sendWithMedia] Read ${fileBuffer.length} bytes, base64 length: ${base64Data.length}`);
+              log.info(`[chat:sendWithMedia] Read ${fileBuffer.length} bytes, base64 length: ${base64Data.length}`);
               imageAttachments.push({
                 content: base64Data,
                 mimeType: item.mimeType,
@@ -94,17 +98,41 @@ export function createChatApi({ gatewayManager }: { gatewayManager: GatewayManag
           rpcParams.attachments = imageAttachments;
         }
 
-        logger.info(
+        log.info(
           `[chat:sendWithMedia] Sending: message="${message.substring(0, 100)}", attachments=${imageAttachments.length}, fileRefs=${fileReferences.length}`,
         );
         const result = await gatewayManager.rpc('chat.send', rpcParams, 120000);
-        logger.info(`[chat:sendWithMedia] RPC result: ${JSON.stringify(result)}`);
+        log.info(`[chat:sendWithMedia] RPC result: ${JSON.stringify(result)}`);
         const response = isRecord(result) && typeof result.runId === 'string'
           ? { runId: result.runId }
           : undefined;
         return { success: true, ...(response ? { result: response } : {}) };
       } catch (error) {
-        logger.error(`[chat:sendWithMedia] Error: ${String(error)}`);
+        log.error(`[chat:sendWithMedia] Error: ${String(error)}`);
+        return { success: false, error: String(error) };
+      }
+  };
+}
+
+export function createChatApi({
+  gatewayManager,
+  runtimeManager,
+}: {
+  gatewayManager: GatewayManager;
+  runtimeManager?: RuntimeManager;
+}): CompleteHostServiceRegistry['chat'] {
+  const openClawHandler = createChatSendWithMediaHandler(gatewayManager, logger);
+  return {
+    sendWithMedia: async (payload) => {
+      if (!runtimeManager) {
+        return openClawHandler(payload);
+      }
+      try {
+        const result = await runtimeManager.getActiveProvider().sendMessageWithMedia(
+          (isRecord(payload) ? payload : {}) as RuntimeSendWithMediaPayload,
+        );
+        return { success: true, result };
+      } catch (error) {
         return { success: false, error: String(error) };
       }
     },

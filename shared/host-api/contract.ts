@@ -1,7 +1,7 @@
 import type { RawMessage } from '../chat/types';
 import type { AgentsSnapshot } from '../types/agent';
 import type { CronJob, CronJobCreateInput, CronJobUpdateInput } from '../types/cron';
-import type { GatewayHealth, GatewayStatus } from '../types/gateway';
+import type { GatewayHealth, GatewayStatus, RuntimeKind } from '../types/gateway';
 import type { MarketplaceSkill, QuickAccessSkill, Skill } from '../types/skill';
 
 export type JsonRecord = Record<string, unknown>;
@@ -18,6 +18,8 @@ export type OpenClawDoctorResult = HostSuccess & {
   cwd: string;
   durationMs: number;
   timedOut?: boolean;
+  auditPath?: string;
+  audit?: JsonRecord;
 };
 export type OpenClawDoctorPayload = { mode: OpenClawDoctorMode };
 
@@ -103,6 +105,7 @@ export type SettingsSnapshot = Partial<{
   launchAtStartup: boolean;
   telemetryEnabled: boolean;
   gatewayAutoStart: boolean;
+  runtimeKind: RuntimeKind;
   gatewayPort: number;
   proxyEnabled: boolean;
   proxyServer: string;
@@ -240,7 +243,12 @@ export type ChannelConfiguredResult = HostSuccess & { channels?: Array<string | 
 export type AgentSnapshotResult = AgentsSnapshot & OptionalHostSuccess;
 export type AgentCreatePayload = { name: string; inheritWorkspace?: boolean };
 export type AgentUpdatePayload = { id: string; name: string };
-export type AgentUpdateModelPayload = { id: string; modelRef: string | null };
+export type AgentUpdateModelPayload = {
+  id: string;
+  modelRef: string | null;
+  providerAccountId?: string | null;
+  permissionMode?: 'suggest' | 'full-auto';
+};
 export type AgentIdPayload = { id: string };
 export type AgentChannelPayload = { id: string; channelType: string };
 
@@ -382,6 +390,34 @@ export type ProviderOAuthRequestPayload = {
   label?: string;
 };
 export type ProviderOAuthSubmitPayload = { code: string };
+export type ProviderCodexOAuthPayload = { accountId?: string };
+export type ProviderCodexOAuthLogoutPayload = ProviderCodexOAuthPayload & { managedOnly?: boolean };
+export type ProviderCodexOAuthAuthFileSummary = {
+  path: string;
+  exists: boolean;
+  complete: boolean;
+  accountId?: string;
+  authMode?: string;
+  lastRefresh?: string;
+  updatedAt?: string;
+  error?: string;
+};
+export type ProviderCodexOAuthStatusResult = HostSuccess & {
+  managedCodexHome?: string;
+  authPath?: string;
+  managed?: ProviderCodexOAuthAuthFileSummary;
+  user?: ProviderCodexOAuthAuthFileSummary;
+  provider?: {
+    accountId: string;
+    vendorId: string;
+    authMode?: string;
+    hasOAuthSecret: boolean;
+    subject?: string;
+    email?: string;
+    managedMatchesAccount?: boolean;
+    userMatchesAccount?: boolean;
+  };
+};
 
 export type StagedFileResult = {
   id: string;
@@ -606,6 +642,14 @@ export type SkillsStatusResult = {
   }[];
 };
 export type LocalSkillsResult = HostSuccess & { skills?: Skill[] };
+export type SkillsRuntimeTargetResult = HostSuccess & {
+  runtimeKind: RuntimeKind;
+  sourceDir: string;
+  openDir: string;
+  runtimeDir?: string;
+  manifestPath?: string;
+  mirrorMode: 'source' | 'runtime-mirror';
+};
 export type SkillConfigsResult = Record<string, { enabled?: boolean; apiKey?: string; env?: Record<string, string> }>;
 export type SkillKeyPayload = { skillKey: string };
 export type SkillUpdateConfigPayload = SkillKeyPayload & {
@@ -639,9 +683,13 @@ export type ClawHubOpenPayload = {
 };
 
 export type UsageHistoryEntry = {
+  runtimeKind?: 'openclaw' | 'cc-connect';
   timestamp: string;
   sessionId: string;
+  runtimeSessionId?: string;
+  turnId?: string;
   agentId: string;
+  providerAccountId?: string;
   model?: string;
   provider?: string;
   content?: string;
@@ -650,10 +698,11 @@ export type UsageHistoryEntry = {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  reasoningTokens?: number;
   totalTokens: number;
   costUsd?: number;
 };
-export type UsageHistoryPayload = { limit?: number };
+export type UsageHistoryPayload = { limit?: number; runtimeKind?: RuntimeKind };
 
 export type DeliveryChannelAccount = {
   accountId: string;
@@ -785,6 +834,9 @@ export type HostApiContract = {
     requestOAuth: (payload: ProviderOAuthRequestPayload) => HostSuccess;
     cancelOAuth: () => HostSuccess;
     submitOAuth: (payload: ProviderOAuthSubmitPayload) => HostSuccess;
+    codexOAuthStatus: (payload?: ProviderCodexOAuthPayload) => ProviderCodexOAuthStatusResult;
+    importCodexOAuth: (payload?: ProviderCodexOAuthPayload) => ProviderCodexOAuthStatusResult;
+    logoutCodexOAuth: (payload?: ProviderCodexOAuthLogoutPayload) => ProviderCodexOAuthStatusResult;
   };
   files: {
     stagePaths: (payload: StagePathsPayload) => StagedFileResult[];
@@ -818,13 +870,14 @@ export type HostApiContract = {
     create: (payload: CronJobCreateInput) => CronJob;
     update: (payload: CronUpdatePayload) => CronJob;
     delete: (payload: CronIdPayload) => HostSuccess;
-    toggle: (payload: CronTogglePayload) => HostSuccess;
+    toggle: (payload: CronTogglePayload) => CronJob | HostSuccess;
     trigger: (payload: CronIdPayload) => HostSuccess;
     sessionHistory: (payload: CronSessionHistoryPayload) => CronSessionHistoryResult;
     deliveryTargets: () => DeliveryTargetsResult;
   };
   skills: {
     local: () => LocalSkillsResult;
+    target: () => SkillsRuntimeTargetResult;
     configs: () => SkillConfigsResult;
     allConfigs: () => SkillConfigsResult;
     getConfig: (payload: SkillKeyPayload) => JsonRecord | undefined;

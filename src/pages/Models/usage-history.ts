@@ -1,7 +1,11 @@
 export type UsageHistoryEntry = {
+  runtimeKind?: 'openclaw' | 'cc-connect';
   timestamp: string;
   sessionId: string;
+  runtimeSessionId?: string;
+  turnId?: string;
   agentId: string;
+  providerAccountId?: string;
   model?: string;
   provider?: string;
   content?: string;
@@ -10,6 +14,7 @@ export type UsageHistoryEntry = {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  reasoningTokens?: number;
   totalTokens: number;
   costUsd?: number;
 };

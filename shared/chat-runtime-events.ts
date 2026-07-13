@@ -7,6 +7,11 @@ export type ChatRuntimeEventBase = {
 
 export type ChatRuntimeEvent =
   | (ChatRuntimeEventBase & {
+      type: 'session.updated';
+      updatedAt?: number;
+      reason?: string;
+    })
+  | (ChatRuntimeEventBase & {
       type: 'run.started';
       startedAt?: number;
     })
@@ -85,4 +90,8 @@ export type ChatRuntimeEvent =
       phase?: string;
       status?: string;
       message?: string;
+      actions?: Array<{
+        action: string;
+        label?: string;
+      }>;
     });

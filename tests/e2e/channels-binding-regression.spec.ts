@@ -7,6 +7,7 @@ test.describe('Channels binding regression', () => {
         nextAccountId: 'feishu-a1b2c3d4',
         saveCount: 0,
         bindingCount: 0,
+        lastSavedConfig: {} as Record<string, unknown>,
         channels: [
           {
             channelType: 'feishu',
@@ -60,6 +61,9 @@ test.describe('Channels binding regression', () => {
         if (request?.module === 'channels' && request.action === 'saveConfig') {
           current.saveCount += 1;
           const body = request.payload ?? {};
+          current.lastSavedConfig = (body.config && typeof body.config === 'object')
+            ? body.config as Record<string, unknown>
+            : {};
           const accountId = body.accountId || current.nextAccountId;
           const feishu = current.channels[0];
           if (!feishu.accounts.some((account) => account.accountId === accountId)) {
@@ -114,6 +118,7 @@ test.describe('Channels binding regression', () => {
     await expect(accountIdInput).toHaveValue(/feishu-/);
     await page.locator('#appId').fill('cli_test');
     await page.locator('#appSecret').fill('secret_test');
+    await page.locator('#adminUsers').fill('ou_cron_admin, ou_ops_admin');
 
     await page.getByRole('button', { name: /Save & Connect|dialog\.saveAndConnect/ }).click();
     await expect(page.getByText(/Configure Feishu \/ Lark|dialog\.configureTitle/)).toBeHidden();
@@ -128,11 +133,20 @@ test.describe('Channels binding regression', () => {
 
     const counters = await electronApp.evaluate(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const state = (globalThis as any).__clawxE2eBindingRegression as { saveCount: number; bindingCount: number };
-      return { saveCount: state.saveCount, bindingCount: state.bindingCount };
+      const state = (globalThis as any).__clawxE2eBindingRegression as {
+        saveCount: number;
+        bindingCount: number;
+        lastSavedConfig: Record<string, unknown>;
+      };
+      return {
+        saveCount: state.saveCount,
+        bindingCount: state.bindingCount,
+        lastSavedConfig: state.lastSavedConfig,
+      };
     });
 
     expect(counters.saveCount).toBe(1);
     expect(counters.bindingCount).toBe(1);
+    expect(counters.lastSavedConfig.adminUsers).toBe('ou_cron_admin, ou_ops_admin');
   });
 });

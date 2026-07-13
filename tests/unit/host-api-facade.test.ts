@@ -239,6 +239,46 @@ describe('hostApi facade', () => {
     }));
   });
 
+  it('passes cc-connect Codex OAuth lifecycle requests through hostInvoke', async () => {
+    hostInvoke
+      .mockResolvedValueOnce({ id: 'req-1', ok: true, data: { success: true, managed: { exists: true } } })
+      .mockResolvedValueOnce({ id: 'req-2', ok: true, data: { success: true, managed: { exists: true } } })
+      .mockResolvedValueOnce({ id: 'req-3', ok: true, data: { success: true, managed: { exists: false } } });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await expect(hostApi.providers.codexOAuthStatus({ accountId: 'openai-oauth' })).resolves.toEqual({
+      success: true,
+      managed: { exists: true },
+    });
+    await expect(hostApi.providers.importCodexOAuth({ accountId: 'openai-oauth' })).resolves.toEqual({
+      success: true,
+      managed: { exists: true },
+    });
+    await expect(hostApi.providers.logoutCodexOAuth({
+      accountId: 'openai-oauth',
+      managedOnly: true,
+    })).resolves.toEqual({
+      success: true,
+      managed: { exists: false },
+    });
+
+    expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      module: 'providers',
+      action: 'codexOAuthStatus',
+      payload: { accountId: 'openai-oauth' },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      module: 'providers',
+      action: 'importCodexOAuth',
+      payload: { accountId: 'openai-oauth' },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      module: 'providers',
+      action: 'logoutCodexOAuth',
+      payload: { accountId: 'openai-oauth', managedOnly: true },
+    }));
+  });
+
   it('calls chat.sendWithMedia through hostInvoke', async () => {
     hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { success: true } });
     const { hostApi } = await import('@/lib/host-api');
@@ -280,6 +320,27 @@ describe('hostApi facade', () => {
     expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
       module: 'skills',
       action: 'clawhubList',
+    }));
+  });
+
+  it('calls skills.target through hostInvoke', async () => {
+    hostInvoke.mockResolvedValueOnce({
+      id: 'req',
+      ok: true,
+      data: {
+        success: true,
+        runtimeKind: 'cc-connect',
+        sourceDir: '/tmp/.openclaw/skills',
+        openDir: '/tmp/clawx/runtimes/cc-connect/codex-home/skills',
+        mirrorMode: 'runtime-mirror',
+      },
+    });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await hostApi.skills.target();
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'skills',
+      action: 'target',
     }));
   });
 

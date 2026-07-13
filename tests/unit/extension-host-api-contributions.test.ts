@@ -28,6 +28,7 @@ describe('extension host API contributions', () => {
     };
     const ctx = {
       gatewayManager: {} as ExtensionContext['gatewayManager'],
+      runtimeManager: {} as ExtensionContext['runtimeManager'],
       getMainWindow: () => null,
       hostApi: { register: hostApiRegister },
     } satisfies ExtensionContext;

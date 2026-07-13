@@ -4,10 +4,14 @@
  */
 import { create } from 'zustand';
 import { hostApi } from '@/lib/host-api';
+import { assertRuntimeOperationSupported } from '@/lib/runtime-operation-capabilities';
 import { useChatStore } from './chat';
+import { useGatewayStore } from './gateway';
 import type { CronJob, CronJobCreateInput, CronJobUpdateInput } from '../types/cron';
 
 let _fetchJobsInFlight: Promise<void> | null = null;
+let _runObservationSequence = 0;
+const _runObservations = new Map<string, number>();
 
 /**
  * How long an optimistically-created job is kept in the list even when the
@@ -15,6 +19,49 @@ let _fetchJobsInFlight: Promise<void> | null = null;
  * window a job missing from the Gateway is treated as deleted/auto-removed.
  */
 const OPTIMISTIC_CREATE_GRACE_MS = 15_000;
+const RUN_OBSERVATION_INITIAL_DELAY_MS = 1_000;
+const RUN_OBSERVATION_MAX_DELAY_MS = 15_000;
+const RUN_OBSERVATION_TIMEOUT_GRACE_MS = 15_000;
+
+function cancelRunObservation(id: string): void {
+  _runObservations.delete(id);
+}
+
+function runObservationTimeoutMs(job: CronJob): number {
+  const configuredTimeoutMins = typeof job.timeoutMins === 'number' && Number.isFinite(job.timeoutMins)
+    ? job.timeoutMins
+    : 0;
+  const timeoutMins = configuredTimeoutMins > 0 ? configuredTimeoutMins : 30;
+  return timeoutMins * 60_000 + RUN_OBSERVATION_TIMEOUT_GRACE_MS;
+}
+
+function runCompletedSince(job: CronJob | undefined, previousLastRunTime: string | undefined): boolean {
+  return Boolean(job?.lastRun?.time && job.lastRun.time !== previousLastRunTime);
+}
+
+async function observeTriggeredRun(
+  id: string,
+  observationId: number,
+  previousLastRunTime: string | undefined,
+  runtimeKind: string | undefined,
+  timeoutMs: number,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let delayMs = RUN_OBSERVATION_INITIAL_DELAY_MS;
+  while (Date.now() < deadline && _runObservations.get(id) === observationId) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    if (_runObservations.get(id) !== observationId) return;
+    if (useGatewayStore.getState().status.runtimeKind !== runtimeKind) break;
+
+    await useCronStore.getState().fetchJobs();
+    const job = useCronStore.getState().jobs.find((candidate) => candidate.id === id);
+    if (!job || runCompletedSince(job, previousLastRunTime)) break;
+    delayMs = Math.min(delayMs * 2, RUN_OBSERVATION_MAX_DELAY_MS);
+  }
+  if (_runObservations.get(id) === observationId) {
+    _runObservations.delete(id);
+  }
+}
 
 interface CronState {
   jobs: CronJob[];
@@ -52,6 +99,7 @@ export const useCronStore = create<CronState>((set) => ({
       }
 
       try {
+        assertRuntimeOperationSupported(useGatewayStore.getState().status, 'cron.list');
         const result = await hostApi.cron.list();
 
         // The Gateway list is authoritative. A job missing from it has either been
@@ -86,6 +134,7 @@ export const useCronStore = create<CronState>((set) => ({
 
   createJob: async (input) => {
     try {
+      assertRuntimeOperationSupported(useGatewayStore.getState().status, 'cron.create');
       // Auto-capture currentAgentId if not provided
       const agentId = input.agentId ?? useChatStore.getState().currentAgentId;
       const job = await hostApi.cron.create({ ...input, agentId });
@@ -99,6 +148,7 @@ export const useCronStore = create<CronState>((set) => ({
 
   updateJob: async (id, input) => {
     try {
+      assertRuntimeOperationSupported(useGatewayStore.getState().status, 'cron.update');
       const updatedJob = await hostApi.cron.update(id, input);
       set((state) => ({
         jobs: state.jobs.map((job) =>
@@ -113,7 +163,9 @@ export const useCronStore = create<CronState>((set) => ({
 
   deleteJob: async (id) => {
     try {
+      assertRuntimeOperationSupported(useGatewayStore.getState().status, 'cron.delete');
       await hostApi.cron.delete(id);
+      cancelRunObservation(id);
       set((state) => ({
         jobs: state.jobs.filter((job) => job.id !== id),
       }));
@@ -125,6 +177,7 @@ export const useCronStore = create<CronState>((set) => ({
 
   toggleJob: async (id, enabled) => {
     try {
+      assertRuntimeOperationSupported(useGatewayStore.getState().status, 'cron.toggle');
       await hostApi.cron.toggle(id, enabled);
       set((state) => ({
         jobs: state.jobs.map((job) =>
@@ -139,14 +192,27 @@ export const useCronStore = create<CronState>((set) => ({
 
   triggerJob: async (id) => {
     try {
+      assertRuntimeOperationSupported(useGatewayStore.getState().status, 'cron.run');
+      const jobBeforeTrigger = useCronStore.getState().jobs.find((job) => job.id === id);
+      const previousLastRunTime = jobBeforeTrigger?.lastRun?.time;
+      const runtimeKind = useGatewayStore.getState().status.runtimeKind;
       await hostApi.cron.trigger(id);
-      // Refresh jobs after trigger to update lastRun/nextRun state
-      try {
-        const result = await hostApi.cron.list();
-        set({ jobs: result });
-      } catch {
-        // Ignore refresh error
+      await useCronStore.getState().fetchJobs();
+      const refreshedJob = useCronStore.getState().jobs.find((job) => job.id === id);
+      if (!refreshedJob || runCompletedSince(refreshedJob, previousLastRunTime)) {
+        cancelRunObservation(id);
+        return;
       }
+
+      const observationId = ++_runObservationSequence;
+      _runObservations.set(id, observationId);
+      void observeTriggeredRun(
+        id,
+        observationId,
+        previousLastRunTime,
+        runtimeKind,
+        runObservationTimeoutMs(refreshedJob),
+      );
     } catch (error) {
       console.error('Failed to trigger cron job:', error);
       throw error;

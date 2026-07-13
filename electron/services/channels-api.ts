@@ -73,6 +73,7 @@ import {
 import { buildGatewayHealthSummary } from '../utils/gateway-health';
 import { logger } from '../utils/logger';
 import type { GatewayManager, GatewayHealthSummary } from '../gateway/manager';
+import type { RuntimeManager } from '../runtime/manager';
 import { isRecord } from './payload-utils';
 
 const WECHAT_QR_TIMEOUT_MS = 8 * 60 * 1000;
@@ -83,6 +84,7 @@ async function listWhatsAppDirectoryPeersFromConfig(_params: unknown): Promise<u
 
 type ChannelsApiContext = {
   gatewayManager: GatewayManager;
+  runtimeManager?: RuntimeManager;
   mainWindow?: BrowserWindow;
 };
 
@@ -265,11 +267,12 @@ export async function buildChannelAccountsView(
   ]);
 
   let gatewayStatus: GatewayChannelStatusPayload | null = null;
+  const runtimeStatusSource = ctx.runtimeManager ?? ctx.gatewayManager;
   if (!skipRuntime) {
     try {
       const probe = options?.probe === true;
       const rpcStartedAt = Date.now();
-      gatewayStatus = await ctx.gatewayManager.rpc<GatewayChannelStatusPayload>(
+      gatewayStatus = await runtimeStatusSource.rpc<GatewayChannelStatusPayload>(
         'channels.status',
         { probe },
         probe ? 5000 : 8000,
@@ -292,8 +295,9 @@ export async function buildChannelAccountsView(
     consecutiveHeartbeatMisses: 0,
     consecutiveRpcFailures: 0,
   };
+  const status = ctx.runtimeManager?.getStatus() ?? ctx.gatewayManager.getStatus();
   const gatewayHealth = buildGatewayHealthSummary({
-    status: ctx.gatewayManager.getStatus(),
+    status,
     diagnostics: gatewayDiagnostics,
     lastChannelsStatusOkAt,
     lastChannelsStatusFailureAt,
@@ -379,7 +383,7 @@ export async function buildChannelAccountsView(
     const baseGroupStatus = pickChannelRuntimeStatus(visibleAccountSnapshots, channelSummary, {
       gatewayHealthState: effectiveGatewayHealthState,
     });
-    const groupStatus = !gatewayStatus && !skipRuntime && ctx.gatewayManager.getStatus().state === 'running'
+    const groupStatus = !gatewayStatus && !skipRuntime && status.state === 'running'
       ? 'degraded'
       : effectiveGatewayHealthState && !hasRuntimeError && baseGroupStatus === 'connected'
         ? 'degraded'
@@ -391,7 +395,7 @@ export async function buildChannelAccountsView(
       channelType: uiChannelType,
       defaultAccountId,
       status: groupStatus,
-      statusReason: !gatewayStatus && !skipRuntime && ctx.gatewayManager.getStatus().state === 'running'
+      statusReason: !gatewayStatus && !skipRuntime && status.state === 'running'
         ? 'channels_status_timeout'
         : groupStatus === 'degraded' && effectiveGatewayHealthState
           ? overlayStatusReason(gatewayHealth, 'gateway_degraded')
@@ -985,13 +989,29 @@ async function ensureScopedChannelBinding(channelType: string, accountId?: strin
   await migrateLegacyChannelWideBinding(storedChannelType);
 }
 
-function scheduleGatewayChannelRestart(ctx: ChannelsApiContext, reason: string): void {
+async function scheduleGatewayChannelRestart(ctx: ChannelsApiContext, reason: string): Promise<void> {
+  const provider = ctx.runtimeManager?.getActiveProvider();
+  if (provider?.refreshConfig) {
+    await provider.refreshConfig({ scope: 'channels', reason, forceRestart: true });
+    return;
+  }
   if (ctx.gatewayManager.getStatus().state === 'stopped') return;
   ctx.gatewayManager.debouncedRestart();
   void reason;
 }
 
-function scheduleGatewayChannelSaveRefresh(ctx: ChannelsApiContext, channelType: string, reason: string): void {
+async function scheduleGatewayChannelSaveRefresh(ctx: ChannelsApiContext, channelType: string, reason: string): Promise<void> {
+  const provider = ctx.runtimeManager?.getActiveProvider();
+  if (provider?.refreshConfig) {
+    const storedChannelType = resolveStoredChannelType(channelType);
+    await provider.refreshConfig({
+      scope: 'channels',
+      reason,
+      channelType: storedChannelType,
+      forceRestart: FORCE_RESTART_CHANNELS.has(storedChannelType),
+    });
+    return;
+  }
   const storedChannelType = resolveStoredChannelType(channelType);
   if (ctx.gatewayManager.getStatus().state === 'stopped') return;
   if (FORCE_RESTART_CHANNELS.has(storedChannelType)) {
@@ -1072,7 +1092,7 @@ async function awaitWeChatQrLogin(
     });
     await saveChannelConfig(UI_WECHAT_CHANNEL_TYPE, { enabled: true }, normalizedAccountId);
     await ensureScopedChannelBinding(UI_WECHAT_CHANNEL_TYPE, normalizedAccountId);
-    scheduleGatewayChannelSaveRefresh(ctx, OPENCLAW_WECHAT_CHANNEL_TYPE, `wechat:loginSuccess:${normalizedAccountId}`);
+    await scheduleGatewayChannelSaveRefresh(ctx, OPENCLAW_WECHAT_CHANNEL_TYPE, `wechat:loginSuccess:${normalizedAccountId}`);
 
     if (activeQrLogins.get(loginKey) !== sessionKey) return;
     emitChannelEvent(ctx, UI_WECHAT_CHANNEL_TYPE, 'success', {
@@ -1135,7 +1155,7 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       const accountId = requireString(payload, 'accountId');
       await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
       await setChannelDefaultAccount(channelType, accountId);
-      scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:setDefaultAccount:${channelType}`);
+      await scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:setDefaultAccount:${channelType}`);
       return { success: true };
     },
     bindingSave: async (payload) => {
@@ -1152,7 +1172,7 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
         await migrateLegacyChannelWideBinding(storedChannelType);
       }
       await assignChannelAccountToAgent(agentId, storedChannelType, accountId);
-      scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:setBinding:${channelType}`);
+      await scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:setBinding:${channelType}`);
       return { success: true };
     },
     bindingDelete: async (payload) => {
@@ -1160,7 +1180,7 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       const accountId = optionalString(payload, 'accountId');
       await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
       await clearChannelBinding(resolveStoredChannelType(channelType), accountId);
-      scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:clearBinding:${channelType}`);
+      await scheduleGatewayChannelSaveRefresh(ctx, channelType, `channel:clearBinding:${channelType}`);
       return { success: true };
     },
     validateConfig: async (payload) => {
@@ -1178,23 +1198,25 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       const accountId = optionalString(payload, 'accountId');
       await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
       const storedChannelType = resolveStoredChannelType(channelType);
-      await ensureChannelPluginInstalled(storedChannelType);
+      if (ctx.runtimeManager?.getActiveProvider().kind !== 'cc-connect') {
+        await ensureChannelPluginInstalled(storedChannelType);
+      }
       const existingValues = await getChannelFormValues(channelType, accountId);
       if (isSameConfigValues(existingValues, config)) {
         await ensureScopedChannelBinding(channelType, accountId);
-        scheduleGatewayChannelSaveRefresh(ctx, storedChannelType, `channel:saveConfigNoChange:${storedChannelType}`);
+        await scheduleGatewayChannelSaveRefresh(ctx, storedChannelType, `channel:saveConfigNoChange:${storedChannelType}`);
         return { success: true, noChange: true };
       }
       await saveChannelConfig(channelType, config, accountId);
       await ensureScopedChannelBinding(channelType, accountId);
-      scheduleGatewayChannelSaveRefresh(ctx, storedChannelType, `channel:saveConfig:${storedChannelType}`);
+      await scheduleGatewayChannelSaveRefresh(ctx, storedChannelType, `channel:saveConfig:${storedChannelType}`);
       return { success: true };
     },
     setEnabled: async (payload) => {
       const channelType = requireString(payload, 'channelType');
       const enabled = isRecord(payload) && payload.enabled === true;
       await setChannelEnabled(channelType, enabled);
-      scheduleGatewayChannelRestart(ctx, `channel:setEnabled:${resolveStoredChannelType(channelType)}`);
+      await scheduleGatewayChannelRestart(ctx, `channel:setEnabled:${resolveStoredChannelType(channelType)}`);
       return { success: true };
     },
     formValues: async (payload) => {
@@ -1209,11 +1231,11 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       if (accountId) {
         await deleteChannelAccountConfig(channelType, accountId);
         await clearChannelBinding(storedChannelType, accountId);
-        scheduleGatewayChannelSaveRefresh(ctx, storedChannelType, `channel:deleteAccount:${storedChannelType}`);
+        await scheduleGatewayChannelSaveRefresh(ctx, storedChannelType, `channel:deleteAccount:${storedChannelType}`);
       } else {
         await deleteChannelConfig(channelType);
         await clearAllBindingsForChannel(storedChannelType);
-        scheduleGatewayChannelRestart(ctx, `channel:deleteConfig:${storedChannelType}`);
+        await scheduleGatewayChannelRestart(ctx, `channel:deleteConfig:${storedChannelType}`);
       }
       return { success: true };
     },

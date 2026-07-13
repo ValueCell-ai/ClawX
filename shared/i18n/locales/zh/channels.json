@@ -240,6 +240,11 @@
                 "appSecret": {
                     "label": "应用密钥 (App Secret)",
                     "placeholder": "您的应用密钥"
+                },
+                "adminUsers": {
+                    "label": "Cron 管理员 ID",
+                    "placeholder": "ou_xxx, ou_yyy",
+                    "description": "允许在飞书/Lark 中创建、修改、执行或删除 cc-connect 定时任务的用户 ID，多个 ID 用逗号分隔。"
                 }
             },
             "instructions": [

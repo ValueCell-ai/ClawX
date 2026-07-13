@@ -1,5 +1,6 @@
 import type { BrowserWindow } from 'electron';
 import type { GatewayManager } from '../gateway/manager';
+import type { RuntimeManager } from '../runtime/manager';
 import type { HostApiContribution, HostApiContributionRegistrar } from '../main/ipc/host-contract';
 import type {
   MarketplaceSearchParams,
@@ -12,6 +13,7 @@ import type {
 
 export interface ExtensionContext {
   gatewayManager: GatewayManager;
+  runtimeManager: RuntimeManager;
   getMainWindow: () => BrowserWindow | null;
   hostApi: HostApiContributionRegistrar;
 }

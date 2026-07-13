@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -189,5 +189,79 @@ describe('process instance file lock', () => {
     expect(lock.acquired).toBe(true);
     expect(readFileSync(lockPath, 'utf8')).toBe('7777');
     lock.release();
+  });
+
+  it('writes structured owner metadata and uses an explicit shared-root lock path', () => {
+    const root = createTempDir();
+    const lockPath = join(root, 'locks', 'writer.lock');
+    const lock = acquireProcessInstanceFileLock({
+      userDataDir: root,
+      lockName: 'writer',
+      lockPath,
+      pid: 4242,
+      metadata: {
+        appVersion: '1.2.3',
+        channel: 'beta',
+        executable: '/Applications/ClawX.app/Contents/MacOS/ClawX',
+        startedAt: '2026-07-11T10:00:00.000Z',
+      },
+    });
+
+    expect(lock.acquired).toBe(true);
+    expect(JSON.parse(readFileSync(lockPath, 'utf8'))).toMatchObject({
+      schema: 'clawx-instance-lock',
+      version: 2,
+      pid: 4242,
+      appVersion: '1.2.3',
+      channel: 'beta',
+      executable: '/Applications/ClawX.app/Contents/MacOS/ClawX',
+      startedAt: '2026-07-11T10:00:00.000Z',
+      heartbeatAt: '2026-07-11T10:00:00.000Z',
+    });
+    lock.release();
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('requires both a dead pid and an expired heartbeat before recovery', () => {
+    const root = createTempDir();
+    const lockPath = join(root, 'locks', 'writer.lock');
+    mkdirSync(join(root, 'locks'), { recursive: true });
+    const freshHeartbeat = new Date().toISOString();
+    writeFileSync(lockPath, JSON.stringify({
+      schema: 'clawx-instance-lock',
+      version: 2,
+      pid: 5151,
+      ownerToken: 'first-owner',
+      heartbeatAt: freshHeartbeat,
+    }));
+
+    const held = acquireProcessInstanceFileLock({
+      userDataDir: root,
+      lockName: 'writer',
+      lockPath,
+      pid: 6161,
+      isPidAlive: () => false,
+      heartbeatExpiryMs: 60_000,
+    });
+    expect(held.acquired).toBe(false);
+    expect(held.ownerDetails?.ownerToken).toBe('first-owner');
+
+    writeFileSync(lockPath, JSON.stringify({
+      schema: 'clawx-instance-lock',
+      version: 2,
+      pid: 5151,
+      ownerToken: 'first-owner',
+      heartbeatAt: '2020-01-01T00:00:00.000Z',
+    }));
+    const recovered = acquireProcessInstanceFileLock({
+      userDataDir: root,
+      lockName: 'writer',
+      lockPath,
+      pid: 6161,
+      isPidAlive: () => false,
+      heartbeatExpiryMs: 60_000,
+    });
+    expect(recovered.acquired).toBe(true);
+    recovered.release();
   });
 });

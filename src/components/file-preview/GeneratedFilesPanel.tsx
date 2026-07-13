@@ -42,7 +42,7 @@ export function GeneratedFilesPanel({
   };
 
   return (
-    <div className={cn('space-y-2', className)}>
+    <div className={cn('space-y-2', className)} data-testid="generated-files-panel">
       <div className="px-1">
         <p className="text-xs font-semibold text-foreground/75">
           {t('generatedFiles.title', { count: files.length, defaultValue: 'File changes ({{count}})' })}
@@ -95,6 +95,7 @@ export function GeneratedFilesPanel({
                 'dark:border-white/10 dark:bg-white/[0.04]',
               )}
               title={file.filePath}
+              data-testid={`generated-file-card-${file.fileName}`}
             >
               <div className="min-w-0 flex items-center gap-2 overflow-hidden whitespace-nowrap text-meta leading-none">
                 <span className="shrink-0 font-medium text-foreground">{file.fileName}</span>

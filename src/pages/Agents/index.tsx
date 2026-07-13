@@ -250,6 +250,7 @@ function AgentCard({
 
   return (
     <div
+      data-testid={`agent-card-${agent.id}`}
       className={cn(
         'group flex items-start gap-4 p-4 rounded-2xl transition-all text-left border relative overflow-hidden bg-transparent border-transparent hover:bg-black/5 dark:hover:bg-white/5',
         agent.isDefault && 'bg-black/[0.04] dark:bg-white/[0.06]'
@@ -285,6 +286,7 @@ function AgentCard({
               </Button>
             )}
             <Button
+              data-testid={`agent-settings-${agent.id}`}
               variant="ghost"
               size="icon"
               className={cn(
@@ -531,6 +533,7 @@ function AgentSettingsModal({
             </DialogDescription>
           </div>
           <Button
+            data-testid="agent-settings-close"
             variant="ghost"
             size="icon"
             onClick={handleRequestClose}
@@ -577,6 +580,7 @@ function AgentSettingsModal({
               </div>
               <button
                 type="button"
+                data-testid={`agent-runtime-settings-${agent.id}`}
                 onClick={() => setShowModelModal(true)}
                 className="space-y-1 rounded-2xl bg-black/5 dark:bg-white/5 border border-transparent p-4 text-left hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
               >
@@ -676,9 +680,11 @@ function AgentModelModal({
   const providerStatuses = useProviderStore((state) => state.statuses);
   const providerVendors = useProviderStore((state) => state.vendors);
   const providerDefaultAccountId = useProviderStore((state) => state.defaultAccountId);
+  const runtimeKind = useGatewayStore((state) => state.status.runtimeKind);
   const { updateAgentModel, defaultModelRef } = useAgentsStore();
   const [selectedRuntimeProviderKey, setSelectedRuntimeProviderKey] = useState('');
   const [modelIdInput, setModelIdInput] = useState('');
+  const [permissionMode, setPermissionMode] = useState<'suggest' | 'full-auto'>(agent.permissionMode ?? 'full-auto');
   const [savingModel, setSavingModel] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [prevOpen, setPrevOpen] = useState(open);
@@ -712,6 +718,10 @@ function AgentModelModal({
     setModelIdInput('');
   }, [agent.modelRef, agent.overrideModelRef, defaultModelRef, runtimeProviderOptions]);
 
+  useEffect(() => {
+    if (open) setPermissionMode(agent.permissionMode ?? 'full-auto');
+  }, [agent.permissionMode, open]);
+
   if (prevOpen !== open) {
     setPrevOpen(open);
     if (!open) {
@@ -731,7 +741,11 @@ function AgentModelModal({
   const desiredOverrideModelRef = nextModelRef && nextModelRef !== normalizedDefaultModelRef
     ? nextModelRef
     : null;
-  const modelChanged = (desiredOverrideModelRef || '') !== currentOverrideModelRef;
+  const accountChanged = Boolean(selectedProvider?.accountId)
+    && selectedProvider?.accountId !== agent.providerAccountId;
+  const permissionModeChanged = permissionMode !== (agent.permissionMode ?? 'full-auto');
+  const modelSelectionChanged = (desiredOverrideModelRef || '') !== currentOverrideModelRef || accountChanged;
+  const modelChanged = modelSelectionChanged || permissionModeChanged;
 
   const handleRequestClose = () => {
     if (savingModel || modelChanged) {
@@ -742,24 +756,31 @@ function AgentModelModal({
   };
 
   const handleSaveModel = async () => {
-    if (!selectedRuntimeProviderKey) {
+    if (modelSelectionChanged && !selectedRuntimeProviderKey) {
       toast.error(t('toast.agentModelProviderRequired'));
       return;
     }
-    if (!trimmedModelId) {
+    if (modelSelectionChanged && !trimmedModelId) {
       toast.error(t('toast.agentModelIdRequired'));
       return;
     }
     if (!modelChanged) return;
-    if (!nextModelRef.includes('/')) {
+    if (modelSelectionChanged && !nextModelRef.includes('/')) {
       toast.error(t('toast.agentModelInvalid'));
       return;
     }
 
     setSavingModel(true);
     try {
-      await updateAgentModel(agent.id, desiredOverrideModelRef);
-      toast.success(desiredOverrideModelRef ? t('toast.agentModelUpdated') : t('toast.agentModelReset'));
+      await updateAgentModel(
+        agent.id,
+        modelSelectionChanged ? desiredOverrideModelRef : (currentOverrideModelRef || null),
+        modelSelectionChanged ? selectedProvider?.accountId ?? null : undefined,
+        permissionMode,
+      );
+      toast.success(permissionModeChanged
+        ? t('toast.agentRuntimeUpdated')
+        : desiredOverrideModelRef ? t('toast.agentModelUpdated') : t('toast.agentModelReset'));
       onClose();
     } catch (error) {
       toast.error(t('toast.agentModelUpdateFailed', { error: String(error) }));
@@ -849,6 +870,36 @@ function AgentModelModal({
               {t('settingsDialog.modelProviderEmpty')}
             </p>
           )}
+          {runtimeKind === 'cc-connect' && (
+            <div className="space-y-2">
+              <Label className="text-xs text-foreground/70">{t('settingsDialog.permissionModeLabel')}</Label>
+              <div
+                className="grid grid-cols-2 gap-1 rounded-lg bg-black/5 p-1 dark:bg-white/5"
+                data-testid="agent-cc-connect-permission-mode"
+              >
+                {(['full-auto', 'suggest'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    data-testid={`agent-permission-mode-${mode}`}
+                    aria-pressed={permissionMode === mode}
+                    onClick={() => setPermissionMode(mode)}
+                    className={cn(
+                      'min-h-9 rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                      permissionMode === mode
+                        ? 'bg-surface-modal text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
+                    )}
+                  >
+                    {t(`settingsDialog.permissionModes.${mode}`)}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs leading-5 text-muted-foreground">
+                {t(`settingsDialog.permissionModeDescriptions.${permissionMode}`)}
+              </p>
+            </div>
+          )}
           <div className="flex items-center justify-end gap-2 pt-2">
             <Button
               variant="outline"
@@ -866,8 +917,9 @@ function AgentModelModal({
               {t('common:actions.cancel')}
             </Button>
             <Button
+              data-testid="agent-runtime-settings-save"
               onClick={() => void handleSaveModel()}
-              disabled={savingModel || !selectedRuntimeProviderKey || !trimmedModelId || !modelChanged}
+              disabled={savingModel || !modelChanged || (modelSelectionChanged && (!selectedRuntimeProviderKey || !trimmedModelId))}
               className="h-9 text-meta font-medium rounded-full px-4 shadow-none"
             >
               {savingModel ? (

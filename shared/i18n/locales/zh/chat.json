@@ -157,11 +157,19 @@
         "title": "执行关系图",
         "branchLabel": "分支",
         "thinkingLabel": "思考中",
+        "interactionLabel": "选择操作",
         "errorLabel": "模型调用失败",
         "imageGenerateLabel": "图片生成",
         "agentRun": "{{agent}} 执行",
         "collapsedSummary": "{{toolCount}} 个工具调用，{{processCount}} 条过程消息",
-        "collapseAction": "收起执行关系图"
+        "collapseAction": "收起执行关系图",
+        "approval": {
+            "allow": "允许一次",
+            "allowAll": "本次运行全部允许",
+            "deny": "拒绝",
+            "answer": "回答",
+            "failed": "无法发送审批响应"
+        }
     },
     "imageGeneration": {
         "generating": "图片生成中，请稍候…",

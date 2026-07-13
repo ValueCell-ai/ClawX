@@ -157,11 +157,19 @@
         "title": "実行グラフ",
         "branchLabel": "branch",
         "thinkingLabel": "考え中",
+        "interactionLabel": "操作を選択",
         "errorLabel": "エラー",
         "imageGenerateLabel": "画像生成",
         "agentRun": "{{agent}} の実行",
         "collapsedSummary": "ツール呼び出し {{toolCount}} 件 · プロセスメッセージ {{processCount}} 件",
-        "collapseAction": "実行グラフを折りたたむ"
+        "collapseAction": "実行グラフを折りたたむ",
+        "approval": {
+            "allow": "今回のみ許可",
+            "allowAll": "この実行中はすべて許可",
+            "deny": "拒否",
+            "answer": "回答",
+            "failed": "承認応答を送信できませんでした"
+        }
     },
     "imageGeneration": {
         "generating": "画像を生成しています。少々お待ちください…",

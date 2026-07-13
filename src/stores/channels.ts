@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import { hostApi } from '@/lib/host-api';
+import { assertRuntimeOperationSupported, isRuntimeOperationSupported } from '@/lib/runtime-operation-capabilities';
 import {
   isChannelRuntimeConnected,
   pickChannelRuntimeStatus,
@@ -141,6 +142,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   },
 
   addChannel: async (params) => {
+    assertRuntimeOperationSupported(useGatewayStore.getState().status, 'channels.add');
     try {
       const result = await useGatewayStore.getState().rpc<Channel>('channels.add', params);
 
@@ -190,7 +192,10 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     }
 
     try {
-      await useGatewayStore.getState().rpc('channels.delete', { channelId: gatewayChannelType });
+      const gatewayState = useGatewayStore.getState();
+      if (isRuntimeOperationSupported(gatewayState.status, 'channels.delete')) {
+        await gatewayState.rpc('channels.delete', { channelId: gatewayChannelType });
+      }
     } catch (error) {
       // Continue with local deletion even if gateway fails
       console.error('Failed to delete channel from gateway:', error);
@@ -207,6 +212,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     updateChannel(channelId, { status: 'connecting', error: undefined });
 
     try {
+      assertRuntimeOperationSupported(useGatewayStore.getState().status, 'channels.connect');
       const { channelType, accountId } = splitChannelId(channelId);
       await useGatewayStore.getState().rpc('channels.connect', {
         channelId: `${toOpenClawChannelType(channelType)}${accountId ? `-${accountId}` : ''}`,
@@ -222,6 +228,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
     clearAutoReconnect(channelId);
 
     try {
+      assertRuntimeOperationSupported(useGatewayStore.getState().status, 'channels.disconnect');
       const { channelType, accountId } = splitChannelId(channelId);
       await useGatewayStore.getState().rpc('channels.disconnect', {
         channelId: `${toOpenClawChannelType(channelType)}${accountId ? `-${accountId}` : ''}`,
@@ -234,6 +241,7 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
   },
 
   requestQrCode: async (channelType) => {
+    assertRuntimeOperationSupported(useGatewayStore.getState().status, 'channels.requestQr');
     return await useGatewayStore.getState().rpc<{ qrCode: string; sessionId: string }>(
       'channels.requestQr',
       { type: toOpenClawChannelType(channelType) },

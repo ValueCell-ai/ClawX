@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { parseUsageEntriesFromJsonl } from '@electron/utils/token-usage-core';
+import {
+  parseUsageEntriesFromJsonl,
+  parseUsageEntriesFromMessages,
+} from '@electron/utils/token-usage-core';
 
 describe('parseUsageEntriesFromJsonl', () => {
   it('extracts assistant usage entries in reverse chronological order', () => {
@@ -30,6 +33,7 @@ describe('parseUsageEntriesFromJsonl', () => {
             promptTokens: 200,
             completionTokens: 80,
             cacheRead: 25,
+            reasoningOutputTokens: 15,
           },
         },
       }),
@@ -54,7 +58,8 @@ describe('parseUsageEntriesFromJsonl', () => {
         outputTokens: 80,
         cacheReadTokens: 25,
         cacheWriteTokens: 0,
-        totalTokens: 305,
+        reasoningTokens: 15,
+        totalTokens: 280,
         costUsd: undefined,
       },
       {
@@ -202,6 +207,48 @@ describe('parseUsageEntriesFromJsonl', () => {
         cacheReadTokens: 0,
         cacheWriteTokens: 0,
         totalTokens: 30,
+        costUsd: undefined,
+      },
+    ]);
+  });
+
+  it('extracts assistant usage from cc-connect session history messages', () => {
+    expect(parseUsageEntriesFromMessages([
+      {
+        id: 'u1',
+        role: 'user',
+        content: 'hello',
+        timestamp: 1_780_000_000_000,
+      },
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: 'cc-connect reply',
+        timestamp: 1_780_000_001_000,
+        model: 'gpt-5.1-codex',
+        provider: 'openai',
+        usage: {
+          input_tokens: 44,
+          output_tokens: 12,
+          cache_read_tokens: 3,
+          total_tokens: 59,
+        },
+      },
+    ], { sessionId: 'agent:main:main', agentId: 'main' })).toEqual([
+      {
+        timestamp: '2026-05-28T20:26:41.000Z',
+        sessionId: 'agent:main:main',
+        agentId: 'main',
+        model: 'gpt-5.1-codex',
+        provider: 'openai',
+        content: 'cc-connect reply',
+        turnId: 'a1',
+        usageStatus: 'available',
+        inputTokens: 44,
+        outputTokens: 12,
+        cacheReadTokens: 3,
+        cacheWriteTokens: 0,
+        totalTokens: 59,
         costUsd: undefined,
       },
     ]);

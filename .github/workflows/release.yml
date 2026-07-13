@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., 1.0.0)'
+        description: 'Version label for an unsigned smoke build (e.g., 1.0.0-beta.smoke)'
         required: true
 
 permissions:
@@ -31,6 +31,7 @@ jobs:
   release:
     needs: validate-release
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
@@ -114,20 +115,42 @@ jobs:
         if: matrix.platform == 'mac'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.MAC_CERTS }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ github.event_name == 'workflow_dispatch' && 'false' || 'true' }}
+          CSC_LINK: ${{ github.event_name == 'push' && secrets.MAC_CERTS || '' }}
+          CSC_KEY_PASSWORD: ${{ github.event_name == 'push' && secrets.MAC_CERTS_PASSWORD || '' }}
+          APPLE_ID: ${{ github.event_name == 'push' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ github.event_name == 'push' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ github.event_name == 'push' && secrets.APPLE_TEAM_ID || '' }}
         run: |
           ulimit -n 65536
           echo "File descriptor limit: $(ulimit -n)"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+          fi
           pnpm run package:mac
+
+      - name: Verify macOS packaged runtime resources
+        if: matrix.platform == 'mac'
+        run: |
+          pnpm run verify:packaged-runtime-resources -- --resources=release/mac/ClawX.app/Contents/Resources --platform=darwin --arch=x64
+          pnpm run verify:packaged-runtime-resources -- --resources=release/mac-arm64/ClawX.app/Contents/Resources --platform=darwin --arch=arm64
+
+      - name: Smoke native macOS packaged cc-connect runtime
+        if: matrix.platform == 'mac'
+        run: pnpm run smoke:cc-connect:packaged -- --allow-unsigned=${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
 
       # Windows specific steps
       - name: Build Windows
         if: matrix.platform == 'win'
         run: pnpm run package:win
+
+      - name: Verify Windows packaged runtime resources
+        if: matrix.platform == 'win'
+        run: pnpm run verify:packaged-runtime-resources -- --resources=release/win-unpacked/resources --platform=win32 --arch=x64
+
+      - name: Smoke native Windows packaged cc-connect runtime
+        if: matrix.platform == 'win'
+        run: pnpm run smoke:cc-connect:packaged
 
       # Detect release channel from tag to skip code signing for alpha/beta builds
       - name: Detect Windows release channel
@@ -276,6 +299,23 @@ jobs:
         if: matrix.platform == 'linux'
         run: pnpm run package:linux
 
+      - name: Verify Linux packaged runtime resources
+        if: matrix.platform == 'linux'
+        run: |
+          pnpm run verify:packaged-runtime-resources -- --resources=release/linux-unpacked/resources --platform=linux --arch=x64
+          pnpm run verify:packaged-runtime-resources -- --resources=release/linux-arm64-unpacked/resources --platform=linux --arch=arm64
+
+      - name: Smoke native Linux x64 packaged cc-connect runtime
+        if: matrix.platform == 'linux'
+        run: xvfb-run -a pnpm run smoke:cc-connect:packaged
+
+      - name: Upload native runtime smoke evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-smoke-${{ matrix.platform }}-native
+          path: artifacts/cc-connect/packaged-smoke-*.json
+          retention-days: 7
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -292,12 +332,103 @@ jobs:
             !release/builder-debug.yml
           retention-days: 7
 
+  runtime-smoke-macos-x64:
+    needs: validate-release
+    runs-on: macos-15-intel
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Prefer HTTPS for public GitHub git dependencies
+        run: |
+          git config --global "url.https://github.com/.insteadOf" "git@github.com:"
+          git config --global --add "url.https://github.com/.insteadOf" "ssh://git@github.com/"
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build native macOS x64 unpacked app
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          SKIP_PREINSTALLED_SKILLS: '1'
+        run: |
+          pnpm run package
+          node scripts/run-electron-builder.mjs --mac dir --x64 --publish never
+
+      - name: Verify and smoke native macOS x64 runtime
+        run: |
+          pnpm run verify:packaged-runtime-resources -- --resources=release/mac/ClawX.app/Contents/Resources --platform=darwin --arch=x64
+          pnpm run smoke:cc-connect:packaged -- --allow-unsigned=${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
+
+      - name: Upload macOS x64 runtime smoke evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-smoke-macos-x64
+          path: artifacts/cc-connect/packaged-smoke-darwin-x64.json
+          retention-days: 7
+
+  runtime-smoke-linux-arm64:
+    needs: validate-release
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Prefer HTTPS for public GitHub git dependencies
+        run: |
+          git config --global "url.https://github.com/.insteadOf" "git@github.com:"
+          git config --global --add "url.https://github.com/.insteadOf" "ssh://git@github.com/"
+
+      - name: Install dependencies and X virtual framebuffer
+        run: |
+          pnpm install
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+
+      - name: Build native Linux arm64 unpacked app
+        env:
+          SKIP_PREINSTALLED_SKILLS: '1'
+        run: |
+          pnpm run package
+          node scripts/run-electron-builder.mjs --linux dir --arm64 --publish never
+
+      - name: Verify and smoke native Linux arm64 runtime
+        run: |
+          pnpm run verify:packaged-runtime-resources -- --resources=release/linux-arm64-unpacked/resources --platform=linux --arch=arm64
+          xvfb-run -a pnpm run smoke:cc-connect:packaged
+
+      - name: Upload Linux arm64 runtime smoke evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-smoke-linux-arm64
+          path: artifacts/cc-connect/packaged-smoke-linux-arm64.json
+          retention-days: 7
+
   # ──────────────────────────────────────────────────────────────
   # Job: Publish to GitHub Releases
   # ──────────────────────────────────────────────────────────────
   publish:
-    needs: release
+    needs: [release, runtime-smoke-macos-x64, runtime-smoke-linux-arm64]
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
     
     steps:
       - name: Download release artifacts only
@@ -389,8 +520,9 @@ jobs:
   #   releases/vX.Y.Z/ → permanent archive, never deleted
   # ──────────────────────────────────────────────────────────────
   upload-oss:
-    needs: release
+    needs: [release, runtime-smoke-macos-x64, runtime-smoke-linux-arm64]
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
 
     steps:
       - name: Download release artifacts only

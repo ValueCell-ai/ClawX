@@ -655,6 +655,13 @@ exports.default = async function afterPack(context) {
     resourcesDir = join(appOutDir, 'resources');
   }
 
+  const { verifyPackagedRuntimeResources } = await import('./verify-packaged-runtime-resources.mjs');
+  const runtimeResourceProblems = verifyPackagedRuntimeResources({ resources: resourcesDir, platform, arch });
+  if (runtimeResourceProblems.length > 0) {
+    throw new Error(`Packaged runtime resource verification failed:\n- ${runtimeResourceProblems.join('\n- ')}`);
+  }
+  console.log(`[after-pack] ✅ cc-connect and Codex resources verified for ${platform}/${arch}.`);
+
   const openclawRoot = join(resourcesDir, 'openclaw');
   const dest = join(openclawRoot, 'node_modules');
   const nodeModulesRoot = join(__dirname, '..', 'node_modules');

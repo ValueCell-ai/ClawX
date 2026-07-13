@@ -203,6 +203,7 @@ export type ProviderSecret =
     accountId: string;
     accessToken: string;
     refreshToken: string;
+    idToken?: string;
     expiresAt: number;
     scopes?: string[];
     email?: string;

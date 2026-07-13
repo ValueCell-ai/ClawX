@@ -7,6 +7,7 @@ import {
   parseUsageEntriesFromJsonl,
   type TokenUsageHistoryEntry,
 } from './token-usage-core';
+import type { RuntimeKind } from '@shared/types/gateway';
 import { listConfiguredAgentIds } from './agent-config';
 
 export {
@@ -14,6 +15,14 @@ export {
   parseUsageEntriesFromJsonl,
   type TokenUsageHistoryEntry,
 } from './token-usage-core';
+
+type RecentUsageSourceFile = {
+  filePath: string;
+  sessionId: string;
+  agentId: string;
+  mtimeMs: number;
+  source: 'openclaw-jsonl';
+};
 
 async function listAgentIdsWithSessionDirs(): Promise<string[]> {
   const openclawDir = getOpenClawConfigDir();
@@ -48,13 +57,13 @@ async function listAgentIdsWithSessionDirs(): Promise<string[]> {
   return [...agentIds];
 }
 
-async function listRecentSessionFiles(): Promise<Array<{ filePath: string; sessionId: string; agentId: string; mtimeMs: number }>> {
+async function listRecentSessionFiles(): Promise<RecentUsageSourceFile[]> {
   const openclawDir = getOpenClawConfigDir();
   const agentsDir = join(openclawDir, 'agents');
 
   try {
     const agentEntries = await listAgentIdsWithSessionDirs();
-    const files: Array<{ filePath: string; sessionId: string; agentId: string; mtimeMs: number }> = [];
+    const files: RecentUsageSourceFile[] = [];
 
     for (const agentId of agentEntries) {
       const sessionsDir = join(agentsDir, agentId, 'sessions');
@@ -72,6 +81,7 @@ async function listRecentSessionFiles(): Promise<Array<{ filePath: string; sessi
               sessionId,
               agentId,
               mtimeMs: fileStat.mtimeMs,
+              source: 'openclaw-jsonl',
             });
           } catch {
             continue;
@@ -89,21 +99,40 @@ async function listRecentSessionFiles(): Promise<Array<{ filePath: string; sessi
   }
 }
 
-export async function getRecentTokenUsageHistory(limit?: number): Promise<TokenUsageHistoryEntry[]> {
-  const files = await listRecentSessionFiles();
+export type TokenUsageHistoryOptions = {
+  limit?: number;
+  runtimeKind?: RuntimeKind;
+};
+
+function normalizeTokenUsageOptions(input?: number | TokenUsageHistoryOptions): TokenUsageHistoryOptions {
+  if (typeof input === 'number') return { limit: input };
+  return input ?? {};
+}
+
+function matchesRuntimeKind(file: RecentUsageSourceFile, runtimeKind?: RuntimeKind): boolean {
+  if (!runtimeKind) return true;
+  return runtimeKind === 'openclaw' && file.source === 'openclaw-jsonl';
+}
+
+export async function getRecentTokenUsageHistory(input?: number | TokenUsageHistoryOptions): Promise<TokenUsageHistoryEntry[]> {
+  const options = normalizeTokenUsageOptions(input);
+  if (options.runtimeKind === 'cc-connect') return [];
+  const files = (await listRecentSessionFiles())
+    .filter((file) => matchesRuntimeKind(file, options.runtimeKind))
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
   const results: TokenUsageHistoryEntry[] = [];
-  const maxEntries = typeof limit === 'number' && Number.isFinite(limit)
-    ? Math.max(Math.floor(limit), 0)
+  const maxEntries = typeof options.limit === 'number' && Number.isFinite(options.limit)
+    ? Math.max(Math.floor(options.limit), 0)
     : Number.POSITIVE_INFINITY;
 
   for (const file of files) {
-    if (results.length >= maxEntries) break;
     try {
       const content = await readFile(file.filePath, 'utf8');
       const entries = parseUsageEntriesFromJsonl(content, {
         sessionId: file.sessionId,
         agentId: file.agentId,
-      }, Number.isFinite(maxEntries) ? maxEntries - results.length : undefined);
+        runtimeKind: 'openclaw',
+      });
       results.push(...entries);
     } catch (error) {
       logger.debug(`Failed to read token usage transcript ${file.filePath}:`, error);

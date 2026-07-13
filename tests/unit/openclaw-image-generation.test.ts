@@ -28,6 +28,11 @@ vi.mock('electron', () => ({
     getPath: () => testUserData,
     getVersion: () => '0.0.0-test',
   },
+  safeStorage: {
+    isEncryptionAvailable: () => true,
+    encryptString: (value: string) => Buffer.from(value, 'utf8'),
+    decryptString: (value: Buffer) => value.toString('utf8'),
+  },
 }));
 
 vi.mock('@electron/utils/paths', async () => {

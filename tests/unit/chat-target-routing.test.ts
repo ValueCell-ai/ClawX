@@ -164,6 +164,45 @@ describe('chat target routing', () => {
     expect(typeof (sendPayload as { idempotencyKey?: unknown }).idempotencyKey).toBe('string');
   });
 
+  it('keeps the selected channel session when sending from a cc-connect channel conversation', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    const channelSessionKey = 'feishu:chat-1:user-1';
+
+    useChatStore.setState({
+      currentSessionKey: channelSessionKey,
+      currentAgentId: 'main',
+      sessions: [{ key: channelSessionKey }],
+      messages: [{ role: 'assistant', content: 'Existing channel history' }],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    await useChatStore.getState().sendMessage('Reply from app', undefined, 'main');
+
+    const state = useChatStore.getState();
+    expect(state.currentSessionKey).toBe(channelSessionKey);
+    expect(state.messages.at(-1)?.content).toBe('Reply from app');
+
+    const sendCall = gatewayRpcMock.mock.calls.find(([method]) => method === 'chat.send');
+    const sendPayload = (sendCall?.[1] ?? {}) as Record<string, unknown>;
+    expect(sendPayload).toMatchObject({
+      sessionKey: channelSessionKey,
+      message: 'Reply from app',
+      deliver: false,
+    });
+  });
+
   it('uses the selected agent main session for attachment sends', async () => {
     const { useChatStore } = await import('@/stores/chat');
 

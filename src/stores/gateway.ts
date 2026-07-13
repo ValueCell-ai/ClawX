@@ -88,16 +88,21 @@ function buildGatewayEventDedupeKey(event: Record<string, unknown>): string | nu
   const sessionKey = event.sessionKey != null ? String(event.sessionKey) : '';
   const seq = event.seq != null ? String(event.seq) : '';
   const state = event.state != null ? String(event.state) : '';
+  const message = event.message;
+  const messageId = message && typeof message === 'object' && (message as Record<string, unknown>).id != null
+    ? String((message as Record<string, unknown>).id)
+    : '';
   if (state === 'delta' && !seq) {
     return ['delta-nosq', runId, sessionKey, stableGatewayEventFingerprint(event.message ?? event)].join('|');
+  }
+  if (state === 'final' && messageId) {
+    return [runId, sessionKey, seq, state, messageId].join('|');
   }
   if (runId || sessionKey || seq || state) {
     return [runId, sessionKey, seq, state].join('|');
   }
-  const message = event.message;
   if (message && typeof message === 'object') {
     const msg = message as Record<string, unknown>;
-    const messageId = msg.id != null ? String(msg.id) : '';
     const stopReason = msg.stopReason ?? msg.stop_reason;
     if (messageId || stopReason) {
       return `msg|${messageId}|${String(stopReason ?? '')}`;
@@ -132,7 +137,7 @@ function shouldProcessGatewayEvent(event: Record<string, unknown>): boolean {
 }
 
 function maybeLoadSessions(
-  state: { loadSessions: () => Promise<void> },
+  state: { loadSessions: (force?: boolean) => Promise<void> },
   force = false,
 ): void {
   const { status } = useGatewayStore.getState();
@@ -141,7 +146,7 @@ function maybeLoadSessions(
   const now = Date.now();
   if (!force && now - lastLoadSessionsAt < LOAD_SESSIONS_MIN_INTERVAL_MS) return;
   lastLoadSessionsAt = now;
-  void state.loadSessions();
+  void state.loadSessions(force);
 }
 
 function maybeLoadHistory(
@@ -152,6 +157,34 @@ function maybeLoadHistory(
   if (!force && now - lastLoadHistoryAt < LOAD_HISTORY_MIN_INTERVAL_MS) return;
   lastLoadHistoryAt = now;
   void state.loadHistory(true);
+}
+
+function runtimeStatusFingerprint(status: GatewayStatus): string {
+  return stableGatewayEventFingerprint({
+    state: status.state,
+    gatewayReady: status.gatewayReady,
+    runtimeKind: status.runtimeKind,
+    capabilities: status.capabilities,
+    operationCapabilities: status.operationCapabilities,
+    configDir: status.configDir,
+    error: status.error,
+    pid: status.pid,
+  });
+}
+
+function shouldReconcileGatewayStatus(latest: GatewayStatus, current: GatewayStatus): boolean {
+  return runtimeStatusFingerprint(latest) !== runtimeStatusFingerprint(current);
+}
+
+function mergeGatewayStatusUpdate(latest: GatewayStatus, current: GatewayStatus): GatewayStatus {
+  return {
+    ...latest,
+    gatewayReady: latest.gatewayReady ?? current.gatewayReady,
+    runtimeKind: latest.runtimeKind ?? current.runtimeKind,
+    capabilities: latest.capabilities ?? current.capabilities,
+    operationCapabilities: latest.operationCapabilities ?? current.operationCapabilities,
+    configDir: latest.configDir ?? current.configDir,
+  };
 }
 
 /** Bump sidebar ordering when any session receives gateway traffic (e.g. Feishu DM). */
@@ -230,7 +263,6 @@ function handleChatRuntimeEvent(event: ChatRuntimeEvent): void {
   import('./chat')
     .then(({ useChatStore, syncCachedSessionRunIdle }) => {
       const state = useChatStore.getState();
-      state.handleRuntimeEvent(event);
 
       // Cron runs stream under the run-scoped key; treat it as the equivalent
       // base cron session the user is viewing instead of an unknown session.
@@ -243,6 +275,16 @@ function handleChatRuntimeEvent(event: ChatRuntimeEvent): void {
       const shouldRefreshSessions = resolvedSessionKey != null
         && !matchesCurrentSession
         && !isKnownSession;
+
+      if (event.type === 'session.updated') {
+        maybeLoadSessions(state, true);
+        if (resolvedSessionKey != null && resolvedSessionKey === state.currentSessionKey) {
+          maybeLoadHistory(state, true);
+        }
+        return;
+      }
+
+      state.handleRuntimeEvent(event);
 
       if (event.type === 'run.started') {
         if (shouldRefreshSessions) {
@@ -291,6 +333,8 @@ function handleGatewayChatMessage(data: unknown): void {
       state: 'final',
       message: payload,
       runId: chatData.runId ?? payload.runId,
+      sessionKey: chatData.sessionKey ?? payload.sessionKey,
+      seq: chatData.seq ?? payload.seq,
     };
     if (!shouldProcessGatewayEvent(normalized)) return;
     useChatStore.getState().handleChatEvent(normalized);
@@ -406,11 +450,12 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
             hostApi.gateway.status()
               .then((latest) => {
                 const current = get().status;
-                if (latest.state !== current.state) {
+                const merged = mergeGatewayStatusUpdate(latest, current);
+                if (shouldReconcileGatewayStatus(merged, current)) {
                   console.info(
-                    `[gateway-store] reconciled stale state: ${current.state} → ${latest.state}`,
+                    `[gateway-store] reconciled stale state: ${current.state} → ${merged.state}`,
                   );
-                  set({ status: latest });
+                  set({ status: merged });
                 }
               })
               .catch(() => { /* ignore */ });
@@ -424,8 +469,9 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
         try {
           const refreshed = await hostApi.gateway.status();
           const current = get().status;
-          if (refreshed.state !== current.state) {
-            set({ status: refreshed });
+          const merged = mergeGatewayStatusUpdate(refreshed, current);
+          if (shouldReconcileGatewayStatus(merged, current)) {
+            set({ status: merged });
           }
         } catch {
           // Best-effort; the IPC listener will eventually reconcile.

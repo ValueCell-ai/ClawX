@@ -34,7 +34,6 @@ import { useChatStore } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { getSessionActivityMs, getSessionBucket, type SessionBucketKey } from './session-buckets';
-import { CHANNEL_NAMES } from '@shared/types/channel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -44,6 +43,7 @@ import { SIDEBAR_COLLAPSED_WIDTH, MAC_SIDEBAR_CHROME_HEIGHT } from '@shared/side
 import { useTranslation } from 'react-i18next';
 import logoSvg from '@/assets/logo.svg';
 import { useNewChatAction } from './use-new-chat-action';
+import { CHANNEL_NAMES, type ChannelType } from '@/types/channel';
 
 interface NavItemProps {
   to: string;
@@ -105,6 +105,12 @@ function getAgentIdFromSessionKey(sessionKey: string): string {
   return agentId || 'main';
 }
 
+function getChannelNameFromSessionKey(sessionKey: string): string | null {
+  const [channelType] = sessionKey.split(':');
+  if (!channelType || channelType === 'agent' || channelType === 'clawx') return null;
+  return CHANNEL_NAMES[channelType as ChannelType] || channelType;
+}
+
 export function Sidebar() {
   const isMac = window.electron?.platform === 'darwin';
   const sidebarCollapsed = useSettingsStore((state) => state.sidebarCollapsed);
@@ -112,6 +118,7 @@ export function Sidebar() {
   const sidebarWidth = useSettingsStore((state) => state.sidebarWidth);
   const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth);
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
+  const runtimeKind = useSettingsStore((state) => state.runtimeKind);
   const [isResizing, setIsResizing] = useState(false);
   const stopResizeRef = useRef<(() => void) | null>(null);
 
@@ -162,11 +169,26 @@ export function Sidebar() {
 
   const navigate = useNavigate();
   const isOnChat = useLocation().pathname === '/';
+  const { t } = useTranslation(['common', 'chat']);
 
-  const getSessionLabel = (key: string, displayName?: string, label?: string) =>
-    sessionLabels[key] ?? label ?? displayName ?? key;
+  const getSessionLabel = (
+    key: string,
+    displayName?: string,
+    label?: string,
+    derivedTitle?: string,
+    lastMessagePreview?: string,
+  ) => {
+    const baseLabel = sessionLabels[key] ?? label ?? derivedTitle ?? lastMessagePreview ?? displayName ?? key;
+    const channelName = getChannelNameFromSessionKey(key);
+    return channelName ? `${channelName}: ${baseLabel}` : baseLabel;
+  };
 
-  const openControlUi = async (view?: 'dreams', label = 'OpenClaw Page') => {
+  const controlUiLabel = gatewayStatus.runtimeKind === 'cc-connect'
+    ? t('common:sidebar.ccConnectPage')
+    : t('common:sidebar.openClawPage');
+  const dreamsNavEnabled = devModeUnlocked && (gatewayStatus.runtimeKind ?? runtimeKind ?? 'openclaw') === 'openclaw';
+
+  const openControlUi = async (view?: 'dreams', label = controlUiLabel) => {
     try {
       const result = await hostApi.gateway.controlUi(view);
       if (result.success && result.url) {
@@ -180,10 +202,9 @@ export function Sidebar() {
   };
 
   const openDevConsole = async () => {
-    await openControlUi(undefined, 'OpenClaw Page');
+    await openControlUi(undefined, controlUiLabel);
   };
 
-  const { t } = useTranslation(['common', 'chat']);
   const [sessionToDelete, setSessionToDelete] = useState<{ key: string; label: string } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingSessionKey, setEditingSessionKey] = useState<string | null>(null);
@@ -324,7 +345,9 @@ export function Sidebar() {
     ...(devModeUnlocked
       ? [
         { to: '/image-generation', icon: <ImagePlus className="h-4 w-4" strokeWidth={2} />, label: t('common:sidebar.imageGeneration'), testId: 'sidebar-nav-image-generation' },
-        { to: '/dreams', icon: <Moon className="h-4 w-4" strokeWidth={2} />, label: t('common:sidebar.openClawDreams'), testId: 'sidebar-nav-dreams' },
+        ...(dreamsNavEnabled
+          ? [{ to: '/dreams', icon: <Moon className="h-4 w-4" strokeWidth={2} />, label: t('common:sidebar.openClawDreams'), testId: 'sidebar-nav-dreams' }]
+          : []),
       ]
       : []),
   ];
@@ -444,10 +467,16 @@ export function Sidebar() {
                   <span>{bucket.label}</span>
                 </button>
                 {isBucketExpanded && bucket.sessions.map((s) => {
-                  const agentId = getAgentIdFromSessionKey(s.key);
+                  const agentId = s.agentId || getAgentIdFromSessionKey(s.key);
                   const agentName = agentNameById[agentId] || agentId;
                   const isEditing = editingSessionKey === s.key;
-                  const sessionLabel = getSessionLabel(s.key, s.displayName, s.label);
+                  const sessionLabel = getSessionLabel(
+                    s.key,
+                    s.displayName,
+                    s.label,
+                    s.derivedTitle,
+                    s.lastMessagePreview,
+                  );
                   const channelType = s.channel && s.channel !== 'webchat' ? s.channel : null;
                   const channelName = channelType ? CHANNEL_NAMES[channelType as keyof typeof CHANNEL_NAMES] ?? channelType : null;
                   return (
@@ -622,7 +651,7 @@ export function Sidebar() {
             </div>
             {!sidebarCollapsed && (
               <>
-                <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">{t('common:sidebar.openClawPage')}</span>
+                <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">{controlUiLabel}</span>
                 <ExternalLink className="ml-auto h-3 w-3 shrink-0 opacity-50 text-current" />
               </>
             )}

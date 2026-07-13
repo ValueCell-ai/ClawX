@@ -12,6 +12,7 @@
         "models": "Модели",
         "deleteSessionConfirm": "Удалить \"{{label}}\"?",
         "openClawPage": "Страница OpenClaw",
+        "ccConnectPage": "Страница CC Connect",
         "openClawDreams": "Dreams",
         "renameSession": "Переименовать",
         "deleteSession": "Удалить",

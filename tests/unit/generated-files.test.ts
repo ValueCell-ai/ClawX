@@ -147,6 +147,143 @@ describe('generated-files utilities', () => {
     });
   });
 
+  it('extracts files created by Codex apply_patch tool calls', () => {
+    const messages: RawMessage[] = [
+      { role: 'user', content: 'create file with apply_patch', timestamp: 1 },
+      {
+        role: 'assistant',
+        content: [{
+          type: 'toolCall',
+          id: 'call-apply-patch',
+          name: 'apply_patch',
+          arguments: [
+            '*** Begin Patch',
+            '*** Add File: reports/summary.md',
+            '+# Summary',
+            '+',
+            '+CLAWX_REAL_TOOL_FILE_OK',
+            '*** End Patch',
+            '',
+          ].join('\n'),
+        }],
+      },
+    ];
+
+    const files = extractGeneratedFiles(messages, 0, 1);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatchObject({
+      filePath: 'reports/summary.md',
+      fileName: 'summary.md',
+      action: 'created',
+      fullContent: '# Summary\n\nCLAWX_REAL_TOOL_FILE_OK\n',
+      baseline: { status: 'missing' },
+    });
+    expect(computeLineStats(files[0])).toEqual({ added: 3, removed: 0 });
+  });
+
+  it('extracts files from Codex apply_patch line-array inputs', () => {
+    const messages = [
+      { role: 'user', content: 'create file with apply_patch', timestamp: 1 },
+      {
+        role: 'assistant',
+        content: [{
+          type: 'toolCall',
+          id: 'call-apply-patch',
+          name: 'apply_patch',
+          arguments: [
+            '*** Begin Patch',
+            '*** Add File: clawx-real-tool-smoke.txt',
+            '+CLAWX_REAL_TOOL_FILE_OK',
+            '*** End Patch',
+            '',
+          ],
+        }],
+        timestamp: 2,
+      },
+      { role: 'assistant', content: 'done', timestamp: 3 },
+    ] as RawMessage[];
+
+    const files = extractGeneratedFiles(messages, 0, messages.length - 1);
+
+    expect(files).toEqual([
+      expect.objectContaining({
+        filePath: 'clawx-real-tool-smoke.txt',
+        fileName: 'clawx-real-tool-smoke.txt',
+        action: 'created',
+        fullContent: 'CLAWX_REAL_TOOL_FILE_OK\n',
+      }),
+    ]);
+    expect(computeLineStats(files[0])).toEqual({ added: 1, removed: 0 });
+  });
+
+  it('extracts edited files from Codex apply_patch update hunks', () => {
+    const messages: RawMessage[] = [
+      { role: 'user', content: 'update file with apply_patch', timestamp: 1 },
+      {
+        role: 'assistant',
+        content: [{
+          type: 'toolCall',
+          id: 'call-apply-patch',
+          name: 'apply_patch',
+          arguments: [
+            '*** Begin Patch',
+            '*** Update File: src/example.ts',
+            '@@',
+            '-const value = 1',
+            '+const value = 2',
+            ' console.log(value)',
+            '*** End Patch',
+            '',
+          ].join('\n'),
+        }],
+      },
+    ];
+
+    const files = extractGeneratedFiles(messages, 0, 1);
+
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatchObject({
+      filePath: 'src/example.ts',
+      fileName: 'example.ts',
+      action: 'modified',
+      edits: [{ old: 'const value = 1\n', new: 'const value = 2\n' }],
+    });
+    expect(computeLineStats(files[0])).toEqual({ added: 1, removed: 1 });
+  });
+
+  it('extracts files from cc-connect structured Patch tool calls', () => {
+    const messages: RawMessage[] = [
+      { role: 'user', content: 'create file through cc-connect', timestamp: 1 },
+      {
+        role: 'assistant',
+        content: [{
+          type: 'toolCall',
+          id: 'call-bridge-patch',
+          name: 'Patch',
+          arguments: [{
+            diff: '# ClawX UI Artifact\nCLAWX_REAL_UI_ARTIFACT_OK\n',
+            kind: { type: 'add' },
+            path: '/tmp/clawx-real-ui-artifact.md',
+          }],
+        }],
+      },
+    ];
+
+    const files = extractGeneratedFiles(messages, 0, 1);
+
+    expect(files).toEqual([
+      expect.objectContaining({
+        filePath: '/tmp/clawx-real-ui-artifact.md',
+        fileName: 'clawx-real-ui-artifact.md',
+        action: 'created',
+        fullContent: '# ClawX UI Artifact\nCLAWX_REAL_UI_ARTIFACT_OK\n',
+        baseline: { status: 'missing' },
+      }),
+    ]);
+    expect(computeLineStats(files[0])).toEqual({ added: 2, removed: 0 });
+  });
+
   it('computes edit snippet stats from joined edit hunks', () => {
     const stats = computeLineStats({
       filePath: '/tmp/example.ts',

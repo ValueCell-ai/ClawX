@@ -5,6 +5,8 @@ export interface AgentSummary {
   modelDisplay: string;
   modelRef?: string | null;
   overrideModelRef?: string | null;
+  providerAccountId?: string | null;
+  permissionMode?: 'suggest' | 'full-auto';
   inheritedModel: boolean;
   workspace: string;
   agentDir: string;

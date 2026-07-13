@@ -1,6 +1,7 @@
 import { access, copyFile, mkdir, readdir, rm } from 'fs/promises';
 import { constants } from 'fs';
 import { join, normalize } from 'path';
+import { app } from 'electron';
 import { deleteAgentChannelAccounts, listConfiguredChannels, readOpenClawConfig, writeOpenClawConfig } from './channel-config';
 import type { OpenClawConfig } from './channel-config';
 import { withConfigLock } from './config-mutex';
@@ -8,11 +9,15 @@ import { expandPath, getOpenClawConfigDir } from './paths';
 import * as logger from './logger';
 import { toUiChannelType } from './channel-alias';
 import { ensureClawXIdentityFile } from './openclaw-workspace';
+import {
+  listCcConnectAgentPermissionModes,
+  listCcConnectAgentProviderBindings,
+} from '../runtime/cc-connect-agent-bindings';
+import { getClawXDataLayout, resolveClawXDataRoot } from './clawx-data-layout';
 
 const MAIN_AGENT_ID = 'main';
 const MAIN_AGENT_NAME = 'Main Agent';
 const DEFAULT_ACCOUNT_ID = 'default';
-const DEFAULT_WORKSPACE_PATH = '~/.openclaw/workspace';
 const AGENT_BOOTSTRAP_FILES = [
   'AGENTS.md',
   'SOUL.md',
@@ -166,7 +171,13 @@ function getDefaultWorkspacePath(config: AgentConfigDocument): string {
     : undefined);
   return typeof defaults?.workspace === 'string' && defaults.workspace.trim()
     ? defaults.workspace
-    : DEFAULT_WORKSPACE_PATH;
+    : getClawXManagedWorkspacePath(MAIN_AGENT_ID);
+}
+
+function getClawXManagedWorkspacePath(agentId: string): string {
+  const safeAgentId = agentId.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-') || MAIN_AGENT_ID;
+  const layout = getClawXDataLayout(resolveClawXDataRoot(process.env, app.getPath('userData')));
+  return join(layout.agentWorkspacesDir, safeAgentId);
 }
 
 function getDefaultAgentDirPath(agentId: string): string {
@@ -350,10 +361,8 @@ function trimTrailingSeparators(path: string): string {
 }
 
 function getManagedWorkspaceDirectory(agent: AgentListEntry): string | null {
-  if (agent.id === MAIN_AGENT_ID) return null;
-
-  const configuredWorkspace = expandPath(agent.workspace || `~/.openclaw/workspace-${agent.id}`);
-  const managedWorkspace = join(getOpenClawConfigDir(), `workspace-${agent.id}`);
+  const configuredWorkspace = expandPath(agent.workspace || getClawXManagedWorkspacePath(agent.id));
+  const managedWorkspace = getClawXManagedWorkspacePath(agent.id);
   const normalizedConfigured = trimTrailingSeparators(normalize(configuredWorkspace));
   const normalizedManaged = trimTrailingSeparators(normalize(managedWorkspace));
 
@@ -411,7 +420,7 @@ async function provisionAgentFilesystem(
   const { entries } = normalizeAgentsConfig(config);
   const mainEntry = entries.find((entry) => entry.id === MAIN_AGENT_ID) ?? createImplicitMainEntry(config);
   const sourceWorkspace = expandPath(mainEntry.workspace || getDefaultWorkspacePath(config));
-  const targetWorkspace = expandPath(agent.workspace || `~/.openclaw/workspace-${agent.id}`);
+  const targetWorkspace = expandPath(agent.workspace || getClawXManagedWorkspacePath(agent.id));
   const sourceAgentDir = expandPath(mainEntry.agentDir || getDefaultAgentDirPath(MAIN_AGENT_ID));
   const targetAgentDir = expandPath(agent.agentDir || getDefaultAgentDirPath(agent.id));
   const targetSessionsDir = join(getOpenClawConfigDir(), 'agents', agent.id, 'sessions');
@@ -465,6 +474,10 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument, preloadedCha
   const defaultAgentIdNorm = normalizeAgentIdForBinding(defaultAgentId);
   const channelOwners: Record<string, string> = {};
   const channelAccountOwners: Record<string, string> = {};
+  const [providerBindings, permissionModes] = await Promise.all([
+    listCcConnectAgentProviderBindings(),
+    listCcConnectAgentPermissionModes(),
+  ]);
 
   // Build per-agent channel lists from account-scoped bindings
   const agentChannelSets = new Map<string, Set<string>>();
@@ -522,8 +535,10 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument, preloadedCha
       modelDisplay: modelLabel,
       modelRef: explicitModelRef || defaultModelRef || null,
       overrideModelRef: explicitModelRef,
+      providerAccountId: providerBindings[entry.id] ?? null,
+      permissionMode: permissionModes[entry.id] ?? 'full-auto',
       inheritedModel,
-      workspace: entry.workspace || (entry.id === MAIN_AGENT_ID ? getDefaultWorkspacePath(config) : `~/.openclaw/workspace-${entry.id}`),
+      workspace: entry.workspace || getClawXManagedWorkspacePath(entry.id),
       agentDir: entry.agentDir || getDefaultAgentDirPath(entry.id),
       mainSessionKey: buildAgentMainSessionKey(config, entry.id),
       channelTypes: configuredChannels
@@ -607,7 +622,7 @@ export async function createAgent(
     const newAgent: AgentListEntry = {
       id: nextId,
       name: normalizedName,
-      workspace: `~/.openclaw/workspace-${nextId}`,
+      workspace: getClawXManagedWorkspacePath(nextId),
       agentDir: getDefaultAgentDirPath(nextId),
     };
 

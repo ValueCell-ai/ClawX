@@ -47,6 +47,11 @@ vi.mock('electron', () => ({
     getVersion: () => '0.0.0-test',
     getAppPath: () => '/tmp',
   },
+  safeStorage: {
+    isEncryptionAvailable: () => true,
+    encryptString: (value: string) => Buffer.from(value, 'utf8'),
+    decryptString: (value: Buffer) => value.toString('utf8'),
+  },
 }));
 
 vi.mock('@electron/utils/logger', () => ({
@@ -185,4 +190,3 @@ describe('listConfiguredChannels WhatsApp detection', () => {
     expect(channelsAfter).not.toContain('whatsapp');
   });
 });
-

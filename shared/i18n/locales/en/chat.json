@@ -157,11 +157,19 @@
         "title": "Execution Graph",
         "branchLabel": "branch",
         "thinkingLabel": "Thinking",
+        "interactionLabel": "Choose an action",
         "errorLabel": "Error",
         "imageGenerateLabel": "Image generation",
         "agentRun": "{{agent}} execution",
         "collapsedSummary": "{{toolCount}} tool calls · {{processCount}} process messages",
-        "collapseAction": "Collapse execution graph"
+        "collapseAction": "Collapse execution graph",
+        "approval": {
+            "allow": "Allow once",
+            "allowAll": "Allow for this run",
+            "deny": "Deny",
+            "answer": "Answer",
+            "failed": "Could not send the approval response"
+        }
     },
     "imageGeneration": {
         "generating": "Generating image, please wait…",

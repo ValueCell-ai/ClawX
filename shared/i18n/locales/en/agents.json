@@ -44,6 +44,15 @@
         "closeWithoutSaving": "Close without saving",
         "saveModelOverride": "Save model",
         "useDefaultModel": "Use default model",
+        "permissionModeLabel": "Tool permissions",
+        "permissionModes": {
+            "full-auto": "Full auto",
+            "suggest": "Ask for approval"
+        },
+        "permissionModeDescriptions": {
+            "full-auto": "Codex can use tools inside the managed workspace without prompting.",
+            "suggest": "Codex asks before tool use and runs in a read-only sandbox until approved."
+        },
         "channelsTitle": "Channels",
         "channelsDescription": "This list is read-only. Manage channel accounts and bindings in the Channels page.",
         "mainAccount": "Main account",
@@ -69,6 +78,7 @@
         "agentModelUpdateFailed": "Failed to update agent model: {{error}}",
         "agentModelReset": "Agent model reset to default",
         "agentModelResetFailed": "Failed to reset agent model: {{error}}",
+        "agentRuntimeUpdated": "Agent runtime settings updated",
         "channelAssigned": "{{channel}} assigned to agent",
         "channelAssignFailed": "Failed to assign channel: {{error}}",
         "channelRemoved": "{{channel}} removed",

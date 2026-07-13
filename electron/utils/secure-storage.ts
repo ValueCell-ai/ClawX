@@ -35,10 +35,6 @@ import { getOpenClawProviderKeyForType } from './provider-keys';
 export async function storeApiKey(providerId: string, apiKey: string): Promise<boolean> {
   try {
     await ensureProviderStoreMigrated();
-    const s = await getClawXProviderStore();
-    const keys = (s.get('apiKeys') || {}) as Record<string, string>;
-    keys[providerId] = apiKey;
-    s.set('apiKeys', keys);
     await setProviderSecret({
       type: 'api_key',
       accountId: providerId,
@@ -65,9 +61,7 @@ export async function getApiKey(providerId: string): Promise<string | null> {
       return secret.apiKey ?? null;
     }
 
-    const s = await getClawXProviderStore();
-    const keys = (s.get('apiKeys') || {}) as Record<string, string>;
-    return keys[providerId] || null;
+    return null;
   } catch (error) {
     console.error('Failed to retrieve API key:', error);
     return null;
@@ -80,10 +74,6 @@ export async function getApiKey(providerId: string): Promise<string | null> {
 export async function deleteApiKey(providerId: string): Promise<boolean> {
   try {
     await ensureProviderStoreMigrated();
-    const s = await getClawXProviderStore();
-    const keys = (s.get('apiKeys') || {}) as Record<string, string>;
-    delete keys[providerId];
-    s.set('apiKeys', keys);
     await deleteProviderSecret(providerId);
     return true;
   } catch (error) {
@@ -102,9 +92,7 @@ export async function hasApiKey(providerId: string): Promise<boolean> {
     return true;
   }
 
-  const s = await getClawXProviderStore();
-  const keys = (s.get('apiKeys') || {}) as Record<string, string>;
-  return providerId in keys;
+  return secret?.type === 'local' && Boolean(secret.apiKey);
 }
 
 /**
@@ -113,8 +101,19 @@ export async function hasApiKey(providerId: string): Promise<boolean> {
 export async function listStoredKeyIds(): Promise<string[]> {
   await ensureProviderStoreMigrated();
   const s = await getClawXProviderStore();
-  const keys = (s.get('apiKeys') || {}) as Record<string, string>;
-  return Object.keys(keys);
+  const legacyKeys = (s.get('apiKeys') || {}) as Record<string, string>;
+  const accountIds = new Set([
+    ...Object.keys(legacyKeys),
+    ...(await listProviderAccounts()).map((account) => account.id),
+  ]);
+  const stored: string[] = [];
+  for (const accountId of accountIds) {
+    const secret = await getProviderSecret(accountId);
+    if (secret?.type === 'api_key' || (secret?.type === 'local' && secret.apiKey)) {
+      stored.push(accountId);
+    }
+  }
+  return stored.sort();
 }
 
 // ==================== Provider Configuration ====================

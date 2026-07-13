@@ -11,6 +11,7 @@ import {
   ExternalLink,
   Copy,
   FileText,
+  ServerCog,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -24,6 +25,7 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useUpdateStore } from '@/stores/update';
 import { UpdateSettings } from '@/components/settings/UpdateSettings';
 import { toUserMessage } from '@/lib/error-message';
+import { isRuntimeOperationSupported } from '@/lib/runtime-operation-capabilities';
 import {
   clearUiTelemetry,
   getUiTelemetrySnapshot,
@@ -53,6 +55,8 @@ export function Settings() {
     setLaunchAtStartup,
     gatewayAutoStart,
     setGatewayAutoStart,
+    runtimeKind,
+    setRuntimeKind,
     proxyEnabled,
     proxyServer,
     proxyHttpServer,
@@ -73,7 +77,11 @@ export function Settings() {
     setTelemetryEnabled,
   } = useSettingsStore();
 
-  const { status: gatewayStatus, restart: restartGateway } = useGatewayStore();
+  const {
+    status: gatewayStatus,
+    restart: restartGateway,
+    setStatus: setGatewayStatus,
+  } = useGatewayStore();
   const currentVersion = useUpdateStore((state) => state.currentVersion);
   const [controlUiInfo, setControlUiInfo] = useState<ControlUiInfo | null>(null);
   const [openclawCliCommand, setOpenclawCliCommand] = useState('');
@@ -94,6 +102,30 @@ export function Settings() {
   const [logContent, setLogContent] = useState('');
   const [doctorRunningMode, setDoctorRunningMode] = useState<'diagnose' | 'fix' | null>(null);
   const [doctorResult, setDoctorResult] = useState<OpenClawDoctorResult | null>(null);
+  const [runtimeDiagnosticsLoading, setRuntimeDiagnosticsLoading] = useState(false);
+  const activeRuntimeKind = gatewayStatus.runtimeKind ?? runtimeKind ?? 'openclaw';
+  const runtimeCapabilities = gatewayStatus.capabilities;
+  const runtimeOperationCapabilities = gatewayStatus.operationCapabilities;
+  const supportsDoctor = runtimeCapabilities?.doctor ?? true;
+  const supportsDoctorFix = isRuntimeOperationSupported(gatewayStatus, 'doctor.fix');
+  const runtimeCapabilityEntries = [
+    ['chat', t('runtime.capabilities.chat')],
+    ['sessions', t('runtime.capabilities.sessions')],
+    ['history', t('runtime.capabilities.history')],
+    ['providers', t('runtime.capabilities.providers')],
+    ['channels', t('runtime.capabilities.channels')],
+    ['cron', t('runtime.capabilities.cron')],
+    ['logs', t('runtime.capabilities.logs')],
+    ['skills', t('runtime.capabilities.skills')],
+    ['doctor', t('runtime.capabilities.doctor')],
+  ] as const;
+  const unsupportedRuntimeOperations = useMemo(() => {
+    if (!runtimeOperationCapabilities) return [];
+    return Object.entries(runtimeOperationCapabilities)
+      .filter(([, operation]) => operation.support === 'unsupported' || operation.support === 'degraded')
+      .sort(([left], [right]) => left.localeCompare(right))
+      .slice(0, 8);
+  }, [runtimeOperationCapabilities]);
 
   const handleShowLogs = async () => {
     try {
@@ -118,6 +150,10 @@ export function Settings() {
   };
 
   const handleRunOpenClawDoctor = async (mode: 'diagnose' | 'fix') => {
+    if (mode === 'fix' && !supportsDoctorFix) {
+      toast.error(t('runtime.openclawOnly'));
+      return;
+    }
     setDoctorRunningMode(mode);
     try {
       const result = await hostApi.app.openClawDoctor(mode);
@@ -166,6 +202,19 @@ export function Settings() {
       toast.success(t('developer.doctorCopied'));
     } catch (error) {
       toast.error(`Failed to copy doctor output: ${String(error)}`);
+    }
+  };
+
+  const handleCopyRuntimeDiagnostics = async () => {
+    setRuntimeDiagnosticsLoading(true);
+    try {
+      const snapshot = await hostApi.diagnostics.gatewaySnapshot();
+      await navigator.clipboard.writeText(JSON.stringify(snapshot, null, 2));
+      toast.success(t('developer.runtimeDiagnosticsCopied'));
+    } catch (error) {
+      toast.error(t('developer.runtimeDiagnosticsCopyFailed', { error: String(error) }));
+    } finally {
+      setRuntimeDiagnosticsLoading(false);
     }
   };
 
@@ -233,6 +282,19 @@ export function Settings() {
     });
     return () => { unsubscribe?.(); };
   }, []);
+
+  useEffect(() => {
+    if (!devModeUnlocked) return;
+    let cancelled = false;
+    void hostApi.gateway.status()
+      .then((status) => {
+        if (!cancelled) setGatewayStatus(status);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [devModeUnlocked, runtimeKind, setGatewayStatus]);
 
   useEffect(() => {
     if (!devModeUnlocked) return;
@@ -418,6 +480,19 @@ export function Settings() {
     toast.success(translateNext('appearance.menuLanguageUpdated'));
   };
 
+  const handleRuntimeChange = (nextRuntimeKind: 'openclaw' | 'cc-connect') => {
+    if (!devModeUnlocked) return;
+    if (nextRuntimeKind === runtimeKind) return;
+    setRuntimeKind(nextRuntimeKind);
+    setDoctorResult(null);
+    window.setTimeout(() => {
+      void hostApi.gateway.status()
+        .then(setGatewayStatus)
+        .catch(() => {});
+    }, 50);
+    toast.success(t('runtime.changed'));
+  };
+
   return (
     <div data-testid="settings-page" className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden">
       <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16">
@@ -575,6 +650,103 @@ export function Settings() {
                   onCheckedChange={setGatewayAutoStart}
                 />
               </div>
+
+              {devModeUnlocked && (
+                <div className="space-y-4" data-testid="settings-runtime-section">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                    <div>
+                      <Label className="text-sm font-medium text-foreground">{t('runtime.title')}</Label>
+                      <p className="text-meta text-muted-foreground mt-1">
+                        {t('runtime.description')}
+                      </p>
+                    </div>
+                    <Badge variant="secondary" className="rounded-full px-3 py-1 bg-black/5 dark:bg-white/10 border border-black/5 dark:border-white/5">
+                      {t(`runtime.kinds.${activeRuntimeKind}`)}
+                    </Badge>
+                  </div>
+                  <div className="flex flex-wrap gap-2" role="group" aria-label={t('runtime.title')}>
+                    <Button
+                      type="button"
+                      variant={runtimeKind === 'openclaw' ? 'secondary' : 'outline'}
+                      data-testid="settings-runtime-openclaw"
+                      onClick={() => handleRuntimeChange('openclaw')}
+                      className={cn("rounded-full px-5 h-10 border-black/10 dark:border-white/10", runtimeKind === 'openclaw' ? "bg-black/5 dark:bg-white/10 text-foreground" : "bg-transparent text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5")}
+                    >
+                      <ServerCog className="h-4 w-4 mr-2" />
+                      {t('runtime.kinds.openclaw')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={runtimeKind === 'cc-connect' ? 'secondary' : 'outline'}
+                      data-testid="settings-runtime-cc-connect"
+                      onClick={() => handleRuntimeChange('cc-connect')}
+                      className={cn("rounded-full px-5 h-10 border-black/10 dark:border-white/10", runtimeKind === 'cc-connect' ? "bg-black/5 dark:bg-white/10 text-foreground" : "bg-transparent text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5")}
+                    >
+                      <ServerCog className="h-4 w-4 mr-2" />
+                      {t('runtime.kinds.cc-connect')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={restartGateway}
+                      data-testid="settings-runtime-restart"
+                      className="rounded-full h-10 px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5"
+                    >
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      {t('runtime.restart')}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {t('runtime.restartHint')}
+                  </p>
+                  {gatewayStatus.configDir && (
+                    <p className="text-xs text-muted-foreground font-mono break-all" data-testid="settings-runtime-config-dir">
+                      {t('runtime.configDir')}: {gatewayStatus.configDir}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2" data-testid="settings-runtime-capabilities">
+                    {runtimeCapabilityEntries.map(([key, label]) => {
+                      const supported = runtimeCapabilities?.[key] ?? (activeRuntimeKind === 'openclaw');
+                      return (
+                        <Badge
+                          key={key}
+                          variant="secondary"
+                          className={cn(
+                            "rounded-full px-3 py-1 border",
+                            supported
+                              ? "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20"
+                              : "bg-black/5 dark:bg-white/5 text-muted-foreground border-transparent",
+                          )}
+                        >
+                          {label}: {supported ? t('runtime.supported') : t('runtime.unsupported')}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                  {unsupportedRuntimeOperations.length > 0 && (
+                    <div
+                      className="rounded-xl border border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5 p-3"
+                      data-testid="settings-runtime-operation-gaps"
+                    >
+                      <p className="text-xs font-medium text-foreground/80 mb-2">
+                        {t('runtime.operationGapsTitle')}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {unsupportedRuntimeOperations.map(([method, operation]) => (
+                          <Badge
+                            key={method}
+                            variant="secondary"
+                            className="rounded-full px-3 py-1 bg-black/5 dark:bg-white/10 text-muted-foreground border border-black/5 dark:border-white/5 font-mono"
+                          >
+                            {method}: {t(operation.support === 'degraded' ? 'runtime.degraded' : 'runtime.unsupported')}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
 
               <div className="flex items-center justify-between">
@@ -762,7 +934,7 @@ export function Settings() {
                     </div>
                   </div>
 
-                  {showCliTools && (
+                  {showCliTools && activeRuntimeKind === 'openclaw' && (
                     <div className="space-y-3">
                       <Label className="text-sm font-medium text-foreground">{t('developer.cli')}</Label>
                       <p className="text-meta text-muted-foreground">
@@ -794,6 +966,33 @@ export function Settings() {
                     </div>
                   )}
 
+                  <div className="space-y-3" data-testid="settings-runtime-diagnostics-section">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <Label className="text-sm font-medium text-foreground">{t('developer.runtimeDiagnostics')}</Label>
+                        <p className="text-meta text-muted-foreground mt-1">
+                          {t('developer.runtimeDiagnosticsDesc')}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        data-testid="settings-copy-runtime-diagnostics"
+                        onClick={() => void handleCopyRuntimeDiagnostics()}
+                        disabled={runtimeDiagnosticsLoading}
+                        className="rounded-xl h-10 px-4 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                      >
+                        {runtimeDiagnosticsLoading ? (
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Copy className="h-4 w-4 mr-2" />
+                        )}
+                        {runtimeDiagnosticsLoading ? t('common:status.loading') : t('common:actions.copy')}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {supportsDoctor ? (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
@@ -806,6 +1005,7 @@ export function Settings() {
                         <Button
                           type="button"
                           variant="outline"
+                          data-testid="settings-run-doctor-button"
                           onClick={() => void handleRunOpenClawDoctor('diagnose')}
                           disabled={doctorRunningMode !== null}
                           className="rounded-xl h-10 px-4 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
@@ -816,8 +1016,9 @@ export function Settings() {
                         <Button
                           type="button"
                           variant="outline"
+                          data-testid="settings-run-doctor-fix-button"
                           onClick={() => void handleRunOpenClawDoctor('fix')}
-                          disabled={doctorRunningMode !== null}
+                          disabled={doctorRunningMode !== null || !supportsDoctorFix}
                           className="rounded-xl h-10 px-4 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
                         >
                           <RefreshCw className={`h-4 w-4 mr-2${doctorRunningMode === 'fix' ? ' animate-spin' : ''}`} />
@@ -873,6 +1074,14 @@ export function Settings() {
                       </div>
                     )}
                   </div>
+                  ) : (
+                    <div className="space-y-3" data-testid="settings-openclaw-doctor-unavailable">
+                      <Label className="text-sm font-medium text-foreground">{t('developer.doctor')}</Label>
+                      <p className="text-meta text-muted-foreground">
+                        {t('runtime.openclawOnly')}
+                      </p>
+                    </div>
+                  )}
 
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">

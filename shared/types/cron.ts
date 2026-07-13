@@ -59,6 +59,11 @@ export interface CronJob {
   lastRun?: CronJobLastRun;
   nextRun?: string;
   agentId: string;
+  exec?: string;
+  workDir?: string;
+  sessionMode?: string;
+  timeoutMins?: number;
+  mute?: boolean;
 }
 
 /**
@@ -70,7 +75,12 @@ export interface CronJob {
  */
 export interface CronJobCreateInput {
   name: string;
-  message: string;
+  message?: string;
+  exec?: string;
+  workDir?: string;
+  sessionMode?: string;
+  timeoutMins?: number;
+  mute?: boolean;
   schedule: string | CronSchedule;
   delivery?: CronJobDelivery;
   enabled?: boolean;
@@ -83,6 +93,11 @@ export interface CronJobCreateInput {
 export interface CronJobUpdateInput {
   name?: string;
   message?: string;
+  exec?: string;
+  workDir?: string;
+  sessionMode?: string;
+  timeoutMins?: number;
+  mute?: boolean;
   schedule?: string | CronSchedule;
   delivery?: CronJobDelivery;
   enabled?: boolean;

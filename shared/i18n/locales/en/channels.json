@@ -240,6 +240,11 @@
                 "appSecret": {
                     "label": "App Secret",
                     "placeholder": "Your app secret"
+                },
+                "adminUsers": {
+                    "label": "Cron administrator IDs",
+                    "placeholder": "ou_xxx, ou_yyy",
+                    "description": "Comma-separated user IDs allowed to create, edit, run, or delete cc-connect cron jobs from Feishu/Lark."
                 }
             },
             "instructions": [

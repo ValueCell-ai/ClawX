@@ -4,9 +4,14 @@ import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 type LaunchElectronOptions = {
   skipSetup?: boolean;
+  omitUserDataOverride?: boolean;
+  initialUserDataDir?: string;
+  timeoutMs?: number;
+  env?: Record<string, string>;
 };
 
 type IpcMockConfig = {
@@ -48,6 +53,20 @@ async function allocatePort(): Promise<number> {
   });
 }
 
+async function removeDirWithRetry(path: string): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await rm(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
+    }
+  }
+  throw lastError;
+}
+
 async function getStableWindow(app: ElectronApplication): Promise<Page> {
   const deadline = Date.now() + 30_000;
   let page = await app.firstWindow();
@@ -79,6 +98,30 @@ async function getStableWindow(app: ElectronApplication): Promise<Page> {
 
 async function closeElectronApp(app: ElectronApplication, timeoutMs = 5_000): Promise<void> {
   let closed = false;
+  const waitForProcessExit = async (processTimeoutMs = 2_000): Promise<boolean> => {
+    try {
+      const child = app.process();
+      if (child.exitCode !== null || child.killed) return true;
+      return await Promise.race([
+        new Promise<boolean>((resolve) => child.once('exit', () => resolve(true))),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), processTimeoutMs)),
+      ]);
+    } catch {
+      // Ignore process inspection failures during e2e teardown.
+      return true;
+    }
+  };
+  const forceKillProcess = async () => {
+    try {
+      const child = app.process();
+      if (child.exitCode === null && !child.killed) {
+        child.kill('SIGKILL');
+      }
+      await waitForProcessExit(1_000);
+    } catch {
+      // Ignore process kill failures during e2e teardown.
+    }
+  };
 
   await Promise.race([
     (async () => {
@@ -97,21 +140,23 @@ async function closeElectronApp(app: ElectronApplication, timeoutMs = 5_000): Pr
   ]);
 
   if (closed) {
+    if (!await waitForProcessExit()) {
+      await forceKillProcess();
+    }
     return;
   }
 
   try {
     await app.close();
+    if (!await waitForProcessExit()) {
+      await forceKillProcess();
+    }
     return;
   } catch {
     // Fall through to process kill if Playwright cannot close the app cleanly.
   }
 
-  try {
-    app.process().kill('SIGKILL');
-  } catch {
-    // Ignore process kill failures during e2e teardown.
-  }
+  await forceKillProcess();
 }
 
 async function seedE2eSettings(userDataDir: string): Promise<void> {
@@ -142,7 +187,11 @@ async function launchClawXElectron(
     : {};
   return await electron.launch({
     executablePath: electronBinaryPath,
-    args: ['--lang=en-US', electronEntry],
+    args: [
+      '--lang=en-US',
+      ...(options.initialUserDataDir ? [`--user-data-dir=${options.initialUserDataDir}`] : []),
+      electronEntry,
+    ],
     env: {
       ...process.env,
       ...electronEnv,
@@ -155,33 +204,41 @@ async function launchClawXElectron(
       LC_ALL: 'en_US.UTF-8',
       LANGUAGE: 'en',
       CLAWX_E2E: '1',
-      CLAWX_USER_DATA_DIR: userDataDir,
+      CLAWX_E2E_CREDENTIAL_KEY: randomUUID(),
+      ...(options.omitUserDataOverride ? {} : { CLAWX_USER_DATA_DIR: userDataDir }),
       ...(options.skipSetup ? { CLAWX_E2E_SKIP_SETUP: '1' } : {}),
       CLAWX_PORT_CLAWX_HOST_API: String(hostApiPort),
+      ...(options.env ?? {}),
     },
-    timeout: 90_000,
+    timeout: options.timeoutMs ?? 90_000,
   });
 }
 
 export const test = base.extend<ElectronFixtures>({
   homeDir: async ({ browserName: _browserName }, provideHomeDir) => {
-    const homeDir = await mkdtemp(join(tmpdir(), 'clawx-e2e-home-'));
+    const overrideHomeDir = process.env.CLAWX_E2E_HOME_DIR?.trim();
+    const homeDir = overrideHomeDir || await mkdtemp(join(tmpdir(), 'clawx-e2e-home-'));
     await mkdir(join(homeDir, '.config'), { recursive: true });
     await mkdir(join(homeDir, 'AppData', 'Local'), { recursive: true });
     await mkdir(join(homeDir, 'AppData', 'Roaming'), { recursive: true });
     try {
       await provideHomeDir(homeDir);
     } finally {
-      await rm(homeDir, { recursive: true, force: true });
+      if (!overrideHomeDir) {
+        await removeDirWithRetry(homeDir);
+      }
     }
   },
 
   userDataDir: async ({ browserName: _browserName }, provideUserDataDir) => {
-    const userDataDir = await mkdtemp(join(tmpdir(), 'clawx-e2e-user-data-'));
+    const overrideUserDataDir = process.env.CLAWX_E2E_USER_DATA_DIR?.trim();
+    const userDataDir = overrideUserDataDir || await mkdtemp(join(tmpdir(), 'clawx-e2e-user-data-'));
     try {
       await provideUserDataDir(userDataDir);
     } finally {
-      await rm(userDataDir, { recursive: true, force: true });
+      if (!overrideUserDataDir) {
+        await removeDirWithRetry(userDataDir);
+      }
     }
   },
 

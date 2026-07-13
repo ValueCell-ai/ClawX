@@ -11,6 +11,35 @@ import { applyRuntimeEventToRuns } from '@/stores/chat/runtime-graph';
 import type { RawMessage, ToolStatus } from '@/stores/chat';
 
 describe('runtime graph state', () => {
+  it('keeps cc-connect approval actions attached to the pending graph step', () => {
+    const runs = applyRuntimeEventToRuns({}, {
+      type: 'approval.updated',
+      runId: 'run-approval',
+      itemId: 'approval-1',
+      title: 'Codex approval',
+      phase: 'requested',
+      status: 'pending',
+      message: 'Allow the command?',
+      actions: [
+        { action: 'perm:allow', label: 'Allow once' },
+        { action: 'perm:deny', label: 'Deny' },
+      ],
+    });
+
+    expect(deriveRuntimeTaskSteps(runs['run-approval'])).toContainEqual(expect.objectContaining({
+      id: 'approval-1',
+      status: 'running',
+      approval: {
+        runId: 'run-approval',
+        status: 'pending',
+        actions: [
+          { action: 'perm:allow', label: 'Allow once' },
+          { action: 'perm:deny', label: 'Deny' },
+        ],
+      },
+    }));
+  });
+
   it('keeps distinct runtime tool updates for the same tool call', () => {
     const started = applyRuntimeEventToRuns({}, {
       type: 'tool.started',
@@ -57,6 +86,23 @@ describe('runtime graph state', () => {
     });
 
     expect(second['run-1'].assistantText).toBe('corrected');
+  });
+
+  it('clears a transient assistant preview when the runtime replaces it with empty text', () => {
+    const preview = applyRuntimeEventToRuns({}, {
+      type: 'assistant.delta',
+      runId: 'run-preview',
+      text: 'working draft',
+      replace: true,
+    });
+    const cleared = applyRuntimeEventToRuns(preview, {
+      type: 'assistant.delta',
+      runId: 'run-preview',
+      text: '',
+      replace: true,
+    });
+
+    expect(cleared['run-preview'].assistantText).toBe('');
   });
 });
 

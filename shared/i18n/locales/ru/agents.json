@@ -44,6 +44,15 @@
         "closeWithoutSaving": "Закрыть без сохранения",
         "saveModelOverride": "Сохранить модель",
         "useDefaultModel": "Использовать модель по умолчанию",
+        "permissionModeLabel": "Разрешения инструментов",
+        "permissionModes": {
+            "full-auto": "Полный автоматический режим",
+            "suggest": "Запрашивать разрешение"
+        },
+        "permissionModeDescriptions": {
+            "full-auto": "Codex может использовать инструменты в управляемой рабочей папке без запросов.",
+            "suggest": "Codex запрашивает разрешение перед использованием инструментов и до одобрения работает в песочнице только для чтения."
+        },
         "channelsTitle": "Каналы",
         "channelsDescription": "Этот список доступен только для чтения. Управляйте учётными записями каналов и привязками на странице Каналов.",
         "mainAccount": "Основная учётная запись",
@@ -69,6 +78,7 @@
         "agentModelUpdateFailed": "Не удалось обновить модель агента: {{error}}",
         "agentModelReset": "Модель агента сброшена до значения по умолчанию",
         "agentModelResetFailed": "Не удалось сбросить модель агента: {{error}}",
+        "agentRuntimeUpdated": "Настройки среды агента обновлены",
         "channelAssigned": "{{channel}} назначен агенту",
         "channelAssignFailed": "Не удалось назначить канал: {{error}}",
         "channelRemoved": "{{channel}} удалён",

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { ExecutionGraphCard } from '@/pages/Chat/ExecutionGraphCard';
 import type { TaskStep } from '@/pages/Chat/task-visualization';
@@ -39,6 +39,21 @@ const branchStep: TaskStep = {
 };
 
 describe('ExecutionGraphCard branch badge', () => {
+  it('renders the active empty-run thinking state as a visible graph node', () => {
+    render(
+      <ExecutionGraphCard
+        agentLabel="main"
+        steps={[]}
+        active
+        expanded
+      />,
+    );
+
+    expect(screen.getByTestId('chat-execution-step-thinking-trailing')).toBeInTheDocument();
+    const icon = screen.getByTestId('chat-execution-step-thinking-trailing-icon');
+    expect(icon.querySelector('svg')).not.toBeNull();
+  });
+
   it('renders the localized branch label without intra-badge wrapping', () => {
     render(
       <ExecutionGraphCard
@@ -168,5 +183,68 @@ describe('ExecutionGraphCard subagent (system) row', () => {
     const pre = container.querySelector('pre');
     expect(pre).not.toBeNull();
     expect(pre!.textContent).toBe(subagentStep.detail);
+  });
+});
+
+describe('ExecutionGraphCard approval actions', () => {
+  it('submits only the offered action with its correlated run id', async () => {
+    const onApprovalAction = vi.fn(async () => undefined);
+    const approvalStep: TaskStep = {
+      id: 'approval-1',
+      label: 'Codex approval',
+      kind: 'system',
+      status: 'running',
+      detail: 'Allow the command?',
+      depth: 1,
+      approval: {
+        runId: 'run-approval-1',
+        status: 'pending',
+        actions: [
+          { action: 'perm:allow', label: 'Allow once' },
+          { action: 'perm:deny', label: 'Deny' },
+        ],
+      },
+    };
+
+    render(
+      <ExecutionGraphCard
+        agentLabel="main"
+        steps={[approvalStep]}
+        active
+        expanded
+        onApprovalAction={onApprovalAction}
+      />,
+    );
+
+    fireEvent.click(screen.getByText('Allow once'));
+    await waitFor(() => expect(onApprovalAction).toHaveBeenCalledWith('run-approval-1', 'perm:allow'));
+    expect(onApprovalAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not render response controls after the approval resolves', () => {
+    const resolvedStep: TaskStep = {
+      id: 'approval-1',
+      label: 'Codex approval',
+      kind: 'system',
+      status: 'completed',
+      depth: 1,
+      approval: {
+        runId: 'run-approval-1',
+        status: 'approved',
+        actions: [{ action: 'perm:allow', label: 'Allow once' }],
+      },
+    };
+
+    render(
+      <ExecutionGraphCard
+        agentLabel="main"
+        steps={[resolvedStep]}
+        active={false}
+        expanded
+        onApprovalAction={vi.fn(async () => undefined)}
+      />,
+    );
+
+    expect(screen.queryByTestId('chat-approval-actions')).toBeNull();
   });
 });

@@ -12,14 +12,8 @@ const { testHome, testUserData } = vi.hoisted(() => {
 
 vi.mock('os', async () => {
   const actual = await vi.importActual<typeof import('os')>('os');
-  const mocked = {
-    ...actual,
-    homedir: () => testHome,
-  };
-  return {
-    ...mocked,
-    default: mocked,
-  };
+  const mocked = { ...actual, homedir: () => testHome };
+  return { ...mocked, default: mocked };
 });
 
 vi.mock('electron', () => ({
@@ -30,6 +24,34 @@ vi.mock('electron', () => ({
   },
 }));
 
+async function seedOpenClawUsage(
+  agentId: string,
+  fileName: string,
+  timestamp = '2026-03-12T12:19:00.000Z',
+): Promise<void> {
+  const openclawDir = join(testHome, '.openclaw');
+  const sessionsDir = join(openclawDir, 'agents', agentId, 'sessions');
+  await mkdir(sessionsDir, { recursive: true });
+  await writeFile(join(openclawDir, 'openclaw.json'), JSON.stringify({
+    agents: { list: [{ id: 'main', name: 'Main', default: true }] },
+  }), 'utf8');
+  await writeFile(join(sessionsDir, fileName), JSON.stringify({
+    type: 'message',
+    timestamp,
+    message: {
+      role: 'assistant',
+      model: 'gpt-5.2-2025-12-11',
+      provider: 'openai',
+      usage: {
+        input: 17_649,
+        output: 107,
+        total: 17_756,
+        cost: { total_usd: 0.0042 },
+      },
+    },
+  }), 'utf8');
+}
+
 describe('token usage session scan', () => {
   beforeEach(async () => {
     vi.resetModules();
@@ -38,52 +60,52 @@ describe('token usage session scan', () => {
     await rm(testUserData, { recursive: true, force: true });
   });
 
-  it('includes transcripts from agent directories that exist on disk but are not configured', async () => {
-    const openclawDir = join(testHome, '.openclaw');
-    await mkdir(openclawDir, { recursive: true });
-    await writeFile(join(openclawDir, 'openclaw.json'), JSON.stringify({
-      agents: {
-        list: [
-          { id: 'main', name: 'Main', default: true },
-        ],
-      },
-    }, null, 2), 'utf8');
-
-    const diskOnlySessionsDir = join(openclawDir, 'agents', 'custom-custom25', 'sessions');
-    await mkdir(diskOnlySessionsDir, { recursive: true });
-    await writeFile(
-      join(diskOnlySessionsDir, 'f8e66f77-0125-4e2f-b750-9c4de01e8f5a.jsonl'),
-      [
-        JSON.stringify({
-          type: 'message',
-          timestamp: '2026-03-12T12:19:00.000Z',
-          message: {
-            role: 'assistant',
-            model: 'gpt-5.2-2025-12-11',
-            provider: 'openai',
-            usage: {
-              input: 17649,
-              output: 107,
-              total: 17756,
-            },
-          },
-        }),
-      ].join('\n'),
-      'utf8',
-    );
+  it('includes OpenClaw transcripts from agent directories that exist only on disk', async () => {
+    await seedOpenClawUsage('custom-custom25', 'f8e66f77-0125-4e2f-b750-9c4de01e8f5a.jsonl');
 
     const { getRecentTokenUsageHistory } = await import('@electron/utils/token-usage');
-    const entries = await getRecentTokenUsageHistory();
+    await expect(getRecentTokenUsageHistory()).resolves.toEqual([
+      expect.objectContaining({
+        runtimeKind: 'openclaw',
+        agentId: 'custom-custom25',
+        sessionId: 'f8e66f77-0125-4e2f-b750-9c4de01e8f5a',
+        model: 'gpt-5.2-2025-12-11',
+        totalTokens: 17_756,
+        costUsd: 0.0042,
+      }),
+    ]);
+  });
 
-    expect(entries).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          agentId: 'custom-custom25',
-          sessionId: 'f8e66f77-0125-4e2f-b750-9c4de01e8f5a',
-          model: 'gpt-5.2-2025-12-11',
-          totalTokens: 17756,
-        }),
-      ]),
-    );
+  it.each([
+    'session-a.deleted.jsonl',
+    'session-b.jsonl.reset.2026-03-12T12-19-00.000Z',
+  ])('keeps OpenClaw history file %s in usage aggregation', async (fileName) => {
+    await seedOpenClawUsage('main', fileName);
+
+    const { getRecentTokenUsageHistory } = await import('@electron/utils/token-usage');
+    const entries = await getRecentTokenUsageHistory({ runtimeKind: 'openclaw' });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ runtimeKind: 'openclaw', agentId: 'main' });
+  });
+
+  it('returns no usage for cc-connect without reading its private session or Codex files', async () => {
+    const privateSessionDir = join(testUserData, 'runtimes', 'cc-connect', 'data', 'sessions');
+    const privateCodexDir = join(testUserData, 'runtimes', 'cc-connect', 'codex-home', 'sessions');
+    await mkdir(privateSessionDir, { recursive: true });
+    await mkdir(privateCodexDir, { recursive: true });
+    await writeFile(join(privateSessionDir, 'private.json'), JSON.stringify({ usage: { total_tokens: 99 } }), 'utf8');
+    await writeFile(join(privateCodexDir, 'private.jsonl'), JSON.stringify({ type: 'token_count', total_tokens: 99 }), 'utf8');
+
+    const { getRecentTokenUsageHistory } = await import('@electron/utils/token-usage');
+    await expect(getRecentTokenUsageHistory({ runtimeKind: 'cc-connect' })).resolves.toEqual([]);
+  });
+
+  it('does not mix OpenClaw usage into an explicit cc-connect query', async () => {
+    await seedOpenClawUsage('main', 'openclaw-session.jsonl');
+
+    const { getRecentTokenUsageHistory } = await import('@electron/utils/token-usage');
+    await expect(getRecentTokenUsageHistory({ runtimeKind: 'cc-connect' })).resolves.toEqual([]);
+    await expect(getRecentTokenUsageHistory({ runtimeKind: 'openclaw' })).resolves.toHaveLength(1);
   });
 });

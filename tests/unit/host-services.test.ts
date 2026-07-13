@@ -1,14 +1,16 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { homedir, tmpdir } from 'node:os';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   applyProxySettingsMock,
+  browserOAuthSetSuccessHandlerMock,
   assignChannelAccountToAgentMock,
   assignChannelToAgentMock,
   clearChannelBindingMock,
   createAgentMock,
+  codexOAuthStatusMock,
   deleteAgentConfigMock,
   deleteChannelAccountConfigMock,
   deleteChannelConfigMock,
@@ -16,6 +18,7 @@ const {
   getAllSettingsMock,
   getChannelFormValuesMock,
   getSettingMock,
+  importCodexOAuthMock,
   listLogFilesMock,
   logDir,
   listAgentsSnapshotFromConfigMock,
@@ -27,13 +30,18 @@ const {
   providerServiceMock,
   readOpenClawConfigMock,
   readLogFileMock,
+  logoutCodexOAuthMock,
   removeAgentWorkspaceDirectoryMock,
   resetSettingsMock,
   saveChannelConfigMock,
+  deleteCcConnectAgentBindingMock,
+  setCcConnectAgentProviderBindingMock,
+  setCcConnectAgentPermissionModeMock,
   setSettingMock,
   syncDefaultProviderToRuntimeMock,
   syncDeletedProviderToRuntimeMock,
   syncSavedProviderToRuntimeMock,
+  syncUpdatedProviderToRuntimeMock,
   syncLaunchAtStartupSettingFromStoreMock,
   syncProxyConfigToOpenClawMock,
   testOpenClawConfigDir,
@@ -41,10 +49,12 @@ const {
   validateApiKeyWithProviderMock,
 } = vi.hoisted(() => ({
   applyProxySettingsMock: vi.fn(),
+  browserOAuthSetSuccessHandlerMock: vi.fn(),
   assignChannelAccountToAgentMock: vi.fn(),
   assignChannelToAgentMock: vi.fn(),
   clearChannelBindingMock: vi.fn(),
   createAgentMock: vi.fn(),
+  codexOAuthStatusMock: vi.fn(),
   deleteAgentConfigMock: vi.fn(),
   deleteChannelAccountConfigMock: vi.fn(),
   deleteChannelConfigMock: vi.fn(),
@@ -52,6 +62,7 @@ const {
   getAllSettingsMock: vi.fn(),
   getChannelFormValuesMock: vi.fn(),
   getSettingMock: vi.fn(),
+  importCodexOAuthMock: vi.fn(),
   listLogFilesMock: vi.fn(),
   logDir: '/tmp/clawx-host-services-test-logs',
   listAgentsSnapshotFromConfigMock: vi.fn(),
@@ -95,13 +106,18 @@ const {
   },
   readOpenClawConfigMock: vi.fn(),
   readLogFileMock: vi.fn(),
+  logoutCodexOAuthMock: vi.fn(),
   removeAgentWorkspaceDirectoryMock: vi.fn(),
   resetSettingsMock: vi.fn(),
-  saveChannelConfigMock: vi.fn(),
+    saveChannelConfigMock: vi.fn(),
+    deleteCcConnectAgentBindingMock: vi.fn(),
+    setCcConnectAgentProviderBindingMock: vi.fn(),
+    setCcConnectAgentPermissionModeMock: vi.fn(),
   setSettingMock: vi.fn(),
   syncDefaultProviderToRuntimeMock: vi.fn(),
   syncDeletedProviderToRuntimeMock: vi.fn(),
   syncSavedProviderToRuntimeMock: vi.fn(),
+  syncUpdatedProviderToRuntimeMock: vi.fn(),
   syncLaunchAtStartupSettingFromStoreMock: vi.fn(),
   syncProxyConfigToOpenClawMock: vi.fn(),
   testOpenClawConfigDir: '/tmp/clawx-host-services-openclaw',
@@ -114,6 +130,26 @@ vi.mock('@electron/utils/store', () => ({
   getSetting: (...args: unknown[]) => getSettingMock(...args),
   resetSettings: (...args: unknown[]) => resetSettingsMock(...args),
   setSetting: (...args: unknown[]) => setSettingMock(...args),
+}));
+
+vi.mock('electron', () => ({
+  app: {
+    isPackaged: false,
+    name: 'ClawX',
+    getPath: vi.fn(() => testOpenClawConfigDir),
+    getLocale: vi.fn(() => 'en'),
+  },
+  BrowserWindow: {
+    getFocusedWindow: vi.fn(() => null),
+    getAllWindows: vi.fn(() => []),
+  },
+  Menu: {
+    buildFromTemplate: vi.fn(() => ({})),
+    setApplicationMenu: vi.fn(),
+  },
+  shell: {
+    openExternal: vi.fn(),
+  },
 }));
 
 vi.mock('@electron/utils/openclaw-proxy', () => ({
@@ -197,7 +233,7 @@ vi.mock('@electron/services/providers/provider-runtime-sync', () => ({
   syncDeletedProviderToRuntime: (...args: unknown[]) => syncDeletedProviderToRuntimeMock(...args),
   syncProviderApiKeyToRuntime: vi.fn(),
   syncSavedProviderToRuntime: (...args: unknown[]) => syncSavedProviderToRuntimeMock(...args),
-  syncUpdatedProviderToRuntime: vi.fn(),
+  syncUpdatedProviderToRuntime: (...args: unknown[]) => syncUpdatedProviderToRuntimeMock(...args),
   getOpenClawProviderKey: vi.fn((type: string) => type),
 }));
 
@@ -213,9 +249,22 @@ vi.mock('@electron/services/providers/provider-validation', () => ({
   validateApiKeyWithProvider: (...args: unknown[]) => validateApiKeyWithProviderMock(...args),
 }));
 
+vi.mock('@electron/runtime/cc-connect-provider-profile', () => ({
+  getCcConnectCodexOAuthStatus: (...args: unknown[]) => codexOAuthStatusMock(...args),
+  importUserCodexOAuthToManagedHome: (...args: unknown[]) => importCodexOAuthMock(...args),
+  logoutCcConnectCodexOAuth: (...args: unknown[]) => logoutCodexOAuthMock(...args),
+}));
+
+vi.mock('@electron/runtime/cc-connect-agent-bindings', () => ({
+  deleteCcConnectAgentBinding: (...args: unknown[]) => deleteCcConnectAgentBindingMock(...args),
+  setCcConnectAgentProviderBinding: (...args: unknown[]) => setCcConnectAgentProviderBindingMock(...args),
+  setCcConnectAgentPermissionMode: (...args: unknown[]) => setCcConnectAgentPermissionModeMock(...args),
+}));
+
 vi.mock('@electron/utils/browser-oauth', () => ({
   browserOAuthManager: {
     setWindow: vi.fn(),
+    setSuccessHandler: (...args: unknown[]) => browserOAuthSetSuccessHandlerMock(...args),
     startFlow: vi.fn(),
     stopFlow: vi.fn(),
     submitManualCode: vi.fn(),
@@ -248,6 +297,7 @@ vi.mock('@electron/utils/paths', () => ({
   getOpenClawConfigDir: () => testOpenClawConfigDir,
   getOpenClawDir: () => testOpenClawConfigDir,
   getOpenClawResolvedDir: () => testOpenClawConfigDir,
+  getOpenClawSkillsDir: () => join(homedir(), '.openclaw', 'skills'),
 }));
 
 vi.mock('@electron/utils/proxy-fetch', () => ({
@@ -311,12 +361,35 @@ describe('host services', () => {
     providerServiceMock.listVendors.mockResolvedValue([]);
     providerServiceMock.createAccount.mockImplementation(async (account: unknown) => account);
     providerServiceMock.setDefaultAccount.mockResolvedValue(undefined);
+    codexOAuthStatusMock.mockResolvedValue({
+      success: true,
+      managedCodexHome: '/tmp/clawx/codex-home',
+      authPath: '/tmp/clawx/codex-home/auth.json',
+      managed: { path: '/tmp/clawx/codex-home/auth.json', exists: false, complete: false },
+      user: { path: '/tmp/home/.codex/auth.json', exists: false, complete: false },
+    });
+    importCodexOAuthMock.mockResolvedValue({
+      success: true,
+      provider: { accountId: 'openai-oauth' },
+      managed: { exists: true, complete: true },
+      user: { exists: true, complete: true },
+    });
+    logoutCodexOAuthMock.mockResolvedValue({
+      success: true,
+      provider: { accountId: 'openai-oauth' },
+      managed: { exists: false, complete: false },
+      user: { exists: true, complete: true },
+    });
     validateApiKeyWithProviderMock.mockResolvedValue({ valid: true });
     ensureFeishuPluginInstalledMock.mockResolvedValue({ installed: true });
     rmSync(logDir, { recursive: true, force: true });
     rmSync(testOpenClawConfigDir, { recursive: true, force: true });
     mkdirSync(logDir, { recursive: true });
     mkdirSync(join(testOpenClawConfigDir, 'logs'), { recursive: true });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('runs proxy side effects and restarts a running gateway after settings.set', async () => {
@@ -337,6 +410,71 @@ describe('host services', () => {
     });
     expect(applyProxySettingsMock).toHaveBeenCalledWith(baseSettings);
     expect(gatewayManager.restart).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the OpenClaw skills source as the active runtime target by default', async () => {
+    const { createSkillsApi } = await import('@electron/services/skills-api');
+    const skillsApi = createSkillsApi({
+      clawHubService: {} as never,
+      gatewayManager: {} as never,
+      runtimeManager: {
+        getActiveKind: vi.fn(async () => 'openclaw'),
+        listCapabilities: vi.fn(() => ({ skills: true })),
+      } as never,
+    });
+
+    await expect(skillsApi.target()).resolves.toMatchObject({
+      success: true,
+      runtimeKind: 'openclaw',
+      sourceDir: join(homedir(), '.openclaw', 'skills'),
+      openDir: join(homedir(), '.openclaw', 'skills'),
+      runtimeDir: join(homedir(), '.openclaw', 'skills'),
+      mirrorMode: 'source',
+    });
+  });
+
+  it('returns the managed Codex skills mirror when cc-connect is active', async () => {
+    const { createSkillsApi } = await import('@electron/services/skills-api');
+    const skillsApi = createSkillsApi({
+      clawHubService: {} as never,
+      gatewayManager: {} as never,
+      runtimeManager: {
+        getActiveKind: vi.fn(async () => 'cc-connect'),
+        listCapabilities: vi.fn(() => ({ skills: true })),
+      } as never,
+    });
+
+    const runtimeDir = join(testOpenClawConfigDir, 'runtimes', 'cc-connect', 'codex-home', 'skills');
+    await expect(skillsApi.target()).resolves.toMatchObject({
+      success: true,
+      runtimeKind: 'cc-connect',
+      sourceDir: join(homedir(), '.openclaw', 'skills'),
+      openDir: runtimeDir,
+      runtimeDir,
+      manifestPath: join(runtimeDir, 'manifest.json'),
+      mirrorMode: 'runtime-mirror',
+    });
+  });
+
+  it('refreshes every cc-connect skill mirror after a ClawHub install', async () => {
+    const install = vi.fn().mockResolvedValue(undefined);
+    const rpc = vi.fn().mockResolvedValue({ success: true });
+    const { createSkillsApi } = await import('@electron/services/skills-api');
+    const skillsApi = createSkillsApi({
+      clawHubService: { install } as never,
+      gatewayManager: {} as never,
+      runtimeManager: {
+        getActiveProvider: vi.fn(() => ({ kind: 'cc-connect' })),
+        listCapabilities: vi.fn(() => ({ skills: true })),
+        rpc,
+      } as never,
+    });
+
+    await expect(skillsApi.clawhubInstall({ slug: 'shared-skill', version: '1.2.3' }))
+      .resolves.toEqual({ success: true });
+
+    expect(install).toHaveBeenCalledWith({ slug: 'shared-skill', version: '1.2.3' });
+    expect(rpc).toHaveBeenCalledWith('skills.update', {});
   });
 
   it('runs launch-at-startup side effects after settings.setMany and reset', async () => {
@@ -379,6 +517,37 @@ describe('host services', () => {
       expect.any(Function),
     );
     expect(gatewayManager.rpc).toHaveBeenCalledWith('chat.history', { limit: 1 }, 42);
+  });
+
+  it('opens the active runtime Control UI through provider capability', async () => {
+    const getControlUi = vi.fn(async () => ({
+      success: true,
+      url: 'http://127.0.0.1:9820/',
+      token: 'runtime-management-token',
+      port: 9820,
+    }));
+    const runtimeManager = {
+      getStatus: vi.fn(() => ({
+        state: 'running',
+        port: 9820,
+        runtimeKind: 'cc-connect',
+        capabilities: { controlUi: true },
+      })),
+      getActiveProvider: vi.fn(() => ({ getControlUi })),
+    };
+    const backpressure = {
+      run: vi.fn(),
+    };
+    const { createGatewayApi } = await import('@electron/services/gateway-api');
+
+    await expect(createGatewayApi(runtimeManager as never, backpressure as never).controlUi()).resolves.toEqual({
+      success: true,
+      url: 'http://127.0.0.1:9820/',
+      token: 'runtime-management-token',
+      port: 9820,
+    });
+
+    expect(getControlUi).toHaveBeenCalledWith({});
   });
 
   it('exposes provider account snapshot actions through the typed providers service', async () => {
@@ -469,6 +638,207 @@ describe('host services', () => {
     );
   });
 
+  it('syncs provider accounts through active runtime provider capability', async () => {
+    const account = {
+      id: 'ollama-local',
+      vendorId: 'ollama',
+      label: 'Ollama',
+      authMode: 'local',
+      model: 'qwen3:latest',
+      enabled: true,
+      createdAt: '2026-06-07T00:00:00.000Z',
+      updatedAt: '2026-06-07T00:00:00.000Z',
+    };
+    providerServiceMock.createAccount.mockResolvedValue(account);
+    const syncProviderProfile = vi.fn(async () => ({ success: true }));
+    const runtimeManager = {
+      getActiveProvider: vi.fn(() => ({ syncProviderProfile })),
+    };
+    const { createProvidersApi } = await import('@electron/services/providers-api');
+
+    await expect(createProvidersApi({
+      gatewayManager: { debouncedReload: vi.fn() } as never,
+      runtimeManager: runtimeManager as never,
+      mainWindow: {} as never,
+    }).createAccount({ account })).resolves.toEqual({
+      success: true,
+      account,
+    });
+
+    expect(providerServiceMock.createAccount).toHaveBeenCalledWith(account, undefined);
+    expect(syncProviderProfile).toHaveBeenCalledWith({
+      providerId: 'ollama-local',
+      reason: 'save',
+    });
+    expect(syncSavedProviderToRuntimeMock).not.toHaveBeenCalled();
+  });
+
+  it('dispatches browser OAuth success through the active runtime provider', async () => {
+    const account = {
+      id: 'openai-oauth',
+      vendorId: 'openai',
+      label: 'OpenAI Codex',
+      authMode: 'oauth_browser',
+      model: 'gpt-5.5',
+      enabled: true,
+      createdAt: '2026-07-12T00:00:00.000Z',
+      updatedAt: '2026-07-12T00:00:00.000Z',
+    };
+    providerServiceMock.getAccount.mockResolvedValue(account);
+    const syncProviderProfile = vi.fn(async () => ({ success: true }));
+    const runtimeManager = {
+      getActiveProvider: vi.fn(() => ({ kind: 'cc-connect', syncProviderProfile })),
+    };
+    const { createProvidersApi } = await import('@electron/services/providers-api');
+
+    createProvidersApi({
+      gatewayManager: { debouncedReload: vi.fn() } as never,
+      runtimeManager: runtimeManager as never,
+      mainWindow: {} as never,
+    });
+    const successHandler = browserOAuthSetSuccessHandlerMock.mock.calls.at(-1)?.[0];
+    expect(successHandler).toBeTypeOf('function');
+    await successHandler({ provider: 'openai', accountId: account.id });
+
+    expect(providerAccountToConfigMock).toHaveBeenCalledWith(account);
+    expect(syncProviderProfile).toHaveBeenCalledWith({
+      providerId: account.id,
+      reason: 'oauth',
+    });
+    expect(syncUpdatedProviderToRuntimeMock).not.toHaveBeenCalled();
+  });
+
+  it('retains OpenClaw provider projection when browser OAuth has no runtime sync capability', async () => {
+    const account = {
+      id: 'openai-oauth',
+      vendorId: 'openai',
+      label: 'OpenAI Codex',
+      authMode: 'oauth_browser',
+      model: 'gpt-5.5',
+      enabled: true,
+      createdAt: '2026-07-12T00:00:00.000Z',
+      updatedAt: '2026-07-12T00:00:00.000Z',
+    };
+    providerServiceMock.getAccount.mockResolvedValue(account);
+    const gatewayManager = { debouncedRestart: vi.fn() };
+    const runtimeManager = {
+      getActiveProvider: vi.fn(() => ({ kind: 'openclaw' })),
+    };
+    const { createProvidersApi } = await import('@electron/services/providers-api');
+
+    createProvidersApi({
+      gatewayManager: gatewayManager as never,
+      runtimeManager: runtimeManager as never,
+      mainWindow: {} as never,
+    });
+    const successHandler = browserOAuthSetSuccessHandlerMock.mock.calls.at(-1)?.[0];
+    expect(successHandler).toBeTypeOf('function');
+    await successHandler({ provider: 'openai', accountId: account.id });
+
+    expect(syncUpdatedProviderToRuntimeMock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: account.id, type: 'openai' }),
+      undefined,
+      gatewayManager,
+    );
+  });
+
+  it('exposes cc-connect Codex OAuth lifecycle through providers service and syncs active runtime', async () => {
+    const syncProviderProfile = vi.fn(async () => ({ success: true }));
+    const runtimeManager = {
+      getActiveProvider: vi.fn(() => ({ syncProviderProfile })),
+    };
+    const { createProvidersApi } = await import('@electron/services/providers-api');
+    const providersApi = createProvidersApi({
+      gatewayManager: { debouncedReload: vi.fn() } as never,
+      runtimeManager: runtimeManager as never,
+      mainWindow: {} as never,
+    });
+
+    await expect(providersApi.codexOAuthStatus({ accountId: 'openai-oauth' })).resolves.toMatchObject({
+      success: true,
+      managedCodexHome: '/tmp/clawx/codex-home',
+    });
+    await expect(providersApi.importCodexOAuth({ accountId: 'openai-oauth' })).resolves.toMatchObject({
+      success: true,
+      provider: { accountId: 'openai-oauth' },
+    });
+    await expect(providersApi.logoutCodexOAuth({
+      accountId: 'openai-oauth',
+      managedOnly: true,
+    })).resolves.toMatchObject({
+      success: true,
+      provider: { accountId: 'openai-oauth' },
+    });
+
+    expect(codexOAuthStatusMock).toHaveBeenCalledWith({ accountId: 'openai-oauth' });
+    expect(importCodexOAuthMock).toHaveBeenCalledWith({ accountId: 'openai-oauth' });
+    expect(logoutCodexOAuthMock).toHaveBeenCalledWith({
+      accountId: 'openai-oauth',
+      managedOnly: true,
+    });
+    expect(syncProviderProfile).toHaveBeenCalledWith({
+      providerId: 'openai-oauth',
+      reason: 'codex-oauth-import',
+    });
+    expect(syncProviderProfile).toHaveBeenCalledWith({
+      providerId: 'openai-oauth',
+      reason: 'codex-oauth-logout',
+    });
+  });
+
+  it('routes cron API through active runtime cron capability', async () => {
+    const runtimeManager = {
+      listCapabilities: vi.fn(() => ({ cron: true })),
+      rpc: vi.fn(async () => [{
+        id: 'cron-1',
+        name: 'Daily summary',
+        message: 'summarize',
+        schedule: { kind: 'cron', expr: '0 9 * * *' },
+        enabled: true,
+        createdAt: '2026-06-08T00:00:00.000Z',
+        updatedAt: '2026-06-08T00:00:00.000Z',
+      }]),
+    };
+    const gatewayManager = {
+      rpc: vi.fn(),
+    };
+    const { createCronApi } = await import('@electron/services/cron-api');
+
+    await expect(createCronApi({
+      gatewayManager: gatewayManager as never,
+      runtimeManager: runtimeManager as never,
+    }).list()).resolves.toMatchObject([
+      { id: 'cron-1', name: 'Daily summary' },
+    ]);
+
+    expect(runtimeManager.rpc).toHaveBeenCalledWith('cron.list');
+    expect(gatewayManager.rpc).not.toHaveBeenCalled();
+  });
+
+  it('uses the canonical runtime cron RPC methods for mutations', async () => {
+    const runtimeManager = {
+      listCapabilities: vi.fn(() => ({ cron: true })),
+      rpc: vi.fn(async () => ({ success: true })),
+    };
+    const gatewayManager = {
+      rpc: vi.fn(),
+    };
+    const { createCronApi } = await import('@electron/services/cron-api');
+    const cronApi = createCronApi({
+      gatewayManager: gatewayManager as never,
+      runtimeManager: runtimeManager as never,
+    });
+
+    await expect(cronApi.delete({ id: 'cron-1' })).resolves.toEqual({ success: true });
+    await expect(cronApi.toggle({ id: 'cron-1', enabled: false })).resolves.toEqual({ success: true });
+    await expect(cronApi.trigger({ id: 'cron-1' })).resolves.toEqual({ success: true });
+
+    expect(runtimeManager.rpc).toHaveBeenCalledWith('cron.delete', { id: 'cron-1' });
+    expect(runtimeManager.rpc).toHaveBeenCalledWith('cron.toggle', { id: 'cron-1', enabled: false });
+    expect(runtimeManager.rpc).toHaveBeenCalledWith('cron.run', { id: 'cron-1', mode: 'force' });
+    expect(gatewayManager.rpc).not.toHaveBeenCalled();
+  });
+
   it('sets the default provider account and syncs runtime defaults', async () => {
     providerServiceMock.getDefaultAccountId.mockResolvedValue('old-default');
     const gatewayManager = { debouncedReload: vi.fn() };
@@ -530,7 +900,7 @@ describe('host services', () => {
     }).deleteAccount({ accountId: deletedAccount.id })).resolves.toEqual({ success: true });
 
     expect(providerServiceMock.setDefaultAccount).toHaveBeenCalledWith(newestEnabledAccount.id);
-    expect(syncDefaultProviderToRuntimeMock).toHaveBeenCalledWith(newestEnabledAccount.id);
+    expect(syncDefaultProviderToRuntimeMock).toHaveBeenCalledWith(newestEnabledAccount.id, gatewayManager);
     expect(syncDeletedProviderToRuntimeMock).toHaveBeenCalledWith(
       expect.objectContaining({ id: deletedAccount.id, type: deletedAccount.vendorId }),
       deletedAccount.id,
@@ -651,6 +1021,71 @@ describe('host services', () => {
     expect(gatewayManager.rpc).not.toHaveBeenCalled();
   });
 
+  it('probes active runtime for channel status when runtime manager is provided', async () => {
+    readOpenClawConfigMock.mockResolvedValue({
+      channels: {
+        feishu: {
+          accounts: {
+            team_bot: { enabled: true },
+          },
+          defaultAccount: 'team_bot',
+        },
+      },
+    });
+    listConfiguredChannelsFromConfigMock.mockResolvedValue(['feishu']);
+    listConfiguredChannelAccountsFromConfigMock.mockReturnValue({
+      feishu: {
+        defaultAccountId: 'team_bot',
+        accountIds: ['team_bot'],
+      },
+    });
+    const gatewayManager = {
+      rpc: vi.fn(),
+      getStatus: vi.fn(() => ({ state: 'stopped', port: 18789 })),
+      getDiagnostics: vi.fn(() => ({ consecutiveHeartbeatMisses: 0, consecutiveRpcFailures: 0 })),
+    };
+    const runtimeManager = {
+      rpc: vi.fn(async () => ({
+        channelAccounts: {
+          feishu: [{
+            accountId: 'team_bot',
+            configured: true,
+            connected: true,
+            running: true,
+            linked: true,
+          }],
+        },
+      })),
+      getStatus: vi.fn(() => ({
+        state: 'running',
+        port: 9820,
+        runtimeKind: 'cc-connect',
+        capabilities: { channels: true },
+      })),
+    };
+    const { createChannelsApi } = await import('@electron/services/channels-api');
+
+    await expect(createChannelsApi({
+      gatewayManager: gatewayManager as never,
+      runtimeManager: runtimeManager as never,
+    }).accounts({ mode: 'runtime', probe: true })).resolves.toMatchObject({
+      success: true,
+      channels: [{
+        channelType: 'feishu',
+        status: 'connected',
+        accounts: [{
+          accountId: 'team_bot',
+          connected: true,
+          running: true,
+          linked: true,
+        }],
+      }],
+    });
+
+    expect(runtimeManager.rpc).toHaveBeenCalledWith('channels.status', { probe: true }, 5000);
+    expect(gatewayManager.rpc).not.toHaveBeenCalled();
+  });
+
   it('lists channel targets from session history and validates channel type', async () => {
     const sessionsDir = join(testOpenClawConfigDir, 'agents', 'main', 'sessions');
     mkdirSync(sessionsDir, { recursive: true });
@@ -752,6 +1187,46 @@ describe('host services', () => {
     expect(gatewayManager.debouncedRestart).toHaveBeenCalledWith(150);
   });
 
+  it('refreshes active runtime config after saving channel config', async () => {
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'main', name: 'Main' }],
+      defaultAgentId: 'main',
+      defaultModelRef: null,
+      configuredChannelTypes: ['feishu'],
+      channelOwners: {},
+      channelAccountOwners: {},
+    });
+    getChannelFormValuesMock.mockResolvedValue({ appId: 'old', appSecret: 'old-secret' });
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state: 'running', port: 18789 })),
+      debouncedRestart: vi.fn(),
+      debouncedReload: vi.fn(),
+    };
+    const refreshConfig = vi.fn(async () => undefined);
+    const runtimeManager = {
+      getActiveProvider: vi.fn(() => ({ refreshConfig })),
+    };
+    const { createChannelsApi } = await import('@electron/services/channels-api');
+
+    await expect(createChannelsApi({
+      gatewayManager: gatewayManager as never,
+      runtimeManager: runtimeManager as never,
+    }).saveConfig({
+      channelType: 'feishu',
+      accountId: 'default',
+      config: { appId: 'cli_new', appSecret: 'new-secret' },
+    })).resolves.toEqual({ success: true });
+
+    expect(refreshConfig).toHaveBeenCalledWith({
+      scope: 'channels',
+      reason: 'channel:saveConfig:feishu',
+      channelType: 'feishu',
+      forceRestart: true,
+    });
+    expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
+    expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
+  });
+
   it('deletes agents by restarting gateway, removing workspace, and returning snapshot', async () => {
     const snapshot = {
       agents: [],
@@ -774,6 +1249,7 @@ describe('host services', () => {
       .resolves.toEqual({ success: true, ...snapshot });
 
     expect(deleteAgentConfigMock).toHaveBeenCalledWith('code');
+    expect(deleteCcConnectAgentBindingMock).toHaveBeenCalledWith('code');
     expect(gatewayManager.restart).toHaveBeenCalledTimes(1);
     expect(removeAgentWorkspaceDirectoryMock).toHaveBeenCalledWith(removedEntry);
   });
@@ -809,6 +1285,46 @@ describe('host services', () => {
     expect(gatewayManager.debouncedReload).toHaveBeenCalledTimes(1);
   });
 
+  it('updates a cc-connect Agent binding through the active runtime without OpenClaw projection', async () => {
+    const snapshot = {
+      agents: [{ id: 'reviewer', modelRef: 'openai/gpt-reviewer' }],
+      defaultAgentId: 'main',
+      defaultModelRef: null,
+      configuredChannelTypes: [],
+      channelOwners: {},
+      channelAccountOwners: {},
+    };
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state: 'running' })),
+      debouncedReload: vi.fn(),
+    };
+    const refreshConfig = vi.fn().mockResolvedValue(undefined);
+    const runtimeManager = {
+      getActiveProvider: vi.fn(() => ({ kind: 'cc-connect', refreshConfig })),
+    };
+    const { createAgentsApi } = await import('@electron/services/agents-api');
+    const agentConfig = await import('@electron/utils/agent-config');
+    const providerRuntimeSync = await import('@electron/services/providers/provider-runtime-sync');
+    vi.mocked(agentConfig.updateAgentModel).mockResolvedValue(snapshot as never);
+
+    await expect(createAgentsApi({
+      gatewayManager: gatewayManager as never,
+      runtimeManager: runtimeManager as never,
+    }).updateModel({
+      id: 'reviewer',
+      modelRef: 'openai/gpt-reviewer',
+      providerAccountId: 'reviewer-account',
+    })).resolves.toMatchObject({ success: true });
+
+    expect(providerRuntimeSync.syncAllProviderAuthToRuntime).not.toHaveBeenCalled();
+    expect(providerRuntimeSync.syncAgentModelOverrideToRuntime).not.toHaveBeenCalled();
+    expect(refreshConfig).toHaveBeenCalledWith({
+      scope: 'runtime',
+      reason: 'update-agent-model',
+    });
+    expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
+  });
+
   it('assigns agent channels and schedules gateway reload', async () => {
     const snapshot = {
       agents: [{ id: 'main', channelTypes: ['feishu'] }],
@@ -836,7 +1352,22 @@ describe('host services', () => {
 
   it('returns diagnostics snapshot with channel view and log tails', async () => {
     writeFileSync(join(testOpenClawConfigDir, 'logs', 'gateway.log'), 'gateway-one\ngateway-two\n');
+    mkdirSync(join(testOpenClawConfigDir, 'runtimes', 'cc-connect'), { recursive: true });
+    writeFileSync(join(testOpenClawConfigDir, 'runtimes', 'cc-connect', 'provider-profile.json'), JSON.stringify({
+      providerId: 'openai-oauth',
+      vendorId: 'openai',
+      supported: true,
+      envKeys: ['CODEX_HOME'],
+    }));
     readLogFileMock.mockResolvedValue('clawx-log-tail');
+    codexOAuthStatusMock.mockResolvedValue({
+      success: true,
+      managedCodexHome: join(testOpenClawConfigDir, 'runtimes', 'cc-connect', 'codex-home'),
+      authPath: join(testOpenClawConfigDir, 'runtimes', 'cc-connect', 'codex-home', 'auth.json'),
+      managed: { exists: true, complete: true },
+      user: { exists: true, complete: true },
+      provider: { accountId: 'openai-oauth', vendorId: 'openai', hasOAuthSecret: true },
+    });
     readOpenClawConfigMock.mockResolvedValue({
       channels: {
         feishu: {
@@ -876,9 +1407,62 @@ describe('host services', () => {
       })),
       getCapabilitySnapshot: vi.fn(() => ({ rpc: true })),
     };
+    const runtimeManager = {
+      getStatus: vi.fn(() => ({
+        runtimeKind: 'cc-connect',
+        state: 'running',
+        configDir: join(testOpenClawConfigDir, 'runtimes', 'cc-connect'),
+        operationCapabilities: {
+          'doctor.fix': { support: 'unsupported', reason: 'cc-connect v1.3.2' },
+        },
+      })),
+      getActiveProvider: vi.fn(() => ({
+        kind: 'cc-connect',
+        rpc: vi.fn(async (method: string) => {
+          if (method === 'cron.list') {
+            return [{
+              id: 'cron-1',
+              name: 'Daily build',
+              message: 'secret prompt should not be copied',
+              agentId: 'research',
+              enabled: true,
+              delivery: { mode: 'none' },
+              createdAt: '2026-06-13T00:00:00.000Z',
+              updatedAt: '2026-06-13T00:00:00.000Z',
+              exec: 'node -e "secret command should not be copied"',
+              workDir: '/tmp/diagnostics-workdir',
+              sessionMode: 'continue',
+              timeoutMins: 5,
+              mute: true,
+              lastRun: {
+                time: '2026-06-13T00:01:00.000Z',
+                success: false,
+                error: 'secret runtime error should not be copied',
+              },
+            }];
+          }
+          return undefined;
+        }),
+        listOperationCapabilities: vi.fn(() => ({
+          'doctor.fix': { support: 'unsupported', reason: 'cc-connect v1.3.2' },
+        })),
+        listLogs: vi.fn(async () => ({ content: 'cc-connect-log-tail' })),
+        getControlUi: vi.fn(async () => ({
+          success: true,
+          url: 'http://127.0.0.1:9820/',
+          token: 'diagnostics-management-token',
+          port: 9820,
+        })),
+      })),
+    };
+    const fetchMock = vi.fn(async () => new Response('{"ok":true}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
     const { createDiagnosticsApi } = await import('@electron/services/diagnostics-api');
 
-    const snapshot = await createDiagnosticsApi({ gatewayManager: gatewayManager as never }).gatewaySnapshot();
+    const snapshot = await createDiagnosticsApi({
+      gatewayManager: gatewayManager as never,
+      runtimeManager: runtimeManager as never,
+    }).gatewaySnapshot();
 
     expect(snapshot).toMatchObject({
       platform: process.platform,
@@ -890,10 +1474,83 @@ describe('host services', () => {
       ],
       clawxLogTail: 'clawx-log-tail',
       gateway: expect.objectContaining({
-        state: 'healthy',
         capabilities: { rpc: true },
       }),
+      runtime: {
+        activeKind: 'cc-connect',
+        status: expect.objectContaining({
+          runtimeKind: 'cc-connect',
+          state: 'running',
+        }),
+        operationCapabilities: {
+          'doctor.fix': { support: 'unsupported', reason: 'cc-connect v1.3.2' },
+        },
+        ccConnect: expect.objectContaining({
+          managedDir: join(testOpenClawConfigDir, 'runtimes', 'cc-connect'),
+          configPath: join(testOpenClawConfigDir, 'runtimes', 'cc-connect', 'config.toml'),
+          codexHomeDir: join(testOpenClawConfigDir, 'runtimes', 'cc-connect', 'codex-home'),
+          providerProfilePath: join(testOpenClawConfigDir, 'runtimes', 'cc-connect', 'provider-profile.json'),
+          oauth: expect.objectContaining({
+            success: true,
+            provider: expect.objectContaining({ accountId: 'openai-oauth' }),
+          }),
+          providerProfile: expect.objectContaining({
+            providerId: 'openai-oauth',
+            envKeys: ['CODEX_HOME'],
+          }),
+          binaries: expect.objectContaining({
+            ccConnect: expect.objectContaining({
+              binaryPath: expect.stringContaining('cc-connect'),
+              manifestPath: expect.stringContaining('manifest.json'),
+              versionCommand: expect.objectContaining({ command: expect.stringContaining('--version') }),
+            }),
+            codex: expect.objectContaining({
+              binaryPath: expect.stringContaining('codex'),
+              manifestPath: expect.stringContaining('manifest.json'),
+              versionCommand: expect.objectContaining({ command: expect.stringContaining('--version') }),
+            }),
+          }),
+          managementApi: expect.objectContaining({
+            success: true,
+            port: 9820,
+            status: 200,
+            body: '{"ok":true}',
+          }),
+          cron: expect.objectContaining({
+            success: true,
+            jobCount: 1,
+            jobs: [
+              expect.objectContaining({
+                id: 'cron-1',
+                name: 'Daily build',
+                agentId: 'research',
+                enabled: true,
+                deliveryMode: 'none',
+                hasExec: true,
+                hasPrompt: false,
+                sessionMode: 'continue',
+                timeoutMins: 5,
+                mute: true,
+                lastRun: expect.objectContaining({
+                  success: false,
+                  hasError: true,
+                }),
+              }),
+            ],
+            knownGaps: expect.arrayContaining([
+              'scheduled-prompt-delivery-unproven',
+            ]),
+          }),
+          logTail: 'cc-connect-log-tail',
+        }),
+      },
     });
+    expect(fetchMock).toHaveBeenCalledWith(new URL('http://127.0.0.1:9820/api/v1/status'), {
+      headers: { Authorization: 'Bearer diagnostics-management-token' },
+    });
+    expect(JSON.stringify(snapshot)).not.toContain('secret prompt should not be copied');
+    expect(JSON.stringify(snapshot)).not.toContain('secret command should not be copied');
+    expect(JSON.stringify(snapshot)).not.toContain('secret runtime error should not be copied');
     expect(snapshot.gatewayLogTail).toContain('gateway-one');
     expect(snapshot.gatewayErrLogTail).toBe('');
   });
@@ -993,5 +1650,28 @@ describe('host services', () => {
           { role: 'assistant', content: 'Hi', timestamp: 1001 },
         ],
       });
+  });
+
+  it('routes session rename through the active runtime session RPC', async () => {
+    const rpc = vi.fn(async () => ({ success: true }));
+    const runtimeManager = {
+      getActiveProvider: vi.fn(() => ({
+        kind: 'openclaw',
+        listCapabilities: vi.fn(() => ({ sessions: true })),
+        rpc,
+      })),
+    };
+    const { createSessionsApi } = await import('@electron/services/sessions-api');
+    const sessionsApi = createSessionsApi(runtimeManager as never);
+
+    await expect(sessionsApi.rename({
+      sessionKey: 'agent:research:named',
+      title: 'Renamed research',
+    })).resolves.toEqual({ success: true });
+
+    expect(rpc).toHaveBeenCalledWith('sessions.rename', {
+      sessionKey: 'agent:research:named',
+      label: 'Renamed research',
+    });
   });
 });

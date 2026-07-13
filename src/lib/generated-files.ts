@@ -103,6 +103,14 @@ const EDIT_TOOLS = new Set([
   'multiEdit',
 ]);
 
+const APPLY_PATCH_TOOLS = new Set([
+  'apply_patch',
+  'ApplyPatch',
+  'applyPatch',
+]);
+
+const STRUCTURED_PATCH_TOOLS = new Set(['Patch', 'patch']);
+
 const FILE_PATH_KEYS = ['file_path', 'filepath', 'path', 'fileName', 'file_name', 'target_path'];
 
 /** Best-effort detector that mirrors the buckets WorkBuddy uses internally. */
@@ -316,6 +324,113 @@ function pickEditOps(input: unknown): FileEditOp[] {
   return ops;
 }
 
+type ApplyPatchFileChange = {
+  filePath: string;
+  action: 'created' | 'modified';
+  fullContent?: string;
+  edits?: FileEditOp[];
+};
+
+function readApplyPatchText(input: unknown): string | null {
+  if (typeof input === 'string') return input;
+  if (Array.isArray(input) && input.every((item) => typeof item === 'string')) {
+    return input.join('\n');
+  }
+  const rec = asRecord(input);
+  if (!rec) return null;
+  for (const key of ['patch', 'input', 'text', 'content']) {
+    const value = rec[key];
+    if (typeof value === 'string' && value.includes('*** ')) return value;
+  }
+  return null;
+}
+
+function parseApplyPatchFiles(input: unknown): ApplyPatchFileChange[] {
+  const text = readApplyPatchText(input);
+  if (!text) return [];
+
+  const changes: ApplyPatchFileChange[] = [];
+  let current: ApplyPatchFileChange | null = null;
+  let addLines: string[] = [];
+  let oldLines: string[] = [];
+  let newLines: string[] = [];
+
+  const flush = () => {
+    if (!current) return;
+    if (current.action === 'created') {
+      current.fullContent = addLines.join('\n');
+      if (addLines.length > 0) current.fullContent += '\n';
+    } else {
+      const oldText = oldLines.length > 0 ? `${oldLines.join('\n')}\n` : '';
+      const newText = newLines.length > 0 ? `${newLines.join('\n')}\n` : '';
+      current.edits = oldText || newText ? [{ old: oldText, new: newText }] : [];
+    }
+    changes.push(current);
+    current = null;
+    addLines = [];
+    oldLines = [];
+    newLines = [];
+  };
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const addMatch = rawLine.match(/^\*\*\* Add File:\s*(.+)$/);
+    const updateMatch = rawLine.match(/^\*\*\* Update File:\s*(.+)$/);
+    const deleteMatch = rawLine.match(/^\*\*\* Delete File:\s*(.+)$/);
+    if (addMatch || updateMatch || deleteMatch || rawLine.startsWith('*** End Patch')) {
+      flush();
+      if (addMatch?.[1]) {
+        current = { filePath: addMatch[1].trim(), action: 'created' };
+      } else if (updateMatch?.[1]) {
+        current = { filePath: updateMatch[1].trim(), action: 'modified' };
+      }
+      continue;
+    }
+    if (!current) continue;
+    if (current.action === 'created') {
+      if (rawLine.startsWith('+') && !rawLine.startsWith('+++')) {
+        addLines.push(rawLine.slice(1));
+      }
+      continue;
+    }
+    if (rawLine.startsWith('+') && !rawLine.startsWith('+++')) {
+      newLines.push(rawLine.slice(1));
+    } else if (rawLine.startsWith('-') && !rawLine.startsWith('---')) {
+      oldLines.push(rawLine.slice(1));
+    }
+  }
+  flush();
+
+  return changes.filter((change) => change.filePath);
+}
+
+function parseStructuredPatchFiles(input: unknown): ApplyPatchFileChange[] {
+  const parsed = typeof input === 'string'
+    ? (() => {
+        try {
+          return JSON.parse(input) as unknown;
+        } catch {
+          return input;
+        }
+      })()
+    : input;
+  const entries = Array.isArray(parsed) ? parsed : [parsed];
+
+  return entries.flatMap((entry): ApplyPatchFileChange[] => {
+    const record = asRecord(entry);
+    if (!record) return [];
+    const filePath = pickStringByKeys(record, FILE_PATH_KEYS);
+    const diff = typeof record.diff === 'string' ? record.diff : undefined;
+    if (!filePath || diff === undefined) return [];
+    const kind = asRecord(record.kind);
+    const patchType = (typeof kind?.type === 'string' ? kind.type : typeof record.kind === 'string' ? record.kind : '')
+      .toLowerCase();
+    if (patchType === 'add' || patchType === 'create') {
+      return [{ filePath, action: 'created', fullContent: diff }];
+    }
+    return [{ filePath, action: 'modified', edits: [{ old: '', new: diff }] }];
+  });
+}
+
 function determineWriteAction(
   existing: GeneratedFile | undefined,
   baseline: GeneratedFileBaseline | undefined,
@@ -430,6 +545,26 @@ export function extractGeneratedFiles(
       const name = typeof block.name === 'string' ? block.name : '';
       if (!name) continue;
       const input = block.input ?? block.arguments;
+      const isApplyPatch = APPLY_PATCH_TOOLS.has(name);
+      const isStructuredPatch = STRUCTURED_PATCH_TOOLS.has(name);
+      if (isApplyPatch || isStructuredPatch) {
+        const patchFiles = isStructuredPatch ? parseStructuredPatchFiles(input) : parseApplyPatchFiles(input);
+        for (const patchFile of patchFiles) {
+          const existing = map.get(patchFile.filePath);
+          map.set(patchFile.filePath, buildGeneratedFile(
+            patchFile.filePath,
+            patchFile.action === 'created' ? determineWriteAction(existing, { status: 'missing' }) : 'modified',
+            {
+              fullContent: patchFile.fullContent,
+              edits: patchFile.edits,
+              baseline: patchFile.action === 'created' ? { status: 'missing' } : existing?.baseline,
+            },
+            i,
+          ));
+        }
+        continue;
+      }
+
       const filePath = pickFilePath(input);
       if (!filePath) continue;
 

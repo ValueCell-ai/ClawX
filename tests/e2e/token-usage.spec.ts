@@ -141,6 +141,38 @@ test.describe('ClawX token usage history', () => {
     expect(nonzeroEntry?.provider).toBe('kimi');
   });
 
+  test('does not read cc-connect private session or Codex transcript usage', async ({ page, userDataDir }) => {
+    const privateSessionDir = join(userDataDir, 'runtimes', 'cc-connect', 'data', 'sessions');
+    const privateCodexDir = join(userDataDir, 'runtimes', 'cc-connect', 'codex-home', 'sessions');
+    await mkdir(privateSessionDir, { recursive: true });
+    await mkdir(privateCodexDir, { recursive: true });
+    await writeFile(join(privateSessionDir, 'private.json'), JSON.stringify({ usage: { total_tokens: 99 } }), 'utf8');
+    await writeFile(join(privateCodexDir, 'private.jsonl'), JSON.stringify({ type: 'token_count', total_tokens: 99 }), 'utf8');
+    await completeSetup(page);
+
+    const usageHistory = await page.evaluate(async () => {
+      return window.electron.ipcRenderer.invoke('usage:recentTokenHistory', { limit: 20, runtimeKind: 'cc-connect' });
+    });
+
+    expect(usageHistory).toEqual([]);
+  });
+
+  test('filters IPC token usage history by runtime kind', async ({ page, homeDir }) => {
+    await seedTokenUsageTranscripts(homeDir);
+    await completeSetup(page);
+
+    const openclawUsageHistory = await page.evaluate(async () => {
+      return window.electron.ipcRenderer.invoke('usage:recentTokenHistory', { limit: 20, runtimeKind: 'openclaw' });
+    });
+    const ccConnectUsageHistory = await page.evaluate(async () => {
+      return window.electron.ipcRenderer.invoke('usage:recentTokenHistory', { limit: 20, runtimeKind: 'cc-connect' });
+    });
+
+    expect(openclawUsageHistory.some((entry) => entry?.runtimeKind === 'openclaw')).toBe(true);
+    expect(openclawUsageHistory.some((entry) => entry?.runtimeKind === 'cc-connect')).toBe(false);
+    expect(ccConnectUsageHistory).toEqual([]);
+  });
+
   // TODO: This test needs a reliable way to inject mocked gateway status into
   // the renderer's Zustand store in CI (where no real OpenClaw runtime exists).
   // The IPC mock + page.reload approach fails because the reload
