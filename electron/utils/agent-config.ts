@@ -677,7 +677,29 @@ export async function updateAgentModel(agentId: string, modelRef: string | null)
       if (!isValidModelRef(normalizedModelRef)) {
         throw new Error('modelRef must be in "provider/model" format');
       }
-      nextEntry.model = { primary: normalizedModelRef };
+      // Merge into the existing model block: replacing it wholesale discards
+      // hand-configured fields such as `fallbacks`.
+      const existingModel = entries[index].model;
+      const nextModel: AgentModelConfig = existingModel && typeof existingModel === 'object'
+        ? { ...existingModel, primary: normalizedModelRef }
+        : { primary: normalizedModelRef };
+      // The OpenClaw runtime treats a per-agent model block without a
+      // `fallbacks` key as an EMPTY fallback override, which suppresses
+      // agents.defaults.model.fallbacks entirely. Inherit the defaults chain
+      // so switching models never silently disables failover.
+      if (!Array.isArray(nextModel.fallbacks)) {
+        const defaultsModel = agentsConfig.defaults?.model;
+        const defaultFallbacks = defaultsModel && typeof defaultsModel === 'object'
+          ? (defaultsModel as AgentModelConfig).fallbacks
+          : undefined;
+        if (Array.isArray(defaultFallbacks)) {
+          const inherited = defaultFallbacks.filter((ref): ref is string => typeof ref === 'string' && ref.trim().length > 0);
+          if (inherited.length > 0) {
+            nextModel.fallbacks = inherited;
+          }
+        }
+      }
+      nextEntry.model = nextModel;
     }
 
     entries[index] = nextEntry;
