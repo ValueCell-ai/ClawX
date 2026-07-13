@@ -60,7 +60,15 @@
         "saveImage": "Сохранить изображение как",
         "imageSaved": "Изображение сохранено",
         "copy": "Копировать ответ",
-        "copied": "Скопировано"
+        "copied": "Скопировано",
+        "attachment": {
+            "loading": "Загрузка вложения",
+            "unavailable": "Вложение недоступно",
+            "open": "Открыть {{name}}",
+            "preview": "Просмотреть {{name}}",
+            "mimeSize": "{{size}}",
+            "openFailed": "Не удалось открыть вложение"
+        }
     },
     "artifactPanel": {
         "tabs": {

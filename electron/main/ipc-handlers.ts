@@ -57,6 +57,8 @@ import { createSettingsApi } from '../services/settings-api';
 import { createChannelsApi } from '../services/channels-api';
 import { createAgentsApi } from '../services/agents-api';
 import { createChatApi } from '../services/chat-api';
+import { AcpSessionAccessRegistry } from '../services/acp-session-access-registry';
+import { createAttachmentAccess, StagedAttachmentRegistry } from '../services/attachment-access';
 import { createCronApi } from '../services/cron-api';
 import { createFilesApi } from '../services/files-api';
 import { createMediaApi } from '../services/media-api';
@@ -133,6 +135,12 @@ function registerTypedHostHandlers(
   mainWindow: BrowserWindow,
   hostApiRegistry: HostApiRegistry,
 ): void {
+  const acpSessionAccessRegistry = new AcpSessionAccessRegistry();
+  const stagedAttachments = new StagedAttachmentRegistry();
+  const attachmentAccess = createAttachmentAccess({
+    sessionAccessRegistry: acpSessionAccessRegistry,
+    stagedAttachments,
+  });
   hostApiRegistry.registerCoreServices({
     app: createAppApi(),
     openclaw: createOpenClawApi(),
@@ -147,10 +155,10 @@ function registerTypedHostHandlers(
     channels: createChannelsApi({ gatewayManager, mainWindow }),
     agents: createAgentsApi({ gatewayManager }),
     providers: createProvidersApi({ gatewayManager, mainWindow }),
-    files: createFilesApi(),
-    media: createMediaApi(),
+    files: createFilesApi({ attachmentAccess, stagedAttachments }),
+    media: createMediaApi({ attachmentAccess }),
     sessions: createSessionsApi(),
-    chat: createChatApi({ gatewayManager, mainWindow }),
+    chat: createChatApi({ gatewayManager, mainWindow, acpSessionAccessRegistry }),
     cron: createCronApi({ gatewayManager }),
     skills: createSkillsApi({ clawHubService, gatewayManager }),
     usage: createUsageApi(),

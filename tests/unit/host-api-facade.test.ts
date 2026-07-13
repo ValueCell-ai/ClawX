@@ -297,6 +297,53 @@ describe('hostApi facade', () => {
     });
   });
 
+  it('passes attachment-scoped file actions without a workspace root', async () => {
+    hostInvoke.mockResolvedValue({ id: 'req', ok: true, data: { ok: true } });
+    const { hostApi } = await import('@/lib/host-api');
+    const ref = {
+      sessionKey: 'agent:main:session-a',
+      generation: 4,
+      uri: 'file:///workspace/report.pdf',
+    };
+    const resolvePayload = { ref, name: 'report.pdf', mimeType: 'application/pdf' };
+
+    await hostApi.files.resolveAttachment(resolvePayload);
+    await hostApi.files.readAttachmentText(ref);
+    await hostApi.files.readAttachmentBinary({ ref, maxBytes: 2048 });
+    await hostApi.files.openAttachment(ref);
+
+    const actions = [
+      ['resolveAttachment', resolvePayload],
+      ['readAttachmentText', ref],
+      ['readAttachmentBinary', { ref, maxBytes: 2048 }],
+      ['openAttachment', ref],
+    ];
+    actions.forEach(([action, payload], index) => {
+      expect(hostInvoke).toHaveBeenNthCalledWith(index + 1, expect.objectContaining({
+        module: 'files',
+        action,
+        payload,
+      }));
+      expect(payload).not.toHaveProperty('workspaceRoot');
+    });
+  });
+
+  it('exports attachment resolution from the file preview client', async () => {
+    hostInvoke.mockResolvedValue({ id: 'req', ok: true, data: { ok: false, error: 'unavailable' } });
+    const { resolveAttachment } = await import('@/lib/file-preview-client');
+    const payload = {
+      ref: { sessionKey: 'agent:main:s1', generation: 1, uri: 'file:///workspace/a.txt' },
+    };
+
+    await resolveAttachment(payload);
+
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'files',
+      action: 'resolveAttachment',
+      payload,
+    }));
+  });
+
   it('does not expose workspace-scoped shell actions', async () => {
     const { hostApi } = await import('@/lib/host-api');
 
@@ -323,7 +370,11 @@ describe('hostApi facade', () => {
       .mockResolvedValueOnce({ id: 'req-4', ok: true, data: { success: true } });
     const { hostApi } = await import('@/lib/host-api');
 
-    await hostApi.chat.loadAcpSession({ sessionKey: 'main', cwd: '/workspace/project' });
+    await hostApi.chat.loadAcpSession({
+      sessionKey: 'main',
+      workspaceRoot: '/workspace',
+      cwd: '/workspace/project',
+    });
     await hostApi.chat.sendAcpPrompt({
       sessionKey: 'main',
       cwd: '/workspace/project',

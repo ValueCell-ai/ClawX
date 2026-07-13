@@ -5,7 +5,7 @@ import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { stripAcpWorkingDirectoryPrefix } from '@shared/chat/session-title';
 import { isOpenClawHeartbeatPollText } from '@shared/chat/openclaw-internal';
 import type { RawMessage } from '@shared/chat/types';
-import { getOpenClawConfigDir } from '../utils/paths';
+import { resolveOpenClawStateDir } from '../utils/paths';
 import { logger } from '../utils/logger';
 import {
   removeSessionEntry,
@@ -151,7 +151,7 @@ async function readOpenClawAcpSessionCwds(sessionKeys: string[]): Promise<Map<st
   const workspaceByKey = new Map<string, string>();
   if (normalizedKeys.length === 0) return workspaceByKey;
 
-  const databasePath = join(getOpenClawConfigDir(), 'state', 'openclaw.sqlite');
+  const databasePath = join(resolveOpenClawStateDir(), 'state', 'openclaw.sqlite');
   try {
     await access(databasePath);
     const sqliteSpecifier = 'node:sqlite';
@@ -305,7 +305,7 @@ function getLimit(payload: unknown, fallback = 200): number {
 
 async function readSessionsJson(agentId: string): Promise<Record<string, unknown>> {
   const fsP = await import('node:fs/promises');
-  const sessionsJsonPath = join(getOpenClawConfigDir(), 'agents', agentId, 'sessions', 'sessions.json');
+  const sessionsJsonPath = join(resolveOpenClawStateDir(), 'agents', agentId, 'sessions', 'sessions.json');
   const raw = await fsP.readFile(sessionsJsonPath, 'utf8');
   return JSON.parse(raw) as Record<string, unknown>;
 }
@@ -367,7 +367,7 @@ async function loadSessionSummary(sessionKey: string, workspacePath: string | nu
   }
 
   try {
-    const sessionsDir = join(getOpenClawConfigDir(), 'agents', parsed.agentId, 'sessions');
+    const sessionsDir = join(resolveOpenClawStateDir(), 'agents', parsed.agentId, 'sessions');
     const sessionsJson = await readSessionsJson(parsed.agentId);
     const transcriptPath = resolveSessionTranscriptPathByKey(sessionKey, sessionsDir, sessionsJson);
     if (!transcriptPath) {
@@ -386,7 +386,7 @@ async function loadSessionTranscriptByKey(sessionKey: string, limit: number): Pr
   if (!parsed) return null;
 
   try {
-    const sessionsDir = join(getOpenClawConfigDir(), 'agents', parsed.agentId, 'sessions');
+    const sessionsDir = join(resolveOpenClawStateDir(), 'agents', parsed.agentId, 'sessions');
     const sessionsJson = await readSessionsJson(parsed.agentId);
     const transcriptPath = resolveSessionTranscriptPathByKey(sessionKey, sessionsDir, sessionsJson);
     if (!transcriptPath) return null;
@@ -410,7 +410,7 @@ async function deleteSession(sessionKey: string): Promise<{ success: boolean; er
     return { success: false, error: `Invalid agentId: ${agentId}` };
   }
 
-  const sessionsDir = join(getOpenClawConfigDir(), 'agents', agentId, 'sessions');
+  const sessionsDir = join(resolveOpenClawStateDir(), 'agents', agentId, 'sessions');
   const sessionsJsonPath = join(sessionsDir, 'sessions.json');
   logger.info(`[session:delete] key=${sessionKey} agentId=${agentId}`);
   logger.info(`[session:delete] sessionsJson=${sessionsJsonPath}`);
@@ -478,7 +478,7 @@ async function renameSession(sessionKey: string, label: string): Promise<{ succe
     return { success: false, error: `Invalid agentId in sessionKey: ${agentId}` };
   }
 
-  const sessionsJsonPath = join(getOpenClawConfigDir(), 'agents', agentId, 'sessions', 'sessions.json');
+  const sessionsJsonPath = join(resolveOpenClawStateDir(), 'agents', agentId, 'sessions', 'sessions.json');
   const fsP = await import('node:fs/promises');
   const raw = await fsP.readFile(sessionsJsonPath, 'utf8');
   const json = JSON.parse(raw) as Record<string, unknown>;
@@ -553,7 +553,7 @@ export function createSessionsApi(): CompleteHostServiceRegistry['sessions'] {
       }
 
       try {
-        const transcriptPath = join(getOpenClawConfigDir(), 'agents', agentId, 'sessions', `${sessionId}.jsonl`);
+        const transcriptPath = join(resolveOpenClawStateDir(), 'agents', agentId, 'sessions', `${sessionId}.jsonl`);
         return { success: true, messages: readRecentTranscriptMessages(transcriptPath, limit) };
       } catch (error) {
         if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {

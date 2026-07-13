@@ -2,6 +2,8 @@ import type {
   AgentCreatePayload,
   AgentUpdatePayload,
   AcpTraceRecordPayload,
+  AttachmentFileRef,
+  AttachmentSourceRef,
   ChannelAccountsPayload,
   ChannelSaveConfigPayload,
   ChannelTargetsPayload,
@@ -21,6 +23,8 @@ import type {
   ProviderOAuthRequestPayload,
   ProviderUpdateWithKeyPayload,
   ProviderValidationPayload,
+  ReadAttachmentBinaryPayload,
+  ResolveAttachmentPayload,
   SaveImagePayload,
   SettingsKey,
   SettingsSnapshot,
@@ -44,6 +48,11 @@ import type { CronJobCreateInput, CronJobUpdateInput } from '@shared/types/cron'
 import { invokeHost } from './host-api-client';
 
 export type {
+  AttachmentAccessError,
+  AttachmentFileRef,
+  AttachmentRemoteRef,
+  AttachmentReadError,
+  AttachmentSourceRef,
   ChannelAccountsResult,
   ChannelCredentialValidationResult,
   ChannelFormValuesResult,
@@ -68,9 +77,13 @@ export type {
   OpenClawCliCommandResult,
   OpenClawDoctorResult,
   OpenClawStatusResult,
+  OpenAttachmentResult,
   ProviderAccountKeyInfo,
   ProviderDefaultAccountResult,
   ProviderValidationResult,
+  ReadAttachmentBinaryResult,
+  ReadAttachmentTextResult,
+  ResolveAttachmentResult,
   SessionHistoryResult,
   SessionLabelSummary,
   SessionSummariesResult,
@@ -291,6 +304,12 @@ export const hostApi = {
       invokeHost('files', 'readWorkspaceBinary', input)
     ),
     statWorkspaceFile: (ref: WorkspaceFileRef) => invokeHost('files', 'statWorkspaceFile', ref),
+    resolveAttachment: (input: ResolveAttachmentPayload) => invokeHost('files', 'resolveAttachment', input),
+    readAttachmentText: (ref: AttachmentFileRef) => invokeHost('files', 'readAttachmentText', ref),
+    readAttachmentBinary: (input: ReadAttachmentBinaryPayload) => (
+      invokeHost('files', 'readAttachmentBinary', input)
+    ),
+    openAttachment: (ref: AttachmentSourceRef) => invokeHost('files', 'openAttachment', ref),
   },
   media: {
     thumbnails: (input: { paths: MediaThumbnailEntry[] }) => invokeHost('media', 'thumbnails', input),

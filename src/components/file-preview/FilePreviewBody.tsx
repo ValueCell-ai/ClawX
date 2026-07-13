@@ -20,6 +20,7 @@
  * here so callers only pass a `FilePreviewTarget` and a `readOnly` flag.
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { FILE_PREVIEW_MAX_BINARY_BYTES } from '@shared/file-preview/limits';
 import { FolderOpen, Save, ShieldAlert, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -29,6 +30,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
 import {
   readTextFile,
+  readAttachmentText,
   readWorkspaceText,
   statFile,
   statWorkspaceFile,
@@ -37,12 +39,9 @@ import {
 import { getFilePreviewTargetIdentity, type FilePreviewTarget } from './types';
 import {
   isHtmlPreviewExt,
-  isPdfPreviewExt,
-  isSheetPreviewExt,
   supportsInlineDiff,
-  supportsInlineDocumentPreview,
-  supportsRichDocumentPreview,
 } from '@/lib/generated-files';
+import { filePreviewKind, richFilePreviewKind } from '@/lib/file-preview-capabilities';
 import { FilePreviewIcon } from './file-card-utils';
 import { formatFileSize } from './format';
 import {
@@ -58,12 +57,6 @@ const MonacoViewerLazy = lazy(() => import('./MonacoViewer'));
 const MonacoDiffViewerLazy = lazy(() => import('./MonacoDiffViewer'));
 const PdfViewerLazy = lazy(() => import('./PdfViewer'));
 const SheetViewerLazy = lazy(() => import('./SheetViewer'));
-
-/**
- * Files past this ceiling get the direct-open fallback instead of the
- * inline PDF / spreadsheet viewer.  Mirrors the main-process binary cap.
- */
-const RICH_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
 
 /**
  * Tab set for the body.
@@ -106,20 +99,18 @@ function tabsForFile(file: FilePreviewTarget, mode: FilePreviewBodyMode): Tab[] 
   // formats where inline diff is actually supported.
   if (mode === 'diff') return supportsInlineDiff(file) ? ['diff'] : [];
 
+  const previewKind = filePreviewKind(file);
+  if (!previewKind) return [];
+  const richPreview = richFilePreviewKind(file);
   const tabs: Tab[] = [];
-  if (file.contentType === 'document') {
-    if (!supportsInlineDocumentPreview(file.ext)) {
-      return [];
-    }
+  if (richPreview) {
+    tabs.push('preview');
+  } else if (file.contentType === 'document') {
     // Markdown / HTML / rich documents: rendered preview first.
     tabs.push('preview');
     if (isHtmlPreviewExt(file.ext)) {
       tabs.push('source');
     }
-  } else if (file.contentType === 'snapshot') {
-    tabs.push('preview');
-  } else if (file.contentType === 'video' || file.contentType === 'audio') {
-    tabs.push('preview');
   } else if (file.contentType === 'code') {
     tabs.push('source');
   } else {
@@ -228,14 +219,15 @@ export function FilePreviewBody({
 
   // Preview / diff modes are read-only by definition — those views are
   // for inspecting content, not editing it.
-  const enforcedReadOnly = readOnly || !!file.workspaceFileRef || mode === 'preview' || mode === 'diff';
+  const enforcedReadOnly = readOnly || !!file.attachmentFileRef || !!file.workspaceFileRef || mode === 'preview' || mode === 'diff';
   const tabs = useMemo(() => tabsForFile(file, mode), [file, mode]);
-  const unsupportedPreviewFormat = file.contentType === 'document' && !supportsInlineDocumentPreview(file.ext);
+  const unsupportedPreviewFormat = mode !== 'diff' && filePreviewKind(file) == null;
   const unsupportedDiffFormat = mode === 'diff' && !supportsInlineDiff(file);
+  const richPreview = richFilePreviewKind(file);
   // Binary document previews (PDF, spreadsheet) own their own loading
   // pipeline — we must not pipe them through `readTextFile` (which would
   // reject them as binary) and the diff tab is intentionally hidden.
-  const isRichDocumentPreview = file.contentType === 'document' && supportsRichDocumentPreview(file.ext);
+  const isRichDocumentPreview = richPreview === 'pdf' || richPreview === 'sheet';
 
   useEffect(() => {
     let cancelled = false;
@@ -255,6 +247,11 @@ export function FilePreviewBody({
     if (unsupportedPreviewFormat) {
       setState({ identity: loadIdentity, status: 'ready', content: '', readOnly: enforcedReadOnly });
       setDraft(null);
+      if (file.attachmentFileRef) {
+        return () => {
+          cancelled = true;
+        };
+      }
       void (file.workspaceFileRef
         ? statWorkspaceFile(file.workspaceFileRef)
         : statFile(file.filePath))
@@ -275,7 +272,7 @@ export function FilePreviewBody({
       // IPC channel; the body just needs to hand off control. For files
       // beyond the inline-preview ceiling we keep the existing
       // "direct open" fallback so users still have a way out.
-      if (typeof file.size === 'number' && file.size > RICH_PREVIEW_MAX_BYTES) {
+      if (typeof file.size === 'number' && file.size > FILE_PREVIEW_MAX_BINARY_BYTES) {
         setSize(file.size);
         setState({ identity: loadIdentity, status: 'tooLarge', size: file.size });
         setDraft(null);
@@ -285,12 +282,18 @@ export function FilePreviewBody({
       }
       setState({ identity: loadIdentity, status: 'loading' });
       setDraft(null);
+      if (file.attachmentFileRef) {
+        setState({ identity: loadIdentity, status: 'ready', content: '', readOnly: true });
+        return () => {
+          cancelled = true;
+        };
+      }
       void (file.workspaceFileRef
         ? statWorkspaceFile(file.workspaceFileRef)
         : statFile(file.filePath))
         .then((res) => {
           if (cancelled) return;
-          if (res.ok && typeof res.size === 'number' && res.size > RICH_PREVIEW_MAX_BYTES) {
+          if (res.ok && typeof res.size === 'number' && res.size > FILE_PREVIEW_MAX_BINARY_BYTES) {
             setSize(res.size);
             setState({ identity: loadIdentity, status: 'tooLarge', size: res.size });
             return;
@@ -307,7 +310,7 @@ export function FilePreviewBody({
       };
     }
 
-    if (file.contentType === 'snapshot' || file.contentType === 'video' || file.contentType === 'audio') {
+    if (richPreview === 'image' || file.contentType === 'video' || file.contentType === 'audio') {
       setState({ identity: loadIdentity, status: 'ready', content: '', readOnly: enforcedReadOnly });
       setDraft(null);
       return () => {
@@ -316,7 +319,9 @@ export function FilePreviewBody({
     }
 
     setState({ identity: loadIdentity, status: 'loading' });
-    (file.workspaceFileRef
+    (file.attachmentFileRef
+      ? readAttachmentText(file.attachmentFileRef)
+      : file.workspaceFileRef
       ? readWorkspaceText(file.workspaceFileRef)
       : readTextFile(file.filePath))
       .then((res) => {
@@ -358,10 +363,10 @@ export function FilePreviewBody({
     return () => {
       cancelled = true;
     };
-  }, [file, loadIdentity, enforcedReadOnly, mode, tabs, unsupportedPreviewFormat, isRichDocumentPreview]);
+  }, [file, loadIdentity, enforcedReadOnly, mode, tabs, unsupportedPreviewFormat, isRichDocumentPreview, richPreview]);
 
   const effectiveReadOnly = state.status === 'ready' ? state.readOnly : true;
-  const allowSystemActions = !file.workspaceFileRef;
+  const allowSystemActions = !file.attachmentFileRef && !file.workspaceFileRef;
   const dirty =
     state.status === 'ready' && !state.readOnly && draft != null && draft !== state.content;
 
@@ -564,10 +569,11 @@ export function FilePreviewBody({
         >
           {tabs.includes('source') && (
             <TabsContent value="source" className="m-0 h-full">
-              {file.contentType === 'snapshot' ? (
+              {richPreview === 'image' ? (
                 <ImageViewer
                   filePath={file.filePath}
                   fileName={file.fileName}
+                  attachmentFileRef={file.attachmentFileRef}
                   workspaceFileRef={file.workspaceFileRef}
                 />
               ) : (
@@ -590,13 +596,14 @@ export function FilePreviewBody({
           )}
           {tabs.includes('preview') && (
             <TabsContent value="preview" className="m-0 h-full overflow-auto">
-              {file.contentType === 'snapshot' ? (
+              {richPreview === 'image' ? (
                 <ImageViewer
                   filePath={file.filePath}
                   fileName={file.fileName}
+                  attachmentFileRef={file.attachmentFileRef}
                   workspaceFileRef={file.workspaceFileRef}
                 />
-              ) : isPdfPreviewExt(file.ext) ? (
+              ) : richPreview === 'pdf' ? (
                 <Suspense
                   fallback={
                     <div className="flex h-full items-center justify-center">
@@ -607,10 +614,11 @@ export function FilePreviewBody({
                   <PdfViewerLazy
                     filePath={file.filePath}
                     fileName={file.fileName}
+                    attachmentFileRef={file.attachmentFileRef}
                     workspaceFileRef={file.workspaceFileRef}
                   />
                 </Suspense>
-              ) : isSheetPreviewExt(file.ext) ? (
+              ) : richPreview === 'sheet' ? (
                 <Suspense
                   fallback={
                     <div className="flex h-full items-center justify-center">
@@ -621,6 +629,7 @@ export function FilePreviewBody({
                   <SheetViewerLazy
                     filePath={file.filePath}
                     fileName={file.fileName}
+                    attachmentFileRef={file.attachmentFileRef}
                     workspaceFileRef={file.workspaceFileRef}
                   />
                 </Suspense>
@@ -630,6 +639,7 @@ export function FilePreviewBody({
                     source={draft ?? state.content}
                     filePath={file.filePath}
                     fileName={file.fileName}
+                    attachmentFileRef={file.attachmentFileRef}
                     workspaceFileRef={file.workspaceFileRef}
                   />
                 ) : (

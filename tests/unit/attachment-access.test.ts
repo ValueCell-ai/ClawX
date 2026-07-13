@@ -1,0 +1,496 @@
+// @vitest-environment node
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { lstat, mkdir, mkdtemp, open, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
+import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { AcpSessionAccessRegistry } from '../../electron/services/acp-session-access-registry';
+import {
+  StagedAttachmentRegistry,
+  createAttachmentAccess,
+} from '../../electron/services/attachment-access';
+import {
+  clearAcpTraceForTests,
+  getAcpTraceSnapshot,
+} from '../../electron/services/acp-trace';
+import {
+  resolveOpenClawConfigDir,
+  resolveOpenClawConfigPath,
+  resolveOpenClawStateDir,
+} from '../../electron/utils/paths';
+
+describe('attachment access boundary', () => {
+  const sessionKey = 'agent:main:session-a';
+  let testDir: string;
+  let workspaceRoot: string;
+  let stateDir: string;
+  let configDir: string;
+  let externalMediaRoot: string;
+  let outsideDir: string;
+  let registry: AcpSessionAccessRegistry;
+  let stagedAttachments: StagedAttachmentRegistry;
+  let openPath: ReturnType<typeof vi.fn>;
+  let openExternal: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    clearAcpTraceForTests();
+    testDir = await mkdtemp(join(tmpdir(), 'clawx-attachment-access-'));
+    workspaceRoot = join(testDir, 'workspace');
+    stateDir = join(testDir, 'state');
+    configDir = join(testDir, 'config');
+    externalMediaRoot = join(testDir, 'runtime-media');
+    outsideDir = join(testDir, 'outside');
+    await Promise.all([
+      mkdir(join(workspaceRoot, 'nested'), { recursive: true }),
+      mkdir(join(stateDir, 'media', 'outgoing', 'records'), { recursive: true }),
+      mkdir(join(stateDir, 'agents', 'main', 'sessions'), { recursive: true }),
+      mkdir(join(configDir, 'media'), { recursive: true }),
+      mkdir(externalMediaRoot, { recursive: true }),
+      mkdir(outsideDir, { recursive: true }),
+    ]);
+    await Promise.all([
+      writeFile(join(workspaceRoot, 'notes.txt'), 'workspace notes'),
+      writeFile(join(workspaceRoot, 'binary.bin'), Buffer.from([1, 2, 3])),
+      writeFile(join(stateDir, 'media', 'state.png'), 'state image'),
+      writeFile(join(configDir, 'media', 'config.png'), 'config image'),
+      writeFile(join(externalMediaRoot, 'runtime.png'), 'runtime image'),
+      writeFile(join(stateDir, 'openclaw.json'), '{}'),
+      writeFile(join(configDir, 'openclaw.json'), '{}'),
+      writeFile(join(stateDir, 'media', 'outgoing', 'records', 'leak.json'), JSON.stringify({
+        original: { path: '/private/account/secret.png' },
+      })),
+      writeFile(join(stateDir, 'agents', 'main', 'sessions', 'secret.jsonl'), 'secret'),
+      writeFile(join(outsideDir, 'secret.txt'), 'outside secret'),
+    ]);
+    registry = new AcpSessionAccessRegistry();
+    registry.commitGrant(await registry.prepareGrant({
+      sessionKey,
+      generation: 1,
+      workspaceRoot,
+      executionCwd: join(workspaceRoot, 'nested'),
+    }));
+    stagedAttachments = new StagedAttachmentRegistry();
+    openPath = vi.fn().mockResolvedValue('');
+    openExternal = vi.fn().mockResolvedValue(undefined);
+  });
+
+  afterEach(async () => {
+    await rm(testDir, { recursive: true, force: true });
+  });
+
+  function getAccess() {
+    return createAttachmentAccess({
+      sessionAccessRegistry: registry,
+      stagedAttachments,
+      stateDir,
+      configDir,
+      shell: { openPath, openExternal },
+    });
+  }
+
+  function ref(uri: string, extra: Record<string, unknown> = {}) {
+    return { sessionKey, generation: 1, uri, ...extra };
+  }
+
+  it('resolves workspace files only through the exact registered session and generation', async () => {
+    const access = getAccess();
+    const workspaceFile = join(workspaceRoot, 'notes.txt');
+
+    await expect(access.resolveAttachment({ ref: ref(workspaceFile) })).resolves.toMatchObject({
+      ok: true,
+      displayName: 'notes.txt',
+      target: { kind: 'local', scope: 'workspace', ref: ref(workspaceFile) },
+    });
+    await expect(access.resolveAttachment({ ref: { ...ref(workspaceFile), sessionKey: 'agent:main:other' } }))
+      .resolves.toMatchObject({ ok: false, error: 'staleSession' });
+    await expect(access.resolveAttachment({ ref: { ...ref(workspaceFile), generation: 2 } }))
+      .resolves.toMatchObject({ ok: false, error: 'staleSession' });
+    await expect(access.resolveAttachment({
+      ref: ref(join(outsideDir, 'secret.txt')),
+      workspaceRoot: outsideDir,
+    } as never)).resolves.toMatchObject({ ok: false, error: 'outsideAllowedRoots' });
+  });
+
+  it('allows only exact declared OpenClaw media roots', async () => {
+    const access = getAccess();
+
+    await expect(access.resolveAttachment({ ref: ref(join(stateDir, 'media', 'state.png')) }))
+      .resolves.toMatchObject({ ok: true, target: { kind: 'local', scope: 'openclaw-media' } });
+    await expect(access.resolveAttachment({ ref: ref(join(configDir, 'media', 'config.png')) }))
+      .resolves.toMatchObject({ ok: true, target: { kind: 'local', scope: 'openclaw-media' } });
+    for (const denied of [
+      join(stateDir, 'openclaw.json'),
+      join(configDir, 'openclaw.json'),
+      join(stateDir, 'agents', 'main', 'sessions', 'secret.jsonl'),
+      join(stateDir, 'media', 'outgoing', 'records', 'leak.json'),
+      join(externalMediaRoot, 'runtime.png'),
+    ]) {
+      await expect(access.resolveAttachment({ ref: ref(denied) }))
+        .resolves.toMatchObject({ ok: false, error: 'outsideAllowedRoots' });
+    }
+
+  });
+
+  it('freezes the registered canonical workspace root across rename and symlink replacement', async () => {
+    const originalWorkspace = join(testDir, 'workspace-original');
+    await rename(workspaceRoot, originalWorkspace);
+    await symlink(outsideDir, workspaceRoot);
+
+    await expect(getAccess().resolveAttachment({ ref: ref(join(workspaceRoot, 'secret.txt')) }))
+      .resolves.toMatchObject({ ok: false, error: 'outsideAllowedRoots' });
+  });
+
+  it.each(['state-external', 'state-sibling', 'config-external', 'config-sibling'])(
+    'rejects a symlinked managed media root targeting %s',
+    async (scenario) => {
+      const isState = scenario.startsWith('state');
+      const parent = isState ? stateDir : configDir;
+      const mediaPath = join(parent, 'media');
+      const sibling = join(parent, 'sensitive');
+      const target = scenario.endsWith('sibling') ? sibling : externalMediaRoot;
+      await rm(mediaPath, { recursive: true, force: true });
+      if (scenario.endsWith('sibling')) {
+        await mkdir(sibling);
+        await writeFile(join(sibling, 'secret.txt'), 'sibling secret');
+      }
+      await symlink(target, mediaPath);
+
+      const targetFile = join(target, scenario.endsWith('sibling') ? 'secret.txt' : 'runtime.png');
+      await expect(getAccess().resolveAttachment({ ref: ref(targetFile) }))
+        .resolves.toMatchObject({ ok: false, error: 'outsideAllowedRoots' });
+    },
+  );
+
+  it.each(['state', 'config'])('pins the %s parent across rename and symlink replacement', async (kind) => {
+    const parent = kind === 'state' ? stateDir : configDir;
+    const originalParent = `${parent}-original`;
+    const replacementParent = join(testDir, `${kind}-replacement`);
+    const replacementMedia = join(replacementParent, 'media');
+    const attachmentId = `${kind}-parent-swap`;
+    const gatewayUrl = `/api/chat/media/outgoing/${encodeURIComponent(sessionKey)}/${attachmentId}/full`;
+    const initialMediaPath = join(parent, 'media', `${kind}.png`);
+    const replacementMediaPath = join(replacementMedia, `${kind}.png`);
+    await writeFile(initialMediaPath, `${kind} initial`);
+
+    const recordPath = join(stateDir, 'media', 'outgoing', 'records', `${attachmentId}.json`);
+    await writeFile(recordPath, JSON.stringify({
+      attachmentId,
+      sessionKey,
+      original: { path: initialMediaPath, contentType: 'image/png' },
+    }));
+    const access = getAccess();
+
+    await expect(access.resolveAttachment({ ref: ref(initialMediaPath) }))
+      .resolves.toMatchObject({ ok: true });
+    await expect(access.resolveAttachment({ ref: ref(gatewayUrl) }))
+      .resolves.toMatchObject({ ok: true });
+
+    await mkdir(replacementMedia, { recursive: true });
+    await writeFile(replacementMediaPath, `${kind} replacement`);
+    if (kind === 'state') {
+      await mkdir(join(replacementMedia, 'outgoing', 'records'), { recursive: true });
+      await writeFile(
+        join(replacementMedia, 'outgoing', 'records', `${attachmentId}.json`),
+        JSON.stringify({
+          attachmentId,
+          sessionKey,
+          original: { path: replacementMediaPath, contentType: 'image/png' },
+        }),
+      );
+    }
+    await rename(parent, originalParent);
+    await symlink(replacementParent, parent);
+
+    await expect(access.resolveAttachment({ ref: ref(join(parent, 'media', `${kind}.png`)) }))
+      .resolves.toMatchObject({ ok: false, error: 'outsideAllowedRoots' });
+    await expect(access.resolveAttachment({ ref: ref(gatewayUrl) }))
+      .resolves.toMatchObject({ ok: false });
+  });
+
+  it('requires a Main-owned staging id and matching staged path', async () => {
+    const stagingDir = join(stateDir, 'media', 'outbound', 'clawx-staging');
+    const stagedPath = join(stagingDir, 'owned.txt');
+    const previousRunPath = join(stagingDir, 'previous-run.txt');
+    await mkdir(stagingDir, { recursive: true });
+    await writeFile(stagedPath, 'owned');
+    await writeFile(previousRunPath, 'unregistered');
+    stagedAttachments.register('stage-1', await realpath(stagedPath));
+    const access = getAccess();
+
+    await expect(access.resolveAttachment({ ref: ref(stagedPath) }))
+      .resolves.toMatchObject({ ok: false, error: 'outsideAllowedRoots' });
+    await expect(access.resolveAttachment({ ref: ref(previousRunPath) }))
+      .resolves.toMatchObject({ ok: false, error: 'outsideAllowedRoots' });
+    await expect(access.resolveAttachment({ ref: ref(stagedPath, { stagingId: 'stage-1' }) }))
+      .resolves.toMatchObject({ ok: true, target: { kind: 'local', scope: 'staging' } });
+    await expect(access.resolveAttachment({
+      ref: ref(join(outsideDir, 'secret.txt'), { stagingId: 'stage-1' }),
+    })).resolves.toMatchObject({ ok: false, error: 'invalidReference' });
+  });
+
+  it('binds outgoing records to attachment, URL session, record session, and message ids', async () => {
+    const attachmentId = 'generated-1';
+    const originalPath = join(stateDir, 'media', 'state.png');
+    const recordPath = join(stateDir, 'media', 'outgoing', 'records', `${attachmentId}.json`);
+    const gatewayUrl = `/api/chat/media/outgoing/${encodeURIComponent(sessionKey)}/${attachmentId}/full`;
+    const writeRecord = (record: Record<string, unknown>) => writeFile(recordPath, JSON.stringify(record));
+    const access = getAccess();
+
+    await writeRecord({
+      attachmentId,
+      sessionKey,
+      messageId: 'message-1',
+      original: { path: originalPath, contentType: 'image/png' },
+    });
+    await expect(access.resolveAttachment({
+      ref: ref(gatewayUrl, { transcriptMessageId: 'message-1' }),
+    })).resolves.toMatchObject({ ok: true, mimeType: 'image/png', target: { scope: 'openclaw-media' } });
+
+    const rejected = [
+      `/api/chat/media/outgoing/${encodeURIComponent('agent:main:other')}/${attachmentId}/full`,
+      `/api/chat/media/outgoing/${encodeURIComponent(sessionKey)}/different-id/full`,
+    ];
+    for (const uri of rejected) {
+      await expect(access.resolveAttachment({ ref: ref(uri, { transcriptMessageId: 'message-1' }) }))
+        .resolves.toMatchObject({ ok: false });
+    }
+    await expect(access.resolveAttachment({
+      ref: ref(gatewayUrl, { transcriptMessageId: 'message-2' }),
+    })).resolves.toMatchObject({ ok: false, error: 'invalidReference' });
+
+    await writeRecord({
+      attachmentId,
+      sessionKey: 'agent:main:other',
+      original: { path: originalPath, contentType: 'image/png' },
+    });
+    await expect(access.resolveAttachment({ ref: ref(gatewayUrl) }))
+      .resolves.toMatchObject({ ok: false, error: 'invalidReference' });
+  });
+
+  it('treats global as a literal outgoing session rather than a wildcard', async () => {
+    const attachmentId = 'global-image';
+    const recordPath = join(stateDir, 'media', 'outgoing', 'records', `${attachmentId}.json`);
+    await writeFile(recordPath, JSON.stringify({
+      attachmentId,
+      sessionKey: 'global',
+      original: { path: join(stateDir, 'media', 'state.png') },
+    }));
+    const access = getAccess();
+    const globalUrl = `/api/chat/media/outgoing/global/${attachmentId}/full`;
+
+    await expect(access.resolveAttachment({ ref: ref(globalUrl) }))
+      .resolves.toMatchObject({ ok: false, error: 'invalidReference' });
+
+    registry.commitGrant(await registry.prepareGrant({
+      sessionKey: 'global',
+      generation: 2,
+      workspaceRoot,
+      executionCwd: workspaceRoot,
+    }));
+    await expect(access.resolveAttachment({
+      ref: { sessionKey: 'global', generation: 2, uri: globalUrl },
+    })).resolves.toMatchObject({ ok: true });
+  });
+
+  it.each([
+    ['missing file', () => join(workspaceRoot, 'missing.txt'), 'unavailable'],
+    ['directory', () => workspaceRoot, 'notFile'],
+    ['traversal', () => `${workspaceRoot}/nested/../notes.txt`, 'invalidReference'],
+    ['encoded traversal', () => `file://${workspaceRoot}/nested/%2e%2e/notes.txt`, 'invalidReference'],
+    ['encoded NUL', () => `file://${workspaceRoot}/notes.txt%00`, 'invalidReference'],
+    ['remote file authority', () => 'file://evil.example/etc/passwd', 'invalidReference'],
+    ['UNC path', () => '\\\\server\\share\\file.txt', 'invalidReference'],
+    ['URL credentials', () => 'https://user:pass@example.com/file.txt', 'unsafeUrl'],
+    ['unknown scheme', () => 'ftp://example.com/file.txt', 'invalidReference'],
+    ['overlong reference', () => `https://example.com/${'a'.repeat(4096)}`, 'invalidReference'],
+  ])('fails closed for %s', async (_label, makeUri, error) => {
+    await expect(getAccess().resolveAttachment({ ref: ref(makeUri()) }))
+      .resolves.toMatchObject({ ok: false, error });
+  });
+
+  it('rejects symlink escapes', async () => {
+    await symlink(join(outsideDir, 'secret.txt'), join(workspaceRoot, 'escape.txt'));
+
+    await expect(getAccess().resolveAttachment({ ref: ref(join(workspaceRoot, 'escape.txt')) }))
+      .resolves.toMatchObject({ ok: false, error: 'outsideAllowedRoots' });
+  });
+
+  it('normalizes safe remote URLs without granting unsafe variants', async () => {
+    const access = getAccess();
+    const result = await access.resolveAttachment({
+      ref: ref('HTTPS://Example.COM:443/assets/report%20final.pdf?x=1'),
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      displayName: 'report final.pdf',
+      target: {
+        kind: 'remote',
+        url: 'https://example.com/assets/report%20final.pdf?x=1',
+      },
+    });
+    expect(result.ok && result.identity).toMatch(/^[a-f0-9]{64}$/);
+    expect(JSON.stringify(result)).not.toContain(workspaceRoot);
+  });
+
+  it('re-resolves text, binary, and open operations after prior success', async () => {
+    const access = getAccess();
+    const textRef = ref(join(workspaceRoot, 'notes.txt'));
+    const binaryRef = ref(join(workspaceRoot, 'binary.bin'));
+    await expect(access.resolveAttachment({ ref: textRef })).resolves.toMatchObject({ ok: true });
+    await expect(access.resolveAttachment({ ref: binaryRef })).resolves.toMatchObject({ ok: true });
+
+    registry.commitGrant(await registry.prepareGrant({
+      sessionKey,
+      generation: 2,
+      workspaceRoot,
+      executionCwd: workspaceRoot,
+    }));
+
+    await expect(access.readAttachmentText(textRef)).resolves.toEqual({ ok: false, error: 'staleSession' });
+    await expect(access.readAttachmentBinary({ ref: binaryRef })).resolves.toEqual({ ok: false, error: 'staleSession' });
+    await expect(access.openAttachment(textRef)).resolves.toEqual({ ok: false, error: 'staleSession' });
+    expect(openPath).not.toHaveBeenCalled();
+  });
+
+  it('reads bounded text and binary data through attachment refs', async () => {
+    const access = getAccess();
+
+    await expect(access.readAttachmentText(ref(join(workspaceRoot, 'notes.txt')))).resolves.toMatchObject({
+      ok: true,
+      content: 'workspace notes',
+      size: 15,
+    });
+    await expect(access.readAttachmentBinary({ ref: ref(join(workspaceRoot, 'binary.bin')), maxBytes: 3 }))
+      .resolves.toMatchObject({ ok: true, data: new Uint8Array([1, 2, 3]), size: 3 });
+    await expect(access.readAttachmentBinary({ ref: ref(join(workspaceRoot, 'binary.bin')), maxBytes: 2 }))
+      .resolves.toMatchObject({ ok: false, error: 'tooLarge', size: 3 });
+  });
+
+  it('delegates validated local and remote opens to the correct shell operation', async () => {
+    const access = getAccess();
+    const localPath = join(workspaceRoot, 'notes.txt');
+    const remoteUrl = 'https://example.com/download/report.pdf';
+
+    await expect(access.openAttachment(ref(localPath))).resolves.toEqual({ ok: true });
+    await expect(access.openAttachment(ref(remoteUrl))).resolves.toEqual({ ok: true });
+    expect(openPath).toHaveBeenCalledWith(await realpath(localPath));
+    expect(openExternal).toHaveBeenCalledWith(remoteUrl);
+    const trace = getAcpTraceSnapshot().entries;
+    expect(trace).toHaveLength(2);
+    expect(trace.every((entry) => entry.event === 'attachment/open:success')).toBe(true);
+    expect(trace.every((entry) => (
+      Object.keys(entry.details as object).sort().join(',') === 'identity,reason,sourceKind'
+    ))).toBe(true);
+    expect(JSON.stringify(trace)).not.toContain(localPath);
+    expect(JSON.stringify(trace)).not.toContain(remoteUrl);
+  });
+
+  it('rechecks generation after final local validation before shell.openPath', async () => {
+    const localPath = await realpath(join(workspaceRoot, 'notes.txt'));
+    let targetStatCount = 0;
+    let releaseFinalValidation!: () => void;
+    let signalFinalValidation!: () => void;
+    const finalValidationReached = new Promise<void>((resolveSignal) => {
+      signalFinalValidation = resolveSignal;
+    });
+    const finalValidationRelease = new Promise<void>((resolveRelease) => {
+      releaseFinalValidation = resolveRelease;
+    });
+    const access = createAttachmentAccess({
+      sessionAccessRegistry: registry,
+      stagedAttachments,
+      stateDir,
+      configDir,
+      shell: { openPath, openExternal },
+      fs: {
+        lstat,
+        open,
+        realpath,
+        stat: async (path) => {
+          const result = await stat(path);
+          if (path === localPath && ++targetStatCount === 2) {
+            signalFinalValidation();
+            await finalValidationRelease;
+          }
+          return result;
+        },
+      },
+    });
+
+    const opening = access.openAttachment(ref(localPath));
+    await finalValidationReached;
+    registry.commitGrant(await registry.prepareGrant({
+      sessionKey,
+      generation: 2,
+      workspaceRoot,
+      executionCwd: workspaceRoot,
+    }));
+    releaseFinalValidation();
+
+    await expect(opening).resolves.toEqual({ ok: false, error: 'staleSession' });
+    expect(openPath).not.toHaveBeenCalled();
+  });
+
+  it('records only bounded, redacted attachment open trace metadata', async () => {
+    openPath.mockResolvedValueOnce('application failed');
+    const localPath = join(workspaceRoot, 'notes.txt');
+
+    await expect(getAccess().openAttachment(ref(localPath))).resolves.toEqual({
+      ok: false,
+      error: 'operationFailed',
+    });
+
+    const entry = getAcpTraceSnapshot().entries.at(-1);
+    expect(entry).toMatchObject({
+      source: 'main',
+      event: 'attachment/open:failure',
+      sessionKey,
+      generation: 1,
+      details: {
+        reason: 'operationFailed',
+        sourceKind: 'local',
+        identity: expect.stringMatching(/^[a-f0-9]{64}$/),
+      },
+    });
+    expect(Object.keys(entry?.details as object).sort()).toEqual(['identity', 'reason', 'sourceKind']);
+    expect(JSON.stringify(entry)).not.toContain(localPath);
+    expect(JSON.stringify(entry)).not.toContain(pathToFileURL(localPath).href);
+  });
+
+  it('sanitizes hostile display labels to one bounded line', async () => {
+    const hostile = `/private/account/secrets/report\n\u202Egpj.exe\u0007 ${'x'.repeat(300)}  `;
+    const result = await getAccess().resolveAttachment({
+      ref: ref(join(workspaceRoot, 'notes.txt')),
+      name: hostile,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(Array.from(result.displayName).some((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint <= 0x1f
+        || (codePoint >= 0x7f && codePoint <= 0x9f)
+        || (codePoint >= 0x202a && codePoint <= 0x202e);
+    })).toBe(false);
+    expect(result.displayName).not.toContain('\n');
+    expect(result.displayName).not.toContain('/private/account/secrets');
+    expect(result.displayName.length).toBeLessThanOrEqual(160);
+  });
+});
+
+describe('OpenClaw attachment path resolution', () => {
+  it('keeps state and config paths distinct and absolute', () => {
+    const stateDir = resolveOpenClawStateDir({ OPENCLAW_STATE_DIR: '~/custom-state' });
+    const configPath = resolveOpenClawConfigPath({
+      OPENCLAW_STATE_DIR: '~/custom-state',
+      OPENCLAW_CONFIG_PATH: './runtime/openclaw.json',
+    });
+
+    expect(stateDir).toBe(resolve(process.env.HOME!, 'custom-state'));
+    expect(configPath).toBe(resolve('runtime/openclaw.json'));
+    expect(resolveOpenClawConfigDir({ OPENCLAW_CONFIG_PATH: configPath })).toBe(resolve('runtime'));
+    expect(resolveOpenClawConfigPath({ OPENCLAW_STATE_DIR: stateDir })).toBe(join(stateDir, 'openclaw.json'));
+  });
+});

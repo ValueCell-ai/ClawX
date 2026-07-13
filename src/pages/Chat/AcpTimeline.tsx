@@ -5,6 +5,7 @@ import { AcpAssistantTurn } from './AcpAssistantTurn';
 import { AcpErrorBanner } from './AcpErrorBanner';
 import { AcpMessageSegment } from './AcpMessageSegment';
 import type { AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
+import { AcpAttachmentPart } from './AcpAttachmentPart';
 
 export function AcpTimeline({
   snapshot,
@@ -41,6 +42,15 @@ export function AcpTimeline({
                   <AcpMessageSegment item={item} />
                 </div>
               ))}
+              {group.attachments.length > 0 && (
+                <div className="flex w-full justify-end">
+                  <div className="flex w-full max-w-[80%] flex-col gap-2">
+                    {group.attachments.map((attachment) => (
+                      <AcpAttachmentPart key={attachment.attachmentId} part={attachment} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           );
         }

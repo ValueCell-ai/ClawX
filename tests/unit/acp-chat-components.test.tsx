@@ -1,14 +1,24 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AcpToolCallCard } from '@/pages/Chat/AcpToolCallCard';
 import { AcpTimeline } from '@/pages/Chat/AcpTimeline';
 import type { AcpTimelineSnapshot, ToolCallItem } from '@/lib/acp/timeline-types';
 import type { AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 
+const openAttachmentMock = vi.hoisted(() => vi.fn());
+
+vi.mock('@/lib/host-api', () => ({
+  hostApi: {
+    files: {
+      openAttachment: openAttachmentMock,
+    },
+  },
+}));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => {
+    t: (key: string, options?: Record<string, unknown>) => {
       const labels: Record<string, string> = {
         'acp.thought': 'Thought',
         'acp.tool': 'Tool',
@@ -25,13 +35,19 @@ vi.mock('react-i18next', () => ({
         'acp.promptFailed': 'Prompt failed',
         'acp.unsupportedContent': 'Unsupported content',
         'acp.dismiss': 'Dismiss',
+        'acp.attachment.loading': 'Loading attachment',
+        'acp.attachment.unavailable': 'Attachment unavailable',
+        'acp.attachment.open': 'Open {{name}}',
+        'acp.attachment.preview': 'Preview {{name}}',
+        'acp.attachment.mimeSize': '{{mimeType}}, {{size}}',
+        'acp.attachment.openFailed': 'Could not open attachment',
         'fileActivity.created': 'Created',
         'fileActivity.modified': 'Modified',
         'fileActivity.deleted': 'Deleted',
         'fileActivity.fileButton': '{{action}} {{path}}',
         'fileActivity.changeRecord': 'View changes for {{path}}',
       };
-      return labels[key] ?? key;
+      return (labels[key] ?? key).replace(/{{(\w+)}}/g, (_match, name: string) => String(options?.[name] ?? ''));
     },
   }),
 }));
@@ -63,6 +79,12 @@ function toolCallItem(overrides: Partial<ToolCallItem>): ToolCallItem {
 }
 
 describe('ACP chat timeline components', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    openAttachmentMock.mockResolvedValue({ ok: true });
+    useArtifactPanel.setState({ open: false, tab: 'changes', focusedFile: null });
+  });
+
   it('renders tool-only turn file controls once after timeline items and routes preview and changes', () => {
     const state = snapshot({
       itemOrder: ['tool:write-file'],
@@ -425,6 +447,292 @@ describe('ACP chat timeline components', () => {
 
     expect(screen.getByTestId('acp-image-part')).toBeInTheDocument();
     expect(screen.getByAltText('Chart preview')).toHaveAttribute('src', 'data:image/png;base64,abc');
+  });
+
+  it('renders pending and unavailable attachments as disabled paperclip rows', () => {
+    const state = snapshot({
+      itemOrder: ['msg-a:0', 'msg-a:1'],
+      itemsById: {
+        'msg-a:0': {
+          kind: 'message-segment',
+          id: 'msg-a:0',
+          role: 'assistant',
+          messageId: 'msg-a',
+          segmentIndex: 0,
+          parts: [{
+            kind: 'attachment',
+            attachmentId: 'attachment:msg-a:0:0',
+            reference: { uri: 'file:///repo/report.txt', name: '/repo/report.txt', mimeType: 'text/plain' },
+            source: 'acp-resource',
+            access: { status: 'pending' },
+          }],
+        },
+        'msg-a:1': {
+          kind: 'message-segment',
+          id: 'msg-a:1',
+          role: 'assistant',
+          messageId: 'msg-a',
+          segmentIndex: 1,
+          parts: [{
+            kind: 'attachment',
+            attachmentId: 'attachment:msg-a:1:0',
+            reference: { uri: 'file:///secret/missing.zip', name: 'missing.zip' },
+            source: 'acp-resource',
+            access: { status: 'unavailable', reason: 'outsideAllowedRoots' },
+          }],
+        },
+      },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+
+    expect(screen.getByText('report.txt')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Loading attachment: report.txt' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Attachment unavailable: missing.zip' })).toBeDisabled();
+    expect(screen.getAllByTestId('acp-attachment-icon')).toHaveLength(2);
+    expect(screen.queryByText('file:///secret/missing.zip')).not.toBeInTheDocument();
+  });
+
+  it('previews a supported attachment with safe metadata and native button semantics', async () => {
+    const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: 'file:///secret/budget.xlsx' };
+    const state = snapshot({
+      itemOrder: ['msg-a:0'],
+      itemsById: {
+        'msg-a:0': {
+          kind: 'message-segment',
+          id: 'msg-a:0',
+          role: 'assistant',
+          messageId: 'msg-a',
+          segmentIndex: 0,
+          parts: [{
+            kind: 'attachment',
+            attachmentId: 'attachment:msg-a:0:0',
+            reference: { uri: ref.uri, name: 'budget.xlsx' },
+            source: 'acp-resource',
+            access: {
+              status: 'available',
+              identity: 'opaque-budget',
+              target: { kind: 'local', scope: 'workspace', ref },
+              mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+              size: 2048,
+            },
+          }],
+        },
+      },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+
+    const button = screen.getByRole('button', { name: 'Preview budget.xlsx' });
+    expect(button.tagName).toBe('BUTTON');
+    expect(button).toHaveClass('focus-visible:ring-2');
+    expect(screen.getByText(/application\/vnd\.openxmlformats/)).toHaveTextContent('2.0 KB');
+    expect(button).not.toHaveAttribute('title', expect.stringContaining('/secret/'));
+
+    button.focus();
+    fireEvent.click(button);
+
+    expect(useArtifactPanel.getState().focusedFile).toMatchObject({
+      filePath: 'budget.xlsx',
+      fileName: 'budget.xlsx',
+      attachmentFileRef: ref,
+    });
+    expect(openAttachmentMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['archive.zip', 'application/zip', 1024],
+    ['report.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 1024],
+    ['clip.mp3', 'audio/mpeg', 1024],
+    ['movie.mp4', 'video/mp4', 1024],
+    ['large.pdf', 'application/pdf', 50 * 1024 * 1024 + 1],
+  ])('opens unsupported or oversized local attachment %s through files.openAttachment', async (name, mimeType, size) => {
+    const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: `file:///workspace/${name}` };
+    const state = snapshot({
+      itemOrder: ['msg-a:0'],
+      itemsById: {
+        'msg-a:0': {
+          kind: 'message-segment', id: 'msg-a:0', role: 'assistant', messageId: 'msg-a', segmentIndex: 0,
+          parts: [{
+            kind: 'attachment', attachmentId: `attachment:${name}`, reference: { uri: ref.uri, name }, source: 'acp-resource',
+            access: { status: 'available', identity: `opaque-${name}`, target: { kind: 'local', scope: 'workspace', ref }, mimeType, size },
+          }],
+        },
+      },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+    fireEvent.click(screen.getByRole('button', { name: `Open ${name}` }));
+
+    await waitFor(() => expect(openAttachmentMock).toHaveBeenCalledWith(ref));
+    expect(useArtifactPanel.getState().focusedFile).toBeNull();
+  });
+
+  it.each(['http://example.com/report.pdf', 'https://example.com/report.pdf'])('routes %s through files.openAttachment', async (url) => {
+    const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: url };
+    const state = snapshot({
+      itemOrder: ['msg-a:0'],
+      itemsById: {
+        'msg-a:0': {
+          kind: 'message-segment', id: 'msg-a:0', role: 'assistant', messageId: 'msg-a', segmentIndex: 0,
+          parts: [{
+            kind: 'attachment', attachmentId: 'attachment:remote', reference: { uri: ref.uri, name: 'report.pdf' }, source: 'acp-resource',
+            access: { status: 'available', identity: 'opaque-remote', target: { kind: 'remote', ref, url: ref.uri }, mimeType: 'application/pdf', size: 1024 },
+          }],
+        },
+      },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open report.pdf' }));
+
+    await waitFor(() => expect(openAttachmentMock).toHaveBeenCalledWith(ref));
+  });
+
+  it('lifts early assistant attachments after later process and prose items and before file activity', () => {
+    const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: 'file:///workspace/report.txt' };
+    const state = snapshot({
+      itemOrder: ['msg-a:0', 'tool:read-file', 'msg-a:1'],
+      itemsById: {
+        'msg-a:0': {
+          kind: 'message-segment', id: 'msg-a:0', role: 'assistant', messageId: 'msg-a', segmentIndex: 0,
+          parts: [
+            { kind: 'markdown', text: 'First prose.' },
+            { kind: 'attachment', attachmentId: 'attachment:early', reference: { uri: ref.uri, name: 'report.txt' }, source: 'acp-resource', access: { status: 'available', identity: 'opaque-report', target: { kind: 'local', scope: 'workspace', ref }, mimeType: 'text/plain', size: 12 } },
+          ],
+        },
+        'tool:read-file': toolCallItem({ id: 'tool:read-file', toolCallId: 'read-file' }),
+        'msg-a:1': {
+          kind: 'message-segment', id: 'msg-a:1', role: 'assistant', messageId: 'msg-a', segmentIndex: 1,
+          parts: [{ kind: 'markdown', text: 'Final prose.' }],
+        },
+      },
+    });
+    const turnId = 'assistant-turn:msg-a:0';
+    const activity: AcpFileActivityProjection = {
+      activities: [],
+      turnSummariesByTurnId: {
+        [turnId]: [{ turnId, relativePath: 'changed.txt', action: 'modified', activities: [], added: 1, removed: 0 }],
+      },
+      fileGroups: [],
+      uniqueFileCount: 1,
+    };
+
+    const { container } = render(<AcpTimeline snapshot={state} fileActivity={activity} workspaceRoot="/workspace" />);
+    const tool = screen.getByTestId('acp-tool-call-card');
+    const finalProse = screen.getByText('Final prose.');
+    const attachment = screen.getByRole('button', { name: 'Preview report.txt' });
+    const fileActivity = screen.getByTestId('acp-turn-file-activity');
+    const ordered = [tool, finalProse, attachment, fileActivity].map((node) => Array.from(container.querySelectorAll('*')).indexOf(node));
+    expect(ordered).toEqual([...ordered].sort((a, b) => a - b));
+    expect(screen.getAllByText('report.txt')).toHaveLength(1);
+  });
+
+  it('renders user attachments after all prose in the user message', () => {
+    const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: 'file:///workspace/notes.txt', stagingId: 'stage-1' };
+    const state = snapshot({
+      itemOrder: ['msg-u:0'],
+      itemsById: {
+        'msg-u:0': {
+          kind: 'message-segment', id: 'msg-u:0', role: 'user', messageId: 'msg-u', segmentIndex: 0,
+          parts: [
+            { kind: 'attachment', attachmentId: 'attachment:user', reference: { uri: ref.uri, name: 'notes.txt' }, source: 'acp-resource', access: { status: 'available', identity: 'opaque-notes', target: { kind: 'local', scope: 'staging', ref }, mimeType: 'text/plain', size: 12 } },
+            { kind: 'markdown', text: 'Please review this file.' },
+          ],
+        },
+      },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+    const prose = screen.getByText('Please review this file.');
+    const attachment = screen.getByRole('button', { name: 'Preview notes.txt' });
+    expect(prose.compareDocumentPosition(attachment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('renders thought and collapsed-tool attachments once after all assistant items', () => {
+    const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: 'file:///workspace/file.txt' };
+    const attachment = (attachmentId: string, name: string) => ({
+      kind: 'attachment' as const,
+      attachmentId,
+      reference: { uri: ref.uri, name },
+      source: 'acp-resource' as const,
+      access: {
+        status: 'available' as const,
+        identity: `opaque-${attachmentId}`,
+        target: { kind: 'local' as const, scope: 'workspace' as const, ref },
+        mimeType: 'text/plain',
+        size: 12,
+      },
+    });
+    const state = snapshot({
+      itemOrder: ['thought:msg-a', 'tool:read', 'msg-a:1'],
+      itemsById: {
+        'thought:msg-a': {
+          kind: 'thought', id: 'thought:msg-a', messageId: 'msg-a',
+          parts: [{ kind: 'markdown', text: 'Inspecting.' }, attachment('thought-file', 'thought.txt')],
+        },
+        'tool:read': {
+          kind: 'tool-call', id: 'tool:read', toolCallId: 'read', title: 'Read file', status: 'completed', historical: true,
+          outputParts: [{ kind: 'markdown', text: 'Hidden tool output.' }, attachment('tool-file', 'tool.txt')], locations: [],
+        },
+        'msg-a:1': {
+          kind: 'message-segment', id: 'msg-a:1', role: 'assistant', messageId: 'msg-a', segmentIndex: 1,
+          parts: [{ kind: 'markdown', text: 'Final answer.' }],
+        },
+      },
+    });
+
+    const { container } = render(<AcpTimeline snapshot={state} />);
+    expect(screen.getByTestId('acp-tool-call-card')).toHaveAttribute('data-expanded', 'false');
+    const ordered = [
+      screen.getByTestId('acp-thought-block'),
+      screen.getByTestId('acp-tool-call-card'),
+      screen.getByText('Final answer.'),
+      screen.getByRole('button', { name: 'Preview thought.txt' }),
+      screen.getByRole('button', { name: 'Preview tool.txt' }),
+    ].map((node) => Array.from(container.querySelectorAll('*')).indexOf(node));
+    expect(ordered).toEqual([...ordered].sort((a, b) => a - b));
+    expect(screen.getAllByTestId('acp-attachment-icon')).toHaveLength(2);
+  });
+
+  it('renders all user prose segments before the group attachment list', () => {
+    const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: 'file:///workspace/file.txt', stagingId: 'stage-1' };
+    const attachment = (attachmentId: string, name: string) => ({
+      kind: 'attachment' as const,
+      attachmentId,
+      reference: { uri: ref.uri, name },
+      source: 'acp-resource' as const,
+      access: {
+        status: 'available' as const,
+        identity: `opaque-${attachmentId}`,
+        target: { kind: 'local' as const, scope: 'staging' as const, ref },
+        mimeType: 'text/plain',
+        size: 12,
+      },
+    });
+    const state = snapshot({
+      itemOrder: ['msg-u:0', 'msg-u:1'],
+      itemsById: {
+        'msg-u:0': {
+          kind: 'message-segment', id: 'msg-u:0', role: 'user', messageId: 'msg-u', segmentIndex: 0,
+          parts: [attachment('user-a', 'a.txt'), { kind: 'markdown', text: 'First user prose.' }],
+        },
+        'msg-u:1': {
+          kind: 'message-segment', id: 'msg-u:1', role: 'user', messageId: 'msg-u', segmentIndex: 1,
+          parts: [{ kind: 'markdown', text: 'Second user prose.' }, attachment('user-b', 'b.txt')],
+        },
+      },
+    });
+
+    const { container } = render(<AcpTimeline snapshot={state} />);
+    const ordered = [
+      screen.getByText('First user prose.'),
+      screen.getByText('Second user prose.'),
+      screen.getByRole('button', { name: 'Preview a.txt' }),
+      screen.getByRole('button', { name: 'Preview b.txt' }),
+    ].map((node) => Array.from(container.querySelectorAll('*')).indexOf(node));
+    expect(ordered).toEqual([...ordered].sort((a, b) => a - b));
+    expect(screen.getAllByTestId('acp-attachment-icon')).toHaveLength(2);
   });
 
   it('dismisses the session error banner', () => {

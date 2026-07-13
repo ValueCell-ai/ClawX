@@ -7,20 +7,37 @@ import type {
   AcpPermissionRequestEnvelope,
   AcpSessionUpdateEnvelope,
 } from '@shared/acp-chat/types';
-import type { MediaThumbnailEntry, MediaThumbnailResult } from '@shared/host-api/contract';
+import type {
+  MediaThumbnailResult,
+  ResolveAttachmentPayload,
+  ResolveAttachmentResult,
+} from '@shared/host-api/contract';
 import i18n from '@/i18n';
 import {
   extractImageGenerationCompletionFromAcpEnvelope,
   extractImageGenerationCompletionFromGatewayChatMessage,
   extractImageGenerationCompletionFromRuntimeEvent,
   extractImageGenerationStartFromAcpEnvelope,
-  extractImageGenerationTranscriptSupplement,
   imageGenerationEvidenceKey,
   type ImageGenerationCompletionEvidence,
   type ImageGenerationMediaCandidate,
   type ImageGenerationTaskStart,
 } from '@/lib/acp/image-generation-compat';
-import { appendSyntheticAssistantMessage, applyAcpSessionUpdate, createEmptyAcpTimeline } from '@/lib/acp/reducer';
+import {
+  applyAttachmentResolution,
+  attachmentRequestFingerprint,
+  collectPendingAttachments,
+  createPendingAttachment,
+  type PendingAttachmentLocation,
+} from '@/lib/acp/attachments';
+import {
+  appendSyntheticAssistantMessage,
+  applyAcpSessionUpdate,
+  createEmptyAcpTimeline,
+  upsertSyntheticTurnAttachments,
+} from '@/lib/acp/reducer';
+import { hashOpenClawMediaDiagnostic, type OpenClawMediaCandidate } from '@/lib/acp/openclaw-media-compat';
+import { fetchOpenClawTranscriptSupplement } from '@/lib/acp/transcript-supplement';
 import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
 import type { AcpTimelineSnapshot, MessageSegmentItem, PermissionItem, RenderPart } from '@/lib/acp/timeline-types';
@@ -39,23 +56,39 @@ type ImageGenerationCompatSession = {
   lastTaskToolCallId?: string;
   lastReplayToolCallId?: string;
   delivered: Set<string>;
+  reservations: Map<string, string>;
 };
 
 const imageGenerationCompatSessions = new Map<string, ImageGenerationCompatSession>();
 const pendingLoadUpdates = new Map<number, AcpSessionUpdateEnvelope[]>();
-let historicalTranscriptSupplementSeq = 0;
-const historicalTranscriptSupplementIds = new Map<string, number>();
 let loadRequestSeq = 0;
+const attachmentResolutionsInFlight = new Set<string>();
+
+type TranscriptSupplementOperation = {
+  id: number;
+  sessionKey: string;
+  generation: number;
+  attempt: number;
+  liveUserMessageId?: string;
+  retryTimer?: ReturnType<typeof setTimeout>;
+};
+
+let transcriptSupplementSeq = 0;
+let activeTranscriptSupplement: TranscriptSupplementOperation | null = null;
+let imageProjectionSeq = 0;
 
 type ImageGenerationProjectionOptions = {
   isCurrent?: () => boolean;
   staleReason?: string;
+  transcriptMessageId?: string;
+  reservationOwner?: string;
 };
 
 type PermissionOutcome = AcpChatRespondPermissionPayload['outcome'];
 
 export type AcpChatSessionState = {
   activeSessionKey: string | null;
+  workspaceRoot: string | null;
   cwd: string | null;
   generation: number;
   loading: boolean;
@@ -71,7 +104,6 @@ export type AcpChatSessionState = {
   applyUpdateEnvelope: (event: AcpSessionUpdateEnvelope) => void;
   applyPermissionRequest: (event: AcpPermissionRequestEnvelope) => void;
   recordImageGenerationStart: (event: AcpSessionUpdateEnvelope) => void;
-  supplementHistoricalImageGenerationFromTranscript: (sessionKey: string, generation: number, supplementId: number) => Promise<void>;
   projectImageGenerationCompletion: (event: ImageGenerationCompletionEvidence, options?: ImageGenerationProjectionOptions) => Promise<void>;
   clearError: () => void;
 };
@@ -108,6 +140,7 @@ function compatSession(sessionKey: string): ImageGenerationCompatSession {
     taskToolCallIds: new Map<string, string>(),
     replayTaskToolCallIds: new Map<string, string>(),
     delivered: new Set<string>(),
+    reservations: new Map<string, string>(),
   };
   imageGenerationCompatSessions.set(sessionKey, created);
   return created;
@@ -115,30 +148,43 @@ function compatSession(sessionKey: string): ImageGenerationCompatSession {
 
 function resetImageGenerationCompatSession(sessionKey: string): void {
   imageGenerationCompatSessions.delete(sessionKey);
-  historicalTranscriptSupplementIds.delete(sessionKey);
 }
 
-function beginHistoricalTranscriptSupplement(sessionKey: string): number {
-  const supplementId = historicalTranscriptSupplementSeq + 1;
-  historicalTranscriptSupplementSeq = supplementId;
-  historicalTranscriptSupplementIds.set(sessionKey, supplementId);
-  return supplementId;
+function invalidateTranscriptSupplement(): void {
+  transcriptSupplementSeq += 1;
+  if (activeTranscriptSupplement?.retryTimer) clearTimeout(activeTranscriptSupplement.retryTimer);
+  activeTranscriptSupplement = null;
 }
 
-function invalidateHistoricalTranscriptSupplement(sessionKey: string): void {
-  if (!historicalTranscriptSupplementIds.has(sessionKey)) return;
-  historicalTranscriptSupplementSeq += 1;
-  historicalTranscriptSupplementIds.set(sessionKey, historicalTranscriptSupplementSeq);
-}
-
-function isCurrentHistoricalTranscriptSupplement(
-  state: AcpChatSessionState,
+function beginTranscriptSupplement(
   sessionKey: string,
   generation: number,
-  supplementId: number,
+  liveUserMessageId?: string,
+): TranscriptSupplementOperation {
+  invalidateTranscriptSupplement();
+  const operation: TranscriptSupplementOperation = {
+    id: transcriptSupplementSeq,
+    sessionKey,
+    generation,
+    attempt: 0,
+    ...(liveUserMessageId ? { liveUserMessageId } : {}),
+  };
+  activeTranscriptSupplement = operation;
+  return operation;
+}
+
+function isCurrentTranscriptSupplement(
+  state: AcpChatSessionState,
+  operation: TranscriptSupplementOperation,
 ): boolean {
-  return isCurrentAction(state, sessionKey, generation)
-    && historicalTranscriptSupplementIds.get(sessionKey) === supplementId;
+  return activeTranscriptSupplement?.id === operation.id
+    && isCurrentAction(state, operation.sessionKey, operation.generation)
+    && (!operation.liveUserMessageId || state.timeline.itemOrder.some((itemId) => {
+      const item = state.timeline.itemsById[itemId];
+      return item?.kind === 'message-segment'
+        && item.role === 'user'
+        && item.messageId === operation.liveUserMessageId;
+    }));
 }
 
 function hasFreshImageGenerationContext(
@@ -152,11 +198,33 @@ function hasFreshImageGenerationContext(
   return anchors.some((startedAt) => startedAt > 0 && now - startedAt <= IMAGE_GENERATION_COMPAT_WINDOW_MS);
 }
 
-function reserveDelivery(sessionKey: string, key: string): boolean {
+function reserveDelivery(
+  sessionKey: string,
+  key: string,
+  owner: string,
+  allowSupersede: boolean,
+): boolean {
   const session = compatSession(sessionKey);
   if (session.delivered.has(key)) return false;
-  session.delivered.add(key);
+  if (session.reservations.has(key) && !allowSupersede) return false;
+  session.reservations.set(key, owner);
   return true;
+}
+
+function ownsDeliveryReservation(sessionKey: string, key: string, owner: string): boolean {
+  return imageGenerationCompatSessions.get(sessionKey)?.reservations.get(key) === owner;
+}
+
+function releaseDelivery(sessionKey: string, key: string, owner: string): void {
+  const session = imageGenerationCompatSessions.get(sessionKey);
+  if (session?.reservations.get(key) === owner) session.reservations.delete(key);
+}
+
+function commitDelivery(sessionKey: string, key: string, owner: string): void {
+  const session = imageGenerationCompatSessions.get(sessionKey);
+  if (session?.reservations.get(key) !== owner) return;
+  session.reservations.delete(key);
+  session.delivered.add(key);
 }
 
 function imageGenerationTaskIdFromSessionKey(sessionKey: string | undefined): string | null {
@@ -275,20 +343,6 @@ function recordHistoricalImageGenerationStart(start: ImageGenerationTaskStart, g
   recordImageGenerationStartAnchor(session, start, true);
 }
 
-function thumbnailEntry(candidate: ImageGenerationMediaCandidate): MediaThumbnailEntry {
-  if (candidate.gatewayUrl) {
-    return {
-      gatewayUrl: candidate.gatewayUrl,
-      ...(candidate.mimeType ? { mimeType: candidate.mimeType } : {}),
-    };
-  }
-
-  return {
-    filePath: candidate.filePath ?? candidate.key,
-    ...(candidate.mimeType ? { mimeType: candidate.mimeType } : {}),
-  };
-}
-
 function messageIdFromEvidence(key: string): string {
   const encoded: string[] = [];
   for (let index = 0; index < key.length; index += 1) {
@@ -303,6 +357,251 @@ function isCurrentAction(
   generation: number,
 ): boolean {
   return state.activeSessionKey === sessionKey && state.generation === generation;
+}
+
+function imageCandidateUri(candidate: ImageGenerationMediaCandidate): string {
+  return candidate.gatewayUrl ?? candidate.filePath ?? candidate.key;
+}
+
+function safeAttachmentName(uri: string): string {
+  let value = uri;
+  try {
+    if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(uri)) value = new URL(uri).pathname;
+  } catch {
+    value = uri;
+  }
+  const name = value.split(/[\\/]/).filter(Boolean).pop() ?? 'attachment';
+  const clean = (candidate: string) => Array.from(candidate)
+    .filter((character) => {
+      const code = character.charCodeAt(0);
+      return code >= 32 && code !== 127;
+    })
+    .join('')
+    .replace(/[\u202a-\u202e\u2066-\u2069]/g, '')
+    .slice(0, 200) || 'attachment';
+  try {
+    return clean(decodeURIComponent(name));
+  } catch {
+    return clean(name);
+  }
+}
+
+function recordOpenClawMediaTrace(
+  operation: TranscriptSupplementOperation,
+  event: string,
+  details: Record<string, unknown>,
+): void {
+  recordProjectionTrace({
+    event,
+    sessionKey: operation.sessionKey,
+    generation: operation.generation,
+    details: { source: 'openclaw-media', operationId: operation.id, ...details },
+  });
+}
+
+async function resolveOpenClawMediaCandidate(
+  operation: TranscriptSupplementOperation,
+  attempt: number,
+  turnId: string,
+  candidate: OpenClawMediaCandidate,
+): Promise<void> {
+  const isCurrent = () => operation.attempt === attempt
+    && isCurrentTranscriptSupplement(useAcpChatSessionStore.getState(), operation);
+  if (!isCurrent()) return;
+
+  let result: ResolveAttachmentResult;
+  try {
+    result = await hostApi.files.resolveAttachment({
+      ref: {
+        sessionKey: operation.sessionKey,
+        generation: operation.generation,
+        uri: candidate.uri,
+        ...(candidate.transcriptMessageId ? { transcriptMessageId: candidate.transcriptMessageId } : {}),
+      },
+      name: safeAttachmentName(candidate.uri),
+    });
+  } catch {
+    result = { ok: false, displayName: safeAttachmentName(candidate.uri), error: 'operationFailed' };
+  }
+
+  const evidenceHash = hashOpenClawMediaDiagnostic(candidate.evidenceId);
+  if (!isCurrent()) {
+    recordOpenClawMediaTrace(operation, 'openclaw-media:projection-stale', {
+      reason: 'attachment-resolution-stale',
+      evidenceHash,
+    });
+    return;
+  }
+
+  recordOpenClawMediaTrace(
+    operation,
+    result.ok ? 'openclaw-media:resolution-available' : 'openclaw-media:resolution-unavailable',
+    {
+      reason: result.ok ? 'available' : result.error,
+      evidenceHash,
+      ...(result.ok ? { identityHash: hashOpenClawMediaDiagnostic(result.identity) } : {}),
+    },
+  );
+
+  const messageId = `compat:openclaw-media:${candidate.evidenceId}`;
+  const pending = createPendingAttachment({
+    messageId,
+    segmentIndex: 0,
+    blockIndex: candidate.order,
+    uri: candidate.uri,
+    name: safeAttachmentName(candidate.uri),
+    ...(candidate.transcriptMessageId ? { transcriptMessageId: candidate.transcriptMessageId } : {}),
+    source: 'openclaw-media',
+    evidenceId: candidate.evidenceId,
+  });
+  const fingerprint = attachmentRequestFingerprint(pending);
+  let projected = false;
+  useAcpChatSessionStore.setState((state) => {
+    if (!isCurrentTranscriptSupplement(state, operation)) return {};
+    const upserted = upsertSyntheticTurnAttachments(state.timeline, {
+      turnId,
+      evidenceId: candidate.evidenceId,
+      attachments: [pending],
+      source: 'openclaw-media',
+    });
+    const timeline = applyAttachmentResolution(upserted, {
+      attachmentId: pending.attachmentId,
+      expectedFingerprint: fingerprint,
+      result,
+    });
+    projected = Object.values(timeline.itemsById).some((item) => (
+      item.kind === 'message-segment'
+      && item.parts.some((part) => part.kind === 'attachment' && part.attachmentId === pending.attachmentId)
+    ));
+    return { timeline };
+  });
+  recordOpenClawMediaTrace(
+    operation,
+    projected ? 'openclaw-media:projection-appended' : 'openclaw-media:projection-deduped',
+    { reason: projected ? 'projected' : 'identity-priority', evidenceHash, attachmentCount: projected ? 1 : 0 },
+  );
+}
+
+async function runTranscriptSupplement(operation: TranscriptSupplementOperation): Promise<void> {
+  const attempt = operation.attempt + 1;
+  operation.attempt = attempt;
+  const isCurrent = () => operation.attempt === attempt
+    && isCurrentTranscriptSupplement(useAcpChatSessionStore.getState(), operation);
+  if (!isCurrent()) return;
+  const state = useAcpChatSessionStore.getState();
+  const result = await fetchOpenClawTranscriptSupplement({
+    sessionKey: operation.sessionKey,
+    generation: operation.generation,
+    executionCwd: state.cwd ?? '',
+    snapshot: () => useAcpChatSessionStore.getState().timeline,
+    ...(operation.liveUserMessageId ? { liveUserMessageId: operation.liveUserMessageId } : {}),
+    isCurrent,
+  });
+  if (!result || !isCurrent()) return;
+
+  for (const start of result.imageGeneration.starts) {
+    if (!isCurrent()) return;
+    recordHistoricalImageGenerationStart(start, operation.generation);
+  }
+  for (const completion of result.imageGeneration.completions) {
+    if (!isCurrent()) return;
+    await useAcpChatSessionStore.getState().projectImageGenerationCompletion(completion, {
+      isCurrent,
+      staleReason: 'stale-transcript-supplement',
+      reservationOwner: `transcript:${operation.id}:${attempt}`,
+      ...(completion.transcriptMessageId ? { transcriptMessageId: completion.transcriptMessageId } : {}),
+    });
+  }
+  for (const supplement of result.media) {
+    for (const candidate of supplement.candidates) {
+      if (!isCurrent()) return;
+      await resolveOpenClawMediaCandidate(operation, attempt, supplement.acpTurnId, candidate);
+    }
+  }
+}
+
+function startHistoricalTranscriptSupplement(sessionKey: string, generation: number): void {
+  const operation = beginTranscriptSupplement(sessionKey, generation);
+  void runTranscriptSupplement(operation);
+}
+
+function startLiveTranscriptSupplement(sessionKey: string, generation: number, userMessageId: string): void {
+  const operation = beginTranscriptSupplement(sessionKey, generation, userMessageId);
+  void runTranscriptSupplement(operation);
+  operation.retryTimer = setTimeout(() => {
+    operation.retryTimer = undefined;
+    if (isCurrentTranscriptSupplement(useAcpChatSessionStore.getState(), operation)) {
+      void runTranscriptSupplement(operation);
+    }
+  }, 1500);
+}
+
+function newPendingAttachments(
+  previous: AcpTimelineSnapshot,
+  next: AcpTimelineSnapshot,
+): PendingAttachmentLocation[] {
+  const previousRequests = new Set(
+    collectPendingAttachments(previous).map(({ attachment, fingerprint }) => (
+      JSON.stringify([attachment.attachmentId, fingerprint])
+    )),
+  );
+  return collectPendingAttachments(next).filter(({ attachment, fingerprint }) => (
+    !previousRequests.has(JSON.stringify([attachment.attachmentId, fingerprint]))
+  ));
+}
+
+function attachmentResolvePayload(
+  sessionKey: string,
+  generation: number,
+  location: PendingAttachmentLocation,
+): ResolveAttachmentPayload {
+  const { reference } = location.attachment;
+  return {
+    ref: {
+      sessionKey,
+      generation,
+      uri: reference.uri,
+      ...(reference.stagingId ? { stagingId: reference.stagingId } : {}),
+      ...(reference.transcriptMessageId ? { transcriptMessageId: reference.transcriptMessageId } : {}),
+    },
+    ...(reference.name ? { name: reference.name } : {}),
+    ...(reference.mimeType ? { mimeType: reference.mimeType } : {}),
+    ...(typeof reference.size === 'number' ? { size: reference.size } : {}),
+  };
+}
+
+function resolvePendingAttachments(
+  sessionKey: string,
+  generation: number,
+  locations: PendingAttachmentLocation[],
+): void {
+  for (const location of locations) {
+    const attachmentId = location.attachment.attachmentId;
+    const expectedFingerprint = location.fingerprint;
+    const inFlightKey = JSON.stringify([sessionKey, generation, attachmentId, expectedFingerprint]);
+    if (attachmentResolutionsInFlight.has(inFlightKey)) continue;
+    attachmentResolutionsInFlight.add(inFlightKey);
+
+    void hostApi.files.resolveAttachment(attachmentResolvePayload(sessionKey, generation, location))
+      .catch((): ResolveAttachmentResult => ({
+        ok: false,
+        displayName: location.attachment.reference.name,
+        error: 'operationFailed',
+      }))
+      .then((result) => {
+        useAcpChatSessionStore.setState((state) => {
+          if (!isCurrentAction(state, sessionKey, generation)) return {};
+          return {
+            timeline: applyAttachmentResolution(state.timeline, {
+              attachmentId,
+              expectedFingerprint,
+              result,
+            }),
+          };
+        });
+      })
+      .finally(() => attachmentResolutionsInFlight.delete(inFlightKey));
+  }
 }
 
 function getPendingPermission(
@@ -338,18 +637,21 @@ function createOptimisticMessageId(): string {
   return `user:${random}`;
 }
 
-function optimisticPromptParts(input: AcpChatPromptPayload): RenderPart[] {
+function optimisticPromptParts(input: AcpChatPromptPayload, messageId: string): RenderPart[] {
   const parts: RenderPart[] = [];
   const text = input.message?.trim();
   if (text) parts.push({ kind: 'markdown', text });
 
-  for (const item of input.media ?? []) {
-    parts.push({
-      kind: 'file',
-      path: item.filePath,
-      name: item.fileName,
-      mimeType: item.mimeType,
-    });
+  for (const [mediaIndex, item] of (input.media ?? []).entries()) {
+    parts.push(createPendingAttachment({
+      messageId,
+      segmentIndex: 0,
+      blockIndex: (text ? 1 : 0) + mediaIndex,
+      uri: item.filePath,
+      name: item.fileName ?? item.filePath,
+      ...(item.mimeType ? { mimeType: item.mimeType } : {}),
+      stagingId: item.stagingId,
+    }));
   }
 
   return parts.length > 0 ? parts : [{ kind: 'markdown', text: '' }];
@@ -371,7 +673,8 @@ function appendOptimisticUserSegment(
     role: 'user',
     messageId,
     segmentIndex: 0,
-    parts: optimisticPromptParts(input),
+    parts: optimisticPromptParts(input, messageId),
+    blockCount: 0,
     optimistic: true,
   };
 
@@ -418,6 +721,7 @@ function applyOperationGeneration(
 
 export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => ({
   activeSessionKey: null,
+  workspaceRoot: null,
   cwd: null,
   generation: 0,
   loading: false,
@@ -430,9 +734,11 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     loadRequestSeq += 1;
     pendingLoadUpdates.clear();
     const generation = get().generation;
+    invalidateTranscriptSupplement();
     resetImageGenerationCompatSession(input.sessionKey);
     set({
       activeSessionKey: input.sessionKey,
+      workspaceRoot: input.workspaceRoot,
       cwd: input.cwd,
       generation,
       loading: false,
@@ -448,9 +754,11 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     loadRequestSeq = requestId;
     pendingLoadUpdates.clear();
     const generation = get().generation;
+    invalidateTranscriptSupplement();
     resetImageGenerationCompatSession(input.sessionKey);
     set({
       activeSessionKey: input.sessionKey,
+      workspaceRoot: input.workspaceRoot,
       cwd: input.cwd,
       generation,
       loading: true,
@@ -463,11 +771,17 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     try {
       const result = await hostApi.chat.loadAcpSession(input);
       const state = get();
-      if (loadRequestSeq !== requestId || state.activeSessionKey !== input.sessionKey || state.cwd !== input.cwd) return false;
+      if (
+        loadRequestSeq !== requestId
+        || state.activeSessionKey !== input.sessionKey
+        || state.workspaceRoot !== input.workspaceRoot
+        || state.cwd !== input.cwd
+      ) return false;
       if (!result.success) {
         pendingLoadUpdates.clear();
         set({
           activeSessionKey: null,
+          workspaceRoot: null,
           cwd: null,
           loading: false,
           error: failedOperationMessage(result, 'ACP session load failed'),
@@ -487,30 +801,40 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       for (const event of sessionUpdates) {
         timeline = applyAcpSessionUpdate(timeline, event.notification, { historical: !!event.historical });
       }
+      const pendingAttachments = newPendingAttachments(
+        createEmptyAcpTimeline(input.sessionKey, generation),
+        timeline,
+      );
       set({
         loading: false,
         error: null,
         generation,
         timeline,
       });
+      resolvePendingAttachments(input.sessionKey, generation, pendingAttachments);
       for (const event of sessionUpdates) {
         get().recordImageGenerationStart(event);
         const evidence = extractImageGenerationCompletionFromAcpEnvelope(event);
         if (evidence) void get().projectImageGenerationCompletion(evidence);
       }
       if (!input.createIfMissing) {
-        // OpenClaw ACP loadSession can omit async image-generation completion replies during
-        // historical replay. Cross-check the persisted transcript through Main-owned host API
-        // so ACP replay and transcript evidence can jointly reconstruct missing media previews.
-        const supplementId = beginHistoricalTranscriptSupplement(input.sessionKey);
-        void get().supplementHistoricalImageGenerationFromTranscript(input.sessionKey, generation, supplementId);
+        startHistoricalTranscriptSupplement(input.sessionKey, generation);
       }
       return true;
     } catch (error) {
       if (loadRequestSeq === requestId) pendingLoadUpdates.clear();
       set((state) => (
-        loadRequestSeq === requestId && state.activeSessionKey === input.sessionKey && state.cwd === input.cwd
-          ? { activeSessionKey: null, cwd: null, loading: false, error: errorMessage(error, 'ACP session load failed') }
+        loadRequestSeq === requestId
+          && state.activeSessionKey === input.sessionKey
+          && state.workspaceRoot === input.workspaceRoot
+          && state.cwd === input.cwd
+          ? {
+            activeSessionKey: null,
+            workspaceRoot: null,
+            cwd: null,
+            loading: false,
+            error: errorMessage(error, 'ACP session load failed'),
+          }
           : {}
       ));
       return false;
@@ -522,7 +846,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     const sessionKey = input.sessionKey;
     const generation = startState.generation;
     if (startState.activeSessionKey !== sessionKey) return false;
-    invalidateHistoricalTranscriptSupplement(sessionKey);
+    invalidateTranscriptSupplement();
 
     const messageId = input.messageId ?? createOptimisticMessageId();
     const payload = { ...input, messageId };
@@ -536,6 +860,14 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
         }
         : {}
     ));
+    const optimisticState = get();
+    if (isCurrentAction(optimisticState, sessionKey, generation)) {
+      resolvePendingAttachments(
+        sessionKey,
+        generation,
+        newPendingAttachments(startState.timeline, optimisticState.timeline),
+      );
+    }
     try {
       const result = await hostApi.chat.sendAcpPrompt(payload);
       const state = get();
@@ -549,6 +881,12 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
           ? applyOperationGeneration(state, result)
           : { error: failedOperationMessage(result, 'ACP prompt failed'), timeline: failedTimeline }),
       });
+      if (result.success) {
+        const current = get();
+        if (current.activeSessionKey === sessionKey) {
+          startLiveTranscriptSupplement(sessionKey, current.generation, messageId);
+        }
+      }
       return result.success;
     } catch (error) {
       set((state) => (
@@ -569,7 +907,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     const sessionKey = startState.activeSessionKey;
     const generation = startState.generation;
     if (!sessionKey) return;
-    invalidateHistoricalTranscriptSupplement(sessionKey);
+    invalidateTranscriptSupplement();
 
     set({ cancelling: true, error: null });
     try {
@@ -602,6 +940,9 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     const outcome = permissionOutcome(optionId);
     try {
       const result = await hostApi.chat.respondAcpPermission({ sessionKey, requestId, outcome });
+      if (result.success && result.generation != null && result.generation !== generation) {
+        invalidateTranscriptSupplement();
+      }
       set((state) => {
         if (!isCurrentAction(state, sessionKey, generation)) return {};
         if (!result.success) {
@@ -650,40 +991,6 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       session.taskStartedAt = Date.now();
       session.taskIds.add(start.taskId);
       recordImageGenerationStartAnchor(session, start, false);
-    }
-  },
-
-  async supplementHistoricalImageGenerationFromTranscript(sessionKey, generation, supplementId) {
-    const isCurrentSupplement = () => isCurrentHistoricalTranscriptSupplement(get(), sessionKey, generation, supplementId);
-    if (!isCurrentSupplement()) return;
-
-    let response: Awaited<ReturnType<typeof hostApi.sessions.history>>;
-    try {
-      response = await hostApi.sessions.history({ sessionKey, limit: 1000 });
-    } catch {
-      if (!isCurrentSupplement()) return;
-      recordProjectionTrace({
-        event: 'image-generation:transcript-supplement-failed',
-        sessionKey,
-        generation,
-        details: { reason: 'history-request-failed' },
-      });
-      return;
-    }
-    if (!isCurrentSupplement()) return;
-    if (!response.success || !Array.isArray(response.messages) || response.messages.length === 0) return;
-
-    const supplement = extractImageGenerationTranscriptSupplement(response.messages, sessionKey);
-    for (const start of supplement.starts) {
-      if (!isCurrentSupplement()) return;
-      recordHistoricalImageGenerationStart(start, generation);
-    }
-    for (const completion of supplement.completions) {
-      if (!isCurrentSupplement()) return;
-      await get().projectImageGenerationCompletion(completion, {
-        isCurrent: isCurrentSupplement,
-        staleReason: 'stale-transcript-supplement',
-      });
     }
   },
 
@@ -742,7 +1049,8 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
 
     const generation = state.generation;
     const key = imageGenerationEvidenceKey({ ...evidence, sessionKey });
-    if (!reserveDelivery(sessionKey, key)) {
+    const reservationOwner = options?.reservationOwner ?? `projection:${imageProjectionSeq += 1}`;
+    if (!reserveDelivery(sessionKey, key, reservationOwner, Boolean(options?.reservationOwner))) {
       recordProjectionTrace({
         event: 'image-generation:projection-deduped',
         sessionKey,
@@ -752,17 +1060,80 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       return;
     }
 
-    let thumbnails: MediaThumbnailResult;
-    try {
-      thumbnails = await hostApi.media.thumbnails({
-        paths: evidence.candidates.map(thumbnailEntry),
+    const resolvedCandidates: Array<{
+      candidate: ImageGenerationMediaCandidate;
+      identity: string;
+      mimeType: string;
+      target: Extract<ResolveAttachmentResult, { ok: true }>['target'];
+    }> = [];
+    let unresolvedCandidateCount = 0;
+    for (const candidate of evidence.candidates) {
+      let result: ResolveAttachmentResult;
+      try {
+        result = await hostApi.files.resolveAttachment({
+          ref: {
+            sessionKey,
+            generation,
+            uri: imageCandidateUri(candidate),
+            ...(options?.transcriptMessageId ? { transcriptMessageId: options.transcriptMessageId } : {}),
+          },
+          ...(candidate.mimeType ? { mimeType: candidate.mimeType } : {}),
+        });
+      } catch {
+        result = { ok: false, displayName: safeAttachmentName(candidate.key), error: 'operationFailed' };
+      }
+      recordProjectionTrace({
+        event: result.ok ? 'image-generation:resolution-available' : 'image-generation:resolution-unavailable',
+        sessionKey,
+        generation,
+        details: projectionTraceDetails(evidence, {
+          reason: result.ok ? 'available' : result.error,
+          evidenceHash: hashOpenClawMediaDiagnostic(evidence.evidenceId),
+          ...(result.ok ? { identityHash: hashOpenClawMediaDiagnostic(result.identity) } : {}),
+        }),
       });
+      if (result.ok) {
+        if (!resolvedCandidates.some((entry) => entry.identity === result.identity)) {
+          resolvedCandidates.push({
+            candidate,
+            identity: result.identity,
+            mimeType: result.mimeType,
+            target: result.target,
+          });
+        }
+      } else {
+        unresolvedCandidateCount += 1;
+      }
+      if (
+        !ownsDeliveryReservation(sessionKey, key, reservationOwner)
+        || (options?.isCurrent && !options.isCurrent())
+        || !isCurrentAction(get(), sessionKey, generation)
+      ) {
+        releaseDelivery(sessionKey, key, reservationOwner);
+        recordProjectionTrace({
+          event: 'image-generation:projection-dropped',
+          sessionKey,
+          generation,
+          details: projectionTraceDetails(evidence, { reason: options?.staleReason ?? 'stale-resolution' }),
+        });
+        return;
+      }
+    }
+
+    let thumbnails: MediaThumbnailResult = {};
+    try {
+      const paths = resolvedCandidates.flatMap(({ identity, mimeType, target }) => (
+        target.kind === 'local'
+          ? [{ attachmentFileRef: target.ref, key: identity, mimeType }]
+          : []
+      ));
+      if (paths.length > 0) thumbnails = await hostApi.media.thumbnails({ paths });
       recordProjectionTrace({
         event: 'image-generation:thumbnail-result',
         sessionKey,
         generation,
         details: projectionTraceDetails(evidence, {
-          previewCount: evidence.candidates.filter((candidate) => Boolean(thumbnails[candidate.key]?.preview)).length,
+          previewCount: resolvedCandidates.filter(({ identity }) => Boolean(thumbnails[identity]?.preview)).length,
         }),
       });
     } catch {
@@ -776,16 +1147,18 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     }
 
     const latest = get();
-    if (options?.isCurrent && !options.isCurrent()) {
+    if (!ownsDeliveryReservation(sessionKey, key, reservationOwner) || (options?.isCurrent && !options.isCurrent())) {
+      releaseDelivery(sessionKey, key, reservationOwner);
       recordProjectionTrace({
         event: 'image-generation:projection-dropped',
         sessionKey,
         generation,
-        details: projectionTraceDetails(evidence, { reason: options.staleReason ?? 'stale-projection' }),
+        details: projectionTraceDetails(evidence, { reason: options?.staleReason ?? 'stale-projection' }),
       });
       return;
     }
     if (latest.activeSessionKey !== sessionKey || latest.generation !== generation) {
+      releaseDelivery(sessionKey, key, reservationOwner);
       recordProjectionTrace({
         event: 'image-generation:projection-dropped',
         sessionKey,
@@ -799,18 +1172,20 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     }
 
     const imageParts: RenderPart[] = [];
-    for (const candidate of evidence.candidates) {
-      const resolved = thumbnails[candidate.key];
+    for (const { candidate, identity, mimeType } of resolvedCandidates) {
+      const resolved = thumbnails[identity];
       if (!resolved?.preview) continue;
       imageParts.push({
         kind: 'image',
         source: resolved.preview,
-        ...(candidate.mimeType ? { mimeType: candidate.mimeType } : {}),
+        mimeType: candidate.mimeType ?? mimeType,
         alt: i18n.t('chat:acp.image'),
+        mediaIdentity: identity,
       });
     }
 
-    const missingCount = evidence.candidates.length - imageParts.length;
+    const missingCount = unresolvedCandidateCount + resolvedCandidates.length - imageParts.length;
+    if (missingCount > 0) releaseDelivery(sessionKey, key, reservationOwner);
     const caption = imageParts.length === 0
       ? i18n.t('chat:imageGeneration.previewUnavailable')
       : missingCount > 0
@@ -830,6 +1205,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
         }),
       };
     });
+    if (missingCount === 0) commitDelivery(sessionKey, key, reservationOwner);
     recordProjectionTrace({
       event: 'image-generation:projection-appended',
       sessionKey,
@@ -848,7 +1224,10 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       return;
     }
     if (event.sessionKey !== state.activeSessionKey || event.generation !== state.generation) return;
-    set({ timeline: applyAcpSessionUpdate(state.timeline, event.notification, { historical: !!event.historical }) });
+    const timeline = applyAcpSessionUpdate(state.timeline, event.notification, { historical: !!event.historical });
+    const pending = newPendingAttachments(state.timeline, timeline);
+    set({ timeline });
+    resolvePendingAttachments(event.sessionKey, event.generation, pending);
     get().recordImageGenerationStart(event);
     const evidence = extractImageGenerationCompletionFromAcpEnvelope(event);
     if (evidence) void get().projectImageGenerationCompletion(evidence);

@@ -60,7 +60,15 @@
         "saveImage": "Save image as",
         "imageSaved": "Image saved",
         "copy": "Copy response",
-        "copied": "Copied"
+        "copied": "Copied",
+        "attachment": {
+            "loading": "Loading attachment",
+            "unavailable": "Attachment unavailable",
+            "open": "Open {{name}}",
+            "preview": "Preview {{name}}",
+            "mimeSize": "{{size}}",
+            "openFailed": "Could not open attachment"
+        }
     },
     "artifactPanel": {
         "tabs": {

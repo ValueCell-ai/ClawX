@@ -26,8 +26,23 @@ function baseHostApiMocks(
 ) {
   return {
     [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: MAIN_WORKSPACE }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', {
+      sessionKey: MAIN_SESSION_KEY,
+      workspaceRoot: MAIN_WORKSPACE,
+      cwd: MAIN_WORKSPACE,
+    }])]: loadResult,
     [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: '/' }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', {
+      sessionKey: MAIN_SESSION_KEY,
+      workspaceRoot: '/',
+      cwd: '/',
+    }])]: loadResult,
     [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', {
+      sessionKey: MAIN_SESSION_KEY,
+      workspaceRoot: DEFAULT_WORKSPACE,
+      cwd: DEFAULT_WORKSPACE,
+    }])]: loadResult,
     [stableStringify(['sessions', 'summaries', { sessionKeys: [MAIN_SESSION_KEY] }])]: { summaries: [] },
     [stableStringify(['/api/agents', 'GET'])]: {
       ok: true,
@@ -46,6 +61,28 @@ function baseHostApiMocks(
       },
     },
     ...overrides,
+  };
+}
+
+function generatedImageHostApiMocks(generatedPath: string, identity: string): Record<string, unknown> {
+  const ref = { sessionKey: MAIN_SESSION_KEY, generation: 1, uri: generatedPath };
+  return {
+    [stableStringify(['files', 'resolveAttachment', {
+      ref,
+      mimeType: 'image/png',
+    }])]: {
+      ok: true,
+      identity,
+      displayName: generatedPath.split('/').at(-1) ?? 'generated.png',
+      mimeType: 'image/png',
+      size: 67,
+      target: { kind: 'local', scope: 'openclaw-media', ref },
+    },
+    [stableStringify(['media', 'thumbnails', {
+      paths: [{ attachmentFileRef: ref, key: identity, mimeType: 'image/png' }],
+    }])]: {
+      [identity]: { preview: ONE_PIXEL_PNG_DATA_URL, fileSize: 67 },
+    },
   };
 }
 
@@ -249,13 +286,11 @@ test.describe('ClawX chat run state events', () => {
     const generatedPath = '/tmp/openclaw-generated-sky.png';
 
     try {
-      await installAcpChatMocks(app, { success: true, generation: 1 }, {
-        [stableStringify(['media', 'thumbnails', {
-          paths: [{ filePath: generatedPath, mimeType: 'image/png' }],
-        }])]: {
-          [generatedPath]: { preview: ONE_PIXEL_PNG_DATA_URL, fileSize: 67 },
-        },
-      });
+      await installAcpChatMocks(
+        app,
+        { success: true, generation: 1 },
+        generatedImageHostApiMocks(generatedPath, 'e2e-live-generated-image'),
+      );
       const page = await openChat(app);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
@@ -290,6 +325,7 @@ test.describe('ClawX chat run state events', () => {
             deliveryStatus: 'sent',
             sourceReplySink: 'internal-ui',
             sourceReply: {
+              text: 'Generated image is ready.',
               mediaUrls: [generatedPath],
             },
           },
@@ -313,13 +349,11 @@ test.describe('ClawX chat run state events', () => {
     const generatedPath = '/tmp/openclaw-replayed-sky.png';
 
     try {
-      await installAcpChatMocks(app, { success: true, generation: 1 }, {
-        [stableStringify(['media', 'thumbnails', {
-          paths: [{ filePath: generatedPath, mimeType: 'image/png' }],
-        }])]: {
-          [generatedPath]: { preview: ONE_PIXEL_PNG_DATA_URL, fileSize: 67 },
-        },
-      });
+      await installAcpChatMocks(
+        app,
+        { success: true, generation: 1 },
+        generatedImageHostApiMocks(generatedPath, 'e2e-replayed-generated-image'),
+      );
       const page = await openChat(app);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
@@ -353,6 +387,7 @@ test.describe('ClawX chat run state events', () => {
               deliveryStatus: 'sent',
               sourceReplySink: 'internal-ui',
               sourceReply: {
+                text: 'Generated image is ready.',
                 mediaUrls: [generatedPath],
               },
             },
@@ -377,13 +412,11 @@ test.describe('ClawX chat run state events', () => {
     const generatedPath = '/Users/me/.openclaw/media/tool-image-generation/clawx-image-1.png';
 
     try {
-      await installAcpChatMocks(app, { success: true, generation: 1 }, {
-        [stableStringify(['media', 'thumbnails', {
-          paths: [{ filePath: generatedPath, mimeType: 'image/png' }],
-        }])]: {
-          [generatedPath]: { preview: ONE_PIXEL_PNG_DATA_URL, fileSize: 67 },
-        },
-      });
+      await installAcpChatMocks(
+        app,
+        { success: true, generation: 1 },
+        generatedImageHostApiMocks(generatedPath, 'e2e-transcript-generated-image'),
+      );
       const page = await openChat(app);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
@@ -406,14 +439,14 @@ test.describe('ClawX chat run state events', () => {
           messageId: 'replayed-image-result',
           content: {
             type: 'text',
-            text: `图片生成完成！这是为你创建的蓝天白云风景图。\n\nMEDIA:${generatedPath}`,
+            text: `Generated image is ready.\n\nMEDIA:${generatedPath}`,
           },
         },
       ], 1, true);
 
       const timeline = page.getByTestId('acp-chat-timeline');
       await expect(timeline).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByText('Generated image is ready.')).toBeVisible();
+      await expect(page.getByText('Generated image is ready.').first()).toBeVisible();
       await expect(timeline.getByTestId('acp-image-part')).toBeVisible();
       const image = timeline.getByRole('img', { name: 'Image' });
       await expect(image).toBeVisible();
@@ -479,9 +512,23 @@ test.describe('ClawX chat run state events', () => {
   test('renders ACP SVG image content without legacy MEDIA marker leakage', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     const filePath = String.raw`C:\Users\Administrator\.openclaw\workspace\japan-kansai-4d3n-plan.svg`;
+    const attachmentRef = { sessionKey: MAIN_SESSION_KEY, generation: 1, uri: filePath };
 
     try {
-      await installAcpChatMocks(app);
+      await installAcpChatMocks(app, { success: true, generation: 1 }, {
+        [stableStringify(['files', 'resolveAttachment', {
+          ref: attachmentRef,
+          name: 'japan-kansai-4d3n-plan.svg',
+          mimeType: 'image/svg+xml',
+        }])]: {
+          ok: true,
+          identity: 'e2e-windows-svg',
+          displayName: 'japan-kansai-4d3n-plan.svg',
+          mimeType: 'image/svg+xml',
+          size: 128,
+          target: { kind: 'local', scope: 'workspace', ref: attachmentRef },
+        },
+      });
       const page = await openChat(app);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
@@ -506,6 +553,7 @@ test.describe('ClawX chat run state events', () => {
       await expect(page.getByText('SVG file is ready:')).toBeVisible();
       await expect(page.getByText('MEDIA:C:')).toHaveCount(0);
       await expect(page.getByText('japan-kansai-4d3n-plan.svg')).toBeVisible();
+      await expect(page.getByRole('button').filter({ hasText: 'japan-kansai-4d3n-plan.svg' })).toBeEnabled();
       await expect(page.getByTestId('acp-image-part').locator('img')).toBeVisible();
       await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
     } finally {

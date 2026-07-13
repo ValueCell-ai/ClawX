@@ -4,6 +4,7 @@ import {
   getAcpTraceSnapshot,
   normalizeRendererAcpTracePayload,
   recordAcpTrace,
+  recordAttachmentOpenTrace,
 } from '../../electron/services/acp-trace';
 
 describe('ACP trace diagnostics store', () => {
@@ -54,5 +55,57 @@ describe('ACP trace diagnostics store', () => {
 
     expect(normalizeRendererAcpTracePayload({ event: '' })).toBeNull();
     expect(normalizeRendererAcpTracePayload(null)).toBeNull();
+  });
+
+  it('allowlists OpenClaw transcript projection details without transcript bodies or raw references', () => {
+    const normalized = normalizeRendererAcpTracePayload({
+      event: 'openclaw-media:resolution-available',
+      sessionKey: 'agent:pi:s1',
+      generation: 2,
+      details: {
+        source: 'openclaw-media',
+        reason: 'available',
+        candidateCount: 1,
+        evidenceHash: 'evidence-hash',
+        identityHash: 'identity-hash',
+        transcriptBody: 'MEDIA:/private/secret.txt',
+        uri: 'file:///private/secret.txt',
+        path: '/private/secret.txt',
+      },
+    });
+
+    expect(normalized?.details).toEqual({
+      source: 'openclaw-media',
+      reason: 'available',
+      candidateCount: 1,
+      evidenceHash: 'evidence-hash',
+      identityHash: 'identity-hash',
+    });
+    expect(JSON.stringify(normalized)).not.toContain('/private/secret.txt');
+  });
+
+  it('records attachment opens with an allowlisted redacted detail shape', () => {
+    recordAttachmentOpenTrace({
+      ok: false,
+      reason: 'operationFailed',
+      sourceKind: 'local',
+      sessionKey: 'agent:pi:s1',
+      generation: 2,
+      identity: 'a'.repeat(64),
+      uri: 'file:///private/secret.txt',
+      path: '/private/secret.txt',
+    } as never);
+
+    const entry = getAcpTraceSnapshot().entries[0];
+    expect(entry).toMatchObject({
+      event: 'attachment/open:failure',
+      details: {
+        reason: 'operationFailed',
+        sourceKind: 'local',
+        identity: 'a'.repeat(64),
+      },
+    });
+    expect(Object.keys(entry.details as object).sort()).toEqual(['identity', 'reason', 'sourceKind']);
+    expect(JSON.stringify(entry)).not.toContain('/private/secret.txt');
   });
 });

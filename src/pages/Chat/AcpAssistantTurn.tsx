@@ -8,6 +8,7 @@ import { AcpThoughtBlock } from './AcpThoughtBlock';
 import { AcpToolCallCard } from './AcpToolCallCard';
 import type { AcpTurnFileSummary } from '@/lib/acp/openclaw-file-activities';
 import { AcpTurnFileActivity } from './AcpTurnFileActivity';
+import { AcpAttachmentPart } from './AcpAttachmentPart';
 
 function assistantTurnClipboardText(group: AcpAssistantTurnDisplayGroup): string {
   const textSegments: string[] = [];
@@ -90,6 +91,10 @@ export function AcpAssistantTurn({
 
           return null;
         })}
+
+        {group.attachments.map((attachment) => (
+          <AcpAttachmentPart key={attachment.attachmentId} part={attachment} />
+        ))}
 
         {workspaceRoot && <AcpTurnFileActivity summaries={fileSummaries} workspaceRoot={workspaceRoot} />}
 

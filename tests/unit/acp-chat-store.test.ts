@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { dedupeTurnAttachments } from '@/lib/acp/attachments';
+import type { AttachmentRenderPart, RenderPart } from '@/lib/acp/timeline-types';
 
 const hostApiMock = vi.hoisted(() => ({
   loadAcpSession: vi.fn(),
@@ -8,6 +10,7 @@ const hostApiMock = vi.hoisted(() => ({
   mediaThumbnails: vi.fn(),
   recordAcpTrace: vi.fn(),
   sessionsHistory: vi.fn(),
+  resolveAttachment: vi.fn(),
 }));
 
 const hostEventsMock = vi.hoisted(() => ({
@@ -50,6 +53,9 @@ vi.mock('@/lib/host-api', () => ({
     sessions: {
       history: hostApiMock.sessionsHistory,
     },
+    files: {
+      resolveAttachment: hostApiMock.resolveAttachment,
+    },
   },
 }));
 
@@ -90,6 +96,30 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
+function availableAttachment(
+  attachmentId: string,
+  source: AttachmentRenderPart['source'],
+  identity: string,
+): AttachmentRenderPart {
+  return {
+    kind: 'attachment',
+    attachmentId,
+    reference: { uri: `file:///repo/${attachmentId}.txt`, name: `${attachmentId}.txt` },
+    source,
+    access: {
+      status: 'available',
+      identity,
+      mimeType: 'text/plain',
+      size: 42,
+      target: {
+        kind: 'local',
+        scope: 'workspace',
+        ref: { sessionKey: 'agent:pi:s1', generation: 1, uri: `file:///repo/${attachmentId}.txt` },
+      },
+    },
+  };
+}
+
 describe('ACP Chat store', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -100,6 +130,24 @@ describe('ACP Chat store', () => {
     hostApiMock.mediaThumbnails.mockReset().mockResolvedValue({});
     hostApiMock.recordAcpTrace.mockReset().mockResolvedValue({ success: true });
     hostApiMock.sessionsHistory.mockReset().mockResolvedValue({ success: true, messages: [] });
+    hostApiMock.resolveAttachment.mockReset().mockImplementation(async (payload: {
+      ref: { sessionKey: string; generation: number; uri: string };
+      mimeType?: string;
+    }) => {
+      const isImage = payload.mimeType?.startsWith('image/');
+      return {
+        ok: true,
+        identity: isImage ? payload.ref.uri : 'attachment-identity',
+        displayName: isImage ? payload.ref.uri.split('/').pop() ?? 'image.png' : 'report.txt',
+        mimeType: isImage ? payload.mimeType : 'text/plain',
+        size: 42,
+        target: {
+          kind: 'local',
+          scope: 'workspace',
+          ref: payload.ref,
+        },
+      };
+    });
     hostEventsMock.updateListener = null;
     hostEventsMock.permissionListener = null;
     hostEventsMock.gatewayChatMessageListener = null;
@@ -114,7 +162,9 @@ describe('ACP Chat store', () => {
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
 
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo-a' });
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo-a', cwd: '/repo-a/project',
+    });
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
       generation: 1,
@@ -132,13 +182,15 @@ describe('ACP Chat store', () => {
 
     useAcpChatSessionStore.getState().prepareLocalSession({
       sessionKey: 'agent:pi:session-local',
-      cwd: '/repo-b',
+      workspaceRoot: '/repo-b',
+      cwd: '/repo-b/project',
     });
 
     expect(hostApiMock.loadAcpSession).not.toHaveBeenCalled();
     expect(useAcpChatSessionStore.getState()).toMatchObject({
       activeSessionKey: 'agent:pi:session-local',
-      cwd: '/repo-b',
+      workspaceRoot: '/repo-b',
+      cwd: '/repo-b/project',
       loading: false,
       sending: false,
       cancelling: false,
@@ -155,7 +207,9 @@ describe('ACP Chat store', () => {
     ensureAcpChatSubscriptions();
     ensureAcpChatSubscriptions();
 
-    await expect(useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' })).resolves.toBe(true);
+    await expect(useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo/packages/app',
+    })).resolves.toBe(true);
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
       generation: 1,
@@ -171,7 +225,9 @@ describe('ACP Chat store', () => {
     expect(useAcpChatSessionStore.getState().timeline.itemOrder).toEqual(['msg-1:0']);
 
     hostApiMock.loadAcpSession.mockResolvedValueOnce({ success: true, generation: 2 });
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo/packages/app',
+    });
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
       generation: 1,
@@ -189,10 +245,13 @@ describe('ACP Chat store', () => {
     expect(hostEventsMock.onAcpPermissionRequest).toHaveBeenCalledTimes(1);
     expect(hostEventsMock.onGatewayChatMessage).toHaveBeenCalledTimes(1);
     expect(hostEventsMock.onChatRuntimeEvent).toHaveBeenCalledTimes(1);
-    expect(hostApiMock.loadAcpSession).toHaveBeenLastCalledWith({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    expect(hostApiMock.loadAcpSession).toHaveBeenLastCalledWith({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo/packages/app',
+    });
     expect(useAcpChatSessionStore.getState()).toMatchObject({
       activeSessionKey: 'agent:pi:s1',
-      cwd: '/repo',
+      workspaceRoot: '/repo',
+      cwd: '/repo/packages/app',
       generation: 2,
       loading: false,
       error: null,
@@ -216,12 +275,13 @@ describe('ACP Chat store', () => {
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
 
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
     useAcpChatSessionStore.getState().prepareLocalSession({
       sessionKey: 'agent:pi:session-local',
+      workspaceRoot: '/repo',
       cwd: '/repo',
     });
-    const reloadPromise = useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    const reloadPromise = useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
 
     historicalLoad.resolve({
       success: true,
@@ -323,7 +383,7 @@ describe('ACP Chat store', () => {
     hostApiMock.loadAcpSession.mockReturnValueOnce(load.promise);
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    const loadPromise = useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    const loadPromise = useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
 
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
@@ -351,7 +411,7 @@ describe('ACP Chat store', () => {
     hostApiMock.loadAcpSession.mockReturnValueOnce(load.promise);
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    const loadPromise = useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    const loadPromise = useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
 
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
@@ -378,7 +438,7 @@ describe('ACP Chat store', () => {
   it('applies matching generation updates', async () => {
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
 
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
@@ -401,11 +461,323 @@ describe('ACP Chat store', () => {
     });
   });
 
+  it('resolves every new pending attachment and patches the matching ids', async () => {
+    hostApiMock.resolveAttachment.mockImplementation(async (payload: { ref: { uri: string } }) => ({
+      ok: true,
+      identity: `identity:${payload.ref.uri}`,
+      displayName: payload.ref.uri.endsWith('one.txt') ? 'one.txt' : 'two.txt',
+      mimeType: 'text/plain',
+      size: payload.ref.uri.endsWith('one.txt') ? 1 : 2,
+      target: { kind: 'local', scope: 'workspace', ref: payload.ref },
+    }));
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message',
+          messageId: 'msg-files',
+          content: [
+            { type: 'resource_link', uri: 'file:///repo/one.txt', name: 'one.txt', mimeType: 'text/plain', size: 1 },
+            { type: 'resource_link', uri: 'file:///repo/two.txt', name: 'two.txt', mimeType: 'text/plain', size: 2 },
+          ],
+        },
+      },
+    });
+
+    await vi.waitFor(() => expect(hostApiMock.resolveAttachment).toHaveBeenCalledTimes(2));
+    expect(hostApiMock.resolveAttachment).toHaveBeenNthCalledWith(1, {
+      ref: { sessionKey: 'agent:pi:s1', generation: 1, uri: 'file:///repo/one.txt' },
+      name: 'one.txt',
+      mimeType: 'text/plain',
+      size: 1,
+    });
+    expect(hostApiMock.resolveAttachment).toHaveBeenNthCalledWith(2, {
+      ref: { sessionKey: 'agent:pi:s1', generation: 1, uri: 'file:///repo/two.txt' },
+      name: 'two.txt',
+      mimeType: 'text/plain',
+      size: 2,
+    });
+    await vi.waitFor(() => {
+      const item = useAcpChatSessionStore.getState().timeline.itemsById['msg-files:0'];
+      expect(item).toMatchObject({
+        parts: [
+          { attachmentId: 'attachment:msg-files:0:0', access: { status: 'available', identity: 'identity:file:///repo/one.txt' } },
+          { attachmentId: 'attachment:msg-files:0:1', access: { status: 'available', identity: 'identity:file:///repo/two.txt' } },
+        ],
+      });
+    });
+  });
+
+  it('drops an old deferred resolution when the same attachment position receives a new reference', async () => {
+    const resolutionA = createDeferred<Record<string, unknown>>();
+    const resolutionB = createDeferred<Record<string, unknown>>();
+    hostApiMock.resolveAttachment
+      .mockReturnValueOnce(resolutionA.promise)
+      .mockReturnValueOnce(resolutionB.promise);
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+    const envelopeFor = (fileName: string) => ({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message',
+          messageId: 'msg-file',
+          content: [{
+            type: 'resource_link',
+            uri: `file:///repo/${fileName}`,
+            name: fileName,
+            mimeType: 'text/plain',
+          }],
+        },
+      },
+    });
+
+    hostEventsMock.updateListener?.(envelopeFor('a.txt'));
+    await vi.waitFor(() => expect(hostApiMock.resolveAttachment).toHaveBeenCalledTimes(1));
+    hostEventsMock.updateListener?.(envelopeFor('b.txt'));
+    await vi.waitFor(() => expect(hostApiMock.resolveAttachment).toHaveBeenCalledTimes(2));
+
+    resolutionB.resolve({
+      ok: true,
+      identity: 'identity-b',
+      displayName: 'b.txt',
+      mimeType: 'text/plain',
+      size: 2,
+      target: {
+        kind: 'local',
+        scope: 'workspace',
+        ref: { sessionKey: 'agent:pi:s1', generation: 1, uri: 'file:///repo/b.txt' },
+      },
+    });
+    await vi.waitFor(() => {
+      expect(useAcpChatSessionStore.getState().timeline.itemsById['msg-file:0']).toMatchObject({
+        parts: [{
+          attachmentId: 'attachment:msg-file:0:0',
+          reference: { uri: 'file:///repo/b.txt', name: 'b.txt' },
+          access: {
+            status: 'available',
+            identity: 'identity-b',
+            target: { ref: { uri: 'file:///repo/b.txt' } },
+          },
+        }],
+      });
+    });
+
+    resolutionA.resolve({
+      ok: true,
+      identity: 'identity-a',
+      displayName: 'a.txt',
+      mimeType: 'text/plain',
+      size: 1,
+      target: {
+        kind: 'local',
+        scope: 'workspace',
+        ref: { sessionKey: 'agent:pi:s1', generation: 1, uri: 'file:///repo/a.txt' },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['msg-file:0']).toMatchObject({
+      parts: [{
+        reference: { uri: 'file:///repo/b.txt', name: 'b.txt' },
+        access: {
+          status: 'available',
+          identity: 'identity-b',
+          target: { ref: { uri: 'file:///repo/b.txt' } },
+        },
+      }],
+    });
+  });
+
+  it('drops attachment resolution after the active session and generation change', async () => {
+    const resolution = createDeferred<Record<string, unknown>>();
+    hostApiMock.resolveAttachment.mockReturnValueOnce(resolution.promise);
+    hostApiMock.loadAcpSession
+      .mockReset()
+      .mockResolvedValueOnce({ success: true, generation: 1 })
+      .mockResolvedValueOnce({ success: true, generation: 2 });
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo-a', cwd: '/repo-a',
+    });
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'msg-file',
+          content: { type: 'resource_link', uri: 'file:///repo-a/report.txt', name: 'report.txt' },
+        },
+      },
+    });
+    await vi.waitFor(() => expect(hostApiMock.resolveAttachment).toHaveBeenCalledTimes(1));
+
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s2', workspaceRoot: '/repo-b', cwd: '/repo-b',
+    });
+    resolution.resolve({
+      ok: true,
+      identity: 'stale-identity',
+      displayName: 'report.txt',
+      mimeType: 'text/plain',
+      size: 42,
+      target: {
+        kind: 'local',
+        scope: 'workspace',
+        ref: { sessionKey: 'agent:pi:s1', generation: 1, uri: 'file:///repo-a/report.txt' },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(useAcpChatSessionStore.getState().timeline).toMatchObject({
+      sessionId: 'agent:pi:s2',
+      loadGeneration: 2,
+      itemOrder: [],
+    });
+  });
+
+  it('keeps unavailable attachments renderable and retries a later pending replacement', async () => {
+    hostApiMock.resolveAttachment
+      .mockResolvedValueOnce({ ok: false, displayName: 'report.txt', error: 'unavailable' })
+      .mockResolvedValueOnce({
+        ok: true,
+        identity: 'report-identity',
+        displayName: 'report.txt',
+        mimeType: 'text/plain',
+        size: 42,
+        target: {
+          kind: 'local',
+          scope: 'workspace',
+          ref: { sessionKey: 'agent:pi:s1', generation: 1, uri: 'file:///repo/report.txt' },
+        },
+      });
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+    const envelope = {
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message',
+          messageId: 'msg-file',
+          content: [{ type: 'resource_link', uri: 'file:///repo/report.txt', name: 'report.txt' }],
+        },
+      },
+    };
+
+    hostEventsMock.updateListener?.(envelope);
+    await vi.waitFor(() => {
+      expect(useAcpChatSessionStore.getState().timeline.itemsById['msg-file:0']).toMatchObject({
+        parts: [{ access: { status: 'unavailable', reason: 'unavailable' } }],
+      });
+    });
+
+    hostEventsMock.updateListener?.(envelope);
+    await vi.waitFor(() => {
+      expect(hostApiMock.resolveAttachment).toHaveBeenCalledTimes(2);
+      expect(useAcpChatSessionStore.getState().timeline.itemsById['msg-file:0']).toMatchObject({
+        parts: [{ access: { status: 'available', identity: 'report-identity' } }],
+      });
+    });
+  });
+
+  it('prefers native attachments and compatibility inline images by resolved identity regardless of order', () => {
+    const native = availableAttachment('native', 'acp-resource', 'same-media');
+    const compatibility = availableAttachment('compat', 'openclaw-media', 'same-media');
+    const image: RenderPart = {
+      kind: 'image',
+      source: 'data:image/png;base64,abc',
+      mediaIdentity: 'same-media',
+    };
+
+    expect(dedupeTurnAttachments([compatibility, native])).toEqual([native]);
+    expect(dedupeTurnAttachments([native, compatibility])).toEqual([native]);
+    expect(dedupeTurnAttachments([compatibility, image])).toEqual([]);
+    expect(dedupeTurnAttachments([image, compatibility])).toEqual([]);
+  });
+
+  it('replaces an earlier compatibility attachment when a native attachment resolves to the same identity', async () => {
+    hostApiMock.resolveAttachment.mockResolvedValueOnce({
+      ok: true,
+      identity: 'same-media',
+      displayName: 'native.txt',
+      mimeType: 'text/plain',
+      size: 42,
+      target: {
+        kind: 'local',
+        scope: 'workspace',
+        ref: { sessionKey: 'agent:pi:s1', generation: 1, uri: 'file:///repo/native.txt' },
+      },
+    });
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+    useAcpChatSessionStore.setState((state) => ({
+      timeline: {
+        ...state.timeline,
+        itemOrder: ['compat:0'],
+        itemsById: {
+          'compat:0': {
+            kind: 'message-segment',
+            id: 'compat:0',
+            role: 'assistant',
+            messageId: 'compat',
+            segmentIndex: 0,
+            parts: [availableAttachment('compat', 'openclaw-media', 'same-media')],
+          },
+        },
+      },
+    }));
+
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'native',
+          content: { type: 'resource_link', uri: 'file:///repo/native.txt', name: 'native.txt' },
+        },
+      },
+    });
+
+    await vi.waitFor(() => {
+      const parts = Object.values(useAcpChatSessionStore.getState().timeline.itemsById)
+        .filter((item) => item.kind === 'message-segment')
+        .flatMap((item) => item.parts)
+        .filter((part) => part.kind === 'attachment');
+      expect(parts).toMatchObject([{ source: 'acp-resource', access: { identity: 'same-media' } }]);
+    });
+  });
+
   it('marks replay tool updates as historical from the ACP envelope without marking live prompt updates', async () => {
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
 
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
       generation: 1,
@@ -468,8 +840,12 @@ describe('ACP Chat store', () => {
       .mockReturnValueOnce(currentLoad.promise);
     const { useAcpChatSessionStore } = await importStore();
 
-    const staleLoadPromise = useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo-a' });
-    const currentLoadPromise = useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s2', cwd: '/repo-b' });
+    const staleLoadPromise = useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo-a', cwd: '/repo-a/project',
+    });
+    const currentLoadPromise = useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s2', workspaceRoot: '/repo-b', cwd: '/repo-b/project',
+    });
     currentLoad.resolve({ success: true, generation: 2 });
     await currentLoadPromise;
     staleLoad.resolve({ success: false, error: 'stale load failed', generation: 1 });
@@ -477,7 +853,8 @@ describe('ACP Chat store', () => {
 
     expect(useAcpChatSessionStore.getState()).toMatchObject({
       activeSessionKey: 'agent:pi:s2',
-      cwd: '/repo-b',
+      workspaceRoot: '/repo-b',
+      cwd: '/repo-b/project',
       generation: 2,
       loading: false,
       error: null,
@@ -492,7 +869,7 @@ describe('ACP Chat store', () => {
   it('inserts permission requests and responds with the selected outcome', async () => {
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
       generation: 1,
@@ -544,19 +921,19 @@ describe('ACP Chat store', () => {
   it('sends prompts, cancels the active session, and clears errors', async () => {
     hostApiMock.sendAcpPrompt.mockResolvedValueOnce({ success: false, error: 'prompt failed' });
     const { useAcpChatSessionStore } = await importStore();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
 
     await expect(useAcpChatSessionStore.getState().sendPrompt({
       sessionKey: 'agent:pi:s1',
       cwd: '/repo',
       message: 'hello',
-      media: [{ filePath: '/repo/image.png', fileName: 'image.png', mimeType: 'image/png' }],
+      media: [{ filePath: '/repo/image.png', stagingId: 'stage-image', fileName: 'image.png', mimeType: 'image/png' }],
     })).resolves.toBe(false);
     expect(hostApiMock.sendAcpPrompt).toHaveBeenCalledWith({
       sessionKey: 'agent:pi:s1',
       cwd: '/repo',
       message: 'hello',
-      media: [{ filePath: '/repo/image.png', fileName: 'image.png', mimeType: 'image/png' }],
+      media: [{ filePath: '/repo/image.png', stagingId: 'stage-image', fileName: 'image.png', mimeType: 'image/png' }],
       messageId: expect.any(String),
     });
     expect(useAcpChatSessionStore.getState()).toMatchObject({
@@ -577,13 +954,13 @@ describe('ACP Chat store', () => {
     const prompt = createDeferred<{ success: boolean; error?: string; generation?: number }>();
     hostApiMock.sendAcpPrompt.mockReturnValueOnce(prompt.promise);
     const { useAcpChatSessionStore } = await importStore();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
 
     const sendPromise = useAcpChatSessionStore.getState().sendPrompt({
       sessionKey: 'agent:pi:s1',
       cwd: '/repo',
       message: 'hello from user',
-      media: [{ filePath: '/repo/notes.txt', fileName: 'notes.txt', mimeType: 'text/plain' }],
+      media: [{ filePath: '/repo/notes.txt', stagingId: 'stage-notes', fileName: 'notes.txt', mimeType: 'text/plain' }],
     });
 
     const state = useAcpChatSessionStore.getState();
@@ -596,14 +973,25 @@ describe('ACP Chat store', () => {
       segmentIndex: 0,
       parts: [
         { kind: 'markdown', text: 'hello from user' },
-        { kind: 'file', path: '/repo/notes.txt', name: 'notes.txt', mimeType: 'text/plain' },
+        {
+          kind: 'attachment',
+          attachmentId: expect.stringMatching(/^attachment:/),
+          reference: {
+            uri: '/repo/notes.txt',
+            name: 'notes.txt',
+            mimeType: 'text/plain',
+            stagingId: 'stage-notes',
+          },
+          source: 'acp-resource',
+          access: { status: 'pending' },
+        },
       ],
     });
     expect(hostApiMock.sendAcpPrompt).toHaveBeenCalledWith({
       sessionKey: 'agent:pi:s1',
       cwd: '/repo',
       message: 'hello from user',
-      media: [{ filePath: '/repo/notes.txt', fileName: 'notes.txt', mimeType: 'text/plain' }],
+      media: [{ filePath: '/repo/notes.txt', stagingId: 'stage-notes', fileName: 'notes.txt', mimeType: 'text/plain' }],
       messageId: expect.any(String),
     });
 
@@ -611,12 +999,94 @@ describe('ACP Chat store', () => {
     await expect(sendPromise).resolves.toBe(true);
   });
 
+  it('does not resolve an optimistic user attachment again when ACP echoes the same resource', async () => {
+    const prompt = createDeferred<{ success: boolean; error?: string; generation?: number }>();
+    hostApiMock.sendAcpPrompt.mockReturnValueOnce(prompt.promise);
+    hostApiMock.resolveAttachment.mockResolvedValueOnce({
+      ok: true,
+      identity: 'staged-notes',
+      displayName: 'notes.txt',
+      mimeType: 'text/plain',
+      size: 12,
+      target: {
+        kind: 'local',
+        scope: 'staging',
+        ref: {
+          sessionKey: 'agent:pi:s1',
+          generation: 1,
+          uri: '/repo/notes.txt',
+          stagingId: 'stage-notes',
+        },
+      },
+    });
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+
+    const sendPromise = useAcpChatSessionStore.getState().sendPrompt({
+      sessionKey: 'agent:pi:s1',
+      cwd: '/repo',
+      message: 'inspect this',
+      messageId: 'user-msg',
+      media: [{
+        filePath: '/repo/notes.txt',
+        stagingId: 'stage-notes',
+        fileName: 'notes.txt',
+        mimeType: 'text/plain',
+      }],
+    });
+    await vi.waitFor(() => {
+      expect(useAcpChatSessionStore.getState().timeline.itemsById['user-msg:0']).toMatchObject({
+        parts: [
+          { kind: 'markdown' },
+          { kind: 'attachment', access: { status: 'available', identity: 'staged-notes' } },
+        ],
+      });
+    });
+
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'user_message',
+          messageId: 'user-msg',
+          content: [
+            { type: 'text', text: 'inspect this' },
+            {
+              type: 'resource_link',
+              uri: '/repo/notes.txt',
+              name: 'notes.txt',
+              mimeType: 'text/plain',
+              _meta: { clawx: { stagingId: 'stage-notes' } },
+            },
+          ],
+        },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(hostApiMock.resolveAttachment).toHaveBeenCalledTimes(1);
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['user-msg:0']).toMatchObject({
+      parts: [
+        { kind: 'markdown' },
+        { kind: 'attachment', access: { status: 'available', identity: 'staged-notes' } },
+      ],
+    });
+
+    prompt.resolve({ success: true });
+    await sendPromise;
+  });
+
   it('keeps a reconciled user segment when prompt completion fails after ACP echo', async () => {
     const prompt = createDeferred<{ success: boolean; error?: string; generation?: number }>();
     hostApiMock.sendAcpPrompt.mockReturnValueOnce(prompt.promise);
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
 
     const sendPromise = useAcpChatSessionStore.getState().sendPrompt({
       sessionKey: 'agent:pi:s1',
@@ -652,7 +1122,7 @@ describe('ACP Chat store', () => {
   it('does not respond to missing or already-resolved permission requests', async () => {
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
 
     await useAcpChatSessionStore.getState().respondPermission('missing', 'allow-once');
 
@@ -686,14 +1156,14 @@ describe('ACP Chat store', () => {
       .mockResolvedValueOnce({ success: true, generation: 2 });
     hostApiMock.sendAcpPrompt.mockReturnValueOnce(prompt.promise);
     const { useAcpChatSessionStore } = await importStore();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo-a' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo-a', cwd: '/repo-a' });
 
     const promptPromise = useAcpChatSessionStore.getState().sendPrompt({
       sessionKey: 'agent:pi:s1',
       cwd: '/repo-a',
       message: 'hello',
     });
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s2', cwd: '/repo-b' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s2', workspaceRoot: '/repo-b', cwd: '/repo-b' });
     prompt.resolve({ success: false, error: 'stale prompt failed', generation: 1 });
     await promptPromise;
 
@@ -707,7 +1177,7 @@ describe('ACP Chat store', () => {
 
   it('returns false and does not prompt when the session is not active', async () => {
     const { useAcpChatSessionStore } = await importStore();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo-a' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo-a', cwd: '/repo-a' });
 
     await expect(useAcpChatSessionStore.getState().sendPrompt({
       sessionKey: 'agent:pi:s2',
@@ -727,10 +1197,10 @@ describe('ACP Chat store', () => {
       .mockResolvedValueOnce({ success: true, generation: 2 });
     hostApiMock.cancelAcpSession.mockReturnValueOnce(cancel.promise);
     const { useAcpChatSessionStore } = await importStore();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo-a' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo-a', cwd: '/repo-a' });
 
     const cancelPromise = useAcpChatSessionStore.getState().cancel();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s2', cwd: '/repo-b' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s2', workspaceRoot: '/repo-b', cwd: '/repo-b' });
     cancel.resolve({ success: false, error: 'stale cancel failed', generation: 1 });
     await cancelPromise;
 
@@ -751,7 +1221,7 @@ describe('ACP Chat store', () => {
     hostApiMock.respondAcpPermission.mockReturnValueOnce(permissionResponse.promise);
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo-a' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo-a', cwd: '/repo-a' });
     hostEventsMock.permissionListener?.({
       sessionKey: 'agent:pi:s1',
       generation: 1,
@@ -764,7 +1234,7 @@ describe('ACP Chat store', () => {
     });
 
     const responsePromise = useAcpChatSessionStore.getState().respondPermission('perm-1', 'allow-once');
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s2', cwd: '/repo-b' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s2', workspaceRoot: '/repo-b', cwd: '/repo-b' });
     permissionResponse.resolve({ success: false, error: 'stale permission failed', generation: 1 });
     await responsePromise;
 
@@ -780,11 +1250,14 @@ describe('ACP Chat store', () => {
     hostApiMock.loadAcpSession.mockResolvedValueOnce({ success: false, error: 'load failed' });
     const { useAcpChatSessionStore } = await importStore();
 
-    const loaded = await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    const loaded = await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo/project',
+    });
 
     expect(loaded).toBe(false);
     expect(useAcpChatSessionStore.getState()).toMatchObject({
       activeSessionKey: null,
+      workspaceRoot: null,
       cwd: null,
       loading: false,
       error: 'load failed',
@@ -794,7 +1267,7 @@ describe('ACP Chat store', () => {
   it('projects trusted image-generation Gateway media into the ACP timeline', async () => {
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
       generation: 1,
@@ -832,7 +1305,11 @@ describe('ACP Chat store', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(hostApiMock.mediaThumbnails).toHaveBeenCalledWith({
-      paths: [{ filePath: '/tmp/sky.png', mimeType: 'image/png' }],
+      paths: [{
+        attachmentFileRef: expect.objectContaining({ uri: '/tmp/sky.png' }),
+        key: '/tmp/sky.png',
+        mimeType: 'image/png',
+      }],
     });
     const timeline = useAcpChatSessionStore.getState().timeline;
     const syntheticId = timeline.itemOrder.find((id) => id.startsWith('compat:image-generation:'));
@@ -852,7 +1329,7 @@ describe('ACP Chat store', () => {
     const taskId = '0d2ee919-2dfd-4b72-9da3-d87e6ee56747';
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
 
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
@@ -885,7 +1362,7 @@ describe('ACP Chat store', () => {
 
   it('records projection rejection when generated media lacks fresh image-generation context', async () => {
     const { useAcpChatSessionStore } = await importStore();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
 
     await useAcpChatSessionStore.getState().projectImageGenerationCompletion({
       sessionKey: 'agent:pi:s1',
@@ -938,12 +1415,16 @@ describe('ACP Chat store', () => {
     });
     const { useAcpChatSessionStore } = await importStore();
 
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(hostApiMock.sessionsHistory).toHaveBeenCalledWith({ sessionKey: 'agent:pi:s1', limit: 1000 });
     expect(hostApiMock.mediaThumbnails).toHaveBeenCalledWith({
-      paths: [{ filePath: '/tmp/replayed-sky.png', mimeType: 'image/png' }],
+      paths: [{
+        attachmentFileRef: expect.objectContaining({ uri: '/tmp/replayed-sky.png' }),
+        key: '/tmp/replayed-sky.png',
+        mimeType: 'image/png',
+      }],
     });
     const timeline = useAcpChatSessionStore.getState().timeline;
     const syntheticId = timeline.itemOrder.find((id) => id.startsWith('compat:image-generation:'));
@@ -972,7 +1453,7 @@ describe('ACP Chat store', () => {
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
 
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
       generation: 1,
@@ -1074,7 +1555,7 @@ describe('ACP Chat store', () => {
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
 
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
     for (const [toolCallId, taskId] of [['first-image-tool', firstTaskId], ['second-image-tool', secondTaskId]] as const) {
       hostEventsMock.updateListener?.({
         sessionKey: 'agent:pi:s1',
@@ -1147,10 +1628,14 @@ describe('ACP Chat store', () => {
     hostApiMock.sendAcpPrompt.mockReturnValueOnce(prompt.promise);
     const { useAcpChatSessionStore } = await importStore();
 
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(hostApiMock.mediaThumbnails).toHaveBeenCalledWith({
-      paths: [{ filePath: '/tmp/replayed-sky.png', mimeType: 'image/png' }],
+      paths: [{
+        attachmentFileRef: expect.objectContaining({ uri: '/tmp/replayed-sky.png' }),
+        key: '/tmp/replayed-sky.png',
+        mimeType: 'image/png',
+      }],
     });
 
     const promptPromise = useAcpChatSessionStore.getState().sendPrompt({
@@ -1192,7 +1677,7 @@ describe('ACP Chat store', () => {
     const taskId = '32aa3a12-a05b-4074-af4e-246cc4a9a303';
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
       generation: 1,
@@ -1234,7 +1719,11 @@ describe('ACP Chat store', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(hostApiMock.mediaThumbnails).toHaveBeenCalledWith({
-      paths: [{ filePath: '/tmp/sky.png', mimeType: 'image/png' }],
+      paths: [{
+        attachmentFileRef: expect.objectContaining({ uri: '/tmp/sky.png' }),
+        key: '/tmp/sky.png',
+        mimeType: 'image/png',
+      }],
     });
     const timeline = useAcpChatSessionStore.getState().timeline;
     const syntheticId = timeline.itemOrder.find((id) => id.startsWith('compat:image-generation:'));
@@ -1254,7 +1743,7 @@ describe('ACP Chat store', () => {
     const taskId = '32aa3a12-a05b-4074-af4e-246cc4a9a303';
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
     hostApiMock.mediaThumbnails.mockResolvedValueOnce({
       '/tmp/replayed-sky.png': { preview: 'data:image/png;base64,replayed', fileSize: 67 },
     });
@@ -1303,7 +1792,11 @@ describe('ACP Chat store', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(hostApiMock.mediaThumbnails).toHaveBeenCalledWith({
-      paths: [{ filePath: '/tmp/replayed-sky.png', mimeType: 'image/png' }],
+      paths: [{
+        attachmentFileRef: expect.objectContaining({ uri: '/tmp/replayed-sky.png' }),
+        key: '/tmp/replayed-sky.png',
+        mimeType: 'image/png',
+      }],
     });
     const timeline = useAcpChatSessionStore.getState().timeline;
     const syntheticId = timeline.itemOrder.find((id) => id.startsWith('compat:image-generation:'));
@@ -1324,7 +1817,7 @@ describe('ACP Chat store', () => {
     const generatedPath = '/Users/me/.openclaw/media/tool-image-generation/clawx-image-1.png';
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
     hostApiMock.mediaThumbnails.mockResolvedValueOnce({
       [generatedPath]: { preview: 'data:image/png;base64,replayed-media-text', fileSize: 67 },
     });
@@ -1368,7 +1861,11 @@ describe('ACP Chat store', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(hostApiMock.mediaThumbnails).toHaveBeenCalledWith({
-      paths: [{ filePath: generatedPath, mimeType: 'image/png' }],
+      paths: [{
+        attachmentFileRef: expect.objectContaining({ uri: generatedPath }),
+        key: generatedPath,
+        mimeType: 'image/png',
+      }],
     });
     const timeline = useAcpChatSessionStore.getState().timeline;
     const syntheticId = timeline.itemOrder.find((id) => id.startsWith('compat:image-generation:'));
@@ -1388,7 +1885,7 @@ describe('ACP Chat store', () => {
     const taskId = '32aa3a12-a05b-4074-af4e-246cc4a9a303';
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
 
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
@@ -1438,7 +1935,7 @@ describe('ACP Chat store', () => {
     const taskId = '32aa3a12-a05b-4074-af4e-246cc4a9a303';
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
 
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
@@ -1477,7 +1974,7 @@ describe('ACP Chat store', () => {
     const taskId = '32aa3a12-a05b-4074-af4e-246cc4a9a303';
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
 
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
@@ -1523,7 +2020,7 @@ describe('ACP Chat store', () => {
     const liveTaskId = '42bb4b23-b16c-4185-b05f-357dd5ba0414';
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
 
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
@@ -1575,7 +2072,7 @@ describe('ACP Chat store', () => {
   it('does not project media without recent image-generation context', async () => {
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
 
     hostEventsMock.gatewayChatMessageListener?.({
       message: {
@@ -1597,7 +2094,7 @@ describe('ACP Chat store', () => {
   it('does not trust Gateway media from historical image-generation replay context', async () => {
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
       generation: 1,
@@ -1640,7 +2137,7 @@ describe('ACP Chat store', () => {
   it('dedupes repeated image-generation media delivery records', async () => {
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
       generation: 1,
@@ -1676,7 +2173,7 @@ describe('ACP Chat store', () => {
   it('dedupes image-generation media delivered by Gateway and runtime streams', async () => {
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
       generation: 1,
@@ -1717,7 +2214,7 @@ describe('ACP Chat store', () => {
   it('keeps distinct image-generation completions when evidence keys collide under 32-bit hashing', async () => {
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
       generation: 1,
@@ -1762,7 +2259,7 @@ describe('ACP Chat store', () => {
   it('appends a text fallback when trusted image-generation completion previews cannot be loaded', async () => {
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
       generation: 1,
@@ -1803,7 +2300,7 @@ describe('ACP Chat store', () => {
     const thumbnailDeferred = createDeferred<Record<string, { preview: string | null; fileSize: number }>>();
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
       generation: 1,
@@ -1827,11 +2324,608 @@ describe('ACP Chat store', () => {
     });
 
     hostApiMock.loadAcpSession.mockResolvedValueOnce({ success: true, generation: 2 });
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s2', cwd: '/repo-2' });
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s2', workspaceRoot: '/repo-2', cwd: '/repo-2' });
     thumbnailDeferred.resolve({ '/tmp/sky.png': { preview: 'data:image/png;base64,abc123', fileSize: 67 } });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(useAcpChatSessionStore.getState()).toMatchObject({ activeSessionKey: 'agent:pi:s2', generation: 2 });
     expect(useAcpChatSessionStore.getState().timeline.itemOrder).toEqual([]);
+  });
+
+  it('feeds image-generation and general MEDIA extraction from one history response', async () => {
+    const taskId = '32aa3a12-a05b-4074-af4e-246cc4a9a303';
+    const history = createDeferred<{ success: true; messages: Array<Record<string, unknown>> }>();
+    hostApiMock.sessionsHistory.mockReturnValueOnce(history.promise);
+    hostApiMock.resolveAttachment.mockImplementation(async (payload: { ref: { uri: string } }) => {
+      const image = payload.ref.uri.endsWith('.png');
+      return {
+        ok: true,
+        identity: image ? 'generated-image-identity' : 'report-identity',
+        displayName: image ? 'generated.png' : 'report.pdf',
+        mimeType: image ? 'image/png' : 'application/pdf',
+        size: image ? 64 : 128,
+        target: { kind: 'local', scope: 'workspace', ref: payload.ref },
+      };
+    });
+    hostApiMock.mediaThumbnails.mockResolvedValueOnce({
+      'generated-image-identity': { preview: 'data:image/png;base64,generated', fileSize: 64 },
+    });
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      historical: true,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'user_message',
+          messageId: 'user-assets',
+          content: [{ type: 'text', text: 'Create assets' }],
+        },
+      },
+    });
+    history.resolve({
+      success: true,
+      messages: [
+        { role: 'user', id: 'transcript-user', content: 'Create assets' },
+        {
+          role: 'toolresult',
+          toolCallId: 'image-tool',
+          toolName: 'image_generate',
+          content: `Background task started for image generation (${taskId}).`,
+          details: { taskId },
+        },
+        {
+          role: 'assistant',
+          id: 'assistant-assets',
+          content: 'Assets ready\nMEDIA:/repo/generated.png\nMEDIA:/repo/report.pdf',
+        },
+      ],
+    });
+
+    await vi.waitFor(() => {
+      const parts = Object.values(useAcpChatSessionStore.getState().timeline.itemsById)
+        .flatMap((item) => item.kind === 'message-segment' ? item.parts : []);
+      expect(parts).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: 'image', mediaIdentity: 'generated-image-identity' }),
+        expect.objectContaining({
+          kind: 'attachment',
+          source: 'openclaw-media',
+          reference: expect.objectContaining({ uri: '/repo/report.pdf', transcriptMessageId: 'assistant-assets' }),
+          access: expect.objectContaining({ status: 'available', identity: 'report-identity' }),
+        }),
+      ]));
+    });
+    expect(hostApiMock.sessionsHistory).toHaveBeenCalledTimes(1);
+    expect(hostApiMock.resolveAttachment).toHaveBeenCalledWith(expect.objectContaining({
+      ref: expect.objectContaining({ uri: '/repo/generated.png', transcriptMessageId: 'assistant-assets' }),
+    }));
+    expect(hostApiMock.mediaThumbnails).toHaveBeenCalledWith({
+      paths: [{
+        attachmentFileRef: expect.objectContaining({ uri: '/repo/generated.png' }),
+        key: 'generated-image-identity',
+        mimeType: 'image/png',
+      }],
+    });
+    const transcriptTraces = hostApiMock.recordAcpTrace.mock.calls
+      .map(([payload]) => payload as { event: string })
+      .filter((payload) => payload.event.startsWith('openclaw-media:'));
+    expect(transcriptTraces.map((payload) => payload.event)).toEqual(expect.arrayContaining([
+      'openclaw-media:history-request-started',
+      'openclaw-media:history-request-succeeded',
+      'openclaw-media:turn-matched',
+      'openclaw-media:resolution-available',
+      'openclaw-media:projection-appended',
+    ]));
+    expect(JSON.stringify(transcriptTraces)).not.toContain('/repo/');
+    expect(JSON.stringify(transcriptTraces)).not.toContain('MEDIA:');
+  });
+
+  it('records a reason-coded history failure without transcript content', async () => {
+    hostApiMock.sessionsHistory.mockRejectedValueOnce(new Error('history failed for MEDIA:/private/secret.txt'));
+    const { useAcpChatSessionStore } = await importStore();
+
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const traces = hostApiMock.recordAcpTrace.mock.calls.map(([payload]) => payload as Record<string, unknown>);
+    expect(traces).toEqual(expect.arrayContaining([
+      expect.objectContaining({ event: 'openclaw-media:history-request-started' }),
+      expect.objectContaining({
+        event: 'openclaw-media:history-request-failed',
+        details: expect.objectContaining({ reason: 'request-failed' }),
+      }),
+    ]));
+    expect(JSON.stringify(traces)).not.toContain('/private/secret.txt');
+  });
+
+  it('upgrades one unavailable MEDIA attachment when unrelated history is evicted before retry', async () => {
+    vi.useFakeTimers();
+    try {
+      const targetMessages = [
+        { role: 'user', content: 'Create report' },
+        { role: 'assistant', content: 'MEDIA:/repo/report.pdf' },
+      ];
+      hostApiMock.sessionsHistory
+        .mockResolvedValueOnce({
+          success: true,
+          messages: [
+            { role: 'user', content: 'Unrelated prompt' },
+            { role: 'assistant', content: 'Unrelated response' },
+            ...targetMessages,
+          ],
+        })
+        .mockResolvedValueOnce({ success: true, messages: targetMessages });
+      hostApiMock.resolveAttachment
+        .mockResolvedValueOnce({ ok: false, displayName: 'report.pdf', error: 'unavailable' })
+        .mockResolvedValueOnce({
+          ok: true,
+          identity: 'report-identity',
+          displayName: 'report.pdf',
+          mimeType: 'application/pdf',
+          size: 128,
+          target: {
+            kind: 'local',
+            scope: 'workspace',
+            ref: { sessionKey: 'agent:pi:s1', generation: 1, uri: '/repo/report.pdf' },
+          },
+        });
+      const { useAcpChatSessionStore } = await importStore();
+      await useAcpChatSessionStore.getState().loadSession({
+        sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true,
+      });
+      await useAcpChatSessionStore.getState().sendPrompt({
+        sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'Create report', messageId: 'live-user',
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(Object.values(useAcpChatSessionStore.getState().timeline.itemsById)
+        .flatMap((item) => item.kind === 'message-segment' ? item.parts : []))
+        .toEqual(expect.arrayContaining([
+          expect.objectContaining({ kind: 'attachment', access: { status: 'unavailable', reason: 'unavailable' } }),
+        ]));
+
+      await vi.advanceTimersByTimeAsync(1500);
+      const attachments = Object.values(useAcpChatSessionStore.getState().timeline.itemsById)
+        .flatMap((item) => item.kind === 'message-segment' ? item.parts : [])
+        .filter((part) => part.kind === 'attachment');
+      expect(attachments).toHaveLength(1);
+      expect(attachments).toMatchObject([{
+        kind: 'attachment',
+        access: { status: 'available', identity: 'report-identity' },
+      }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('drops an older immediate attachment resolution after the delayed attempt starts', async () => {
+    vi.useFakeTimers();
+    try {
+      const firstResolution = createDeferred<Record<string, unknown>>();
+      hostApiMock.sessionsHistory.mockResolvedValue({
+        success: true,
+        messages: [
+          { role: 'user', id: 'transcript-user', content: 'Create report' },
+          { role: 'assistant', id: 'transcript-assistant', content: 'MEDIA:/repo/report.pdf' },
+        ],
+      });
+      hostApiMock.resolveAttachment
+        .mockReturnValueOnce(firstResolution.promise)
+        .mockResolvedValueOnce({
+          ok: true,
+          identity: 'fresh-report',
+          displayName: 'report.pdf',
+          mimeType: 'application/pdf',
+          size: 128,
+          target: {
+            kind: 'local',
+            scope: 'workspace',
+            ref: { sessionKey: 'agent:pi:s1', generation: 1, uri: '/repo/report.pdf' },
+          },
+        });
+      const { useAcpChatSessionStore } = await importStore();
+      await useAcpChatSessionStore.getState().loadSession({
+        sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true,
+      });
+      await useAcpChatSessionStore.getState().sendPrompt({
+        sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'Create report', messageId: 'live-user',
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(hostApiMock.resolveAttachment).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(hostApiMock.resolveAttachment).toHaveBeenCalledTimes(2);
+      firstResolution.resolve({ ok: false, displayName: 'report.pdf', error: 'unavailable' });
+      await vi.advanceTimersByTimeAsync(0);
+
+      const attachments = Object.values(useAcpChatSessionStore.getState().timeline.itemsById)
+        .flatMap((item) => item.kind === 'message-segment' ? item.parts : [])
+        .filter((part) => part.kind === 'attachment');
+      expect(attachments).toMatchObject([{ access: { status: 'available', identity: 'fresh-report' } }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lets the 1500 ms retry supersede a stale image reservation and project once', async () => {
+    vi.useFakeTimers();
+    try {
+      const taskId = '32aa3a12-a05b-4074-af4e-246cc4a9a303';
+      const firstResolution = createDeferred<Record<string, unknown>>();
+      hostApiMock.sessionsHistory.mockResolvedValue({
+        success: true,
+        messages: [
+          { role: 'user', content: 'Create image' },
+          {
+            role: 'toolresult',
+            toolName: 'image_generate',
+            toolCallId: 'image-tool',
+            content: `Background task started for image generation (${taskId}).`,
+            details: { taskId },
+          },
+          { role: 'assistant', id: 'image-result', content: 'MEDIA:/repo/generated.png' },
+        ],
+      });
+      hostApiMock.resolveAttachment
+        .mockReturnValueOnce(firstResolution.promise)
+        .mockResolvedValueOnce({
+          ok: true,
+          identity: 'generated-identity',
+          displayName: 'generated.png',
+          mimeType: 'image/png',
+          size: 64,
+          target: {
+            kind: 'local',
+            scope: 'workspace',
+            ref: { sessionKey: 'agent:pi:s1', generation: 1, uri: '/repo/generated.png' },
+          },
+        });
+      hostApiMock.mediaThumbnails.mockResolvedValue({
+        'generated-identity': { preview: 'data:image/png;base64,retry', fileSize: 64 },
+      });
+      const { useAcpChatSessionStore } = await importStore();
+      await useAcpChatSessionStore.getState().loadSession({
+        sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true,
+      });
+      await useAcpChatSessionStore.getState().sendPrompt({
+        sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'Create image', messageId: 'live-user',
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(hostApiMock.resolveAttachment).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(hostApiMock.resolveAttachment).toHaveBeenCalledTimes(2);
+      firstResolution.resolve({ ok: false, displayName: 'generated.png', error: 'unavailable' });
+      await vi.advanceTimersByTimeAsync(0);
+
+      const images = Object.values(useAcpChatSessionStore.getState().timeline.itemsById)
+        .flatMap((item) => item.kind === 'message-segment' ? item.parts : [])
+        .filter((part) => part.kind === 'image');
+      expect(images).toMatchObject([{ source: 'data:image/png;base64,retry', mediaIdentity: 'generated-identity' }]);
+      expect(hostApiMock.mediaThumbnails).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not replay an older image-generation turn during a live non-image supplement', async () => {
+    vi.useFakeTimers();
+    try {
+      const taskId = '32aa3a12-a05b-4074-af4e-246cc4a9a303';
+      hostApiMock.sessionsHistory.mockResolvedValue({
+        success: true,
+        messages: [
+          { role: 'user', content: 'Create old image' },
+          {
+            role: 'toolresult',
+            toolName: 'image_generate',
+            content: `Background task started for image generation (${taskId}).`,
+            details: { taskId },
+          },
+          { role: 'assistant', id: 'old-image', content: 'MEDIA:/repo/old.png' },
+          { role: 'user', content: 'Create current report' },
+          { role: 'assistant', id: 'current-report', content: 'MEDIA:/repo/current.pdf' },
+        ],
+      });
+      hostApiMock.resolveAttachment.mockImplementation(async (payload: { ref: { uri: string } }) => ({
+        ok: true,
+        identity: `identity:${payload.ref.uri}`,
+        displayName: payload.ref.uri.split('/').pop() ?? 'file',
+        mimeType: payload.ref.uri.endsWith('.png') ? 'image/png' : 'application/pdf',
+        size: 64,
+        target: { kind: 'local', scope: 'workspace', ref: payload.ref },
+      }));
+      const { useAcpChatSessionStore } = await importStore();
+      await useAcpChatSessionStore.getState().loadSession({
+        sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true,
+      });
+      await useAcpChatSessionStore.getState().sendPrompt({
+        sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'Create current report', messageId: 'live-user',
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(hostApiMock.resolveAttachment).not.toHaveBeenCalledWith(expect.objectContaining({
+        ref: expect.objectContaining({ uri: '/repo/old.png' }),
+      }));
+      expect(hostApiMock.resolveAttachment).toHaveBeenCalledWith(expect.objectContaining({
+        ref: expect.objectContaining({ uri: '/repo/current.pdf' }),
+      }));
+      expect(useAcpChatSessionStore.getState().timeline.itemOrder
+        .filter((id) => id.startsWith('compat:image-generation:'))).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['resolver', 'thumbnail'] as const)(
+    'releases an image reservation after a %s error so the same evidence can retry',
+    async (failure) => {
+      const evidence = {
+        sessionKey: 'agent:pi:s1',
+        source: 'gateway-chat-message' as const,
+        evidenceId: `retry-after-${failure}`,
+        caption: '',
+        candidates: [{ key: '/repo/retry.png', filePath: '/repo/retry.png', mimeType: 'image/png' }],
+      };
+      if (failure === 'resolver') {
+        hostApiMock.resolveAttachment
+          .mockRejectedValueOnce(new Error('resolve failed'))
+          .mockResolvedValueOnce({
+            ok: true,
+            identity: 'retry-identity',
+            displayName: 'retry.png',
+            mimeType: 'image/png',
+            size: 64,
+            target: {
+              kind: 'local', scope: 'workspace',
+              ref: { sessionKey: 'agent:pi:s1', generation: 1, uri: '/repo/retry.png' },
+            },
+          });
+      } else {
+        hostApiMock.resolveAttachment.mockResolvedValue({
+          ok: true,
+          identity: 'retry-identity',
+          displayName: 'retry.png',
+          mimeType: 'image/png',
+          size: 64,
+          target: {
+            kind: 'local', scope: 'workspace',
+            ref: { sessionKey: 'agent:pi:s1', generation: 1, uri: '/repo/retry.png' },
+          },
+        });
+        hostApiMock.mediaThumbnails.mockRejectedValueOnce(new Error('thumbnail failed'));
+      }
+      hostApiMock.mediaThumbnails.mockResolvedValueOnce({
+        'retry-identity': { preview: 'data:image/png;base64,retried', fileSize: 64 },
+      });
+      const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+      ensureAcpChatSubscriptions();
+      await useAcpChatSessionStore.getState().loadSession({
+        sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true,
+      });
+      hostEventsMock.updateListener?.({
+        sessionKey: 'agent:pi:s1',
+        generation: 1,
+        notification: {
+          sessionId: 'agent:pi:s1',
+          update: {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: 'image-tool',
+            content: [{ type: 'content', content: { type: 'text', text: 'Background task started for image generation (32aa3a12-a05b-4074-af4e-246cc4a9a303).' } }],
+          },
+        },
+      });
+
+      await useAcpChatSessionStore.getState().projectImageGenerationCompletion(evidence);
+      await useAcpChatSessionStore.getState().projectImageGenerationCompletion(evidence);
+
+      const images = Object.values(useAcpChatSessionStore.getState().timeline.itemsById)
+        .flatMap((item) => item.kind === 'message-segment' ? item.parts : [])
+        .filter((part) => part.kind === 'image');
+      expect(images).toMatchObject([{ source: 'data:image/png;base64,retried' }]);
+      expect(hostApiMock.resolveAttachment).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('releases an image reservation when resolution returns after a stale generation', async () => {
+    const resolution = createDeferred<Record<string, unknown>>();
+    hostApiMock.resolveAttachment
+      .mockReturnValueOnce(resolution.promise)
+      .mockResolvedValueOnce({
+        ok: true,
+        identity: 'fresh-generation-image',
+        displayName: 'fresh.png',
+        mimeType: 'image/png',
+        size: 64,
+        target: {
+          kind: 'local', scope: 'workspace',
+          ref: { sessionKey: 'agent:pi:s1', generation: 1, uri: '/repo/fresh.png' },
+        },
+      });
+    hostApiMock.mediaThumbnails.mockResolvedValue({
+      'fresh-generation-image': { preview: 'data:image/png;base64,fresh', fileSize: 64 },
+    });
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true,
+    });
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1', generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'tool_call_update', toolCallId: 'image-tool',
+          content: [{ type: 'content', content: { type: 'text', text: 'Background task started for image generation (32aa3a12-a05b-4074-af4e-246cc4a9a303).' } }],
+        },
+      },
+    });
+    const evidence = {
+      sessionKey: 'agent:pi:s1',
+      source: 'gateway-chat-message' as const,
+      evidenceId: 'stale-generation-retry',
+      caption: '',
+      candidates: [{ key: '/repo/fresh.png', filePath: '/repo/fresh.png', mimeType: 'image/png' }],
+    };
+
+    const staleProjection = useAcpChatSessionStore.getState().projectImageGenerationCompletion(evidence);
+    await vi.waitFor(() => expect(hostApiMock.resolveAttachment).toHaveBeenCalledTimes(1));
+    useAcpChatSessionStore.setState({ generation: 2 });
+    resolution.resolve({ ok: false, displayName: 'fresh.png', error: 'staleSession' });
+    await staleProjection;
+    useAcpChatSessionStore.setState({ generation: 1 });
+    await useAcpChatSessionStore.getState().projectImageGenerationCompletion(evidence);
+
+    expect(hostApiMock.resolveAttachment).toHaveBeenCalledTimes(2);
+    expect(Object.values(useAcpChatSessionStore.getState().timeline.itemsById)
+      .flatMap((item) => item.kind === 'message-segment' ? item.parts : [])
+      .filter((part) => part.kind === 'image')).toMatchObject([
+      { source: 'data:image/png;base64,fresh', mediaIdentity: 'fresh-generation-image' },
+    ]);
+  });
+
+  it('requests a live transcript immediately and retries exactly once at 1500 ms', async () => {
+    vi.useFakeTimers();
+    try {
+      const { useAcpChatSessionStore } = await importStore();
+      await useAcpChatSessionStore.getState().loadSession({
+        sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true,
+      });
+
+      await useAcpChatSessionStore.getState().sendPrompt({
+        sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'Create report', messageId: 'live-user',
+      });
+
+      expect(hostApiMock.sessionsHistory).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1499);
+      expect(hostApiMock.sessionsHistory).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(hostApiMock.sessionsHistory).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(hostApiMock.sessionsHistory).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['new-prompt', 'cancel', 'load', 'session-switch', 'generation-change'] as const)(
+    'invalidates the pending live transcript retry on %s',
+    async (invalidation) => {
+      vi.useFakeTimers();
+      try {
+        const { useAcpChatSessionStore } = await importStore();
+        await useAcpChatSessionStore.getState().loadSession({
+          sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true,
+        });
+        await useAcpChatSessionStore.getState().sendPrompt({
+          sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'First', messageId: 'first-user',
+        });
+        expect(hostApiMock.sessionsHistory).toHaveBeenCalledTimes(1);
+
+        if (invalidation === 'new-prompt') {
+          await useAcpChatSessionStore.getState().sendPrompt({
+            sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'Second', messageId: 'second-user',
+          });
+        } else if (invalidation === 'cancel') {
+          await useAcpChatSessionStore.getState().cancel();
+        } else if (invalidation === 'load') {
+          await useAcpChatSessionStore.getState().loadSession({
+            sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true,
+          });
+        } else if (invalidation === 'session-switch') {
+          useAcpChatSessionStore.getState().prepareLocalSession({
+            sessionKey: 'agent:pi:s2', workspaceRoot: '/repo-2', cwd: '/repo-2', createIfMissing: true,
+          });
+        } else {
+          useAcpChatSessionStore.setState((state) => ({ generation: state.generation + 1 }));
+        }
+
+        await vi.advanceTimersByTimeAsync(1500);
+        expect(hostApiMock.sessionsHistory).toHaveBeenCalledTimes(invalidation === 'new-prompt' ? 3 : 1);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it('resolves structured image evidence through Main and stores the opaque media identity', async () => {
+    hostApiMock.resolveAttachment.mockResolvedValue({
+      ok: true,
+      identity: 'opaque-generated-image',
+      displayName: 'sky.png',
+      mimeType: 'image/png',
+      size: 64,
+      target: {
+        kind: 'local',
+        scope: 'openclaw-media',
+        ref: { sessionKey: 'agent:pi:s1', generation: 1, uri: 'file:///repo/sky.png' },
+      },
+    });
+    hostApiMock.mediaThumbnails.mockResolvedValueOnce({
+      'opaque-generated-image': { preview: 'data:image/png;base64,sky', fileSize: 64 },
+    });
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true,
+    });
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'image-tool',
+          status: 'completed',
+          content: [{
+            type: 'content',
+            content: {
+              type: 'text',
+              text: 'Background task started for image generation (32aa3a12-a05b-4074-af4e-246cc4a9a303).',
+            },
+          }],
+        },
+      },
+    });
+    hostEventsMock.gatewayChatMessageListener?.({
+      message: {
+        sessionKey: 'agent:pi:s1',
+        runId: 'run-image',
+        message: {
+          role: 'assistant',
+          _attachedFiles: [
+            { filePath: 'file:///repo/sky.png', mimeType: 'image/png' },
+            { filePath: '/repo/sky.png', mimeType: 'image/png' },
+          ],
+        },
+      },
+    });
+
+    await vi.waitFor(() => {
+      const image = Object.values(useAcpChatSessionStore.getState().timeline.itemsById)
+        .flatMap((item) => item.kind === 'message-segment' ? item.parts : [])
+        .find((part) => part.kind === 'image');
+      expect(image).toMatchObject({ mediaIdentity: 'opaque-generated-image' });
+    });
+    expect(hostApiMock.resolveAttachment).toHaveBeenCalledWith({
+      ref: { sessionKey: 'agent:pi:s1', generation: 1, uri: 'file:///repo/sky.png' },
+      mimeType: 'image/png',
+    });
+    expect(hostApiMock.resolveAttachment).toHaveBeenCalledTimes(2);
+    expect(hostApiMock.mediaThumbnails).toHaveBeenCalledWith({
+      paths: [{
+        attachmentFileRef: { sessionKey: 'agent:pi:s1', generation: 1, uri: 'file:///repo/sky.png' },
+        key: 'opaque-generated-image',
+        mimeType: 'image/png',
+      }],
+    });
   });
 });

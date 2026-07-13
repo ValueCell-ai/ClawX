@@ -1,12 +1,12 @@
 # ACP Chat Architecture And Timeline
 
-Status: current architecture reference, reviewed 2026-07-13.
+Status: current architecture reference, reviewed 2026-07-15.
 
 Related scenario: `acp-chat-experience`
 
 Related rules: `acp-chat-state-and-history`, `renderer-main-boundary`
 
-Related tasks: `acp-native-chat`, `filter-openclaw-heartbeat-session`
+Related tasks: `acp-native-chat`, `acp-media-attachments`, `filter-openclaw-heartbeat-session`
 
 ## Ownership
 
@@ -33,7 +33,7 @@ ACP `session/load` replay is the primary source of Chat history. ClawX does not 
 
 OpenClaw emits replay through ordinary `session/update` notifications and completes the replay before `session/load` returns. Main collects those raw notifications for the active load generation and returns them with the load result instead of forwarding them incrementally. Renderer temporarily groups generation-matching host events that arrive during the IPC result handoff, then runs the normal reducer over the combined batch and publishes the resulting timeline in one state update. This is an in-flight transaction buffer only, not a history cache; after load, live updates continue through the normal host-event route. Permission requests are accepted only after the current loaded session starts a prompt, preventing load-time or handoff requests from creating invisible waiters.
 
-There is one approved supplement: after an existing session loads, ClawX may query Main-owned transcript history to recover asynchronous image-generation completions omitted by ACP replay. This requires a preceding `image_generate` start in the same transcript and uses the same safe media hydration path as live compatibility projection. The exception does not apply to normal assistant text, tool cards, plans, permissions, or file activity.
+There are exactly two approved transcript supplements. ClawX may recover asynchronous image-generation completions with proven `image_generate` context, and it may recover explicit line-leading assistant `MEDIA:` attachment directives omitted by OpenClaw ACP. Both are bounded, marked, memory-only projections. They do not authorize reconstruction of ordinary assistant text, thoughts, tool cards, plans, permissions, or file activity. See `harness/reference/acp-generated-media-and-diagnostics.md#bounded-transcript-exceptions` for the compatibility rationale and removal condition.
 
 ## Timeline Model
 
@@ -71,6 +71,14 @@ The protocol timeline remains flat. `src/lib/acp/timeline-groups.ts` derives dis
 - Grouping never infers ownership from `messageId`, `toolCallId`, `_meta`, or synthetic persisted turn ids.
 
 An assistant turn has one identity column and one copy action. Copy includes textual assistant segments and excludes tool output. Tool cards render inline in original order, preserve preformatted whitespace, auto-collapse one second after live completion, respect manual override, and start collapsed when historical and completed.
+
+## Attachments
+
+Standard ACP `resource_link` and URI-backed `resource` content is the preferred attachment path. OpenClaw ACP currently projects assistant text and thought content but can omit assistant media while removing `MEDIA:` directives from the visible live reply. Until upstream emits standard resource content, the bounded explicit-`MEDIA:` supplement may add a marked compatibility attachment to the matching turn without manufacturing an ACP event.
+
+Renderer keeps attachment references and compatibility projections in the active in-memory timeline. Main owns the ACP workspace grant and resolves, reads, and opens every attachment against the exact session and generation. A prior resolution is not a reusable authorization, and Renderer cannot supply a replacement workspace root. Native ACP evidence wins when it resolves to the same identity as compatibility evidence.
+
+Assistant attachment rows render after ordinary turn content and before file activity; user attachment rows render after user prose. Supported authorized local files use the Preview panel, other authorized local files use the system application only after a click, and HTTP or HTTPS attachments open externally only after a click. Image-generation completion remains an inline-image experience. It shares transcript coordination and opaque resolved identities with attachment recovery but is not converted into an attachment card.
 
 ## Chat Behaviors
 

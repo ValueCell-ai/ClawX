@@ -60,7 +60,15 @@
         "saveImage": "画像を別名で保存",
         "imageSaved": "画像を保存しました",
         "copy": "返信をコピー",
-        "copied": "コピーしました"
+        "copied": "コピーしました",
+        "attachment": {
+            "loading": "添付ファイルを読み込み中",
+            "unavailable": "添付ファイルを利用できません",
+            "open": "{{name}} を開く",
+            "preview": "{{name}} をプレビュー",
+            "mimeSize": "{{size}}",
+            "openFailed": "添付ファイルを開けませんでした"
+        }
     },
     "artifactPanel": {
         "tabs": {

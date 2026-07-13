@@ -29,6 +29,8 @@ import {
 } from '../utils/control-ui-device-pairing';
 import { logger } from '../utils/logger';
 import { recordAcpTrace } from './acp-trace';
+import { AcpSessionAccessRegistry, type AcpSessionAccessContext } from './acp-session-access-registry';
+import { expandPath } from '../utils/paths';
 
 type AcpConnection = Pick<ClientSideConnection, 'initialize' | 'newSession' | 'loadSession' | 'prompt' | 'cancel'>;
 type MainWindowLike = {
@@ -138,6 +140,7 @@ export class AcpChatService {
 
   constructor(
     private readonly mainWindow: MainWindowLike,
+    private readonly accessRegistry: AcpSessionAccessRegistry,
     injectedConnection?: AcpConnection,
     private readonly gateway?: GatewayPairingRpcClient,
   ) {
@@ -191,7 +194,9 @@ export class AcpChatService {
   }
 
   private async performLoadSession(payload: AcpChatLoadPayload): Promise<AcpChatOperationResult> {
-    if (!isValidSessionKey(payload.sessionKey) || !payload.cwd) return fail('Invalid ACP session load payload');
+    if (!isValidSessionKey(payload.sessionKey) || !payload.workspaceRoot || !payload.cwd) {
+      return fail('Invalid ACP session load payload');
+    }
     const previousPermissionsEnabled = this.permissionsEnabled;
     this.permissionsEnabled = false;
     this.trace('session/load:start', {
@@ -209,6 +214,7 @@ export class AcpChatService {
     let nextGeneration = previousGeneration + 1;
     let stateAdvanced = false;
     let loadBatch: AcpSessionLoadBatch | null = null;
+    let previousAccessGrant: AcpSessionAccessContext | null = null;
 
     try {
       const connection = await this.ensureConnection();
@@ -220,6 +226,13 @@ export class AcpChatService {
       previousHistoricalGeneration = this.historicalGeneration;
       previousGeneration = this.generation;
       nextGeneration = previousGeneration + 1;
+      previousAccessGrant = this.accessRegistry.snapshot();
+      const preparedAccessGrant = await this.accessRegistry.prepareGrant({
+        sessionKey: payload.sessionKey,
+        generation: nextGeneration,
+        workspaceRoot: payload.workspaceRoot,
+        executionCwd: payload.cwd,
+      });
 
       this.generation = nextGeneration;
       this.activeSessionKey = payload.sessionKey;
@@ -242,7 +255,7 @@ export class AcpChatService {
       let acpSessionId = payload.sessionKey;
       if (payload.createIfMissing) {
         const created = await connection.newSession({
-          cwd: payload.cwd,
+          cwd: preparedAccessGrant.executionCwd,
           mcpServers: [],
           _meta: { sessionKey: payload.sessionKey, prefixCwd: true },
         });
@@ -250,15 +263,14 @@ export class AcpChatService {
       } else {
         await connection.loadSession({
           sessionId: payload.sessionKey,
-          cwd: payload.cwd,
+          cwd: preparedAccessGrant.executionCwd,
           mcpServers: [],
         });
       }
-      if (this.activeSessionKey === payload.sessionKey && this.generation === nextGeneration) {
-        this.activeAcpSessionId = acpSessionId;
-        this.loadedSessionKey = payload.sessionKey;
-        this.loadedAcpSessionId = acpSessionId;
-      }
+      this.activeAcpSessionId = acpSessionId;
+      this.loadedSessionKey = payload.sessionKey;
+      this.loadedAcpSessionId = acpSessionId;
+      this.accessRegistry.commitGrant(preparedAccessGrant);
       this.trace('session/load:success', {
         sessionKey: payload.sessionKey,
         generation: nextGeneration,
@@ -274,7 +286,11 @@ export class AcpChatService {
     } catch (error) {
       if (this.activeLoadBatch === loadBatch) this.activeLoadBatch = null;
       this.resolvePermissionWaitersForSession(payload.sessionKey, cancelledPermissionResponse());
-      if (stateAdvanced && this.activeSessionKey === payload.sessionKey && this.generation === nextGeneration) {
+      if (
+        stateAdvanced
+        && this.activeSessionKey === payload.sessionKey
+        && this.generation === nextGeneration
+      ) {
         this.generation = previousGeneration;
         this.activeSessionKey = previousSessionKey;
         this.activeAcpSessionId = previousAcpSessionId;
@@ -283,6 +299,7 @@ export class AcpChatService {
         this.historicalSessionKey = previousHistoricalSessionKey;
         this.historicalGeneration = previousHistoricalGeneration;
         this.permissionsEnabled = previousPermissionsEnabled;
+        this.accessRegistry.restore(previousAccessGrant);
       }
       logger.error(`[acp-chat] loadSession failed: ${String(error)}`);
       this.trace('session/load:failed', {
@@ -299,6 +316,16 @@ export class AcpChatService {
     if (!this.activeSessionKey) return fail('No active ACP session');
     if (payload.sessionKey !== this.activeSessionKey) return fail('ACP prompt session is not active');
     if (this.loadedSessionKey !== payload.sessionKey || !this.loadedAcpSessionId) return fail('ACP session is not loaded');
+    const accessGrant = this.accessRegistry.get(payload.sessionKey, this.generation);
+    if (!accessGrant) return fail('ACP session access grant is not active');
+    const promptCwd = payload.cwd === accessGrant.executionCwd
+      ? payload.cwd
+      : await import('node:fs/promises')
+        .then((fsP) => fsP.realpath(expandPath(payload.cwd)))
+        .catch(() => null);
+    if (promptCwd !== accessGrant.executionCwd) {
+      return fail('ACP prompt cwd does not match the registered execution cwd');
+    }
 
     try {
       this.trace('session/prompt:start', {
@@ -634,7 +661,13 @@ export class AcpChatService {
           const data = await fsP.readFile(item.filePath, 'base64');
           blocks.push({ type: 'image', data, mimeType, uri: item.filePath });
         } else {
-          blocks.push({ type: 'resource_link', uri: item.filePath, name: item.fileName ?? item.filePath });
+          blocks.push({
+            type: 'resource_link',
+            uri: item.filePath,
+            name: item.fileName ?? item.filePath,
+            mimeType: item.mimeType,
+            _meta: { clawx: { stagingId: item.stagingId } },
+          });
         }
       }
     }
@@ -646,7 +679,8 @@ export class AcpChatService {
 
 export function createAcpChatService(
   mainWindow: MainWindowLike,
+  accessRegistry: AcpSessionAccessRegistry,
   gateway?: GatewayPairingRpcClient,
 ): AcpChatService {
-  return new AcpChatService(mainWindow, undefined, gateway);
+  return new AcpChatService(mainWindow, accessRegistry, undefined, gateway);
 }

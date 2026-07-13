@@ -1,12 +1,12 @@
 # OpenClaw File Activity
 
-Status: current compatibility and safety reference, reviewed 2026-07-13.
+Status: current compatibility and safety reference, reviewed 2026-07-15.
 
 Related scenario: `acp-file-activity`
 
 Related rules: `tool-derived-file-safety`, `session-workspace-authority`
 
-Related task: `restore-acp-file-activity`
+Related tasks: `restore-acp-file-activity`, `acp-media-attachments`
 
 ## Semantics And Ownership
 
@@ -72,6 +72,12 @@ type WorkspaceFileRef = {
 Main independently canonicalizes each read/stat request, checks real paths and nearest existing parents, rejects traversal and symlink escape, and avoids following unsafe final links. Renderer lexical rejection prevents activity UI for obvious outside paths. A later Main rejection keeps the historical activity but shows localized unavailable feedback.
 
 Tool-derived targets are read-only in-app previews. They never expose system open or reveal because path validation cannot be atomic with OS shell dispatch. Existing trusted workspace-browser targets may retain their established operations.
+
+## Separation From Attachments
+
+File activity and user-facing attachments are separate projections and security boundaries. Incidental paths in tool input or output remain tool-derived evidence: they cannot become attachment cards and retain the preview-only restrictions above. Attachment evidence must instead come from standard ACP resource content, a Main-owned user staging record, or the bounded explicit assistant `MEDIA:` exception documented in `harness/reference/acp-generated-media-and-diagnostics.md#bounded-transcript-exceptions`.
+
+Main establishes an attachment workspace grant only when the ACP session load or creation succeeds. Each attachment resolve, preview read, and system or external open then revalidates the exact session, generation, reference, canonical target, and allowed ownership scope. This attachment-scoped operation can safely support click-initiated system open without weakening the separate rule that incidental tool-derived targets never expose system open or reveal.
 
 ## User Experience And Replay
 

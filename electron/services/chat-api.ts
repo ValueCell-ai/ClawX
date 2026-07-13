@@ -3,6 +3,7 @@ import type { GatewayManager } from '../gateway/manager';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { logger } from '../utils/logger';
 import { createAcpChatService } from './acp-chat-service';
+import type { AcpSessionAccessRegistry } from './acp-session-access-registry';
 import { isRecord } from './payload-utils';
 
 const VISION_MIME_TYPES = new Set([
@@ -43,11 +44,13 @@ function normalizeMedia(media: unknown): Array<{ filePath: string; mimeType: str
 export function createChatApi({
   gatewayManager,
   mainWindow,
+  acpSessionAccessRegistry,
 }: {
   gatewayManager: GatewayManager;
   mainWindow: BrowserWindow;
+  acpSessionAccessRegistry: AcpSessionAccessRegistry;
 }): CompleteHostServiceRegistry['chat'] {
-  const acpChat = createAcpChatService(mainWindow, gatewayManager);
+  const acpChat = createAcpChatService(mainWindow, acpSessionAccessRegistry, gatewayManager);
 
   return {
     sendWithMedia: async (payload) => {

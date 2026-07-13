@@ -250,9 +250,12 @@ vi.mock('@electron/utils/whatsapp-login', () => ({
 }));
 
 vi.mock('@electron/utils/paths', () => ({
+  expandPath: (path: string) => path,
   getOpenClawConfigDir: () => testOpenClawConfigDir,
   getOpenClawDir: () => testOpenClawConfigDir,
   getOpenClawResolvedDir: () => testOpenClawConfigDir,
+  resolveOpenClawConfigDir: () => testOpenClawConfigDir,
+  resolveOpenClawStateDir: () => testOpenClawConfigDir,
 }));
 
 vi.mock('@electron/utils/proxy-fetch', () => ({
@@ -1060,5 +1063,27 @@ describe('host services', () => {
           { role: 'assistant', content: 'Hi', timestamp: 1001 },
         ],
       });
+  });
+
+  it('exposes four attachment-scoped file operations from the files service', async () => {
+    const attachmentAccess = {
+      resolveAttachment: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable', displayName: 'file' }),
+      readAttachmentText: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable' }),
+      readAttachmentBinary: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable' }),
+      openAttachment: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable' }),
+    };
+    const { createFilesApi } = await import('@electron/services/files-api');
+    const filesApi = createFilesApi({ attachmentAccess: attachmentAccess as never });
+    const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: 'file:///tmp/a.txt' };
+
+    await filesApi.resolveAttachment({ ref });
+    await filesApi.readAttachmentText(ref);
+    await filesApi.readAttachmentBinary({ ref, maxBytes: 5 });
+    await filesApi.openAttachment(ref);
+
+    expect(attachmentAccess.resolveAttachment).toHaveBeenCalledWith({ ref });
+    expect(attachmentAccess.readAttachmentText).toHaveBeenCalledWith(ref);
+    expect(attachmentAccess.readAttachmentBinary).toHaveBeenCalledWith({ ref, maxBytes: 5 });
+    expect(attachmentAccess.openAttachment).toHaveBeenCalledWith(ref);
   });
 });

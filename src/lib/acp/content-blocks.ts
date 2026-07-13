@@ -1,8 +1,31 @@
 import type { ContentBlock, ToolCallContent } from '@agentclientprotocol/sdk';
+import { createPendingAttachment } from './attachments';
 import type { RenderPart } from './timeline-types';
+
+export type ContentBlockRenderContext = {
+  role: 'user' | 'assistant';
+  messageId: string;
+  segmentIndex: number;
+  blockIndex: number;
+};
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  const string = optionalString(value);
+  return string?.trim() ? string : undefined;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
 }
 
 function unsupportedContent(message: string): RenderPart {
@@ -19,7 +42,40 @@ function imageDataSource(mimeType: string | undefined, data: string | undefined)
   return `data:${mimeType};base64,${data}`;
 }
 
-export function contentBlockToRenderPart(block: ContentBlock): RenderPart {
+function uriBasename(uri: string): string {
+  const withoutQuery = uri.split(/[?#]/, 1)[0] ?? uri;
+  return withoutQuery.split(/[\\/]/).filter(Boolean).at(-1) ?? uri;
+}
+
+function stagingId(block: ContentBlock, role: ContentBlockRenderContext['role']): string | undefined {
+  if (role !== 'user') return undefined;
+  const meta = recordValue(block._meta);
+  const clawx = recordValue(meta?.clawx);
+  return nonEmptyString(clawx?.stagingId);
+}
+
+function attachmentPart(input: {
+  context: ContentBlockRenderContext;
+  uri: string;
+  name?: string;
+  title?: string;
+  mimeType?: string;
+  size?: number;
+  stagingId?: string;
+  unavailable?: boolean;
+}): RenderPart {
+  return createPendingAttachment({
+    ...input.context,
+    uri: input.uri,
+    name: input.name ?? input.title ?? (input.uri ? uriBasename(input.uri) : ''),
+    ...(input.mimeType ? { mimeType: input.mimeType } : {}),
+    ...(typeof input.size === 'number' ? { size: input.size } : {}),
+    ...(input.stagingId ? { stagingId: input.stagingId } : {}),
+    ...(input.unavailable ? { unavailableReason: 'invalidReference' as const } : {}),
+  });
+}
+
+export function contentBlockToRenderPart(block: ContentBlock, context: ContentBlockRenderContext): RenderPart {
   switch (block.type) {
     case 'text':
       return { kind: 'markdown', text: block.text };
@@ -31,40 +87,46 @@ export function contentBlockToRenderPart(block: ContentBlock): RenderPart {
       return { kind: 'image', source, mimeType: block.mimeType };
     }
     case 'resource_link':
-      return {
-        kind: 'file',
-        path: block.uri,
-        name: block.name,
+      return attachmentPart({
+        context,
+        uri: block.uri,
+        name: nonEmptyString(block.name),
+        title: nonEmptyString(block.title),
         mimeType: block.mimeType ?? undefined,
-      };
+        size: block.size ?? undefined,
+        stagingId: stagingId(block, context.role),
+      });
     case 'resource': {
-      if (!block.resource || typeof block.resource !== 'object') {
-        return unsupportedContent('Unsupported ACP resource content');
-      }
-      const resource = block.resource as Record<string, unknown>;
-      const uri = optionalString(resource.uri);
-      if (uri) {
-        return {
-          kind: 'file',
-          path: uri,
-          mimeType: optionalString(resource.mimeType),
-        };
-      }
-      return unsupportedContent('Unsupported ACP resource content');
+      const resource = recordValue(block.resource);
+      const uri = nonEmptyString(resource?.uri) ?? '';
+      return attachmentPart({
+        context,
+        uri,
+        name: nonEmptyString(resource?.name),
+        title: nonEmptyString(resource?.title),
+        mimeType: nonEmptyString(resource?.mimeType),
+        size: optionalNumber(resource?.size),
+        unavailable: !uri,
+      });
     }
     default:
       return unsupportedContent(`Unsupported ACP content block: ${block.type}`);
   }
 }
 
-export function contentBlocksToRenderParts(blocks: ContentBlock[] | undefined | null): RenderPart[] {
-  return (blocks ?? []).map(contentBlockToRenderPart);
+export function contentBlocksToRenderParts(
+  blocks: ContentBlock[] | undefined | null,
+  context: Omit<ContentBlockRenderContext, 'blockIndex'>,
+): RenderPart[] {
+  return (blocks ?? []).map((block, blockIndex) => contentBlockToRenderPart(block, { ...context, blockIndex }));
 }
 
-export function toolContentToRenderPart(entry: ToolCallContent): RenderPart {
+export function toolContentToRenderPart(entry: ToolCallContent, context?: ContentBlockRenderContext): RenderPart {
   switch (entry.type) {
     case 'content':
-      return contentBlockToRenderPart(entry.content);
+      return contentBlockToRenderPart(entry.content, context ?? {
+        role: 'assistant', messageId: 'tool-content', segmentIndex: 0, blockIndex: 0,
+      });
     case 'diff':
       return { kind: 'markdown', text: `Diff: ${entry.path}\n\n${entry.newText}` };
     case 'terminal':
@@ -74,6 +136,11 @@ export function toolContentToRenderPart(entry: ToolCallContent): RenderPart {
   }
 }
 
-export function toolContentToRenderParts(content: ToolCallContent[] | undefined | null): RenderPart[] {
-  return (content ?? []).map(toolContentToRenderPart);
+export function toolContentToRenderParts(
+  content: ToolCallContent[] | undefined | null,
+  context?: Omit<ContentBlockRenderContext, 'blockIndex'>,
+): RenderPart[] {
+  return (content ?? []).map((entry, blockIndex) => toolContentToRenderPart(entry, context
+    ? { ...context, blockIndex }
+    : undefined));
 }

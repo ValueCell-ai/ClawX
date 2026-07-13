@@ -437,6 +437,56 @@ export type WorkspaceContextInput = {
   executionCwd: string;
 };
 export type FileReadBinaryOptions = { maxBytes?: number };
+export type AttachmentSourceRef = {
+  sessionKey: string;
+  generation: number;
+  uri: string;
+  stagingId?: string;
+  transcriptMessageId?: string;
+};
+export type AttachmentFileRef = AttachmentSourceRef;
+export type AttachmentRemoteRef = AttachmentSourceRef;
+export type AttachmentAccessError =
+  | 'invalidReference'
+  | 'staleSession'
+  | 'outsideAllowedRoots'
+  | 'unavailable'
+  | 'notFile'
+  | 'unsafeUrl'
+  | 'operationFailed';
+export type AttachmentReadError = AttachmentAccessError | 'tooLarge' | 'binary';
+export type ResolveAttachmentPayload = {
+  ref: AttachmentSourceRef;
+  name?: string;
+  mimeType?: string;
+  size?: number;
+};
+export type ResolveAttachmentResult =
+  | {
+      ok: true;
+      identity: string;
+      displayName: string;
+      mimeType: string;
+      size: number;
+      target:
+        | {
+            kind: 'local';
+            scope: 'workspace' | 'openclaw-media' | 'staging';
+            ref: AttachmentFileRef;
+          }
+        | { kind: 'remote'; ref: AttachmentRemoteRef; url: string };
+    }
+  | { ok: false; displayName: string; error: AttachmentAccessError };
+export type ReadAttachmentTextResult =
+  | { ok: true; content: string; mimeType: string; size: number; readOnly: true }
+  | { ok: false; error: AttachmentReadError; size?: number };
+export type ReadAttachmentBinaryPayload = { ref: AttachmentFileRef; maxBytes?: number };
+export type ReadAttachmentBinaryResult =
+  | { ok: true; data: Uint8Array; mimeType: string; size: number; readOnly: true }
+  | { ok: false; error: AttachmentReadError; size?: number };
+export type OpenAttachmentResult =
+  | { ok: true }
+  | { ok: false; error: AttachmentAccessError };
 export type FilePreviewTreeOptions = {
   maxDepth?: number;
   maxNodes?: number;
@@ -514,6 +564,8 @@ export type FileListTreeResult = {
 export type MediaThumbnailEntry = {
   filePath?: string;
   gatewayUrl?: string;
+  attachmentFileRef?: AttachmentFileRef;
+  key?: string;
   mimeType?: string;
 };
 export type MediaThumbnailsPayload = { paths: MediaThumbnailEntry[] };
@@ -850,6 +902,10 @@ export type HostApiContract = {
     readWorkspaceText: (ref: WorkspaceFileRef) => Promise<ReadTextFileResult>;
     readWorkspaceBinary: (input: WorkspaceFileRef & { maxBytes?: number }) => Promise<ReadBinaryFileResult>;
     statWorkspaceFile: (ref: WorkspaceFileRef) => Promise<StatFileResult>;
+    resolveAttachment: (payload: ResolveAttachmentPayload) => ResolveAttachmentResult;
+    readAttachmentText: (ref: AttachmentFileRef) => ReadAttachmentTextResult;
+    readAttachmentBinary: (payload: ReadAttachmentBinaryPayload) => ReadAttachmentBinaryResult;
+    openAttachment: (ref: AttachmentSourceRef) => OpenAttachmentResult;
   };
   media: {
     thumbnails: (payload: MediaThumbnailsPayload) => MediaThumbnailResult;

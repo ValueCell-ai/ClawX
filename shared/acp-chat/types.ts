@@ -12,12 +12,14 @@ export type AcpSessionKeyPayload = {
 };
 
 export type AcpChatLoadPayload = AcpSessionKeyPayload & {
+  workspaceRoot: string;
   cwd: string;
   createIfMissing?: boolean;
 };
 
 export type AcpPromptMediaItem = {
   filePath: string;
+  stagingId: string;
   fileName?: string;
   mimeType?: string;
 };
