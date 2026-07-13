@@ -212,7 +212,8 @@ test.describe('cc-connect real Feishu channel runtime smoke', () => {
       apiKeys: {},
       defaultProviderAccountId: 'openai-oauth',
     }, null, 2), 'utf8');
-    await writeFile(join(openClawConfigDir, 'openclaw.json'), JSON.stringify({
+    const compatibilityConfigPath = join(openClawConfigDir, 'openclaw.json');
+    const compatibilityConfig = JSON.stringify({
       agents: {
         defaults: { workspace: mainWorkspace },
         list: [
@@ -240,7 +241,8 @@ test.describe('cc-connect real Feishu channel runtime smoke', () => {
           },
         },
       },
-    }, null, 2), 'utf8');
+    }, null, 2);
+    await writeFile(compatibilityConfigPath, compatibilityConfig, 'utf8');
 
     const app = await launchElectronApp({
       skipSetup: true,
@@ -284,6 +286,18 @@ test.describe('cc-connect real Feishu channel runtime smoke', () => {
       expect(managedConfig).toContain('enable_feishu_card = false');
       const workDirLines = managedConfig.split('\n').filter((line) => line.startsWith('work_dir =')).join('\n');
       expect(workDirLines).not.toContain(process.cwd());
+
+      const canonicalConfigPath = join(userDataDir, 'runtime-config.json');
+      const canonicalConfig = await readFile(canonicalConfigPath, 'utf8');
+      expect(canonicalConfig).toContain('"schema": "clawx-runtime-config"');
+      expect(canonicalConfig).toContain(appId);
+      expect(canonicalConfig).not.toContain(appSecret);
+      const encryptedVault = await readFile(join(userDataDir, 'credentials', 'secrets.enc'));
+      expect(encryptedVault.includes(Buffer.from(appSecret, 'utf8'))).toBe(false);
+      const credentialIndex = await readFile(join(userDataDir, 'credentials', 'index.json'), 'utf8');
+      expect(credentialIndex).toContain(`feishu:${accountId}`);
+      expect(credentialIndex).not.toContain(appSecret);
+      await expect(readFile(compatibilityConfigPath, 'utf8')).resolves.toBe(compatibilityConfig);
 
       const channelsAccounts = await page.evaluate(async () => {
         return await window.clawx.hostInvoke({
@@ -409,6 +423,30 @@ test.describe('cc-connect real Feishu channel runtime smoke', () => {
           ]),
         },
       });
+
+      const canonicalAfterDelete = JSON.parse(await readFile(canonicalConfigPath, 'utf8')) as {
+        config?: { channels?: Record<string, unknown> };
+      };
+      expect(canonicalAfterDelete.config?.channels?.feishu).toBeUndefined();
+      await expect(readFile(compatibilityConfigPath, 'utf8')).resolves.toBe(compatibilityConfig);
+
+      const evidenceDir = join(process.cwd(), 'artifacts', 'cc-connect');
+      await mkdir(evidenceDir, { recursive: true });
+      await writeFile(join(evidenceDir, 'real-feishu-lifecycle.json'), `${JSON.stringify({
+        schema: 'clawx-cc-connect-real-feishu-lifecycle-evidence',
+        runtimeKind: 'cc-connect',
+        platformType,
+        canonicalConfigOwner: true,
+        canonicalSecretStripped: true,
+        vaultPlaintextSecretAbsent: true,
+        compatibilitySourceUnchangedAfterImport: true,
+        connectedBeforeReload: true,
+        disconnectReloadSucceeded: true,
+        connectedAfterReload: true,
+        canonicalChannelDeleted: true,
+        compatibilitySourceUnchangedAfterDelete: true,
+        managedRuntimePlatformRemoved: true,
+      }, null, 2)}\n`, 'utf8');
     } finally {
       await closeElectronApp(app);
       await waitForNoRuntimeProcesses(runtimeDir);

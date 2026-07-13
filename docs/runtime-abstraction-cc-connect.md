@@ -589,9 +589,14 @@ Current live-credential evidence proves the Feishu platform reaches
 `connected`/`running` through cc-connect, survives Host API disconnect/connect
 reload, preserves both the ClawX desktop administrator and configured Channel
 administrators, removes the account from managed config on delete, and cleans
-up the runtime process. A tenant-originated inbound marker and its reply remain
-a separate manual gate; lifecycle success alone does not claim message-delivery
-parity.
+up the runtime process. The same real test proves an existing OpenClaw channel
+file is a read-only import source: non-secret account metadata is owned by the
+canonical runtime config, the app secret is absent from that document and from
+plaintext vault bytes, and neither import nor cc-connect-mode delete changes
+the compatibility file. Sanitized machine evidence is written to
+`artifacts/cc-connect/real-feishu-lifecycle.json`. A tenant-originated inbound
+marker and its reply remain a separate manual gate; lifecycle success alone
+does not claim message-delivery parity.
 
 ## 11. Cron
 
