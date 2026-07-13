@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
 
@@ -64,8 +64,9 @@ test.describe('ClawX canonical data layout migration', () => {
         },
       });
       expect(JSON.parse(versionFile)).toMatchObject({ schema: 'clawx-data', version: 1 });
-      expect(migrationJournal).toContain('legacy-electron-user-data-import');
-      expect(migrationJournal).toContain(legacyDir);
+      const migrationRecord = JSON.parse(migrationJournal.trim().split('\n')[0]);
+      expect(migrationRecord).toMatchObject({ migration: 'legacy-electron-user-data-import' });
+      expect(migrationRecord.source).toBe(await realpath(legacyDir));
       expect(migrationJournal).toContain('settings.json');
       expect(migrationJournal).toContain('clawx-providers.json');
 
