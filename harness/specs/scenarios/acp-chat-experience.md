@@ -30,8 +30,8 @@ requiredRules:
   - docs-sync
 ---
 
-ACP Chat covers session load, prompt, cancel, permission, replay, timeline reduction, assistant-turn presentation, generated-media compatibility, and Chat-specific diagnostics.
+ACP Chat covers serialized and atomic session load, prompt, cancel, permission, replay, timeline reduction, assistant-turn presentation, generated-media compatibility, and Chat-specific diagnostics.
 
-Main owns ACP transport and routing. Renderer owns the in-memory timeline and display grouping. ACP replay is authoritative except for the approved image-generation transcript supplement. Standard ACP content remains preferred over compatibility projections.
+Main owns ACP transport and routing, serializes loads on the shared connection, and batches load-time notifications until replay completes. Renderer atomically reduces that raw batch into the in-memory timeline and owns display grouping. ACP replay is authoritative except for the approved image-generation transcript supplement. Standard ACP content remains preferred over compatibility projections.
 
 The durable architecture, exceptions, and validation anchors are documented in `harness/reference/acp-chat.md` and `harness/reference/acp-generated-media-and-diagnostics.md`.

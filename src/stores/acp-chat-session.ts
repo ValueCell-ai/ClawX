@@ -42,8 +42,10 @@ type ImageGenerationCompatSession = {
 };
 
 const imageGenerationCompatSessions = new Map<string, ImageGenerationCompatSession>();
+const pendingLoadUpdates = new Map<number, AcpSessionUpdateEnvelope[]>();
 let historicalTranscriptSupplementSeq = 0;
 const historicalTranscriptSupplementIds = new Map<string, number>();
+let loadRequestSeq = 0;
 
 type ImageGenerationProjectionOptions = {
   isCurrent?: () => boolean;
@@ -425,39 +427,45 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
   timeline: createEmptyAcpTimeline(EMPTY_SESSION_ID, 0),
 
   prepareLocalSession(input) {
-    const localGeneration = get().generation + 1;
+    loadRequestSeq += 1;
+    pendingLoadUpdates.clear();
+    const generation = get().generation;
     resetImageGenerationCompatSession(input.sessionKey);
     set({
       activeSessionKey: input.sessionKey,
       cwd: input.cwd,
-      generation: localGeneration,
+      generation,
       loading: false,
       sending: false,
       cancelling: false,
       error: null,
-      timeline: createEmptyAcpTimeline(input.sessionKey, localGeneration),
+      timeline: createEmptyAcpTimeline(input.sessionKey, generation),
     });
   },
 
   async loadSession(input) {
-    const localGeneration = get().generation + 1;
+    const requestId = loadRequestSeq + 1;
+    loadRequestSeq = requestId;
+    pendingLoadUpdates.clear();
+    const generation = get().generation;
     resetImageGenerationCompatSession(input.sessionKey);
     set({
       activeSessionKey: input.sessionKey,
       cwd: input.cwd,
-      generation: localGeneration,
+      generation,
       loading: true,
       sending: false,
       cancelling: false,
       error: null,
-      timeline: createEmptyAcpTimeline(input.sessionKey, localGeneration),
+      timeline: createEmptyAcpTimeline(input.sessionKey, generation),
     });
 
     try {
       const result = await hostApi.chat.loadAcpSession(input);
       const state = get();
-      if (state.activeSessionKey !== input.sessionKey || state.generation !== localGeneration) return false;
+      if (loadRequestSeq !== requestId || state.activeSessionKey !== input.sessionKey || state.cwd !== input.cwd) return false;
       if (!result.success) {
+        pendingLoadUpdates.clear();
         set({
           activeSessionKey: null,
           cwd: null,
@@ -468,12 +476,28 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       }
 
       const generation = result.generation ?? state.generation;
+      const sessionUpdates = [
+        ...(result.sessionUpdates ?? []),
+        ...(pendingLoadUpdates.get(generation) ?? []),
+      ].filter((event) => (
+        event.sessionKey === input.sessionKey && event.generation === generation
+      ));
+      pendingLoadUpdates.clear();
+      let timeline = createEmptyAcpTimeline(input.sessionKey, generation);
+      for (const event of sessionUpdates) {
+        timeline = applyAcpSessionUpdate(timeline, event.notification, { historical: !!event.historical });
+      }
       set({
         loading: false,
         error: null,
         generation,
-        timeline: { ...state.timeline, loadGeneration: generation },
+        timeline,
       });
+      for (const event of sessionUpdates) {
+        get().recordImageGenerationStart(event);
+        const evidence = extractImageGenerationCompletionFromAcpEnvelope(event);
+        if (evidence) void get().projectImageGenerationCompletion(evidence);
+      }
       if (!input.createIfMissing) {
         // OpenClaw ACP loadSession can omit async image-generation completion replies during
         // historical replay. Cross-check the persisted transcript through Main-owned host API
@@ -483,8 +507,9 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       }
       return true;
     } catch (error) {
+      if (loadRequestSeq === requestId) pendingLoadUpdates.clear();
       set((state) => (
-        state.activeSessionKey === input.sessionKey && state.generation === localGeneration
+        loadRequestSeq === requestId && state.activeSessionKey === input.sessionKey && state.cwd === input.cwd
           ? { activeSessionKey: null, cwd: null, loading: false, error: errorMessage(error, 'ACP session load failed') }
           : {}
       ));
@@ -815,6 +840,13 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
 
   applyUpdateEnvelope(event) {
     const state = get();
+    if (state.loading) {
+      if (event.sessionKey === state.activeSessionKey) {
+        const updates = pendingLoadUpdates.get(event.generation) ?? [];
+        pendingLoadUpdates.set(event.generation, [...updates, event]);
+      }
+      return;
+    }
     if (event.sessionKey !== state.activeSessionKey || event.generation !== state.generation) return;
     set({ timeline: applyAcpSessionUpdate(state.timeline, event.notification, { historical: !!event.historical }) });
     get().recordImageGenerationStart(event);

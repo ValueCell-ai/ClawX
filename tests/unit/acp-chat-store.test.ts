@@ -204,6 +204,177 @@ describe('ACP Chat store', () => {
     });
   });
 
+  it('keeps the complete replay after preparing a local chat and quickly loading history again', async () => {
+    const historicalLoad = createDeferred<{
+      success: boolean;
+      generation?: number;
+      sessionUpdates?: Array<Record<string, unknown>>;
+    }>();
+    hostApiMock.loadAcpSession
+      .mockResolvedValueOnce({ success: true, generation: 1 })
+      .mockReturnValueOnce(historicalLoad.promise);
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    useAcpChatSessionStore.getState().prepareLocalSession({
+      sessionKey: 'agent:pi:session-local',
+      cwd: '/repo',
+    });
+    const reloadPromise = useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+
+    historicalLoad.resolve({
+      success: true,
+      generation: 2,
+      sessionUpdates: [
+        {
+          sessionKey: 'agent:pi:s1',
+          generation: 2,
+          historical: true,
+          notification: {
+            sessionId: 'agent:pi:s1',
+            update: {
+              sessionUpdate: 'user_message_chunk',
+              messageId: 'history-user',
+              content: { type: 'text', text: 'history prompt' },
+            },
+          },
+        },
+        {
+          sessionKey: 'agent:pi:s1',
+          generation: 2,
+          historical: true,
+          notification: {
+            sessionId: 'agent:pi:s1',
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              messageId: 'history-assistant',
+              content: { type: 'text', text: 'complete historical answer' },
+            },
+          },
+        },
+      ],
+    });
+
+    await expect(reloadPromise).resolves.toBe(true);
+    expect(useAcpChatSessionStore.getState().timeline.itemOrder).toEqual([
+      'history-user:0',
+      'history-assistant:0',
+    ]);
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['history-user:0']).toMatchObject({
+      parts: [{ kind: 'markdown', text: 'history prompt' }],
+    });
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['history-assistant:0']).toMatchObject({
+      parts: [{ kind: 'markdown', text: 'complete historical answer' }],
+    });
+  });
+
+  it('commits a completed ACP load batch as one timeline snapshot', async () => {
+    hostApiMock.loadAcpSession.mockResolvedValueOnce({
+      success: true,
+      generation: 1,
+      sessionUpdates: [
+        {
+          sessionKey: 'agent:pi:s1',
+          generation: 1,
+          historical: true,
+          notification: {
+            sessionId: 'agent:pi:s1',
+            update: {
+              sessionUpdate: 'user_message_chunk',
+              messageId: 'batched-user',
+              content: { type: 'text', text: 'batched prompt' },
+            },
+          },
+        },
+        {
+          sessionKey: 'agent:pi:s1',
+          generation: 1,
+          historical: true,
+          notification: {
+            sessionId: 'agent:pi:s1',
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              messageId: 'batched-assistant',
+              content: { type: 'text', text: 'batched answer' },
+            },
+          },
+        },
+      ],
+    });
+    const { useAcpChatSessionStore } = await importStore();
+    const observed: Array<{ loading: boolean; itemCount: number }> = [];
+    const unsubscribe = useAcpChatSessionStore.subscribe((state) => {
+      observed.push({ loading: state.loading, itemCount: state.timeline.itemOrder.length });
+    });
+
+    await expect(useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1',
+      cwd: '/repo',
+    })).resolves.toBe(true);
+    unsubscribe();
+
+    expect(observed).not.toContainEqual({ loading: false, itemCount: 1 });
+    expect(observed.at(-1)).toEqual({ loading: false, itemCount: 2 });
+  });
+
+  it('ignores event-channel updates and image side effects while a session load is pending', async () => {
+    const load = createDeferred<{ success: boolean; generation?: number }>();
+    hostApiMock.loadAcpSession.mockReturnValueOnce(load.promise);
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+    const loadPromise = useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 99,
+      historical: true,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'stale-load-message',
+          content: { type: 'text', text: 'stale replay' },
+        },
+      },
+    });
+
+    expect(useAcpChatSessionStore.getState().timeline.itemOrder).toEqual([]);
+    expect(useAcpChatSessionStore.getState().generation).toBe(0);
+    expect(hostApiMock.mediaThumbnails).not.toHaveBeenCalled();
+    load.resolve({ success: true, generation: 1 });
+    await loadPromise;
+  });
+
+  it('merges matching event-channel updates that arrive during the load handoff', async () => {
+    const load = createDeferred<{ success: boolean; generation?: number }>();
+    hostApiMock.loadAcpSession.mockReturnValueOnce(load.promise);
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+    const loadPromise = useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      historical: true,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'handoff-message',
+          content: { type: 'text', text: 'arrived during IPC handoff' },
+        },
+      },
+    });
+
+    expect(useAcpChatSessionStore.getState().timeline.itemOrder).toEqual([]);
+    load.resolve({ success: true, generation: 1 });
+    await loadPromise;
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['handoff-message:0']).toMatchObject({
+      parts: [{ kind: 'markdown', text: 'arrived during IPC handoff' }],
+    });
+  });
+
   it('applies matching generation updates', async () => {
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();

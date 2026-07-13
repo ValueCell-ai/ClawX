@@ -198,7 +198,6 @@ export function Chat() {
     : null;
 
   useEffect(() => {
-    setResolvedWorkspaceContext(null);
     if (!workspaceContextKey || !currentSessionKey || !cwd || !projectionExecutionCwd) return;
     let stale = false;
     void hostApi.files.resolveWorkspaceContext({
@@ -233,6 +232,7 @@ export function Chat() {
 
   useEffect(() => {
     if (!currentSessionKey || !cwd || !currentSession?.createdLocally) return;
+    acpLoadInFlightKeyRef.current = null;
     const hasStaleTimeline = acpTimeline.sessionId !== currentSessionKey || acpTimeline.itemOrder.length > 0;
     if (acpActiveSessionKey === currentSessionKey && acpCwd === cwd && !hasStaleTimeline) return;
     prepareLocalAcpSession({ sessionKey: currentSessionKey, cwd });
@@ -288,17 +288,14 @@ export function Chat() {
     });
   }, [acpActiveSessionKey, acpTimeline, currentSessionKey, resolvedWorkspaceContext, workspaceContextKey]);
   const questionDirectoryItems = useMemo(() => {
-    let ordinal = 0;
-    return acpTimeline.itemOrder.flatMap((itemId) => {
-      const item = acpTimeline.itemsById[itemId];
-      if (item?.kind !== 'message-segment' || item.role !== 'user') return [];
-      ordinal += 1;
-      return [{
-        itemId: item.id,
-        anchorId: getAcpUserMessageAnchorId(item.id),
-        title: buildQuestionDirectoryTitle(item, t('questionDirectory.fallback', { number: ordinal })),
-      }];
-    });
+    const userItems = acpTimeline.itemOrder
+      .map((itemId) => acpTimeline.itemsById[itemId])
+      .filter((item): item is MessageSegmentItem => item?.kind === 'message-segment' && item.role === 'user');
+    return userItems.map((item, index) => ({
+      itemId: item.id,
+      anchorId: getAcpUserMessageAnchorId(item.id),
+      title: buildQuestionDirectoryTitle(item, t('questionDirectory.fallback', { number: index + 1 })),
+    }));
   }, [acpTimeline, t]);
   const questionDirectoryVisible = questionDirectoryOpenSessionKey === currentSessionKey
     && questionDirectoryItems.length > 1;
@@ -346,7 +343,9 @@ export function Chat() {
                     <AcpTimeline
                       snapshot={acpTimeline}
                       fileActivity={fileActivity}
-                      workspaceRoot={resolvedWorkspaceContext?.workspaceRoot}
+                      workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey
+                        ? resolvedWorkspaceContext.workspaceRoot
+                        : undefined}
                       onPermissionSelect={(requestId, optionId) => {
                         void respondAcpPermission(requestId, optionId);
                       }}
@@ -399,21 +398,11 @@ export function Chat() {
               const existingSession = sessions.find((session) => session.key === sessionKey);
               const createIfMissing = !targetAgent && (!existingSession || !!existingSession.createdLocally);
               if (createIfMissing || acpActiveSessionKey !== sessionKey || acpCwd !== promptCwd) {
-                const acpLoadKey = `${sessionKey}\0${promptCwd}`;
-                acpLoadInFlightKeyRef.current = acpLoadKey;
-                const loaded = await (async () => {
-                  try {
-                    return await loadAcpSession({
-                      sessionKey,
-                      cwd: promptCwd,
-                      ...(createIfMissing ? { createIfMissing: true } : {}),
-                    });
-                  } finally {
-                    if (acpLoadInFlightKeyRef.current === acpLoadKey) {
-                      acpLoadInFlightKeyRef.current = null;
-                    }
-                  }
-                })();
+                const loaded = await loadAcpSession({
+                  sessionKey,
+                  cwd: promptCwd,
+                  ...(createIfMissing ? { createIfMissing: true } : {}),
+                });
                 if (loaded && createIfMissing) {
                   acknowledgeAcpSessionCreated(sessionKey, promptCwd);
                 }

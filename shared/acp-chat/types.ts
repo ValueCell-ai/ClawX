@@ -40,6 +40,8 @@ export type AcpChatOperationResult = {
   success: boolean;
   error?: string;
   generation?: number;
+  /** Raw notifications collected while session/load is in progress. */
+  sessionUpdates?: AcpSessionUpdateEnvelope[];
 };
 
 export type AcpSessionUpdateEnvelope = {

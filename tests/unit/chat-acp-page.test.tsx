@@ -471,6 +471,40 @@ describe('ACP Chat page', () => {
     resolveInitialLoad(true);
   });
 
+  it('starts a new load when returning to a session whose earlier load is still pending', async () => {
+    const sessionKey = 'agent:main:session-a';
+    let resolveInitialLoad!: (loaded: boolean) => void;
+    const initialLoad = new Promise<boolean>((resolve) => {
+      resolveInitialLoad = resolve;
+    });
+    const localSessionKey = 'agent:main:session-local';
+    chatState.sessions = [{ key: sessionKey, workspacePath: '/workspace' }];
+    chatState.currentSessionKey = sessionKey;
+    acpState.activeSessionKey = null;
+    acpState.loadSession
+      .mockReturnValueOnce(initialLoad)
+      .mockResolvedValueOnce(true);
+
+    const { rerender } = render(<Chat />);
+    await waitFor(() => expect(acpState.loadSession).toHaveBeenCalledTimes(1));
+
+    chatState.sessions = [
+      { key: sessionKey, workspacePath: '/workspace' },
+      { key: localSessionKey, workspacePath: '/workspace', createdLocally: true },
+    ];
+    chatState.currentSessionKey = localSessionKey;
+    acpState.activeSessionKey = localSessionKey;
+    acpState.cwd = '/workspace';
+    rerender(<Chat />);
+
+    chatState.currentSessionKey = sessionKey;
+    rerender(<Chat />);
+
+    await waitFor(() => expect(acpState.loadSession).toHaveBeenCalledTimes(2));
+    expect(acpState.loadSession).toHaveBeenLastCalledWith({ sessionKey, cwd: '/workspace' });
+    resolveInitialLoad(false);
+  });
+
   it('does not create a local ACP session before first send', async () => {
     chatState.sessions = [{ key: 'agent:main:session-local', createdLocally: true }];
     chatState.currentSessionKey = 'agent:main:session-local';

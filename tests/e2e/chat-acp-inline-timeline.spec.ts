@@ -53,7 +53,10 @@ function baseHostApiMocks(loadResult: Record<string, unknown> = { success: true,
   };
 }
 
-async function installAcpChatMocks(app: ElectronApplication) {
+async function installAcpChatMocks(
+  app: ElectronApplication,
+  loadResult: Record<string, unknown> = { success: true, generation: 1 },
+) {
   await installIpcMocks(app, {
     gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
     gatewayRpc: {
@@ -64,22 +67,26 @@ async function installAcpChatMocks(app: ElectronApplication) {
         },
       },
     },
-    hostApi: baseHostApiMocks(),
+    hostApi: baseHostApiMocks(loadResult),
   });
 }
 
 async function installAcpLoadReplayMock(app: ElectronApplication, updates: AcpSessionUpdate[]) {
   await app.evaluate(async ({ app: _app }, payload) => {
-    const { BrowserWindow, ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
     type IpcInvokeHandler = (event: unknown, request: { id?: string; module?: string; action?: string; args?: unknown[] }) => Promise<unknown>;
     const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
     const originalHostInvoke = handlers?.get('host:invoke');
     ipcMain.removeHandler('host:invoke');
     ipcMain.handle('host:invoke', async (event: unknown, request: { id?: string; module?: string; action?: string; args?: unknown[] }) => {
       if (request?.module === 'chat' && request.action === 'loadAcpSession') {
-        for (const update of payload.updates as AcpSessionUpdate[]) {
-          for (const window of BrowserWindow.getAllWindows()) {
-            window.webContents.send('chat:acp-session-update', {
+        return {
+          id: request.id,
+          ok: true,
+          data: {
+            success: true,
+            generation: 1,
+            sessionUpdates: (payload.updates as AcpSessionUpdate[]).map((update) => ({
               sessionKey: payload.sessionKey,
               generation: 1,
               historical: true,
@@ -87,10 +94,9 @@ async function installAcpLoadReplayMock(app: ElectronApplication, updates: AcpSe
                 sessionId: payload.sessionKey,
                 update,
               },
-            });
-          }
-        }
-        return { id: request.id, ok: true, data: { success: true, generation: 1 } };
+            })),
+          },
+        };
       }
       return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
     });
@@ -276,6 +282,73 @@ async function openChat(app: ElectronApplication) {
 }
 
 test.describe('ClawX ACP inline timeline', () => {
+  test('commits a long historical replay without exposing partial assistant text', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const paragraphChunks = Array.from({ length: 12 }, (_, index) => `Paragraph ${index + 1}.\n\n`);
+    const sessionUpdates = [
+      {
+        sessionKey: MAIN_SESSION_KEY,
+        generation: 1,
+        historical: true,
+        notification: {
+          sessionId: MAIN_SESSION_KEY,
+          update: {
+            sessionUpdate: 'user_message_chunk',
+            messageId: 'long-history-user',
+            content: { type: 'text', text: 'Write a 12-paragraph article' },
+          },
+        },
+      },
+      ...paragraphChunks.map((text) => ({
+        sessionKey: MAIN_SESSION_KEY,
+        generation: 1,
+        historical: true,
+        notification: {
+          sessionId: MAIN_SESSION_KEY,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            messageId: 'long-history-assistant',
+            content: { type: 'text', text },
+          },
+        },
+      })),
+    ];
+
+    try {
+      await installAcpChatMocks(app, { success: true, generation: 1, sessionUpdates });
+      const initialPage = await getStableWindow(app);
+      await initialPage.addInitScript(() => {
+        const observedLengths: number[] = [];
+        Object.defineProperty(window, '__acpObservedAssistantLengths', {
+          value: observedLengths,
+          configurable: true,
+        });
+        const observer = new MutationObserver(() => {
+          const assistant = document.querySelector('[data-testid="acp-assistant-message"]');
+          const length = assistant?.textContent?.length ?? 0;
+          if (length > 0 && observedLengths.at(-1) !== length) observedLengths.push(length);
+        });
+        const observe = () => {
+          observer.observe(document.documentElement, { childList: true, characterData: true, subtree: true });
+        };
+        if (document.documentElement) observe();
+        else window.addEventListener('DOMContentLoaded', observe, { once: true });
+      });
+
+      const page = await openChat(app);
+      const assistant = page.getByTestId('acp-assistant-message');
+      await expect(assistant).toContainText('Paragraph 1.', { timeout: 30_000 });
+      await expect(assistant).toContainText('Paragraph 12.');
+      const finalLength = await assistant.evaluate((element) => element.textContent?.length ?? 0);
+      const observedLengths = await page.evaluate(() => (
+        (window as unknown as { __acpObservedAssistantLengths?: number[] }).__acpObservedAssistantLengths ?? []
+      ));
+      expect(observedLengths).toEqual([finalLength]);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('renders ACP tool updates inline without the legacy execution graph', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 

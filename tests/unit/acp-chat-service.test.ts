@@ -395,6 +395,7 @@ describe('AcpChatService', () => {
     const { service, send } = await createService();
 
     await service.loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await service.sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'edit the file' });
     send.mockClear();
 
     const pending = service.client.requestPermission({
@@ -445,6 +446,7 @@ describe('AcpChatService', () => {
     const { service, send } = await createService();
 
     await service.loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await service.sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'edit the file' });
     send.mockClear();
     const pending = service.client.requestPermission({
       sessionId: 'agent:pi:s1',
@@ -460,11 +462,62 @@ describe('AcpChatService', () => {
     await expectCancelledSoon(pending);
   });
 
+  it('cancels pending permission requests when reloading the same session', async () => {
+    const { service, send } = await createService();
+
+    await service.loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await service.sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'edit the file' });
+    send.mockClear();
+    const pending = service.client.requestPermission({
+      sessionId: 'agent:pi:s1',
+      toolCall: { toolCallId: 'tool-1', title: 'Edit file', status: 'pending' },
+      options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }],
+    } as never);
+
+    await service.loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+
+    await expectCancelledSoon(pending);
+  });
+
+  it('cancels permission requests received while session/load is in progress', async () => {
+    const connection = createConnection();
+    const load = createDeferred<unknown>();
+    connection.loadSession.mockReturnValueOnce(load.promise);
+    const { service, send } = await createService(connection);
+    const loadPromise = service.loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await vi.waitFor(() => expect(connection.loadSession).toHaveBeenCalledTimes(1));
+    send.mockClear();
+
+    await expectCancelledSoon(service.client.requestPermission({
+      sessionId: 'agent:pi:s1',
+      toolCall: { toolCallId: 'tool-load', title: 'Unexpected load permission', status: 'pending' },
+      options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }],
+    } as never));
+    expect(send).not.toHaveBeenCalledWith(HOST_EVENT_CHANNELS.chat.acpPermissionRequest, expect.anything());
+
+    load.resolve({});
+    await loadPromise;
+  });
+
+  it('cancels permission requests after load until the current session starts a prompt', async () => {
+    const { service, send } = await createService();
+    await service.loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    send.mockClear();
+
+    await expectCancelledSoon(service.client.requestPermission({
+      sessionId: 'agent:pi:s1',
+      toolCall: { toolCallId: 'tool-handoff', title: 'Late load permission', status: 'pending' },
+      options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }],
+    } as never));
+    expect(send).not.toHaveBeenCalledWith(HOST_EVENT_CHANNELS.chat.acpPermissionRequest, expect.anything());
+  });
+
   it('cancels pending permission requests and drops the connection when the ACP child exits', async () => {
     const firstConnection = createConnection();
     const { service, child } = await createSpawnedService(firstConnection);
 
     await service.loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await service.sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'edit the file' });
     const pending = service.client.requestPermission({
       sessionId: 'agent:pi:s1',
       toolCall: { toolCallId: 'tool-1', title: 'Edit file', status: 'pending' },
@@ -487,6 +540,7 @@ describe('AcpChatService', () => {
     const { service, child } = await createSpawnedService(firstConnection);
 
     await service.loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await service.sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'edit the file' });
     const pending = service.client.requestPermission({
       sessionId: 'agent:pi:s1',
       toolCall: { toolCallId: 'tool-1', title: 'Edit file', status: 'pending' },
@@ -518,6 +572,83 @@ describe('AcpChatService', () => {
 
     initialized.resolve(createInitResponse());
     await expect(Promise.all([firstLoad, secondLoad])).resolves.toHaveLength(2);
+  });
+
+  it('serializes overlapping session loads on the shared ACP connection', async () => {
+    const connection = createConnection();
+    const firstLoad = createDeferred<unknown>();
+    connection.loadSession
+      .mockReturnValueOnce(firstLoad.promise)
+      .mockResolvedValueOnce({});
+    const { service } = await createService(connection);
+
+    const first = service.loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await vi.waitFor(() => expect(connection.loadSession).toHaveBeenCalledTimes(1));
+    const second = service.loadSession({ sessionKey: 'agent:pi:s2', cwd: '/repo' });
+    await Promise.resolve();
+
+    expect(connection.loadSession).toHaveBeenCalledTimes(1);
+    firstLoad.resolve({});
+    await expect(first).resolves.toMatchObject({ success: true, generation: 1 });
+    await expect(second).resolves.toMatchObject({ success: true, generation: 2 });
+    expect(connection.loadSession).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns session/load replay as one batch without forwarding incremental events', async () => {
+    const connection = createConnection();
+    const { service, send } = await createService(connection);
+    connection.loadSession.mockImplementationOnce(async () => {
+      await service.client.sessionUpdate({
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'history-message',
+          content: { type: 'text', text: 'complete history' },
+        },
+      } as never);
+      return {};
+    });
+
+    await expect(service.loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' })).resolves.toEqual({
+      success: true,
+      generation: 1,
+      sessionUpdates: [{
+        sessionKey: 'agent:pi:s1',
+        generation: 1,
+        historical: true,
+        notification: {
+          sessionId: 'agent:pi:s1',
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            messageId: 'history-message',
+            content: { type: 'text', text: 'complete history' },
+          },
+        },
+      }],
+    });
+    expect(send).not.toHaveBeenCalledWith(HOST_EVENT_CHANNELS.chat.acpSessionUpdate, expect.anything());
+  });
+
+  it('filters old-session updates received before session/new returns its ACP id', async () => {
+    const connection = createConnection();
+    const { service } = await createService(connection);
+    connection.newSession.mockImplementationOnce(async () => {
+      await service.client.sessionUpdate({
+        sessionId: 'acp-old-session',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'stale-message',
+          content: { type: 'text', text: 'old session tail' },
+        },
+      } as never);
+      return { sessionId: 'acp-new-session' };
+    });
+
+    await expect(service.loadSession({
+      sessionKey: 'agent:pi:session-new',
+      cwd: '/repo',
+      createIfMissing: true,
+    })).resolves.toEqual({ success: true, generation: 1 });
   });
 
   it('rejects prompts before any ACP session has loaded', async () => {
@@ -609,7 +740,7 @@ describe('AcpChatService', () => {
     });
   });
 
-  it('does not let an older failed overlapping load roll back a newer loaded session', async () => {
+  it('continues with a queued session load after the older load fails', async () => {
     const { service, connection, send } = await createService();
     const firstLoad = createDeferred<unknown>();
 
@@ -620,13 +751,10 @@ describe('AcpChatService', () => {
     const older = service.loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
     await vi.waitFor(() => expect(connection.loadSession).toHaveBeenCalledTimes(1));
 
-    await expect(service.loadSession({ sessionKey: 'agent:pi:s2', cwd: '/repo' })).resolves.toEqual({
-      success: true,
-      generation: 2,
-    });
-
+    const newer = service.loadSession({ sessionKey: 'agent:pi:s2', cwd: '/repo' });
     firstLoad.reject(new Error('older load failed'));
     await expect(older).resolves.toEqual({ success: false, error: 'older load failed' });
+    await expect(newer).resolves.toEqual({ success: true, generation: 1 });
 
     await service.client.sessionUpdate({
       sessionId: 'agent:pi:s1',
@@ -648,7 +776,7 @@ describe('AcpChatService', () => {
     expect(send).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledWith(HOST_EVENT_CHANNELS.chat.acpSessionUpdate, {
       sessionKey: 'agent:pi:s2',
-      generation: 2,
+      generation: 1,
       historical: true,
       notification: {
         sessionId: 'agent:pi:s2',
@@ -665,6 +793,7 @@ describe('AcpChatService', () => {
     const { service, connection, send } = await createService();
 
     await service.loadSession({ sessionKey: 'agent:pi:s1', cwd: '/repo' });
+    await service.sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'edit the file' });
     send.mockClear();
 
     const pending = service.client.requestPermission({

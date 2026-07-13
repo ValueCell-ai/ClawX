@@ -38,14 +38,26 @@ type PermissionWaiter = {
   sessionKey: string;
   resolve: (response: RequestPermissionResponse) => void;
 };
+type AcpSessionLoadBatch = {
+  sessionKey: string;
+  generation: number;
+  sessionUpdates: Array<{
+    acpSessionId: string;
+    envelope: AcpSessionUpdateEnvelope;
+  }>;
+};
 type AcpChildProcess = ChildProcess & {
   stdin: NonNullable<ChildProcess['stdin']>;
   stdout: NonNullable<ChildProcess['stdout']>;
   stderr: NonNullable<ChildProcess['stderr']>;
 };
 
-function ok(generation?: number): AcpChatOperationResult {
-  return { success: true, ...(generation != null ? { generation } : {}) };
+function ok(generation?: number, sessionUpdates?: AcpSessionUpdateEnvelope[]): AcpChatOperationResult {
+  return {
+    success: true,
+    ...(generation != null ? { generation } : {}),
+    ...(sessionUpdates?.length ? { sessionUpdates } : {}),
+  };
 }
 
 function fail(error: unknown): AcpChatOperationResult {
@@ -117,6 +129,9 @@ export class AcpChatService {
   private loadedAcpSessionId: string | null = null;
   private historicalSessionKey: string | null = null;
   private historicalGeneration: number | null = null;
+  private permissionsEnabled = false;
+  private loadQueue: Promise<void> | null = null;
+  private activeLoadBatch: AcpSessionLoadBatch | null = null;
   private permissionSeq = 0;
   private readonly permissionWaiters = new Map<string, PermissionWaiter>();
   readonly client: Client;
@@ -155,8 +170,30 @@ export class AcpChatService {
     }
   }
 
-  async loadSession(payload: AcpChatLoadPayload): Promise<AcpChatOperationResult> {
+  loadSession(payload: AcpChatLoadPayload): Promise<AcpChatOperationResult> {
+    const previousLoad = this.loadQueue;
+    let releaseLoad!: () => void;
+    const currentLoad = new Promise<void>((resolve) => {
+      releaseLoad = resolve;
+    });
+    this.loadQueue = currentLoad;
+
+    const run = async () => {
+      if (previousLoad) await previousLoad;
+      try {
+        return await this.performLoadSession(payload);
+      } finally {
+        releaseLoad();
+        if (this.loadQueue === currentLoad) this.loadQueue = null;
+      }
+    };
+    return run();
+  }
+
+  private async performLoadSession(payload: AcpChatLoadPayload): Promise<AcpChatOperationResult> {
     if (!isValidSessionKey(payload.sessionKey) || !payload.cwd) return fail('Invalid ACP session load payload');
+    const previousPermissionsEnabled = this.permissionsEnabled;
+    this.permissionsEnabled = false;
     this.trace('session/load:start', {
       sessionKey: payload.sessionKey,
       details: { createIfMissing: !!payload.createIfMissing, cwdPresent: Boolean(payload.cwd) },
@@ -171,6 +208,7 @@ export class AcpChatService {
     let previousGeneration = this.generation;
     let nextGeneration = previousGeneration + 1;
     let stateAdvanced = false;
+    let loadBatch: AcpSessionLoadBatch | null = null;
 
     try {
       const connection = await this.ensureConnection();
@@ -190,8 +228,14 @@ export class AcpChatService {
       this.loadedAcpSessionId = null;
       this.historicalSessionKey = payload.createIfMissing ? null : payload.sessionKey;
       this.historicalGeneration = payload.createIfMissing ? null : nextGeneration;
+      loadBatch = {
+        sessionKey: payload.sessionKey,
+        generation: nextGeneration,
+        sessionUpdates: [],
+      };
+      this.activeLoadBatch = loadBatch;
       stateAdvanced = true;
-      if (previousSessionKey && previousSessionKey !== payload.sessionKey) {
+      if (previousSessionKey) {
         this.resolvePermissionWaitersForSession(previousSessionKey, cancelledPermissionResponse());
       }
 
@@ -220,8 +264,15 @@ export class AcpChatService {
         generation: nextGeneration,
         details: { createIfMissing: !!payload.createIfMissing, acpSessionId },
       });
-      return ok(nextGeneration);
+      if (this.activeLoadBatch === loadBatch) this.activeLoadBatch = null;
+      return ok(
+        nextGeneration,
+        loadBatch.sessionUpdates
+          .filter((entry) => entry.acpSessionId === acpSessionId)
+          .map((entry) => entry.envelope),
+      );
     } catch (error) {
+      if (this.activeLoadBatch === loadBatch) this.activeLoadBatch = null;
       this.resolvePermissionWaitersForSession(payload.sessionKey, cancelledPermissionResponse());
       if (stateAdvanced && this.activeSessionKey === payload.sessionKey && this.generation === nextGeneration) {
         this.generation = previousGeneration;
@@ -231,6 +282,7 @@ export class AcpChatService {
         this.loadedAcpSessionId = previousLoadedAcpSessionId;
         this.historicalSessionKey = previousHistoricalSessionKey;
         this.historicalGeneration = previousHistoricalGeneration;
+        this.permissionsEnabled = previousPermissionsEnabled;
       }
       logger.error(`[acp-chat] loadSession failed: ${String(error)}`);
       this.trace('session/load:failed', {
@@ -259,6 +311,7 @@ export class AcpChatService {
         this.historicalSessionKey = null;
         this.historicalGeneration = null;
       }
+      this.permissionsEnabled = true;
       await connection.prompt({
         sessionId: this.loadedAcpSessionId,
         prompt,
@@ -271,6 +324,7 @@ export class AcpChatService {
       });
       return ok(this.generation);
     } catch (error) {
+      this.permissionsEnabled = false;
       logger.error(`[acp-chat] prompt failed: ${String(error)}`);
       this.trace('session/prompt:failed', {
         sessionKey: payload.sessionKey,
@@ -288,6 +342,7 @@ export class AcpChatService {
       this.trace('session/cancel:start', { sessionKey: payload.sessionKey });
       const connection = await this.ensureConnection();
       await connection.cancel({ sessionId: this.loadedAcpSessionId });
+      this.permissionsEnabled = false;
       this.resolvePermissionWaitersForSession(payload.sessionKey, cancelledPermissionResponse());
       this.trace('session/cancel:success', { sessionKey: payload.sessionKey });
       return ok(this.generation);
@@ -444,6 +499,7 @@ export class AcpChatService {
     this.loadedAcpSessionId = null;
     this.historicalSessionKey = null;
     this.historicalGeneration = null;
+    this.permissionsEnabled = false;
   }
 
   private emitSessionUpdate(notification: SessionNotification): void {
@@ -480,6 +536,16 @@ export class AcpChatService {
         : {}),
       notification: { ...notification, sessionId: sessionKey },
     };
+    const loadBatch = this.activeLoadBatch;
+    if (loadBatch?.sessionKey === sessionKey && loadBatch.generation === this.generation) {
+      loadBatch.sessionUpdates.push({ acpSessionId, envelope });
+      this.trace('session-update:buffered', {
+        direction: 'downstream',
+        sessionKey,
+        details: { acpSessionId, updateType, historical: !!envelope.historical },
+      });
+      return;
+    }
     this.mainWindow.webContents.send(HOST_EVENT_CHANNELS.chat.acpSessionUpdate, envelope);
     this.trace('session-update:forwarded', {
       direction: 'downstream',
@@ -491,6 +557,22 @@ export class AcpChatService {
   private requestPermission(request: RequestPermissionRequest): Promise<RequestPermissionResponse> {
     const acpSessionId = request.sessionId;
     const sessionKey = this.activeSessionKey;
+    if (!this.permissionsEnabled) {
+      this.trace('permission:ignored', {
+        direction: 'upstream',
+        sessionKey: sessionKey ?? null,
+        details: { reason: 'no-active-prompt', acpSessionId },
+      });
+      return Promise.resolve(cancelledPermissionResponse());
+    }
+    if (this.activeLoadBatch) {
+      this.trace('permission:ignored', {
+        direction: 'upstream',
+        sessionKey: sessionKey ?? null,
+        details: { reason: 'session-loading', acpSessionId },
+      });
+      return Promise.resolve(cancelledPermissionResponse());
+    }
     if (!sessionKey || (this.activeAcpSessionId && acpSessionId !== this.activeAcpSessionId)) {
       this.trace('permission:ignored', {
         direction: 'upstream',
