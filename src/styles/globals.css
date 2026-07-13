@@ -268,67 +268,70 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .clawx-chat-working-zoomies-inner::after {
+    .clawx-chat-thinking-dot-pulse-dot,
+    .clawx-chat-thinking-dot-pulse-inner::before,
+    .clawx-chat-thinking-dot-pulse-inner::after {
       animation: none !important;
-      transform: translateX(0) !important;
+      transform: scale(1) !important;
     }
   }
 
-  .clawx-chat-working-zoomies {
-    --clawx-zoomies-bg-opacity: 0.14;
-    --clawx-zoomies-color: hsl(var(--primary));
-    --clawx-zoomies-speed: 1.15s;
+  .clawx-chat-thinking-dot-pulse {
+    --uib-size: 28px;
+    --uib-color: hsl(var(--primary));
+    --uib-speed: 1.3s;
+    --uib-dot-size: calc(var(--uib-size) * 0.24);
     align-items: center;
     display: inline-flex;
     flex-shrink: 0;
-    height: 100%;
+    height: var(--uib-dot-size);
     justify-content: center;
-    width: 100%;
+    width: var(--uib-size);
   }
 
-  .clawx-chat-working-zoomies-inner {
+  .clawx-chat-thinking-dot-pulse-inner {
     align-items: center;
-    border-radius: 9999px;
     display: flex;
+    justify-content: space-between;
     height: 100%;
-    justify-content: center;
-    overflow: hidden;
     position: relative;
-    transform: translate3d(0, 0, 0);
     width: 100%;
   }
 
-  .clawx-chat-working-zoomies-inner::before {
-    background-color: var(--clawx-zoomies-color);
+  .clawx-chat-thinking-dot-pulse-dot,
+  .clawx-chat-thinking-dot-pulse-inner::before,
+  .clawx-chat-thinking-dot-pulse-inner::after {
+    background-color: var(--uib-color);
+    border-radius: 50%;
     content: '';
-    height: 100%;
-    left: 0;
-    opacity: var(--clawx-zoomies-bg-opacity);
-    position: absolute;
-    top: 0;
+    display: block;
+    height: var(--uib-dot-size);
+    transform: scale(0);
     transition: background-color 0.3s ease;
-    width: 100%;
+    width: var(--uib-dot-size);
   }
 
-  .clawx-chat-working-zoomies-inner::after {
-    animation: clawx-chat-working-zoomies var(--clawx-zoomies-speed) ease-in-out infinite;
-    background-color: var(--clawx-zoomies-color);
-    border-radius: 9999px;
-    content: '';
-    height: 100%;
-    transform: translateX(-100%);
-    transition: background-color 0.3s ease;
-    width: 100%;
+  .clawx-chat-thinking-dot-pulse-inner::before {
+    animation: clawx-chat-thinking-dot-pulse var(--uib-speed) ease-in-out calc(var(--uib-speed) * -0.375) infinite;
+  }
+
+  .clawx-chat-thinking-dot-pulse-dot {
+    animation: clawx-chat-thinking-dot-pulse var(--uib-speed) ease-in-out calc(var(--uib-speed) * -0.25) infinite both;
+  }
+
+  .clawx-chat-thinking-dot-pulse-inner::after {
+    animation: clawx-chat-thinking-dot-pulse var(--uib-speed) ease-in-out calc(var(--uib-speed) * -0.125) infinite;
   }
 }
 
-@keyframes clawx-chat-working-zoomies {
-  0% {
-    transform: translateX(-100%);
+@keyframes clawx-chat-thinking-dot-pulse {
+  0%,
+  100% {
+    transform: scale(0);
   }
 
-  100% {
-    transform: translateX(100%);
+  50% {
+    transform: scale(1);
   }
 }
 

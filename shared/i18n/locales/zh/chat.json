@@ -222,7 +222,7 @@
         "gatewayDisconnectedPlaceholder": "网关未连接...",
         "send": "发送",
         "stop": "停止",
-        "working": "AI 正在工作",
+        "thinking": "思考中…",
         "gatewayConnected": "已连接",
         "gatewayStarting": "启动中",
         "gatewayStatus": "网关{{state}} ｜ 端口：{{port}} ｜ 进程 ID：{{pid}}",

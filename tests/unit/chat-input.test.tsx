@@ -109,6 +109,8 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Send';
     case 'composer.stop':
       return 'Stop';
+    case 'composer.thinking':
+      return 'Thinking…';
     case 'composer.gatewayConnected':
       return 'connected';
     case 'composer.gatewayStarting':
@@ -230,15 +232,20 @@ describe('ChatInput agent targeting', () => {
     artifactPanelMocks.openPreview.mockReset();
   });
 
-  it('renders the Zoomies working indicator while a message is sending', () => {
+  it('renders a dot pulse and visible thinking label while a message is sending', () => {
     render(
       <TooltipProvider>
         <ChatInput onSend={vi.fn()} sending />
       </TooltipProvider>,
     );
 
-    expect(screen.getByTestId('chat-composer-working-indicator')).toBeInTheDocument();
-    expect(screen.getByTestId('chat-composer-zoomies')).toBeInTheDocument();
+    const indicator = screen.getByRole('status', { name: 'Thinking…' });
+    expect(indicator).toHaveAttribute('data-testid', 'chat-composer-working-indicator');
+    expect(indicator).toHaveTextContent('Thinking…');
+    expect(indicator).toHaveAttribute('aria-label', 'Thinking…');
+    expect(indicator).toHaveAttribute('aria-live', 'polite');
+    expect(screen.getByTestId('chat-composer-dot-pulse')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-composer-zoomies')).not.toBeInTheDocument();
   });
 
   it('renders editable workspace selector in the composer footer', () => {

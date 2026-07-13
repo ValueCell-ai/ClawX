@@ -222,7 +222,7 @@
         "gatewayDisconnectedPlaceholder": "Gateway not connected...",
         "send": "Send",
         "stop": "Stop",
-        "working": "AI is working",
+        "thinking": "Thinking…",
         "gatewayConnected": "connected",
         "gatewayStarting": "starting",
         "gatewayStatus": "gateway {{state}} | port: {{port}} | pid: {{pid}}",

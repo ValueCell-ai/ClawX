@@ -859,17 +859,19 @@ export function ChatInput({
             data-testid="chat-composer-working-indicator"
             role="status"
             aria-live="polite"
-            aria-label={t('composer.working')}
-            className="relative mb-2 flex h-1 overflow-hidden rounded-full"
+            aria-label={t('composer.thinking')}
+            className="mb-2 flex h-5 items-center gap-2 text-sm text-muted-foreground"
           >
-            <span className="sr-only">{t('composer.working')}</span>
             <span
-              data-testid="chat-composer-zoomies"
+              data-testid="chat-composer-dot-pulse"
               aria-hidden="true"
-              className="clawx-chat-working-zoomies"
+              className="clawx-chat-thinking-dot-pulse"
             >
-              <span className="clawx-chat-working-zoomies-inner" />
+              <span className="clawx-chat-thinking-dot-pulse-inner">
+                <span className="clawx-chat-thinking-dot-pulse-dot" />
+              </span>
             </span>
+            <span>{t('composer.thinking')}</span>
           </div>
         )}
 

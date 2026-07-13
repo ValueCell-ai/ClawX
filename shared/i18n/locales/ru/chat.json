@@ -222,7 +222,7 @@
         "gatewayDisconnectedPlaceholder": "Шлюз не подключён...",
         "send": "Отправить",
         "stop": "Остановить",
-        "working": "AI работает",
+        "thinking": "Думаю…",
         "gatewayConnected": "подключён",
         "gatewayStarting": "запуск",
         "gatewayStatus": "шлюз {{state}} | порт: {{port}} | PID: {{pid}}",
