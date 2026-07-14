@@ -266,6 +266,37 @@ describe('provider-runtime-sync refresh strategy', () => {
     );
   });
 
+  it('normalizes a provider-prefixed model before updating OpenAI runtime config', async () => {
+    const openaiProvider = createProvider({
+      id: 'openai-personal',
+      type: 'openai',
+      model: 'openai/gpt-5.6',
+    });
+    mocks.getProviderAccount.mockResolvedValue({ authMode: 'oauth_browser' });
+    mocks.getDefaultProvider.mockResolvedValue(openaiProvider.id);
+    mocks.getProviderConfig.mockReturnValue({
+      api: 'openai-responses',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKeyEnv: 'OPENAI_API_KEY',
+    });
+
+    await syncUpdatedProviderToRuntime(openaiProvider, undefined);
+
+    expect(mocks.syncProviderConfigToOpenClaw).toHaveBeenCalledWith(
+      'openai',
+      'gpt-5.6',
+      expect.objectContaining({
+        api: 'openai-responses',
+        baseUrl: 'https://api.openai.com/v1',
+      }),
+    );
+    expect(mocks.setOpenClawDefaultModel).toHaveBeenCalledWith(
+      'openai',
+      'openai/gpt-5.6',
+      [],
+    );
+  });
+
   it('syncs a targeted agent model override to runtime provider registry', async () => {
     mocks.getAllProviders.mockResolvedValue([
       createProvider({

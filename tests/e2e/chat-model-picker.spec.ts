@@ -130,6 +130,18 @@ test.describe('ClawX chat model picker', () => {
                 createdAt: now,
                 updatedAt: now,
               },
+              {
+                id: 'openai-oauth',
+                vendorId: 'openai',
+                label: 'OpenAI',
+                authMode: 'oauth_browser',
+                model: 'openai/gpt-5.6',
+                metadata: { customModels: ['gpt-5.5', 'openai/gpt-5.6'] },
+                enabled: true,
+                isDefault: false,
+                createdAt: now,
+                updatedAt: now,
+              },
             ]);
           }
           if (request?.module === 'providers' && request.action === 'list') {
@@ -145,7 +157,9 @@ test.describe('ClawX chat model picker', () => {
             ]);
           }
           if (request?.module === 'providers' && request.action === 'vendors') {
-            return makeResponse(request.id, []);
+            return makeResponse(request.id, [
+              { id: 'openai', name: 'OpenAI', supportedAuthModes: ['api_key', 'oauth_browser'] },
+            ]);
           }
           if (request?.module === 'providers' && request.action === 'getDefaultAccount') {
             return makeResponse(request.id, { accountId: 'alpha1234' });
@@ -169,6 +183,9 @@ test.describe('ClawX chat model picker', () => {
       await page.getByTestId('chat-model-picker-button').click();
       await expect(page.getByTestId('chat-model-picker-menu')).toBeVisible();
       await expect(page.getByTestId('chat-model-picker-menu')).toContainText('provider/model-beta (Beta)');
+      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('gpt-5.6 (OpenAI)');
+      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('gpt-5.5 (OpenAI)');
+      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('openai/gpt-5.6 (OpenAI)');
       await page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'provider/model-beta (Beta)' }).click();
       await expect(page.getByTestId('chat-model-picker-button')).toContainText('provider/model-beta (Beta)');
 
