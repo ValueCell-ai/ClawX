@@ -71,6 +71,9 @@ export function findHiddenOpenClawHeartbeatSession(sessionKey: string, sessions:
 
 export function shouldIncludeSessionInSidebarList(session: ChatSession): boolean {
   if (!session.key) return false;
+  // Hide renderer-local placeholders created by New Chat until the first message
+  // creates the backing ACP session (acknowledgeAcpSessionCreated clears the flag).
+  if (session.createdLocally) return false;
   if (isOpenClawHeartbeatOnlySession(session)) return false;
   if (isChannelSessionKey(session.key)) {
     return !isPlaceholderChannelSession(session);

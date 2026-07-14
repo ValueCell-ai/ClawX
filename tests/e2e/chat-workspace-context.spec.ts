@@ -256,7 +256,7 @@ test.describe('ClawX chat workspace context', () => {
     }
   });
 
-  test('new unbound chat appears under the selected global workspace group from an ACP-only page', async ({ launchElectronApp }) => {
+  test('new unbound chat stays hidden until it has content and then appears under the selected global workspace group', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -282,8 +282,10 @@ test.describe('ClawX chat workspace context', () => {
 
       await expect(async () => {
         await page.getByTestId('sidebar-new-chat').click();
-        await expect(globalWorkspaceGroup.getByText(/agent:main:session-/)).toBeVisible({ timeout: 500 });
+        await expect(globalWorkspaceGroup.getByText(/agent:main:session-/)).toHaveCount(0, { timeout: 500 });
       }).toPass({ timeout: 30_000 });
+
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
 
       await expect(workspaceSelector).toHaveText(GLOBAL_WORKSPACE_LABEL);
       await expect(workspaceSelector).toHaveAttribute('title', GLOBAL_WORKSPACE);

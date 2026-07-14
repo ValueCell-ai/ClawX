@@ -70,6 +70,42 @@ afterEach(() => {
 });
 
 describe('sidebar session helpers', () => {
+  it('hides locally-created empty sessions until they have content', () => {
+    const pendingKey = 'agent:main:session-pending';
+    seedSidebarState();
+    useChatStore.setState({
+      sessions: [
+        { key: pendingKey, displayName: pendingKey, createdLocally: true },
+        { key: sidebarSessionKey, displayName: 'Existing chat', updatedAt: 1 },
+      ],
+      currentSessionKey: pendingKey,
+      sessionLastActivity: { [sidebarSessionKey]: 1 },
+    });
+
+    renderSidebar();
+
+    expect(screen.queryByTestId(`sidebar-session-${pendingKey}`)).not.toBeInTheDocument();
+    expect(screen.getByTestId(`sidebar-session-${sidebarSessionKey}`)).toBeInTheDocument();
+  });
+
+  it('hides locally-created empty sessions until they have content', () => {
+    const pendingKey = 'agent:main:session-pending';
+    seedSidebarState();
+    useChatStore.setState({
+      sessions: [
+        { key: sidebarSessionKey, displayName: 'Existing chat', updatedAt: 1 },
+        { key: pendingKey, displayName: pendingKey, createdLocally: true, updatedAt: 2 },
+      ],
+      currentSessionKey: pendingKey,
+      sessionLastActivity: { [sidebarSessionKey]: 1 },
+    });
+
+    renderSidebar();
+
+    expect(screen.getByTestId(`sidebar-session-${sidebarSessionKey}`)).toBeInTheDocument();
+    expect(screen.queryByTestId(`sidebar-session-${pendingKey}`)).not.toBeInTheDocument();
+  });
+
   it('marks the current chat session button as the current page', () => {
     seedSidebarState();
 
