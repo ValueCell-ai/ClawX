@@ -51,6 +51,15 @@ export function splitModelRef(modelRef: string | null | undefined): { providerKe
   };
 }
 
+export function normalizeModelIdForRuntimeProvider(
+  modelId: string | null | undefined,
+  runtimeProviderKey: string,
+): string {
+  const value = (modelId || '').trim();
+  const prefix = `${runtimeProviderKey}/`;
+  return value.startsWith(prefix) ? value.slice(prefix.length) : value;
+}
+
 export function formatModelRefLabel(modelRef: string | null | undefined): string {
   const parsed = splitModelRef(modelRef);
   return parsed?.modelId || (modelRef || '').trim() || 'Model';
@@ -161,16 +170,15 @@ export function buildConfiguredModelOptions(
   for (const account of entries) {
     const runtimeProviderKey = resolveRuntimeProviderKey(account);
     const modelIds = (() => {
+      const selectedModelId = normalizeModelIdForRuntimeProvider(account.model, runtimeProviderKey);
+      if (account.authMode === 'oauth_browser' && selectedModelId) {
+        return [selectedModelId];
+      }
       const configured = (account.metadata?.customModels ?? [])
-        .map((modelId) => modelId.trim())
+        .map((modelId) => normalizeModelIdForRuntimeProvider(modelId, runtimeProviderKey))
         .filter(Boolean);
       if (configured.length > 0) return configured;
-      if (!account.model?.trim()) return [];
-      return [
-        account.model.startsWith(`${runtimeProviderKey}/`)
-          ? account.model.slice(runtimeProviderKey.length + 1)
-          : account.model.trim(),
-      ].filter(Boolean);
+      return selectedModelId ? [selectedModelId] : [];
     })();
     for (const modelId of modelIds) {
       const modelRef = `${runtimeProviderKey}/${modelId}`;

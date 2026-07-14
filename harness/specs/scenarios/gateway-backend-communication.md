@@ -34,6 +34,7 @@ requiredRules:
   - active-config-guards
   - provider-default-invariant
   - provider-model-metadata-preservation
+  - provider-model-selection-authority
   - comms-regression
   - docs-sync
 forbiddenPatterns:
