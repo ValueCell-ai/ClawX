@@ -36,6 +36,7 @@ import { useChatStore } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { groupSessionsByWorkspace } from './session-buckets';
+import { shouldIncludeSessionInSidebarList } from '@/stores/chat/session-key-utils';
 import { CHANNEL_NAMES } from '@shared/types/channel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -320,8 +321,12 @@ export function Sidebar() {
     () => Object.fromEntries((agents ?? []).map((agent) => [agent.id, agent.name])),
     [agents],
   );
+  const sidebarSessions = useMemo(
+    () => sessions.filter((session) => shouldIncludeSessionInSidebarList(session)),
+    [sessions],
+  );
   const workspaceSessionGroups = groupSessionsByWorkspace(
-    sessions,
+    sidebarSessions,
     sessionLastActivity,
     t('chat:workspace.defaultLabel'),
     chatWorkspacePath,
@@ -476,7 +481,7 @@ export function Sidebar() {
       </nav>
 
       {/* Session list — below Settings, only when expanded */}
-      {!sidebarCollapsed && sessions.length > 0 && (
+      {!sidebarCollapsed && sidebarSessions.length > 0 && (
         <div className="mt-4 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2">
           <div className="mb-1 flex items-center justify-between gap-2 pl-2.5">
             <span className="text-tiny font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">

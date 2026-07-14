@@ -119,7 +119,7 @@ test.describe('ClawX chat workspace session list', () => {
     }
   });
 
-  test('new chat appears in the default workspace group', async ({ launchElectronApp }) => {
+  test('new chat stays hidden in the sidebar until the first message', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     const oldTimestampMs = Date.now() - 35 * 24 * 60 * 60 * 1000;
     const seededHistory = [
@@ -189,8 +189,9 @@ test.describe('ClawX chat workspace session list', () => {
 
       await page.getByTestId('sidebar-new-chat').click();
 
-      await expect(page.getByTestId(defaultWorkspaceSessionGroupTestId()).getByText(/agent:main:session-/)).toBeVisible();
+      await expect(page.getByTestId(defaultWorkspaceSessionGroupTestId()).getByText(/agent:main:session-/)).toHaveCount(0);
       await expect(page.getByTestId(defaultWorkspaceSessionGroupToggleTestId())).toHaveAttribute('aria-expanded', 'true');
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }
