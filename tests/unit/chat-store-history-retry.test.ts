@@ -1737,9 +1737,9 @@ describe('useChatStore startup history retry', () => {
       streamingMessage: { role: 'assistant' },
     });
 
-    await vi.advanceTimersByTimeAsync(121_000);
+    await vi.advanceTimersByTimeAsync(241_000);
 
-    expect(useChatStore.getState().runError).toContain('120 seconds');
+    expect(useChatStore.getState().runError).toContain('240 seconds');
     expect(useChatStore.getState().sending).toBe(true);
     expect(useChatStore.getState().streamingMessage).toBeNull();
 
@@ -1927,9 +1927,9 @@ describe('useChatStore startup history retry', () => {
     });
 
     const sendPromise = useChatStore.getState().sendMessage('new question');
-    await vi.advanceTimersByTimeAsync(121_000);
+    await vi.advanceTimersByTimeAsync(241_000);
 
-    expect(useChatStore.getState().runError).toContain('120 seconds');
+    expect(useChatStore.getState().runError).toContain('240 seconds');
     expect(useChatStore.getState().error).toBeNull();
     expect(useChatStore.getState().sending).toBe(true);
 

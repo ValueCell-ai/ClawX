@@ -942,6 +942,7 @@ describe('syncProviderConfigToOpenClaw', () => {
         customField: 'keep-me',
       }),
     ]);
+    expect(entry.timeoutSeconds).toBe(240);
   });
 
   it('infers text-only input for a new unknown custom-provider model', async () => {
@@ -964,6 +965,7 @@ describe('syncProviderConfigToOpenClaw', () => {
         input: ['text'],
       }),
     ]);
+    expect(entry.timeoutSeconds).toBe(240);
   });
 
   it('writes an inferred contextWindow for new custom-provider model rows', async () => {
@@ -2427,5 +2429,47 @@ describe('batchSyncConfigFields', () => {
     expect(custom[1].contextTokens).toBe(32000);
     // Non custom-* providers own their metadata — never backfilled.
     expect(moonshot[0].contextWindow).toBeUndefined();
+  });
+
+  it('backfills timeoutSeconds=240 on models.providers entries missing the field', async () => {
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      models: {
+        providers: {
+          anthropic: { timeoutSeconds: 600 },
+          'custom-example': {
+            baseUrl: 'https://example.com/v1',
+            api: 'openai-completions',
+            models: [{ id: 'model-a', name: 'Model A' }],
+          },
+        },
+      },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const providers = (config.models as Record<string, unknown>).providers as Record<string, unknown>;
+    expect((providers.anthropic as Record<string, unknown>).timeoutSeconds).toBe(600);
+    expect((providers['custom-example'] as Record<string, unknown>).timeoutSeconds).toBe(240);
+  });
+
+  it('seeds timeoutSeconds=240 for the default model provider when missing', async () => {
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      agents: {
+        defaults: {
+          model: { primary: 'anthropic/claude-opus-4-6' },
+        },
+      },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const providers = (config.models as Record<string, unknown>).providers as Record<string, unknown>;
+    expect(providers.anthropic).toEqual({ timeoutSeconds: 240 });
   });
 });
