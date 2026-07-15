@@ -4,7 +4,7 @@ Status: current compatibility and safety reference, reviewed 2026-07-15.
 
 Related scenario: `acp-file-activity`
 
-Related rules: `tool-derived-file-safety`, `session-workspace-authority`
+Related rules: `tool-derived-file-safety`, `session-workspace-authority`, `attachment-access-safety`
 
 Related tasks: `restore-acp-file-activity`, `acp-media-attachments`
 
@@ -77,7 +77,7 @@ Tool-derived targets are read-only in-app previews. They never expose system ope
 
 File activity and user-facing attachments are separate projections and security boundaries. Incidental paths in tool input or output remain tool-derived evidence: they cannot become attachment cards and retain the preview-only restrictions above. Attachment evidence must instead come from standard ACP resource content, a Main-owned user staging record, or the bounded explicit assistant `MEDIA:` exception documented in `harness/reference/acp-generated-media-and-diagnostics.md#bounded-transcript-exceptions`.
 
-Main establishes an attachment workspace grant only when the ACP session load or creation succeeds. Each attachment resolve, preview read, and system or external open then revalidates the exact session, generation, reference, canonical target, and allowed ownership scope. This attachment-scoped operation can safely support click-initiated system open without weakening the separate rule that incidental tool-derived targets never expose system open or reveal.
+Main establishes an attachment workspace grant only when the ACP session load or creation succeeds. Each attachment resolve, preview read, and system or external open then revalidates the exact session, generation, reference, canonical target, and allowed ownership scope. This attachment-scoped operation can safely support click-initiated system open without weakening the separate rule that incidental tool-derived targets never expose system open or reveal. The complete boundary is documented in `harness/reference/acp-attachment-access-control.md`.
 
 ## User Experience And Replay
 

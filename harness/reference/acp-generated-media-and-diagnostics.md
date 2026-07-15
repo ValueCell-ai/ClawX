@@ -4,7 +4,7 @@ Status: current compatibility reference, reviewed 2026-07-15.
 
 Related scenario: `acp-chat-experience`
 
-Related rules: `acp-chat-state-and-history`, `acp-compatibility-content-safety`, `diagnostics-trace-safety`
+Related rules: `acp-chat-state-and-history`, `acp-compatibility-content-safety`, `attachment-access-safety`, `diagnostics-trace-safety`
 
 Related tasks: `acp-image-generation-compatibility`, `acp-historical-transcript-supplement`, `acp-media-attachments`, `acp-debug-trace-channel`
 
@@ -19,7 +19,7 @@ This section is the durable rationale referenced by the transcript supplement en
 1. Image-generation completion with proven `image_generate` context. Trusted structured runtime evidence or approved transcript evidence may restore the completion caption, failure explanation, and media as the existing inline-image experience.
 2. General attachment recovery from an explicit line-leading assistant `MEDIA:` directive outside fenced code blocks. This exception does not require image-generation context, but it recovers only the attachment reference, never the surrounding assistant message.
 
-Both exceptions use one bounded transcript fetch coordinator, keep projected state in memory, require exact active session and generation identity, and reject stale or ambiguous evidence. Existing-session load reads at most 1000 recent transcript messages. A successful live prompt performs one immediate read and one retry 1500 milliseconds later rather than polling indefinitely. These exceptions must be removed when the distributed OpenClaw ACP adapter emits the equivalent standard content.
+Both exceptions use one bounded transcript fetch coordinator, keep projected state in memory, require exact active session and generation identity, and reject stale or ambiguous evidence. Existing-session load reads at most `1000` recent transcript messages. A successful live prompt performs one immediate read and exactly one retry `1500 ms` later rather than polling indefinitely. These exceptions must be removed when the distributed OpenClaw ACP adapter emits the equivalent standard content.
 
 Transcript supplementation must not recover or reconstruct ordinary assistant messages, thoughts, tools, plans, permissions, file activity, or a parallel Chat history. Bare paths, inline prose paths, unknown URI schemes, incidental tool paths, and directives inside fenced code blocks are not general attachments.
 
@@ -40,9 +40,17 @@ When trusted source-reply text exists, it is preserved whether or not media is p
 
 ### Explicit MEDIA Attachments
 
-The general attachment extractor scans assistant transcript content only for explicit line-leading `MEDIA:` directives outside fenced code blocks. It associates candidates with real user-turn boundaries from newest to oldest and skips unmatched or ambiguous turns rather than guessing. It never projects the raw directive or other transcript prose. Candidates already proven to be image-generation completions remain inline images and are suppressed from the paperclip-card path.
+The general attachment extractor considers normalized assistant roles only. After optional leading whitespace, a whole line must start with the case-insensitive `MEDIA:` token and contain exactly one reference. Single- or double-quoted references may contain spaces and must close with the same quote; unquoted references cannot contain whitespace. One accepted line produces one candidate, and multiple lines retain transcript order. The current source-reference bound is `4096` characters.
 
-Every standard or compatibility attachment reference is resolved through Main's session-scoped attachment boundary. Main derives the workspace grant from the successful ACP load, checks the exact session and generation, limits local access to the active workspace or verified managed media and staging records, and re-authorizes each resolve, preview read, or open. HTTP and HTTPS references are revalidated before external open. Native ACP resources win over equivalent compatibility evidence.
+Accepted reference forms are absolute POSIX paths, Windows drive paths, `file://` URIs, `~/` paths, paths relative to the registered execution cwd, and HTTP or HTTPS URLs. Relative paths are accepted only when execution cwd is available. Unknown URI schemes, malformed URLs or quotes, empty references, Markdown/list wrappers, inline prose, ordinary bare paths, and wrapped references are rejected. Markdown backtick and tilde fences follow the delimiter character and opening length; all content remains ignored until a valid close with the same delimiter and at least that length. The parser does not render the raw directive or surrounding transcript prose.
+
+Transcript and ACP messages are partitioned by real user boundaries; leading orphan assistant content is ineligible. User text matching removes only the known OpenClaw working-directory envelope, normalizes line endings and surrounding whitespace, and does not use broad fuzzy matching. Because transcript history is a bounded suffix and cross-source message ids are not durable, alignment proceeds newest-to-oldest with the tuple of normalized user text and duplicate occurrence from the tail. A live supplement additionally requires the optimistic ACP user identity and restricts extraction to that current turn. Missing, duplicate, or ambiguous anchors are skipped instead of assigned by ordinal offset or nearest-turn guesswork.
+
+Every asynchronous result is valid only for the same active session key, ACP generation, supplement operation, current attempt, and, for live recovery, user-turn identity. Session changes, new loads or prompts, cancellation/invalidation, and the delayed retry superseding the immediate attempt prevent stale mutation.
+
+Candidates already proven to be image-generation completions remain inline images and are suppressed from the paperclip-card path. General attachments are deduplicated only within a conversation turn by the opaque identity returned after Main authorization. Deduplication spans immediate and delayed reads, repeated history loads, native ACP resources, general compatibility evidence, and generated-image evidence. Native ACP attachment evidence wins regardless of arrival order; an equivalent inline generated image suppresses the paperclip card. An unavailable result does not reserve a resolved identity, so a stable candidate from the delayed read can replace the same synthetic projection and upgrade it to available.
+
+Every standard or compatibility attachment reference is resolved through Main's session-scoped attachment boundary. Main derives the workspace grant from the successful ACP load, checks the exact session and generation, limits local access to the active workspace or verified managed media and staging records, and re-authorizes each resolve, preview read, or open. HTTP and HTTPS references are revalidated before external open. See `harness/reference/acp-attachment-access-control.md`.
 
 Image generation and general attachments share transcript fetch coordination and opaque resolved media identities only. Generated images remain inline; general attachments render as paperclip rows after assistant prose.
 
@@ -57,6 +65,10 @@ hostApi.sessions.history({ sessionKey, limit: 1000 });
 A pure image-generation extractor scans messages in transcript order. It first records an `image_generate` start from a tool result, then accepts a later internal-UI `message` tool source reply or assistant `MEDIA:` values that look like images. Assistant media captions have their `MEDIA:` directives removed before display. A message-tool reply or image completion without preceding task context is rejected. Separately, the general attachment extractor may accept explicit assistant `MEDIA:` directives without image-generation context under the restrictions above. Read failure, no accepted evidence, duplicate evidence, or a stale generation leaves the ACP timeline unchanged.
 
 These are the only transcript-derived Chat supplements. They must not become a general recovery mechanism for missing tool cards, file activity, plans, permissions, thoughts, or ordinary messages.
+
+## Rejected Compatibility Alternatives
+
+Main does not manufacture ACP `agent_message_chunk` resource events from transcript evidence because that would misrepresent compatibility data as native protocol replay. The ACP page does not reuse legacy Chat path extraction or rendering because that would restore competing history authorities. Standard-ACP-only behavior is insufficient while the distributed adapter omits assistant media, but the exception remains removable when upstream emits standard resources. Bare-path or broad prose extraction is rejected because false positives would widen the local-file trust surface.
 
 ## Trace Channel
 

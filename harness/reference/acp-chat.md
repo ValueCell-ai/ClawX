@@ -4,7 +4,7 @@ Status: current architecture reference, reviewed 2026-07-15.
 
 Related scenario: `acp-chat-experience`
 
-Related rules: `acp-chat-state-and-history`, `renderer-main-boundary`
+Related rules: `acp-chat-state-and-history`, `attachment-access-safety`, `renderer-main-boundary`
 
 Related tasks: `acp-native-chat`, `acp-media-attachments`, `filter-openclaw-heartbeat-session`
 
@@ -33,7 +33,7 @@ ACP `session/load` replay is the primary source of Chat history. ClawX does not 
 
 OpenClaw emits replay through ordinary `session/update` notifications and completes the replay before `session/load` returns. Main collects those raw notifications for the active load generation and returns them with the load result instead of forwarding them incrementally. Renderer temporarily groups generation-matching host events that arrive during the IPC result handoff, then runs the normal reducer over the combined batch and publishes the resulting timeline in one state update. This is an in-flight transaction buffer only, not a history cache; after load, live updates continue through the normal host-event route. Permission requests are accepted only after the current loaded session starts a prompt, preventing load-time or handoff requests from creating invisible waiters.
 
-There are exactly two approved transcript supplements. ClawX may recover asynchronous image-generation completions with proven `image_generate` context, and it may recover explicit line-leading assistant `MEDIA:` attachment directives omitted by OpenClaw ACP. Both are bounded, marked, memory-only projections. They do not authorize reconstruction of ordinary assistant text, thoughts, tool cards, plans, permissions, or file activity. See `harness/reference/acp-generated-media-and-diagnostics.md#bounded-transcript-exceptions` for the compatibility rationale and removal condition.
+There are exactly two approved transcript supplements. ClawX may recover asynchronous image-generation completions with proven `image_generate` context, and it may recover explicit line-leading assistant `MEDIA:` attachment directives omitted by OpenClaw ACP. Both are bounded, marked, memory-only projections. They do not authorize reconstruction of ordinary assistant text, thoughts, tool cards, plans, permissions, or file activity. See `harness/reference/acp-generated-media-and-diagnostics.md#bounded-transcript-exceptions` for the compatibility grammar, alignment, rationale, and removal condition.
 
 ## Timeline Model
 
@@ -76,9 +76,13 @@ An assistant turn has one identity column and one copy action. Copy includes tex
 
 Standard ACP `resource_link` and URI-backed `resource` content is the preferred attachment path. OpenClaw ACP currently projects assistant text and thought content but can omit assistant media while removing `MEDIA:` directives from the visible live reply. Until upstream emits standard resource content, the bounded explicit-`MEDIA:` supplement may add a marked compatibility attachment to the matching turn without manufacturing an ACP event.
 
-Renderer keeps attachment references and compatibility projections in the active in-memory timeline. Main owns the ACP workspace grant and resolves, reads, and opens every attachment against the exact session and generation. A prior resolution is not a reusable authorization, and Renderer cannot supply a replacement workspace root. Native ACP evidence wins when it resolves to the same identity as compatibility evidence.
+Standard `resource_link` mapping preserves its URI, name, title fallback, MIME type, and size when supplied. A URI-backed embedded `resource` uses the same model and metadata precedence; embedded content without a usable URI becomes unavailable rather than entering an unrelated unsupported-content path. Exact TypeScript models remain authoritative.
 
-Assistant attachment rows render after ordinary turn content and before file activity; user attachment rows render after user prose. User-selected images render as Main-generated thumbnails whose hover overlay identifies the file. Other user-selected files show the filename followed by the muted, truncating source path retained by Main's staging registry; ACP-provided paths are not trusted, and assistant and unavailable attachments remain basename-only. Supported authorized local files use the Preview panel, other authorized local files use the system application only after a click, and HTTP or HTTPS attachments open externally only after a click. Image-generation completion remains an inline-image experience. It shares transcript coordination and opaque resolved identities with attachment recovery but is not converted into an attachment card.
+Renderer keeps attachment references and compatibility projections in the active in-memory timeline. Main owns the ACP workspace grant and resolves, reads, and opens every attachment against the exact session and generation. A prior resolution is not reusable authorization, and Renderer cannot supply a replacement workspace root. Native ACP evidence wins when it resolves to the same identity as compatibility evidence. The complete authorization and URI boundary is documented in `harness/reference/acp-attachment-access-control.md`.
+
+Assistant grouping lifts attachments from message, thought, and tool-output segments into one ordered turn list after all prose and process items and before file activity. This prevents an early resource block from appearing above later assistant prose. User grouping similarly renders all prose before ordered attachments. User-selected images render as Main-generated thumbnails whose hover overlay identifies the file. Other user-selected files show the filename followed by the muted, truncating source path retained by Main's staging registry; ACP-provided paths are not trusted, and assistant and unavailable attachments remain basename-only.
+
+Available attachment rows are semantic buttons with keyboard activation, an accessible action and safe filename, standard focus visibility, and the established hover state. Pending and unavailable rows remain announced but disabled. Supported authorized local files use the Preview panel, other authorized local files use the system application only after a click, and HTTP or HTTPS attachments open externally only after a click. One malformed or unavailable attachment cannot suppress prose or sibling attachments. Image-generation completion remains an inline-image experience. It shares transcript coordination and opaque resolved identities with attachment recovery but is not converted into an attachment card.
 
 ## Chat Behaviors
 
@@ -90,6 +94,6 @@ Assistant attachment rows render after ordinary turn content and before file act
 
 ## Validation Anchors
 
-Key tests live in `tests/unit/acp-*.test.*`, `tests/unit/acp-timeline-groups.test.ts`, `tests/unit/chat-question-directory.test.tsx`, and `tests/e2e/chat-acp-inline-timeline.spec.ts`.
+Key tests live in `tests/unit/acp-*.test.*`, `tests/unit/acp-timeline-groups.test.ts`, `tests/unit/attachment-access.test.ts`, `tests/unit/chat-question-directory.test.tsx`, `tests/e2e/chat-acp-inline-timeline.spec.ts`, and `tests/e2e/chat-acp-attachments.spec.ts`.
 
 This reference consolidates the former ACP native Chat, Chat polish, turn grouping, and question-directory design documents. Later implementation decisions supersede the original no-optimistic-message rule, the assumption that ACP id always equals Gateway session key, and segment-level assistant copy controls.

@@ -8,16 +8,19 @@ touchedAreas:
   - package.json
   - docs/specs/2026-07-14-acp-media-attachments-design.md
   - docs/plans/2026-07-14-acp-media-attachments.md
+  - docs/plans/2026-07-15-harness-spec-consolidation.md
   - harness/specs/tasks/acp-media-attachments.md
   - harness/specs/tasks/fix-acp-history-load-races.md
   - harness/specs/scenarios/acp-chat-experience.md
   - harness/specs/rules/acp-chat-state-and-history.md
   - harness/specs/rules/acp-compatibility-content-safety.md
+  - harness/specs/rules/attachment-access-safety.md
   - harness/specs/rules/diagnostics-trace-safety.md
   - harness/specs/rules/session-workspace-authority.md
   - harness/specs/rules/tool-derived-file-safety.md
   - harness/specs/rules/ui-i18n-design-tokens.md
   - harness/reference/acp-chat.md
+  - harness/reference/acp-attachment-access-control.md
   - harness/reference/acp-generated-media-and-diagnostics.md
   - harness/reference/openclaw-file-activity.md
   - shared/acp-chat/types.ts
@@ -132,6 +135,7 @@ requiredRules:
   - host-api-fallback-policy
   - acp-chat-state-and-history
   - acp-compatibility-content-safety
+  - attachment-access-safety
   - diagnostics-trace-safety
   - session-workspace-authority
   - tool-derived-file-safety
@@ -164,6 +168,8 @@ acceptance:
   - Local references outside the workspace and verified managed roots cannot be previewed or opened.
   - Live and historical paths deduplicate and reject stale session or generation results.
   - Native ACP resources take precedence over transcript compatibility evidence.
+  - Attachment access remains bound to Main-owned session, generation, ownership, and outgoing-record authority on every operation.
+  - Attachment rows use semantic controls with safe accessible labels, keyboard activation, and disabled unavailable states.
   - The implementation contains the required compatibility rationale comment and links it to durable architecture documentation.
   - No OpenClaw source or distributed package is modified.
   - No legacy Chat renderer, direct Renderer IPC, or direct Gateway HTTP request is introduced.
@@ -189,12 +195,18 @@ Standard ACP resource content is the preferred attachment source. The OpenClaw t
 | --- | --- |
 | Standard ACP resources render actionable cards | `tests/unit/acp-reducer.test.ts`, `tests/unit/acp-chat-components.test.tsx`, `tests/e2e/chat-acp-attachments.spec.ts` |
 | Explicit OpenClaw `MEDIA:` recovery and hidden raw directives | `tests/unit/acp-media-attachments.test.ts`, `tests/unit/acp-chat-store.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts` |
+| Explicit parser grammar rejects fenced, wrapped, inline, malformed, unknown-scheme, and overlong values | `tests/unit/acp-media-attachments.test.ts`, `acp-compatibility-content-safety` |
+| Transcript suffix alignment uses normalized user text and occurrence from the tail without guessing | `tests/unit/acp-media-attachments.test.ts`, `tests/unit/acp-chat-store.test.ts`, `acp-chat-state-and-history` |
 | Body-first ordering and declaration order | `tests/unit/acp-timeline-groups.test.ts`, `tests/unit/acp-chat-components.test.tsx`, `tests/e2e/chat-acp-attachments.spec.ts` |
 | User thumbnail, filename overlay, and Main-owned source-path presentation | `tests/unit/acp-chat-components.test.tsx`, `tests/unit/acp-reducer.test.ts`, `tests/unit/attachment-access.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts`, `ui-i18n-design-tokens` |
 | Preview, local system open, and remote external open routing | `tests/unit/file-preview-body.test.tsx`, `tests/unit/rich-file-viewers.test.tsx`, `tests/unit/attachment-access.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts` |
+| Main grant lifecycle and exact session/generation revocation | `tests/unit/acp-session-access-registry.test.ts`, `tests/unit/acp-chat-service.test.ts`, `tests/unit/attachment-access.test.ts`, `attachment-access-safety` |
+| URI hardening, allowed roots, staging ownership, and outgoing-record binding | `tests/unit/attachment-access.test.ts`, `attachment-access-safety` |
+| Attachment previews use scoped reads without naked-path or workspace fallback | `tests/unit/file-preview-body.test.tsx`, `tests/unit/rich-file-viewers.test.tsx`, `tests/unit/artifact-panel.test.tsx`, `attachment-access-safety` |
+| Semantic controls, safe labels, keyboard activation, and disabled unavailable state | `tests/unit/acp-chat-components.test.tsx`, `tests/unit/attachment-access.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts`, `ui-i18n-design-tokens` |
 | Bare prose paths are rejected | `tests/unit/acp-media-attachments.test.ts`, `acp-compatibility-content-safety` |
-| Outside-root and stale session/generation access is rejected | `tests/unit/attachment-access.test.ts`, `tests/unit/acp-session-access-registry.test.ts`, `session-workspace-authority`, `tool-derived-file-safety` |
-| Live/history dedupe and native ACP precedence | `tests/unit/acp-chat-store.test.ts`, `tests/unit/acp-media-attachments.test.ts`, `acp-chat-state-and-history` |
+| Outside-root and stale session/generation access is rejected | `tests/unit/attachment-access.test.ts`, `tests/unit/acp-session-access-registry.test.ts`, `attachment-access-safety`, `session-workspace-authority`, `tool-derived-file-safety` |
+| Turn-scoped live/history dedupe, unavailable upgrade, and native ACP precedence | `tests/unit/acp-chat-store.test.ts`, `tests/unit/acp-media-attachments.test.ts`, `acp-chat-state-and-history`, `acp-compatibility-content-safety` |
 | Compatibility rationale remains marked and bounded | `harness/reference/acp-generated-media-and-diagnostics.md#bounded-transcript-exceptions`, `acp-compatibility-content-safety` |
 | No OpenClaw, legacy Renderer, direct IPC, or direct Gateway regression | `renderer-main-boundary`, `backend-communication-boundary`, `acp-chat-state-and-history`, harness validation |
 | Complete regression validation passes | `requiredTests` above and `comms-regression` |

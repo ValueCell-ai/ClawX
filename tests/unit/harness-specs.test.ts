@@ -24,6 +24,7 @@ describe('harness specs', () => {
       'host-api-fallback-policy',
       'acp-chat-state-and-history',
       'acp-compatibility-content-safety',
+      'attachment-access-safety',
       'diagnostics-trace-safety',
       'session-workspace-authority',
       'tool-derived-file-safety',
