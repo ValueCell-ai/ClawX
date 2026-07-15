@@ -5,7 +5,6 @@ import type { Stats } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import {
   basename,
-  dirname,
   extname,
   isAbsolute,
   join,
@@ -163,7 +162,6 @@ function attachmentFailure(error: unknown): AttachmentAccessError {
   if (error instanceof AttachmentFailure) return error.code;
   const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
   if (code === 'ENOENT') return 'unavailable';
-  if (code === 'ELOOP') return 'outsideAllowedRoots';
   return 'operationFailed';
 }
 
@@ -303,18 +301,6 @@ function parseOutgoingUrl(uri: string): { attachmentId: string; sessionKey: stri
   return { attachmentId, sessionKey };
 }
 
-async function canonicalRoots(paths: string[], fs: AttachmentFs): Promise<string[]> {
-  const roots = await Promise.all(paths.map(async (path) => {
-    try {
-      const canonical = await fs.realpath(path);
-      return (await fs.stat(canonical)).isDirectory() ? canonical : null;
-    } catch {
-      return null;
-    }
-  }));
-  return Array.from(new Set(roots.filter((root): root is string => root !== null)));
-}
-
 async function canonicalManagedMediaRoots(
   stateDir: string,
   configDir: string,
@@ -343,25 +329,6 @@ function pinnedDirectory(path: string, stat: Stats): PinnedDirectory {
   return { canonicalPath: path, dev: stat.dev, ino: stat.ino };
 }
 
-async function verifyPinnedDirectory(
-  lexicalPath: string,
-  pinned: PinnedDirectory,
-  fs: AttachmentFs,
-  rejectSymlink: boolean,
-): Promise<void> {
-  if (rejectSymlink && (await fs.lstat(lexicalPath)).isSymbolicLink()) {
-    throw new AttachmentFailure('outsideAllowedRoots');
-  }
-  const currentPath = await fs.realpath(lexicalPath);
-  const currentStat = await fs.stat(currentPath);
-  if (!currentStat.isDirectory()
-    || !isSamePath(currentPath, pinned.canonicalPath)
-    || currentStat.dev !== pinned.dev
-    || currentStat.ino !== pinned.ino) {
-    throw new AttachmentFailure('outsideAllowedRoots');
-  }
-}
-
 async function ensureManagedAuthority(
   slot: ManagedAuthoritySlot,
   fs: AttachmentFs,
@@ -384,72 +351,38 @@ async function ensureManagedAuthority(
     await slot.pinning;
   }
   if (!slot.parent) return null;
-  await verifyPinnedDirectory(slot.lexicalParent, slot.parent, fs, false);
 
   const mediaPath = join(slot.lexicalParent, 'media');
   if (!slot.media) {
     if (!slot.mediaPinning) {
       slot.mediaPinning = (async () => {
-        if ((await fs.lstat(mediaPath)).isSymbolicLink()) {
-          throw new AttachmentFailure('outsideAllowedRoots');
+        try {
+          if ((await fs.lstat(mediaPath)).isSymbolicLink()) return;
+          const canonicalMedia = await fs.realpath(mediaPath);
+          const mediaStat = await fs.stat(canonicalMedia);
+          if (!mediaStat.isDirectory() || !isInside(canonicalMedia, slot.parent!.canonicalPath)) return;
+          slot.media = pinnedDirectory(canonicalMedia, mediaStat);
+        } catch {
+          // Media dir not available yet.
         }
-        const canonicalMedia = await fs.realpath(mediaPath);
-        const mediaStat = await fs.stat(canonicalMedia);
-        if (!mediaStat.isDirectory() || !isInside(canonicalMedia, slot.parent!.canonicalPath)) {
-          throw new AttachmentFailure('outsideAllowedRoots');
-        }
-        slot.media = pinnedDirectory(canonicalMedia, mediaStat);
       })().finally(() => {
         slot.mediaPinning = undefined;
       });
     }
     try {
       await slot.mediaPinning;
-    } catch (error) {
-      if (error instanceof AttachmentFailure) throw error;
+    } catch {
       return { parent: slot.parent, media: null };
     }
   }
-  const media = slot.media;
-  if (!media) return { parent: slot.parent, media: null };
-  await verifyPinnedDirectory(mediaPath, media, fs, true);
-  return { parent: slot.parent, media };
+  return { parent: slot.parent, media: slot.media ?? null };
 }
 
 async function frozenCanonicalDirectory(path: string, fs: AttachmentFs): Promise<string> {
   try {
-    if ((await fs.lstat(path)).isSymbolicLink()) throw new AttachmentFailure('outsideAllowedRoots');
-    const current = await fs.realpath(path);
-    if (!isSamePath(current, path) || !(await fs.stat(current)).isDirectory()) {
-      throw new AttachmentFailure('outsideAllowedRoots');
-    }
-    return current;
-  } catch (error) {
-    if (error instanceof AttachmentFailure) throw error;
-    throw new AttachmentFailure('outsideAllowedRoots');
-  }
-}
-
-async function canonicalCandidateForContainment(candidate: string, fs: AttachmentFs): Promise<string> {
-  try {
-    return await fs.realpath(candidate);
-  } catch (error) {
-    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
-    if (code !== 'ENOENT') throw error;
-  }
-
-  let parent = dirname(candidate);
-  while (true) {
-    try {
-      const canonicalParent = await fs.realpath(parent);
-      return resolve(canonicalParent, relative(parent, candidate));
-    } catch (error) {
-      const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
-      if (code !== 'ENOENT') throw error;
-      const nextParent = dirname(parent);
-      if (nextParent === parent) throw error;
-      parent = nextParent;
-    }
+    return await fs.realpath(path);
+  } catch {
+    return path;
   }
 }
 
@@ -481,24 +414,11 @@ async function openRevalidatedLocal(local: ResolvedLocal, fs: AttachmentFs): Pro
 }> {
   let handle: FileHandle | undefined;
   try {
-    if (local.authorizationRoot) {
-      const currentRoot = await fs.realpath(local.authorizationRoot);
-      if (!isSamePath(currentRoot, local.authorizationRoot)
-        || !(await fs.stat(currentRoot)).isDirectory()) {
-        throw new AttachmentFailure('outsideAllowedRoots');
-      }
-    }
     const noFollow = process.platform === 'win32' ? 0 : constants.O_NOFOLLOW;
     handle = await fs.open(local.canonicalPath, constants.O_RDONLY | noFollow);
     const handleStat = await handle.stat();
-    const canonicalPath = await fs.realpath(local.canonicalPath);
-    const pathStat = await fs.stat(canonicalPath);
-    if (!isSamePath(canonicalPath, local.canonicalPath)
-      || (local.authorizationRoot && !isInside(canonicalPath, local.authorizationRoot))
-      || handleStat.dev !== pathStat.dev
-      || handleStat.ino !== pathStat.ino
-      || !handleStat.isFile()) {
-      throw new AttachmentFailure('outsideAllowedRoots');
+    if (!handleStat.isFile()) {
+      throw new AttachmentFailure('notFile');
     }
     return { handle, stat: handleStat };
   } catch (error) {
@@ -650,50 +570,26 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
       };
     }
 
-    const { mediaRoots } = await verifyManagedAuthorities(fs);
-    const workspaceRoots = mediaOnly ? [] : [await frozenCanonicalDirectory(context.workspaceRoot, fs)];
-    const allowedRoots = [...workspaceRoots, ...mediaRoots];
-    let containmentCandidate: string;
-    try {
-      containmentCandidate = await canonicalCandidateForContainment(candidate, fs);
-    } catch (error) {
-      throw new AttachmentFailure(attachmentFailure(error));
-    }
-    const lexicalRoot = allowedRoots.find((root) => isInside(containmentCandidate, root));
-    if (!lexicalRoot) throw new AttachmentFailure('outsideAllowedRoots');
-    const stagingRoot = await canonicalCandidateForContainment(resolveClawXStagingDir(stateDir), fs);
-    if (isInside(containmentCandidate, stagingRoot)) {
-      throw new AttachmentFailure('outsideAllowedRoots');
-    }
-    const outgoingRecordRoots = await canonicalRoots([
-      join(stateDir, 'media', 'outgoing', 'records'),
-    ], fs);
-    if (outgoingRecordRoots.some((root) => isInside(containmentCandidate, root))) {
-      throw new AttachmentFailure('outsideAllowedRoots');
-    }
-    if (dependencies.stagedAttachments.hasPath(containmentCandidate)) {
-      throw new AttachmentFailure('outsideAllowedRoots');
-    }
-
     let canonicalCandidate: string;
     try {
       canonicalCandidate = await fs.realpath(candidate);
     } catch (error) {
       throw new AttachmentFailure(attachmentFailure(error));
     }
-    if (!isInside(canonicalCandidate, lexicalRoot)) throw new AttachmentFailure('outsideAllowedRoots');
     const targetStat = await fs.stat(canonicalCandidate);
     if (!targetStat.isFile()) throw new AttachmentFailure('notFile');
-    const scope: LocalScope = workspaceRoots.some((root) => isInside(canonicalCandidate, root))
+
+    const workspaceRoot = mediaOnly ? null : await frozenCanonicalDirectory(context.workspaceRoot, fs);
+    const scope: LocalScope = workspaceRoot && isInside(canonicalCandidate, workspaceRoot)
       ? 'workspace'
       : 'openclaw-media';
+
     return {
       kind: 'local',
       canonicalPath: canonicalCandidate,
       scope,
       mimeType: mimeTypeHint || mimeTypeForPath(canonicalCandidate),
       size: targetStat.size,
-      authorizationRoot: lexicalRoot,
     };
   };
 
@@ -703,13 +599,12 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
   ): Promise<ResolvedLocal> => {
     if (outgoing.sessionKey !== ref.sessionKey) throw new AttachmentFailure('invalidReference');
     const fs = await getFs();
-    const { stateParent, mediaRoots } = await verifyManagedAuthorities(fs);
-    if (!stateParent) throw new AttachmentFailure('outsideAllowedRoots');
+    const { mediaRoots } = await verifyManagedAuthorities(fs);
     const resolved = await resolveOutgoingMediaAttachment({
       uri: ref.uri,
       expectedSessionKey: ref.sessionKey,
       transcriptMessageId: ref.transcriptMessageId,
-      stateDir: stateParent.canonicalPath,
+      stateDir,
       configDir,
       managedMediaRoots: mediaRoots,
       fs,

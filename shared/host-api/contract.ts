@@ -451,7 +451,6 @@ export type AttachmentRemoteRef = AttachmentSourceRef;
 export type AttachmentAccessError =
   | 'invalidReference'
   | 'staleSession'
-  | 'outsideAllowedRoots'
   | 'unavailable'
   | 'notFile'
   | 'unsafeUrl'

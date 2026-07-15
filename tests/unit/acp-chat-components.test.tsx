@@ -483,7 +483,7 @@ describe('ACP chat timeline components', () => {
             attachmentId: 'attachment:msg-a:1:0',
             reference: { uri: 'file:///secret/missing.zip', name: 'missing.zip' },
             source: 'acp-resource',
-            access: { status: 'unavailable', reason: 'outsideAllowedRoots' },
+            access: { status: 'unavailable', reason: 'operationFailed' },
           }],
         },
       },

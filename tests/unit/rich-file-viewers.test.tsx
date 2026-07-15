@@ -84,17 +84,17 @@ describe('rich file viewers', () => {
     ['sheet', 'file.xlsx'],
   ])('routes attachment-scoped %s failures without workspace or naked-path retries', async (kind, fileName) => {
     const attachmentFileRef = { sessionKey: 'agent:main:s1', generation: 2, uri: `file:///secret/${fileName}` };
-    readAttachmentBinary.mockResolvedValueOnce({ ok: false, error: 'outsideAllowedRoots' });
+    readAttachmentBinary.mockResolvedValueOnce({ ok: false, error: 'operationFailed' });
 
     if (kind === 'image') {
       render(<ImageViewer filePath={fileName} fileName={fileName} attachmentFileRef={attachmentFileRef} />);
-      expect(await screen.findByText('Image failed to load: outsideAllowedRoots')).toBeVisible();
+      expect(await screen.findByText('Image failed to load: operationFailed')).toBeVisible();
     } else if (kind === 'PDF') {
-      render(<PdfViewer filePath={fileName} attachmentFileRef={attachmentFileRef} />);
-      expect(await screen.findByText('PDF failed to load: outsideAllowedRoots')).toBeVisible();
+      render(<PdfViewer filePath={fileName} fileName={fileName} attachmentFileRef={attachmentFileRef} />);
+      expect(await screen.findByText('PDF failed to load: operationFailed')).toBeVisible();
     } else {
-      render(<SheetViewer filePath={fileName} attachmentFileRef={attachmentFileRef} />);
-      expect(await screen.findByText('Spreadsheet failed to load: outsideAllowedRoots')).toBeVisible();
+      render(<SheetViewer filePath={fileName} fileName={fileName} attachmentFileRef={attachmentFileRef} />);
+      expect(await screen.findByText('Spreadsheet failed to load: operationFailed')).toBeVisible();
     }
 
     expect(readAttachmentBinary).toHaveBeenCalledWith(attachmentFileRef, 50 * 1024 * 1024);
