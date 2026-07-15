@@ -101,7 +101,7 @@ describe('ACP image-generation compatibility extraction', () => {
           deliveryStatus: 'sent',
           sourceReplySink: 'internal-ui',
           sourceReply: {
-            text: 'Generated image is ready.',
+            text: 'Your sunset over the mountains is ready.',
             mediaUrls: ['/tmp/generated-sky.png'],
           },
         },
@@ -111,11 +111,269 @@ describe('ACP image-generation compatibility extraction', () => {
     expect(evidence).toMatchObject({
       sessionKey: `image_generate:${TASK_ID}`,
       source: 'runtime-event',
-      caption: 'Generated image is ready.',
+      caption: 'Your sunset over the mountains is ready.',
     });
     expect(evidence?.candidates).toEqual([
       { key: '/tmp/generated-sky.png', filePath: '/tmp/generated-sky.png', mimeType: 'image/png' },
     ]);
+  });
+
+  it('extracts authoritative source-reply text from ACP tool output with or without media', () => {
+    const completion = (sourceReply: { text: string; mediaUrls?: string[] }) => extractImageGenerationCompletionFromAcpEnvelope({
+      sessionKey: SESSION_KEY,
+      generation: 1,
+      notification: {
+        sessionId: SESSION_KEY,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'message-tool',
+          status: 'completed',
+          rawOutput: {
+            details: {
+              status: 'ok',
+              deliveryStatus: 'sent',
+              sourceReplySink: 'internal-ui',
+              sourceReply,
+            },
+          },
+        },
+      },
+    });
+
+    expect(completion({
+      text: 'Here is the watercolor skyline you requested.',
+      mediaUrls: ['/tmp/generated-skyline.png'],
+    })).toMatchObject({
+      source: 'acp-session-update',
+      caption: 'Here is the watercolor skyline you requested.',
+      candidates: [{ key: '/tmp/generated-skyline.png' }],
+    });
+    expect(completion({
+      text: 'Image generation failed because no image model is available.',
+    })).toMatchObject({
+      source: 'acp-session-update',
+      caption: 'Image generation failed because no image model is available.',
+      candidates: [],
+    });
+  });
+
+  it('preserves source-reply text exactly and rejects unsuccessful internal-UI deliveries', () => {
+    const completion = (details: Record<string, unknown>) => extractImageGenerationCompletionFromAcpEnvelope({
+      sessionKey: SESSION_KEY,
+      generation: 1,
+      notification: {
+        sessionId: SESSION_KEY,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'message-tool',
+          status: 'completed',
+          rawOutput: { details },
+        },
+      },
+    });
+    const exactText = '  First line\n  indented line  \n';
+
+    expect(completion({
+      status: 'ok',
+      deliveryStatus: 'sent',
+      sourceReplySink: 'internal-ui',
+      sourceReply: { text: exactText },
+    })?.caption).toBe(exactText);
+    expect(completion({
+      status: 'error',
+      deliveryStatus: 'failed',
+      sourceReplySink: 'internal-ui',
+      sourceReply: { text: 'This was not delivered.', mediaUrls: ['/tmp/not-delivered.png'] },
+    })).toBeNull();
+    expect(completion({
+      status: 'ok',
+      deliveryStatus: 'cancelled',
+      sourceReplySink: 'internal-ui',
+      sourceReply: { text: 'This was cancelled.' },
+    })).toBeNull();
+  });
+
+  it('extracts text-only internal-UI failures from runtime message-tool deliveries', () => {
+    const evidence = extractImageGenerationCompletionFromRuntimeEvent({
+      type: 'tool.completed',
+      runId: `image_generate:${TASK_ID}:error`,
+      sessionKey: `image_generate:${TASK_ID}`,
+      toolCallId: 'message-tool',
+      name: 'message',
+      result: {
+        details: {
+          status: 'ok',
+          deliveryStatus: 'sent',
+          sourceReplySink: 'internal-ui',
+          sourceReply: {
+            text: 'Image generation timed out before an image was produced.',
+          },
+        },
+      },
+    });
+
+    expect(evidence).toMatchObject({
+      sessionKey: `image_generate:${TASK_ID}`,
+      source: 'runtime-event',
+      taskId: TASK_ID,
+      caption: 'Image generation timed out before an image was produced.',
+      candidates: [],
+    });
+  });
+
+  it('accepts OpenClaw message-tool delivery details when lifecycle meta is completed', () => {
+    const evidence = extractImageGenerationCompletionFromRuntimeEvent({
+      type: 'tool.completed',
+      runId: `image_generate:${TASK_ID}:ok`,
+      sessionKey: `image_generate:${TASK_ID}`,
+      toolCallId: 'message-tool',
+      name: 'message',
+      meta: { status: 'completed' },
+      result: {
+        details: {
+          deliveryStatus: 'sent',
+          sourceReplySink: 'internal-ui',
+          sourceReply: {
+            text: 'The generated puppy is ready.',
+            mediaUrls: ['/tmp/generated-puppy.png'],
+          },
+        },
+      },
+    });
+
+    expect(evidence).toMatchObject({
+      taskId: TASK_ID,
+      caption: 'The generated puppy is ready.',
+      candidates: [{ key: '/tmp/generated-puppy.png' }],
+    });
+  });
+
+  it('extracts final assistant text from a correlated image-generation completion run', () => {
+    expect(extractImageGenerationCompletionFromRuntimeEvent({
+      type: 'assistant.delta',
+      runId: `image_generate:${TASK_ID}:error`,
+      sessionKey: SESSION_KEY,
+      phase: 'final_answer',
+      text: '抱歉，这次小猫图生成失败了：当前图像生成模型通道不可用。',
+    })).toMatchObject({
+      taskId: TASK_ID,
+      caption: '抱歉，这次小猫图生成失败了：当前图像生成模型通道不可用。',
+      authoritativeCaption: true,
+      candidates: [],
+    });
+  });
+
+  it('extracts final Gateway assistant MEDIA replies from a correlated completion run', () => {
+    const evidence = extractImageGenerationCompletionFromGatewayChatMessage({
+      message: {
+        runId: `image_generate:${TASK_ID}:ok`,
+        sessionKey: SESSION_KEY,
+        state: 'final',
+        message: {
+          role: 'assistant',
+          content: [{
+            type: 'text',
+            text: '生成好了 🐶\n\nMEDIA:/tmp/generated-puppy.png',
+          }],
+        },
+      },
+    });
+
+    expect(evidence).toMatchObject({
+      taskId: TASK_ID,
+      caption: '生成好了 🐶',
+      authoritativeCaption: true,
+      candidates: [{ key: '/tmp/generated-puppy.png' }],
+    });
+    expect(extractImageGenerationCompletionFromGatewayChatMessage({
+      message: {
+        runId: `image_generate:${TASK_ID}:ok`,
+        sessionKey: SESSION_KEY,
+        state: 'final',
+        message: {
+          role: 'assistant',
+          content: [{
+            type: 'text',
+            text: '  橘子来了~MEDIA:/tmp/generated-orange.png',
+          }],
+        },
+      },
+    })).toMatchObject({
+      caption: '  橘子来了~',
+      candidates: [{ key: '/tmp/generated-orange.png' }],
+    });
+  });
+
+  it('rejects failed runtime deliveries and text-only assistant deltas', () => {
+    expect(extractImageGenerationCompletionFromRuntimeEvent({
+      type: 'tool.completed',
+      runId: `image_generate:${TASK_ID}:error`,
+      sessionKey: `image_generate:${TASK_ID}`,
+      toolCallId: 'message-tool',
+      name: 'message',
+      isError: true,
+      result: {
+        details: {
+          status: 'error',
+          deliveryStatus: 'not-sent',
+          sourceReplySink: 'internal-ui',
+          sourceReply: { text: 'Not delivered.', mediaUrls: ['/tmp/not-delivered.png'] },
+        },
+      },
+    })).toBeNull();
+    expect(extractImageGenerationCompletionFromRuntimeEvent({
+      type: 'assistant.delta',
+      runId: `image_generate:${TASK_ID}:error`,
+      sessionKey: SESSION_KEY,
+      text: 'Partial untrusted completion text',
+    })).toBeNull();
+    expect(extractImageGenerationCompletionFromRuntimeEvent({
+      type: 'tool.completed',
+      runId: `image_generate:${TASK_ID}:error`,
+      sessionKey: `image_generate:${TASK_ID}`,
+      toolCallId: 'message-tool',
+      name: 'message',
+      result: {
+        details: {
+          status: 'ok',
+          deliveryStatus: 'timeout',
+          sourceReplySink: 'internal-ui',
+          sourceReply: { mediaUrls: ['/tmp/timed-out.png'] },
+        },
+      },
+    })).toBeNull();
+    expect(extractImageGenerationCompletionFromGatewayChatMessage({
+      message: {
+        sessionKey: `image_generate:${TASK_ID}`,
+        state: 'final',
+        runId: `image_generate:${TASK_ID}:error`,
+        message: {
+          role: 'toolresult',
+          toolName: 'message',
+          details: {
+            status: 'rejected',
+            deliveryStatus: 'sent',
+            sourceReplySink: 'internal-ui',
+            sourceReply: { mediaUrls: ['/tmp/rejected.png'] },
+          },
+        },
+      },
+    })).toBeNull();
+    expect(extractImageGenerationCompletionFromGatewayChatMessage({
+      message: {
+        sessionKey: `image_generate:${TASK_ID}`,
+        state: 'final',
+        runId: `image_generate:${TASK_ID}:error`,
+        message: {
+          role: 'toolresult',
+          toolName: 'message',
+          details: {
+            status: 'error',
+            mediaUrls: ['/tmp/unconfirmed-error.png'],
+          },
+        },
+      },
+    })).toBeNull();
   });
 
   it('extracts historical ACP image-generation media from assistant MEDIA text', () => {
@@ -184,7 +442,7 @@ describe('ACP image-generation compatibility extraction', () => {
       sessionKey: SESSION_KEY,
       source: 'transcript-history',
       historical: true,
-      caption: 'Generated image is ready.',
+      caption: '图片生成完成！',
     });
     expect(supplement.completions[0]?.candidates).toEqual([
       {
@@ -192,6 +450,119 @@ describe('ACP image-generation compatibility extraction', () => {
         filePath: '/Users/me/.openclaw/media/tool-image-generation/clawx-image-1.png',
         mimeType: 'image/png',
       },
+    ]);
+  });
+
+  it('extracts text-only internal-UI failures from transcript fallback after an image_generate start', () => {
+    const supplement = extractImageGenerationTranscriptSupplement([
+      {
+        role: 'toolresult',
+        toolCallId: 'tool-image',
+        toolName: 'image_generate',
+        content: `Background task started for image generation (${TASK_ID}).`,
+        details: { taskId: TASK_ID },
+      },
+      {
+        role: 'toolresult',
+        id: 'message-delivery-failure',
+        toolCallId: 'message-tool',
+        toolName: 'message',
+        content: 'Sent visible reply to the current source conversation via internal-ui.',
+        details: {
+          status: 'ok',
+          deliveryStatus: 'sent',
+          sourceReplySink: 'internal-ui',
+          sourceReply: {
+            text: 'Image generation failed because the provider returned no images.',
+          },
+        },
+      },
+    ], SESSION_KEY);
+
+    expect(supplement.completions).toEqual([
+      expect.objectContaining({
+        taskId: TASK_ID,
+        toolCallId: 'tool-image',
+        caption: 'Image generation failed because the provider returned no images.',
+        candidates: [],
+      }),
+    ]);
+  });
+
+  it('does not associate transcript MEDIA evidence across user-turn boundaries', () => {
+    const supplement = extractImageGenerationTranscriptSupplement([
+      {
+        role: 'toolresult',
+        toolCallId: 'tool-image',
+        toolName: 'image_generate',
+        content: `Background task started for image generation (${TASK_ID}).`,
+        details: { taskId: TASK_ID },
+      },
+      { role: 'user', content: 'A different request' },
+      {
+        role: 'assistant',
+        id: 'unrelated-media',
+        content: 'MEDIA:/tmp/unrelated.png',
+      },
+    ], SESSION_KEY);
+
+    expect(supplement.starts).toHaveLength(1);
+    expect(supplement.completions).toEqual([]);
+  });
+
+  it('keeps internal image-completion triggers in the originating transcript turn', () => {
+    const failure = extractImageGenerationTranscriptSupplement([
+      { role: 'user', content: '生成一张小猫图' },
+      {
+        role: 'toolresult',
+        toolCallId: 'tool-image',
+        toolName: 'image_generate',
+        content: `Background task started for image generation (${TASK_ID}).`,
+        details: { taskId: TASK_ID },
+      },
+      {
+        role: 'user',
+        content: `[Inter-session message] sourceSession=image_generate:${TASK_ID} sourceChannel=webchat sourceTool=image_generate isUser=false\n[Internal task completion event]\nstatus: failed`,
+      },
+      {
+        role: 'assistant',
+        id: 'kitten-failure',
+        content: '抱歉，这次小猫图生成失败了：当前图像生成模型通道不可用。',
+      },
+    ], SESSION_KEY);
+    const success = extractImageGenerationTranscriptSupplement([
+      { role: 'user', content: '生成一张小狗图' },
+      {
+        role: 'toolresult',
+        toolCallId: 'tool-image',
+        toolName: 'image_generate',
+        content: `Background task started for image generation (${TASK_ID}).`,
+        details: { taskId: TASK_ID },
+      },
+      {
+        role: 'user',
+        content: `[Inter-session message] sourceSession=image_generate:${TASK_ID} sourceChannel=webchat sourceTool=image_generate isUser=false\n[Internal task completion event]\nstatus: completed successfully`,
+      },
+      {
+        role: 'assistant',
+        id: 'puppy-success',
+        content: '生成好了 🐶\n\nMEDIA:/tmp/generated-puppy.png',
+      },
+    ], SESSION_KEY);
+
+    expect(failure.completions).toEqual([
+      expect.objectContaining({
+        taskId: TASK_ID,
+        caption: '抱歉，这次小猫图生成失败了：当前图像生成模型通道不可用。',
+        candidates: [],
+      }),
+    ]);
+    expect(success.completions).toEqual([
+      expect.objectContaining({
+        taskId: TASK_ID,
+        caption: '生成好了 🐶',
+        candidates: [expect.objectContaining({ key: '/tmp/generated-puppy.png' })],
+      }),
     ]);
   });
 
@@ -347,5 +718,42 @@ describe('ACP image-generation compatibility extraction', () => {
     expect(collisionEvidenceA).not.toBeNull();
     expect(collisionEvidenceB).not.toBeNull();
     expect(imageGenerationEvidenceKey(collisionEvidenceA!)).not.toBe(imageGenerationEvidenceKey(collisionEvidenceB!));
+
+    const gatewayFailure = extractImageGenerationCompletionFromGatewayChatMessage({
+      message: {
+        sessionKey: `image_generate:${TASK_ID}`,
+        state: 'final',
+        runId: `image_generate:${TASK_ID}:error`,
+        message: {
+          role: 'toolresult',
+          toolName: 'message',
+          details: {
+            status: 'ok',
+            deliveryStatus: 'sent',
+            sourceReplySink: 'internal-ui',
+            sourceReply: { text: 'Image generation failed.' },
+          },
+        },
+      },
+    });
+    const runtimeFailure = extractImageGenerationCompletionFromRuntimeEvent({
+      type: 'tool.completed',
+      runId: `image_generate:${TASK_ID}:error`,
+      sessionKey: `image_generate:${TASK_ID}`,
+      toolCallId: 'message-tool',
+      name: 'message',
+      result: {
+        details: {
+          status: 'ok',
+          deliveryStatus: 'sent',
+          sourceReplySink: 'internal-ui',
+          sourceReply: { text: 'Image generation failed.' },
+        },
+      },
+    });
+
+    expect(gatewayFailure).not.toBeNull();
+    expect(runtimeFailure).not.toBeNull();
+    expect(imageGenerationEvidenceKey(gatewayFailure!)).toBe(imageGenerationEvidenceKey(runtimeFailure!));
   });
 });

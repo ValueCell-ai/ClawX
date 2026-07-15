@@ -45,6 +45,7 @@ import type { AcpTimelineSnapshot, MessageSegmentItem, PermissionItem, RenderPar
 const EMPTY_SESSION_ID = '';
 const CANCEL_PERMISSION_OPTION_ID = '__cancelled__';
 const IMAGE_GENERATION_COMPAT_WINDOW_MS = 195_000;
+const IMAGE_GENERATION_TRANSCRIPT_RETRY_DELAYS_MS = [1500, 3000, 5000, 8000, 13_000, 21_000, 30_000, 30_000, 30_000, 30_000];
 
 type ImageGenerationCompatSession = {
   taskStartedAt: number;
@@ -55,8 +56,11 @@ type ImageGenerationCompatSession = {
   replayTaskToolCallIds: Map<string, string>;
   lastTaskToolCallId?: string;
   lastReplayToolCallId?: string;
+  lastTaskId?: string;
+  lastReplayTaskId?: string;
   delivered: Set<string>;
   reservations: Map<string, string>;
+  authoritativeCaptions: Map<string, { text: string; priority: number }>;
 };
 
 const imageGenerationCompatSessions = new Map<string, ImageGenerationCompatSession>();
@@ -69,6 +73,11 @@ type TranscriptSupplementOperation = {
   sessionKey: string;
   generation: number;
   attempt: number;
+  retryIndex: number;
+  imageTaskIds: Set<string>;
+  completedTaskIds: Set<string>;
+  started: boolean;
+  terminal: boolean;
   liveUserMessageId?: string;
   retryTimer?: ReturnType<typeof setTimeout>;
 };
@@ -141,6 +150,7 @@ function compatSession(sessionKey: string): ImageGenerationCompatSession {
     replayTaskToolCallIds: new Map<string, string>(),
     delivered: new Set<string>(),
     reservations: new Map<string, string>(),
+    authoritativeCaptions: new Map<string, { text: string; priority: number }>(),
   };
   imageGenerationCompatSessions.set(sessionKey, created);
   return created;
@@ -156,6 +166,22 @@ function invalidateTranscriptSupplement(): void {
   activeTranscriptSupplement = null;
 }
 
+function stopLiveTranscriptSupplementRetry(sessionKey: string, generation: number, taskId?: string): void {
+  const operation = activeTranscriptSupplement;
+  if (
+    !operation?.liveUserMessageId
+    || operation.sessionKey !== sessionKey
+    || operation.generation !== generation
+    || !taskId
+    || !operation.imageTaskIds.has(taskId)
+  ) return;
+  operation.completedTaskIds.add(taskId);
+  if ([...operation.imageTaskIds].some((id) => !operation.completedTaskIds.has(id))) return;
+  operation.terminal = true;
+  if (operation.retryTimer) clearTimeout(operation.retryTimer);
+  operation.retryTimer = undefined;
+}
+
 function beginTranscriptSupplement(
   sessionKey: string,
   generation: number,
@@ -167,6 +193,11 @@ function beginTranscriptSupplement(
     sessionKey,
     generation,
     attempt: 0,
+    retryIndex: 0,
+    imageTaskIds: new Set<string>(),
+    completedTaskIds: new Set<string>(),
+    started: false,
+    terminal: false,
     ...(liveUserMessageId ? { liveUserMessageId } : {}),
   };
   activeTranscriptSupplement = operation;
@@ -238,15 +269,20 @@ function resolveImageGenerationProjectionSession(
 ): string | null {
   const activeSessionKey = state.activeSessionKey;
   if (!activeSessionKey) return null;
-  if (!evidence.sessionKey || evidence.sessionKey === activeSessionKey) return activeSessionKey;
-
-  const taskId = imageGenerationTaskIdFromSessionKey(evidence.sessionKey);
-  if (!taskId) return null;
   const session = imageGenerationCompatSessions.get(activeSessionKey);
-  const taskIds = evidence.source === 'acp-session-update' && evidence.historical
+  const taskIds = usesReplayImageGenerationContext(evidence)
     ? session?.replayTaskIds
     : session?.taskIds;
-  return taskIds?.has(taskId) ? activeSessionKey : null;
+  const taskId = evidence.taskId ?? imageGenerationTaskIdFromSessionKey(evidence.sessionKey);
+  if (taskId) return taskIds?.has(taskId) ? activeSessionKey : null;
+  if (!evidence.sessionKey || evidence.sessionKey === activeSessionKey) return activeSessionKey;
+  return null;
+}
+
+function imageGenerationCaptionPriority(source: ImageGenerationCompletionEvidence['source']): number {
+  if (source === 'acp-session-update') return 3;
+  if (source === 'transcript-history') return 1;
+  return 2;
 }
 
 function usesReplayImageGenerationContext(evidence: ImageGenerationCompletionEvidence): boolean {
@@ -259,12 +295,15 @@ function recordImageGenerationStartAnchor(
   start: ImageGenerationTaskStart,
   replay: boolean,
 ): void {
-  if (!start.toolCallId) return;
   if (replay) {
+    session.lastReplayTaskId = start.taskId;
+    if (!start.toolCallId) return;
     session.replayTaskToolCallIds.set(start.taskId, start.toolCallId);
     session.lastReplayToolCallId = start.toolCallId;
     return;
   }
+  session.lastTaskId = start.taskId;
+  if (!start.toolCallId) return;
   session.taskToolCallIds.set(start.taskId, start.toolCallId);
   session.lastTaskToolCallId = start.toolCallId;
 }
@@ -349,6 +388,55 @@ function messageIdFromEvidence(key: string): string {
     encoded.push(key.charCodeAt(index).toString(16).padStart(4, '0'));
   }
   return `compat:image-generation:${encoded.join('')}`;
+}
+
+function replaceSyntheticImageCaptionAtItem(
+  timeline: AcpTimelineSnapshot,
+  itemId: string,
+  caption: string,
+): AcpTimelineSnapshot {
+  const item = timeline.itemsById[itemId];
+  if (item?.kind !== 'message-segment' || item.compat?.source !== 'image-generation') return timeline;
+  const markdownIndex = item.parts.findIndex((part) => part.kind === 'markdown');
+  const parts = markdownIndex < 0
+    ? [{ kind: 'markdown' as const, text: caption }, ...item.parts]
+    : item.parts.map((part, index) => (
+        index === markdownIndex ? { kind: 'markdown' as const, text: caption } : part
+      ));
+  return {
+    ...timeline,
+    itemsById: {
+      ...timeline.itemsById,
+      [itemId]: { ...item, parts },
+    },
+  };
+}
+
+function replaceSyntheticImageCaption(
+  timeline: AcpTimelineSnapshot,
+  key: string,
+  caption: string,
+): AcpTimelineSnapshot {
+  return replaceSyntheticImageCaptionAtItem(timeline, `${messageIdFromEvidence(key)}:0`, caption);
+}
+
+function matchingSyntheticImageItemId(
+  timeline: AcpTimelineSnapshot,
+  imageParts: RenderPart[],
+): string | undefined {
+  const identities = imageParts.flatMap((part) => (
+    part.kind === 'image' && part.mediaIdentity ? [part.mediaIdentity] : []
+  )).sort();
+  if (identities.length === 0) return undefined;
+  const identityKey = JSON.stringify(identities);
+  return timeline.itemOrder.find((itemId) => {
+    const item = timeline.itemsById[itemId];
+    if (item?.kind !== 'message-segment' || item.compat?.source !== 'image-generation') return false;
+    const existingIdentities = item.parts.flatMap((part) => (
+      part.kind === 'image' && part.mediaIdentity ? [part.mediaIdentity] : []
+    )).sort();
+    return JSON.stringify(existingIdentities) === identityKey;
+  });
 }
 
 function isCurrentAction(
@@ -525,15 +613,37 @@ function startHistoricalTranscriptSupplement(sessionKey: string, generation: num
   void runTranscriptSupplement(operation);
 }
 
-function startLiveTranscriptSupplement(sessionKey: string, generation: number, userMessageId: string): void {
-  const operation = beginTranscriptSupplement(sessionKey, generation, userMessageId);
-  void runTranscriptSupplement(operation);
+function scheduleLiveTranscriptSupplement(operation: TranscriptSupplementOperation): void {
+  if (
+    operation.retryTimer
+    || operation.terminal
+    || !isCurrentTranscriptSupplement(useAcpChatSessionStore.getState(), operation)
+  ) return;
+  const hasImageTask = operation.imageTaskIds.size > 0;
+  if (!hasImageTask && operation.retryIndex > 0) return;
+  const delay = IMAGE_GENERATION_TRANSCRIPT_RETRY_DELAYS_MS[operation.retryIndex];
+  if (delay === undefined) {
+    operation.terminal = true;
+    return;
+  }
+  operation.retryIndex += 1;
   operation.retryTimer = setTimeout(() => {
     operation.retryTimer = undefined;
-    if (isCurrentTranscriptSupplement(useAcpChatSessionStore.getState(), operation)) {
-      void runTranscriptSupplement(operation);
-    }
-  }, 1500);
+    void runLiveTranscriptSupplement(operation);
+    scheduleLiveTranscriptSupplement(operation);
+  }, delay);
+}
+
+async function runLiveTranscriptSupplement(operation: TranscriptSupplementOperation): Promise<void> {
+  if (operation.terminal || !isCurrentTranscriptSupplement(useAcpChatSessionStore.getState(), operation)) return;
+  await runTranscriptSupplement(operation);
+}
+
+function startLiveTranscriptSupplement(operation: TranscriptSupplementOperation): void {
+  operation.started = true;
+  if (operation.terminal) return;
+  void runLiveTranscriptSupplement(operation);
+  scheduleLiveTranscriptSupplement(operation);
 }
 
 function newPendingAttachments(
@@ -846,10 +956,10 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     const sessionKey = input.sessionKey;
     const generation = startState.generation;
     if (startState.activeSessionKey !== sessionKey) return false;
-    invalidateTranscriptSupplement();
 
     const messageId = input.messageId ?? createOptimisticMessageId();
     const payload = { ...input, messageId };
+    const transcriptOperation = beginTranscriptSupplement(sessionKey, generation, messageId);
 
     set((state) => (
       isCurrentAction(state, sessionKey, generation)
@@ -883,12 +993,21 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       });
       if (result.success) {
         const current = get();
-        if (current.activeSessionKey === sessionKey) {
-          startLiveTranscriptSupplement(sessionKey, current.generation, messageId);
+        if (
+          current.activeSessionKey === sessionKey
+          && current.generation === transcriptOperation.generation
+          && isCurrentTranscriptSupplement(current, transcriptOperation)
+        ) {
+          startLiveTranscriptSupplement(transcriptOperation);
+        } else if (activeTranscriptSupplement === transcriptOperation) {
+          invalidateTranscriptSupplement();
         }
+      } else if (activeTranscriptSupplement === transcriptOperation) {
+        invalidateTranscriptSupplement();
       }
       return result.success;
     } catch (error) {
+      if (activeTranscriptSupplement === transcriptOperation) invalidateTranscriptSupplement();
       set((state) => (
         isCurrentAction(state, sessionKey, generation)
           ? {
@@ -991,6 +1110,23 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       session.taskStartedAt = Date.now();
       session.taskIds.add(start.taskId);
       recordImageGenerationStartAnchor(session, start, false);
+      const operation = activeTranscriptSupplement;
+      if (
+        operation?.liveUserMessageId
+        && operation.sessionKey === start.sessionKey
+        && operation.generation === event.generation
+      ) {
+        const isNewTask = !operation.imageTaskIds.has(start.taskId);
+        operation.imageTaskIds.add(start.taskId);
+        if (isNewTask && operation.terminal) {
+          operation.terminal = false;
+          operation.retryIndex = 0;
+        }
+        if (operation.started && !operation.retryTimer) {
+          void runLiveTranscriptSupplement(operation);
+          scheduleLiveTranscriptSupplement(operation);
+        }
+      }
     }
   },
 
@@ -1037,7 +1173,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       });
       return;
     }
-    if (evidence.candidates.length === 0) {
+    if (evidence.candidates.length === 0 && !evidence.authoritativeCaption) {
       recordProjectionTrace({
         event: 'image-generation:projection-rejected',
         sessionKey,
@@ -1048,15 +1184,38 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     }
 
     const generation = state.generation;
-    const key = imageGenerationEvidenceKey({ ...evidence, sessionKey });
+    const compat = compatSession(sessionKey);
+    const correlatedTaskId = evidence.taskId
+      ?? imageGenerationTaskIdFromSessionKey(evidence.sessionKey)
+      ?? (usesReplayImageGenerationContext(evidence) ? compat.lastReplayTaskId : compat.lastTaskId);
+    const key = imageGenerationEvidenceKey({
+      ...evidence,
+      sessionKey,
+      ...(correlatedTaskId ? { taskId: correlatedTaskId } : {}),
+    });
+    if (evidence.authoritativeCaption) {
+      const captions = compat.authoritativeCaptions;
+      const next = { text: evidence.caption, priority: imageGenerationCaptionPriority(evidence.source) };
+      const previous = captions.get(key);
+      if (!previous || next.priority > previous.priority) captions.set(key, next);
+    }
     const reservationOwner = options?.reservationOwner ?? `projection:${imageProjectionSeq += 1}`;
     if (!reserveDelivery(sessionKey, key, reservationOwner, Boolean(options?.reservationOwner))) {
+      if (evidence.authoritativeCaption) {
+        const preferredCaption = compatSession(sessionKey).authoritativeCaptions.get(key)?.text ?? evidence.caption;
+        set((current) => ({
+          timeline: replaceSyntheticImageCaption(current.timeline, key, preferredCaption),
+        }));
+      }
       recordProjectionTrace({
         event: 'image-generation:projection-deduped',
         sessionKey,
         generation,
         details: projectionTraceDetails(evidence),
       });
+      if (compat.delivered.has(key)) {
+        stopLiveTranscriptSupplementRetry(sessionKey, generation, correlatedTaskId);
+      }
       return;
     }
 
@@ -1186,11 +1345,38 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
 
     const missingCount = unresolvedCandidateCount + resolvedCandidates.length - imageParts.length;
     if (missingCount > 0) releaseDelivery(sessionKey, key, reservationOwner);
-    const caption = imageParts.length === 0
-      ? i18n.t('chat:imageGeneration.previewUnavailable')
-      : missingCount > 0
-        ? i18n.t('chat:imageGeneration.generatedReadyWithMissing')
-        : i18n.t('chat:imageGeneration.generatedReady');
+    const authoritativeCaption = imageGenerationCompatSessions.get(sessionKey)?.authoritativeCaptions.get(key)?.text;
+    const caption = authoritativeCaption
+      ? authoritativeCaption
+      : imageParts.length === 0
+        ? i18n.t('chat:imageGeneration.previewUnavailable')
+        : missingCount > 0
+          ? i18n.t('chat:imageGeneration.generatedReadyWithMissing')
+          : i18n.t('chat:imageGeneration.generatedReady');
+    const duplicateItemId = matchingSyntheticImageItemId(latest.timeline, imageParts);
+    if (duplicateItemId) {
+      const existingItem = latest.timeline.itemsById[duplicateItemId];
+      const existingKey = existingItem?.kind === 'message-segment' ? existingItem.compat?.evidenceId : undefined;
+      const captions = imageGenerationCompatSessions.get(sessionKey)?.authoritativeCaptions;
+      const currentCaption = captions?.get(key);
+      const existingCaption = existingKey ? captions?.get(existingKey) : undefined;
+      if (existingKey && currentCaption && (!existingCaption || currentCaption.priority > existingCaption.priority)) {
+        captions?.set(existingKey, currentCaption);
+        set((current) => ({
+          timeline: replaceSyntheticImageCaptionAtItem(current.timeline, duplicateItemId, currentCaption.text),
+        }));
+      }
+      if (missingCount === 0) commitDelivery(sessionKey, key, reservationOwner);
+      else releaseDelivery(sessionKey, key, reservationOwner);
+      recordProjectionTrace({
+        event: 'image-generation:projection-deduped',
+        sessionKey,
+        generation,
+        details: projectionTraceDetails(evidence, { reason: 'resolved-media-identity' }),
+      });
+      stopLiveTranscriptSupplementRetry(sessionKey, generation, correlatedTaskId);
+      return;
+    }
     const parts: RenderPart[] = [{ kind: 'markdown', text: caption }, ...imageParts];
     const afterItemId = imageGenerationAnchorItemId(latest, sessionKey, evidence);
 
@@ -1212,6 +1398,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       generation,
       details: projectionTraceDetails(evidence, { imageCount: imageParts.length, missingCount }),
     });
+    stopLiveTranscriptSupplementRetry(sessionKey, generation, correlatedTaskId);
   },
 
   applyUpdateEnvelope(event) {

@@ -65,6 +65,16 @@ function normalizeUserText(text: string): string {
     .trim();
 }
 
+function isInternalInterSessionUser(message: RawMessage): boolean {
+  if (typeof message.role !== 'string' || message.role.toLowerCase() !== 'user') return false;
+  const provenance = message as RawMessage & { provenance?: unknown };
+  if (provenance.provenance && typeof provenance.provenance === 'object') {
+    const kind = (provenance.provenance as Record<string, unknown>).kind;
+    if (typeof kind === 'string' && kind.toLowerCase() === 'inter_session') return true;
+  }
+  return /^\[Inter-session message\]\s/.test(textFromContent(message.content));
+}
+
 function parseDirectiveReference(line: string, executionCwd: string): string | null {
   const match = line.match(/^\s*MEDIA:\s*(.*?)\s*$/i);
   if (!match) return null;
@@ -145,6 +155,7 @@ export function extractOpenClawMediaTurns(
   for (const message of messages) {
     const role = typeof message.role === 'string' ? message.role.toLowerCase() : '';
     if (role === 'user') {
+      if (isInternalInterSessionUser(message)) continue;
       current = {
         normalizedUserText: normalizeUserText(textFromContent(message.content)),
         candidates: [],
@@ -233,7 +244,7 @@ export function selectOpenClawTranscriptTurn(
   let current: { normalizedUserText: string; messages: RawMessage[] } | null = null;
   for (const message of messages) {
     const role = typeof message.role === 'string' ? message.role.toLowerCase() : '';
-    if (role === 'user') {
+    if (role === 'user' && !isInternalInterSessionUser(message)) {
       current = {
         normalizedUserText: normalizeUserText(textFromContent(message.content)),
         messages: [message],

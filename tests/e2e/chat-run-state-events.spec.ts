@@ -102,15 +102,15 @@ async function installAcpChatMocks(
   });
 }
 
-async function emitChatRuntimeEvent(
+async function emitGatewayChatMessage(
   app: ElectronApplication,
   payload: Record<string, unknown>,
 ) {
   await app.evaluate(
-    async ({ app: _app }, runtimePayload) => {
+    async ({ app: _app }, chatPayload) => {
       const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
       for (const window of BrowserWindow.getAllWindows()) {
-        window.webContents.send('chat:runtime-event', runtimePayload);
+        window.webContents.send('gateway:chat-message', chatPayload);
       }
     },
     payload,
@@ -310,32 +310,72 @@ test.describe('ClawX chat run state events', () => {
       await expect(timeline).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('acp-tool-call-card')).toContainText('Background task started for image generation');
 
-      await emitChatRuntimeEvent(app, {
-        type: 'tool.completed',
-        sessionKey: `image_generate:${IMAGE_GENERATION_TASK_ID}`,
-        runId: `image_generate:${IMAGE_GENERATION_TASK_ID}:ok`,
-        toolCallId: 'message-tool',
-        name: 'message',
-        result: {
-          details: {
-            status: 'ok',
-            deliveryStatus: 'sent',
-            sourceReplySink: 'internal-ui',
-            sourceReply: {
-              text: 'Generated image is ready.',
-              mediaUrls: [generatedPath],
-            },
+      await emitGatewayChatMessage(app, {
+        message: {
+          runId: `image_generate:${IMAGE_GENERATION_TASK_ID}:ok`,
+          sessionKey: MAIN_SESSION_KEY,
+          state: 'final',
+          message: {
+            role: 'assistant',
+            content: [{
+              type: 'text',
+              text: `Here is the exact sky scene you requested.\n\nMEDIA:${generatedPath}`,
+            }],
           },
         },
       });
 
-      await expect(page.getByText('Generated image is ready.')).toBeVisible();
+      await expect(page.getByText('Here is the exact sky scene you requested.')).toBeVisible();
       await expect(timeline.getByTestId('acp-image-part')).toBeVisible();
       const image = timeline.getByRole('img', { name: 'Image' });
       await expect(image).toBeVisible();
       await expect(image).toHaveAttribute('src', ONE_PIXEL_PNG_DATA_URL);
       await expect(page.getByTestId('image-preview-unavailable')).toHaveCount(0);
       await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('projects OpenClaw image-generation failures as ACP Chat replies', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installAcpChatMocks(app, { success: true, generation: 1 });
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'image-tool',
+        status: 'completed',
+        content: [{
+          type: 'content',
+          content: {
+            type: 'text',
+            text: `Background task started for image generation (${IMAGE_GENERATION_TASK_ID}).`,
+          },
+        }],
+        locations: [],
+      }]);
+
+      await emitGatewayChatMessage(app, {
+        message: {
+          runId: `image_generate:${IMAGE_GENERATION_TASK_ID}:error`,
+          sessionKey: MAIN_SESSION_KEY,
+          state: 'final',
+          message: {
+            role: 'assistant',
+            content: [{
+              type: 'text',
+              text: 'Image generation failed because no image model is available.',
+            }],
+          },
+        },
+      });
+
+      await expect(page.getByText('Image generation failed because no image model is available.')).toBeVisible();
+      await expect(page.getByTestId('acp-image-part')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
