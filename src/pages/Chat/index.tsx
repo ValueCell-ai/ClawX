@@ -166,6 +166,7 @@ export function Chat() {
   const acpCancelling = useAcpChatSessionStore((s) => s.cancelling);
   const acpError = useAcpChatSessionStore((s) => s.error);
   const acpActiveSessionKey = useAcpChatSessionStore((s) => s.activeSessionKey);
+  const acpWorkspaceRoot = useAcpChatSessionStore((s) => s.workspaceRoot);
   const acpCwd = useAcpChatSessionStore((s) => s.cwd);
   const prepareLocalAcpSession = useAcpChatSessionStore((s) => s.prepareLocalSession);
   const loadAcpSession = useAcpChatSessionStore((s) => s.loadSession);
@@ -198,7 +199,6 @@ export function Chat() {
     : null;
 
   useEffect(() => {
-    setResolvedWorkspaceContext(null);
     if (!workspaceContextKey || !currentSessionKey || !cwd || !projectionExecutionCwd) return;
     let stale = false;
     void hostApi.files.resolveWorkspaceContext({
@@ -233,15 +233,16 @@ export function Chat() {
 
   useEffect(() => {
     if (!currentSessionKey || !cwd || !currentSession?.createdLocally) return;
+    acpLoadInFlightKeyRef.current = null;
     const hasStaleTimeline = acpTimeline.sessionId !== currentSessionKey || acpTimeline.itemOrder.length > 0;
-    if (acpActiveSessionKey === currentSessionKey && acpCwd === cwd && !hasStaleTimeline) return;
-    prepareLocalAcpSession({ sessionKey: currentSessionKey, cwd });
-  }, [acpActiveSessionKey, acpCwd, acpTimeline.itemOrder.length, acpTimeline.sessionId, currentSession, currentSessionKey, cwd, prepareLocalAcpSession]);
+    if (acpActiveSessionKey === currentSessionKey && acpWorkspaceRoot === cwd && acpCwd === cwd && !hasStaleTimeline) return;
+    prepareLocalAcpSession({ sessionKey: currentSessionKey, workspaceRoot: cwd, cwd });
+  }, [acpActiveSessionKey, acpCwd, acpTimeline.itemOrder.length, acpTimeline.sessionId, acpWorkspaceRoot, currentSession, currentSessionKey, cwd, prepareLocalAcpSession]);
 
   useEffect(() => {
     if (!currentSessionKey || !cwd) return;
     if (currentSessionKey === DEFAULT_SESSION_KEY && sessions.length === 0 && acpActiveSessionKey == null && !sessionDiscoveryAttempted) return;
-    if (acpActiveSessionKey === currentSessionKey && acpCwd === cwd) return;
+    if (acpActiveSessionKey === currentSessionKey && acpWorkspaceRoot === cwd && acpCwd === cwd) return;
     const acpLoadKey = `${currentSessionKey}\0${cwd}`;
     if (acpLoadInFlightKeyRef.current === acpLoadKey) return;
     const currentSession = sessions.find((session) => session.key === currentSessionKey);
@@ -250,6 +251,7 @@ export function Chat() {
     acpLoadInFlightKeyRef.current = acpLoadKey;
     void loadAcpSession({
       sessionKey: currentSessionKey,
+      workspaceRoot: cwd,
       cwd,
       ...(createIfMissing ? { createIfMissing: true } : {}),
     }).then((loaded) => {
@@ -261,7 +263,7 @@ export function Chat() {
         acpLoadInFlightKeyRef.current = null;
       }
     });
-  }, [acknowledgeAcpSessionCreated, acpActiveSessionKey, acpCwd, currentSessionKey, cwd, loadAcpSession, sessionDiscoveryAttempted, sessions]);
+  }, [acknowledgeAcpSessionCreated, acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSessionKey, cwd, loadAcpSession, sessionDiscoveryAttempted, sessions]);
 
   const platform = window.electron?.platform;
   const isMac = platform === 'darwin';
@@ -288,17 +290,14 @@ export function Chat() {
     });
   }, [acpActiveSessionKey, acpTimeline, currentSessionKey, resolvedWorkspaceContext, workspaceContextKey]);
   const questionDirectoryItems = useMemo(() => {
-    let ordinal = 0;
-    return acpTimeline.itemOrder.flatMap((itemId) => {
-      const item = acpTimeline.itemsById[itemId];
-      if (item?.kind !== 'message-segment' || item.role !== 'user') return [];
-      ordinal += 1;
-      return [{
-        itemId: item.id,
-        anchorId: getAcpUserMessageAnchorId(item.id),
-        title: buildQuestionDirectoryTitle(item, t('questionDirectory.fallback', { number: ordinal })),
-      }];
-    });
+    const userItems = acpTimeline.itemOrder
+      .map((itemId) => acpTimeline.itemsById[itemId])
+      .filter((item): item is MessageSegmentItem => item?.kind === 'message-segment' && item.role === 'user');
+    return userItems.map((item, index) => ({
+      itemId: item.id,
+      anchorId: getAcpUserMessageAnchorId(item.id),
+      title: buildQuestionDirectoryTitle(item, t('questionDirectory.fallback', { number: index + 1 })),
+    }));
   }, [acpTimeline, t]);
   const questionDirectoryVisible = questionDirectoryOpenSessionKey === currentSessionKey
     && questionDirectoryItems.length > 1;
@@ -346,7 +345,9 @@ export function Chat() {
                     <AcpTimeline
                       snapshot={acpTimeline}
                       fileActivity={fileActivity}
-                      workspaceRoot={resolvedWorkspaceContext?.workspaceRoot}
+                      workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey
+                        ? resolvedWorkspaceContext.workspaceRoot
+                        : undefined}
                       onPermissionSelect={(requestId, optionId) => {
                         void respondAcpPermission(requestId, optionId);
                       }}
@@ -389,6 +390,7 @@ export function Chat() {
               ?.filter((file) => file.status === 'ready')
               .map((file) => ({
                 filePath: file.stagedPath,
+                stagingId: file.id,
                 fileName: file.fileName,
                 mimeType: file.mimeType,
               }));
@@ -398,13 +400,19 @@ export function Chat() {
             void (async () => {
               const existingSession = sessions.find((session) => session.key === sessionKey);
               const createIfMissing = !targetAgent && (!existingSession || !!existingSession.createdLocally);
-              if (createIfMissing || acpActiveSessionKey !== sessionKey || acpCwd !== promptCwd) {
+              if (
+                createIfMissing
+                || acpActiveSessionKey !== sessionKey
+                || acpWorkspaceRoot !== promptCwd
+                || acpCwd !== promptCwd
+              ) {
                 const acpLoadKey = `${sessionKey}\0${promptCwd}`;
                 acpLoadInFlightKeyRef.current = acpLoadKey;
                 const loaded = await (async () => {
                   try {
                     return await loadAcpSession({
                       sessionKey,
+                      workspaceRoot: promptCwd,
                       cwd: promptCwd,
                       ...(createIfMissing ? { createIfMissing: true } : {}),
                     });

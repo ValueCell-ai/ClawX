@@ -73,7 +73,7 @@ test.describe('ClawX chat workspace session list', () => {
               json: { success: true, agents: [{ id: 'main', name: 'Main' }] },
             },
           },
-          [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: {
             success: true,
             generation: 1,
           },
@@ -167,7 +167,7 @@ test.describe('ClawX chat workspace session list', () => {
               json: { success: true, agents: [{ id: 'main', name: 'Main' }] },
             },
           },
-          [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: {
             success: true,
             generation: 1,
           },

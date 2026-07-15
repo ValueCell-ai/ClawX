@@ -9,6 +9,7 @@ const REVIEWER_WORKSPACE = '/workspace/reviewer';
 const IMAGE_TASK_ID = '0d2ee919-2dfd-4b72-9da3-d87e6ee56747';
 const GENERATED_IMAGE_PATH = '/workspace/.openclaw/media/tool-image-generation/generated-image.png';
 const GENERATED_IMAGE_PREVIEW = 'data:image/png;base64,iVBORw0KGgo=';
+const GENERATED_IMAGE_IDENTITY = 'e2e-transcript-generated-image';
 const DEFAULT_WORKSPACE_SEGMENT = '~%2F.openclaw%2Fworkspace';
 
 type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
@@ -28,12 +29,12 @@ function defaultWorkspaceSessionGroupTestId(): string {
 
 function baseHostApiMocks(loadResult: Record<string, unknown> = { success: true, generation: 1 }) {
   return {
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: MAIN_WORKSPACE }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: MAIN_WORKSPACE, createIfMissing: true }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: '/' }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: '/', createIfMissing: true }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: MAIN_WORKSPACE, cwd: MAIN_WORKSPACE }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: MAIN_WORKSPACE, cwd: MAIN_WORKSPACE, createIfMissing: true }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: '/', cwd: '/' }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: '/', cwd: '/', createIfMissing: true }])]: loadResult,
     [stableStringify(['/api/agents', 'GET'])]: {
       ok: true,
       data: {
@@ -53,7 +54,10 @@ function baseHostApiMocks(loadResult: Record<string, unknown> = { success: true,
   };
 }
 
-async function installAcpChatMocks(app: ElectronApplication) {
+async function installAcpChatMocks(
+  app: ElectronApplication,
+  loadResult: Record<string, unknown> = { success: true, generation: 1 },
+) {
   await installIpcMocks(app, {
     gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
     gatewayRpc: {
@@ -64,22 +68,26 @@ async function installAcpChatMocks(app: ElectronApplication) {
         },
       },
     },
-    hostApi: baseHostApiMocks(),
+    hostApi: baseHostApiMocks(loadResult),
   });
 }
 
 async function installAcpLoadReplayMock(app: ElectronApplication, updates: AcpSessionUpdate[]) {
   await app.evaluate(async ({ app: _app }, payload) => {
-    const { BrowserWindow, ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
     type IpcInvokeHandler = (event: unknown, request: { id?: string; module?: string; action?: string; args?: unknown[] }) => Promise<unknown>;
     const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
     const originalHostInvoke = handlers?.get('host:invoke');
     ipcMain.removeHandler('host:invoke');
     ipcMain.handle('host:invoke', async (event: unknown, request: { id?: string; module?: string; action?: string; args?: unknown[] }) => {
       if (request?.module === 'chat' && request.action === 'loadAcpSession') {
-        for (const update of payload.updates as AcpSessionUpdate[]) {
-          for (const window of BrowserWindow.getAllWindows()) {
-            window.webContents.send('chat:acp-session-update', {
+        return {
+          id: request.id,
+          ok: true,
+          data: {
+            success: true,
+            generation: 1,
+            sessionUpdates: (payload.updates as AcpSessionUpdate[]).map((update) => ({
               sessionKey: payload.sessionKey,
               generation: 1,
               historical: true,
@@ -87,10 +95,9 @@ async function installAcpLoadReplayMock(app: ElectronApplication, updates: AcpSe
                 sessionId: payload.sessionKey,
                 update,
               },
-            });
-          }
-        }
-        return { id: request.id, ok: true, data: { success: true, generation: 1 } };
+            })),
+          },
+        };
       }
       return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
     });
@@ -276,6 +283,73 @@ async function openChat(app: ElectronApplication) {
 }
 
 test.describe('ClawX ACP inline timeline', () => {
+  test('commits a long historical replay without exposing partial assistant text', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const paragraphChunks = Array.from({ length: 12 }, (_, index) => `Paragraph ${index + 1}.\n\n`);
+    const sessionUpdates = [
+      {
+        sessionKey: MAIN_SESSION_KEY,
+        generation: 1,
+        historical: true,
+        notification: {
+          sessionId: MAIN_SESSION_KEY,
+          update: {
+            sessionUpdate: 'user_message_chunk',
+            messageId: 'long-history-user',
+            content: { type: 'text', text: 'Write a 12-paragraph article' },
+          },
+        },
+      },
+      ...paragraphChunks.map((text) => ({
+        sessionKey: MAIN_SESSION_KEY,
+        generation: 1,
+        historical: true,
+        notification: {
+          sessionId: MAIN_SESSION_KEY,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            messageId: 'long-history-assistant',
+            content: { type: 'text', text },
+          },
+        },
+      })),
+    ];
+
+    try {
+      await installAcpChatMocks(app, { success: true, generation: 1, sessionUpdates });
+      const initialPage = await getStableWindow(app);
+      await initialPage.addInitScript(() => {
+        const observedLengths: number[] = [];
+        Object.defineProperty(window, '__acpObservedAssistantLengths', {
+          value: observedLengths,
+          configurable: true,
+        });
+        const observer = new MutationObserver(() => {
+          const assistant = document.querySelector('[data-testid="acp-assistant-message"]');
+          const length = assistant?.textContent?.length ?? 0;
+          if (length > 0 && observedLengths.at(-1) !== length) observedLengths.push(length);
+        });
+        const observe = () => {
+          observer.observe(document.documentElement, { childList: true, characterData: true, subtree: true });
+        };
+        if (document.documentElement) observe();
+        else window.addEventListener('DOMContentLoaded', observe, { once: true });
+      });
+
+      const page = await openChat(app);
+      const assistant = page.getByTestId('acp-assistant-message');
+      await expect(assistant).toContainText('Paragraph 1.', { timeout: 30_000 });
+      await expect(assistant).toContainText('Paragraph 12.');
+      const finalLength = await assistant.evaluate((element) => element.textContent?.length ?? 0);
+      const observedLengths = await page.evaluate(() => (
+        (window as unknown as { __acpObservedAssistantLengths?: number[] }).__acpObservedAssistantLengths ?? []
+      ));
+      expect(observedLengths).toEqual([finalLength]);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('renders ACP tool updates inline without the legacy execution graph', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
@@ -585,10 +659,44 @@ test.describe('ClawX ACP inline timeline', () => {
               },
             ],
           },
-          [stableStringify(['media', 'thumbnails', {
-            paths: [{ filePath: GENERATED_IMAGE_PATH, mimeType: 'image/png' }],
+          [stableStringify(['files', 'resolveAttachment', {
+            ref: {
+              sessionKey: MAIN_SESSION_KEY,
+              generation: 1,
+              uri: GENERATED_IMAGE_PATH,
+              transcriptMessageId: 'transcript-image-complete',
+            },
+            mimeType: 'image/png',
           }])]: {
-            [GENERATED_IMAGE_PATH]: { preview: GENERATED_IMAGE_PREVIEW, fileSize: 128 },
+            ok: true,
+            identity: GENERATED_IMAGE_IDENTITY,
+            displayName: 'generated-image.png',
+            mimeType: 'image/png',
+            size: 128,
+            target: {
+              kind: 'local',
+              scope: 'openclaw-media',
+              ref: {
+                sessionKey: MAIN_SESSION_KEY,
+                generation: 1,
+                uri: GENERATED_IMAGE_PATH,
+                transcriptMessageId: 'transcript-image-complete',
+              },
+            },
+          },
+          [stableStringify(['media', 'thumbnails', {
+            paths: [{
+              attachmentFileRef: {
+                sessionKey: MAIN_SESSION_KEY,
+                generation: 1,
+                uri: GENERATED_IMAGE_PATH,
+                transcriptMessageId: 'transcript-image-complete',
+              },
+              key: GENERATED_IMAGE_IDENTITY,
+              mimeType: 'image/png',
+            }],
+          }])]: {
+            [GENERATED_IMAGE_IDENTITY]: { preview: GENERATED_IMAGE_PREVIEW, fileSize: 128 },
           },
           [stableStringify(['media', 'saveImage', {
             base64: 'iVBORw0KGgo=',
@@ -640,7 +748,6 @@ test.describe('ClawX ACP inline timeline', () => {
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('acp-tool-call-card')).toContainText('Generate image');
-      await expect(page.getByText('Generated image is ready.')).toBeVisible({ timeout: 30_000 });
       const imagePart = page.getByTestId('acp-image-part');
       const image = imagePart.locator('img');
       await expect(image).toBeVisible();
@@ -730,7 +837,7 @@ test.describe('ClawX ACP inline timeline', () => {
     }
   });
 
-  test('shows the composer Zoomies indicator only while sending', async ({ launchElectronApp }) => {
+  test('shows the composer dot pulse and thinking label only while sending', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -739,17 +846,19 @@ test.describe('ClawX ACP inline timeline', () => {
       const page = await openChat(app);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('chat-composer-working-indicator')).toHaveCount(0);
-      await expect(page.getByTestId('chat-composer-zoomies')).toHaveCount(0);
+      await expect(page.getByTestId('chat-composer-dot-pulse')).toHaveCount(0);
 
       await page.getByTestId('chat-composer-input').fill('Hold the send state');
       await page.getByTestId('chat-composer-send').click();
 
       await expect(page.getByTestId('chat-composer-working-indicator')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('chat-composer-zoomies')).toBeVisible();
+      await expect(page.getByTestId('chat-composer-working-indicator')).toContainText('Thinking…');
+      await expect(page.getByTestId('chat-composer-dot-pulse')).toBeVisible();
+      await expect(page.getByTestId('chat-composer-zoomies')).toHaveCount(0);
 
       await resolveDeferredAcpPrompt(app);
       await expect(page.getByTestId('chat-composer-working-indicator')).toHaveCount(0, { timeout: 30_000 });
-      await expect(page.getByTestId('chat-composer-zoomies')).toHaveCount(0);
+      await expect(page.getByTestId('chat-composer-dot-pulse')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
@@ -805,11 +914,11 @@ test.describe('ClawX ACP inline timeline', () => {
         },
         hostApi: {
           ...baseHostApiMocks(),
-          [stableStringify(['chat', 'loadAcpSession', { sessionKey: REVIEWER_SESSION_KEY, cwd: REVIEWER_WORKSPACE }])]: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: REVIEWER_SESSION_KEY, workspaceRoot: REVIEWER_WORKSPACE, cwd: REVIEWER_WORKSPACE }])]: {
             success: true,
             generation: 1,
           },
-          [stableStringify(['chat', 'loadAcpSession', { sessionKey: REVIEWER_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: REVIEWER_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: {
             success: true,
             generation: 1,
           },

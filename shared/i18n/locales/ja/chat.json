@@ -60,7 +60,15 @@
         "saveImage": "画像を別名で保存",
         "imageSaved": "画像を保存しました",
         "copy": "返信をコピー",
-        "copied": "コピーしました"
+        "copied": "コピーしました",
+        "attachment": {
+            "loading": "添付ファイルを読み込み中",
+            "unavailable": "添付ファイルを利用できません",
+            "open": "{{name}} を開く",
+            "preview": "{{name}} をプレビュー",
+            "mimeSize": "{{mimeType}}, {{size}}",
+            "openFailed": "添付ファイルを開けませんでした"
+        }
     },
     "artifactPanel": {
         "tabs": {
@@ -222,7 +230,7 @@
         "gatewayDisconnectedPlaceholder": "ゲートウェイ未接続...",
         "send": "送信",
         "stop": "停止",
-        "working": "AI が処理中です",
+        "thinking": "考え中…",
         "gatewayConnected": "接続済み",
         "gatewayStarting": "起動中",
         "gatewayStatus": "ゲートウェイ {{state}} | ポート: {{port}} | PID: {{pid}}",

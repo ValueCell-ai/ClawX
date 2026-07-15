@@ -7,9 +7,12 @@ import { DatabaseSync } from 'node:sqlite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const testOpenClawDir = join(tmpdir(), `clawx-session-workspace-${process.pid}`);
+const testOpenClawConfigDir = join(tmpdir(), `clawx-session-config-${process.pid}`);
 
 vi.mock('@electron/utils/paths', () => ({
   getOpenClawConfigDir: () => testOpenClawDir,
+  resolveOpenClawStateDir: () => testOpenClawDir,
+  resolveOpenClawConfigDir: () => testOpenClawConfigDir,
 }));
 
 function seedAcpCwd(sessionKey: string, cwd: string) {
@@ -64,6 +67,26 @@ function seedTranscript(sessionKey: string, messages: unknown[]) {
 describe('sessions API workspace summaries', () => {
   beforeEach(() => {
     rmSync(testOpenClawDir, { recursive: true, force: true });
+    rmSync(testOpenClawConfigDir, { recursive: true, force: true });
+  });
+
+  it('loads transcript history from the state dir when the config path is elsewhere', async () => {
+    seedTranscript('agent:main:session-state', [{
+      role: 'assistant',
+      content: 'state transcript',
+      timestamp: 10_000,
+    }]);
+    mkdirSync(testOpenClawConfigDir, { recursive: true });
+    writeFileSync(join(testOpenClawConfigDir, 'openclaw.json'), '{}');
+    const { createSessionsApi } = await import('@electron/services/sessions-api');
+
+    await expect(createSessionsApi().history({
+      sessionKey: 'agent:main:session-state',
+      limit: 5,
+    })).resolves.toMatchObject({
+      success: true,
+      messages: [{ content: 'state transcript' }],
+    });
   });
 
   it('returns OpenClaw ACP cwd as workspacePath when available', async () => {

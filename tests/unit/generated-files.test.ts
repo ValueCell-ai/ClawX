@@ -8,6 +8,7 @@ import {
   type GeneratedFileBaseline,
 } from '@/lib/generated-files';
 import type { RawMessage } from '@/stores/chat';
+import { attachmentOpenMode, richFilePreviewKind } from '@/lib/file-preview-capabilities';
 
 function makeWriteFile(overrides: Partial<GeneratedFile> = {}): GeneratedFile {
   return {
@@ -87,6 +88,57 @@ describe('generated-files utilities', () => {
     });
 
     expect(stats).toBeNull();
+  });
+
+  it('uses shared preview limits and routes remote or unsupported attachments to system open', () => {
+    const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: 'file:///workspace/file.txt' };
+    const local = { kind: 'local' as const, scope: 'workspace' as const, ref };
+    const remote = { kind: 'remote' as const, ref, url: 'https://example.com/file.txt' };
+
+    expect(attachmentOpenMode({ ext: '.txt', mimeType: 'text/plain', size: 2 * 1024 * 1024, target: local })).toBe('preview');
+    expect(attachmentOpenMode({ ext: '.txt', mimeType: 'text/plain', size: 2 * 1024 * 1024 + 1, target: local })).toBe('system');
+    expect(attachmentOpenMode({ ext: '.pdf', mimeType: 'application/pdf', size: 50 * 1024 * 1024, target: local })).toBe('preview');
+    expect(attachmentOpenMode({ ext: '', mimeType: 'application/pdf', size: 1024, target: local })).toBe('preview');
+    expect(attachmentOpenMode({ ext: '.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 50 * 1024 * 1024 + 1, target: local })).toBe('system');
+    expect(attachmentOpenMode({ ext: '.zip', mimeType: 'application/zip', size: 100, target: local })).toBe('system');
+    expect(attachmentOpenMode({ ext: '.txt', mimeType: 'text/plain', size: 100, target: remote })).toBe('system');
+  });
+
+  it.each([
+    '.zip', '.tar', '.gz', '.rar', '.7z',
+    '.doc', '.docx', '.ppt', '.pptx',
+    '.mp3', '.wav', '.mp4', '.webm',
+  ])('forces known unsupported extension %s to system open despite previewable MIME', (ext) => {
+    const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: `/workspace/file${ext}` };
+    expect(attachmentOpenMode({
+      ext,
+      mimeType: 'text/plain',
+      size: 100,
+      target: { kind: 'local', scope: 'workspace', ref },
+    })).toBe('system');
+  });
+
+  it.each([
+    ['.txt', 'application/octet-stream'],
+    ['.ts', 'application/octet-stream'],
+    ['.csv', 'application/zip'],
+    ['.pdf', 'text/plain'],
+    ['.xlsx', 'text/plain'],
+  ])('preserves supported extension %s despite conflicting MIME', (ext, mimeType) => {
+    const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: `/workspace/file${ext}` };
+    expect(attachmentOpenMode({
+      ext,
+      mimeType,
+      size: 100,
+      target: { kind: 'local', scope: 'workspace', ref },
+    })).toBe('preview');
+  });
+
+  it('uses supported extensions before conflicting rich MIME viewer hints', () => {
+    expect(richFilePreviewKind({ ext: '.pdf', mimeType: 'image/png' })).toBe('pdf');
+    expect(richFilePreviewKind({ ext: '.xlsx', mimeType: 'image/png' })).toBe('sheet');
+    expect(richFilePreviewKind({ ext: '.txt', mimeType: 'image/png' })).toBeNull();
+    expect(richFilePreviewKind({ ext: '', mimeType: 'image/png' })).toBe('image');
   });
 
   it('extracts write files with per-run baseline state and action', () => {

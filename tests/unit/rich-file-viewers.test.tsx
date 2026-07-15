@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import PdfViewer from '@/components/file-preview/PdfViewer';
 import SheetViewer from '@/components/file-preview/SheetViewer';
+import ImageViewer from '@/components/file-preview/ImageViewer';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -14,10 +15,12 @@ vi.mock('react-i18next', () => ({
 
 const readBinaryFile = vi.fn();
 const readWorkspaceBinary = vi.fn();
+const readAttachmentBinary = vi.fn();
 
 vi.mock('@/lib/file-preview-client', () => ({
   readBinaryFile: (...args: unknown[]) => readBinaryFile(...args),
   readWorkspaceBinary: (...args: unknown[]) => readWorkspaceBinary(...args),
+  readAttachmentBinary: (...args: unknown[]) => readAttachmentBinary(...args),
 }));
 
 vi.mock('xlsx', () => ({
@@ -72,6 +75,30 @@ describe('rich file viewers', () => {
 
     expect(await screen.findByText('Spreadsheet failed to load: notFound')).toBeVisible();
     expect(readWorkspaceBinary).toHaveBeenCalledWith({ ...sheetRef, maxBytes: 50 * 1024 * 1024 });
+    expect(readBinaryFile).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['image', 'image.png'],
+    ['PDF', 'file.pdf'],
+    ['sheet', 'file.xlsx'],
+  ])('routes attachment-scoped %s failures without workspace or naked-path retries', async (kind, fileName) => {
+    const attachmentFileRef = { sessionKey: 'agent:main:s1', generation: 2, uri: `file:///secret/${fileName}` };
+    readAttachmentBinary.mockResolvedValueOnce({ ok: false, error: 'outsideAllowedRoots' });
+
+    if (kind === 'image') {
+      render(<ImageViewer filePath={fileName} fileName={fileName} attachmentFileRef={attachmentFileRef} />);
+      expect(await screen.findByText('Image failed to load: outsideAllowedRoots')).toBeVisible();
+    } else if (kind === 'PDF') {
+      render(<PdfViewer filePath={fileName} attachmentFileRef={attachmentFileRef} />);
+      expect(await screen.findByText('PDF failed to load: outsideAllowedRoots')).toBeVisible();
+    } else {
+      render(<SheetViewer filePath={fileName} attachmentFileRef={attachmentFileRef} />);
+      expect(await screen.findByText('Spreadsheet failed to load: outsideAllowedRoots')).toBeVisible();
+    }
+
+    expect(readAttachmentBinary).toHaveBeenCalledWith(attachmentFileRef, 50 * 1024 * 1024);
+    expect(readWorkspaceBinary).not.toHaveBeenCalled();
     expect(readBinaryFile).not.toHaveBeenCalled();
   });
 

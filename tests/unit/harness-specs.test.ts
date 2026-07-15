@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   isPluginLifecycleTask,
+  loadRuleSpecs,
+  loadScenarioSpecs,
+  loadSpec,
   parseFrontmatter,
   pathMatchesAny,
 } from '../../harness/src/specs.mjs';
@@ -13,6 +16,37 @@ import {
 } from '../../harness/src/rules.mjs';
 
 describe('harness specs', () => {
+  it('defines the ACP media attachment harness contract', async () => {
+    const expectedRules = [
+      'renderer-main-boundary',
+      'backend-communication-boundary',
+      'api-client-transport-policy',
+      'host-api-fallback-policy',
+      'acp-chat-state-and-history',
+      'acp-compatibility-content-safety',
+      'attachment-access-safety',
+      'diagnostics-trace-safety',
+      'session-workspace-authority',
+      'tool-derived-file-safety',
+      'ui-i18n-design-tokens',
+      'comms-regression',
+      'docs-sync',
+    ];
+    const [task, rules, scenarios] = await Promise.all([
+      loadSpec('harness/specs/tasks/acp-media-attachments.md'),
+      loadRuleSpecs(),
+      loadScenarioSpecs(),
+    ]);
+    const ruleIds = new Set(rules.map((rule) => rule.data.id));
+    const acpChatScenario = scenarios.find((scenario) => scenario.data.id === 'acp-chat-experience');
+
+    expect(task.data.id).toBe('acp-media-attachments');
+    expect(task.data.requiredRules).toEqual(expectedRules);
+    expect(expectedRules.filter((ruleId) => !ruleIds.has(ruleId))).toEqual([]);
+    expect(task.data.requiredProfiles).toContain('e2e');
+    expect(acpChatScenario?.data.ownedPaths).toContain('tests/e2e/chat-acp-attachments.spec.ts');
+  });
+
   it('parses Markdown frontmatter with arrays and nested docs', () => {
     const spec = parseFrontmatter(`---
 id: example

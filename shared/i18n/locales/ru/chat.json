@@ -60,7 +60,15 @@
         "saveImage": "Сохранить изображение как",
         "imageSaved": "Изображение сохранено",
         "copy": "Копировать ответ",
-        "copied": "Скопировано"
+        "copied": "Скопировано",
+        "attachment": {
+            "loading": "Загрузка вложения",
+            "unavailable": "Вложение недоступно",
+            "open": "Открыть {{name}}",
+            "preview": "Просмотреть {{name}}",
+            "mimeSize": "{{mimeType}}, {{size}}",
+            "openFailed": "Не удалось открыть вложение"
+        }
     },
     "artifactPanel": {
         "tabs": {
@@ -222,7 +230,7 @@
         "gatewayDisconnectedPlaceholder": "Шлюз не подключён...",
         "send": "Отправить",
         "stop": "Остановить",
-        "working": "AI работает",
+        "thinking": "Думаю…",
         "gatewayConnected": "подключён",
         "gatewayStarting": "запуск",
         "gatewayStatus": "шлюз {{state}} | порт: {{port}} | PID: {{pid}}",

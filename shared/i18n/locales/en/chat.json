@@ -60,7 +60,15 @@
         "saveImage": "Save image as",
         "imageSaved": "Image saved",
         "copy": "Copy response",
-        "copied": "Copied"
+        "copied": "Copied",
+        "attachment": {
+            "loading": "Loading attachment",
+            "unavailable": "Attachment unavailable",
+            "open": "Open {{name}}",
+            "preview": "Preview {{name}}",
+            "mimeSize": "{{mimeType}}, {{size}}",
+            "openFailed": "Could not open attachment"
+        }
     },
     "artifactPanel": {
         "tabs": {
@@ -222,7 +230,7 @@
         "gatewayDisconnectedPlaceholder": "Gateway not connected...",
         "send": "Send",
         "stop": "Stop",
-        "working": "AI is working",
+        "thinking": "Thinking…",
         "gatewayConnected": "connected",
         "gatewayStarting": "starting",
         "gatewayStatus": "gateway {{state}} | port: {{port}} | pid: {{pid}}",

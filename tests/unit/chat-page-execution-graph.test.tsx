@@ -10,6 +10,9 @@ const { acpState, agentsState, artifactPanelState, chatState, gatewayState, stic
     cancelling: false,
     error: null as string | null,
     activeSessionKey: 'agent:main:main' as string | null,
+    workspaceRoot: null as string | null,
+    cwd: null as string | null,
+    prepareLocalSession: vi.fn(),
     loadSession: vi.fn(),
     sendPrompt: vi.fn(),
     cancel: vi.fn(),
@@ -209,6 +212,9 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     acpState.cancelling = false;
     acpState.error = null;
     acpState.activeSessionKey = 'agent:main:main';
+    acpState.workspaceRoot = null;
+    acpState.cwd = null;
+    acpState.prepareLocalSession.mockReset();
     acpState.loadSession.mockReset();
     acpState.loadSession.mockResolvedValue(undefined);
     acpState.sendPrompt.mockReset();
@@ -253,7 +259,11 @@ describe('ACP Chat page inline timeline lifecycle', () => {
 
     await waitFor(() => {
       expect(ensureAcpChatSubscriptions).toHaveBeenCalledTimes(1);
-      expect(acpState.loadSession).toHaveBeenCalledWith({ sessionKey: 'agent:main:main', cwd: '/workspace' });
+      expect(acpState.loadSession).toHaveBeenCalledWith({
+        sessionKey: 'agent:main:main',
+        workspaceRoot: '/workspace',
+        cwd: '/workspace',
+      });
     });
   });
 

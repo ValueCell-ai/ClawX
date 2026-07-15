@@ -16,6 +16,7 @@ const shellOpenPathMock = vi.fn(async () => '');
 const shellShowItemInFolderMock = vi.fn(async () => undefined);
 const readTextFile = vi.fn();
 const readWorkspaceText = vi.fn();
+const readAttachmentText = vi.fn();
 const statFile = vi.fn();
 const statWorkspaceFile = vi.fn();
 const writeTextFile = vi.fn();
@@ -23,6 +24,7 @@ const writeTextFile = vi.fn();
 vi.mock('@/lib/file-preview-client', () => ({
   readTextFile: (...args: unknown[]) => readTextFile(...args),
   readWorkspaceText: (...args: unknown[]) => readWorkspaceText(...args),
+  readAttachmentText: (...args: unknown[]) => readAttachmentText(...args),
   statFile: (...args: unknown[]) => statFile(...args),
   statWorkspaceFile: (...args: unknown[]) => statWorkspaceFile(...args),
   writeTextFile: (...args: unknown[]) => writeTextFile(...args),
@@ -86,6 +88,57 @@ describe('FilePreviewBody', () => {
       'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation allow-downloads',
     );
     expect(screen.queryByText('<!doctype html>')).not.toBeInTheDocument();
+  });
+
+  it('uses attachment-scoped text reads for HTML without a naked-path fallback', async () => {
+    const attachmentFileRef = { sessionKey: 'agent:main:s1', generation: 4, uri: 'file:///secret/site.html' };
+    readAttachmentText.mockResolvedValueOnce({
+      ok: true,
+      content: '<h1>Scoped HTML</h1>',
+      mimeType: 'text/html',
+      size: 20,
+      readOnly: true,
+    });
+
+    render(
+      <FilePreviewBody
+        file={makePreviewTarget({
+          filePath: 'site.html',
+          fileName: 'site.html',
+          ext: '.html',
+          mimeType: 'text/html',
+          contentType: 'document',
+          size: 20,
+          attachmentFileRef,
+        })}
+        mode="preview"
+      />,
+    );
+
+    expect(await screen.findByTestId('html-preview-frame')).toHaveAttribute('srcdoc', '<h1>Scoped HTML</h1>');
+    expect(readAttachmentText).toHaveBeenCalledWith(attachmentFileRef);
+    expect(readWorkspaceText).not.toHaveBeenCalled();
+    expect(readTextFile).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Show in file manager' })).not.toBeInTheDocument();
+  });
+
+  it('uses attachment-scoped text reads for source previews without workspace fallback', async () => {
+    const attachmentFileRef = { sessionKey: 'agent:main:s1', generation: 4, uri: 'file:///secret/demo.ts' };
+    readAttachmentText.mockResolvedValueOnce({
+      ok: true,
+      content: 'export const scoped = true;',
+      mimeType: 'text/typescript',
+      size: 27,
+      readOnly: true,
+    });
+
+    render(<FilePreviewBody file={makePreviewTarget({
+      filePath: 'demo.ts', fileName: 'demo.ts', ext: '.ts', mimeType: 'text/typescript', contentType: 'code', size: 27, attachmentFileRef,
+    })} />);
+
+    await waitFor(() => expect(readAttachmentText).toHaveBeenCalledWith(attachmentFileRef));
+    expect(readWorkspaceText).not.toHaveBeenCalled();
+    expect(readTextFile).not.toHaveBeenCalled();
   });
 
   it('uses known attachment size to show direct-open fallback for large PDFs', async () => {

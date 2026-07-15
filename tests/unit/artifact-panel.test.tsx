@@ -143,6 +143,31 @@ describe('ArtifactPanel', () => {
     expect(shellShowItemInFolder).not.toHaveBeenCalled();
   });
 
+  it('renders attachment previews without trusted rich-file folder actions', () => {
+    useArtifactPanel.setState({
+      open: true,
+      tab: 'preview',
+      focusedFile: {
+        filePath: 'report.pdf',
+        fileName: 'report.pdf',
+        ext: '.pdf',
+        mimeType: 'application/pdf',
+        contentType: 'document',
+        attachmentFileRef: {
+          sessionKey: 'agent:main:s1',
+          generation: 2,
+          uri: 'file:///secret/report.pdf',
+        },
+      },
+    });
+
+    render(<ArtifactPanel fileGroups={groups()} uniqueFileCount={2} agent={null} />);
+
+    expect(screen.getByTestId('file-preview-body')).toHaveTextContent('preview:report.pdf');
+    expect(screen.queryByTestId('artifact-panel-action-open-folder')).not.toBeInTheDocument();
+    expect(shellShowItemInFolder).not.toHaveBeenCalled();
+  });
+
   it('retains the rich open-folder action for trusted files', () => {
     useArtifactPanel.setState({
       open: true,

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { applyAttachmentResolution, attachmentRequestFingerprint } from '@/lib/acp/attachments';
 import { contentBlockToRenderPart, toolContentToRenderPart } from '@/lib/acp/content-blocks';
 import { appendSyntheticAssistantMessage, applyAcpSessionUpdate, createEmptyAcpTimeline } from '@/lib/acp/reducer';
+
+const assistantBlockContext = {
+  role: 'assistant' as const,
+  messageId: 'msg-a',
+  segmentIndex: 0,
+  blockIndex: 0,
+};
 
 describe('ACP timeline reducer', () => {
   it('segments assistant text when process blocks interleave with the same messageId', () => {
@@ -228,7 +236,13 @@ describe('ACP timeline reducer', () => {
           optimistic: true,
           parts: [
             { kind: 'markdown', text: 'inspect this' },
-            { kind: 'file', path: '/repo/notes.txt', name: 'notes.txt', mimeType: 'text/plain' },
+            {
+              kind: 'attachment',
+              attachmentId: 'attachment:user-msg:0:1',
+              reference: { uri: '/repo/notes.txt', name: 'notes.txt', mimeType: 'text/plain' },
+              source: 'acp-resource',
+              access: { status: 'pending' },
+            },
           ],
         },
       },
@@ -258,7 +272,13 @@ describe('ACP timeline reducer', () => {
       optimistic: false,
       parts: [
         { kind: 'markdown', text: 'inspect this' },
-        { kind: 'file', path: '/repo/notes.txt', name: 'notes.txt', mimeType: 'text/plain' },
+        {
+          kind: 'attachment',
+          attachmentId: 'attachment:user-msg:0:1',
+          reference: { uri: '/repo/notes.txt', name: 'notes.txt', mimeType: 'text/plain' },
+          source: 'acp-resource',
+          access: { status: 'pending' },
+        },
       ],
     });
   });
@@ -278,7 +298,13 @@ describe('ACP timeline reducer', () => {
           optimistic: true,
           parts: [
             { kind: 'markdown', text: 'inspect this' },
-            { kind: 'file', path: '/repo/notes.txt', name: 'notes.txt', mimeType: 'text/plain' },
+            {
+              kind: 'attachment',
+              attachmentId: 'attachment:user-msg:0:1',
+              reference: { uri: '/repo/notes.txt', name: 'notes.txt', mimeType: 'text/plain' },
+              source: 'acp-resource',
+              access: { status: 'pending' },
+            },
           ],
         },
       },
@@ -300,7 +326,13 @@ describe('ACP timeline reducer', () => {
       optimistic: false,
       parts: [
         { kind: 'markdown', text: 'inspect this' },
-        { kind: 'file', path: '/repo/notes.txt', name: 'notes.txt', mimeType: 'text/plain' },
+        {
+          kind: 'attachment',
+          attachmentId: 'attachment:user-msg:0:1',
+          reference: { uri: '/repo/notes.txt', name: 'notes.txt', mimeType: 'text/plain' },
+          source: 'acp-resource',
+          access: { status: 'pending' },
+        },
       ],
     });
   });
@@ -370,7 +402,13 @@ describe('ACP timeline reducer', () => {
       expect(item.parts).toEqual([
         { kind: 'markdown', text: 'complete' },
         { kind: 'image', source: 'file:///tmp/plot.png', mimeType: 'image/png' },
-        { kind: 'file', path: 'file:///tmp/result.txt', name: 'result.txt', mimeType: 'text/plain' },
+        {
+          kind: 'attachment',
+          attachmentId: 'attachment:msg-a:0:2',
+          reference: { uri: 'file:///tmp/result.txt', name: 'result.txt', mimeType: 'text/plain' },
+          source: 'acp-resource',
+          access: { status: 'pending' },
+        },
       ]);
     }
   });
@@ -519,11 +557,17 @@ describe('ACP timeline reducer', () => {
     });
   });
 
-  it('converts embedded resources with a uri into file render parts', () => {
+  it('converts embedded resources with a uri into attachment render parts', () => {
     expect(contentBlockToRenderPart({
       type: 'resource',
       resource: { uri: 'file:///tmp/report.md', text: '# Report', mimeType: 'text/markdown' },
-    })).toEqual({ kind: 'file', path: 'file:///tmp/report.md', mimeType: 'text/markdown' });
+    }, assistantBlockContext)).toEqual({
+      kind: 'attachment',
+      attachmentId: 'attachment:msg-a:0:0',
+      reference: { uri: 'file:///tmp/report.md', name: 'report.md', mimeType: 'text/markdown' },
+      source: 'acp-resource',
+      access: { status: 'pending' },
+    });
   });
 
   it('prefers image data when an image uri is not render-safe', () => {
@@ -532,13 +576,137 @@ describe('ACP timeline reducer', () => {
       uri: '/tmp/staged-image.png',
       data: 'abc123',
       mimeType: 'image/png',
-    })).toEqual({ kind: 'image', source: 'data:image/png;base64,abc123', mimeType: 'image/png' });
+    }, assistantBlockContext)).toEqual({ kind: 'image', source: 'data:image/png;base64,abc123', mimeType: 'image/png' });
   });
 
-  it('returns an error render part for malformed embedded resources', () => {
-    expect(contentBlockToRenderPart({ type: 'resource', resource: null } as never)).toEqual({
-      kind: 'error',
-      message: 'Unsupported ACP resource content',
+  it('returns an unavailable attachment for embedded resources without a usable uri', () => {
+    expect(contentBlockToRenderPart({
+      type: 'resource',
+      resource: { text: '# Report', mimeType: 'text/markdown' },
+    } as never, assistantBlockContext)).toEqual({
+      kind: 'attachment',
+      attachmentId: 'attachment:msg-a:0:0',
+      reference: { uri: '', name: '' , mimeType: 'text/markdown' },
+      source: 'acp-resource',
+      access: { status: 'unavailable', reason: 'invalidReference' },
+    });
+  });
+
+  it('preserves resource link metadata and accepts ClawX staging ownership only from user content', () => {
+    const resource = {
+      type: 'resource_link' as const,
+      uri: 'file:///tmp/budget.xlsx',
+      name: '',
+      title: 'Budget workbook',
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      size: 2048,
+      _meta: { clawx: { stagingId: 'stage-1' } },
+    };
+
+    expect(contentBlockToRenderPart(resource, {
+      ...assistantBlockContext,
+      role: 'user',
+    })).toMatchObject({
+      kind: 'attachment',
+      attachmentId: 'attachment:msg-a:0:0',
+      reference: {
+        uri: 'file:///tmp/budget.xlsx',
+        name: 'Budget workbook',
+        mimeType: resource.mimeType,
+        size: 2048,
+        stagingId: 'stage-1',
+      },
+      source: 'acp-resource',
+      access: { status: 'pending' },
+    });
+    expect(contentBlockToRenderPart(resource, assistantBlockContext)).not.toMatchObject({
+      reference: { stagingId: 'stage-1' },
+    });
+  });
+
+  it('renders a staged user image block as an attachment and ignores untrusted display paths', () => {
+    expect(contentBlockToRenderPart({
+      type: 'image',
+      data: 'abc123',
+      mimeType: 'image/png',
+      uri: '/tmp/clawx-staging/photo.png',
+      _meta: {
+        clawx: {
+          stagingId: 'stage-photo',
+          displayPath: '/spoofed/private/path/photo.png',
+          fileName: 'photo.png',
+        },
+      },
+    }, {
+      role: 'user', messageId: 'user-photo', segmentIndex: 0, blockIndex: 0,
+    })).toMatchObject({
+      kind: 'attachment',
+      reference: {
+        uri: '/tmp/clawx-staging/photo.png',
+        name: 'photo.png',
+        mimeType: 'image/png',
+        stagingId: 'stage-photo',
+      },
+    });
+    expect(contentBlockToRenderPart({
+      type: 'resource_link',
+      uri: '/tmp/clawx-staging/notes.txt',
+      name: 'notes.txt',
+      _meta: { clawx: { stagingId: 'stage-notes', displayPath: '/spoofed/private/notes.txt' } },
+    }, {
+      role: 'user', messageId: 'user-notes', segmentIndex: 0, blockIndex: 0,
+    })).not.toMatchObject({ reference: { displayPath: expect.anything() } });
+  });
+
+  it('uses segment and block positions for distinct attachment ids around a tool call', () => {
+    let state = createEmptyAcpTimeline('agent:pi:s1', 1);
+    const resource = { type: 'resource_link' as const, uri: 'file:///tmp/report.txt', name: 'report.txt' };
+
+    state = applyAcpSessionUpdate(state, {
+      sessionId: 'agent:pi:s1',
+      update: { sessionUpdate: 'agent_message_chunk', messageId: 'msg-a', content: resource },
+    });
+    state = applyAcpSessionUpdate(state, {
+      sessionId: 'agent:pi:s1',
+      update: { sessionUpdate: 'tool_call', toolCallId: 'tool-1', title: 'Inspect', status: 'completed' },
+    });
+    state = applyAcpSessionUpdate(state, {
+      sessionId: 'agent:pi:s1',
+      update: { sessionUpdate: 'agent_message_chunk', messageId: 'msg-a', content: resource },
+    });
+
+    expect(state.itemsById['msg-a:0']).toMatchObject({
+      parts: [{ attachmentId: 'attachment:msg-a:0:0' }],
+    });
+    expect(state.itemsById['msg-a:1']).toMatchObject({
+      parts: [{ attachmentId: 'attachment:msg-a:1:0' }],
+    });
+
+    const secondAttachment = state.itemsById['msg-a:1']?.kind === 'message-segment'
+      ? state.itemsById['msg-a:1'].parts[0]
+      : undefined;
+    if (!secondAttachment || secondAttachment.kind !== 'attachment') throw new Error('missing second attachment');
+    state = applyAttachmentResolution(state, {
+      attachmentId: 'attachment:msg-a:1:0',
+      expectedFingerprint: attachmentRequestFingerprint(secondAttachment),
+      result: {
+        ok: true,
+        identity: 'second-resource',
+        displayName: 'report.txt',
+        mimeType: 'text/plain',
+        size: 42,
+        target: {
+          kind: 'local',
+          scope: 'workspace',
+          ref: { sessionKey: 'agent:pi:s1', generation: 1, uri: 'file:///tmp/report.txt' },
+        },
+      },
+    });
+    expect(state.itemsById['msg-a:0']).toMatchObject({
+      parts: [{ access: { status: 'pending' } }],
+    });
+    expect(state.itemsById['msg-a:1']).toMatchObject({
+      parts: [{ access: { status: 'available', identity: 'second-resource' } }],
     });
   });
 

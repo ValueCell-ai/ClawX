@@ -12,17 +12,19 @@ import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import {
   readBinaryFile,
+  readAttachmentBinary,
   readWorkspaceBinary,
+  type AttachmentFileRef,
   type WorkspaceFileRef,
 } from '@/lib/file-preview-client';
 import { cn } from '@/lib/utils';
 import { getFilePreviewTargetIdentity } from './types';
-
-const IMAGE_MAX_BYTES = 50 * 1024 * 1024;
+import { FILE_PREVIEW_MAX_BINARY_BYTES } from '@shared/file-preview/limits';
 
 export interface ImageViewerProps {
   filePath: string;
   fileName: string;
+  attachmentFileRef?: AttachmentFileRef;
   workspaceFileRef?: WorkspaceFileRef;
   className?: string;
 }
@@ -33,10 +35,10 @@ type LoadState =
   | { identity: string; status: 'error'; message: string }
   | { identity: string; status: 'ready'; url: string };
 
-export default function ImageViewer({ filePath, fileName, workspaceFileRef, className }: ImageViewerProps) {
+export default function ImageViewer({ filePath, fileName, attachmentFileRef, workspaceFileRef, className }: ImageViewerProps) {
   const { t } = useTranslation('chat');
   const [zoomed, setZoomed] = useState(false);
-  const loadIdentity = getFilePreviewTargetIdentity({ filePath, workspaceFileRef });
+  const loadIdentity = getFilePreviewTargetIdentity({ filePath, attachmentFileRef, workspaceFileRef });
   const [state, setState] = useState<LoadState>({ identity: loadIdentity, status: 'loading' });
   const currentState: LoadState = state.identity === loadIdentity
     ? state
@@ -48,16 +50,22 @@ export default function ImageViewer({ filePath, fileName, workspaceFileRef, clas
 
     void (async () => {
       try {
-        const res = workspaceFileRef
-          ? await readWorkspaceBinary({ ...workspaceFileRef, maxBytes: IMAGE_MAX_BYTES })
-          : await readBinaryFile(filePath, { maxBytes: IMAGE_MAX_BYTES });
+        const res = attachmentFileRef
+          ? await readAttachmentBinary(attachmentFileRef, FILE_PREVIEW_MAX_BINARY_BYTES)
+          : workspaceFileRef
+            ? await readWorkspaceBinary({ ...workspaceFileRef, maxBytes: FILE_PREVIEW_MAX_BINARY_BYTES })
+            : await readBinaryFile(filePath, { maxBytes: FILE_PREVIEW_MAX_BINARY_BYTES });
         if (cancelled) return;
-        if (!res.ok || !res.data) {
+        if (!res.ok) {
           if (res.error === 'tooLarge') {
             setState({ identity: loadIdentity, status: 'tooLarge', size: res.size });
             return;
           }
           setState({ identity: loadIdentity, status: 'error', message: String(res.error ?? 'unknown') });
+          return;
+        }
+        if (!res.data) {
+          setState({ identity: loadIdentity, status: 'error', message: 'unknown' });
           return;
         }
         const cloned = new Uint8Array(res.data.byteLength);
@@ -84,7 +92,7 @@ export default function ImageViewer({ filePath, fileName, workspaceFileRef, clas
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [filePath, loadIdentity, workspaceFileRef]);
+  }, [attachmentFileRef, filePath, loadIdentity, workspaceFileRef]);
 
   if (currentState.status === 'loading') {
     return (

@@ -1,9 +1,50 @@
 import type { PlanEntry, SessionConfigOption, ToolCallLocation, ToolKind } from '@agentclientprotocol/sdk';
+import type {
+  AttachmentAccessError,
+  AttachmentFileRef,
+  AttachmentRemoteRef,
+} from '@shared/host-api/contract';
+
+export type AttachmentUnavailableReason = AttachmentAccessError;
+
+export type AttachmentAccessTarget =
+  | {
+      kind: 'local';
+      scope: 'workspace' | 'openclaw-media' | 'staging';
+      ref: AttachmentFileRef;
+    }
+  | { kind: 'remote'; ref: AttachmentRemoteRef; url: string };
+
+export type AttachmentRenderPart = {
+  kind: 'attachment';
+  attachmentId: string;
+  reference: {
+    uri: string;
+    name: string;
+    displayPath?: string;
+    mimeType?: string;
+    size?: number;
+    stagingId?: string;
+    transcriptMessageId?: string;
+  };
+  source: 'acp-resource' | 'openclaw-media';
+  evidenceId?: string;
+  access:
+    | { status: 'pending' }
+    | { status: 'unavailable'; reason: AttachmentUnavailableReason }
+    | {
+        status: 'available';
+        identity: string;
+        target: AttachmentAccessTarget;
+        mimeType: string;
+        size: number;
+      };
+};
 
 export type RenderPart =
   | { kind: 'markdown'; text: string }
-  | { kind: 'image'; source: string; mimeType?: string; alt?: string }
-  | { kind: 'file'; path?: string; name?: string; mimeType?: string }
+  | { kind: 'image'; source: string; mimeType?: string; alt?: string; mediaIdentity?: string }
+  | AttachmentRenderPart
   | { kind: 'error'; message: string };
 
 export type MessageSegmentItem = {
@@ -13,9 +54,11 @@ export type MessageSegmentItem = {
   messageId: string;
   segmentIndex: number;
   parts: RenderPart[];
+  /** Number of ACP blocks consumed by this segment, independent of render-part coalescing. */
+  blockCount?: number;
   optimistic?: boolean;
   /** Renderer-only compatibility projection, not an ACP protocol event. */
-  compat?: { source: 'image-generation'; evidenceId: string };
+  compat?: { source: 'image-generation' | 'openclaw-media'; evidenceId: string };
 };
 
 export type ThoughtItem = {

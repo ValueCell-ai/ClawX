@@ -1,4 +1,9 @@
-import type { AcpTraceEntry, AcpTraceRecordPayload, AcpTraceSnapshot } from '@shared/host-api/contract';
+import type {
+  AcpTraceEntry,
+  AcpTraceRecordPayload,
+  AcpTraceSnapshot,
+  AttachmentAccessError,
+} from '@shared/host-api/contract';
 import { isRecord } from './payload-utils';
 
 type AcpTraceRecordInput = Omit<AcpTraceEntry, 'seq' | 'timestamp'>;
@@ -6,6 +11,22 @@ type AcpTraceRecordInput = Omit<AcpTraceEntry, 'seq' | 'timestamp'>;
 const MAX_ACP_TRACE_ENTRIES = 500;
 const MAX_STRING_LENGTH = 300;
 const SENSITIVE_KEY_RE = /(authorization|api[_-]?key|token|secret|password|bearer)/i;
+const OPENCLAW_MEDIA_DETAIL_KEYS = new Set([
+  'source',
+  'reason',
+  'candidateCount',
+  'matchedCount',
+  'rejectedCount',
+  'attachmentCount',
+  'imageCount',
+  'missingCount',
+  'previewCount',
+  'evidenceHash',
+  'identityHash',
+  'operationId',
+  'latestGeneration',
+  'error',
+]);
 
 let sequence = 0;
 let entries: AcpTraceEntry[] = [];
@@ -68,13 +89,16 @@ export function normalizeRendererAcpTracePayload(payload: unknown): AcpTraceReco
   const generation = typeof payload.generation === 'number' && Number.isFinite(payload.generation)
     ? payload.generation
     : undefined;
+  const details = event.startsWith('openclaw-media:') && isRecord(payload.details)
+    ? Object.fromEntries(Object.entries(payload.details).filter(([key]) => OPENCLAW_MEDIA_DETAIL_KEYS.has(key)))
+    : payload.details;
   return {
     source: 'renderer',
     event,
     direction,
     ...(sessionKey ? { sessionKey } : {}),
     ...(generation != null ? { generation } : {}),
-    ...(payload.details !== undefined ? { details: payload.details } : {}),
+    ...(details !== undefined ? { details } : {}),
   };
 }
 
@@ -83,6 +107,28 @@ export function recordRendererAcpTrace(payload: AcpTraceRecordPayload): { succes
   if (!normalized) return { success: false, error: 'Invalid ACP trace payload' };
   recordAcpTrace(normalized);
   return { success: true };
+}
+
+export function recordAttachmentOpenTrace(input: {
+  ok: boolean;
+  reason: AttachmentAccessError | 'success';
+  sourceKind: 'local' | 'remote' | 'invalid';
+  sessionKey: string;
+  generation: number;
+  identity: string;
+}): AcpTraceEntry {
+  return recordAcpTrace({
+    source: 'main',
+    event: `attachment/open:${input.ok ? 'success' : 'failure'}`,
+    direction: 'open',
+    sessionKey: input.sessionKey,
+    generation: input.generation,
+    details: {
+      reason: input.reason,
+      sourceKind: input.sourceKind,
+      identity: input.identity.slice(0, 64),
+    },
+  });
 }
 
 export function clearAcpTraceForTests(): void {

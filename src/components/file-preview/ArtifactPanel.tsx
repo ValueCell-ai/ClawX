@@ -52,13 +52,14 @@ export function ArtifactPanel({ fileGroups, uniqueFileCount, agent, workspacePat
   const focusedChange = useArtifactPanel((s) => s.focusedChange);
   const close = useArtifactPanel((s) => s.close);
   const richFocusedFile = !!focusedFile
+    && !focusedFile.attachmentFileRef
     && !focusedFile.workspaceFileRef
     && supportsRichDocumentPreview(focusedFile.ext);
   const requestedTab = !WORKSPACE_BROWSER_ENABLED && tab === 'browser' ? 'changes' : tab;
   const visibleTab = requestedTab;
 
   const handleRevealFocusedFile = () => {
-    if (!focusedFile) return;
+    if (!focusedFile || focusedFile.attachmentFileRef) return;
     hostApi.shell.showItemInFolder(focusedFile.filePath).catch(() => {
       toast.error(t('filePreview.errors.openInFinderFailed', 'Could not reveal in file manager'));
     });

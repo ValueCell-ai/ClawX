@@ -60,7 +60,15 @@
         "saveImage": "另存为图片",
         "imageSaved": "图片已保存",
         "copy": "复制回复",
-        "copied": "已复制"
+        "copied": "已复制",
+        "attachment": {
+            "loading": "正在加载附件",
+            "unavailable": "附件不可用",
+            "open": "打开 {{name}}",
+            "preview": "预览 {{name}}",
+            "mimeSize": "{{mimeType}}, {{size}}",
+            "openFailed": "无法打开附件"
+        }
     },
     "artifactPanel": {
         "tabs": {
@@ -222,7 +230,7 @@
         "gatewayDisconnectedPlaceholder": "网关未连接...",
         "send": "发送",
         "stop": "停止",
-        "working": "AI 正在工作",
+        "thinking": "思考中…",
         "gatewayConnected": "已连接",
         "gatewayStarting": "启动中",
         "gatewayStatus": "网关{{state}} ｜ 端口：{{port}} ｜ 进程 ID：{{pid}}",

@@ -234,7 +234,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
             json: { success: true, agents: [{ id: 'main', name: 'main', workspace: DEFAULT_WORKSPACE, mainSessionKey: MAIN_SESSION_KEY }] },
           },
         },
-        [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: {
+        [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: {
           success: true,
           generation: 1,
         },
@@ -270,7 +270,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
             json: { success: true, agents: [{ id: 'main', name: 'main', workspace: DEFAULT_WORKSPACE, mainSessionKey: MAIN_SESSION_KEY }] },
           },
         },
-        [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: {
+        [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: {
           success: true,
           generation: 1,
         },

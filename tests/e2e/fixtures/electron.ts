@@ -1,9 +1,12 @@
 import electronBinaryPath from 'electron';
 import { _electron as electron, expect, test as base, type ElectronApplication, type Page } from '@playwright/test';
-import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { build as buildWithEsbuild } from 'esbuild';
+import { access, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import type { RawMessage } from '../../../shared/chat/types';
 
 type LaunchElectronOptions = {
   skipSetup?: boolean;
@@ -29,6 +32,51 @@ export type RecordedLegacyIpcInvocation = {
   args: unknown[];
 };
 
+export type AttachmentFixtureSession = {
+  key: string;
+  title: string;
+};
+
+export type AttachmentFixtureTranscriptResponse = RawMessage[] | {
+  messages: RawMessage[];
+  deferId: string;
+};
+
+export type AttachmentHostFixture = {
+  workspaceDir: string;
+  openClawMediaDir: string;
+  outsideDir: string;
+  createWorkspaceFile: (relativePath: string, data: string | Uint8Array) => Promise<string>;
+  createOpenClawMediaFile: (relativePath: string, data: string | Uint8Array) => Promise<string>;
+  createOutsideFile: (relativePath: string, data: string | Uint8Array) => Promise<string>;
+  registerStagedAttachment: (id: string, stagedPath: string, displayPath?: string) => Promise<void>;
+  emitAcpSessionUpdates: (input: {
+    sessionKey: string;
+    updates: Array<Record<string, unknown> & { sessionUpdate: string }>;
+    generation?: number;
+    historical?: boolean;
+  }) => Promise<void>;
+  setPromptUpdates: (
+    prompt: string,
+    updates: Array<Record<string, unknown> & { sessionUpdate: string }>,
+  ) => Promise<void>;
+  setSessionReplay: (
+    sessionKey: string,
+    updates: Array<Record<string, unknown> & { sessionUpdate: string }>,
+  ) => Promise<void>;
+  setTranscriptResponses: (
+    sessionKey: string,
+    responses: AttachmentFixtureTranscriptResponse[],
+  ) => Promise<void>;
+  releaseTranscriptResponse: (deferId: string) => Promise<void>;
+  waitForDeferredTranscriptReady: (deferId: string, timeoutMs?: number) => Promise<void>;
+  waitForDeferredTranscriptCompleted: (deferId: string, timeoutMs?: number) => Promise<void>;
+  waitForHistoryRequestCount: (sessionKey: string, count: number, timeoutMs?: number) => Promise<number[]>;
+  getHostInvocations: () => Promise<RecordedHostInvocation[]>;
+  getShellInvocations: () => Promise<RecordedHostInvocation[]>;
+  clearInvocations: () => Promise<void>;
+};
+
 type ElectronFixtures = {
   electronApp: ElectronApplication;
   page: Page;
@@ -39,6 +87,40 @@ type ElectronFixtures = {
 
 const repoRoot = resolve(process.cwd());
 const electronEntry = join(repoRoot, 'dist-electron/main/index.js');
+let productionAttachmentBundlePromise: Promise<string> | undefined;
+
+function productionAttachmentBundle(): Promise<string> {
+  // The app's production registry is closure-owned and cannot accept a provider-free
+  // test grant. Bundle the real access service into Electron Main instead of
+  // reimplementing its authorization or shell delegation in this fixture.
+  productionAttachmentBundlePromise ??= buildWithEsbuild({
+    stdin: {
+      contents: [
+        `export { createAttachmentAccess, StagedAttachmentRegistry } from ${JSON.stringify(join(repoRoot, 'electron/services/attachment-access.ts'))};`,
+        `export { AcpSessionAccessRegistry } from ${JSON.stringify(join(repoRoot, 'electron/services/acp-session-access-registry.ts'))};`,
+        `export { createMediaApi } from ${JSON.stringify(join(repoRoot, 'electron/services/media-api.ts'))};`,
+      ].join('\n'),
+      loader: 'ts',
+      resolveDir: repoRoot,
+      sourcefile: 'attachment-e2e-production-entry.ts',
+    },
+    bundle: true,
+    define: {
+      'import.meta.url': JSON.stringify(pathToFileURL(join(repoRoot, 'electron/utils/paths.ts')).href),
+    },
+    external: ['electron'],
+    format: 'cjs',
+    platform: 'node',
+    target: 'node22',
+    tsconfig: join(repoRoot, 'tsconfig.node.json'),
+    write: false,
+  }).then((result) => {
+    const output = result.outputFiles?.[0];
+    if (!output) throw new Error('Failed to bundle production attachment services for Electron E2E');
+    return output.text;
+  });
+  return productionAttachmentBundlePromise;
+}
 
 async function allocatePort(): Promise<number> {
   return await new Promise((resolvePort, reject) => {
@@ -481,6 +563,444 @@ export async function installIpcMocks(
     },
     config,
   );
+}
+
+function stableStringify(value: unknown): string {
+  if (value == null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`);
+  return `{${entries.join(',')}}`;
+}
+
+export async function installAttachmentHostFixture(
+  app: ElectronApplication,
+  options: { sessions: AttachmentFixtureSession[] },
+): Promise<AttachmentHostFixture> {
+  if (options.sessions.length === 0) throw new Error('Attachment fixture requires at least one session');
+  const homeDir = await app.evaluate(async () => process.env.HOME || process.env.USERPROFILE || '');
+  if (!homeDir) throw new Error('Attachment fixture could not resolve the isolated home directory');
+  const fixtureRoot = join(homeDir, 'attachment-e2e');
+  const workspacePath = join(fixtureRoot, 'workspace');
+  const outsidePath = join(fixtureRoot, 'outside');
+  const openClawMediaPath = join(homeDir, '.openclaw', 'media');
+  await Promise.all([
+    mkdir(workspacePath, { recursive: true }),
+    mkdir(outsidePath, { recursive: true }),
+    mkdir(openClawMediaPath, { recursive: true }),
+  ]);
+  const [workspaceDir, outsideDir, openClawMediaDir] = await Promise.all([
+    realpath(workspacePath),
+    realpath(outsidePath),
+    realpath(openClawMediaPath),
+  ]);
+  const productionAttachmentBundlePath = join(fixtureRoot, 'production-attachment-access.cjs');
+  await writeFile(productionAttachmentBundlePath, await productionAttachmentBundle(), 'utf-8');
+
+  const now = Date.now();
+  const sessionRecords = options.sessions.map((session, index) => ({
+    key: session.key,
+    displayName: session.title,
+    derivedTitle: session.title,
+    workspacePath: workspaceDir,
+    updatedAt: new Date(now - index).toISOString(),
+  }));
+  const sessionsList = { success: true, result: { sessions: sessionRecords } };
+  const sessionKeys = options.sessions.map((session) => session.key);
+  await installIpcMocks(app, {
+    gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345, connectedAt: now },
+    gatewayRpc: {
+      [stableStringify(['sessions.list', {}])]: sessionsList,
+      [stableStringify(['sessions.list', { includeDerivedTitles: true, includeLastMessage: true }])]: sessionsList,
+      [stableStringify(['chat.history', null])]: { success: true, result: { messages: [] } },
+    },
+    hostApi: {
+      [stableStringify(['settings', 'getAll', null])]: {
+        language: 'en',
+        setupComplete: true,
+        chatWorkspacePath: workspaceDir,
+        recentWorkspacePaths: [workspaceDir],
+      },
+      [stableStringify(['agents', 'list', null])]: {
+        success: true,
+        agents: [{
+          id: 'main',
+          name: 'main',
+          workspace: workspaceDir,
+          mainSessionKey: options.sessions[0]!.key,
+        }],
+      },
+      [stableStringify(['sessions', 'summaries', { sessionKeys }])]: {
+        success: true,
+        summaries: options.sessions.map((session, index) => ({
+          sessionKey: session.key,
+          firstUserText: session.title,
+          lastTimestamp: now - index,
+          workspacePath: workspaceDir,
+        })),
+      },
+    },
+    recordLegacyIpcInvocations: true,
+  });
+
+  await app.evaluate(async ({ app: _app }, payload) => {
+    const { BrowserWindow, ipcMain, shell } = process.mainModule!.require('electron') as typeof import('electron');
+    type AcpUpdate = Record<string, unknown> & { sessionUpdate: string };
+    type TranscriptResponse = { messages: RawMessage[]; deferId?: string };
+    type HostRequest = {
+      id?: string;
+      module?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+    };
+    type HostHandler = (event: unknown, request: HostRequest) => Promise<unknown>;
+    type FixtureState = {
+      activeSessionKey: string;
+      generation: number;
+      replays: Record<string, AcpUpdate[]>;
+      promptUpdates: Record<string, AcpUpdate[]>;
+      transcriptResponses: Record<string, TranscriptResponse[]>;
+      transcriptIndexes: Record<string, number>;
+      historyRequestTimes: Record<string, number[]>;
+      replayReady: Record<string, Promise<void> | undefined>;
+      deferredTranscriptResolvers: Record<string, (() => void) | undefined>;
+      deferredTranscriptReady: Record<string, boolean>;
+      deferredTranscriptReturned: Record<string, boolean>;
+      deferredTranscriptCompleted: Record<string, boolean>;
+      hostInvocations: RecordedHostInvocation[];
+      shellInvocations: RecordedHostInvocation[];
+      stagedAttachments?: { register: (id: string, canonicalPath: string, displayPath?: string) => void };
+    };
+    const globals = globalThis as unknown as { __e2eAttachmentFixture?: FixtureState };
+    const state: FixtureState = {
+      activeSessionKey: '',
+      generation: 0,
+      replays: {},
+      promptUpdates: {},
+      transcriptResponses: {},
+      transcriptIndexes: {},
+      historyRequestTimes: {},
+      replayReady: {},
+      deferredTranscriptResolvers: {},
+      deferredTranscriptReady: {},
+      deferredTranscriptReturned: {},
+      deferredTranscriptCompleted: {},
+      hostInvocations: [],
+      shellInvocations: [],
+    };
+    globals.__e2eAttachmentFixture = state;
+
+    const instrumentedShell = shell as unknown as {
+      openPath: (path: string) => Promise<string>;
+      openExternal: (url: string) => Promise<void>;
+    };
+    instrumentedShell.openPath = async (path) => {
+      state.shellInvocations.push({ module: 'shell', action: 'openPath', payload: { path } });
+      return '';
+    };
+    instrumentedShell.openExternal = async (url) => {
+      state.shellInvocations.push({ module: 'shell', action: 'openExternal', payload: { url } });
+    };
+
+    type ProductionAttachmentModule = {
+      AcpSessionAccessRegistry: new () => {
+        prepareGrant: (input: {
+          sessionKey: string;
+          generation: number;
+          workspaceRoot: string;
+          executionCwd: string;
+        }) => Promise<unknown>;
+        commitGrant: (grant: unknown) => void;
+      };
+      StagedAttachmentRegistry: new () => {
+        register: (id: string, canonicalPath: string, displayPath?: string) => void;
+      };
+      createMediaApi: (dependencies: { attachmentAccess: unknown }) => {
+        thumbnails: (input: unknown) => Promise<unknown>;
+      };
+      createAttachmentAccess: (dependencies: {
+        sessionAccessRegistry: unknown;
+        stagedAttachments: unknown;
+      }) => {
+        resolveAttachment: (input: unknown) => Promise<unknown>;
+        readAttachmentText: (input: unknown) => Promise<unknown>;
+        readAttachmentBinary: (input: unknown) => Promise<unknown>;
+        openAttachment: (input: unknown) => Promise<unknown>;
+      };
+    };
+    const production = process.mainModule!.require(payload.productionAttachmentBundlePath) as ProductionAttachmentModule;
+    const productionSessionAccess = new production.AcpSessionAccessRegistry();
+    const productionStagedAttachments = new production.StagedAttachmentRegistry();
+    state.stagedAttachments = productionStagedAttachments;
+    const productionAttachmentAccess = production.createAttachmentAccess({
+      sessionAccessRegistry: productionSessionAccess,
+      stagedAttachments: productionStagedAttachments,
+    });
+    const productionMediaApi = production.createMediaApi({ attachmentAccess: productionAttachmentAccess });
+
+    const respond = (id: unknown, data: unknown) => ({
+      id: typeof id === 'string' ? id : undefined,
+      ok: true,
+      data,
+    });
+    const emitUpdates = (sessionKey: string, generation: number, historical: boolean, updates: AcpUpdate[]) => {
+      for (const update of updates) {
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('chat:acp-session-update', {
+            sessionKey,
+            generation,
+            ...(historical ? { historical: true } : {}),
+            notification: { sessionId: sessionKey, update },
+          });
+        }
+      }
+    };
+    const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, HostHandler> })._invokeHandlers;
+    const originalHostInvoke = handlers?.get('host:invoke');
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: HostRequest) => {
+      state.hostInvocations.push({ module: request.module, action: request.action, payload: request.payload });
+
+      if (request.module === 'chat' && request.action === 'loadAcpSession') {
+        const sessionKey = String(request.payload?.sessionKey ?? '');
+        state.generation += 1;
+        state.activeSessionKey = sessionKey;
+        const generation = state.generation;
+        const grant = await productionSessionAccess.prepareGrant({
+          sessionKey,
+          generation,
+          workspaceRoot: payload.workspaceDir,
+          executionCwd: payload.workspaceDir,
+        });
+        productionSessionAccess.commitGrant(grant);
+        const replay = state.replays[sessionKey] ?? [];
+        state.replayReady[sessionKey] = new Promise((resolveReplay) => {
+          setTimeout(() => {
+            emitUpdates(sessionKey, generation, true, replay);
+            resolveReplay();
+          }, 0);
+        });
+        return respond(request.id, { success: true, generation });
+      }
+      if (request.module === 'chat' && request.action === 'sendAcpPrompt') {
+        const sessionKey = String(request.payload?.sessionKey ?? '');
+        const prompt = String(request.payload?.message ?? '');
+        if (sessionKey === state.activeSessionKey) {
+          emitUpdates(sessionKey, state.generation, false, state.promptUpdates[prompt] ?? []);
+        }
+        return respond(request.id, { success: true, generation: state.generation });
+      }
+      if (request.module === 'sessions' && request.action === 'history') {
+        const sessionKey = String(request.payload?.sessionKey ?? '');
+        const times = state.historyRequestTimes[sessionKey] ?? [];
+        times.push(Date.now());
+        state.historyRequestTimes[sessionKey] = times;
+        await state.replayReady[sessionKey];
+        const responses = state.transcriptResponses[sessionKey] ?? [{ messages: [] }];
+        const index = state.transcriptIndexes[sessionKey] ?? 0;
+        state.transcriptIndexes[sessionKey] = index + 1;
+        const response = responses[Math.min(index, responses.length - 1)] ?? { messages: [] };
+        if (response.deferId) {
+          state.deferredTranscriptReady[response.deferId] = true;
+          await new Promise<void>((resolveResponse) => {
+            state.deferredTranscriptResolvers[response.deferId!] = resolveResponse;
+          });
+          delete state.deferredTranscriptResolvers[response.deferId];
+          state.deferredTranscriptReturned[response.deferId] = true;
+        }
+        return respond(request.id, { success: true, messages: response.messages });
+      }
+      if (request.module === 'files' && request.action === 'resolveWorkspaceContext') {
+        return respond(request.id, {
+          ok: true,
+          workspaceRoot: payload.workspaceDir,
+          executionCwd: payload.workspaceDir,
+        });
+      }
+      if (request.module === 'files' && request.action === 'resolveAttachment') {
+        return respond(request.id, await productionAttachmentAccess.resolveAttachment(request.payload));
+      }
+      if (request.module === 'files' && request.action === 'readAttachmentText') {
+        return respond(request.id, await productionAttachmentAccess.readAttachmentText(request.payload));
+      }
+      if (request.module === 'files' && request.action === 'readAttachmentBinary') {
+        return respond(request.id, await productionAttachmentAccess.readAttachmentBinary(request.payload));
+      }
+      if (request.module === 'files' && request.action === 'openAttachment') {
+        return respond(request.id, await productionAttachmentAccess.openAttachment(request.payload));
+      }
+      if (request.module === 'media' && request.action === 'thumbnails') {
+        return respond(request.id, await productionMediaApi.thumbnails(request.payload));
+      }
+      if (request.module === 'diagnostics' && request.action === 'recordAcpTrace') {
+        if (request.payload?.event === 'openclaw-media:projection-stale') {
+          for (const deferId of Object.keys(state.deferredTranscriptReturned)) {
+            state.deferredTranscriptCompleted[deferId] = true;
+          }
+        }
+        return respond(request.id, { success: true });
+      }
+
+      return originalHostInvoke?.(event, request) ?? respond(request.id, {});
+    });
+  }, { workspaceDir, productionAttachmentBundlePath });
+
+  const writeFixtureFile = async (root: string, relativePath: string, data: string | Uint8Array) => {
+    const filePath = resolve(root, relativePath);
+    const fromRoot = relative(root, filePath);
+    if (!fromRoot || fromRoot === '..' || fromRoot.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)) {
+      throw new Error(`Attachment fixture path escapes its root: ${relativePath}`);
+    }
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, data);
+    return filePath;
+  };
+  const readState = async () => await app.evaluate(async () => {
+    const state = (globalThis as unknown as {
+      __e2eAttachmentFixture?: {
+        historyRequestTimes: Record<string, number[]>;
+        deferredTranscriptReady: Record<string, boolean>;
+        deferredTranscriptCompleted: Record<string, boolean>;
+        hostInvocations: RecordedHostInvocation[];
+        shellInvocations: RecordedHostInvocation[];
+      };
+    }).__e2eAttachmentFixture;
+    if (!state) throw new Error('Attachment fixture is not installed');
+    return {
+      historyRequestTimes: state.historyRequestTimes,
+      deferredTranscriptReady: state.deferredTranscriptReady,
+      deferredTranscriptCompleted: state.deferredTranscriptCompleted,
+      hostInvocations: state.hostInvocations,
+      shellInvocations: state.shellInvocations,
+    };
+  });
+
+  return {
+    workspaceDir,
+    openClawMediaDir,
+    outsideDir,
+    createWorkspaceFile: async (path, data) => await writeFixtureFile(workspaceDir, path, data),
+    createOpenClawMediaFile: async (path, data) => await writeFixtureFile(openClawMediaDir, path, data),
+    createOutsideFile: async (path, data) => await writeFixtureFile(outsideDir, path, data),
+    registerStagedAttachment: async (id, stagedPath, displayPath) => {
+      await app.evaluate(async ({ app: _app }, input) => {
+        const state = (globalThis as unknown as {
+          __e2eAttachmentFixture?: {
+            stagedAttachments?: { register: (id: string, canonicalPath: string, displayPath?: string) => void };
+          };
+        }).__e2eAttachmentFixture;
+        if (!state?.stagedAttachments) throw new Error('Attachment staging fixture is not installed');
+        state.stagedAttachments.register(input.id, input.stagedPath, input.displayPath);
+      }, { id, stagedPath, displayPath });
+    },
+    emitAcpSessionUpdates: async (input) => {
+      await app.evaluate(async ({ app: _app }, event) => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        const state = (globalThis as unknown as {
+          __e2eAttachmentFixture?: { activeSessionKey: string; generation: number };
+        }).__e2eAttachmentFixture;
+        if (!state) throw new Error('Attachment fixture is not installed');
+        const generation = event.generation ?? state.generation;
+        for (const update of event.updates) {
+          for (const window of BrowserWindow.getAllWindows()) {
+            window.webContents.send('chat:acp-session-update', {
+              sessionKey: event.sessionKey,
+              generation,
+              ...(event.historical ? { historical: true } : {}),
+              notification: { sessionId: event.sessionKey, update },
+            });
+          }
+        }
+      }, input);
+    },
+    setPromptUpdates: async (prompt, updates) => {
+      await app.evaluate(async ({ app: _app }, input) => {
+        const state = (globalThis as unknown as {
+          __e2eAttachmentFixture?: { promptUpdates: Record<string, unknown[]> };
+        }).__e2eAttachmentFixture;
+        if (!state) throw new Error('Attachment fixture is not installed');
+        state.promptUpdates[input.prompt] = input.updates;
+      }, { prompt, updates });
+    },
+    setSessionReplay: async (sessionKey, updates) => {
+      await app.evaluate(async ({ app: _app }, input) => {
+        const state = (globalThis as unknown as {
+          __e2eAttachmentFixture?: { replays: Record<string, unknown[]> };
+        }).__e2eAttachmentFixture;
+        if (!state) throw new Error('Attachment fixture is not installed');
+        state.replays[input.sessionKey] = input.updates;
+      }, { sessionKey, updates });
+    },
+    setTranscriptResponses: async (sessionKey, responses) => {
+      const normalized = responses.map((response) => Array.isArray(response)
+        ? { messages: response }
+        : response);
+      await app.evaluate(async ({ app: _app }, input) => {
+        const state = (globalThis as unknown as {
+          __e2eAttachmentFixture?: {
+            transcriptResponses: Record<string, unknown[]>;
+            transcriptIndexes: Record<string, number>;
+          };
+        }).__e2eAttachmentFixture;
+        if (!state) throw new Error('Attachment fixture is not installed');
+        state.transcriptResponses[input.sessionKey] = input.responses;
+        state.transcriptIndexes[input.sessionKey] = 0;
+      }, { sessionKey, responses: normalized });
+    },
+    releaseTranscriptResponse: async (deferId) => {
+      await app.evaluate(async ({ app: _app }, id) => {
+        const state = (globalThis as unknown as {
+          __e2eAttachmentFixture?: { deferredTranscriptResolvers: Record<string, (() => void) | undefined> };
+        }).__e2eAttachmentFixture;
+        if (!state) throw new Error('Attachment fixture is not installed');
+        const release = state.deferredTranscriptResolvers[id];
+        if (!release) throw new Error(`Deferred transcript response is not ready: ${id}`);
+        delete state.deferredTranscriptResolvers[id];
+        release();
+      }, deferId);
+    },
+    waitForDeferredTranscriptReady: async (deferId, timeoutMs = 5_000) => {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        if ((await readState()).deferredTranscriptReady[deferId]) return;
+        await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+      }
+      throw new Error(`Timed out waiting for deferred transcript response to become ready: ${deferId}`);
+    },
+    waitForDeferredTranscriptCompleted: async (deferId, timeoutMs = 5_000) => {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        if ((await readState()).deferredTranscriptCompleted[deferId]) return;
+        await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+      }
+      throw new Error(`Timed out waiting for deferred transcript response to complete: ${deferId}`);
+    },
+    waitForHistoryRequestCount: async (sessionKey, count, timeoutMs = 5_000) => {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const times = (await readState()).historyRequestTimes[sessionKey] ?? [];
+        if (times.length >= count) return times;
+        await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+      }
+      throw new Error(`Timed out waiting for ${count} transcript requests for ${sessionKey}`);
+    },
+    getHostInvocations: async () => (await readState()).hostInvocations,
+    getShellInvocations: async () => (await readState()).shellInvocations,
+    clearInvocations: async () => {
+      await app.evaluate(async () => {
+        const state = (globalThis as unknown as {
+          __e2eAttachmentFixture?: {
+            hostInvocations: RecordedHostInvocation[];
+            shellInvocations: RecordedHostInvocation[];
+          };
+        }).__e2eAttachmentFixture;
+        if (!state) throw new Error('Attachment fixture is not installed');
+        state.hostInvocations = [];
+        state.shellInvocations = [];
+      });
+    },
+  };
 }
 
 export async function getRecordedHostInvocations(app: ElectronApplication): Promise<RecordedHostInvocation[]> {

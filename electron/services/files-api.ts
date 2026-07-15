@@ -23,8 +23,17 @@ import type {
   FileReadBinaryOptions,
   WorkspaceFileRef,
 } from '@shared/host-api/contract';
+import {
+  FILE_PREVIEW_MAX_BINARY_BYTES,
+  FILE_PREVIEW_MAX_TEXT_BYTES,
+} from '@shared/file-preview/limits';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
-import { expandPath } from '../utils/paths';
+import { expandPath, resolveOpenClawStateDir } from '../utils/paths';
+import {
+  resolveClawXStagingDir,
+  type AttachmentAccess,
+  type StagedAttachmentRegistry,
+} from './attachment-access';
 import { isRecord } from './payload-utils';
 
 const EXT_MIME_MAP: Record<string, string> = {
@@ -70,10 +79,7 @@ const EXT_MIME_MAP: Record<string, string> = {
   '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 };
 
-const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
 const DIRECTORY_MIME_TYPE = 'application/x-directory';
-const FILE_PREVIEW_MAX_TEXT_BYTES = 2 * 1024 * 1024;
-const FILE_PREVIEW_MAX_BINARY_BYTES = 50 * 1024 * 1024;
 const FILE_PREVIEW_TREE_MAX_DEPTH = 6;
 const FILE_PREVIEW_TREE_MAX_NODES = 5000;
 const FILE_PREVIEW_DIR_BLACKLIST = new Set([
@@ -127,6 +133,23 @@ type WorkspaceFs = {
 
 type FilesApiDependencies = {
   workspaceFs?: WorkspaceFs;
+  attachmentAccess?: AttachmentAccess;
+  stagedAttachments?: StagedAttachmentRegistry;
+  stagingHooks?: {
+    beforeDestinationOpen?: (input: { stagingDir: string; destinationPath: string }) => Promise<void>;
+  };
+};
+
+type PinnedStagingDirectory = {
+  lexicalPath: string;
+  canonicalPath: string;
+  dev: number;
+  ino: number;
+};
+
+type PinnedStagingArea = {
+  stagingDir: string;
+  directories: PinnedStagingDirectory[];
 };
 
 function getMimeType(ext: string): string {
@@ -155,6 +178,24 @@ async function generateImagePreview(filePath: string, mimeType: string): Promise
     const { readFile } = await import('node:fs/promises');
     const buf = await readFile(filePath);
     return `data:${mimeType};base64,${buf.toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
+
+function generateImageBufferPreview(buffer: Buffer, mimeType: string): string | null {
+  try {
+    const img = nativeImage.createFromBuffer(buffer);
+    if (img.isEmpty()) return null;
+    const size = img.getSize();
+    const maxDim = 512;
+    if (size.width > maxDim || size.height > maxDim) {
+      const resized = size.width >= size.height
+        ? img.resize({ width: maxDim })
+        : img.resize({ height: maxDim });
+      return `data:image/png;base64,${resized.toPNG().toString('base64')}`;
+    }
+    return `data:${mimeType};base64,${buffer.toString('base64')}`;
   } catch {
     return null;
   }
@@ -317,7 +358,7 @@ function getFilePreviewWriteRoots(): string[] {
   } catch {
     // ignore
   }
-  roots.push(resolve(OUTBOUND_DIR));
+  roots.push(resolve(resolveClawXStagingDir()));
   return roots;
 }
 
@@ -376,6 +417,162 @@ function getBinaryOptions(opts: unknown): FileReadBinaryOptions {
 export function createFilesApi(dependencies: FilesApiDependencies = {}): CompleteHostServiceRegistry['files'] {
   const getWorkspaceFs = async (): Promise<WorkspaceFs> => dependencies.workspaceFs
     ?? await import('node:fs/promises');
+  const stagingAreaName = `clawx-${process.pid}-${crypto.randomUUID()}`;
+  let stagingAreaPromise: Promise<PinnedStagingArea> | null = null;
+
+  const initializeStagingArea = async (): Promise<PinnedStagingArea> => {
+    const fsP = await import('node:fs/promises');
+    const directories: PinnedStagingDirectory[] = [];
+    const ensureDirectory = async (lexicalPath: string, parent?: PinnedStagingDirectory) => {
+      let entryStat: Stats;
+      try {
+        entryStat = await fsP.lstat(lexicalPath);
+      } catch (error) {
+        const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+        if (code !== 'ENOENT') throw error;
+        await fsP.mkdir(lexicalPath, { mode: 0o700 });
+        entryStat = await fsP.lstat(lexicalPath);
+      }
+      if (entryStat.isSymbolicLink() || !entryStat.isDirectory()) {
+        throw new Error('Invalid ClawX staging directory');
+      }
+      const canonicalPath = await fsP.realpath(lexicalPath);
+      const canonicalStat = await fsP.stat(canonicalPath);
+      if (!canonicalStat.isDirectory()
+        || (parent && !isPathInside(canonicalPath, parent.canonicalPath))) {
+        throw new Error('Invalid ClawX staging directory');
+      }
+      const pinned = {
+        lexicalPath,
+        canonicalPath,
+        dev: canonicalStat.dev,
+        ino: canonicalStat.ino,
+      };
+      directories.push(pinned);
+      return pinned;
+    };
+
+    const stateDir = await ensureDirectory(resolveOpenClawStateDir());
+    const mediaDir = await ensureDirectory(join(stateDir.canonicalPath, 'media'), stateDir);
+    const outboundDir = await ensureDirectory(join(mediaDir.canonicalPath, 'outbound'), mediaDir);
+    const stagingRoot = await ensureDirectory(join(outboundDir.canonicalPath, 'clawx-staging'), outboundDir);
+    const stagingArea = await ensureDirectory(join(stagingRoot.canonicalPath, stagingAreaName), stagingRoot);
+    return { stagingDir: stagingArea.canonicalPath, directories };
+  };
+
+  const getStagingArea = () => {
+    stagingAreaPromise ??= initializeStagingArea();
+    return stagingAreaPromise;
+  };
+
+  const verifyStagingArea = async (area: PinnedStagingArea) => {
+    const fsP = await import('node:fs/promises');
+    for (const directory of area.directories) {
+      const entryStat = await fsP.lstat(directory.lexicalPath);
+      if (entryStat.isSymbolicLink()) throw new Error('Invalid ClawX staging directory');
+      const currentPath = await fsP.realpath(directory.lexicalPath);
+      const currentStat = await fsP.stat(currentPath);
+      if (!currentStat.isDirectory()
+        || !isSamePath(currentPath, directory.canonicalPath)
+        || currentStat.dev !== directory.dev
+        || currentStat.ino !== directory.ino) {
+        throw new Error('Invalid ClawX staging directory');
+      }
+    }
+  };
+
+  const cleanupOwnedDestination = async (destinationPath: string, identity?: { dev: number; ino: number }) => {
+    if (!identity) return;
+    const fsP = await import('node:fs/promises');
+    try {
+      const current = await fsP.stat(destinationPath);
+      if (current.dev === identity.dev && current.ino === identity.ino) {
+        await fsP.unlink(destinationPath);
+      }
+    } catch {
+      // The destination was already removed or redirected again.
+    }
+  };
+
+  const createStagedFile = async (
+    fileName: string,
+    write: (handle: FileHandle) => Promise<void>,
+  ): Promise<{ path: string; stat: Stats }> => {
+    const fsP = await import('node:fs/promises');
+    const area = await getStagingArea();
+    await verifyStagingArea(area);
+    const destinationPath = join(area.stagingDir, fileName);
+    await dependencies.stagingHooks?.beforeDestinationOpen?.({
+      stagingDir: area.stagingDir,
+      destinationPath,
+    });
+
+    let handle: FileHandle | undefined;
+    let identity: { dev: number; ino: number } | undefined;
+    try {
+      const noFollow = process.platform === 'win32' ? 0 : constants.O_NOFOLLOW;
+      handle = await fsP.open(
+        destinationPath,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | noFollow,
+        0o600,
+      );
+      const openedStat = await handle.stat();
+      identity = { dev: openedStat.dev, ino: openedStat.ino };
+
+      // Node has no openat. Validate the unpredictable empty destination before writing bytes.
+      await verifyStagingArea(area);
+      const canonicalDestination = await fsP.realpath(destinationPath);
+      const pathStat = await fsP.stat(canonicalDestination);
+      if (!isPathInside(canonicalDestination, area.stagingDir)
+        || pathStat.dev !== openedStat.dev
+        || pathStat.ino !== openedStat.ino) {
+        throw new Error('Invalid ClawX staging destination');
+      }
+
+      await write(handle);
+      const finalStat = await handle.stat();
+      await verifyStagingArea(area);
+      const finalPath = await fsP.realpath(destinationPath);
+      const finalPathStat = await fsP.stat(finalPath);
+      if (!isSamePath(finalPath, canonicalDestination)
+        || finalPathStat.dev !== finalStat.dev
+        || finalPathStat.ino !== finalStat.ino) {
+        throw new Error('Invalid ClawX staging destination');
+      }
+      await handle.close();
+      handle = undefined;
+      await verifyStagingArea(area);
+      const registrationPath = await fsP.realpath(destinationPath);
+      const registrationStat = await fsP.stat(registrationPath);
+      if (!isSamePath(registrationPath, finalPath)
+        || registrationStat.dev !== finalStat.dev
+        || registrationStat.ino !== finalStat.ino) {
+        throw new Error('Invalid ClawX staging destination');
+      }
+      return { path: registrationPath, stat: finalStat };
+    } catch (error) {
+      await handle?.close().catch(() => undefined);
+      await cleanupOwnedDestination(destinationPath, identity);
+      throw error;
+    }
+  };
+
+  const copyIntoHandle = async (sourcePath: string, destination: FileHandle) => {
+    const fsP = await import('node:fs/promises');
+    const source = await fsP.open(sourcePath, constants.O_RDONLY);
+    try {
+      const buffer = Buffer.allocUnsafe(64 * 1024);
+      let position = 0;
+      while (true) {
+        const { bytesRead } = await source.read(buffer, 0, buffer.length, position);
+        if (bytesRead === 0) break;
+        await destination.write(buffer, 0, bytesRead, position);
+        position += bytesRead;
+      }
+    } finally {
+      await source.close();
+    }
+  };
   return {
     stagePaths: async (payload) => {
       const body = isRecord(payload) ? payload as StagePathsPayload : {};
@@ -383,8 +580,6 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
         ? body.filePaths.filter((value): value is string => typeof value === 'string')
         : [];
       const fsP = await import('node:fs/promises');
-      await fsP.mkdir(OUTBOUND_DIR, { recursive: true });
-
       const results = [];
       for (const filePath of filePaths) {
         const id = crypto.randomUUID();
@@ -403,14 +598,13 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
         }
 
         const ext = extname(filePath);
-        const stagedPath = join(OUTBOUND_DIR, `${id}${ext}`);
-        await fsP.copyFile(filePath, stagedPath);
-        const s = await fsP.stat(stagedPath);
         const mimeType = getMimeType(ext);
         const preview = mimeType.startsWith('image/')
-          ? await generateImagePreview(stagedPath, mimeType)
+          ? await generateImagePreview(filePath, mimeType)
           : null;
-        results.push({ id, fileName, mimeType, fileSize: s.size, stagedPath, preview });
+        const staged = await createStagedFile(`${id}${ext}`, (handle) => copyIntoHandle(filePath, handle));
+        dependencies.stagedAttachments?.register(id, staged.path, filePath);
+        results.push({ id, fileName, mimeType, fileSize: staged.stat.size, stagedPath: staged.path, preview });
       }
       return results;
     },
@@ -419,26 +613,25 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
       if (typeof body.base64 !== 'string' || typeof body.fileName !== 'string') {
         throw new Error('Invalid staged buffer payload');
       }
-      const fsP = await import('node:fs/promises');
-      await fsP.mkdir(OUTBOUND_DIR, { recursive: true });
-
       const id = crypto.randomUUID();
       const payloadMimeType = typeof body.mimeType === 'string' ? body.mimeType : '';
       const ext = extname(body.fileName) || mimeToExt(payloadMimeType);
-      const stagedPath = join(OUTBOUND_DIR, `${id}${ext}`);
       const buffer = Buffer.from(body.base64, 'base64');
-      await fsP.writeFile(stagedPath, buffer);
 
       const mimeType = payloadMimeType || getMimeType(ext);
       const preview = mimeType.startsWith('image/')
-        ? await generateImagePreview(stagedPath, mimeType)
+        ? generateImageBufferPreview(buffer, mimeType)
         : null;
+      const staged = await createStagedFile(`${id}${ext}`, async (handle) => {
+        await handle.writeFile(buffer);
+      });
+      dependencies.stagedAttachments?.register(id, staged.path);
       return {
         id,
         fileName: body.fileName,
         mimeType,
         fileSize: buffer.length,
-        stagedPath,
+        stagedPath: staged.path,
         preview,
       };
     },
@@ -534,6 +727,23 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
       } finally {
         await opened?.handle.close().catch(() => undefined);
       }
+    },
+    resolveAttachment: async (payload) => dependencies.attachmentAccess?.resolveAttachment(payload) ?? {
+      ok: false,
+      displayName: 'attachment',
+      error: 'operationFailed',
+    },
+    readAttachmentText: async (ref) => dependencies.attachmentAccess?.readAttachmentText(ref) ?? {
+      ok: false,
+      error: 'operationFailed',
+    },
+    readAttachmentBinary: async (payload) => dependencies.attachmentAccess?.readAttachmentBinary(payload) ?? {
+      ok: false,
+      error: 'operationFailed',
+    },
+    openAttachment: async (ref) => dependencies.attachmentAccess?.openAttachment(ref) ?? {
+      ok: false,
+      error: 'operationFailed',
     },
     readText: async (payload) => {
       try {

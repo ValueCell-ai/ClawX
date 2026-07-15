@@ -9,7 +9,8 @@ import type {
   ToolKind,
 } from '@agentclientprotocol/sdk';
 import { contentBlockToRenderPart, contentBlocksToRenderParts, toolContentToRenderPart, toolContentToRenderParts } from './content-blocks';
-import type { AcpTimelineSnapshot, MessageSegmentItem, RenderPart, TimelineItem, ToolCallItem } from './timeline-types';
+import { dedupeTimelineAttachments } from './attachments';
+import type { AcpTimelineSnapshot, AttachmentRenderPart, MessageSegmentItem, RenderPart, TimelineItem, ToolCallItem } from './timeline-types';
 
 type UpdateRecord = Record<string, unknown> & {
   sessionUpdate?: unknown;
@@ -109,7 +110,9 @@ function nextMessageSegment(
 
   const segmentIndex = state.segmentCounts[messageId] ?? 0;
   const id = `${messageId}:${segmentIndex}`;
-  const item: MessageSegmentItem = { kind: 'message-segment', id, role, messageId, segmentIndex, parts: [] };
+  const item: MessageSegmentItem = {
+    kind: 'message-segment', id, role, messageId, segmentIndex, parts: [], blockCount: 0,
+  };
 
   return {
     state: {
@@ -134,7 +137,37 @@ function appendRenderPart(parts: RenderPart[], nextPart: RenderPart): RenderPart
   return [...parts, nextPart];
 }
 
+function preserveAvailableAttachment(
+  previous: Extract<RenderPart, { kind: 'attachment' }>,
+  next: Extract<RenderPart, { kind: 'attachment' }>,
+): RenderPart {
+  const sameReference = previous.reference.uri === next.reference.uri
+    && previous.reference.stagingId === next.reference.stagingId;
+  return sameReference && previous.access.status === 'available'
+    ? {
+        ...next,
+        reference: {
+          ...next.reference,
+          ...(previous.reference.displayPath ? { displayPath: previous.reference.displayPath } : {}),
+        },
+        access: previous.access,
+      }
+    : next;
+}
+
 function appendMessageRenderPart(role: Role, parts: RenderPart[], nextPart: RenderPart): RenderPart[] {
+  if (nextPart.kind === 'attachment') {
+    const existingIndex = parts.findIndex((part) => (
+      part.kind === 'attachment' && part.attachmentId === nextPart.attachmentId
+    ));
+    if (existingIndex >= 0) {
+      return parts.map((part, index) => (
+        index === existingIndex && part.kind === 'attachment'
+          ? preserveAvailableAttachment(part, nextPart)
+          : part
+      ));
+    }
+  }
   if (role === 'user' && nextPart.kind === 'markdown') {
     const markdownIndex = parts.findIndex((part) => part.kind === 'markdown');
     if (markdownIndex >= 0 && markdownIndex !== parts.length - 1) {
@@ -149,20 +182,31 @@ function appendMessageRenderPart(role: Role, parts: RenderPart[], nextPart: Rend
 }
 
 function renderPartKey(part: RenderPart): string | null {
-  if (part.kind === 'file') return `file:${part.path ?? ''}:${part.name ?? ''}:${part.mimeType ?? ''}`;
+  if (part.kind === 'attachment') {
+    return `attachment:${part.reference.uri}:${part.reference.name}:${part.reference.mimeType ?? ''}:${part.reference.stagingId ?? ''}`;
+  }
   if (part.kind === 'image') return `image:${part.source}:${part.mimeType ?? ''}`;
   if (part.kind === 'error') return `error:${part.message}`;
   return null;
 }
 
 function mergeOptimisticUserEchoParts(optimisticParts: RenderPart[], echoParts: RenderPart[]): RenderPart[] {
-  const echoPartKeys = new Set(echoParts.map(renderPartKey).filter((key): key is string => Boolean(key)));
+  const reconciledEchoParts = echoParts.map((echoPart) => {
+    if (echoPart.kind !== 'attachment') return echoPart;
+    const previous = optimisticParts.find((part) => (
+      part.kind === 'attachment' && renderPartKey(part) === renderPartKey(echoPart)
+    ));
+    return previous?.kind === 'attachment'
+      ? preserveAvailableAttachment(previous, echoPart)
+      : echoPart;
+  });
+  const echoPartKeys = new Set(reconciledEchoParts.map(renderPartKey).filter((key): key is string => Boolean(key)));
   const missingOptimisticMedia = optimisticParts.filter((part) => {
     if (part.kind === 'markdown') return false;
     const key = renderPartKey(part);
     return !key || !echoPartKeys.has(key);
   });
-  return [...echoParts, ...missingOptimisticMedia];
+  return [...reconciledEchoParts, ...missingOptimisticMedia];
 }
 
 function findMessageSegmentId(state: AcpTimelineSnapshot, role: Role, messageId: string): string | undefined {
@@ -181,12 +225,19 @@ function appendMessageChunk(
   if (!content) return state;
   const messageId = getMessageId(state, update, role);
   const result = nextMessageSegment(state, role, messageId);
-  const nextPart = contentBlockToRenderPart(content);
+  const blockIndex = result.item.blockCount ?? result.item.parts.length;
+  const nextPart = contentBlockToRenderPart(content, {
+    role,
+    messageId,
+    segmentIndex: result.item.segmentIndex,
+    blockIndex,
+  });
   const parts = result.item.optimistic && role === 'user'
     ? mergeOptimisticUserEchoParts(result.item.parts, [nextPart])
     : appendMessageRenderPart(role, result.item.parts, nextPart);
   const nextItem: MessageSegmentItem = {
     ...result.item,
+    blockCount: blockIndex + 1,
     optimistic: false,
     parts,
   };
@@ -207,9 +258,15 @@ function replaceMessage(
     const existingId = findMessageSegmentId(state, role, messageId);
     const existing = existingId ? state.itemsById[existingId] : undefined;
     if (existing?.kind === 'message-segment') {
-      const parts = contentBlocksToRenderParts(contentArray(content));
+      const blocks = contentArray(content);
+      const parts = contentBlocksToRenderParts(blocks, {
+        role,
+        messageId,
+        segmentIndex: existing.segmentIndex,
+      });
       const item: MessageSegmentItem = {
         ...existing,
+        blockCount: blocks.length,
         optimistic: false,
         parts: existing.optimistic ? mergeOptimisticUserEchoParts(existing.parts, parts) : parts,
       };
@@ -221,10 +278,16 @@ function replaceMessage(
   }
 
   const result = nextMessageSegment(state, role, messageId);
+  const blocks = contentArray(content);
   const item: MessageSegmentItem = {
     ...result.item,
+    blockCount: blocks.length,
     optimistic: false,
-    parts: contentBlocksToRenderParts(contentArray(content)),
+    parts: contentBlocksToRenderParts(blocks, {
+      role,
+      messageId,
+      segmentIndex: result.item.segmentIndex,
+    }),
   };
 
   return {
@@ -249,6 +312,7 @@ export function appendSyntheticAssistantMessage(
     role: 'assistant',
     messageId: input.messageId,
     segmentIndex: 0,
+    blockCount: 0,
     parts: input.parts,
     compat: { source: 'image-generation', evidenceId: input.evidenceId },
   };
@@ -265,12 +329,66 @@ export function appendSyntheticAssistantMessage(
     ];
   })();
 
-  return {
+  return dedupeTimelineAttachments({
     ...closed,
     itemOrder: nextOrder,
     itemsById: { ...closed.itemsById, [id]: item },
     segmentCounts: { ...closed.segmentCounts, [input.messageId]: 1 },
+  });
+}
+
+export function upsertSyntheticTurnAttachments(
+  snapshot: AcpTimelineSnapshot,
+  input: {
+    turnId: string;
+    evidenceId: string;
+    attachments: AttachmentRenderPart[];
+    source: 'openclaw-media';
+  },
+): AcpTimelineSnapshot {
+  const messageId = `compat:openclaw-media:${input.evidenceId}`;
+  const id = `${messageId}:0`;
+  const existingId = snapshot.itemOrder.find((itemId) => {
+    const item = snapshot.itemsById[itemId];
+    return item?.kind === 'message-segment'
+      && item.compat?.source === input.source
+      && item.compat.evidenceId === input.evidenceId;
+  });
+  const anchorIndex = snapshot.itemOrder.findIndex((itemId) => {
+    const item = snapshot.itemsById[itemId];
+    return item?.kind === 'message-segment' && item.role === 'user' && item.messageId === input.turnId;
+  });
+  if (anchorIndex < 0) return snapshot;
+
+  const item: MessageSegmentItem = {
+    kind: 'message-segment',
+    id,
+    role: 'assistant',
+    messageId,
+    segmentIndex: 0,
+    blockCount: 0,
+    parts: input.attachments,
+    compat: { source: input.source, evidenceId: input.evidenceId },
   };
+  const itemsById = { ...snapshot.itemsById };
+  if (existingId && existingId !== id) delete itemsById[existingId];
+  itemsById[id] = item;
+
+  let itemOrder = snapshot.itemOrder.filter((itemId) => itemId !== existingId && itemId !== id);
+  const nextUserIndex = itemOrder.findIndex((itemId, index) => {
+    if (index <= anchorIndex) return false;
+    const nextItem = itemsById[itemId];
+    return nextItem?.kind === 'message-segment' && nextItem.role === 'user';
+  });
+  const insertionIndex = nextUserIndex < 0 ? itemOrder.length : nextUserIndex;
+  itemOrder = [...itemOrder.slice(0, insertionIndex), id, ...itemOrder.slice(insertionIndex)];
+
+  return dedupeTimelineAttachments({
+    ...snapshot,
+    itemOrder,
+    itemsById,
+    segmentCounts: { ...snapshot.segmentCounts, [messageId]: 1 },
+  });
 }
 
 function normalizeToolStatus(status: ToolCallStatus | null | undefined): ToolCallItem['status'] {
@@ -313,7 +431,11 @@ function upsertToolCall(
     status: propertyExists(update, 'status') ? normalizeToolStatus(rawStatus) : prev?.status ?? 'pending',
     input: hasRawInput ? update.rawInput : prev?.input,
     output: hasRawOutput ? update.rawOutput : prev?.output,
-    outputParts: hasContent ? toolContentToRenderParts(toolContentArray(update.content)) : prev?.outputParts ?? [],
+    outputParts: hasContent
+      ? toolContentToRenderParts(toolContentArray(update.content), {
+          role: 'assistant', messageId: `tool:${toolCallId}`, segmentIndex: 0,
+        })
+      : prev?.outputParts ?? [],
     locations: hasLocations ? toolLocations(update.locations) : prev?.locations ?? [],
     error: rawError ?? prev?.error,
     historical: !!prev?.historical || !!options.historical,
@@ -332,7 +454,12 @@ function appendToolContentChunk(
   const prev = existingToolCall(state, id);
   const rawContent = objectValue(update.content);
   const nextPart = rawContent
-    ? toolContentToRenderPart(rawContent as ToolCallContent)
+    ? toolContentToRenderPart(rawContent as ToolCallContent, {
+        role: 'assistant',
+        messageId: `tool:${toolCallId}`,
+        segmentIndex: 0,
+        blockIndex: prev?.outputParts.length ?? 0,
+      })
     : { kind: 'error' as const, message: 'Unsupported ACP tool content chunk' };
 
   return appendItem(closeAllMessageSegments(state), {
@@ -363,7 +490,12 @@ function appendThoughtChunk(state: AcpTimelineSnapshot, update: UpdateRecord): A
     kind: 'thought',
     id,
     messageId,
-    parts: [...parts, contentBlockToRenderPart(content)],
+    parts: [...parts, contentBlockToRenderPart(content, {
+      role: 'assistant',
+      messageId: `thought:${messageId}`,
+      segmentIndex: 0,
+      blockIndex: parts.length,
+    })],
   });
 }
 

@@ -5,6 +5,8 @@
  * graph (and so React Fast Refresh stays happy).
  */
 import { classifyFileExt, extnameOf, getMimeTypeForExt } from '@/lib/generated-files';
+import type { AttachmentRenderPart } from '@/lib/acp/timeline-types';
+import { richFilePreviewKind } from '@/lib/file-preview-capabilities';
 import type { WorkspaceFileRef } from '@/lib/file-preview-client';
 import type { FilePreviewTarget } from './types';
 
@@ -40,5 +42,28 @@ export function buildWorkspacePreviewTarget(
     ext,
     mimeType: getMimeTypeForExt(ext),
     contentType: classifyFileExt(ext),
+  };
+}
+
+export function buildAttachmentPreviewTarget(attachment: AttachmentRenderPart): FilePreviewTarget {
+  if (attachment.access.status !== 'available' || attachment.access.target.kind !== 'local') {
+    throw new Error('Attachment is not available for preview');
+  }
+  const fileName = attachment.reference.name;
+  const ext = extnameOf(fileName);
+  const mimeType = attachment.access.mimeType || getMimeTypeForExt(ext);
+  const richPreview = richFilePreviewKind({ ext, mimeType });
+  return {
+    attachmentFileRef: attachment.access.target.ref,
+    filePath: fileName,
+    fileName,
+    ext,
+    mimeType,
+    contentType: richPreview === 'image'
+      ? 'snapshot'
+      : richPreview === 'pdf' || richPreview === 'sheet'
+        ? 'document'
+        : classifyFileExt(ext),
+    size: attachment.access.size,
   };
 }
