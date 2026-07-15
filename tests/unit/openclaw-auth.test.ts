@@ -2472,4 +2472,36 @@ describe('batchSyncConfigFields', () => {
     const providers = (config.models as Record<string, unknown>).providers as Record<string, unknown>;
     expect(providers.anthropic).toEqual({ timeoutSeconds: 240 });
   });
+
+  it('preserves explicit default provider registration when backfilling timeoutSeconds', async () => {
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      agents: {
+        defaults: {
+          model: { primary: 'ollama-abc12345/llama3.2' },
+        },
+      },
+      models: {
+        providers: {
+          'ollama-abc12345': {
+            baseUrl: 'http://127.0.0.1:11434/v1',
+            api: 'openai-completions',
+            models: [{ id: 'llama3.2', name: 'llama3.2' }],
+          },
+        },
+      },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const entry = ((config.models as Record<string, unknown>).providers as Record<string, unknown>)['ollama-abc12345'] as Record<string, unknown>;
+    expect(entry).toEqual({
+      baseUrl: 'http://127.0.0.1:11434/v1',
+      api: 'openai-completions',
+      models: [{ id: 'llama3.2', name: 'llama3.2' }],
+      timeoutSeconds: 240,
+    });
+  });
 });

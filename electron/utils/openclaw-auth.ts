@@ -946,13 +946,20 @@ function backfillProviderTimeoutSeconds(config: Record<string, unknown>): string
   return backfilled;
 }
 
-function isStaleBuiltInProviderRegistration(entry: Record<string, unknown>): boolean {
+function isExplicitProviderRegistration(entry: Record<string, unknown>): boolean {
   return Boolean(entry.baseUrl || entry.api || entry.models);
+}
+
+function backfillProviderTimeoutSecondsOnEntry(entry: Record<string, unknown>): boolean {
+  if (entry.timeoutSeconds !== undefined) return false;
+  entry.timeoutSeconds = DEFAULT_PROVIDER_TIMEOUT_SECONDS;
+  return true;
 }
 
 /**
  * Ensure built-in registry providers carry a minimal models.providers overlay
  * with timeoutSeconds so OpenClaw's 120s default idle watchdog does not apply.
+ * Only call for built-in providers without an explicit registration entry.
  */
 function ensureBuiltInProviderIdleTimeoutOverlay(
   providers: Record<string, unknown>,
@@ -962,7 +969,7 @@ function ensureBuiltInProviderIdleTimeoutOverlay(
     ? (providers[provider] as Record<string, unknown>)
     : null;
 
-  if (existing && isStaleBuiltInProviderRegistration(existing)) {
+  if (existing && isExplicitProviderRegistration(existing)) {
     const preservedTimeout = existing.timeoutSeconds;
     delete providers[provider];
     providers[provider] = {
@@ -979,13 +986,7 @@ function ensureBuiltInProviderIdleTimeoutOverlay(
     return true;
   }
 
-  if (existing.timeoutSeconds === undefined) {
-    existing.timeoutSeconds = DEFAULT_PROVIDER_TIMEOUT_SECONDS;
-    providers[provider] = existing;
-    return true;
-  }
-
-  return false;
+  return backfillProviderTimeoutSecondsOnEntry(existing);
 }
 
 function ensureDefaultModelProviderTimeoutOverlay(config: Record<string, unknown>): boolean {
@@ -999,6 +1000,20 @@ function ensureDefaultModelProviderTimeoutOverlay(config: Record<string, unknown
   const providerKey = primary.slice(0, slashIndex);
   const models = (config.models || {}) as Record<string, unknown>;
   const providers = (models.providers || {}) as Record<string, unknown>;
+  const existing = isPlainRecord(providers[providerKey])
+    ? (providers[providerKey] as Record<string, unknown>)
+    : null;
+
+  // Runtime custom/ollama keys and explicit registrations must keep routing fields.
+  if (isRuntimeGeneratedProviderKey(providerKey)
+    || (existing && isExplicitProviderRegistration(existing))) {
+    if (!existing || !backfillProviderTimeoutSecondsOnEntry(existing)) return false;
+    providers[providerKey] = existing;
+    models.providers = providers;
+    config.models = models;
+    return true;
+  }
+
   const changed = ensureBuiltInProviderIdleTimeoutOverlay(providers, providerKey);
   if (changed) {
     models.providers = providers;
