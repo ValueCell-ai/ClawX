@@ -111,8 +111,8 @@ describe('provider metadata', () => {
 
     expect(anthropic).toMatchObject({
       showModelId: true,
-      defaultModelId: 'claude-opus-4-6',
-      modelIdPlaceholder: 'claude-opus-4-6',
+      defaultModelId: 'claude-opus-4-8',
+      modelIdPlaceholder: 'claude-opus-4-8',
     });
     expect(openrouter).toMatchObject({
       showModelId: true,
@@ -199,7 +199,7 @@ describe('provider metadata', () => {
 
     expect(resolveProviderModelForSave(openrouter, '   ', false)).toBe('openai/gpt-5.5');
     expect(resolveProviderModelForSave(siliconflow, '   ', false)).toBe('deepseek-ai/DeepSeek-V3');
-    expect(resolveProviderModelForSave(anthropic, '   ', false)).toBe('claude-opus-4-6');
+    expect(resolveProviderModelForSave(anthropic, '   ', false)).toBe('claude-opus-4-8');
     expect(resolveProviderModelForSave(ark, '  ep-custom-model  ', false)).toBe('ep-custom-model');
   });
 

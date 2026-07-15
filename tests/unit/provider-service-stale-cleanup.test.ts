@@ -638,7 +638,7 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
           id: 'anthropic',
           name: 'Anthropic',
           defaultAuthMode: 'api_key',
-          defaultModelId: 'claude-opus-4-6',
+          defaultModelId: 'claude-opus-4-8',
         };
       }
       return undefined;
@@ -653,7 +653,7 @@ describe('ProviderService.listAccounts (openclaw.json as sole source of truth)',
         id: 'anthropic',
         vendorId: 'anthropic',
         authMode: 'api_key',
-        model: 'claude-opus-4-6',
+        model: 'claude-opus-4-8',
       }),
     ]);
   });

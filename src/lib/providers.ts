@@ -155,8 +155,8 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
     model: 'Claude',
     requiresApiKey: true,
     showModelId: true,
-    defaultModelId: 'claude-opus-4-6',
-    modelIdPlaceholder: 'claude-opus-4-6',
+    defaultModelId: 'claude-opus-4-8',
+    modelIdPlaceholder: 'claude-opus-4-8',
     docsUrl: 'https://platform.claude.com/docs/en/api/overview',
   },
   {
