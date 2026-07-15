@@ -9,6 +9,7 @@ const REVIEWER_WORKSPACE = '/workspace/reviewer';
 const IMAGE_TASK_ID = '0d2ee919-2dfd-4b72-9da3-d87e6ee56747';
 const GENERATED_IMAGE_PATH = '/workspace/.openclaw/media/tool-image-generation/generated-image.png';
 const GENERATED_IMAGE_PREVIEW = 'data:image/png;base64,iVBORw0KGgo=';
+const GENERATED_IMAGE_IDENTITY = 'e2e-transcript-generated-image';
 const DEFAULT_WORKSPACE_SEGMENT = '~%2F.openclaw%2Fworkspace';
 
 type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
@@ -28,12 +29,12 @@ function defaultWorkspaceSessionGroupTestId(): string {
 
 function baseHostApiMocks(loadResult: Record<string, unknown> = { success: true, generation: 1 }) {
   return {
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: MAIN_WORKSPACE }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: MAIN_WORKSPACE, createIfMissing: true }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: '/' }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: '/', createIfMissing: true }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: MAIN_WORKSPACE, cwd: MAIN_WORKSPACE }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: MAIN_WORKSPACE, cwd: MAIN_WORKSPACE, createIfMissing: true }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: '/', cwd: '/' }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: '/', cwd: '/', createIfMissing: true }])]: loadResult,
     [stableStringify(['/api/agents', 'GET'])]: {
       ok: true,
       data: {
@@ -658,10 +659,44 @@ test.describe('ClawX ACP inline timeline', () => {
               },
             ],
           },
-          [stableStringify(['media', 'thumbnails', {
-            paths: [{ filePath: GENERATED_IMAGE_PATH, mimeType: 'image/png' }],
+          [stableStringify(['files', 'resolveAttachment', {
+            ref: {
+              sessionKey: MAIN_SESSION_KEY,
+              generation: 1,
+              uri: GENERATED_IMAGE_PATH,
+              transcriptMessageId: 'transcript-image-complete',
+            },
+            mimeType: 'image/png',
           }])]: {
-            [GENERATED_IMAGE_PATH]: { preview: GENERATED_IMAGE_PREVIEW, fileSize: 128 },
+            ok: true,
+            identity: GENERATED_IMAGE_IDENTITY,
+            displayName: 'generated-image.png',
+            mimeType: 'image/png',
+            size: 128,
+            target: {
+              kind: 'local',
+              scope: 'openclaw-media',
+              ref: {
+                sessionKey: MAIN_SESSION_KEY,
+                generation: 1,
+                uri: GENERATED_IMAGE_PATH,
+                transcriptMessageId: 'transcript-image-complete',
+              },
+            },
+          },
+          [stableStringify(['media', 'thumbnails', {
+            paths: [{
+              attachmentFileRef: {
+                sessionKey: MAIN_SESSION_KEY,
+                generation: 1,
+                uri: GENERATED_IMAGE_PATH,
+                transcriptMessageId: 'transcript-image-complete',
+              },
+              key: GENERATED_IMAGE_IDENTITY,
+              mimeType: 'image/png',
+            }],
+          }])]: {
+            [GENERATED_IMAGE_IDENTITY]: { preview: GENERATED_IMAGE_PREVIEW, fileSize: 128 },
           },
           [stableStringify(['media', 'saveImage', {
             base64: 'iVBORw0KGgo=',
@@ -880,11 +915,11 @@ test.describe('ClawX ACP inline timeline', () => {
         },
         hostApi: {
           ...baseHostApiMocks(),
-          [stableStringify(['chat', 'loadAcpSession', { sessionKey: REVIEWER_SESSION_KEY, cwd: REVIEWER_WORKSPACE }])]: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: REVIEWER_SESSION_KEY, workspaceRoot: REVIEWER_WORKSPACE, cwd: REVIEWER_WORKSPACE }])]: {
             success: true,
             generation: 1,
           },
-          [stableStringify(['chat', 'loadAcpSession', { sessionKey: REVIEWER_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: REVIEWER_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: {
             success: true,
             generation: 1,
           },

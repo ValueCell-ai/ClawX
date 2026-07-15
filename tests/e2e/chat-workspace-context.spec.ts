@@ -159,8 +159,8 @@ async function installWorkspaceMocks(app: ElectronApplication, options: Workspac
       }),
       [stableStringify(['sessions', 'summaries', { sessionKeys: [SESSION_KEY] }])]: sessionSummaries,
       [stableStringify(['/api/sessions/summaries', 'POST'])]: hostJson(sessionSummaries),
-      [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: acpLoadResult,
-      [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: SESSION_WORKSPACE }])]: acpLoadResult,
+      [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: acpLoadResult,
+      [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: SESSION_WORKSPACE, cwd: SESSION_WORKSPACE }])]: acpLoadResult,
     },
   });
 

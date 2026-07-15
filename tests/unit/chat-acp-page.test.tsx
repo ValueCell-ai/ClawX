@@ -523,7 +523,11 @@ describe('ACP Chat page', () => {
     rerender(<Chat />);
 
     await waitFor(() => expect(acpState.loadSession).toHaveBeenCalledTimes(2));
-    expect(acpState.loadSession).toHaveBeenLastCalledWith({ sessionKey, cwd: '/workspace' });
+    expect(acpState.loadSession).toHaveBeenLastCalledWith({
+      sessionKey,
+      workspaceRoot: '/workspace',
+      cwd: '/workspace',
+    });
     resolveInitialLoad(false);
   });
 

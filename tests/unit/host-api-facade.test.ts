@@ -390,7 +390,7 @@ describe('hostApi facade', () => {
     expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
       module: 'chat',
       action: 'loadAcpSession',
-      payload: { sessionKey: 'main', cwd: '/workspace/project' },
+      payload: { sessionKey: 'main', workspaceRoot: '/workspace', cwd: '/workspace/project' },
     }));
     expect(hostInvoke).toHaveBeenNthCalledWith(2, expect.objectContaining({
       module: 'chat',

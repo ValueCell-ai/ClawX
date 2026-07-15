@@ -25,19 +25,16 @@ function baseHostApiMocks(
   overrides: Record<string, unknown> = {},
 ) {
   return {
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: MAIN_WORKSPACE }])]: loadResult,
     [stableStringify(['chat', 'loadAcpSession', {
       sessionKey: MAIN_SESSION_KEY,
       workspaceRoot: MAIN_WORKSPACE,
       cwd: MAIN_WORKSPACE,
     }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: '/' }])]: loadResult,
     [stableStringify(['chat', 'loadAcpSession', {
       sessionKey: MAIN_SESSION_KEY,
       workspaceRoot: '/',
       cwd: '/',
     }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: loadResult,
     [stableStringify(['chat', 'loadAcpSession', {
       sessionKey: MAIN_SESSION_KEY,
       workspaceRoot: DEFAULT_WORKSPACE,

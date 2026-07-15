@@ -18,11 +18,11 @@ function stableStringify(value: unknown): string {
 
 function baseHostApiMocks(loadResult: Record<string, unknown> = { success: true, generation: 1 }) {
   return {
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, cwd: PROJECT_MANAGER_WORKSPACE }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, cwd: PROJECT_MANAGER_WORKSPACE, createIfMissing: true }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, cwd: '/' }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, workspaceRoot: PROJECT_MANAGER_WORKSPACE, cwd: PROJECT_MANAGER_WORKSPACE }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, workspaceRoot: PROJECT_MANAGER_WORKSPACE, cwd: PROJECT_MANAGER_WORKSPACE, createIfMissing: true }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, workspaceRoot: '/', cwd: '/' }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: loadResult,
     [stableStringify(['/api/agents', 'GET'])]: {
       ok: true,
       data: {

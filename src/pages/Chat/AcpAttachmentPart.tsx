@@ -17,8 +17,9 @@ export function AcpAttachmentPart({ part }: { part: AttachmentRenderPart }) {
   const unavailable = part.access.status === 'unavailable';
   const disabled = pending || unavailable;
   const size = part.access.status === 'available' ? part.access.size : part.reference.size;
+  const mimeType = part.access.status === 'available' ? part.access.mimeType : part.reference.mimeType;
   const secondary = size
-    ? t('acp.attachment.mimeSize', { size: formatFileSize(size) })
+    ? t('acp.attachment.mimeSize', { mimeType, size: formatFileSize(size) })
     : '';
   const mode = part.access.status === 'available'
     ? attachmentOpenMode({ ext: extnameOf(name), mimeType: part.access.mimeType, size: part.access.size, target: part.access.target })
