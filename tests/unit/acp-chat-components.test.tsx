@@ -43,7 +43,6 @@ vi.mock('react-i18next', () => ({
         'acp.attachment.unavailable': 'Attachment unavailable',
         'acp.attachment.open': 'Open {{name}}',
         'acp.attachment.preview': 'Preview {{name}}',
-        'acp.attachment.mimeSize': '{{size}}',
         'acp.attachment.openFailed': 'Could not open attachment',
         'fileActivity.created': 'Created',
         'fileActivity.modified': 'Modified',

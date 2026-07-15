@@ -10,6 +10,30 @@ import { richFilePreviewKind } from '@/lib/file-preview-capabilities';
 import type { WorkspaceFileRef } from '@/lib/file-preview-client';
 import type { FilePreviewTarget } from './types';
 
+function filePathFromUri(uri: string): string {
+  if (/^file:\/\/\//i.test(uri)) {
+    try { return decodeURIComponent(uri.slice(7)); } catch { return uri.slice(7); }
+  }
+  if (/^file:\/\/localhost\//i.test(uri)) {
+    try { return decodeURIComponent(uri.slice(16)); } catch { return uri.slice(16); }
+  }
+  return uri;
+}
+
+export function previewDisplayPath(
+  file: Pick<FilePreviewTarget, 'filePath' | 'attachmentFileRef' | 'workspaceFileRef'>,
+): string {
+  if (file.attachmentFileRef) {
+    return filePathFromUri(file.attachmentFileRef.uri);
+  }
+  if (file.workspaceFileRef) {
+    const root = file.workspaceFileRef.workspaceRoot.replace(/\\/g, '/');
+    const rel = file.workspaceFileRef.relativePath.replace(/\\/g, '/').replace(/^\.\/+/, '');
+    return rel ? `${root}/${rel}` : root;
+  }
+  return file.filePath;
+}
+
 type WorkspacePreviewMetadata = Partial<Omit<
   FilePreviewTarget,
   'workspaceFileRef' | 'filePath' | 'fileName' | 'ext' | 'mimeType' | 'contentType'
