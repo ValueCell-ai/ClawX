@@ -461,6 +461,193 @@ describe('ACP Chat store', () => {
     });
   });
 
+  it('keeps an in-flight timeline updated while another session is active and restores it on return', async () => {
+    const prompt = createDeferred<{ success: boolean; generation: number }>();
+    hostApiMock.loadAcpSession
+      .mockResolvedValueOnce({ success: true, generation: 1 })
+      .mockResolvedValueOnce({ success: true, generation: 2 })
+      .mockResolvedValueOnce({ success: true, generation: 1, resumedActivePrompt: true });
+    hostApiMock.sendAcpPrompt.mockReturnValueOnce(prompt.promise);
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+    const sendPrompt = useAcpChatSessionStore.getState().sendPrompt({
+      sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'keep streaming', messageId: 'msg-user',
+    });
+    await vi.waitFor(() => expect(hostApiMock.sendAcpPrompt).toHaveBeenCalledTimes(1));
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'msg-assistant',
+          content: { type: 'text', text: 'before switch ' },
+        },
+      },
+    });
+
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s2', workspaceRoot: '/repo', cwd: '/repo',
+    });
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'msg-assistant',
+          content: { type: 'text', text: 'while away ' },
+        },
+      },
+    });
+
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+    expect(useAcpChatSessionStore.getState()).toMatchObject({
+      activeSessionKey: 'agent:pi:s1',
+      generation: 1,
+      sending: true,
+    });
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['msg-assistant:0']).toMatchObject({
+      parts: [{ kind: 'markdown', text: 'before switch while away ' }],
+    });
+
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'msg-assistant',
+          content: { type: 'text', text: 'after return' },
+        },
+      },
+    });
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['msg-assistant:0']).toMatchObject({
+      parts: [{ kind: 'markdown', text: 'before switch while away after return' }],
+    });
+
+    prompt.resolve({ success: true, generation: 1 });
+    await expect(sendPrompt).resolves.toBe(true);
+    expect(useAcpChatSessionStore.getState().sending).toBe(false);
+  });
+
+  it('falls back to ACP replay when a prompt settles during live-session reactivation', async () => {
+    const prompt = createDeferred<{ success: boolean; generation: number }>();
+    const resume = createDeferred<{ success: boolean; generation: number; resumedActivePrompt: boolean }>();
+    hostApiMock.loadAcpSession
+      .mockResolvedValueOnce({ success: true, generation: 1 })
+      .mockResolvedValueOnce({ success: true, generation: 2 })
+      .mockReturnValueOnce(resume.promise)
+      .mockResolvedValueOnce({
+        success: true,
+        generation: 3,
+        sessionUpdates: [{
+          sessionKey: 'agent:pi:s1',
+          generation: 3,
+          historical: true,
+          notification: {
+            sessionId: 'agent:pi:s1',
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              messageId: 'msg-assistant',
+              content: { type: 'text', text: 'complete replay' },
+            },
+          },
+        }],
+      });
+    hostApiMock.sendAcpPrompt.mockReturnValueOnce(prompt.promise);
+    const { useAcpChatSessionStore } = await importStore();
+
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+    const sendPrompt = useAcpChatSessionStore.getState().sendPrompt({
+      sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'finish while returning', messageId: 'msg-user',
+    });
+    await vi.waitFor(() => expect(hostApiMock.sendAcpPrompt).toHaveBeenCalledTimes(1));
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s2', workspaceRoot: '/repo', cwd: '/repo',
+    });
+    const returnToLiveSession = useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+    await vi.waitFor(() => expect(hostApiMock.loadAcpSession).toHaveBeenCalledTimes(3));
+
+    prompt.resolve({ success: true, generation: 1 });
+    await sendPrompt;
+    resume.resolve({ success: true, generation: 1, resumedActivePrompt: true });
+
+    await expect(returnToLiveSession).resolves.toBe(true);
+    expect(hostApiMock.loadAcpSession).toHaveBeenCalledTimes(4);
+    expect(useAcpChatSessionStore.getState()).toMatchObject({
+      activeSessionKey: 'agent:pi:s1',
+      generation: 3,
+      sending: false,
+    });
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['msg-assistant:0']).toMatchObject({
+      parts: [{ kind: 'markdown', text: 'complete replay' }],
+    });
+  });
+
+  it('keeps a resolved permission non-actionable when its live session is restored', async () => {
+    const prompt = createDeferred<{ success: boolean; generation: number }>();
+    const permission = createDeferred<{ success: boolean; generation: number }>();
+    hostApiMock.loadAcpSession
+      .mockResolvedValueOnce({ success: true, generation: 1 })
+      .mockResolvedValueOnce({ success: true, generation: 2 })
+      .mockResolvedValueOnce({ success: true, generation: 1, resumedActivePrompt: true });
+    hostApiMock.sendAcpPrompt.mockReturnValueOnce(prompt.promise);
+    hostApiMock.respondAcpPermission.mockReturnValueOnce(permission.promise);
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+    const sendPrompt = useAcpChatSessionStore.getState().sendPrompt({
+      sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'edit', messageId: 'msg-user',
+    });
+    await vi.waitFor(() => expect(hostApiMock.sendAcpPrompt).toHaveBeenCalledTimes(1));
+    hostEventsMock.permissionListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      requestId: 'permission-1',
+      request: {
+        sessionId: 'agent:pi:s1',
+        toolCall: { toolCallId: 'tool-1', title: 'Edit file', status: 'pending' },
+        options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }],
+      },
+    });
+    const respond = useAcpChatSessionStore.getState().respondPermission('permission-1', 'allow-once');
+    await vi.waitFor(() => expect(hostApiMock.respondAcpPermission).toHaveBeenCalledTimes(1));
+
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s2', workspaceRoot: '/repo', cwd: '/repo',
+    });
+    permission.resolve({ success: true, generation: 1 });
+    await respond;
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['permission:permission-1']).toMatchObject({
+      kind: 'permission',
+      status: 'selected',
+    });
+
+    prompt.resolve({ success: true, generation: 1 });
+    await sendPrompt;
+  });
+
   it('resolves every new pending attachment and patches the matching ids', async () => {
     hostApiMock.resolveAttachment.mockImplementation(async (payload: { ref: { uri: string } }) => ({
       ok: true,
