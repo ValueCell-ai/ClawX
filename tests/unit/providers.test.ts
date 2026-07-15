@@ -46,6 +46,55 @@ describe('provider metadata', () => {
     });
   });
 
+  it('includes Z.AI CN and Global with OpenClaw-aligned endpoints and glm-5.2 default', () => {
+    expect(PROVIDER_TYPES).toEqual(expect.arrayContaining(['zai', 'zai-global']));
+    expect(BUILTIN_PROVIDER_TYPES).toEqual(expect.arrayContaining(['zai', 'zai-global']));
+
+    expect(PROVIDER_TYPE_INFO).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'zai',
+          name: 'Z.AI (CN)',
+          defaultBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+          defaultModelId: 'glm-5.2',
+          showBaseUrl: true,
+          showModelId: true,
+          codePlanPresetBaseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+          codePlanPresetModelId: 'glm-5.2',
+          codePlanDocsUrl: 'https://docs.bigmodel.cn/cn/coding-plan/quick-start',
+        }),
+        expect.objectContaining({
+          id: 'zai-global',
+          name: 'Z.AI (Global)',
+          defaultBaseUrl: 'https://api.z.ai/api/paas/v4',
+          defaultModelId: 'glm-5.2',
+          showBaseUrl: true,
+          showModelId: true,
+          codePlanPresetBaseUrl: 'https://api.z.ai/api/coding/paas/v4',
+          codePlanPresetModelId: 'glm-5.2',
+          codePlanDocsUrl: 'https://docs.z.ai/devpack/quick-start',
+        }),
+      ]),
+    );
+
+    expect(getProviderEnvVar('zai')).toBe('ZAI_API_KEY');
+    expect(getProviderEnvVar('zai-global')).toBe('ZAI_API_KEY');
+    expect(getProviderConfig('zai')).toEqual(
+      expect.objectContaining({
+        baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+        api: 'openai-completions',
+        apiKeyEnv: 'ZAI_API_KEY',
+      }),
+    );
+    expect(getProviderConfig('zai-global')).toEqual(
+      expect.objectContaining({
+        baseUrl: 'https://api.z.ai/api/paas/v4',
+        api: 'openai-completions',
+        apiKeyEnv: 'ZAI_API_KEY',
+      }),
+    );
+  });
+
   it('uses a single canonical env key for moonshot provider', () => {
     expect(getProviderEnvVar('moonshot')).toBe('MOONSHOT_API_KEY');
     expect(getProviderEnvVars('moonshot')).toEqual(['MOONSHOT_API_KEY']);
@@ -59,7 +108,7 @@ describe('provider metadata', () => {
 
   it('keeps builtin provider sources in sync', () => {
     expect(BUILTIN_PROVIDER_TYPES).toEqual(
-      expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'ark', 'moonshot', 'siliconflow', 'minimax-portal', 'minimax-portal-cn', 'modelstudio', 'ollama'])
+      expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'ark', 'moonshot', 'siliconflow', 'minimax-portal', 'minimax-portal-cn', 'zai', 'zai-global', 'modelstudio', 'ollama'])
     );
   });
 

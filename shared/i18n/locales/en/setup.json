@@ -70,7 +70,7 @@
         "codePlanPreset": "Code Plan Preset",
         "codePlanMode": "Code Plan",
         "useCodePlanPreset": "Use Ark Code Plan Preset",
-        "codePlanPresetDesc": "Code Plan uses https://ark.cn-beijing.volces.com/api/coding/v3 and model ark-code-latest. Do not use /api/v3 for Code Plan traffic.",
+        "codePlanPresetDesc": "Code Plan uses {{baseUrl}} and model {{modelId}}. Do not use the general API endpoint for Code Plan traffic.",
         "codePlanDoc": "Code Plan docs",
         "protocol": "Protocol",
         "protocols": {

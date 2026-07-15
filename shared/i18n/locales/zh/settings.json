@@ -56,7 +56,7 @@
       "codePlanPreset": "Code Plan 预设",
       "codePlanMode": "Code Plan",
       "useCodePlanPreset": "使用 Ark Code Plan 预设",
-      "codePlanPresetDesc": "Code Plan 使用 https://ark.cn-beijing.volces.com/api/coding/v3 与模型 ark-code-latest。请勿把 /api/v3 用于 Code Plan 流量。",
+      "codePlanPresetDesc": "Code Plan 使用 {{baseUrl}} 与模型 {{modelId}}。请勿把通用 API 端点用于 Code Plan 流量。",
       "codePlanDoc": "Code Plan 文档",
       "protocol": "协议",
       "advancedConfig": "高级配置",
@@ -104,7 +104,8 @@
       "failedUpdate": "更新提供商失败",
       "invalidKey": "无效的 API 密钥",
       "modelRequired": "需要模型 ID",
-      "minimaxConflict": "不能同时添加 MiniMax 国际站和国内站的服务商。"
+      "minimaxConflict": "不能同时添加 MiniMax 国际站和国内站的服务商。",
+      "zaiConflict": "不能同时添加 Z.AI 国际站和国内站的服务商。"
     },
     "oauth": {
       "loginMode": "OAuth 登录",

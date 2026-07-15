@@ -36,6 +36,9 @@ describe('inferCustomModelContextWindow', () => {
     ['gemini-3-flash', 1_048_576],
     ['kimi-k2.6', 256_000],
     ['MiniMax-M3', 204_800],
+    ['glm-5.2', 1_000_000],
+    ['glm-5.1', 1_000_000],
+    ['glm-4.7', 200_000],
   ])('maps known family %s to %d tokens', (modelId, expected) => {
     expect(inferCustomModelContextWindow(modelId)).toBe(expected);
   });

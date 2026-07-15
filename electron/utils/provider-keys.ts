@@ -3,6 +3,8 @@ const MULTI_INSTANCE_PROVIDER_TYPES = new Set(['custom', 'ollama']);
 export const OPENCLAW_PROVIDER_KEY_MINIMAX = 'minimax-portal';
 export const OPENCLAW_PROVIDER_KEY_MOONSHOT = 'moonshot';
 export const OPENCLAW_PROVIDER_KEY_MOONSHOT_GLOBAL = 'moonshot-global';
+/** OpenClaw Z.AI runtime provider id (CN + Global share this key). */
+export const OPENCLAW_PROVIDER_KEY_ZAI = 'zai';
 /** OpenClaw Codex OAuth runtime provider id (canonical `openai`, not legacy `openai-codex`). */
 export const OPENAI_CODEX_RUNTIME_PROVIDER_KEY = 'openai';
 export const CLAWX_OPENAI_IMAGE_PROVIDER_KEY = 'clawx-openai-image';
@@ -19,6 +21,8 @@ const HIDDEN_PROVIDER_KEYS_FOR_UI = new Set<string>([
 
 const PROVIDER_KEY_ALIASES: Record<string, string> = {
   'minimax-portal-cn': OPENCLAW_PROVIDER_KEY_MINIMAX,
+  // OpenClaw's built-in Z.AI provider is always `zai` (see docs.openclaw.ai/providers/zai).
+  'zai-global': OPENCLAW_PROVIDER_KEY_ZAI,
 };
 
 export function getOpenClawProviderKeyForType(type: string, providerId: string): string {
@@ -85,6 +89,10 @@ export function isOAuthProviderType(type: string): boolean {
 
 export function isMiniMaxProviderType(type: string): boolean {
   return type === OPENCLAW_PROVIDER_KEY_MINIMAX || type === 'minimax-portal-cn';
+}
+
+export function isZaiProviderType(type: string): boolean {
+  return type === OPENCLAW_PROVIDER_KEY_ZAI || type === 'zai-global';
 }
 
 export function getOAuthProviderTargetKey(type: string): string | undefined {

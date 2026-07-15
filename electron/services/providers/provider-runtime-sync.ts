@@ -98,6 +98,10 @@ export function getOpenClawProviderKey(type: string, providerId: string): string
   if (type === 'minimax-portal-cn') {
     return 'minimax-portal';
   }
+  // OpenClaw Z.AI provider key is always `zai` (Global UI vendor aliases here).
+  if (type === 'zai-global') {
+    return 'zai';
+  }
   return type;
 }
 

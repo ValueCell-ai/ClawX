@@ -126,11 +126,12 @@ ClawX はドキュメント処理スキル（`pdf`、`xlsx`、`docx`、`pptx`）
 Skills ページでは OpenClaw の複数ソース（管理ディレクトリ、workspace、追加スキルディレクトリ）から検出されたスキルを表示でき、各スキルの実際のパスを確認して実フォルダを直接開けます。OpenClaw 同梱の bundled skill については、コミュニティ版ではパッケージにも表示にも `skill-creator` のみを残し、dev 起動時と packaged 起動時の両方で他の bundled skill を物理的に削除します。さらに、削除済み bundled skill の古い `openclaw.json` エントリも一緒に掃除します。
 
 ### 🔐 セキュアなプロバイダー統合
-複数のAIプロバイダー（OpenAI、Anthropicなど）に接続でき、資格情報はシステムのネイティブキーチェーンに安全に保存されます。OpenAI は API キーとブラウザ OAuth（Codex サブスクリプション）の両方に対応しています。
+複数のAIプロバイダー（OpenAI、Anthropic、Z.AI / GLMなど）に接続でき、資格情報はシステムのネイティブキーチェーンに安全に保存されます。OpenAI は API キーとブラウザ OAuth（Codex サブスクリプション）の両方に対応しています。
 開発者モードでは、専用の Image Generation ページで、独立した OpenAI 互換の画像生成エンドポイント（Base URL、API キー、`gpt-image-2` などのモデル名）を設定でき、画像生成だけ専用の `/v1/images/generations` サービスを使い、チャットは通常の OpenAI Provider のまま継続できます。
 OpenAI-compatible ゲートウェイを **Custom プロバイダー** で使う場合、**設定 → AI Providers → Provider 編集** でカスタム `User-Agent` を設定でき、互換性が必要なエンドポイントで有効です。
 プロバイダーの編集や切り替え時、ClawX は `input: ["text", "image"]` など既存のモデル単位の能力メタデータを保持します。新しく選択した Custom プロバイダーのモデルには OpenClaw onboarding と同等の画像入力推論を適用し、不明なモデルはテキスト専用として扱います。
 Custom プロバイダーのモデル行には明示的な `contextWindow` も書き込まれ（モデルファミリーから推定、例：`gpt-5.x` → 272k）、旧バージョンで保存された行は起動時に自動補完されます。これにより OpenClaw は長いセッションを "Context overflow" エラーになる前に圧縮できます。compaction 未設定の場合は `agents.defaults.compaction.mode = "safeguard"` と `reserveTokensFloor = 50000` が既定値として設定されますが、ユーザーが自分で設定したモデル行や圧縮設定が変更されることはありません（`reserveTokensFloor` が未設定の場合のみ補完されることがあります）。
+Z.AI（CN / Global）は OpenClaw 組み込みの `zai` プロバイダー（`ZAI_API_KEY`）に対応し、既定モデルは `glm-5.2` です。Code Plan プリセットで Coding Plan エンドポイント（`…/api/coding/paas/v4`）へ切り替え、通常 API（`…/api/paas/v4`）も利用できます。CN と Global は同じ OpenClaw ランタイムキーを共有するため同時追加できません。
 互換ゲートウェイで `/models` が認証以外の理由で使えない場合、ClawX は API キー検証時に軽量な `/chat/completions` または `/responses` プローブへ自動フォールバックします。
 
 ### 🌙 アダプティブテーマ

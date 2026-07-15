@@ -56,7 +56,7 @@
       "codePlanPreset": "Пресет Code Plan",
       "codePlanMode": "Code Plan",
       "useCodePlanPreset": "Использовать пресет Ark Code Plan",
-      "codePlanPresetDesc": "Code Plan использует https://ark.cn-beijing.volces.com/api/coding/v3 и модель ark-code-latest. Не используйте /api/v3 для трафика Code Plan.",
+      "codePlanPresetDesc": "Code Plan использует {{baseUrl}} и модель {{modelId}}. Не используйте общий API endpoint для трафика Code Plan.",
       "codePlanDoc": "Документация Code Plan",
       "protocol": "Протокол",
       "advancedConfig": "Расширенная конфигурация",
@@ -104,7 +104,8 @@
       "failedUpdate": "Не удалось обновить провайдера",
       "invalidKey": "Неверный API-ключ",
       "modelRequired": "Требуется ID модели",
-      "minimaxConflict": "Нельзя добавить оба провайдера MiniMax (Global) и MiniMax (CN)."
+      "minimaxConflict": "Нельзя добавить оба провайдера MiniMax (Global) и MiniMax (CN).",
+      "zaiConflict": "Нельзя добавить оба провайдера Z.AI (Global) и Z.AI (CN)."
     },
     "oauth": {
       "loginMode": "Вход через OAuth",

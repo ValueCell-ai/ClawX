@@ -291,6 +291,8 @@ export type ProviderType =
   | 'deepseek'
   | 'minimax-portal'
   | 'minimax-portal-cn'
+  | 'zai'
+  | 'zai-global'
   | 'modelstudio'
   | 'ollama'
   | 'custom';

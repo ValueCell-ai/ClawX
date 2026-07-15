@@ -16,6 +16,8 @@ const CUSTOM_MODEL_CONTEXT_WINDOW_RULES: Array<{ pattern: RegExp; contextWindow:
   { pattern: /\bgemini\b/, contextWindow: 1_048_576 },
   { pattern: /\bkimi\b|moonshot/, contextWindow: 256_000 },
   { pattern: /minimax/, contextWindow: 204_800 },
+  { pattern: /\bglm-5(?:\.|\b)/, contextWindow: 1_000_000 },
+  { pattern: /\bglm-4/, contextWindow: 200_000 },
 ];
 
 /** Safe floor for unknown custom models: high enough to avoid compaction spam. */

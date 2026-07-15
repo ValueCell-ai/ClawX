@@ -56,7 +56,7 @@
       "codePlanPreset": "Code Plan プリセット",
       "codePlanMode": "Code Plan",
       "useCodePlanPreset": "Ark Code Plan プリセットを使用",
-      "codePlanPresetDesc": "Code Plan は https://ark.cn-beijing.volces.com/api/coding/v3 と model ark-code-latest を使います。Code Plan 通信に /api/v3 を使わないでください。",
+      "codePlanPresetDesc": "Code Plan は {{baseUrl}} と model {{modelId}} を使います。Code Plan 通信に一般 API エンドポイントを使わないでください。",
       "codePlanDoc": "Code Plan ドキュメント",
       "protocol": "プロトコル",
       "advancedConfig": "詳細設定",
@@ -104,7 +104,8 @@
       "failedUpdate": "プロバイダーの更新に失敗しました",
       "invalidKey": "無効な API キー",
       "modelRequired": "モデル ID が必要です",
-      "minimaxConflict": "MiniMax (Global) と MiniMax (CN) は同時に追加できません。"
+      "minimaxConflict": "MiniMax (Global) と MiniMax (CN) は同時に追加できません。",
+      "zaiConflict": "Z.AI (Global) と Z.AI (CN) は同時に追加できません。"
     },
     "oauth": {
       "loginMode": "OAuthログイン",
