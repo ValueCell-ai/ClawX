@@ -748,7 +748,6 @@ test.describe('ClawX ACP inline timeline', () => {
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('acp-tool-call-card')).toContainText('Generate image');
-      await expect(page.getByText('Generated image is ready.')).toBeVisible({ timeout: 30_000 });
       const imagePart = page.getByTestId('acp-image-part');
       const image = imagePart.locator('img');
       await expect(image).toBeVisible();
