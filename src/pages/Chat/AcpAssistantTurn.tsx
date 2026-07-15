@@ -59,7 +59,7 @@ export function AcpAssistantTurn({
 
           if (item.kind === 'tool-call') {
             return (
-              <div key={item.id} data-acp-item-id={item.id} className="w-full">
+              <div key={item.id} data-acp-item-id={item.id} className="-my-1 w-full">
                 <AcpToolCallCard item={item} />
               </div>
             );

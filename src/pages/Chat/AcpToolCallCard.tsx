@@ -17,13 +17,6 @@ function statusLabelKey(status: ToolCallItem['status']): string {
   return `acp.${status}`;
 }
 
-function statusClasses(status: ToolCallItem['status']): string {
-  if (status === 'running') return 'text-blue-700 dark:text-blue-400 bg-black/5 dark:bg-white/10';
-  if (status === 'completed') return 'text-green-700 dark:text-green-400 bg-black/5 dark:bg-white/10';
-  if (status === 'failed') return 'text-red-700 dark:text-red-400 bg-black/5 dark:bg-white/10';
-  return 'text-amber-700 dark:text-amber-400 bg-black/5 dark:bg-white/10';
-}
-
 function StatusIcon({ status }: { status: ToolCallItem['status'] }) {
   if (status === 'running') return <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />;
   if (status === 'completed') return <CheckCircle2 className="h-4 w-4" aria-hidden="true" />;
@@ -90,7 +83,7 @@ export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
     <div
       data-testid="acp-tool-call-card"
       data-expanded={expanded ? 'true' : 'false'}
-      className="rounded-2xl border border-black/10 bg-surface-modal px-4 py-3 shadow-sm dark:border-white/10"
+      className="rounded-lg px-1 py-0.5"
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
         {hasDetails ? (
@@ -112,16 +105,16 @@ export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
           >
             {expanded ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" /> : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
             <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('acp.tool')}</span>
-            <span className="min-w-0 truncate text-sm font-medium text-foreground">{item.title}</span>
+            <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{item.title}</span>
           </button>
         ) : (
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <Wrench className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('acp.tool')}</span>
-            <span className="min-w-0 truncate text-sm font-medium text-foreground">{item.title}</span>
+            <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{item.title}</span>
           </div>
         )}
-        <span className={cn('inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-medium uppercase tracking-wide', statusClasses(item.status))}>
+        <span className="inline-flex shrink-0 items-center gap-1 px-2 py-0.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
           <StatusIcon status={item.status} />
           {t(statusLabelKey(item.status))}
         </span>
