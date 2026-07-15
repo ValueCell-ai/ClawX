@@ -133,18 +133,25 @@ class AttachmentFailure extends Error {
 }
 
 export class StagedAttachmentRegistry {
-  private readonly paths = new Map<string, string>();
+  private readonly files = new Map<string, { canonicalPath: string; displayPath?: string }>();
 
-  register(id: string, canonicalPath: string): void {
-    if (id && canonicalPath) this.paths.set(id, canonicalPath);
+  register(id: string, canonicalPath: string, displayPath?: string): void {
+    if (id && canonicalPath) this.files.set(id, {
+      canonicalPath,
+      ...(displayPath ? { displayPath } : {}),
+    });
   }
 
   get(id: string): string | null {
-    return this.paths.get(id) ?? null;
+    return this.files.get(id)?.canonicalPath ?? null;
+  }
+
+  getDisplayPath(id: string): string | null {
+    return this.files.get(id)?.displayPath ?? null;
   }
 
   hasPath(canonicalPath: string): boolean {
-    return Array.from(this.paths.values()).some((path) => isSamePath(path, canonicalPath));
+    return Array.from(this.files.values()).some((file) => isSamePath(file.canonicalPath, canonicalPath));
   }
 }
 
@@ -763,10 +770,14 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
           target: { kind: 'remote', ref, url: target.normalizedUrl },
         };
       }
+      const displayPath = ref.stagingId
+        ? dependencies.stagedAttachments.getDisplayPath(ref.stagingId)
+        : null;
       return {
         ok: true,
         identity: opaqueIdentity(target.canonicalPath),
         displayName: finalDisplayName,
+        ...(displayPath ? { displayPath } : {}),
         mimeType: target.mimeType,
         size: target.size,
         target: { kind: 'local', scope: target.scope, ref },

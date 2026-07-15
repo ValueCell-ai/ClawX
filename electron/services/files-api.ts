@@ -603,7 +603,7 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
           ? await generateImagePreview(filePath, mimeType)
           : null;
         const staged = await createStagedFile(`${id}${ext}`, (handle) => copyIntoHandle(filePath, handle));
-        dependencies.stagedAttachments?.register(id, staged.path);
+        dependencies.stagedAttachments?.register(id, staged.path, filePath);
         results.push({ id, fileName, mimeType, fileSize: staged.stat.size, stagedPath: staged.path, preview });
       }
       return results;

@@ -466,6 +466,7 @@ export type ResolveAttachmentResult =
       ok: true;
       identity: string;
       displayName: string;
+      displayPath?: string;
       mimeType: string;
       size: number;
       target:

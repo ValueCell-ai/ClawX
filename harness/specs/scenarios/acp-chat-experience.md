@@ -37,6 +37,6 @@ requiredRules:
 
 ACP Chat covers session load, prompt, cancel, permission, replay, timeline reduction, assistant-turn presentation, standard ACP attachments, bounded generated-media and OpenClaw MEDIA compatibility, and Chat-specific diagnostics.
 
-Main owns ACP transport, routing, transcript retrieval, workspace grants, and session/generation-scoped attachment authorization. Renderer owns the in-memory timeline, bounded compatibility alignment, attachment presentation, and display grouping. ACP replay is authoritative except for the approved image-generation completion and explicit line-leading assistant OpenClaw `MEDIA:` attachment supplements. Standard ACP content remains preferred over compatibility projections, and incidental tool paths never enter the attachment pipeline.
+Main owns ACP transport, routing, transcript retrieval, workspace grants, and session/generation-scoped attachment authorization. Renderer owns the in-memory timeline, bounded compatibility alignment, attachment presentation, and display grouping, including user-image thumbnails and user-selected source-path labels. ACP replay is authoritative except for the approved image-generation completion and explicit line-leading assistant OpenClaw `MEDIA:` attachment supplements. Standard ACP content remains preferred over compatibility projections, and incidental tool paths never enter the attachment pipeline.
 
 The durable architecture, exceptions, and validation anchors are documented in `harness/reference/acp-chat.md` and `harness/reference/acp-generated-media-and-diagnostics.md`.

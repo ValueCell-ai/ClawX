@@ -1045,6 +1045,7 @@ describe('AcpChatService', () => {
             data: Buffer.from('fake-image').toString('base64'),
             mimeType: 'image/png',
             uri: imagePath,
+            _meta: { clawx: { stagingId: 'staged-image', fileName: 'image.png' } },
           },
           {
             type: 'resource_link',

@@ -13,6 +13,7 @@ export type CreatePendingAttachmentInput = {
   blockIndex: number;
   uri: string;
   name: string;
+  displayPath?: string;
   mimeType?: string;
   size?: number;
   stagingId?: string;
@@ -39,6 +40,7 @@ function referenceFromInput(input: CreatePendingAttachmentInput): AttachmentRend
   return {
     uri: input.uri,
     name: input.name,
+    ...(input.displayPath ? { displayPath: input.displayPath } : {}),
     ...(input.mimeType ? { mimeType: input.mimeType } : {}),
     ...(typeof input.size === 'number' ? { size: input.size } : {}),
     ...(input.stagingId ? { stagingId: input.stagingId } : {}),
@@ -151,6 +153,7 @@ function resolvedAttachment(
     reference: {
       ...attachment.reference,
       name: result.displayName,
+      ...(result.displayPath ? { displayPath: result.displayPath } : {}),
       mimeType: result.mimeType,
       size: result.size,
     },

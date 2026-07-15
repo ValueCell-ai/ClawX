@@ -144,7 +144,14 @@ function preserveAvailableAttachment(
   const sameReference = previous.reference.uri === next.reference.uri
     && previous.reference.stagingId === next.reference.stagingId;
   return sameReference && previous.access.status === 'available'
-    ? { ...next, access: previous.access }
+    ? {
+        ...next,
+        reference: {
+          ...next.reference,
+          ...(previous.reference.displayPath ? { displayPath: previous.reference.displayPath } : {}),
+        },
+        access: previous.access,
+      }
     : next;
 }
 

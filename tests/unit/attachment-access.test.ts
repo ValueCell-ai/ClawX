@@ -215,7 +215,7 @@ describe('attachment access boundary', () => {
     await mkdir(stagingDir, { recursive: true });
     await writeFile(stagedPath, 'owned');
     await writeFile(previousRunPath, 'unregistered');
-    stagedAttachments.register('stage-1', await realpath(stagedPath));
+    stagedAttachments.register('stage-1', await realpath(stagedPath), '/Users/test/Documents/owned.txt');
     const access = getAccess();
 
     await expect(access.resolveAttachment({ ref: ref(stagedPath) }))
@@ -223,7 +223,11 @@ describe('attachment access boundary', () => {
     await expect(access.resolveAttachment({ ref: ref(previousRunPath) }))
       .resolves.toMatchObject({ ok: false, error: 'outsideAllowedRoots' });
     await expect(access.resolveAttachment({ ref: ref(stagedPath, { stagingId: 'stage-1' }) }))
-      .resolves.toMatchObject({ ok: true, target: { kind: 'local', scope: 'staging' } });
+      .resolves.toMatchObject({
+        ok: true,
+        displayPath: '/Users/test/Documents/owned.txt',
+        target: { kind: 'local', scope: 'staging' },
+      });
     await expect(access.resolveAttachment({
       ref: ref(join(outsideDir, 'secret.txt'), { stagingId: 'stage-1' }),
     })).resolves.toMatchObject({ ok: false, error: 'invalidReference' });

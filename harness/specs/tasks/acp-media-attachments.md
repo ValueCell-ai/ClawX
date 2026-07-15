@@ -99,6 +99,8 @@ expectedUserBehavior:
   - Standard ACP resource_link and URI-backed resource content renders as paperclip attachment cards.
   - Explicit assistant OpenClaw MEDIA directives omitted by ACP are recovered for live completions and historical session loads without displaying the raw directive.
   - Attachment rows render after assistant prose and preserve declaration order.
+  - User image attachments render as thumbnails with a filename overlay on hover.
+  - User non-image attachments show their source path after the filename, omit MIME text, and truncate long paths.
   - Supported authorized local files open in the right-side Preview panel after a user click.
   - Unsupported authorized local files open with the operating system default application after a user click.
   - HTTP and HTTPS attachments open externally after a user click.
@@ -135,6 +137,8 @@ requiredTests:
   - pnpm run harness:ci
 acceptance:
   - A standard ACP resource_link or URI-backed resource renders an actionable paperclip attachment card.
+  - User image attachments render as thumbnails with the filename revealed by a hover overlay.
+  - User non-image attachments render the filename followed by a muted, truncating source path and no MIME label.
   - The reported OpenClaw MEDIA directive for budget_sample.xlsx renders an attachment in ACP Chat even though OpenClaw ACP emits no resource block.
   - The raw MEDIA directive is not displayed.
   - The attachment renders after assistant prose and preserves declaration order.
@@ -171,6 +175,7 @@ Standard ACP resource content is the preferred attachment source. The OpenClaw t
 | Standard ACP resources render actionable cards | `tests/unit/acp-reducer.test.ts`, `tests/unit/acp-chat-components.test.tsx`, `tests/e2e/chat-acp-attachments.spec.ts` |
 | Explicit OpenClaw `MEDIA:` recovery and hidden raw directives | `tests/unit/acp-media-attachments.test.ts`, `tests/unit/acp-chat-store.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts` |
 | Body-first ordering and declaration order | `tests/unit/acp-timeline-groups.test.ts`, `tests/unit/acp-chat-components.test.tsx`, `tests/e2e/chat-acp-attachments.spec.ts` |
+| User thumbnail, filename overlay, and Main-owned source-path presentation | `tests/unit/acp-chat-components.test.tsx`, `tests/unit/acp-reducer.test.ts`, `tests/unit/attachment-access.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts`, `ui-i18n-design-tokens` |
 | Preview, local system open, and remote external open routing | `tests/unit/file-preview-body.test.tsx`, `tests/unit/rich-file-viewers.test.tsx`, `tests/unit/attachment-access.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts` |
 | Bare prose paths are rejected | `tests/unit/acp-media-attachments.test.ts`, `acp-compatibility-content-safety` |
 | Outside-root and stale session/generation access is rejected | `tests/unit/attachment-access.test.ts`, `tests/unit/acp-session-access-registry.test.ts`, `session-workspace-authority`, `tool-derived-file-safety` |

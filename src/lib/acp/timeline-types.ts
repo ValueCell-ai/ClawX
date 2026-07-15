@@ -21,6 +21,7 @@ export type AttachmentRenderPart = {
   reference: {
     uri: string;
     name: string;
+    displayPath?: string;
     mimeType?: string;
     size?: number;
     stagingId?: string;

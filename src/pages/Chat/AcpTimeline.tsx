@@ -44,9 +44,9 @@ export function AcpTimeline({
               ))}
               {group.attachments.length > 0 && (
                 <div className="flex w-full justify-end">
-                  <div className="flex w-full max-w-[80%] flex-col gap-2">
+                  <div className="flex w-full max-w-[50%] flex-col items-end gap-2">
                     {group.attachments.map((attachment) => (
-                      <AcpAttachmentPart key={attachment.attachmentId} part={attachment} />
+                      <AcpAttachmentPart key={attachment.attachmentId} part={attachment} tone="user" />
                     ))}
                   </div>
                 </div>

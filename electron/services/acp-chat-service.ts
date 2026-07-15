@@ -659,14 +659,29 @@ export class AcpChatService {
         const mimeType = item.mimeType || 'application/octet-stream';
         if (mimeType.startsWith('image/')) {
           const data = await fsP.readFile(item.filePath, 'base64');
-          blocks.push({ type: 'image', data, mimeType, uri: item.filePath });
+          blocks.push({
+            type: 'image',
+            data,
+            mimeType,
+            uri: item.filePath,
+            _meta: {
+              clawx: {
+                stagingId: item.stagingId,
+                ...(item.fileName ? { fileName: item.fileName } : {}),
+              },
+            },
+          });
         } else {
           blocks.push({
             type: 'resource_link',
             uri: item.filePath,
             name: item.fileName ?? item.filePath,
             mimeType: item.mimeType,
-            _meta: { clawx: { stagingId: item.stagingId } },
+            _meta: {
+              clawx: {
+                stagingId: item.stagingId,
+              },
+            },
           });
         }
       }

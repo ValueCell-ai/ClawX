@@ -76,6 +76,81 @@ async function openChat(app: ElectronApplication): Promise<Page> {
 }
 
 test.describe('ACP media attachments', () => {
+  test('renders user image thumbnails and actionable file paths', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      const fixture = await installAttachmentHostFixture(app, {
+        sessions: [{ key: MAIN_SESSION_KEY, title: 'Main session' }],
+      });
+      const imageBytes = Uint8Array.from(Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        'base64',
+      ));
+      const imagePath = await fixture.createWorkspaceFile('uploads/photo.png', imageBytes);
+      const notesPath = await fixture.createWorkspaceFile('uploads/notes.txt', 'Preview this user attachment.');
+      const displayImagePath = '/Users/test/Pictures/photo.png';
+      const displayNotesPath = '/Users/test/Documents/a/very/long/path/notes.txt';
+      await fixture.registerStagedAttachment('stage-photo', imagePath, displayImagePath);
+      await fixture.registerStagedAttachment('stage-notes', notesPath, displayNotesPath);
+      await fixture.setSessionReplay(MAIN_SESSION_KEY, [{
+        sessionUpdate: 'user_message',
+        messageId: 'user-attachments',
+        content: [
+          { type: 'text', text: 'Review these files.' },
+          {
+            type: 'image',
+            uri: imagePath,
+            data: Buffer.from(imageBytes).toString('base64'),
+            mimeType: 'image/png',
+            _meta: { clawx: { stagingId: 'stage-photo', fileName: 'photo.png' } },
+          },
+          {
+            type: 'resource_link',
+            uri: notesPath,
+            name: 'notes.txt',
+            mimeType: 'text/plain',
+            _meta: { clawx: { stagingId: 'stage-notes' } },
+          },
+        ],
+      }]);
+      await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [[]]);
+
+      const page = await openChat(app);
+      const userMessage = page.getByTestId('acp-user-message');
+      await expect(userMessage.getByText('Review these files.')).toBeVisible({ timeout: 30_000 });
+      const thumbnail = page.getByTestId('acp-user-image-attachment');
+      await expect(thumbnail).toBeVisible();
+      await expect(thumbnail).toHaveAttribute('alt', 'photo.png');
+      const [bubbleBox, thumbnailBox] = await Promise.all([
+        userMessage.locator('.bg-brand').first().boundingBox(),
+        thumbnail.locator('..').boundingBox(),
+      ]);
+      expect(bubbleBox).not.toBeNull();
+      expect(thumbnailBox).not.toBeNull();
+      expect(Math.abs((bubbleBox!.x + bubbleBox!.width) - (thumbnailBox!.x + thumbnailBox!.width))).toBeLessThanOrEqual(1);
+      await expect(page.getByTestId('acp-user-image-overlay')).toContainText('photo.png');
+
+      const notes = page.getByRole('button', { name: 'Preview notes.txt' });
+      await expect(notes).toContainText(displayNotesPath);
+      await expect(notes).not.toContainText('text/plain');
+      await notes.click();
+      const panel = page.getByTestId('artifact-panel');
+      await expect(panel).toBeVisible();
+      await expect(panel.getByText('Preview this user attachment.')).toBeVisible({ timeout: 30_000 });
+      await expect.poll(async () => (await fixture.getHostInvocations()).some((call) => (
+        call.module === 'media'
+        && call.action === 'thumbnails'
+        && Array.isArray(call.payload?.paths)
+        && (call.payload.paths as Array<Record<string, unknown>>).some((entry) => (
+          (entry.attachmentFileRef as Record<string, unknown> | undefined)?.uri === imagePath
+        ))
+      ))).toBe(true);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('previews the reported live spreadsheet flow and restores one historical card', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 

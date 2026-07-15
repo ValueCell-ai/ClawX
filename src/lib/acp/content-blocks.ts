@@ -47,17 +47,26 @@ function uriBasename(uri: string): string {
   return withoutQuery.split(/[\\/]/).filter(Boolean).at(-1) ?? uri;
 }
 
-function stagingId(block: ContentBlock, role: ContentBlockRenderContext['role']): string | undefined {
-  if (role !== 'user') return undefined;
+function clawxUserMetadata(block: ContentBlock, role: ContentBlockRenderContext['role']): {
+  stagingId?: string;
+  fileName?: string;
+} {
+  if (role !== 'user') return {};
   const meta = recordValue(block._meta);
   const clawx = recordValue(meta?.clawx);
-  return nonEmptyString(clawx?.stagingId);
+  const stagingId = nonEmptyString(clawx?.stagingId);
+  const fileName = nonEmptyString(clawx?.fileName);
+  return {
+    ...(stagingId ? { stagingId } : {}),
+    ...(fileName ? { fileName } : {}),
+  };
 }
 
 function attachmentPart(input: {
   context: ContentBlockRenderContext;
   uri: string;
   name?: string;
+  displayPath?: string;
   title?: string;
   mimeType?: string;
   size?: number;
@@ -68,6 +77,7 @@ function attachmentPart(input: {
     ...input.context,
     uri: input.uri,
     name: input.name ?? input.title ?? (input.uri ? uriBasename(input.uri) : ''),
+    ...(input.displayPath ? { displayPath: input.displayPath } : {}),
     ...(input.mimeType ? { mimeType: input.mimeType } : {}),
     ...(typeof input.size === 'number' ? { size: input.size } : {}),
     ...(input.stagingId ? { stagingId: input.stagingId } : {}),
@@ -81,12 +91,23 @@ export function contentBlockToRenderPart(block: ContentBlock, context: ContentBl
       return { kind: 'markdown', text: block.text };
     case 'image': {
       const uri = optionalString(block.uri);
+      const clawx = clawxUserMetadata(block, context.role);
+      if (context.role === 'user' && uri) {
+        return attachmentPart({
+          context,
+          uri,
+          name: clawx.fileName,
+          mimeType: block.mimeType,
+          stagingId: clawx.stagingId,
+        });
+      }
       const source = isSafeImageUri(uri)
         ? uri
         : imageDataSource(block.mimeType, optionalString(block.data)) ?? uri ?? '';
       return { kind: 'image', source, mimeType: block.mimeType };
     }
-    case 'resource_link':
+    case 'resource_link': {
+      const clawx = clawxUserMetadata(block, context.role);
       return attachmentPart({
         context,
         uri: block.uri,
@@ -94,8 +115,9 @@ export function contentBlockToRenderPart(block: ContentBlock, context: ContentBl
         title: nonEmptyString(block.title),
         mimeType: block.mimeType ?? undefined,
         size: block.size ?? undefined,
-        stagingId: stagingId(block, context.role),
+        stagingId: clawx.stagingId,
       });
+    }
     case 'resource': {
       const resource = recordValue(block.resource);
       const uri = nonEmptyString(resource?.uri) ?? '';

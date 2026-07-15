@@ -7,11 +7,15 @@ import type { AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activiti
 import { useArtifactPanel } from '@/stores/artifact-panel';
 
 const openAttachmentMock = vi.hoisted(() => vi.fn());
+const thumbnailsMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/host-api', () => ({
   hostApi: {
     files: {
       openAttachment: openAttachmentMock,
+    },
+    media: {
+      thumbnails: thumbnailsMock,
     },
   },
 }));
@@ -39,7 +43,7 @@ vi.mock('react-i18next', () => ({
         'acp.attachment.unavailable': 'Attachment unavailable',
         'acp.attachment.open': 'Open {{name}}',
         'acp.attachment.preview': 'Preview {{name}}',
-        'acp.attachment.mimeSize': '{{mimeType}}, {{size}}',
+        'acp.attachment.mimeSize': '{{size}}',
         'acp.attachment.openFailed': 'Could not open attachment',
         'fileActivity.created': 'Created',
         'fileActivity.modified': 'Modified',
@@ -82,6 +86,7 @@ describe('ACP chat timeline components', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     openAttachmentMock.mockResolvedValue({ ok: true });
+    thumbnailsMock.mockResolvedValue({});
     useArtifactPanel.setState({ open: false, tab: 'changes', focusedFile: null });
   });
 
@@ -526,7 +531,7 @@ describe('ACP chat timeline components', () => {
     const button = screen.getByRole('button', { name: 'Preview budget.xlsx' });
     expect(button.tagName).toBe('BUTTON');
     expect(button).toHaveClass('focus-visible:ring-2');
-    expect(screen.getByText(/application\/vnd\.openxmlformats/)).toHaveTextContent('2.0 KB');
+    expect(screen.getByText('2.0 KB')).toBeInTheDocument();
     expect(button).not.toHaveAttribute('title', expect.stringContaining('/secret/'));
 
     button.focus();
@@ -647,6 +652,128 @@ describe('ACP chat timeline components', () => {
     const prose = screen.getByText('Please review this file.');
     const attachment = screen.getByRole('button', { name: 'Preview notes.txt' });
     expect(prose.compareDocumentPosition(attachment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('renders a user image attachment as a thumbnail with a filename hover overlay', async () => {
+    const ref = {
+      sessionKey: 'agent:main:s1', generation: 1, uri: '/tmp/clawx-staging/photo.png', stagingId: 'stage-photo',
+    };
+    thumbnailsMock.mockResolvedValueOnce({
+      'opaque-photo': {
+        preview: 'data:image/png;base64,iVBORw0KGgo=',
+        fileSize: 4,
+      },
+    });
+    const state = snapshot({
+      itemOrder: ['msg-u:0'],
+      itemsById: {
+        'msg-u:0': {
+          kind: 'message-segment', id: 'msg-u:0', role: 'user', messageId: 'msg-u', segmentIndex: 0,
+          parts: [{
+            kind: 'attachment', attachmentId: 'attachment:user-photo',
+            reference: {
+              uri: ref.uri,
+              name: 'photo.png',
+              displayPath: '/Users/test/Pictures/photo.png',
+              mimeType: 'image/png',
+              stagingId: 'stage-photo',
+            },
+            source: 'acp-resource',
+            access: {
+              status: 'available', identity: 'opaque-photo',
+              target: { kind: 'local', scope: 'staging', ref }, mimeType: 'image/png', size: 4,
+            },
+          }],
+        },
+      },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+
+    const thumbnail = await screen.findByTestId('acp-user-image-attachment');
+    expect(thumbnail).toHaveAttribute('alt', 'photo.png');
+    expect(thumbnail).toHaveAttribute('src', 'data:image/png;base64,iVBORw0KGgo=');
+    expect(screen.getByTestId('acp-user-image-overlay')).toHaveTextContent('photo.png');
+    expect(thumbnail.parentElement?.parentElement).toHaveClass('items-end');
+    expect(thumbnailsMock).toHaveBeenCalledWith({
+      paths: [{ attachmentFileRef: ref, key: 'opaque-photo', mimeType: 'image/png' }],
+    });
+    expect(screen.queryByTestId('acp-attachment-icon')).not.toBeInTheDocument();
+  });
+
+  it('shows a user file path after its name without MIME or size and keeps preview routing', () => {
+    const ref = {
+      sessionKey: 'agent:main:s1', generation: 1, uri: '/tmp/clawx-staging/notes.txt', stagingId: 'stage-notes',
+    };
+    const state = snapshot({
+      itemOrder: ['msg-u:0'],
+      itemsById: {
+        'msg-u:0': {
+          kind: 'message-segment', id: 'msg-u:0', role: 'user', messageId: 'msg-u', segmentIndex: 0,
+          parts: [{
+            kind: 'attachment', attachmentId: 'attachment:user-notes',
+            reference: {
+              uri: ref.uri,
+              name: 'notes.txt',
+              displayPath: '/Users/test/Documents/a/very/long/path/notes.txt',
+              mimeType: 'text/plain',
+              stagingId: 'stage-notes',
+            },
+            source: 'acp-resource',
+            access: {
+              status: 'available', identity: 'opaque-notes',
+              target: { kind: 'local', scope: 'staging', ref }, mimeType: 'text/plain', size: 2048,
+            },
+          }],
+        },
+      },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+
+    const button = screen.getByRole('button', { name: 'Preview notes.txt' });
+    const path = screen.getByTestId('acp-user-attachment-path');
+    expect(path).toHaveTextContent('/Users/test/Documents/a/very/long/path/notes.txt');
+    expect(path).toHaveClass('truncate', 'text-muted-foreground');
+    expect(button).not.toHaveTextContent('2.0 KB');
+    expect(button).not.toHaveTextContent('text/plain');
+
+    fireEvent.click(button);
+    expect(useArtifactPanel.getState().focusedFile).toMatchObject({
+      fileName: 'notes.txt',
+      attachmentFileRef: ref,
+    });
+  });
+
+  it('opens an unsupported user file through the scoped system-open route', async () => {
+    const ref = {
+      sessionKey: 'agent:main:s1', generation: 1, uri: '/tmp/clawx-staging/archive.zip', stagingId: 'stage-zip',
+    };
+    const state = snapshot({
+      itemOrder: ['msg-u:0'],
+      itemsById: {
+        'msg-u:0': {
+          kind: 'message-segment', id: 'msg-u:0', role: 'user', messageId: 'msg-u', segmentIndex: 0,
+          parts: [{
+            kind: 'attachment', attachmentId: 'attachment:user-zip',
+            reference: {
+              uri: ref.uri, name: 'archive.zip', displayPath: '/Users/test/Downloads/archive.zip', stagingId: 'stage-zip',
+            },
+            source: 'acp-resource',
+            access: {
+              status: 'available', identity: 'opaque-zip',
+              target: { kind: 'local', scope: 'staging', ref }, mimeType: 'application/zip', size: 128,
+            },
+          }],
+        },
+      },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open archive.zip' }));
+
+    await waitFor(() => expect(openAttachmentMock).toHaveBeenCalledWith(ref));
+    expect(useArtifactPanel.getState().focusedFile).toBeNull();
   });
 
   it('renders thought and collapsed-tool attachments once after all assistant items', () => {

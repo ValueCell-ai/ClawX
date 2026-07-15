@@ -624,6 +624,40 @@ describe('ACP timeline reducer', () => {
     });
   });
 
+  it('renders a staged user image block as an attachment and ignores untrusted display paths', () => {
+    expect(contentBlockToRenderPart({
+      type: 'image',
+      data: 'abc123',
+      mimeType: 'image/png',
+      uri: '/tmp/clawx-staging/photo.png',
+      _meta: {
+        clawx: {
+          stagingId: 'stage-photo',
+          displayPath: '/spoofed/private/path/photo.png',
+          fileName: 'photo.png',
+        },
+      },
+    }, {
+      role: 'user', messageId: 'user-photo', segmentIndex: 0, blockIndex: 0,
+    })).toMatchObject({
+      kind: 'attachment',
+      reference: {
+        uri: '/tmp/clawx-staging/photo.png',
+        name: 'photo.png',
+        mimeType: 'image/png',
+        stagingId: 'stage-photo',
+      },
+    });
+    expect(contentBlockToRenderPart({
+      type: 'resource_link',
+      uri: '/tmp/clawx-staging/notes.txt',
+      name: 'notes.txt',
+      _meta: { clawx: { stagingId: 'stage-notes', displayPath: '/spoofed/private/notes.txt' } },
+    }, {
+      role: 'user', messageId: 'user-notes', segmentIndex: 0, blockIndex: 0,
+    })).not.toMatchObject({ reference: { displayPath: expect.anything() } });
+  });
+
   it('uses segment and block positions for distinct attachment ids around a tool call', () => {
     let state = createEmptyAcpTimeline('agent:pi:s1', 1);
     const resource = { type: 'resource_link' as const, uri: 'file:///tmp/report.txt', name: 'report.txt' };

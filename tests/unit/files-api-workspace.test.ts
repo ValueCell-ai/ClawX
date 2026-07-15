@@ -88,6 +88,8 @@ describe('workspace-scoped files api', () => {
 
     expect(stagedAttachments.get(result.id)).toBe(await realpath(result.stagedPath));
     expect(stagedAttachments.get(pathResult.id)).toBe(await realpath(pathResult.stagedPath));
+    expect(stagedAttachments.getDisplayPath(result.id)).toBeNull();
+    expect(stagedAttachments.getDisplayPath(pathResult.id)).toBe(join(workspaceRoot, 'hello.txt'));
     expect(result.stagedPath).toContain(join('media', 'outbound', 'clawx-staging'));
     expect(pathResult.stagedPath).toContain(join('media', 'outbound', 'clawx-staging'));
   });

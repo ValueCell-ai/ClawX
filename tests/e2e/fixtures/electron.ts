@@ -49,6 +49,7 @@ export type AttachmentHostFixture = {
   createWorkspaceFile: (relativePath: string, data: string | Uint8Array) => Promise<string>;
   createOpenClawMediaFile: (relativePath: string, data: string | Uint8Array) => Promise<string>;
   createOutsideFile: (relativePath: string, data: string | Uint8Array) => Promise<string>;
+  registerStagedAttachment: (id: string, stagedPath: string, displayPath?: string) => Promise<void>;
   emitAcpSessionUpdates: (input: {
     sessionKey: string;
     updates: Array<Record<string, unknown> & { sessionUpdate: string }>;
@@ -97,6 +98,7 @@ function productionAttachmentBundle(): Promise<string> {
       contents: [
         `export { createAttachmentAccess, StagedAttachmentRegistry } from ${JSON.stringify(join(repoRoot, 'electron/services/attachment-access.ts'))};`,
         `export { AcpSessionAccessRegistry } from ${JSON.stringify(join(repoRoot, 'electron/services/acp-session-access-registry.ts'))};`,
+        `export { createMediaApi } from ${JSON.stringify(join(repoRoot, 'electron/services/media-api.ts'))};`,
       ].join('\n'),
       loader: 'ts',
       resolveDir: repoRoot,
@@ -668,6 +670,7 @@ export async function installAttachmentHostFixture(
       deferredTranscriptCompleted: Record<string, boolean>;
       hostInvocations: RecordedHostInvocation[];
       shellInvocations: RecordedHostInvocation[];
+      stagedAttachments?: { register: (id: string, canonicalPath: string, displayPath?: string) => void };
     };
     const globals = globalThis as unknown as { __e2eAttachmentFixture?: FixtureState };
     const state: FixtureState = {
@@ -710,7 +713,12 @@ export async function installAttachmentHostFixture(
         }) => Promise<unknown>;
         commitGrant: (grant: unknown) => void;
       };
-      StagedAttachmentRegistry: new () => unknown;
+      StagedAttachmentRegistry: new () => {
+        register: (id: string, canonicalPath: string, displayPath?: string) => void;
+      };
+      createMediaApi: (dependencies: { attachmentAccess: unknown }) => {
+        thumbnails: (input: unknown) => Promise<unknown>;
+      };
       createAttachmentAccess: (dependencies: {
         sessionAccessRegistry: unknown;
         stagedAttachments: unknown;
@@ -723,10 +731,13 @@ export async function installAttachmentHostFixture(
     };
     const production = process.mainModule!.require(payload.productionAttachmentBundlePath) as ProductionAttachmentModule;
     const productionSessionAccess = new production.AcpSessionAccessRegistry();
+    const productionStagedAttachments = new production.StagedAttachmentRegistry();
+    state.stagedAttachments = productionStagedAttachments;
     const productionAttachmentAccess = production.createAttachmentAccess({
       sessionAccessRegistry: productionSessionAccess,
-      stagedAttachments: new production.StagedAttachmentRegistry(),
+      stagedAttachments: productionStagedAttachments,
     });
+    const productionMediaApi = production.createMediaApi({ attachmentAccess: productionAttachmentAccess });
 
     const respond = (id: unknown, data: unknown) => ({
       id: typeof id === 'string' ? id : undefined,
@@ -819,6 +830,9 @@ export async function installAttachmentHostFixture(
       if (request.module === 'files' && request.action === 'openAttachment') {
         return respond(request.id, await productionAttachmentAccess.openAttachment(request.payload));
       }
+      if (request.module === 'media' && request.action === 'thumbnails') {
+        return respond(request.id, await productionMediaApi.thumbnails(request.payload));
+      }
       if (request.module === 'diagnostics' && request.action === 'recordAcpTrace') {
         if (request.payload?.event === 'openclaw-media:projection-stale') {
           for (const deferId of Object.keys(state.deferredTranscriptReturned)) {
@@ -869,6 +883,17 @@ export async function installAttachmentHostFixture(
     createWorkspaceFile: async (path, data) => await writeFixtureFile(workspaceDir, path, data),
     createOpenClawMediaFile: async (path, data) => await writeFixtureFile(openClawMediaDir, path, data),
     createOutsideFile: async (path, data) => await writeFixtureFile(outsideDir, path, data),
+    registerStagedAttachment: async (id, stagedPath, displayPath) => {
+      await app.evaluate(async ({ app: _app }, input) => {
+        const state = (globalThis as unknown as {
+          __e2eAttachmentFixture?: {
+            stagedAttachments?: { register: (id: string, canonicalPath: string, displayPath?: string) => void };
+          };
+        }).__e2eAttachmentFixture;
+        if (!state?.stagedAttachments) throw new Error('Attachment staging fixture is not installed');
+        state.stagedAttachments.register(input.id, input.stagedPath, input.displayPath);
+      }, { id, stagedPath, displayPath });
+    },
     emitAcpSessionUpdates: async (input) => {
       await app.evaluate(async ({ app: _app }, event) => {
         const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
