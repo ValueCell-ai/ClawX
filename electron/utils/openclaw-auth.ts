@@ -2862,13 +2862,6 @@ export async function updateSingleAgentModelProvider(
 const SKILL_WORKSHOP_TOOL_DENY_ENTRY = 'skill_workshop';
 const SKILL_CREATOR_SKILL_KEY = 'skill-creator';
 
-// ClawX desktop does not expose the subagent workflow. Deny the spawn entry
-// point and its companion tools so the model cannot spawn child agent
-// sessions (runtime="subagent") even under tools.profile="full".
-// `sessions_spawn` is the only tool that creates a subagent; `sessions_yield`
-// and `subagents` are the receive/list companions and are useless without it.
-const SUBAGENT_TOOL_DENY_ENTRIES = ['sessions_spawn', 'sessions_yield', 'subagents'] as const;
-
 function normalizeToolDenyList(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === 'string')
@@ -2883,22 +2876,6 @@ function ensureToolDenyIncludes(
     return { deny, modified: false };
   }
   return { deny: [...deny, entry], modified: true };
-}
-
-function ensureToolDenyIncludesAll(
-  deny: string[],
-  entries: readonly string[],
-): { deny: string[]; modified: boolean } {
-  let current = deny;
-  let modified = false;
-  for (const entry of entries) {
-    const result = ensureToolDenyIncludes(current, entry);
-    if (result.modified) {
-      current = result.deny;
-      modified = true;
-    }
-  }
-  return { deny: current, modified };
 }
 
 export async function sanitizeOpenClawConfig(): Promise<void> {
@@ -3100,22 +3077,6 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       toolsModified = true;
     }
 
-    // ClawX desktop does not expose the subagent workflow. Deny the spawn
-    // entry point and its companions even under tools.profile="full" so the
-    // model cannot spawn child agent sessions (runtime="subagent").
-    const subagentDenyResult = ensureToolDenyIncludesAll(
-      normalizeToolDenyList(toolsConfig.deny),
-      SUBAGENT_TOOL_DENY_ENTRIES,
-    );
-    if (subagentDenyResult.modified) {
-      toolsConfig.deny = subagentDenyResult.deny;
-      toolsModified = true;
-      console.log(`[sanitize] Added subagent tool(s) to tools.deny for ClawX desktop: ${SUBAGENT_TOOL_DENY_ENTRIES.join(', ')}`);
-    } else if (!Array.isArray(toolsConfig.deny) || toolsConfig.deny.length !== subagentDenyResult.deny.length) {
-      toolsConfig.deny = subagentDenyResult.deny;
-      toolsModified = true;
-    }
-
     // ── tools.exec approvals (OpenClaw 3.28+) ──────────────────────
     // ClawX is a local desktop app where the user is the trusted operator.
     // Exec approval prompts add unnecessary friction in this context, so we
@@ -3175,21 +3136,6 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       console.log('[sanitize] Added "skill_workshop" to gateway.tools.deny for ClawX desktop');
     } else if (!Array.isArray(gatewayTools.deny) || gatewayTools.deny.length !== gatewayDenyResult.deny.length) {
       gatewayTools.deny = gatewayDenyResult.deny;
-      gatewayModified = true;
-    }
-
-    // Mirror the subagent tool deny into gateway.tools.deny so gateway-side
-    // sessions cannot spawn subagents either.
-    const gatewaySubagentDenyResult = ensureToolDenyIncludesAll(
-      normalizeToolDenyList(gatewayTools.deny),
-      SUBAGENT_TOOL_DENY_ENTRIES,
-    );
-    if (gatewaySubagentDenyResult.modified) {
-      gatewayTools.deny = gatewaySubagentDenyResult.deny;
-      gatewayModified = true;
-      console.log(`[sanitize] Added subagent tool(s) to gateway.tools.deny for ClawX desktop: ${SUBAGENT_TOOL_DENY_ENTRIES.join(', ')}`);
-    } else if (!Array.isArray(gatewayTools.deny) || gatewayTools.deny.length !== gatewaySubagentDenyResult.deny.length) {
-      gatewayTools.deny = gatewaySubagentDenyResult.deny;
       gatewayModified = true;
     }
     if (gatewayModified) {

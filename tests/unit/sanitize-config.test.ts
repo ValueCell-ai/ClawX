@@ -51,12 +51,6 @@ function withClawXToolDefaults<T extends Record<string, unknown>>(config: T): T 
   tools.sessions = sessions;
   tools.exec = exec;
   tools.deny = deny.includes('skill_workshop') ? deny : [...deny, 'skill_workshop'];
-  // Mirror production: also deny the subagent workflow tools.
-  for (const entry of ['sessions_spawn', 'sessions_yield', 'subagents']) {
-    if (!(tools.deny as string[]).includes(entry)) {
-      (tools.deny as string[]).push(entry);
-    }
-  }
 
   const gateway = (config.gateway && typeof config.gateway === 'object' && !Array.isArray(config.gateway))
     ? { ...(config.gateway as Record<string, unknown>) }
@@ -68,12 +62,6 @@ function withClawXToolDefaults<T extends Record<string, unknown>>(config: T): T 
     ? (gatewayTools.deny as unknown[]).filter((value): value is string => typeof value === 'string')
     : [];
   gatewayTools.deny = gatewayDeny.includes('skill_workshop') ? gatewayDeny : [...gatewayDeny, 'skill_workshop'];
-  // Mirror production: also deny the subagent workflow tools (gateway side).
-  for (const entry of ['sessions_spawn', 'sessions_yield', 'subagents']) {
-    if (!(gatewayTools.deny as string[]).includes(entry)) {
-      (gatewayTools.deny as string[]).push(entry);
-    }
-  }
   gateway.tools = gatewayTools;
 
   const skills = (config.skills && typeof config.skills === 'object' && !Array.isArray(config.skills))
@@ -426,27 +414,6 @@ async function sanitizeConfig(
     toolsModified = true;
   }
 
-  // Mirror production: deny the subagent workflow tools (sessions_spawn /
-  // sessions_yield / subagents) so the model cannot spawn child agent sessions.
-  const subagentEntries = ['sessions_spawn', 'sessions_yield', 'subagents'];
-  let subagentDeny = Array.isArray(toolsConfig.deny)
-    ? toolsConfig.deny.filter((value): value is string => typeof value === 'string')
-    : [];
-  let subagentDenyChanged = false;
-  for (const entry of subagentEntries) {
-    if (!subagentDeny.includes(entry)) {
-      subagentDeny = [...subagentDeny, entry];
-      subagentDenyChanged = true;
-    }
-  }
-  if (subagentDenyChanged) {
-    toolsConfig.deny = subagentDeny;
-    toolsModified = true;
-  } else if (!Array.isArray(toolsConfig.deny) || toolsConfig.deny.length !== subagentDeny.length) {
-    toolsConfig.deny = subagentDeny;
-    toolsModified = true;
-  }
-
   const execConfig = (toolsConfig.exec as Record<string, unknown> | undefined) || {};
   if (execConfig.security !== 'full' || execConfig.ask !== 'off') {
     execConfig.security = 'full';
@@ -487,29 +454,6 @@ async function sanitizeConfig(
     : [];
   if (!gatewayDeny.includes('skill_workshop')) {
     gatewayTools.deny = [...gatewayDeny, 'skill_workshop'];
-    gateway.tools = gatewayTools;
-    config.gateway = gateway;
-    modified = true;
-  }
-
-  // Mirror production: deny the subagent workflow tools on the gateway side too.
-  let gatewaySubagentDeny = Array.isArray(gatewayTools.deny)
-    ? gatewayTools.deny.filter((value): value is string => typeof value === 'string')
-    : [];
-  let gatewaySubagentChanged = false;
-  for (const entry of ['sessions_spawn', 'sessions_yield', 'subagents']) {
-    if (!gatewaySubagentDeny.includes(entry)) {
-      gatewaySubagentDeny = [...gatewaySubagentDeny, entry];
-      gatewaySubagentChanged = true;
-    }
-  }
-  if (gatewaySubagentChanged) {
-    gatewayTools.deny = gatewaySubagentDeny;
-    gateway.tools = gatewayTools;
-    config.gateway = gateway;
-    modified = true;
-  } else if (!Array.isArray(gatewayTools.deny) || gatewayTools.deny.length !== gatewaySubagentDeny.length) {
-    gatewayTools.deny = gatewaySubagentDeny;
     gateway.tools = gatewayTools;
     config.gateway = gateway;
     modified = true;
