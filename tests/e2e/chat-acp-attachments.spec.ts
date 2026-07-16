@@ -375,7 +375,7 @@ test.describe('ACP media attachments', () => {
     }
   });
 
-  test('renders outside-workspace paths unavailable without reading or opening them', async ({ launchElectronApp }) => {
+  test('previews outside-workspace paths through attachment host APIs', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -396,10 +396,9 @@ test.describe('ACP media attachments', () => {
       await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [[]]);
 
       const page = await openChat(app);
-      const unavailableCard = page.getByRole('button').filter({ hasText: 'private.txt' });
-      await expect(unavailableCard).toBeDisabled({ timeout: 30_000 });
-      await expect(unavailableCard).toHaveAccessibleName('Attachment unavailable: private.txt');
-      await expect(unavailableCard).toContainText('Attachment unavailable');
+      const outsideCard = page.getByRole('button', { name: 'Preview private.txt', exact: true });
+      await expect(outsideCard).toBeEnabled({ timeout: 30_000 });
+      await expect(outsideCard).toContainText(outsidePath);
       const calls = await fixture.getHostInvocations();
       expect(calls.some((call) => (
         call.module === 'files'
@@ -407,11 +406,24 @@ test.describe('ACP media attachments', () => {
         && call.payload?.ref
         && (call.payload.ref as Record<string, unknown>).uri === outsidePath
       ))).toBe(true);
-      expect(calls.some((call) => (
+      await fixture.clearInvocations();
+
+      await outsideCard.click();
+      const panel = page.getByTestId('artifact-panel');
+      await expect(panel).toBeVisible();
+      await expect(panel.getByText('not authorized')).toBeVisible({ timeout: 30_000 });
+      const previewCalls = await fixture.getHostInvocations();
+      expect(previewCalls.some((call) => (
         call.module === 'files'
-        && (call.action === 'readAttachmentBinary' || call.action === 'openAttachment')
-      ))).toBe(false);
+        && call.action === 'readAttachmentText'
+        && call.payload?.uri === outsidePath
+      ))).toBe(true);
       expect(await fixture.getShellInvocations()).toEqual([]);
+      expect((await getRecordedLegacyIpcInvocations(app)).filter((call) => (
+        call.channel === 'file:readText'
+        || call.channel === 'file:readBinary'
+        || call.channel.startsWith('shell:')
+      ))).toEqual([]);
     } finally {
       await closeElectronApp(app);
     }

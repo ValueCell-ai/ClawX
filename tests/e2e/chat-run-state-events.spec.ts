@@ -589,8 +589,9 @@ test.describe('ClawX chat run state events', () => {
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByText('SVG file is ready:')).toBeVisible();
       await expect(page.getByText('MEDIA:C:')).toHaveCount(0);
-      await expect(page.getByText('japan-kansai-4d3n-plan.svg')).toBeVisible();
-      await expect(page.getByRole('button').filter({ hasText: 'japan-kansai-4d3n-plan.svg' })).toBeEnabled();
+      const svgCard = page.getByRole('button', { name: 'Preview japan-kansai-4d3n-plan.svg', exact: true });
+      await expect(svgCard).toBeEnabled();
+      await expect(svgCard).toContainText(filePath);
       await expect(page.getByTestId('acp-image-part').locator('img')).toBeVisible();
       await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
     } finally {
