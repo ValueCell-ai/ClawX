@@ -1158,6 +1158,7 @@ describe('ACP Chat store', () => {
       kind: 'message-segment',
       role: 'user',
       segmentIndex: 0,
+      userPromptTextBlocks: ['hello from user', '[Resource link] /repo/notes.txt'],
       parts: [
         { kind: 'markdown', text: 'hello from user' },
         {
@@ -2969,6 +2970,100 @@ describe('ACP Chat store', () => {
     ]));
     expect(JSON.stringify(transcriptTraces)).not.toContain('/repo/');
     expect(JSON.stringify(transcriptTraces)).not.toContain('MEDIA:');
+  });
+
+  it('recovers historical MEDIA when the ACP user turn contains a resource attachment', async () => {
+    const history = createDeferred<{ success: true; messages: Array<Record<string, unknown>> }>();
+    hostApiMock.sessionsHistory.mockReturnValueOnce(history.promise);
+    const inputPath = 'C:\\Users\\Administrator\\.openclaw\\media\\input.xlsx';
+    const outputPath = 'C:\\Users\\Administrator\\.openclaw\\media\\output.xlsx';
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+
+    const load = useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: 'C:\\Users\\Administrator\\.openclaw\\workspace', cwd: 'C:\\Users\\Administrator\\.openclaw\\workspace',
+    });
+    await load;
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      historical: true,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'user_message',
+          messageId: 'user-with-resource',
+          content: [
+            { type: 'text', text: 'Create the report' },
+            { type: 'resource_link', uri: inputPath, name: 'input.xlsx' },
+          ],
+        },
+      },
+    });
+    history.resolve({
+      success: true,
+      messages: [
+        {
+          role: 'user',
+          content: `[Working directory: C:\\Users\\Administrator\\.openclaw\\workspace]\n\nCreate the report\n[Resource link] ${inputPath}`,
+        },
+        { role: 'assistant', id: 'assistant-output', content: `Report ready\nMEDIA:${outputPath}` },
+      ],
+    });
+
+    await vi.waitFor(() => {
+      const attachments = Object.values(useAcpChatSessionStore.getState().timeline.itemsById)
+        .flatMap((item) => item.kind === 'message-segment' ? item.parts : [])
+        .filter((part) => part.kind === 'attachment' && part.source === 'openclaw-media');
+      expect(attachments).toHaveLength(1);
+      expect(attachments[0]).toMatchObject({
+        reference: { uri: outputPath, transcriptMessageId: 'assistant-output' },
+        access: { status: 'available' },
+      });
+    });
+  });
+
+  it.each([
+    { kind: 'resource', inputPath: '/repo/input.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+    { kind: 'image', inputPath: '/repo/input.png', mimeType: 'image/png' },
+  ])('recovers live MEDIA for an attachment-only $kind prompt', async ({ kind, inputPath, mimeType }) => {
+    const outputPath = `/repo/${kind}-output.pdf`;
+    hostApiMock.sessionsHistory.mockResolvedValueOnce({
+      success: true,
+      messages: [
+        {
+          role: 'user',
+          content: kind === 'resource'
+            ? `[Working directory: /repo]\n\n[Resource link] ${inputPath}`
+            : '[Working directory: /repo]\n\n',
+        },
+        { role: 'assistant', id: `${kind}-assistant`, content: `MEDIA:${outputPath}` },
+      ],
+    });
+    const { useAcpChatSessionStore } = await importStore();
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true,
+    });
+
+    await expect(useAcpChatSessionStore.getState().sendPrompt({
+      sessionKey: 'agent:pi:s1',
+      cwd: '/repo',
+      message: '',
+      messageId: `${kind}-only-user`,
+      media: [{ filePath: inputPath, stagingId: `${kind}-stage`, mimeType }],
+    })).resolves.toBe(true);
+
+    await vi.waitFor(() => {
+      const attachments = Object.values(useAcpChatSessionStore.getState().timeline.itemsById)
+        .flatMap((item) => item.kind === 'message-segment' ? item.parts : [])
+        .filter((part) => part.kind === 'attachment' && part.source === 'openclaw-media');
+      expect(attachments).toHaveLength(1);
+      expect(attachments[0]).toMatchObject({
+        reference: { uri: outputPath, transcriptMessageId: `${kind}-assistant` },
+        access: { status: 'available' },
+      });
+    });
+    expect(hostApiMock.sessionsHistory).toHaveBeenCalledTimes(1);
   });
 
   it('records a reason-coded history failure without transcript content', async () => {

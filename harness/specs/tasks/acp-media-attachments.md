@@ -116,6 +116,7 @@ touchedAreas:
 expectedUserBehavior:
   - Standard ACP resource_link and URI-backed resource content renders as paperclip attachment cards.
   - Explicit assistant OpenClaw MEDIA directives omitted by ACP are recovered for live completions and historical session loads without displaying the raw directive.
+  - MEDIA recovery remains aligned when the triggering ACP user turn contains structured resources, images, or no text.
   - Attachment rows render after assistant prose and preserve declaration order.
   - User image attachments render as thumbnails with a filename overlay on hover.
   - User non-image attachments show their source path after the filename, omit MIME text, and truncate long paths.
@@ -159,6 +160,7 @@ acceptance:
   - User image attachments render as thumbnails with the filename revealed by a hover overlay.
   - User non-image attachments render the filename followed by a muted, truncating source path and no MIME label.
   - The reported OpenClaw MEDIA directive for budget_sample.xlsx renders an attachment in ACP Chat even though OpenClaw ACP emits no resource block.
+  - User resource links and attachment-only prompts do not prevent the same turn's assistant MEDIA attachment from rendering.
   - The raw MEDIA directive is not displayed.
   - The attachment renders after assistant prose and preserves declaration order.
   - Supported files open in the right-side Preview panel.
@@ -197,6 +199,7 @@ Standard ACP resource content is the preferred attachment source. The OpenClaw t
 | Explicit OpenClaw `MEDIA:` recovery and hidden raw directives | `tests/unit/acp-media-attachments.test.ts`, `tests/unit/acp-chat-store.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts` |
 | Explicit parser grammar rejects fenced, wrapped, inline, malformed, unknown-scheme, and overlong values | `tests/unit/acp-media-attachments.test.ts`, `acp-compatibility-content-safety` |
 | Transcript suffix alignment uses normalized user text and occurrence from the tail without guessing | `tests/unit/acp-media-attachments.test.ts`, `tests/unit/acp-chat-store.test.ts`, `acp-chat-state-and-history` |
+| Attached and attachment-only user turns use binary-free structured prompt projection | `tests/unit/acp-media-attachments.test.ts`, `tests/unit/acp-reducer.test.ts`, `tests/unit/acp-chat-store.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts`, `acp-chat-state-and-history` |
 | Body-first ordering and declaration order | `tests/unit/acp-timeline-groups.test.ts`, `tests/unit/acp-chat-components.test.tsx`, `tests/e2e/chat-acp-attachments.spec.ts` |
 | User thumbnail, filename overlay, and Main-owned source-path presentation | `tests/unit/acp-chat-components.test.tsx`, `tests/unit/acp-reducer.test.ts`, `tests/unit/attachment-access.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts`, `ui-i18n-design-tokens` |
 | Preview, local system open, and remote external open routing | `tests/unit/file-preview-body.test.tsx`, `tests/unit/rich-file-viewers.test.tsx`, `tests/unit/attachment-access.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts` |

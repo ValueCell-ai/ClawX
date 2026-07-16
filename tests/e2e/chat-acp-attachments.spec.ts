@@ -151,6 +151,70 @@ test.describe('ACP media attachments', () => {
     }
   });
 
+  test('recovers assistant MEDIA for a user turn with a resource attachment', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const prompt = 'Create the attached-source report';
+    const reply = 'The attached-source report is ready.';
+
+    try {
+      const fixture = await installAttachmentHostFixture(app, {
+        sessions: [
+          { key: MAIN_SESSION_KEY, title: 'Main session' },
+          { key: OTHER_SESSION_KEY, title: 'Other session' },
+        ],
+      });
+      const sourcePath = await fixture.createWorkspaceFile('attached-source.xlsx', workbookBytes());
+      const outputPath = await fixture.createWorkspaceFile('attached-output.xlsx', workbookBytes());
+      await fixture.setSessionReplay(MAIN_SESSION_KEY, [
+        {
+          sessionUpdate: 'user_message',
+          messageId: 'attached-source-user',
+          content: [
+            { type: 'text', text: prompt },
+            {
+              type: 'resource_link',
+              uri: sourcePath,
+              name: 'attached-source.xlsx',
+              mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            },
+          ],
+        },
+        {
+          sessionUpdate: 'agent_message',
+          messageId: 'attached-source-reply',
+          content: [{ type: 'text', text: reply }],
+        },
+      ]);
+      const transcript = [
+        {
+          role: 'user',
+          id: 'attached-source-transcript-user',
+          content: `[Working directory: ${fixture.workspaceDir}]\n\n${prompt}\n[Resource link] ${sourcePath}`,
+        },
+        {
+          role: 'assistant',
+          id: 'attached-source-transcript-assistant',
+          content: `${reply}\nMEDIA:${outputPath}`,
+        },
+      ];
+      await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [[]]);
+
+      const page = await openChat(app);
+      await expect(page.getByText(prompt)).toBeVisible({ timeout: 30_000 });
+      await fixture.waitForHistoryRequestCount(MAIN_SESSION_KEY, 1);
+      await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [transcript]);
+
+      await page.getByTestId(`sidebar-session-${OTHER_SESSION_KEY}`).click();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+
+      await expect(page.getByRole('button').filter({ hasText: 'attached-output.xlsx' })).toHaveCount(1, { timeout: 30_000 });
+      await expect(page.getByText(/MEDIA:/)).toHaveCount(0);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('previews the reported live spreadsheet flow and restores one historical card', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
@@ -242,7 +306,7 @@ test.describe('ACP media attachments', () => {
       await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [[]]);
 
       const page = await openChat(app);
-      const nativeCard = page.getByRole('button').filter({ hasText: 'Native budget.xlsx' });
+      const nativeCard = page.getByRole('button', { name: 'Preview Native budget.xlsx', exact: true });
       await expect(nativeCard).toBeEnabled({ timeout: 30_000 });
 
       await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [[
@@ -257,8 +321,8 @@ test.describe('ACP media attachments', () => {
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
       await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
 
-      await expect(page.getByRole('button').filter({ hasText: 'Native budget.xlsx' })).toHaveCount(1, { timeout: 30_000 });
-      await expect(page.getByRole('button').filter({ hasText: 'native-budget.xlsx' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Preview Native budget.xlsx', exact: true })).toHaveCount(1, { timeout: 30_000 });
+      await expect(page.getByRole('button', { name: 'Preview native-budget.xlsx', exact: true })).toHaveCount(0);
       await expect(page.getByText(/MEDIA:/)).toHaveCount(0);
     } finally {
       await closeElectronApp(app);

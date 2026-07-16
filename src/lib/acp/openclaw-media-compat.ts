@@ -198,7 +198,11 @@ export function extractOpenClawMediaTurns(
   }));
 }
 
-function markdownText(item: MessageSegmentItem): string {
+function userPromptText(item: MessageSegmentItem): string {
+  // OpenClaw ACP does not project assistant MEDIA attachments, so ClawX reads a
+  // bounded transcript supplement. Use the prompt text OpenClaw flattened from
+  // structured ACP blocks to align that evidence without parsing user prose.
+  if (item.userPromptTextBlocks) return item.userPromptTextBlocks.join('\n');
   return item.parts
     .flatMap((part) => part.kind === 'markdown' ? [part.text] : [])
     .join('');
@@ -211,12 +215,12 @@ function acpUserTurns(snapshot: AcpTimelineSnapshot): AcpUserTurn[] {
   for (const itemId of snapshot.itemOrder) {
     const item = snapshot.itemsById[itemId];
     if (item?.kind === 'message-segment' && item.role === 'user') {
-      if (!current) {
+      if (!current || !current.messageIds.has(item.messageId)) {
         current = { turnId: item.messageId, messageIds: new Set(), normalizedUserText: '' };
         turns.push(current);
       }
       current.messageIds.add(item.messageId);
-      current.normalizedUserText += markdownText(item);
+      current.normalizedUserText += userPromptText(item);
       continue;
     }
     current = null;
@@ -273,7 +277,6 @@ export function alignOpenClawMediaTurns(
   const acpByKey = new Map<string, AcpUserTurn>();
   const ambiguousKeys = new Set<string>();
   for (const turn of eligibleAcpTurns) {
-    if (!turn.normalizedUserText) continue;
     const key = turnMatchKey(turn);
     if (acpByKey.has(key)) ambiguousKeys.add(key);
     else acpByKey.set(key, turn);
@@ -281,7 +284,7 @@ export function alignOpenClawMediaTurns(
 
   const supplements: OpenClawMediaTurnSupplement[] = [];
   for (const transcriptTurn of transcriptTurns) {
-    if (transcriptTurn.candidates.length === 0 || !transcriptTurn.normalizedUserText) continue;
+    if (transcriptTurn.candidates.length === 0) continue;
     const key = turnMatchKey(transcriptTurn);
     if (ambiguousKeys.has(key)) continue;
     const acpTurn = acpByKey.get(key);

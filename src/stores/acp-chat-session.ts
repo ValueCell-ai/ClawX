@@ -37,6 +37,7 @@ import {
   upsertSyntheticTurnAttachments,
 } from '@/lib/acp/reducer';
 import { hashOpenClawMediaDiagnostic, type OpenClawMediaCandidate } from '@/lib/acp/openclaw-media-compat';
+import { openClawResourceLinkPromptText } from '@/lib/acp/openclaw-prompt-compat';
 import { fetchOpenClawTranscriptSupplement } from '@/lib/acp/transcript-supplement';
 import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
@@ -834,6 +835,18 @@ function optimisticPromptParts(input: AcpChatPromptPayload, messageId: string): 
   return parts.length > 0 ? parts : [{ kind: 'markdown', text: '' }];
 }
 
+function optimisticPromptTextBlocks(input: AcpChatPromptPayload): string[] {
+  const text = input.message?.trim();
+  return [
+    ...(text ? [text] : []),
+    ...(input.media ?? []).flatMap((item) => (
+      item.mimeType?.startsWith('image/')
+        ? []
+        : [openClawResourceLinkPromptText(item.filePath)]
+    )),
+  ];
+}
+
 function appendOptimisticUserSegment(
   timeline: AcpTimelineSnapshot,
   input: AcpChatPromptPayload,
@@ -851,6 +864,8 @@ function appendOptimisticUserSegment(
     messageId,
     segmentIndex: 0,
     parts: optimisticPromptParts(input, messageId),
+    userPromptTextBlocks: optimisticPromptTextBlocks(input),
+    userPromptTextBlocksOptimistic: true,
     blockCount: 0,
     optimistic: true,
   };
