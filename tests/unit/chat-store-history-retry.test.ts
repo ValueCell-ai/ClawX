@@ -1737,16 +1737,11 @@ describe('useChatStore startup history retry', () => {
       streamingMessage: { role: 'assistant' },
     });
 
-    await vi.advanceTimersByTimeAsync(241_000);
+    await vi.advanceTimersByTimeAsync(121_000);
 
-    expect(useChatStore.getState().runError).toContain('240 seconds');
+    expect(useChatStore.getState().runError).toContain('120 seconds');
     expect(useChatStore.getState().sending).toBe(true);
     expect(useChatStore.getState().streamingMessage).toBeNull();
-
-    await vi.advanceTimersByTimeAsync(239_000);
-
-    expect(useChatStore.getState().sending).toBe(true);
-    expect(useChatStore.getState().error).toBeNull();
 
     await vi.advanceTimersByTimeAsync(20_000);
 
@@ -1760,7 +1755,7 @@ describe('useChatStore startup history retry', () => {
   // Regression for the "first chat after gateway start" bug: the gateway
   // accepted chat.send but no streamed chat/runtime events ever reached the
   // renderer. Without the fallback transcript poll the safety timers fired
-  // "The model did not respond within 240 seconds" and then "No response
+  // "The model did not respond within 120 seconds" and then "No response
   // received from the model" even though the transcript already contained
   // the assistant reply.
   it('recovers via the fallback transcript poll when no streamed events arrive', async () => {
@@ -1932,9 +1927,9 @@ describe('useChatStore startup history retry', () => {
     });
 
     const sendPromise = useChatStore.getState().sendMessage('new question');
-    await vi.advanceTimersByTimeAsync(241_000);
+    await vi.advanceTimersByTimeAsync(121_000);
 
-    expect(useChatStore.getState().runError).toContain('240 seconds');
+    expect(useChatStore.getState().runError).toContain('120 seconds');
     expect(useChatStore.getState().error).toBeNull();
     expect(useChatStore.getState().sending).toBe(true);
 

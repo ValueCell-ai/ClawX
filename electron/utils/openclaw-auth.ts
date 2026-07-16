@@ -525,8 +525,6 @@ const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] 
 const VALID_COMPACTION_MODES = new Set(['default', 'safeguard']);
 /** Matches OpenClaw's 200k+ context-window recommendation (see computeContextAwareReserveTokensFloor). */
 const DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR = 50_000;
-/** Default OpenClaw model stream-idle / provider HTTP timeout (seconds). */
-export const DEFAULT_PROVIDER_TIMEOUT_SECONDS = 240;
 const BUILTIN_CHANNEL_IDS = new Set([
   'discord',
   'telegram',
@@ -930,96 +928,6 @@ function backfillCustomProviderModelContextWindows(config: Record<string, unknow
   }
 
   return backfilled;
-}
-
-function backfillProviderTimeoutSeconds(config: Record<string, unknown>): string[] {
-  const models = (config.models || {}) as Record<string, unknown>;
-  const providers = (models.providers || {}) as Record<string, unknown>;
-  const backfilled: string[] = [];
-
-  for (const [providerKey, entry] of Object.entries(providers)) {
-    if (!isPlainRecord(entry) || entry.timeoutSeconds !== undefined) continue;
-    entry.timeoutSeconds = DEFAULT_PROVIDER_TIMEOUT_SECONDS;
-    backfilled.push(providerKey);
-  }
-
-  return backfilled;
-}
-
-function isExplicitProviderRegistration(entry: Record<string, unknown>): boolean {
-  return Boolean(entry.baseUrl || entry.api || entry.models);
-}
-
-function backfillProviderTimeoutSecondsOnEntry(entry: Record<string, unknown>): boolean {
-  if (entry.timeoutSeconds !== undefined) return false;
-  entry.timeoutSeconds = DEFAULT_PROVIDER_TIMEOUT_SECONDS;
-  return true;
-}
-
-/**
- * Ensure built-in registry providers carry a minimal models.providers overlay
- * with timeoutSeconds so OpenClaw's 120s default idle watchdog does not apply.
- * Only call for built-in providers without an explicit registration entry.
- */
-function ensureBuiltInProviderIdleTimeoutOverlay(
-  providers: Record<string, unknown>,
-  provider: string,
-): boolean {
-  const existing = isPlainRecord(providers[provider])
-    ? (providers[provider] as Record<string, unknown>)
-    : null;
-
-  if (existing && isExplicitProviderRegistration(existing)) {
-    const preservedTimeout = existing.timeoutSeconds;
-    delete providers[provider];
-    providers[provider] = {
-      timeoutSeconds: typeof preservedTimeout === 'number'
-        ? preservedTimeout
-        : DEFAULT_PROVIDER_TIMEOUT_SECONDS,
-    };
-    console.log(`Removed stale models.providers.${provider} (built-in provider)`);
-    return true;
-  }
-
-  if (!existing) {
-    providers[provider] = { timeoutSeconds: DEFAULT_PROVIDER_TIMEOUT_SECONDS };
-    return true;
-  }
-
-  return backfillProviderTimeoutSecondsOnEntry(existing);
-}
-
-function ensureDefaultModelProviderTimeoutOverlay(config: Record<string, unknown>): boolean {
-  const agents = isPlainRecord(config.agents) ? config.agents : null;
-  const defaults = agents && isPlainRecord(agents.defaults) ? agents.defaults : null;
-  const model = defaults && isPlainRecord(defaults.model) ? defaults.model : null;
-  const primary = typeof model?.primary === 'string' ? model.primary.trim() : '';
-  const slashIndex = primary.indexOf('/');
-  if (slashIndex <= 0 || slashIndex >= primary.length - 1) return false;
-
-  const providerKey = primary.slice(0, slashIndex);
-  const models = (config.models || {}) as Record<string, unknown>;
-  const providers = (models.providers || {}) as Record<string, unknown>;
-  const existing = isPlainRecord(providers[providerKey])
-    ? (providers[providerKey] as Record<string, unknown>)
-    : null;
-
-  // Runtime custom/ollama keys and explicit registrations must keep routing fields.
-  if (isRuntimeGeneratedProviderKey(providerKey)
-    || (existing && isExplicitProviderRegistration(existing))) {
-    if (!existing || !backfillProviderTimeoutSecondsOnEntry(existing)) return false;
-    providers[providerKey] = existing;
-    models.providers = providers;
-    config.models = models;
-    return true;
-  }
-
-  const changed = ensureBuiltInProviderIdleTimeoutOverlay(providers, providerKey);
-  if (changed) {
-    models.providers = providers;
-    config.models = models;
-  }
-  return changed;
 }
 
 async function writeOpenClawJson(config: Record<string, unknown>): Promise<void> {
@@ -1665,9 +1573,12 @@ export async function setOpenClawDefaultModel(
         `Configured models.providers.openai for OAuth (api=${OPENAI_CODEX_OAUTH_PROVIDER_CONFIG.api})`,
       );
     } else {
+      // Built-in provider: remove any stale models.providers entry
       const models = (config.models || {}) as Record<string, unknown>;
       const providers = (models.providers || {}) as Record<string, unknown>;
-      if (ensureBuiltInProviderIdleTimeoutOverlay(providers, provider)) {
+      if (providers[provider]) {
+        delete providers[provider];
+        console.log(`Removed stale models.providers.${provider} (built-in provider)`);
         models.providers = providers;
         config.models = models;
       }
@@ -2043,10 +1954,6 @@ function upsertOpenClawProviderEntry(
     }
   }
   applyPinnedAgentRuntime(provider, nextProvider);
-
-  if (nextProvider.timeoutSeconds === undefined) {
-    nextProvider.timeoutSeconds = DEFAULT_PROVIDER_TIMEOUT_SECONDS;
-  }
 
   providers[provider] = nextProvider;
   models.providers = providers;
@@ -2823,17 +2730,6 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     if (backfilledContextWindows.length > 0) {
       modified = true;
       console.log(`[batch-sync] Backfilled contextWindow for custom provider models: ${backfilledContextWindows.join(', ')}`);
-    }
-
-    // ── Provider request idle timeout backfill ──
-    const backfilledTimeouts = backfillProviderTimeoutSeconds(config);
-    if (backfilledTimeouts.length > 0) {
-      modified = true;
-      console.log(`[batch-sync] Backfilled timeoutSeconds=${DEFAULT_PROVIDER_TIMEOUT_SECONDS} for models.providers: ${backfilledTimeouts.join(', ')}`);
-    }
-    if (ensureDefaultModelProviderTimeoutOverlay(config)) {
-      modified = true;
-      console.log(`[batch-sync] Ensured default model provider timeoutSeconds=${DEFAULT_PROVIDER_TIMEOUT_SECONDS}`);
     }
 
     if (modified) {

@@ -145,11 +145,10 @@ const OPTIMISTIC_USER_MESSAGE_TTL_MS = 30 * 60 * 1000;
 const OPTIMISTIC_USER_TIMESTAMP_MATCH_MS = 120_000;
 /** Grace period before surfacing mid-run Gateway errors that often self-recover. */
 const ERROR_RECOVERY_DELAY_MS = 12_000;
-/** OpenClaw LLM idle timeout before an internal retry (matches DEFAULT_PROVIDER_TIMEOUT_SECONDS). */
-const LLM_IDLE_HINT_MS = 240_000;
-/** Allow one full same-model retry window before declaring a hard no-response failure. */
-const NO_RESPONSE_SAFETY_TIMEOUT_MS = LLM_IDLE_HINT_MS * 2 + 10_000;
-const LLM_IDLE_HINT_SECONDS = LLM_IDLE_HINT_MS / 1000;
+/** OpenClaw LLM idle timeout before an internal retry. */
+const LLM_IDLE_HINT_MS = 120_000;
+/** Wait past one LLM idle window before declaring a hard no-response failure. */
+const NO_RESPONSE_SAFETY_TIMEOUT_MS = 130_000;
 /** Delay before the first fallback transcript poll after a send. */
 const HISTORY_POLL_START_DELAY_MS = 3_000;
 /** Interval between fallback transcript poll ticks during an active send. */
@@ -3974,7 +3973,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       if (sendAgeMs >= LLM_IDLE_HINT_MS && !state.runError && !hasProgress) {
         set({
-          runError: `The model did not respond within ${LLM_IDLE_HINT_SECONDS} seconds. Retrying…`,
+          runError: 'The model did not respond within 120 seconds. Retrying…',
         });
       }
 
