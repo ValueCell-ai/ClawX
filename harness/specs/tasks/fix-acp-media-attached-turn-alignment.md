@@ -14,8 +14,13 @@ touchedAreas:
   - harness/specs/tasks/preserve-acp-stream-across-navigation.md
   - harness/specs/rules/acp-chat-state-and-history.md
   - harness/specs/rules/acp-compatibility-content-safety.md
+  - harness/specs/rules/attachment-access-safety.md
+  - harness/specs/rules/session-workspace-authority.md
+  - harness/specs/rules/ui-i18n-design-tokens.md
+  - harness/reference/acp-attachment-access-control.md
   - harness/reference/acp-generated-media-and-diagnostics.md
   - harness/reference/acp-chat.md
+  - harness/reference/openclaw-file-activity.md
   - shared/acp-chat/types.ts
   - shared/host-api/contract.ts
   - shared/i18n/locales/en/chat.json
@@ -40,6 +45,7 @@ touchedAreas:
   - tests/unit/rich-file-viewers.test.tsx
   - tests/e2e/chat-acp-attachments.spec.ts
   - tests/e2e/chat-acp-inline-timeline.spec.ts
+  - tests/e2e/chat-run-state-events.spec.ts
 expectedUserBehavior:
   - An explicit assistant MEDIA attachment renders when the triggering user prompt contains one or more ACP resource links or images.
   - Text-plus-attachment and attachment-only turns recover live and historical MEDIA evidence without displaying raw compatibility markers.

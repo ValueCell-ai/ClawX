@@ -9,8 +9,11 @@ touchedAreas:
   - docs/specs/2026-07-14-acp-media-attachments-design.md
   - docs/plans/2026-07-14-acp-media-attachments.md
   - docs/plans/2026-07-15-harness-spec-consolidation.md
+  - docs/plans/2026-07-16-acp-media-attached-turn-alignment.md
   - harness/specs/tasks/acp-media-attachments.md
   - harness/specs/tasks/fix-acp-history-load-races.md
+  - harness/specs/tasks/fix-acp-media-attached-turn-alignment.md
+  - harness/specs/tasks/preserve-acp-stream-across-navigation.md
   - harness/specs/scenarios/acp-chat-experience.md
   - harness/specs/rules/acp-chat-state-and-history.md
   - harness/specs/rules/acp-compatibility-content-safety.md
@@ -46,6 +49,7 @@ touchedAreas:
   - src/lib/acp/reducer.ts
   - src/lib/acp/image-generation-compat.ts
   - src/lib/acp/openclaw-media-compat.ts
+  - src/lib/acp/openclaw-prompt-compat.ts
   - src/lib/acp/transcript-supplement.ts
   - src/lib/acp/timeline-groups.ts
   - src/stores/acp-chat-session.ts
@@ -120,8 +124,8 @@ expectedUserBehavior:
   - Attachment rows render after assistant prose and preserve declaration order.
   - User image attachments render as thumbnails with a filename overlay on hover.
   - User non-image attachments show their source path after the filename, omit MIME text, and truncate long paths.
-  - Supported authorized local files open in the right-side Preview panel after a user click.
-  - Unsupported authorized local files open with the operating system default application after a user click.
+  - Supported session-valid local files, including paths outside the active workspace, open in the right-side Preview panel after a user click.
+  - Unsupported session-valid local files open with the operating system default application after a user click.
   - HTTP and HTTPS attachments open externally after a user click.
   - Arbitrary paths in ordinary prose do not become attachments.
   - Unavailable or unauthorized references cannot be previewed or opened and do not suppress assistant prose or other attachments.
@@ -164,13 +168,13 @@ acceptance:
   - The raw MEDIA directive is not displayed.
   - The attachment renders after assistant prose and preserves declaration order.
   - Supported files open in the right-side Preview panel.
-  - Unsupported authorized local files open with the system default application after a click.
+  - Unsupported session-valid local files open with the system default application after a click.
   - HTTP and HTTPS attachments open externally after a click.
   - Arbitrary prose paths do not become attachments.
-  - Local references outside the workspace and verified managed roots cannot be previewed or opened.
+  - Existing local references outside the workspace can be previewed or opened after exact session/generation validation and per-operation Main re-resolution.
   - Live and historical paths deduplicate and reject stale session or generation results.
   - Native ACP resources take precedence over transcript compatibility evidence.
-  - Attachment access remains bound to Main-owned session, generation, ownership, and outgoing-record authority on every operation.
+  - Attachment access remains bound to Main-owned session, generation, target revalidation, and outgoing-record authority on every operation.
   - Attachment rows use semantic controls with safe accessible labels, keyboard activation, and disabled unavailable states.
   - The implementation contains the required compatibility rationale comment and links it to durable architecture documentation.
   - No OpenClaw source or distributed package is modified.
@@ -204,11 +208,11 @@ Standard ACP resource content is the preferred attachment source. The OpenClaw t
 | User thumbnail, filename overlay, and Main-owned source-path presentation | `tests/unit/acp-chat-components.test.tsx`, `tests/unit/acp-reducer.test.ts`, `tests/unit/attachment-access.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts`, `ui-i18n-design-tokens` |
 | Preview, local system open, and remote external open routing | `tests/unit/file-preview-body.test.tsx`, `tests/unit/rich-file-viewers.test.tsx`, `tests/unit/attachment-access.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts` |
 | Main grant lifecycle and exact session/generation revocation | `tests/unit/acp-session-access-registry.test.ts`, `tests/unit/acp-chat-service.test.ts`, `tests/unit/attachment-access.test.ts`, `attachment-access-safety` |
-| URI hardening, allowed roots, staging ownership, and outgoing-record binding | `tests/unit/attachment-access.test.ts`, `attachment-access-safety` |
+| URI hardening, regular-file resolution, staging identity, and outgoing-record binding | `tests/unit/attachment-access.test.ts`, `attachment-access-safety` |
 | Attachment previews use scoped reads without naked-path or workspace fallback | `tests/unit/file-preview-body.test.tsx`, `tests/unit/rich-file-viewers.test.tsx`, `tests/unit/artifact-panel.test.tsx`, `attachment-access-safety` |
 | Semantic controls, safe labels, keyboard activation, and disabled unavailable state | `tests/unit/acp-chat-components.test.tsx`, `tests/unit/attachment-access.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts`, `ui-i18n-design-tokens` |
 | Bare prose paths are rejected | `tests/unit/acp-media-attachments.test.ts`, `acp-compatibility-content-safety` |
-| Outside-root and stale session/generation access is rejected | `tests/unit/attachment-access.test.ts`, `tests/unit/acp-session-access-registry.test.ts`, `attachment-access-safety`, `session-workspace-authority`, `tool-derived-file-safety` |
+| Outside-workspace files resolve while stale session/generation access is rejected | `tests/unit/attachment-access.test.ts`, `tests/unit/acp-session-access-registry.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts`, `attachment-access-safety`, `session-workspace-authority` |
 | Turn-scoped live/history dedupe, unavailable upgrade, and native ACP precedence | `tests/unit/acp-chat-store.test.ts`, `tests/unit/acp-media-attachments.test.ts`, `acp-chat-state-and-history`, `acp-compatibility-content-safety` |
 | Compatibility rationale remains marked and bounded | `harness/reference/acp-generated-media-and-diagnostics.md#bounded-transcript-exceptions`, `acp-compatibility-content-safety` |
 | No OpenClaw, legacy Renderer, direct IPC, or direct Gateway regression | `renderer-main-boundary`, `backend-communication-boundary`, `acp-chat-state-and-history`, harness validation |
