@@ -89,6 +89,29 @@ describe('ACP chat timeline components', () => {
     useArtifactPanel.setState({ open: false, tab: 'changes', focusedFile: null });
   });
 
+  it('does not apply background highlighting to chat code', () => {
+    const state = snapshot({
+      itemOrder: ['msg-a:0'],
+      itemsById: {
+        'msg-a:0': {
+          kind: 'message-segment',
+          id: 'msg-a:0',
+          role: 'assistant',
+          messageId: 'msg-a',
+          segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: '```\nAGENTS\n├── raw/\n└── wiki/\n```\n\nand `inline`' }],
+        },
+      },
+    });
+
+    const { container } = render(<AcpTimeline snapshot={state} />);
+    const blockCode = container.querySelector('pre code');
+    const inlineCode = Array.from(container.querySelectorAll('code')).find((element) => element.textContent === 'inline');
+
+    expect(blockCode).not.toHaveClass('bg-black/5');
+    expect(inlineCode).not.toHaveClass('bg-black/5');
+  });
+
   it('renders tool-only turn file controls once after timeline items and routes preview and changes', () => {
     const state = snapshot({
       itemOrder: ['tool:write-file'],

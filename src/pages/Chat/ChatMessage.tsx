@@ -654,10 +654,10 @@ function AssistantMarkdown({
         components={{
           code({ className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || '');
-            const isInline = !match && !className;
+            const isInline = !match && !className && !String(children).includes('\n');
             if (isInline) {
               return (
-                <code className="bg-black/5 dark:bg-white/5 px-1.5 py-0.5 rounded text-sm font-mono break-words break-all" {...props}>
+                <code className="text-sm font-mono break-words break-all" {...props}>
                   {children}
                 </code>
               );

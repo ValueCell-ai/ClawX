@@ -90,7 +90,7 @@ export default function MarkdownPreview({ source, className }: MarkdownPreviewPr
           ),
           code: ({ className: codeClass, children, ...props }) => {
             const match = /language-(\w+)/.exec(codeClass || '');
-            const isInline = !match && !codeClass;
+            const isInline = !match && !codeClass && !String(children).includes('\n');
             if (isInline) {
               return (
                 <code

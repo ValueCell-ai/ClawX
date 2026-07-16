@@ -43,10 +43,10 @@ function AcpMarkdownPart({ text, tone }: { text: string; tone: RenderTone }) {
         components={{
           code({ className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || '');
-            const isInline = !match && !className;
+            const isInline = !match && !className && !String(children).includes('\n');
             if (isInline) {
               return (
-                <code className="rounded bg-black/5 px-1.5 py-0.5 font-mono text-sm break-all dark:bg-white/10" {...props}>
+                <code className="font-mono text-sm break-all" {...props}>
                   {children}
                 </code>
               );

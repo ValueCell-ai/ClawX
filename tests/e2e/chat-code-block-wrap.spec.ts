@@ -137,6 +137,8 @@ test.describe('ClawX chat code block wrapping', () => {
 
       const codeBlock = assistantProse.locator('pre').first();
       await expect(codeBlock).toBeVisible();
+      const code = codeBlock.locator('code');
+      await expect(code).not.toHaveClass(/bg-black\/5/);
 
       const metrics = await codeBlock.evaluate((el) => {
         const style = window.getComputedStyle(el);
@@ -160,6 +162,8 @@ test.describe('ClawX chat code block wrapping', () => {
 
       await expect(codeBlock).toContainText(LONG_LOG_LINE);
       await expect(codeBlock).toContainText(LONG_PATH);
+      await expect.poll(() => code.evaluate((el) => window.getComputedStyle(el).backgroundColor))
+        .toBe('rgba(0, 0, 0, 0)');
     } finally {
       await closeElectronApp(app);
     }
