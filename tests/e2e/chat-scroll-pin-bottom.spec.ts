@@ -168,9 +168,17 @@ test.describe('ClawX chat scroll pin-to-bottom during runs', () => {
 
       // Start a run so pinning becomes active (sending === true).
       await expect(page.getByTestId('chat-composer-input')).toBeEnabled({ timeout: 30_000 });
+      await scrollContainer.evaluate((el) => {
+        const element = el as HTMLElement;
+        element.scrollTop = 0;
+        element.dispatchEvent(new Event('scroll', { bubbles: true }));
+      });
+      await expect(page.getByTestId('chat-scroll-to-latest')).toBeVisible();
       await page.getByTestId('chat-composer-input').fill('do a multi-tool task');
       await page.getByTestId('chat-composer-send').click();
       await expect(page.getByTestId('chat-composer-send')).toHaveAttribute('title', 'Stop');
+      await expect(page.getByText('do a multi-tool task')).toBeInViewport();
+      await expectPinnedToBottom();
 
       // Growing text stream -> height keeps increasing; bar must stay at bottom.
       await emitDelta({ sessionUpdate: 'agent_message', messageId: 'streaming-assistant', content: [{ type: 'text', text: streamingText(3) }] });

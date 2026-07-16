@@ -427,12 +427,16 @@ export function Chat() {
                 }
                 if (!loaded) return;
               }
-              await sendAcpPrompt({
+              const sendPromise = sendAcpPrompt({
                 sessionKey,
                 cwd: promptCwd,
                 message: text,
                 media,
               });
+              requestAnimationFrame(() => {
+                void scrollToBottom({ animation: 'instant', ignoreEscapes: true });
+              });
+              await sendPromise;
             })();
           }}
           onStop={() => void cancelAcp()}

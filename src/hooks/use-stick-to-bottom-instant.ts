@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useStickToBottom } from "use-stick-to-bottom";
 
 const ESCAPE_FROM_LOCK_OFFSET_PX = 70;
@@ -31,7 +31,7 @@ export function useStickToBottomInstant(resetKey?: string, active = false) {
   // callback without re-creating the observer on every render.
   const activeRef = useRef(active);
   const escapedRef = useRef(escapedFromLock);
-  useEffect(() => {
+  useLayoutEffect(() => {
     activeRef.current = active;
     escapedRef.current = escapedFromLock;
   }, [active, escapedFromLock]);
