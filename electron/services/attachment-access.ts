@@ -551,23 +551,24 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
 
     if (ref.stagingId) {
       const stagedPath = dependencies.stagedAttachments.get(ref.stagingId);
-      if (!stagedPath) throw new AttachmentFailure('invalidReference');
-      let canonicalCandidate: string;
-      try {
-        canonicalCandidate = await fs.realpath(candidate);
-      } catch (error) {
-        throw new AttachmentFailure(attachmentFailure(error));
+      if (stagedPath) {
+        let canonicalCandidate: string;
+        try {
+          canonicalCandidate = await fs.realpath(candidate);
+        } catch (error) {
+          throw new AttachmentFailure(attachmentFailure(error));
+        }
+        if (!isSamePath(canonicalCandidate, stagedPath)) throw new AttachmentFailure('invalidReference');
+        const stagedStat = await fs.stat(canonicalCandidate);
+        if (!stagedStat.isFile()) throw new AttachmentFailure('notFile');
+        return {
+          kind: 'local',
+          canonicalPath: canonicalCandidate,
+          scope: 'staging',
+          mimeType: mimeTypeHint || mimeTypeForPath(canonicalCandidate),
+          size: stagedStat.size,
+        };
       }
-      if (!isSamePath(canonicalCandidate, stagedPath)) throw new AttachmentFailure('invalidReference');
-      const stagedStat = await fs.stat(canonicalCandidate);
-      if (!stagedStat.isFile()) throw new AttachmentFailure('notFile');
-      return {
-        kind: 'local',
-        canonicalPath: canonicalCandidate,
-        scope: 'staging',
-        mimeType: mimeTypeHint || mimeTypeForPath(canonicalCandidate),
-        size: stagedStat.size,
-      };
     }
 
     let canonicalCandidate: string;

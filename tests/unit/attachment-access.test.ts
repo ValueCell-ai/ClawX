@@ -232,6 +232,17 @@ describe('attachment access boundary', () => {
     })).resolves.toMatchObject({ ok: false, error: 'invalidReference' });
   });
 
+  it('falls back to regular resolution when stagingId is unknown after restart', async () => {
+    const stagingDir = join(stateDir, 'media', 'outbound', 'clawx-staging');
+    const orphanedPath = join(stagingDir, 'orphaned-from-prev-run.txt');
+    await mkdir(stagingDir, { recursive: true });
+    await writeFile(orphanedPath, 'persisted on disk');
+    const access = getAccess();
+
+    await expect(access.resolveAttachment({ ref: ref(orphanedPath, { stagingId: 'unknown-id' }) }))
+      .resolves.toMatchObject({ ok: true, displayName: 'orphaned-from-prev-run.txt' });
+  });
+
   it('binds outgoing records to attachment, URL session, record session, and message ids', async () => {
     const attachmentId = 'generated-1';
     const originalPath = join(stateDir, 'media', 'state.png');
