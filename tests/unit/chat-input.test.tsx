@@ -302,6 +302,8 @@ describe('ChatInput agent targeting', () => {
     const button = screen.getByTestId('chat-workspace-selector');
     expect(button).toHaveTextContent('默认工作空间');
     expect(button).toHaveAttribute('aria-disabled', 'true');
+    expect(button).toHaveClass('border-transparent');
+    expect(button).not.toHaveClass('border-black/10');
 
     fireEvent.click(button);
 

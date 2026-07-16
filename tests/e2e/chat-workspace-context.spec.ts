@@ -194,6 +194,7 @@ test.describe('ClawX chat workspace context', () => {
       await expect(workspaceSelector).toHaveText(SESSION_WORKSPACE_LABEL);
       await expect(workspaceSelector).toHaveAttribute('title', SESSION_WORKSPACE);
       await expect(workspaceSelector).toHaveAttribute('aria-disabled', 'true');
+      await expect(workspaceSelector).toHaveClass(/border-transparent/);
 
       const sidebar = page.getByTestId('sidebar');
       const workspaceGroup = sidebar.getByTestId(workspaceSessionGroupTestId(SESSION_WORKSPACE));

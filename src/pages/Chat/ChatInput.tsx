@@ -1177,11 +1177,11 @@ export function ChatInput({
                   tabIndex={workspaceSelectorDisabled ? -1 : undefined}
                   onClick={workspaceSelectorDisabled ? undefined : handleWorkspaceButtonClick}
                   className={cn(
-                    'inline-flex min-w-0 max-w-[260px] items-center gap-1 rounded-full border border-black/10 px-2 py-0.5',
-                    'bg-black/[0.02] text-tiny font-medium text-foreground/75 transition-colors dark:border-white/10 dark:bg-white/[0.04]',
+                    'inline-flex min-w-0 max-w-[260px] items-center gap-1 rounded-full border px-2 py-0.5',
+                    'bg-black/[0.02] text-tiny font-medium text-foreground/75 transition-colors dark:bg-white/[0.04]',
                     workspaceSelectorDisabled
-                      ? 'cursor-default opacity-80'
-                      : 'hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
+                      ? 'cursor-default border-transparent opacity-80'
+                      : 'border-black/10 hover:bg-black/5 hover:text-foreground dark:border-white/10 dark:hover:bg-white/10',
                   )}
                 >
                   <FolderOpen className="h-3 w-3 shrink-0" />
