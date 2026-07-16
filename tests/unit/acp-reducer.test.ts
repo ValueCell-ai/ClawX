@@ -234,6 +234,8 @@ describe('ACP timeline reducer', () => {
           messageId: 'user-msg',
           segmentIndex: 0,
           optimistic: true,
+          userPromptTextBlocks: ['inspect this', '[Resource link] /repo/notes.txt'],
+          userPromptTextBlocksOptimistic: true,
           parts: [
             { kind: 'markdown', text: 'inspect this' },
             {
@@ -270,6 +272,7 @@ describe('ACP timeline reducer', () => {
     expect(state.itemsById['user-msg:0']).toMatchObject({
       kind: 'message-segment',
       optimistic: false,
+      userPromptTextBlocks: ['inspect this', '[Resource link] /repo/notes.txt'],
       parts: [
         { kind: 'markdown', text: 'inspect this' },
         {
@@ -296,6 +299,8 @@ describe('ACP timeline reducer', () => {
           messageId: 'user-msg',
           segmentIndex: 0,
           optimistic: true,
+          userPromptTextBlocks: ['inspect this', '[Resource link] /repo/notes.txt'],
+          userPromptTextBlocksOptimistic: true,
           parts: [
             { kind: 'markdown', text: 'inspect this' },
             {
@@ -324,6 +329,7 @@ describe('ACP timeline reducer', () => {
     expect(state.itemsById['user-msg:0']).toMatchObject({
       kind: 'message-segment',
       optimistic: false,
+      userPromptTextBlocks: ['inspect this', '[Resource link] /repo/notes.txt'],
       parts: [
         { kind: 'markdown', text: 'inspect this' },
         {
@@ -411,6 +417,44 @@ describe('ACP timeline reducer', () => {
         },
       ]);
     }
+  });
+
+  it('keeps an ordered binary-free OpenClaw prompt text projection for user content', () => {
+    let state = createEmptyAcpTimeline('agent:pi:s1', 1);
+
+    state = applyAcpSessionUpdate(state, {
+      sessionId: 'agent:pi:s1',
+      update: {
+        sessionUpdate: 'user_message',
+        messageId: 'user-with-files',
+        content: [
+          { type: 'text', text: 'Create the report' },
+          { type: 'image', data: 'large-base64-must-not-be-retained', mimeType: 'image/png' },
+          {
+            type: 'resource_link',
+            uri: 'file:///repo/input.xlsx',
+            name: 'input.xlsx',
+            title: 'Input (July)',
+          },
+          {
+            type: 'resource',
+            resource: { uri: 'file:///repo/context.txt', text: 'Embedded context' },
+          },
+        ],
+      } as never,
+    });
+
+    expect(state.itemsById['user-with-files:0']).toMatchObject({
+      kind: 'message-segment',
+      userPromptTextBlocks: [
+        'Create the report',
+        '[Resource link (Input \\(July\\))] file:///repo/input.xlsx',
+        'Embedded context',
+      ],
+    });
+    const item = state.itemsById['user-with-files:0'];
+    expect(item?.kind === 'message-segment' ? JSON.stringify(item.userPromptTextBlocks) : '')
+      .not.toContain('large-base64-must-not-be-retained');
   });
 
   it('adds full message content as a later segment after a process block closes the message', () => {

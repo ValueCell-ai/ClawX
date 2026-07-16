@@ -224,7 +224,9 @@ ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用
 
 Chat 使用由 Electron Main 持有的 ACP stdio bridge。Renderer 接收类型化 host events，并渲染内存中的 ACP timeline。Gateway 仍负责 providers、models、skills、workspace、settings、diagnostics 和 media configuration 等非 Chat 能力。
 
-ACP Chat 会将标准 ACP resource 渲染为附件。用户选择的图片会显示为缩略图，并在悬停蒙层中显示文件名；其它用户附件会显示文件名，以及灰色、可截断的来源路径。当前 OpenClaw ACP adapter 遗漏 assistant 媒体时，显式的 assistant `MEDIA:` 指令也可恢复为附件卡片，且不会显示原始指令。受支持且已授权的本地文件会在应用内预览；其它已授权本地文件会在用户点击后通过系统应用打开；远程 HTTP 和 HTTPS 附件会在用户点击后从外部打开。普通文本中的裸路径或行内路径不会被当作附件。
+打开其它会话或页面时，尚未完成的 ACP 回复仍会继续流式接收。若在回复完成前返回，ClawX 会恢复最新的内存 timeline 并继续显示实时输出；回复完成后，普通 ACP 历史回放仍是唯一事实来源。
+
+ACP Chat 会将标准 ACP resource 渲染为附件。用户选择的图片会显示为缩略图，并在悬停蒙层中显示文件名；其它可用的附件卡片会显示文件名，以及灰色、可截断的来源路径。当前 OpenClaw ACP adapter 遗漏 assistant 媒体时，显式的 assistant `MEDIA:` 指令也可恢复为附件卡片，且不会显示原始指令。现有本地文件引用（包括当前 workspace 外的路径）在每次预览或打开前，都会由 Electron Main 按精确的 session 和 generation 重新验证。受支持的本地文件会在应用内预览；其它本地文件会在用户点击后通过系统应用打开；远程 HTTP 和 HTTPS 附件会在用户点击后从外部打开。普通文本中的裸路径或行内路径不会被当作附件。
 
 ACP Chat 也可在 runtime 以可信结构化媒体投递图像生成结果时显示生成图片预览。对于可信的 OpenClaw internal-UI 投递和与生图任务关联的最终回复，ClawX 会保留原始的用户可见完成文案，包括只有文本的失败说明，而不会统一替换成通用图片文案。历史 OpenClaw 回放中，assistant 的图片 `MEDIA:` 标记只有在同一会话已记录图像生成任务启动后才会进入内联图片体验。ClawX 通过 Electron Main 的主机媒体处理加载预览，而不是让 Renderer 任意访问文件系统。标准 ACP 图片和 resource 内容仍是首选路径，并会直接渲染。
 

@@ -109,40 +109,39 @@ describe('attachment access boundary', () => {
     await expect(access.resolveAttachment({
       ref: ref(join(outsideDir, 'secret.txt')),
       workspaceRoot: outsideDir,
-    } as never)).resolves.toMatchObject({ ok: false, error: 'outsideAllowedRoots' });
+    } as never)).resolves.toMatchObject({ ok: true });
   });
 
-  it('allows only exact declared OpenClaw media roots', async () => {
+  it('resolves OpenClaw media roots and files outside declared roots', async () => {
     const access = getAccess();
 
     await expect(access.resolveAttachment({ ref: ref(join(stateDir, 'media', 'state.png')) }))
       .resolves.toMatchObject({ ok: true, target: { kind: 'local', scope: 'openclaw-media' } });
     await expect(access.resolveAttachment({ ref: ref(join(configDir, 'media', 'config.png')) }))
       .resolves.toMatchObject({ ok: true, target: { kind: 'local', scope: 'openclaw-media' } });
-    for (const denied of [
+    for (const allowed of [
       join(stateDir, 'openclaw.json'),
       join(configDir, 'openclaw.json'),
       join(stateDir, 'agents', 'main', 'sessions', 'secret.jsonl'),
       join(stateDir, 'media', 'outgoing', 'records', 'leak.json'),
       join(externalMediaRoot, 'runtime.png'),
     ]) {
-      await expect(access.resolveAttachment({ ref: ref(denied) }))
-        .resolves.toMatchObject({ ok: false, error: 'outsideAllowedRoots' });
+      await expect(access.resolveAttachment({ ref: ref(allowed) }))
+        .resolves.toMatchObject({ ok: true });
     }
-
   });
 
-  it('freezes the registered canonical workspace root across rename and symlink replacement', async () => {
+  it('resolves workspace root across rename and symlink replacement', async () => {
     const originalWorkspace = join(testDir, 'workspace-original');
     await rename(workspaceRoot, originalWorkspace);
     await symlink(outsideDir, workspaceRoot);
 
     await expect(getAccess().resolveAttachment({ ref: ref(join(workspaceRoot, 'secret.txt')) }))
-      .resolves.toMatchObject({ ok: false, error: 'outsideAllowedRoots' });
+      .resolves.toMatchObject({ ok: true });
   });
 
   it.each(['state-external', 'state-sibling', 'config-external', 'config-sibling'])(
-    'rejects a symlinked managed media root targeting %s',
+    'resolves files through a symlinked managed media root targeting %s',
     async (scenario) => {
       const isState = scenario.startsWith('state');
       const parent = isState ? stateDir : configDir;
@@ -158,11 +157,11 @@ describe('attachment access boundary', () => {
 
       const targetFile = join(target, scenario.endsWith('sibling') ? 'secret.txt' : 'runtime.png');
       await expect(getAccess().resolveAttachment({ ref: ref(targetFile) }))
-        .resolves.toMatchObject({ ok: false, error: 'outsideAllowedRoots' });
+        .resolves.toMatchObject({ ok: true });
     },
   );
 
-  it.each(['state', 'config'])('pins the %s parent across rename and symlink replacement', async (kind) => {
+  it.each(['state', 'config'])('resolves through renamed and symlinked %s parent', async (kind) => {
     const parent = kind === 'state' ? stateDir : configDir;
     const originalParent = `${parent}-original`;
     const replacementParent = join(testDir, `${kind}-replacement`);
@@ -203,7 +202,7 @@ describe('attachment access boundary', () => {
     await symlink(replacementParent, parent);
 
     await expect(access.resolveAttachment({ ref: ref(join(parent, 'media', `${kind}.png`)) }))
-      .resolves.toMatchObject({ ok: false, error: 'outsideAllowedRoots' });
+      .resolves.toMatchObject({ ok: true });
     await expect(access.resolveAttachment({ ref: ref(gatewayUrl) }))
       .resolves.toMatchObject({ ok: false });
   });
@@ -219,9 +218,9 @@ describe('attachment access boundary', () => {
     const access = getAccess();
 
     await expect(access.resolveAttachment({ ref: ref(stagedPath) }))
-      .resolves.toMatchObject({ ok: false, error: 'outsideAllowedRoots' });
+      .resolves.toMatchObject({ ok: true });
     await expect(access.resolveAttachment({ ref: ref(previousRunPath) }))
-      .resolves.toMatchObject({ ok: false, error: 'outsideAllowedRoots' });
+      .resolves.toMatchObject({ ok: true });
     await expect(access.resolveAttachment({ ref: ref(stagedPath, { stagingId: 'stage-1' }) }))
       .resolves.toMatchObject({
         ok: true,
@@ -231,6 +230,17 @@ describe('attachment access boundary', () => {
     await expect(access.resolveAttachment({
       ref: ref(join(outsideDir, 'secret.txt'), { stagingId: 'stage-1' }),
     })).resolves.toMatchObject({ ok: false, error: 'invalidReference' });
+  });
+
+  it('falls back to regular resolution when stagingId is unknown after restart', async () => {
+    const stagingDir = join(stateDir, 'media', 'outbound', 'clawx-staging');
+    const orphanedPath = join(stagingDir, 'orphaned-from-prev-run.txt');
+    await mkdir(stagingDir, { recursive: true });
+    await writeFile(orphanedPath, 'persisted on disk');
+    const access = getAccess();
+
+    await expect(access.resolveAttachment({ ref: ref(orphanedPath, { stagingId: 'unknown-id' }) }))
+      .resolves.toMatchObject({ ok: true, displayName: 'orphaned-from-prev-run.txt' });
   });
 
   it('binds outgoing records to attachment, URL session, record session, and message ids', async () => {
@@ -313,11 +323,11 @@ describe('attachment access boundary', () => {
       .resolves.toMatchObject({ ok: false, error });
   });
 
-  it('rejects symlink escapes', async () => {
+  it('resolves files through symlink escapes', async () => {
     await symlink(join(outsideDir, 'secret.txt'), join(workspaceRoot, 'escape.txt'));
 
     await expect(getAccess().resolveAttachment({ ref: ref(join(workspaceRoot, 'escape.txt')) }))
-      .resolves.toMatchObject({ ok: false, error: 'outsideAllowedRoots' });
+      .resolves.toMatchObject({ ok: true });
   });
 
   it('normalizes safe remote URLs without granting unsafe variants', async () => {

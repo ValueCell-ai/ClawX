@@ -37,6 +37,7 @@ import {
   writeTextFile,
 } from '@/lib/file-preview-client';
 import { getFilePreviewTargetIdentity, type FilePreviewTarget } from './types';
+import { previewDisplayPath } from './build-preview-target';
 import {
   isHtmlPreviewExt,
   supportsInlineDiff,
@@ -717,7 +718,7 @@ export function FilePreviewBody({
           />
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold">{file.fileName}</h2>
-            <p className="truncate text-2xs text-muted-foreground">{file.filePath}</p>
+            <p className="truncate text-2xs text-muted-foreground" title={previewDisplayPath(file)}>{previewDisplayPath(file)}</p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">

@@ -311,6 +311,72 @@ describe('AcpChatService', () => {
     });
   });
 
+  it('keeps routing an in-flight prompt while another session is viewed and reactivates it without replay', async () => {
+    const connection = createConnection();
+    const prompt = createDeferred<{ stopReason: string }>();
+    connection.prompt.mockReturnValueOnce(prompt.promise);
+    const { service, send } = await createService(connection);
+
+    await service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
+    const sendPrompt = service.sendPrompt({
+      sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'keep streaming', messageId: 'msg-user',
+    });
+    await vi.waitFor(() => expect(connection.prompt).toHaveBeenCalledTimes(1));
+
+    await service.client.sessionUpdate({
+      sessionId: 'agent:pi:s1',
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'msg-assistant',
+        content: { type: 'text', text: 'before switch ' },
+      },
+    } as never);
+    await service.loadSession({ sessionKey: 'agent:pi:s2', workspaceRoot: '/repo', cwd: '/repo' });
+    await service.client.sessionUpdate({
+      sessionId: 'agent:pi:s1',
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'msg-assistant',
+        content: { type: 'text', text: 'while away ' },
+      },
+    } as never);
+
+    await expect(service.loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    })).resolves.toEqual({ success: true, generation: 1, resumedActivePrompt: true });
+    await service.client.sessionUpdate({
+      sessionId: 'agent:pi:s1',
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'msg-assistant',
+        content: { type: 'text', text: 'after return' },
+      },
+    } as never);
+
+    const routedChunks = send.mock.calls
+      .filter(([channel, envelope]) => (
+        channel === HOST_EVENT_CHANNELS.chat.acpSessionUpdate
+        && envelope.sessionKey === 'agent:pi:s1'
+        && envelope.notification.update.sessionUpdate === 'agent_message_chunk'
+      ))
+      .map(([, envelope]) => ({
+        generation: envelope.generation,
+        text: envelope.notification.update.content.text,
+      }));
+    expect(routedChunks).toEqual([
+      { generation: 1, text: 'before switch ' },
+      { generation: 1, text: 'while away ' },
+      { generation: 1, text: 'after return' },
+    ]);
+    expect(connection.loadSession).toHaveBeenCalledTimes(2);
+
+    prompt.resolve({ stopReason: 'end_turn' });
+    await expect(sendPrompt).resolves.toEqual({ success: true, generation: 1 });
+    await expect(service.loadSession({
+      sessionKey: 'agent:pi:s2', workspaceRoot: '/repo', cwd: '/repo',
+    })).resolves.toEqual({ success: true, generation: 3 });
+  });
+
   it('records ACP session load and forwarded update trace entries', async () => {
     const { clearAcpTraceForTests, getAcpTraceSnapshot } = await import('../../electron/services/acp-trace');
     clearAcpTraceForTests();
@@ -422,10 +488,14 @@ describe('AcpChatService', () => {
   });
 
   it('emits permission requests separately and resolves them from respondPermission', async () => {
-    const { service, send } = await createService();
+    const connection = createConnection();
+    const prompt = createDeferred<{ stopReason: string }>();
+    connection.prompt.mockReturnValueOnce(prompt.promise);
+    const { service, send } = await createService(connection);
 
     await service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
-    await service.sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'edit the file' });
+    const sendPrompt = service.sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'edit the file' });
+    await vi.waitFor(() => expect(connection.prompt).toHaveBeenCalledTimes(1));
     send.mockClear();
 
     const pending = service.client.requestPermission({
@@ -455,6 +525,38 @@ describe('AcpChatService', () => {
     await expect(pending).resolves.toEqual({
       outcome: { outcome: 'selected', optionId: 'allow-once' },
     });
+    prompt.resolve({ stopReason: 'end_turn' });
+    await sendPrompt;
+  });
+
+  it('responds to an inactive live prompt permission with its original generation', async () => {
+    const connection = createConnection();
+    const prompt = createDeferred<{ stopReason: string }>();
+    connection.prompt.mockReturnValueOnce(prompt.promise);
+    const { service, send } = await createService(connection);
+
+    await service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
+    const sendPrompt = service.sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'edit' });
+    await vi.waitFor(() => expect(connection.prompt).toHaveBeenCalledTimes(1));
+    const pending = service.client.requestPermission({
+      sessionId: 'agent:pi:s1',
+      toolCall: { toolCallId: 'tool-1', title: 'Edit file', status: 'pending' },
+      options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }],
+    } as never);
+    const requestId = send.mock.calls.at(-1)?.[1].requestId;
+
+    await service.loadSession({ sessionKey: 'agent:pi:s2', workspaceRoot: '/repo', cwd: '/repo' });
+    await expect(service.respondPermission({
+      sessionKey: 'agent:pi:s1',
+      requestId,
+      outcome: { outcome: 'selected', optionId: 'allow-once' },
+    })).resolves.toEqual({ success: true, generation: 1 });
+    await expect(pending).resolves.toEqual({
+      outcome: { outcome: 'selected', optionId: 'allow-once' },
+    });
+
+    prompt.resolve({ stopReason: 'end_turn' });
+    await sendPrompt;
   });
 
   it('returns cancelled for permission requests from non-active sessions', async () => {

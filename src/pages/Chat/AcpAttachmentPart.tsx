@@ -13,6 +13,24 @@ import { useArtifactPanel } from '@/stores/artifact-panel';
 
 type AttachmentTone = 'assistant' | 'user';
 
+function filePathFromUri(uri: string): string {
+  if (/^file:\/\/\//i.test(uri)) {
+    try {
+      return decodeURIComponent(uri.slice(7));
+    } catch {
+      return uri.slice(7);
+    }
+  }
+  if (/^file:\/\/localhost\//i.test(uri)) {
+    try {
+      return decodeURIComponent(uri.slice(16));
+    } catch {
+      return uri.slice(16);
+    }
+  }
+  return uri;
+}
+
 function AcpUserImageAttachment({
   part,
   name,
@@ -30,16 +48,21 @@ function AcpUserImageAttachment({
     if (part.access.target.kind !== 'local') return;
     let cancelled = false;
 
-    void hostApi.media.thumbnails({
-      paths: [{
-        attachmentFileRef: part.access.target.ref,
-        key: part.access.identity,
-        mimeType: part.access.mimeType,
-      }],
-    }).then((result) => {
-      if (cancelled) return;
-      setThumbnailUrl(result[part.access.identity]?.preview ?? null);
-    }).catch(() => undefined);
+    void hostApi.media
+      .thumbnails({
+        paths: [
+          {
+            attachmentFileRef: part.access.target.ref,
+            key: part.access.identity,
+            mimeType: part.access.mimeType,
+          },
+        ],
+      })
+      .then((result) => {
+        if (cancelled) return;
+        setThumbnailUrl(result[part.access.identity]?.preview ?? null);
+      })
+      .catch(() => undefined);
 
     return () => {
       cancelled = true;
@@ -83,13 +106,16 @@ export function AcpAttachmentPart({ part, tone = 'assistant' }: { part: Attachme
   const unavailable = part.access.status === 'unavailable';
   const disabled = pending || unavailable;
   const size = part.access.status === 'available' ? part.access.size : part.reference.size;
-  const mimeType = part.access.status === 'available' ? part.access.mimeType : part.reference.mimeType;
-  const secondary = size
-    ? t('acp.attachment.mimeSize', { mimeType, size: formatFileSize(size) })
-    : '';
-  const mode = part.access.status === 'available'
-    ? attachmentOpenMode({ ext: extnameOf(name), mimeType: part.access.mimeType, size: part.access.size, target: part.access.target })
-    : null;
+  const displayPath = part.reference.displayPath ?? filePathFromUri(part.reference.uri);
+  const mode =
+    part.access.status === 'available'
+      ? attachmentOpenMode({
+          ext: extnameOf(name),
+          mimeType: part.access.mimeType,
+          size: part.access.size,
+          target: part.access.target,
+        })
+      : null;
   const actionLabel = pending
     ? t('acp.attachment.loading')
     : unavailable
@@ -113,14 +139,16 @@ export function AcpAttachmentPart({ part, tone = 'assistant' }: { part: Attachme
   };
 
   if (
-    tone === 'user'
-    && part.access.status === 'available'
-    && part.access.target.kind === 'local'
-    && part.access.mimeType.startsWith('image/')
+    tone === 'user' &&
+    part.access.status === 'available' &&
+    part.access.target.kind === 'local' &&
+    part.access.mimeType.startsWith('image/')
   ) {
     return (
       <AcpUserImageAttachment
-        part={part as AttachmentRenderPart & { access: Extract<AttachmentRenderPart['access'], { status: 'available' }> }}
+        part={
+          part as AttachmentRenderPart & { access: Extract<AttachmentRenderPart['access'], { status: 'available' }> }
+        }
         name={name}
         ariaLabel={ariaLabel}
         activate={activate}
@@ -157,9 +185,17 @@ export function AcpAttachmentPart({ part, tone = 'assistant' }: { part: Attachme
       ) : (
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium text-foreground">{name}</span>
-          <span className="block truncate text-2xs text-muted-foreground">
-            {disabled ? actionLabel : secondary}
-          </span>
+          {disabled ? (
+            <span className="block truncate text-2xs text-muted-foreground">{actionLabel}</span>
+          ) : (
+            <span className="flex min-w-0 items-baseline gap-1 text-2xs text-muted-foreground">
+              <span data-testid="acp-attachment-path" className="min-w-0 w-auto truncate" title={displayPath}>
+                {displayPath}
+              </span>
+              {size ? <span className="shrink-0">·</span> : null}
+              {size ? <span className="shrink-0 whitespace-nowrap">{formatFileSize(size)}</span> : null}
+            </span>
+          )}
         </span>
       )}
     </button>

@@ -23,7 +23,13 @@ function extract(messages: RawMessage[], suppressedUris = new Set<string>()) {
 }
 
 function timeline(
-  turns: Array<{ userId: string; userText: string; assistantId?: string; assistantText?: string }>,
+  turns: Array<{
+    userId: string;
+    userText: string;
+    userPromptTextBlocks?: string[];
+    assistantId?: string;
+    assistantText?: string;
+  }>,
 ): AcpTimelineSnapshot {
   const snapshot = createEmptyAcpTimeline('agent:main:session-1', 4);
   for (const turn of turns) {
@@ -36,6 +42,7 @@ function timeline(
       messageId: turn.userId,
       segmentIndex: 0,
       parts: [{ kind: 'markdown', text: turn.userText }],
+      ...(turn.userPromptTextBlocks ? { userPromptTextBlocks: turn.userPromptTextBlocks } : {}),
     };
     if (turn.assistantId) {
       const assistantItemId = `${turn.assistantId}:0`;
@@ -319,6 +326,66 @@ describe('OpenClaw MEDIA transcript extraction', () => {
 });
 
 describe('OpenClaw MEDIA transcript turn alignment', () => {
+  it('aligns a structured resource-link user turn with OpenClaw transcript projection', () => {
+    const resourcePath = 'C:\\Users\\Administrator\\.openclaw\\media\\input.xlsx';
+    const snapshot = timeline([{
+      userId: 'user-with-resource',
+      userText: 'Create the report',
+      userPromptTextBlocks: [
+        'Create the report',
+        `[Resource link] ${resourcePath}`,
+      ],
+    }]);
+    const turns = extract(transcript(
+      {
+        role: 'user',
+        content: `[Working directory: C:\\Users\\Administrator\\.openclaw\\workspace]\n\nCreate the report\n[Resource link] ${resourcePath}`,
+      },
+      { role: 'assistant', content: 'MEDIA:C:\\Users\\Administrator\\.openclaw\\media\\report.xlsx' },
+    ));
+
+    expect(alignOpenClawMediaTurns(snapshot, turns, {})).toMatchObject([{
+      acpTurnId: 'user-with-resource',
+      candidates: [{ uri: 'C:\\Users\\Administrator\\.openclaw\\media\\report.xlsx' }],
+    }]);
+  });
+
+  it('aligns attachment-only turns with empty OpenClaw prompt text by occurrence from the tail', () => {
+    const snapshot = timeline([
+      { userId: 'image-first', userText: '', userPromptTextBlocks: [] },
+      { userId: 'image-last', userText: '', userPromptTextBlocks: [] },
+    ]);
+    const turns = extract(transcript(
+      { role: 'user', content: '[Working directory: /workspace/project]\n\n' },
+      { role: 'assistant', content: 'MEDIA:/tmp/first.pdf' },
+      { role: 'user', content: '[Working directory: /workspace/project]\n\n' },
+      { role: 'assistant', content: 'MEDIA:/tmp/last.pdf' },
+    ));
+
+    expect(alignOpenClawMediaTurns(snapshot, turns, {})).toMatchObject([
+      { acpTurnId: 'image-first', candidates: [{ uri: '/tmp/first.pdf' }] },
+      { acpTurnId: 'image-last', candidates: [{ uri: '/tmp/last.pdf' }] },
+    ]);
+  });
+
+  it('keeps user-authored Resource link marker text in the exact alignment key', () => {
+    const authoredText = 'Explain this literal syntax:\n[Resource link] /not-an-attachment.txt';
+    const snapshot = timeline([{
+      userId: 'literal-marker',
+      userText: authoredText,
+      userPromptTextBlocks: [authoredText],
+    }]);
+    const turns = extract(transcript(
+      { role: 'user', content: authoredText },
+      { role: 'assistant', content: 'MEDIA:/tmp/explanation.pdf' },
+    ));
+
+    expect(alignOpenClawMediaTurns(snapshot, turns, {})).toMatchObject([{
+      acpTurnId: 'literal-marker',
+      candidates: [{ uri: '/tmp/explanation.pdf' }],
+    }]);
+  });
+
   it('aligns a bounded transcript suffix newest-to-oldest', () => {
     const snapshot = timeline([
       { userId: 'user-old', userText: 'Old prompt', assistantId: 'assistant-old' },

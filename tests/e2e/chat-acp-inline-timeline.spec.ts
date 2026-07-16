@@ -418,6 +418,51 @@ test.describe('ClawX ACP inline timeline', () => {
     }
   });
 
+  test('continues an ACP response while Chat is unmounted and shows the latest stream on return', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installAcpChatMocks(app);
+      await installAcpPromptDeferredMock(app);
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+
+      await page.getByTestId('chat-composer-input').fill('Keep working while I navigate');
+      await page.getByTestId('chat-composer-send').click();
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'navigation-stream',
+        content: { type: 'text', text: 'Before navigation. ' },
+      }]);
+      await expect(page.getByTestId('acp-assistant-message')).toContainText('Before navigation.');
+
+      await page.getByTestId('sidebar-nav-settings').click();
+      await expect(page.getByTestId('settings-page')).toBeVisible();
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'navigation-stream',
+        content: { type: 'text', text: 'While away. ' },
+      }]);
+
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await expect(page.getByTestId('chat-page')).toBeVisible();
+      await expect(page.getByTestId('acp-assistant-message')).toContainText('Before navigation. While away.');
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'navigation-stream',
+        content: { type: 'text', text: 'After return.' },
+      }]);
+      await expect(page.getByTestId('acp-assistant-message')).toContainText(
+        'Before navigation. While away. After return.',
+      );
+
+      await resolveDeferredAcpPrompt(app);
+      await expect(page.getByTestId('chat-composer-send')).toBeVisible();
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('shows assistant identity and copies ACP assistant text', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 

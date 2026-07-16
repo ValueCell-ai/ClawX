@@ -10,6 +10,7 @@ import type {
 } from '@agentclientprotocol/sdk';
 import { contentBlockToRenderPart, contentBlocksToRenderParts, toolContentToRenderPart, toolContentToRenderParts } from './content-blocks';
 import { dedupeTimelineAttachments } from './attachments';
+import { openClawPromptTextBlocks } from './openclaw-prompt-compat';
 import type { AcpTimelineSnapshot, AttachmentRenderPart, MessageSegmentItem, RenderPart, TimelineItem, ToolCallItem } from './timeline-types';
 
 type UpdateRecord = Record<string, unknown> & {
@@ -240,6 +241,19 @@ function appendMessageChunk(
     blockCount: blockIndex + 1,
     optimistic: false,
     parts,
+    ...(role === 'user'
+      ? {
+          userPromptTextBlocks: result.item.userPromptTextBlocksOptimistic
+            ? result.item.userPromptTextBlocks
+            : [
+                ...(result.item.userPromptTextBlocks ?? []),
+                ...openClawPromptTextBlocks([content]),
+              ],
+          ...(result.item.userPromptTextBlocksOptimistic
+            ? { userPromptTextBlocksOptimistic: true }
+            : {}),
+        }
+      : {}),
   };
 
   return {
@@ -269,6 +283,10 @@ function replaceMessage(
         blockCount: blocks.length,
         optimistic: false,
         parts: existing.optimistic ? mergeOptimisticUserEchoParts(existing.parts, parts) : parts,
+        userPromptTextBlocks: existing.userPromptTextBlocksOptimistic
+          ? existing.userPromptTextBlocks
+          : openClawPromptTextBlocks(blocks),
+        userPromptTextBlocksOptimistic: undefined,
       };
       return {
         ...state,
@@ -288,6 +306,7 @@ function replaceMessage(
       messageId,
       segmentIndex: result.item.segmentIndex,
     }),
+    ...(role === 'user' ? { userPromptTextBlocks: openClawPromptTextBlocks(blocks) } : {}),
   };
 
   return {
