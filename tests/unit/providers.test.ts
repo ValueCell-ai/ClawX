@@ -46,6 +46,39 @@ describe('provider metadata', () => {
     });
   });
 
+  it('includes Atlas Cloud as an OpenAI-compatible built-in provider', () => {
+    expect(PROVIDER_TYPES).toContain('atlascloud');
+    expect(BUILTIN_PROVIDER_TYPES).toContain('atlascloud');
+
+    expect(PROVIDER_TYPE_INFO).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'atlascloud',
+          name: 'Atlas Cloud',
+          defaultBaseUrl: 'https://api.atlascloud.ai/v1',
+          showBaseUrl: true,
+          showModelId: true,
+          defaultModelId: 'qwen/qwen3.5-flash',
+          modelIdPlaceholder: 'qwen/qwen3.5-flash',
+        }),
+      ]),
+    );
+
+    expect(getProviderEnvVar('atlascloud')).toBe('ATLASCLOUD_API_KEY');
+    expect(getProviderEnvVars('atlascloud')).toEqual(['ATLASCLOUD_API_KEY']);
+    expect(getProviderConfig('atlascloud')).toEqual(
+      expect.objectContaining({
+        baseUrl: 'https://api.atlascloud.ai/v1',
+        api: 'openai-completions',
+        apiKeyEnv: 'ATLASCLOUD_API_KEY',
+        models: expect.arrayContaining([
+          expect.objectContaining({ id: 'qwen/qwen3.5-flash' }),
+          expect.objectContaining({ id: 'deepseek-ai/deepseek-v4-pro' }),
+        ]),
+      }),
+    );
+  });
+
   it('includes Z.AI CN and Global with OpenClaw-aligned endpoints and glm-5.2 default', () => {
     expect(PROVIDER_TYPES).toEqual(expect.arrayContaining(['zai', 'zai-global']));
     expect(BUILTIN_PROVIDER_TYPES).toEqual(expect.arrayContaining(['zai', 'zai-global']));
@@ -108,7 +141,7 @@ describe('provider metadata', () => {
 
   it('keeps builtin provider sources in sync', () => {
     expect(BUILTIN_PROVIDER_TYPES).toEqual(
-      expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'ark', 'moonshot', 'siliconflow', 'minimax-portal', 'minimax-portal-cn', 'zai', 'zai-global', 'modelstudio', 'ollama'])
+      expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'ark', 'moonshot', 'siliconflow', 'deepseek', 'atlascloud', 'minimax-portal', 'minimax-portal-cn', 'zai', 'zai-global', 'modelstudio', 'ollama'])
     );
   });
 
@@ -155,6 +188,7 @@ describe('provider metadata', () => {
     const openrouter = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'openrouter');
     const siliconflow = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'siliconflow');
     const deepseek = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'deepseek');
+    const atlascloud = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'atlascloud');
     const moonshot = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'moonshot');
     const moonshotGlobal = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'moonshot-global');
 
@@ -175,6 +209,10 @@ describe('provider metadata', () => {
       showModelId: true,
       defaultModelId: 'deepseek-v4-pro',
     });
+    expect(atlascloud).toMatchObject({
+      showModelId: true,
+      defaultModelId: 'qwen/qwen3.5-flash',
+    });
     expect(moonshot).toMatchObject({
       showModelId: true,
       defaultModelId: 'kimi-k2.6',
@@ -186,7 +224,7 @@ describe('provider metadata', () => {
       modelIdPlaceholder: 'kimi-k2.6',
     });
 
-    for (const provider of [anthropic, openrouter, siliconflow, deepseek, moonshot, moonshotGlobal]) {
+    for (const provider of [anthropic, openrouter, siliconflow, deepseek, atlascloud, moonshot, moonshotGlobal]) {
       expect(provider?.showModelIdInDevModeOnly).toBeUndefined();
       expect(shouldShowProviderModelId(provider, false)).toBe(true);
       expect(shouldShowProviderModelId(provider, true)).toBe(true);
@@ -250,6 +288,8 @@ describe('provider metadata', () => {
     expect(resolveProviderModelForSave(siliconflow, '   ', false)).toBe('deepseek-ai/DeepSeek-V3');
     expect(resolveProviderModelForSave(anthropic, '   ', false)).toBe('claude-opus-4-8');
     expect(resolveProviderModelForSave(ark, '  ep-custom-model  ', false)).toBe('ep-custom-model');
+    expect(resolveProviderModelForSave(PROVIDER_TYPE_INFO.find((provider) => provider.id === 'atlascloud'), '   ', false))
+      .toBe('qwen/qwen3.5-flash');
   });
 
   it('normalizes provider API keys for save flow', () => {

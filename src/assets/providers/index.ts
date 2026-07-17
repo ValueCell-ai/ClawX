@@ -29,4 +29,5 @@ export const providerIcons: Record<string, string> = {
     ollama,
     custom,
     deepseek,
+    atlascloud: custom,
 };

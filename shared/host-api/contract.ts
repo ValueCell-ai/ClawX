@@ -290,6 +290,7 @@ export type ProviderType =
   | 'moonshot-global'
   | 'siliconflow'
   | 'deepseek'
+  | 'atlascloud'
   | 'minimax-portal'
   | 'minimax-portal-cn'
   | 'zai'

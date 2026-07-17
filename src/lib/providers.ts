@@ -16,6 +16,7 @@ export const PROVIDER_TYPES = [
   'moonshot-global',
   'siliconflow',
   'deepseek',
+  'atlascloud',
   'minimax-portal',
   'minimax-portal-cn',
   'zai',
@@ -47,6 +48,7 @@ export const BUILTIN_PROVIDER_TYPES = [
   'moonshot-global',
   'siliconflow',
   'deepseek',
+  'atlascloud',
   'minimax-portal',
   'minimax-portal-cn',
   'zai',
@@ -195,6 +197,7 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
   { id: 'moonshot-global', name: 'Moonshot (Global)', icon: '🌙', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.ai/v1', showModelId: true, defaultModelId: 'kimi-k2.6', modelIdPlaceholder: 'kimi-k2.6', docsUrl: 'https://platform.moonshot.ai/' },
   { id: 'siliconflow', name: 'SiliconFlow (CN)', icon: '🌊', placeholder: 'sk-...', model: 'Multi-Model', requiresApiKey: true, defaultBaseUrl: 'https://api.siliconflow.cn/v1', showModelId: true, modelIdPlaceholder: 'deepseek-ai/DeepSeek-V3', defaultModelId: 'deepseek-ai/DeepSeek-V3', docsUrl: 'https://docs.siliconflow.cn/cn/userguide/introduction' },
   { id: 'deepseek', name: 'DeepSeek', icon: '🐋', placeholder: 'sk-...', model: 'DeepSeek', requiresApiKey: true, defaultBaseUrl: 'https://api.deepseek.com/v1', showModelId: true, modelIdPlaceholder: 'deepseek-v4-pro', defaultModelId: 'deepseek-v4-pro', apiKeyUrl: 'https://platform.deepseek.com/api_keys', docsUrl: 'https://api-docs.deepseek.com/', docsUrlZh: 'https://api-docs.deepseek.com/zh-cn/' },
+  { id: 'atlascloud', name: 'Atlas Cloud', icon: '☁️', placeholder: 'ak-...', model: 'Multi-Model', requiresApiKey: true, defaultBaseUrl: 'https://api.atlascloud.ai/v1', showBaseUrl: true, showModelId: true, modelIdPlaceholder: 'qwen/qwen3.5-flash', defaultModelId: 'qwen/qwen3.5-flash', docsUrl: 'https://atlascloud.ai/' },
   { id: 'minimax-portal', name: 'MiniMax (Global)', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: false, isOAuth: true, supportsApiKey: true, defaultModelId: 'MiniMax-M3', showModelId: true, modelIdPlaceholder: 'MiniMax-M3', apiKeyUrl: 'https://platform.minimax.io' },
   {
     id: 'zai',
