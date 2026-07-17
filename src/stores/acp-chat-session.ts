@@ -71,6 +71,8 @@ type LiveSessionSnapshot = {
   workspaceRoot: string | null;
   cwd: string | null;
   generation: number;
+  sending: boolean;
+  pendingImageGenerationTaskIds: string[];
   timeline: AcpTimelineSnapshot;
   deferredImageUpdates: Array<{ key: string; event: AcpSessionUpdateEnvelope }>;
 };
@@ -130,6 +132,7 @@ export type AcpChatSessionState = {
   generation: number;
   loading: boolean;
   sending: boolean;
+  pendingImageGenerationTaskIds: string[];
   cancelling: boolean;
   error: string | null;
   timeline: AcpTimelineSnapshot;
@@ -193,13 +196,18 @@ function applyPermissionRequestToTimeline(
 }
 
 function captureLiveSession(state: AcpChatSessionState): void {
-  if (!state.sending || !state.activeSessionKey) return;
+  if (
+    (!state.sending && state.pendingImageGenerationTaskIds.length === 0)
+    || !state.activeSessionKey
+  ) return;
   const existing = liveSessionSnapshots.get(state.activeSessionKey);
   liveSessionSnapshots.set(state.activeSessionKey, {
     sessionKey: state.activeSessionKey,
     workspaceRoot: state.workspaceRoot,
     cwd: state.cwd,
     generation: state.generation,
+    sending: state.sending,
+    pendingImageGenerationTaskIds: state.pendingImageGenerationTaskIds,
     timeline: state.timeline,
     deferredImageUpdates: existing?.deferredImageUpdates ?? [],
   });
@@ -918,6 +926,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
   generation: 0,
   loading: false,
   sending: false,
+  pendingImageGenerationTaskIds: [],
   cancelling: false,
   error: null,
   timeline: createEmptyAcpTimeline(EMPTY_SESSION_ID, 0),
@@ -936,6 +945,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       generation,
       loading: false,
       sending: false,
+      pendingImageGenerationTaskIds: [],
       cancelling: false,
       error: null,
       timeline: createEmptyAcpTimeline(input.sessionKey, generation),
@@ -950,14 +960,17 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     const generation = get().generation;
     const liveSnapshot = liveSessionSnapshots.get(input.sessionKey);
     invalidateTranscriptSupplement();
-    resetImageGenerationCompatSession(input.sessionKey);
+    if (!liveSnapshot?.pendingImageGenerationTaskIds.length) {
+      resetImageGenerationCompatSession(input.sessionKey);
+    }
     set({
       activeSessionKey: input.sessionKey,
       workspaceRoot: input.workspaceRoot,
       cwd: input.cwd,
       generation,
       loading: true,
-      sending: !!liveSnapshot,
+      sending: liveSnapshot?.sending ?? false,
+      pendingImageGenerationTaskIds: liveSnapshot?.pendingImageGenerationTaskIds ?? [],
       cancelling: false,
       error: null,
       timeline: liveSnapshot?.timeline ?? createEmptyAcpTimeline(input.sessionKey, generation),
@@ -1018,6 +1031,16 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       const currentResumedSnapshot = result.resumedActivePrompt
         ? liveSessionSnapshots.get(input.sessionKey)
         : undefined;
+      const currentBackgroundSnapshot = !result.resumedActivePrompt
+        ? liveSessionSnapshots.get(input.sessionKey)
+        : undefined;
+      const restorableBackgroundSnapshot = currentBackgroundSnapshot?.generation === generation
+        && currentBackgroundSnapshot.pendingImageGenerationTaskIds.length > 0
+        ? currentBackgroundSnapshot
+        : undefined;
+      if (currentBackgroundSnapshot && !restorableBackgroundSnapshot) {
+        resetImageGenerationCompatSession(input.sessionKey);
+      }
       let timeline = currentResumedSnapshot?.generation === generation
         ? currentResumedSnapshot.timeline
         : createEmptyAcpTimeline(input.sessionKey, generation);
@@ -1030,7 +1053,11 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       );
       set({
         loading: false,
-        sending: !!currentResumedSnapshot,
+        sending: currentResumedSnapshot?.sending ?? false,
+        pendingImageGenerationTaskIds:
+          currentResumedSnapshot?.pendingImageGenerationTaskIds
+          ?? restorableBackgroundSnapshot?.pendingImageGenerationTaskIds
+          ?? [],
         error: null,
         generation,
         timeline,
@@ -1045,7 +1072,8 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
         liveSessionSnapshots.delete(input.sessionKey);
       }
       resolvePendingAttachments(input.sessionKey, generation, pendingAttachments);
-      for (const { event } of currentResumedSnapshot?.deferredImageUpdates ?? []) {
+      const restoredSnapshot = currentResumedSnapshot ?? restorableBackgroundSnapshot;
+      for (const { event } of restoredSnapshot?.deferredImageUpdates ?? []) {
         get().recordImageGenerationStart(event);
         const evidence = extractImageGenerationCompletionFromAcpEnvelope(event);
         if (evidence) void get().projectImageGenerationCompletion(evidence);
@@ -1250,6 +1278,18 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       session.taskStartedAt = Date.now();
       session.taskIds.add(start.taskId);
       recordImageGenerationStartAnchor(session, start, false);
+      set((current) => (
+        current.activeSessionKey === start.sessionKey
+        && current.generation === event.generation
+        && !current.pendingImageGenerationTaskIds.includes(start.taskId)
+          ? {
+            pendingImageGenerationTaskIds: [
+              ...current.pendingImageGenerationTaskIds,
+              start.taskId,
+            ],
+          }
+          : {}
+      ));
       const operation = activeTranscriptSupplement;
       if (
         operation?.liveUserMessageId
@@ -1328,6 +1368,14 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     const correlatedTaskId = evidence.taskId
       ?? imageGenerationTaskIdFromSessionKey(evidence.sessionKey)
       ?? (usesReplayImageGenerationContext(evidence) ? compat.lastReplayTaskId : compat.lastTaskId);
+    const settlePendingTask = (current: AcpChatSessionState): string[] => {
+      if (!correlatedTaskId) {
+        return usesReplayImageGenerationContext(evidence)
+          ? current.pendingImageGenerationTaskIds
+          : [];
+      }
+      return current.pendingImageGenerationTaskIds.filter((taskId) => taskId !== correlatedTaskId);
+    };
     const key = imageGenerationEvidenceKey({
       ...evidence,
       sessionKey,
@@ -1354,6 +1402,9 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
         details: projectionTraceDetails(evidence),
       });
       if (compat.delivered.has(key)) {
+        set((current) => ({
+          pendingImageGenerationTaskIds: settlePendingTask(current),
+        }));
         stopLiveTranscriptSupplementRetry(sessionKey, generation, correlatedTaskId);
       }
       return;
@@ -1504,8 +1555,12 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
         captions?.set(existingKey, currentCaption);
         set((current) => ({
           timeline: replaceSyntheticImageCaptionAtItem(current.timeline, duplicateItemId, currentCaption.text),
+          pendingImageGenerationTaskIds: settlePendingTask(current),
         }));
       }
+      set((current) => ({
+        pendingImageGenerationTaskIds: settlePendingTask(current),
+      }));
       if (missingCount === 0) commitDelivery(sessionKey, key, reservationOwner);
       else releaseDelivery(sessionKey, key, reservationOwner);
       recordProjectionTrace({
@@ -1529,6 +1584,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
           parts,
           afterItemId,
         }),
+        pendingImageGenerationTaskIds: settlePendingTask(current),
       };
     });
     if (missingCount === 0) commitDelivery(sessionKey, key, reservationOwner);

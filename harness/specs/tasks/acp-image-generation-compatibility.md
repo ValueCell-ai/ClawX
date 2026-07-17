@@ -14,9 +14,13 @@ touchedAreas:
   - src/lib/acp/reducer.ts
   - src/lib/acp/timeline-types.ts
   - src/stores/acp-chat-session.ts
+  - src/pages/Chat/index.tsx
+  - src/pages/Chat/ChatInput.tsx
   - tests/unit/acp-image-generation-compat.test.ts
   - tests/unit/acp-reducer.test.ts
   - tests/unit/acp-chat-store.test.ts
+  - tests/unit/chat-acp-page.test.tsx
+  - tests/unit/chat-input.test.tsx
   - tests/e2e/chat-run-state-events.spec.ts
   - shared/i18n/locales/en/chat.json
   - shared/i18n/locales/zh/chat.json
@@ -27,6 +31,7 @@ touchedAreas:
   - README.ja-JP.md
 expectedUserBehavior:
   - ACP Chat first shows the image_generate background task start tool result.
+  - The composer keeps showing its thinking indicator after the foreground prompt finishes until the generated image or a failure reply is rendered, including after switching away from and back to the conversation, without locking the composer during background generation.
   - When OpenClaw later exposes a trusted internal-UI source reply through ACP or Gateway host events, ClawX preserves its exact user-facing text instead of replacing it with a generic caption.
   - Successful replies include the hydrated image preview, while text-only generation failures remain visible as assistant replies.
   - Arbitrary local paths and generic MEDIA: prose without approved image-generation context are not rendered as images.
@@ -57,6 +62,8 @@ acceptance:
   - Internal-UI sourceReply text is authoritative for both successful media replies and text-only failure replies.
   - ClawX hydrates previews through hostApi.media.thumbnails before rendering images.
   - Duplicate completion records do not create duplicate assistant image replies.
+  - Live background image generation keeps the thinking indicator visible until its success or failure completion is projected.
+  - Switching conversations preserves each live image-generation pending state and restores its indicator on return.
   - Stale preview resolution does not append to a different active session or generation.
 docs:
   required: true

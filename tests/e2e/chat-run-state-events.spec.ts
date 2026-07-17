@@ -309,6 +309,11 @@ test.describe('ClawX chat run state events', () => {
       const timeline = page.getByTestId('acp-chat-timeline');
       await expect(timeline).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('acp-tool-call-card')).toContainText('Background task started for image generation');
+      await expect(page.getByTestId('chat-composer-working-indicator')).toBeVisible();
+      await page.getByTestId('sidebar-new-chat').click();
+      await expect(page.getByTestId('chat-composer-working-indicator')).toHaveCount(0);
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await expect(page.getByTestId('chat-composer-working-indicator')).toBeVisible();
 
       await emitGatewayChatMessage(app, {
         message: {
@@ -330,6 +335,7 @@ test.describe('ClawX chat run state events', () => {
       const image = timeline.getByRole('img', { name: 'Image' });
       await expect(image).toBeVisible();
       await expect(image).toHaveAttribute('src', ONE_PIXEL_PNG_DATA_URL);
+      await expect(page.getByTestId('chat-composer-working-indicator')).toHaveCount(0);
       await expect(page.getByTestId('image-preview-unavailable')).toHaveCount(0);
       await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
     } finally {
@@ -358,6 +364,7 @@ test.describe('ClawX chat run state events', () => {
         }],
         locations: [],
       }]);
+      await expect(page.getByTestId('chat-composer-working-indicator')).toBeVisible();
 
       await emitGatewayChatMessage(app, {
         message: {
@@ -375,6 +382,7 @@ test.describe('ClawX chat run state events', () => {
       });
 
       await expect(page.getByText('Image generation failed because no image model is available.')).toBeVisible();
+      await expect(page.getByTestId('chat-composer-working-indicator')).toHaveCount(0);
       await expect(page.getByTestId('acp-image-part')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);

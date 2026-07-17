@@ -1475,6 +1475,24 @@ describe('ACP Chat store', () => {
         },
       },
     });
+    expect(useAcpChatSessionStore.getState().pendingImageGenerationTaskIds).toEqual([
+      '32aa3a12-a05b-4074-af4e-246cc4a9a303',
+    ]);
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s2',
+      workspaceRoot: '/repo-2',
+      cwd: '/repo-2',
+    });
+    expect(useAcpChatSessionStore.getState().pendingImageGenerationTaskIds).toEqual([]);
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1',
+      workspaceRoot: '/repo',
+      cwd: '/repo',
+    });
+    expect(useAcpChatSessionStore.getState()).toMatchObject({
+      sending: false,
+      pendingImageGenerationTaskIds: ['32aa3a12-a05b-4074-af4e-246cc4a9a303'],
+    });
     hostApiMock.mediaThumbnails.mockResolvedValueOnce({
       '/tmp/sky.png': { preview: 'data:image/png;base64,abc123', fileSize: 67 },
     });
@@ -1511,6 +1529,7 @@ describe('ACP Chat store', () => {
         { kind: 'image', source: 'data:image/png;base64,abc123', mimeType: 'image/png', alt: 'Image' },
       ],
     });
+    expect(useAcpChatSessionStore.getState().pendingImageGenerationTaskIds).toEqual([]);
   });
 
   it('records image-generation start detection trace entries', async () => {
@@ -1996,6 +2015,7 @@ describe('ACP Chat store', () => {
         },
       },
     });
+    expect(useAcpChatSessionStore.getState().pendingImageGenerationTaskIds).toEqual([taskId]);
 
     hostEventsMock.runtimeEventListener?.({
       type: 'tool.completed',
@@ -2029,6 +2049,7 @@ describe('ACP Chat store', () => {
         text: 'Image generation failed because no image model is available.',
       }],
     });
+    expect(useAcpChatSessionStore.getState().pendingImageGenerationTaskIds).toEqual([]);
   });
 
   it('upgrades a generic image caption when authoritative source-reply text arrives later', async () => {

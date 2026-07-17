@@ -250,6 +250,17 @@ describe('ChatInput agent targeting', () => {
     expect(screen.queryByTestId('chat-composer-zoomies')).not.toBeInTheDocument();
   });
 
+  it('shows the thinking indicator without locking the composer for background work', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput onSend={vi.fn()} showWorkingIndicator />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole('status', { name: 'Thinking…' })).toBeInTheDocument();
+    expect(screen.getByTestId('chat-composer-input')).not.toBeDisabled();
+  });
+
   it('waits for the provider snapshot before clearing an unavailable model override', async () => {
     let resolveSnapshot!: () => void;
     agentsState.updateAgentModel.mockResolvedValue(undefined);

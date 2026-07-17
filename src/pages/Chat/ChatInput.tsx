@@ -47,6 +47,7 @@ interface ChatInputProps {
   onStop?: () => void;
   disabled?: boolean;
   sending?: boolean;
+  showWorkingIndicator?: boolean;
   workspaceLabel?: string;
   workspacePath?: string;
   workspaceReadOnly?: boolean;
@@ -201,6 +202,7 @@ export function ChatInput({
   onStop,
   disabled = false,
   sending = false,
+  showWorkingIndicator = sending,
   workspaceLabel,
   workspacePath,
   workspaceReadOnly = false,
@@ -866,7 +868,7 @@ export function ChatInput({
       onDrop={handleDrop}
     >
       <div className="w-full">
-        {sending && (
+        {showWorkingIndicator && (
           <div
             data-testid="chat-composer-working-indicator"
             role="status"

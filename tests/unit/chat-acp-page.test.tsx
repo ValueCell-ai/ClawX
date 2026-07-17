@@ -42,6 +42,7 @@ const { acpState, agentsState, artifactPanelState, artifactPanelProps, chatState
     } as AcpTimelineSnapshot,
     loading: false,
     sending: false,
+    pendingImageGenerationTaskIds: [] as string[],
     cancelling: false,
     error: null as string | null,
     activeSessionKey: 'agent:main:main' as string | null,

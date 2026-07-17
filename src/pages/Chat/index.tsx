@@ -164,6 +164,9 @@ export function Chat() {
   const acpTimeline = useAcpChatSessionStore((s) => s.timeline);
   const acpLoading = useAcpChatSessionStore((s) => s.loading);
   const acpSending = useAcpChatSessionStore((s) => s.sending);
+  const imageGenerationPending = useAcpChatSessionStore(
+    (s) => s.pendingImageGenerationTaskIds.length > 0,
+  );
   const acpCancelling = useAcpChatSessionStore((s) => s.cancelling);
   const acpError = useAcpChatSessionStore((s) => s.error);
   const acpActiveSessionKey = useAcpChatSessionStore((s) => s.activeSessionKey);
@@ -443,6 +446,7 @@ export function Chat() {
           onStop={() => void cancelAcp()}
           disabled={acpLoading || acpCancelling || !cwd}
           sending={composerBusy}
+          showWorkingIndicator={composerBusy || imageGenerationPending}
           workspaceLabel={workspaceLabel}
           workspacePath={cwd}
           workspaceReadOnly={effectiveWorkspace.readOnly}
