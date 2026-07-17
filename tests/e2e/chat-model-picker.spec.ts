@@ -14,6 +14,10 @@ test.describe('ClawX chat model picker', () => {
         let currentModelRef = refs.alphaModelRef;
         const hostRequests: Array<{ path: string; method: string; body: unknown }> = [];
         const now = new Date().toISOString();
+        let releaseProviderAccounts: (() => void) | undefined;
+        const providerAccountsReady = new Promise<void>((resolve) => {
+          releaseProviderAccounts = resolve;
+        });
         const originalHostInvoke = (ipcMain as unknown as {
           _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
         })._invokeHandlers?.get('host:invoke');
@@ -105,6 +109,7 @@ test.describe('ClawX chat model picker', () => {
             return makeResponse(request.id, agentsSnapshot());
           }
           if (request?.module === 'providers' && request.action === 'accounts') {
+            await providerAccountsReady;
             return makeResponse(request.id, [
               {
                 id: 'alpha1234',
@@ -169,11 +174,29 @@ test.describe('ClawX chat model picker', () => {
         });
 
         (globalThis as typeof globalThis & { __chatModelPickerRequests?: typeof hostRequests }).__chatModelPickerRequests = hostRequests;
+        (globalThis as typeof globalThis & {
+          __releaseChatModelProviders?: () => void;
+        }).__releaseChatModelProviders = releaseProviderAccounts;
       }, { alphaModelRef, betaModelRef });
 
       const page = await getStableWindow(app);
       await page.reload();
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await expect.poll(async () => app.evaluate(() => (
+        (globalThis as typeof globalThis & {
+          __chatModelPickerRequests?: Array<{ path: string }>;
+        }).__chatModelPickerRequests?.some((request) => request.path === 'providers:accounts') ?? false
+      ))).toBe(true);
+      expect(await app.evaluate(() => (
+        (globalThis as typeof globalThis & {
+          __chatModelPickerRequests?: Array<{ path: string }>;
+        }).__chatModelPickerRequests?.some((request) => request.path === 'agents:updateModel') ?? false
+      ))).toBe(false);
+      await app.evaluate(() => {
+        (globalThis as typeof globalThis & {
+          __releaseChatModelProviders?: () => void;
+        }).__releaseChatModelProviders?.();
+      });
       await app.evaluate(({ BrowserWindow }) => {
         const win = BrowserWindow.getAllWindows()[0];
         win?.webContents.send('gateway:status-changed', { state: 'running', port: 18789, pid: 12345, gatewayReady: true });

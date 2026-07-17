@@ -221,6 +221,7 @@ export function ChatInput({
   const [selectedSkill, setSelectedSkill] = useState<QuickAccessSkill | null>(null);
   const [switchingModelRef, setSwitchingModelRef] = useState<string | null>(null);
   const [optimisticModelRef, setOptimisticModelRef] = useState<string | null>(null);
+  const [providerSnapshotReady, setProviderSnapshotReady] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const skillPickerRef = useRef<HTMLDivElement>(null);
@@ -235,6 +236,7 @@ export function ChatInput({
   const providerStatuses = useProviderStore((s) => s.statuses);
   const providerDefaultAccountId = useProviderStore((s) => s.defaultAccountId);
   const providerVendors = useProviderStore((s) => s.vendors);
+  const providerError = useProviderStore((s) => s.error);
   const refreshProviderSnapshot = useProviderStore((s) => s.refreshProviderSnapshot);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const currentAgent = useMemo(
@@ -289,7 +291,17 @@ export function ChatInput({
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
   const openArtifactPreview = useArtifactPanel((s) => s.openPreview);
   useEffect(() => {
-    void refreshProviderSnapshot();
+    let cancelled = false;
+    void (async () => {
+      try {
+        await refreshProviderSnapshot();
+      } finally {
+        if (!cancelled) setProviderSnapshotReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [refreshProviderSnapshot]);
 
   useEffect(() => {
@@ -319,11 +331,11 @@ export function ChatInput({
   }, [workspaceSelectorDisabled]);
 
   useEffect(() => {
-    if (!currentAgent || switchingModelRef || optimisticModelRef) return;
+    if (!providerSnapshotReady || providerError || !currentAgent || switchingModelRef || optimisticModelRef) return;
     const override = (currentAgent.overrideModelRef || '').trim();
     if (!override || isConfiguredModelRefAvailable(override, modelOptions)) return;
     void updateAgentModel(currentAgent.id, null).catch(() => {});
-  }, [currentAgent, modelOptions, optimisticModelRef, switchingModelRef, updateAgentModel]);
+  }, [currentAgent, modelOptions, optimisticModelRef, providerError, providerSnapshotReady, switchingModelRef, updateAgentModel]);
 
   // Auto-resize textarea
   useEffect(() => {

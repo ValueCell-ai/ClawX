@@ -21,6 +21,7 @@ const { agentsState, chatState, gatewayState, providersState, artifactPanelMocks
     accounts: [] as Array<Record<string, unknown>>,
     statuses: [] as Array<Record<string, unknown>>,
     defaultAccountId: null as string | null,
+    error: null as string | null,
     refreshProviderSnapshot: vi.fn(),
   },
   artifactPanelMocks: {
@@ -225,6 +226,7 @@ describe('ChatInput agent targeting', () => {
     providersState.accounts = [];
     providersState.statuses = [];
     providersState.defaultAccountId = null;
+    providersState.error = null;
     providersState.refreshProviderSnapshot.mockReset();
     vi.mocked(hostApiFetchMock).mockReset();
     vi.mocked(hostApiDialogOpenMock).mockReset();
@@ -246,6 +248,38 @@ describe('ChatInput agent targeting', () => {
     expect(indicator).toHaveAttribute('aria-live', 'polite');
     expect(screen.getByTestId('chat-composer-dot-pulse')).toBeInTheDocument();
     expect(screen.queryByTestId('chat-composer-zoomies')).not.toBeInTheDocument();
+  });
+
+  it('waits for the provider snapshot before clearing an unavailable model override', async () => {
+    let resolveSnapshot!: () => void;
+    agentsState.updateAgentModel.mockResolvedValue(undefined);
+    providersState.refreshProviderSnapshot.mockReturnValue(new Promise<void>((resolve) => {
+      resolveSnapshot = resolve;
+    }));
+    agentsState.agents = [{
+      id: 'main',
+      name: 'Main',
+      modelRef: 'custom-stale/model',
+      overrideModelRef: 'custom-stale/model',
+      inheritedModel: false,
+      workspace: '~/.openclaw/workspace',
+      agentDir: '~/.openclaw/agents/main/agent',
+      mainSessionKey: 'agent:main:main',
+      channelTypes: [],
+    }];
+
+    renderChatInput();
+
+    await waitFor(() => {
+      expect(providersState.refreshProviderSnapshot).toHaveBeenCalled();
+    });
+    expect(agentsState.updateAgentModel).not.toHaveBeenCalled();
+
+    resolveSnapshot();
+
+    await waitFor(() => {
+      expect(agentsState.updateAgentModel).toHaveBeenCalledWith('main', null);
+    });
   });
 
   it('renders editable workspace selector in the composer footer', () => {
