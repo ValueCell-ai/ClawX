@@ -251,7 +251,11 @@
         "expandAll": "Развернуть все",
         "loadMore": "Загрузить еще",
         "loadMoreForWorkspace": "Загрузить еще {{count}} сессий в {{workspace}}",
-        "workspaceToggle": "Переключить рабочую область {{workspace}}"
+        "workspaceToggle": "Переключить рабочую область {{workspace}}",
+        "renameWorkspace": "Переименовать рабочую область {{workspace}}",
+        "workspaceName": "Название рабочей области",
+        "saveWorkspaceRename": "Сохранить название рабочей области",
+        "cancelWorkspaceRename": "Отменить переименование рабочей области"
     },
     "historyBuckets": {
         "today": "Сегодня",

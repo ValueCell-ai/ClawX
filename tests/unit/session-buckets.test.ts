@@ -64,6 +64,20 @@ describe('workspace session grouping', () => {
     expect(groups[0].workspacePath).toBe('/repo/global');
   });
 
+  it('uses custom workspace labels without changing path-based grouping', () => {
+    const groups = groupSessionsByWorkspace(
+      [{ key: 'agent:main:session-project', workspacePath: '/repo/project', updatedAt: 1 }],
+      {},
+      '默认工作空间',
+      undefined,
+      { '/repo/project': '产品项目' },
+    );
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].workspacePath).toBe('/repo/project');
+    expect(groups[0].label).toBe('产品项目');
+  });
+
   it('groups default-equivalent workspace paths with sessions missing cwd', () => {
     const groups = groupSessionsByWorkspace(
       [

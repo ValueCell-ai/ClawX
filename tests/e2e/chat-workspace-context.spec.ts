@@ -88,6 +88,7 @@ async function getWorkspaceTreeRequests(app: ElectronApplication) {
 type WorkspaceMockOptions = {
   chatWorkspacePath?: string;
   recentWorkspacePaths?: string[];
+  workspaceLabels?: Record<string, string>;
   sessionHistory?: Array<{ role: string; content: unknown; timestamp?: number }>;
   sessionDerivedTitle?: string | null;
   sessionSummaryFirstUserText?: string | null;
@@ -102,6 +103,7 @@ async function installWorkspaceMocks(app: ElectronApplication, options: Workspac
     setupComplete: true,
     chatWorkspacePath: options.chatWorkspacePath ?? DEFAULT_WORKSPACE,
     recentWorkspacePaths: options.recentWorkspacePaths ?? [DEFAULT_WORKSPACE],
+    workspaceLabels: options.workspaceLabels ?? {},
   };
   const sessionRow = {
     key: SESSION_KEY,
@@ -145,6 +147,9 @@ async function installWorkspaceMocks(app: ElectronApplication, options: Workspac
     },
     hostApi: {
       [stableStringify(['settings', 'getAll', null])]: settingsSnapshot,
+      [stableStringify(['settings', 'setMany', {
+        patch: { workspaceLabels: { [SESSION_WORKSPACE]: 'Renamed workspace' } },
+      }])]: { success: true },
       [stableStringify(['/api/settings', 'GET'])]: hostJson(settingsSnapshot),
       [stableStringify(['/api/gateway/status', 'GET'])]: hostJson(gatewayStatus),
       [stableStringify(['/api/agents', 'GET'])]: hostJson({
@@ -201,6 +206,19 @@ test.describe('ClawX chat workspace context', () => {
       await expect(workspaceGroup).toBeVisible();
       await expect(workspaceGroup).toContainText('Workspace chat');
       await expect(workspaceGroup).not.toContainText('[Working directory:');
+      const workspaceToggle = workspaceGroup.getByRole('button', {
+        name: `Toggle workspace ${SESSION_WORKSPACE_LABEL}`,
+      });
+      await expect(workspaceToggle).toHaveAttribute('title', SESSION_WORKSPACE);
+
+      await workspaceToggle.hover();
+      await workspaceGroup.getByRole('button', { name: `Rename workspace ${SESSION_WORKSPACE_LABEL}` }).click();
+      await workspaceGroup.getByRole('textbox', { name: 'Workspace name' }).fill('Renamed workspace');
+      await workspaceGroup.getByRole('button', { name: 'Save workspace name' }).click();
+
+      await expect(workspaceGroup).toContainText('Renamed workspace');
+      await expect(workspaceSelector).toHaveText('Renamed workspace');
+      await expect(workspaceSelector).toHaveAttribute('title', SESSION_WORKSPACE);
 
       await page.getByTestId('chat-toolbar-workspace').click();
 
@@ -209,14 +227,14 @@ test.describe('ClawX chat workspace context', () => {
       await sidePanel.getByTestId('artifact-panel-tab-browser').click();
 
       const workspaceHeader = sidePanel.getByTestId('workspace-header-title');
-      const expectedWorkspaceHeader = `Agent: Main Agent · Directory: ${SESSION_WORKSPACE_LABEL}`;
+      const expectedWorkspaceHeader = 'Agent: Main Agent · Directory: Renamed workspace';
       await expect(workspaceHeader).toHaveAttribute('title', expectedWorkspaceHeader);
       await expect(workspaceHeader).toHaveAttribute('aria-label', expectedWorkspaceHeader);
       await expect(sidePanel.getByTestId('workspace-agent-tag')).toHaveText('Main Agent');
       await expect(sidePanel.getByTestId('workspace-agent-tag')).toHaveAttribute('title', 'Main Agent');
-      await expect(sidePanel.getByTestId('workspace-path-tag')).toHaveText(SESSION_WORKSPACE_LABEL);
+      await expect(sidePanel.getByTestId('workspace-path-tag')).toHaveText('Renamed workspace');
       await expect(sidePanel.getByTestId('workspace-path-tag')).toHaveAttribute('title', SESSION_WORKSPACE);
-      await expect(sidePanel.getByTestId('workspace-path-final-segment')).toHaveText('ClawX');
+      await expect(sidePanel.getByTestId('workspace-path-final-segment')).toHaveText('Renamed workspace');
       await expect(sidePanel.getByTestId('workspace-tree')).toBeVisible({ timeout: 30_000 });
       await expect(sidePanel.getByText('README.md')).toBeVisible();
 

@@ -40,6 +40,7 @@ interface SettingsState {
   devModeUnlocked: boolean;
   chatWorkspacePath: string;
   recentWorkspacePaths: string[];
+  workspaceLabels: Record<string, string>;
 
   // Setup
   setupComplete: boolean;
@@ -65,6 +66,7 @@ interface SettingsState {
   setSidebarWidth: (value: number) => void;
   setDevModeUnlocked: (value: boolean) => void;
   setChatWorkspacePath: (workspacePath: string) => void;
+  setWorkspaceLabel: (workspacePath: string, label: string) => void;
   markSetupComplete: () => void;
   resetSettings: () => void;
 }
@@ -90,6 +92,7 @@ const defaultSettings = {
   devModeUnlocked: false,
   chatWorkspacePath: DEFAULT_WORKSPACE_CWD,
   recentWorkspacePaths: [DEFAULT_WORKSPACE_CWD],
+  workspaceLabels: {},
   setupComplete: false,
 };
 
@@ -177,6 +180,19 @@ export const useSettingsStore = create<SettingsState>()(
           ].slice(0, MAX_RECENT_WORKSPACES);
           void hostApi.settings.setMany({ chatWorkspacePath: normalized, recentWorkspacePaths }).catch(() => { });
           return { chatWorkspacePath: normalized, recentWorkspacePaths };
+        });
+      },
+      setWorkspaceLabel: (workspacePath, label) => {
+        const normalizedPath = workspacePath.trim();
+        const normalizedLabel = label.trim();
+        if (!normalizedPath || !normalizedLabel) return;
+        set((state) => {
+          const workspaceLabels = {
+            ...state.workspaceLabels,
+            [normalizedPath]: normalizedLabel,
+          };
+          void hostApi.settings.setMany({ workspaceLabels }).catch(() => { });
+          return { workspaceLabels };
         });
       },
       markSetupComplete: () => set({ setupComplete: true }),

@@ -59,6 +59,8 @@ expectedUserBehavior:
   - Existing sessions use OpenClaw ACP cwd as their read-only workspace context.
   - Historical sessions with recoverable OpenClaw cwd group under their real cwd.
   - Sessions without recoverable cwd group under the default workspace label.
+  - Imported workspace display names can be renamed without changing their authoritative paths.
+  - Renamed workspace labels stay synchronized between the sidebar and chat composer, while hover text exposes the path.
   - OpenClaw ACP cwd injection remains enabled, while automatic conversation titles omit its leading working-directory envelope.
   - Renderer continues to use host-api and never calls direct IPC or Gateway HTTP.
 requiredProfiles:
@@ -86,6 +88,7 @@ acceptance:
   - Bound session footer workspace is read-only.
   - Right workspace tree root matches effective chat workspace.
   - Sidebar groups sessions by workspace, then sorts each flat group by the shared activity timestamp without date buckets.
+  - Custom workspace labels persist through Main-owned settings and never replace path identity.
   - Explicit user session labels remain unchanged even when they begin with a working-directory-looking string.
 docs:
   required: true

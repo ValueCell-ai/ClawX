@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getSessionActivityMs } from '@/components/layout/session-buckets';
 import {
   Sidebar,
+  getWorkspaceGroupRenameTestId,
   getWorkspaceGroupStateKey,
   getWorkspaceGroupTestId,
   getWorkspaceGroupToggleTestId,
@@ -193,6 +194,30 @@ describe('sidebar session helpers', () => {
 
     expect(renameSession).not.toHaveBeenCalled();
     expect(screen.queryByLabelText('Session title')).not.toBeInTheDocument();
+  });
+
+  it('renames imported workspaces while keeping the path as hover text', () => {
+    const workspacePath = '/repo/imported';
+    const setWorkspaceLabel = vi.fn();
+    seedSidebarState();
+    useSettingsStore.setState({ workspaceLabels: {}, setWorkspaceLabel });
+    useChatStore.setState({
+      sessions: [{
+        key: sidebarSessionKey,
+        displayName: 'Workspace chat',
+        workspacePath,
+        updatedAt: 1,
+      }],
+    });
+
+    renderSidebar();
+
+    expect(screen.getByTestId(getWorkspaceGroupToggleTestId(workspacePath))).toHaveAttribute('title', workspacePath);
+    fireEvent.click(screen.getByTestId(getWorkspaceGroupRenameTestId(workspacePath)));
+    fireEvent.change(screen.getByLabelText('Workspace name'), { target: { value: 'Imported project' } });
+    fireEvent.click(screen.getByLabelText('Save workspace name'));
+
+    expect(setWorkspaceLabel).toHaveBeenCalledWith(workspacePath, 'Imported project');
   });
 
   it('uses the timestamp embedded in a locally-created session key as activity fallback', () => {

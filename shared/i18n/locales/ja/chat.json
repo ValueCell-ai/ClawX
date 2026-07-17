@@ -251,7 +251,11 @@
         "expandAll": "すべて展開",
         "loadMore": "もっと読み込む",
         "loadMoreForWorkspace": "{{workspace}} でさらに {{count}} 件のセッションを読み込む",
-        "workspaceToggle": "ワークスペース {{workspace}} を切り替え"
+        "workspaceToggle": "ワークスペース {{workspace}} を切り替え",
+        "renameWorkspace": "ワークスペース {{workspace}} の名前を変更",
+        "workspaceName": "ワークスペース名",
+        "saveWorkspaceRename": "ワークスペース名を保存",
+        "cancelWorkspaceRename": "ワークスペース名の変更をキャンセル"
     },
     "historyBuckets": {
         "today": "今日",

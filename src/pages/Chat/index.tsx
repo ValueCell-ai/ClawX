@@ -133,6 +133,7 @@ export function Chat() {
   const selectAcpSession = useChatStore((s) => s.selectAcpSession);
   const acknowledgeAcpSessionCreated = useChatStore((s) => s.acknowledgeAcpSessionCreated);
   const chatWorkspacePath = useSettingsStore((s) => s.chatWorkspacePath);
+  const workspaceLabels = useSettingsStore((s) => s.workspaceLabels);
   const setChatWorkspacePath = useSettingsStore((s) => s.setChatWorkspacePath);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
   const agents = useAgentsStore((s) => s.agents);
@@ -154,7 +155,7 @@ export function Chat() {
     [chatWorkspacePath, currentSession],
   );
   const cwd = effectiveWorkspace.cwd;
-  const workspaceLabel = getWorkspaceDisplayLabel(cwd, t('workspace.defaultLabel'));
+  const workspaceLabel = getWorkspaceDisplayLabel(cwd, t('workspace.defaultLabel'), workspaceLabels);
   const currentAgent = useMemo(
     () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
     [agents, currentAgentId],

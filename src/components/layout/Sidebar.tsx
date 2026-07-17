@@ -48,6 +48,7 @@ import { SIDEBAR_COLLAPSED_WIDTH, MAC_SIDEBAR_CHROME_HEIGHT } from '@shared/side
 import { useTranslation } from 'react-i18next';
 import logoSvg from '@/assets/logo.svg';
 import { useNewChatAction } from './use-new-chat-action';
+import { isDefaultWorkspacePath } from '@/lib/workspace-context';
 
 interface NavItemProps {
   to: string;
@@ -111,6 +112,10 @@ export function getWorkspaceGroupToggleTestId(workspacePath: string): string {
   return `workspace-session-group-toggle-${getWorkspaceTestIdSegment(workspacePath)}`;
 }
 
+export function getWorkspaceGroupRenameTestId(workspacePath: string): string {
+  return `workspace-session-group-rename-${getWorkspaceTestIdSegment(workspacePath)}`;
+}
+
 function getWorkspaceLoadMoreTestId(workspacePath: string): string {
   return `workspace-session-load-more-${getWorkspaceTestIdSegment(workspacePath)}`;
 }
@@ -129,6 +134,8 @@ export function Sidebar() {
   const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth);
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
   const chatWorkspacePath = useSettingsStore((state) => state.chatWorkspacePath);
+  const workspaceLabels = useSettingsStore((state) => state.workspaceLabels);
+  const setWorkspaceLabel = useSettingsStore((state) => state.setWorkspaceLabel);
   const [isResizing, setIsResizing] = useState(false);
   const stopResizeRef = useRef<(() => void) | null>(null);
 
@@ -205,6 +212,8 @@ export function Sidebar() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingSessionKey, setEditingSessionKey] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
+  const [editingWorkspacePath, setEditingWorkspacePath] = useState<string | null>(null);
+  const [editingWorkspaceLabel, setEditingWorkspaceLabel] = useState('');
   const [nowMs, setNowMs] = useState(INITIAL_NOW_MS);
   const [collapsedWorkspaceGroups, setCollapsedWorkspaceGroups] = useState<Record<string, boolean>>({});
   const [workspaceVisibleSessionCounts, setWorkspaceVisibleSessionCounts] = useState<Record<string, number>>({});
@@ -259,6 +268,36 @@ export function Sidebar() {
       void handleRenameSubmit();
     } else if (e.key === 'Escape') {
       handleRenameCancel();
+    }
+  };
+
+  const handleStartWorkspaceRename = (workspacePath: string, currentLabel: string) => {
+    setEditingWorkspacePath(workspacePath);
+    setEditingWorkspaceLabel(currentLabel);
+  };
+
+  const handleWorkspaceRenameSubmit = () => {
+    if (editingWorkspacePath && editingWorkspaceLabel.trim()) {
+      setWorkspaceLabel(editingWorkspacePath, editingWorkspaceLabel);
+    }
+    setEditingWorkspacePath(null);
+  };
+
+  const handleWorkspaceRenameCancel = () => {
+    setEditingWorkspacePath(null);
+  };
+
+  const handleWorkspaceRenameBlur = (event: React.FocusEvent<HTMLDivElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    handleWorkspaceRenameSubmit();
+  };
+
+  const handleWorkspaceRenameKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      handleWorkspaceRenameSubmit();
+    } else if (event.key === 'Escape') {
+      handleWorkspaceRenameCancel();
     }
   };
 
@@ -330,6 +369,7 @@ export function Sidebar() {
     sessionLastActivity,
     t('chat:workspace.defaultLabel'),
     chatWorkspacePath,
+    workspaceLabels,
   );
   const allWorkspaceGroupsCollapsed = workspaceSessionGroups.length > 0
     && workspaceSessionGroups.every((group) => collapsedWorkspaceGroups[getWorkspaceGroupStateKey(group.workspacePath)] ?? false);
@@ -520,26 +560,79 @@ export function Sidebar() {
                   data-testid={getWorkspaceGroupTestId(workspaceGroup.workspacePath)}
                   className="space-y-1"
                 >
-                  <button
-                    type="button"
-                    data-testid={getWorkspaceGroupToggleTestId(workspaceGroup.workspacePath)}
-                    aria-expanded={!collapsed}
-                    aria-label={t('chat:sessionList.workspaceToggle', { workspace: workspaceGroup.label })}
-                    onClick={() => toggleWorkspaceGroup(workspaceGroup.workspacePath)}
-                    className="flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-meta font-semibold text-foreground/75 transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5"
-                    title={workspaceGroup.label}
-                  >
-                    <ChevronRight
-                      className={cn(
-                        'h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform',
-                        !collapsed && 'rotate-90',
+                  {editingWorkspacePath === workspaceGroup.workspacePath ? (
+                    <div
+                      className="flex w-full items-center gap-1 px-1.5 py-1"
+                      onBlur={handleWorkspaceRenameBlur}
+                    >
+                      <Input
+                        autoFocus
+                        value={editingWorkspaceLabel}
+                        onChange={(event) => setEditingWorkspaceLabel(event.target.value)}
+                        onKeyDown={handleWorkspaceRenameKeyDown}
+                        className="h-7 min-w-0 flex-1 text-meta"
+                        aria-label={t('chat:sessionList.workspaceName')}
+                      />
+                      <button
+                        type="button"
+                        aria-label={t('chat:sessionList.saveWorkspaceRename')}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={handleWorkspaceRenameSubmit}
+                        className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={t('chat:sessionList.cancelWorkspaceRename')}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={handleWorkspaceRenameCancel}
+                        className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-destructive"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="group flex items-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5">
+                      <button
+                        type="button"
+                        data-testid={getWorkspaceGroupToggleTestId(workspaceGroup.workspacePath)}
+                        aria-expanded={!collapsed}
+                        aria-label={t('chat:sessionList.workspaceToggle', { workspace: workspaceGroup.label })}
+                        onClick={() => toggleWorkspaceGroup(workspaceGroup.workspacePath)}
+                        onDoubleClick={() => {
+                          if (!isDefaultWorkspacePath(workspaceGroup.workspacePath)) {
+                            handleStartWorkspaceRename(workspaceGroup.workspacePath, workspaceGroup.label);
+                          }
+                        }}
+                        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-meta font-semibold text-foreground/75 transition-colors hover:text-foreground"
+                        title={workspaceGroup.workspacePath}
+                      >
+                        <ChevronRight
+                          className={cn(
+                            'h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform',
+                            !collapsed && 'rotate-90',
+                          )}
+                        />
+                        <span className="min-w-0 flex-1 truncate">{workspaceGroup.label}</span>
+                        <span className="shrink-0 text-2xs font-medium text-muted-foreground/60 group-hover:hidden group-focus-within:hidden">
+                          {workspaceGroup.sessions.length}
+                        </span>
+                      </button>
+                      {!isDefaultWorkspacePath(workspaceGroup.workspacePath) && (
+                        <button
+                          type="button"
+                          data-testid={getWorkspaceGroupRenameTestId(workspaceGroup.workspacePath)}
+                          aria-label={t('chat:sessionList.renameWorkspace', { workspace: workspaceGroup.label })}
+                          title={t('chat:sessionList.renameWorkspace', { workspace: workspaceGroup.label })}
+                          onClick={() => handleStartWorkspaceRename(workspaceGroup.workspacePath, workspaceGroup.label)}
+                          className="mr-2 hidden shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-black/5 hover:text-foreground group-hover:flex group-focus-within:flex dark:hover:bg-white/10"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
                       )}
-                    />
-                    <span className="min-w-0 flex-1 truncate">{workspaceGroup.label}</span>
-                    <span className="shrink-0 text-2xs font-medium text-muted-foreground/60">
-                      {workspaceGroup.sessions.length}
-                    </span>
-                  </button>
+                    </div>
+                  )}
 
                   {!collapsed && (
                     <div className="space-y-0.5">

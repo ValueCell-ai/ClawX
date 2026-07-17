@@ -251,7 +251,11 @@
         "expandAll": "Expand all",
         "loadMore": "Load more",
         "loadMoreForWorkspace": "Load {{count}} more sessions in {{workspace}}",
-        "workspaceToggle": "Toggle workspace {{workspace}}"
+        "workspaceToggle": "Toggle workspace {{workspace}}",
+        "renameWorkspace": "Rename workspace {{workspace}}",
+        "workspaceName": "Workspace name",
+        "saveWorkspaceRename": "Save workspace name",
+        "cancelWorkspaceRename": "Cancel workspace rename"
     },
     "historyBuckets": {
         "today": "Today",

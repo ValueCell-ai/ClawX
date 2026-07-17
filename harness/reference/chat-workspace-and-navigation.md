@@ -18,7 +18,7 @@ OpenClaw's persisted ACP `cwd` is authoritative for a bound session. The global 
 
 The effective workspace is shared by ACP load/prompt, the composer, sidebar grouping, the right-side workspace browser, and tool-derived file activity. A bound session is read-only in the composer and is not moved when the global selection changes. Missing or unreadable bound paths show unavailable/error state instead of silently changing roots.
 
-ClawX persists global and recent workspace selections through Main-owned settings APIs. Renderer session state may mirror the bound path for UI coordination, but must not become a competing persistent session-to-path authority. Targeted `@agent` sends may intentionally use the target agent workspace and should remain an explicit branch.
+ClawX persists global and recent workspace selections plus custom display labels through Main-owned settings APIs. Custom labels are keyed by canonical path and never replace path identity or ACP cwd authority. Renderer session state may mirror the bound path for UI coordination, but must not become a competing persistent session-to-path authority. Targeted `@agent` sends may intentionally use the target agent workspace and should remain an explicit branch.
 
 ## First Send And Titles
 
@@ -36,6 +36,8 @@ Sessions are grouped by workspace, not by date bucket. The default workspace sor
 4. Zero.
 
 Each group initially displays five sessions and loads five more at a time. Collapse and visible-count state are per workspace and in memory. Relative time and ordering use the same timestamp; actions replace the timestamp on hover or keyboard focus.
+
+Non-default workspace headers expose a rename action on hover or keyboard focus. A custom name updates both the sidebar group and the composer workspace chip; the header and chip keep the full filesystem path in their title text.
 
 ## Workspace Browser
 

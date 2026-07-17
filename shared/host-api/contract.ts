@@ -125,6 +125,7 @@ export type SettingsSnapshot = Partial<{
   setupComplete: boolean;
   chatWorkspacePath: string;
   recentWorkspacePaths: string[];
+  workspaceLabels: Record<string, string>;
 }>;
 export type SettingsKey = keyof SettingsSnapshot & string;
 export type SettingsValue = SettingsSnapshot[SettingsKey];

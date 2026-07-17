@@ -54,6 +54,7 @@ export interface AppSettings {
   devModeUnlocked: boolean;
   chatWorkspacePath: string;
   recentWorkspacePaths: string[];
+  workspaceLabels: Record<string, string>;
 
   // Presets
   selectedBundles: string[];
@@ -107,6 +108,7 @@ function createDefaultSettings(): AppSettings {
     devModeUnlocked: false,
     chatWorkspacePath: DEFAULT_WORKSPACE_CWD,
     recentWorkspacePaths: [DEFAULT_WORKSPACE_CWD],
+    workspaceLabels: {},
 
     // Presets
     selectedBundles: ['productivity', 'developer'],

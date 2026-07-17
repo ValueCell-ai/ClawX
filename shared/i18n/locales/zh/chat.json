@@ -251,7 +251,11 @@
         "expandAll": "一键展开",
         "loadMore": "加载更多",
         "loadMoreForWorkspace": "在 {{workspace}} 中再加载 {{count}} 个会话",
-        "workspaceToggle": "展开或折叠工作空间 {{workspace}}"
+        "workspaceToggle": "展开或折叠工作空间 {{workspace}}",
+        "renameWorkspace": "重命名工作空间 {{workspace}}",
+        "workspaceName": "工作空间名称",
+        "saveWorkspaceRename": "保存工作空间名称",
+        "cancelWorkspaceRename": "取消重命名工作空间"
     },
     "historyBuckets": {
         "today": "今天",

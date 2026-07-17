@@ -54,9 +54,14 @@ export function formatWorkspacePath(workspace: string): string {
   return normalized;
 }
 
-export function getWorkspaceDisplayLabel(workspace: string | null | undefined, defaultLabel: string): string {
+export function getWorkspaceDisplayLabel(
+  workspace: string | null | undefined,
+  defaultLabel: string,
+  workspaceLabels: Record<string, string> = {},
+): string {
   const normalized = normalizeWorkspacePath(workspace) ?? DEFAULT_WORKSPACE_CWD;
-  return isDefaultWorkspacePath(normalized) ? defaultLabel : formatWorkspacePath(normalized);
+  if (isDefaultWorkspacePath(normalized)) return defaultLabel;
+  return workspaceLabels[normalized]?.trim() || formatWorkspacePath(normalized);
 }
 
 export function resolveEffectiveWorkspace(input: {
