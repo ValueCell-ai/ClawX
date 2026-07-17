@@ -165,7 +165,7 @@ export function Chat() {
   const acpLoading = useAcpChatSessionStore((s) => s.loading);
   const acpSending = useAcpChatSessionStore((s) => s.sending);
   const imageGenerationPending = useAcpChatSessionStore(
-    (s) => s.pendingImageGenerationTaskIds.length > 0,
+    (s) => Boolean(s.pendingImageGenerationTaskIds?.length),
   );
   const acpCancelling = useAcpChatSessionStore((s) => s.cancelling);
   const acpError = useAcpChatSessionStore((s) => s.error);
