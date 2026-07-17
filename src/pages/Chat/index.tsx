@@ -446,7 +446,7 @@ export function Chat() {
           onStop={() => void cancelAcp()}
           disabled={acpLoading || acpCancelling || !cwd}
           sending={composerBusy}
-          showWorkingIndicator={composerBusy || imageGenerationPending}
+          imageGenerating={imageGenerationPending}
           workspaceLabel={workspaceLabel}
           workspacePath={cwd}
           workspaceReadOnly={effectiveWorkspace.readOnly}

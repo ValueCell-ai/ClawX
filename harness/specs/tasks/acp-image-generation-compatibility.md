@@ -31,7 +31,7 @@ touchedAreas:
   - README.ja-JP.md
 expectedUserBehavior:
   - ACP Chat first shows the image_generate background task start tool result.
-  - The composer keeps showing its thinking indicator after the foreground prompt finishes until the generated image or a failure reply is rendered, including after switching away from and back to the conversation, without locking the composer during background generation.
+  - After the normal thinking state ends, the composer shows a distinct image-generation indicator until the generated image or a failure reply is rendered, including after switching away from and back to the conversation; users may edit a draft while another send is prevented.
   - When OpenClaw later exposes a trusted internal-UI source reply through ACP or Gateway host events, ClawX preserves its exact user-facing text instead of replacing it with a generic caption.
   - Successful replies include the hydrated image preview, while text-only generation failures remain visible as assistant replies.
   - Arbitrary local paths and generic MEDIA: prose without approved image-generation context are not rendered as images.
@@ -62,8 +62,9 @@ acceptance:
   - Internal-UI sourceReply text is authoritative for both successful media replies and text-only failure replies.
   - ClawX hydrates previews through hostApi.media.thumbnails before rendering images.
   - Duplicate completion records do not create duplicate assistant image replies.
-  - Live background image generation keeps the thinking indicator visible until its success or failure completion is projected.
+  - Live background image generation shows its dedicated generating label until its success or failure completion is projected, without changing the existing sending/thinking behavior.
   - Switching conversations preserves each live image-generation pending state and restores its indicator on return.
+  - Completion evidence received while the image conversation is inactive is deferred to that conversation, and a second prompt cannot be sent until the image task settles.
   - Stale preview resolution does not append to a different active session or generation.
 docs:
   required: true

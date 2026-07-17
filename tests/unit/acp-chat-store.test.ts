@@ -1453,6 +1453,10 @@ describe('ACP Chat store', () => {
   });
 
   it('projects trusted image-generation Gateway media into the ACP timeline', async () => {
+    hostApiMock.loadAcpSession
+      .mockResolvedValueOnce({ success: true, generation: 1 })
+      .mockResolvedValueOnce({ success: true, generation: 2 })
+      .mockResolvedValueOnce({ success: true, generation: 3 });
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
     ensureAcpChatSubscriptions();
     await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
@@ -1484,15 +1488,6 @@ describe('ACP Chat store', () => {
       cwd: '/repo-2',
     });
     expect(useAcpChatSessionStore.getState().pendingImageGenerationTaskIds).toEqual([]);
-    await useAcpChatSessionStore.getState().loadSession({
-      sessionKey: 'agent:pi:s1',
-      workspaceRoot: '/repo',
-      cwd: '/repo',
-    });
-    expect(useAcpChatSessionStore.getState()).toMatchObject({
-      sending: false,
-      pendingImageGenerationTaskIds: ['32aa3a12-a05b-4074-af4e-246cc4a9a303'],
-    });
     hostApiMock.mediaThumbnails.mockResolvedValueOnce({
       '/tmp/sky.png': { preview: 'data:image/png;base64,abc123', fileSize: 67 },
     });
@@ -1500,13 +1495,19 @@ describe('ACP Chat store', () => {
     hostEventsMock.gatewayChatMessageListener?.({
       message: {
         sessionKey: 'agent:pi:s1',
-        runId: 'run-1',
+        runId: 'image_generate:32aa3a12-a05b-4074-af4e-246cc4a9a303:ok',
         message: {
           role: 'toolresult',
           toolName: 'message',
           details: { mediaUrls: ['/tmp/sky.png'] },
         },
       },
+    });
+    expect(hostApiMock.mediaThumbnails).not.toHaveBeenCalled();
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1',
+      workspaceRoot: '/repo',
+      cwd: '/repo',
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
 

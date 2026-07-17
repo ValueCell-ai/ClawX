@@ -75,6 +75,10 @@ type LiveSessionSnapshot = {
   pendingImageGenerationTaskIds: string[];
   timeline: AcpTimelineSnapshot;
   deferredImageUpdates: Array<{ key: string; event: AcpSessionUpdateEnvelope }>;
+  deferredImageCompletions: Array<{
+    key: string;
+    evidence: ImageGenerationCompletionEvidence;
+  }>;
 };
 const liveSessionSnapshots = new Map<string, LiveSessionSnapshot>();
 let loadRequestSeq = 0;
@@ -210,6 +214,7 @@ function captureLiveSession(state: AcpChatSessionState): void {
     pendingImageGenerationTaskIds: state.pendingImageGenerationTaskIds,
     timeline: state.timeline,
     deferredImageUpdates: existing?.deferredImageUpdates ?? [],
+    deferredImageCompletions: existing?.deferredImageCompletions ?? [],
   });
 }
 
@@ -337,6 +342,28 @@ function commitDelivery(sessionKey: string, key: string, owner: string): void {
 function imageGenerationTaskIdFromSessionKey(sessionKey: string | undefined): string | null {
   const match = sessionKey?.match(/^image_generate:([0-9a-f-]{36})(?::|$)/i);
   return match?.[1] ?? null;
+}
+
+function deferInactiveImageGenerationCompletion(
+  activeSessionKey: string | null,
+  evidence: ImageGenerationCompletionEvidence,
+): boolean {
+  const taskId = evidence.taskId ?? imageGenerationTaskIdFromSessionKey(evidence.sessionKey);
+  if (!taskId) return false;
+  for (const [sessionKey, snapshot] of liveSessionSnapshots) {
+    if (
+      sessionKey === activeSessionKey
+      || !snapshot.pendingImageGenerationTaskIds.includes(taskId)
+    ) continue;
+    const key = imageGenerationEvidenceKey(evidence);
+    const deferredImageCompletions = snapshot.deferredImageCompletions.filter(
+      (entry) => entry.key !== key,
+    );
+    deferredImageCompletions.push({ key, evidence });
+    liveSessionSnapshots.set(sessionKey, { ...snapshot, deferredImageCompletions });
+    return true;
+  }
+  return false;
 }
 
 function resolveImageGenerationProjectionSession(
@@ -1034,7 +1061,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       const currentBackgroundSnapshot = !result.resumedActivePrompt
         ? liveSessionSnapshots.get(input.sessionKey)
         : undefined;
-      const restorableBackgroundSnapshot = currentBackgroundSnapshot?.generation === generation
+      const restorableBackgroundSnapshot = currentBackgroundSnapshot
         && currentBackgroundSnapshot.pendingImageGenerationTaskIds.length > 0
         ? currentBackgroundSnapshot
         : undefined;
@@ -1067,6 +1094,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
           ...currentResumedSnapshot,
           timeline,
           deferredImageUpdates: [],
+          deferredImageCompletions: [],
         });
       } else {
         liveSessionSnapshots.delete(input.sessionKey);
@@ -1077,6 +1105,9 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
         get().recordImageGenerationStart(event);
         const evidence = extractImageGenerationCompletionFromAcpEnvelope(event);
         if (evidence) void get().projectImageGenerationCompletion(evidence);
+      }
+      for (const { evidence } of restoredSnapshot?.deferredImageCompletions ?? []) {
+        void get().projectImageGenerationCompletion(evidence);
       }
       for (const event of sessionUpdates) {
         get().recordImageGenerationStart(event);
@@ -1688,10 +1719,18 @@ export function ensureAcpChatSubscriptions(): void {
   });
   hostEvents.onGatewayChatMessage((event) => {
     const evidence = extractImageGenerationCompletionFromGatewayChatMessage(event);
-    if (evidence) void useAcpChatSessionStore.getState().projectImageGenerationCompletion(evidence);
+    const state = useAcpChatSessionStore.getState();
+    if (
+      evidence
+      && !deferInactiveImageGenerationCompletion(state.activeSessionKey, evidence)
+    ) void state.projectImageGenerationCompletion(evidence);
   });
   hostEvents.onChatRuntimeEvent((event) => {
     const evidence = extractImageGenerationCompletionFromRuntimeEvent(event);
-    if (evidence) void useAcpChatSessionStore.getState().projectImageGenerationCompletion(evidence);
+    const state = useAcpChatSessionStore.getState();
+    if (
+      evidence
+      && !deferInactiveImageGenerationCompletion(state.activeSessionKey, evidence)
+    ) void state.projectImageGenerationCompletion(evidence);
   });
 }

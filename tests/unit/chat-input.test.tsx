@@ -112,6 +112,8 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Stop';
     case 'composer.thinking':
       return 'Thinking…';
+    case 'imageGeneration.generating':
+      return 'Generating image, please wait…';
     case 'composer.gatewayConnected':
       return 'connected';
     case 'composer.gatewayStarting':
@@ -250,15 +252,34 @@ describe('ChatInput agent targeting', () => {
     expect(screen.queryByTestId('chat-composer-zoomies')).not.toBeInTheDocument();
   });
 
-  it('shows the thinking indicator without locking the composer for background work', () => {
+  it('shows an image-generation indicator without locking the composer for background work', () => {
     render(
       <TooltipProvider>
-        <ChatInput onSend={vi.fn()} showWorkingIndicator />
+        <ChatInput onSend={vi.fn()} imageGenerating />
       </TooltipProvider>,
     );
 
-    expect(screen.getByRole('status', { name: 'Thinking…' })).toBeInTheDocument();
-    expect(screen.getByTestId('chat-composer-input')).not.toBeDisabled();
+    const indicator = screen.getByRole('status', { name: 'Generating image, please wait…' });
+    expect(indicator).toHaveAttribute('data-testid', 'chat-composer-image-generation-indicator');
+    expect(screen.queryByTestId('chat-composer-working-indicator')).not.toBeInTheDocument();
+    const input = screen.getByTestId('chat-composer-input');
+    expect(input).not.toBeDisabled();
+    fireEvent.change(input, { target: { value: 'Queue this after the image' } });
+    expect(screen.getByTestId('chat-composer-send')).toBeDisabled();
+  });
+
+  it('keeps the existing thinking indicator while sending even when image generation has started', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput onSend={vi.fn()} sending imageGenerating />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole('status', { name: 'Thinking…' })).toHaveAttribute(
+      'data-testid',
+      'chat-composer-working-indicator',
+    );
+    expect(screen.queryByTestId('chat-composer-image-generation-indicator')).not.toBeInTheDocument();
   });
 
   it('waits for the provider snapshot before clearing an unavailable model override', async () => {
