@@ -27,6 +27,12 @@ import {
 import { fetchCronSessionHistory } from '@/lib/cron-session-history';
 import { pickStartupSessionFallback } from './chat/session-selection';
 import {
+  applyGatewaySessionsChanged,
+  normalizeGatewaySessionRow,
+  type GatewaySessionsChangedPayload,
+} from './chat/session-catalog';
+import { useSessionAttentionStore, type SessionAttentionTransition } from './session-attention';
+import {
   CHAT_HISTORY_DISK_FALLBACK_TIMEOUT_MS,
   CHAT_HISTORY_STARTUP_FALLBACK_RACE_MS,
   CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS,
@@ -50,6 +56,7 @@ import {
   finishSessionLabelHydration,
   getSessionLabelHydrationCandidate,
   getSessionLabelHydrationVersion,
+  isSessionLabelHydrationVersionCurrent,
 } from './chat/session-label-hydration';
 import {
   DEFAULT_CANONICAL_PREFIX,
@@ -102,6 +109,19 @@ let _historyPollTimer: ReturnType<typeof setTimeout> | null = null;
 let _errorRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
 let _loadSessionsInFlight: Promise<void> | null = null;
 let _lastLoadSessionsAt = 0;
+let _sessionCatalogGeneration = 0;
+let _loadSessionsContext: {
+  generation: number;
+  events: GatewaySessionsChangedPayload[];
+} | null = null;
+let _pendingGenerationSessionEvents: {
+  generation: number;
+  events: GatewaySessionsChangedPayload[];
+} | null = null;
+let _queuedForcedSessionGeneration: number | null = null;
+let _standaloneForcedSessionReloadPending = false;
+const _latestSessionEventTsByKey = new Map<string, number>();
+let _successfulSessionListTsFloor: number | null = null;
 const _historyLoadInFlight = new Map<string, Promise<void>>();
 const _lastHistoryLoadAtBySession = new Map<string, number>();
 const _forceNextHistoryLoadBySession = new Set<string>();
@@ -163,6 +183,56 @@ type PendingOptimisticUserMessage = {
 };
 
 const _pendingOptimisticUserMessages = new Map<string, PendingOptimisticUserMessage[]>();
+
+export function synchronizeGatewaySessionGeneration(generation: number): void {
+  if (!Number.isFinite(generation) || generation <= _sessionCatalogGeneration) return;
+  _sessionCatalogGeneration = generation;
+  _latestSessionEventTsByKey.clear();
+  _successfulSessionListTsFloor = null;
+  _pendingGenerationSessionEvents = { generation, events: [] };
+}
+
+function getSessionsChangedExactKey(payload: GatewaySessionsChangedPayload): string | null {
+  const envelopeKey = typeof payload.sessionKey === 'string' && payload.sessionKey.trim()
+    ? payload.sessionKey.trim()
+    : typeof payload.key === 'string' ? payload.key.trim() : '';
+  const nestedKey = typeof payload.session?.key === 'string' ? payload.session.key.trim() : '';
+  if (envelopeKey && nestedKey && envelopeKey !== nestedKey) return null;
+  return nestedKey || envelopeKey || null;
+}
+
+function getSessionEventUncertainty(events: GatewaySessionsChangedPayload[]): {
+  keys: Set<string>;
+  unscoped: boolean;
+} {
+  const keys = new Set<string>();
+  let unscoped = false;
+  for (const event of events) {
+    if (typeof event.ts === 'number' && Number.isFinite(event.ts)) continue;
+    const eventKey = getSessionsChangedExactKey(event);
+    if (eventKey) {
+      keys.add(eventKey);
+    } else {
+      unscoped = true;
+    }
+  }
+  return { keys, unscoped };
+}
+
+function mergeSessionActivity(
+  current: Record<string, number>,
+  sessions: ChatSession[],
+): Record<string, number> {
+  let next = current;
+  for (const session of sessions) {
+    if (typeof session.updatedAt !== 'number' || !Number.isFinite(session.updatedAt)) continue;
+    const activity = Math.max(current[session.key] ?? 0, session.updatedAt);
+    if (current[session.key] === activity) continue;
+    if (next === current) next = { ...current };
+    next[session.key] = activity;
+  }
+  return next;
+}
 
 function hasExplicitSessionLabel(session: ChatSession | undefined): boolean {
   return typeof session?.label === 'string' && Boolean(session.label.trim());
@@ -265,6 +335,7 @@ async function fetchSessionLabelSummaries(sessionKeys: string[]): Promise<Sessio
 function applySessionLabelSummaries(
   set: ChatSet,
   summaries: SessionLabelSummary[],
+  requestVersions?: ReadonlyMap<string, string>,
 ): void {
   if (summaries.length === 0) return;
   set((state) => {
@@ -276,6 +347,17 @@ function applySessionLabelSummaries(
 
     for (const summary of summaries) {
       const session = nextSessions.find((entry) => entry.key === summary.sessionKey);
+      if (requestVersions) {
+        const requestVersion = requestVersions.get(summary.sessionKey);
+        if (
+          !requestVersion
+          || !session
+          || !isSessionLabelHydrationVersionCurrent(summary.sessionKey, requestVersion)
+          || getSessionLabelHydrationVersion(session, nextActivity) !== requestVersion
+        ) {
+          continue;
+        }
+      }
       if (isHeartbeatOnlySummaryForSession(session, summary)) {
         if (nextSessions === state.sessions) {
           nextSessions = [...state.sessions];
@@ -375,10 +457,19 @@ async function refreshVisibleSessionSummaries(
     : sessions.map((session) => session.key)
   ).filter((key) => key && key.startsWith('agent:'));
   if (targetKeys.length === 0) return;
+  const sessionLastActivity = get().sessionLastActivity;
+  const requestVersions = new Map(
+    sessions
+      .filter((session) => targetKeys.includes(session.key))
+      .map((session) => [
+        session.key,
+        getSessionLabelHydrationVersion(session, sessionLastActivity),
+      ] as const),
+  );
 
   try {
     const summaries = await fetchSessionLabelSummaries(targetKeys);
-    applySessionLabelSummaries(set, summaries);
+    applySessionLabelSummaries(set, summaries, requestVersions);
   } catch (error) {
     console.warn('[session summaries] refresh failed:', error);
   }
@@ -1888,23 +1979,6 @@ function getAgentIdFromSessionKey(sessionKey: string): string {
   return parts[1] || 'main';
 }
 
-function parseSessionUpdatedAtMs(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return toMs(value);
-  }
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Date.parse(value);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
-  return undefined;
-}
-
-function parseSessionStatus(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? value.trim().toLowerCase() : undefined;
-}
-
 function sessionIndicatesIdle(session: ChatSession | undefined): boolean {
   if (!session) return false;
   if (session.hasActiveRun === false) return true;
@@ -2787,34 +2861,57 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   // ── Load sessions via sessions.list ──
 
-  loadSessions: async () => {
+  loadSessions: async (options) => {
+    const requestedGeneration = options?.gatewayGeneration;
+    if (typeof requestedGeneration === 'number' && Number.isFinite(requestedGeneration)) {
+      if (requestedGeneration < _sessionCatalogGeneration) return;
+      synchronizeGatewaySessionGeneration(requestedGeneration);
+    }
+
     const now = Date.now();
     if (_loadSessionsInFlight) {
-      await _loadSessionsInFlight;
+      let observedFlight = _loadSessionsInFlight;
+      if (options?.force) {
+        _queuedForcedSessionGeneration = Math.max(
+          _queuedForcedSessionGeneration ?? _sessionCatalogGeneration,
+          _sessionCatalogGeneration,
+        );
+      }
+      while (observedFlight) {
+        await observedFlight;
+        if (!options?.force) break;
+        const successorFlight = _loadSessionsInFlight;
+        if (!successorFlight || successorFlight === observedFlight) break;
+        observedFlight = successorFlight;
+      }
       return;
     }
-    if (now - _lastLoadSessionsAt < SESSION_LOAD_MIN_INTERVAL_MS) {
+    if (!options?.force && now - _lastLoadSessionsAt < SESSION_LOAD_MIN_INTERVAL_MS) {
       return;
     }
 
-    _loadSessionsInFlight = (async () => {
-      try {
-        const data = await fetchChatSessionsList();
-        if (data) {
+    const runFlight = async (initialGeneration: number): Promise<void> => {
+      let generation = initialGeneration;
+      let internalFollowUpUsed = false;
+      let previousGatewayListKeys: Set<string> | null = null;
+      const suppressedSessionKeys = new Set<string>();
+      while (true) {
+        const pendingEvents = _pendingGenerationSessionEvents?.generation === generation
+          ? _pendingGenerationSessionEvents.events
+          : [];
+        if (_pendingGenerationSessionEvents?.generation === generation) {
+          _pendingGenerationSessionEvents = null;
+        }
+        const context = { generation, events: pendingEvents };
+        _loadSessionsContext = context;
+        let needsFollowUp = false;
+        try {
+          const data = await fetchChatSessionsList();
+          if (data && generation === _sessionCatalogGeneration) {
           const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
-          const normalizedSessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => ({
-            key: String(s.key || ''),
-            label: s.label ? String(s.label) : undefined,
-            displayName: s.displayName ? String(s.displayName) : undefined,
-            derivedTitle: s.derivedTitle ? String(s.derivedTitle) : undefined,
-            lastMessagePreview: s.lastMessagePreview ? String(s.lastMessagePreview) : undefined,
-            thinkingLevel: s.thinkingLevel ? String(s.thinkingLevel) : undefined,
-            model: s.model ? String(s.model) : undefined,
-            updatedAt: parseSessionUpdatedAtMs(s.updatedAt),
-            status: parseSessionStatus(s.status),
-            hasActiveRun: typeof s.hasActiveRun === 'boolean' ? s.hasActiveRun : undefined,
-            channel: s.lastChannel ? String(s.lastChannel) : undefined,
-          }));
+          const normalizedSessions: ChatSession[] = rawSessions.map(
+            (session: Record<string, unknown>) => normalizeGatewaySessionRow(session),
+          );
           const sessions = normalizedSessions.filter((s: ChatSession) => shouldIncludeSessionInSidebarList(s));
 
           const canonicalBySuffix = new Map<string, string>();
@@ -2848,15 +2945,101 @@ export const useChatStore = create<ChatState>((set, get) => ({
             const workspacePath = localWorkspaceBySessionKey.get(session.key);
             return workspacePath ? { ...session, workspacePath } : session;
           });
+          if (previousGatewayListKeys) {
+            const currentKeys = new Set(localSessions.map((session) => session.key));
+            for (const sessionKey of previousGatewayListKeys) {
+              if (!currentKeys.has(sessionKey)) suppressedSessionKeys.add(sessionKey);
+            }
+          }
+          previousGatewayListKeys = new Set(mergedSessions.map((session) => session.key));
           const heartbeatLabelCleanup = getHeartbeatCachedLabelCleanup(mergedSessions, currentSessionLabels);
           for (const sessionKey of heartbeatLabelCleanup.hiddenSessionKeys) {
             clearCachedSessionHistory(sessionKey);
             clearCachedSessionRunState(sessionKey);
             clearSessionLabelHydrationTracking(sessionKey);
           }
-          const visibleMergedSessions = heartbeatLabelCleanup.hiddenSessionKeys.size > 0
+          let visibleMergedSessions = heartbeatLabelCleanup.hiddenSessionKeys.size > 0
             ? mergedSessions.filter((session) => !heartbeatLabelCleanup.hiddenSessionKeys.has(session.key))
             : mergedSessions;
+          if (suppressedSessionKeys.size > 0) {
+            visibleMergedSessions = visibleMergedSessions.filter(
+              (session) => !suppressedSessionKeys.has(session.key),
+            );
+          }
+          const listTs = typeof data.ts === 'number' && Number.isFinite(data.ts)
+            ? data.ts
+            : undefined;
+          const uncertainty = getSessionEventUncertainty(context.events);
+          const toOrderableAttentionRows = (rows: ChatSession[]): ChatSession[] => (
+            uncertainty.keys.size === 0
+              ? rows
+              : rows.filter((session) => !uncertainty.keys.has(session.key))
+          );
+          const attentionTransitions: SessionAttentionTransition[] = [
+            { type: 'rows', rows: toOrderableAttentionRows(visibleMergedSessions) },
+          ];
+          const deletedSessionKeys = new Set<string>();
+          const attentionOrderIsReliable = listTs !== undefined && !uncertainty.unscoped;
+
+          if (listTs === undefined) {
+            needsFollowUp = true;
+          } else {
+            _successfulSessionListTsFloor = Math.max(
+              _successfulSessionListTsFloor ?? -Infinity,
+              listTs,
+            );
+            for (const session of visibleMergedSessions) {
+              _latestSessionEventTsByKey.set(
+                session.key,
+                Math.max(_latestSessionEventTsByKey.get(session.key) ?? -Infinity, listTs),
+              );
+            }
+          }
+
+          for (const event of context.events) {
+            const eventTs = typeof event.ts === 'number' && Number.isFinite(event.ts)
+              ? event.ts
+              : undefined;
+            if (listTs === undefined || eventTs === undefined) {
+              needsFollowUp = true;
+              continue;
+            }
+            if (eventTs < listTs) continue;
+
+            const result = applyGatewaySessionsChanged(
+              visibleMergedSessions,
+              event,
+              _latestSessionEventTsByKey,
+            );
+            if (result.applied) {
+              visibleMergedSessions = result.sessions;
+              if (result.deletedKey) {
+                clearSessionLabelHydrationTracking(result.deletedKey);
+                if (!uncertainty.keys.has(result.deletedKey)) {
+                  attentionTransitions.push({ type: 'delete', sessionKey: result.deletedKey });
+                }
+              } else {
+                attentionTransitions.push({
+                  type: 'rows',
+                  rows: toOrderableAttentionRows(visibleMergedSessions),
+                });
+              }
+            }
+            if (result.deletedKey) deletedSessionKeys.add(result.deletedKey);
+            if (result.requiresReload) needsFollowUp = true;
+          }
+
+          if (attentionOrderIsReliable) {
+            useSessionAttentionStore.getState().reconcileSessionTransitions(attentionTransitions);
+          }
+          const labelCleanupKeys = new Set([
+            ...heartbeatLabelCleanup.labelKeys,
+            ...deletedSessionKeys,
+          ]);
+          const activityCleanupKeys = new Set([
+            ...heartbeatLabelCleanup.hiddenSessionKeys,
+            ...deletedSessionKeys,
+          ]);
           let nextSessionKey = currentSessionKey || DEFAULT_SESSION_KEY;
           let replacedHiddenHeartbeatSession = false;
           const hiddenCurrentSession = findHiddenOpenClawHeartbeatSession(nextSessionKey, normalizedSessions);
@@ -2894,12 +3077,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
             ]
             : visibleMergedSessions;
 
-          const discoveredActivity = Object.fromEntries(
-            sessionsWithCurrent
-              .filter((session) => typeof session.updatedAt === 'number' && Number.isFinite(session.updatedAt))
-              .map((session) => [session.key, session.updatedAt!]),
-          );
-
           const previousSessionKey = currentSessionKey;
           if (previousSessionKey !== nextSessionKey) {
             // Mirror switchSession: stop in-flight history polls and swap cached
@@ -2915,14 +3092,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 sessions: sessionsWithCurrent,
                 sessionLabels: omitRecordKeys(
                   switchPatch.sessionLabels ?? state.sessionLabels,
-                  heartbeatLabelCleanup.labelKeys,
+                  labelCleanupKeys,
                 ),
-                sessionLastActivity: omitRecordKeys(
-                  {
-                    ...(switchPatch.sessionLastActivity ?? state.sessionLastActivity),
-                    ...discoveredActivity,
-                  },
-                  heartbeatLabelCleanup.hiddenSessionKeys,
+                sessionLastActivity: mergeSessionActivity(
+                  omitRecordKeys(
+                    switchPatch.sessionLastActivity ?? state.sessionLastActivity,
+                    activityCleanupKeys,
+                  ),
+                  sessionsWithCurrent,
                 ),
               };
             });
@@ -2931,13 +3108,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
               sessions: sessionsWithCurrent,
               currentSessionKey: nextSessionKey,
               currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
-              sessionLabels: omitRecordKeys(state.sessionLabels, heartbeatLabelCleanup.labelKeys),
-              sessionLastActivity: omitRecordKeys(
-                {
-                  ...state.sessionLastActivity,
-                  ...discoveredActivity,
-                },
-                heartbeatLabelCleanup.hiddenSessionKeys,
+              sessionLabels: omitRecordKeys(state.sessionLabels, labelCleanupKeys),
+              sessionLastActivity: mergeSessionActivity(
+                omitRecordKeys(state.sessionLastActivity, activityCleanupKeys),
+                sessionsWithCurrent,
               ),
             }));
           }
@@ -2973,7 +3147,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
                   const summaries = await fetchSessionLabelSummaries(
                     pending.map(({ session }) => session.key),
                   );
-                  applySessionLabelSummaries(set, summaries);
+                  applySessionLabelSummaries(
+                    set,
+                    summaries,
+                    new Map(pending.map(({ session, version }) => [session.key, version])),
+                  );
                   const summaryBySessionKey = new Map(
                     summaries.map((summary) => [summary.sessionKey, summary]),
                   );
@@ -3007,18 +3185,171 @@ export const useChatStore = create<ChatState>((set, get) => ({
           if (previousSessionKey !== nextSessionKey) {
             void get().loadHistory();
           }
-        }
-      } catch (err) {
-        console.warn('Failed to load sessions:', err);
-      } finally {
-        _lastLoadSessionsAt = Date.now();
-      }
-    })();
+          }
+        } catch (err) {
+          console.warn('Failed to load sessions:', err);
+          if (generation === _sessionCatalogGeneration) {
+            let reducedSessions = get().sessions;
+            const uncertainty = getSessionEventUncertainty(context.events);
+            const toOrderableAttentionRows = (rows: ChatSession[]): ChatSession[] => (
+              uncertainty.keys.size === 0
+                ? rows
+                : rows.filter((session) => !uncertainty.keys.has(session.key))
+            );
+            const attentionTransitions: SessionAttentionTransition[] = [];
+            const deletedSessionKeys = new Set<string>();
+            let appliedAny = false;
+            for (const event of context.events) {
+              if (typeof event.ts !== 'number' || !Number.isFinite(event.ts)) continue;
+              if (_successfulSessionListTsFloor !== null && event.ts < _successfulSessionListTsFloor) continue;
+              const result = applyGatewaySessionsChanged(
+                reducedSessions,
+                event,
+                _latestSessionEventTsByKey,
+              );
+              if (result.applied) {
+                appliedAny = true;
+                reducedSessions = result.sessions;
+                if (result.deletedKey) {
+                  clearSessionLabelHydrationTracking(result.deletedKey);
+                  if (!uncertainty.keys.has(result.deletedKey)) {
+                    attentionTransitions.push({ type: 'delete', sessionKey: result.deletedKey });
+                  }
+                } else {
+                  attentionTransitions.push({
+                    type: 'rows',
+                    rows: toOrderableAttentionRows(reducedSessions),
+                  });
+                }
+              }
+              if (result.deletedKey) deletedSessionKeys.add(result.deletedKey);
+            }
 
+            if (appliedAny) {
+              if (!uncertainty.unscoped && attentionTransitions.length > 0) {
+                useSessionAttentionStore.getState().reconcileSessionTransitions(attentionTransitions);
+              }
+              set((state) => {
+                let sessionLabels = state.sessionLabels;
+                let sessionLastActivity = state.sessionLastActivity;
+                for (const deletedKey of deletedSessionKeys) {
+                  sessionLabels = clearSessionEntryFromMap(sessionLabels, deletedKey);
+                  sessionLastActivity = clearSessionEntryFromMap(sessionLastActivity, deletedKey);
+                }
+                return {
+                  sessions: reducedSessions,
+                  sessionLabels,
+                  sessionLastActivity: mergeSessionActivity(sessionLastActivity, reducedSessions),
+                };
+              });
+              reconcileCurrentSessionIdleFromBackend(set, get, reducedSessions);
+              applySessionBackendLabels(set, reducedSessions);
+            }
+            needsFollowUp = true;
+          }
+        } finally {
+          if (_loadSessionsContext === context) _loadSessionsContext = null;
+          _lastLoadSessionsAt = Date.now();
+        }
+
+        const queuedGeneration = _queuedForcedSessionGeneration;
+        if (queuedGeneration !== null) {
+          _queuedForcedSessionGeneration = null;
+          generation = queuedGeneration;
+          internalFollowUpUsed = false;
+          continue;
+        }
+        if (needsFollowUp && !internalFollowUpUsed) {
+          internalFollowUpUsed = true;
+          generation = _sessionCatalogGeneration;
+          continue;
+        }
+        break;
+      }
+    };
+
+    let activeFlight = runFlight(_sessionCatalogGeneration);
+    _loadSessionsInFlight = activeFlight;
     try {
-      await _loadSessionsInFlight;
+      while (true) {
+        await activeFlight;
+        const queuedGeneration = _queuedForcedSessionGeneration;
+        if (queuedGeneration === null) break;
+        _queuedForcedSessionGeneration = null;
+        if (queuedGeneration < _sessionCatalogGeneration) continue;
+        activeFlight = runFlight(queuedGeneration);
+        _loadSessionsInFlight = activeFlight;
+      }
     } finally {
-      _loadSessionsInFlight = null;
+      if (_loadSessionsInFlight === activeFlight) {
+        _loadSessionsInFlight = null;
+      }
+    }
+  },
+
+  handleSessionsChanged: (payload) => {
+    if (_loadSessionsContext?.generation === _sessionCatalogGeneration) {
+      _loadSessionsContext.events.push(payload);
+      return;
+    }
+    if (_pendingGenerationSessionEvents?.generation === _sessionCatalogGeneration) {
+      _pendingGenerationSessionEvents.events.push(payload);
+      return;
+    }
+
+    const requestForcedReload = (): void => {
+      if (!_standaloneForcedSessionReloadPending) {
+        _standaloneForcedSessionReloadPending = true;
+        void get().loadSessions({
+          force: true,
+          gatewayGeneration: _sessionCatalogGeneration,
+        }).finally(() => {
+          _standaloneForcedSessionReloadPending = false;
+        });
+      }
+    };
+
+    if (typeof payload.ts !== 'number' || !Number.isFinite(payload.ts)) {
+      requestForcedReload();
+      return;
+    }
+    if (_successfulSessionListTsFloor !== null && payload.ts < _successfulSessionListTsFloor) {
+      return;
+    }
+
+    const result = applyGatewaySessionsChanged(
+      get().sessions,
+      payload,
+      _latestSessionEventTsByKey,
+    );
+    if (result.applied) {
+      const eventKey = typeof payload.session?.key === 'string'
+        ? payload.session.key.trim()
+        : typeof payload.sessionKey === 'string'
+          ? payload.sessionKey.trim()
+          : typeof payload.key === 'string' ? payload.key.trim() : '';
+      const affectedRow = result.sessions.find((session) => session.key === eventKey);
+      if (affectedRow) {
+        useSessionAttentionStore.getState().reconcileSessionRows([affectedRow]);
+      }
+      set((state) => ({
+        sessions: result.sessions,
+        sessionLabels: result.deletedKey
+          ? clearSessionEntryFromMap(state.sessionLabels, result.deletedKey)
+          : state.sessionLabels,
+        sessionLastActivity: result.deletedKey
+          ? clearSessionEntryFromMap(state.sessionLastActivity, result.deletedKey)
+          : mergeSessionActivity(state.sessionLastActivity, result.sessions),
+      }));
+      reconcileCurrentSessionIdleFromBackend(set, get, result.sessions);
+      applySessionBackendLabels(set, result.sessions);
+    }
+    if (result.deletedKey) {
+      clearSessionLabelHydrationTracking(result.deletedKey);
+      useSessionAttentionStore.getState().removeSession(result.deletedKey);
+    }
+    if (result.requiresReload) {
+      requestForcedReload();
     }
   },
 
@@ -3063,13 +3394,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // The main process unlinks <id>.jsonl plus any leftover
     // <id>.deleted.jsonl and <id>.jsonl.reset.* siblings, then removes the
     // entry from sessions.json so sessions.list stops surfacing it.
+    let hardDeleteSucceeded = false;
     try {
       const result = await hostApi.sessions.delete(key);
       if (!result.success) {
         console.warn(`[deleteSession] IPC reported failure for ${key}:`, result.error);
+      } else {
+        hardDeleteSucceeded = true;
       }
     } catch (err) {
       console.warn(`[deleteSession] IPC call failed for ${key}:`, err);
+    }
+    if (hardDeleteSucceeded) {
+      useSessionAttentionStore.getState().removeSession(key);
     }
 
     const { currentSessionKey, sessions } = get();

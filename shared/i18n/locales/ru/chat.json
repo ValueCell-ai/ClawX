@@ -256,6 +256,8 @@
         "collapseAll": "Свернуть все",
         "expandAll": "Развернуть все",
         "loadMore": "Загрузить еще",
+        "aiReplying": "ИИ отвечает",
+        "unreadReply": "Непрочитанный ответ",
         "loadMoreForWorkspace": "Загрузить еще {{count}} сессий в {{workspace}}",
         "workspaceToggle": "Переключить рабочую область {{workspace}}",
         "renameWorkspace": "Переименовать рабочую область {{workspace}}",

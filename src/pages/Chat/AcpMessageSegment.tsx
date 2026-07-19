@@ -34,7 +34,11 @@ function AcpMarkdownPart({ text, tone }: { text: string; tone: RenderTone }) {
     <div
       className={cn(
         'prose prose-sm max-w-none break-words',
-        isUser ? 'prose-invert text-white [&_*]:text-inherit' : 'dark:prose-invert text-foreground',
+        isUser
+          ? // User messages skip full markdown rendering, so preserve \n line breaks in paragraphs
+            'prose-invert text-white [&_*]:text-inherit [&_p]:whitespace-pre-wrap'
+          : // AI replies render as full markdown where code blocks/lists handle line breaks natively
+            'dark:prose-invert text-foreground',
       )}
     >
       <ReactMarkdown

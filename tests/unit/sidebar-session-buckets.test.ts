@@ -1,5 +1,5 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getSessionActivityMs } from '@/components/layout/session-buckets';
@@ -14,20 +14,22 @@ import { formatSessionRelativeTime } from '@/lib/relative-time';
 import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
+import { useSessionAttentionStore } from '@/stores/session-attention';
 import { useSettingsStore } from '@/stores/settings';
 
 const initialAgentsState = useAgentsStore.getState();
 const initialChatState = useChatStore.getState();
 const initialGatewayState = useGatewayStore.getState();
+const initialSessionAttentionState = useSessionAttentionStore.getState();
 const initialSettingsState = useSettingsStore.getState();
 const initialElectronPlatform = window.electron?.platform;
 const sidebarSessionKey = 'agent:main:session-sidebar-test';
 
-function renderSidebar() {
+function renderSidebar(initialEntry = '/') {
   return render(
     React.createElement(
       MemoryRouter,
-      { initialEntries: ['/'] },
+      { initialEntries: [initialEntry] },
       React.createElement(Sidebar),
     ),
   );
@@ -48,6 +50,7 @@ function seedSidebarState(renameSession = vi.fn().mockResolvedValue(undefined)) 
   useAgentsStore.setState({
     fetchAgents: vi.fn().mockResolvedValue(undefined),
   });
+  useSessionAttentionStore.setState({ bySessionKey: {}, visibleSessionKey: null });
   useChatStore.setState({
     sessions: [{ key: sidebarSessionKey, displayName: 'Original title', updatedAt: 1 }],
     currentSessionKey: sidebarSessionKey,
@@ -67,7 +70,9 @@ afterEach(() => {
   useAgentsStore.setState(initialAgentsState, true);
   useChatStore.setState(initialChatState, true);
   useGatewayStore.setState(initialGatewayState, true);
+  useSessionAttentionStore.setState(initialSessionAttentionState, true);
   useSettingsStore.setState(initialSettingsState, true);
+  localStorage.removeItem('clawx.session-attention');
 });
 
 describe('sidebar session helpers', () => {
@@ -113,6 +118,162 @@ describe('sidebar session helpers', () => {
     renderSidebar();
 
     expect(screen.getByTestId(`sidebar-session-${sidebarSessionKey}`)).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('renders the relative timestamp for an idle read session', () => {
+    seedSidebarState();
+    useChatStore.setState({
+      sessions: [{
+        key: sidebarSessionKey,
+        displayName: 'Finished reply',
+        status: 'done',
+        hasActiveRun: false,
+        updatedAt: 1,
+      }],
+    });
+
+    renderSidebar();
+
+    expect(screen.getByTestId(`sidebar-session-time-${sidebarSessionKey}`)).toHaveAttribute(
+      'title',
+      new Date(1).toLocaleString(),
+    );
+    expect(screen.queryByTestId(`sidebar-session-busy-${sidebarSessionKey}`)).not.toBeInTheDocument();
+    expect(screen.queryByTestId(`sidebar-session-unread-${sidebarSessionKey}`)).not.toBeInTheDocument();
+  });
+
+  it('renders an accessible busy indicator without a timestamp', () => {
+    seedSidebarState();
+    useChatStore.setState({
+      sessions: [{
+        key: sidebarSessionKey,
+        displayName: 'Active reply',
+        status: 'running',
+        hasActiveRun: true,
+        updatedAt: 1,
+      }],
+    });
+
+    renderSidebar();
+
+    expect(screen.getByTestId(`sidebar-session-busy-${sidebarSessionKey}`)).toHaveAccessibleName('AI is replying');
+    expect(screen.queryByTestId(`sidebar-session-time-${sidebarSessionKey}`)).not.toBeInTheDocument();
+  });
+
+  it('lets terminal status override stale active state and follows attention', () => {
+    seedSidebarState();
+    useChatStore.setState({
+      sessions: [{
+        key: sidebarSessionKey,
+        displayName: 'Completed reply',
+        status: 'done',
+        hasActiveRun: true,
+        updatedAt: 1,
+      }],
+    });
+    useSessionAttentionStore.setState({
+      bySessionKey: { [sidebarSessionKey]: { observedBusy: false, unread: true } },
+    });
+
+    renderSidebar();
+
+    expect(screen.getByTestId(`sidebar-session-unread-${sidebarSessionKey}`)).toHaveAccessibleName('Unread reply');
+    expect(screen.queryByTestId(`sidebar-session-busy-${sidebarSessionKey}`)).not.toBeInTheDocument();
+    expect(screen.queryByTestId(`sidebar-session-time-${sidebarSessionKey}`)).not.toBeInTheDocument();
+
+    act(() => useSessionAttentionStore.getState().markRead(sidebarSessionKey));
+
+    expect(screen.getByTestId(`sidebar-session-time-${sidebarSessionKey}`)).toBeInTheDocument();
+  });
+
+  it('renders an accessible unread indicator without a timestamp for idle sessions', () => {
+    seedSidebarState();
+    useChatStore.setState({
+      sessions: [{
+        key: sidebarSessionKey,
+        displayName: 'Unread reply',
+        hasActiveRun: false,
+        updatedAt: 1,
+      }],
+    });
+    useSessionAttentionStore.setState({
+      bySessionKey: { [sidebarSessionKey]: { observedBusy: false, unread: true } },
+    });
+
+    renderSidebar();
+
+    expect(screen.getByTestId(`sidebar-session-unread-${sidebarSessionKey}`)).toHaveAccessibleName('Unread reply');
+    expect(screen.queryByTestId(`sidebar-session-time-${sidebarSessionKey}`)).not.toBeInTheDocument();
+  });
+
+  it('keeps persisted observed busy visible while live status is unknown', () => {
+    seedSidebarState();
+    useSessionAttentionStore.setState({
+      bySessionKey: { [sidebarSessionKey]: { observedBusy: true, unread: false } },
+    });
+
+    renderSidebar();
+
+    expect(screen.getByTestId(`sidebar-session-busy-${sidebarSessionKey}`)).toHaveAccessibleName('AI is replying');
+    expect(screen.queryByTestId(`sidebar-session-time-${sidebarSessionKey}`)).not.toBeInTheDocument();
+  });
+
+  it('gives busy state precedence over an older unread marker', () => {
+    seedSidebarState();
+    useChatStore.setState({
+      sessions: [{
+        key: sidebarSessionKey,
+        displayName: 'New active reply',
+        hasActiveRun: true,
+        updatedAt: 1,
+      }],
+    });
+    useSessionAttentionStore.setState({
+      bySessionKey: { [sidebarSessionKey]: { observedBusy: true, unread: true } },
+    });
+
+    renderSidebar();
+
+    expect(screen.getByTestId(`sidebar-session-busy-${sidebarSessionKey}`)).toBeInTheDocument();
+    expect(screen.queryByTestId(`sidebar-session-unread-${sidebarSessionKey}`)).not.toBeInTheDocument();
+    expect(screen.queryByTestId(`sidebar-session-time-${sidebarSessionKey}`)).not.toBeInTheDocument();
+  });
+
+  it('marks an unread row read before reloading the selected session and restores its timestamp', () => {
+    const originalMarkRead = useSessionAttentionStore.getState().markRead;
+    const markRead = vi.fn((sessionKey: string) => originalMarkRead(sessionKey));
+    const loadHistory = vi.fn(() => {
+      expect(useSessionAttentionStore.getState().bySessionKey[sidebarSessionKey]?.unread).toBe(false);
+      return Promise.resolve();
+    });
+    seedSidebarState();
+    useChatStore.setState({
+      loadHistory,
+    });
+    useSessionAttentionStore.setState({
+      bySessionKey: { [sidebarSessionKey]: { observedBusy: false, unread: true } },
+      markRead,
+    });
+    renderSidebar();
+
+    fireEvent.click(screen.getByTestId(`sidebar-session-${sidebarSessionKey}`));
+
+    expect(markRead).toHaveBeenCalledWith(sidebarSessionKey);
+    expect(loadHistory).toHaveBeenCalledWith(false);
+    expect(screen.getByTestId(`sidebar-session-time-${sidebarSessionKey}`)).toBeInTheDocument();
+  });
+
+  it('does not treat a retained current session as visible or read on Settings', () => {
+    seedSidebarState();
+    useSessionAttentionStore.setState({
+      bySessionKey: { [sidebarSessionKey]: { observedBusy: false, unread: true } },
+    });
+
+    renderSidebar('/settings');
+
+    expect(screen.getByTestId(`sidebar-session-${sidebarSessionKey}`)).not.toHaveAttribute('aria-current');
+    expect(screen.getByTestId(`sidebar-session-unread-${sidebarSessionKey}`)).toBeInTheDocument();
+    expect(useSessionAttentionStore.getState().bySessionKey[sidebarSessionKey]?.unread).toBe(true);
   });
 
   it('uses the formatted cache for long explicit labels with working-directory markers', () => {

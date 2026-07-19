@@ -27,6 +27,7 @@ import {
   ChevronRight,
   ChevronsUpDown,
   ChevronsDownUp,
+  LoaderCircle,
   Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -34,6 +35,7 @@ import { isGatewayRestarting } from '@/lib/gateway-status';
 import { rendererExtensionRegistry } from '@/extensions/registry';
 import { useSettingsStore } from '@/stores/settings';
 import { useChatStore } from '@/stores/chat';
+import { useSessionAttentionStore } from '@/stores/session-attention';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { groupSessionsByWorkspace } from './session-buckets';
@@ -51,6 +53,7 @@ import logoSvg from '@/assets/logo.svg';
 import { useNewChatAction } from './use-new-chat-action';
 import { isDefaultWorkspacePath } from '@/lib/workspace-context';
 import { useWorkspaceAvailability } from '@/hooks/use-workspace-availability';
+import { projectSessionRunState } from '@/stores/chat/session-status';
 
 interface NavItemProps {
   to: string;
@@ -156,6 +159,8 @@ export function Sidebar() {
   const renameSession = useChatStore((s) => s.renameSession);
   const loadSessions = useChatStore((s) => s.loadSessions);
   const loadHistory = useChatStore((s) => s.loadHistory);
+  const sessionAttentionByKey = useSessionAttentionStore((s) => s.bySessionKey);
+  const markRead = useSessionAttentionStore((s) => s.markRead);
   const handleNewChat = useNewChatAction();
 
   const gatewayStatus = useGatewayStore((s) => s.status);
@@ -700,6 +705,11 @@ export function Sidebar() {
                         const isCurrentSession = isOnChat && currentSessionKey === s.key;
                         const sessionLabel = getSessionLabel(s.key, s.displayName, s.label);
                         const relativeTime = formatSessionRelativeTime(activityMs, nowMs, i18n.language);
+                        const runState = projectSessionRunState(s);
+                        const attention = sessionAttentionByKey[s.key];
+                        const isBusy = runState === 'busy'
+                          || (runState === 'unknown' && attention?.observedBusy === true);
+                        const isUnread = !isBusy && attention?.unread === true;
                         const channelType = s.channel && s.channel !== 'webchat' ? s.channel : null;
                         const channelName = channelType
                           ? (CHANNEL_NAMES[channelType as keyof typeof CHANNEL_NAMES] ?? channelType)
@@ -751,6 +761,7 @@ export function Sidebar() {
                                   data-testid={`sidebar-session-${s.key}`}
                                   aria-current={isCurrentSession ? 'page' : undefined}
                                   onClick={() => {
+                                    markRead(s.key);
                                     if (currentSessionKey === s.key) {
                                       void loadHistory(false);
                                     } else {
@@ -782,14 +793,35 @@ export function Sidebar() {
                                     <span className="truncate">{sessionLabel}</span>
                                   </div>
                                 </button>
-                                {relativeTime && (
+                                {isBusy ? (
                                   <span
+                                    role="status"
+                                    data-testid={`sidebar-session-busy-${s.key}`}
+                                    aria-label={t('chat:sessionList.aiReplying')}
+                                    title={t('chat:sessionList.aiReplying')}
+                                    className="shrink-0 pr-2 text-blue-700 group-hover:hidden group-focus-within:hidden dark:text-blue-400"
+                                  >
+                                    <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
+                                  </span>
+                                ) : isUnread ? (
+                                  <span
+                                    role="status"
+                                    data-testid={`sidebar-session-unread-${s.key}`}
+                                    aria-label={t('chat:sessionList.unreadReply')}
+                                    title={t('chat:sessionList.unreadReply')}
+                                    className="shrink-0 pr-2 group-hover:hidden group-focus-within:hidden"
+                                  >
+                                    <span aria-hidden="true" className="block h-2 w-2 rounded-full bg-blue-500" />
+                                  </span>
+                                ) : relativeTime ? (
+                                  <span
+                                    data-testid={`sidebar-session-time-${s.key}`}
                                     title={new Date(activityMs).toLocaleString()}
                                     className="shrink-0 pr-2 text-2xs font-medium text-muted-foreground/55 group-hover:hidden group-focus-within:hidden"
                                   >
                                     {relativeTime}
                                   </span>
-                                )}
+                                ) : null}
                                 <div className="hidden items-center gap-0.5 pr-1.5 group-hover:flex group-focus-within:flex">
                                   <button
                                     aria-label={t('common:sidebar.renameSession')}

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { useAgentsStore } from '@/stores/agents';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { useChatStore } from '@/stores/chat';
+import { useSessionAttentionStore } from '@/stores/session-attention';
 import { useSettingsStore } from '@/stores/settings';
 import { ensureAcpChatSubscriptions, useAcpChatSessionStore } from '@/stores/acp-chat-session';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
@@ -177,6 +178,7 @@ export function Chat() {
   const loadSessions = useChatStore((s) => s.loadSessions);
   const selectAcpSession = useChatStore((s) => s.selectAcpSession);
   const acknowledgeAcpSessionCreated = useChatStore((s) => s.acknowledgeAcpSessionCreated);
+  const setVisibleSession = useSessionAttentionStore((s) => s.setVisibleSession);
   const chatWorkspacePath = useSettingsStore((s) => s.chatWorkspacePath);
   const workspaceLabels = useSettingsStore((s) => s.workspaceLabels);
   const setChatWorkspacePath = useSettingsStore((s) => s.setChatWorkspacePath);
@@ -234,6 +236,11 @@ export function Chat() {
     currentSessionKey,
     acpSending || acpCancelling,
   );
+
+  useEffect(() => {
+    setVisibleSession(currentSessionKey);
+    return () => setVisibleSession(null);
+  }, [currentSessionKey, setVisibleSession]);
 
   useEffect(() => {
     void fetchAgents().catch(() => undefined);

@@ -256,6 +256,8 @@
         "collapseAll": "Collapse all",
         "expandAll": "Expand all",
         "loadMore": "Load more",
+        "aiReplying": "AI is replying",
+        "unreadReply": "Unread reply",
         "loadMoreForWorkspace": "Load {{count}} more sessions in {{workspace}}",
         "workspaceToggle": "Toggle workspace {{workspace}}",
         "renameWorkspace": "Rename workspace {{workspace}}",

@@ -8,11 +8,18 @@ ownedPaths:
   - src/stores/gateway.ts
   - src/stores/chat.ts
   - src/stores/chat/**
+  - src/stores/session-attention.ts
+  - src/stores/chat/session-status.ts
+  - src/stores/chat/session-catalog.ts
   - electron/main/ipc/**
   - electron/services/**
   - electron/gateway/**
   - electron/preload/**
   - electron/utils/**
+  - tests/unit/session-attention.test.ts
+  - tests/unit/session-status.test.ts
+  - tests/unit/session-catalog.test.ts
+  - tests/e2e/chat-sidebar-session-attention.spec.ts
 requiredProfiles:
   - fast
   - comms
@@ -35,6 +42,7 @@ requiredRules:
   - provider-default-invariant
   - provider-model-metadata-preservation
   - provider-model-selection-authority
+  - sidebar-session-attention-authority
   - comms-regression
   - docs-sync
 forbiddenPatterns:

@@ -24,6 +24,7 @@ type SessionLabelHydrationCandidateOptions = {
 const sessionLabelHydrationInFlight = new Map<string, string>();
 const sessionLabelHydrationHandled = new Map<string, SessionLabelHydrationRecord>();
 const sessionLabelHydrationReadyByRuntime = new Set<string>();
+const sessionLabelHydrationIncarnation = new Map<string, number>();
 
 function normalizeLabelValue(value: string | undefined): string | null {
   if (typeof value !== 'string') return null;
@@ -47,9 +48,15 @@ export function getSessionLabelHydrationVersion(
   session: Pick<ChatSession, 'key' | 'updatedAt' | 'label' | 'displayName' | 'derivedTitle'>,
   sessionLastActivity: Record<string, number>,
 ): string {
+  const incarnation = sessionLabelHydrationIncarnation.get(session.key) ?? 0;
   const activityVersion = session.updatedAt ?? sessionLastActivity[session.key] ?? 'none';
   const backendLabel = normalizeLabelValue(session.label) ?? normalizeLabelValue(session.derivedTitle) ?? '';
-  return `${activityVersion}|${backendLabel}`;
+  return `${incarnation}|${activityVersion}|${backendLabel}`;
+}
+
+export function isSessionLabelHydrationVersionCurrent(sessionKey: string, version: string): boolean {
+  const incarnation = sessionLabelHydrationIncarnation.get(sessionKey) ?? 0;
+  return version.startsWith(`${incarnation}|`);
 }
 
 export function getSessionLabelHydrationCandidate(
@@ -91,6 +98,7 @@ export function getSessionLabelHydrationCandidate(
 }
 
 export function beginSessionLabelHydration(sessionKey: string, version: string): boolean {
+  if (!isSessionLabelHydrationVersionCurrent(sessionKey, version)) return false;
   if (sessionLabelHydrationInFlight.get(sessionKey) === version) return false;
   if (sessionLabelHydrationHandled.get(sessionKey)?.version === version) return false;
   sessionLabelHydrationInFlight.set(sessionKey, version);
@@ -102,9 +110,8 @@ export function finishSessionLabelHydration(
   version: string,
   outcome: SessionLabelHydrationOutcome,
 ): void {
-  if (sessionLabelHydrationInFlight.get(sessionKey) === version) {
-    sessionLabelHydrationInFlight.delete(sessionKey);
-  }
+  if (sessionLabelHydrationInFlight.get(sessionKey) !== version) return;
+  sessionLabelHydrationInFlight.delete(sessionKey);
   sessionLabelHydrationHandled.set(sessionKey, { version, outcome });
 }
 
@@ -115,6 +122,8 @@ export function abandonSessionLabelHydration(sessionKey: string, version: string
 }
 
 export function clearSessionLabelHydrationTracking(sessionKey: string): void {
+  const incarnation = sessionLabelHydrationIncarnation.get(sessionKey) ?? 0;
+  sessionLabelHydrationIncarnation.set(sessionKey, incarnation + 1);
   sessionLabelHydrationInFlight.delete(sessionKey);
   sessionLabelHydrationHandled.delete(sessionKey);
 }

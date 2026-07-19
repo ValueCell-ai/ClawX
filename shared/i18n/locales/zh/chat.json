@@ -256,6 +256,8 @@
         "collapseAll": "一键折叠",
         "expandAll": "一键展开",
         "loadMore": "加载更多",
+        "aiReplying": "AI 正在回复",
+        "unreadReply": "未读回复",
         "loadMoreForWorkspace": "在 {{workspace}} 中再加载 {{count}} 个会话",
         "workspaceToggle": "展开或折叠工作空间 {{workspace}}",
         "renameWorkspace": "重命名工作空间 {{workspace}}",

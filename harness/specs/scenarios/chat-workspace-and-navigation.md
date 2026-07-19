@@ -11,6 +11,8 @@ ownedPaths:
   - src/stores/settings.ts
   - src/stores/chat.ts
   - src/stores/chat/session-actions.ts
+  - src/stores/session-attention.ts
+  - src/stores/chat/session-status.ts
   - src/components/layout/Sidebar.tsx
   - src/components/layout/session-buckets.ts
   - src/components/file-preview/ArtifactPanel.tsx
@@ -23,10 +25,13 @@ ownedPaths:
   - shared/i18n/locales/*/chat.json
   - tests/unit/workspace-context.test.ts
   - tests/unit/session-title.test.ts
+  - tests/unit/session-attention.test.ts
+  - tests/unit/session-status.test.ts
   - tests/unit/session-buckets.test.ts
   - tests/e2e/chat-workspace-context.spec.ts
   - tests/e2e/chat-acp-inline-timeline.spec.ts
   - tests/e2e/chat-question-directory.spec.ts
+  - tests/e2e/chat-sidebar-session-attention.spec.ts
 requiredProfiles:
   - fast
 conditionalProfiles:
@@ -36,6 +41,7 @@ requiredRules:
   - session-workspace-authority
   - renderer-main-boundary
   - ui-i18n-design-tokens
+  - sidebar-session-attention-authority
   - docs-sync
 ---
 

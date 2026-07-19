@@ -16,6 +16,38 @@ import {
 } from '../../harness/src/rules.mjs';
 
 describe('harness specs', () => {
+  it('defines the sidebar session attention harness contract', async () => {
+    const expectedRules = [
+      'renderer-main-boundary',
+      'backend-communication-boundary',
+      'host-events-fallback-policy',
+      'gateway-readiness-policy',
+      'ui-i18n-design-tokens',
+      'sidebar-session-attention-authority',
+      'comms-regression',
+      'docs-sync',
+    ];
+    const [task, rules, scenarios] = await Promise.all([
+      loadSpec('harness/specs/tasks/sidebar-session-attention.md'),
+      loadRuleSpecs(),
+      loadScenarioSpecs(),
+    ]);
+    const ruleIds = new Set(rules.map((rule) => rule.data.id));
+    const affectedScenarioIds = [
+      'gateway-backend-communication',
+      'chat-workspace-and-navigation',
+    ];
+
+    expect(task.data.scenario).toBe('gateway-backend-communication');
+    expect(task.data.requiredProfiles).toEqual(['fast', 'comms', 'e2e']);
+    expect(task.data.requiredRules).toEqual(expectedRules);
+    expect(ruleIds).toContain('sidebar-session-attention-authority');
+    for (const scenarioId of affectedScenarioIds) {
+      const scenario = scenarios.find((candidate) => candidate.data.id === scenarioId);
+      expect(scenario?.data.requiredRules).toContain('sidebar-session-attention-authority');
+    }
+  });
+
   it('defines the ACP media attachment harness contract', async () => {
     const expectedRules = [
       'renderer-main-boundary',
