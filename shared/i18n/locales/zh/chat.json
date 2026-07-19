@@ -81,7 +81,8 @@
         "tabs": {
             "changes": "变更",
             "preview": "预览",
-            "browser": "工作空间"
+            "browser": "工作空间",
+            "webBrowser": "网页浏览器"
         },
         "actions": {
             "back": "返回列表"
@@ -96,6 +97,51 @@
         "preview": {
             "emptyTitle": "尚未选择文件",
             "emptyHint": "请先点击对话里的文件卡片，侧栏会选中该文件后在此预览。"
+        },
+        "webBrowser": {
+            "actions": {
+                "back": "后退",
+                "forward": "前进",
+                "refresh": "刷新",
+                "more": "更多",
+                "forceRefresh": "强制刷新",
+                "clearCookies": "清除 Cookie",
+                "clearSiteData": "清除网站数据",
+                "openExternal": "在系统浏览器中打开"
+            },
+            "address": {
+                "label": "网页地址",
+                "placeholder": "输入网址"
+            },
+            "errors": {
+                "empty": "请输入网页地址。",
+                "absolutePath": "本地路径必须使用 file:/// 网址。",
+                "invalidUrl": "网页地址无效。",
+                "unsupportedProtocol": "不支持此网址协议。",
+                "reservedUrl": "无法打开此内部网址。",
+                "loadFailed": "网页加载失败。",
+                "clearCookiesFailed": "清除 Cookie 失败。",
+                "clearSiteDataFailed": "清除网站数据失败。",
+                "openExternalFailed": "无法在系统浏览器中打开网页。"
+            },
+            "success": {
+                "cookiesCleared": "Cookie 已清除。",
+                "siteDataCleared": "网站数据已清除。"
+            },
+            "crash": {
+                "title": "网页浏览器已停止运行",
+                "message": "浏览器页面意外关闭，浏览历史和页面状态已丢失。",
+                "recover": "恢复浏览器"
+            },
+            "permissionDialog": {
+                "title": "摄像头和麦克风权限",
+                "message": "{{origin}} 想要使用你的{{capability}}。",
+                "camera": "摄像头",
+                "microphone": "麦克风",
+                "cameraAndMicrophone": "摄像头和麦克风",
+                "allow": "允许",
+                "deny": "拒绝"
+            }
         }
     },
     "filePreview": {

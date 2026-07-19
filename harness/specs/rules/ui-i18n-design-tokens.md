@@ -6,6 +6,7 @@ appliesTo:
   - acp-chat-experience
   - acp-file-activity
   - gateway-backend-communication
+  - chat-workspace-and-navigation
 ---
 
 Route every new user-visible string through `react-i18next` with matching English, Chinese, Japanese, and Russian locale coverage. Do not hardcode display text in pages or components.
@@ -15,3 +16,5 @@ Use the semantic tokens and substitutions documented in `src/styles/globals.css`
 Interactive rows use semantic controls, keyboard activation, accessible names, visible focus styling, and disabled semantics where applicable. Attachment cards may show the decoded local path or normalized remote URL represented by explicit ACP resource or approved `MEDIA:` evidence; paths truncate visually and remain available in the title. Unavailable attachments remain basename-only, and unrelated UI or diagnostics must not expose sensitive absolute host paths.
 
 Eligible attachment split cards use separate sibling semantic controls for the primary preview action and secondary Open with action; buttons must not be nested and secondary interactions must not activate preview. The dropdown must support keyboard navigation, activation, dismissal, and focus restoration. Open-with, loading, platform reveal, and explicit action-failure labels require matching English, Chinese, Japanese, and Russian chat locale entries. Application rows use bounded native icons when available and a generic application icon for every missing, malformed, oversized, unreadable, or failed icon.
+
+Every Web Browser icon-only control must have a localized accessible name and matching tooltip in English, Chinese, Japanese, and Russian. Browser navigation and menu controls use semantic focus and native disabled behavior, the hidden browser host is non-interactive and absent from the accessibility tree, and the combined title/address control keeps its full URL available to assistive technology.

@@ -20,6 +20,10 @@ ownedPaths:
   - tests/unit/session-status.test.ts
   - tests/unit/session-catalog.test.ts
   - tests/e2e/chat-sidebar-session-attention.spec.ts
+  - shared/web-browser.ts
+  - electron/main/web-browser-policy.ts
+  - electron/main/web-browser-session.ts
+  - electron/services/web-browser-api.ts
 requiredProfiles:
   - fast
   - comms
@@ -68,3 +72,5 @@ Renderer code must not own transport selection, direct IPC channels, direct Gate
 Renderer code must not create direct Gateway WebSocket connections. Gateway frame diagnostics must be emitted by Main-process Gateway logging.
 
 Channel/plugin migration behavior is also part of this scenario when ClawX rewrites OpenClaw config before Gateway launch. Upgrades must preserve single-owner channel registration for migrated plugin-backed channels such as Feishu/Lark.
+
+The Web Browser privileged bridge is also Main-owned: Renderer address and recovery navigation, data clearing, and external opening flow through the typed Host API. The artifact tab value `web-browser` identifies this Electron guest and remains distinct from the Workspace file browser value `browser`; UI ownership stays in `chat-workspace-and-navigation`.

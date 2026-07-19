@@ -8,8 +8,9 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { RawMessage } from '../../../shared/chat/types';
 
-type LaunchElectronOptions = {
+export type LaunchElectronOptions = {
   skipSetup?: boolean;
+  additionalArgs?: string[];
 };
 
 type IpcMockConfig = {
@@ -243,6 +244,9 @@ async function launchClawXElectron(
   userDataDir: string,
   options: LaunchElectronOptions = {},
 ): Promise<ElectronApplication> {
+  if (options.additionalArgs?.some((arg) => arg.startsWith('--use-fake-ui-for-media-stream'))) {
+    throw new Error('Electron E2E must not bypass application media permission prompts');
+  }
   await seedE2eSettings(userDataDir);
   const hostApiPort = await allocatePort();
   const electronEnv = process.platform === 'linux'
@@ -253,7 +257,7 @@ async function launchClawXElectron(
     : {};
   return await electron.launch({
     executablePath: electronBinaryPath,
-    args: ['--lang=en-US', electronEntry],
+    args: ['--lang=en-US', ...(options.additionalArgs ?? []), electronEntry],
     env: {
       ...process.env,
       ...electronEnv,

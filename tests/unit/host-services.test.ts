@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1113,5 +1113,51 @@ describe('host services', () => {
       ok: false,
       error: 'operationFailed',
     });
+  });
+
+  it('registers exactly one typed web browser service without legacy IPC', () => {
+    const source = readFileSync(join(process.cwd(), 'electron/main/ipc-handlers.ts'), 'utf8');
+
+    expect(source.match(/\bwebBrowser\s*:/g)).toHaveLength(1);
+    expect(source).toContain('webBrowser: createWebBrowserApi({ browserSession, registry })');
+    expect(source).not.toMatch(/['"]webBrowser:/);
+  });
+
+  it('configures browser policy and typed handlers before the initial renderer load', () => {
+    const source = readFileSync(join(process.cwd(), 'electron/main/index.ts'), 'utf8');
+    const createWindowSource = source.slice(
+      source.indexOf('function createWindow('),
+      source.indexOf('function loadMainWindow('),
+    );
+    const configureIndex = source.indexOf('configureWebBrowserSession({');
+    const firstInitializationAwaitIndex = source.indexOf(
+      'await initTelemetry();',
+      source.indexOf('async function initialize()'),
+    );
+    const createMainWindowIndex = source.indexOf('const window = createMainWindow();');
+    const registerHandlersIndex = source.indexOf('registerIpcHandlers(');
+    const loadRendererIndex = source.indexOf('loadMainWindow(window);');
+    const appReadySource = source.slice(
+      source.indexOf('app.whenReady().then('),
+      source.indexOf("app.on('window-all-closed'"),
+    );
+    const initializeCompleteIndex = appReadySource.indexOf('await initialize();');
+    const activateHandlerIndex = appReadySource.indexOf("app.on('activate'");
+
+    expect(source.match(/new WebBrowserGuestRegistry\(\)/g)).toHaveLength(1);
+    expect(configureIndex).toBeGreaterThan(-1);
+    expect(configureIndex).toBeLessThan(firstInitializationAwaitIndex);
+    expect(createMainWindowIndex).toBeGreaterThan(configureIndex);
+    expect(registerHandlersIndex).toBeGreaterThan(createMainWindowIndex);
+    expect(loadRendererIndex).toBeGreaterThan(registerHandlersIndex);
+    expect(initializeCompleteIndex).toBeGreaterThan(-1);
+    expect(activateHandlerIndex).toBeGreaterThan(initializeCompleteIndex);
+    expect(appReadySource).not.toContain('void initialize()');
+    expect(createWindowSource.indexOf('new BrowserWindow(')).toBeLessThan(
+      createWindowSource.indexOf('installWebBrowserGuestPolicy('),
+    );
+    expect(createWindowSource).not.toContain('.loadURL(');
+    expect(createWindowSource).not.toContain('.loadFile(');
+    expect(source).toContain('getMainWindow: () => mainWindow');
   });
 });

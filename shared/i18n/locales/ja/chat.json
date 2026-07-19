@@ -81,7 +81,8 @@
         "tabs": {
             "changes": "変更",
             "preview": "プレビュー",
-            "browser": "ワークスペース"
+            "browser": "ワークスペース",
+            "webBrowser": "ウェブブラウザ"
         },
         "actions": {
             "back": "一覧に戻る"
@@ -96,6 +97,51 @@
         "preview": {
             "emptyTitle": "ファイルが選択されていません",
             "emptyHint": "まず会話内のファイルカードをクリックしてファイルを選択すると、ここにプレビューが表示されます。"
+        },
+        "webBrowser": {
+            "actions": {
+                "back": "戻る",
+                "forward": "進む",
+                "refresh": "再読み込み",
+                "more": "その他",
+                "forceRefresh": "強制再読み込み",
+                "clearCookies": "Cookie を消去",
+                "clearSiteData": "サイトデータを消去",
+                "openExternal": "システムブラウザで開く"
+            },
+            "address": {
+                "label": "ウェブアドレス",
+                "placeholder": "URL を入力"
+            },
+            "errors": {
+                "empty": "ウェブアドレスを入力してください。",
+                "absolutePath": "ローカルパスには file:/// URL を使用してください。",
+                "invalidUrl": "ウェブアドレスが無効です。",
+                "unsupportedProtocol": "この URL プロトコルはサポートされていません。",
+                "reservedUrl": "この内部 URL は開けません。",
+                "loadFailed": "ページを読み込めませんでした。",
+                "clearCookiesFailed": "Cookie を消去できませんでした。",
+                "clearSiteDataFailed": "サイトデータを消去できませんでした。",
+                "openExternalFailed": "システムブラウザでページを開けませんでした。"
+            },
+            "success": {
+                "cookiesCleared": "Cookie を消去しました。",
+                "siteDataCleared": "サイトデータを消去しました。"
+            },
+            "crash": {
+                "title": "ウェブブラウザが停止しました",
+                "message": "ブラウザページが予期せず終了しました。閲覧履歴とページの状態は失われました。",
+                "recover": "ブラウザを復旧"
+            },
+            "permissionDialog": {
+                "title": "カメラとマイクの許可",
+                "message": "{{origin}} が{{capability}}を使用しようとしています。",
+                "camera": "カメラ",
+                "microphone": "マイク",
+                "cameraAndMicrophone": "カメラとマイク",
+                "allow": "許可",
+                "deny": "拒否"
+            }
         }
     },
     "filePreview": {

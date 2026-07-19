@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -45,6 +47,64 @@ describe('harness specs', () => {
     for (const scenarioId of affectedScenarioIds) {
       const scenario = scenarios.find((candidate) => candidate.data.id === scenarioId);
       expect(scenario?.data.requiredRules).toContain('sidebar-session-attention-authority');
+    }
+  });
+
+  it('defines the Web Browser harness contract', async () => {
+    const expectedRules = [
+      'renderer-main-boundary',
+      'backend-communication-boundary',
+      'api-client-transport-policy',
+      'host-api-fallback-policy',
+      'ui-i18n-design-tokens',
+      'web-browser-security-and-lifecycle',
+      'comms-regression',
+      'docs-sync',
+    ];
+    const [task, rules, scenarios, browserReference] = await Promise.all([
+      loadSpec('harness/specs/tasks/web-browser.md'),
+      loadRuleSpecs(),
+      loadScenarioSpecs(),
+      readFile('harness/reference/web-browser.md', 'utf8'),
+    ]);
+    const ruleIds = new Set(rules.map((rule) => rule.data.id));
+    const workspaceScenario = scenarios.find(
+      (scenario) => scenario.data.id === 'chat-workspace-and-navigation',
+    );
+
+    expect(task.data).toMatchObject({
+      id: 'web-browser',
+      scenario: 'gateway-backend-communication',
+      taskType: 'runtime-bridge',
+      requiredProfiles: ['fast', 'comms', 'e2e'],
+      requiredRules: expectedRules,
+      docs: { required: true },
+    });
+    expect(expectedRules.filter((ruleId) => !ruleIds.has(ruleId))).toEqual([]);
+    expect(workspaceScenario?.data.ownedPaths).toEqual(expect.arrayContaining([
+      'src/components/web-browser/**',
+      'tests/e2e/web-browser-navigation.spec.ts',
+      'tests/e2e/web-browser-lifecycle.spec.ts',
+      'tests/e2e/web-browser-policy.spec.ts',
+    ]));
+    expect(workspaceScenario?.body).toContain('harness/reference/web-browser.md');
+
+    for (const contractAnchor of [
+      'persist:clawx-web-browser',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.7559.236 Electron/40.8.4 Safari/537.36',
+      '`http:`',
+      '`https:`',
+      '`file:///`',
+      'single registered guest',
+      '| Permission | Check path | Request path | Persistence |',
+      'Clear Cookies',
+      'Clear Site Data',
+      '`window.opener`',
+      'Electron default download',
+      'system proxy',
+      '## Validation Anchors',
+    ]) {
+      expect(browserReference).toContain(contractAnchor);
     }
   });
 

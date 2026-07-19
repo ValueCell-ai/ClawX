@@ -18,6 +18,9 @@ ownedPaths:
   - src/components/file-preview/ArtifactPanel.tsx
   - src/components/file-preview/WorkspaceBrowserBody.tsx
   - src/pages/Chat/index.tsx
+  - src/components/web-browser/**
+  - src/stores/artifact-panel.ts
+  - src/components/layout/MainLayout.tsx
   - src/pages/Chat/ChatInput.tsx
   - src/pages/Chat/ChatToolbar.tsx
   - shared/host-api/contract.ts
@@ -32,6 +35,9 @@ ownedPaths:
   - tests/e2e/chat-acp-inline-timeline.spec.ts
   - tests/e2e/chat-question-directory.spec.ts
   - tests/e2e/chat-sidebar-session-attention.spec.ts
+  - tests/e2e/web-browser-navigation.spec.ts
+  - tests/e2e/web-browser-lifecycle.spec.ts
+  - tests/e2e/web-browser-policy.spec.ts
 requiredProfiles:
   - fast
 conditionalProfiles:
@@ -45,6 +51,6 @@ requiredRules:
   - docs-sync
 ---
 
-This scenario covers selecting a workspace for a new Chat, validating its availability before ACP load, recovering from deleted global workspace paths, marking unavailable non-default sidebar groups, permanently deleting their sessions after confirmation, binding workspaces through OpenClaw ACP cwd, targeting another agent without losing that agent's workspace or first prompt, restoring historical workspace context, renaming imported workspace display labels, navigating workspace-grouped sessions, browsing the effective workspace, and jumping among user questions.
+This scenario covers selecting a workspace for a new Chat, validating its availability before ACP load, recovering from deleted global workspace paths, marking unavailable non-default sidebar groups, permanently deleting their sessions after confirmation, binding workspaces through OpenClaw ACP cwd, targeting another agent without losing that agent's workspace or first prompt, restoring historical workspace context, renaming imported workspace display labels, navigating workspace-grouped sessions, browsing the effective workspace, using the distinct persistent Web Browser artifact tab, and jumping among user questions.
 
-The current resolution, ordering, title normalization, and browser behavior are documented in `harness/reference/chat-workspace-and-navigation.md`.
+Workspace file browsing keeps the store value `browser`; the Electron Web Browser uses `web-browser`. Current workspace resolution, ordering, title normalization, and file-browser behavior are documented in `harness/reference/chat-workspace-and-navigation.md`; the Electron guest contract is documented in `harness/reference/web-browser.md`.

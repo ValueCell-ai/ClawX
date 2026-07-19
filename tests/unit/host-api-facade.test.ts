@@ -107,6 +107,35 @@ describe('hostApi facade', () => {
     }));
   });
 
+  it('routes web browser operations through hostInvoke', async () => {
+    hostInvoke.mockResolvedValue({ id: 'req', ok: true, data: undefined });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await hostApi.webBrowser.navigate('https://example.com/');
+    await hostApi.webBrowser.clearCookies();
+    await hostApi.webBrowser.clearSiteData();
+    await hostApi.webBrowser.openExternal();
+
+    expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      module: 'webBrowser',
+      action: 'navigate',
+      payload: { url: 'https://example.com/' },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      module: 'webBrowser',
+      action: 'clearCookies',
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      module: 'webBrowser',
+      action: 'clearSiteData',
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(4, expect.objectContaining({
+      module: 'webBrowser',
+      action: 'openExternal',
+    }));
+    expect(hostInvoke.mock.calls.slice(1).every(([request]) => !('payload' in request))).toBe(true);
+  });
+
   it('passes log file path and tail lines through hostInvoke', async () => {
     hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { content: 'tail' } });
     const { hostApi } = await import('@/lib/host-api');
@@ -512,6 +541,7 @@ describe('hostApi facade', () => {
   });
 
   it('keeps production main, preload, renderer, and shared imports on their side of the boundary', () => {
+    const webBrowserTypeBridge = readFileSync(join(process.cwd(), 'src/types/web-browser.ts'), 'utf8');
     const collectFiles = (root: string): string[] => {
       const files: string[] = [];
       const collect = (dir: string) => {
@@ -548,7 +578,7 @@ describe('hostApi facade', () => {
       /\bfrom\s+['"][^'"]*(?:electron\/|dist-electron|preload|ipc-handlers|host-contract)/g,
       /\bimport\(\s*['"][^'"]*(?:@electron\/|electron\/|dist-electron|preload|ipc-handlers|host-contract)/g,
       /\brequire\(\s*['"][^'"]*(?:@electron\/|electron\/|dist-electron|preload|ipc-handlers|host-contract)/g,
-    ]);
+    ]).filter((violation) => violation !== "src/types/web-browser.ts: from 'electron'");
     const sharedToAppLayer = findViolations('shared', [
       /\bfrom\s+['"]@\//g,
       /\bfrom\s+['"]@electron\//g,
@@ -557,6 +587,7 @@ describe('hostApi facade', () => {
       /\brequire\(\s*['"][^'"]*(?:@\/|@electron\/|src\/|electron\/|dist-electron|preload|ipc-handlers|host-contract)/g,
     ]);
 
+    expect(webBrowserTypeBridge).toContain("import type { WebviewTag } from 'electron';");
     expect({
       electronToRenderer,
       rendererToElectron,

@@ -1,6 +1,6 @@
 # Chat Workspace And Navigation
 
-Status: current workspace reference, reviewed 2026-07-20.
+Status: current workspace reference, reviewed 2026-07-21.
 
 Related scenario: `chat-workspace-and-navigation`
 
@@ -53,11 +53,13 @@ The versioned attention store persists only exact-key `observedBusy` and `unread
 
 The future migration is recorded in `docs/specs/2026-07-20-sidebar-session-attention-design.md`: once the bundled Gateway provides durable `unread` and `sessions.patch`, Gateway unread state should replace the local transition store and read acknowledgement should call `sessions.patch({ unread: false })`.
 
-## Workspace Browser
+## Workspace Browser And Web Browser
 
-The right panel tabs remain Workspace, Preview, and Changes. The Workspace tree uses `react-arborist`, includes hidden files, uses relative path as node identity, and remains read-only: no edit, drag/drop, or multi-select. Agent and path tags replace the older `Workspace - agent` header. Home is compacted to `~`, the path's final segment remains visible, and the full value is available as a title.
+The right panel tabs are Workspace, Preview, Changes, and Web Browser. Workspace keeps the existing store tab value `browser`; the unrelated Electron Web Browser uses `web-browser`. The Workspace tree uses `react-arborist`, includes hidden files, uses relative path as node identity, and remains read-only: no edit, drag/drop, or multi-select. Agent and path tags replace the older `Workspace - agent` header. Home is compacted to `~`, the path's final segment remains visible, and the full value is available as a title.
 
 File icons come only from trusted bundled assets. Selecting a file preserves the existing preview behavior and backend boundary.
+
+The Web Browser is a fixed fourth tab with one persistent Electron guest. `ArtifactTab` keeps `browser` and `web-browser` distinct; `WebBrowserAnchor` marks the panel body while the route-stable `WebBrowserHost` mounted by `MainLayout` owns the live guest. The stable panel selectors are `artifact-panel-tabs`, `artifact-panel-tab-web-browser`, and `web-browser-anchor`; the global surface selectors are `web-browser-host` and `web-browser-webview`. Its session, security, lifecycle, permission, popup, download, proxy, and data-clearing contract is documented separately in `harness/reference/web-browser.md`.
 
 ## Question Navigation
 
@@ -65,6 +67,6 @@ The Chat question directory belongs to the active ACP timeline rather than works
 
 ## Validation Anchors
 
-Key tests include `tests/unit/workspace-context.test.ts`, `tests/unit/session-title.test.ts`, `tests/unit/session-buckets.test.ts`, `tests/unit/sidebar-session-buckets.test.ts`, `tests/unit/workspace-browser-body.test.tsx`, `tests/unit/chat-acp-page.test.tsx`, `tests/e2e/chat-workspace-context.spec.ts`, `tests/e2e/chat-acp-inline-timeline.spec.ts`, `tests/e2e/chat-question-directory.spec.ts`, and `tests/e2e/chat-sidebar-session-attention.spec.ts`.
+Key tests include `tests/unit/workspace-context.test.ts`, `tests/unit/session-title.test.ts`, `tests/unit/session-buckets.test.ts`, `tests/unit/sidebar-session-buckets.test.ts`, `tests/unit/workspace-browser-body.test.tsx`, `tests/unit/chat-acp-page.test.tsx`, `tests/unit/artifact-panel-store.test.ts`, `tests/unit/artifact-panel.test.tsx`, `tests/unit/main-layout.test.tsx`, `tests/e2e/chat-workspace-context.spec.ts`, `tests/e2e/chat-acp-inline-timeline.spec.ts`, `tests/e2e/chat-question-directory.spec.ts`, `tests/e2e/chat-sidebar-session-attention.spec.ts`, and the three final Web Browser E2E specs linked from `harness/reference/web-browser.md`.
 
 This reference consolidates the former workspace sidebar, chat workspace context, sidebar workspace UI, and ACP working-directory title designs. The later flat activity-sorted sidebar supersedes the earlier recency buckets.

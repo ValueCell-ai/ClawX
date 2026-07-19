@@ -81,7 +81,8 @@
         "tabs": {
             "changes": "Изменения",
             "preview": "Просмотр",
-            "browser": "Рабочая область"
+            "browser": "Рабочая область",
+            "webBrowser": "Веб-браузер"
         },
         "actions": {
             "back": "Назад к списку"
@@ -96,6 +97,51 @@
         "preview": {
             "emptyTitle": "Файл не выбран",
             "emptyHint": "Сначала откройте файл через карточку в чате — выбранный файл появится в этом предпросмотре."
+        },
+        "webBrowser": {
+            "actions": {
+                "back": "Назад",
+                "forward": "Вперёд",
+                "refresh": "Обновить",
+                "more": "Ещё",
+                "forceRefresh": "Обновить принудительно",
+                "clearCookies": "Очистить файлы cookie",
+                "clearSiteData": "Очистить данные сайта",
+                "openExternal": "Открыть в системном браузере"
+            },
+            "address": {
+                "label": "Веб-адрес",
+                "placeholder": "Введите URL"
+            },
+            "errors": {
+                "empty": "Введите веб-адрес.",
+                "absolutePath": "Для локального пути используйте URL вида file:///.",
+                "invalidUrl": "Недопустимый веб-адрес.",
+                "unsupportedProtocol": "Этот протокол URL не поддерживается.",
+                "reservedUrl": "Этот внутренний URL нельзя открыть.",
+                "loadFailed": "Не удалось загрузить страницу.",
+                "clearCookiesFailed": "Не удалось очистить файлы cookie.",
+                "clearSiteDataFailed": "Не удалось очистить данные сайта.",
+                "openExternalFailed": "Не удалось открыть страницу в системном браузере."
+            },
+            "success": {
+                "cookiesCleared": "Файлы cookie очищены.",
+                "siteDataCleared": "Данные сайта очищены."
+            },
+            "crash": {
+                "title": "Веб-браузер остановлен",
+                "message": "Страница браузера неожиданно закрылась. История навигации и состояние страницы потеряны.",
+                "recover": "Восстановить браузер"
+            },
+            "permissionDialog": {
+                "title": "Доступ к камере и микрофону",
+                "message": "{{origin}} запрашивает доступ к устройству: {{capability}}.",
+                "camera": "камера",
+                "microphone": "микрофон",
+                "cameraAndMicrophone": "камера и микрофон",
+                "allow": "Разрешить",
+                "deny": "Запретить"
+            }
         }
     },
     "filePreview": {
