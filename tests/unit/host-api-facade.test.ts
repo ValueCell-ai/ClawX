@@ -311,12 +311,18 @@ describe('hostApi facade', () => {
     await hostApi.files.readAttachmentText(ref);
     await hostApi.files.readAttachmentBinary({ ref, maxBytes: 2048 });
     await hostApi.files.openAttachment(ref);
+    await hostApi.files.listAttachmentOpenHandlers(ref);
+    await hostApi.files.openAttachmentWith({ ref, handlerId: 'com.apple.Preview' });
+    await hostApi.files.revealAttachment(ref);
 
     const actions = [
       ['resolveAttachment', resolvePayload],
       ['readAttachmentText', ref],
       ['readAttachmentBinary', { ref, maxBytes: 2048 }],
       ['openAttachment', ref],
+      ['listAttachmentOpenHandlers', ref],
+      ['openAttachmentWith', { ref, handlerId: 'com.apple.Preview' }],
+      ['revealAttachment', ref],
     ];
     actions.forEach(([action, payload], index) => {
       expect(hostInvoke).toHaveBeenNthCalledWith(index + 1, expect.objectContaining({

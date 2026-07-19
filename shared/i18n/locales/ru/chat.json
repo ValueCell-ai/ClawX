@@ -66,7 +66,15 @@
             "unavailable": "Вложение недоступно",
             "open": "Открыть {{name}}",
             "preview": "Просмотреть {{name}}",
-            "openFailed": "Не удалось открыть вложение"
+            "openFailed": "Не удалось открыть вложение",
+            "openWith": "Открыть с помощью",
+            "openWithFile": "Открыть {{name}} с помощью",
+            "searchingApplications": "Поиск приложений",
+            "showInFinder": "Показать в Finder",
+            "showInExplorer": "Показать в Проводнике",
+            "showInFileManager": "Показать в файловом менеджере",
+            "openWithFailed": "Не удалось открыть вложение в выбранном приложении",
+            "revealFailed": "Не удалось показать вложение в папке"
         }
     },
     "artifactPanel": {

@@ -18,6 +18,7 @@ import type {
   MediaThumbnailEntry,
   OpenClawDoctorMode,
   OpenClawDoctorResult,
+  OpenAttachmentWithPayload,
   ProviderAccount,
   ProviderConfig,
   ProviderOAuthRequestPayload,
@@ -50,6 +51,8 @@ import { invokeHost } from './host-api-client';
 export type {
   AttachmentAccessError,
   AttachmentFileRef,
+  AttachmentOpenHandler,
+  AttachmentOpenHandlersResult,
   AttachmentRemoteRef,
   AttachmentReadError,
   AttachmentSourceRef,
@@ -310,6 +313,13 @@ export const hostApi = {
       invokeHost('files', 'readAttachmentBinary', input)
     ),
     openAttachment: (ref: AttachmentSourceRef) => invokeHost('files', 'openAttachment', ref),
+    listAttachmentOpenHandlers: (ref: AttachmentFileRef) => (
+      invokeHost('files', 'listAttachmentOpenHandlers', ref)
+    ),
+    openAttachmentWith: (input: OpenAttachmentWithPayload) => (
+      invokeHost('files', 'openAttachmentWith', input)
+    ),
+    revealAttachment: (ref: AttachmentFileRef) => invokeHost('files', 'revealAttachment', ref),
   },
   media: {
     thumbnails: (input: { paths: MediaThumbnailEntry[] }) => invokeHost('media', 'thumbnails', input),

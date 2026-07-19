@@ -59,6 +59,7 @@ import { createAgentsApi } from '../services/agents-api';
 import { createChatApi } from '../services/chat-api';
 import { AcpSessionAccessRegistry } from '../services/acp-session-access-registry';
 import { createAttachmentAccess, StagedAttachmentRegistry } from '../services/attachment-access';
+import { createAttachmentOpenWithService } from '../services/attachment-open-with';
 import { createCronApi } from '../services/cron-api';
 import { createFilesApi } from '../services/files-api';
 import { createMediaApi } from '../services/media-api';
@@ -137,9 +138,11 @@ function registerTypedHostHandlers(
 ): void {
   const acpSessionAccessRegistry = new AcpSessionAccessRegistry();
   const stagedAttachments = new StagedAttachmentRegistry();
+  const attachmentOpenWith = createAttachmentOpenWithService();
   const attachmentAccess = createAttachmentAccess({
     sessionAccessRegistry: acpSessionAccessRegistry,
     stagedAttachments,
+    openWith: attachmentOpenWith,
   });
   hostApiRegistry.registerCoreServices({
     app: createAppApi(),

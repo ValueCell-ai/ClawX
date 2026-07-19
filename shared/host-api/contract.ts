@@ -490,6 +490,26 @@ export type ReadAttachmentBinaryResult =
 export type OpenAttachmentResult =
   | { ok: true }
   | { ok: false; error: AttachmentAccessError };
+export type AttachmentOpenHandler = {
+  handlerId: string;
+  name: string;
+  iconDataUrl?: string;
+  isDefault: boolean;
+};
+export type AttachmentOpenHandlersResult =
+  | {
+      ok: true;
+      platform: 'darwin' | 'win32' | 'linux';
+      handlers: AttachmentOpenHandler[];
+    }
+  | {
+      ok: false;
+      error: AttachmentAccessError | 'unsupportedPlatform' | 'operationFailed';
+    };
+export type OpenAttachmentWithPayload = {
+  ref: AttachmentFileRef;
+  handlerId: string;
+};
 export type FilePreviewTreeOptions = {
   maxDepth?: number;
   maxNodes?: number;
@@ -909,6 +929,9 @@ export type HostApiContract = {
     readAttachmentText: (ref: AttachmentFileRef) => ReadAttachmentTextResult;
     readAttachmentBinary: (payload: ReadAttachmentBinaryPayload) => ReadAttachmentBinaryResult;
     openAttachment: (ref: AttachmentSourceRef) => OpenAttachmentResult;
+    listAttachmentOpenHandlers: (ref: AttachmentFileRef) => Promise<AttachmentOpenHandlersResult>;
+    openAttachmentWith: (payload: OpenAttachmentWithPayload) => Promise<OpenAttachmentResult>;
+    revealAttachment: (ref: AttachmentFileRef) => Promise<OpenAttachmentResult>;
   };
   media: {
     thumbnails: (payload: MediaThumbnailsPayload) => MediaThumbnailResult;

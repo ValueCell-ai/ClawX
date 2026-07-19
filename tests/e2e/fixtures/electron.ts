@@ -42,6 +42,18 @@ export type AttachmentFixtureTranscriptResponse = RawMessage[] | {
   deferId: string;
 };
 
+export type AttachmentOpenHandlersFixtureResult = {
+  ok: boolean;
+  platform?: 'darwin' | 'win32' | 'linux';
+  handlers?: Array<{
+    handlerId: string;
+    name: string;
+    iconDataUrl?: string;
+    isDefault: boolean;
+  }>;
+  error?: string;
+};
+
 export type AttachmentHostFixture = {
   workspaceDir: string;
   openClawMediaDir: string;
@@ -74,6 +86,7 @@ export type AttachmentHostFixture = {
   waitForHistoryRequestCount: (sessionKey: string, count: number, timeoutMs?: number) => Promise<number[]>;
   clearHistoryRequestTimes: (sessionKey?: string) => Promise<void>;
   waitForHistoryQuiet: (sessionKey: string, quietMs?: number, timeoutMs?: number) => Promise<void>;
+  setOpenHandlersResult: (result: AttachmentOpenHandlersFixtureResult) => Promise<void>;
   getHostInvocations: () => Promise<RecordedHostInvocation[]>;
   getShellInvocations: () => Promise<RecordedHostInvocation[]>;
   clearInvocations: () => Promise<void>;
@@ -350,6 +363,7 @@ export async function installIpcMocks(
           _invokeHandlers?: Map<string, IpcInvokeHandler>;
         })._invokeHandlers?.get(channel);
       };
+      const instrumentedLegacyHandlers = new Map<string, IpcInvokeHandler>();
 
       const respond = (id: unknown, data: unknown) => ({
         id: typeof id === 'string' ? id : undefined,
@@ -389,6 +403,7 @@ export async function installIpcMocks(
       const originalLegacyFileListTree = getInvokeHandler('file:listTree');
       const getLegacyOverride = (channel: string, original?: IpcInvokeHandler) => {
         const current = getInvokeHandler(channel);
+        if (current === instrumentedLegacyHandlers.get(channel)) return null;
         return current && current !== original ? current : null;
       };
 
@@ -405,13 +420,15 @@ export async function installIpcMocks(
           'shell:openPath',
         ];
         for (const channel of forbiddenLegacyChannels) {
-          ipcMain.removeHandler(channel);
-          ipcMain.handle(channel, async (_event: unknown, ...args: unknown[]) => {
+          const instrumentedHandler: IpcInvokeHandler = async (_event: unknown, ...args: unknown[]) => {
             globals.__e2eLegacyIpcInvocations?.push({ channel, args });
             if (channel === 'shell:openPath') return 'legacyIpcForbidden';
             if (channel.startsWith('file:')) return { ok: false, error: 'legacyIpcForbidden' };
             return undefined;
-          });
+          };
+          instrumentedLegacyHandlers.set(channel, instrumentedHandler);
+          ipcMain.removeHandler(channel);
+          ipcMain.handle(channel, instrumentedHandler);
         }
       }
 
@@ -686,6 +703,7 @@ export async function installAttachmentHostFixture(
       deferredTranscriptReady: Record<string, boolean>;
       deferredTranscriptReturned: Record<string, boolean>;
       deferredTranscriptCompleted: Record<string, boolean>;
+      openHandlersResult: AttachmentOpenHandlersFixtureResult;
       hostInvocations: RecordedHostInvocation[];
       shellInvocations: RecordedHostInvocation[];
       stagedAttachments?: { register: (id: string, canonicalPath: string, displayPath?: string) => void };
@@ -704,6 +722,11 @@ export async function installAttachmentHostFixture(
       deferredTranscriptReady: {},
       deferredTranscriptReturned: {},
       deferredTranscriptCompleted: {},
+      openHandlersResult: {
+        ok: true,
+        platform: process.platform === 'win32' ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux',
+        handlers: [],
+      },
       hostInvocations: [],
       shellInvocations: [],
     };
@@ -712,6 +735,7 @@ export async function installAttachmentHostFixture(
     const instrumentedShell = shell as unknown as {
       openPath: (path: string) => Promise<string>;
       openExternal: (url: string) => Promise<void>;
+      showItemInFolder: (path: string) => void;
     };
     instrumentedShell.openPath = async (path) => {
       state.shellInvocations.push({ module: 'shell', action: 'openPath', payload: { path } });
@@ -719,6 +743,9 @@ export async function installAttachmentHostFixture(
     };
     instrumentedShell.openExternal = async (url) => {
       state.shellInvocations.push({ module: 'shell', action: 'openExternal', payload: { url } });
+    };
+    instrumentedShell.showItemInFolder = (path) => {
+      state.shellInvocations.push({ module: 'shell', action: 'showItemInFolder', payload: { path } });
     };
 
     type ProductionAttachmentModule = {
@@ -856,6 +883,15 @@ export async function installAttachmentHostFixture(
       }
       if (request.module === 'files' && request.action === 'openAttachment') {
         return respond(request.id, await productionAttachmentAccess.openAttachment(request.payload));
+      }
+      if (request.module === 'files' && request.action === 'listAttachmentOpenHandlers') {
+        return respond(request.id, state.openHandlersResult);
+      }
+      if (request.module === 'files' && request.action === 'openAttachmentWith') {
+        return respond(request.id, { ok: true });
+      }
+      if (request.module === 'files' && request.action === 'revealAttachment') {
+        return respond(request.id, { ok: true });
       }
       if (request.module === 'media' && request.action === 'thumbnails') {
         return respond(request.id, await productionMediaApi.thumbnails(request.payload));
@@ -1040,6 +1076,15 @@ export async function installAttachmentHostFixture(
         await new Promise((resolveWait) => setTimeout(resolveWait, 25));
       }
       throw new Error(`Timed out waiting for transcript requests to stay quiet for ${sessionKey}`);
+    },
+    setOpenHandlersResult: async (result) => {
+      await app.evaluate(async ({ app: _app }, nextResult) => {
+        const state = (globalThis as unknown as {
+          __e2eAttachmentFixture?: { openHandlersResult: AttachmentOpenHandlersFixtureResult };
+        }).__e2eAttachmentFixture;
+        if (!state) throw new Error('Attachment fixture is not installed');
+        state.openHandlersResult = nextResult;
+      }, result);
     },
     getHostInvocations: async () => (await readState()).hostInvocations,
     getShellInvocations: async () => (await readState()).shellInvocations,

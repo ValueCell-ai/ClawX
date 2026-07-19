@@ -65,6 +65,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: Test Windows attachment open-with bridge
+        if: matrix.platform == 'win'
+        run: pnpm exec vitest run tests/unit/attachment-open-with.test.ts tests/unit/attachment-open-with-native.test.ts
+
       - name: Download uv binaries for macOS
         if: matrix.platform == 'mac'
         run: pnpm run uv:download:mac
@@ -128,6 +132,25 @@ jobs:
       - name: Build Windows
         if: matrix.platform == 'win'
         run: pnpm run package:win
+
+      - name: Verify packaged Windows attachment open-with helper
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $helpers = @(Get-ChildItem -Path "release" -Recurse -File -Filter "attachment-open-with.ps1" | Where-Object {
+            $_.FullName -match '[\\/]resources[\\/]resources[\\/]scripts[\\/]attachment-open-with\.ps1$'
+          })
+          if ($helpers.Count -ne 1) {
+            throw "Expected exactly one packaged attachment-open-with helper, found $($helpers.Count)"
+          }
+          if ($helpers[0].Length -le 0) {
+            throw "Packaged attachment-open-with helper is empty"
+          }
+          $sourceHash = (Get-FileHash -LiteralPath "resources/scripts/attachment-open-with.ps1" -Algorithm SHA256).Hash
+          $packagedHash = (Get-FileHash -LiteralPath $helpers[0].FullName -Algorithm SHA256).Hash
+          if ($sourceHash -ne $packagedHash) {
+            throw "Packaged attachment-open-with helper hash does not match source"
+          }
 
       # Detect release channel from tag to skip code signing for alpha/beta builds
       - name: Detect Windows release channel

@@ -745,6 +745,19 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
       ok: false,
       error: 'operationFailed',
     },
+    listAttachmentOpenHandlers: async (ref) => dependencies.attachmentAccess
+      ?.listAttachmentOpenHandlers(ref) ?? {
+        ok: false,
+        error: 'operationFailed',
+      },
+    openAttachmentWith: async (payload) => dependencies.attachmentAccess?.openAttachmentWith(payload) ?? {
+      ok: false,
+      error: 'operationFailed',
+    },
+    revealAttachment: async (ref) => dependencies.attachmentAccess?.revealAttachment(ref) ?? {
+      ok: false,
+      error: 'operationFailed',
+    },
     readText: async (payload) => {
       try {
         const { realPath: real, readOnly } = await resolveSandboxedPath(requirePath(payload), 'read');

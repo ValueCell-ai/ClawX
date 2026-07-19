@@ -66,7 +66,15 @@
             "unavailable": "Attachment unavailable",
             "open": "Open {{name}}",
             "preview": "Preview {{name}}",
-            "openFailed": "Could not open attachment"
+            "openFailed": "Could not open attachment",
+            "openWith": "Open with",
+            "openWithFile": "Open {{name}} with",
+            "searchingApplications": "Searching for applications",
+            "showInFinder": "Show in Finder",
+            "showInExplorer": "Show in File Explorer",
+            "showInFileManager": "Show in file manager",
+            "openWithFailed": "Could not open attachment with the selected application",
+            "revealFailed": "Could not show attachment in its folder"
         }
     },
     "artifactPanel": {

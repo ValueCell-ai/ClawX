@@ -512,9 +512,12 @@ test.describe('ClawX chat file changes', () => {
       await expect(page.getByTestId('acp-file-button')).toBeVisible({ timeout: 30_000 });
       await page.getByTestId('chat-toolbar-workspace').click();
       await expect(page.getByTestId('artifact-panel')).toBeVisible();
-      await expect.poll(async () => (await getRecordedLegacyIpcInvocations(app)).some(
-        (request) => request.channel === 'file:listTree',
-      )).toBe(true);
+      await expect.poll(async () => (await getRecordedHostInvocations(app)).some((request) => (
+        request.module === 'files'
+        && request.action === 'listTree'
+        && request.payload?.path === WORKSPACE
+        && (request.payload?.opts as { includeHidden?: boolean } | undefined)?.includeHidden === true
+      ))).toBe(true);
       await clearRecordedFileAccessInvocations(app);
       await page.getByTestId('acp-file-button').click();
 

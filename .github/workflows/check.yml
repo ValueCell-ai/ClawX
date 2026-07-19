@@ -82,6 +82,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Test Windows attachment open-with bridge
+        run: pnpm exec vitest run tests/unit/attachment-open-with.test.ts tests/unit/attachment-open-with-native.test.ts
+
       - name: Generate extension bridge
         run: pnpm run ext:bridge
 

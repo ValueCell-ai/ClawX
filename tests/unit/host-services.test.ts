@@ -1065,12 +1065,15 @@ describe('host services', () => {
       });
   });
 
-  it('exposes four attachment-scoped file operations from the files service', async () => {
+  it('delegates all attachment-scoped file operations from the files service', async () => {
     const attachmentAccess = {
       resolveAttachment: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable', displayName: 'file' }),
       readAttachmentText: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable' }),
       readAttachmentBinary: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable' }),
       openAttachment: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable' }),
+      listAttachmentOpenHandlers: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable' }),
+      openAttachmentWith: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable' }),
+      revealAttachment: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable' }),
     };
     const { createFilesApi } = await import('@electron/services/files-api');
     const filesApi = createFilesApi({ attachmentAccess: attachmentAccess as never });
@@ -1080,10 +1083,35 @@ describe('host services', () => {
     await filesApi.readAttachmentText(ref);
     await filesApi.readAttachmentBinary({ ref, maxBytes: 5 });
     await filesApi.openAttachment(ref);
+    await filesApi.listAttachmentOpenHandlers(ref);
+    await filesApi.openAttachmentWith({ ref, handlerId: 'com.apple.Preview' });
+    await filesApi.revealAttachment(ref);
 
     expect(attachmentAccess.resolveAttachment).toHaveBeenCalledWith({ ref });
     expect(attachmentAccess.readAttachmentText).toHaveBeenCalledWith(ref);
     expect(attachmentAccess.readAttachmentBinary).toHaveBeenCalledWith({ ref, maxBytes: 5 });
     expect(attachmentAccess.openAttachment).toHaveBeenCalledWith(ref);
+    expect(attachmentAccess.listAttachmentOpenHandlers).toHaveBeenCalledWith(ref);
+    expect(attachmentAccess.openAttachmentWith).toHaveBeenCalledWith({ ref, handlerId: 'com.apple.Preview' });
+    expect(attachmentAccess.revealAttachment).toHaveBeenCalledWith(ref);
+  });
+
+  it('fails attachment-scoped operations safely when attachment access is absent', async () => {
+    const { createFilesApi } = await import('@electron/services/files-api');
+    const filesApi = createFilesApi();
+    const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: 'file:///tmp/a.txt' };
+
+    await expect(filesApi.listAttachmentOpenHandlers(ref)).resolves.toEqual({
+      ok: false,
+      error: 'operationFailed',
+    });
+    await expect(filesApi.openAttachmentWith({ ref, handlerId: 'com.apple.Preview' })).resolves.toEqual({
+      ok: false,
+      error: 'operationFailed',
+    });
+    await expect(filesApi.revealAttachment(ref)).resolves.toEqual({
+      ok: false,
+      error: 'operationFailed',
+    });
   });
 });
