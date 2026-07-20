@@ -27,6 +27,7 @@ test.describe('ClawX chat model picker', () => {
           data,
         });
 
+        const workspacePath = '/tmp/clawx-model-picker-workspace';
         const agentsSnapshot = () => ({
           success: true,
           agents: [{
@@ -37,7 +38,7 @@ test.describe('ClawX chat model picker', () => {
             modelRef: currentModelRef,
             overrideModelRef: currentModelRef,
             inheritedModel: false,
-            workspace: '~/.openclaw/workspace',
+            workspace: workspacePath,
             agentDir: '~/.openclaw/agents/main/agent',
             mainSessionKey: 'agent:main:main',
             channelTypes: [],
@@ -80,6 +81,22 @@ test.describe('ClawX chat model picker', () => {
 
           if (request?.module === 'gateway' && request.action === 'status') {
             return makeResponse(request.id, { state: 'running', port: 18789, pid: 12345, gatewayReady: true });
+          }
+          if (request?.module === 'settings' && request.action === 'getAll') {
+            return makeResponse(request.id, {
+              language: 'en',
+              setupComplete: true,
+              chatWorkspacePath: workspacePath,
+              recentWorkspacePaths: [workspacePath],
+            });
+          }
+          if (request?.module === 'files' && request.action === 'resolveWorkspaceContext') {
+            const workspaceRoot = typeof body?.workspaceRoot === 'string' ? body.workspaceRoot.trim() : '';
+            const executionCwd = typeof body?.executionCwd === 'string' ? body.executionCwd.trim() : '';
+            if (!workspaceRoot || !executionCwd) {
+              return makeResponse(request.id, { ok: false, error: 'outsideSandbox' });
+            }
+            return makeResponse(request.id, { ok: true, workspaceRoot, executionCwd });
           }
           if (request?.module === 'chat' && request.action === 'loadAcpSession') {
             return makeResponse(request.id, { success: true, generation: 1 });
