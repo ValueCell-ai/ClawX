@@ -779,6 +779,9 @@ describe('ACP Chat page', () => {
 
     render(<Chat />);
 
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false');
+    });
     fireEvent.click(screen.getByTestId('mock-send-target'));
 
     await waitFor(() => {
