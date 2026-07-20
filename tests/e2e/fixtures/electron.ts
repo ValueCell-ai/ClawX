@@ -532,6 +532,22 @@ export async function installIpcMocks(
           if (request?.module === 'files') {
             const payload = request.payload ?? {};
             const path = typeof payload.path === 'string' ? payload.path : '';
+            if (request.action === 'resolveWorkspaceContext') {
+              const workspaceRoot = typeof payload.workspaceRoot === 'string'
+                ? payload.workspaceRoot.trim()
+                : '';
+              const executionCwd = typeof payload.executionCwd === 'string'
+                ? payload.executionCwd.trim()
+                : '';
+              if (!workspaceRoot || !executionCwd) {
+                return respond(request.id, { ok: false, error: 'outsideSandbox' });
+              }
+              return respond(request.id, {
+                ok: true,
+                workspaceRoot,
+                executionCwd,
+              });
+            }
             if (request.action === 'stat') {
               const legacyFileStat = getLegacyOverride('file:stat', originalLegacyFileStat);
               if (legacyFileStat) {
@@ -812,10 +828,19 @@ export async function installAttachmentHostFixture(
         return respond(request.id, { success: true, messages: response.messages });
       }
       if (request.module === 'files' && request.action === 'resolveWorkspaceContext') {
+        const workspaceRoot = typeof request.payload?.workspaceRoot === 'string'
+          ? request.payload.workspaceRoot.trim()
+          : '';
+        const executionCwd = typeof request.payload?.executionCwd === 'string'
+          ? request.payload.executionCwd.trim()
+          : '';
+        if (!workspaceRoot || !executionCwd) {
+          return respond(request.id, { ok: false, error: 'outsideSandbox' });
+        }
         return respond(request.id, {
           ok: true,
-          workspaceRoot: payload.workspaceDir,
-          executionCwd: payload.workspaceDir,
+          workspaceRoot,
+          executionCwd,
         });
       }
       if (request.module === 'files' && request.action === 'resolveAttachment') {
