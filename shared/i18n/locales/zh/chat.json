@@ -173,6 +173,12 @@
         "pickFile": "从左侧选择一个文件预览",
         "empty": "工作空间为空或无法访问",
         "truncated": "目录过大，已截断显示前 5000 个节点",
+        "unavailable": {
+            "title": "工作空间不可用",
+            "description": "此文件夹可能已被移动或删除。请选择一个现有文件夹以继续：{{path}}",
+            "boundDescription": "此对话的工作空间可能已被移动或删除，当前无法访问：{{path}}",
+            "chooseAction": "选择工作空间"
+        },
         "actions": {
             "refresh": "刷新",
             "openRootInFinder": "在文件管理器中显示根目录"
@@ -253,6 +259,13 @@
         "loadMoreForWorkspace": "在 {{workspace}} 中再加载 {{count}} 个会话",
         "workspaceToggle": "展开或折叠工作空间 {{workspace}}",
         "renameWorkspace": "重命名工作空间 {{workspace}}",
+        "workspaceUnavailableBadge": "不可用",
+        "deleteWorkspace": "删除不可用的工作空间 {{workspace}}",
+        "deleteWorkspaceTitle": "删除不可用的工作空间？",
+        "deleteWorkspaceConfirm": "永久删除“{{workspace}}”及其中的全部 {{count}} 个会话？此操作无法撤销。",
+        "deleteWorkspaceConfirmAction": "删除工作空间和会话",
+        "deleteWorkspacePartialFailure": "有 {{count}} 个会话无法删除，已保留在该工作空间中。",
+        "deleteWorkspaceCleanupFailed": "会话已删除，但无法清理保存的工作空间记录。",
         "workspaceName": "工作空间名称",
         "saveWorkspaceRename": "保存工作空间名称",
         "cancelWorkspaceRename": "取消重命名工作空间"

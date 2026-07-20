@@ -8,7 +8,9 @@ appliesTo:
   - gateway-backend-communication
 ---
 
-OpenClaw ACP cwd is authoritative for a bound Chat session. Global workspace selection applies only to new or unbound sessions, and consumers use one effective workspace for ACP load/prompt, composer state, sidebar grouping, workspace browsing, and file activity. Missing paths surface unavailable state instead of silently changing roots.
+OpenClaw ACP cwd is authoritative for a bound Chat session. Global workspace selection applies only to new or unbound sessions, and consumers use one effective workspace for ACP load/prompt, composer state, sidebar grouping, workspace browsing, and file activity. Main validates the effective workspace before ACP load. Missing paths surface a localized unavailable state instead of repeatedly loading or silently changing roots; only new or unbound sessions may offer an action that replaces the global workspace.
+
+Sidebar group deletion is available only after Main confirms that a non-default workspace is unavailable. It permanently hard-deletes every successfully targeted session through the existing Main-owned session deletion boundary, keeps failed sessions visible, and never treats removal of display metadata as a substitute for deleting transcripts. Per-session deletes run sequentially so updates to an agent's sessions index cannot race.
 
 Custom workspace names are display-only aliases keyed by canonical workspace path. They may change sidebar and composer labels, but never path-based grouping, ACP cwd, browser roots, attachment authority, or session binding.
 

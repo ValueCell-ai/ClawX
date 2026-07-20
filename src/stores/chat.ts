@@ -3091,6 +3091,68 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
+  deleteSessions: async (keys: string[]) => {
+    const requestedKeys = [...new Set(keys)].filter(Boolean);
+    const deletedKeys: string[] = [];
+    const failedKeys: string[] = [];
+
+    // Main rewrites each agent's sessions.json during deletion. Keep these
+    // operations sequential so two sessions for the same agent cannot race.
+    for (const key of requestedKeys) {
+      try {
+        const result = await hostApi.sessions.delete(key);
+        if (result.success) deletedKeys.push(key);
+        else failedKeys.push(key);
+      } catch {
+        failedKeys.push(key);
+      }
+    }
+
+    if (deletedKeys.length === 0) return { deletedKeys, failedKeys };
+
+    const deletedSet = new Set(deletedKeys);
+    for (const key of deletedKeys) {
+      clearCachedSessionHistory(key);
+      clearCachedSessionRunState(key);
+      clearSessionLabelHydrationTracking(key);
+      clearPendingOptimisticUserMessages(key);
+    }
+
+    const before = get();
+    const remaining = before.sessions.filter((session) => !deletedSet.has(session.key));
+    const currentWasDeleted = deletedSet.has(before.currentSessionKey);
+    const next = currentWasDeleted ? remaining[0] : undefined;
+
+    set((state) => ({
+      sessions: state.sessions.filter((session) => !deletedSet.has(session.key)),
+      sessionLabels: Object.fromEntries(
+        Object.entries(state.sessionLabels).filter(([key]) => !deletedSet.has(key)),
+      ),
+      sessionLastActivity: Object.fromEntries(
+        Object.entries(state.sessionLastActivity).filter(([key]) => !deletedSet.has(key)),
+      ),
+      ...(currentWasDeleted
+        ? {
+          messages: [],
+          streamingText: '',
+          streamingMessage: null,
+          streamingTools: [],
+          activeRunId: null,
+          error: null,
+          runError: null,
+          pendingFinal: false,
+          lastUserMessageAt: null,
+          pendingToolImages: [],
+          currentSessionKey: next?.key ?? DEFAULT_SESSION_KEY,
+          currentAgentId: getAgentIdFromSessionKey(next?.key ?? DEFAULT_SESSION_KEY),
+        }
+        : {}),
+    }));
+
+    if (currentWasDeleted && next) await get().loadHistory();
+    return { deletedKeys, failedKeys };
+  },
+
   // ── New session ──
 
   newSession: () => {

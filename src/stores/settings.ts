@@ -8,6 +8,7 @@ import i18n from '@/i18n';
 import { hostApi } from '@/lib/host-api';
 import { resolveSupportedLanguage } from '@shared/language';
 import { DEFAULT_WORKSPACE_CWD, MAX_RECENT_WORKSPACES } from '@shared/workspace';
+import { normalizeWorkspacePath } from '@/lib/workspace-context';
 
 type Theme = 'light' | 'dark' | 'system';
 type UpdateChannel = 'stable' | 'beta' | 'dev';
@@ -67,6 +68,7 @@ interface SettingsState {
   setDevModeUnlocked: (value: boolean) => void;
   setChatWorkspacePath: (workspacePath: string) => void;
   setWorkspaceLabel: (workspacePath: string, label: string) => void;
+  removeWorkspace: (workspacePath: string) => Promise<void>;
   markSetupComplete: () => void;
   resetSettings: () => void;
 }
@@ -194,6 +196,30 @@ export const useSettingsStore = create<SettingsState>()(
           void hostApi.settings.setMany({ workspaceLabels }).catch(() => { });
           return { workspaceLabels };
         });
+      },
+      removeWorkspace: async (workspacePath) => {
+        const target = normalizeWorkspacePath(workspacePath);
+        if (!target) return;
+        const isTarget = (candidate: string) => normalizeWorkspacePath(candidate) === target;
+        const state = useSettingsStore.getState();
+        const resetsGlobalWorkspace = isTarget(state.chatWorkspacePath);
+        const recentWorkspacePaths = state.recentWorkspacePaths.filter((entry) => !isTarget(entry));
+        if (
+          resetsGlobalWorkspace
+          && !recentWorkspacePaths.some((entry) => normalizeWorkspacePath(entry) === DEFAULT_WORKSPACE_CWD)
+        ) {
+          recentWorkspacePaths.unshift(DEFAULT_WORKSPACE_CWD);
+        }
+        const workspaceLabels = Object.fromEntries(
+          Object.entries(state.workspaceLabels).filter(([path]) => !isTarget(path)),
+        );
+        const patch = {
+          chatWorkspacePath: resetsGlobalWorkspace ? DEFAULT_WORKSPACE_CWD : state.chatWorkspacePath,
+          recentWorkspacePaths,
+          workspaceLabels,
+        };
+        set(patch);
+        await hostApi.settings.setMany(patch);
       },
       markSetupComplete: () => set({ setupComplete: true }),
       resetSettings: () => set(defaultSettings),

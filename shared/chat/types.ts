@@ -111,6 +111,11 @@ export interface ChatRuntimeRunState {
   events: ChatRuntimeEvent[];
 }
 
+export interface DeleteSessionsResult {
+  deletedKeys: string[];
+  failedKeys: string[];
+}
+
 export interface ChatState {
   // Messages
   messages: RawMessage[];
@@ -153,6 +158,7 @@ export interface ChatState {
   newSession: () => void;
   acknowledgeAcpSessionCreated: (key: string, workspacePath?: string) => void;
   deleteSession: (key: string) => Promise<void>;
+  deleteSessions: (keys: string[]) => Promise<DeleteSessionsResult>;
   renameSession: (key: string, label: string) => Promise<void>;
   cleanupEmptySession: () => void;
   loadHistory: (quiet?: boolean) => Promise<void>;
