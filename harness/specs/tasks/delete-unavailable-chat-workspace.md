@@ -25,6 +25,7 @@ touchedAreas:
   - src/stores/settings.ts
   - tests/unit/use-workspace-availability.test.tsx
   - tests/unit/chat-acp-page.test.tsx
+  - tests/unit/chat-page-execution-graph.test.tsx
   - tests/unit/chat-store-history-retry.test.ts
   - tests/unit/settings-store.test.ts
   - tests/e2e/chat-workspace-context.spec.ts
