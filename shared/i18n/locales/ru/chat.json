@@ -173,6 +173,12 @@
         "pickFile": "Выберите файл слева для предпросмотра",
         "empty": "Рабочая область пуста или недоступна",
         "truncated": "Каталог обрезан — показаны первые 5000 узлов",
+        "unavailable": {
+            "title": "Рабочая область недоступна",
+            "description": "Папка могла быть перемещена или удалена. Выберите существующую папку, чтобы продолжить: {{path}}",
+            "boundDescription": "Рабочая область этого чата могла быть перемещена или удалена и сейчас недоступна: {{path}}",
+            "chooseAction": "Выбрать рабочую область"
+        },
         "actions": {
             "refresh": "Обновить",
             "openRootInFinder": "Показать корень в файловом менеджере"
@@ -253,6 +259,13 @@
         "loadMoreForWorkspace": "Загрузить еще {{count}} сессий в {{workspace}}",
         "workspaceToggle": "Переключить рабочую область {{workspace}}",
         "renameWorkspace": "Переименовать рабочую область {{workspace}}",
+        "workspaceUnavailableBadge": "Недоступна",
+        "deleteWorkspace": "Удалить недоступную рабочую область {{workspace}}",
+        "deleteWorkspaceTitle": "Удалить недоступную рабочую область?",
+        "deleteWorkspaceConfirm": "Навсегда удалить «{{workspace}}» и все сессии ({{count}}) в ней? Это действие нельзя отменить.",
+        "deleteWorkspaceConfirmAction": "Удалить область и сессии",
+        "deleteWorkspacePartialFailure": "Не удалось удалить сессии: {{count}}. Они остались в рабочей области.",
+        "deleteWorkspaceCleanupFailed": "Сессии удалены, но не удалось очистить сохранённую запись рабочей области.",
         "workspaceName": "Название рабочей области",
         "saveWorkspaceRename": "Сохранить название рабочей области",
         "cancelWorkspaceRename": "Отменить переименование рабочей области"

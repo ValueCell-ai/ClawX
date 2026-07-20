@@ -4,9 +4,11 @@
  * the codebase but is no longer part of the primary Chat render path.
  */
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownToLine } from 'lucide-react';
+import { AlertTriangle, ArrowDownToLine, FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { DEFAULT_SESSION_KEY } from '@shared/chat/types';
+import { Button } from '@/components/ui/button';
 import { useAgentsStore } from '@/stores/agents';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { useChatStore } from '@/stores/chat';
@@ -46,6 +48,11 @@ type QuestionDirectoryItem = {
 };
 
 const QUESTION_DIRECTORY_RENDER_LIMIT = 300;
+
+type WorkspaceContextCheck = {
+  key: string;
+  available: boolean;
+};
 
 function buildQuestionDirectoryTitle(item: MessageSegmentItem, fallback: string): string {
   const markdown = item.parts.find(
@@ -121,6 +128,44 @@ function AcpEmptyState() {
   );
 }
 
+function WorkspaceUnavailableBanner({
+  path,
+  readOnly,
+  onChooseWorkspace,
+}: {
+  path: string;
+  readOnly: boolean;
+  onChooseWorkspace?: () => void;
+}) {
+  const { t } = useTranslation('chat');
+  return (
+    <div
+      data-testid="workspace-unavailable-banner"
+      className="flex items-start gap-3 rounded-2xl border border-amber-500/20 bg-surface-modal px-4 py-3 text-amber-700 shadow-sm dark:text-amber-400"
+    >
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">{t('workspace.unavailable.title')}</p>
+        <p className="mt-1 break-words text-sm opacity-80">
+          {t(readOnly ? 'workspace.unavailable.boundDescription' : 'workspace.unavailable.description', { path })}
+        </p>
+        {!readOnly && onChooseWorkspace && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-3 border-amber-500/30 bg-transparent text-amber-700 hover:bg-black/5 dark:text-amber-400 dark:hover:bg-white/10"
+            onClick={onChooseWorkspace}
+          >
+            <FolderOpen className="mr-2 h-4 w-4" aria-hidden="true" />
+            {t('workspace.unavailable.chooseAction')}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function Chat() {
   ensureAcpChatSubscriptions();
 
@@ -146,6 +191,7 @@ export function Chat() {
     workspaceRoot: string;
     executionCwd: string;
   } | null>(null);
+  const [workspaceContextCheck, setWorkspaceContextCheck] = useState<WorkspaceContextCheck | null>(null);
   const currentSession = useMemo(
     () => sessions.find((session) => session.key === currentSessionKey) ?? null,
     [currentSessionKey, sessions],
@@ -205,22 +251,40 @@ export function Chat() {
   useEffect(() => {
     if (!workspaceContextKey || !currentSessionKey || !cwd || !projectionExecutionCwd) return;
     let stale = false;
+    setWorkspaceContextCheck(null);
     void hostApi.files.resolveWorkspaceContext({
       workspaceRoot: cwd,
       executionCwd: projectionExecutionCwd,
     }).then((result) => {
-      if (stale || !result.ok || !result.workspaceRoot || !result.executionCwd) return;
+      if (stale) return;
+      if (!result.ok || !result.workspaceRoot || !result.executionCwd) {
+        setResolvedWorkspaceContext(null);
+        setWorkspaceContextCheck({ key: workspaceContextKey, available: false });
+        return;
+      }
       setResolvedWorkspaceContext({
         key: workspaceContextKey,
         sessionKey: currentSessionKey,
         workspaceRoot: result.workspaceRoot,
         executionCwd: result.executionCwd,
       });
-    }).catch(() => undefined);
+      setWorkspaceContextCheck({ key: workspaceContextKey, available: true });
+    }).catch(() => {
+      if (stale) return;
+      setResolvedWorkspaceContext(null);
+      setWorkspaceContextCheck({ key: workspaceContextKey, available: false });
+    });
     return () => {
       stale = true;
     };
   }, [currentSessionKey, cwd, projectionExecutionCwd, workspaceContextKey]);
+
+  const workspaceContextAvailable = !!workspaceContextKey
+    && workspaceContextCheck?.key === workspaceContextKey
+    && workspaceContextCheck.available;
+  const workspaceUnavailable = !!workspaceContextKey
+    && workspaceContextCheck?.key === workspaceContextKey
+    && !workspaceContextCheck.available;
 
   useEffect(() => {
     if (currentSessionKey !== DEFAULT_SESSION_KEY || sessions.length > 0 || sessionDiscoveryAttempted) return;
@@ -244,7 +308,7 @@ export function Chat() {
   }, [acpActiveSessionKey, acpCwd, acpTimeline.itemOrder.length, acpTimeline.sessionId, acpWorkspaceRoot, currentSession, currentSessionKey, cwd, prepareLocalAcpSession]);
 
   useEffect(() => {
-    if (!currentSessionKey || !cwd) return;
+    if (!currentSessionKey || !cwd || !workspaceContextAvailable) return;
     if (currentSessionKey === DEFAULT_SESSION_KEY && sessions.length === 0 && acpActiveSessionKey == null && !sessionDiscoveryAttempted) return;
     if (acpActiveSessionKey === currentSessionKey && acpWorkspaceRoot === cwd && acpCwd === cwd) return;
     const acpLoadKey = `${currentSessionKey}\0${cwd}`;
@@ -267,7 +331,7 @@ export function Chat() {
         acpLoadInFlightKeyRef.current = null;
       }
     });
-  }, [acknowledgeAcpSessionCreated, acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSessionKey, cwd, loadAcpSession, sessionDiscoveryAttempted, sessions]);
+  }, [acknowledgeAcpSessionCreated, acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSessionKey, cwd, loadAcpSession, sessionDiscoveryAttempted, sessions, workspaceContextAvailable]);
 
   const platform = window.electron?.platform;
   const isMac = platform === 'darwin';
@@ -275,10 +339,23 @@ export function Chat() {
   const composerBusy = acpSending || acpCancelling;
   const showScrollToLatest = acpTimeline.itemOrder.length > 0 && !isAtBottom;
   const hasAttemptedAcpPromptForCurrentSession = lastPromptAttemptSessionKey === currentSessionKey;
-  const visibleAcpError = acpError
+  const visibleAcpError = !workspaceUnavailable && acpError
     && !(acpTimeline.itemOrder.length === 0 && !hasAttemptedAcpPromptForCurrentSession && isRecoverableInitialAcpLoadError(acpError))
     ? acpError
     : null;
+  const chooseReplacementWorkspace = async () => {
+    try {
+      const result = await hostApi.dialog.open({
+        title: t('composer.workspacePickerTitle'),
+        buttonLabel: t('composer.workspacePickerButton'),
+        properties: ['openDirectory', 'createDirectory'],
+      });
+      const selected = result.filePaths[0]?.trim();
+      if (!result.canceled && selected) setChatWorkspacePath(selected);
+    } catch {
+      toast.error(t('composer.workspacePickerFailed'));
+    }
+  };
   const fileActivity = useMemo(() => {
     if (
       !workspaceContextKey
@@ -338,6 +415,13 @@ export function Chat() {
             <div data-testid="chat-scroll-column" className="relative min-h-0 min-w-0 flex-1">
               <div ref={scrollRef} className="h-full min-h-0 min-w-0 overflow-y-auto" data-testid="chat-scroll-container">
                 <div ref={contentRef} className="mx-auto max-w-4xl space-y-4">
+                  {workspaceUnavailable && (
+                    <WorkspaceUnavailableBanner
+                      path={cwd}
+                      readOnly={effectiveWorkspace.readOnly}
+                      onChooseWorkspace={effectiveWorkspace.readOnly ? undefined : () => void chooseReplacementWorkspace()}
+                    />
+                  )}
                   {visibleAcpError && <AcpErrorBanner message={visibleAcpError} onDismiss={clearAcpError} />}
                   {acpLoading ? (
                     <div className="flex min-h-[40vh] items-center justify-center" data-testid="acp-chat-loading">
@@ -381,7 +465,7 @@ export function Chat() {
 
         <ChatInput
           onSend={(text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => {
-            if (!currentSessionKey || !cwd) return;
+            if (!currentSessionKey || !cwd || !workspaceContextAvailable) return;
             const targetAgent = targetAgentId
               ? agents.find((agent) => agent.id === targetAgentId) ?? null
               : null;
@@ -399,11 +483,18 @@ export function Chat() {
                 mimeType: file.mimeType,
               }));
             if (targetAgent) {
-              selectAcpSession(sessionKey);
+              selectAcpSession(sessionKey, promptCwd);
             }
             void (async () => {
+              if (promptCwd !== cwd) {
+                const promptWorkspace = await hostApi.files.resolveWorkspaceContext({
+                  workspaceRoot: promptCwd,
+                  executionCwd: promptCwd,
+                }).catch(() => ({ ok: false }));
+                if (!promptWorkspace.ok) return;
+              }
               const existingSession = sessions.find((session) => session.key === sessionKey);
-              const createIfMissing = !targetAgent && (!existingSession || !!existingSession.createdLocally);
+              const createIfMissing = !existingSession || !!existingSession.createdLocally;
               if (
                 createIfMissing
                 || acpActiveSessionKey !== sessionKey
@@ -444,7 +535,7 @@ export function Chat() {
             })();
           }}
           onStop={() => void cancelAcp()}
-          disabled={acpLoading || acpCancelling || !cwd}
+          disabled={acpLoading || acpCancelling || !cwd || !workspaceContextAvailable}
           sending={composerBusy}
           imageGenerating={imageGenerationPending}
           workspaceLabel={workspaceLabel}

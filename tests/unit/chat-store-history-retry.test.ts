@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chatHistoryRpcParams } from './gateway-rpc-test-utils';
 
-const { gatewayRpcMock, agentsState, hostApiFetchMock } = vi.hoisted(() => ({
+const { gatewayRpcMock, agentsState, hostApiFetchMock, sessionDeleteMock } = vi.hoisted(() => ({
   gatewayRpcMock: vi.fn(),
   agentsState: {
     agents: [] as Array<Record<string, unknown>>,
   },
   hostApiFetchMock: vi.fn(),
+  sessionDeleteMock: vi.fn(),
 }));
 
 vi.mock('@/stores/gateway', () => ({
@@ -48,7 +49,7 @@ vi.mock('@/lib/host-api', () => ({
         method: 'POST',
         body: JSON.stringify(input),
       }),
-      delete: vi.fn(async () => ({ success: true })),
+      delete: (key: string) => sessionDeleteMock(key),
       rename: vi.fn(async () => ({ success: true })),
     },
     chat: {
@@ -65,6 +66,8 @@ describe('useChatStore startup history retry', () => {
     agentsState.agents = [];
     gatewayRpcMock.mockReset();
     hostApiFetchMock.mockReset();
+    sessionDeleteMock.mockReset();
+    sessionDeleteMock.mockResolvedValue({ success: true });
     hostApiFetchMock.mockImplementation(async (path: string) => {
       if (path === '/api/chat/sessions' || path === '/api/chat/history' || path === '/api/chat/send' || path === '/api/chat/abort') {
         throw new Error('No route for mocked chat host API');
@@ -1209,6 +1212,99 @@ describe('useChatStore startup history retry', () => {
 
     resolveSend?.({ runId: 'run-deleted' });
     await sendPromise;
+  });
+
+  it('hard-deletes workspace sessions sequentially and switches once to a surviving session', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    let resolveFirst!: (value: { success: boolean }) => void;
+    sessionDeleteMock
+      .mockReturnValueOnce(new Promise((resolve) => {
+        resolveFirst = resolve;
+      }))
+      .mockResolvedValueOnce({ success: true });
+    gatewayRpcMock.mockResolvedValue({ messages: [] });
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-a',
+      currentAgentId: 'main',
+      sessions: [
+        { key: 'agent:main:session-a', workspacePath: '/missing' },
+        { key: 'agent:other:session-b', workspacePath: '/missing' },
+        { key: 'agent:main:session-c', workspacePath: '/kept' },
+      ],
+      sessionLabels: {
+        'agent:main:session-a': 'A',
+        'agent:other:session-b': 'B',
+        'agent:main:session-c': 'C',
+      },
+      sessionLastActivity: {
+        'agent:main:session-a': 3,
+        'agent:other:session-b': 2,
+        'agent:main:session-c': 1,
+      },
+      messages: [{ role: 'user', content: 'A' }],
+    });
+
+    const deletion = useChatStore.getState().deleteSessions([
+      'agent:main:session-a',
+      'agent:other:session-b',
+    ]);
+    await vi.waitFor(() => expect(sessionDeleteMock).toHaveBeenCalledTimes(1));
+    resolveFirst({ success: true });
+    const result = await deletion;
+
+    expect(sessionDeleteMock.mock.calls.map(([key]) => key)).toEqual([
+      'agent:main:session-a',
+      'agent:other:session-b',
+    ]);
+    expect(result).toEqual({
+      deletedKeys: ['agent:main:session-a', 'agent:other:session-b'],
+      failedKeys: [],
+    });
+    expect(useChatStore.getState().sessions.map((session) => session.key)).toEqual([
+      'agent:main:session-c',
+    ]);
+    expect(useChatStore.getState().currentSessionKey).toBe('agent:main:session-c');
+    expect(useChatStore.getState().sessionLabels).toEqual({ 'agent:main:session-c': 'C' });
+  });
+
+  it('keeps sessions whose workspace-group hard delete fails', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    sessionDeleteMock
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: false, error: 'locked' });
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-c',
+      currentAgentId: 'main',
+      sessions: [
+        { key: 'agent:main:session-a', workspacePath: '/missing' },
+        { key: 'agent:main:session-b', workspacePath: '/missing' },
+        { key: 'agent:main:session-c', workspacePath: '/kept' },
+      ],
+      sessionLabels: {
+        'agent:main:session-a': 'A',
+        'agent:main:session-b': 'B',
+        'agent:main:session-c': 'C',
+      },
+      sessionLastActivity: {},
+    });
+
+    const result = await useChatStore.getState().deleteSessions([
+      'agent:main:session-a',
+      'agent:main:session-b',
+    ]);
+
+    expect(result).toEqual({
+      deletedKeys: ['agent:main:session-a'],
+      failedKeys: ['agent:main:session-b'],
+    });
+    expect(useChatStore.getState().sessions.map((session) => session.key)).toEqual([
+      'agent:main:session-b',
+      'agent:main:session-c',
+    ]);
+    expect(useChatStore.getState().sessionLabels).toEqual({
+      'agent:main:session-b': 'B',
+      'agent:main:session-c': 'C',
+    });
   });
 
   // Regression for the "thinking disappears mid-tool-chain" bug:

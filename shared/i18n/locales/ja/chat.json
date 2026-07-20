@@ -173,6 +173,12 @@
         "pickFile": "左側のファイルを選択してプレビュー",
         "empty": "ワークスペースが空、またはアクセスできません",
         "truncated": "ディレクトリが大きいため、5000 件までで切り詰めました",
+        "unavailable": {
+            "title": "ワークスペースを利用できません",
+            "description": "このフォルダーは移動または削除された可能性があります。続行するには既存のフォルダーを選択してください: {{path}}",
+            "boundDescription": "このチャットのワークスペースは移動または削除された可能性があり、現在アクセスできません: {{path}}",
+            "chooseAction": "ワークスペースを選択"
+        },
         "actions": {
             "refresh": "更新",
             "openRootInFinder": "ルートをファイルマネージャーで表示"
@@ -253,6 +259,13 @@
         "loadMoreForWorkspace": "{{workspace}} でさらに {{count}} 件のセッションを読み込む",
         "workspaceToggle": "ワークスペース {{workspace}} を切り替え",
         "renameWorkspace": "ワークスペース {{workspace}} の名前を変更",
+        "workspaceUnavailableBadge": "利用不可",
+        "deleteWorkspace": "利用できないワークスペース {{workspace}} を削除",
+        "deleteWorkspaceTitle": "利用できないワークスペースを削除しますか？",
+        "deleteWorkspaceConfirm": "「{{workspace}}」とその中の全 {{count}} セッションを完全に削除しますか？この操作は元に戻せません。",
+        "deleteWorkspaceConfirmAction": "ワークスペースとセッションを削除",
+        "deleteWorkspacePartialFailure": "{{count}} 件のセッションを削除できなかったため、ワークスペースに残しました。",
+        "deleteWorkspaceCleanupFailed": "セッションは削除されましたが、保存済みワークスペースの記録を消去できませんでした。",
         "workspaceName": "ワークスペース名",
         "saveWorkspaceRename": "ワークスペース名を保存",
         "cancelWorkspaceRename": "ワークスペース名の変更をキャンセル"

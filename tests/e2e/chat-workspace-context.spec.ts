@@ -1,5 +1,12 @@
 import type { ElectronApplication } from '@playwright/test';
-import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
+import {
+  closeElectronApp,
+  expect,
+  getRecordedHostInvocations,
+  getStableWindow,
+  installIpcMocks,
+  test,
+} from './fixtures/electron';
 
 const SESSION_KEY = 'agent:main:session-a';
 const SESSION_WORKSPACE = '/Users/e2e/workspace/ClawX';
@@ -89,6 +96,7 @@ type WorkspaceMockOptions = {
   chatWorkspacePath?: string;
   recentWorkspacePaths?: string[];
   workspaceLabels?: Record<string, string>;
+  unavailableWorkspacePath?: string;
   sessionHistory?: Array<{ role: string; content: unknown; timestamp?: number }>;
   sessionDerivedTitle?: string | null;
   sessionSummaryFirstUserText?: string | null;
@@ -120,6 +128,11 @@ async function installWorkspaceMocks(app: ElectronApplication, options: Workspac
     }],
   };
   const acpLoadResult = { success: true, generation: 1 };
+  const workspaceContextResult = (workspacePath: string) => (
+    options.unavailableWorkspacePath === workspacePath
+      ? { ok: false, error: 'notFound' }
+      : { ok: true, workspaceRoot: workspacePath, executionCwd: workspacePath }
+  );
 
   await installIpcMocks(app, {
     gatewayStatus,
@@ -150,6 +163,13 @@ async function installWorkspaceMocks(app: ElectronApplication, options: Workspac
       [stableStringify(['settings', 'setMany', {
         patch: { workspaceLabels: { [SESSION_WORKSPACE]: 'Renamed workspace' } },
       }])]: { success: true },
+      [stableStringify(['settings', 'setMany', {
+        patch: {
+          chatWorkspacePath: options.chatWorkspacePath ?? DEFAULT_WORKSPACE,
+          recentWorkspacePaths: options.recentWorkspacePaths ?? [DEFAULT_WORKSPACE],
+          workspaceLabels: {},
+        },
+      }])]: { success: true },
       [stableStringify(['/api/settings', 'GET'])]: hostJson(settingsSnapshot),
       [stableStringify(['/api/gateway/status', 'GET'])]: hostJson(gatewayStatus),
       [stableStringify(['/api/agents', 'GET'])]: hostJson({
@@ -164,9 +184,23 @@ async function installWorkspaceMocks(app: ElectronApplication, options: Workspac
       }),
       [stableStringify(['sessions', 'summaries', { sessionKeys: [SESSION_KEY] }])]: sessionSummaries,
       [stableStringify(['/api/sessions/summaries', 'POST'])]: hostJson(sessionSummaries),
+      [stableStringify(['files', 'resolveWorkspaceContext', {
+        workspaceRoot: DEFAULT_WORKSPACE,
+        executionCwd: DEFAULT_WORKSPACE,
+      }])]: workspaceContextResult(DEFAULT_WORKSPACE),
+      [stableStringify(['files', 'resolveWorkspaceContext', {
+        workspaceRoot: SESSION_WORKSPACE,
+        executionCwd: SESSION_WORKSPACE,
+      }])]: workspaceContextResult(SESSION_WORKSPACE),
+      [stableStringify(['files', 'resolveWorkspaceContext', {
+        workspaceRoot: GLOBAL_WORKSPACE,
+        executionCwd: GLOBAL_WORKSPACE,
+      }])]: workspaceContextResult(GLOBAL_WORKSPACE),
       [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: acpLoadResult,
       [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: SESSION_WORKSPACE, cwd: SESSION_WORKSPACE }])]: acpLoadResult,
+      [stableStringify(['sessions', 'delete', { id: SESSION_KEY }])]: { success: true },
     },
+    recordHostInvocations: true,
   });
 
   await installWorkspaceTreeMock(app);
@@ -204,6 +238,10 @@ test.describe('ClawX chat workspace context', () => {
       const sidebar = page.getByTestId('sidebar');
       const workspaceGroup = sidebar.getByTestId(workspaceSessionGroupTestId(SESSION_WORKSPACE));
       await expect(workspaceGroup).toBeVisible();
+      await expect(workspaceGroup.getByText('Unavailable')).toHaveCount(0);
+      await expect(workspaceGroup.getByTestId(
+        `workspace-session-group-delete-${encodeURIComponent(SESSION_WORKSPACE)}`,
+      )).toHaveCount(0);
       await expect(workspaceGroup).toContainText('Workspace chat');
       await expect(workspaceGroup).not.toContainText('[Working directory:');
       const workspaceToggle = workspaceGroup.getByRole('button', {
@@ -313,6 +351,104 @@ test.describe('ClawX chat workspace context', () => {
       const defaultWorkspaceGroupWithPendingSession = sidebar.getByTestId(workspaceSessionGroupTestId(DEFAULT_WORKSPACE))
         .filter({ hasText: /agent:main:session-/ });
       await expect(defaultWorkspaceGroupWithPendingSession).toHaveCount(0);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('missing global workspace prompts for another folder without attempting ACP creation', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installWorkspaceMocks(app, {
+        chatWorkspacePath: GLOBAL_WORKSPACE,
+        recentWorkspacePaths: [GLOBAL_WORKSPACE, DEFAULT_WORKSPACE],
+        unavailableWorkspacePath: GLOBAL_WORKSPACE,
+      });
+
+      const page = await getStableWindow(app);
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
+      }
+
+      await expect(page.getByTestId('chat-workspace-selector')).toHaveText(SESSION_WORKSPACE_LABEL, {
+        timeout: 30_000,
+      });
+      await expect(async () => {
+        await page.getByTestId('sidebar-new-chat').click();
+        await expect(page.getByTestId('chat-workspace-selector')).toHaveText(GLOBAL_WORKSPACE_LABEL, {
+          timeout: 1_000,
+        });
+      }).toPass({ timeout: 30_000 });
+
+      const banner = page.getByTestId('workspace-unavailable-banner');
+      await expect(banner).toBeVisible();
+      await expect(banner).toContainText('Workspace unavailable');
+      await expect(banner).toContainText(GLOBAL_WORKSPACE);
+      await expect(banner.getByRole('button', { name: 'Choose workspace' })).toBeVisible();
+
+      await expect.poll(async () => {
+        const invocations = await getRecordedHostInvocations(app);
+        return invocations.filter((entry) => (
+          entry.module === 'chat'
+          && entry.action === 'loadAcpSession'
+          && entry.payload?.cwd === GLOBAL_WORKSPACE
+        )).length;
+      }).toBe(0);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('unavailable non-default workspace group can permanently delete its sessions', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installWorkspaceMocks(app, {
+        unavailableWorkspacePath: SESSION_WORKSPACE,
+      });
+
+      const page = await getStableWindow(app);
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
+      }
+
+      const workspaceGroup = page.getByTestId('sidebar').getByTestId(
+        workspaceSessionGroupTestId(SESSION_WORKSPACE),
+      );
+      await expect(workspaceGroup).toBeVisible({ timeout: 30_000 });
+      await expect(workspaceGroup.getByText('Unavailable')).toBeVisible();
+
+      const deleteButton = workspaceGroup.getByTestId(
+        `workspace-session-group-delete-${encodeURIComponent(SESSION_WORKSPACE)}`,
+      );
+      await expect(deleteButton).toBeVisible();
+      await deleteButton.click();
+
+      await expect(page.getByText('Delete unavailable workspace?')).toBeVisible();
+      await expect(page.getByText(/Permanently delete .* and all 1 sessions/)).toBeVisible();
+      await page.getByTestId('confirm-dialog-cancel-button').click();
+      await expect(workspaceGroup).toBeVisible();
+      expect((await getRecordedHostInvocations(app)).some((entry) => (
+        entry.module === 'sessions' && entry.action === 'delete'
+      ))).toBe(false);
+
+      await deleteButton.click();
+      await page.getByTestId('confirm-dialog-confirm-button').click();
+
+      await expect(workspaceGroup).toHaveCount(0);
+      await expect.poll(async () => {
+        const invocations = await getRecordedHostInvocations(app);
+        return invocations.some((entry) => (
+          entry.module === 'sessions'
+          && entry.action === 'delete'
+          && entry.payload?.id === SESSION_KEY
+        ));
+      }).toBe(true);
     } finally {
       await closeElectronApp(app);
     }

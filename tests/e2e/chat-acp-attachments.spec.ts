@@ -450,6 +450,10 @@ test.describe('ACP media attachments', () => {
 
       const page = await openChat(app);
       await fixture.waitForHistoryRequestCount(MAIN_SESSION_KEY, 1);
+      // Drain duplicate startup transcript fetches (Strict Mode / remount) before
+      // arming the deferred live retry response, otherwise an extra historical
+      // read can consume the deferred slot and make the 1500ms gap look ~0ms.
+      await fixture.waitForHistoryQuiet(MAIN_SESSION_KEY);
       await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [
         [],
         {
@@ -464,14 +468,15 @@ test.describe('ACP media attachments', () => {
           ],
         },
       ]);
+      await fixture.clearHistoryRequestTimes(MAIN_SESSION_KEY);
       await expect(fixture.releaseTranscriptResponse('delayed-retry')).rejects.toThrow(
         'Deferred transcript response is not ready: delayed-retry',
       );
       await page.getByTestId('chat-composer-input').fill(retryPrompt);
       await page.getByTestId('chat-composer-send').click();
 
-      const requestTimes = await fixture.waitForHistoryRequestCount(MAIN_SESSION_KEY, 3, 6_000);
-      expect(requestTimes[2]! - requestTimes[1]!).toBeGreaterThanOrEqual(1_400);
+      const requestTimes = await fixture.waitForHistoryRequestCount(MAIN_SESSION_KEY, 2, 6_000);
+      expect(requestTimes[1]! - requestTimes[0]!).toBeGreaterThanOrEqual(1_400);
       await fixture.waitForDeferredTranscriptReady('delayed-retry');
       await page.getByTestId(`sidebar-session-${OTHER_SESSION_KEY}`).click();
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();

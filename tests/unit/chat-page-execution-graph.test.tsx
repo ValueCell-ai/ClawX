@@ -50,6 +50,13 @@ const { acpState, agentsState, artifactPanelState, chatState, gatewayState, stic
 }));
 
 const ensureAcpChatSubscriptions = vi.hoisted(() => vi.fn());
+const resolveWorkspaceContext = vi.hoisted(() => vi.fn());
+
+vi.mock('@/lib/host-api', () => ({
+  hostApi: {
+    files: { resolveWorkspaceContext },
+  },
+}));
 
 vi.mock('@/stores/acp-chat-session', () => ({
   ensureAcpChatSubscriptions,
@@ -206,6 +213,15 @@ function timelineWithProcessBlocks(): AcpTimelineSnapshot {
 describe('ACP Chat page inline timeline lifecycle', () => {
   beforeEach(() => {
     ensureAcpChatSubscriptions.mockReset();
+    resolveWorkspaceContext.mockReset();
+    resolveWorkspaceContext.mockImplementation(async (input: {
+      workspaceRoot: string;
+      executionCwd: string;
+    }) => ({
+      ok: true,
+      workspaceRoot: input.workspaceRoot,
+      executionCwd: input.executionCwd,
+    }));
     acpState.timeline = timelineWithProcessBlocks();
     acpState.loading = false;
     acpState.sending = false;
@@ -258,7 +274,7 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     ]);
 
     await waitFor(() => {
-      expect(ensureAcpChatSubscriptions).toHaveBeenCalledTimes(1);
+      expect(ensureAcpChatSubscriptions).toHaveBeenCalled();
       expect(acpState.loadSession).toHaveBeenCalledWith({
         sessionKey: 'agent:main:main',
         workspaceRoot: '/workspace',

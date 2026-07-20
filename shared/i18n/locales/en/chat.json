@@ -173,6 +173,12 @@
         "pickFile": "Select a file from the left to preview",
         "empty": "Workspace is empty or inaccessible",
         "truncated": "Directory truncated — only the first 5000 entries shown",
+        "unavailable": {
+            "title": "Workspace unavailable",
+            "description": "This folder may have been moved or deleted. Choose an existing folder to continue: {{path}}",
+            "boundDescription": "This chat's workspace may have been moved or deleted and can no longer be accessed: {{path}}",
+            "chooseAction": "Choose workspace"
+        },
         "actions": {
             "refresh": "Refresh",
             "openRootInFinder": "Reveal workspace in file manager"
@@ -253,6 +259,13 @@
         "loadMoreForWorkspace": "Load {{count}} more sessions in {{workspace}}",
         "workspaceToggle": "Toggle workspace {{workspace}}",
         "renameWorkspace": "Rename workspace {{workspace}}",
+        "workspaceUnavailableBadge": "Unavailable",
+        "deleteWorkspace": "Delete unavailable workspace {{workspace}}",
+        "deleteWorkspaceTitle": "Delete unavailable workspace?",
+        "deleteWorkspaceConfirm": "Permanently delete “{{workspace}}” and all {{count}} sessions in it? This cannot be undone.",
+        "deleteWorkspaceConfirmAction": "Delete workspace and sessions",
+        "deleteWorkspacePartialFailure": "{{count}} sessions could not be deleted and remain in the workspace.",
+        "deleteWorkspaceCleanupFailed": "Sessions were deleted, but the saved workspace entry could not be cleaned up.",
         "workspaceName": "Workspace name",
         "saveWorkspaceRename": "Save workspace name",
         "cancelWorkspaceRename": "Cancel workspace rename"

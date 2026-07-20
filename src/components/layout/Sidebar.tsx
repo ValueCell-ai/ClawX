@@ -5,6 +5,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import {
   Network,
   Bot,
@@ -49,6 +50,7 @@ import { useTranslation } from 'react-i18next';
 import logoSvg from '@/assets/logo.svg';
 import { useNewChatAction } from './use-new-chat-action';
 import { isDefaultWorkspacePath } from '@/lib/workspace-context';
+import { useWorkspaceAvailability } from '@/hooks/use-workspace-availability';
 
 interface NavItemProps {
   to: string;
@@ -116,6 +118,10 @@ export function getWorkspaceGroupRenameTestId(workspacePath: string): string {
   return `workspace-session-group-rename-${getWorkspaceTestIdSegment(workspacePath)}`;
 }
 
+function getWorkspaceGroupDeleteTestId(workspacePath: string): string {
+  return `workspace-session-group-delete-${getWorkspaceTestIdSegment(workspacePath)}`;
+}
+
 function getWorkspaceLoadMoreTestId(workspacePath: string): string {
   return `workspace-session-load-more-${getWorkspaceTestIdSegment(workspacePath)}`;
 }
@@ -136,6 +142,7 @@ export function Sidebar() {
   const chatWorkspacePath = useSettingsStore((state) => state.chatWorkspacePath);
   const workspaceLabels = useSettingsStore((state) => state.workspaceLabels);
   const setWorkspaceLabel = useSettingsStore((state) => state.setWorkspaceLabel);
+  const removeWorkspace = useSettingsStore((state) => state.removeWorkspace);
   const [isResizing, setIsResizing] = useState(false);
   const stopResizeRef = useRef<(() => void) | null>(null);
 
@@ -145,6 +152,7 @@ export function Sidebar() {
   const sessionLastActivity = useChatStore((s) => s.sessionLastActivity);
   const switchSession = useChatStore((s) => s.switchSession);
   const deleteSession = useChatStore((s) => s.deleteSession);
+  const deleteSessions = useChatStore((s) => s.deleteSessions);
   const renameSession = useChatStore((s) => s.renameSession);
   const loadSessions = useChatStore((s) => s.loadSessions);
   const loadHistory = useChatStore((s) => s.loadHistory);
@@ -210,6 +218,12 @@ export function Sidebar() {
   const { t, i18n } = useTranslation(['common', 'chat']);
   const [sessionToDelete, setSessionToDelete] = useState<{ key: string; label: string } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [workspaceToDelete, setWorkspaceToDelete] = useState<{
+    path: string;
+    label: string;
+    sessionKeys: string[];
+  } | null>(null);
+  const [workspaceDeleteDialogOpen, setWorkspaceDeleteDialogOpen] = useState(false);
   const [editingSessionKey, setEditingSessionKey] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
   const [editingWorkspacePath, setEditingWorkspacePath] = useState<string | null>(null);
@@ -234,6 +248,12 @@ export function Sidebar() {
     const timer = window.setTimeout(() => setSessionToDelete(null), 160);
     return () => window.clearTimeout(timer);
   }, [deleteDialogOpen, sessionToDelete]);
+
+  useEffect(() => {
+    if (workspaceDeleteDialogOpen || !workspaceToDelete) return;
+    const timer = window.setTimeout(() => setWorkspaceToDelete(null), 160);
+    return () => window.clearTimeout(timer);
+  }, [workspaceDeleteDialogOpen, workspaceToDelete]);
 
   const handleStartRename = (key: string, currentLabel: string) => {
     setEditingSessionKey(key);
@@ -370,6 +390,9 @@ export function Sidebar() {
     t('chat:workspace.defaultLabel'),
     chatWorkspacePath,
     workspaceLabels,
+  );
+  const workspaceAvailability = useWorkspaceAvailability(
+    workspaceSessionGroups.map((group) => group.workspacePath),
   );
   const allWorkspaceGroupsCollapsed = workspaceSessionGroups.length > 0
     && workspaceSessionGroups.every((group) => collapsedWorkspaceGroups[getWorkspaceGroupStateKey(group.workspacePath)] ?? false);
@@ -553,6 +576,8 @@ export function Sidebar() {
               const visibleSessions = workspaceGroup.sessions.slice(0, visibleCount);
               const hiddenCount = Math.max(0, workspaceGroup.sessions.length - visibleSessions.length);
               const loadMoreCount = Math.min(WORKSPACE_SESSION_LIMIT_INCREMENT, hiddenCount);
+              const workspaceUnavailable = workspaceAvailability[workspaceGroup.workspacePath] === 'unavailable'
+                && !isDefaultWorkspacePath(workspaceGroup.workspacePath);
 
               return (
                 <div
@@ -615,6 +640,15 @@ export function Sidebar() {
                           )}
                         />
                         <span className="min-w-0 flex-1 truncate">{workspaceGroup.label}</span>
+                        {workspaceUnavailable && (
+                          <Badge
+                            variant="warning"
+                            data-testid={`workspace-session-group-unavailable-${getWorkspaceTestIdSegment(workspaceGroup.workspacePath)}`}
+                            className="shrink-0 px-1.5 py-0 text-2xs"
+                          >
+                            {t('chat:sessionList.workspaceUnavailableBadge')}
+                          </Badge>
+                        )}
                         <span className="shrink-0 text-2xs font-medium text-muted-foreground/60 group-hover:hidden group-focus-within:hidden">
                           {workspaceGroup.sessions.length}
                         </span>
@@ -626,9 +660,32 @@ export function Sidebar() {
                           aria-label={t('chat:sessionList.renameWorkspace', { workspace: workspaceGroup.label })}
                           title={t('chat:sessionList.renameWorkspace', { workspace: workspaceGroup.label })}
                           onClick={() => handleStartWorkspaceRename(workspaceGroup.workspacePath, workspaceGroup.label)}
-                          className="mr-2 hidden shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-black/5 hover:text-foreground group-hover:flex group-focus-within:flex dark:hover:bg-white/10"
+                          className={cn(
+                            'hidden shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-black/5 hover:text-foreground group-hover:flex group-focus-within:flex dark:hover:bg-white/10',
+                            !workspaceUnavailable && 'mr-2',
+                          )}
                         >
                           <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      {workspaceUnavailable && (
+                        <button
+                          type="button"
+                          data-testid={getWorkspaceGroupDeleteTestId(workspaceGroup.workspacePath)}
+                          aria-label={t('chat:sessionList.deleteWorkspace', { workspace: workspaceGroup.label })}
+                          title={t('chat:sessionList.deleteWorkspace', { workspace: workspaceGroup.label })}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setWorkspaceToDelete({
+                              path: workspaceGroup.workspacePath,
+                              label: workspaceGroup.label,
+                              sessionKeys: workspaceGroup.sessions.map(({ session }) => session.key),
+                            });
+                            setWorkspaceDeleteDialogOpen(true);
+                          }}
+                          className="mr-2 flex shrink-0 items-center justify-center rounded p-0.5 text-destructive hover:bg-destructive/10"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       )}
                     </div>
@@ -901,6 +958,37 @@ export function Sidebar() {
           setDeleteDialogOpen(false);
         }}
         onCancel={() => setDeleteDialogOpen(false)}
+      />
+      <ConfirmDialog
+        open={workspaceDeleteDialogOpen}
+        title={t('chat:sessionList.deleteWorkspaceTitle')}
+        message={t('chat:sessionList.deleteWorkspaceConfirm', {
+          workspace: workspaceToDelete?.label ?? '',
+          count: workspaceToDelete?.sessionKeys.length ?? 0,
+        })}
+        confirmLabel={t('chat:sessionList.deleteWorkspaceConfirmAction')}
+        cancelLabel={t('common:actions.cancel')}
+        variant="destructive"
+        onConfirm={async () => {
+          const target = workspaceToDelete;
+          if (!target) return;
+          const currentWasTargeted = target.sessionKeys.includes(currentSessionKey);
+          const result = await deleteSessions(target.sessionKeys);
+          if (result.failedKeys.length === 0) {
+            try {
+              await removeWorkspace(target.path);
+            } catch {
+              toast.error(t('chat:sessionList.deleteWorkspaceCleanupFailed'));
+            }
+          } else {
+            toast.error(t('chat:sessionList.deleteWorkspacePartialFailure', {
+              count: result.failedKeys.length,
+            }));
+          }
+          if (currentWasTargeted && result.deletedKeys.includes(currentSessionKey)) navigate('/');
+          setWorkspaceDeleteDialogOpen(false);
+        }}
+        onCancel={() => setWorkspaceDeleteDialogOpen(false)}
       />
     </aside>
   );

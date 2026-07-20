@@ -18,7 +18,7 @@ OpenClaw's persisted ACP `cwd` is authoritative for a bound session. The global 
 
 The effective workspace is shared by ACP load/prompt, the composer, sidebar grouping, the right-side workspace browser, and tool-derived file activity. A bound session is read-only in the composer and is not moved when the global selection changes. Missing or unreadable bound paths show unavailable/error state instead of silently changing roots.
 
-ClawX persists global and recent workspace selections plus custom display labels through Main-owned settings APIs. Custom labels are keyed by canonical path and never replace path identity or ACP cwd authority. Renderer session state may mirror the bound path for UI coordination, but must not become a competing persistent session-to-path authority. Targeted `@agent` sends may intentionally use the target agent workspace and should remain an explicit branch.
+ClawX persists global and recent workspace selections plus custom display labels through Main-owned settings APIs. Custom labels are keyed by canonical path and never replace path identity or ACP cwd authority. Renderer session state may mirror the bound path for UI coordination, but must not become a competing persistent session-to-path authority. Targeted `@agent` sends intentionally use the target agent workspace and remain an explicit branch. Navigation records that workspace on the target session placeholder before reactive loading; a newly targeted agent's first send creates its main ACP session and shares one load identity with the prompt so navigation cannot supersede delivery.
 
 ## First Send And Titles
 
@@ -39,6 +39,8 @@ Each group initially displays five sessions and loads five more at a time. Colla
 
 Non-default workspace headers expose a rename action on hover or keyboard focus. A custom name updates both the sidebar group and the composer workspace chip; the header and chip keep the full filesystem path in their title text.
 
+Sidebar validates distinct non-default group paths through Main. A confirmed unavailable group shows a warning badge and destructive delete action; available, unresolved, and default groups do not. One confirmation hard-deletes the group's sessions sequentially across agents. Successful sessions disappear together, failed sessions remain for retry, and workspace recents/labels are removed only after the full group succeeds.
+
 ## Workspace Browser
 
 The right panel tabs remain Workspace, Preview, and Changes. The Workspace tree uses `react-arborist`, includes hidden files, uses relative path as node identity, and remains read-only: no edit, drag/drop, or multi-select. Agent and path tags replace the older `Workspace - agent` header. Home is compacted to `~`, the path's final segment remains visible, and the full value is available as a title.
@@ -51,6 +53,6 @@ The Chat question directory belongs to the active ACP timeline rather than works
 
 ## Validation Anchors
 
-Key tests include `tests/unit/workspace-context.test.ts`, `tests/unit/session-title.test.ts`, `tests/unit/session-buckets.test.ts`, `tests/unit/sidebar-session-buckets.test.ts`, `tests/unit/workspace-browser-body.test.tsx`, `tests/e2e/chat-workspace-context.spec.ts`, and `tests/e2e/chat-question-directory.spec.ts`.
+Key tests include `tests/unit/workspace-context.test.ts`, `tests/unit/session-title.test.ts`, `tests/unit/session-buckets.test.ts`, `tests/unit/sidebar-session-buckets.test.ts`, `tests/unit/workspace-browser-body.test.tsx`, `tests/unit/chat-acp-page.test.tsx`, `tests/e2e/chat-workspace-context.spec.ts`, `tests/e2e/chat-acp-inline-timeline.spec.ts`, and `tests/e2e/chat-question-directory.spec.ts`.
 
 This reference consolidates the former workspace sidebar, chat workspace context, sidebar workspace UI, and ACP working-directory title designs. The later flat activity-sorted sidebar supersedes the earlier recency buckets.

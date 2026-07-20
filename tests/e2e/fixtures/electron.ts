@@ -72,6 +72,8 @@ export type AttachmentHostFixture = {
   waitForDeferredTranscriptReady: (deferId: string, timeoutMs?: number) => Promise<void>;
   waitForDeferredTranscriptCompleted: (deferId: string, timeoutMs?: number) => Promise<void>;
   waitForHistoryRequestCount: (sessionKey: string, count: number, timeoutMs?: number) => Promise<number[]>;
+  clearHistoryRequestTimes: (sessionKey?: string) => Promise<void>;
+  waitForHistoryQuiet: (sessionKey: string, quietMs?: number, timeoutMs?: number) => Promise<void>;
   getHostInvocations: () => Promise<RecordedHostInvocation[]>;
   getShellInvocations: () => Promise<RecordedHostInvocation[]>;
   clearInvocations: () => Promise<void>;
@@ -532,6 +534,22 @@ export async function installIpcMocks(
           if (request?.module === 'files') {
             const payload = request.payload ?? {};
             const path = typeof payload.path === 'string' ? payload.path : '';
+            if (request.action === 'resolveWorkspaceContext') {
+              const workspaceRoot = typeof payload.workspaceRoot === 'string'
+                ? payload.workspaceRoot.trim()
+                : '';
+              const executionCwd = typeof payload.executionCwd === 'string'
+                ? payload.executionCwd.trim()
+                : '';
+              if (!workspaceRoot || !executionCwd) {
+                return respond(request.id, { ok: false, error: 'outsideSandbox' });
+              }
+              return respond(request.id, {
+                ok: true,
+                workspaceRoot,
+                executionCwd,
+              });
+            }
             if (request.action === 'stat') {
               const legacyFileStat = getLegacyOverride('file:stat', originalLegacyFileStat);
               if (legacyFileStat) {
@@ -812,10 +830,19 @@ export async function installAttachmentHostFixture(
         return respond(request.id, { success: true, messages: response.messages });
       }
       if (request.module === 'files' && request.action === 'resolveWorkspaceContext') {
+        const workspaceRoot = typeof request.payload?.workspaceRoot === 'string'
+          ? request.payload.workspaceRoot.trim()
+          : '';
+        const executionCwd = typeof request.payload?.executionCwd === 'string'
+          ? request.payload.executionCwd.trim()
+          : '';
+        if (!workspaceRoot || !executionCwd) {
+          return respond(request.id, { ok: false, error: 'outsideSandbox' });
+        }
         return respond(request.id, {
           ok: true,
-          workspaceRoot: payload.workspaceDir,
-          executionCwd: payload.workspaceDir,
+          workspaceRoot,
+          executionCwd,
         });
       }
       if (request.module === 'files' && request.action === 'resolveAttachment') {
@@ -984,6 +1011,35 @@ export async function installAttachmentHostFixture(
         await new Promise((resolveWait) => setTimeout(resolveWait, 25));
       }
       throw new Error(`Timed out waiting for ${count} transcript requests for ${sessionKey}`);
+    },
+    clearHistoryRequestTimes: async (sessionKey) => {
+      await app.evaluate(async ({ app: _app }, key) => {
+        const state = (globalThis as unknown as {
+          __e2eAttachmentFixture?: { historyRequestTimes: Record<string, number[]> };
+        }).__e2eAttachmentFixture;
+        if (!state) throw new Error('Attachment fixture is not installed');
+        if (key) {
+          state.historyRequestTimes[key] = [];
+          return;
+        }
+        state.historyRequestTimes = {};
+      }, sessionKey);
+    },
+    waitForHistoryQuiet: async (sessionKey, quietMs = 300, timeoutMs = 5_000) => {
+      const deadline = Date.now() + timeoutMs;
+      let lastCount = -1;
+      let quietSince = Date.now();
+      while (Date.now() < deadline) {
+        const times = (await readState()).historyRequestTimes[sessionKey] ?? [];
+        if (times.length !== lastCount) {
+          lastCount = times.length;
+          quietSince = Date.now();
+        } else if (Date.now() - quietSince >= quietMs) {
+          return;
+        }
+        await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+      }
+      throw new Error(`Timed out waiting for transcript requests to stay quiet for ${sessionKey}`);
     },
     getHostInvocations: async () => (await readState()).hostInvocations,
     getShellInvocations: async () => (await readState()).shellInvocations,
