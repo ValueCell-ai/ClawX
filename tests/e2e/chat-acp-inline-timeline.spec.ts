@@ -219,6 +219,50 @@ async function installAcpPromptFailureMock(app: ElectronApplication, error: stri
   }, error);
 }
 
+async function installTargetAgentRequestRecorder(app: ElectronApplication) {
+  await app.evaluate(async ({ app: _app }, targetSessionKey) => {
+    const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type HostInvokeRequest = {
+      id?: string;
+      module?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+      args?: unknown[];
+    };
+    type RecordedRequest = { action: string; payload: Record<string, unknown> };
+    type IpcInvokeHandler = (event: unknown, request: HostInvokeRequest) => Promise<unknown>;
+    const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
+    const originalHostInvoke = handlers?.get('host:invoke');
+    const globals = globalThis as unknown as { __targetAgentRequests?: RecordedRequest[] };
+    globals.__targetAgentRequests = [];
+
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: HostInvokeRequest) => {
+      const requestPayload = request.payload ?? (Array.isArray(request.args) ? request.args[0] : undefined);
+      if (
+        request?.module === 'chat'
+        && (request.action === 'loadAcpSession' || request.action === 'sendAcpPrompt')
+        && requestPayload?.sessionKey === targetSessionKey
+      ) {
+        globals.__targetAgentRequests?.push({
+          action: request.action,
+          payload: requestPayload,
+        });
+        return { id: request.id, ok: true, data: { success: true, generation: 1 } };
+      }
+      return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
+    });
+  }, REVIEWER_SESSION_KEY);
+}
+
+async function getTargetAgentRequests(app: ElectronApplication) {
+  return await app.evaluate(async ({ app: _app }) => {
+    return (globalThis as unknown as {
+      __targetAgentRequests?: Array<{ action: string; payload: Record<string, unknown> }>;
+    }).__targetAgentRequests ?? [];
+  });
+}
+
 async function installAcpPromptDeferredMock(app: ElectronApplication) {
   await app.evaluate(async ({ app: _app }) => {
     const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
@@ -934,6 +978,87 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('acp-error-banner')).toHaveCount(0);
       await expect(page.getByTestId('chat-composer-input')).toBeEnabled();
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('creates and sends the first prompt to a newly targeted agent workspace', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [
+                { key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE, updatedAt: new Date().toISOString() },
+              ],
+            },
+          },
+        },
+        hostApi: {
+          ...baseHostApiMocks(),
+          [stableStringify(['/api/agents', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                agents: [
+                  {
+                    id: 'main',
+                    name: 'main',
+                    workspace: MAIN_WORKSPACE,
+                    mainSessionKey: MAIN_SESSION_KEY,
+                  },
+                  {
+                    id: 'reviewer',
+                    name: 'reviewer',
+                    workspace: REVIEWER_WORKSPACE,
+                    mainSessionKey: REVIEWER_SESSION_KEY,
+                    modelDisplay: 'mock-model',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+      await installTargetAgentRequestRecorder(app);
+
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+
+      await page.getByTestId('chat-composer-agent').click();
+      await page.getByRole('button', { name: 'reviewer mock-model' }).click();
+      await page.getByTestId('chat-composer-input').fill('Hello reviewer');
+      await page.getByTestId('chat-composer-send').click();
+
+      await expect.poll(async () => {
+        const requests = await getTargetAgentRequests(app);
+        return requests.some((request) => request.action === 'sendAcpPrompt');
+      }).toBe(true);
+
+      const requests = await getTargetAgentRequests(app);
+      expect(requests.filter((request) => request.action === 'loadAcpSession')).toEqual([{
+        action: 'loadAcpSession',
+        payload: {
+          sessionKey: REVIEWER_SESSION_KEY,
+          workspaceRoot: REVIEWER_WORKSPACE,
+          cwd: REVIEWER_WORKSPACE,
+          createIfMissing: true,
+        },
+      }]);
+      expect(requests.some((request) => (
+        request.action === 'sendAcpPrompt'
+        && request.payload.sessionKey === REVIEWER_SESSION_KEY
+        && request.payload.cwd === REVIEWER_WORKSPACE
+        && request.payload.message === 'Hello reviewer'
+      ))).toBe(true);
     } finally {
       await closeElectronApp(app);
     }
