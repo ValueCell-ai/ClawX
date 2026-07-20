@@ -399,11 +399,11 @@ export function Chat() {
                 mimeType: file.mimeType,
               }));
             if (targetAgent) {
-              selectAcpSession(sessionKey);
+              selectAcpSession(sessionKey, promptCwd);
             }
             void (async () => {
               const existingSession = sessions.find((session) => session.key === sessionKey);
-              const createIfMissing = !targetAgent && (!existingSession || !!existingSession.createdLocally);
+              const createIfMissing = !existingSession || !!existingSession.createdLocally;
               if (
                 createIfMissing
                 || acpActiveSessionKey !== sessionKey

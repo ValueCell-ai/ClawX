@@ -234,7 +234,7 @@
         "gatewayStarting": "起動中",
         "gatewayStatus": "ゲートウェイ {{state}} | ポート: {{port}} | PID: {{pid}}",
         "retryFailedAttachments": "失敗した添付を再試行",
-        "workspacePrefix": "{{workspace}}",
+        "workspacePrefix": "ワークスペース: {{workspace}}",
         "workspacePickerTitle": "ワークスペースフォルダーを選択",
         "workspacePickerButton": "このワークスペースを使用",
         "workspacePickerFailed": "ワークスペース選択を開けませんでした",

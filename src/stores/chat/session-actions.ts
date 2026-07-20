@@ -348,7 +348,7 @@ export function createSessionActions(
       get().loadHistory();
     },
 
-    selectAcpSession: (key: string) => {
+    selectAcpSession: (key: string, workspacePath?: string) => {
       const { currentSessionKey, messages, sessionLastActivity, sessionLabels } = get();
       const leavingEmpty = !currentSessionKey.endsWith(':main')
         && messages.length === 0
@@ -366,10 +366,19 @@ export function createSessionActions(
         pendingFinal: false,
         lastUserMessageAt: null,
         pendingToolImages: [],
-        sessions: [
-          ...(leavingEmpty ? s.sessions.filter((session) => session.key !== currentSessionKey) : s.sessions),
-          ...(s.sessions.some((session) => session.key === key) ? [] : [{ key, displayName: key }]),
-        ],
+        sessions: (() => {
+          const sessions = leavingEmpty
+            ? s.sessions.filter((session) => session.key !== currentSessionKey)
+            : s.sessions;
+          const existingSession = sessions.find((session) => session.key === key);
+          if (!existingSession) {
+            return [...sessions, { key, displayName: key, ...(workspacePath ? { workspacePath } : {}) }];
+          }
+          if (!workspacePath || existingSession.workspacePath === workspacePath) return sessions;
+          return sessions.map((session) => (
+            session.key === key ? { ...session, workspacePath } : session
+          ));
+        })(),
         ...(leavingEmpty ? {
           sessionLabels: Object.fromEntries(
             Object.entries(s.sessionLabels).filter(([k]) => k !== currentSessionKey),
