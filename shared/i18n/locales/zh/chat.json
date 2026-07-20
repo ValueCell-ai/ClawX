@@ -234,7 +234,7 @@
         "gatewayStarting": "启动中",
         "gatewayStatus": "网关{{state}} ｜ 端口：{{port}} ｜ 进程 ID：{{pid}}",
         "retryFailedAttachments": "重试失败的附件",
-        "workspacePrefix": "工作空间：{{workspace}}",
+        "workspacePrefix": "{{workspace}}",
         "workspacePickerTitle": "选择工作空间文件夹",
         "workspacePickerButton": "使用此工作空间",
         "workspacePickerFailed": "无法打开工作空间选择器",

@@ -234,7 +234,7 @@
         "gatewayStarting": "starting",
         "gatewayStatus": "gateway {{state}} | port: {{port}} | pid: {{pid}}",
         "retryFailedAttachments": "Retry failed attachments",
-        "workspacePrefix": "Workspace: {{workspace}}",
+        "workspacePrefix": "{{workspace}}",
         "workspacePickerTitle": "Select workspace folder",
         "workspacePickerButton": "Use workspace",
         "workspacePickerFailed": "Could not open workspace picker",
