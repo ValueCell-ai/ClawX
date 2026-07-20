@@ -363,9 +363,19 @@ describe('ACP Chat page', () => {
     chatState.loadSessions.mockReset();
     chatState.loadSessions.mockResolvedValue(undefined);
     chatState.selectAcpSession.mockReset();
-    chatState.selectAcpSession.mockImplementation((sessionKey: string) => {
+    chatState.selectAcpSession.mockImplementation((sessionKey: string, workspacePath?: string) => {
       chatState.currentSessionKey = sessionKey;
       chatState.currentAgentId = sessionKey.split(':')[1] || 'main';
+      const existingSession = chatState.sessions.find((session) => session.key === sessionKey);
+      if (existingSession) {
+        chatState.sessions = chatState.sessions.map((session) => (
+          session.key === sessionKey
+            ? { ...session, workspacePath: workspacePath ?? session.workspacePath }
+            : session
+        ));
+      } else {
+        chatState.sessions = [...chatState.sessions, { key: sessionKey, workspacePath }];
+      }
     });
     chatState.acknowledgeAcpSessionCreated.mockReset();
     settingsState.chatWorkspacePath = '/workspace';
@@ -721,6 +731,10 @@ describe('ACP Chat page', () => {
       { id: 'main', name: 'Main', workspace: '/workspace', mainSessionKey: 'agent:main:main' },
       { id: 'research', name: 'Research', workspace: '/research-workspace', mainSessionKey: 'agent:research:desk' },
     ];
+    chatState.sessions = [
+      { key: 'agent:main:main', workspacePath: '/workspace' },
+      { key: 'agent:research:desk', workspacePath: '/research-workspace' },
+    ];
 
     render(<Chat />);
 
@@ -739,7 +753,7 @@ describe('ACP Chat page', () => {
     expect(acpState.loadSession).toHaveBeenCalledWith({
       sessionKey: 'agent:research:desk', workspaceRoot: '/research-workspace', cwd: '/research-workspace',
     });
-    expect(chatState.selectAcpSession).toHaveBeenCalledWith('agent:research:desk');
+    expect(chatState.selectAcpSession).toHaveBeenCalledWith('agent:research:desk', '/research-workspace');
     expect(acpState.sendPrompt).toHaveBeenCalledWith({
       sessionKey: 'agent:research:desk',
       cwd: '/research-workspace',
@@ -755,6 +769,41 @@ describe('ACP Chat page', () => {
     expect(chatState.selectAcpSession.mock.invocationCallOrder.at(-1)!).toBeLessThan(
       acpState.loadSession.mock.invocationCallOrder[targetLoadIndex]!,
     );
+  });
+
+  it('creates a new target agent session in its workspace before the first prompt', async () => {
+    agentsState.agents = [
+      { id: 'main', name: 'Main', workspace: '/workspace', mainSessionKey: 'agent:main:main' },
+      { id: 'research', name: 'Research', workspace: '/research-workspace', mainSessionKey: 'agent:research:main' },
+    ];
+
+    render(<Chat />);
+
+    fireEvent.click(screen.getByTestId('mock-send-target'));
+
+    await waitFor(() => {
+      expect(acpState.acceptedPromptSessionKeys).toContain('agent:research:main');
+    });
+    expect(chatState.selectAcpSession).toHaveBeenCalledWith(
+      'agent:research:main',
+      '/research-workspace',
+    );
+    expect(acpState.loadSession).toHaveBeenCalledWith({
+      sessionKey: 'agent:research:main',
+      workspaceRoot: '/research-workspace',
+      cwd: '/research-workspace',
+      createIfMissing: true,
+    });
+    expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(
+      'agent:research:main',
+      '/research-workspace',
+    );
+    expect(acpState.sendPrompt).toHaveBeenCalledWith({
+      sessionKey: 'agent:research:main',
+      cwd: '/research-workspace',
+      message: 'Ask research',
+      media: undefined,
+    });
   });
 
   it('reloads an active target ACP session before sending when its cwd is stale', async () => {
@@ -781,7 +830,10 @@ describe('ACP Chat page', () => {
 
     await waitFor(() => {
       expect(acpState.loadSession).toHaveBeenCalledWith({
-        sessionKey, workspaceRoot: '/research-workspace', cwd: '/research-workspace',
+        sessionKey,
+        workspaceRoot: '/research-workspace',
+        cwd: '/research-workspace',
+        createIfMissing: true,
       });
     });
     expect(acpState.sendPrompt).toHaveBeenCalledWith({
@@ -799,6 +851,10 @@ describe('ACP Chat page', () => {
     agentsState.agents = [
       { id: 'main', name: 'Main', workspace: '/workspace', mainSessionKey: 'agent:main:main' },
       { id: 'research', name: 'Research', workspace: '/research-workspace', mainSessionKey: 'agent:research:desk' },
+    ];
+    chatState.sessions = [
+      { key: 'agent:main:main', workspacePath: '/workspace' },
+      { key: 'agent:research:desk', workspacePath: '/research-workspace' },
     ];
     acpState.loadSession.mockImplementation(async (input: { sessionKey: string }) => {
       if (input.sessionKey === 'agent:research:desk') return false;
@@ -818,7 +874,7 @@ describe('ACP Chat page', () => {
         sessionKey: 'agent:research:desk', workspaceRoot: '/research-workspace', cwd: '/research-workspace',
       });
     });
-    expect(chatState.selectAcpSession).toHaveBeenCalledWith('agent:research:desk');
+    expect(chatState.selectAcpSession).toHaveBeenCalledWith('agent:research:desk', '/research-workspace');
     expect(acpState.sendPrompt).not.toHaveBeenCalled();
   });
 

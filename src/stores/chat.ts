@@ -2010,11 +2010,24 @@ function resolveMainSessionKeyForAgent(agentId: string | undefined | null): stri
   return summary?.mainSessionKey || buildFallbackMainSessionKey(normalizedAgentId);
 }
 
-function ensureSessionEntry(sessions: ChatSession[], sessionKey: string, createdLocally = false): ChatSession[] {
-  if (sessions.some((session) => session.key === sessionKey)) {
-    return sessions;
+function ensureSessionEntry(
+  sessions: ChatSession[],
+  sessionKey: string,
+  options: { createdLocally?: boolean; workspacePath?: string } = {},
+): ChatSession[] {
+  const existingSession = sessions.find((session) => session.key === sessionKey);
+  if (existingSession) {
+    if (!options.workspacePath || existingSession.workspacePath === options.workspacePath) return sessions;
+    return sessions.map((session) => (
+      session.key === sessionKey ? { ...session, workspacePath: options.workspacePath } : session
+    ));
   }
-  return [...sessions, { key: sessionKey, displayName: sessionKey, ...(createdLocally ? { createdLocally: true } : {}) }];
+  return [...sessions, {
+    key: sessionKey,
+    displayName: sessionKey,
+    ...(options.createdLocally ? { createdLocally: true } : {}),
+    ...(options.workspacePath ? { workspacePath: options.workspacePath } : {}),
+  }];
 }
 
 function clearSessionEntryFromMap<T extends Record<string, unknown>>(entries: T, sessionKey: string): T {
@@ -2040,7 +2053,7 @@ function buildSessionSwitchPatch(
     | 'pendingToolImages'
   >,
   nextSessionKey: string,
-  options: { createdLocally?: boolean } = {},
+  options: { createdLocally?: boolean; workspacePath?: string } = {},
 ): Partial<ChatState> {
   captureSessionRunState(state.currentSessionKey, state);
   if (state.messages.length > 0) {
@@ -2069,7 +2082,7 @@ function buildSessionSwitchPatch(
   return {
     currentSessionKey: nextSessionKey,
     currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
-    sessions: ensureSessionEntry(nextSessions, nextSessionKey, !!options.createdLocally),
+    sessions: ensureSessionEntry(nextSessions, nextSessionKey, options),
     sessionLabels: leavingEmpty
       ? clearSessionEntryFromMap(state.sessionLabels, state.currentSessionKey)
       : state.sessionLabels,
@@ -3022,11 +3035,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     get().loadHistory();
   },
 
-  selectAcpSession: (key: string) => {
-    if (key === get().currentSessionKey) return;
+  selectAcpSession: (key: string, workspacePath?: string) => {
+    if (
+      key === get().currentSessionKey
+      && (!workspacePath || get().sessions.find((session) => session.key === key)?.workspacePath === workspacePath)
+    ) return;
     clearHistoryPoll();
     clearBaselines();
-    set((s) => buildSessionSwitchPatch(s, key));
+    set((s) => buildSessionSwitchPatch(s, key, { workspacePath }));
   },
 
   // ── Delete session ──
