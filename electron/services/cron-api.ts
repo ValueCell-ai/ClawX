@@ -53,7 +53,7 @@ interface CronSessionKeyParts {
 
 interface CronSessionFallbackMessage {
   id: string;
-  role: 'assistant' | 'system';
+  role: 'user' | 'assistant';
   content: string;
   timestamp: number;
   isError?: boolean;
@@ -117,14 +117,14 @@ function buildCronRunMessage(entry: CronRunLogEntry, index: number): CronSession
 
   return {
     id: `cron-run-${entry.sessionId ?? entry.ts ?? index}`,
-    role: status === 'error' ? 'system' : 'assistant',
+    role: 'assistant',
     content,
     timestamp,
     ...(status === 'error' ? { isError: true } : {}),
   };
 }
 
-async function readCronRunLog(jobId: string): Promise<CronRunLogEntry[]> {
+async function readLegacyCronRunLog(jobId: string): Promise<CronRunLogEntry[]> {
   const logPath = join(getOpenClawConfigDir(), 'cron', 'runs', `${jobId}.jsonl`);
   const raw = await readFile(logPath, 'utf8').catch(() => '');
   if (!raw.trim()) return [];
@@ -143,6 +143,24 @@ async function readCronRunLog(jobId: string): Promise<CronRunLogEntry[]> {
     }
   }
   return entries;
+}
+
+async function readCronRunHistory(
+  gatewayManager: GatewayManager,
+  jobId: string,
+  limit: number,
+): Promise<CronRunLogEntry[]> {
+  try {
+    const result = await gatewayManager.rpc<{ entries?: CronRunLogEntry[] }>('cron.runs', {
+      id: jobId,
+      limit,
+      sortDir: 'asc',
+    }, 8000);
+    if (Array.isArray(result?.entries)) return result.entries;
+  } catch {
+    // OpenClaw versions before SQLite cron history may not expose cron.runs.
+  }
+  return readLegacyCronRunLog(jobId);
 }
 
 async function readSessionStoreEntry(
@@ -204,12 +222,10 @@ function buildCronSessionFallbackMessages(params: {
     : (normalizeTimestampMs(params.job?.state?.runningAtMs) ?? params.sessionEntry?.updatedAt);
 
   if (taskName || prompt) {
-    const lines = [taskName ? `Scheduled task: ${taskName}` : 'Scheduled task'];
-    if (prompt) lines.push(`Prompt: ${prompt}`);
     messages.push({
       id: `cron-meta-${parsed.jobId}`,
-      role: 'system',
-      content: lines.join('\n'),
+      role: 'user',
+      content: prompt || taskName,
       timestamp: Math.max(0, (firstRelevantTimestamp ?? Date.now()) - 1),
     });
   }
@@ -224,16 +240,9 @@ function buildCronSessionFallbackMessages(params: {
     if (runningAt) {
       messages.push({
         id: `cron-running-${parsed.jobId}`,
-        role: 'system',
+        role: 'assistant',
         content: 'This scheduled task is still running in OpenClaw, but no chat transcript is available yet.',
         timestamp: runningAt,
-      });
-    } else if (messages.length === 0) {
-      messages.push({
-        id: `cron-empty-${parsed.jobId}`,
-        role: 'system',
-        content: 'No chat transcript is available for this scheduled task yet.',
-        timestamp: params.sessionEntry?.updatedAt ?? Date.now(),
       });
     }
   }
@@ -569,7 +578,7 @@ export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManag
       const [jobsResult, runs, sessionEntry] = await Promise.all([
         gatewayManager.rpc('cron.list', { includeDisabled: true }, 8000)
           .catch(() => ({ jobs: [] as GatewayCronJob[] })),
-        readCronRunLog(parsedSession.jobId),
+        readCronRunHistory(gatewayManager, parsedSession.jobId, limit),
         readSessionStoreEntry(parsedSession.agentId, sessionKey),
       ]);
       const jobs = (jobsResult as { jobs?: GatewayCronJob[] }).jobs ?? [];

@@ -10,6 +10,9 @@ touchedAreas:
   - scripts/download-bundled-node.mjs
   - scripts/bundle-openclaw.mjs
   - electron/services/acp-chat-service.ts
+  - electron/services/cron-api.ts
+  - src/lib/cron-session-history.ts
+  - src/stores/acp-chat-session.ts
   - shared/acp-chat/types.ts
   - electron/utils/openclaw-upgrade-snapshot.ts
   - electron/utils/plugin-install-index.ts
@@ -20,6 +23,9 @@ touchedAreas:
   - electron/gateway/manager.ts
   - electron/gateway/process-policy.ts
   - tests/unit/acp-chat-service.test.ts
+  - tests/unit/acp-chat-store.test.ts
+  - tests/unit/cron-schedule.test.ts
+  - tests/e2e/cron-run-live-status.spec.ts
   - tests/unit/gateway-startup-recovery.test.ts
   - tests/unit/gateway-startup-orchestrator.test.ts
   - tests/unit/openclaw-cli.test.ts
@@ -32,6 +38,8 @@ touchedAreas:
   - README.zh-CN.md
   - README.ja-JP.md
   - README.ru-RU.md
+  - harness/specs/scenarios/gateway-backend-communication.md
+  - harness/specs/rules/acp-chat-state-and-history.md
   - harness/specs/tasks/upgrade-openclaw-2026-7-1.md
 expectedUserBehavior:
   - Existing OpenClaw 2026.6.10 configuration, authentication, sessions, and channel credentials remain usable after upgrade, with a one-time pre-migration snapshot of mutable config/auth/SQLite state.
@@ -39,6 +47,7 @@ expectedUserBehavior:
   - ClawX registers the compatibility-patched WeCom mirror as a local-path install with static channel metadata so OpenClaw startup migration does not replace it with the raw mismatched npm package.
   - Fatal runtime/SQLite incompatibility, EX_CONFIG exits, invalid migrations, and active migration leases do not enter unbounded Gateway restart loops.
   - ACP chat initializes, replays, prompts, cancels, requests permission, and forwards unknown ACP 1.1 session updates without dropping the NDJSON connection.
+  - Cron sessions use OpenClaw 2026.7.1's SQLite-backed `cron.runs` history when ACP replay is empty, so immediate and scheduled executions show their prompt and completed summaries instead of an empty timeline.
   - Bundled channel plugins use versions compatible with OpenClaw 2026.7.1 while existing WeCom and Open Lark manifest-ID compatibility behavior remains unchanged.
   - Packaged builds use Electron and Windows Node runtimes that satisfy OpenClaw 2026.7.1 Node and SQLite requirements.
 requiredProfiles:
@@ -46,6 +55,9 @@ requiredProfiles:
   - comms
 requiredTests:
   - tests/unit/acp-chat-service.test.ts
+  - tests/unit/acp-chat-store.test.ts
+  - tests/unit/cron-schedule.test.ts
+  - tests/e2e/cron-run-live-status.spec.ts
   - tests/unit/gateway-startup-recovery.test.ts
   - tests/unit/gateway-startup-orchestrator.test.ts
   - tests/unit/openclaw-cli.test.ts
@@ -63,6 +75,7 @@ acceptance:
   - ClawX snapshots OpenClaw config, credentials, and SQLite databases with WAL/SHM sidecars once before the first 2026.7.1 prelaunch sync.
   - ClawX writes plugin install metadata to OpenClaw 2026.7.1's canonical `state/openclaw.sqlite` index, removes legacy config records, and represents the patched WeCom mirror as a local path rather than an npm-managed install.
   - Gateway recovery performs at most one doctor repair per startup flow and does not retry fatal runtime, EX_CONFIG, invalid migration, or active migration-lease failures indefinitely.
+  - Electron Main reads current cron history through Gateway `cron.runs`, retains legacy JSONL as a compatibility fallback, and supplements only empty cron ACP replay in memory without replacing non-empty replay.
   - ACP 1.1 type checks, targeted runtime tests, communication regression checks, and harness validation pass.
 docs:
   required: true

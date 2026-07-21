@@ -10,6 +10,7 @@ const hostApiMock = vi.hoisted(() => ({
   mediaThumbnails: vi.fn(),
   recordAcpTrace: vi.fn(),
   sessionsHistory: vi.fn(),
+  cronSessionHistory: vi.fn(),
   resolveAttachment: vi.fn(),
 }));
 
@@ -52,6 +53,9 @@ vi.mock('@/lib/host-api', () => ({
     },
     sessions: {
       history: hostApiMock.sessionsHistory,
+    },
+    cron: {
+      sessionHistory: hostApiMock.cronSessionHistory,
     },
     files: {
       resolveAttachment: hostApiMock.resolveAttachment,
@@ -130,6 +134,7 @@ describe('ACP Chat store', () => {
     hostApiMock.mediaThumbnails.mockReset().mockResolvedValue({});
     hostApiMock.recordAcpTrace.mockReset().mockResolvedValue({ success: true });
     hostApiMock.sessionsHistory.mockReset().mockResolvedValue({ success: true, messages: [] });
+    hostApiMock.cronSessionHistory.mockReset().mockResolvedValue({ messages: [] });
     hostApiMock.resolveAttachment.mockReset().mockImplementation(async (payload: {
       ref: { sessionKey: string; generation: number; uri: string };
       mimeType?: string;
@@ -156,6 +161,65 @@ describe('ACP Chat store', () => {
     hostEventsMock.onAcpPermissionRequest.mockClear();
     hostEventsMock.onGatewayChatMessage.mockClear();
     hostEventsMock.onChatRuntimeEvent.mockClear();
+  });
+
+  it('projects cron history when ACP replay is empty', async () => {
+    hostApiMock.cronSessionHistory.mockResolvedValue({
+      messages: [
+        { id: 'cron-prompt', role: 'user', content: '提醒我喝水', timestamp: 1_700_000_000_000 },
+        { id: 'cron-result', role: 'assistant', content: '该喝水了！💧', timestamp: 1_700_000_005_000 },
+      ],
+    });
+    const { useAcpChatSessionStore } = await importStore();
+
+    const loaded = await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:main:cron:job-water',
+      workspaceRoot: '/repo-a',
+      cwd: '/repo-a',
+    });
+
+    expect(loaded).toBe(true);
+    expect(hostApiMock.cronSessionHistory).toHaveBeenCalledWith({
+      sessionKey: 'agent:main:cron:job-water',
+      limit: 200,
+    });
+    const timeline = useAcpChatSessionStore.getState().timeline;
+    expect(timeline.itemOrder).toEqual(['cron-prompt:0', 'cron-result:0']);
+    expect(timeline.itemsById['cron-prompt:0']).toMatchObject({ role: 'user' });
+    expect(timeline.itemsById['cron-result:0']).toMatchObject({ role: 'assistant' });
+  });
+
+  it('keeps non-empty ACP replay authoritative over cron fallback history', async () => {
+    hostApiMock.loadAcpSession.mockResolvedValue({
+      success: true,
+      generation: 1,
+      sessionUpdates: [{
+        sessionKey: 'agent:main:cron:job-water',
+        generation: 1,
+        historical: true,
+        notification: {
+          sessionId: 'agent:main:cron:job-water',
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            messageId: 'acp-result',
+            content: { type: 'text', text: 'ACP authoritative result' },
+          },
+        },
+      }],
+    });
+    hostApiMock.cronSessionHistory.mockResolvedValue({
+      messages: [{ id: 'cron-result', role: 'assistant', content: 'Fallback result' }],
+    });
+    const { useAcpChatSessionStore } = await importStore();
+
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:main:cron:job-water',
+      workspaceRoot: '/repo-a',
+      cwd: '/repo-a',
+    });
+
+    const timeline = useAcpChatSessionStore.getState().timeline;
+    expect(timeline.itemOrder).toEqual(['acp-result:0']);
   });
 
   it('prepares a local pending session by clearing renderer state without loading ACP', async () => {

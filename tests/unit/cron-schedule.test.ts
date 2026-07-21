@@ -68,3 +68,46 @@ describe('cron schedule normalization', () => {
     expect(update?.params.patch?.schedule).toEqual({ kind: 'at', at: '2031-02-03T10:30:00.000Z' });
   });
 });
+
+describe('cron session history', () => {
+  it('reads SQLite-backed run summaries through cron.runs', async () => {
+    const job = makeGatewayJob({ kind: 'cron', expr: '* * * * *' });
+    const rpc = vi.fn(async (method: string) => {
+      if (method === 'cron.list') return { jobs: [job] };
+      if (method === 'cron.runs') {
+        return {
+          entries: [{
+            jobId: 'job-1',
+            status: 'ok',
+            summary: 'Time to drink water.',
+            sessionId: 'run-session-1',
+            ts: 1_700_000_005_000,
+            runAtMs: 1_700_000_000_000,
+            durationMs: 5000,
+            provider: 'provider-a',
+            model: 'model-a',
+          }],
+        };
+      }
+      return {};
+    });
+    const api = createCronApi({ gatewayManager: { rpc } as unknown as GatewayManager });
+
+    const result = await api.sessionHistory({
+      sessionKey: 'agent:main:cron:job-1',
+      limit: 200,
+    });
+
+    expect(rpc).toHaveBeenCalledWith('cron.runs', {
+      id: 'job-1',
+      limit: 200,
+      sortDir: 'asc',
+    }, 8000);
+    expect(result).toMatchObject({
+      messages: [
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: expect.stringContaining('Time to drink water.') },
+      ],
+    });
+  });
+});
