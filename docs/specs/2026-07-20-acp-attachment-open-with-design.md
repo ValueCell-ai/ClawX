@@ -5,7 +5,7 @@ Status: Approved
 
 ## Summary
 
-Add an `Open with` split action to local, previewable AI attachment cards in ACP chat. The existing primary card action continues to open ClawX's preview panel. A separate action on the right opens a dropdown containing compatible system applications followed by a fixed reveal-in-file-manager action.
+Add an in-card `Open with` action to local, previewable AI attachment cards in ACP chat. The existing primary card action continues to open ClawX's preview panel. A compact separate button inside the card's right edge opens a dropdown containing compatible system applications followed by a fixed reveal-in-file-manager action.
 
 The feature supports application discovery and application-specific opening on macOS and Windows. Linux shows the same secondary action with only the reveal-in-file-manager item. Application discovery, metadata, and icon failures degrade silently and never block previewing or revealing the file.
 
@@ -42,14 +42,14 @@ The secondary action is rendered only when all of the following are true:
 
 The action is not rendered for user attachments, pending or unavailable attachments, remote targets, or system-open-only attachments. This keeps the feature aligned with the existing `aria-label="Preview <filename>"` card identified by the requirement.
 
-### Split Card Structure
+### In-Card Control Structure
 
-The current attachment button becomes a visual card container with two sibling controls:
+The current attachment button becomes one visual card container with two sibling controls:
 
 - The primary button occupies the file information area. It retains the translated `Preview <filename>` accessible name and its existing click, Enter, and Space behavior.
-- The secondary button sits on the right, displays the translated `Open with` label and a downward chevron, and has an accessible name equivalent to `Open <filename> with`.
+- The compact secondary button sits inside the card's right edge, displays the translated `Open with` label and a downward chevron, and has an accessible name equivalent to `Open <filename> with`.
 
-The controls must not be nested buttons. Activating the secondary button or any menu item must not bubble into the primary action. Focus rings, hover states, disabled states, rounded card edges, and borders use the existing semantic tokens and attachment-card visual language.
+The controls must not be nested buttons. The secondary button is inset and independently rounded without a full-height separator, so the attachment remains one visual card rather than a segmented control. Activating the secondary button or any menu item must not bubble into the primary action. Focus rings, hover states, disabled states, rounded card edges, and borders use the existing semantic tokens and attachment-card visual language.
 
 ### Menu Contents
 
@@ -60,7 +60,7 @@ On macOS and Windows, the menu has two sections:
 
 On Linux, the first section is absent and the menu contains only the reveal action.
 
-Application rows contain a 32-pixel native icon when available and the localized application name. A generic application icon replaces an unavailable, malformed, or unreadable native icon. The default application is first. Remaining applications are sorted by localized display name using the current UI locale. Duplicate native handlers are removed by stable platform handler identity.
+Application rows contain a 20-pixel native icon when available and the localized application name. A generic application icon replaces an unavailable, malformed, or unreadable native icon. The default application is first. Remaining applications are sorted by localized display name using the current UI locale. Duplicate native handlers are removed by stable platform handler identity.
 
 The application section is not truncated. The menu has a maximum height and scrolls when necessary. Discovery starts lazily when the menu first opens. A localized, disabled loading row is shown while discovery is pending, but the reveal action is immediately available.
 
@@ -201,7 +201,7 @@ Handler metadata and converted icons used to render lists are cached in memory f
 
 ## Renderer Architecture
 
-`AcpAttachmentPart` keeps ownership of eligibility and the primary preview action. The split-card and menu behavior can be extracted into a small attachment-specific component if needed for readability, but it is not generalized to unrelated cards.
+`AcpAttachmentPart` keeps ownership of eligibility and the primary preview action. The in-card secondary control and menu behavior can be extracted into a small attachment-specific component if needed for readability, but it is not generalized to unrelated cards.
 
 When the eligible menu opens:
 
@@ -262,7 +262,7 @@ Failure isolation is a core acceptance requirement:
 - Windows adapter tests mock bridge output and execution for desktop and packaged handlers, default association, spaces and Unicode in paths, timeout, malformed output, handler invocation, and icon fallback.
 - Attachment access tests verify local-file requirements, stale session rejection, remote rejection, re-resolution before action, forged handler rejection, handler removal, and attachment-scoped reveal.
 - Host contract and facade tests verify the three typed `files` operations and ensure no legacy IPC path is added.
-- React tests verify exact eligibility, unchanged primary `Preview <filename>` behavior, separate controls, no click propagation, loading state, application sorting, icon fallback, silent empty/error states, platform reveal labels, and keyboard menu behavior.
+- React tests verify exact eligibility, unchanged primary `Preview <filename>` behavior, the compact in-card sibling control, no click propagation, loading state, application sorting, icon fallback, silent empty/error states, platform reveal labels, and keyboard menu behavior.
 
 ### Electron E2E
 
@@ -283,7 +283,7 @@ Because this is a user-visible host communication change, implementation must ad
 
 ## Acceptance Criteria
 
-- Eligible AI local preview cards have visually integrated but semantically separate preview and `Open with` controls.
+- Eligible AI local preview cards keep one visual card with a compact inset `Open with` button and semantically separate sibling controls.
 - Clicking anywhere in the primary card area preserves the existing preview behavior.
 - Clicking the secondary control never opens the preview.
 - macOS and Windows show all valid compatible applications reported by their system association APIs, with the default first and remaining entries locale-sorted.
@@ -295,7 +295,7 @@ Because this is a user-visible host communication change, implementation must ad
 - Main revalidates the attachment ref immediately before either opening or revealing, and freshly revalidates the selected handler immediately before application-specific opening.
 - No executable path, command template, application path, or canonical attachment path crosses into Renderer.
 - All new display text is translated in English, Chinese, Japanese, and Russian.
-- Unit and Electron E2E coverage demonstrates the split interaction, platform behavior, failure isolation, and attachment access safety.
+- Unit and Electron E2E coverage demonstrates the in-card interaction, platform behavior, failure isolation, and attachment access safety.
 
 ## Alternatives Considered
 

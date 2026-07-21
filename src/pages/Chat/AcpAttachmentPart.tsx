@@ -40,7 +40,7 @@ function ApplicationIcon({ iconDataUrl }: { iconDataUrl?: string }) {
     return (
       <AppWindow
         data-testid="acp-attachment-open-with-generic-icon"
-        className="h-8 w-8 shrink-0 text-muted-foreground"
+        className="h-5 w-5 shrink-0 text-muted-foreground"
         aria-hidden="true"
       />
     );
@@ -51,7 +51,7 @@ function ApplicationIcon({ iconDataUrl }: { iconDataUrl?: string }) {
       data-testid="acp-attachment-open-with-native-icon"
       src={iconDataUrl}
       alt=""
-      className="h-8 w-8 shrink-0 object-contain"
+      className="h-5 w-5 shrink-0 object-contain"
       onError={() => setFailedIcon(iconDataUrl)}
     />
   );
@@ -180,9 +180,9 @@ function AcpAttachmentOpenWith({ fileRef, name }: { fileRef: AttachmentFileRef; 
           data-testid="acp-attachment-open-with-trigger"
           aria-label={t('acp.attachment.openWithFile', { name })}
           className={cn(
-            'flex shrink-0 items-center gap-1 self-stretch rounded-r-xl border-l border-black/10 px-2 text-xs text-muted-foreground dark:border-white/10',
+            'flex shrink-0 items-center gap-1 rounded-md bg-surface-input px-2 py-1.5 text-xs text-muted-foreground',
             'transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5',
-            'focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
           )}
         >
           <span>{t('acp.attachment.openWith')}</span>
@@ -419,15 +419,15 @@ export function AcpAttachmentPart({ part, tone = 'assistant' }: { part: Attachme
 
   if (openWithFileRef) {
     return (
-      <div className="flex w-full max-w-full rounded-xl border border-black/10 bg-surface-modal text-left text-sm dark:border-white/10">
+      <div className="flex w-full max-w-full items-center gap-1 rounded-xl border border-black/10 bg-surface-modal p-1 pr-2 text-left text-sm dark:border-white/10">
         <button
           type="button"
           aria-label={ariaLabel}
           onClick={() => void activate()}
           className={cn(
-            'flex min-w-0 flex-1 items-center gap-3 rounded-l-xl px-3 py-2 text-left',
+            'flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-1 text-left',
             'transition-colors hover:bg-black/5 dark:hover:bg-white/5',
-            'focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
           )}
         >
           {attachmentContent}

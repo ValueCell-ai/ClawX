@@ -57,7 +57,7 @@ Create `harness/specs/tasks/acp-attachment-open-with.md` with:
 - `requiredProfiles: [fast, comms, e2e]`.
 - Rules for renderer/Main boundaries, host API fallback, attachment access safety, UI/i18n, comms regression, and docs sync.
 - Required commands copied from Task 6.
-- Acceptance entries for split-button behavior, macOS/Windows handlers and icons, Linux reveal-only behavior, fresh Main validation, silent discovery/icon degradation, and absence of raw paths/commands in Renderer.
+- Acceptance entries for in-card secondary-button behavior, macOS/Windows handlers and icons, Linux reveal-only behavior, fresh Main validation, silent discovery/icon degradation, and absence of raw paths/commands in Renderer.
 - An acceptance traceability table linking deterministic platform behavior to `tests/unit/attachment-open-with.test.ts`, native bridge validity to `tests/unit/attachment-open-with-native.test.ts`, authorization to `tests/unit/attachment-access.test.ts`, UI to `tests/unit/acp-chat-components.test.tsx`, and end-to-end behavior to `tests/e2e/chat-acp-attachments.spec.ts`.
 
 - [ ] **Step 2: Extend durable scenario and rules**
@@ -376,7 +376,7 @@ git commit -m "feat: expose secure attachment open-with actions"
 
 **Interfaces:**
 - Consumes: `hostApi.files.listAttachmentOpenHandlers`, `openAttachmentWith`, and `revealAttachment` from Task 3.
-- Produces: The user-visible split card and accessible dropdown exercised by Task 5.
+- Produces: The user-visible in-card secondary control and accessible dropdown exercised by Task 5.
 
 - [ ] **Step 1: Write failing component tests**
 
@@ -420,13 +420,13 @@ revealFailed
 
 Use natural translations, preserve the `{{name}}` interpolation in `openWithFile`, and do not hardcode Finder/Explorer labels in React.
 
-- [ ] **Step 4: Refactor eligible cards into sibling controls**
+- [ ] **Step 4: Refactor eligible cards into in-card sibling controls**
 
 Keep the current single-button branches unchanged for ineligible cards and user image thumbnails. For an eligible assistant local preview attachment:
 
 - Render one card-shaped `div` with the current border/surface styling.
-- Render the primary file-information button as `flex-1 min-w-0`, preserving `aria-label`, file content, click behavior, focus ring, and rounded left corners.
-- Add a visually integrated right-side trigger with a left separator, translated label, chevron, its own focus ring, and rounded right corners.
+- Render the primary file-information button as `flex-1 min-w-0`, preserving `aria-label`, file content, click behavior, focus ring, and rounded corners.
+- Add a compact right-side trigger inset within the card with no full-height separator, using the translated label, chevron, and its own focus ring.
 - Use `@radix-ui/react-dropdown-menu` directly; do not add a generic component wrapper that is unused elsewhere.
 
 - [ ] **Step 5: Implement lazy menu state and actions**
@@ -447,7 +447,7 @@ pnpm exec vitest run tests/unit/acp-chat-components.test.tsx tests/unit/artifact
 pnpm run typecheck:web
 ```
 
-Expected: split-card, eligibility, silent degradation, platform labels, keyboard behavior, and existing preview tests pass.
+Expected: in-card control layout, eligibility, silent degradation, platform labels, keyboard behavior, and existing preview tests pass.
 
 - [ ] **Step 7: Commit the Renderer behavior**
 

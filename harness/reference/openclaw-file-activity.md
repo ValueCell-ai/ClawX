@@ -83,6 +83,8 @@ Main establishes attachment session and relative-path context only when the ACP 
 
 Each assistant turn shows one file button and one summary per eligible path. Created/modified buttons open current-file Preview; deleted buttons open Changes. Changes is session-scoped, grouped by file, and shows at most one diff editor per turn and path. Empty sessions explicitly state that the session has no file changes.
 
+When a preview supports multiple views, its segmented switcher shares the trailing side of the file name/path header rather than consuming a separate row. HTML files expose `Preview` then `Source`, default to the sandboxed rendered preview, and preserve the same scoped read result when switching views.
+
 Full ACP structured replay restores available activity through the same projection. Transcript-only or incomplete replay does not infer missing records. Session switch clears the projection with the active timeline.
 
 ## Validation Anchors

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { FilePreviewBody } from '@/components/file-preview/FilePreviewBody';
 import type { FilePreviewTarget } from '@/components/file-preview/types';
 
@@ -82,6 +82,11 @@ describe('FilePreviewBody', () => {
     );
 
     const frame = await screen.findByTestId('html-preview-frame');
+    const header = screen.getByText('demo.html').closest('header');
+    expect(header).not.toBeNull();
+    const viewTabs = within(header!).getByRole('tablist');
+    expect(within(viewTabs).getByRole('tab', { name: 'Preview' })).toHaveAttribute('data-state', 'active');
+    expect(within(viewTabs).getByRole('tab', { name: 'Source' })).toBeVisible();
     expect(frame).toBeVisible();
     expect(frame).toHaveAttribute(
       'sandbox',

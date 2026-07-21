@@ -118,6 +118,8 @@ test.describe('ACP media attachments', () => {
       const trigger = page.getByRole('button', { name: 'Open Open with budget.xlsx with', exact: true });
       await expect(preview).toBeEnabled({ timeout: 30_000 });
       await expect(trigger).toBeEnabled();
+      await expect(trigger).toHaveCSS('align-self', 'auto');
+      await expect(trigger).toHaveCSS('border-left-width', '0px');
       await expect.poll(async () => {
         const resolveCall = (await fixture.getHostInvocations()).find((call) => (
           call.module === 'files'
@@ -154,8 +156,8 @@ test.describe('ACP media attachments', () => {
         await expect(appRows.nth(0)).toHaveText('Zulu Sheets');
         await expect(appRows.nth(1)).toHaveText('Alpha Sheets');
         await expect(appRows.nth(0).getByTestId('acp-attachment-open-with-native-icon')).toHaveAttribute('src', nativeIcon);
-        await expect(appRows.nth(0).getByTestId('acp-attachment-open-with-native-icon')).toHaveCSS('width', '32px');
-        await expect(appRows.nth(0).getByTestId('acp-attachment-open-with-native-icon')).toHaveCSS('height', '32px');
+        await expect(appRows.nth(0).getByTestId('acp-attachment-open-with-native-icon')).toHaveCSS('width', '20px');
+        await expect(appRows.nth(0).getByTestId('acp-attachment-open-with-native-icon')).toHaveCSS('height', '20px');
         await expect(appRows.nth(1).getByTestId('acp-attachment-open-with-generic-icon')).toBeVisible();
         await expect(appRows.nth(1).getByTestId('acp-attachment-open-with-generic-icon')).toHaveCSS('width', '32px');
         await expect(appRows.nth(1).getByTestId('acp-attachment-open-with-generic-icon')).toHaveCSS('height', '32px');
@@ -188,6 +190,52 @@ test.describe('ACP media attachments', () => {
       const previewCalls = await fixture.getHostInvocations();
       expect(filesActionCalls(previewCalls, 'openAttachmentWith')).toEqual([]);
       expect(filesActionCalls(previewCalls, 'revealAttachment')).toEqual([]);
+      expect(await getRecordedLegacyIpcInvocations(app)).toEqual([]);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('keeps the HTML preview and source switcher in the file header', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      const fixture = await installAttachmentHostFixture(app, {
+        sessions: [{ key: MAIN_SESSION_KEY, title: 'Main session' }],
+      });
+      const htmlPath = await fixture.createWorkspaceFile(
+        'inline-preview.html',
+        '<!doctype html><html><body><h1>Inline HTML preview</h1></body></html>',
+      );
+      await fixture.setSessionReplay(MAIN_SESSION_KEY, [
+        userUpdate('html-preview-user', 'Show the HTML file'),
+        resourceUpdate({
+          messageId: 'html-preview-reply',
+          uri: htmlPath,
+          name: 'inline-preview.html',
+          mimeType: 'text/html',
+        }),
+      ]);
+      await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [[]]);
+
+      const page = await openChat(app);
+      const attachment = page.getByRole('button', { name: 'Preview inline-preview.html', exact: true });
+      await expect(attachment).toBeEnabled({ timeout: 30_000 });
+      await attachment.click();
+
+      const panel = page.getByTestId('artifact-panel');
+      const fileHeader = panel.locator('header').filter({ hasText: 'inline-preview.html' });
+      const viewTabs = fileHeader.getByTestId('file-preview-view-tabs');
+      await expect(viewTabs).toBeVisible();
+      await expect(viewTabs.getByRole('tab', { name: 'Preview', exact: true })).toHaveAttribute('data-state', 'active');
+      await expect(panel.getByTestId('html-preview-frame')).toBeVisible();
+
+      await viewTabs.getByRole('tab', { name: 'Source', exact: true }).click();
+      await expect(viewTabs.getByRole('tab', { name: 'Source', exact: true })).toHaveAttribute('data-state', 'active');
+      await expect(panel.getByTestId('html-preview-frame')).toHaveCount(0);
+
+      await viewTabs.getByRole('tab', { name: 'Preview', exact: true }).click();
+      await expect(panel.getByTestId('html-preview-frame')).toBeVisible();
       expect(await getRecordedLegacyIpcInvocations(app)).toEqual([]);
     } finally {
       await closeElectronApp(app);

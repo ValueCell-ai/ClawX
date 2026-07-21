@@ -3,7 +3,7 @@ id: acp-attachment-open-with
 title: Add secure platform attachment open-with actions
 scenario: gateway-backend-communication
 taskType: runtime-bridge
-intent: Add a split Open with action for previewable local assistant attachments while keeping authorization and native application handling in Electron Main.
+intent: Add an in-card Open with action for previewable local assistant attachments while keeping authorization and native application handling in Electron Main.
 touchedAreas:
   - docs/specs/2026-07-20-acp-attachment-open-with-design.md
   - docs/plans/2026-07-20-acp-attachment-open-with.md
@@ -68,7 +68,7 @@ requiredTests:
   - pnpm harness run --spec harness/specs/tasks/acp-attachment-open-with.md
   - pnpm run harness:ci
 acceptance:
-  - Eligible local assistant preview cards use sibling primary preview and secondary Open with controls, and the secondary interaction never activates preview.
+  - Eligible local assistant preview cards place a compact secondary Open with button inside the card's right edge while retaining sibling semantic controls, and the secondary interaction never activates preview.
   - macOS and Windows list every valid compatible handler, deduplicate by stable identity, put the default first, locale-sort the remainder, and use native or generic application icons.
   - Linux performs no application discovery or application-specific open and presents only attachment-scoped reveal.
   - Main independently re-resolves the attachment ref, active session, and generation for list, selected-handler open, and reveal, then freshly validates handler membership immediately before application-specific open.
@@ -83,7 +83,7 @@ docs:
 
 ## Scope
 
-This task covers the Main-owned platform adapters and attachment authorization operations, the typed host facade, the eligible ACP attachment split control, four-locale menu behavior, native packaging checks, and focused regression coverage described by the approved design.
+This task covers the Main-owned platform adapters and attachment authorization operations, the typed host facade, the eligible ACP attachment in-card control, four-locale menu behavior, native packaging checks, and focused regression coverage described by the approved design.
 
 The durable requirements are defined by `harness/specs/scenarios/acp-chat-experience.md`, `harness/specs/rules/attachment-access-safety.md`, `harness/specs/rules/ui-i18n-design-tokens.md`, and `harness/reference/acp-attachment-access-control.md`.
 
@@ -101,5 +101,5 @@ The durable requirements are defined by `harness/specs/scenarios/acp-chat-experi
 | Deterministic handler normalization, caching, bounds, icon degradation, sanitized process environment, Main-owned Windows association input, and post-ready invocation behavior | `tests/unit/attachment-open-with.test.ts` |
 | Real macOS and Windows native bridge validity plus packaged Windows helper resolution | `tests/unit/attachment-open-with-native.test.ts` |
 | Per-operation attachment authorization, generation revalidation, forged-handler rejection, scoped reveal, and sensitive diagnostic-payload exclusion | `tests/unit/attachment-access.test.ts`, `attachment-access-safety` |
-| Split controls, exact eligibility, sorting, loading, icon fallback, silent failure, localization, and keyboard interaction | `tests/unit/acp-chat-components.test.tsx`, `ui-i18n-design-tokens` |
+| In-card sibling controls, exact eligibility, sorting, loading, icon fallback, silent failure, localization, and keyboard interaction | `tests/unit/acp-chat-components.test.tsx`, `ui-i18n-design-tokens` |
 | End-to-end click routing, typed host requests, platform menu behavior, and failure isolation | `tests/e2e/chat-acp-attachments.spec.ts` |

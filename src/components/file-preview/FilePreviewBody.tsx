@@ -27,7 +27,6 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { cn } from '@/lib/utils';
 import {
   readTextFile,
   readAttachmentText,
@@ -548,26 +547,7 @@ export function FilePreviewBody({
     }
 
     return (
-      <Tabs value={tab} onValueChange={(next) => setTab(next as Tab)} className="flex h-full flex-col">
-        {/* Hide the tab strip when there's only one tab — keeps the UI
-            quiet for the common case (just preview / just source). */}
-        {tabs.length > 1 && (
-          <TabsList className="m-3 self-start">
-            {tabs.map((id) => (
-              <TabsTrigger key={id} value={id}>
-                {id === 'source' && t('filePreview.tabs.source', 'Source')}
-                {id === 'preview' && t('filePreview.tabs.preview', 'Preview')}
-                {id === 'diff' && t('filePreview.tabs.changes', 'Changes')}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        )}
-        <div
-          className={cn(
-            'min-h-0 flex-1',
-            tabs.length > 1 && 'border-t border-black/5 dark:border-white/10',
-          )}
-        >
+      <div className="h-full min-h-0">
           {tabs.includes('source') && (
             <TabsContent value="source" className="m-0 h-full">
               {richPreview === 'image' ? (
@@ -693,13 +673,16 @@ export function FilePreviewBody({
               </Suspense>
             </TabsContent>
           )}
-        </div>
-      </Tabs>
+      </div>
     );
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <Tabs
+      value={tab}
+      onValueChange={(next) => setTab(next as Tab)}
+      className="flex h-full min-h-0 flex-col"
+    >
       {!hideHeader && (
       <header
         className={
@@ -722,6 +705,17 @@ export function FilePreviewBody({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {state.status === 'ready' && tabs.length > 1 && (
+            <TabsList className="h-8 shrink-0" data-testid="file-preview-view-tabs">
+              {tabs.map((id) => (
+                <TabsTrigger key={id} value={id} className="px-2.5 py-1 text-xs">
+                  {id === 'source' && t('filePreview.tabs.source', 'Source')}
+                  {id === 'preview' && t('filePreview.tabs.preview', 'Preview')}
+                  {id === 'diff' && t('filePreview.tabs.changes', 'Changes')}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          )}
           {!effectiveReadOnly && state.status === 'ready' && (
             <>
               <Button variant="ghost" size="sm" onClick={handleRevert} disabled={!dirty || saving}>
@@ -739,7 +733,7 @@ export function FilePreviewBody({
       </header>
       )}
       <div className="min-h-0 flex-1">{renderBody()}</div>
-    </div>
+    </Tabs>
   );
 }
 

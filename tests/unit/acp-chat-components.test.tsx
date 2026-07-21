@@ -550,14 +550,18 @@ describe('ACP chat timeline components', () => {
     expect(screen.getByAltText('Chart preview')).toHaveAttribute('src', 'data:image/png;base64,abc');
   });
 
-  it('splits an eligible assistant local preview card without changing its primary preview action', () => {
+  it('embeds the open-with control inside an eligible assistant preview card', () => {
     const part = availableAttachment();
     render(<AcpAttachmentPart part={part} />);
 
     const preview = screen.getByRole('button', { name: 'Preview report.pdf' });
     const trigger = screen.getByRole('button', { name: 'Open report.pdf with' });
     expect(preview.parentElement).toBe(trigger.parentElement);
-    expect(preview).toHaveClass('flex-1', 'min-w-0');
+    expect(preview.parentElement).toHaveClass('items-center', 'gap-1', 'p-1');
+    expect(preview).toHaveClass('flex-1', 'rounded-lg');
+    expect(preview).not.toHaveClass('rounded-l-xl');
+    expect(trigger).toHaveClass('rounded-md');
+    expect(trigger).not.toHaveClass('self-stretch', 'border-l', 'rounded-r-xl');
 
     fireEvent.click(preview);
 
@@ -631,7 +635,7 @@ describe('ACP chat timeline components', () => {
       'Beta',
     ]);
     expect(screen.getByTestId('acp-attachment-open-with-native-icon')).toHaveAttribute('src', iconDataUrl);
-    expect(screen.getByTestId('acp-attachment-open-with-native-icon')).toHaveClass('h-8', 'w-8');
+    expect(screen.getByTestId('acp-attachment-open-with-native-icon')).toHaveClass('h-5', 'w-5');
   });
 
   it('uses a generic application icon for missing, invalid, oversized, and failed native icons', async () => {
