@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AcpToolCallCard } from '@/pages/Chat/AcpToolCallCard';
 import { AcpAttachmentPart } from '@/pages/Chat/AcpAttachmentPart';
 import { AcpTimeline } from '@/pages/Chat/AcpTimeline';
+import { AcpTurnFileActivity } from '@/pages/Chat/AcpTurnFileActivity';
 import type { AcpTimelineSnapshot, AttachmentRenderPart, ToolCallItem } from '@/lib/acp/timeline-types';
 import type { AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 import { useArtifactPanel } from '@/stores/artifact-panel';
@@ -281,6 +282,30 @@ describe('ACP chat timeline components', () => {
       relativePath: 'old.md',
       turnId,
       navigationId: expect.any(Number),
+    });
+  });
+
+  it.each(['report.docx', 'slides.pptx'])('routes active Office file activity %s through a workspace-scoped preview target', (relativePath) => {
+    render(
+      <AcpTurnFileActivity
+        workspaceRoot="/workspace"
+        summaries={[{
+          turnId: 'turn-office',
+          relativePath,
+          action: 'created',
+          activities: [],
+          added: null,
+          removed: null,
+        }]}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('acp-file-button'));
+
+    expect(useArtifactPanel.getState().focusedFile).toMatchObject({
+      filePath: relativePath,
+      contentType: 'document',
+      workspaceFileRef: { workspaceRoot: '/workspace', relativePath },
     });
   });
 
@@ -953,8 +978,26 @@ describe('ACP chat timeline components', () => {
   });
 
   it.each([
+    ['report.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['slides.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  ])('previews an authorized in-limit Office attachment %s', (name, mimeType) => {
+    const part = availableAttachment({ name, mimeType, size: 20 * 1024 * 1024 });
+    render(<AcpAttachmentPart part={part} />);
+
+    fireEvent.click(screen.getByRole('button', { name: `Preview ${name}` }));
+
+    expect(useArtifactPanel.getState().focusedFile).toMatchObject({
+      fileName: name,
+      contentType: 'document',
+      attachmentFileRef: part.access.status === 'available' && part.access.target.ref,
+    });
+    expect(openAttachmentMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
     ['archive.zip', 'application/zip', 1024],
-    ['report.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 1024],
+    ['large.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 20 * 1024 * 1024 + 1],
+    ['large.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 20 * 1024 * 1024 + 1],
     ['clip.mp3', 'audio/mpeg', 1024],
     ['movie.mp4', 'video/mp4', 1024],
     ['large.pdf', 'application/pdf', 50 * 1024 * 1024 + 1],
@@ -999,6 +1042,25 @@ describe('ACP chat timeline components', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open report.pdf' }));
 
     await waitFor(() => expect(openAttachmentMock).toHaveBeenCalledWith(ref));
+  });
+
+  it.each([
+    ['remote.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['remote.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  ])('opens remote Office attachment %s through the scoped host action', async (name, mimeType) => {
+    const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: `https://example.com/${name}` };
+    const part = availableAttachment({
+      name,
+      mimeType,
+      target: { kind: 'remote', ref, url: ref.uri },
+      ref,
+    });
+    render(<AcpAttachmentPart part={part} />);
+
+    fireEvent.click(screen.getByRole('button', { name: `Open ${name}` }));
+
+    await waitFor(() => expect(openAttachmentMock).toHaveBeenCalledWith(ref));
+    expect(useArtifactPanel.getState().focusedFile).toBeNull();
   });
 
   it('lifts early assistant attachments after later process and prose items and before file activity', () => {

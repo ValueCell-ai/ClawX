@@ -12,7 +12,7 @@
  * `useArtifactPanel` zustand store so any part of the page (file cards,
  * toolbar buttons, "View file changes →" links) can drive it.
  */
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Eye, FileEdit, FolderOpen, FolderTree, Globe2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -142,12 +142,13 @@ export function ArtifactPanel({ fileGroups, uniqueFileCount, agent, workspacePat
               workspaceLabel={workspaceLabel}
               runStartedAt={runStartedAt}
               refreshSignal={refreshSignal}
+              active={visibleTab === 'browser'}
               compact
             />
           </div>
         )}
         <div className={cn('h-full min-h-0', visibleTab !== 'preview' && 'hidden')}>
-          <PreviewTab focusedFile={focusedFile} />
+          <PreviewTab focusedFile={focusedFile} active={visibleTab === 'preview'} />
         </div>
         <div className={cn('h-full min-h-0', visibleTab !== 'changes' && 'hidden')}>
           <AcpSessionChangesView fileGroups={fileGroups} uniqueFileCount={uniqueFileCount} focus={focusedChange} />
@@ -203,10 +204,12 @@ function PanelTabButton({ testId, icon, label, active, onClick }: PanelTabButton
 
 interface PreviewTabProps {
   focusedFile: FilePreviewTarget | null;
+  active: boolean;
 }
 
-function PreviewTab({ focusedFile }: PreviewTabProps) {
+function PreviewTab({ focusedFile, active }: PreviewTabProps) {
   const { t } = useTranslation('chat');
+  const [pptxSlidePositions] = useState(() => new Map<string, number>());
   if (!focusedFile) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
@@ -222,12 +225,16 @@ function PreviewTab({ focusedFile }: PreviewTabProps) {
       </div>
     );
   }
+  const identity = getFilePreviewTargetIdentity(focusedFile);
   return (
     <FilePreviewBody
-      key={getFilePreviewTargetIdentity(focusedFile)}
+      key={identity}
       file={focusedFile}
       compact
       mode="preview"
+      active={active}
+      initialPptxSlideIndex={pptxSlidePositions.get(identity) ?? 0}
+      onPptxSlideIndexChange={(index) => pptxSlidePositions.set(identity, index)}
     />
   );
 }

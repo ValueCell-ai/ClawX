@@ -209,6 +209,15 @@
             "pageInputAria": "現在のページ",
             "singlePageHint": "ツールバーから {{total}} ページを切り替えできます"
         },
+        "docx": {
+            "loadFailed": "Word 文書の読み込みに失敗しました"
+        },
+        "pptx": {
+            "loadFailed": "プレゼンテーションの読み込みに失敗しました",
+            "previous": "前のスライド",
+            "next": "次のスライド",
+            "slidePosition": "{{current}} / {{total}}"
+        },
         "sheet": {
             "loadFailed": "スプレッドシートの読み込みに失敗しました: {{error}}",
             "empty": "表示できるワークシートがありません",

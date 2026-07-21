@@ -97,10 +97,10 @@ describe('GeneratedFilesPanel', () => {
       <GeneratedFilesPanel
         files={[
           makeFile({
-            filePath: '/tmp/report.docx',
-            fileName: 'report.docx',
-            ext: '.docx',
-            mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            filePath: '/tmp/report.doc',
+            fileName: 'report.doc',
+            ext: '.doc',
+            mimeType: 'application/msword',
             contentType: 'document',
           }),
         ]}
@@ -108,7 +108,7 @@ describe('GeneratedFilesPanel', () => {
       />,
     );
 
-    const button = screen.getByRole('button', { name: /report\.docx/ });
+    const button = screen.getByRole('button', { name: /report\.doc/ });
     expect(button).toBeDisabled();
     fireEvent.click(button);
     expect(onOpen).not.toHaveBeenCalled();

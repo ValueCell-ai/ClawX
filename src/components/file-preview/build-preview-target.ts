@@ -85,7 +85,10 @@ export function buildAttachmentPreviewTarget(attachment: AttachmentRenderPart): 
     mimeType,
     contentType: richPreview === 'image'
       ? 'snapshot'
-      : richPreview === 'pdf' || richPreview === 'sheet'
+      : richPreview === 'pdf'
+        || richPreview === 'sheet'
+        || richPreview === 'docx'
+        || richPreview === 'pptx'
         ? 'document'
         : classifyFileExt(ext),
     size: attachment.access.size,

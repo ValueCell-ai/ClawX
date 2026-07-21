@@ -209,6 +209,15 @@
             "pageInputAria": "当前页",
             "singlePageHint": "使用工具栏在 {{total}} 页之间切换"
         },
+        "docx": {
+            "loadFailed": "Word 文档加载失败"
+        },
+        "pptx": {
+            "loadFailed": "演示文稿加载失败",
+            "previous": "上一张幻灯片",
+            "next": "下一张幻灯片",
+            "slidePosition": "{{current}} / {{total}}"
+        },
         "sheet": {
             "loadFailed": "表格加载失败：{{error}}",
             "empty": "该文件没有可展示的工作表",

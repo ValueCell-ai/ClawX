@@ -20,7 +20,6 @@
  * here so callers only pass a `FilePreviewTarget` and a `readOnly` flag.
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { FILE_PREVIEW_MAX_BINARY_BYTES } from '@shared/file-preview/limits';
 import { FolderOpen, Save, ShieldAlert, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
@@ -41,7 +40,11 @@ import {
   isHtmlPreviewExt,
   supportsInlineDiff,
 } from '@/lib/generated-files';
-import { filePreviewKind, richFilePreviewKind } from '@/lib/file-preview-capabilities';
+import {
+  filePreviewKind,
+  isFilePreviewWithinSizeLimit,
+  richFilePreviewKind,
+} from '@/lib/file-preview-capabilities';
 import { FilePreviewIcon } from './file-card-utils';
 import { formatFileSize } from './format';
 import {
@@ -57,6 +60,8 @@ const MonacoViewerLazy = lazy(() => import('./MonacoViewer'));
 const MonacoDiffViewerLazy = lazy(() => import('./MonacoDiffViewer'));
 const PdfViewerLazy = lazy(() => import('./PdfViewer'));
 const SheetViewerLazy = lazy(() => import('./SheetViewer'));
+const DocxViewerLazy = lazy(() => import('./DocxViewer'));
+const PptxViewerLazy = lazy(() => import('./PptxViewer'));
 
 /**
  * Tab set for the body.
@@ -81,6 +86,10 @@ export interface FilePreviewBodyProps {
   mode?: FilePreviewBodyMode;
   /** When true, hide the file header (name / path / actions). */
   hideHeader?: boolean;
+  /** Whether this preview surface is visible and may own the PPTX parser. */
+  active?: boolean;
+  initialPptxSlideIndex?: number;
+  onPptxSlideIndexChange?: (index: number) => void;
 }
 
 type LoadState =
@@ -205,6 +214,9 @@ export function FilePreviewBody({
   trailingHeader,
   mode = 'full',
   hideHeader = false,
+  active = true,
+  initialPptxSlideIndex,
+  onPptxSlideIndexChange,
 }: FilePreviewBodyProps) {
   const { t } = useTranslation('chat');
   const loadIdentity = getFilePreviewTargetIdentity(file);
@@ -224,10 +236,22 @@ export function FilePreviewBody({
   const unsupportedPreviewFormat = mode !== 'diff' && filePreviewKind(file) == null;
   const unsupportedDiffFormat = mode === 'diff' && !supportsInlineDiff(file);
   const richPreview = richFilePreviewKind(file);
-  // Binary document previews (PDF, spreadsheet) own their own loading
+  // Binary document previews own their own loading
   // pipeline — we must not pipe them through `readTextFile` (which would
   // reject them as binary) and the diff tab is intentionally hidden.
-  const isRichDocumentPreview = richPreview === 'pdf' || richPreview === 'sheet';
+  const isRichDocumentPreview = richPreview === 'pdf'
+    || richPreview === 'sheet'
+    || richPreview === 'docx'
+    || richPreview === 'pptx';
+  const richPreviewLimitTarget = useMemo(() => (
+    isRichDocumentPreview && richPreview
+      ? { kind: 'rich' as const, richKind: richPreview }
+      : null
+  ), [isRichDocumentPreview, richPreview]);
+  const handleOfficeTooLarge = useCallback((nextSize?: number) => {
+    setSize(nextSize);
+    setState({ identity: loadIdentity, status: 'tooLarge', size: nextSize });
+  }, [loadIdentity]);
 
   useEffect(() => {
     let cancelled = false;
@@ -272,7 +296,11 @@ export function FilePreviewBody({
       // IPC channel; the body just needs to hand off control. For files
       // beyond the inline-preview ceiling we keep the existing
       // "direct open" fallback so users still have a way out.
-      if (typeof file.size === 'number' && file.size > FILE_PREVIEW_MAX_BINARY_BYTES) {
+      if (
+        richPreviewLimitTarget
+        && typeof file.size === 'number'
+        && !isFilePreviewWithinSizeLimit(richPreviewLimitTarget, file.size)
+      ) {
         setSize(file.size);
         setState({ identity: loadIdentity, status: 'tooLarge', size: file.size });
         setDraft(null);
@@ -293,7 +321,12 @@ export function FilePreviewBody({
         : statFile(file.filePath))
         .then((res) => {
           if (cancelled) return;
-          if (res.ok && typeof res.size === 'number' && res.size > FILE_PREVIEW_MAX_BINARY_BYTES) {
+          if (
+            res.ok
+            && richPreviewLimitTarget
+            && typeof res.size === 'number'
+            && !isFilePreviewWithinSizeLimit(richPreviewLimitTarget, res.size)
+          ) {
             setSize(res.size);
             setState({ identity: loadIdentity, status: 'tooLarge', size: res.size });
             return;
@@ -363,7 +396,7 @@ export function FilePreviewBody({
     return () => {
       cancelled = true;
     };
-  }, [file, loadIdentity, enforcedReadOnly, mode, tabs, unsupportedPreviewFormat, isRichDocumentPreview, richPreview]);
+  }, [file, loadIdentity, enforcedReadOnly, mode, tabs, unsupportedPreviewFormat, isRichDocumentPreview, richPreview, richPreviewLimitTarget]);
 
   const effectiveReadOnly = state.status === 'ready' ? state.readOnly : true;
   const allowSystemActions = !file.attachmentFileRef && !file.workspaceFileRef;
@@ -614,6 +647,44 @@ export function FilePreviewBody({
                     workspaceFileRef={file.workspaceFileRef}
                   />
                 </Suspense>
+              ) : richPreview === 'docx' ? (
+                <Suspense
+                  fallback={
+                    <div className="flex h-full items-center justify-center">
+                      <LoadingSpinner />
+                    </div>
+                  }
+                >
+                  <DocxViewerLazy
+                    filePath={file.filePath}
+                    fileName={file.fileName}
+                    attachmentFileRef={file.attachmentFileRef}
+                    workspaceFileRef={file.workspaceFileRef}
+                    onTooLarge={handleOfficeTooLarge}
+                  />
+                </Suspense>
+              ) : richPreview === 'pptx' ? (
+                // CSS hidden is insufficient: pptxviewjs@1.1.9 shares Renderer-global processor/ZIP state.
+                // See docs/specs/2026-07-22-office-document-preview-design.md#single-active-instance.
+                active ? (
+                  <Suspense
+                    fallback={
+                      <div className="flex h-full items-center justify-center">
+                        <LoadingSpinner />
+                      </div>
+                    }
+                  >
+                    <PptxViewerLazy
+                      filePath={file.filePath}
+                      fileName={file.fileName}
+                      attachmentFileRef={file.attachmentFileRef}
+                      workspaceFileRef={file.workspaceFileRef}
+                      onTooLarge={handleOfficeTooLarge}
+                      initialSlideIndex={initialPptxSlideIndex}
+                      onSlideIndexChange={onPptxSlideIndexChange}
+                    />
+                  </Suspense>
+                ) : null
               ) : file.contentType === 'document' ? (
                 isHtmlPreviewExt(file.ext) ? (
                   <HtmlPreview

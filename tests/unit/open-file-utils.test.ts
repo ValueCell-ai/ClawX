@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { confirmAndOpenFile, revealFile } from '@/components/file-preview/open-file-utils';
+import {
+  confirmAndOpenFile,
+  DIRECT_OPEN_FALLBACK_MIN_BYTES,
+  revealFile,
+  shouldOfferDirectOpenFallback,
+} from '@/components/file-preview/open-file-utils';
 
 const mocks = vi.hoisted(() => ({
   message: vi.fn(),
@@ -35,4 +40,12 @@ describe('open-file-utils', () => {
     expect(mocks.showItemInFolder).toHaveBeenCalledWith('/tmp/demo.pdf');
   });
 
+  it.each(['.docx', '.pptx'])('offers direct-open fallback for large %s previews', (ext) => {
+    expect(shouldOfferDirectOpenFallback(ext, DIRECT_OPEN_FALLBACK_MIN_BYTES)).toBe(false);
+    expect(shouldOfferDirectOpenFallback(ext, DIRECT_OPEN_FALLBACK_MIN_BYTES + 1)).toBe(true);
+  });
+
+  it.each(['.doc', '.ppt'])('does not offer direct-open fallback for legacy %s files', (ext) => {
+    expect(shouldOfferDirectOpenFallback(ext, DIRECT_OPEN_FALLBACK_MIN_BYTES + 1)).toBe(false);
+  });
 });

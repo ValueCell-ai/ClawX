@@ -108,6 +108,47 @@ describe('harness specs', () => {
     }
   });
 
+  it('defines the Office document preview harness contract', async () => {
+    const [task, rules, scenarios] = await Promise.all([
+      loadSpec('harness/specs/tasks/office-document-preview.md'),
+      loadRuleSpecs(),
+      loadScenarioSpecs(),
+    ]);
+    const ruleIds = new Set(rules.map((rule) => rule.data.id));
+    const workspaceScenario = scenarios.find(
+      (scenario) => scenario.data.id === 'chat-workspace-and-navigation',
+    );
+
+    expect(task.data).toMatchObject({
+      id: 'office-document-preview',
+      scenario: 'chat-workspace-and-navigation',
+      taskType: 'runtime-bridge',
+      requiredProfiles: ['fast', 'e2e'],
+      docs: { required: true },
+    });
+    expect(task.data.requiredRules).toEqual([
+      'renderer-main-boundary',
+      'attachment-access-safety',
+      'tool-derived-file-safety',
+      'ui-i18n-design-tokens',
+      'office-preview-safety',
+      'docs-sync',
+    ]);
+    expect(ruleIds).toContain('office-preview-safety');
+    expect(workspaceScenario?.data.requiredRules).toContain('office-preview-safety');
+    expect(workspaceScenario?.data.ownedPaths).toEqual(expect.arrayContaining([
+      'src/components/file-preview/DocxViewer.tsx',
+      'src/components/file-preview/PptxViewer.tsx',
+      'src/pages/Chat/AcpTurnFileActivity.tsx',
+      'src/pages/Chat/AcpAttachmentPart.tsx',
+      'tests/e2e/office-document-preview.spec.ts',
+    ]));
+    expect(workspaceScenario?.body).toContain('DOCX');
+    expect(workspaceScenario?.body).toContain('PPTX');
+    expect(workspaceScenario?.body).toContain('20 MB');
+    expect(workspaceScenario?.body).toContain('single mounted PPTX viewer');
+  });
+
   it('defines the ACP media attachment harness contract', async () => {
     const expectedRules = [
       'renderer-main-boundary',

@@ -4,9 +4,9 @@ Status: current workspace reference, reviewed 2026-07-21.
 
 Related scenario: `chat-workspace-and-navigation`
 
-Related rules: `session-workspace-authority`, `sidebar-session-attention-authority`, `ui-i18n-design-tokens`
+Related rules: `session-workspace-authority`, `sidebar-session-attention-authority`, `ui-i18n-design-tokens`, `office-preview-safety`
 
-Related tasks: `chat-workspace-context`, `sidebar-session-attention`
+Related tasks: `chat-workspace-context`, `sidebar-session-attention`, `office-document-preview`
 
 ## Workspace Authority
 
@@ -61,12 +61,18 @@ File icons come only from trusted bundled assets. Selecting a file preserves the
 
 The Web Browser is a fixed fourth tab with one persistent Electron guest. `ArtifactTab` keeps `browser` and `web-browser` distinct; `WebBrowserAnchor` marks the panel body while the route-stable `WebBrowserHost` mounted by `MainLayout` owns the live guest. The stable panel selectors are `artifact-panel-tabs`, `artifact-panel-tab-web-browser`, and `web-browser-anchor`; the global surface selectors are `web-browser-host` and `web-browser-webview`. Its session, security, lifecycle, permission, popup, download, proxy, and data-clearing contract is documented separately in `harness/reference/web-browser.md`.
 
+## Office Document Preview
+
+The Workspace and Preview surfaces support read-only `.docx` and `.pptx` files; legacy `.doc` and `.ppt` files remain system-open-only. Extension is authoritative, and compressed DOCX/PPTX input is limited to 20 MB before Renderer parsing. Scoped workspace and attachment references use only their authorized Host API read route and never fall back to a naked path. Workspace Browser intentionally retains its existing Host-validated absolute-path read flow.
+
+DOCX generated content is isolated and its links are non-interactive. PPTX renders one slide at a time, and kept-mounted artifact surfaces conditionally mount it so the shared Electron Renderer has a single mounted PPTX viewer. Cleanup releases ClawX-owned resources and invokes public `destroy()` exactly once, while the reviewed dependency-owned retained-resource limitation remains accepted. Exact security and lifecycle requirements are in `harness/specs/rules/office-preview-safety.md`; implementation decisions and user-visible limitations are in `docs/specs/2026-07-22-office-document-preview-design.md`.
+
 ## Question Navigation
 
 The Chat question directory belongs to the active ACP timeline rather than workspace persistence. Its current behavior is documented in `harness/reference/acp-chat.md`.
 
 ## Validation Anchors
 
-Key tests include `tests/unit/workspace-context.test.ts`, `tests/unit/session-title.test.ts`, `tests/unit/session-buckets.test.ts`, `tests/unit/sidebar-session-buckets.test.ts`, `tests/unit/workspace-browser-body.test.tsx`, `tests/unit/chat-acp-page.test.tsx`, `tests/unit/artifact-panel-store.test.ts`, `tests/unit/artifact-panel.test.tsx`, `tests/unit/main-layout.test.tsx`, `tests/e2e/chat-workspace-context.spec.ts`, `tests/e2e/chat-acp-inline-timeline.spec.ts`, `tests/e2e/chat-question-directory.spec.ts`, `tests/e2e/chat-sidebar-session-attention.spec.ts`, and the three final Web Browser E2E specs linked from `harness/reference/web-browser.md`.
+Key tests include `tests/unit/workspace-context.test.ts`, `tests/unit/session-title.test.ts`, `tests/unit/session-buckets.test.ts`, `tests/unit/sidebar-session-buckets.test.ts`, `tests/unit/workspace-browser-body.test.tsx`, `tests/unit/office-file-viewers.test.tsx`, `tests/unit/chat-acp-page.test.tsx`, `tests/unit/artifact-panel-store.test.ts`, `tests/unit/artifact-panel.test.tsx`, `tests/unit/main-layout.test.tsx`, `tests/e2e/chat-workspace-context.spec.ts`, `tests/e2e/chat-acp-inline-timeline.spec.ts`, `tests/e2e/chat-question-directory.spec.ts`, `tests/e2e/chat-sidebar-session-attention.spec.ts`, `tests/e2e/office-document-preview.spec.ts`, and the three final Web Browser E2E specs linked from `harness/reference/web-browser.md`.
 
 This reference consolidates the former workspace sidebar, chat workspace context, sidebar workspace UI, and ACP working-directory title designs. The later flat activity-sorted sidebar supersedes the earlier recency buckets.

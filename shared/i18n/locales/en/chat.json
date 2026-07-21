@@ -209,6 +209,15 @@
             "pageInputAria": "Current page",
             "singlePageHint": "Use the toolbar to switch between {{total}} pages"
         },
+        "docx": {
+            "loadFailed": "Word document failed to load"
+        },
+        "pptx": {
+            "loadFailed": "Presentation failed to load",
+            "previous": "Previous slide",
+            "next": "Next slide",
+            "slidePosition": "{{current}} / {{total}}"
+        },
         "sheet": {
             "loadFailed": "Failed to load spreadsheet: {{error}}",
             "empty": "This file has no displayable worksheets",
