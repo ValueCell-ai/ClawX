@@ -8,24 +8,64 @@ touchedAreas:
   - package.json
   - pnpm-lock.yaml
   - scripts/download-bundled-node.mjs
+  - scripts/bundle-openclaw.mjs
+  - electron/services/acp-chat-service.ts
+  - shared/acp-chat/types.ts
+  - electron/utils/openclaw-upgrade-snapshot.ts
+  - electron/utils/plugin-install-index.ts
+  - electron/utils/plugin-install.ts
+  - electron/gateway/config-sync.ts
+  - electron/gateway/startup-recovery.ts
+  - electron/gateway/startup-orchestrator.ts
+  - electron/gateway/manager.ts
+  - electron/gateway/process-policy.ts
+  - tests/unit/acp-chat-service.test.ts
+  - tests/unit/gateway-startup-recovery.test.ts
+  - tests/unit/gateway-startup-orchestrator.test.ts
+  - tests/unit/openclaw-cli.test.ts
+  - tests/unit/openclaw-bundle-config.test.ts
+  - tests/unit/openclaw-upgrade-snapshot.test.ts
+  - tests/unit/plugin-install-index.test.ts
+  - tests/unit/plugin-install.test.ts
+  - tests/unit/gateway-process-policy.test.ts
+  - README.md
+  - README.zh-CN.md
+  - README.ja-JP.md
+  - README.ru-RU.md
   - harness/specs/tasks/upgrade-openclaw-2026-7-1.md
 expectedUserBehavior:
-  - ClawX starts and communicates with the bundled OpenClaw 2026.7.1 Gateway.
-  - Bundled official channel plugins use versions compatible with OpenClaw 2026.7.1.
-  - Packaged Windows builds use a Node runtime that satisfies OpenClaw 2026.7.1 engine requirements.
+  - Existing OpenClaw 2026.6.10 configuration, authentication, sessions, and channel credentials remain usable after upgrade, with a one-time pre-migration snapshot of mutable config/auth/SQLite state.
+  - ClawX starts and communicates with the bundled OpenClaw 2026.7.1 Gateway, including migration and control-plane safe-mode startup states.
+  - ClawX registers the compatibility-patched WeCom mirror as a local-path install with static channel metadata so OpenClaw startup migration does not replace it with the raw mismatched npm package.
+  - Fatal runtime/SQLite incompatibility, EX_CONFIG exits, invalid migrations, and active migration leases do not enter unbounded Gateway restart loops.
+  - ACP chat initializes, replays, prompts, cancels, requests permission, and forwards unknown ACP 1.1 session updates without dropping the NDJSON connection.
+  - Bundled channel plugins use versions compatible with OpenClaw 2026.7.1 while existing WeCom and Open Lark manifest-ID compatibility behavior remains unchanged.
+  - Packaged builds use Electron and Windows Node runtimes that satisfy OpenClaw 2026.7.1 Node and SQLite requirements.
 requiredProfiles:
   - fast
   - comms
 requiredTests:
+  - tests/unit/acp-chat-service.test.ts
+  - tests/unit/gateway-startup-recovery.test.ts
+  - tests/unit/gateway-startup-orchestrator.test.ts
   - tests/unit/openclaw-cli.test.ts
   - tests/unit/openclaw-bundle-config.test.ts
+  - tests/unit/openclaw-upgrade-snapshot.test.ts
+  - tests/unit/plugin-install-index.test.ts
+  - tests/unit/plugin-install.test.ts
+  - tests/unit/channel-config.test.ts
 acceptance:
-  - The OpenClaw dependency and official OpenClaw channel plugins are pinned to 2026.7.1.
-  - The lockfile resolves OpenClaw and the official channel plugins at 2026.7.1 without incompatible peers.
+  - OpenClaw, ACP SDK, Electron, Windows Node, and official OpenClaw channel plugins are pinned to compatible runtime versions.
+  - DingTalk is pinned to 3.6.6, WeCom to 2026.7.2, and Open Lark to 2026.7.9 without changing ClawX's effective manifest-ID mappings.
+  - The lockfile resolves OpenClaw and all bundled channel plugins without incompatible peers or stale 2026.6.10 plugin packages.
+  - Electron embeds Node 24.15.0 or newer within the Node 24 line and a WAL-reset-safe SQLite runtime.
   - The bundled Windows Node version satisfies OpenClaw 2026.7.1's declared engine range.
-  - Type checks, targeted runtime tests, and communication regression checks pass.
+  - ClawX snapshots OpenClaw config, credentials, and SQLite databases with WAL/SHM sidecars once before the first 2026.7.1 prelaunch sync.
+  - ClawX writes plugin install metadata to OpenClaw 2026.7.1's canonical `state/openclaw.sqlite` index, removes legacy config records, and represents the patched WeCom mirror as a local path rather than an npm-managed install.
+  - Gateway recovery performs at most one doctor repair per startup flow and does not retry fatal runtime, EX_CONFIG, invalid migration, or active migration-lease failures indefinitely.
+  - ACP 1.1 type checks, targeted runtime tests, communication regression checks, and harness validation pass.
 docs:
-  required: false
+  required: true
 ---
 
 Use this task spec for the coordinated runtime, official plugin, lockfile, and

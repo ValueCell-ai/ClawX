@@ -8,8 +8,23 @@
 const INVALID_CONFIG_PATTERNS: RegExp[] = [
   /\binvalid config\b/i,
   /\bconfig invalid\b/i,
+  /\bfatal configuration error\b/i,
   /\bunrecognized key\b/i,
+  /\bstartup migration(?:s)?\b.*\b(?:blocked|failed|did not complete cleanly)\b/i,
+  /\bmigration\b.*\bopenclaw doctor --fix\b/i,
   /\brun:\s*openclaw doctor --fix\b/i,
+];
+
+const FATAL_RUNTIME_PATTERNS: RegExp[] = [
+  /\bNode(?:\.js)?\b.*\boutside the supported range\b/i,
+  /\buses SQLite\b.*\bnot WAL-reset-safe\b/i,
+  /\bSQLite\b.*\bWAL-reset-safe runtime required\b/i,
+  /\bInstall Node 24\.15\+.*\bNode 22\.22\.3\+\b/i,
+];
+
+const STARTUP_MIGRATION_LOCK_PATTERNS: RegExp[] = [
+  /\bstartup migrations? (?:is|are) already running\b/i,
+  /\bretry after the other gateway finishes\b/i,
 ];
 
 const TRANSIENT_START_ERROR_PATTERNS: RegExp[] = [
@@ -59,6 +74,33 @@ export function hasInvalidConfigFailureSignal(
     : String(startupError ?? '');
 
   return isInvalidConfigSignal(errorText);
+}
+
+function startupFailureCandidates(startupError: unknown, startupStderrLines: string[]): string[] {
+  return [
+    ...startupStderrLines,
+    startupError instanceof Error
+      ? `${startupError.name}: ${startupError.message}`
+      : String(startupError ?? ''),
+  ];
+}
+
+/** Returns true for OpenClaw runtime/SQLite failures that doctor cannot repair. */
+export function hasFatalRuntimeFailureSignal(
+  startupError: unknown,
+  startupStderrLines: string[],
+): boolean {
+  return startupFailureCandidates(startupError, startupStderrLines)
+    .some((text) => FATAL_RUNTIME_PATTERNS.some((pattern) => pattern.test(text)));
+}
+
+/** Returns true while another/stale OpenClaw startup migration lease is active. */
+export function hasStartupMigrationLockSignal(
+  startupError: unknown,
+  startupStderrLines: string[],
+): boolean {
+  return startupFailureCandidates(startupError, startupStderrLines)
+    .some((text) => STARTUP_MIGRATION_LOCK_PATTERNS.some((pattern) => pattern.test(text)));
 }
 
 /**
@@ -136,12 +178,18 @@ export function getGatewayStartupRecoveryAction(options: {
   attempt: number;
   maxAttempts: number;
 }): GatewayStartupRecoveryAction {
-  if (shouldAttemptConfigAutoRepair(
-    options.startupError,
-    options.startupStderrLines,
-    options.configRepairAttempted,
-  )) {
-    return 'repair';
+  if (
+    hasFatalRuntimeFailureSignal(options.startupError, options.startupStderrLines)
+    || hasStartupMigrationLockSignal(options.startupError, options.startupStderrLines)
+  ) {
+    return 'fail';
+  }
+
+  if (hasInvalidConfigFailureSignal(options.startupError, options.startupStderrLines)) {
+    // One doctor pass is the only automated repair. If the same migration or
+    // config failure remains afterward, stop instead of treating the generic
+    // process-exited error as transient.
+    return options.configRepairAttempted ? 'fail' : 'repair';
   }
 
   if (options.attempt < options.maxAttempts && isTransientGatewayStartError(options.startupError)) {

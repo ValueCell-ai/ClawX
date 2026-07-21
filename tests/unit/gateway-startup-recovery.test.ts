@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   connectGatewayWithStartupRetry,
   getGatewayStartupRecoveryAction,
+  hasFatalRuntimeFailureSignal,
   hasInvalidConfigFailureSignal,
+  hasStartupMigrationLockSignal,
   isGatewayStillStartingError,
   isInvalidConfigSignal,
   isTransientGatewayStartError,
@@ -46,11 +48,33 @@ describe('gateway startup recovery heuristics', () => {
     expect(shouldAttemptConfigAutoRepair(new Error('start failed'), lines, true)).toBe(false);
   });
 
-  it('matches common invalid-config phrases robustly', () => {
+  it('matches common invalid-config and migration phrases robustly', () => {
     expect(isInvalidConfigSignal('Config invalid')).toBe(true);
     expect(isInvalidConfigSignal('skills: Unrecognized key: "enabled"')).toBe(true);
+    expect(isInvalidConfigSignal('Startup migration blocked by legacy state')).toBe(true);
+    expect(isInvalidConfigSignal(
+      'OpenClaw startup migrations did not complete cleanly; refusing to report the gateway ready.',
+    )).toBe(true);
     expect(isInvalidConfigSignal('Run: openclaw doctor --fix')).toBe(true);
     expect(isInvalidConfigSignal('Gateway ready after 3 attempts')).toBe(false);
+  });
+
+  it('detects an active startup-migration lease that must not be restart-looped', () => {
+    expect(hasStartupMigrationLockSignal(undefined, [
+      'OpenClaw startup migrations are already running for this state directory; retry after the other gateway finishes or after 2026-07-21T03:02:57.489Z.',
+    ])).toBe(true);
+    expect(hasStartupMigrationLockSignal(new Error('gateway start failed'), [])).toBe(false);
+  });
+
+  it('detects Node and SQLite failures that cannot be repaired by doctor', () => {
+    expect(hasFatalRuntimeFailureSignal(undefined, [
+      'System Node 24.14.0 at /usr/bin/node uses SQLite 3.49.1, which is not WAL-reset-safe. Install Node 24.15+ (recommended) or Node 22.22.3+.',
+    ])).toBe(true);
+    expect(hasFatalRuntimeFailureSignal(
+      new Error('System Node 23.11.0 is outside the supported range'),
+      [],
+    )).toBe(true);
+    expect(hasFatalRuntimeFailureSignal(new Error('Config invalid'), [])).toBe(false);
   });
 });
 
@@ -69,7 +93,7 @@ describe('getGatewayStartupRecoveryAction', () => {
     expect(action).toBe('repair');
   });
 
-  it('returns retry when repair was attempted but error is still transient', () => {
+  it('fails when the config error remains after the one doctor repair', () => {
     const action = getGatewayStartupRecoveryAction({
       startupError: transientError,
       startupStderrLines: configInvalidStderr,
@@ -77,7 +101,7 @@ describe('getGatewayStartupRecoveryAction', () => {
       attempt: 1,
       maxAttempts: 3,
     });
-    expect(action).toBe('retry');
+    expect(action).toBe('fail');
   });
 
   it('returns retry for transient errors after successful repair (no config signal)', () => {
@@ -106,6 +130,33 @@ describe('getGatewayStartupRecoveryAction', () => {
     const action = getGatewayStartupRecoveryAction({
       startupError: new Error('Unknown fatal error'),
       startupStderrLines: [],
+      configRepairAttempted: false,
+      attempt: 1,
+      maxAttempts: 3,
+    });
+    expect(action).toBe('fail');
+  });
+
+  it('does not retry while an OpenClaw startup-migration lease is active', () => {
+    const action = getGatewayStartupRecoveryAction({
+      startupError: transientError,
+      startupStderrLines: [
+        'OpenClaw startup migrations are already running; retry after the other gateway finishes.',
+      ],
+      configRepairAttempted: false,
+      attempt: 1,
+      maxAttempts: 3,
+    });
+    expect(action).toBe('fail');
+  });
+
+  it('does not retry or run doctor for a fatal runtime incompatibility', () => {
+    const action = getGatewayStartupRecoveryAction({
+      startupError: new Error('Gateway process exited before becoming ready (code=1)'),
+      startupStderrLines: [
+        'System Node 24.14.0 uses SQLite 3.49.1, which is not WAL-reset-safe. Install Node 24.15+ or Node 22.22.3+.',
+        'Run: openclaw doctor --fix',
+      ],
       configRepairAttempted: false,
       attempt: 1,
       maxAttempts: 3,

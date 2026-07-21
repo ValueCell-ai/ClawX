@@ -13,6 +13,8 @@ const {
   mockRealpathSync,
   mockLoggerWarn,
   mockLoggerInfo,
+  mockUpsertPluginInstallRecordsIntoSqlite,
+  mockRemovePluginInstallRecordsFromSqlite,
   mockHomedir,
   mockApp,
 } = vi.hoisted(() => ({
@@ -28,6 +30,8 @@ const {
   mockRealpathSync: vi.fn(),
   mockLoggerWarn: vi.fn(),
   mockLoggerInfo: vi.fn(),
+  mockUpsertPluginInstallRecordsIntoSqlite: vi.fn(() => true),
+  mockRemovePluginInstallRecordsFromSqlite: vi.fn(() => true),
   mockHomedir: vi.fn(() => '/home/test'),
   mockApp: {
     isPackaged: true,
@@ -88,7 +92,8 @@ vi.mock('@electron/utils/logger', () => ({
 }));
 
 vi.mock('@electron/utils/plugin-install-index', () => ({
-  upsertPluginInstallRecordsIntoSqlite: vi.fn(() => true),
+  upsertPluginInstallRecordsIntoSqlite: mockUpsertPluginInstallRecordsIntoSqlite,
+  removePluginInstallRecordsFromSqlite: mockRemovePluginInstallRecordsFromSqlite,
   ensureOpenClawStateDirExists: vi.fn(),
 }));
 
@@ -121,6 +126,52 @@ describe('plugin installer diagnostics', () => {
     if (ORIGINAL_PLATFORM_DESCRIPTOR) {
       Object.defineProperty(process, 'platform', ORIGINAL_PLATFORM_DESCRIPTOR);
     }
+  });
+
+  it('adds the WeCom channel descriptor while preserving valid upstream npm metadata', async () => {
+    const targetDir = '/home/test/.openclaw/extensions/wecom';
+    mockExistsSync.mockImplementation((input: string) => [
+      `${targetDir}/openclaw.plugin.json`,
+      `${targetDir}/package.json`,
+      `${targetDir}/dist/index.js`,
+    ].includes(String(input)));
+    mockReadFileSync.mockImplementation((input: string) => {
+      const value = String(input);
+      if (value.endsWith('openclaw.plugin.json')) {
+        return JSON.stringify({ id: 'wecom-openclaw-plugin', channels: ['wecom'] });
+      }
+      if (value.endsWith('package.json')) {
+        return JSON.stringify({
+          name: '@wecom/wecom',
+          version: '2026.7.2',
+          main: 'dist/index.js',
+          openclaw: { install: { npmSpec: '@wecom/wecom', localPath: 'extensions/wecom' } },
+        });
+      }
+      if (value.endsWith('dist/index.js')) {
+        return 'export default { id: "wecom-openclaw-plugin" };';
+      }
+      return '{}';
+    });
+
+    const { fixupPluginManifest } = await import('@electron/utils/plugin-install');
+    fixupPluginManifest(targetDir);
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      `${targetDir}/openclaw.plugin.json`,
+      expect.stringContaining('"channelConfigs"'),
+      'utf-8',
+    );
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      `${targetDir}/openclaw.plugin.json`,
+      expect.stringContaining('"id": "wecom"'),
+      'utf-8',
+    );
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      `${targetDir}/package.json`,
+      expect.stringContaining('"name": "@wecom/wecom-openclaw-plugin"'),
+      'utf-8',
+    );
   });
 
   it('returns source-missing warning when bundled mirror cannot be found', async () => {
@@ -223,7 +274,7 @@ describe('plugin installer diagnostics', () => {
     );
   });
 
-  it('writes trusted install metadata for mirrored official whatsapp plugin', async () => {
+  it('writes trusted SQLite metadata for mirrored official whatsapp plugin', async () => {
     const configPath = '/home/test/.openclaw/openclaw.json';
     const targetDir = '/home/test/.openclaw/extensions/whatsapp';
     const sourceDir = '/bundle/whatsapp';
@@ -255,15 +306,60 @@ describe('plugin installer diagnostics', () => {
     const result = ensurePluginInstalled('whatsapp', [sourceDir], 'WhatsApp');
 
     expect(result.installed).toBe(true);
+    expect(mockUpsertPluginInstallRecordsIntoSqlite).toHaveBeenCalledWith({
+      whatsapp: expect.objectContaining({
+        installPath: targetDir,
+        resolvedName: '@openclaw/whatsapp',
+      }),
+    });
+  });
+
+  it('removes WeCom updater metadata for the patched legacy-compatible plugin id', async () => {
+    const configPath = '/home/test/.openclaw/openclaw.json';
+    const targetDir = '/home/test/.openclaw/extensions/wecom';
+
+    mockExistsSync.mockImplementation((input: string) => {
+      const value = String(input);
+      return value === configPath
+        || value === `${targetDir}/openclaw.plugin.json`
+        || value === `${targetDir}/package.json`;
+    });
+    mockReadFileSync.mockImplementation((input: string) => {
+      if (String(input) === configPath) {
+        return JSON.stringify({
+          plugins: {
+            installs: {
+              wecom: {
+                source: 'npm',
+                spec: '@wecom/wecom-openclaw-plugin',
+                version: '2026.6.23',
+              },
+            },
+          },
+        });
+      }
+      if (String(input) === `${targetDir}/package.json`) {
+        return JSON.stringify({ version: '2026.7.2' });
+      }
+      return '{}';
+    });
+    mockRealpathSync.mockImplementation((input: string) => input);
+
+    const { syncTrustedOfficialPluginInstallRecord } = await import('@electron/utils/plugin-install');
+    expect(syncTrustedOfficialPluginInstallRecord('wecom', targetDir)).toBe(true);
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       configPath,
-      expect.stringContaining(`"installPath": "${targetDir}"`),
+      expect.not.stringContaining('"installs"'),
       'utf-8',
     );
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      configPath,
-      expect.stringContaining('"resolvedName": "@openclaw/whatsapp"'),
-      'utf-8',
-    );
+    expect(mockRemovePluginInstallRecordsFromSqlite).toHaveBeenCalledWith(['wecom']);
+    expect(mockUpsertPluginInstallRecordsIntoSqlite).toHaveBeenCalledWith({
+      wecom: expect.objectContaining({
+        source: 'path',
+        sourcePath: targetDir,
+        installPath: targetDir,
+        version: '2026.7.2',
+      }),
+    });
   });
 });

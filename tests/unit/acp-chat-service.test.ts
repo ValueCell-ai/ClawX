@@ -239,8 +239,7 @@ describe('AcpChatService', () => {
     expect(connection.prompt).toHaveBeenCalledWith({
       sessionId: 'acp-session-1',
       prompt: [{ type: 'text', text: 'hello' }],
-      messageId: 'msg-1',
-      _meta: { sessionKey: 'agent:pi:session-123', prefixCwd: true },
+      _meta: { sessionKey: 'agent:pi:session-123', prefixCwd: true, messageId: 'msg-1' },
     });
   });
 
@@ -285,7 +284,9 @@ describe('AcpChatService', () => {
         sessionUpdate: 'agent_message_chunk',
         messageId: 'msg-1',
         content: { type: 'text', text: 'hello' },
+        futureExtensionField: { retained: true },
       },
+      _meta: { futureTopLevelMetadata: 'retained' },
     } as never);
     await service.client.sessionUpdate({
       sessionId: 'agent:other:s2',
@@ -306,7 +307,9 @@ describe('AcpChatService', () => {
           sessionUpdate: 'agent_message_chunk',
           messageId: 'msg-1',
           content: { type: 'text', text: 'hello' },
+          futureExtensionField: { retained: true },
         },
+        _meta: { futureTopLevelMetadata: 'retained' },
       },
     });
   });
@@ -1139,7 +1142,6 @@ describe('AcpChatService', () => {
 
       expect(connection.prompt).toHaveBeenCalledWith({
         sessionId: 'agent:pi:s1',
-        messageId: 'msg-user-1',
         prompt: [
           { type: 'text', text: 'Inspect attachments' },
           {
@@ -1157,7 +1159,7 @@ describe('AcpChatService', () => {
             _meta: { clawx: { stagingId: 'staged-notes' } },
           },
         ],
-        _meta: { sessionKey: 'agent:pi:s1', prefixCwd: true },
+        _meta: { sessionKey: 'agent:pi:s1', prefixCwd: true, messageId: 'msg-user-1' },
       });
     } finally {
       rmSync(imagePath, { force: true });

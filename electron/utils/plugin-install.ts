@@ -12,7 +12,11 @@ import { readdir, stat, copyFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { logger } from './logger';
-import { upsertPluginInstallRecordsIntoSqlite, ensureOpenClawStateDirExists } from './plugin-install-index';
+import {
+  upsertPluginInstallRecordsIntoSqlite,
+  removePluginInstallRecordsFromSqlite,
+  ensureOpenClawStateDirExists,
+} from './plugin-install-index';
 
 function normalizeFsPathForWindows(filePath: string): string {
   if (process.platform !== 'win32') return filePath;
@@ -122,7 +126,7 @@ const MANIFEST_ID_FIXES: Record<string, string> = {
 /**
  * After a plugin has been copied to ~/.openclaw/extensions/<dir>, fix any
  * known manifest-ID mismatches so the Gateway can load the plugin.
- * Also patches package.json fields that the Gateway uses as "entry hints".
+ * Also keeps package.json npm metadata usable by OpenClaw's repair planner.
  */
 export function fixupPluginManifest(targetDir: string): void {
   // 1. Fix openclaw.plugin.json id
@@ -131,45 +135,64 @@ export function fixupPluginManifest(targetDir: string): void {
     const raw = readFileSync(fsPath(manifestPath), 'utf-8');
     const manifest = JSON.parse(raw);
     const oldId = manifest.id as string | undefined;
+    let modified = false;
     if (oldId && MANIFEST_ID_FIXES[oldId]) {
       const newId = MANIFEST_ID_FIXES[oldId];
       manifest.id = newId;
-      writeFileSync(fsPath(manifestPath), JSON.stringify(manifest, null, 2) + '\n', 'utf-8');
+      modified = true;
       logger.info(`[plugin] Fixed manifest ID: ${oldId} → ${newId}`);
+    }
+
+    // OpenClaw 2026.7.1 treats configured channel plugins without a static
+    // channelConfigs descriptor as stale/missing and invokes its npm repair
+    // flow. The WeCom package has no descriptor upstream, so provide a
+    // permissive schema that preserves ClawX's existing channel config fields.
+    if (manifest.id === 'wecom' && !manifest.channelConfigs?.wecom) {
+      manifest.channelConfigs = {
+        ...(manifest.channelConfigs ?? {}),
+        wecom: {
+          schema: {
+            type: 'object',
+            additionalProperties: true,
+          },
+        },
+      };
+      modified = true;
+      logger.info('[plugin] Added WeCom channelConfigs compatibility descriptor');
+    }
+
+    if (modified) {
+      writeFileSync(fsPath(manifestPath), JSON.stringify(manifest, null, 2) + '\n', 'utf-8');
     }
   } catch {
     // manifest may not exist yet — ignore
   }
 
-  // 2. Fix package.json fields that Gateway uses as "entry hints"
+  // 2. Keep package.json package-manager metadata valid
   const pkgPath = join(targetDir, 'package.json');
   try {
     const raw = readFileSync(fsPath(pkgPath), 'utf-8');
     const pkg = JSON.parse(raw);
     let modified = false;
 
-    // Check if the package name contains a legacy ID that needs fixing
-    for (const [oldId, newId] of Object.entries(MANIFEST_ID_FIXES)) {
-      if (typeof pkg.name === 'string' && pkg.name.includes(oldId)) {
-        pkg.name = pkg.name.replace(oldId, newId);
-        modified = true;
-      }
-      const install = pkg.openclaw?.install;
-      if (install) {
-        if (typeof install.npmSpec === 'string' && install.npmSpec.includes(oldId)) {
-          install.npmSpec = install.npmSpec.replace(oldId, newId);
-          modified = true;
-        }
-        if (typeof install.localPath === 'string' && install.localPath.includes(oldId)) {
-          install.localPath = install.localPath.replace(oldId, newId);
-          modified = true;
-        }
-      }
+    // Keep the real upstream npm package name/spec even though ClawX patches
+    // the effective plugin id. Rewriting these to the non-existent
+    // `@wecom/wecom` package makes OpenClaw's repair planner fail before the
+    // Gateway starts. Restore metadata previously rewritten by older ClawX
+    // compatibility code.
+    if (pkg.name === '@wecom/wecom') {
+      pkg.name = '@wecom/wecom-openclaw-plugin';
+      modified = true;
+    }
+    const install = pkg.openclaw?.install;
+    if (install?.npmSpec === '@wecom/wecom') {
+      install.npmSpec = '@wecom/wecom-openclaw-plugin';
+      modified = true;
     }
 
     if (modified) {
       writeFileSync(fsPath(pkgPath), JSON.stringify(pkg, null, 2) + '\n', 'utf-8');
-      logger.info(`[plugin] Fixed package.json entry hints in ${targetDir}`);
+      logger.info(`[plugin] Restored package.json npm metadata in ${targetDir}`);
     }
   } catch {
     // ignore
@@ -242,12 +265,18 @@ const PLUGIN_NPM_NAMES: Record<string, string> = {
 const OPENCLAW_CONFIG_PATH = join(homedir(), '.openclaw', 'openclaw.json');
 
 /**
- * Official @openclaw/* channel plugins that ClawX mirrors into
- * ~/.openclaw/extensions/. OpenClaw 2026.6+ requires matching
- * plugins.installs metadata so trustedOfficialInstall is true and
- * runtime APIs such as openKeyedStore are available.
+ * Channel plugins whose ClawX-managed mirrors need synchronized install
+ * metadata. OpenClaw 2026.6+ reads these records from SQLite for trust checks;
+ * OpenClaw 2026.7.1 also uses them to decide whether startup migrations should
+ * update an installed plugin.
  */
 const TRUSTED_OFFICIAL_EXTENSION_PLUGINS: Record<string, string> = {
+  // WeCom intentionally runs under ClawX's legacy-compatible `wecom` id even
+  // though the upstream package manifest still declares
+  // `wecom-openclaw-plugin`. Keep its install record current so OpenClaw's
+  // startup migration does not try to update the raw, unpatched npm package
+  // and fail the id check before the Gateway can start.
+  wecom: '@wecom/wecom-openclaw-plugin',
   whatsapp: '@openclaw/whatsapp',
   discord: '@openclaw/discord',
   qqbot: '@openclaw/qqbot',
@@ -303,26 +332,10 @@ function persistTrustedOfficialPluginInstallRecordsToSqlite(
   return upsertPluginInstallRecordsIntoSqlite(records);
 }
 
-function trustedInstallRecordMatches(
-  existing: unknown,
-  expected: TrustedOfficialPluginInstallRecord,
-): boolean {
-  if (!existing || typeof existing !== 'object' || Array.isArray(existing)) {
-    return false;
-  }
-  const record = existing as Record<string, unknown>;
-  return record.source === expected.source
-    && record.spec === expected.spec
-    && record.installPath === expected.installPath
-    && record.version === expected.version
-    && record.resolvedName === expected.resolvedName
-    && record.resolvedVersion === expected.resolvedVersion
-    && record.resolvedSpec === expected.resolvedSpec;
-}
-
 /**
- * Write or refresh plugins.installs.<id> for a ClawX-mirrored official plugin.
- * Also persists the record into openclaw.sqlite for OpenClaw 2026.6+ trust checks.
+ * Persist a ClawX-mirrored plugin install record in OpenClaw's canonical SQLite
+ * index. OpenClaw 2026.7.1 treats config-level plugins.installs as legacy
+ * migration input, so remove that transient copy instead of recreating it.
  * Safe to call repeatedly; no-ops when metadata is already current.
  */
 export function syncTrustedOfficialPluginInstallRecord(
@@ -339,39 +352,56 @@ export function syncTrustedOfficialPluginInstallRecord(
   let jsonChanged = false;
   try {
     ensureOpenClawStateDirExists();
-    if (!existsSync(fsPath(OPENCLAW_CONFIG_PATH))) {
-      return false;
-    }
-
-    const raw = readFileSync(fsPath(OPENCLAW_CONFIG_PATH), 'utf-8');
-    const config = JSON.parse(raw) as Record<string, unknown>;
-    let plugins = config.plugins;
-    if (!plugins || typeof plugins !== 'object' || Array.isArray(plugins)) {
-      plugins = { enabled: true, installs: {} };
-      config.plugins = plugins;
-    }
-
-    const pluginsRecord = plugins as Record<string, unknown>;
-    const installs = pluginsRecord.installs;
-    const installsRecord = installs && typeof installs === 'object' && !Array.isArray(installs)
-      ? installs as Record<string, unknown>
-      : {};
-
-    const existing = installsRecord[pluginDirName];
-    if (!trustedInstallRecordMatches(existing, expected)) {
-      installsRecord[pluginDirName] = expected;
-      pluginsRecord.installs = installsRecord;
-      writeFileSync(
-        fsPath(OPENCLAW_CONFIG_PATH),
-        `${JSON.stringify(config, null, 2)}\n`,
-        'utf-8',
-      );
-      logger.info(`[plugin] Synced trusted install metadata for ${pluginDirName}`);
-      jsonChanged = true;
+    if (existsSync(fsPath(OPENCLAW_CONFIG_PATH))) {
+      const raw = readFileSync(fsPath(OPENCLAW_CONFIG_PATH), 'utf-8');
+      const config = JSON.parse(raw) as Record<string, unknown>;
+      const plugins = config.plugins;
+      if (plugins && typeof plugins === 'object' && !Array.isArray(plugins)) {
+        const pluginsRecord = plugins as Record<string, unknown>;
+        const installs = pluginsRecord.installs;
+        if (installs && typeof installs === 'object' && !Array.isArray(installs)) {
+          const installsRecord = installs as Record<string, unknown>;
+          if (Object.hasOwn(installsRecord, pluginDirName)) {
+            delete installsRecord[pluginDirName];
+            if (Object.keys(installsRecord).length === 0) {
+              delete pluginsRecord.installs;
+            }
+            writeFileSync(
+              fsPath(OPENCLAW_CONFIG_PATH),
+              `${JSON.stringify(config, null, 2)}\n`,
+              'utf-8',
+            );
+            logger.info(`[plugin] Removed legacy config install metadata for ${pluginDirName}`);
+            jsonChanged = true;
+          }
+        }
+      }
     }
   } catch (error) {
-    logger.warn(`[plugin] Failed to sync trusted install metadata for ${pluginDirName}:`, error);
-    return false;
+    // Keep the canonical SQLite repair available even if legacy config cleanup
+    // cannot be completed in this pass.
+    logger.warn(`[plugin] Failed to remove legacy install metadata for ${pluginDirName}:`, error);
+  }
+
+  // The upstream WeCom package still declares `wecom-openclaw-plugin`, while
+  // ClawX intentionally patches it to the effective id `wecom`. Register the
+  // ClawX mirror as a local path: an npm record makes OpenClaw fetch the raw
+  // package and reject its unpatched id, while no record makes the startup
+  // repair planner treat the configured plugin as missing.
+  if (pluginDirName === 'wecom') {
+    const removedLegacyRecord = removePluginInstallRecordsFromSqlite([pluginDirName]);
+    const pathRecord = {
+      source: 'path',
+      spec: targetDir,
+      sourcePath: targetDir,
+      installPath: normalizePluginInstallPathForRecord(targetDir) ?? targetDir,
+      version: expected.version,
+      installedAt: expected.installedAt,
+    };
+    const sqliteChanged = upsertPluginInstallRecordsIntoSqlite({
+      [pluginDirName]: pathRecord,
+    });
+    return jsonChanged || removedLegacyRecord || sqliteChanged;
   }
 
   const sqliteChanged = persistTrustedOfficialPluginInstallRecordsToSqlite({
@@ -380,7 +410,7 @@ export function syncTrustedOfficialPluginInstallRecord(
   return jsonChanged || sqliteChanged;
 }
 
-/** Repair trusted install metadata for all mirrored official plugins on disk. */
+/** Repair managed install metadata for all mirrored plugins on disk. */
 export function repairTrustedOfficialPluginInstallRecords(): void {
   for (const pluginDirName of Object.keys(TRUSTED_OFFICIAL_EXTENSION_PLUGINS)) {
     const targetDir = join(homedir(), '.openclaw', 'extensions', pluginDirName);

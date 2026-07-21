@@ -37,7 +37,10 @@ function resolveOpenClawStateDir(): string {
 }
 
 function resolveOpenClawStateSqlitePath(): string {
-  return join(resolveOpenClawStateDir(), 'openclaw.sqlite');
+  // OpenClaw 2026.7.1 moved the shared state database under state/.
+  // Writing the legacy root-level database leaves Gateway migrations reading
+  // stale plugin records from the canonical database.
+  return join(resolveOpenClawStateDir(), 'state', 'openclaw.sqlite');
 }
 
 function parseInstallRecordsJson(raw: unknown): Record<string, Record<string, unknown>> {
@@ -88,6 +91,7 @@ export function upsertPluginInstallRecordsIntoSqlite(
 
   ensureOpenClawStateDirExists();
   const sqlitePath = resolveOpenClawStateSqlitePath();
+  mkdirSync(join(resolveOpenClawStateDir(), 'state'), { recursive: true });
 
   let db: DatabaseSync | null = null;
   try {
@@ -155,6 +159,66 @@ export function upsertPluginInstallRecordsIntoSqlite(
   } finally {
     db?.close();
   }
+}
+
+/**
+ * Remove install records that must remain ClawX-managed rather than updated
+ * from their raw upstream npm package. Also clean the legacy root-level DB
+ * previously written by ClawX before OpenClaw 2026.7.1 moved state to state/.
+ */
+export function removePluginInstallRecordsFromSqlite(pluginIds: string[]): boolean {
+  if (pluginIds.length === 0) return false;
+
+  const stateDir = resolveOpenClawStateDir();
+  const sqlitePaths = [
+    resolveOpenClawStateSqlitePath(),
+    join(stateDir, 'openclaw.sqlite'),
+  ];
+  let changed = false;
+
+  for (const sqlitePath of sqlitePaths) {
+    if (!existsSync(sqlitePath)) continue;
+
+    let db: DatabaseSync | null = null;
+    try {
+      db = openStateDatabase(sqlitePath);
+      const row = db.prepare(`
+        SELECT install_records_json
+          FROM installed_plugin_index
+         WHERE index_key = ?
+      `).get(INSTALLED_PLUGIN_INDEX_KEY) as { install_records_json?: string } | undefined;
+      if (!row) continue;
+
+      const records = parseInstallRecordsJson(row.install_records_json);
+      let databaseChanged = false;
+      for (const pluginId of pluginIds) {
+        if (Object.hasOwn(records, pluginId)) {
+          delete records[pluginId];
+          databaseChanged = true;
+        }
+      }
+      if (!databaseChanged) continue;
+
+      const now = Date.now();
+      db.prepare(`
+        UPDATE installed_plugin_index
+           SET install_records_json = ?,
+               updated_at_ms = ?,
+               generated_at_ms = ?
+         WHERE index_key = ?
+      `).run(JSON.stringify(records), now, now, INSTALLED_PLUGIN_INDEX_KEY);
+      changed = true;
+    } catch (error) {
+      logger.warn(`[plugin] Failed to remove install metadata from ${sqlitePath}:`, error);
+    } finally {
+      db?.close();
+    }
+  }
+
+  if (changed) {
+    logger.info(`[plugin] Removed managed install metadata from SQLite for: ${pluginIds.join(', ')}`);
+  }
+  return changed;
 }
 
 /** Ensure ~/.openclaw exists before first config write in fresh installs. */

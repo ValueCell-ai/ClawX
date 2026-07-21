@@ -393,11 +393,13 @@ export class AcpChatService {
         this.historicalGeneration = null;
       }
       this.permissionsEnabled = true;
+      const messageId = payload.messageId ?? randomUUID();
       await connection.prompt({
         sessionId: acpSessionId,
         prompt,
-        messageId: payload.messageId ?? randomUUID(),
-        _meta: { sessionKey: payload.sessionKey, prefixCwd: true },
+        // ACP 1.1 removed messageId from the PromptRequest wire shape. Keep
+        // ClawX correlation metadata in the protocol extension envelope.
+        _meta: { sessionKey: payload.sessionKey, prefixCwd: true, messageId },
       });
       this.trace('session/prompt:success', {
         sessionKey: payload.sessionKey,

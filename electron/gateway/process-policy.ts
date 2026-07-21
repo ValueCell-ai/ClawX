@@ -10,6 +10,13 @@ export const DEFAULT_RECONNECT_CONFIG: ReconnectConfig = {
   maxDelay: 30000,
 };
 
+/** sysexits(3) EX_CONFIG, used by OpenClaw 2026.7.1 for fatal config startup errors. */
+export const OPENCLAW_EX_CONFIG_EXIT_CODE = 78;
+
+export function isOpenClawFatalConfigExitCode(code: number | null | undefined): boolean {
+  return code === OPENCLAW_EX_CONFIG_EXIT_CODE;
+}
+
 export function nextLifecycleEpoch(currentEpoch: number): number {
   return currentEpoch + 1;
 }

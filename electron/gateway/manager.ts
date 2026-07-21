@@ -24,6 +24,7 @@ import {
   type GatewayLifecycleState,
   getReconnectScheduleDecision,
   getReconnectSkipReason,
+  isOpenClawFatalConfigExitCode,
 } from './process-policy';
 import {
   clearPendingGatewayRequests,
@@ -55,6 +56,11 @@ import {
 } from './reload-policy';
 import { classifyGatewayStderrMessage, recordGatewayStartupStderrLine } from './startup-stderr';
 import { runGatewayStartupSequence } from './startup-orchestrator';
+import {
+  hasFatalRuntimeFailureSignal,
+  hasInvalidConfigFailureSignal,
+  hasStartupMigrationLockSignal,
+} from './startup-recovery';
 import {
   GatewayCapabilityMonitor,
   type GatewayCapabilityName,
@@ -444,7 +450,17 @@ export class GatewayManager extends EventEmitter {
         error
       );
       this.setStatus({ state: 'error', error: String(error) });
-      if (this.shouldReconnect) {
+      const fatalStartupFailure = isOpenClawFatalConfigExitCode(this.processExitCode)
+        || hasFatalRuntimeFailureSignal(error, this.recentStartupStderrLines)
+        || hasStartupMigrationLockSignal(error, this.recentStartupStderrLines)
+        || hasInvalidConfigFailureSignal(error, this.recentStartupStderrLines);
+      if (fatalStartupFailure) {
+        // OpenClaw 2026.7.1 uses EX_CONFIG for fatal configuration failures.
+        // Runtime and SQLite compatibility failures are likewise not repaired
+        // by restarting the same binary, so leave recovery to a manual start.
+        this.shouldReconnect = false;
+        logger.error('Gateway startup failed fatally; automatic reconnect disabled');
+      } else if (this.shouldReconnect) {
         logger.warn('Gateway start failed; scheduling auto-reconnect recovery');
         this.scheduleReconnect();
       }
@@ -1086,16 +1102,23 @@ export class GatewayManager extends EventEmitter {
           this.setStatus({ state: 'stopped' });
         }
 
-        // Always attempt reconnect from process exit.  scheduleReconnect()
-        // internally checks shouldReconnect and reconnect-timer guards, so
-        // calling it unconditionally is safe — intentional stop() calls set
-        // shouldReconnect=false which makes scheduleReconnect() no-op.
-        //
-        // On Windows, the WS close handler intentionally skips reconnect
-        // (to avoid racing with this exit handler).  However, WS close
-        // fires *before* process exit and sets state='stopped', which
-        // previously caused this handler to also skip reconnect — leaving
-        // the gateway permanently dead with no recovery path.
+        const orchestratedStartupFailure = isOpenClawFatalConfigExitCode(code)
+          || hasFatalRuntimeFailureSignal(undefined, this.recentStartupStderrLines)
+          || hasStartupMigrationLockSignal(undefined, this.recentStartupStderrLines)
+          || hasInvalidConfigFailureSignal(undefined, this.recentStartupStderrLines);
+        if (orchestratedStartupFailure) {
+          // During startup the orchestrator may still perform its one bounded
+          // doctor repair. Do not race it with an independent reconnect timer.
+          // If orchestration cannot recover, start() disables reconnect in its
+          // catch path so migration/config failures cannot create an outer loop.
+          if (this.status.state !== 'starting') this.shouldReconnect = false;
+          logger.error(`Gateway process reported a non-retriable startup condition (code=${String(code)}); reconnect not scheduled`);
+          return;
+        }
+
+        // Always attempt reconnect from non-fatal process exits.
+        // scheduleReconnect() internally checks shouldReconnect and timer
+        // guards, so intentional stop() remains a no-op.
         this.scheduleReconnect();
       },
       onError: () => {

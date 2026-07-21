@@ -841,30 +841,6 @@ function patchBrokenModules(nodeModulesDir) {
   }
 }
 
-function findFirstFileByName(rootDir, matcher) {
-  const stack = [rootDir];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    let entries = [];
-    try {
-      entries = fs.readdirSync(current, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      const fullPath = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        stack.push(fullPath);
-        continue;
-      }
-      if (entry.isFile() && matcher.test(entry.name)) {
-        return fullPath;
-      }
-    }
-  }
-  return null;
-}
-
 function findFilesByName(rootDir, matcher) {
   const matches = [];
   const stack = [rootDir];
@@ -891,36 +867,11 @@ function findFilesByName(rootDir, matcher) {
 }
 
 function patchBundledRuntime(outputDir) {
-  const replacePatches = [
-    {
-      label: 'workspace command runner',
-      target: () => findFirstFileByName(path.join(outputDir, 'dist'), /^workspace-.*\.js$/),
-      search: `\tconst child = spawn(resolvedCommand, finalArgv.slice(1), {
-\t\tstdio,
-\t\tcwd,
-\t\tenv: resolvedEnv,
-\t\twindowsVerbatimArguments,
-\t\t...shouldSpawnWithShell({
-\t\t\tresolvedCommand,
-\t\t\tplatform: process$1.platform
-\t\t}) ? { shell: true } : {}
-\t});`,
-      replace: `\tconst child = spawn(resolvedCommand, finalArgv.slice(1), {
-\t\tstdio,
-\t\tcwd,
-\t\tenv: resolvedEnv,
-\t\twindowsVerbatimArguments,
-\t\twindowsHide: true,
-\t\t...shouldSpawnWithShell({
-\t\t\tresolvedCommand,
-\t\t\tplatform: process$1.platform
-\t\t}) ? { shell: true } : {}
-\t});`,
-    },
-    // Note: OpenClaw 3.31 removed the hash-suffixed agent-scope-*.js, chrome-*.js,
-    // and qmd-manager-*.js files from dist/plugin-sdk/. Patches for those spawn
-    // sites are no longer needed — the runtime now uses windowsHide natively.
-  ];
+  // OpenClaw 2026.7.1 routes ordinary child-process execution through
+  // resolveChildProcessInvocation(), which already sets windowsHide=true.
+  // PTY execution remains patched below because node-pty follows a separate
+  // launch path and is disabled on Windows in ClawX packaged builds.
+  const replacePatches = [];
 
   let count = 0;
   for (const patch of replacePatches) {
@@ -949,21 +900,21 @@ function patchBundledRuntime(outputDir) {
 
   const ptyTargets = findFilesByName(
     path.join(outputDir, 'dist'),
-    /^(subagent-registry|reply|pi-embedded)-.*\.js$/,
+    /^(supervisor|bash-tools)-.*\.js$/,
   );
   const ptyPatches = [
     {
       label: 'pty launcher windowsHide',
-      search: `\tconst pty = spawn(params.shell, params.args, {
+      search: `\tconst pty = spawn(preparedSpawn.command, preparedSpawn.args, {
 \t\tcwd: params.cwd,
-\t\tenv: params.env ? toStringEnv(params.env) : void 0,
+\t\tenv: preparedSpawn.env ? toStringEnv(preparedSpawn.env) : void 0,
 \t\tname: params.name ?? process.env.TERM ?? "xterm-256color",
 \t\tcols: params.cols ?? 120,
 \t\trows: params.rows ?? 30
 \t});`,
-      replace: `\tconst pty = spawn(params.shell, params.args, {
+      replace: `\tconst pty = spawn(preparedSpawn.command, preparedSpawn.args, {
 \t\tcwd: params.cwd,
-\t\tenv: params.env ? toStringEnv(params.env) : void 0,
+\t\tenv: preparedSpawn.env ? toStringEnv(preparedSpawn.env) : void 0,
 \t\tname: params.name ?? process.env.TERM ?? "xterm-256color",
 \t\tcols: params.cols ?? 120,
 \t\trows: params.rows ?? 30,
@@ -996,7 +947,7 @@ function patchBundledRuntime(outputDir) {
       }
     }
     if (!matchedAny) {
-      echo`   ⚠️  Skipped patch for ${patch.label}: expected source snippet not found`;
+      throw new Error(`Required OpenClaw 2026.7.1 patch not found: ${patch.label}`);
     }
   }
 

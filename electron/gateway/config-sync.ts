@@ -35,6 +35,7 @@ import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
 import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, syncTrustedOfficialPluginInstallRecord, resolvePluginNpmPackagePath } from '../utils/plugin-install';
 import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
+import { ensureOpenClaw2026_7_1UpgradeSnapshot } from '../utils/openclaw-upgrade-snapshot';
 import { stripSystemdSupervisorEnv } from './config-sync-env';
 import { cleanupAgentsSymlinkedSkills, cleanupStalePluginRuntimeDeps } from './skills-symlink-cleanup';
 import {
@@ -624,6 +625,19 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
   if (!isOpenClawPresent()) {
     throw new Error(`OpenClaw package not found at: ${openclawDir}`);
   }
+
+  await measureAsync(timingsMs, 'upgradeSnapshotMs', async () => {
+    try {
+      const snapshot = await ensureOpenClaw2026_7_1UpgradeSnapshot();
+      if (snapshot.status === 'created') {
+        logger.info(`[upgrade] Created OpenClaw 2026.7.1 pre-migration snapshot (${snapshot.files.length} files): ${snapshot.snapshotDir}`);
+      }
+    } catch (error) {
+      // OpenClaw also maintains migration-specific backups. Keep startup
+      // available if the additional ClawX safety snapshot cannot be written.
+      logger.warn('[upgrade] Failed to create OpenClaw 2026.7.1 pre-migration snapshot:', error);
+    }
+  });
 
   const appSettings = await measureAsync(timingsMs, 'settingsMs', getAllSettings);
   const prelaunchSummary = await measureAsync(timingsMs, 'prelaunchSyncMs', async () => (

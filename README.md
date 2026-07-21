@@ -326,7 +326,7 @@ Chain multiple skills together to create sophisticated automation pipelines. Pro
 
 ### Prerequisites
 
-- **Node.js**: 22.19+ (LTS recommended)
+- **Node.js**: 22.22.3+, 24.15.0+, or 25.9.0+ within the corresponding supported major line (Node 24 LTS recommended)
 - **Package Manager**: pnpm 9+ (recommended) or npm
 - **Linux (Ubuntu/Debian)**: Install required system libraries before running Electron:
   ```bash
