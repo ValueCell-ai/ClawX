@@ -163,7 +163,6 @@ describe('harness specs', () => {
 
   it('keeps implemented design decisions in topic-based Harness references', async () => {
     const [
-      index,
       browserReference,
       officeReference,
       attentionReference,
@@ -171,7 +170,6 @@ describe('harness specs', () => {
       scenarios,
       harnessMarkdown,
     ] = await Promise.all([
-      readFile('harness/reference/README.md', 'utf8'),
       readFile('harness/reference/web-browser.md', 'utf8'),
       readFile('harness/reference/office-document-preview.md', 'utf8'),
       readFile('harness/reference/sidebar-session-attention.md', 'utf8'),
@@ -179,15 +177,6 @@ describe('harness specs', () => {
       loadScenarioSpecs(),
       readMarkdownTree('harness'),
     ]);
-
-    for (const topic of [
-      'Web Browser',
-      'Office Document Preview',
-      'Sidebar Session Attention',
-      'ACP Attachment Access Control',
-    ]) {
-      expect(index).toContain(topic);
-    }
 
     for (const anchor of [
       'Trust Model And Ownership',

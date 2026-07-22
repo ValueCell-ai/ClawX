@@ -104,11 +104,13 @@ export function WebBrowserHost(): React.ReactElement | null {
   const panelOpen = useArtifactPanel((state) => state.open);
   const activeTab = useArtifactPanel((state) => state.tab);
   const anchor = useArtifactPanel((state) => state.webBrowserAnchor);
+  const requestedNavigation = useArtifactPanel((state) => state.webBrowserNavigation);
   const [geometry, setGeometry] = useState<HostGeometry | null>(null);
   const [loading, setLoading] = useState(false);
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState<string>(WEB_BROWSER_INITIAL_URL);
   const [faviconUrl, setFaviconUrl] = useState<string | null>(null);
+  const [addressNavigationId, setAddressNavigationId] = useState(0);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [clearingCookies, setClearingCookies] = useState(false);
@@ -127,7 +129,10 @@ export function WebBrowserHost(): React.ReactElement | null {
   const navigationRequestRef = useRef<NavigationRequest | null>(null);
   const navigationGenerationRef = useRef(0);
   const currentUrlRef = useRef<string>(WEB_BROWSER_INITIAL_URL);
+  const requestedNavigationRef = useRef(requestedNavigation);
+  const handledNavigationIdRef = useRef(0);
   translationRef.current = t;
+  requestedNavigationRef.current = requestedNavigation;
 
   const reportNavigationFailure = useCallback((request: NavigationRequest) => {
     if (
@@ -154,6 +159,26 @@ export function WebBrowserHost(): React.ReactElement | null {
       if (rethrow) throw error;
     }
   }, [reportNavigationFailure]);
+
+  const consumeRequestedNavigation = useCallback(() => {
+    const request = requestedNavigationRef.current;
+    const guest = webviewRef.current;
+    if (
+      !request
+      || request.id <= handledNavigationIdRef.current
+      || !guest
+      || attachedWebviewRef.current !== guest
+    ) return;
+    handledNavigationIdRef.current = request.id;
+    currentUrlRef.current = request.url;
+    setUrl(request.url);
+    setTitle('');
+    setFaviconUrl(null);
+    setAddressNavigationId(request.id);
+    void runNavigation(request.url, false);
+  }, [runNavigation]);
+
+  useEffect(consumeRequestedNavigation, [consumeRequestedNavigation, requestedNavigation]);
 
   useLayoutEffect(() => {
     if (!anchor) {
@@ -224,6 +249,8 @@ export function WebBrowserHost(): React.ReactElement | null {
       }
       syncHistory();
       hostRef.current?.querySelector<HTMLInputElement>('[data-testid="web-browser-address-input"]')?.focus();
+
+      consumeRequestedNavigation();
 
       const recoveryUrl = pendingRecoveryUrlRef.current;
       pendingRecoveryUrlRef.current = null;
@@ -304,7 +331,7 @@ export function WebBrowserHost(): React.ReactElement | null {
       node.removeEventListener('did-fail-load', onDidFailLoad);
       node.removeEventListener('render-process-gone', onRenderProcessGone);
     };
-  }, [reportNavigationFailure, runNavigation]);
+  }, [consumeRequestedNavigation, reportNavigationFailure, runNavigation]);
 
   useEffect(() => () => removeWebviewListenersRef.current(), []);
 
@@ -412,6 +439,7 @@ export function WebBrowserHost(): React.ReactElement | null {
         title={title}
         url={url}
         faviconUrl={faviconUrl}
+        addressNavigationId={addressNavigationId}
         canGoBack={canGoBack}
         canGoForward={canGoForward}
         visible={!hostHidden && !crashed}

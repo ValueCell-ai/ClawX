@@ -252,6 +252,44 @@ async function openChanges(page: Page) {
 }
 
 test.describe('ClawX chat file changes', () => {
+  test('opens HTML file activity in the Web Browser from Open with', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    try {
+      await installFileActivityMocks(app, {
+        liveByPrompt: {
+          'Create HTML': writeSequence('write-html', 'site/demo.html', '<h1>Demo</h1>'),
+        },
+      });
+      const page = await openChat(app);
+      await sendPrompt(page, 'Create HTML');
+
+      const openWith = page.getByRole('button', { name: 'Open site/demo.html with' });
+      await expect(openWith).toBeVisible({ timeout: 30_000 });
+      await openWith.click();
+      const menu = page.getByTestId('acp-attachment-open-with-menu');
+      await expect(menu).toBeVisible();
+      const browserItem = page.getByTestId('acp-file-open-in-built-in-browser');
+      await expect(menu).toContainText('Open in built-in browser');
+      await expect(page.getByRole('menuitem').first()).toHaveAttribute(
+        'data-testid',
+        'acp-file-open-in-built-in-browser',
+      );
+      await browserItem.click();
+
+      const panel = page.getByTestId('artifact-panel');
+      await expect(panel).toBeVisible();
+      await expect(panel.getByTestId('artifact-panel-tab-web-browser')).toHaveClass(/bg-foreground\/10/);
+      await expect(page.getByTestId('web-browser-host')).toHaveAttribute('aria-hidden', 'false');
+      await expect.poll(async () => (await getRecordedHostInvocations(app)).some((request) => (
+        request.module === 'webBrowser'
+        && request.action === 'navigate'
+        && request.payload?.url === 'file:///workspace/site/demo.html'
+      ))).toBe(true);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('renders a live completed Write with counts, scoped Preview, and a session record', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     try {

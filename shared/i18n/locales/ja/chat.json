@@ -38,6 +38,7 @@
     "fileCard": {
         "openWith": "アプリで開く",
         "openWithFile": "{{name}} をアプリで開く",
+        "openInBuiltInBrowser": "内蔵ブラウザで開く",
         "searchingApplications": "アプリを検索中",
         "showInFinder": "Finder に表示",
         "showInExplorer": "エクスプローラーに表示",

@@ -170,6 +170,8 @@ beforeEach(() => {
     tab: 'changes',
     webBrowserInitialized: false,
     webBrowserAnchor: null,
+    webBrowserNavigation: null,
+    webBrowserNavigationId: 0,
   });
   hostApiMocks.navigate.mockResolvedValue(undefined);
   hostApiMocks.clearCookies.mockResolvedValue(undefined);
@@ -216,6 +218,27 @@ beforeEach(() => {
 });
 
 describe('WebBrowserHost lifecycle', () => {
+  it('consumes a queued navigation after the browser guest first attaches', async () => {
+    const { anchor } = makeAnchor();
+    renderHost();
+
+    act(() => {
+      useArtifactPanel.getState().openWebBrowser('file:///workspace/site.html');
+      useArtifactPanel.getState().setWebBrowserAnchor(anchor);
+    });
+    expect(hostApiMocks.navigate).not.toHaveBeenCalled();
+
+    emit(webview(), 'did-attach');
+
+    await waitFor(() => {
+      expect(hostApiMocks.navigate).toHaveBeenCalledTimes(1);
+      expect(hostApiMocks.navigate).toHaveBeenCalledWith('file:///workspace/site.html');
+    });
+    expect(screen.getByTestId('web-browser-address-display')).toHaveAccessibleName(
+      /file:\/\/\/workspace\/site\.html/,
+    );
+  });
+
   it('creates one fixed, preload-free guest lazily and preserves its DOM identity while hidden', async () => {
     const { anchor } = makeAnchor();
     renderHost();

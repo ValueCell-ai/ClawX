@@ -16,6 +16,8 @@ describe('artifact panel store', () => {
       widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
       webBrowserInitialized: false,
       webBrowserAnchor: null,
+      webBrowserNavigation: null,
+      webBrowserNavigationId: 0,
     });
   });
 
@@ -48,6 +50,16 @@ describe('artifact panel store', () => {
       tab: 'web-browser',
       webBrowserInitialized: true,
     });
+  });
+
+  it('records a fresh browser navigation when opening a URL', () => {
+    useArtifactPanel.getState().openWebBrowser('file:///workspace/site.html');
+    const first = useArtifactPanel.getState().webBrowserNavigation;
+    useArtifactPanel.getState().openWebBrowser('file:///workspace/site.html');
+    const second = useArtifactPanel.getState().webBrowserNavigation;
+
+    expect(first).toMatchObject({ id: 1, url: 'file:///workspace/site.html' });
+    expect(second).toMatchObject({ id: 2, url: 'file:///workspace/site.html' });
   });
 
   it('registers and clears the anchor without changing initialization', () => {

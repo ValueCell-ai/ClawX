@@ -25,6 +25,7 @@ export interface WebBrowserToolbarProps {
   title: string;
   url: string;
   faviconUrl: string | null;
+  addressNavigationId?: number;
   canGoBack: boolean;
   canGoForward: boolean;
   visible: boolean;
@@ -161,6 +162,7 @@ export function WebBrowserToolbar({
   title,
   url,
   faviconUrl,
+  addressNavigationId,
   canGoBack,
   canGoForward,
   visible,
@@ -215,6 +217,7 @@ export function WebBrowserToolbar({
       </ToolbarButton>
 
       <WebBrowserAddressControl
+        key={addressNavigationId ?? 0}
         title={title}
         url={url}
         faviconUrl={faviconUrl}

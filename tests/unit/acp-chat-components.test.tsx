@@ -72,6 +72,7 @@ vi.mock('react-i18next', () => ({
         'acp.attachment.openFailed': 'Could not open attachment',
         'fileCard.openWith': 'Open with',
         'fileCard.openWithFile': 'Open {{name}} with',
+        'fileCard.openInBuiltInBrowser': 'Open in built-in browser',
         'fileCard.searchingApplications': 'Searching for applications',
         'fileCard.showInFinder': 'Show in Finder',
         'fileCard.showInExplorer': 'Show in File Explorer',
@@ -176,7 +177,13 @@ describe('ACP chat timeline components', () => {
     openWorkspaceWithMock.mockResolvedValue({ ok: true });
     revealWorkspaceFileMock.mockResolvedValue({ ok: true });
     thumbnailsMock.mockResolvedValue({});
-    useArtifactPanel.setState({ open: false, tab: 'changes', focusedFile: null });
+    useArtifactPanel.setState({
+      open: false,
+      tab: 'changes',
+      focusedFile: null,
+      webBrowserNavigation: null,
+      webBrowserNavigationId: 0,
+    });
   });
 
   it('does not apply background highlighting to chat code', () => {
@@ -435,6 +442,40 @@ describe('ACP chat timeline components', () => {
       expect(revealAttachmentMock).not.toHaveBeenCalled();
     },
   );
+
+  it('opens HTML file activity in the built-in browser from the first Open with item', async () => {
+    render(
+      <AcpTurnFileActivity
+        workspaceRoot="/workspace/demo"
+        summaries={[{
+          turnId: 'turn-html',
+          relativePath: 'site/report #1.html',
+          action: 'created',
+          activities: [],
+          added: 1,
+          removed: 0,
+        }]}
+      />,
+    );
+
+    await openAttachmentMenu('site/report #1.html');
+    const items = screen.getAllByRole('menuitem');
+    expect(items[0]).toHaveTextContent('Open in built-in browser');
+    fireEvent.click(items[0]);
+
+    expect(useArtifactPanel.getState()).toMatchObject({
+      open: true,
+      tab: 'web-browser',
+      webBrowserInitialized: true,
+      webBrowserNavigation: {
+        url: 'file:///workspace/demo/site/report%20%231.html',
+      },
+    });
+    expect(listWorkspaceOpenHandlersMock).toHaveBeenCalledWith({
+      workspaceRoot: '/workspace/demo',
+      relativePath: 'site/report #1.html',
+    });
+  });
 
   it.each(['report.docx', 'slides.pptx'])('routes active Office file activity %s through a workspace-scoped preview target', (relativePath) => {
     render(
@@ -748,6 +789,31 @@ describe('ACP chat timeline components', () => {
     expect(listAttachmentOpenHandlersMock).not.toHaveBeenCalled();
     expect(openAttachmentWithMock).not.toHaveBeenCalled();
     expect(revealAttachmentMock).not.toHaveBeenCalled();
+  });
+
+  it('opens a local HTML attachment in the built-in browser from the first Open with item', async () => {
+    render(<AcpAttachmentPart part={availableAttachment({
+      name: 'site one.html',
+      mimeType: 'text/html',
+      ref: {
+        ...attachmentRef,
+        uri: '/workspace/site one.html',
+      },
+    })} />);
+
+    await openAttachmentMenu('site one.html');
+    const items = screen.getAllByRole('menuitem');
+    expect(items[0]).toHaveTextContent('Open in built-in browser');
+    fireEvent.click(items[0]);
+
+    expect(useArtifactPanel.getState()).toMatchObject({
+      open: true,
+      tab: 'web-browser',
+      webBrowserInitialized: true,
+      webBrowserNavigation: {
+        url: 'file:///workspace/site%20one.html',
+      },
+    });
   });
 
   it.each([

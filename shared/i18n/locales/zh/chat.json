@@ -38,6 +38,7 @@
     "fileCard": {
         "openWith": "打开方式",
         "openWithFile": "选择打开 {{name}} 的应用",
+        "openInBuiltInBrowser": "在内置浏览器中打开",
         "searchingApplications": "正在查找应用",
         "showInFinder": "在访达中显示",
         "showInExplorer": "在文件资源管理器中显示",

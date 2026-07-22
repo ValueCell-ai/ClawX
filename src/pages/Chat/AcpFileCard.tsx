@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { AppWindow, ChevronDown, FolderOpen } from 'lucide-react';
+import { AppWindow, ChevronDown, FolderOpen, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
@@ -10,6 +10,8 @@ import {
   type WorkspaceFileRef,
 } from '@/lib/host-api';
 import { cn } from '@/lib/utils';
+import { extnameOf, isHtmlPreviewExt } from '@/lib/generated-files';
+import { useArtifactPanel } from '@/stores/artifact-panel';
 
 export type AcpFileTarget =
   | { kind: 'attachment'; ref: AttachmentFileRef }
@@ -37,6 +39,40 @@ function fileTargetKey(target: AcpFileTarget): string {
     target.ref.stagingId,
     target.ref.transcriptMessageId,
   ]);
+}
+
+function absolutePathToFileUrl(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, '/');
+  const absolutePath = normalized.startsWith('/') ? normalized : `/${normalized}`;
+  const encodedPath = absolutePath
+    .split('/')
+    .map((segment, index) => {
+      if (index === 0) return '';
+      if (index === 1 && /^[A-Za-z]:$/.test(segment)) return segment;
+      return encodeURIComponent(segment);
+    })
+    .join('/');
+  return `file://${encodedPath}`;
+}
+
+function builtInBrowserUrl(target: AcpFileTarget, name: string): string | null {
+  if (!isHtmlPreviewExt(extnameOf(name))) return null;
+  if (target.kind === 'workspace') {
+    const root = target.ref.workspaceRoot.replace(/[\\/]+$/, '');
+    const relativePath = target.ref.relativePath.replace(/^[\\/]+/, '');
+    return absolutePathToFileUrl(`${root}/${relativePath}`);
+  }
+  try {
+    const url = new URL(target.ref.uri);
+    if (url.protocol !== 'file:') return null;
+    if (!url.hostname) return url.href;
+    if (url.hostname.toLowerCase() !== 'localhost') return null;
+    return absolutePathToFileUrl(decodeURIComponent(url.pathname));
+  } catch {
+    return /^(?:[\\/]|[A-Za-z]:[\\/])/.test(target.ref.uri)
+      ? absolutePathToFileUrl(target.ref.uri)
+      : null;
+  }
 }
 
 function ApplicationIcon({ iconDataUrl }: { iconDataUrl?: string }) {
@@ -75,6 +111,7 @@ export function AcpFileOpenWith({ target, name }: { target: AcpFileTarget; name:
   const requestToken = useRef(0);
   const currentTargetKey = useRef(targetKey);
   const platform = window.electron.platform;
+  const browserUrl = builtInBrowserUrl(target, name);
   const targetKind = target.kind;
   const attachmentSessionKey = target.kind === 'attachment' ? target.ref.sessionKey : undefined;
   const attachmentGeneration = target.kind === 'attachment' ? target.ref.generation : undefined;
@@ -232,6 +269,19 @@ export function AcpFileOpenWith({ target, name }: { target: AcpFileTarget; name:
           sideOffset={4}
           className="z-50 max-h-72 min-w-48 overflow-y-auto rounded-lg border border-black/10 bg-surface-modal p-1 text-foreground shadow-lg dark:border-white/10"
         >
+          {browserUrl && (
+            <>
+              <DropdownMenu.Item
+                data-testid="acp-file-open-in-built-in-browser"
+                className={itemClassName}
+                onSelect={() => useArtifactPanel.getState().openWebBrowser(browserUrl)}
+              >
+                <Globe className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <span>{t('fileCard.openInBuiltInBrowser')}</span>
+              </DropdownMenu.Item>
+              <DropdownMenu.Separator className="my-1 h-px bg-black/10 dark:bg-white/10" />
+            </>
+          )}
           {loading && (
             <DropdownMenu.Item
               disabled

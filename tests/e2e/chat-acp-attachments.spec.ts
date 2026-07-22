@@ -1,4 +1,5 @@
 import type { ElectronApplication, Page } from '@playwright/test';
+import { pathToFileURL } from 'node:url';
 import * as XLSX from 'xlsx';
 import {
   closeElectronApp,
@@ -84,6 +85,58 @@ async function openChat(app: ElectronApplication): Promise<Page> {
 }
 
 test.describe('ACP media attachments', () => {
+  test('opens a local HTML attachment in the right-side Web Browser', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      const fixture = await installAttachmentHostFixture(app, {
+        sessions: [{ key: MAIN_SESSION_KEY, title: 'Main session' }],
+      });
+      const htmlPath = await fixture.createWorkspaceFile(
+        'browser demo.html',
+        '<!doctype html><title>Attachment Browser Demo</title><h1>Demo</h1>',
+      );
+      await fixture.setSessionReplay(MAIN_SESSION_KEY, [
+        userUpdate('html-browser-user', 'Show the HTML page'),
+        resourceUpdate({
+          messageId: 'html-browser-reply',
+          uri: htmlPath,
+          name: 'browser demo.html',
+          mimeType: 'text/html',
+          text: 'The HTML page is ready.',
+        }),
+      ]);
+      await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [[]]);
+
+      const page = await openChat(app);
+      const trigger = page.getByRole('button', { name: 'Open browser demo.html with', exact: true });
+      await expect(trigger).toBeEnabled({ timeout: 30_000 });
+      await trigger.click();
+      const browserItem = page.getByTestId('acp-file-open-in-built-in-browser');
+      await expect(page.getByRole('menuitem').first()).toHaveAttribute(
+        'data-testid',
+        'acp-file-open-in-built-in-browser',
+      );
+      await browserItem.click();
+
+      const expectedUrl = pathToFileURL(htmlPath).href;
+      const panel = page.getByTestId('artifact-panel');
+      await expect(panel).toBeVisible();
+      await expect(panel.getByTestId('artifact-panel-tab-web-browser')).toHaveClass(/bg-foreground\/10/);
+      await expect(page.getByTestId('web-browser-host')).toHaveAttribute('aria-hidden', 'false');
+      await expect.poll(async () => (await fixture.getHostInvocations()).some((request) => (
+        request.module === 'webBrowser'
+        && request.action === 'navigate'
+        && request.payload?.url === expectedUrl
+      ))).toBe(true);
+      await expect(page.getByTestId('web-browser-address-display')).toHaveAccessibleName(
+        new RegExp(expectedUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+      );
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('routes preview, open-with, and reveal through isolated typed host actions', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 

@@ -38,6 +38,7 @@
     "fileCard": {
         "openWith": "Открыть с помощью",
         "openWithFile": "Открыть {{name}} с помощью",
+        "openInBuiltInBrowser": "Открыть во встроенном браузере",
         "searchingApplications": "Поиск приложений",
         "showInFinder": "Показать в Finder",
         "showInExplorer": "Показать в Проводнике",

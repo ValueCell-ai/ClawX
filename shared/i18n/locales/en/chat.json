@@ -38,6 +38,7 @@
     "fileCard": {
         "openWith": "Open with",
         "openWithFile": "Open {{name}} with",
+        "openInBuiltInBrowser": "Open in built-in browser",
         "searchingApplications": "Searching for applications",
         "showInFinder": "Show in Finder",
         "showInExplorer": "Show in File Explorer",
