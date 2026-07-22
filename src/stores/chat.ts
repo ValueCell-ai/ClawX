@@ -2935,15 +2935,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
           });
 
           const { currentSessionKey, sessions: localSessions, sessionLabels: currentSessionLabels } = get();
-          const localWorkspaceBySessionKey = new Map(
-            localSessions
-              .filter((session) => session.workspacePath)
-              .map((session) => [session.key, session.workspacePath!] as const),
+          const localSessionByKey = new Map(
+            localSessions.map((session) => [session.key, session] as const),
           );
           const mergedSessions = dedupedSessions.map((session) => {
-            if (session.workspacePath) return session;
-            const workspacePath = localWorkspaceBySessionKey.get(session.key);
-            return workspacePath ? { ...session, workspacePath } : session;
+            const localSession = localSessionByKey.get(session.key);
+            const workspacePath = session.workspacePath ?? localSession?.workspacePath;
+            if (!localSession?.createdLocally && workspacePath === session.workspacePath) return session;
+            return {
+              ...session,
+              ...(workspacePath ? { workspacePath } : {}),
+              ...(localSession?.createdLocally ? { createdLocally: true } : {}),
+            };
           });
           if (previousGatewayListKeys) {
             const currentKeys = new Set(localSessions.map((session) => session.key));
@@ -3073,7 +3076,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
             && isClawXDesktopSessionKey(nextSessionKey)
             ? [
               ...visibleMergedSessions,
-              localCurrentSession ?? { key: nextSessionKey, displayName: nextSessionKey },
+              localCurrentSession ?? {
+                key: nextSessionKey,
+                displayName: nextSessionKey,
+                ...(replacedHiddenHeartbeatSession ? { createdLocally: true } : {}),
+              },
             ]
             : visibleMergedSessions;
 
@@ -3528,19 +3535,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((s) => buildSessionSwitchPatch(s, newKey, { createdLocally: true }));
   },
 
-  acknowledgeAcpSessionCreated: (key: string, workspacePath?: string) => {
+  acknowledgeAcpSessionCreated: (key: string, workspacePath?: string, initialPrompt?: string) => {
     const normalizedWorkspacePath = workspacePath?.trim();
-    set((s) => ({
-      sessions: s.sessions.map((session) => (
-        session.key === key && session.createdLocally
-          ? {
-            ...session,
-            createdLocally: false,
+    const initialLabel = key.endsWith(':main') ? '' : toSessionLabel(initialPrompt || '');
+    set((s) => {
+      const sessionEntry = s.sessions.find((session) => session.key === key);
+      return {
+        sessions: sessionEntry
+          ? s.sessions.map((session) => (
+            session.key === key && session.createdLocally
+              ? {
+                ...session,
+                createdLocally: false,
+                ...(normalizedWorkspacePath ? { workspacePath: normalizedWorkspacePath } : {}),
+              }
+              : session
+          ))
+          : [...s.sessions, {
+            key,
+            displayName: key,
             ...(normalizedWorkspacePath ? { workspacePath: normalizedWorkspacePath } : {}),
-          }
-          : session
-      )),
-    }));
+          }],
+        ...(initialLabel && !hasExplicitSessionLabel(sessionEntry) && !s.sessionLabels[key]
+          ? { sessionLabels: { ...s.sessionLabels, [key]: initialLabel } }
+          : {}),
+      };
+    });
   },
 
   // ── Rename session ──

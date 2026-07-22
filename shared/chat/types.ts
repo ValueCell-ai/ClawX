@@ -174,7 +174,7 @@ export interface ChatState {
   switchSession: (key: string) => void;
   selectAcpSession: (key: string, workspacePath?: string) => void;
   newSession: () => void;
-  acknowledgeAcpSessionCreated: (key: string, workspacePath?: string) => void;
+  acknowledgeAcpSessionCreated: (key: string, workspacePath?: string, initialPrompt?: string) => void;
   deleteSession: (key: string) => Promise<void>;
   deleteSessions: (keys: string[]) => Promise<DeleteSessionsResult>;
   renameSession: (key: string, label: string) => Promise<void>;

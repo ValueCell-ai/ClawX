@@ -197,7 +197,7 @@ export function applyGatewaySessionsChanged(
 
   if (eventTs !== undefined) latestEventTsByKey.set(key, eventTs);
   const nextSessions = [...sessions];
-  if (shouldIncludeSessionInSidebarList(merged)) {
+  if (merged.createdLocally || shouldIncludeSessionInSidebarList(merged)) {
     nextSessions[index] = merged;
   } else {
     nextSessions.splice(index, 1);

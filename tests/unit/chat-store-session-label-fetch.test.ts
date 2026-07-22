@@ -84,6 +84,32 @@ describe('chat store session label summary hydration', () => {
     vi.useRealTimers();
   });
 
+  it('restores a newly created session and its first-prompt title after catalog reconciliation removes the placeholder', async () => {
+    const sessionKey = 'agent:main:session-raced';
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: sessionKey,
+      currentAgentId: 'main',
+      sessions: [],
+      sessionLabels: {},
+    });
+
+    useChatStore.getState().acknowledgeAcpSessionCreated(
+      sessionKey,
+      '/workspace',
+      'Investigate the sidebar title race',
+    );
+
+    expect(useChatStore.getState().sessions).toContainEqual({
+      key: sessionKey,
+      displayName: sessionKey,
+      workspacePath: '/workspace',
+    });
+    expect(useChatStore.getState().sessionLabels[sessionKey]).toBe(
+      'Investigate the sidebar title race',
+    );
+  });
+
   it('only includes persisted main sessions missing workspacePath when workspace hydration is requested', async () => {
     const { getSessionLabelHydrationCandidate } = await import('@/stores/chat/session-label-hydration');
 

@@ -527,7 +527,7 @@ export function Chat() {
                   }
                 })();
                 if (loaded && createIfMissing) {
-                  acknowledgeAcpSessionCreated(sessionKey, promptCwd);
+                  acknowledgeAcpSessionCreated(sessionKey, promptCwd, text);
                 }
                 if (!loaded) return;
               }

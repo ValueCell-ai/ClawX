@@ -1,6 +1,6 @@
 # Chat Workspace And Navigation
 
-Status: current workspace reference, reviewed 2026-07-21.
+Status: current workspace reference, reviewed 2026-07-23.
 
 Related scenario: `chat-workspace-and-navigation`
 
@@ -22,7 +22,7 @@ ClawX persists global and recent workspace selections plus custom display labels
 
 ## First Send And Titles
 
-First send initializes the ACP session with the selected cwd and then marks the local session as created/bound. ACP keeps `_meta.prefixCwd: true`; disabling cwd injection would break OpenClaw context. Automatic titles instead normalize away one leading `[Working directory: ...]` envelope and subsequent whitespace.
+First send initializes the ACP session with the selected cwd and then marks the local session as created/bound. A fresh session generated at cold start to replace hidden heartbeat history is marked as the same kind of local placeholder; it cannot appear as a normal empty session or bypass first-send creation. Gateway event and canonical-list reconciliation preserve the local `createdLocally` marker until acknowledgement, even when OpenClaw already reports the same key with the ACP bridge display name. The acknowledgement atomically restores a raced-away placeholder when necessary, clears the marker, and seeds a missing automatic sidebar title from the raw first prompt. The newly visible row therefore never falls back to the bridge client identity while transcript title hydration catches up. Existing explicit or cached labels win. ACP keeps `_meta.prefixCwd: true`; disabling cwd injection would break OpenClaw context. Automatic titles instead normalize away one leading `[Working directory: ...]` envelope and subsequent whitespace.
 
 Normalization applies to automatic sources such as Gateway-derived title and Main transcript summary. It never changes an explicit user label, never removes a non-leading marker, and treats the exact truncated envelope form as a missing title so a better summary can replace it.
 
@@ -73,6 +73,6 @@ The Chat question directory belongs to the active ACP timeline rather than works
 
 ## Validation Anchors
 
-Key tests include `tests/unit/workspace-context.test.ts`, `tests/unit/session-title.test.ts`, `tests/unit/session-buckets.test.ts`, `tests/unit/sidebar-session-buckets.test.ts`, `tests/unit/workspace-browser-body.test.tsx`, `tests/unit/office-file-viewers.test.tsx`, `tests/unit/chat-acp-page.test.tsx`, `tests/unit/artifact-panel-store.test.ts`, `tests/unit/artifact-panel.test.tsx`, `tests/unit/main-layout.test.tsx`, `tests/e2e/chat-workspace-context.spec.ts`, `tests/e2e/chat-acp-inline-timeline.spec.ts`, `tests/e2e/chat-question-directory.spec.ts`, `tests/e2e/chat-sidebar-session-attention.spec.ts`, `tests/e2e/office-document-preview.spec.ts`, and the three final Web Browser E2E specs linked from `harness/reference/web-browser.md`.
+Key tests include `tests/unit/workspace-context.test.ts`, `tests/unit/session-title.test.ts`, `tests/unit/session-buckets.test.ts`, `tests/unit/sidebar-session-buckets.test.ts`, `tests/unit/workspace-browser-body.test.tsx`, `tests/unit/office-file-viewers.test.tsx`, `tests/unit/chat-acp-page.test.tsx`, `tests/unit/artifact-panel-store.test.ts`, `tests/unit/artifact-panel.test.tsx`, `tests/unit/main-layout.test.tsx`, `tests/e2e/chat-workspace-context.spec.ts`, `tests/e2e/chat-new-session-date.spec.ts`, `tests/e2e/chat-acp-inline-timeline.spec.ts`, `tests/e2e/chat-question-directory.spec.ts`, `tests/e2e/chat-sidebar-session-attention.spec.ts`, `tests/e2e/office-document-preview.spec.ts`, and the three final Web Browser E2E specs linked from `harness/reference/web-browser.md`.
 
 This reference consolidates the former workspace sidebar, chat workspace context, sidebar workspace UI, and ACP working-directory title designs. The later flat activity-sorted sidebar supersedes the earlier recency buckets.

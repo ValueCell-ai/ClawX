@@ -11,6 +11,7 @@ ownedPaths:
   - src/stores/settings.ts
   - src/stores/chat.ts
   - src/stores/chat/session-actions.ts
+  - src/stores/chat/session-catalog.ts
   - src/stores/session-attention.ts
   - src/stores/chat/session-status.ts
   - src/components/layout/Sidebar.tsx
@@ -38,6 +39,8 @@ ownedPaths:
   - shared/i18n/locales/*/chat.json
   - tests/unit/workspace-context.test.ts
   - tests/unit/session-title.test.ts
+  - tests/unit/session-catalog.test.ts
+  - tests/unit/chat-load-sessions-startup.test.ts
   - tests/unit/session-attention.test.ts
   - tests/unit/session-status.test.ts
   - tests/unit/session-buckets.test.ts
@@ -50,6 +53,7 @@ ownedPaths:
   - tests/unit/artifact-panel.test.tsx
   - tests/unit/acp-chat-components.test.tsx
   - tests/e2e/chat-workspace-context.spec.ts
+  - tests/e2e/chat-new-session-date.spec.ts
   - tests/e2e/chat-acp-inline-timeline.spec.ts
   - tests/e2e/chat-question-directory.spec.ts
   - tests/e2e/chat-sidebar-session-attention.spec.ts
@@ -71,7 +75,7 @@ requiredRules:
   - docs-sync
 ---
 
-This scenario covers selecting a workspace for a new Chat, validating its availability before ACP load, recovering from deleted global workspace paths, marking unavailable non-default sidebar groups, permanently deleting their sessions after confirmation, binding workspaces through OpenClaw ACP cwd, targeting another agent without losing that agent's workspace or first prompt, restoring historical workspace context, renaming imported workspace display labels, navigating workspace-grouped sessions, browsing the effective workspace, using the distinct persistent Web Browser artifact tab, and jumping among user questions.
+This scenario covers selecting a workspace for a new Chat, validating its availability before ACP load, deriving a newly visible session title atomically from its first prompt, recovering from deleted global workspace paths, marking unavailable non-default sidebar groups, permanently deleting their sessions after confirmation, binding workspaces through OpenClaw ACP cwd, targeting another agent without losing that agent's workspace or first prompt, restoring historical workspace context, renaming imported workspace display labels, navigating workspace-grouped sessions, browsing the effective workspace, using the distinct persistent Web Browser artifact tab, and jumping among user questions.
 
 Workspace file browsing keeps the store value `browser`; the Electron Web Browser uses `web-browser`. Its toolbar reserves a fixed-size favicon or placeholder slot only in the non-editing title state, omits the hover URL tooltip, and gives every More menu action an icon. Current workspace resolution, ordering, title normalization, and file-browser behavior are documented in `harness/reference/chat-workspace-and-navigation.md`; the Electron guest contract is documented in `harness/reference/web-browser.md`.
 

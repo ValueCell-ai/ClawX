@@ -62,6 +62,27 @@ describe('Gateway session catalog projection', () => {
     expect(result.sessions).toEqual([{ key: SESSION_KEY, status: 'running', model: 'nested-model' }]);
   });
 
+  it('keeps a local new-chat placeholder hidden when the Gateway reports its ACP display name', () => {
+    const result = applyGatewaySessionsChanged(
+      [{ key: SESSION_KEY, displayName: SESSION_KEY, createdLocally: true }],
+      {
+        sessionKey: SESSION_KEY,
+        ts: 10,
+        displayName: 'ACP',
+        updatedAt: 10,
+      },
+      new Map(),
+    );
+
+    expect(result).toMatchObject({ applied: true, requiresReload: true });
+    expect(result.sessions).toEqual([{
+      key: SESSION_KEY,
+      displayName: 'ACP',
+      createdLocally: true,
+      updatedAt: 10_000,
+    }]);
+  });
+
   it('preserves explicit false and clears optional fields only when null is present', () => {
     const result = applyGatewaySessionsChanged(
       [{ key: SESSION_KEY, hasActiveRun: true, model: 'old-model', label: 'Keep me' }],
