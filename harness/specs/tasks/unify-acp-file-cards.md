@@ -5,7 +5,6 @@ scenario: gateway-backend-communication
 taskType: runtime-bridge
 intent: Share one ACP file-card and Open with interaction while adding independently validated workspace-scoped native actions for created and modified file activity.
 touchedAreas:
-  - docs/plans/2026-07-23-unify-acp-file-cards.md
   - harness/specs/tasks/unify-acp-file-cards.md
   - harness/specs/scenarios/acp-file-activity.md
   - harness/specs/rules/tool-derived-file-safety.md

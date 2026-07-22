@@ -8,7 +8,6 @@ touchedAreas:
   - README.md
   - README.zh-CN.md
   - README.ja-JP.md
-  - docs/plans/2026-07-16-acp-media-attached-turn-alignment.md
   - harness/specs/tasks/fix-acp-media-attached-turn-alignment.md
   - harness/specs/tasks/acp-media-attachments.md
   - harness/specs/tasks/preserve-acp-stream-across-navigation.md

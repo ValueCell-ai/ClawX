@@ -292,8 +292,8 @@ export function FilePreviewBody({
     }
 
     if (isRichDocumentPreview) {
-      // PdfViewer / SheetViewer load bytes themselves through the binary
-      // IPC channel; the body just needs to hand off control. For files
+      // Binary rich viewers load bytes themselves through their authorized
+      // Host API route; the body just needs to hand off control. For files
       // beyond the inline-preview ceiling we keep the existing
       // "direct open" fallback so users still have a way out.
       if (
@@ -665,7 +665,7 @@ export function FilePreviewBody({
                 </Suspense>
               ) : richPreview === 'pptx' ? (
                 // CSS hidden is insufficient: pptxviewjs@1.1.9 shares Renderer-global processor/ZIP state.
-                // See docs/specs/2026-07-22-office-document-preview-design.md#single-active-instance.
+                // See harness/reference/office-document-preview.md#single-pptx-instance.
                 active ? (
                   <Suspense
                     fallback={

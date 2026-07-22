@@ -126,8 +126,8 @@ export default function PptxViewer({
       throw new Error('PptxViewer requires a single active instance');
     }
 
-    // pptxviewjs@1.1.9 shares chart/ZIP globals across instances. See the design's
-    // Single active instance section: docs/specs/2026-07-22-office-document-preview-design.md#single-active-instance
+    // pptxviewjs@1.1.9 shares chart/ZIP globals across instances.
+    // See harness/reference/office-document-preview.md#single-pptx-instance.
     hasActiveDevelopmentInstance = true;
     return () => {
       hasActiveDevelopmentInstance = false;

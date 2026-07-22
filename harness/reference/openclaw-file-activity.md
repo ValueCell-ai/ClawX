@@ -4,9 +4,9 @@ Status: current compatibility and safety reference, reviewed 2026-07-23.
 
 Related scenario: `acp-file-activity`
 
-Related rules: `tool-derived-file-safety`, `session-workspace-authority`, `attachment-access-safety`
+Related rules: `tool-derived-file-safety`, `session-workspace-authority`, `attachment-access-safety`, `office-preview-safety`
 
-Related tasks: `restore-acp-file-activity`, `acp-media-attachments`, `unify-acp-file-cards`
+Related tasks: `restore-acp-file-activity`, `acp-media-attachments`, `acp-attachment-open-with`, `unify-acp-file-cards`, `office-document-preview`
 
 ## Semantics And Ownership
 
@@ -72,6 +72,8 @@ type WorkspaceFileRef = {
 Main independently canonicalizes each read/stat/native-action request, checks real paths and nearest existing parents, rejects traversal, non-files, and symlink escape, and avoids following unsafe final links. Handler discovery, selected-handler open, and reveal each re-resolve the `WorkspaceFileRef`; selected-handler open performs an additional callback revalidation immediately before native invocation. Renderer lexical rejection prevents activity UI for obvious outside paths. A later Main rejection keeps the historical activity while refusing the requested file operation.
 
 Tool-derived targets are read-only in-app previews and never use naked-path shell APIs. Created and modified activity may expose a separate Open with menu backed only by workspace-scoped Host API actions; deleted activity does not. The native adapter receives a Main-owned canonical path and opaque handler id, and Main revalidates the workspace reference before invocation. Linux offers only workspace-scoped reveal.
+
+`src/pages/Chat/AcpFileCard.tsx` supplies the shared attachment/file-activity presentation shell and target-aware menu without sharing grants. In-limit DOCX/PPTX activity reaches the Office viewers through its `WorkspaceFileRef`; parsing and single-viewer constraints are documented in `harness/reference/office-document-preview.md`.
 
 ## Separation From Attachments
 

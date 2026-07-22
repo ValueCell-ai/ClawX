@@ -5,8 +5,7 @@ scenario: chat-workspace-and-navigation
 taskType: runtime-bridge
 intent: Add Renderer-only DOCX and PPTX previews to existing authorized file surfaces without weakening scoped access or loading Office parsers in the initial chat bundle.
 touchedAreas:
-  - docs/specs/2026-07-22-office-document-preview-design.md
-  - docs/plans/2026-07-22-office-document-preview.md
+  - harness/reference/office-document-preview.md
   - harness/specs/tasks/office-document-preview.md
   - harness/specs/rules/office-preview-safety.md
   - harness/specs/scenarios/chat-workspace-and-navigation.md
@@ -89,8 +88,8 @@ docs:
 
 ## Scope
 
-This contract governs the complete Office preview implementation described by `docs/specs/2026-07-22-office-document-preview-design.md` and `docs/plans/2026-07-22-office-document-preview.md`. It extends the existing workspace/navigation scenario without adding a new communication transport or Main-process document conversion path.
+This contract governs the complete Office preview implementation recorded in `harness/reference/office-document-preview.md` and enforced by `harness/specs/rules/office-preview-safety.md`. It extends the existing workspace/navigation scenario without adding a new communication transport or Main-process document conversion path.
 
 ## Durable Contracts
 
-Implementation tasks must preserve `harness/specs/rules/office-preview-safety.md` together with the existing Renderer/Main, attachment, tool-derived file, localization, and documentation rules. Durable workspace and preview ownership is recorded in `harness/reference/chat-workspace-and-navigation.md`.
+Implementation tasks must preserve `harness/specs/rules/office-preview-safety.md` together with the existing Renderer/Main, attachment, tool-derived file, localization, and documentation rules. Durable Office behavior and implementation rationale are recorded in `harness/reference/office-document-preview.md`; workspace and preview ownership remains recorded in `harness/reference/chat-workspace-and-navigation.md`.

@@ -5,8 +5,7 @@ scenario: gateway-backend-communication
 taskType: runtime-bridge
 intent: Show active and unread-completion state in sidebar session rows using the OpenClaw Gateway session catalog as the only status authority.
 touchedAreas:
-  - docs/specs/2026-07-20-sidebar-session-attention-design.md
-  - docs/plans/2026-07-20-sidebar-session-attention.md
+  - harness/reference/sidebar-session-attention.md
   - harness/specs/tasks/sidebar-session-attention.md
   - harness/specs/rules/sidebar-session-attention-authority.md
   - harness/specs/scenarios/gateway-backend-communication.md
@@ -16,6 +15,7 @@ touchedAreas:
   - src/stores/session-attention.ts
   - src/stores/chat/session-status.ts
   - src/stores/chat/session-catalog.ts
+  - src/stores/chat/session-label-hydration.ts
   - tests/unit/session-attention.test.ts
   - tests/unit/session-status.test.ts
   - tests/unit/session-catalog.test.ts
@@ -28,11 +28,13 @@ touchedAreas:
   - shared/i18n/locales/ja/chat.json
   - shared/i18n/locales/ru/chat.json
   - tests/unit/gateway-events.test.ts
+  - tests/unit/gateway-event-dispatch.test.ts
   - tests/unit/gateway-bisection-0d794cd.test.ts
   - tests/unit/chat-store-history-retry.test.ts
   - tests/unit/chat-store-session-label-fetch.test.ts
   - tests/unit/session-label-hydration.test.ts
   - tests/unit/sidebar-session-buckets.test.ts
+  - tests/unit/i18n-locale-parity.test.ts
   - tests/e2e/chat-sidebar-session-attention.spec.ts
   - harness/reference/chat-workspace-and-navigation.md
   - README.md
@@ -57,7 +59,7 @@ requiredRules:
   - comms-regression
   - docs-sync
 requiredTests:
-  - pnpm exec vitest run tests/unit/harness-specs.test.ts tests/unit/session-attention.test.ts tests/unit/session-status.test.ts tests/unit/session-catalog.test.ts tests/unit/gateway-events.test.ts tests/unit/chat-store-history-retry.test.ts tests/unit/sidebar-session-buckets.test.ts
+  - pnpm exec vitest run tests/unit/harness-specs.test.ts tests/unit/session-attention.test.ts tests/unit/session-status.test.ts tests/unit/session-catalog.test.ts tests/unit/session-label-hydration.test.ts tests/unit/gateway-events.test.ts tests/unit/chat-store-history-retry.test.ts tests/unit/chat-store-session-label-fetch.test.ts tests/unit/sidebar-session-buckets.test.ts
   - pnpm exec vitest run tests/unit/i18n-locale-parity.test.ts tests/unit/gateway-event-dispatch.test.ts
   - pnpm run typecheck
   - pnpm run lint:check
@@ -81,6 +83,8 @@ docs:
 ## Scope
 
 The implementation preserves the Main-owned Gateway transport and the existing Renderer session catalog. It adds only a Gateway-derived run projection and local presentation attention state.
+
+The durable architecture, ordering and failure semantics, current limitations, and future Gateway-unread migration are documented in `harness/reference/sidebar-session-attention.md`.
 
 ## Out Of Scope
 

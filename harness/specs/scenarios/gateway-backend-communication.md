@@ -19,11 +19,20 @@ ownedPaths:
   - tests/unit/session-attention.test.ts
   - tests/unit/session-status.test.ts
   - tests/unit/session-catalog.test.ts
+  - tests/unit/gateway-events.test.ts
+  - tests/unit/gateway-event-dispatch.test.ts
+  - tests/unit/chat-store-history-retry.test.ts
+  - tests/unit/chat-store-session-label-fetch.test.ts
+  - tests/unit/session-label-hydration.test.ts
   - tests/e2e/chat-sidebar-session-attention.spec.ts
   - shared/web-browser.ts
   - electron/main/web-browser-policy.ts
   - electron/main/web-browser-session.ts
   - electron/services/web-browser-api.ts
+  - tests/unit/web-browser-url.test.ts
+  - tests/unit/web-browser-policy.test.ts
+  - tests/unit/web-browser-session.test.ts
+  - tests/unit/web-browser-api.test.ts
 requiredProfiles:
   - fast
   - comms
@@ -33,6 +42,7 @@ conditionalProfiles:
       - user-visible gateway status changes
       - user-visible chat send/receive behavior changes
       - channels/agents/settings UI depends on new backend response shape
+      - Web Browser guest, navigation, session, permission, or data policy changes
 requiredRules:
   - renderer-main-boundary
   - backend-communication-boundary
@@ -47,6 +57,7 @@ requiredRules:
   - provider-model-metadata-preservation
   - provider-model-selection-authority
   - sidebar-session-attention-authority
+  - web-browser-security-and-lifecycle
   - comms-regression
   - docs-sync
 forbiddenPatterns:
@@ -73,4 +84,6 @@ Renderer code must not create direct Gateway WebSocket connections. Gateway fram
 
 Channel/plugin migration behavior is also part of this scenario when ClawX rewrites OpenClaw config before Gateway launch. Upgrades must preserve single-owner channel registration for migrated plugin-backed channels such as Feishu/Lark.
 
-The Web Browser privileged bridge is also Main-owned: Renderer address and recovery navigation, data clearing, and external opening flow through the typed Host API. The artifact tab value `web-browser` identifies this Electron guest and remains distinct from the Workspace file browser value `browser`; UI ownership stays in `chat-workspace-and-navigation`.
+The Web Browser privileged bridge is also Main-owned: Renderer address and recovery navigation, data clearing, and external opening flow through the typed Host API. The artifact tab value `web-browser` identifies this Electron guest and remains distinct from the Workspace file browser value `browser`; UI ownership stays in `chat-workspace-and-navigation`. The durable guest contract is `harness/reference/web-browser.md`.
+
+Gateway session-catalog subscription, normalization, ordered list/event replay, attention transitions, and reconnect recovery are documented in `harness/reference/sidebar-session-attention.md`.

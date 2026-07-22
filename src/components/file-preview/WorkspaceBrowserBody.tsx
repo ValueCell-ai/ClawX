@@ -308,7 +308,7 @@ export function WorkspaceBrowserBody({
       };
     }
     if (supportsRichDocumentPreview(node.ext ?? '')) {
-      // PDF / spreadsheet viewers handle their own loading; we only need
+      // Binary rich viewers handle their own loading; we only need
       // a stat for the badge / direct-open fallbacks.  Files that exceed
       // the inline cap fall back to the existing tooLarge UI so users
       // can still open them with the system default app.
@@ -647,7 +647,7 @@ export function WorkspaceBrowserBody({
     if (isPptxPreviewExt(selectedNode.ext)) {
       const identity = getFilePreviewTargetIdentity({ filePath: selectedNode.absPath });
       // CSS hidden is insufficient: pptxviewjs@1.1.9 shares Renderer-global processor/ZIP state.
-      // See docs/specs/2026-07-22-office-document-preview-design.md#single-active-instance.
+      // See harness/reference/office-document-preview.md#single-pptx-instance.
       return active ? (
         <Suspense
           fallback={

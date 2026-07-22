@@ -5,8 +5,9 @@ scenario: gateway-backend-communication
 taskType: runtime-bridge
 intent: Add one persistent, hardened Electron webview to the Chat artifact panel with Main-owned navigation, session, permission, popup, download, and site-data policy.
 touchedAreas:
-  - docs/specs/2026-07-20-web-browser-design.md
-  - docs/plans/2026-07-20-web-browser.md
+  - harness/reference/web-browser.md
+  - harness/specs/rules/web-browser-security-and-lifecycle.md
+  - harness/specs/tasks/web-browser.md
   - shared/web-browser.ts
   - shared/host-api/contract.ts
   - shared/i18n/resources.ts
@@ -47,13 +48,10 @@ touchedAreas:
   - tests/e2e/web-browser-navigation.spec.ts
   - tests/e2e/web-browser-lifecycle.spec.ts
   - tests/e2e/web-browser-policy.spec.ts
-  - harness/reference/web-browser.md
   - harness/reference/chat-workspace-and-navigation.md
-  - harness/specs/rules/web-browser-security-and-lifecycle.md
   - harness/specs/rules/ui-i18n-design-tokens.md
   - harness/specs/scenarios/chat-workspace-and-navigation.md
   - harness/specs/scenarios/gateway-backend-communication.md
-  - harness/specs/tasks/web-browser.md
   - README.md
   - README.zh-CN.md
   - README.ja-JP.md
@@ -62,6 +60,7 @@ expectedUserBehavior:
   - The artifact panel shows one localized Web Browser tab after Changes, distinct from the Workspace browser.
   - First selection lazily creates one hardened guest at about:blank; later tab, panel, session, and route changes hide it while scripts, network activity, audio, and resource use may continue.
   - Address, history, refresh, clear-data, crash recovery, popup, and external-open actions reuse the registered guest and allow only HTTP, HTTPS, and explicit standard file URLs at the top level.
+  - Address input treats a host followed by a numeric port as a schemeless HTTPS destination, while Main never performs scheme completion.
   - The title state shows a page-provided favicon or same-size placeholder without a hover URL tooltip, address editing hides the icon slot, and every More menu action has an icon.
   - Cookies and site storage persist in persist:clawx-web-browser, while guest creation, URL, page state, and history do not restore after application restart.
   - Allowed popup targets replace the current page without a child window and cannot preserve window.opener, returned handles, initially blank scripted popups, or full POST/referrer/named-window behavior.
@@ -99,6 +98,7 @@ acceptance:
   - Exactly one lazily created webview uses persist:clawx-web-browser, about:blank, and the fixed cross-platform UserAgent with no guest preload or Node integration.
   - The initialized guest remains mounted and preserves live state and history across panel, artifact-tab, chat-session, and route hiding; restart returns to about:blank without URL, page-state, or history restoration.
   - Main validates typed navigation, page navigation, redirects, popup targets, and external opening for only HTTP, HTTPS, and explicit standard file URLs; local-file exposure is documented.
+  - Renderer parsing preserves host-plus-numeric-port input as an HTTPS host destination, while Main-facing normalization requires an explicit allowed scheme.
   - Every popup is denied as a child, an allowed target reuses the current guest, and window.opener, handles, initially blank scripted popups, and full POST/referrer/named-window compatibility are not promised.
   - Media prompts once per request without persistence, clipboard is allowed, and geolocation, display capture, notifications, and all other permissions are denied.
   - Clear Cookies and Clear Site Data operate across every origin with their documented disjoint storage scopes and preserve downloaded files.
@@ -113,4 +113,6 @@ docs:
 
 ## Related Contracts
 
-The primary runtime bridge remains rooted in `gateway-backend-communication`. Artifact-panel placement, route-stable host ownership, and the distinction between Workspace `browser` and Electron `web-browser` are linked through `chat-workspace-and-navigation` and `harness/reference/chat-workspace-and-navigation.md`. Final symbols, selectors, limitations, and test anchors are recorded in `harness/reference/web-browser.md`.
+The primary runtime bridge remains rooted in `gateway-backend-communication`. Artifact-panel placement, route-stable host ownership, and the distinction between Workspace `browser` and Electron `web-browser` are linked through `chat-workspace-and-navigation` and `harness/reference/chat-workspace-and-navigation.md`.
+
+`harness/reference/web-browser.md`, this task, and `harness/specs/rules/web-browser-security-and-lifecycle.md` are the authoritative durable design, acceptance, and enforcement records. The reference owns implemented decisions, rationale, rejected alternatives, limitations, symbols, selectors, and test anchors; historical design and implementation-plan files are not inputs to this task.

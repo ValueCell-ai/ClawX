@@ -1,4 +1,5 @@
-import { readFile } from 'node:fs/promises';
+import { access, readFile, readdir } from 'node:fs/promises';
+import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -16,6 +17,17 @@ import {
   validateGatewayTaskSpec,
   validatePluginLifecycleTaskSpec,
 } from '../../harness/src/rules.mjs';
+
+async function readMarkdownTree(directory: string): Promise<Array<{ file: string; content: string }>> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const nested = await Promise.all(entries.map(async (entry) => {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) return readMarkdownTree(file);
+    if (!entry.isFile() || !entry.name.endsWith('.md')) return [];
+    return [{ file, content: await readFile(file, 'utf8') }];
+  }));
+  return nested.flat();
+}
 
 describe('harness specs', () => {
   it('defines the sidebar session attention harness contract', async () => {
@@ -147,6 +159,93 @@ describe('harness specs', () => {
     expect(workspaceScenario?.body).toContain('PPTX');
     expect(workspaceScenario?.body).toContain('20 MB');
     expect(workspaceScenario?.body).toContain('single mounted PPTX viewer');
+  });
+
+  it('keeps implemented design decisions in topic-based Harness references', async () => {
+    const [
+      index,
+      browserReference,
+      officeReference,
+      attentionReference,
+      attachmentReference,
+      scenarios,
+      harnessMarkdown,
+    ] = await Promise.all([
+      readFile('harness/reference/README.md', 'utf8'),
+      readFile('harness/reference/web-browser.md', 'utf8'),
+      readFile('harness/reference/office-document-preview.md', 'utf8'),
+      readFile('harness/reference/sidebar-session-attention.md', 'utf8'),
+      readFile('harness/reference/acp-attachment-access-control.md', 'utf8'),
+      loadScenarioSpecs(),
+      readMarkdownTree('harness'),
+    ]);
+
+    for (const topic of [
+      'Web Browser',
+      'Office Document Preview',
+      'Sidebar Session Attention',
+      'ACP Attachment Access Control',
+    ]) {
+      expect(index).toContain(topic);
+    }
+
+    for (const anchor of [
+      'Trust Model And Ownership',
+      'numeric port',
+      'Main Startup And Attachment Ordering',
+      'Failure Semantics And Crash Recovery',
+      'Rejected Alternatives',
+    ]) {
+      expect(browserReference).toContain(anchor);
+    }
+
+    for (const anchor of [
+      '`docx-preview`',
+      '`pptxviewjs@1.1.9`',
+      '`jszip`',
+      '`chart.js`',
+      '20 MB',
+      '`window.currentProcessor`',
+      'Future Hardening',
+    ]) {
+      expect(officeReference).toContain(anchor);
+    }
+
+    for (const anchor of [
+      '`clawx.session-attention`',
+      '`sessions.changed`',
+      '`list.ts`',
+      '`event.ts`',
+      '`done`',
+      '`hasActiveRun`',
+      '`sessions.patch({ unread: false })`',
+    ]) {
+      expect(attentionReference).toContain(anchor);
+    }
+
+    for (const anchor of [
+      '64 KiB',
+      'five seconds',
+      'static JXA',
+      'SHA-256',
+      'Successful Empty Result On Linux',
+      'Rejected Alternatives',
+    ]) {
+      expect(attachmentReference).toContain(anchor);
+    }
+
+    const scenarioById = new Map(scenarios.map((scenario) => [scenario.data.id, scenario]));
+    expect(scenarioById.get('gateway-backend-communication')?.data.requiredRules)
+      .toContain('web-browser-security-and-lifecycle');
+    for (const scenarioId of ['chat-workspace-and-navigation', 'acp-chat-experience', 'acp-file-activity']) {
+      expect(scenarioById.get(scenarioId)?.data.requiredRules).toContain('office-preview-safety');
+    }
+
+    for (const { file, content } of harnessMarkdown) {
+      expect(content, `${file} must not depend on deleted design or plan documents`)
+        .not.toMatch(/docs\/(?:specs|plans)\//);
+    }
+    await expect(access('docs/specs')).rejects.toThrow();
   });
 
   it('defines the ACP media attachment harness contract', async () => {

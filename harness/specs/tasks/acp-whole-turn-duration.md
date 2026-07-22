@@ -5,7 +5,6 @@ scenario: gateway-backend-communication
 taskType: runtime-bridge
 intent: Show one whole-turn duration for ACP assistant turns, using Renderer-observed timing while live and a Main-owned transcript timing supplement after historical ACP replay.
 touchedAreas:
-  - docs/plans/2026-07-22-acp-whole-turn-duration.md
   - harness/specs/tasks/acp-whole-turn-duration.md
   - harness/specs/scenarios/acp-chat-experience.md
   - harness/specs/rules/acp-chat-state-and-history.md

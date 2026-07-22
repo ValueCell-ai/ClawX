@@ -4,9 +4,9 @@ Status: current workspace reference, reviewed 2026-07-23.
 
 Related scenario: `chat-workspace-and-navigation`
 
-Related rules: `session-workspace-authority`, `sidebar-session-attention-authority`, `ui-i18n-design-tokens`, `office-preview-safety`
+Related rules: `session-workspace-authority`, `sidebar-session-attention-authority`, `ui-i18n-design-tokens`, `office-preview-safety`, `web-browser-security-and-lifecycle`
 
-Related tasks: `chat-workspace-context`, `sidebar-session-attention`, `office-document-preview`
+Related tasks: `chat-workspace-context`, `sidebar-session-attention`, `office-document-preview`, `web-browser`
 
 ## Workspace Authority
 
@@ -51,7 +51,7 @@ Read state follows visible Chat integration rather than the retained current-ses
 
 The versioned attention store persists only exact-key `observedBusy` and `unread` state. This allows a later idle canonical snapshot to recover completion when ClawX previously observed the run as busy, including across an app restart. A run that starts and finishes while ClawX is fully offline cannot be inferred and must not create unread state. Run-scoped cron keys also cannot drive base-row attention because the bundled Gateway does not expose a recoverable canonical relationship.
 
-The future migration is recorded in `docs/specs/2026-07-20-sidebar-session-attention-design.md`: once the bundled Gateway provides durable `unread` and `sessions.patch`, Gateway unread state should replace the local transition store and read acknowledgement should call `sessions.patch({ unread: false })`.
+The complete projection, persistence, list/event ordering, failure recovery, and future `sessions.patch({ unread: false })` migration are documented in `harness/reference/sidebar-session-attention.md`.
 
 ## Workspace Browser And Web Browser
 
@@ -65,7 +65,7 @@ The Web Browser is a fixed fourth tab with one persistent Electron guest. `Artif
 
 The Workspace and Preview surfaces support read-only `.docx` and `.pptx` files; legacy `.doc` and `.ppt` files remain system-open-only. Extension is authoritative, and compressed DOCX/PPTX input is limited to 20 MB before Renderer parsing. Scoped workspace and attachment references use only their authorized Host API read route and never fall back to a naked path. Workspace Browser intentionally retains its existing Host-validated absolute-path read flow.
 
-DOCX generated content is isolated and its links are non-interactive. PPTX renders one slide at a time, and kept-mounted artifact surfaces conditionally mount it so the shared Electron Renderer has a single mounted PPTX viewer. Cleanup releases ClawX-owned resources and invokes public `destroy()` exactly once, while the reviewed dependency-owned retained-resource limitation remains accepted. Exact security and lifecycle requirements are in `harness/specs/rules/office-preview-safety.md`; implementation decisions and user-visible limitations are in `docs/specs/2026-07-22-office-document-preview-design.md`.
+DOCX generated content is isolated and its links are non-interactive. PPTX renders one slide at a time, and kept-mounted artifact surfaces conditionally mount it so the shared Electron Renderer has a single mounted PPTX viewer. Cleanup releases ClawX-owned resources and invokes public `destroy()` exactly once, while the reviewed dependency-owned retained-resource limitation remains accepted. Exact security and lifecycle requirements are in `harness/specs/rules/office-preview-safety.md`; dependency choices, rendering decisions, user-visible limitations, and future hardening are in `harness/reference/office-document-preview.md`.
 
 ## Question Navigation
 
