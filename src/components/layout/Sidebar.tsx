@@ -33,7 +33,7 @@ import { cn } from '@/lib/utils';
 import { isGatewayRestarting } from '@/lib/gateway-status';
 import { rendererExtensionRegistry } from '@/extensions/registry';
 import { useSettingsStore } from '@/stores/settings';
-import { useChatStore } from '@/stores/chat';
+import { useChatStore, type ChatSession } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { groupSessionsByWorkspace } from './session-buckets';
@@ -51,6 +51,7 @@ import logoSvg from '@/assets/logo.svg';
 import { useNewChatAction } from './use-new-chat-action';
 import { isDefaultWorkspacePath } from '@/lib/workspace-context';
 import { useWorkspaceAvailability } from '@/hooks/use-workspace-availability';
+import { isOpenClawSessionIdFallbackTitle } from '@shared/chat/session-title';
 
 interface NavItemProps {
   to: string;
@@ -195,8 +196,18 @@ export function Sidebar() {
   const navigate = useNavigate();
   const isOnChat = useLocation().pathname === '/';
 
-  const getSessionLabel = (key: string, displayName?: string, label?: string) =>
-    sessionLabels[key] ?? (label?.trim() ? label : displayName ?? key);
+  const getSessionLabel = (session: ChatSession) => {
+    const candidates = [
+      sessionLabels[session.key],
+      session.label,
+      session.derivedTitle,
+      session.displayName,
+    ];
+    return candidates.find((candidate) => (
+      candidate?.trim()
+      && !isOpenClawSessionIdFallbackTitle(candidate, session.sessionId)
+    ))?.trim() ?? session.key;
+  };
 
   const openControlUi = async (view?: 'dreams', label = 'OpenClaw Page') => {
     try {
@@ -226,6 +237,7 @@ export function Sidebar() {
   const [workspaceDeleteDialogOpen, setWorkspaceDeleteDialogOpen] = useState(false);
   const [editingSessionKey, setEditingSessionKey] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
+  const [editingOriginalLabel, setEditingOriginalLabel] = useState('');
   const [editingWorkspacePath, setEditingWorkspacePath] = useState<string | null>(null);
   const [editingWorkspaceLabel, setEditingWorkspaceLabel] = useState('');
   const [nowMs, setNowMs] = useState(INITIAL_NOW_MS);
@@ -258,23 +270,28 @@ export function Sidebar() {
   const handleStartRename = (key: string, currentLabel: string) => {
     setEditingSessionKey(key);
     setEditingLabel(currentLabel);
+    setEditingOriginalLabel(currentLabel);
   };
 
   const handleRenameSubmit = async () => {
-    if (!editingSessionKey || !editingLabel.trim()) {
+    const normalizedLabel = editingLabel.trim();
+    if (!editingSessionKey || !normalizedLabel || normalizedLabel === editingOriginalLabel.trim()) {
       setEditingSessionKey(null);
+      setEditingOriginalLabel('');
       return;
     }
     try {
-      await renameSession(editingSessionKey, editingLabel.trim());
+      await renameSession(editingSessionKey, normalizedLabel);
     } catch (err) {
       console.error('Failed to rename session:', err);
     }
     setEditingSessionKey(null);
+    setEditingOriginalLabel('');
   };
 
   const handleRenameCancel = () => {
     setEditingSessionKey(null);
+    setEditingOriginalLabel('');
   };
 
   const handleRenameBlur = (event: React.FocusEvent<HTMLDivElement>) => {
@@ -698,7 +715,7 @@ export function Sidebar() {
                         const agentName = agentNameById[agentId] || agentId;
                         const isEditing = editingSessionKey === s.key;
                         const isCurrentSession = isOnChat && currentSessionKey === s.key;
-                        const sessionLabel = getSessionLabel(s.key, s.displayName, s.label);
+                        const sessionLabel = getSessionLabel(s);
                         const relativeTime = formatSessionRelativeTime(activityMs, nowMs, i18n.language);
                         const channelType = s.channel && s.channel !== 'webchat' ? s.channel : null;
                         const channelName = channelType

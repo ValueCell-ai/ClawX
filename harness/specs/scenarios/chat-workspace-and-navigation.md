@@ -39,6 +39,6 @@ requiredRules:
   - docs-sync
 ---
 
-This scenario covers selecting a workspace for a new Chat, validating its availability before ACP load, recovering from deleted global workspace paths, marking unavailable non-default sidebar groups, permanently deleting their sessions after confirmation, binding workspaces through OpenClaw ACP cwd, targeting another agent without losing that agent's workspace or first prompt, restoring historical workspace context, renaming imported workspace display labels, navigating workspace-grouped sessions, browsing the effective workspace, and jumping among user questions.
+This scenario covers selecting persisted recent, known session, or newly browsed workspaces for a new Chat, validating workspace availability before ACP load, recovering from deleted global workspace paths, marking unavailable non-default sidebar groups, permanently deleting their sessions after confirmation, binding workspaces through OpenClaw ACP cwd, targeting another agent without losing that agent's workspace or first prompt, restoring historical workspace context, replacing synthetic UUID-date session titles with transcript prompts, renaming imported workspace display labels, navigating workspace-grouped sessions, browsing the effective workspace, and jumping among user questions.
 
 The current resolution, ordering, title normalization, and browser behavior are documented in `harness/reference/chat-workspace-and-navigation.md`.

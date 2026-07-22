@@ -174,6 +174,20 @@ describe('sidebar session helpers', () => {
     });
   });
 
+  it('does not persist a session rename when the title was not changed', async () => {
+    const renameSession = vi.fn().mockResolvedValue(undefined);
+    seedSidebarState(renameSession);
+    renderSidebar();
+
+    fireEvent.click(screen.getByLabelText('Rename'));
+    fireEvent.click(screen.getByLabelText('Save session title'));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Session title')).not.toBeInTheDocument();
+    });
+    expect(renameSession).not.toHaveBeenCalled();
+  });
+
   it('keeps rename controls active when focus moves to cancel and cancels on click', () => {
     const renameSession = vi.fn().mockResolvedValue(undefined);
     seedSidebarState(renameSession);

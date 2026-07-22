@@ -188,6 +188,74 @@ describe('chat store session label summary hydration', () => {
     expect(backgroundHistoryCalls).toHaveLength(0);
   });
 
+  it('replaces OpenClaw UUID-date fallback labels with the first user prompt', async () => {
+    const sessionKey = 'agent:main:session-fallback';
+    const sessionId = '72e4b28b-8477-4e29-b57e-e14448fd42d0';
+    const fallbackTitle = '72e4b28b (2026-07-22)';
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return {
+          sessions: [
+            {
+              key: sessionKey,
+              sessionId,
+              label: fallbackTitle,
+              displayName: fallbackTitle,
+              derivedTitle: fallbackTitle,
+              updatedAt: 1_784_700_425_523,
+            },
+            { key: 'agent:main:main', displayName: 'Main', updatedAt: 1_784_700_425_524 },
+          ],
+        };
+      }
+      throw new Error(`Unexpected gateway RPC: ${method}`);
+    });
+    hostApiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/sessions/summaries') {
+        return {
+          success: true,
+          summaries: [{
+            sessionKey,
+            firstUserText: '用浏览器打开B站',
+            lastTimestamp: 1_784_700_425_523,
+            workspacePath: '~/.openclaw/workspace',
+          }],
+        };
+      }
+      return { success: true, summaries: [] };
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessions: [],
+      messages: [],
+      sessionLabels: { [sessionKey]: fallbackTitle },
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+      runError: null,
+    });
+
+    await useChatStore.getState().loadSessions();
+
+    await vi.waitFor(() => {
+      expect(useChatStore.getState().sessionLabels[sessionKey]).toBe('用浏览器打开B站');
+    });
+    expect(useChatStore.getState().sessions.find((session) => session.key === sessionKey)?.sessionId)
+      .toBe(sessionId);
+  });
+
   it('strips ACP working-directory metadata from derived session titles', async () => {
     gatewayRpcMock.mockImplementation(async (method: string) => {
       if (method === 'sessions.list') {
