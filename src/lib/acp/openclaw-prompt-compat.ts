@@ -44,6 +44,15 @@ export function openClawResourceLinkPromptText(uri: string, title?: string): str
     : `[Resource link${titleSuffix}]`;
 }
 
+export function isOpenClawInternalUserText(text: string): boolean {
+  const normalized = text.trimStart();
+  return /^\[Inter-session message\]\s/.test(normalized)
+    || (
+      /^A background task completed\./.test(normalized)
+      && /(?:^|\n)source:\s*image_generation\b/i.test(normalized)
+    );
+}
+
 export function openClawPromptTextBlocks(blocks: readonly ContentBlock[]): string[] {
   const textBlocks: string[] = [];
   for (const block of blocks) {

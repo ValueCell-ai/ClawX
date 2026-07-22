@@ -150,6 +150,47 @@ describe('ACP timeline reducer', () => {
     });
   });
 
+  it('hides OpenClaw internal completion users without merging the following assistant reply', () => {
+    let state = createEmptyAcpTimeline('agent:pi:s1', 1);
+    const apply = (sessionUpdate: string, text: string) => {
+      state = applyAcpSessionUpdate(state, {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate,
+          content: { type: 'text', text },
+        },
+      } as never);
+    };
+
+    apply('user_message_chunk', '给我生成一只小狗');
+    apply('agent_message_chunk', '...');
+    apply(
+      'user_message_chunk',
+      'A background task completed. Use this result to reply.\nsource: image_generation\nstatus: completed successfully',
+    );
+    apply(
+      'user_message_chunk',
+      '[Inter-session message] sourceSession=image_generate:dog sourceTool=image_generate isUser=false\ninternal payload',
+    );
+    apply('agent_message_chunk', '小狗生成好了 🐶');
+    apply('user_message_chunk', '你好');
+
+    expect(state.itemOrder).toEqual([
+      'user:message:0:0',
+      'assistant:message:1:0',
+      'assistant:message:2:0',
+      'user:message:3:0',
+    ]);
+    expect(state.itemsById['assistant:message:1:0']).toMatchObject({
+      parts: [{ kind: 'markdown', text: '...' }],
+    });
+    expect(state.itemsById['assistant:message:2:0']).toMatchObject({
+      parts: [{ kind: 'markdown', text: '小狗生成好了 🐶' }],
+    });
+    expect(state.itemOrder.map((id) => JSON.stringify(state.itemsById[id])).join('\n'))
+      .not.toContain('background task');
+  });
+
   it('coalesces adjacent markdown chunks into one render part', () => {
     let state = createEmptyAcpTimeline('agent:pi:s1', 1);
 

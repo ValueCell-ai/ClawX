@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { useAgentsStore } from '@/stores/agents';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { useChatStore } from '@/stores/chat';
+import { useGatewayStore } from '@/stores/gateway';
 import { useSettingsStore } from '@/stores/settings';
 import { ensureAcpChatSubscriptions, useAcpChatSessionStore } from '@/stores/acp-chat-session';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
@@ -182,7 +183,10 @@ export function Chat() {
   const setChatWorkspacePath = useSettingsStore((s) => s.setChatWorkspacePath);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
   const agents = useAgentsStore((s) => s.agents);
+  const gatewayStatus = useGatewayStore((s) => s.status);
+  const gatewayReady = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady === true;
   const [sessionDiscoveryAttempted, setSessionDiscoveryAttempted] = useState(false);
+  const [readySessionDiscoveryAttempted, setReadySessionDiscoveryAttempted] = useState(false);
   const [lastPromptAttemptSessionKey, setLastPromptAttemptSessionKey] = useState<string | null>(null);
   const [questionDirectoryOpenSessionKey, setQuestionDirectoryOpenSessionKey] = useState<string | null>(null);
   const [resolvedWorkspaceContext, setResolvedWorkspaceContext] = useState<{
@@ -287,17 +291,29 @@ export function Chat() {
     && !workspaceContextCheck.available;
 
   useEffect(() => {
-    if (currentSessionKey !== DEFAULT_SESSION_KEY || sessions.length > 0 || sessionDiscoveryAttempted) return;
+    if (currentSessionKey !== DEFAULT_SESSION_KEY || sessions.length > 0) return;
+    const needsInitialDiscovery = !sessionDiscoveryAttempted;
+    const needsReadyDiscovery = gatewayReady && !readySessionDiscoveryAttempted;
+    if (!needsInitialDiscovery && !needsReadyDiscovery) return;
     let cancelled = false;
     void loadSessions()
       .finally(() => {
-        if (!cancelled) setSessionDiscoveryAttempted(true);
+        if (cancelled) return;
+        setSessionDiscoveryAttempted(true);
+        if (gatewayReady) setReadySessionDiscoveryAttempted(true);
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [currentSessionKey, loadSessions, sessionDiscoveryAttempted, sessions.length]);
+  }, [
+    currentSessionKey,
+    gatewayReady,
+    loadSessions,
+    readySessionDiscoveryAttempted,
+    sessionDiscoveryAttempted,
+    sessions.length,
+  ]);
 
   useEffect(() => {
     if (!currentSessionKey || !cwd || !currentSession?.createdLocally) return;
@@ -309,7 +325,12 @@ export function Chat() {
 
   useEffect(() => {
     if (!currentSessionKey || !cwd || !workspaceContextAvailable) return;
-    if (currentSessionKey === DEFAULT_SESSION_KEY && sessions.length === 0 && acpActiveSessionKey == null && !sessionDiscoveryAttempted) return;
+    if (
+      currentSessionKey === DEFAULT_SESSION_KEY
+      && sessions.length === 0
+      && acpActiveSessionKey == null
+      && (!sessionDiscoveryAttempted || !readySessionDiscoveryAttempted)
+    ) return;
     if (acpActiveSessionKey === currentSessionKey && acpWorkspaceRoot === cwd && acpCwd === cwd) return;
     const acpLoadKey = `${currentSessionKey}\0${cwd}`;
     if (acpLoadInFlightKeyRef.current === acpLoadKey) return;
@@ -331,7 +352,7 @@ export function Chat() {
         acpLoadInFlightKeyRef.current = null;
       }
     });
-  }, [acknowledgeAcpSessionCreated, acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSessionKey, cwd, loadAcpSession, sessionDiscoveryAttempted, sessions, workspaceContextAvailable]);
+  }, [acknowledgeAcpSessionCreated, acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSessionKey, cwd, loadAcpSession, readySessionDiscoveryAttempted, sessionDiscoveryAttempted, sessions, workspaceContextAvailable]);
 
   const platform = window.electron?.platform;
   const isMac = platform === 'darwin';

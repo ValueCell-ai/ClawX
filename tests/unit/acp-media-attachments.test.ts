@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { RawMessage } from '@shared/chat/types';
 import {
   alignOpenClawMediaTurns,
+  alignOpenClawTranscriptTurns,
   extractOpenClawMediaTurns,
+  selectOpenClawTranscriptBoundaryPredecessor,
 } from '@/lib/acp/openclaw-media-compat';
 import {
   appendSyntheticAssistantMessage,
@@ -326,6 +328,68 @@ describe('OpenClaw MEDIA transcript extraction', () => {
 });
 
 describe('OpenClaw MEDIA transcript turn alignment', () => {
+  it('selects the replay-visible image turn while retaining its internal completion trigger', () => {
+    const snapshot = timeline([{
+      userId: 'newer-dog-user',
+      userText: '给我生成一只小狗',
+      assistantId: 'newer-dog-assistant',
+      assistantText: '小狗生成好了 🐶',
+    }]);
+    const messages = transcript(
+      { role: 'user', content: '给我生成一只猫' },
+      { role: 'assistant', content: '猫生成好了 🐱\nMEDIA:/tmp/old-cat.png' },
+      { role: 'user', content: '给我生成一只小狗' },
+      {
+        role: 'toolresult',
+        toolName: 'image_generate',
+        content: 'Background task started for image generation (bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb).',
+      },
+      {
+        role: 'user',
+        content: 'A background task completed.',
+        provenance: {
+          kind: 'inter_session',
+          sourceSessionKey: 'image_generate:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          sourceTool: 'image_generate',
+        },
+      },
+      { role: 'assistant', content: '小狗生成好了 🐶\nMEDIA:/tmp/newer-dog.png' },
+    );
+
+    const aligned = alignOpenClawTranscriptTurns(messages, snapshot, {});
+
+    expect(aligned).toHaveLength(1);
+    expect(aligned[0]).toMatchObject({ acpTurnId: 'newer-dog-user' });
+    expect(aligned[0]!.messages).toHaveLength(4);
+    expect(aligned[0]!.messages[2]).toMatchObject({
+      provenance: { kind: 'inter_session', sourceTool: 'image_generate' },
+    });
+  });
+
+  it('selects only the transcript turn immediately preceding the ACP replay boundary', () => {
+    const snapshot = timeline([
+      { userId: 'visible-hello', userText: '你好', assistantId: 'hello-response' },
+      { userId: 'visible-tiger', userText: '给我生成一只老虎' },
+    ]);
+    const messages = transcript(
+      { role: 'user', content: '给我生成一只猫' },
+      { role: 'assistant', content: '猫生成好了 🐱' },
+      { role: 'user', content: '给我生成一只小狗' },
+      { role: 'assistant', content: '小狗生成好了 🐶' },
+      { role: 'user', content: '你好' },
+      { role: 'assistant', content: '你好，我在。' },
+      { role: 'user', content: '给我生成一只老虎' },
+    );
+
+    expect(selectOpenClawTranscriptBoundaryPredecessor(messages, snapshot)).toMatchObject({
+      beforeAcpTurnId: 'visible-hello',
+      messages: [
+        { role: 'user', content: '给我生成一只小狗' },
+        { role: 'assistant', content: '小狗生成好了 🐶' },
+      ],
+    });
+  });
+
   it('aligns a structured resource-link user turn with OpenClaw transcript projection', () => {
     const resourcePath = 'C:\\Users\\Administrator\\.openclaw\\media\\input.xlsx';
     const snapshot = timeline([{
@@ -481,6 +545,24 @@ describe('synthetic OpenClaw MEDIA projection', () => {
       compat: { source: 'openclaw-media', evidenceId: 'evidence-report' },
       parts: [{ attachmentId: 'report' }],
     });
+  });
+
+  it('inserts a boundary image before the first ACP replay item', () => {
+    const snapshot = timeline([
+      { userId: 'visible-hello', userText: '你好', assistantId: 'hello-response' },
+    ]);
+    const projected = appendSyntheticAssistantMessage(snapshot, {
+      messageId: 'compat:image-generation:boundary-dog',
+      evidenceId: 'boundary-dog',
+      parts: [{ kind: 'image', source: 'data:image/png;base64,dog' }],
+      beforeItemId: 'visible-hello:0',
+    });
+
+    expect(projected.itemOrder).toEqual([
+      'compat:image-generation:boundary-dog:0',
+      'visible-hello:0',
+      'hello-response:0',
+    ]);
   });
 
   it('lets an inline image remove an earlier same-identity attachment card', () => {

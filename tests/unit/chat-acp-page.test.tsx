@@ -469,6 +469,32 @@ describe('ACP Chat page', () => {
     });
   });
 
+  it('does not create the default ACP session before ready discovery finds existing history', async () => {
+    acpState.activeSessionKey = null;
+    chatState.sessions = [];
+    gatewayState.status = { state: 'starting', gatewayReady: false, port: 18789 };
+
+    const { rerender } = render(<Chat />);
+
+    await waitFor(() => expect(chatState.loadSessions).toHaveBeenCalledTimes(1));
+    expect(acpState.loadSession).not.toHaveBeenCalled();
+
+    gatewayState.status = { state: 'running', gatewayReady: true, port: 18789 };
+    chatState.sessions = [{ key: 'agent:main:main', label: 'AAB' }];
+    rerender(<Chat />);
+
+    await waitFor(() => {
+      expect(acpState.loadSession).toHaveBeenCalledWith({
+        sessionKey: 'agent:main:main',
+        workspaceRoot: '~/.openclaw/workspace',
+        cwd: '~/.openclaw/workspace',
+      });
+    });
+    expect(acpState.loadSession).not.toHaveBeenCalledWith(expect.objectContaining({
+      createIfMissing: true,
+    }));
+  });
+
   it('uses OpenClaw session workspacePath for ACP load and read-only footer', async () => {
     chatState.sessions = [{ key: 'agent:main:session-a', workspacePath: '/Users/alex/workspace/ClawX' }];
     chatState.currentSessionKey = 'agent:main:session-a';

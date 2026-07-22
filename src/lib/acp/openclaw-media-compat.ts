@@ -1,6 +1,7 @@
 import { stripAcpWorkingDirectoryPrefix } from '@shared/chat/session-title';
 import type { RawMessage } from '@shared/chat/types';
 import type { AcpTimelineSnapshot, MessageSegmentItem } from './timeline-types';
+import { isOpenClawInternalUserText } from './openclaw-prompt-compat';
 
 const MAX_MEDIA_REFERENCE_LENGTH = 4096;
 const URI_SCHEME_RE = /^[A-Za-z][A-Za-z0-9+.-]*:/;
@@ -18,6 +19,16 @@ export type OpenClawMediaCandidate = {
 export type OpenClawMediaTurnSupplement = {
   acpTurnId: string;
   candidates: OpenClawMediaCandidate[];
+};
+
+export type OpenClawTranscriptTurnSupplement = {
+  acpTurnId: string;
+  messages: RawMessage[];
+};
+
+export type OpenClawTranscriptBoundarySupplement = {
+  beforeAcpTurnId: string;
+  messages: RawMessage[];
 };
 
 export type TranscriptMediaTurn = {
@@ -72,7 +83,7 @@ function isInternalInterSessionUser(message: RawMessage): boolean {
     const kind = (provenance.provenance as Record<string, unknown>).kind;
     if (typeof kind === 'string' && kind.toLowerCase() === 'inter_session') return true;
   }
-  return /^\[Inter-session message\]\s/.test(textFromContent(message.content));
+  return isOpenClawInternalUserText(textFromContent(message.content));
 }
 
 function parseDirectiveReference(line: string, executionCwd: string): string | null {
@@ -236,15 +247,12 @@ function turnMatchKey(turn: { normalizedUserText: string; userOccurrenceFromTail
   return JSON.stringify([turn.normalizedUserText, turn.userOccurrenceFromTail]);
 }
 
-export function selectOpenClawTranscriptTurn(
-  messages: RawMessage[],
-  snapshot: AcpTimelineSnapshot,
-  liveUserMessageId: string,
-): RawMessage[] {
-  const acpMatches = acpUserTurns(snapshot).filter((turn) => turn.messageIds.has(liveUserMessageId));
-  if (acpMatches.length !== 1) return [];
-  const targetKey = turnMatchKey(acpMatches[0]!);
-  const rawTurns: Array<{ normalizedUserText: string; messages: RawMessage[] }> = [];
+function rawTranscriptTurns(messages: RawMessage[]): Array<{
+  normalizedUserText: string;
+  userOccurrenceFromTail: number;
+  messages: RawMessage[];
+}> {
+  const turns: Array<{ normalizedUserText: string; messages: RawMessage[] }> = [];
   let current: { normalizedUserText: string; messages: RawMessage[] } | null = null;
   for (const message of messages) {
     const role = typeof message.role === 'string' ? message.role.toLowerCase() : '';
@@ -253,14 +261,69 @@ export function selectOpenClawTranscriptTurn(
         normalizedUserText: normalizeUserText(textFromContent(message.content)),
         messages: [message],
       };
-      rawTurns.push(current);
+      turns.push(current);
     } else if (current) {
       current.messages.push(message);
     }
   }
-  const matches = assignOccurrencesFromTail(rawTurns)
-    .filter((turn) => turnMatchKey(turn) === targetKey);
+  return assignOccurrencesFromTail(turns);
+}
+
+export function alignOpenClawTranscriptTurns(
+  messages: RawMessage[],
+  snapshot: AcpTimelineSnapshot,
+  input: { liveUserMessageId?: string },
+): OpenClawTranscriptTurnSupplement[] {
+  const acpTurns = acpUserTurns(snapshot);
+  const eligibleAcpTurns = input.liveUserMessageId
+    ? acpTurns.filter((turn) => turn.messageIds.has(input.liveUserMessageId!))
+    : acpTurns;
+  if (input.liveUserMessageId && eligibleAcpTurns.length !== 1) return [];
+
+  const acpByKey = new Map<string, AcpUserTurn>();
+  const ambiguousKeys = new Set<string>();
+  for (const turn of eligibleAcpTurns) {
+    const key = turnMatchKey(turn);
+    if (acpByKey.has(key)) ambiguousKeys.add(key);
+    else acpByKey.set(key, turn);
+  }
+
+  const supplements: OpenClawTranscriptTurnSupplement[] = [];
+  for (const transcriptTurn of rawTranscriptTurns(messages)) {
+    const key = turnMatchKey(transcriptTurn);
+    if (ambiguousKeys.has(key)) continue;
+    const acpTurn = acpByKey.get(key);
+    if (!acpTurn) continue;
+    supplements.push({ acpTurnId: acpTurn.turnId, messages: transcriptTurn.messages });
+  }
+  return supplements;
+}
+
+export function selectOpenClawTranscriptTurn(
+  messages: RawMessage[],
+  snapshot: AcpTimelineSnapshot,
+  liveUserMessageId: string,
+): RawMessage[] {
+  const matches = alignOpenClawTranscriptTurns(messages, snapshot, { liveUserMessageId });
   return matches.length === 1 ? matches[0]!.messages : [];
+}
+
+export function selectOpenClawTranscriptBoundaryPredecessor(
+  messages: RawMessage[],
+  snapshot: AcpTimelineSnapshot,
+): OpenClawTranscriptBoundarySupplement | null {
+  const firstAcpTurn = acpUserTurns(snapshot)[0];
+  if (!firstAcpTurn) return null;
+  const targetKey = turnMatchKey(firstAcpTurn);
+  const transcriptTurns = rawTranscriptTurns(messages);
+  const matches = transcriptTurns
+    .map((turn, index) => ({ turn, index }))
+    .filter(({ turn }) => turnMatchKey(turn) === targetKey);
+  if (matches.length !== 1 || matches[0]!.index <= 0) return null;
+  return {
+    beforeAcpTurnId: firstAcpTurn.turnId,
+    messages: transcriptTurns[matches[0]!.index - 1]!.messages,
+  };
 }
 
 export function alignOpenClawMediaTurns(

@@ -812,6 +812,20 @@ test.describe('ClawX ACP inline timeline', () => {
           content: [{ type: 'content', content: { type: 'text', text: `Background task started for image generation (${IMAGE_TASK_ID})` } }],
           locations: [],
         },
+        {
+          sessionUpdate: 'user_message_chunk',
+          content: {
+            type: 'text',
+            text: 'A background task completed. Use this result to reply.\nsource: image_generation\nstatus: completed successfully',
+          },
+        },
+        {
+          sessionUpdate: 'user_message_chunk',
+          content: {
+            type: 'text',
+            text: `[Inter-session message] sourceSession=image_generate:${IMAGE_TASK_ID} sourceTool=image_generate isUser=false\ninternal payload`,
+          },
+        },
       ]);
 
       const page = await openChat(app);
@@ -837,6 +851,8 @@ test.describe('ClawX ACP inline timeline', () => {
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('acp-tool-call-card')).toContainText('Generate image');
+      await expect(page.getByText('A background task completed.', { exact: false })).toHaveCount(0);
+      await expect(page.getByText('[Inter-session message]', { exact: false })).toHaveCount(0);
       const imagePart = page.getByTestId('acp-image-part');
       const image = imagePart.locator('img');
       await expect(image).toBeVisible();
@@ -854,6 +870,161 @@ test.describe('ClawX ACP inline timeline', () => {
         mimeType: 'image/png',
         defaultFileName: 'generated-image.png',
       }]);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('historical image-generation restores the boundary dog result without appending an older cat to the ACP replay suffix', async ({ launchElectronApp }) => {
+    const oldCatTaskId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const newerDogTaskId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const oldCatPath = '/workspace/.openclaw/media/tool-image-generation/old-cat.png';
+    const newerDogPath = '/workspace/.openclaw/media/tool-image-generation/newer-dog.png';
+    const oldCatIdentity = 'e2e-old-cat-image';
+    const newerDogIdentity = 'e2e-newer-dog-image';
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [{ key: MAIN_SESSION_KEY, displayName: 'AAB', workspacePath: MAIN_WORKSPACE }],
+            },
+          },
+        },
+        hostApi: {
+          ...baseHostApiMocks(),
+          [stableStringify(['sessions', 'history', { sessionKey: MAIN_SESSION_KEY, limit: 1000 }])]: {
+            success: true,
+            messages: [
+              { role: 'user', content: '给我生成一只猫' },
+              {
+                role: 'toolresult',
+                toolName: 'image_generate',
+                toolCallId: 'old-cat-tool',
+                content: `Background task started for image generation (${oldCatTaskId})`,
+                details: { taskId: oldCatTaskId },
+              },
+              {
+                id: 'old-cat-result',
+                role: 'assistant',
+                content: `猫生成好了 🐱\nMEDIA:${oldCatPath}`,
+              },
+              { role: 'user', content: '给我生成一只小狗' },
+              {
+                role: 'toolresult',
+                toolName: 'image_generate',
+                toolCallId: 'newer-dog-tool',
+                content: `Background task started for image generation (${newerDogTaskId})`,
+                details: { taskId: newerDogTaskId },
+              },
+              {
+                id: 'newer-dog-result',
+                role: 'assistant',
+                content: `小狗生成好了 🐶\nMEDIA:${newerDogPath}`,
+              },
+              { role: 'user', content: '你好' },
+              { role: 'assistant', content: '你好，我在。' },
+              { role: 'user', content: '给我生成一只老虎' },
+            ],
+          },
+          [stableStringify(['files', 'resolveAttachment', {
+            ref: {
+              sessionKey: MAIN_SESSION_KEY,
+              generation: 1,
+              uri: oldCatPath,
+              transcriptMessageId: 'old-cat-result',
+            },
+            mimeType: 'image/png',
+          }])]: {
+            ok: true,
+            identity: oldCatIdentity,
+            displayName: 'old-cat.png',
+            mimeType: 'image/png',
+            size: 128,
+            target: {
+              kind: 'local',
+              scope: 'openclaw-media',
+              ref: {
+                sessionKey: MAIN_SESSION_KEY,
+                generation: 1,
+                uri: oldCatPath,
+                transcriptMessageId: 'old-cat-result',
+              },
+            },
+          },
+          [stableStringify(['files', 'resolveAttachment', {
+            ref: {
+              sessionKey: MAIN_SESSION_KEY,
+              generation: 1,
+              uri: newerDogPath,
+              transcriptMessageId: 'newer-dog-result',
+            },
+            mimeType: 'image/png',
+          }])]: {
+            ok: true,
+            identity: newerDogIdentity,
+            displayName: 'newer-dog.png',
+            mimeType: 'image/png',
+            size: 256,
+            target: {
+              kind: 'local',
+              scope: 'openclaw-media',
+              ref: {
+                sessionKey: MAIN_SESSION_KEY,
+                generation: 1,
+                uri: newerDogPath,
+                transcriptMessageId: 'newer-dog-result',
+              },
+            },
+          },
+          [stableStringify(['media', 'thumbnails', {
+            paths: [{
+              attachmentFileRef: {
+                sessionKey: MAIN_SESSION_KEY,
+                generation: 1,
+                uri: newerDogPath,
+                transcriptMessageId: 'newer-dog-result',
+              },
+              key: newerDogIdentity,
+              mimeType: 'image/png',
+            }],
+          }])]: {
+            [newerDogIdentity]: { preview: GENERATED_IMAGE_PREVIEW, fileSize: 256 },
+          },
+        },
+      });
+      await installAcpLoadReplayMock(app, [
+        {
+          sessionUpdate: 'user_message',
+          messageId: 'newer-hello-user',
+          content: [{ type: 'text', text: '你好' }],
+        },
+        {
+          sessionUpdate: 'agent_message',
+          messageId: 'newer-hello-assistant',
+          content: [{ type: 'text', text: '你好，我在。' }],
+        },
+        {
+          sessionUpdate: 'user_message',
+          messageId: 'newer-tiger-user',
+          content: [{ type: 'text', text: '给我生成一只老虎' }],
+        },
+      ]);
+
+      const page = await openChat(app);
+
+      await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByText('小狗生成好了 🐶')).toBeVisible();
+      await expect(page.getByText('你好，我在。')).toBeVisible();
+      await expect(page.getByText('给我生成一只老虎')).toBeVisible();
+      await expect(page.getByTestId('acp-image-part')).toHaveCount(1);
+      await expect(page.getByText('猫生成好了 🐱')).toHaveCount(0);
+      const timelineText = await page.getByTestId('acp-chat-timeline').innerText();
+      expect(timelineText.indexOf('小狗生成好了 🐶')).toBeLessThan(timelineText.indexOf('你好'));
     } finally {
       await closeElectronApp(app);
     }

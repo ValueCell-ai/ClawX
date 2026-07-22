@@ -308,6 +308,12 @@ export class AcpChatService {
           sessionId: payload.sessionKey,
           cwd: preparedAccessGrant.executionCwd,
           mcpServers: [],
+          // OpenClaw 2026.7.1 otherwise resolves this key through the latest
+          // completed ACP replay ledger. A metadata-only ledger created by an
+          // earlier empty session can then mask the authoritative transcript.
+          // Explicit routing makes ACP validate the requested key and fall back
+          // to transcript replay when that exact ledger is unavailable.
+          _meta: { sessionKey: payload.sessionKey, prefixCwd: true },
         });
       }
       this.activeAcpSessionId = acpSessionId;

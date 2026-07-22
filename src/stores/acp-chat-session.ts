@@ -126,6 +126,8 @@ type ImageGenerationProjectionOptions = {
   isCurrent?: () => boolean;
   staleReason?: string;
   transcriptMessageId?: string;
+  turnId?: string;
+  beforeTurnId?: string;
   reservationOwner?: string;
 };
 
@@ -469,6 +471,80 @@ function projectionTraceDetails(
   };
 }
 
+function transcriptImageGenerationStartHasAcpAnchor(
+  operation: TranscriptSupplementOperation,
+  start: ImageGenerationTaskStart & { acpTurnId?: string; beforeAcpTurnId?: string },
+): boolean {
+  const state = useAcpChatSessionStore.getState();
+  const session = imageGenerationCompatSessions.get(operation.sessionKey);
+  const taskIds = operation.liveUserMessageId ? session?.taskIds : session?.replayTaskIds;
+  return taskIds?.has(start.taskId) === true
+    || existingToolAnchorId(state, start.toolCallId) !== undefined
+    || (!!start.acpTurnId && state.timeline.itemOrder.some((itemId) => {
+      const item = state.timeline.itemsById[itemId];
+      return item?.kind === 'message-segment'
+        && item.role === 'user'
+        && item.messageId === start.acpTurnId;
+    }))
+    || (!!start.beforeAcpTurnId && state.timeline.itemOrder.some((itemId) => {
+      const item = state.timeline.itemsById[itemId];
+      return item?.kind === 'message-segment'
+        && item.role === 'user'
+        && item.messageId === start.beforeAcpTurnId;
+    }));
+}
+
+function recordRejectedTranscriptImageGenerationStart(
+  operation: TranscriptSupplementOperation,
+  start: ImageGenerationTaskStart,
+): void {
+  recordProjectionTrace({
+    event: 'image-generation:projection-rejected',
+    sessionKey: operation.sessionKey,
+    generation: operation.generation,
+    details: {
+      source: 'transcript-history',
+      historical: true,
+      candidateCount: 0,
+      taskId: start.taskId,
+      reason: 'missing-acp-turn-anchor',
+    },
+  });
+}
+
+function imageGenerationTurnStartItemId(
+  timeline: AcpTimelineSnapshot,
+  turnId: string | undefined,
+): string | undefined {
+  if (!turnId) return undefined;
+  return timeline.itemOrder.find((itemId) => {
+    const item = timeline.itemsById[itemId];
+    return item?.kind === 'message-segment'
+      && item.role === 'user'
+      && item.messageId === turnId;
+  });
+}
+
+function imageGenerationTurnAnchorItemId(
+  timeline: AcpTimelineSnapshot,
+  turnId: string | undefined,
+): string | undefined {
+  if (!turnId) return undefined;
+  const turnIndex = timeline.itemOrder.findIndex((itemId) => {
+    const item = timeline.itemsById[itemId];
+    return item?.kind === 'message-segment'
+      && item.role === 'user'
+      && item.messageId === turnId;
+  });
+  if (turnIndex < 0) return undefined;
+  const nextUserIndex = timeline.itemOrder.findIndex((itemId, index) => {
+    if (index <= turnIndex) return false;
+    const item = timeline.itemsById[itemId];
+    return item?.kind === 'message-segment' && item.role === 'user';
+  });
+  return timeline.itemOrder[(nextUserIndex < 0 ? timeline.itemOrder.length : nextUserIndex) - 1];
+}
+
 function recordHistoricalImageGenerationStart(start: ImageGenerationTaskStart, generation: number): void {
   recordProjectionTrace({
     event: 'image-generation:start-detected',
@@ -692,16 +768,25 @@ async function runTranscriptSupplement(operation: TranscriptSupplementOperation)
   });
   if (!result || !isCurrent()) return;
 
+  const acceptedImageTaskIds = new Set<string>();
   for (const start of result.imageGeneration.starts) {
     if (!isCurrent()) return;
+    if (!transcriptImageGenerationStartHasAcpAnchor(operation, start)) {
+      recordRejectedTranscriptImageGenerationStart(operation, start);
+      continue;
+    }
+    acceptedImageTaskIds.add(start.taskId);
     recordHistoricalImageGenerationStart(start, operation.generation);
   }
   for (const completion of result.imageGeneration.completions) {
     if (!isCurrent()) return;
+    if (!completion.taskId || !acceptedImageTaskIds.has(completion.taskId)) continue;
     await useAcpChatSessionStore.getState().projectImageGenerationCompletion(completion, {
       isCurrent,
       staleReason: 'stale-transcript-supplement',
       reservationOwner: `transcript:${operation.id}:${attempt}`,
+      ...(completion.acpTurnId ? { turnId: completion.acpTurnId } : {}),
+      ...(completion.beforeAcpTurnId ? { beforeTurnId: completion.beforeAcpTurnId } : {}),
       ...(completion.transcriptMessageId ? { transcriptMessageId: completion.transcriptMessageId } : {}),
     });
   }
@@ -1627,7 +1712,11 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       return;
     }
     const parts: RenderPart[] = [{ kind: 'markdown', text: caption }, ...imageParts];
-    const afterItemId = imageGenerationAnchorItemId(latest, sessionKey, evidence);
+    const afterItemId = imageGenerationAnchorItemId(latest, sessionKey, evidence)
+      ?? imageGenerationTurnAnchorItemId(latest.timeline, options?.turnId);
+    const beforeItemId = afterItemId
+      ? undefined
+      : imageGenerationTurnStartItemId(latest.timeline, options?.beforeTurnId);
 
     set((current) => {
       if (current.activeSessionKey !== sessionKey || current.generation !== generation) return {};
@@ -1637,6 +1726,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
           evidenceId: key,
           parts,
           afterItemId,
+          beforeItemId,
         }),
         pendingImageGenerationTaskIds: settlePendingTask(current),
       };
