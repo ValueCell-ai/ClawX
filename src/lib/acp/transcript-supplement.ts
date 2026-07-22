@@ -1,29 +1,20 @@
 import type { RawMessage } from '@shared/chat/types';
-import type { ImageGenerationCompletionEvidence, ImageGenerationTaskStart } from './image-generation-compat';
+import type { ImageGenerationCompletionEvidence, ImageGenerationTranscriptSupplement } from './image-generation-compat';
 import { extractImageGenerationTranscriptSupplement } from './image-generation-compat';
 import { hostApi } from '../host-api';
 import {
   alignOpenClawMediaTurns,
-  alignOpenClawTranscriptTurns,
   extractOpenClawMediaTurns,
-  selectOpenClawTranscriptBoundaryPredecessor,
+  selectOpenClawTranscriptTurn,
   type OpenClawMediaTurnSupplement,
 } from './openclaw-media-compat';
 import type { AcpTimelineSnapshot } from './timeline-types';
 
-export type CoordinatedImageGenerationTaskStart = ImageGenerationTaskStart & {
-  acpTurnId?: string;
-  beforeAcpTurnId?: string;
-};
-
 export type CoordinatedImageGenerationCompletion = ImageGenerationCompletionEvidence & {
-  acpTurnId?: string;
-  beforeAcpTurnId?: string;
   transcriptMessageId?: string;
 };
 
-export type CoordinatedImageGenerationSupplement = {
-  starts: CoordinatedImageGenerationTaskStart[];
+export type CoordinatedImageGenerationSupplement = Omit<ImageGenerationTranscriptSupplement, 'completions'> & {
   completions: CoordinatedImageGenerationCompletion[];
 };
 
@@ -114,53 +105,15 @@ export async function fetchOpenClawTranscriptSupplement(
 
   const messages = response.messages;
   const snapshot = typeof input.snapshot === 'function' ? input.snapshot() : input.snapshot;
-  const alignedImageTurns = alignOpenClawTranscriptTurns(messages, snapshot, {
-    ...(input.liveUserMessageId ? { liveUserMessageId: input.liveUserMessageId } : {}),
-  });
-  const sourceMessages = input.liveUserMessageId
-    ? alignedImageTurns.length === 1 ? alignedImageTurns[0]!.messages : []
+  const imageMessages = input.liveUserMessageId
+    ? selectOpenClawTranscriptTurn(messages, snapshot, input.liveUserMessageId)
     : messages;
-  const extractedImages = extractImageGenerationTranscriptSupplement(sourceMessages, input.sessionKey);
-  const acpTurnIdByTaskId = new Map<string, string>();
-  for (const turn of alignedImageTurns) {
-    const extracted = extractImageGenerationTranscriptSupplement(turn.messages, input.sessionKey);
-    for (const start of extracted.starts) acpTurnIdByTaskId.set(start.taskId, turn.acpTurnId);
-  }
-  const beforeAcpTurnIdByTaskId = new Map<string, string>();
-  if (!input.liveUserMessageId) {
-    const boundary = selectOpenClawTranscriptBoundaryPredecessor(messages, snapshot);
-    if (
-      boundary
-      && ![...acpTurnIdByTaskId.values()].includes(boundary.beforeAcpTurnId)
-    ) {
-      const extracted = extractImageGenerationTranscriptSupplement(boundary.messages, input.sessionKey);
-      for (const start of extracted.starts) {
-        beforeAcpTurnIdByTaskId.set(start.taskId, boundary.beforeAcpTurnId);
-      }
-    }
-  }
+  const extractedImages = extractImageGenerationTranscriptSupplement(imageMessages, input.sessionKey);
   const imageGeneration: CoordinatedImageGenerationSupplement = {
-    starts: extractedImages.starts.map((start) => {
-      const acpTurnId = acpTurnIdByTaskId.get(start.taskId);
-      const beforeAcpTurnId = beforeAcpTurnIdByTaskId.get(start.taskId);
-      return {
-        ...start,
-        ...(acpTurnId ? { acpTurnId } : {}),
-        ...(beforeAcpTurnId ? { beforeAcpTurnId } : {}),
-      };
-    }),
+    starts: extractedImages.starts,
     completions: extractedImages.completions.map((completion) => {
-      const messageId = transcriptMessageId(completion, sourceMessages, input.sessionKey);
-      const acpTurnId = completion.taskId ? acpTurnIdByTaskId.get(completion.taskId) : undefined;
-      const beforeAcpTurnId = completion.taskId
-        ? beforeAcpTurnIdByTaskId.get(completion.taskId)
-        : undefined;
-      return {
-        ...completion,
-        ...(acpTurnId ? { acpTurnId } : {}),
-        ...(beforeAcpTurnId ? { beforeAcpTurnId } : {}),
-        ...(messageId ? { transcriptMessageId: messageId } : {}),
-      };
+      const messageId = transcriptMessageId(completion, imageMessages, input.sessionKey);
+      return { ...completion, ...(messageId ? { transcriptMessageId: messageId } : {}) };
     }),
   };
   const suppressedUris = new Set(

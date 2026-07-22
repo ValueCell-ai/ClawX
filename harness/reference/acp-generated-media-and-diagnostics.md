@@ -12,10 +12,6 @@ Related tasks: `acp-image-generation-compatibility`, `acp-historical-transcript-
 
 Standard ACP image, `resource_link`, and URI-backed `resource` content blocks are preferred and render directly. OpenClaw ACP currently projects assistant text and thought content but can omit assistant media, while Gateway processing removes `MEDIA:` directives from the visible live reply. ClawX handles those gaps through two bounded in-memory compatibility exceptions. Neither revives the legacy Chat renderer nor represents synthetic data as a native ACP event.
 
-## Historical Replay Routing
-
-Existing-session `session/load` requests include explicit `{ sessionKey, prefixCwd: true }` ACP routing metadata. OpenClaw 2026.7.1 otherwise prefers the newest completed replay ledger for a key; a metadata-only ledger created by an earlier empty session can mask the authoritative transcript and produce a blank timeline. ClawX also waits for a Gateway-ready session-discovery pass before automatically creating a missing default session, preventing startup from manufacturing such a ledger for an existing conversation. If ACP falls back to transcript replay, OpenClaw internal image-completion user triggers are consumed for compatibility correlation but suppressed by the reducer before rendering.
-
 ## Bounded Transcript Exceptions
 
 This section is the durable rationale referenced by the transcript supplement entry point. The two exceptions are:
@@ -33,11 +29,10 @@ The projector:
 
 1. Detects a recent image-generation task start from ACP tool evidence.
 2. Accepts completion text and media only from bounded, trusted fields or approved historical context.
-3. Requires transcript-derived evidence either to correlate by task id or tool-call id to an ACP image start, to belong to an originating transcript user turn that exactly aligns with a user turn in the active ACP timeline context, or to be the single image turn immediately preceding the first exact ACP/transcript turn match. The bounded predecessor is inserted before the replay suffix; all other transcript-only tasks outside the ACP replay window are rejected rather than appended as orphan replies.
-4. Requires the active session and generation to remain unchanged.
-5. Resolves local paths or Gateway media through `hostApi.media.thumbnails` in Main.
-6. Inserts a marked synthetic assistant segment after the associated tool.
-7. Deduplicates repeated evidence and keeps all state in memory.
+3. Requires the active session and generation to remain unchanged.
+4. Resolves local paths or Gateway media through `hostApi.media.thumbnails` in Main.
+5. Inserts a marked synthetic assistant segment after the associated tool when possible.
+6. Deduplicates repeated evidence and keeps all state in memory.
 
 Accepted live evidence includes structured media fields such as `mediaUrl`, `mediaUrls`, nested `sourceReply` media, assistant media attachments, OpenClaw ACP tool output explicitly associated with the internal UI sink, and final Gateway assistant replies whose `image_generate:<task-id>:ok|error` run matches the recorded task. For a correlated `message` tool delivery, `sourceReply.text` is the authoritative visible caption or failure explanation. A task-correlated final assistant reply may also provide the authoritative caption or text-only failure explanation. Arbitrary prose, unrelated runs or tools, failed delivery attempts, and unscoped local paths are rejected.
 
@@ -67,7 +62,7 @@ After successful `loadSession` for an existing session, the store may call:
 hostApi.sessions.history({ sessionKey, limit: 1000 });
 ```
 
-A pure image-generation extractor scans messages in transcript order. It first identifies an `image_generate` start from a tool result, then accepts a later internal-UI `message` tool source reply or assistant completion associated with that task. Before projection, the coordinator requires that transcript start either match a replay-visible or current live ACP image start by task id/tool-call id, belong to a transcript user turn matched to an ACP user turn by the binary-free prompt projection and duplicate occurrence from the tail, or be the image turn immediately preceding the first such historical turn match. The boundary fallback is disabled when the first ACP turn already contains a matched image task and is always inserted before that first turn. It restores the newest boundary image (for example, a dog result) when ACP replay omits both its tool card and user turn, while preventing an older transcript image (for example, a cat result) from being appended after newer turns. OpenClaw's runtime-generated inter-session completion trigger remains part of the originating user turn rather than starting a new end-user turn. Assistant media captions have their `MEDIA:` directives removed before display, and a task-correlated text-only assistant reply may restore a failure explanation. A message-tool reply or image completion without preceding task context is rejected. Separately, the general attachment extractor may accept explicit assistant `MEDIA:` directives without image-generation context under the restrictions above. Read failure, no accepted evidence, duplicate evidence, or a stale generation leaves the ACP timeline unchanged.
+A pure image-generation extractor scans messages in transcript order. It first records an `image_generate` start from a tool result, then accepts a later internal-UI `message` tool source reply or assistant completion associated with that task. OpenClaw's runtime-generated inter-session completion trigger remains part of the originating user turn rather than starting a new end-user turn. Assistant media captions have their `MEDIA:` directives removed before display, and a task-correlated text-only assistant reply may restore a failure explanation. A message-tool reply or image completion without preceding task context is rejected. Separately, the general attachment extractor may accept explicit assistant `MEDIA:` directives without image-generation context under the restrictions above. Read failure, no accepted evidence, duplicate evidence, or a stale generation leaves the ACP timeline unchanged.
 
 These are the only transcript-derived Chat supplements. They must not become a general recovery mechanism for missing tool cards, file activity, plans, permissions, thoughts, or ordinary messages.
 

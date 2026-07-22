@@ -189,7 +189,7 @@ describe('AcpChatService', () => {
     expect(loggerMock.info).toHaveBeenCalledWith('[acp-chat] [stdout] │ startup doctor note');
   });
 
-  it('loads historical sessions with explicit routing so metadata-only ledgers cannot mask transcript replay', async () => {
+  it('loads historical sessions without explicit routing metadata so replay can resolve by session key', async () => {
     const { service, connection } = await createService();
 
     await expect(service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' })).resolves.toEqual({
@@ -205,7 +205,6 @@ describe('AcpChatService', () => {
       sessionId: 'agent:pi:s1',
       cwd: '/repo',
       mcpServers: [],
-      _meta: { sessionKey: 'agent:pi:s1', prefixCwd: true },
     });
     expect(connection.newSession).not.toHaveBeenCalled();
   });
@@ -1093,7 +1092,6 @@ describe('AcpChatService', () => {
         sessionId: 'agent:pi:later',
         cwd: '/later',
         mcpServers: [],
-        _meta: { sessionKey: 'agent:pi:later', prefixCwd: true },
       });
       expect(accessRegistry.restore).not.toHaveBeenCalled();
     },

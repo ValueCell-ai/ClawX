@@ -10,7 +10,7 @@ import type {
 } from '@agentclientprotocol/sdk';
 import { contentBlockToRenderPart, contentBlocksToRenderParts, toolContentToRenderPart, toolContentToRenderParts } from './content-blocks';
 import { dedupeTimelineAttachments } from './attachments';
-import { isOpenClawInternalUserText, openClawPromptTextBlocks } from './openclaw-prompt-compat';
+import { openClawPromptTextBlocks } from './openclaw-prompt-compat';
 import type { AcpTimelineSnapshot, AttachmentRenderPart, MessageSegmentItem, RenderPart, TimelineItem, ToolCallItem } from './timeline-types';
 
 type UpdateRecord = Record<string, unknown> & {
@@ -79,15 +79,6 @@ function configOptions(value: unknown): SessionConfigOption[] {
 
 function propertyExists(record: UpdateRecord, property: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, property);
-}
-
-function isOpenClawInternalUserContent(value: unknown): boolean {
-  const blocks = Array.isArray(value)
-    ? value as ContentBlock[]
-    : value && typeof value === 'object'
-      ? [value as ContentBlock]
-      : [];
-  return isOpenClawInternalUserText(openClawPromptTextBlocks(blocks).join('\n'));
 }
 
 function fallbackMessageId(state: AcpTimelineSnapshot, role: Role): string {
@@ -331,7 +322,6 @@ export function appendSyntheticAssistantMessage(
     evidenceId: string;
     parts: RenderPart[];
     afterItemId?: string;
-    beforeItemId?: string;
   },
 ): AcpTimelineSnapshot {
   const id = `${input.messageId}:0`;
@@ -349,20 +339,12 @@ export function appendSyntheticAssistantMessage(
   const closed = closeAllMessageSegments(snapshot);
   const nextOrder = (() => {
     if (closed.itemOrder.includes(id)) return closed.itemOrder;
-    const beforeIndex = input.beforeItemId ? closed.itemOrder.indexOf(input.beforeItemId) : -1;
-    if (beforeIndex >= 0) {
-      return [
-        ...closed.itemOrder.slice(0, beforeIndex),
-        id,
-        ...closed.itemOrder.slice(beforeIndex),
-      ];
-    }
-    const afterIndex = input.afterItemId ? closed.itemOrder.indexOf(input.afterItemId) : -1;
-    if (afterIndex < 0) return [...closed.itemOrder, id];
+    const anchorIndex = input.afterItemId ? closed.itemOrder.indexOf(input.afterItemId) : -1;
+    if (anchorIndex < 0) return [...closed.itemOrder, id];
     return [
-      ...closed.itemOrder.slice(0, afterIndex + 1),
+      ...closed.itemOrder.slice(0, anchorIndex + 1),
       id,
-      ...closed.itemOrder.slice(afterIndex + 1),
+      ...closed.itemOrder.slice(anchorIndex + 1),
     ];
   })();
 
@@ -562,7 +544,6 @@ export function applyAcpSessionUpdate(
   const update = notification.update as unknown as UpdateRecord;
   switch (update.sessionUpdate) {
     case 'user_message': {
-      if (isOpenClawInternalUserContent(update.content)) return closeAllMessageSegments(snapshot);
       const messageId = stringValue(update.messageId);
       return messageId ? replaceMessage(snapshot, 'user', messageId, update.content) : snapshot;
     }
@@ -573,9 +554,7 @@ export function applyAcpSessionUpdate(
     case 'tool_call_content_chunk':
       return appendToolContentChunk(snapshot, update, options);
     case 'user_message_chunk':
-      return isOpenClawInternalUserContent(update.content)
-        ? closeAllMessageSegments(snapshot)
-        : appendMessageChunk(snapshot, 'user', update);
+      return appendMessageChunk(snapshot, 'user', update);
     case 'agent_message_chunk':
       return appendMessageChunk(snapshot, 'assistant', update);
     case 'agent_thought_chunk':

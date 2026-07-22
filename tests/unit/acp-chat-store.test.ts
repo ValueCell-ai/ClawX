@@ -100,30 +100,6 @@ function createDeferred<T>() {
   return { promise, resolve, reject };
 }
 
-function historicalImageStartEnvelope(taskId: string, toolCallId = 'image-tool') {
-  return {
-    sessionKey: 'agent:pi:s1',
-    generation: 1,
-    historical: true,
-    notification: {
-      sessionId: 'agent:pi:s1',
-      update: {
-        sessionUpdate: 'tool_call',
-        toolCallId,
-        title: 'image_generate',
-        status: 'completed',
-        content: [{
-          type: 'content',
-          content: {
-            type: 'text',
-            text: `Background task started for image generation (${taskId}).`,
-          },
-        }],
-      },
-    },
-  };
-}
-
 function availableAttachment(
   attachmentId: string,
   source: AttachmentRenderPart['source'],
@@ -1681,120 +1657,8 @@ describe('ACP Chat store', () => {
     }));
   });
 
-  it('restores the dog image at the ACP replay boundary while rejecting an older cat task', async () => {
-    const oldCatTaskId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-    const newerDogTaskId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-    hostApiMock.loadAcpSession.mockResolvedValueOnce({
-      success: true,
-      generation: 1,
-      sessionUpdates: [
-        {
-          sessionKey: 'agent:pi:s1',
-          generation: 1,
-          historical: true,
-          notification: {
-            sessionId: 'agent:pi:s1',
-            update: {
-              sessionUpdate: 'user_message',
-              messageId: 'newer-hello-user',
-              content: [{ type: 'text', text: '你好' }],
-            },
-          },
-        },
-        {
-          sessionKey: 'agent:pi:s1',
-          generation: 1,
-          historical: true,
-          notification: {
-            sessionId: 'agent:pi:s1',
-            update: {
-              sessionUpdate: 'agent_message',
-              messageId: 'newer-hello-assistant',
-              content: [{ type: 'text', text: '你好，我在。' }],
-            },
-          },
-        },
-      ],
-    });
-    hostApiMock.sessionsHistory.mockResolvedValueOnce({
-      success: true,
-      messages: [
-        { role: 'user', content: '给我生成一只猫' },
-        {
-          role: 'toolresult',
-          toolCallId: 'old-cat-tool',
-          toolName: 'image_generate',
-          content: `Background task started for image generation (${oldCatTaskId}).`,
-          details: { taskId: oldCatTaskId },
-        },
-        {
-          role: 'assistant',
-          id: 'old-cat-result',
-          content: '猫生成好了 🐱\n\nMEDIA:/tmp/old-cat.png',
-        },
-        { role: 'user', content: '给我生成一只小狗' },
-        {
-          role: 'toolresult',
-          toolCallId: 'newer-dog-tool',
-          toolName: 'image_generate',
-          content: `Background task started for image generation (${newerDogTaskId}).`,
-          details: { taskId: newerDogTaskId },
-        },
-        {
-          role: 'assistant',
-          id: 'newer-dog-result',
-          content: '小狗生成好了 🐶\n\nMEDIA:/tmp/newer-dog.png',
-        },
-        { role: 'user', content: '你好' },
-        { role: 'assistant', content: '你好，我在。' },
-        { role: 'user', content: '给我生成一只老虎' },
-      ],
-    });
-    hostApiMock.mediaThumbnails.mockResolvedValueOnce({
-      '/tmp/newer-dog.png': { preview: 'data:image/png;base64,newer-dog', fileSize: 67 },
-    });
-    const { useAcpChatSessionStore } = await importStore();
-
-    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(hostApiMock.resolveAttachment).toHaveBeenCalledTimes(1);
-    expect(hostApiMock.resolveAttachment).toHaveBeenCalledWith(expect.objectContaining({
-      ref: expect.objectContaining({ uri: '/tmp/newer-dog.png' }),
-    }));
-    expect(hostApiMock.mediaThumbnails).toHaveBeenCalledTimes(1);
-    const timeline = useAcpChatSessionStore.getState().timeline;
-    const syntheticIds = timeline.itemOrder.filter((id) => id.startsWith('compat:image-generation:'));
-    expect(syntheticIds).toHaveLength(1);
-    expect(timeline.itemsById[syntheticIds[0]!]).toMatchObject({
-      role: 'assistant',
-      parts: [
-        { kind: 'markdown', text: '小狗生成好了 🐶' },
-        { kind: 'image', source: 'data:image/png;base64,newer-dog' },
-      ],
-    });
-    expect(timeline.itemOrder.indexOf(syntheticIds[0]!)).toBeLessThan(
-      timeline.itemOrder.indexOf('newer-hello-user:0'),
-    );
-    expect(hostApiMock.recordAcpTrace).toHaveBeenCalledWith(expect.objectContaining({
-      event: 'image-generation:projection-rejected',
-      sessionKey: 'agent:pi:s1',
-      generation: 1,
-      details: expect.objectContaining({
-        source: 'transcript-history',
-        taskId: oldCatTaskId,
-        reason: 'missing-acp-turn-anchor',
-      }),
-    }));
-  });
-
   it('supplements historical ACP image-generation completions from transcript history', async () => {
     const taskId = '0d2ee919-2dfd-4b72-9da3-d87e6ee56747';
-    hostApiMock.loadAcpSession.mockResolvedValueOnce({
-      success: true,
-      generation: 1,
-      sessionUpdates: [historicalImageStartEnvelope(taskId)],
-    });
     hostApiMock.sessionsHistory.mockResolvedValueOnce({
       success: true,
       messages: [
@@ -1850,11 +1714,6 @@ describe('ACP Chat store', () => {
 
   it('restores a text-only image failure after an OpenClaw inter-session completion trigger', async () => {
     const taskId = '0d2ee919-2dfd-4b72-9da3-d87e6ee56747';
-    hostApiMock.loadAcpSession.mockResolvedValueOnce({
-      success: true,
-      generation: 1,
-      sessionUpdates: [historicalImageStartEnvelope(taskId)],
-    });
     hostApiMock.sessionsHistory.mockResolvedValueOnce({
       success: true,
       messages: [
@@ -2060,11 +1919,6 @@ describe('ACP Chat store', () => {
 
   it('drops a pending transcript supplement when a new prompt starts before thumbnail hydration completes', async () => {
     const taskId = '0d2ee919-2dfd-4b72-9da3-d87e6ee56747';
-    hostApiMock.loadAcpSession.mockResolvedValueOnce({
-      success: true,
-      generation: 1,
-      sessionUpdates: [historicalImageStartEnvelope(taskId)],
-    });
     const thumbnail = createDeferred<Record<string, { preview: string | null; fileSize: number }>>();
     const prompt = createDeferred<{ success: true }>();
     hostApiMock.sessionsHistory.mockResolvedValueOnce({
@@ -3147,7 +3001,6 @@ describe('ACP Chat store', () => {
         },
       },
     });
-    hostEventsMock.updateListener?.(historicalImageStartEnvelope(taskId));
     history.resolve({
       success: true,
       messages: [
@@ -3466,10 +3319,6 @@ describe('ACP Chat store', () => {
       const { useAcpChatSessionStore } = await importStore();
       await useAcpChatSessionStore.getState().loadSession({
         sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true,
-      });
-      useAcpChatSessionStore.getState().applyUpdateEnvelope({
-        ...historicalImageStartEnvelope(taskId),
-        historical: false,
       });
       await useAcpChatSessionStore.getState().sendPrompt({
         sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'Create image', messageId: 'live-user',
