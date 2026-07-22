@@ -1,4 +1,7 @@
-import { isAcpWorkingDirectoryTruncatedTitle } from '@shared/chat/session-title';
+import {
+  isAcpWorkingDirectoryTruncatedTitle,
+  isOpenClawSessionIdFallbackTitle,
+} from '@shared/chat/session-title';
 import type { ChatSession } from './types';
 
 export const LABEL_FETCH_CONCURRENCY = 5;
@@ -45,7 +48,7 @@ export function isSessionLabelHydrationReady(runtimeKey: string, fallbackReady =
 }
 
 export function getSessionLabelHydrationVersion(
-  session: Pick<ChatSession, 'key' | 'updatedAt' | 'label' | 'displayName' | 'derivedTitle'>,
+  session: Pick<ChatSession, 'key' | 'sessionId' | 'updatedAt' | 'label' | 'displayName' | 'derivedTitle'>,
   sessionLastActivity: Record<string, number>,
 ): string {
   const incarnation = sessionLabelHydrationIncarnation.get(session.key) ?? 0;
@@ -60,7 +63,7 @@ export function isSessionLabelHydrationVersionCurrent(sessionKey: string, versio
 }
 
 export function getSessionLabelHydrationCandidate(
-  session: Pick<ChatSession, 'key' | 'updatedAt' | 'label' | 'displayName' | 'derivedTitle' | 'workspacePath' | 'createdLocally'>,
+  session: Pick<ChatSession, 'key' | 'sessionId' | 'updatedAt' | 'label' | 'displayName' | 'derivedTitle' | 'workspacePath' | 'createdLocally'>,
   sessionLabels: Record<string, string>,
   sessionLastActivity: Record<string, number>,
   options: SessionLabelHydrationCandidateOptions = {},
@@ -74,9 +77,14 @@ export function getSessionLabelHydrationCandidate(
   if (isLocalOrGhostMainSession) return null;
   if (isMainSession && (hasWorkspacePath || !options.includeWorkspacePath)) return null;
 
-  const hasSidebarLabel = normalizeLabelValue(sessionLabels[session.key]) != null;
-  const explicitLabel = normalizeLabelValue(session.label);
+  const sidebarLabel = normalizeLabelValue(sessionLabels[session.key]);
+  const hasSidebarLabel = sidebarLabel != null
+    && !isOpenClawSessionIdFallbackTitle(sidebarLabel, session.sessionId);
+  const explicitLabel = isOpenClawSessionIdFallbackTitle(session.label || '', session.sessionId)
+    ? null
+    : normalizeLabelValue(session.label);
   const derivedTitle = isAcpWorkingDirectoryTruncatedTitle(session.derivedTitle || '')
+    || isOpenClawSessionIdFallbackTitle(session.derivedTitle || '', session.sessionId)
     ? null
     : normalizeLabelValue(session.derivedTitle);
   const backendLabel = explicitLabel ?? derivedTitle;

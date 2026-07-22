@@ -55,6 +55,7 @@ touchedAreas:
   - tests/e2e/chat-workspace-context.spec.ts
 expectedUserBehavior:
   - New chat sessions use the globally selected workspace until their first send.
+  - Editable new chats list persisted recent and known session workspaces in the composer menu, alongside the default workspace and native folder picker.
   - First send initializes the OpenClaw ACP session with the selected cwd.
   - Existing sessions use OpenClaw ACP cwd as their read-only workspace context.
   - Historical sessions with recoverable OpenClaw cwd group under their real cwd.
@@ -62,6 +63,7 @@ expectedUserBehavior:
   - Imported workspace display names can be renamed without changing their authoritative paths.
   - Renamed workspace labels stay synchronized between the sidebar and chat composer, while hover text exposes the path.
   - OpenClaw ACP cwd injection remains enabled, while automatic conversation titles omit its leading working-directory envelope.
+  - OpenClaw UUID-date fallback titles are replaced by the transcript's first user prompt and are never persisted by an unchanged rename.
   - Renderer continues to use host-api and never calls direct IPC or Gateway HTTP.
 requiredProfiles:
   - fast
@@ -85,11 +87,13 @@ requiredTests:
 acceptance:
   - OpenClaw ACP cwd is the authoritative session workspace when available.
   - ClawX only persists global workspace selection and recent workspaces.
+  - The editable composer workspace menu shows deduplicated recent and known-session non-default workspaces with their custom display labels.
   - Bound session footer workspace is read-only.
   - Right workspace tree root matches effective chat workspace.
   - Sidebar groups sessions by workspace, then sorts each flat group by the shared activity timestamp without date buckets.
   - Custom workspace labels persist through Main-owned settings and never replace path identity.
   - Explicit user session labels remain unchanged even when they begin with a working-directory-looking string.
+  - A UUID-date fallback matching the OpenClaw session id is not treated as an explicit or derived user-facing title.
 docs:
   required: true
 ---

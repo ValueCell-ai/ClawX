@@ -14,6 +14,7 @@ export type NormalizedSessionPatch = {
 type SessionField = Exclude<keyof ChatSession, 'key' | 'createdLocally'>;
 
 const STRING_FIELDS = [
+  'sessionId',
   'label',
   'displayName',
   'derivedTitle',

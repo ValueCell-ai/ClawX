@@ -7,6 +7,7 @@ import { create } from 'zustand';
 import { hostApi, type ChatSendWithMediaResult, type SessionLabelSummary } from '@/lib/host-api';
 import {
   isAcpWorkingDirectoryTruncatedTitle,
+  isOpenClawSessionIdFallbackTitle,
   stripAcpWorkingDirectoryPrefix,
 } from '@shared/chat/session-title';
 import { useGatewayStore } from './gateway';
@@ -234,8 +235,17 @@ function mergeSessionActivity(
   return next;
 }
 
+function isSyntheticSessionFallbackLabel(
+  session: ChatSession | undefined,
+  label: string | null | undefined,
+): boolean {
+  return Boolean(session && label && isOpenClawSessionIdFallbackTitle(label, session.sessionId));
+}
+
 function hasExplicitSessionLabel(session: ChatSession | undefined): boolean {
-  return typeof session?.label === 'string' && Boolean(session.label.trim());
+  return typeof session?.label === 'string'
+    && Boolean(session.label.trim())
+    && !isSyntheticSessionFallbackLabel(session, session.label);
 }
 
 function applySessionBackendLabels(set: ChatSet, sessions: ChatSession[]): void {
@@ -255,9 +265,12 @@ function applySessionBackendLabels(set: ChatSet, sessions: ChatSession[]): void 
       }
 
       const derivedTitle = session.derivedTitle || '';
-      const label = toAutomaticSessionLabel(derivedTitle);
-      if (!label && isAcpWorkingDirectoryTruncatedTitle(derivedTitle)) {
-        if (nextLabels[session.key] === '…') {
+      const derivedTitleUnavailable = isAcpWorkingDirectoryTruncatedTitle(derivedTitle)
+        || isSyntheticSessionFallbackLabel(session, derivedTitle);
+      const label = derivedTitleUnavailable ? '' : toAutomaticSessionLabel(derivedTitle);
+      if (!label && derivedTitleUnavailable) {
+        const cachedLabel = nextLabels[session.key];
+        if (cachedLabel === '…' || isSyntheticSessionFallbackLabel(session, cachedLabel)) {
           if (nextLabels === state.sessionLabels) nextLabels = { ...state.sessionLabels };
           delete nextLabels[session.key];
         }
@@ -402,7 +415,8 @@ function applySessionLabelSummaries(
       // Only auto-hydrate missing labels. Existing entries include user renames
       // and must not be overwritten by transcript-derived titles.
       const existingLabel = nextLabels[summary.sessionKey]?.trim();
-      if (labelText && !existingLabel && !hasExplicitSessionLabel(session)) {
+      const existingLabelIsFallback = isSyntheticSessionFallbackLabel(session, existingLabel);
+      if (labelText && (!existingLabel || existingLabelIsFallback) && !hasExplicitSessionLabel(session)) {
         if (nextLabels === state.sessionLabels) {
           nextLabels = { ...state.sessionLabels };
         }

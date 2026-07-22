@@ -73,6 +73,8 @@ export interface ContentBlock {
 /** Session from sessions.list */
 export interface ChatSession {
   key: string;
+  /** OpenClaw transcript session UUID, used to identify synthetic fallback titles. */
+  sessionId?: string;
   label?: string;
   displayName?: string;
   derivedTitle?: string;
