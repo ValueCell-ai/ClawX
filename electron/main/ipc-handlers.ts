@@ -172,7 +172,11 @@ function registerTypedHostHandlers(
     channels: createChannelsApi({ gatewayManager, mainWindow }),
     agents: createAgentsApi({ gatewayManager }),
     providers: createProvidersApi({ gatewayManager, mainWindow }),
-    files: createFilesApi({ attachmentAccess, stagedAttachments }),
+    files: createFilesApi({
+      attachmentAccess,
+      openWith: attachmentOpenWith,
+      stagedAttachments,
+    }),
     media: createMediaApi({ attachmentAccess }),
     sessions: createSessionsApi(),
     chat: createChatApi({ gatewayManager, mainWindow, acpSessionAccessRegistry }),

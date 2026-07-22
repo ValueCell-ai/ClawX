@@ -12,6 +12,9 @@ const openAttachmentMock = vi.hoisted(() => vi.fn());
 const listAttachmentOpenHandlersMock = vi.hoisted(() => vi.fn());
 const openAttachmentWithMock = vi.hoisted(() => vi.fn());
 const revealAttachmentMock = vi.hoisted(() => vi.fn());
+const listWorkspaceOpenHandlersMock = vi.hoisted(() => vi.fn());
+const openWorkspaceWithMock = vi.hoisted(() => vi.fn());
+const revealWorkspaceFileMock = vi.hoisted(() => vi.fn());
 const thumbnailsMock = vi.hoisted(() => vi.fn());
 const toastErrorMock = vi.hoisted(() => vi.fn());
 const i18nLanguage = vi.hoisted(() => ({ value: 'en' }));
@@ -23,6 +26,9 @@ vi.mock('@/lib/host-api', () => ({
       listAttachmentOpenHandlers: listAttachmentOpenHandlersMock,
       openAttachmentWith: openAttachmentWithMock,
       revealAttachment: revealAttachmentMock,
+      listWorkspaceOpenHandlers: listWorkspaceOpenHandlersMock,
+      openWorkspaceWith: openWorkspaceWithMock,
+      revealWorkspaceFile: revealWorkspaceFileMock,
     },
     media: {
       thumbnails: thumbnailsMock,
@@ -64,14 +70,14 @@ vi.mock('react-i18next', () => ({
         'acp.attachment.open': 'Open {{name}}',
         'acp.attachment.preview': 'Preview {{name}}',
         'acp.attachment.openFailed': 'Could not open attachment',
-        'acp.attachment.openWith': 'Open with',
-        'acp.attachment.openWithFile': 'Open {{name}} with',
-        'acp.attachment.searchingApplications': 'Searching for applications',
-        'acp.attachment.showInFinder': 'Show in Finder',
-        'acp.attachment.showInExplorer': 'Show in File Explorer',
-        'acp.attachment.showInFileManager': 'Show in file manager',
-        'acp.attachment.openWithFailed': 'Could not open attachment with the selected application',
-        'acp.attachment.revealFailed': 'Could not show attachment in its folder',
+        'fileCard.openWith': 'Open with',
+        'fileCard.openWithFile': 'Open {{name}} with',
+        'fileCard.searchingApplications': 'Searching for applications',
+        'fileCard.showInFinder': 'Show in Finder',
+        'fileCard.showInExplorer': 'Show in File Explorer',
+        'fileCard.showInFileManager': 'Show in file manager',
+        'fileCard.openWithFailed': 'Could not open file with the selected application',
+        'fileCard.revealFailed': 'Could not show file in its folder',
         'fileActivity.created': 'Created',
         'fileActivity.modified': 'Modified',
         'fileActivity.deleted': 'Deleted',
@@ -166,6 +172,9 @@ describe('ACP chat timeline components', () => {
     listAttachmentOpenHandlersMock.mockResolvedValue({ ok: true, platform: 'darwin', handlers: [] });
     openAttachmentWithMock.mockResolvedValue({ ok: true });
     revealAttachmentMock.mockResolvedValue({ ok: true });
+    listWorkspaceOpenHandlersMock.mockResolvedValue({ ok: true, platform: 'darwin', handlers: [] });
+    openWorkspaceWithMock.mockResolvedValue({ ok: true });
+    revealWorkspaceFileMock.mockResolvedValue({ ok: true });
     thumbnailsMock.mockResolvedValue({});
     useArtifactPanel.setState({ open: false, tab: 'changes', focusedFile: null });
   });
@@ -374,13 +383,58 @@ describe('ACP chat timeline components', () => {
     render(<AcpTimeline snapshot={state} fileActivity={projection} workspaceRoot="/workspace" />);
     expect(screen.getByTestId('acp-turn-file-activity')).not.toHaveTextContent('+');
     expect(screen.getByTestId('acp-turn-file-activity')).not.toHaveTextContent('-');
+    expect(screen.queryByRole('button', { name: 'Open old.md with' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('acp-file-button'));
     expect(useArtifactPanel.getState().focusedChange).toMatchObject({
       relativePath: 'old.md',
       turnId,
       navigationId: expect.any(Number),
     });
+    expect(listWorkspaceOpenHandlersMock).not.toHaveBeenCalled();
+    expect(openWorkspaceWithMock).not.toHaveBeenCalled();
+    expect(revealWorkspaceFileMock).not.toHaveBeenCalled();
   });
+
+  it.each(['created', 'modified'] as const)(
+    'shows workspace Open with for %s activity and routes every menu action with a WorkspaceFileRef',
+    async (action) => {
+      const ref = { workspaceRoot: '/workspace', relativePath: 'report.md' };
+      listWorkspaceOpenHandlersMock.mockResolvedValue({
+        ok: true,
+        platform: 'darwin',
+        handlers: [{ handlerId: 'opaque-reader-id', name: 'Reader', isDefault: true }],
+      });
+      render(
+        <AcpTurnFileActivity
+          workspaceRoot={ref.workspaceRoot}
+          summaries={[{
+            turnId: `turn-${action}`,
+            relativePath: ref.relativePath,
+            action,
+            activities: [],
+            added: 1,
+            removed: action === 'modified' ? 1 : 0,
+          }]}
+        />,
+      );
+
+      await openAttachmentMenu(ref.relativePath);
+      expect(listWorkspaceOpenHandlersMock).toHaveBeenCalledWith(ref);
+      expect(listAttachmentOpenHandlersMock).not.toHaveBeenCalled();
+
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Reader' }));
+      await waitFor(() => expect(openWorkspaceWithMock).toHaveBeenCalledWith({
+        ref,
+        handlerId: 'opaque-reader-id',
+      }));
+      expect(openAttachmentWithMock).not.toHaveBeenCalled();
+
+      await openAttachmentMenu(ref.relativePath);
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Show in Finder' }));
+      await waitFor(() => expect(revealWorkspaceFileMock).toHaveBeenCalledWith(ref));
+      expect(revealAttachmentMock).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(['report.docx', 'slides.pptx'])('routes active Office file activity %s through a workspace-scoped preview target', (relativePath) => {
     render(
@@ -824,7 +878,7 @@ describe('ACP chat timeline components', () => {
     openAttachmentWithMock.mockResolvedValueOnce({ ok: false, error: 'operationFailed' });
     await openAttachmentMenu();
     fireEvent.click(await screen.findByText('Reader'));
-    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith('Could not open attachment with the selected application'));
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith('Could not open file with the selected application'));
   });
 
   it.each([
@@ -839,7 +893,7 @@ describe('ACP chat timeline components', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: label }));
 
     await waitFor(() => expect(revealAttachmentMock).toHaveBeenCalledWith(attachmentRef));
-    expect(toastErrorMock).toHaveBeenCalledWith('Could not show attachment in its folder');
+    expect(toastErrorMock).toHaveBeenCalledWith('Could not show file in its folder');
   });
 
   it('renders a reveal-only Linux menu without requesting application discovery', async () => {

@@ -326,6 +326,55 @@ describe('hostApi facade', () => {
     });
   });
 
+  it('passes the exact WorkspaceFileRef to listWorkspaceOpenHandlers', async () => {
+    hostInvoke.mockResolvedValueOnce({
+      id: 'req',
+      ok: true,
+      data: { ok: true, platform: 'darwin', handlers: [] },
+    });
+    const { hostApi } = await import('@/lib/host-api');
+    const ref = { workspaceRoot: '/workspace', relativePath: 'src/index.ts' };
+
+    await hostApi.files.listWorkspaceOpenHandlers(ref);
+
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'files',
+      action: 'listWorkspaceOpenHandlers',
+      payload: ref,
+    }));
+  });
+
+  it('passes only the WorkspaceFileRef and opaque handler id to openWorkspaceWith', async () => {
+    hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { ok: true } });
+    const { hostApi } = await import('@/lib/host-api');
+    const payload = {
+      ref: { workspaceRoot: '/workspace', relativePath: 'src/index.ts' },
+      handlerId: 'opaque-handler-id',
+    };
+
+    await hostApi.files.openWorkspaceWith(payload);
+
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'files',
+      action: 'openWorkspaceWith',
+      payload,
+    }));
+  });
+
+  it('passes the exact WorkspaceFileRef to revealWorkspaceFile', async () => {
+    hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { ok: true } });
+    const { hostApi } = await import('@/lib/host-api');
+    const ref = { workspaceRoot: '/workspace', relativePath: 'src/index.ts' };
+
+    await hostApi.files.revealWorkspaceFile(ref);
+
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'files',
+      action: 'revealWorkspaceFile',
+      payload: ref,
+    }));
+  });
+
   it('passes attachment-scoped file actions without a workspace root', async () => {
     hostInvoke.mockResolvedValue({ id: 'req', ok: true, data: { ok: true } });
     const { hostApi } = await import('@/lib/host-api');
@@ -377,13 +426,6 @@ describe('hostApi facade', () => {
       action: 'resolveAttachment',
       payload,
     }));
-  });
-
-  it('does not expose workspace-scoped shell actions', async () => {
-    const { hostApi } = await import('@/lib/host-api');
-
-    expect(hostApi.files).not.toHaveProperty('openWorkspaceFile');
-    expect(hostApi.files).not.toHaveProperty('revealWorkspaceFile');
   });
 
   it('calls chat.sendWithMedia through hostInvoke', async () => {

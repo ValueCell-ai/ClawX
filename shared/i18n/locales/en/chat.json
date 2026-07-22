@@ -35,6 +35,16 @@
         "fileUnavailable": "File unavailable",
         "outsideWorkspace": "File is outside the workspace"
     },
+    "fileCard": {
+        "openWith": "Open with",
+        "openWithFile": "Open {{name}} with",
+        "searchingApplications": "Searching for applications",
+        "showInFinder": "Show in Finder",
+        "showInExplorer": "Show in File Explorer",
+        "showInFileManager": "Show in file manager",
+        "openWithFailed": "Could not open file with the selected application",
+        "revealFailed": "Could not show file in its folder"
+    },
     "runError": {
         "title": "Model call failed"
     },
@@ -68,15 +78,7 @@
             "unavailable": "Attachment unavailable",
             "open": "Open {{name}}",
             "preview": "Preview {{name}}",
-            "openFailed": "Could not open attachment",
-            "openWith": "Open with",
-            "openWithFile": "Open {{name}} with",
-            "searchingApplications": "Searching for applications",
-            "showInFinder": "Show in Finder",
-            "showInExplorer": "Show in File Explorer",
-            "showInFileManager": "Show in file manager",
-            "openWithFailed": "Could not open attachment with the selected application",
-            "revealFailed": "Could not show attachment in its folder"
+            "openFailed": "Could not open attachment"
         }
     },
     "artifactPanel": {

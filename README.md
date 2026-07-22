@@ -245,6 +245,7 @@ ACP Chat can also display generated image previews when image-generation media i
 ### ACP File Activity Semantics
 
 - File activity is projected from successful, completed OpenClaw `write`, `edit`, and `apply_patch` calls. Tool recognition follows the official OpenClaw Chat UI; filtering to completed calls is specific to ClawX.
+- Created and modified activity rows use the same file-card shell and **Open with** menu as previewable assistant attachments while retaining their status and optional `+/-` summary. Deleted rows keep only the **Changes** action. Every application-list, selected-application, and reveal request is independently revalidated in Electron Main from the workspace root and relative path; tool-derived paths never become attachments or expose canonical native paths to Renderer.
 - A `write` is shown as the tool declares it: a creation with an all-added diff, even if the path may already exist.
 - **Changes** is a chronological, session-level record of tool-declared activity. It is not Git output or a verified diff against a source baseline.
 - For each file, Changes renders at most one diff editor per assistant turn. Sequential fragments are composed when safe; independent fragments share one concatenated editor without claiming a complete-file baseline.

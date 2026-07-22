@@ -511,6 +511,26 @@ export type OpenAttachmentWithPayload = {
   ref: AttachmentFileRef;
   handlerId: string;
 };
+export type WorkspaceNativeFileError =
+  | 'outsideSandbox'
+  | 'notFound'
+  | 'notFile'
+  | 'unsupportedPlatform'
+  | 'operationFailed';
+export type WorkspaceOpenHandlersResult =
+  | {
+      ok: true;
+      platform: 'darwin' | 'win32' | 'linux';
+      handlers: AttachmentOpenHandler[];
+    }
+  | { ok: false; error: WorkspaceNativeFileError };
+export type OpenWorkspaceWithPayload = {
+  ref: WorkspaceFileRef;
+  handlerId: string;
+};
+export type WorkspaceNativeFileResult =
+  | { ok: true }
+  | { ok: false; error: WorkspaceNativeFileError };
 export type FilePreviewTreeOptions = {
   maxDepth?: number;
   maxNodes?: number;
@@ -941,6 +961,9 @@ export type HostApiContract = {
     readWorkspaceText: (ref: WorkspaceFileRef) => Promise<ReadTextFileResult>;
     readWorkspaceBinary: (input: WorkspaceFileRef & { maxBytes?: number }) => Promise<ReadBinaryFileResult>;
     statWorkspaceFile: (ref: WorkspaceFileRef) => Promise<StatFileResult>;
+    listWorkspaceOpenHandlers: (ref: WorkspaceFileRef) => Promise<WorkspaceOpenHandlersResult>;
+    openWorkspaceWith: (payload: OpenWorkspaceWithPayload) => Promise<WorkspaceNativeFileResult>;
+    revealWorkspaceFile: (ref: WorkspaceFileRef) => Promise<WorkspaceNativeFileResult>;
     resolveAttachment: (payload: ResolveAttachmentPayload) => ResolveAttachmentResult;
     readAttachmentText: (ref: AttachmentFileRef) => ReadAttachmentTextResult;
     readAttachmentBinary: (payload: ReadAttachmentBinaryPayload) => ReadAttachmentBinaryResult;

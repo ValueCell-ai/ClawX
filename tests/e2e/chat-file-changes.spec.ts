@@ -110,6 +110,20 @@ async function installFileActivityMocks(app: ElectronApplication, options: {
   for (const [relativePath, response] of Object.entries(options.scopedRead ?? {})) {
     hostApi[stableStringify(['files', 'readWorkspaceText', { workspaceRoot: WORKSPACE, relativePath }])] = response;
   }
+  const nativePlatform = process.platform === 'win32' ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux';
+  const liveFileRef = { workspaceRoot: WORKSPACE, relativePath: 'src/live.ts' };
+  hostApi[stableStringify(['files', 'listWorkspaceOpenHandlers', liveFileRef])] = {
+    ok: true,
+    platform: nativePlatform,
+    handlers: nativePlatform === 'linux'
+      ? []
+      : [{ handlerId: 'opaque-test-reader', name: 'Test Reader', isDefault: true }],
+  };
+  hostApi[stableStringify(['files', 'openWorkspaceWith', {
+    ref: liveFileRef,
+    handlerId: 'opaque-test-reader',
+  }])] = { ok: true };
+  hostApi[stableStringify(['files', 'revealWorkspaceFile', liveFileRef])] = { ok: true };
   const scopedReadKey = stableStringify(['files', 'readWorkspaceText', {
     workspaceRoot: WORKSPACE,
     relativePath: 'blocked.ts',
@@ -254,6 +268,33 @@ test.describe('ClawX chat file changes', () => {
       await expect(page.getByTestId('acp-file-button')).toHaveAccessibleName('Created src/live.ts');
       await expect(page.getByTestId('acp-file-summary-row')).toContainText('+2');
       await expect(page.getByTestId('acp-file-summary-row')).toContainText('-0');
+
+      const openWith = page.getByRole('button', { name: 'Open src/live.ts with' });
+      await openWith.click();
+      await expect(page.getByTestId('acp-attachment-open-with-menu')).toBeVisible();
+      if (process.platform !== 'linux') {
+        await page.getByRole('menuitem', { name: 'Test Reader' }).click();
+        await expect.poll(async () => (await getRecordedHostInvocations(app)).some((request) => (
+          request.module === 'files'
+          && request.action === 'openWorkspaceWith'
+          && request.payload?.handlerId === 'opaque-test-reader'
+          && request.payload?.ref && typeof request.payload.ref === 'object'
+          && (request.payload.ref as Record<string, unknown>).relativePath === 'src/live.ts'
+        ))).toBe(true);
+        await openWith.click();
+      }
+      const revealLabel = process.platform === 'darwin'
+        ? 'Show in Finder'
+        : process.platform === 'win32'
+          ? 'Show in File Explorer'
+          : 'Show in file manager';
+      await page.getByRole('menuitem', { name: revealLabel }).click();
+      await expect.poll(async () => (await getRecordedHostInvocations(app)).some((request) => (
+        request.module === 'files'
+        && request.action === 'revealWorkspaceFile'
+        && request.payload?.relativePath === 'src/live.ts'
+      ))).toBe(true);
+
       await page.getByTestId('acp-file-button').click();
 
       const panel = page.getByTestId('artifact-panel');
@@ -302,6 +343,7 @@ test.describe('ClawX chat file changes', () => {
       await sendPrompt(page, 'Edit two files');
 
       await expect(page.getByTestId('acp-file-button')).toHaveCount(2, { timeout: 30_000 });
+      await expect(page.getByTestId('acp-attachment-open-with-trigger')).toHaveCount(2);
       const panel = await openChanges(page);
       await expect(panel.getByTestId('acp-change-file-group')).toHaveCount(2);
       await expect(panel.getByTestId('monaco-diff-viewer')).toHaveCount(2);
@@ -372,6 +414,7 @@ test.describe('ClawX chat file changes', () => {
       await sendPrompt(page, 'Delete the file');
       const fileButton = page.getByTestId('acp-file-button');
       await expect(fileButton).toHaveAccessibleName('Deleted src/deleted.ts', { timeout: 30_000 });
+      await expect(page.getByTestId('acp-attachment-open-with-trigger')).toHaveCount(0);
       await fileButton.click();
 
       const panel = page.getByTestId('artifact-panel');

@@ -35,6 +35,16 @@
         "fileUnavailable": "ファイルを利用できません",
         "outsideWorkspace": "ファイルはワークスペース外にあります"
     },
+    "fileCard": {
+        "openWith": "アプリで開く",
+        "openWithFile": "{{name}} をアプリで開く",
+        "searchingApplications": "アプリを検索中",
+        "showInFinder": "Finder に表示",
+        "showInExplorer": "エクスプローラーに表示",
+        "showInFileManager": "ファイルマネージャーに表示",
+        "openWithFailed": "選択したアプリでファイルを開けませんでした",
+        "revealFailed": "ファイルをフォルダーに表示できませんでした"
+    },
     "runError": {
         "title": "モデル呼び出しに失敗しました"
     },
@@ -68,15 +78,7 @@
             "unavailable": "添付ファイルを利用できません",
             "open": "{{name}} を開く",
             "preview": "{{name}} をプレビュー",
-            "openFailed": "添付ファイルを開けませんでした",
-            "openWith": "アプリで開く",
-            "openWithFile": "{{name}} をアプリで開く",
-            "searchingApplications": "アプリを検索中",
-            "showInFinder": "Finder に表示",
-            "showInExplorer": "エクスプローラーに表示",
-            "showInFileManager": "ファイルマネージャーに表示",
-            "openWithFailed": "選択したアプリで添付ファイルを開けませんでした",
-            "revealFailed": "添付ファイルをフォルダーに表示できませんでした"
+            "openFailed": "添付ファイルを開けませんでした"
         }
     },
     "artifactPanel": {

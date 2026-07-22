@@ -19,6 +19,7 @@ import type {
   OpenClawDoctorMode,
   OpenClawDoctorResult,
   OpenAttachmentWithPayload,
+  OpenWorkspaceWithPayload,
   ProviderAccount,
   ProviderConfig,
   ProviderOAuthRequestPayload,
@@ -99,6 +100,9 @@ export type {
   UsageHistoryEntry,
   WorkspaceContextInput,
   WorkspaceFileRef,
+  WorkspaceNativeFileError,
+  WorkspaceNativeFileResult,
+  WorkspaceOpenHandlersResult,
 } from '@shared/host-api/contract';
 
 export const hostApi = {
@@ -314,6 +318,13 @@ export const hostApi = {
       invokeHost('files', 'readWorkspaceBinary', input)
     ),
     statWorkspaceFile: (ref: WorkspaceFileRef) => invokeHost('files', 'statWorkspaceFile', ref),
+    listWorkspaceOpenHandlers: (ref: WorkspaceFileRef) => (
+      invokeHost('files', 'listWorkspaceOpenHandlers', ref)
+    ),
+    openWorkspaceWith: (input: OpenWorkspaceWithPayload) => (
+      invokeHost('files', 'openWorkspaceWith', input)
+    ),
+    revealWorkspaceFile: (ref: WorkspaceFileRef) => invokeHost('files', 'revealWorkspaceFile', ref),
     resolveAttachment: (input: ResolveAttachmentPayload) => invokeHost('files', 'resolveAttachment', input),
     readAttachmentText: (ref: AttachmentFileRef) => invokeHost('files', 'readAttachmentText', ref),
     readAttachmentBinary: (input: ReadAttachmentBinaryPayload) => (
