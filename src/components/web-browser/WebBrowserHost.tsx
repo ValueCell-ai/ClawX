@@ -51,6 +51,16 @@ interface WebBrowserPageTitleUpdatedEvent extends Event {
   title: string;
 }
 
+interface WebBrowserPageFaviconUpdatedEvent extends Event {
+  favicons: string[];
+}
+
+interface WebBrowserDidStartNavigationEvent extends Event {
+  isMainFrame: boolean;
+  isInPlace: boolean;
+  url: string;
+}
+
 const WebviewElement = 'webview' as unknown as ComponentType<WebviewElementProps>;
 
 const ADDRESS_ERROR_KEYS: Record<WebBrowserAddressErrorCode, string> = {
@@ -73,6 +83,21 @@ function readGeometry(anchor: HTMLElement): HostGeometry | null {
   };
 }
 
+function hasSameOrigin(currentUrl: string, nextUrl: string): boolean {
+  try {
+    const current = new URL(currentUrl);
+    const next = new URL(nextUrl);
+    if (current.origin !== 'null' || next.origin !== 'null') {
+      return current.origin === next.origin;
+    }
+    current.hash = '';
+    next.hash = '';
+    return current.href === next.href;
+  } catch {
+    return false;
+  }
+}
+
 export function WebBrowserHost(): React.ReactElement | null {
   const { t } = useTranslation('chat');
   const initialized = useArtifactPanel((state) => state.webBrowserInitialized);
@@ -83,6 +108,7 @@ export function WebBrowserHost(): React.ReactElement | null {
   const [loading, setLoading] = useState(false);
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState<string>(WEB_BROWSER_INITIAL_URL);
+  const [faviconUrl, setFaviconUrl] = useState<string | null>(null);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [clearingCookies, setClearingCookies] = useState(false);
@@ -100,6 +126,7 @@ export function WebBrowserHost(): React.ReactElement | null {
   const pendingRecoveryUrlRef = useRef<string | null>(null);
   const navigationRequestRef = useRef<NavigationRequest | null>(null);
   const navigationGenerationRef = useRef(0);
+  const currentUrlRef = useRef<string>(WEB_BROWSER_INITIAL_URL);
   translationRef.current = t;
 
   const reportNavigationFailure = useCallback((request: NavigationRequest) => {
@@ -181,6 +208,7 @@ export function WebBrowserHost(): React.ReactElement | null {
       }
     };
     const syncAllowedUrl = (nextUrl: string) => {
+      currentUrlRef.current = nextUrl;
       setUrl(nextUrl);
       const allowedUrl = normalizeWebBrowserTopLevelUrl(nextUrl);
       if (allowedUrl) lastAllowedUrlRef.current = allowedUrl;
@@ -214,6 +242,16 @@ export function WebBrowserHost(): React.ReactElement | null {
       syncHistory();
     };
     const onPageTitleUpdated = (event: WebBrowserPageTitleUpdatedEvent) => setTitle(event.title);
+    const onPageFaviconUpdated = (event: WebBrowserPageFaviconUpdatedEvent) => {
+      setFaviconUrl(event.favicons[0] ?? null);
+    };
+    const onDidStartNavigation = (event: WebBrowserDidStartNavigationEvent) => {
+      if (
+        event.isMainFrame
+        && !event.isInPlace
+        && !hasSameOrigin(currentUrlRef.current, event.url)
+      ) setFaviconUrl(null);
+    };
     const onDidNavigate = (event: WebBrowserDidNavigateEvent) => {
       syncAllowedUrl(event.url);
       syncHistory();
@@ -237,6 +275,7 @@ export function WebBrowserHost(): React.ReactElement | null {
       attachedWebviewRef.current = null;
       navigationRequestRef.current = null;
       setLoading(false);
+      setFaviconUrl(null);
       setCrashed(true);
     };
 
@@ -244,6 +283,9 @@ export function WebBrowserHost(): React.ReactElement | null {
     node.addEventListener('did-start-loading', onDidStartLoading);
     node.addEventListener('did-stop-loading', onDidStopLoading);
     node.addEventListener('page-title-updated', onPageTitleUpdated);
+    node.addEventListener('page-favicon-updated', onPageFaviconUpdated);
+    node.addEventListener('did-start-navigation', onDidStartNavigation);
+    node.addEventListener('did-redirect-navigation', onDidStartNavigation);
     node.addEventListener('did-navigate', onDidNavigate);
     node.addEventListener('did-navigate-in-page', onDidNavigateInPage);
     node.addEventListener('did-fail-load', onDidFailLoad);
@@ -254,6 +296,9 @@ export function WebBrowserHost(): React.ReactElement | null {
       node.removeEventListener('did-start-loading', onDidStartLoading);
       node.removeEventListener('did-stop-loading', onDidStopLoading);
       node.removeEventListener('page-title-updated', onPageTitleUpdated);
+      node.removeEventListener('page-favicon-updated', onPageFaviconUpdated);
+      node.removeEventListener('did-start-navigation', onDidStartNavigation);
+      node.removeEventListener('did-redirect-navigation', onDidStartNavigation);
       node.removeEventListener('did-navigate', onDidNavigate);
       node.removeEventListener('did-navigate-in-page', onDidNavigateInPage);
       node.removeEventListener('did-fail-load', onDidFailLoad);
@@ -333,7 +378,9 @@ export function WebBrowserHost(): React.ReactElement | null {
     pendingRecoveryUrlRef.current = lastAllowedUrlRef.current;
     navigationRequestRef.current = null;
     setTitle('');
+    currentUrlRef.current = WEB_BROWSER_INITIAL_URL;
     setUrl(WEB_BROWSER_INITIAL_URL);
+    setFaviconUrl(null);
     setCanGoBack(false);
     setCanGoForward(false);
     setGeneration((current) => current + 1);
@@ -364,6 +411,7 @@ export function WebBrowserHost(): React.ReactElement | null {
       <WebBrowserToolbar
         title={title}
         url={url}
+        faviconUrl={faviconUrl}
         canGoBack={canGoBack}
         canGoForward={canGoForward}
         visible={!hostHidden && !crashed}

@@ -1,5 +1,13 @@
 import { useState } from 'react';
-import { ArrowLeft, ArrowRight, Ellipsis, RefreshCw } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Cookie,
+  Database,
+  Ellipsis,
+  ExternalLink,
+  RefreshCw,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { canOpenWebBrowserExternally } from '@shared/web-browser';
 import type { WebBrowserAddressErrorCode } from '@shared/web-browser';
@@ -16,6 +24,7 @@ import { WebBrowserAddressControl } from './WebBrowserAddressControl';
 export interface WebBrowserToolbarProps {
   title: string;
   url: string;
+  faviconUrl: string | null;
   canGoBack: boolean;
   canGoForward: boolean;
   visible: boolean;
@@ -116,6 +125,7 @@ function MoreMenu({
       </Tooltip>
       <DropdownMenuContent align="end">
         <DropdownMenuItem data-testid="web-browser-force-refresh" onSelect={onForceRefresh}>
+          <RefreshCw className="mr-2 h-4 w-4 shrink-0" />
           {t('artifactPanel.webBrowser.actions.forceRefresh')}
         </DropdownMenuItem>
         <DropdownMenuItem
@@ -123,6 +133,7 @@ function MoreMenu({
           disabled={clearingCookies}
           onSelect={onClearCookies}
         >
+          <Cookie className="mr-2 h-4 w-4 shrink-0" />
           {t('artifactPanel.webBrowser.actions.clearCookies')}
         </DropdownMenuItem>
         <DropdownMenuItem
@@ -130,6 +141,7 @@ function MoreMenu({
           disabled={clearingSiteData}
           onSelect={onClearSiteData}
         >
+          <Database className="mr-2 h-4 w-4 shrink-0" />
           {t('artifactPanel.webBrowser.actions.clearSiteData')}
         </DropdownMenuItem>
         <DropdownMenuItem
@@ -137,6 +149,7 @@ function MoreMenu({
           disabled={!canOpenWebBrowserExternally(url)}
           onSelect={onOpenExternal}
         >
+          <ExternalLink className="mr-2 h-4 w-4 shrink-0" />
           {t('artifactPanel.webBrowser.actions.openExternal')}
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -147,6 +160,7 @@ function MoreMenu({
 export function WebBrowserToolbar({
   title,
   url,
+  faviconUrl,
   canGoBack,
   canGoForward,
   visible,
@@ -203,6 +217,7 @@ export function WebBrowserToolbar({
       <WebBrowserAddressControl
         title={title}
         url={url}
+        faviconUrl={faviconUrl}
         onNavigate={onNavigate}
         onAddressError={onAddressError}
       />

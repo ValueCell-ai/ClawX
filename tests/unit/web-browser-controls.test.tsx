@@ -46,6 +46,7 @@ function renderAddress(
       <WebBrowserAddressControl
         title="Example document"
         url="https://example.com/a/very/long/path"
+        faviconUrl="https://example.com/favicon.ico"
         {...callbacks}
         {...props}
       />
@@ -60,6 +61,7 @@ function toolbarProps(
   return {
     title: 'Example document',
     url: 'https://example.com/',
+    faviconUrl: 'https://example.com/favicon.ico',
     canGoBack: true,
     canGoForward: true,
     visible: true,
@@ -115,17 +117,76 @@ describe('WebBrowserAddressControl', () => {
     expect(screen.getByTestId('web-browser-address-display')).toHaveTextContent('https://fallback.example/');
   });
 
-  it('exposes the full URL on hover and to assistive technology', async () => {
+  it('shows the favicon without exposing the full URL in a hover tooltip', async () => {
     renderAddress();
 
     const display = screen.getByTestId('web-browser-address-display');
-    expect(display.querySelector('[aria-hidden="true"]')).toHaveClass('truncate');
+    expect(display.querySelector('span[aria-hidden="true"]')).toHaveClass('truncate');
     expect(display).toHaveAccessibleName(/https:\/\/example\.com\/a\/very\/long\/path/);
+    expect(screen.getByTestId('web-browser-favicon')).toHaveAttribute(
+      'src',
+      'https://example.com/favicon.ico',
+    );
 
     fireEvent.pointerMove(display, { pointerType: 'mouse' });
-    await waitFor(() => {
-      expect(screen.getByRole('tooltip')).toHaveTextContent('https://example.com/a/very/long/path');
-    });
+    await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument());
+  });
+
+  it('reserves the favicon slot with a same-size placeholder', () => {
+    renderAddress({ faviconUrl: null });
+
+    expect(screen.queryByTestId('web-browser-favicon')).not.toBeInTheDocument();
+    expect(screen.getByTestId('web-browser-favicon-placeholder')).toHaveClass(
+      'h-4',
+      'w-4',
+      'shrink-0',
+    );
+  });
+
+  it('falls back to the placeholder when the favicon fails to load', () => {
+    renderAddress();
+
+    fireEvent.error(screen.getByTestId('web-browser-favicon'));
+    expect(screen.queryByTestId('web-browser-favicon')).not.toBeInTheDocument();
+    expect(screen.getByTestId('web-browser-favicon-placeholder')).toBeInTheDocument();
+  });
+
+  it('keeps the last loaded same-origin favicon when a new candidate fails', () => {
+    const { rerender } = renderAddress();
+    fireEvent.load(screen.getByTestId('web-browser-favicon'));
+
+    rerender(
+      <TooltipProvider delayDuration={0}>
+        <WebBrowserAddressControl
+          title="Next document"
+          url="https://example.com/next"
+          faviconUrl="https://example.com/missing.ico"
+          onNavigate={vi.fn()}
+          onAddressError={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+    fireEvent.error(screen.getByTestId('web-browser-favicon'));
+
+    expect(screen.getByTestId('web-browser-favicon')).toHaveAttribute(
+      'src',
+      'https://example.com/favicon.ico',
+    );
+    expect(screen.queryByTestId('web-browser-favicon-placeholder')).not.toBeInTheDocument();
+
+    rerender(
+      <TooltipProvider delayDuration={0}>
+        <WebBrowserAddressControl
+          title="No favicon"
+          url="https://example.com/no-favicon"
+          faviconUrl={null}
+          onNavigate={vi.fn()}
+          onAddressError={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+    expect(screen.queryByTestId('web-browser-favicon')).not.toBeInTheDocument();
+    expect(screen.getByTestId('web-browser-favicon-placeholder')).toBeInTheDocument();
   });
 
   it('enters edit mode on click and selects the current URL', async () => {
@@ -134,6 +195,8 @@ describe('WebBrowserAddressControl', () => {
 
     const input = screen.getByTestId('web-browser-address-input') as HTMLInputElement;
     await waitFor(() => expect(input).toHaveFocus());
+    expect(screen.queryByTestId('web-browser-favicon')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('web-browser-favicon-placeholder')).not.toBeInTheDocument();
     expect(input.selectionStart).toBe(0);
     expect(input.selectionEnd).toBe(input.value.length);
     expect(input).toHaveValue('https://example.com/a/very/long/path');
@@ -331,6 +394,20 @@ describe('WebBrowserToolbar', () => {
       openMoreMenu();
       fireEvent.click(await screen.findByTestId(testId));
       expect(callback).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('shows an icon for every More menu item', async () => {
+    renderToolbar(toolbarProps());
+    openMoreMenu();
+
+    for (const [testId, iconClass] of [
+      ['web-browser-force-refresh', 'lucide-refresh-cw'],
+      ['web-browser-clear-cookies', 'lucide-cookie'],
+      ['web-browser-clear-site-data', 'lucide-database'],
+      ['web-browser-open-external', 'lucide-external-link'],
+    ]) {
+      expect((await screen.findByTestId(testId)).querySelector('svg')).toHaveClass(iconClass);
     }
   });
 

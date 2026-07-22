@@ -318,7 +318,12 @@ describe('WebBrowserHost lifecycle', () => {
     fireEvent.blur(screen.getByTestId('web-browser-address-input'));
     emit(guest, 'page-title-updated', { title: 'Document title' });
     emit(guest, 'did-navigate', { url: 'https://example.com/docs' });
+    emit(guest, 'page-favicon-updated', { favicons: ['https://example.com/favicon.svg'] });
     expect(screen.getByTestId('web-browser-address-display')).toHaveTextContent('Document title');
+    expect(screen.getByTestId('web-browser-favicon')).toHaveAttribute(
+      'src',
+      'https://example.com/favicon.svg',
+    );
 
     emit(guest, 'did-navigate-in-page', { isMainFrame: false, url: 'https://subframe.example/#ignored' });
     expect(screen.getByTestId('web-browser-address-display')).toHaveAccessibleName(/https:\/\/example\.com\/docs/);
@@ -329,6 +334,42 @@ describe('WebBrowserHost lifecycle', () => {
     expect(screen.getByTestId('web-browser-host')).toHaveAttribute('aria-busy', 'true');
     emit(guest, 'did-stop-loading');
     expect(screen.getByTestId('web-browser-host')).toHaveAttribute('aria-busy', 'false');
+
+    emit(guest, 'did-start-navigation', { isMainFrame: false, isInPlace: false });
+    expect(screen.getByTestId('web-browser-favicon')).toBeInTheDocument();
+    emit(guest, 'did-start-navigation', { isMainFrame: true, isInPlace: true });
+    expect(screen.getByTestId('web-browser-favicon')).toBeInTheDocument();
+    emit(guest, 'did-start-navigation', {
+      isMainFrame: true,
+      isInPlace: false,
+      url: 'https://example.com/next',
+    });
+    expect(screen.getByTestId('web-browser-favicon')).toBeInTheDocument();
+    emit(guest, 'did-start-navigation', {
+      isMainFrame: true,
+      isInPlace: false,
+      url: 'https://other.example/',
+    });
+    expect(screen.queryByTestId('web-browser-favicon')).not.toBeInTheDocument();
+    expect(screen.getByTestId('web-browser-favicon-placeholder')).toBeInTheDocument();
+
+    emit(guest, 'did-navigate', { url: 'https://example.com/redirect' });
+    emit(guest, 'page-favicon-updated', { favicons: ['https://example.com/favicon.svg'] });
+    emit(guest, 'did-redirect-navigation', {
+      isMainFrame: true,
+      isInPlace: false,
+      url: 'https://redirected.example/',
+    });
+    expect(screen.queryByTestId('web-browser-favicon')).not.toBeInTheDocument();
+
+    emit(guest, 'did-navigate', { url: 'file:///tmp/first.html' });
+    emit(guest, 'page-favicon-updated', { favicons: ['file:///tmp/first.svg'] });
+    emit(guest, 'did-start-navigation', {
+      isMainFrame: true,
+      isInPlace: false,
+      url: 'file:///tmp/second.html',
+    });
+    expect(screen.queryByTestId('web-browser-favicon')).not.toBeInTheDocument();
   });
 
   it('ignores subframe and aborted failures and reports another main-frame failure once', () => {

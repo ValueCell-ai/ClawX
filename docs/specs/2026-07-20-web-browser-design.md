@@ -10,7 +10,7 @@ to the right of Changes, uses Electron's `<webview>` tag, and keeps one guest
 WebContents alive for the rest of the application run after its first use.
 
 The feature intentionally does not include multiple tabs, bookmarks, persisted
-browsing history, password management, favicons, or a download manager.
+browsing history, password management, or a download manager.
 
 ## Goals
 
@@ -88,13 +88,17 @@ Back and Forward reflect `webview.canGoBack()` and
 `webview.reload()`.
 
 When the combined control is not being edited, it displays the document title.
-If the document has no title, it displays the current URL. Hovering it displays
-the complete current URL. Long values are truncated visually while the full URL
-remains available to assistive technology and in edit mode.
+If the document has no title, it displays the current URL. A page-provided
+favicon appears to the left. Same-origin and same-document navigation retain it
+until Electron reports a replacement, while cross-origin main-frame navigation
+clears it. When no favicon is available, including while loading, a same-size
+globe placeholder reserves the icon slot so the title does not move. Hovering
+does not display a URL tooltip. Long values are truncated visually while the
+full URL remains available to assistive technology and in edit mode.
 
 Clicking the control enters edit mode and selects the current URL. Enter submits
 the value. Escape or focus loss cancels editing and restores the current
-document title or URL without navigating.
+document title or URL without navigating. The favicon is hidden in edit mode.
 
 ### Address parsing
 
@@ -129,6 +133,8 @@ The More menu contains four actions:
    page. It does not remove cookies or downloaded files.
 4. Open in system browser opens the current `http:`, `https:`, or `file:` URL
    through Electron's `shell.openExternal`. It is disabled on `about:blank`.
+
+Each menu action has a matching Lucide icon.
 
 For `file:` URLs, Main validates and passes the normalized absolute URL directly
 to `shell.openExternal`; it does not convert the value to a path or call
@@ -167,15 +173,15 @@ The Renderer owns:
 - Artifact tab selection and lazy-initialization state.
 - Host visibility and anchor geometry.
 - The webview element and its navigation controls.
-- Document title, URL, loading, failure, and navigation-history button state.
+- Document title, favicon URL, URL, loading, failure, and navigation-history button state.
 - Address parsing for immediate user feedback.
 - User-facing localized errors and operation progress.
 
-The Renderer listens to the webview's load, navigation, title, and process-gone
-events. Main-frame load failures with Electron's aborted-navigation error are
-ignored. Other failures retain the current URL and controls and show a localized
-error. A guest-process failure replaces the browser surface with a localized
-recovery action that recreates the guest. After the replacement attaches at
+The Renderer listens to the webview's load, navigation, title, favicon, and
+process-gone events. Main-frame load failures with Electron's aborted-navigation
+error are ignored. Other failures retain the current URL and controls and show a
+localized error. A guest-process failure replaces the browser surface with a
+localized recovery action that recreates the guest. After the replacement attaches at
 `about:blank`, Renderer asks the typed Host API to validate and load the last
 known allowed URL. The crashed guest's in-memory history cannot be recovered.
 
@@ -412,8 +418,8 @@ page unchanged and shows a localized error.
   lazy initialization.
 - Address parsing covers scheme completion, supported URLs, standard
   `file:///` URLs, rejected plain paths, and rejected privileged schemes.
-- Combined title/address behavior covers title fallback, hover, Enter, Escape,
-  blur, and invalid input.
+- Combined title/address behavior covers title fallback, favicon presentation,
+  absence of a hover URL tooltip, Enter, Escape, blur, and invalid input.
 - Main policy helpers cover attachment validation, top-level protocol decisions,
   popup decisions, fixed partition selection, and permission decisions.
 
@@ -423,8 +429,8 @@ Tests use deterministic local HTTP pages and isolated Electron user data.
 
 - The Web Browser tab appears once and immediately after Changes.
 - No guest exists before first selection; exactly one exists afterward.
-- URL navigation, title display, hover URL, back, forward, refresh, and force
-  refresh operate on the same guest.
+- URL navigation, title and favicon display, absence of a hover URL tooltip,
+  back, forward, refresh, and force refresh operate on the same guest.
 - Popup links navigate the current guest and do not create another BrowserWindow
   or guest.
 - Closing/reopening the artifact panel, switching artifact tabs, switching chat

@@ -133,6 +133,14 @@ test.describe('embedded web browser navigation', () => {
       await expect(page.getByTestId('web-browser-clear-cookies')).toBeVisible();
       await expect(page.getByTestId('web-browser-clear-site-data')).toBeVisible();
       await expect(page.getByTestId('web-browser-open-external')).toBeDisabled();
+      for (const testId of [
+        'web-browser-force-refresh',
+        'web-browser-clear-cookies',
+        'web-browser-clear-site-data',
+        'web-browser-open-external',
+      ]) {
+        await expect(page.getByTestId(testId).locator('svg')).toHaveCount(1);
+      }
     } finally {
       await closeElectronApp(app);
     }
@@ -156,10 +164,26 @@ test.describe('embedded web browser navigation', () => {
       });
       const display = page.getByTestId('web-browser-address-display');
       await expect(display).toContainText('Fixture Start');
+      await expect(page.getByTestId('web-browser-favicon')).toHaveAttribute(
+        'src',
+        new URL('/favicon.svg', webBrowserFixture.urls.start).href,
+      );
+      await executeInWebBrowserGuest(app, guestId, "history.pushState({}, '', '#same-document'); true");
+      await expect(page.getByTestId('web-browser-favicon')).toHaveAttribute(
+        'src',
+        new URL('/favicon.svg', webBrowserFixture.urls.start).href,
+      );
+      await executeInWebBrowserGuest(app, guestId, 'history.back(); true');
+      await expectGuestAt(app, { guestId, url: webBrowserFixture.urls.start });
+      await expect(page.getByTestId('web-browser-favicon')).toHaveAttribute(
+        'src',
+        new URL('/favicon.svg', webBrowserFixture.urls.start).href,
+      );
       await display.hover();
-      await expect(page.getByRole('tooltip')).toContainText(webBrowserFixture.urls.start);
+      await expect(page.getByRole('tooltip')).toHaveCount(0);
 
       await display.click();
+      await expect(page.getByTestId('web-browser-favicon')).toHaveCount(0);
       await page.getByTestId('web-browser-address-input').fill(webBrowserFixture.urls.second);
       await page.getByTestId('web-browser-address-input').press('Escape');
       await expect(page.getByTestId('web-browser-address-display')).toContainText('Fixture Start');
@@ -173,6 +197,8 @@ test.describe('embedded web browser navigation', () => {
 
       await navigateFromAddress(page, webBrowserFixture.urls.second);
       await expectGuestAt(app, { guestId, url: webBrowserFixture.urls.second, title: 'Fixture Second' });
+      await expect(page.getByTestId('web-browser-favicon')).toBeVisible();
+      await expect(page.getByTestId('web-browser-favicon-placeholder')).toHaveCount(0);
       await expect(page.getByTestId('web-browser-back')).toBeEnabled();
       await page.getByTestId('web-browser-back').click();
       await expectGuestAt(app, { guestId, url: webBrowserFixture.urls.start, title: 'Fixture Start' });
@@ -193,6 +219,17 @@ test.describe('embedded web browser navigation', () => {
         matchingGuestCount: 1,
         browserWindowCount: 1,
       });
+
+      await navigateFromAddress(page, webBrowserFixture.urls.crossOriginRedirect);
+      await expectGuestAt(app, {
+        guestId,
+        url: webBrowserFixture.urls.storageAlternate,
+        title: 'Storage Fixture',
+      });
+      await expect(page.getByTestId('web-browser-favicon')).toHaveCount(0);
+      const placeholder = page.getByTestId('web-browser-favicon-placeholder');
+      await expect(placeholder).toHaveCSS('width', '16px');
+      await expect(placeholder).toHaveCSS('height', '16px');
     } finally {
       await closeElectronApp(app);
     }

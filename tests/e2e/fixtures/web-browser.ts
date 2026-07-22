@@ -23,6 +23,7 @@ export interface LocalWebBrowserFixture {
     popupTarget: string;
     ua: string;
     allowedRedirect: string;
+    crossOriginRedirect: string;
     disallowedRedirect: string;
     storage: string;
     storagePolicy: string;
@@ -90,10 +91,10 @@ export const WEB_BROWSER_E2E_SESSION_KEYS = {
   secondary: 'agent:main:web-browser-e2e-secondary',
 } as const;
 
-function html(title: string, body: string): string {
+function html(title: string, body: string, head = ''): string {
   return `<!doctype html>
 <html>
-  <head><meta charset="utf-8"><title>${title}</title></head>
+  <head><meta charset="utf-8"><title>${title}</title>${head}</head>
   <body>${body}</body>
 </html>`;
 }
@@ -149,7 +150,11 @@ async function createLocalWebBrowserFixture(homeDir: string): Promise<{
           '<main id="start">start</main>',
           '<a id="second-link" href="/second">second</a>',
           '<a id="download-link" href="/download" download>download</a>',
-        ].join('')));
+        ].join(''), '<link rel="icon" href="/favicon.svg">'));
+        return;
+      case '/favicon.svg':
+        response.setHeader('Content-Type', 'image/svg+xml');
+        response.end('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" fill="#2563eb"/></svg>');
         return;
       case '/second':
         response.end(html('Fixture Second', '<main id="second">second</main>'));
@@ -169,6 +174,11 @@ async function createLocalWebBrowserFixture(homeDir: string): Promise<{
       case '/redirect-allowed':
         response.statusCode = 302;
         response.setHeader('Location', '/second');
+        response.end();
+        return;
+      case '/redirect-cross-origin':
+        response.statusCode = 302;
+        response.setHeader('Location', `${origin.replace('127.0.0.1', 'localhost')}/storage-policy`);
         response.end();
         return;
       case '/redirect-disallowed':
@@ -279,6 +289,7 @@ async function createLocalWebBrowserFixture(homeDir: string): Promise<{
         popupTarget: url('/popup-target'),
         ua: url('/ua'),
         allowedRedirect: url('/redirect-allowed'),
+        crossOriginRedirect: url('/redirect-cross-origin'),
         disallowedRedirect: url('/redirect-disallowed'),
         storage: url('/storage'),
         storagePolicy: url('/storage-policy'),

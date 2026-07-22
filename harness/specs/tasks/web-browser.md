@@ -62,6 +62,7 @@ expectedUserBehavior:
   - The artifact panel shows one localized Web Browser tab after Changes, distinct from the Workspace browser.
   - First selection lazily creates one hardened guest at about:blank; later tab, panel, session, and route changes hide it while scripts, network activity, audio, and resource use may continue.
   - Address, history, refresh, clear-data, crash recovery, popup, and external-open actions reuse the registered guest and allow only HTTP, HTTPS, and explicit standard file URLs at the top level.
+  - The title state shows a page-provided favicon or same-size placeholder without a hover URL tooltip, address editing hides the icon slot, and every More menu action has an icon.
   - Cookies and site storage persist in persist:clawx-web-browser, while guest creation, URL, page state, and history do not restore after application restart.
   - Allowed popup targets replace the current page without a child window and cannot preserve window.opener, returned handles, initially blank scripted popups, or full POST/referrer/named-window behavior.
   - Camera and microphone prompt for every request without remembered grants, clipboard variants are allowed, and geolocation, display capture, notifications, and every other permission are denied.
@@ -104,7 +105,7 @@ acceptance:
   - Downloads are not canceled or assigned a path by ClawX, may wait on native Save UI, and have no custom manager; unattended completion or a system Downloads path is not promised.
   - The dedicated session uses system proxy resolution without ClawX client-proxy synchronization or connection recycling.
   - External opening reads and validates the registered guest URL; file URLs use shell.openExternal and may open an OS-associated application, never shell.openPath.
-  - Every browser control and error uses four-locale text, localized accessible names and tooltips, semantic disabled behavior, project design tokens, and the stable selectors in the durable reference.
+  - Every browser control and error uses four-locale text, localized accessible names and tooltips where applicable, semantic disabled behavior, project design tokens, and the stable selectors in the durable reference; the title control has no URL tooltip, reserves a fixed-size favicon or placeholder slot only outside address editing, and every More menu action has a Lucide icon.
   - Unit, Electron E2E, communication regression, Harness, type, lint, build, and documentation checks pass.
 docs:
   required: true

@@ -31,7 +31,7 @@ Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like 
 - Do not synchronize the ClawX client proxy to the browser partition. Let Electron/Chromium use normal system proxy resolution.
 - Route every new display string through the `chat` namespace with matching `en`, `zh`, `ja`, and `ru` keys.
 - Use project design tokens and semantic controls. Add Electron E2E coverage for every user-visible browser interaction.
-- Do not add multi-tab support, bookmarks, persisted URL/history, password management, favicons, permission memory, geolocation, display capture, or a download manager.
+- Do not add multi-tab support, bookmarks, persisted URL/history, password management, permission memory, geolocation, display capture, or a download manager.
 
 ---
 
@@ -711,7 +711,7 @@ Add Main snapshot helpers that return serializable guest ID, URL, title, UA, mat
 Write tests for:
 
 - Fixed tab order, no guest before first click, one guest afterward, initial `about:blank`, and focused address input.
-- HTTP navigation, title/hover URL, Enter/Escape/blur, Back, Forward, Refresh, and Force Refresh while guest ID remains unchanged.
+- HTTP navigation, title/favicon display without a hover URL tooltip, Enter/Escape/blur, Back, Forward, Refresh, and Force Refresh while guest ID remains unchanged.
 - `_blank` and `window.open()` allowed targets reuse the same guest and create no window/guest; disallowed popup and redirect targets do not navigate.
 - Exact UA observed by both guest and server.
 - Plain path rejection, standard `file:///` navigation, HTTP/file external opening through `shell.openExternal`, no `shell.openPath`, and disabled external opening at `about:blank`.
@@ -874,7 +874,7 @@ git commit -m "test: cover web browser session policy"
 
 - [ ] **Step 1: Audit the implementation against the docs before editing**
 
-Verify the final code and tests establish every documented limitation and exact value. Confirm there is no favicon, history persistence, password manager, extra tab/window, remembered permission, custom download path, or client-proxy synchronization.
+Verify the final code and tests establish every documented limitation and exact value. Confirm title-state favicon behavior plus the absence of history persistence, password manager, extra tab/window, remembered permission, custom download path, or client-proxy synchronization.
 
 - [ ] **Step 2: Update all four READMEs**
 

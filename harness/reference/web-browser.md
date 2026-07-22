@@ -26,6 +26,10 @@ Main accepts one pending attachment and one single registered guest at a time. T
 
 After first selection, the global host keeps the same guest mounted while the panel closes, another artifact tab is selected, the chat session changes, or the route changes. Hidden content remains active and may consume resources or play audio. Only destruction of the registered guest releases the slot; crash recovery may then create one replacement and navigate it to the last allowed URL without restoring history.
 
+## Toolbar Presentation
+
+The non-editing address control shows the page title, falling back to the URL, and displays the first URL from the webview's `page-favicon-updated` event when available. Same-origin and same-document navigation retain the current favicon until Electron reports a replacement; cross-origin main-frame navigation clears it. While no favicon is available, including during loading, a same-size globe placeholder reserves the icon slot so the title does not shift. Neither favicon nor placeholder is shown in address-editing mode. Long title or URL text remains truncated, the full URL remains available to assistive technology and edit mode, and hovering the control does not open a URL tooltip. Each of the four More menu actions has a Lucide icon.
+
 ## Popup Policy
 
 Every popup handler returns `deny`; no child BrowserWindow, BrowserView, WebContentsView, or second webview is created. Allowed targets navigate the existing guest, while unsupported protocols are rejected. Same-tab fallback cannot preserve `window.opener`, returned window handles, an initially empty popup populated later, `_blank` POST bodies, referrer fidelity, named-window behavior, or window features.
@@ -75,11 +79,11 @@ Stable acceptance selectors are:
 
 - Panel and placement: `artifact-panel-tabs`, `artifact-panel-tab-web-browser`, and `web-browser-anchor`.
 - Persistent surface: `web-browser-host` and `web-browser-webview`.
-- Navigation: `web-browser-toolbar`, `web-browser-back`, `web-browser-forward`, `web-browser-refresh`, `web-browser-address-input`, and `web-browser-address-display`.
+- Navigation: `web-browser-toolbar`, `web-browser-back`, `web-browser-forward`, `web-browser-refresh`, `web-browser-address-input`, `web-browser-address-display`, and `web-browser-favicon`.
 - Privileged actions: `web-browser-more`, `web-browser-force-refresh`, `web-browser-clear-cookies`, `web-browser-clear-site-data`, and `web-browser-open-external`.
 
 ## Validation Anchors
 
 Contract and locale coverage is anchored by `tests/unit/harness-specs.test.ts` and `tests/unit/i18n-locale-parity.test.ts`. Shared and privileged boundaries are covered by `tests/unit/web-browser-url.test.ts`, `tests/unit/host-api-facade.test.ts`, `tests/unit/web-browser-policy.test.ts`, `tests/unit/web-browser-session.test.ts`, `tests/unit/web-browser-api.test.ts`, and `tests/unit/host-services.test.ts`. Renderer behavior and placement are covered by `tests/unit/artifact-panel-store.test.ts`, `tests/unit/artifact-panel.test.tsx`, `tests/unit/web-browser-controls.test.tsx`, `tests/unit/web-browser-host.test.tsx`, and `tests/unit/main-layout.test.tsx`.
 
-`tests/e2e/web-browser-navigation.spec.ts` anchors lazy creation, tab order, controls, allowed and rejected navigation, same-guest popups, fixed UserAgent, explicit file URLs, and external opening. `tests/e2e/web-browser-lifecycle.spec.ts` anchors hidden background lifetime, geometry, crash replacement, cookie persistence, and the absence of URL/history restoration. `tests/e2e/web-browser-policy.spec.ts` anchors guest isolation, cross-origin clearing scopes, per-request media prompts, clipboard and denied permissions, and untouched Electron/OS download behavior, including the native macOS save-sheet path.
+`tests/e2e/web-browser-navigation.spec.ts` anchors lazy creation, tab order, controls, title-state favicon presentation, absence of a hover URL tooltip, allowed and rejected navigation, same-guest popups, fixed UserAgent, explicit file URLs, and external opening. `tests/e2e/web-browser-lifecycle.spec.ts` anchors hidden background lifetime, geometry, crash replacement, cookie persistence, and the absence of URL/history restoration. `tests/e2e/web-browser-policy.spec.ts` anchors guest isolation, cross-origin clearing scopes, per-request media prompts, clipboard and denied permissions, and untouched Electron/OS download behavior, including the native macOS save-sheet path.
