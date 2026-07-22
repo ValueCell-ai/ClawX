@@ -61,6 +61,8 @@
         "imageSaved": "图片已保存",
         "copy": "复制回复",
         "copied": "已复制",
+        "turnDuration": "用时 {{duration}}",
+        "turnElapsed": "已处理 {{duration}}",
         "attachment": {
             "loading": "正在加载附件",
             "unavailable": "附件不可用",

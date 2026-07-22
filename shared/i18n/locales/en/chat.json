@@ -61,6 +61,8 @@
         "imageSaved": "Image saved",
         "copy": "Copy response",
         "copied": "Copied",
+        "turnDuration": "Took {{duration}}",
+        "turnElapsed": "{{duration}} elapsed",
         "attachment": {
             "loading": "Loading attachment",
             "unavailable": "Attachment unavailable",

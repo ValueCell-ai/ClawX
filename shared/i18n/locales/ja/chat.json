@@ -61,6 +61,8 @@
         "imageSaved": "画像を保存しました",
         "copy": "返信をコピー",
         "copied": "コピーしました",
+        "turnDuration": "所要時間 {{duration}}",
+        "turnElapsed": "経過時間 {{duration}}",
         "attachment": {
             "loading": "添付ファイルを読み込み中",
             "unavailable": "添付ファイルを利用できません",

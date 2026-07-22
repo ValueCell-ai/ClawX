@@ -15,6 +15,8 @@ Use the semantic tokens and substitutions documented in `src/styles/globals.css`
 
 Interactive rows use semantic controls, keyboard activation, accessible names, visible focus styling, and disabled semantics where applicable. Attachment cards may show the decoded local path or normalized remote URL represented by explicit ACP resource or approved `MEDIA:` evidence; paths truncate visually and remain available in the title. Unavailable attachments remain basename-only, and unrelated UI or diagnostics must not expose sensitive absolute host paths.
 
+ACP whole-turn timing uses localized unit formatting and localized running/completed labels in all four locales. It renders as persistent muted metadata in the assistant-turn footer; copy remains the hover-only action.
+
 Multi-view file previews keep their localized segmented view switcher in the trailing side of the file name/path header instead of allocating a separate content row. HTML preview retains the `Preview` then `Source` order and defaults to the rendered preview.
 
 Eligible attachment cards place a compact secondary Open with button inside the card's right edge while keeping it a sibling of the primary preview button; buttons must not be nested and secondary interactions must not activate preview. The secondary button must not divide the card into visual segments. The dropdown must support keyboard navigation, activation, dismissal, and focus restoration. Open-with, loading, platform reveal, and explicit action-failure labels require matching English, Chinese, Japanese, and Russian chat locale entries. Application rows use bounded native icons when available and a generic application icon for every missing, malformed, oversized, unreadable, or failed icon.

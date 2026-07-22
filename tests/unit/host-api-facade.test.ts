@@ -455,6 +455,18 @@ describe('hostApi facade', () => {
     }));
   });
 
+  it('calls sessions.turnTimings through hostInvoke', async () => {
+    hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { success: true, timings: [] } });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await hostApi.sessions.turnTimings({ sessionKey: 'agent:main:main', limit: 1000 });
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'sessions',
+      action: 'turnTimings',
+      payload: { sessionKey: 'agent:main:main', limit: 1000 },
+    }));
+  });
+
   it('calls cron.list through hostInvoke', async () => {
     hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: [] });
     const { hostApi } = await import('@/lib/host-api');

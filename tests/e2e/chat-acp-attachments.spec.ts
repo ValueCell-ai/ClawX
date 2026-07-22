@@ -159,8 +159,8 @@ test.describe('ACP media attachments', () => {
         await expect(appRows.nth(0).getByTestId('acp-attachment-open-with-native-icon')).toHaveCSS('width', '20px');
         await expect(appRows.nth(0).getByTestId('acp-attachment-open-with-native-icon')).toHaveCSS('height', '20px');
         await expect(appRows.nth(1).getByTestId('acp-attachment-open-with-generic-icon')).toBeVisible();
-        await expect(appRows.nth(1).getByTestId('acp-attachment-open-with-generic-icon')).toHaveCSS('width', '32px');
-        await expect(appRows.nth(1).getByTestId('acp-attachment-open-with-generic-icon')).toHaveCSS('height', '32px');
+        await expect(appRows.nth(1).getByTestId('acp-attachment-open-with-generic-icon')).toHaveCSS('width', '20px');
+        await expect(appRows.nth(1).getByTestId('acp-attachment-open-with-generic-icon')).toHaveCSS('height', '20px');
 
         await page.getByRole('menuitem', { name: 'Alpha Sheets', exact: true }).click();
         await expect.poll(async () => filesActionCalls(

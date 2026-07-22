@@ -349,6 +349,9 @@ export const hostApi = {
     history: (input: { sessionKey?: string; agentId?: string; sessionId?: string; limit?: number }) => (
       invokeHost('sessions', 'history', input)
     ),
+    turnTimings: (input: { sessionKey: string; limit?: number }) => (
+      invokeHost('sessions', 'turnTimings', input)
+    ),
   },
   chat: {
     sendWithMedia: (input: ChatSendWithMediaPayload) => invokeHost('chat', 'sendWithMedia', input),

@@ -14,6 +14,7 @@ const openAttachmentWithMock = vi.hoisted(() => vi.fn());
 const revealAttachmentMock = vi.hoisted(() => vi.fn());
 const thumbnailsMock = vi.hoisted(() => vi.fn());
 const toastErrorMock = vi.hoisted(() => vi.fn());
+const i18nLanguage = vi.hoisted(() => ({ value: 'en' }));
 
 vi.mock('@/lib/host-api', () => ({
   hostApi: {
@@ -38,6 +39,8 @@ vi.mock('sonner', () => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) => {
+      if (i18nLanguage.value === 'zh' && key === 'acp.turnDuration') return `用时 ${String(options?.duration ?? '')}`;
+      if (i18nLanguage.value === 'zh' && key === 'acp.turnElapsed') return `已处理 ${String(options?.duration ?? '')}`;
       const labels: Record<string, string> = {
         'acp.thought': 'Thought',
         'acp.tool': 'Tool',
@@ -53,6 +56,8 @@ vi.mock('react-i18next', () => ({
         'acp.loadFailed': 'Load failed',
         'acp.promptFailed': 'Prompt failed',
         'acp.unsupportedContent': 'Unsupported content',
+        'acp.turnDuration': 'Took {{duration}}',
+        'acp.turnElapsed': '{{duration}} elapsed',
         'acp.dismiss': 'Dismiss',
         'acp.attachment.loading': 'Loading attachment',
         'acp.attachment.unavailable': 'Attachment unavailable',
@@ -75,7 +80,7 @@ vi.mock('react-i18next', () => ({
       };
       return (labels[key] ?? key).replace(/{{(\w+)}}/g, (_match, name: string) => String(options?.[name] ?? ''));
     },
-    i18n: { language: 'en' },
+    i18n: { get language() { return i18nLanguage.value; } },
   }),
 }));
 
@@ -155,6 +160,7 @@ function toolCallItem(overrides: Partial<ToolCallItem>): ToolCallItem {
 describe('ACP chat timeline components', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    i18nLanguage.value = 'en';
     window.electron.platform = 'darwin';
     openAttachmentMock.mockResolvedValue({ ok: true });
     listAttachmentOpenHandlersMock.mockResolvedValue({ ok: true, platform: 'darwin', handlers: [] });
@@ -185,6 +191,97 @@ describe('ACP chat timeline components', () => {
 
     expect(blockCode).not.toHaveClass('bg-black/5');
     expect(inlineCode).not.toHaveClass('bg-black/5');
+  });
+
+  it('shows a fixed whole-turn duration on the ACP-replayed assistant turn', () => {
+    const state = snapshot({
+      itemOrder: ['user-a:0', 'assistant-a:0'],
+      itemsById: {
+        'user-a:0': {
+          kind: 'message-segment', id: 'user-a:0', role: 'user', messageId: 'user-a', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Measure this' }],
+        },
+        'assistant-a:0': {
+          kind: 'message-segment', id: 'assistant-a:0', role: 'assistant', messageId: 'assistant-a', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Measured' }],
+        },
+      },
+    });
+
+    render(<AcpTimeline
+      snapshot={state}
+      turnTimingsByUserMessageId={{
+        'user-a': { source: 'transcript', status: 'complete', durationMs: 6_400 },
+      }}
+    />);
+
+    expect(screen.getByTestId('acp-turn-duration')).toHaveTextContent('Took 6 sec');
+  });
+
+  it('floors Chinese whole-turn seconds, spaces the unit, and uses processing/completed copy', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(20_000);
+    i18nLanguage.value = 'zh';
+    const state = snapshot({
+      itemOrder: ['user-a:0', 'assistant-a:0', 'user-b:0', 'assistant-b:0'],
+      itemsById: {
+        'user-a:0': {
+          kind: 'message-segment', id: 'user-a:0', role: 'user', messageId: 'user-a', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Completed' }],
+        },
+        'assistant-a:0': {
+          kind: 'message-segment', id: 'assistant-a:0', role: 'assistant', messageId: 'assistant-a', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Done' }],
+        },
+        'user-b:0': {
+          kind: 'message-segment', id: 'user-b:0', role: 'user', messageId: 'user-b', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Running' }],
+        },
+        'assistant-b:0': {
+          kind: 'message-segment', id: 'assistant-b:0', role: 'assistant', messageId: 'assistant-b', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Working' }],
+        },
+      },
+    });
+
+    render(<AcpTimeline
+      snapshot={state}
+      turnTimingsByUserMessageId={{
+        'user-a': { source: 'transcript', status: 'complete', durationMs: 23_600 },
+        'user-b': { source: 'live', status: 'running', startedAtMs: 600 },
+      }}
+    />);
+
+    expect(screen.getByText('用时 23 秒')).toBeVisible();
+    expect(screen.getByText('已处理 19 秒')).toBeVisible();
+    vi.useRealTimers();
+  });
+
+  it('updates a running whole-turn elapsed duration from its original start time', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    const state = snapshot({
+      itemOrder: ['user-a:0', 'tool:read-file'],
+      itemsById: {
+        'user-a:0': {
+          kind: 'message-segment', id: 'user-a:0', role: 'user', messageId: 'user-a', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Read it' }],
+        },
+        'tool:read-file': toolCallItem({ status: 'running' }),
+      },
+    });
+
+    render(<AcpTimeline
+      snapshot={state}
+      turnTimingsByUserMessageId={{
+        'user-a': { source: 'live', status: 'running', startedAtMs: 7_000 },
+      }}
+    />);
+    expect(screen.getByTestId('acp-turn-duration')).toHaveTextContent('3 sec elapsed');
+
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(screen.getByTestId('acp-turn-duration')).toHaveTextContent('4 sec elapsed');
+    vi.useRealTimers();
   });
 
   it('renders tool-only turn file controls once after timeline items and routes preview and changes', () => {
@@ -680,7 +777,7 @@ describe('ACP chat timeline components', () => {
     await openAttachmentMenu();
     await screen.findByText('Missing');
     expect(screen.getAllByTestId('acp-attachment-open-with-generic-icon')).toHaveLength(3);
-    expect(screen.getAllByTestId('acp-attachment-open-with-generic-icon')[0]).toHaveClass('h-8', 'w-8');
+    expect(screen.getAllByTestId('acp-attachment-open-with-generic-icon')[0]).toHaveClass('h-5', 'w-5');
 
     fireEvent.error(screen.getByTestId('acp-attachment-open-with-native-icon'));
     expect(screen.getAllByTestId('acp-attachment-open-with-generic-icon')).toHaveLength(4);

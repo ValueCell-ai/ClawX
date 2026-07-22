@@ -210,6 +210,7 @@ export function Chat() {
   );
 
   const acpTimeline = useAcpChatSessionStore((s) => s.timeline);
+  const acpTurnTimings = useAcpChatSessionStore((s) => s.turnTimingsByUserMessageId);
   const acpLoading = useAcpChatSessionStore((s) => s.loading);
   const acpSending = useAcpChatSessionStore((s) => s.sending);
   const imageGenerationPending = useAcpChatSessionStore(
@@ -439,6 +440,7 @@ export function Chat() {
                   ) : (
                     <AcpTimeline
                       snapshot={acpTimeline}
+                      turnTimingsByUserMessageId={acpTurnTimings}
                       fileActivity={fileActivity}
                       workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey
                         ? resolvedWorkspaceContext.workspaceRoot

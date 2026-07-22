@@ -16,6 +16,7 @@ export type AcpUserDisplayGroup = {
 export type AcpAssistantTurnDisplayGroup = {
   kind: 'assistant-turn';
   id: string;
+  userMessageId?: string;
   items: TimelineItem[];
   attachments: AttachmentRenderPart[];
 };
@@ -68,6 +69,9 @@ function assistantGroupForItem(
   const group: AcpAssistantTurnDisplayGroup = {
     kind: 'assistant-turn',
     id: `assistant-turn:${item.id}`,
+    ...(previous?.kind === 'user' && previous.items.at(-1)?.messageId
+      ? { userMessageId: previous.items.at(-1)!.messageId }
+      : {}),
     items: [],
     attachments: [],
   };

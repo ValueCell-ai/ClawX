@@ -673,6 +673,15 @@ export type SessionHistoryPayload = {
 export type SessionHistoryResult = OptionalHostSuccess & {
   messages?: RawMessage[];
 };
+export type SessionTurnTimingsPayload = { sessionKey: string; limit?: number };
+export type SessionTurnTimingCandidate = {
+  normalizedUserText: string;
+  userOccurrenceFromTail: number;
+  durationMs: number;
+};
+export type SessionTurnTimingsResult = OptionalHostSuccess & {
+  timings?: SessionTurnTimingCandidate[];
+};
 export type SessionSummariesPayload = { sessionKeys?: string[]; limit?: number };
 export type SessionLabelSummary = {
   sessionKey: string;
@@ -953,6 +962,7 @@ export type HostApiContract = {
     rename: (payload: SessionRenamePayload) => HostSuccess;
     summaries: (payload?: SessionSummariesPayload) => SessionSummariesResult;
     history: (payload: SessionHistoryPayload) => SessionHistoryResult;
+    turnTimings: (payload: SessionTurnTimingsPayload) => SessionTurnTimingsResult;
   };
   chat: {
     sendWithMedia: (payload: ChatSendWithMediaPayload) => ChatSendWithMediaResult;

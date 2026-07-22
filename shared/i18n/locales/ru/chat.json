@@ -61,6 +61,8 @@
         "imageSaved": "Изображение сохранено",
         "copy": "Копировать ответ",
         "copied": "Скопировано",
+        "turnDuration": "Заняло {{duration}}",
+        "turnElapsed": "Прошло {{duration}}",
         "attachment": {
             "loading": "Загрузка вложения",
             "unavailable": "Вложение недоступно",

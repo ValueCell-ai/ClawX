@@ -64,6 +64,17 @@ function seedTranscript(sessionKey: string, messages: unknown[]) {
   );
 }
 
+function seedTranscriptRecords(sessionKey: string, records: unknown[]) {
+  const sessionsDir = join(testOpenClawDir, 'agents', 'main', 'sessions');
+  mkdirSync(sessionsDir, { recursive: true });
+  writeFileSync(join(sessionsDir, 'sessions.json'), JSON.stringify({ [sessionKey]: 'timings.jsonl' }), 'utf8');
+  writeFileSync(
+    join(sessionsDir, 'timings.jsonl'),
+    records.map((record) => JSON.stringify(record)).join('\n'),
+    'utf8',
+  );
+}
+
 describe('sessions API workspace summaries', () => {
   beforeEach(() => {
     rmSync(testOpenClawDir, { recursive: true, force: true });
@@ -86,6 +97,124 @@ describe('sessions API workspace summaries', () => {
     })).resolves.toMatchObject({
       success: true,
       messages: [{ content: 'state transcript' }],
+    });
+  });
+
+  it('extracts bounded whole-turn timings without treating inter-session messages as new turns', async () => {
+    seedTranscriptRecords('agent:main:session-timings', [
+      {
+        type: 'message',
+        timestamp: '2026-07-22T10:00:00.000Z',
+        message: { role: 'user', content: '[Working directory: /tmp/project]\nRepeat this' },
+      },
+      {
+        type: 'message',
+        timestamp: '2026-07-22T10:00:01.000Z',
+        message: { role: 'assistant', content: [{ type: 'toolCall', id: 'tool-1' }] },
+      },
+      {
+        type: 'message',
+        timestamp: '2026-07-22T10:00:03.000Z',
+        message: { role: 'toolResult', content: 'tool result', toolCallId: 'tool-1' },
+      },
+      {
+        type: 'message',
+        timestamp: '2026-07-22T10:00:05.000Z',
+        message: { role: 'assistant', content: 'First answer' },
+      },
+      {
+        type: 'message',
+        timestamp: '2026-07-22T10:01:00.000Z',
+        message: { role: 'user', content: 'Repeat this' },
+      },
+      {
+        type: 'message',
+        timestamp: '2026-07-22T10:01:01.000Z',
+        message: {
+          role: 'user',
+          content: '[Inter-session message] async continuation',
+          provenance: { kind: 'inter_session' },
+        },
+      },
+      {
+        type: 'message',
+        timestamp: '2026-07-22T10:01:02.000Z',
+        message: { role: 'tool_result', content: 'continued tool result', toolCallId: 'tool-2' },
+      },
+      {
+        type: 'message',
+        timestamp: '2026-07-22T10:01:04.000Z',
+        message: { role: 'assistant', content: 'Second answer' },
+      },
+      {
+        type: 'message',
+        timestamp: '2026-07-22T10:02:00.000Z',
+        message: { role: 'user', content: 'Incomplete turn' },
+      },
+    ]);
+    const { createSessionsApi } = await import('@electron/services/sessions-api');
+
+    const result = await createSessionsApi().turnTimings({
+      sessionKey: 'agent:main:session-timings',
+      limit: 1000,
+    });
+
+    expect(result).toEqual({
+      success: true,
+      timings: [
+        {
+          normalizedUserText: 'Repeat this',
+          userOccurrenceFromTail: 2,
+          durationMs: 5_000,
+        },
+        {
+          normalizedUserText: 'Repeat this',
+          userOccurrenceFromTail: 1,
+          durationMs: 4_000,
+        },
+      ],
+    });
+  });
+
+  it('falls back to message timestamps and omits negative or orphan turn timings', async () => {
+    seedTranscriptRecords('agent:main:session-timing-fallback', [
+      {
+        type: 'message',
+        message: { role: 'assistant', content: 'orphan', timestamp: 2_000_000_000_000 },
+      },
+      {
+        type: 'message',
+        message: { role: 'user', content: 'Fallback', timestamp: 2_000_000_001_000 },
+      },
+      {
+        type: 'message',
+        message: { role: 'assistant', content: 'answer', timestamp: 2_000_000_003_500 },
+      },
+      {
+        type: 'message',
+        timestamp: '2026-07-22T10:03:10.000Z',
+        message: { role: 'user', content: 'Clock skew' },
+      },
+      {
+        type: 'message',
+        timestamp: '2026-07-22T10:03:09.000Z',
+        message: { role: 'assistant', content: 'older answer' },
+      },
+    ]);
+    const { createSessionsApi } = await import('@electron/services/sessions-api');
+
+    const result = await createSessionsApi().turnTimings({
+      sessionKey: 'agent:main:session-timing-fallback',
+      limit: 1000,
+    });
+
+    expect(result).toEqual({
+      success: true,
+      timings: [{
+        normalizedUserText: 'Fallback',
+        userOccurrenceFromTail: 1,
+        durationMs: 2_500,
+      }],
     });
   });
 

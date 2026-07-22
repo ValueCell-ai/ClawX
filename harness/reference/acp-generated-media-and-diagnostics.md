@@ -6,7 +6,7 @@ Related scenario: `acp-chat-experience`
 
 Related rules: `acp-chat-state-and-history`, `acp-compatibility-content-safety`, `attachment-access-safety`, `diagnostics-trace-safety`
 
-Related tasks: `acp-image-generation-compatibility`, `acp-historical-transcript-supplement`, `acp-media-attachments`, `acp-debug-trace-channel`
+Related tasks: `acp-image-generation-compatibility`, `acp-historical-transcript-supplement`, `acp-media-attachments`, `acp-debug-trace-channel`, `acp-whole-turn-duration`
 
 ## Preferred And Compatibility Paths
 
@@ -14,12 +14,14 @@ Standard ACP image, `resource_link`, and URI-backed `resource` content blocks ar
 
 ## Bounded Transcript Exceptions
 
-This section is the durable rationale referenced by the transcript supplement entry point. The two exceptions are:
+This section is the durable rationale referenced by the transcript supplement entry point. The two content exceptions are:
 
 1. Image-generation completion with proven `image_generate` context. Trusted structured runtime evidence or approved transcript evidence may restore the completion caption, failure explanation, and media as the existing inline-image experience.
 2. General attachment recovery from an explicit line-leading assistant `MEDIA:` directive outside fenced code blocks. This exception does not require image-generation context, but it recovers only the attachment reference, never the surrounding assistant message.
 
-Both exceptions use one bounded transcript fetch coordinator, keep projected state in memory, require exact active session and generation identity, and reject stale or ambiguous evidence. Existing-session load reads at most 1000 recent transcript messages. An ordinary successful live prompt performs one immediate read and one retry 1500 milliseconds later. Only an `image_generate` task recorded for that same live prompt extends the coordinator through bounded backoff while waiting for its completion artifact; accepted completion, invalidation, or retry-window exhaustion stops it. These exceptions must be removed when the distributed OpenClaw ACP adapter emits the equivalent standard content.
+Both content exceptions use one bounded transcript fetch coordinator, keep projected state in memory, require exact active session and generation identity, and reject stale or ambiguous evidence. Existing-session load reads at most 1000 recent transcript messages. An ordinary successful live prompt performs one immediate read and one retry 1500 milliseconds later. Only an `image_generate` task recorded for that same live prompt extends the coordinator through bounded backoff while waiting for its completion artifact; accepted completion, invalidation, or retry-window exhaustion stops it. These exceptions must be removed when the distributed OpenClaw ACP adapter emits the equivalent standard content.
+
+The same historical coordinator may request metadata-only whole-turn timing from Main. This is necessary because ACP `session/load` supplies replay content and status but not the original timestamps needed to calculate duration. Main derives candidates from bounded transcript JSONL envelopes, and Renderer aligns them with the same normalized user text and duplicate occurrence-from-tail rule. Timing can annotate only an ACP-created turn and never recovers transcript content.
 
 Transcript supplementation must not recover or reconstruct ordinary assistant messages, thoughts, tools, plans, permissions, file activity, or a parallel Chat history. Bare paths, inline prose paths, unknown URI schemes, incidental tool paths, and directives inside fenced code blocks are not general attachments.
 
@@ -64,7 +66,7 @@ hostApi.sessions.history({ sessionKey, limit: 1000 });
 
 A pure image-generation extractor scans messages in transcript order. It first records an `image_generate` start from a tool result, then accepts a later internal-UI `message` tool source reply or assistant completion associated with that task. OpenClaw's runtime-generated inter-session completion trigger remains part of the originating user turn rather than starting a new end-user turn. Assistant media captions have their `MEDIA:` directives removed before display, and a task-correlated text-only assistant reply may restore a failure explanation. A message-tool reply or image completion without preceding task context is rejected. Separately, the general attachment extractor may accept explicit assistant `MEDIA:` directives without image-generation context under the restrictions above. Read failure, no accepted evidence, duplicate evidence, or a stale generation leaves the ACP timeline unchanged.
 
-These are the only transcript-derived Chat supplements. They must not become a general recovery mechanism for missing tool cards, file activity, plans, permissions, thoughts, or ordinary messages.
+These are the only transcript-derived Chat content supplements. Metadata-only whole-turn timing is also permitted, but it must not become a general recovery mechanism for missing turns, tool cards, file activity, plans, permissions, thoughts, or ordinary messages.
 
 ## Rejected Compatibility Alternatives
 

@@ -10,6 +10,7 @@ const hostApiMock = vi.hoisted(() => ({
   mediaThumbnails: vi.fn(),
   recordAcpTrace: vi.fn(),
   sessionsHistory: vi.fn(),
+  sessionTurnTimings: vi.fn(),
   resolveAttachment: vi.fn(),
 }));
 
@@ -52,6 +53,7 @@ vi.mock('@/lib/host-api', () => ({
     },
     sessions: {
       history: hostApiMock.sessionsHistory,
+      turnTimings: hostApiMock.sessionTurnTimings,
     },
     files: {
       resolveAttachment: hostApiMock.resolveAttachment,
@@ -130,6 +132,7 @@ describe('ACP Chat store', () => {
     hostApiMock.mediaThumbnails.mockReset().mockResolvedValue({});
     hostApiMock.recordAcpTrace.mockReset().mockResolvedValue({ success: true });
     hostApiMock.sessionsHistory.mockReset().mockResolvedValue({ success: true, messages: [] });
+    hostApiMock.sessionTurnTimings.mockReset().mockResolvedValue({ success: true, timings: [] });
     hostApiMock.resolveAttachment.mockReset().mockImplementation(async (payload: {
       ref: { sessionKey: string; generation: number; uri: string };
       mimeType?: string;
@@ -461,6 +464,88 @@ describe('ACP Chat store', () => {
     });
   });
 
+  it('supplements ACP replayed turns with transcript-derived whole-turn timing', async () => {
+    hostApiMock.loadAcpSession.mockResolvedValueOnce({
+      success: true,
+      generation: 1,
+      sessionUpdates: [
+        {
+          sessionKey: 'agent:pi:s1',
+          generation: 1,
+          historical: true,
+          notification: {
+            sessionId: 'agent:pi:s1',
+            update: {
+              sessionUpdate: 'user_message_chunk',
+              messageId: 'user-history',
+              content: { type: 'text', text: 'Measure this turn' },
+            },
+          },
+        },
+        {
+          sessionKey: 'agent:pi:s1',
+          generation: 1,
+          historical: true,
+          notification: {
+            sessionId: 'agent:pi:s1',
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              messageId: 'assistant-history',
+              content: { type: 'text', text: 'Measured' },
+            },
+          },
+        },
+      ],
+    });
+    hostApiMock.sessionTurnTimings.mockResolvedValueOnce({
+      success: true,
+      timings: [{
+        normalizedUserText: 'Measure this turn',
+        userOccurrenceFromTail: 1,
+        durationMs: 6_400,
+      }],
+    });
+    const { useAcpChatSessionStore } = await importStore();
+
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+
+    await vi.waitFor(() => expect(useAcpChatSessionStore.getState().turnTimingsByUserMessageId).toEqual({
+      'user-history': { source: 'transcript', status: 'complete', durationMs: 6_400 },
+    }));
+    expect(hostApiMock.sessionTurnTimings).toHaveBeenCalledWith({
+      sessionKey: 'agent:pi:s1',
+      limit: 1000,
+    });
+  });
+
+  it('tracks live whole-turn timing and freezes it when the prompt settles', async () => {
+    const prompt = createDeferred<{ success: boolean; generation: number }>();
+    hostApiMock.sendAcpPrompt.mockReturnValueOnce(prompt.promise);
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    const { useAcpChatSessionStore } = await importStore();
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+
+    const sending = useAcpChatSessionStore.getState().sendPrompt({
+      sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'Time this', messageId: 'user-live',
+    });
+    await vi.waitFor(() => expect(hostApiMock.sendAcpPrompt).toHaveBeenCalledTimes(1));
+    expect(useAcpChatSessionStore.getState().turnTimingsByUserMessageId).toEqual({
+      'user-live': { source: 'live', status: 'running', startedAtMs: 1_000 },
+    });
+
+    now.mockReturnValue(4_600);
+    prompt.resolve({ success: true, generation: 1 });
+    await expect(sending).resolves.toBe(true);
+    expect(useAcpChatSessionStore.getState().turnTimingsByUserMessageId).toEqual({
+      'user-live': { source: 'live', status: 'complete', durationMs: 3_600 },
+    });
+    now.mockRestore();
+  });
+
   it('keeps an in-flight timeline updated while another session is active and restores it on return', async () => {
     const prompt = createDeferred<{ success: boolean; generation: number }>();
     hostApiMock.loadAcpSession
@@ -478,6 +563,8 @@ describe('ACP Chat store', () => {
       sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'keep streaming', messageId: 'msg-user',
     });
     await vi.waitFor(() => expect(hostApiMock.sendAcpPrompt).toHaveBeenCalledTimes(1));
+    const timingBeforeNavigation = useAcpChatSessionStore.getState().turnTimingsByUserMessageId['msg-user'];
+    expect(timingBeforeNavigation).toMatchObject({ source: 'live', status: 'running' });
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
       generation: 1,
@@ -515,6 +602,8 @@ describe('ACP Chat store', () => {
       generation: 1,
       sending: true,
     });
+    expect(useAcpChatSessionStore.getState().turnTimingsByUserMessageId['msg-user'])
+      .toEqual(timingBeforeNavigation);
     expect(useAcpChatSessionStore.getState().timeline.itemsById['msg-assistant:0']).toMatchObject({
       parts: [{ kind: 'markdown', text: 'before switch while away ' }],
     });
@@ -1128,6 +1217,7 @@ describe('ACP Chat store', () => {
       error: 'prompt failed',
     });
     expect(useAcpChatSessionStore.getState().timeline.itemOrder).toEqual([]);
+    expect(useAcpChatSessionStore.getState().turnTimingsByUserMessageId).toEqual({});
 
     useAcpChatSessionStore.getState().clearError();
     expect(useAcpChatSessionStore.getState().error).toBeNull();
