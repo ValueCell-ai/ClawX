@@ -14,6 +14,16 @@ const { gatewayRpcMock, hostApiFetchMock, agentsState } = vi.hoisted(() => ({
   },
 }));
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 vi.mock('@/stores/gateway', () => ({
   useGatewayStore: {
     getState: () => ({
@@ -74,6 +84,32 @@ describe('chat store session label summary hydration', () => {
     vi.useRealTimers();
   });
 
+  it('restores a newly created session and its first-prompt title after catalog reconciliation removes the placeholder', async () => {
+    const sessionKey = 'agent:main:session-raced';
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: sessionKey,
+      currentAgentId: 'main',
+      sessions: [],
+      sessionLabels: {},
+    });
+
+    useChatStore.getState().acknowledgeAcpSessionCreated(
+      sessionKey,
+      '/workspace',
+      'Investigate the sidebar title race',
+    );
+
+    expect(useChatStore.getState().sessions).toContainEqual({
+      key: sessionKey,
+      displayName: sessionKey,
+      workspacePath: '/workspace',
+    });
+    expect(useChatStore.getState().sessionLabels[sessionKey]).toBe(
+      'Investigate the sidebar title race',
+    );
+  });
+
   it('only includes persisted main sessions missing workspacePath when workspace hydration is requested', async () => {
     const { getSessionLabelHydrationCandidate } = await import('@/stores/chat/session-label-hydration');
 
@@ -88,7 +124,7 @@ describe('chat store session label summary hydration', () => {
       {},
       {},
       { includeWorkspacePath: true },
-    )).toEqual({ sessionKey: 'agent:main:main', version: '1001|' });
+    )).toEqual({ sessionKey: 'agent:main:main', version: '0|1001|' });
 
     expect(getSessionLabelHydrationCandidate(
       { key: 'agent:main:main', displayName: 'agent:main:main', createdLocally: true },
@@ -186,6 +222,74 @@ describe('chat store session label summary hydration', () => {
       ([method, params]) => method === 'chat.history' && (params as Record<string, unknown> | undefined)?.limit === 1000,
     );
     expect(backgroundHistoryCalls).toHaveLength(0);
+  });
+
+  it('replaces OpenClaw UUID-date fallback labels with the first user prompt', async () => {
+    const sessionKey = 'agent:main:session-fallback';
+    const sessionId = '72e4b28b-8477-4e29-b57e-e14448fd42d0';
+    const fallbackTitle = '72e4b28b (2026-07-22)';
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return {
+          sessions: [
+            {
+              key: sessionKey,
+              sessionId,
+              label: fallbackTitle,
+              displayName: fallbackTitle,
+              derivedTitle: fallbackTitle,
+              updatedAt: 1_784_700_425_523,
+            },
+            { key: 'agent:main:main', displayName: 'Main', updatedAt: 1_784_700_425_524 },
+          ],
+        };
+      }
+      throw new Error(`Unexpected gateway RPC: ${method}`);
+    });
+    hostApiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/sessions/summaries') {
+        return {
+          success: true,
+          summaries: [{
+            sessionKey,
+            firstUserText: '用浏览器打开B站',
+            lastTimestamp: 1_784_700_425_523,
+            workspacePath: '~/.openclaw/workspace',
+          }],
+        };
+      }
+      return { success: true, summaries: [] };
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      currentAgentId: 'main',
+      sessions: [],
+      messages: [],
+      sessionLabels: { [sessionKey]: fallbackTitle },
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+      runError: null,
+    });
+
+    await useChatStore.getState().loadSessions();
+
+    await vi.waitFor(() => {
+      expect(useChatStore.getState().sessionLabels[sessionKey]).toBe('用浏览器打开B站');
+    });
+    expect(useChatStore.getState().sessions.find((session) => session.key === sessionKey)?.sessionId)
+      .toBe(sessionId);
   });
 
   it('strips ACP working-directory metadata from derived session titles', async () => {
@@ -1227,5 +1331,175 @@ describe('chat store session label summary hydration', () => {
     await Promise.resolve();
 
     expect(useChatStore.getState().sessionLabels['agent:main:session-a']).toBe('Custom name');
+  });
+
+  it('drops a stale background summary after buffered delete-recreate and applies the new incarnation', async () => {
+    const sessionKey = 'agent:main:recreated-background';
+    const unrelatedKey = 'agent:main:unrelated-background';
+    const secondList = deferred<Record<string, unknown>>();
+    const oldSummary = deferred<Record<string, unknown>>();
+    const newSummary = deferred<Record<string, unknown>>();
+    let listCalls = 0;
+    let summaryCalls = 0;
+
+    gatewayRpcMock.mockImplementation((method: string) => {
+      if (method !== 'sessions.list') return Promise.resolve({ messages: [] });
+      listCalls += 1;
+      if (listCalls === 1) {
+        return Promise.resolve({
+          ts: 10,
+          sessions: [
+            { key: sessionKey, updatedAt: 1_700_000_000_000 },
+            { key: unrelatedKey, label: 'Unrelated', workspacePath: '/unrelated' },
+          ],
+        });
+      }
+      return secondList.promise;
+    });
+    hostApiFetchMock.mockImplementation((path: string) => {
+      if (path !== '/api/sessions/summaries') return Promise.resolve({ success: true });
+      summaryCalls += 1;
+      return summaryCalls === 1 ? oldSummary.promise : newSummary.promise;
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: sessionKey,
+      currentAgentId: 'main',
+      sessions: [
+        { key: sessionKey, updatedAt: 1_700_000_000_000 },
+        { key: unrelatedKey, label: 'Unrelated', workspacePath: '/unrelated' },
+      ],
+      sessionLabels: { [unrelatedKey]: 'Unrelated' },
+      sessionLastActivity: { [unrelatedKey]: 1_700_000_009_000 },
+    });
+
+    await useChatStore.getState().loadSessions({ force: true, gatewayGeneration: 1 });
+    expect(summaryCalls).toBe(1);
+
+    const reloading = useChatStore.getState().loadSessions({ force: true, gatewayGeneration: 2 });
+    useChatStore.getState().handleSessionsChanged({ sessionKey, reason: 'delete', ts: 21 });
+    useChatStore.getState().handleSessionsChanged({
+      key: sessionKey,
+      ts: 22,
+      session: { key: sessionKey, updatedAt: 1_700_000_000_000 },
+    });
+    secondList.resolve({
+      ts: 20,
+      sessions: [
+        { key: sessionKey, updatedAt: 1_700_000_000_000 },
+        { key: unrelatedKey, label: 'Unrelated', workspacePath: '/unrelated' },
+      ],
+    });
+    await reloading;
+    expect(summaryCalls).toBe(2);
+
+    oldSummary.resolve({
+      success: true,
+      summaries: [{
+        sessionKey,
+        firstUserText: 'stale title',
+        lastTimestamp: 1_700_000_001_000,
+        workspacePath: '/stale',
+      }],
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(useChatStore.getState().sessionLabels[sessionKey]).toBeUndefined();
+    expect(useChatStore.getState().sessionLastActivity[sessionKey]).toBe(1_700_000_000_000);
+    expect(useChatStore.getState().sessions.find((session) => session.key === sessionKey)?.workspacePath).toBeUndefined();
+
+    newSummary.resolve({
+      success: true,
+      summaries: [{
+        sessionKey,
+        firstUserText: 'fresh title',
+        lastTimestamp: 1_700_000_002_000,
+        workspacePath: '/fresh',
+      }],
+    });
+    await vi.waitFor(() => {
+      expect(useChatStore.getState().sessionLabels[sessionKey]).toBe('fresh title');
+    });
+    expect(useChatStore.getState().sessionLastActivity[sessionKey]).toBe(1_700_000_002_000);
+    expect(useChatStore.getState().sessions.find((session) => session.key === sessionKey)?.workspacePath).toBe('/fresh');
+    expect(useChatStore.getState().sessionLabels[unrelatedKey]).toBe('Unrelated');
+    expect(useChatStore.getState().sessionLastActivity[unrelatedKey]).toBe(1_700_000_009_000);
+  });
+
+  it('drops a stale visible-session refresh after buffered delete-recreate', async () => {
+    const sessionKey = 'agent:main:recreated-refresh';
+    const list = deferred<Record<string, unknown>>();
+    const oldRefresh = deferred<Record<string, unknown>>();
+    const newSummary = deferred<Record<string, unknown>>();
+    let summaryCalls = 0;
+
+    gatewayRpcMock.mockImplementation((method: string) => {
+      if (method === 'chat.history') return Promise.resolve({ messages: [] });
+      if (method === 'sessions.list') return list.promise;
+      throw new Error(`Unexpected gateway RPC: ${method}`);
+    });
+    hostApiFetchMock.mockImplementation((path: string) => {
+      if (path !== '/api/sessions/summaries') return Promise.resolve({ success: true });
+      summaryCalls += 1;
+      return summaryCalls === 1 ? oldRefresh.promise : newSummary.promise;
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: sessionKey,
+      currentAgentId: 'main',
+      sessions: [{ key: sessionKey, updatedAt: 1_700_000_000_000 }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      loading: false,
+    });
+
+    await useChatStore.getState().loadHistory(false);
+    expect(summaryCalls).toBe(1);
+
+    const reloading = useChatStore.getState().loadSessions({ force: true, gatewayGeneration: 1 });
+    useChatStore.getState().handleSessionsChanged({ sessionKey, reason: 'delete', ts: 31 });
+    useChatStore.getState().handleSessionsChanged({
+      key: sessionKey,
+      ts: 32,
+      session: { key: sessionKey, updatedAt: 1_700_000_000_000 },
+    });
+    list.resolve({
+      ts: 30,
+      sessions: [{ key: sessionKey, updatedAt: 1_700_000_000_000 }],
+    });
+    await reloading;
+    expect(summaryCalls).toBe(2);
+
+    oldRefresh.resolve({
+      success: true,
+      summaries: [{
+        sessionKey,
+        firstUserText: 'stale refresh',
+        lastTimestamp: 1_700_000_003_000,
+        workspacePath: '/stale-refresh',
+      }],
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(useChatStore.getState().sessionLabels[sessionKey]).toBeUndefined();
+    expect(useChatStore.getState().sessions[0]?.workspacePath).toBeUndefined();
+
+    newSummary.resolve({
+      success: true,
+      summaries: [{
+        sessionKey,
+        firstUserText: 'fresh refresh',
+        lastTimestamp: 1_700_000_004_000,
+        workspacePath: '/fresh-refresh',
+      }],
+    });
+    await vi.waitFor(() => {
+      expect(useChatStore.getState().sessionLabels[sessionKey]).toBe('fresh refresh');
+    });
+    expect(useChatStore.getState().sessionLastActivity[sessionKey]).toBe(1_700_000_004_000);
+    expect(useChatStore.getState().sessions[0]?.workspacePath).toBe('/fresh-refresh');
   });
 });

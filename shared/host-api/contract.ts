@@ -10,6 +10,7 @@ import type { AgentsSnapshot } from '../types/agent';
 import type { CronJob, CronJobCreateInput, CronJobUpdateInput } from '../types/cron';
 import type { GatewayHealth, GatewayStatus } from '../types/gateway';
 import type { MarketplaceSkill, QuickAccessSkill, Skill } from '../types/skill';
+import type { WebBrowserNavigatePayload } from '../web-browser';
 
 export type JsonRecord = Record<string, unknown>;
 export type HostSuccess = { success: boolean; error?: string };
@@ -490,6 +491,46 @@ export type ReadAttachmentBinaryResult =
 export type OpenAttachmentResult =
   | { ok: true }
   | { ok: false; error: AttachmentAccessError };
+export type AttachmentOpenHandler = {
+  handlerId: string;
+  name: string;
+  iconDataUrl?: string;
+  isDefault: boolean;
+};
+export type AttachmentOpenHandlersResult =
+  | {
+      ok: true;
+      platform: 'darwin' | 'win32' | 'linux';
+      handlers: AttachmentOpenHandler[];
+    }
+  | {
+      ok: false;
+      error: AttachmentAccessError | 'unsupportedPlatform' | 'operationFailed';
+    };
+export type OpenAttachmentWithPayload = {
+  ref: AttachmentFileRef;
+  handlerId: string;
+};
+export type WorkspaceNativeFileError =
+  | 'outsideSandbox'
+  | 'notFound'
+  | 'notFile'
+  | 'unsupportedPlatform'
+  | 'operationFailed';
+export type WorkspaceOpenHandlersResult =
+  | {
+      ok: true;
+      platform: 'darwin' | 'win32' | 'linux';
+      handlers: AttachmentOpenHandler[];
+    }
+  | { ok: false; error: WorkspaceNativeFileError };
+export type OpenWorkspaceWithPayload = {
+  ref: WorkspaceFileRef;
+  handlerId: string;
+};
+export type WorkspaceNativeFileResult =
+  | { ok: true }
+  | { ok: false; error: WorkspaceNativeFileError };
 export type FilePreviewTreeOptions = {
   maxDepth?: number;
   maxNodes?: number;
@@ -652,6 +693,15 @@ export type SessionHistoryPayload = {
 export type SessionHistoryResult = OptionalHostSuccess & {
   messages?: RawMessage[];
 };
+export type SessionTurnTimingsPayload = { sessionKey: string; limit?: number };
+export type SessionTurnTimingCandidate = {
+  normalizedUserText: string;
+  userOccurrenceFromTail: number;
+  durationMs: number;
+};
+export type SessionTurnTimingsResult = OptionalHostSuccess & {
+  timings?: SessionTurnTimingCandidate[];
+};
 export type SessionSummariesPayload = { sessionKeys?: string[]; limit?: number };
 export type SessionLabelSummary = {
   sessionKey: string;
@@ -780,6 +830,12 @@ export type HostApiContract = {
     showItemInFolder: (payload: ShellPathPayload) => void;
     openPath: (payload: ShellPathPayload) => string;
   };
+  webBrowser: {
+    navigate: (payload: WebBrowserNavigatePayload) => void;
+    clearCookies: () => void;
+    clearSiteData: () => void;
+    openExternal: () => void;
+  };
   dialog: {
     open: (payload: DialogOpenPayload) => DialogOpenResult;
     message: (payload: DialogMessagePayload) => DialogMessageResult;
@@ -905,10 +961,16 @@ export type HostApiContract = {
     readWorkspaceText: (ref: WorkspaceFileRef) => Promise<ReadTextFileResult>;
     readWorkspaceBinary: (input: WorkspaceFileRef & { maxBytes?: number }) => Promise<ReadBinaryFileResult>;
     statWorkspaceFile: (ref: WorkspaceFileRef) => Promise<StatFileResult>;
+    listWorkspaceOpenHandlers: (ref: WorkspaceFileRef) => Promise<WorkspaceOpenHandlersResult>;
+    openWorkspaceWith: (payload: OpenWorkspaceWithPayload) => Promise<WorkspaceNativeFileResult>;
+    revealWorkspaceFile: (ref: WorkspaceFileRef) => Promise<WorkspaceNativeFileResult>;
     resolveAttachment: (payload: ResolveAttachmentPayload) => ResolveAttachmentResult;
     readAttachmentText: (ref: AttachmentFileRef) => ReadAttachmentTextResult;
     readAttachmentBinary: (payload: ReadAttachmentBinaryPayload) => ReadAttachmentBinaryResult;
     openAttachment: (ref: AttachmentSourceRef) => OpenAttachmentResult;
+    listAttachmentOpenHandlers: (ref: AttachmentFileRef) => Promise<AttachmentOpenHandlersResult>;
+    openAttachmentWith: (payload: OpenAttachmentWithPayload) => Promise<OpenAttachmentResult>;
+    revealAttachment: (ref: AttachmentFileRef) => Promise<OpenAttachmentResult>;
   };
   media: {
     thumbnails: (payload: MediaThumbnailsPayload) => MediaThumbnailResult;
@@ -923,6 +985,7 @@ export type HostApiContract = {
     rename: (payload: SessionRenamePayload) => HostSuccess;
     summaries: (payload?: SessionSummariesPayload) => SessionSummariesResult;
     history: (payload: SessionHistoryPayload) => SessionHistoryResult;
+    turnTimings: (payload: SessionTurnTimingsPayload) => SessionTurnTimingsResult;
   };
   chat: {
     sendWithMedia: (payload: ChatSendWithMediaPayload) => ChatSendWithMediaResult;

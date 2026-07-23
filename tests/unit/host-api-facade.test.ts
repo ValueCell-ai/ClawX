@@ -107,6 +107,35 @@ describe('hostApi facade', () => {
     }));
   });
 
+  it('routes web browser operations through hostInvoke', async () => {
+    hostInvoke.mockResolvedValue({ id: 'req', ok: true, data: undefined });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await hostApi.webBrowser.navigate('https://example.com/');
+    await hostApi.webBrowser.clearCookies();
+    await hostApi.webBrowser.clearSiteData();
+    await hostApi.webBrowser.openExternal();
+
+    expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      module: 'webBrowser',
+      action: 'navigate',
+      payload: { url: 'https://example.com/' },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      module: 'webBrowser',
+      action: 'clearCookies',
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      module: 'webBrowser',
+      action: 'clearSiteData',
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(4, expect.objectContaining({
+      module: 'webBrowser',
+      action: 'openExternal',
+    }));
+    expect(hostInvoke.mock.calls.slice(1).every(([request]) => !('payload' in request))).toBe(true);
+  });
+
   it('passes log file path and tail lines through hostInvoke', async () => {
     hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { content: 'tail' } });
     const { hostApi } = await import('@/lib/host-api');
@@ -297,6 +326,55 @@ describe('hostApi facade', () => {
     });
   });
 
+  it('passes the exact WorkspaceFileRef to listWorkspaceOpenHandlers', async () => {
+    hostInvoke.mockResolvedValueOnce({
+      id: 'req',
+      ok: true,
+      data: { ok: true, platform: 'darwin', handlers: [] },
+    });
+    const { hostApi } = await import('@/lib/host-api');
+    const ref = { workspaceRoot: '/workspace', relativePath: 'src/index.ts' };
+
+    await hostApi.files.listWorkspaceOpenHandlers(ref);
+
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'files',
+      action: 'listWorkspaceOpenHandlers',
+      payload: ref,
+    }));
+  });
+
+  it('passes only the WorkspaceFileRef and opaque handler id to openWorkspaceWith', async () => {
+    hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { ok: true } });
+    const { hostApi } = await import('@/lib/host-api');
+    const payload = {
+      ref: { workspaceRoot: '/workspace', relativePath: 'src/index.ts' },
+      handlerId: 'opaque-handler-id',
+    };
+
+    await hostApi.files.openWorkspaceWith(payload);
+
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'files',
+      action: 'openWorkspaceWith',
+      payload,
+    }));
+  });
+
+  it('passes the exact WorkspaceFileRef to revealWorkspaceFile', async () => {
+    hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { ok: true } });
+    const { hostApi } = await import('@/lib/host-api');
+    const ref = { workspaceRoot: '/workspace', relativePath: 'src/index.ts' };
+
+    await hostApi.files.revealWorkspaceFile(ref);
+
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'files',
+      action: 'revealWorkspaceFile',
+      payload: ref,
+    }));
+  });
+
   it('passes attachment-scoped file actions without a workspace root', async () => {
     hostInvoke.mockResolvedValue({ id: 'req', ok: true, data: { ok: true } });
     const { hostApi } = await import('@/lib/host-api');
@@ -311,12 +389,18 @@ describe('hostApi facade', () => {
     await hostApi.files.readAttachmentText(ref);
     await hostApi.files.readAttachmentBinary({ ref, maxBytes: 2048 });
     await hostApi.files.openAttachment(ref);
+    await hostApi.files.listAttachmentOpenHandlers(ref);
+    await hostApi.files.openAttachmentWith({ ref, handlerId: 'com.apple.Preview' });
+    await hostApi.files.revealAttachment(ref);
 
     const actions = [
       ['resolveAttachment', resolvePayload],
       ['readAttachmentText', ref],
       ['readAttachmentBinary', { ref, maxBytes: 2048 }],
       ['openAttachment', ref],
+      ['listAttachmentOpenHandlers', ref],
+      ['openAttachmentWith', { ref, handlerId: 'com.apple.Preview' }],
+      ['revealAttachment', ref],
     ];
     actions.forEach(([action, payload], index) => {
       expect(hostInvoke).toHaveBeenNthCalledWith(index + 1, expect.objectContaining({
@@ -342,13 +426,6 @@ describe('hostApi facade', () => {
       action: 'resolveAttachment',
       payload,
     }));
-  });
-
-  it('does not expose workspace-scoped shell actions', async () => {
-    const { hostApi } = await import('@/lib/host-api');
-
-    expect(hostApi.files).not.toHaveProperty('openWorkspaceFile');
-    expect(hostApi.files).not.toHaveProperty('revealWorkspaceFile');
   });
 
   it('calls chat.sendWithMedia through hostInvoke', async () => {
@@ -417,6 +494,18 @@ describe('hostApi facade', () => {
     expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
       module: 'sessions',
       action: 'summaries',
+    }));
+  });
+
+  it('calls sessions.turnTimings through hostInvoke', async () => {
+    hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { success: true, timings: [] } });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await hostApi.sessions.turnTimings({ sessionKey: 'agent:main:main', limit: 1000 });
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'sessions',
+      action: 'turnTimings',
+      payload: { sessionKey: 'agent:main:main', limit: 1000 },
     }));
   });
 
@@ -506,6 +595,7 @@ describe('hostApi facade', () => {
   });
 
   it('keeps production main, preload, renderer, and shared imports on their side of the boundary', () => {
+    const webBrowserTypeBridge = readFileSync(join(process.cwd(), 'src/types/web-browser.ts'), 'utf8');
     const collectFiles = (root: string): string[] => {
       const files: string[] = [];
       const collect = (dir: string) => {
@@ -542,7 +632,7 @@ describe('hostApi facade', () => {
       /\bfrom\s+['"][^'"]*(?:electron\/|dist-electron|preload|ipc-handlers|host-contract)/g,
       /\bimport\(\s*['"][^'"]*(?:@electron\/|electron\/|dist-electron|preload|ipc-handlers|host-contract)/g,
       /\brequire\(\s*['"][^'"]*(?:@electron\/|electron\/|dist-electron|preload|ipc-handlers|host-contract)/g,
-    ]);
+    ]).filter((violation) => violation !== "src/types/web-browser.ts: from 'electron'");
     const sharedToAppLayer = findViolations('shared', [
       /\bfrom\s+['"]@\//g,
       /\bfrom\s+['"]@electron\//g,
@@ -551,6 +641,7 @@ describe('hostApi facade', () => {
       /\brequire\(\s*['"][^'"]*(?:@\/|@electron\/|src\/|electron\/|dist-electron|preload|ipc-handlers|host-contract)/g,
     ]);
 
+    expect(webBrowserTypeBridge).toContain("import type { WebviewTag } from 'electron';");
     expect({
       electronToRenderer,
       rendererToElectron,

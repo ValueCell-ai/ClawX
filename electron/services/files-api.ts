@@ -1,4 +1,4 @@
-import { app, nativeImage } from 'electron';
+import { app, nativeImage, shell } from 'electron';
 import crypto from 'node:crypto';
 import { constants } from 'node:fs';
 import type { Stats } from 'node:fs';
@@ -21,6 +21,7 @@ import type {
   FilePreviewTreeNode,
   FilePreviewTreeOptions,
   FileReadBinaryOptions,
+  WorkspaceNativeFileError,
   WorkspaceFileRef,
 } from '@shared/host-api/contract';
 import {
@@ -34,6 +35,10 @@ import {
   type AttachmentAccess,
   type StagedAttachmentRegistry,
 } from './attachment-access';
+import {
+  HANDLER_ID_MAX_LENGTH,
+  type AttachmentOpenWithService,
+} from './attachment-open-with';
 import { isRecord } from './payload-utils';
 
 const EXT_MIME_MAP: Record<string, string> = {
@@ -134,6 +139,7 @@ type WorkspaceFs = {
 type FilesApiDependencies = {
   workspaceFs?: WorkspaceFs;
   attachmentAccess?: AttachmentAccess;
+  openWith?: AttachmentOpenWithService;
   stagedAttachments?: StagedAttachmentRegistry;
   stagingHooks?: {
     beforeDestinationOpen?: (input: { stagingDir: string; destinationPath: string }) => Promise<void>;
@@ -236,6 +242,17 @@ function workspaceError(error: unknown): FilePreviewError {
   return 'operationFailed';
 }
 
+function workspaceNativeError(error: unknown): WorkspaceNativeFileError {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message === 'outsideSandbox' || message === 'notFound' || message === 'notFile') {
+    return message;
+  }
+  const mapped = workspaceError(error);
+  if (mapped === 'outsideSandbox') return 'outsideSandbox';
+  if (mapped === 'notFound') return 'notFound';
+  return 'operationFailed';
+}
+
 function isSamePath(left: string, right: string): boolean {
   const normalizedLeft = resolve(left);
   const normalizedRight = resolve(right);
@@ -310,6 +327,15 @@ async function revalidateWorkspaceTarget(
     throw new Error('outsideSandbox');
   }
   return target;
+}
+
+async function resolveWorkspaceRegularFile(
+  ref: WorkspaceFileRef,
+  fsP: WorkspaceFs,
+): Promise<string> {
+  const resolvedTarget = await resolveWorkspaceTarget(ref, fsP);
+  if (!(await fsP.stat(resolvedTarget.target)).isFile()) throw new Error('notFile');
+  return resolvedTarget.target;
 }
 
 async function openWorkspaceTarget(ref: WorkspaceFileRef, fsP: WorkspaceFs): Promise<OpenWorkspaceTarget> {
@@ -728,6 +754,64 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
         await opened?.handle.close().catch(() => undefined);
       }
     },
+    listWorkspaceOpenHandlers: async (ref) => {
+      try {
+        const openWith = dependencies.openWith;
+        if (!openWith) throw new Error('operationFailed');
+        const target = await resolveWorkspaceRegularFile(ref, await getWorkspaceFs());
+        if (openWith.platform === 'linux') {
+          return { ok: true, platform: 'linux', handlers: [] };
+        }
+        const handlers = await openWith.list(target);
+        return {
+          ok: true,
+          platform: openWith.platform,
+          handlers: handlers.map(({ id, name, iconDataUrl, isDefault }) => ({
+            handlerId: id,
+            name,
+            ...(iconDataUrl ? { iconDataUrl } : {}),
+            isDefault,
+          })),
+        };
+      } catch (error) {
+        return { ok: false, error: workspaceNativeError(error) };
+      }
+    },
+    openWorkspaceWith: async (payload) => {
+      try {
+        const openWith = dependencies.openWith;
+        if (!openWith) throw new Error('operationFailed');
+        const fsP = await getWorkspaceFs();
+        const target = await resolveWorkspaceRegularFile(payload?.ref, fsP);
+        if (typeof payload?.handlerId !== 'string'
+          || !payload.handlerId.trim()
+          || payload.handlerId.length > HANDLER_ID_MAX_LENGTH) {
+          throw new Error('operationFailed');
+        }
+        if (openWith.platform === 'linux') {
+          return { ok: false, error: 'unsupportedPlatform' };
+        }
+        await openWith.open(
+          target,
+          payload.handlerId,
+          () => resolveWorkspaceRegularFile(payload.ref, fsP),
+        );
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: workspaceNativeError(error) };
+      }
+    },
+    revealWorkspaceFile: async (ref) => {
+      try {
+        const fsP = await getWorkspaceFs();
+        await resolveWorkspaceRegularFile(ref, fsP);
+        const target = await resolveWorkspaceRegularFile(ref, fsP);
+        shell.showItemInFolder(target);
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: workspaceNativeError(error) };
+      }
+    },
     resolveAttachment: async (payload) => dependencies.attachmentAccess?.resolveAttachment(payload) ?? {
       ok: false,
       displayName: 'attachment',
@@ -742,6 +826,19 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
       error: 'operationFailed',
     },
     openAttachment: async (ref) => dependencies.attachmentAccess?.openAttachment(ref) ?? {
+      ok: false,
+      error: 'operationFailed',
+    },
+    listAttachmentOpenHandlers: async (ref) => dependencies.attachmentAccess
+      ?.listAttachmentOpenHandlers(ref) ?? {
+        ok: false,
+        error: 'operationFailed',
+      },
+    openAttachmentWith: async (payload) => dependencies.attachmentAccess?.openAttachmentWith(payload) ?? {
+      ok: false,
+      error: 'operationFailed',
+    },
+    revealAttachment: async (ref) => dependencies.attachmentAccess?.revealAttachment(ref) ?? {
       ok: false,
       error: 'operationFailed',
     },

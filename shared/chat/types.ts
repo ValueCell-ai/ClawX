@@ -73,6 +73,8 @@ export interface ContentBlock {
 /** Session from sessions.list */
 export interface ChatSession {
   key: string;
+  /** OpenClaw transcript session UUID, used to identify synthetic fallback titles. */
+  sessionId?: string;
   label?: string;
   displayName?: string;
   derivedTitle?: string;
@@ -89,6 +91,23 @@ export interface ChatSession {
   /** Renderer-local placeholder created by New Chat before ACP has created the backing session. */
   createdLocally?: boolean;
 }
+
+export type GatewaySessionsChangedPayload = Record<string, unknown> & {
+  sessionKey?: string;
+  key?: string;
+  reason?: string;
+  phase?: string;
+  ts?: number;
+  session?: Record<string, unknown>;
+  status?: string;
+  hasActiveRun?: boolean;
+  updatedAt?: number | null;
+};
+
+export type LoadSessionsOptions = {
+  force?: boolean;
+  gatewayGeneration?: number;
+};
 
 export interface ToolStatus {
   id?: string;
@@ -152,11 +171,12 @@ export interface ChatState {
   thinkingLevel: string | null;
 
   // Actions
-  loadSessions: () => Promise<void>;
+  loadSessions: (options?: LoadSessionsOptions) => Promise<void>;
+  handleSessionsChanged: (payload: GatewaySessionsChangedPayload) => void;
   switchSession: (key: string) => void;
   selectAcpSession: (key: string, workspacePath?: string) => void;
   newSession: () => void;
-  acknowledgeAcpSessionCreated: (key: string, workspacePath?: string) => void;
+  acknowledgeAcpSessionCreated: (key: string, workspacePath?: string, initialPrompt?: string) => void;
   deleteSession: (key: string) => Promise<void>;
   deleteSessions: (keys: string[]) => Promise<DeleteSessionsResult>;
   renameSession: (key: string, label: string) => Promise<void>;

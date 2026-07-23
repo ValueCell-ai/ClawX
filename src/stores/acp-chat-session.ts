@@ -39,6 +39,7 @@ import {
 import { hashOpenClawMediaDiagnostic, type OpenClawMediaCandidate } from '@/lib/acp/openclaw-media-compat';
 import { openClawResourceLinkPromptText } from '@/lib/acp/openclaw-prompt-compat';
 import { fetchOpenClawTranscriptSupplement } from '@/lib/acp/transcript-supplement';
+import { alignHistoricalTurnTimings, type AcpTurnTiming } from '@/lib/acp/turn-timings';
 import { buildCronHistoryAcpNotifications, fetchCronSessionHistory } from '@/lib/cron-session-history';
 import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
@@ -76,6 +77,7 @@ type LiveSessionSnapshot = {
   sending: boolean;
   pendingImageGenerationTaskIds: string[];
   timeline: AcpTimelineSnapshot;
+  turnTimingsByUserMessageId: Record<string, AcpTurnTiming>;
   deferredImageUpdates: Array<{ key: string; event: AcpSessionUpdateEnvelope }>;
   deferredImageCompletions: Array<{
     key: string;
@@ -142,6 +144,7 @@ export type AcpChatSessionState = {
   cancelling: boolean;
   error: string | null;
   timeline: AcpTimelineSnapshot;
+  turnTimingsByUserMessageId: Record<string, AcpTurnTiming>;
   prepareLocalSession: (input: AcpChatLoadPayload) => void;
   loadSession: (input: AcpChatLoadPayload) => Promise<boolean>;
   sendPrompt: (input: AcpChatPromptPayload) => Promise<boolean>;
@@ -215,6 +218,7 @@ function captureLiveSession(state: AcpChatSessionState): void {
     sending: state.sending,
     pendingImageGenerationTaskIds: state.pendingImageGenerationTaskIds,
     timeline: state.timeline,
+    turnTimingsByUserMessageId: state.turnTimingsByUserMessageId,
     deferredImageUpdates: existing?.deferredImageUpdates ?? [],
     deferredImageCompletions: existing?.deferredImageCompletions ?? [],
   });
@@ -692,6 +696,14 @@ async function runTranscriptSupplement(operation: TranscriptSupplementOperation)
   });
   if (!result || !isCurrent()) return;
 
+  if (!operation.liveUserMessageId && result.turnTimings.length > 0) {
+    useAcpChatSessionStore.setState((current) => (
+      isCurrentTranscriptSupplement(current, operation)
+        ? { turnTimingsByUserMessageId: alignHistoricalTurnTimings(current.timeline, result.turnTimings) }
+        : {}
+    ));
+  }
+
   for (const start of result.imageGeneration.starts) {
     if (!isCurrent()) return;
     recordHistoricalImageGenerationStart(start, operation.generation);
@@ -959,6 +971,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
   cancelling: false,
   error: null,
   timeline: createEmptyAcpTimeline(EMPTY_SESSION_ID, 0),
+  turnTimingsByUserMessageId: {},
 
   prepareLocalSession(input) {
     captureLiveSession(get());
@@ -978,6 +991,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       cancelling: false,
       error: null,
       timeline: createEmptyAcpTimeline(input.sessionKey, generation),
+      turnTimingsByUserMessageId: {},
     });
   },
 
@@ -1003,6 +1017,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       cancelling: false,
       error: null,
       timeline: liveSnapshot?.timeline ?? createEmptyAcpTimeline(input.sessionKey, generation),
+      turnTimingsByUserMessageId: liveSnapshot?.turnTimingsByUserMessageId ?? {},
     });
 
     try {
@@ -1111,6 +1126,8 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
         error: null,
         generation,
         timeline,
+        turnTimingsByUserMessageId:
+          currentResumedSnapshot?.turnTimingsByUserMessageId ?? {},
       });
       if (currentResumedSnapshot) {
         liveSessionSnapshots.set(input.sessionKey, {
@@ -1169,6 +1186,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
 
     const messageId = input.messageId ?? createOptimisticMessageId();
     const payload = { ...input, messageId };
+    const startedAtMs = Date.now();
     const transcriptOperation = beginTranscriptSupplement(sessionKey, generation, messageId);
 
     set((state) => (
@@ -1177,6 +1195,10 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
           sending: true,
           error: null,
           timeline: appendOptimisticUserSegment(state.timeline, payload, messageId),
+          turnTimingsByUserMessageId: {
+            ...state.turnTimingsByUserMessageId,
+            [messageId]: { source: 'live', status: 'running', startedAtMs },
+          },
         }
         : {}
     ));
@@ -1197,8 +1219,19 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       const failedTimeline = result.success
         ? state.timeline
         : removePendingOptimisticUserSegment(state.timeline, messageId);
+      const { [messageId]: _removedTiming, ...remainingTurnTimings } = state.turnTimingsByUserMessageId;
       set({
         sending: false,
+        turnTimingsByUserMessageId: result.success
+          ? {
+            ...state.turnTimingsByUserMessageId,
+            [messageId]: {
+              source: 'live',
+              status: 'complete',
+              durationMs: Math.max(0, Date.now() - startedAtMs),
+            },
+          }
+          : remainingTurnTimings,
         ...(result.success
           ? applyOperationGeneration(state, result)
           : { error: failedOperationMessage(result, 'ACP prompt failed'), timeline: failedTimeline }),
@@ -1223,11 +1256,15 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       if (activeTranscriptSupplement === transcriptOperation) invalidateTranscriptSupplement();
       set((state) => (
         isCurrentAction(state, sessionKey, generation)
-          ? {
-            sending: false,
-            error: errorMessage(error, 'ACP prompt failed'),
-            timeline: removePendingOptimisticUserSegment(state.timeline, messageId),
-          }
+          ? (() => {
+            const { [messageId]: _removedTiming, ...turnTimingsByUserMessageId } = state.turnTimingsByUserMessageId;
+            return {
+              sending: false,
+              error: errorMessage(error, 'ACP prompt failed'),
+              timeline: removePendingOptimisticUserSegment(state.timeline, messageId),
+              turnTimingsByUserMessageId,
+            };
+          })()
           : {}
       ));
       return false;

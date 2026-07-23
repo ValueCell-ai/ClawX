@@ -83,7 +83,9 @@ describe('groupAcpTimelineItems', () => {
     }));
 
     expect(groups.map((group) => group.kind)).toEqual(['user', 'assistant-turn', 'user', 'assistant-turn']);
+    expect(groups[1]).toMatchObject({ kind: 'assistant-turn', userMessageId: 'user-a' });
     expect(groups[1]?.items.map((item) => item.id)).toEqual(['assistant-a:0']);
+    expect(groups[3]).toMatchObject({ kind: 'assistant-turn', userMessageId: 'user-b' });
     expect(groups[3]?.items.map((item) => item.id)).toEqual(['assistant-b:0']);
   });
 
@@ -124,6 +126,7 @@ describe('groupAcpTimelineItems', () => {
 
     expect(groups).toHaveLength(1);
     expect(groups[0]).toMatchObject({ kind: 'assistant-turn' });
+    expect(groups[0]).not.toHaveProperty('userMessageId');
     expect(groups[0]?.items.map((item) => item.id)).toEqual(['thought:assistant-a']);
   });
 

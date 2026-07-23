@@ -171,7 +171,8 @@ export function buildConfiguredModelOptions(
     const runtimeProviderKey = resolveRuntimeProviderKey(account);
     const modelIds = (() => {
       const selectedModelId = normalizeModelIdForRuntimeProvider(account.model, runtimeProviderKey);
-      if (account.authMode === 'oauth_browser' && selectedModelId) {
+      const supportsMultipleModels = account.vendorId === 'custom' || account.vendorId === 'ollama';
+      if (!supportsMultipleModels && selectedModelId) {
         return [selectedModelId];
       }
       const configured = (account.metadata?.customModels ?? [])

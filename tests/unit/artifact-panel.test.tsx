@@ -20,6 +20,7 @@ vi.mock('react-i18next', () => ({
         'artifactPanel.tabs.browser': 'Workspace',
         'artifactPanel.tabs.preview': 'Preview',
         'artifactPanel.tabs.changes': 'Changes',
+        'artifactPanel.tabs.webBrowser': 'Web Browser',
         'artifactPanel.changes.heading': `File changes (${String(options?.count ?? '')})`,
         'artifactPanel.changes.empty': 'This session has no file changes yet.',
         'artifactPanel.changes.diffUnavailable': 'Diff unavailable',
@@ -31,10 +32,22 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+const { filePreviewBodyProps, workspaceBrowserProps } = vi.hoisted(() => ({
+  filePreviewBodyProps: [] as Array<Record<string, unknown>>,
+  workspaceBrowserProps: [] as Array<Record<string, unknown>>,
+}));
+
 vi.mock('@/components/file-preview/FilePreviewBody', () => ({
-  FilePreviewBody: ({ file, mode }: { file: { fileName: string }; mode: string }) => (
-    <div data-testid="file-preview-body">{mode}:{file.fileName}</div>
-  ),
+  FilePreviewBody: (props: Record<string, unknown>) => {
+    filePreviewBodyProps.push(props);
+    const file = props.file as { fileName: string; ext: string };
+    return (
+      <div data-testid="file-preview-body">
+        {String(props.mode)}:{file.fileName}
+        {props.active === true && file.ext === '.pptx' && <div data-testid="pptx-viewer">preview</div>}
+      </div>
+    );
+  },
 }));
 
 vi.mock('@/components/file-preview/MonacoDiffViewer', () => ({
@@ -43,14 +56,14 @@ vi.mock('@/components/file-preview/MonacoDiffViewer', () => ({
   ),
 }));
 
-const { workspaceBrowserProps } = vi.hoisted(() => ({
-  workspaceBrowserProps: [] as Array<Record<string, unknown>>,
-}));
-
 vi.mock('@/components/file-preview/WorkspaceBrowserBody', () => ({
   WorkspaceBrowserBody: (props: Record<string, unknown>) => {
     workspaceBrowserProps.push(props);
-    return <div data-testid="workspace-browser" />;
+    return (
+      <div data-testid="workspace-browser">
+        {props.active === true && <div data-testid="pptx-viewer">workspace</div>}
+      </div>
+    );
   },
 }));
 
@@ -83,6 +96,8 @@ function groups(): AcpSessionFileGroup[] {
 
 afterEach(() => {
   vi.clearAllMocks();
+  filePreviewBodyProps.length = 0;
+  workspaceBrowserProps.length = 0;
   act(() => {
     useArtifactPanel.setState({
       open: false,
@@ -90,11 +105,76 @@ afterEach(() => {
       focusedFile: null,
       focusedChange: null,
       widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
+      webBrowserInitialized: false,
+      webBrowserAnchor: null,
     });
   });
 });
 
 describe('ArtifactPanel', () => {
+  it('renders one localized Web Browser tab immediately after Changes', () => {
+    render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
+
+    const tabs = screen.getByTestId('artifact-panel-tabs');
+    expect(screen.getAllByRole('button', { name: 'Web Browser' })).toHaveLength(1);
+    expect(Array.from(tabs.children).map((tab) => tab.getAttribute('data-testid'))).toEqual([
+      'artifact-panel-tab-browser',
+      'artifact-panel-tab-preview',
+      'artifact-panel-tab-changes',
+      'artifact-panel-tab-web-browser',
+    ]);
+  });
+
+  it('selects Web Browser and registers its empty layout anchor', () => {
+    const { unmount } = render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
+
+    fireEvent.click(screen.getByTestId('artifact-panel-tab-web-browser'));
+
+    const anchor = screen.getByTestId('web-browser-anchor');
+    expect(useArtifactPanel.getState()).toMatchObject({
+      tab: 'web-browser',
+      webBrowserInitialized: true,
+    });
+    expect(useArtifactPanel.getState().webBrowserAnchor).toBe(anchor);
+    expect(anchor).toHaveClass('h-full', 'min-h-0', 'w-full');
+    expect(anchor.parentElement?.children).toHaveLength(1);
+    expect(anchor.parentElement).not.toHaveClass('hidden');
+    expect(screen.getByTestId('workspace-browser').closest('.hidden')).not.toBeNull();
+    expect(screen.queryByTestId('file-preview-body')).not.toBeInTheDocument();
+
+    unmount();
+    expect(useArtifactPanel.getState()).toMatchObject({
+      webBrowserAnchor: null,
+      webBrowserInitialized: true,
+    });
+  });
+
+  it('keeps the rich-preview folder action after all four tabs', () => {
+    useArtifactPanel.setState({
+      focusedFile: { filePath: '/tmp/report.pdf', fileName: 'report.pdf', ext: '.pdf', mimeType: 'application/pdf', contentType: 'document' },
+    });
+    render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
+
+    expect(Array.from(screen.getByTestId('artifact-panel-tabs').children).map((control) => control.getAttribute('data-testid'))).toEqual([
+      'artifact-panel-tab-browser',
+      'artifact-panel-tab-preview',
+      'artifact-panel-tab-changes',
+      'artifact-panel-tab-web-browser',
+      'artifact-panel-action-open-folder',
+    ]);
+  });
+
+  it('keeps every localized tab reachable in a horizontally scrollable row', () => {
+    render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
+
+    const tabs = screen.getByTestId('artifact-panel-tabs');
+    expect(tabs).toHaveClass('overflow-x-auto');
+    expect(Array.from(tabs.children).slice(0, 4)).toHaveLength(4);
+    for (const tab of Array.from(tabs.children).slice(0, 4)) {
+      expect(tab).toHaveClass('shrink-0');
+    }
+  });
+
   it('passes effective workspace path to the workspace browser', () => {
     workspaceBrowserProps.length = 0;
     useArtifactPanel.setState({ open: true, tab: 'browser' });
@@ -108,6 +188,55 @@ describe('ArtifactPanel', () => {
       />,
     );
     expect(workspaceBrowserProps.at(-1)).toMatchObject({ workspacePath: '/session/workspace', workspaceLabel: '~/session/workspace' });
+  });
+
+  it('keeps both preview surfaces mounted but activates only the visible PPTX surface', () => {
+    useArtifactPanel.setState({
+      open: true,
+      tab: 'preview',
+      focusedFile: {
+        filePath: '/tmp/slides.pptx', fileName: 'slides.pptx', ext: '.pptx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', contentType: 'document',
+      },
+    });
+    render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
+
+    expect(workspaceBrowserProps.at(-1)).toMatchObject({ active: false });
+    expect(filePreviewBodyProps.at(-1)).toMatchObject({ active: true });
+    expect(screen.getAllByTestId('pptx-viewer')).toHaveLength(1);
+
+    fireEvent.click(screen.getByTestId('artifact-panel-tab-browser'));
+
+    expect(screen.getByTestId('workspace-browser')).toBeInTheDocument();
+    expect(screen.getByTestId('file-preview-body')).toBeInTheDocument();
+    expect(workspaceBrowserProps.at(-1)).toMatchObject({ active: true });
+    expect(filePreviewBodyProps.at(-1)).toMatchObject({ active: false });
+    expect(screen.getAllByTestId('pptx-viewer')).toHaveLength(1);
+
+    fireEvent.click(screen.getByTestId('artifact-panel-tab-changes'));
+
+    expect(workspaceBrowserProps.at(-1)).toMatchObject({ active: false });
+    expect(filePreviewBodyProps.at(-1)).toMatchObject({ active: false });
+    expect(screen.queryByTestId('pptx-viewer')).not.toBeInTheDocument();
+  });
+
+  it('preserves the viewer-reported PowerPoint position for each preview target', () => {
+    const first = {
+      filePath: '/tmp/first.pptx', fileName: 'first.pptx', ext: '.pptx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', contentType: 'document' as const,
+    };
+    const second = { ...first, filePath: '/tmp/second.pptx', fileName: 'second.pptx' };
+    useArtifactPanel.setState({ open: true, tab: 'preview', focusedFile: first });
+    render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
+
+    expect(filePreviewBodyProps.at(-1)).toMatchObject({ initialPptxSlideIndex: 0 });
+    (filePreviewBodyProps.at(-1)?.onPptxSlideIndexChange as ((index: number) => void) | undefined)?.(2);
+
+    act(() => useArtifactPanel.setState({ focusedFile: second }));
+    expect(filePreviewBodyProps.at(-1)).toMatchObject({ initialPptxSlideIndex: 0 });
+
+    act(() => useArtifactPanel.setState({ focusedFile: first }));
+    expect(filePreviewBodyProps.at(-1)).toMatchObject({ initialPptxSlideIndex: 2 });
   });
 
   it('always keeps Changes available for rich preview files', () => {

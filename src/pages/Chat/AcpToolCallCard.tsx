@@ -83,9 +83,9 @@ export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
     <div
       data-testid="acp-tool-call-card"
       data-expanded={expanded ? 'true' : 'false'}
-      className="rounded-lg px-1 py-0.5"
+      className="rounded-lg px-0 py-0.5"
     >
-      <div className="flex min-w-0 items-start justify-between gap-3">
+      <div className="flex min-w-0 items-center justify-between gap-3">
         {hasDetails ? (
           <button
             type="button"
@@ -101,7 +101,7 @@ export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
             aria-expanded={expanded}
             aria-label={toggleLabel}
             title={toggleLabel}
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10"
+            className="flex min-w-0 p-1 flex-1 items-center gap-2 rounded-lg text-left transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10"
           >
             {expanded ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" /> : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
             <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('acp.tool')}</span>

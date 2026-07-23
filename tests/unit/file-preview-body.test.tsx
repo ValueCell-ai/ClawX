@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { FilePreviewBody } from '@/components/file-preview/FilePreviewBody';
 import type { FilePreviewTarget } from '@/components/file-preview/types';
 
@@ -20,6 +20,32 @@ const readAttachmentText = vi.fn();
 const statFile = vi.fn();
 const statWorkspaceFile = vi.fn();
 const writeTextFile = vi.fn();
+
+vi.mock('@/components/file-preview/DocxViewer', () => ({
+  default: ({ filePath, onTooLarge }: { filePath: string; onTooLarge?: (size?: number) => void }) => (
+    <div data-testid="docx-viewer">
+      {filePath}
+      <button type="button" onClick={() => onTooLarge?.(20 * 1024 * 1024 + 9)}>Grow DOCX</button>
+    </div>
+  ),
+}));
+
+vi.mock('@/components/file-preview/PptxViewer', () => ({
+  default: ({
+    filePath,
+    initialSlideIndex,
+    onTooLarge,
+  }: {
+    filePath: string;
+    initialSlideIndex?: number;
+    onTooLarge?: (size?: number) => void;
+  }) => (
+    <div data-testid="pptx-viewer">
+      {filePath}:{initialSlideIndex ?? 0}
+      <button type="button" onClick={() => onTooLarge?.(20 * 1024 * 1024 + 11)}>Grow PPTX</button>
+    </div>
+  ),
+}));
 
 vi.mock('@/lib/file-preview-client', () => ({
   readTextFile: (...args: unknown[]) => readTextFile(...args),
@@ -57,6 +83,11 @@ function makePreviewTarget(overrides: Partial<FilePreviewTarget> = {}): FilePrev
 describe('FilePreviewBody', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    readTextFile.mockResolvedValue({ ok: false, error: 'binary' });
+    readWorkspaceText.mockResolvedValue({ ok: false, error: 'binary' });
+    readAttachmentText.mockResolvedValue({ ok: false, error: 'binary' });
+    statFile.mockResolvedValue({ ok: true, size: 1024, isFile: true });
+    statWorkspaceFile.mockResolvedValue({ ok: true, size: 1024, isFile: true });
   });
 
   it('renders html files as sandboxed HTML preview instead of raw source by default', async () => {
@@ -82,6 +113,11 @@ describe('FilePreviewBody', () => {
     );
 
     const frame = await screen.findByTestId('html-preview-frame');
+    const header = screen.getByText('demo.html').closest('header');
+    expect(header).not.toBeNull();
+    const viewTabs = within(header!).getByRole('tablist');
+    expect(within(viewTabs).getByRole('tab', { name: 'Preview' })).toHaveAttribute('data-state', 'active');
+    expect(within(viewTabs).getByRole('tab', { name: 'Source' })).toBeVisible();
     expect(frame).toBeVisible();
     expect(frame).toHaveAttribute(
       'sandbox',
@@ -160,6 +196,187 @@ describe('FilePreviewBody', () => {
       }));
       expect(shellOpenPathMock).toHaveBeenCalledWith('/tmp/large-report.pdf');
     });
+  });
+
+  it.each([
+    ['Word', '.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx-viewer'],
+    ['PowerPoint', '.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'pptx-viewer'],
+  ])('lazy-dispatches %s files without reading them as text', async (_label, ext, mimeType, testId) => {
+    statFile.mockResolvedValueOnce({ ok: true, size: 1024, isFile: true });
+    const fileName = `report${ext}`;
+
+    render(
+      <FilePreviewBody
+        file={makePreviewTarget({
+          filePath: `/tmp/${fileName}`,
+          fileName,
+          ext,
+          mimeType,
+          contentType: 'document',
+          size: undefined,
+        })}
+        mode="preview"
+      />,
+    );
+
+    expect(await screen.findByTestId(testId)).toHaveTextContent(`/tmp/${fileName}`);
+    expect(statFile).toHaveBeenCalledWith(`/tmp/${fileName}`);
+    expect(readTextFile).not.toHaveBeenCalled();
+    expect(readWorkspaceText).not.toHaveBeenCalled();
+    expect(readAttachmentText).not.toHaveBeenCalled();
+  });
+
+  it.each(['.docx', '.pptx'])('offers trusted system actions instead of mounting an oversized %s parser', async (ext) => {
+    const fileName = `large${ext}`;
+    render(
+      <FilePreviewBody
+        file={makePreviewTarget({
+          filePath: `/tmp/${fileName}`,
+          fileName,
+          ext,
+          mimeType: 'application/octet-stream',
+          contentType: 'document',
+          size: 20 * 1024 * 1024 + 1,
+        })}
+        mode="preview"
+      />,
+    );
+
+    expect(await screen.findByRole('button', { name: 'Open directly' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Show in file manager' })).toBeVisible();
+    expect(screen.queryByTestId('docx-viewer')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('pptx-viewer')).not.toBeInTheDocument();
+    expect(readTextFile).not.toHaveBeenCalled();
+  });
+
+  it('shows a scoped oversized Office file without exposing system actions', async () => {
+    const workspaceFileRef = { workspaceRoot: '/workspace', relativePath: 'reports/large.docx' };
+    statWorkspaceFile.mockResolvedValueOnce({ ok: true, size: 20 * 1024 * 1024 + 1, isFile: true });
+
+    render(
+      <FilePreviewBody
+        file={makePreviewTarget({
+          filePath: 'reports/large.docx',
+          fileName: 'large.docx',
+          ext: '.docx',
+          mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          contentType: 'document',
+          size: undefined,
+          workspaceFileRef,
+        })}
+        mode="preview"
+      />,
+    );
+
+    expect(await screen.findByText('File is too large ({{size}}); preview disabled')).toBeVisible();
+    expect(statWorkspaceFile).toHaveBeenCalledWith(workspaceFileRef);
+    expect(screen.queryByRole('button', { name: 'Open directly' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show in file manager' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('docx-viewer')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['DOCX', '.docx', 'Grow DOCX'],
+    ['PPTX', '.pptx', 'Grow PPTX'],
+  ])('shows authorized fallback actions when a local %s grows after stat', async (_label, ext, growLabel) => {
+    const fileName = `growing${ext}`;
+    statFile.mockResolvedValueOnce({ ok: true, size: 1024, isFile: true });
+    render(
+      <FilePreviewBody
+        file={makePreviewTarget({
+          filePath: `/tmp/${fileName}`,
+          fileName,
+          ext,
+          mimeType: 'application/octet-stream',
+          contentType: 'document',
+          size: undefined,
+        })}
+        mode="preview"
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: growLabel }));
+
+    expect(await screen.findByRole('button', { name: 'Open directly' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Show in file manager' })).toBeVisible();
+    expect(screen.queryByTestId('docx-viewer')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('pptx-viewer')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['DOCX', '.docx', 'Grow DOCX'],
+    ['PPTX', '.pptx', 'Grow PPTX'],
+  ])('keeps race-time tooLarge %s scoped without naked-path actions', async (_label, ext, growLabel) => {
+    const fileName = `growing${ext}`;
+    const workspaceFileRef = { workspaceRoot: '/workspace', relativePath: `reports/${fileName}` };
+    statWorkspaceFile.mockRejectedValueOnce(new Error('stat unavailable'));
+    render(
+      <FilePreviewBody
+        file={makePreviewTarget({
+          filePath: `reports/${fileName}`,
+          fileName,
+          ext,
+          mimeType: 'application/octet-stream',
+          contentType: 'document',
+          size: undefined,
+          workspaceFileRef,
+        })}
+        mode="preview"
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: growLabel }));
+
+    expect(await screen.findByText('File is too large ({{size}}); preview disabled')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Open directly' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show in file manager' })).not.toBeInTheDocument();
+  });
+
+  it('keeps an attachment race-time tooLarge state scoped without naked-path actions', async () => {
+    render(
+      <FilePreviewBody
+        file={makePreviewTarget({
+          filePath: 'growing.docx',
+          fileName: 'growing.docx',
+          ext: '.docx',
+          mimeType: 'application/octet-stream',
+          contentType: 'document',
+          size: undefined,
+          attachmentFileRef: {
+            sessionKey: 'agent:main:s1',
+            generation: 4,
+            uri: 'file:///private/growing.docx',
+          },
+        })}
+        mode="preview"
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Grow DOCX' }));
+
+    expect(await screen.findByText('File is too large ({{size}}); preview disabled')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Open directly' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show in file manager' })).not.toBeInTheDocument();
+  });
+
+  it('mounts a PowerPoint parser only while its preview surface is active', async () => {
+    const file = makePreviewTarget({
+      filePath: '/tmp/slides.pptx',
+      fileName: 'slides.pptx',
+      ext: '.pptx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      contentType: 'document',
+      size: 1024,
+    });
+    const { rerender } = render(
+      <FilePreviewBody file={file} mode="preview" active={false} initialPptxSlideIndex={3} />,
+    );
+
+    await waitFor(() => expect(screen.queryByTestId('pptx-viewer')).not.toBeInTheDocument());
+
+    rerender(<FilePreviewBody file={file} mode="preview" active initialPptxSlideIndex={3} />);
+
+    expect(await screen.findByTestId('pptx-viewer')).toHaveTextContent('/tmp/slides.pptx:3');
   });
 
   it('uses scoped text reads and stays read-only for workspace targets', async () => {

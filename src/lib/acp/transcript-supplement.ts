@@ -1,4 +1,5 @@
 import type { RawMessage } from '@shared/chat/types';
+import type { SessionTurnTimingCandidate } from '@shared/host-api/contract';
 import type { ImageGenerationCompletionEvidence, ImageGenerationTranscriptSupplement } from './image-generation-compat';
 import { extractImageGenerationTranscriptSupplement } from './image-generation-compat';
 import { hostApi } from '../host-api';
@@ -22,6 +23,7 @@ export type TranscriptSupplementResult = {
   imageGeneration: CoordinatedImageGenerationSupplement;
   media: OpenClawMediaTurnSupplement[];
   transcriptMediaTurnCount: number;
+  turnTimings: SessionTurnTimingCandidate[];
 };
 
 type TranscriptSupplementInput = {
@@ -70,10 +72,18 @@ export async function fetchOpenClawTranscriptSupplement(
     reason: input.liveUserMessageId ? 'live' : 'historical',
   });
 
-  let response: Awaited<ReturnType<typeof hostApi.sessions.history>>;
-  try {
-    response = await hostApi.sessions.history({ sessionKey: input.sessionKey, limit: 1000 });
-  } catch {
+  const [historyResult, timingResult] = await Promise.allSettled([
+    hostApi.sessions.history({ sessionKey: input.sessionKey, limit: 1000 }),
+    input.liveUserMessageId
+      ? Promise.resolve(null)
+      : hostApi.sessions.turnTimings({ sessionKey: input.sessionKey, limit: 1000 }),
+  ]);
+  const response = historyResult.status === 'fulfilled' ? historyResult.value : null;
+  const timingResponse = timingResult.status === 'fulfilled' ? timingResult.value : null;
+  const turnTimings = timingResponse?.success && Array.isArray(timingResponse.timings)
+    ? timingResponse.timings
+    : [];
+  if (!response?.success || !Array.isArray(response.messages)) {
     if (input.isCurrent()) {
       recordTrace(input, 'openclaw-media:history-request-failed', {
         source: 'openclaw-media',
@@ -85,7 +95,7 @@ export async function fetchOpenClawTranscriptSupplement(
         reason: 'history-failure-stale',
       });
     }
-    return null;
+    if (turnTimings.length === 0 || !input.isCurrent()) return null;
   }
 
   if (!input.isCurrent()) {
@@ -95,15 +105,7 @@ export async function fetchOpenClawTranscriptSupplement(
     });
     return null;
   }
-  if (!response.success || !Array.isArray(response.messages)) {
-    recordTrace(input, 'openclaw-media:history-request-failed', {
-      source: 'openclaw-media',
-      reason: 'invalid-response',
-    });
-    return null;
-  }
-
-  const messages = response.messages;
+  const messages = response?.success && Array.isArray(response.messages) ? response.messages : [];
   const snapshot = typeof input.snapshot === 'function' ? input.snapshot() : input.snapshot;
   const imageMessages = input.liveUserMessageId
     ? selectOpenClawTranscriptTurn(messages, snapshot, input.liveUserMessageId)
@@ -149,5 +151,5 @@ export async function fetchOpenClawTranscriptSupplement(
     });
   }
 
-  return { imageGeneration, media, transcriptMediaTurnCount };
+  return { imageGeneration, media, transcriptMediaTurnCount, turnTimings };
 }

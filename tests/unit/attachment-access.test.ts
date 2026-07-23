@@ -32,6 +32,9 @@ describe('attachment access boundary', () => {
   let stagedAttachments: StagedAttachmentRegistry;
   let openPath: ReturnType<typeof vi.fn>;
   let openExternal: ReturnType<typeof vi.fn>;
+  let showItemInFolder: ReturnType<typeof vi.fn>;
+  let listOpenHandlers: ReturnType<typeof vi.fn>;
+  let openWithHandler: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     clearAcpTraceForTests();
@@ -73,6 +76,9 @@ describe('attachment access boundary', () => {
     stagedAttachments = new StagedAttachmentRegistry();
     openPath = vi.fn().mockResolvedValue('');
     openExternal = vi.fn().mockResolvedValue(undefined);
+    showItemInFolder = vi.fn();
+    listOpenHandlers = vi.fn().mockResolvedValue([]);
+    openWithHandler = vi.fn().mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
@@ -85,7 +91,12 @@ describe('attachment access boundary', () => {
       stagedAttachments,
       stateDir,
       configDir,
-      shell: { openPath, openExternal },
+      shell: { openPath, openExternal, showItemInFolder },
+      openWith: {
+        platform: 'darwin',
+        list: listOpenHandlers,
+        open: openWithHandler,
+      },
     });
   }
 
@@ -401,6 +412,290 @@ describe('attachment access boundary', () => {
     expect(JSON.stringify(trace)).not.toContain(remoteUrl);
   });
 
+  it('lists only safe public handler metadata for a validated local ref', async () => {
+    const localPath = await realpath(join(workspaceRoot, 'notes.txt'));
+    listOpenHandlers.mockResolvedValueOnce([{
+      id: 'com.apple.Preview',
+      name: 'Preview',
+      iconDataUrl: 'data:image/png;base64,c2FmZQ==',
+      isDefault: true,
+      applicationPath: '/Applications/Private.app',
+      commandLine: 'private --command',
+    }]);
+
+    await expect(getAccess().listAttachmentOpenHandlers(ref(localPath))).resolves.toEqual({
+      ok: true,
+      platform: 'darwin',
+      handlers: [{
+        handlerId: 'com.apple.Preview',
+        name: 'Preview',
+        iconDataUrl: 'data:image/png;base64,c2FmZQ==',
+        isDefault: true,
+      }],
+    });
+    expect(listOpenHandlers).toHaveBeenCalledWith(localPath);
+  });
+
+  it('returns a successful empty Linux list without invoking discovery', async () => {
+    const localPath = join(workspaceRoot, 'notes.txt');
+    const access = createAttachmentAccess({
+      sessionAccessRegistry: registry,
+      stagedAttachments,
+      stateDir,
+      configDir,
+      shell: { openPath, openExternal, showItemInFolder },
+      openWith: {
+        platform: 'linux',
+        list: listOpenHandlers,
+        open: openWithHandler,
+      },
+    });
+
+    await expect(access.listAttachmentOpenHandlers(ref(localPath))).resolves.toEqual({
+      ok: true,
+      platform: 'linux',
+      handlers: [],
+    });
+    expect(listOpenHandlers).not.toHaveBeenCalled();
+  });
+
+  it('preserves normalized empty discovery and unexpected failure result semantics', async () => {
+    const localRef = ref(join(workspaceRoot, 'notes.txt'));
+    const access = getAccess();
+
+    await expect(access.listAttachmentOpenHandlers(localRef)).resolves.toEqual({
+      ok: true,
+      platform: 'darwin',
+      handlers: [],
+    });
+    listOpenHandlers.mockRejectedValueOnce(new Error('unexpected platform service failure'));
+    await expect(access.listAttachmentOpenHandlers(localRef)).resolves.toEqual({
+      ok: false,
+      error: 'operationFailed',
+    });
+  });
+
+  it.each([
+    ['remote', () => ref('https://example.com/report.pdf'), 'invalidReference'],
+    ['stale session', () => ({ ...ref(join(workspaceRoot, 'notes.txt')), generation: 2 }), 'staleSession'],
+    ['missing file', () => ref(join(workspaceRoot, 'missing.txt')), 'unavailable'],
+    ['non-file', () => ref(workspaceRoot), 'notFile'],
+  ])('rejects %s refs for list, selected open, and reveal', async (_label, makeRef, error) => {
+    const access = getAccess();
+    const attachmentRef = makeRef();
+
+    await expect(access.listAttachmentOpenHandlers(attachmentRef)).resolves.toEqual({ ok: false, error });
+    await expect(access.openAttachmentWith({
+      ref: attachmentRef,
+      handlerId: 'com.apple.Preview',
+    })).resolves.toEqual({ ok: false, error });
+    await expect(access.revealAttachment(attachmentRef)).resolves.toEqual({ ok: false, error });
+    expect(listOpenHandlers).not.toHaveBeenCalled();
+    expect(openWithHandler).not.toHaveBeenCalled();
+    expect(showItemInFolder).not.toHaveBeenCalled();
+  });
+
+  it('allows listed and selected-handler opens outside the workspace after exact ref validation', async () => {
+    const outsidePath = await realpath(join(outsideDir, 'secret.txt'));
+    listOpenHandlers.mockResolvedValueOnce([{
+      id: 'com.apple.TextEdit',
+      name: 'TextEdit',
+      isDefault: true,
+    }]);
+    openWithHandler.mockImplementationOnce(async (_path, _handlerId, revalidateFile) => {
+      await expect(revalidateFile()).resolves.toBe(outsidePath);
+    });
+    const access = getAccess();
+
+    await expect(access.listAttachmentOpenHandlers(ref(outsidePath))).resolves.toMatchObject({ ok: true });
+    await expect(access.openAttachmentWith({
+      ref: ref(outsidePath),
+      handlerId: 'com.apple.TextEdit',
+    })).resolves.toEqual({ ok: true });
+    expect(listOpenHandlers).toHaveBeenCalledWith(outsidePath);
+    expect(openWithHandler).toHaveBeenCalledWith(
+      outsidePath,
+      'com.apple.TextEdit',
+      expect.any(Function),
+    );
+  });
+
+  it('delegates forged handler identity only to the platform membership check', async () => {
+    const localPath = await realpath(join(workspaceRoot, 'notes.txt'));
+    openWithHandler.mockRejectedValueOnce(new Error('attachment-open-with:unknown-handler'));
+
+    await expect(getAccess().openAttachmentWith({
+      ref: ref(localPath),
+      handlerId: 'com.attacker.Forged',
+    })).resolves.toEqual({ ok: false, error: 'operationFailed' });
+    expect(openWithHandler).toHaveBeenCalledWith(
+      localPath,
+      'com.attacker.Forged',
+      expect.any(Function),
+    );
+  });
+
+  it.each(['', 'x'.repeat(513)])('rejects invalid handler id %j before platform access', async (handlerId) => {
+    await expect(getAccess().openAttachmentWith({
+      ref: ref(join(workspaceRoot, 'notes.txt')),
+      handlerId,
+    })).resolves.toEqual({ ok: false, error: 'invalidReference' });
+    expect(openWithHandler).not.toHaveBeenCalled();
+  });
+
+  it('re-resolves the original ref after platform handler readiness', async () => {
+    const localPath = await realpath(join(workspaceRoot, 'notes.txt'));
+    let initialResolutionComplete = false;
+    openWithHandler.mockImplementationOnce(async (initialPath, handlerId, revalidateFile) => {
+      expect(initialPath).toBe(localPath);
+      expect(handlerId).toBe('com.apple.Preview');
+      initialResolutionComplete = true;
+      await expect(revalidateFile()).resolves.toBe(localPath);
+    });
+
+    await expect(getAccess().openAttachmentWith({
+      ref: ref(localPath),
+      handlerId: 'com.apple.Preview',
+    })).resolves.toEqual({ ok: true });
+    expect(initialResolutionComplete).toBe(true);
+  });
+
+  it('rejects generation invalidation during delayed fresh handler enumeration', async () => {
+    const localPath = await realpath(join(workspaceRoot, 'notes.txt'));
+    let releaseEnumeration!: () => void;
+    let signalEnumeration!: () => void;
+    const enumerationReached = new Promise<void>((resolveSignal) => {
+      signalEnumeration = resolveSignal;
+    });
+    const enumerationRelease = new Promise<void>((resolveRelease) => {
+      releaseEnumeration = resolveRelease;
+    });
+    const nativeInvoke = vi.fn();
+    openWithHandler.mockImplementationOnce(async (_path, _handlerId, revalidateFile) => {
+      signalEnumeration();
+      await enumerationRelease;
+      await revalidateFile();
+      nativeInvoke();
+    });
+    const opening = getAccess().openAttachmentWith({
+      ref: ref(localPath),
+      handlerId: 'com.apple.Preview',
+    });
+    await enumerationReached;
+    registry.commitGrant(await registry.prepareGrant({
+      sessionKey,
+      generation: 2,
+      workspaceRoot,
+      executionCwd: workspaceRoot,
+    }));
+    releaseEnumeration();
+
+    await expect(opening).resolves.toEqual({ ok: false, error: 'staleSession' });
+    expect(nativeInvoke).not.toHaveBeenCalled();
+  });
+
+  it('re-resolves immediately before revealing and passes only the canonical path', async () => {
+    const localPath = await realpath(join(workspaceRoot, 'notes.txt'));
+
+    await expect(getAccess().revealAttachment(ref(join(workspaceRoot, 'notes.txt'))))
+      .resolves.toEqual({ ok: true });
+    expect(showItemInFolder).toHaveBeenCalledWith(localPath);
+  });
+
+  it('rejects generation invalidation during final reveal validation', async () => {
+    const localPath = await realpath(join(workspaceRoot, 'notes.txt'));
+    let targetStatCount = 0;
+    let releaseFinalValidation!: () => void;
+    let signalFinalValidation!: () => void;
+    const finalValidationReached = new Promise<void>((resolveSignal) => {
+      signalFinalValidation = resolveSignal;
+    });
+    const finalValidationRelease = new Promise<void>((resolveRelease) => {
+      releaseFinalValidation = resolveRelease;
+    });
+    const access = createAttachmentAccess({
+      sessionAccessRegistry: registry,
+      stagedAttachments,
+      stateDir,
+      configDir,
+      shell: { openPath, openExternal, showItemInFolder },
+      openWith: {
+        platform: 'darwin',
+        list: listOpenHandlers,
+        open: openWithHandler,
+      },
+      fs: {
+        lstat,
+        open,
+        realpath,
+        stat: async (path) => {
+          const result = await stat(path);
+          if (path === localPath && ++targetStatCount === 2) {
+            signalFinalValidation();
+            await finalValidationRelease;
+          }
+          return result;
+        },
+      },
+    });
+
+    const revealing = access.revealAttachment(ref(localPath));
+    await finalValidationReached;
+    registry.commitGrant(await registry.prepareGrant({
+      sessionKey,
+      generation: 2,
+      workspaceRoot,
+      executionCwd: workspaceRoot,
+    }));
+    releaseFinalValidation();
+
+    await expect(revealing).resolves.toEqual({ ok: false, error: 'staleSession' });
+    expect(showItemInFolder).not.toHaveBeenCalled();
+  });
+
+  it('does not place open-with or reveal sensitive values in diagnostics', async () => {
+    const sentinelPath = join(outsideDir, 'sentinel-canonical-file.txt');
+    const sentinels = [
+      sentinelPath,
+      '/Applications/Sentinel Bundle.app',
+      '/private/sentinel-icon-source.icns',
+      'sentinel-command --secret',
+      'data:image/png;base64,SENTINEL_ICON_DATA',
+    ];
+    await writeFile(sentinelPath, 'sentinel');
+    listOpenHandlers.mockResolvedValueOnce([{
+      id: 'com.example.Sentinel',
+      name: 'Sentinel',
+      iconDataUrl: sentinels[4],
+      isDefault: true,
+      applicationPath: sentinels[1],
+      bundlePath: sentinels[1],
+      iconSourcePath: sentinels[2],
+      commandLine: sentinels[3],
+    }]);
+    openWithHandler.mockImplementationOnce(async (_path, _handlerId, revalidateFile) => {
+      await revalidateFile();
+    });
+    const consoleSpies = ['debug', 'error', 'info', 'log', 'warn'].map((method) => (
+      vi.spyOn(console, method as 'log').mockImplementation(() => undefined)
+    ));
+    const access = getAccess();
+
+    try {
+      await access.listAttachmentOpenHandlers(ref(sentinelPath));
+      await access.openAttachmentWith({ ref: ref(sentinelPath), handlerId: 'com.example.Sentinel' });
+      await access.revealAttachment(ref(sentinelPath));
+
+      const diagnostics = JSON.stringify({
+        trace: getAcpTraceSnapshot(),
+        logs: consoleSpies.flatMap((spy) => spy.mock.calls),
+      });
+      for (const sentinel of sentinels) expect(diagnostics).not.toContain(sentinel);
+    } finally {
+      consoleSpies.forEach((spy) => spy.mockRestore());
+    }
+  });
+
   it('rechecks generation after final local validation before shell.openPath', async () => {
     const localPath = await realpath(join(workspaceRoot, 'notes.txt'));
     let targetStatCount = 0;
@@ -417,7 +712,12 @@ describe('attachment access boundary', () => {
       stagedAttachments,
       stateDir,
       configDir,
-      shell: { openPath, openExternal },
+      shell: { openPath, openExternal, showItemInFolder },
+      openWith: {
+        platform: 'darwin',
+        list: listOpenHandlers,
+        open: openWithHandler,
+      },
       fs: {
         lstat,
         open,

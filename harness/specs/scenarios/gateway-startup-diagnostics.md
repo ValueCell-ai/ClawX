@@ -39,6 +39,8 @@ Treat these as the same incident family until proven otherwise:
 
 - `Gateway ready fallback triggered; probing RPC router before marking ready`
 - `Gateway ready fallback RPC router probe failed: RPC timeout: system-presence`
+- `[gateway-startup] ... slow=true`
+- `[gateway-startup] Slow managed Gateway startup detected`
 - `[gateway:rpc] doctor.memory.status failed`
 - `[gateway:rpc] doctor.memory.dreamDiary failed`
 - `chat.history unavailable during gateway startup`
@@ -72,6 +74,14 @@ lsof -nP -iTCP:5173 -sTCP:LISTEN || true
 ```bash
 tail -n 160 "$HOME/Library/Application Support/clawx/logs/clawx-$(date +%F).log"
 ```
+
+ClawX-owned Gateway children enable `OPENCLAW_GATEWAY_STARTUP_TRACE=1` automatically. Normal duration-bearing trace lines are normalized as informational records:
+
+```text
+[gateway-startup] stage=plugins.bootstrap durationMs=... totalMs=...
+```
+
+Stages taking at least 10 seconds are marked `slow=true`. A spawn-to-handshake duration of at least 30 seconds emits `Slow managed Gateway startup detected` with the longest observed OpenClaw stage. The existing `gateway.startup` metric also includes the compact `openclawTrace` summary. Startup trace records contain stage names and timings only; do not add environment values, config payloads, or provider secrets to these diagnostics.
 
 3. Probe OpenClaw-native signals in this order. Redirect output for memory-related calls because successful responses may contain user data:
 
@@ -225,14 +235,21 @@ Expected handling:
 pnpm exec tsx -e "import { sanitizeOpenClawConfig } from './electron/utils/openclaw-auth.ts'; import { cleanupAgentsSymlinkedSkills, cleanupStalePluginRuntimeDeps } from './electron/gateway/skills-symlink-cleanup.ts'; sanitizeOpenClawConfig().then(() => { console.log(cleanupAgentsSymlinkedSkills()); console.log(cleanupStalePluginRuntimeDeps()); });"
 ```
 
-4. Restart the app or Gateway and watch for the startup metric:
+4. Restart the app or Gateway and watch for the startup metric and trace summary:
 
 ```text
 [metric] gateway.startup {
   "configSyncMs": ...,
   "spawnToReadyMs": ...,
   "readyToConnectMs": ...,
-  "totalMs": ...
+  "totalMs": ...,
+  "openclawTrace": {
+    "stageCount": ...,
+    "lastStage": ...,
+    "traceTotalMs": ...,
+    "slowestStage": ...,
+    "slowestStageMs": ...
+  }
 }
 ```
 

@@ -35,6 +35,17 @@
         "fileUnavailable": "Файл недоступен",
         "outsideWorkspace": "Файл находится вне рабочей области"
     },
+    "fileCard": {
+        "openWith": "Открыть с помощью",
+        "openWithFile": "Открыть {{name}} с помощью",
+        "openInBuiltInBrowser": "Открыть во встроенном браузере",
+        "searchingApplications": "Поиск приложений",
+        "showInFinder": "Показать в Finder",
+        "showInExplorer": "Показать в Проводнике",
+        "showInFileManager": "Показать в файловом менеджере",
+        "openWithFailed": "Не удалось открыть файл в выбранном приложении",
+        "revealFailed": "Не удалось показать файл в папке"
+    },
     "runError": {
         "title": "Ошибка вызова модели"
     },
@@ -61,6 +72,8 @@
         "imageSaved": "Изображение сохранено",
         "copy": "Копировать ответ",
         "copied": "Скопировано",
+        "turnDuration": "Заняло {{duration}}",
+        "turnElapsed": "Прошло {{duration}}",
         "attachment": {
             "loading": "Загрузка вложения",
             "unavailable": "Вложение недоступно",
@@ -73,7 +86,8 @@
         "tabs": {
             "changes": "Изменения",
             "preview": "Просмотр",
-            "browser": "Рабочая область"
+            "browser": "Рабочая область",
+            "webBrowser": "Веб-браузер"
         },
         "actions": {
             "back": "Назад к списку"
@@ -88,6 +102,51 @@
         "preview": {
             "emptyTitle": "Файл не выбран",
             "emptyHint": "Сначала откройте файл через карточку в чате — выбранный файл появится в этом предпросмотре."
+        },
+        "webBrowser": {
+            "actions": {
+                "back": "Назад",
+                "forward": "Вперёд",
+                "refresh": "Обновить",
+                "more": "Ещё",
+                "forceRefresh": "Обновить принудительно",
+                "clearCookies": "Очистить файлы cookie",
+                "clearSiteData": "Очистить данные сайта",
+                "openExternal": "Открыть в системном браузере"
+            },
+            "address": {
+                "label": "Веб-адрес",
+                "placeholder": "Введите URL"
+            },
+            "errors": {
+                "empty": "Введите веб-адрес.",
+                "absolutePath": "Для локального пути используйте URL вида file:///.",
+                "invalidUrl": "Недопустимый веб-адрес.",
+                "unsupportedProtocol": "Этот протокол URL не поддерживается.",
+                "reservedUrl": "Этот внутренний URL нельзя открыть.",
+                "loadFailed": "Не удалось загрузить страницу.",
+                "clearCookiesFailed": "Не удалось очистить файлы cookie.",
+                "clearSiteDataFailed": "Не удалось очистить данные сайта.",
+                "openExternalFailed": "Не удалось открыть страницу в системном браузере."
+            },
+            "success": {
+                "cookiesCleared": "Файлы cookie очищены.",
+                "siteDataCleared": "Данные сайта очищены."
+            },
+            "crash": {
+                "title": "Веб-браузер остановлен",
+                "message": "Страница браузера неожиданно закрылась. История навигации и состояние страницы потеряны.",
+                "recover": "Восстановить браузер"
+            },
+            "permissionDialog": {
+                "title": "Доступ к камере и микрофону",
+                "message": "{{origin}} запрашивает доступ к устройству: {{capability}}.",
+                "camera": "камера",
+                "microphone": "микрофон",
+                "cameraAndMicrophone": "камера и микрофон",
+                "allow": "Разрешить",
+                "deny": "Запретить"
+            }
         }
     },
     "filePreview": {
@@ -154,6 +213,15 @@
             "zoomReset": "По ширине",
             "pageInputAria": "Текущая страница",
             "singlePageHint": "Используйте панель инструментов для переключения между {{total}} страницами"
+        },
+        "docx": {
+            "loadFailed": "Не удалось загрузить документ Word"
+        },
+        "pptx": {
+            "loadFailed": "Не удалось загрузить презентацию",
+            "previous": "Предыдущий слайд",
+            "next": "Следующий слайд",
+            "slidePosition": "{{current}} / {{total}}"
         },
         "sheet": {
             "loadFailed": "Не удалось загрузить таблицу: {{error}}",
@@ -256,6 +324,8 @@
         "collapseAll": "Свернуть все",
         "expandAll": "Развернуть все",
         "loadMore": "Загрузить еще",
+        "aiReplying": "ИИ отвечает",
+        "unreadReply": "Непрочитанный ответ",
         "loadMoreForWorkspace": "Загрузить еще {{count}} сессий в {{workspace}}",
         "workspaceToggle": "Переключить рабочую область {{workspace}}",
         "renameWorkspace": "Переименовать рабочую область {{workspace}}",

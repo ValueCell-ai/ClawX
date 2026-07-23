@@ -16,12 +16,18 @@ import { cn } from '@/lib/utils';
 import { readTextFile, statFile } from '@/lib/file-preview-client';
 import { hostApi } from '@/lib/host-api';
 import {
+  isDocxPreviewExt,
   isHtmlPreviewExt,
   isPdfPreviewExt,
+  isPptxPreviewExt,
   isSheetPreviewExt,
   supportsInlineDocumentPreview,
   supportsRichDocumentPreview,
 } from '@/lib/generated-files';
+import {
+  isFilePreviewWithinSizeLimit,
+  richFilePreviewKind,
+} from '@/lib/file-preview-capabilities';
 import {
   collectInitialExpanded,
   findNode,
@@ -38,13 +44,14 @@ import { MaterialFileIcon } from './MaterialFileIcon';
 import MarkdownPreview from './MarkdownPreview';
 import HtmlPreview from './HtmlPreview';
 import ImageViewer from './ImageViewer';
+import { getFilePreviewTargetIdentity } from './types';
 
 const MonacoViewerLazy = lazy(() => import('./MonacoViewer'));
 const PdfViewerLazy = lazy(() => import('./PdfViewer'));
 const SheetViewerLazy = lazy(() => import('./SheetViewer'));
+const DocxViewerLazy = lazy(() => import('./DocxViewer'));
+const PptxViewerLazy = lazy(() => import('./PptxViewer'));
 
-/** Inline rich-doc viewers tap out past this — falls back to direct open. */
-const RICH_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
 const TREE_INDENT_PX = 8;
 
 function formatWorkspacePath(workspace: string): string {
@@ -133,6 +140,8 @@ export interface WorkspaceBrowserBodyProps {
   treeWidth?: number;
   /** Optional slot rendered in the toolbar (e.g. close button when used in a Sheet). */
   toolbarTrailing?: React.ReactNode;
+  /** Whether this browser surface is visible and may own the PPTX parser. */
+  active?: boolean;
 }
 
 type LoadState =
@@ -159,11 +168,13 @@ export function WorkspaceBrowserBody({
   compact = false,
   treeWidth,
   toolbarTrailing,
+  active = true,
 }: WorkspaceBrowserBodyProps) {
   const { t } = useTranslation('chat');
   const [state, setState] = useState<LoadState>({ status: 'idle' });
   const [selectedRel, setSelectedRel] = useState<string | null>(null);
   const [fileState, setFileState] = useState<FileState>({ status: 'idle' });
+  const [fileStatePath, setFileStatePath] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
   const [openRelPathState, setOpenRelPathState] = useState<{ scope: string; paths: Set<string> | null }>({
     scope: '',
@@ -171,6 +182,7 @@ export function WorkspaceBrowserBody({
   });
   const treeContainerRef = useRef<HTMLDivElement | null>(null);
   const [treeHeight, setTreeHeight] = useState(0);
+  const [pptxSlidePositions] = useState(() => new Map<string, number>());
 
   const explicitWorkspace = workspacePath?.trim() ?? '';
   const workspace = explicitWorkspace || agent?.workspace || '';
@@ -222,6 +234,7 @@ export function WorkspaceBrowserBody({
     /* eslint-disable react-hooks/set-state-in-effect -- intentional reset on agent switch */
     setSelectedRel(null);
     setFileState({ status: 'idle' });
+    setFileStatePath(null);
     setOpenRelPathState({ scope: treeScope, paths: null });
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [treeScope]);
@@ -273,9 +286,11 @@ export function WorkspaceBrowserBody({
     /* eslint-disable react-hooks/set-state-in-effect -- selection-driven loader */
     if (!selectedNode || selectedNode.isDir) {
       setFileState({ status: 'idle' });
+      setFileStatePath(null);
       return;
     }
     const node = selectedNode;
+    setFileStatePath(node.absPath);
     let cancelled = false;
     if (node.contentType === 'document' && !supportsInlineDocumentPreview(node.ext ?? '')) {
       setFileState({ status: 'loading' });
@@ -293,7 +308,7 @@ export function WorkspaceBrowserBody({
       };
     }
     if (supportsRichDocumentPreview(node.ext ?? '')) {
-      // PDF / spreadsheet viewers handle their own loading; we only need
+      // Binary rich viewers handle their own loading; we only need
       // a stat for the badge / direct-open fallbacks.  Files that exceed
       // the inline cap fall back to the existing tooLarge UI so users
       // can still open them with the system default app.
@@ -301,7 +316,16 @@ export function WorkspaceBrowserBody({
       void statFile(node.absPath)
         .then((res) => {
           if (cancelled) return;
-          if (res.ok && typeof res.size === 'number' && res.size > RICH_PREVIEW_MAX_BYTES) {
+          const richKind = richFilePreviewKind({
+            ext: node.ext ?? '',
+            mimeType: node.mimeType ?? '',
+          });
+          if (
+            res.ok
+            && richKind
+            && typeof res.size === 'number'
+            && !isFilePreviewWithinSizeLimit({ kind: 'rich', richKind }, res.size)
+          ) {
             setFileState({ status: 'tooLarge', size: res.size });
             return;
           }
@@ -379,6 +403,12 @@ export function WorkspaceBrowserBody({
       toast.error(t('filePreview.errors.openFailed', { defaultValue: 'Open failed: {{error}}', error: message }));
     }
   }, [selectedNode, fileState, t]);
+
+  const handleOfficeTooLarge = useCallback((size?: number) => {
+    if (!selectedNode || selectedNode.isDir) return;
+    setFileStatePath(selectedNode.absPath);
+    setFileState({ status: 'tooLarge', size });
+  }, [selectedNode]);
 
   const renderTree = () => {
     if (state.status === 'loading' || state.status === 'idle') {
@@ -484,22 +514,25 @@ export function WorkspaceBrowserBody({
         </Suspense>
       );
     }
-    if (fileState.status === 'loading' || fileState.status === 'idle') {
+    const displayedFileState: FileState = fileStatePath === selectedNode.absPath
+      ? fileState
+      : { status: 'loading' };
+    if (displayedFileState.status === 'loading' || displayedFileState.status === 'idle') {
       return (
         <div className="flex h-full items-center justify-center">
           <LoadingSpinner />
         </div>
       );
     }
-    if (fileState.status === 'tooLarge') {
-      const directOpen = shouldOfferDirectOpenFallback(selectedNode.ext, fileState.size);
+    if (displayedFileState.status === 'tooLarge') {
+      const directOpen = shouldOfferDirectOpenFallback(selectedNode.ext, displayedFileState.size);
       return (
         <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
           <p>
             {directOpen
               ? t('filePreview.errors.largeBinaryOpenHint', {
                 defaultValue: 'This file is {{size}}. ClawX does not provide an inline preview for it. You can confirm to open it directly in your system default app.',
-                size: formatFileSize(fileState.size ?? 0) || '> 2MB',
+                size: formatFileSize(displayedFileState.size ?? 0) || '> 2MB',
               })
               : t('filePreview.errors.tooLarge', 'File too large; preview disabled')}
           </p>
@@ -517,15 +550,15 @@ export function WorkspaceBrowserBody({
         </div>
       );
     }
-    if (fileState.status === 'binary') {
-      const directOpen = shouldOfferDirectOpenFallback(selectedNode.ext, fileState.size);
+    if (displayedFileState.status === 'binary') {
+      const directOpen = shouldOfferDirectOpenFallback(selectedNode.ext, displayedFileState.size);
       return (
         <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
           <p>
             {directOpen
               ? t('filePreview.errors.largeBinaryOpenHint', {
                 defaultValue: 'This file is {{size}}. ClawX does not provide an inline preview for it. You can confirm to open it directly in your system default app.',
-                size: formatFileSize(fileState.size ?? 0) || '> 2MB',
+                size: formatFileSize(displayedFileState.size ?? 0) || '> 2MB',
               })
               : t('filePreview.errors.binary', 'Binary files do not support text preview')}
           </p>
@@ -543,8 +576,8 @@ export function WorkspaceBrowserBody({
         </div>
       );
     }
-    if (fileState.status === 'error') {
-      const errMsg = fileState.message;
+    if (displayedFileState.status === 'error') {
+      const errMsg = displayedFileState.message;
       const hint = errMsg === 'outsideSandbox'
         ? t('filePreview.errors.outsideSandbox', 'Path is outside the workspace; read denied')
         : errMsg === 'notFound'
@@ -556,8 +589,8 @@ export function WorkspaceBrowserBody({
         </div>
       );
     }
-    if (fileState.status === 'unsupported') {
-      const directOpen = shouldOfferDirectOpenFallback(selectedNode.ext, fileState.size);
+    if (displayedFileState.status === 'unsupported') {
+      const directOpen = shouldOfferDirectOpenFallback(selectedNode.ext, displayedFileState.size);
       return (
         <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
           <div className="space-y-1.5">
@@ -570,7 +603,7 @@ export function WorkspaceBrowserBody({
               {directOpen
                 ? t('filePreview.errors.largeBinaryOpenHint', {
                   defaultValue: 'This file is {{size}}. ClawX does not provide an inline preview for it. You can confirm to open it directly in your system default app.',
-                  size: formatFileSize(fileState.size ?? 0) || '> 2MB',
+                  size: formatFileSize(displayedFileState.size ?? 0) || '> 2MB',
                 })
                 : t(
                   'filePreview.errors.unsupportedFormatHint',
@@ -593,10 +626,51 @@ export function WorkspaceBrowserBody({
       );
     }
 
+    if (isDocxPreviewExt(selectedNode.ext)) {
+      return (
+        <Suspense
+          fallback={
+            <div className="flex h-full items-center justify-center">
+              <LoadingSpinner />
+            </div>
+          }
+        >
+          <DocxViewerLazy
+            filePath={selectedNode.absPath}
+            fileName={selectedNode.name}
+            onTooLarge={handleOfficeTooLarge}
+          />
+        </Suspense>
+      );
+    }
+
+    if (isPptxPreviewExt(selectedNode.ext)) {
+      const identity = getFilePreviewTargetIdentity({ filePath: selectedNode.absPath });
+      // CSS hidden is insufficient: pptxviewjs@1.1.9 shares Renderer-global processor/ZIP state.
+      // See harness/reference/office-document-preview.md#single-pptx-instance.
+      return active ? (
+        <Suspense
+          fallback={
+            <div className="flex h-full items-center justify-center">
+              <LoadingSpinner />
+            </div>
+          }
+        >
+          <PptxViewerLazy
+            filePath={selectedNode.absPath}
+            fileName={selectedNode.name}
+            initialSlideIndex={pptxSlidePositions.get(identity) ?? 0}
+            onSlideIndexChange={(index) => pptxSlidePositions.set(identity, index)}
+            onTooLarge={handleOfficeTooLarge}
+          />
+        </Suspense>
+      ) : null;
+    }
+
     if (isHtmlPreviewExt(selectedNode.ext)) {
       return (
         <HtmlPreview
-          source={fileState.content}
+          source={displayedFileState.content}
           filePath={selectedNode.absPath}
           fileName={selectedNode.name}
         />
@@ -606,7 +680,7 @@ export function WorkspaceBrowserBody({
     if (selectedNode.contentType === 'document') {
       return (
         <div className="h-full overflow-auto">
-          <MarkdownPreview source={fileState.content} />
+          <MarkdownPreview source={displayedFileState.content} />
         </div>
       );
     }
@@ -619,7 +693,7 @@ export function WorkspaceBrowserBody({
           </div>
         }
       >
-        <MonacoViewerLazy filePath={selectedNode.absPath} value={fileState.content} readOnly />
+        <MonacoViewerLazy filePath={selectedNode.absPath} value={displayedFileState.content} readOnly />
       </Suspense>
     );
   };

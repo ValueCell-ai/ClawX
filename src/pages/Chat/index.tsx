@@ -12,17 +12,23 @@ import { Button } from '@/components/ui/button';
 import { useAgentsStore } from '@/stores/agents';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { useChatStore } from '@/stores/chat';
+import { useSessionAttentionStore } from '@/stores/session-attention';
 import { useSettingsStore } from '@/stores/settings';
 import { ensureAcpChatSubscriptions, useAcpChatSessionStore } from '@/stores/acp-chat-session';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
-import { getWorkspaceDisplayLabel, resolveEffectiveWorkspace } from '@/lib/workspace-context';
+import {
+  getWorkspaceDisplayLabel,
+  isDefaultWorkspacePath,
+  normalizeWorkspacePath,
+  resolveEffectiveWorkspace,
+} from '@/lib/workspace-context';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
 import { getAcpUserMessageAnchorId } from '@/lib/acp/timeline-anchors';
 import type { MessageSegmentItem, RenderPart } from '@/lib/acp/timeline-types';
 import { projectOpenClawFileActivities, type AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 import { hostApi } from '@/lib/host-api';
-import { ChatInput, type FileAttachment } from './ChatInput';
+import { ChatInput, type ChatWorkspaceOption, type FileAttachment } from './ChatInput';
 import { ChatToolbar } from './ChatToolbar';
 import { AcpTimeline } from './AcpTimeline';
 import { AcpErrorBanner } from './AcpErrorBanner';
@@ -177,7 +183,9 @@ export function Chat() {
   const loadSessions = useChatStore((s) => s.loadSessions);
   const selectAcpSession = useChatStore((s) => s.selectAcpSession);
   const acknowledgeAcpSessionCreated = useChatStore((s) => s.acknowledgeAcpSessionCreated);
+  const setVisibleSession = useSessionAttentionStore((s) => s.setVisibleSession);
   const chatWorkspacePath = useSettingsStore((s) => s.chatWorkspacePath);
+  const recentWorkspacePaths = useSettingsStore((s) => s.recentWorkspacePaths ?? []);
   const workspaceLabels = useSettingsStore((s) => s.workspaceLabels);
   const setChatWorkspacePath = useSettingsStore((s) => s.setChatWorkspacePath);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
@@ -202,12 +210,35 @@ export function Chat() {
   );
   const cwd = effectiveWorkspace.cwd;
   const workspaceLabel = getWorkspaceDisplayLabel(cwd, t('workspace.defaultLabel'), workspaceLabels);
+  const workspaceOptions = useMemo<ChatWorkspaceOption[]>(() => {
+    const seen = new Set<string>();
+    const options: ChatWorkspaceOption[] = [];
+    const candidatePaths = [
+      ...recentWorkspacePaths,
+      chatWorkspacePath,
+      ...sessions.map((session) => session.workspacePath).filter((path): path is string => !!path),
+    ];
+    for (const path of candidatePaths) {
+      const normalized = normalizeWorkspacePath(path);
+      if (!normalized || isDefaultWorkspacePath(normalized)) continue;
+      const slashedPath = normalized.replace(/\\/g, '/');
+      const identity = /^[A-Za-z]:\//.test(slashedPath) ? slashedPath.toLowerCase() : slashedPath;
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      options.push({
+        path: normalized,
+        label: getWorkspaceDisplayLabel(normalized, t('workspace.defaultLabel'), workspaceLabels),
+      });
+    }
+    return options;
+  }, [chatWorkspacePath, recentWorkspacePaths, sessions, t, workspaceLabels]);
   const currentAgent = useMemo(
     () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
     [agents, currentAgentId],
   );
 
   const acpTimeline = useAcpChatSessionStore((s) => s.timeline);
+  const acpTurnTimings = useAcpChatSessionStore((s) => s.turnTimingsByUserMessageId);
   const acpLoading = useAcpChatSessionStore((s) => s.loading);
   const acpSending = useAcpChatSessionStore((s) => s.sending);
   const imageGenerationPending = useAcpChatSessionStore(
@@ -234,6 +265,11 @@ export function Chat() {
     currentSessionKey,
     acpSending || acpCancelling,
   );
+
+  useEffect(() => {
+    setVisibleSession(currentSessionKey);
+    return () => setVisibleSession(null);
+  }, [currentSessionKey, setVisibleSession]);
 
   useEffect(() => {
     void fetchAgents().catch(() => undefined);
@@ -432,6 +468,7 @@ export function Chat() {
                   ) : (
                     <AcpTimeline
                       snapshot={acpTimeline}
+                      turnTimingsByUserMessageId={acpTurnTimings}
                       fileActivity={fileActivity}
                       workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey
                         ? resolvedWorkspaceContext.workspaceRoot
@@ -518,7 +555,7 @@ export function Chat() {
                   }
                 })();
                 if (loaded && createIfMissing) {
-                  acknowledgeAcpSessionCreated(sessionKey, promptCwd);
+                  acknowledgeAcpSessionCreated(sessionKey, promptCwd, text);
                 }
                 if (!loaded) return;
               }
@@ -540,6 +577,7 @@ export function Chat() {
           imageGenerating={imageGenerationPending}
           workspaceLabel={workspaceLabel}
           workspacePath={cwd}
+          workspaceOptions={workspaceOptions}
           workspaceReadOnly={effectiveWorkspace.readOnly}
           onSelectWorkspace={setChatWorkspacePath}
         />

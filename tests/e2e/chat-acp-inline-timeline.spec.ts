@@ -72,7 +72,15 @@ async function installAcpChatMocks(
   });
 }
 
-async function installAcpLoadReplayMock(app: ElectronApplication, updates: AcpSessionUpdate[]) {
+async function installAcpLoadReplayMock(
+  app: ElectronApplication,
+  updates: AcpSessionUpdate[],
+  timings: Array<{
+    normalizedUserText: string;
+    userOccurrenceFromTail: number;
+    durationMs: number;
+  }> = [],
+) {
   await app.evaluate(async ({ app: _app }, payload) => {
     const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
     type IpcInvokeHandler = (event: unknown, request: { id?: string; module?: string; action?: string; args?: unknown[] }) => Promise<unknown>;
@@ -99,9 +107,16 @@ async function installAcpLoadReplayMock(app: ElectronApplication, updates: AcpSe
           },
         };
       }
+      if (request?.module === 'sessions' && request.action === 'turnTimings') {
+        return {
+          id: request.id,
+          ok: true,
+          data: { success: true, timings: payload.timings },
+        };
+      }
       return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
     });
-  }, { sessionKey: MAIN_SESSION_KEY, updates });
+  }, { sessionKey: MAIN_SESSION_KEY, updates, timings });
 }
 
 async function installAcpLoadRecorderMock(app: ElectronApplication) {
@@ -327,6 +342,36 @@ async function openChat(app: ElectronApplication) {
 }
 
 test.describe('ClawX ACP inline timeline', () => {
+  test('supplements an ACP-replayed assistant turn with historical duration', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installAcpChatMocks(app);
+      await installAcpLoadReplayMock(app, [
+        {
+          sessionUpdate: 'user_message_chunk',
+          messageId: 'timed-history-user',
+          content: { type: 'text', text: 'Measure this historical turn' },
+        },
+        {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'timed-history-assistant',
+          content: { type: 'text', text: 'Historical turn measured' },
+        },
+      ], [{
+        normalizedUserText: 'Measure this historical turn',
+        userOccurrenceFromTail: 1,
+        durationMs: 6_400,
+      }]);
+
+      const page = await openChat(app);
+      await expect(page.getByText('Historical turn measured')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('acp-turn-duration')).toHaveText('Took 6 sec');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('commits a long historical replay without exposing partial assistant text', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     const paragraphChunks = Array.from({ length: 12 }, (_, index) => `Paragraph ${index + 1}.\n\n`);
@@ -479,9 +524,13 @@ test.describe('ClawX ACP inline timeline', () => {
         content: { type: 'text', text: 'Before navigation. ' },
       }]);
       await expect(page.getByTestId('acp-assistant-message')).toContainText('Before navigation.');
+      const duration = page.getByTestId('acp-turn-duration');
+      await expect(duration).toContainText('elapsed');
+      const beforeNavigationSeconds = Number.parseFloat((await duration.textContent()) ?? '0');
 
       await page.getByTestId('sidebar-nav-settings').click();
       await expect(page.getByTestId('settings-page')).toBeVisible();
+      await page.waitForTimeout(1_100);
       await emitAcpSessionUpdates(app, [{
         sessionUpdate: 'agent_message_chunk',
         messageId: 'navigation-stream',
@@ -491,6 +540,8 @@ test.describe('ClawX ACP inline timeline', () => {
       await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
       await expect(page.getByTestId('chat-page')).toBeVisible();
       await expect(page.getByTestId('acp-assistant-message')).toContainText('Before navigation. While away.');
+      await expect(duration).toContainText('elapsed');
+      expect(Number.parseFloat((await duration.textContent()) ?? '0')).toBeGreaterThan(beforeNavigationSeconds);
       await emitAcpSessionUpdates(app, [{
         sessionUpdate: 'agent_message_chunk',
         messageId: 'navigation-stream',
@@ -502,6 +553,10 @@ test.describe('ClawX ACP inline timeline', () => {
 
       await resolveDeferredAcpPrompt(app);
       await expect(page.getByTestId('chat-composer-send')).toBeVisible();
+      await expect(duration).toContainText('Took');
+      const completedDuration = await duration.textContent();
+      await page.waitForTimeout(1_100);
+      await expect(duration).toHaveText(completedDuration ?? '');
     } finally {
       await closeElectronApp(app);
     }
@@ -913,14 +968,18 @@ test.describe('ClawX ACP inline timeline', () => {
       const page = await openChat(app);
 
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`)).toHaveCount(0);
+      await expect(page.getByText('[OpenClaw heartbeat poll]')).toHaveCount(0);
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([]);
+
+      await page.getByTestId('chat-composer-input').fill('Start a real conversation');
+      await page.getByTestId('chat-composer-send').click();
       await expect.poll(async () => {
         const loadSessionKeys = await getRecordedAcpLoadSessionKeys(app);
         return loadSessionKeys.some((sessionKey) => /^agent:main:session-/.test(sessionKey));
       }, { timeout: 30_000 }).toBe(true);
       const loadSessionKeys = await getRecordedAcpLoadSessionKeys(app);
       expect(loadSessionKeys).not.toContain(MAIN_SESSION_KEY);
-      await expect(page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`)).toHaveCount(0);
-      await expect(page.getByText('[OpenClaw heartbeat poll]')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }

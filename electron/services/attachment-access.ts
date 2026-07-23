@@ -18,8 +18,10 @@ import { fileURLToPath } from 'node:url';
 import type {
   AttachmentAccessError,
   AttachmentFileRef,
+  AttachmentOpenHandlersResult,
   AttachmentSourceRef,
   OpenAttachmentResult,
+  OpenAttachmentWithPayload,
   ReadAttachmentBinaryPayload,
   ReadAttachmentBinaryResult,
   ReadAttachmentTextResult,
@@ -32,6 +34,10 @@ import {
 } from '@shared/file-preview/limits';
 import type { AcpSessionAccessRegistry } from './acp-session-access-registry';
 import { recordAttachmentOpenTrace } from './acp-trace';
+import {
+  HANDLER_ID_MAX_LENGTH,
+  type AttachmentOpenWithService,
+} from './attachment-open-with';
 import {
   expandPath,
   resolveOpenClawConfigDir,
@@ -73,6 +79,7 @@ type AttachmentFs = {
 type AttachmentShell = {
   openPath: (path: string) => Promise<string>;
   openExternal: (url: string) => Promise<void>;
+  showItemInFolder: (path: string) => void;
 };
 
 export type AttachmentAccess = {
@@ -80,6 +87,9 @@ export type AttachmentAccess = {
   readAttachmentText: (ref: AttachmentFileRef) => Promise<ReadAttachmentTextResult>;
   readAttachmentBinary: (payload: ReadAttachmentBinaryPayload) => Promise<ReadAttachmentBinaryResult>;
   openAttachment: (ref: AttachmentSourceRef) => Promise<OpenAttachmentResult>;
+  listAttachmentOpenHandlers: (ref: AttachmentFileRef) => Promise<AttachmentOpenHandlersResult>;
+  openAttachmentWith: (payload: OpenAttachmentWithPayload) => Promise<OpenAttachmentResult>;
+  revealAttachment: (ref: AttachmentFileRef) => Promise<OpenAttachmentResult>;
 };
 
 type AttachmentAccessDependencies = {
@@ -89,6 +99,7 @@ type AttachmentAccessDependencies = {
   configDir?: string;
   fs?: AttachmentFs;
   shell?: AttachmentShell;
+  openWith: AttachmentOpenWithService;
 };
 
 type LocalScope = 'workspace' | 'openclaw-media' | 'staging';
@@ -790,10 +801,81 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
     }
   };
 
+  const requireCurrentLocalTarget = async (ref: AttachmentFileRef): Promise<ResolvedLocal> => {
+    const target = await resolveTarget(ref);
+    if (target.kind !== 'local') throw new AttachmentFailure('invalidReference');
+    if (!dependencies.sessionAccessRegistry.get(ref.sessionKey, ref.generation)) {
+      throw new AttachmentFailure('staleSession');
+    }
+    return target;
+  };
+
+  const listAttachmentOpenHandlers = async (
+    ref: AttachmentFileRef,
+  ): Promise<AttachmentOpenHandlersResult> => {
+    try {
+      const target = await requireCurrentLocalTarget(ref);
+      if (dependencies.openWith.platform === 'linux') {
+        return { ok: true, platform: 'linux', handlers: [] };
+      }
+      const handlers = await dependencies.openWith.list(target.canonicalPath);
+      if (!dependencies.sessionAccessRegistry.get(ref.sessionKey, ref.generation)) {
+        throw new AttachmentFailure('staleSession');
+      }
+      return {
+        ok: true,
+        platform: dependencies.openWith.platform,
+        handlers: handlers.map(({ id, name, iconDataUrl, isDefault }) => ({
+          handlerId: id,
+          name,
+          ...(iconDataUrl ? { iconDataUrl } : {}),
+          isDefault,
+        })),
+      };
+    } catch (error) {
+      return { ok: false, error: attachmentFailure(error) };
+    }
+  };
+
+  const openAttachmentWith = async (
+    payload: OpenAttachmentWithPayload,
+  ): Promise<OpenAttachmentResult> => {
+    try {
+      const target = await requireCurrentLocalTarget(payload?.ref);
+      if (typeof payload?.handlerId !== 'string'
+        || !payload.handlerId.trim()
+        || payload.handlerId.length > HANDLER_ID_MAX_LENGTH) {
+        throw new AttachmentFailure('invalidReference');
+      }
+      await dependencies.openWith.open(
+        target.canonicalPath,
+        payload.handlerId,
+        async () => (await requireCurrentLocalTarget(payload.ref)).canonicalPath,
+      );
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: attachmentFailure(error) };
+    }
+  };
+
+  const revealAttachment = async (ref: AttachmentFileRef): Promise<OpenAttachmentResult> => {
+    try {
+      await requireCurrentLocalTarget(ref);
+      const revalidated = await requireCurrentLocalTarget(ref);
+      shell.showItemInFolder(revalidated.canonicalPath);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: attachmentFailure(error) };
+    }
+  };
+
   return {
     resolveAttachment,
     readAttachmentText,
     readAttachmentBinary,
     openAttachment,
+    listAttachmentOpenHandlers,
+    openAttachmentWith,
+    revealAttachment,
   };
 }

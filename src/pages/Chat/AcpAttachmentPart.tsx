@@ -8,8 +8,8 @@ import type { AttachmentRenderPart } from '@/lib/acp/timeline-types';
 import { attachmentOpenMode } from '@/lib/file-preview-capabilities';
 import { basenameOf, extnameOf } from '@/lib/generated-files';
 import { hostApi } from '@/lib/host-api';
-import { cn } from '@/lib/utils';
 import { useArtifactPanel } from '@/stores/artifact-panel';
+import { AcpFileCard } from './AcpFileCard';
 
 type AttachmentTone = 'assistant' | 'user';
 
@@ -123,6 +123,13 @@ export function AcpAttachmentPart({ part, tone = 'assistant' }: { part: Attachme
       : t(mode === 'preview' ? 'acp.attachment.preview' : 'acp.attachment.open', { name });
   const ariaLabel = disabled ? `${actionLabel}: ${name}` : actionLabel;
   const userDisplayPath = tone === 'user' ? part.reference.displayPath : undefined;
+  const openWithFileRef =
+    tone === 'assistant' &&
+    part.access.status === 'available' &&
+    part.access.target.kind === 'local' &&
+    mode === 'preview'
+      ? part.access.target.ref
+      : null;
 
   const activate = async () => {
     if (part.access.status !== 'available') return;
@@ -156,20 +163,8 @@ export function AcpAttachmentPart({ part, tone = 'assistant' }: { part: Attachme
     );
   }
 
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      aria-label={ariaLabel}
-      onClick={() => void activate()}
-      className={cn(
-        'flex w-full max-w-full items-center gap-3 rounded-xl border border-black/10 bg-surface-modal px-3 py-2 text-left text-sm dark:border-white/10',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-        disabled
-          ? 'cursor-not-allowed text-muted-foreground opacity-70'
-          : 'transition-colors hover:bg-black/5 dark:hover:bg-white/5',
-      )}
-    >
+  const attachmentContent = (
+    <>
       <Paperclip data-testid="acp-attachment-icon" className="h-4 w-4 shrink-0" aria-hidden="true" />
       {userDisplayPath && !disabled ? (
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
@@ -198,6 +193,20 @@ export function AcpAttachmentPart({ part, tone = 'assistant' }: { part: Attachme
           )}
         </span>
       )}
-    </button>
+    </>
+  );
+
+  return (
+    <AcpFileCard
+      variant="standalone"
+      primaryAriaLabel={ariaLabel}
+      primaryDisabled={disabled}
+      onPrimary={() => void activate()}
+      openWith={openWithFileRef
+        ? { target: { kind: 'attachment', ref: openWithFileRef }, name }
+        : undefined}
+    >
+      {attachmentContent}
+    </AcpFileCard>
   );
 }

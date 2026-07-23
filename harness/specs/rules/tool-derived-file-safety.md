@@ -8,7 +8,7 @@ appliesTo:
   - gateway-backend-communication
 ---
 
-Treat file-tool paths as untrusted. Renderer must enforce lexical workspace containment before projection, and Main must independently enforce canonical and symlink-safe containment for every scoped read/stat operation. Tool-derived targets are read-only in-app previews and expose no system open or reveal action.
+Treat file-tool paths as untrusted. Renderer must enforce lexical workspace containment before projection, and Main must independently enforce canonical and symlink-safe containment for every scoped read, stat, handler-list, selected-handler-open, and reveal operation. Tool-derived targets remain read-only in-app previews; created and modified activity may expose explicit native Open with and reveal actions only through `WorkspaceFileRef` Host API operations that freshly resolve a regular file inside the canonical workspace. An HTML activity may also construct a local file URL from the already-authorized workspace root and contained relative path for the existing Web Browser navigation route; this is browser navigation, not a native handler action or canonicalization claim. Deleted activity exposes neither action. Renderer must never send or receive a Main-canonicalized target, executable path, command, or command template.
 
 File activity remains a record of completed canonical OpenClaw `write`, `edit`, and `apply_patch` inputs. It must not claim to be a verified disk or Git diff, scan the workspace, infer shell effects, or persist a separate ledger.
 

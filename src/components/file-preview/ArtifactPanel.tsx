@@ -1,19 +1,20 @@
 /**
  * Right-side artifact panel — the WorkBuddy-style split-pane sidebar
- * shown next to the Chat conversation.  Hosts three top-level tabs:
+ * shown next to the Chat conversation.  Hosts four top-level tabs:
  *
  *   - Workspace (browser): read-only workspace tree + file preview,
  *     scoped to the effective chat workspace.
  *   - Preview: rendered preview of whichever file is currently focused.
  *   - Changes: projected ACP file activity grouped by workspace path.
+ *   - Web Browser: stable layout anchor for the globally hosted webview.
  *
  * Open/close + tab + focused-file state lives in the
  * `useArtifactPanel` zustand store so any part of the page (file cards,
  * toolbar buttons, "View file changes →" links) can drive it.
  */
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { Eye, FileEdit, FolderOpen, FolderTree, X } from 'lucide-react';
+import { Eye, FileEdit, FolderOpen, FolderTree, Globe2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -27,6 +28,7 @@ import { FilePreviewBody } from './FilePreviewBody';
 import { WorkspaceBrowserBody } from './WorkspaceBrowserBody';
 import { WORKSPACE_BROWSER_ENABLED } from './workspace-browser-config';
 import { AcpSessionChangesView } from './AcpSessionChangesView';
+import { WebBrowserAnchor } from '@/components/web-browser/WebBrowserAnchor';
 
 export interface ArtifactPanelProps {
   fileGroups: AcpSessionFileGroup[];
@@ -75,7 +77,10 @@ export function ArtifactPanel({ fileGroups, uniqueFileCount, agent, workspacePat
             aria-hidden="true"
           />
         )}
-        <div className={cn('flex min-w-0 items-center gap-1', isMac && 'no-drag relative z-10')}>
+        <div
+          data-testid="artifact-panel-tabs"
+          className={cn('flex min-w-0 items-center gap-1 overflow-x-auto', isMac && 'no-drag relative z-10')}
+        >
           {WORKSPACE_BROWSER_ENABLED && (
             <PanelTabButton
               testId="artifact-panel-tab-browser"
@@ -98,6 +103,13 @@ export function ArtifactPanel({ fileGroups, uniqueFileCount, agent, workspacePat
             label={t('artifactPanel.tabs.changes', 'Changes')}
             active={visibleTab === 'changes'}
             onClick={() => setTab('changes')}
+          />
+          <PanelTabButton
+            testId="artifact-panel-tab-web-browser"
+            icon={<Globe2 className="h-3.5 w-3.5" />}
+            label={t('artifactPanel.tabs.webBrowser', 'Web Browser')}
+            active={visibleTab === 'web-browser'}
+            onClick={() => setTab('web-browser')}
           />
           {richFocusedFile && (
             <PanelTabButton
@@ -130,15 +142,19 @@ export function ArtifactPanel({ fileGroups, uniqueFileCount, agent, workspacePat
               workspaceLabel={workspaceLabel}
               runStartedAt={runStartedAt}
               refreshSignal={refreshSignal}
+              active={visibleTab === 'browser'}
               compact
             />
           </div>
         )}
         <div className={cn('h-full min-h-0', visibleTab !== 'preview' && 'hidden')}>
-          <PreviewTab focusedFile={focusedFile} />
+          <PreviewTab focusedFile={focusedFile} active={visibleTab === 'preview'} />
         </div>
         <div className={cn('h-full min-h-0', visibleTab !== 'changes' && 'hidden')}>
           <AcpSessionChangesView fileGroups={fileGroups} uniqueFileCount={uniqueFileCount} focus={focusedChange} />
+        </div>
+        <div className={cn('h-full min-h-0', visibleTab !== 'web-browser' && 'hidden')}>
+          {visibleTab === 'web-browser' && <WebBrowserAnchor />}
         </div>
       </div>
     </div>
@@ -174,7 +190,7 @@ function PanelTabButton({ testId, icon, label, active, onClick }: PanelTabButton
         onClick();
       }}
       className={cn(
-        'relative z-40 flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+        'relative z-40 flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
         active
           ? 'bg-foreground/10 text-foreground'
           : 'text-muted-foreground hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
@@ -188,10 +204,12 @@ function PanelTabButton({ testId, icon, label, active, onClick }: PanelTabButton
 
 interface PreviewTabProps {
   focusedFile: FilePreviewTarget | null;
+  active: boolean;
 }
 
-function PreviewTab({ focusedFile }: PreviewTabProps) {
+function PreviewTab({ focusedFile, active }: PreviewTabProps) {
   const { t } = useTranslation('chat');
+  const [pptxSlidePositions] = useState(() => new Map<string, number>());
   if (!focusedFile) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
@@ -207,12 +225,16 @@ function PreviewTab({ focusedFile }: PreviewTabProps) {
       </div>
     );
   }
+  const identity = getFilePreviewTargetIdentity(focusedFile);
   return (
     <FilePreviewBody
-      key={getFilePreviewTargetIdentity(focusedFile)}
+      key={identity}
       file={focusedFile}
       compact
       mode="preview"
+      active={active}
+      initialPptxSlideIndex={pptxSlidePositions.get(identity) ?? 0}
+      onPptxSlideIndexChange={(index) => pptxSlidePositions.set(identity, index)}
     />
   );
 }

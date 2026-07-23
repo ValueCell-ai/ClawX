@@ -53,6 +53,7 @@
       "replaceApiKeyHelp": "Оставьте это поле пустым, чтобы сохранить текущий API-ключ.",
       "baseUrl": "Базовый URL",
       "modelId": "ID модели",
+      "modelIdEditDisabled": "ID модели нельзя изменить после создания. Чтобы использовать другой ID, удалите этого провайдера и добавьте его снова.",
       "codePlanPreset": "Пресет Code Plan",
       "codePlanMode": "Code Plan",
       "useCodePlanPreset": "Использовать пресет Ark Code Plan",

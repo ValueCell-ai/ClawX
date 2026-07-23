@@ -20,14 +20,12 @@
  * here so callers only pass a `FilePreviewTarget` and a `readOnly` flag.
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { FILE_PREVIEW_MAX_BINARY_BYTES } from '@shared/file-preview/limits';
 import { FolderOpen, Save, ShieldAlert, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { cn } from '@/lib/utils';
 import {
   readTextFile,
   readAttachmentText,
@@ -42,7 +40,11 @@ import {
   isHtmlPreviewExt,
   supportsInlineDiff,
 } from '@/lib/generated-files';
-import { filePreviewKind, richFilePreviewKind } from '@/lib/file-preview-capabilities';
+import {
+  filePreviewKind,
+  isFilePreviewWithinSizeLimit,
+  richFilePreviewKind,
+} from '@/lib/file-preview-capabilities';
 import { FilePreviewIcon } from './file-card-utils';
 import { formatFileSize } from './format';
 import {
@@ -58,6 +60,8 @@ const MonacoViewerLazy = lazy(() => import('./MonacoViewer'));
 const MonacoDiffViewerLazy = lazy(() => import('./MonacoDiffViewer'));
 const PdfViewerLazy = lazy(() => import('./PdfViewer'));
 const SheetViewerLazy = lazy(() => import('./SheetViewer'));
+const DocxViewerLazy = lazy(() => import('./DocxViewer'));
+const PptxViewerLazy = lazy(() => import('./PptxViewer'));
 
 /**
  * Tab set for the body.
@@ -82,6 +86,10 @@ export interface FilePreviewBodyProps {
   mode?: FilePreviewBodyMode;
   /** When true, hide the file header (name / path / actions). */
   hideHeader?: boolean;
+  /** Whether this preview surface is visible and may own the PPTX parser. */
+  active?: boolean;
+  initialPptxSlideIndex?: number;
+  onPptxSlideIndexChange?: (index: number) => void;
 }
 
 type LoadState =
@@ -206,6 +214,9 @@ export function FilePreviewBody({
   trailingHeader,
   mode = 'full',
   hideHeader = false,
+  active = true,
+  initialPptxSlideIndex,
+  onPptxSlideIndexChange,
 }: FilePreviewBodyProps) {
   const { t } = useTranslation('chat');
   const loadIdentity = getFilePreviewTargetIdentity(file);
@@ -225,10 +236,22 @@ export function FilePreviewBody({
   const unsupportedPreviewFormat = mode !== 'diff' && filePreviewKind(file) == null;
   const unsupportedDiffFormat = mode === 'diff' && !supportsInlineDiff(file);
   const richPreview = richFilePreviewKind(file);
-  // Binary document previews (PDF, spreadsheet) own their own loading
+  // Binary document previews own their own loading
   // pipeline — we must not pipe them through `readTextFile` (which would
   // reject them as binary) and the diff tab is intentionally hidden.
-  const isRichDocumentPreview = richPreview === 'pdf' || richPreview === 'sheet';
+  const isRichDocumentPreview = richPreview === 'pdf'
+    || richPreview === 'sheet'
+    || richPreview === 'docx'
+    || richPreview === 'pptx';
+  const richPreviewLimitTarget = useMemo(() => (
+    isRichDocumentPreview && richPreview
+      ? { kind: 'rich' as const, richKind: richPreview }
+      : null
+  ), [isRichDocumentPreview, richPreview]);
+  const handleOfficeTooLarge = useCallback((nextSize?: number) => {
+    setSize(nextSize);
+    setState({ identity: loadIdentity, status: 'tooLarge', size: nextSize });
+  }, [loadIdentity]);
 
   useEffect(() => {
     let cancelled = false;
@@ -269,11 +292,15 @@ export function FilePreviewBody({
     }
 
     if (isRichDocumentPreview) {
-      // PdfViewer / SheetViewer load bytes themselves through the binary
-      // IPC channel; the body just needs to hand off control. For files
+      // Binary rich viewers load bytes themselves through their authorized
+      // Host API route; the body just needs to hand off control. For files
       // beyond the inline-preview ceiling we keep the existing
       // "direct open" fallback so users still have a way out.
-      if (typeof file.size === 'number' && file.size > FILE_PREVIEW_MAX_BINARY_BYTES) {
+      if (
+        richPreviewLimitTarget
+        && typeof file.size === 'number'
+        && !isFilePreviewWithinSizeLimit(richPreviewLimitTarget, file.size)
+      ) {
         setSize(file.size);
         setState({ identity: loadIdentity, status: 'tooLarge', size: file.size });
         setDraft(null);
@@ -294,7 +321,12 @@ export function FilePreviewBody({
         : statFile(file.filePath))
         .then((res) => {
           if (cancelled) return;
-          if (res.ok && typeof res.size === 'number' && res.size > FILE_PREVIEW_MAX_BINARY_BYTES) {
+          if (
+            res.ok
+            && richPreviewLimitTarget
+            && typeof res.size === 'number'
+            && !isFilePreviewWithinSizeLimit(richPreviewLimitTarget, res.size)
+          ) {
             setSize(res.size);
             setState({ identity: loadIdentity, status: 'tooLarge', size: res.size });
             return;
@@ -364,7 +396,7 @@ export function FilePreviewBody({
     return () => {
       cancelled = true;
     };
-  }, [file, loadIdentity, enforcedReadOnly, mode, tabs, unsupportedPreviewFormat, isRichDocumentPreview, richPreview]);
+  }, [file, loadIdentity, enforcedReadOnly, mode, tabs, unsupportedPreviewFormat, isRichDocumentPreview, richPreview, richPreviewLimitTarget]);
 
   const effectiveReadOnly = state.status === 'ready' ? state.readOnly : true;
   const allowSystemActions = !file.attachmentFileRef && !file.workspaceFileRef;
@@ -548,26 +580,7 @@ export function FilePreviewBody({
     }
 
     return (
-      <Tabs value={tab} onValueChange={(next) => setTab(next as Tab)} className="flex h-full flex-col">
-        {/* Hide the tab strip when there's only one tab — keeps the UI
-            quiet for the common case (just preview / just source). */}
-        {tabs.length > 1 && (
-          <TabsList className="m-3 self-start">
-            {tabs.map((id) => (
-              <TabsTrigger key={id} value={id}>
-                {id === 'source' && t('filePreview.tabs.source', 'Source')}
-                {id === 'preview' && t('filePreview.tabs.preview', 'Preview')}
-                {id === 'diff' && t('filePreview.tabs.changes', 'Changes')}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        )}
-        <div
-          className={cn(
-            'min-h-0 flex-1',
-            tabs.length > 1 && 'border-t border-black/5 dark:border-white/10',
-          )}
-        >
+      <div className="h-full min-h-0">
           {tabs.includes('source') && (
             <TabsContent value="source" className="m-0 h-full">
               {richPreview === 'image' ? (
@@ -634,6 +647,44 @@ export function FilePreviewBody({
                     workspaceFileRef={file.workspaceFileRef}
                   />
                 </Suspense>
+              ) : richPreview === 'docx' ? (
+                <Suspense
+                  fallback={
+                    <div className="flex h-full items-center justify-center">
+                      <LoadingSpinner />
+                    </div>
+                  }
+                >
+                  <DocxViewerLazy
+                    filePath={file.filePath}
+                    fileName={file.fileName}
+                    attachmentFileRef={file.attachmentFileRef}
+                    workspaceFileRef={file.workspaceFileRef}
+                    onTooLarge={handleOfficeTooLarge}
+                  />
+                </Suspense>
+              ) : richPreview === 'pptx' ? (
+                // CSS hidden is insufficient: pptxviewjs@1.1.9 shares Renderer-global processor/ZIP state.
+                // See harness/reference/office-document-preview.md#single-pptx-instance.
+                active ? (
+                  <Suspense
+                    fallback={
+                      <div className="flex h-full items-center justify-center">
+                        <LoadingSpinner />
+                      </div>
+                    }
+                  >
+                    <PptxViewerLazy
+                      filePath={file.filePath}
+                      fileName={file.fileName}
+                      attachmentFileRef={file.attachmentFileRef}
+                      workspaceFileRef={file.workspaceFileRef}
+                      onTooLarge={handleOfficeTooLarge}
+                      initialSlideIndex={initialPptxSlideIndex}
+                      onSlideIndexChange={onPptxSlideIndexChange}
+                    />
+                  </Suspense>
+                ) : null
               ) : file.contentType === 'document' ? (
                 isHtmlPreviewExt(file.ext) ? (
                   <HtmlPreview
@@ -693,13 +744,16 @@ export function FilePreviewBody({
               </Suspense>
             </TabsContent>
           )}
-        </div>
-      </Tabs>
+      </div>
     );
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <Tabs
+      value={tab}
+      onValueChange={(next) => setTab(next as Tab)}
+      className="flex h-full min-h-0 flex-col"
+    >
       {!hideHeader && (
       <header
         className={
@@ -722,6 +776,17 @@ export function FilePreviewBody({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {state.status === 'ready' && tabs.length > 1 && (
+            <TabsList className="h-8 shrink-0" data-testid="file-preview-view-tabs">
+              {tabs.map((id) => (
+                <TabsTrigger key={id} value={id} className="px-2.5 py-1 text-xs">
+                  {id === 'source' && t('filePreview.tabs.source', 'Source')}
+                  {id === 'preview' && t('filePreview.tabs.preview', 'Preview')}
+                  {id === 'diff' && t('filePreview.tabs.changes', 'Changes')}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          )}
           {!effectiveReadOnly && state.status === 'ready' && (
             <>
               <Button variant="ghost" size="sm" onClick={handleRevert} disabled={!dirty || saving}>
@@ -739,7 +804,7 @@ export function FilePreviewBody({
       </header>
       )}
       <div className="min-h-0 flex-1">{renderBody()}</div>
-    </div>
+    </Tabs>
   );
 }
 

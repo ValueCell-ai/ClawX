@@ -164,6 +164,18 @@ test.describe('ClawX chat model picker', () => {
                 createdAt: now,
                 updatedAt: now,
               },
+              {
+                id: 'moonshot-api-key',
+                vendorId: 'moonshot',
+                label: 'Moonshot',
+                authMode: 'api_key',
+                model: 'moonshot/kimi-k2.7',
+                metadata: { customModels: ['kimi-k2.6', 'moonshot/kimi-k2.7'] },
+                enabled: true,
+                isDefault: false,
+                createdAt: now,
+                updatedAt: now,
+              },
             ]);
           }
           if (request?.module === 'providers' && request.action === 'list') {
@@ -176,11 +188,13 @@ test.describe('ClawX chat model picker', () => {
             return makeResponse(request.id, [
               { accountId: 'alpha1234', hasKey: true, keyMasked: 'sk-***' },
               { accountId: 'beta5678', hasKey: true, keyMasked: 'sk-***' },
+              { accountId: 'moonshot-api-key', hasKey: true, keyMasked: 'sk-***' },
             ]);
           }
           if (request?.module === 'providers' && request.action === 'vendors') {
             return makeResponse(request.id, [
               { id: 'openai', name: 'OpenAI', supportedAuthModes: ['api_key', 'oauth_browser'] },
+              { id: 'moonshot', name: 'Moonshot', supportedAuthModes: ['api_key'] },
             ]);
           }
           if (request?.module === 'providers' && request.action === 'getDefaultAccount') {
@@ -226,6 +240,9 @@ test.describe('ClawX chat model picker', () => {
       await expect(page.getByTestId('chat-model-picker-menu')).toContainText('gpt-5.6 (OpenAI)');
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('gpt-5.5 (OpenAI)');
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('openai/gpt-5.6 (OpenAI)');
+      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('kimi-k2.7 (Moonshot)');
+      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('kimi-k2.6 (Moonshot)');
+      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('moonshot/kimi-k2.7 (Moonshot)');
       await page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'provider/model-beta (Beta)' }).click();
       await expect(page.getByTestId('chat-model-picker-button')).toContainText('provider/model-beta (Beta)');
 

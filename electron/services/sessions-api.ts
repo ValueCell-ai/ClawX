@@ -5,6 +5,7 @@ import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { stripAcpWorkingDirectoryPrefix } from '@shared/chat/session-title';
 import { isOpenClawHeartbeatPollText } from '@shared/chat/openclaw-internal';
 import type { RawMessage } from '@shared/chat/types';
+import type { SessionTurnTimingCandidate } from '@shared/host-api/contract';
 import { resolveOpenClawStateDir } from '../utils/paths';
 import { logger } from '../utils/logger';
 import {
@@ -31,7 +32,15 @@ type TranscriptMessage = RawMessage;
 
 type ParsedTranscriptLine = {
   type?: string;
+  id?: unknown;
+  timestamp?: unknown;
   message?: TranscriptMessage;
+};
+
+type TranscriptMessageRecord = {
+  id?: string;
+  timestamp?: unknown;
+  message: TranscriptMessage;
 };
 
 type SessionPayload = {
@@ -99,6 +108,77 @@ function isInternalSummaryText(text: string): boolean {
 function normalizeTimestamp(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
   return value < 1e12 ? value * 1000 : value;
+}
+
+function normalizeTranscriptTimestamp(value: unknown): number | null {
+  if (typeof value === 'number') return normalizeTimestamp(value);
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function transcriptRecordTimestamp(record: TranscriptMessageRecord): number | null {
+  return normalizeTranscriptTimestamp(record.timestamp)
+    ?? normalizeTranscriptTimestamp(record.message.timestamp);
+}
+
+function normalizeTurnUserText(message: TranscriptMessage): string {
+  return stripAcpWorkingDirectoryPrefix(extractMessageText(message.content))
+    .replace(/\r\n/g, '\n')
+    .trim();
+}
+
+function isInternalInterSessionUser(message: TranscriptMessage): boolean {
+  const provenance = (message as TranscriptMessage & { provenance?: unknown }).provenance;
+  if (provenance && typeof provenance === 'object' && !Array.isArray(provenance)) {
+    const kind = (provenance as Record<string, unknown>).kind;
+    if (typeof kind === 'string' && kind.toLowerCase() === 'inter_session') return true;
+  }
+  return /^\[Inter-session message\]\s/.test(extractMessageText(message.content));
+}
+
+function extractTranscriptTurnTimings(records: TranscriptMessageRecord[]): SessionTurnTimingCandidate[] {
+  const turns: Array<{
+    normalizedUserText: string;
+    startedAt: number | null;
+    completedAt: number | null;
+  }> = [];
+  let current: (typeof turns)[number] | null = null;
+
+  for (const record of records) {
+    const role = typeof record.message.role === 'string' ? record.message.role.toLowerCase() : '';
+    if (role === 'user') {
+      if (isInternalInterSessionUser(record.message)) continue;
+      current = {
+        normalizedUserText: normalizeTurnUserText(record.message),
+        startedAt: transcriptRecordTimestamp(record),
+        completedAt: null,
+      };
+      turns.push(current);
+      continue;
+    }
+
+    if (!current || (role !== 'assistant' && role !== 'toolresult' && role !== 'tool_result')) continue;
+    const timestamp = transcriptRecordTimestamp(record);
+    if (timestamp != null && (current.completedAt == null || timestamp > current.completedAt)) {
+      current.completedAt = timestamp;
+    }
+  }
+
+  const occurrences = new Map<string, number>();
+  const candidates = new Array<SessionTurnTimingCandidate | null>(turns.length).fill(null);
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index]!;
+    const userOccurrenceFromTail = (occurrences.get(turn.normalizedUserText) ?? 0) + 1;
+    occurrences.set(turn.normalizedUserText, userOccurrenceFromTail);
+    if (turn.startedAt == null || turn.completedAt == null || turn.completedAt < turn.startedAt) continue;
+    candidates[index] = {
+      normalizedUserText: turn.normalizedUserText,
+      userOccurrenceFromTail,
+      durationMs: turn.completedAt - turn.startedAt,
+    };
+  }
+  return candidates.filter((candidate): candidate is SessionTurnTimingCandidate => candidate != null);
 }
 
 type SqliteDatabaseLike = {
@@ -171,39 +251,47 @@ async function readOpenClawAcpSessionCwds(sessionKeys: string[]): Promise<Map<st
   }
 }
 
-function parseMessageLine(line: string): TranscriptMessage | null {
+function parseMessageRecordLine(line: string): TranscriptMessageRecord | null {
   try {
     const entry = JSON.parse(line) as ParsedTranscriptLine;
     if (entry.type !== 'message' || !entry.message || typeof entry.message !== 'object') {
       return null;
     }
-    return entry.message;
+    return {
+      ...(typeof entry.id === 'string' ? { id: entry.id } : {}),
+      timestamp: entry.timestamp,
+      message: entry.message,
+    };
   } catch {
     return null;
   }
 }
 
-function parseRecentMessagesFromTailChunk(chunk: string, readStart: number, limit: number): TranscriptMessage[] {
+function parseMessageLine(line: string): TranscriptMessage | null {
+  return parseMessageRecordLine(line)?.message ?? null;
+}
+
+function parseRecentRecordsFromTailChunk(chunk: string, readStart: number, limit: number): TranscriptMessageRecord[] {
   const lines = chunk.split(/\r?\n/);
   if (readStart > 0) lines.shift();
 
-  const collected: TranscriptMessage[] = [];
+  const collected: TranscriptMessageRecord[] = [];
   let scanned = 0;
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index];
     if (!line?.trim()) continue;
     scanned += 1;
     if (scanned > RECENT_TRANSCRIPT_MAX_SCAN_LINES) break;
-    const message = parseMessageLine(line);
-    if (message) {
-      collected.push(message);
+    const record = parseMessageRecordLine(line);
+    if (record) {
+      collected.push(record);
       if (collected.length >= limit) break;
     }
   }
   return collected.reverse();
 }
 
-function readRecentTranscriptMessages(transcriptPath: string, limit: number): TranscriptMessage[] {
+function readRecentTranscriptRecords(transcriptPath: string, limit: number): TranscriptMessageRecord[] {
   const boundedLimit = Math.max(1, Math.min(Math.floor(limit), 1000));
   let fd: number | null = null;
   try {
@@ -217,13 +305,13 @@ function readRecentTranscriptMessages(transcriptPath: string, limit: number): Tr
       const readLen = size - readStart;
       const buffer = Buffer.allocUnsafe(readLen);
       readSync(fd, buffer, 0, readLen, readStart);
-      const messages = parseRecentMessagesFromTailChunk(buffer.toString('utf8'), readStart, boundedLimit);
+      const records = parseRecentRecordsFromTailChunk(buffer.toString('utf8'), readStart, boundedLimit);
       if (
-        messages.length >= boundedLimit
+        records.length >= boundedLimit
         || readStart === 0
         || readBytes >= RECENT_TRANSCRIPT_MAX_READ_BYTES
       ) {
-        return messages;
+        return records;
       }
       readBytes = Math.min(size, readBytes * 2);
     }
@@ -231,6 +319,10 @@ function readRecentTranscriptMessages(transcriptPath: string, limit: number): Tr
   } finally {
     if (fd !== null) closeSync(fd);
   }
+}
+
+function readRecentTranscriptMessages(transcriptPath: string, limit: number): TranscriptMessage[] {
+  return readRecentTranscriptRecords(transcriptPath, limit).map((record) => record.message);
 }
 
 async function readAllTranscriptMessages(transcriptPath: string): Promise<TranscriptMessage[]> {
@@ -392,6 +484,28 @@ async function loadSessionTranscriptByKey(sessionKey: string, limit: number): Pr
     if (!transcriptPath) return null;
 
     return readRecentTranscriptMessages(transcriptPath, limit);
+  } catch {
+    return null;
+  }
+}
+
+async function loadSessionTurnTimingsByKey(
+  sessionKey: string,
+  limit: number,
+): Promise<SessionTurnTimingCandidate[] | null> {
+  const parsed = parseSessionKey(sessionKey);
+  if (!parsed) return null;
+
+  try {
+    const sessionsDir = join(resolveOpenClawStateDir(), 'agents', parsed.agentId, 'sessions');
+    const sessionsJson = await readSessionsJson(parsed.agentId);
+    const transcriptPath = resolveSessionTranscriptPathByKey(sessionKey, sessionsDir, sessionsJson);
+    if (!transcriptPath) return null;
+
+    // ACP session/load is authoritative for history content, but its updates omit the
+    // original timestamps needed to calculate a whole-turn duration. Read only bounded
+    // transcript timing metadata here; this must never become a second history source.
+    return extractTranscriptTurnTimings(readRecentTranscriptRecords(transcriptPath, limit));
   } catch {
     return null;
   }
@@ -561,6 +675,14 @@ export function createSessionsApi(): CompleteHostServiceRegistry['sessions'] {
         }
         return { success: false, error: 'Failed to load transcript' };
       }
+    },
+    turnTimings: async (payload) => {
+      const body = isRecord(payload) ? payload as SessionPayload : {};
+      const sessionKey = typeof body.sessionKey === 'string' ? body.sessionKey.trim() : '';
+      if (!sessionKey) return { success: false, error: 'sessionKey is required' };
+      const timings = await loadSessionTurnTimingsByKey(sessionKey, getLimit(payload, 1000));
+      if (!timings) return { success: false, error: 'Transcript not found' };
+      return { success: true, timings };
     },
   };
 }

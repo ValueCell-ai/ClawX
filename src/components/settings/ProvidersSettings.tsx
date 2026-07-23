@@ -448,21 +448,12 @@ function ProviderCard({
       }
 
       {
-        if (showModelIdField && !modelId.trim()) {
-          setValidationError(t('aiProviders.toast.modelRequired'));
-          setSaving(false);
-          return;
-        }
-
         const updates: Partial<ProviderConfig> = {};
         if (typeInfo?.showBaseUrl && (baseUrl.trim() || undefined) !== (account.baseUrl || undefined)) {
           updates.baseUrl = baseUrl.trim() || undefined;
         }
         if ((account.vendorId === 'custom' || account.vendorId === 'ollama') && apiProtocol !== account.apiProtocol) {
           updates.apiProtocol = apiProtocol;
-        }
-        if (showModelIdField && (modelId.trim() || undefined) !== (account.model || undefined)) {
-          updates.model = modelId.trim() || undefined;
         }
         const existingUserAgent = getUserAgentHeader(account.headers).trim();
         const nextUserAgent = userAgent.trim();
@@ -645,14 +636,18 @@ function ProviderCard({
                 <div className="space-y-1.5 pt-2">
                   <Label className={currentLabelClasses}>{t('aiProviders.dialog.modelId')}</Label>
                   <Input
+                    data-testid={`provider-edit-model-id-${account.id}`}
                     value={modelId}
-                    onChange={(e) => {
-                      setModelId(e.target.value);
-                      setValidationError(null);
-                    }}
+                    disabled
                     placeholder={typeInfo?.modelIdPlaceholder || 'provider/model-id'}
-                    className={currentInputClasses}
+                    className={cn(currentInputClasses, 'cursor-not-allowed opacity-70')}
                   />
+                  <p
+                    data-testid={`provider-edit-model-id-help-${account.id}`}
+                    className="text-xs text-muted-foreground"
+                  >
+                    {t('aiProviders.dialog.modelIdEditDisabled')}
+                  </p>
                 </div>
               )}
               {codePlanPreset && (
@@ -675,6 +670,7 @@ function ProviderCard({
                     <button
                       type="button"
                       data-testid={`provider-edit-codeplan-apikey-${account.id}`}
+                      disabled
                       onClick={() => {
                         setCodePlanMode('apikey');
                         setBaseUrl(typeInfo?.defaultBaseUrl || '');
@@ -689,6 +685,7 @@ function ProviderCard({
                     <button
                       type="button"
                       data-testid={`provider-edit-codeplan-mode-${account.id}`}
+                      disabled
                       onClick={() => {
                         setCodePlanMode('codeplan');
                         setBaseUrl(codePlanPreset.baseUrl);
@@ -870,11 +867,9 @@ function ProviderCard({
                       !newKey.trim()
                       && (baseUrl.trim() || undefined) === (account.baseUrl || undefined)
                       && userAgent.trim() === getUserAgentHeader(account.headers).trim()
-                      && (modelId.trim() || undefined) === (account.model || undefined)
                       && fallbackModelsEqual(normalizeFallbackModels(fallbackModelsText.split('\n')), account.fallbackModels)
                       && fallbackProviderIdsEqual(fallbackProviderIds, account.fallbackAccountIds)
                     )
-                    || Boolean(showModelIdField && !modelId.trim())
                   }
                 >
                   {validating || saving ? (

@@ -35,6 +35,17 @@
         "fileUnavailable": "File unavailable",
         "outsideWorkspace": "File is outside the workspace"
     },
+    "fileCard": {
+        "openWith": "Open with",
+        "openWithFile": "Open {{name}} with",
+        "openInBuiltInBrowser": "Open in built-in browser",
+        "searchingApplications": "Searching for applications",
+        "showInFinder": "Show in Finder",
+        "showInExplorer": "Show in File Explorer",
+        "showInFileManager": "Show in file manager",
+        "openWithFailed": "Could not open file with the selected application",
+        "revealFailed": "Could not show file in its folder"
+    },
     "runError": {
         "title": "Model call failed"
     },
@@ -61,6 +72,8 @@
         "imageSaved": "Image saved",
         "copy": "Copy response",
         "copied": "Copied",
+        "turnDuration": "Took {{duration}}",
+        "turnElapsed": "{{duration}} elapsed",
         "attachment": {
             "loading": "Loading attachment",
             "unavailable": "Attachment unavailable",
@@ -73,7 +86,8 @@
         "tabs": {
             "changes": "Changes",
             "preview": "Preview",
-            "browser": "Workspace"
+            "browser": "Workspace",
+            "webBrowser": "Web Browser"
         },
         "actions": {
             "back": "Back to list"
@@ -88,6 +102,51 @@
         "preview": {
             "emptyTitle": "No file selected",
             "emptyHint": "Click a file card in the chat first; the selected file will preview here."
+        },
+        "webBrowser": {
+            "actions": {
+                "back": "Back",
+                "forward": "Forward",
+                "refresh": "Refresh",
+                "more": "More",
+                "forceRefresh": "Force Refresh",
+                "clearCookies": "Clear Cookies",
+                "clearSiteData": "Clear Site Data",
+                "openExternal": "Open in System Browser"
+            },
+            "address": {
+                "label": "Web address",
+                "placeholder": "Enter a URL"
+            },
+            "errors": {
+                "empty": "Enter a web address.",
+                "absolutePath": "Local paths must use a file:/// URL.",
+                "invalidUrl": "This web address is invalid.",
+                "unsupportedProtocol": "This URL protocol is not supported.",
+                "reservedUrl": "This internal URL cannot be opened.",
+                "loadFailed": "Failed to load the page.",
+                "clearCookiesFailed": "Failed to clear cookies.",
+                "clearSiteDataFailed": "Failed to clear site data.",
+                "openExternalFailed": "Failed to open the page in the system browser."
+            },
+            "success": {
+                "cookiesCleared": "Cookies cleared.",
+                "siteDataCleared": "Site data cleared."
+            },
+            "crash": {
+                "title": "Web Browser stopped",
+                "message": "The browser page closed unexpectedly. Its navigation history and page state were lost.",
+                "recover": "Recover Browser"
+            },
+            "permissionDialog": {
+                "title": "Camera and microphone permission",
+                "message": "{{origin}} wants to use your {{capability}}.",
+                "camera": "camera",
+                "microphone": "microphone",
+                "cameraAndMicrophone": "camera and microphone",
+                "allow": "Allow",
+                "deny": "Deny"
+            }
         }
     },
     "filePreview": {
@@ -154,6 +213,15 @@
             "zoomReset": "Fit to width",
             "pageInputAria": "Current page",
             "singlePageHint": "Use the toolbar to switch between {{total}} pages"
+        },
+        "docx": {
+            "loadFailed": "Word document failed to load"
+        },
+        "pptx": {
+            "loadFailed": "Presentation failed to load",
+            "previous": "Previous slide",
+            "next": "Next slide",
+            "slidePosition": "{{current}} / {{total}}"
         },
         "sheet": {
             "loadFailed": "Failed to load spreadsheet: {{error}}",
@@ -256,6 +324,8 @@
         "collapseAll": "Collapse all",
         "expandAll": "Expand all",
         "loadMore": "Load more",
+        "aiReplying": "AI is replying",
+        "unreadReply": "Unread reply",
         "loadMoreForWorkspace": "Load {{count}} more sessions in {{workspace}}",
         "workspaceToggle": "Toggle workspace {{workspace}}",
         "renameWorkspace": "Rename workspace {{workspace}}",

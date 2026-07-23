@@ -35,6 +35,17 @@
         "fileUnavailable": "ファイルを利用できません",
         "outsideWorkspace": "ファイルはワークスペース外にあります"
     },
+    "fileCard": {
+        "openWith": "アプリで開く",
+        "openWithFile": "{{name}} をアプリで開く",
+        "openInBuiltInBrowser": "内蔵ブラウザで開く",
+        "searchingApplications": "アプリを検索中",
+        "showInFinder": "Finder に表示",
+        "showInExplorer": "エクスプローラーに表示",
+        "showInFileManager": "ファイルマネージャーに表示",
+        "openWithFailed": "選択したアプリでファイルを開けませんでした",
+        "revealFailed": "ファイルをフォルダーに表示できませんでした"
+    },
     "runError": {
         "title": "モデル呼び出しに失敗しました"
     },
@@ -61,6 +72,8 @@
         "imageSaved": "画像を保存しました",
         "copy": "返信をコピー",
         "copied": "コピーしました",
+        "turnDuration": "所要時間 {{duration}}",
+        "turnElapsed": "経過時間 {{duration}}",
         "attachment": {
             "loading": "添付ファイルを読み込み中",
             "unavailable": "添付ファイルを利用できません",
@@ -73,7 +86,8 @@
         "tabs": {
             "changes": "変更",
             "preview": "プレビュー",
-            "browser": "ワークスペース"
+            "browser": "ワークスペース",
+            "webBrowser": "ウェブブラウザ"
         },
         "actions": {
             "back": "一覧に戻る"
@@ -88,6 +102,51 @@
         "preview": {
             "emptyTitle": "ファイルが選択されていません",
             "emptyHint": "まず会話内のファイルカードをクリックしてファイルを選択すると、ここにプレビューが表示されます。"
+        },
+        "webBrowser": {
+            "actions": {
+                "back": "戻る",
+                "forward": "進む",
+                "refresh": "再読み込み",
+                "more": "その他",
+                "forceRefresh": "強制再読み込み",
+                "clearCookies": "Cookie を消去",
+                "clearSiteData": "サイトデータを消去",
+                "openExternal": "システムブラウザで開く"
+            },
+            "address": {
+                "label": "ウェブアドレス",
+                "placeholder": "URL を入力"
+            },
+            "errors": {
+                "empty": "ウェブアドレスを入力してください。",
+                "absolutePath": "ローカルパスには file:/// URL を使用してください。",
+                "invalidUrl": "ウェブアドレスが無効です。",
+                "unsupportedProtocol": "この URL プロトコルはサポートされていません。",
+                "reservedUrl": "この内部 URL は開けません。",
+                "loadFailed": "ページを読み込めませんでした。",
+                "clearCookiesFailed": "Cookie を消去できませんでした。",
+                "clearSiteDataFailed": "サイトデータを消去できませんでした。",
+                "openExternalFailed": "システムブラウザでページを開けませんでした。"
+            },
+            "success": {
+                "cookiesCleared": "Cookie を消去しました。",
+                "siteDataCleared": "サイトデータを消去しました。"
+            },
+            "crash": {
+                "title": "ウェブブラウザが停止しました",
+                "message": "ブラウザページが予期せず終了しました。閲覧履歴とページの状態は失われました。",
+                "recover": "ブラウザを復旧"
+            },
+            "permissionDialog": {
+                "title": "カメラとマイクの許可",
+                "message": "{{origin}} が{{capability}}を使用しようとしています。",
+                "camera": "カメラ",
+                "microphone": "マイク",
+                "cameraAndMicrophone": "カメラとマイク",
+                "allow": "許可",
+                "deny": "拒否"
+            }
         }
     },
     "filePreview": {
@@ -154,6 +213,15 @@
             "zoomReset": "幅に合わせる",
             "pageInputAria": "現在のページ",
             "singlePageHint": "ツールバーから {{total}} ページを切り替えできます"
+        },
+        "docx": {
+            "loadFailed": "Word 文書の読み込みに失敗しました"
+        },
+        "pptx": {
+            "loadFailed": "プレゼンテーションの読み込みに失敗しました",
+            "previous": "前のスライド",
+            "next": "次のスライド",
+            "slidePosition": "{{current}} / {{total}}"
         },
         "sheet": {
             "loadFailed": "スプレッドシートの読み込みに失敗しました: {{error}}",
@@ -256,6 +324,8 @@
         "collapseAll": "すべて折りたたむ",
         "expandAll": "すべて展開",
         "loadMore": "もっと読み込む",
+        "aiReplying": "AI が返信中",
+        "unreadReply": "未読の返信",
         "loadMoreForWorkspace": "{{workspace}} でさらに {{count}} 件のセッションを読み込む",
         "workspaceToggle": "ワークスペース {{workspace}} を切り替え",
         "renameWorkspace": "ワークスペース {{workspace}} の名前を変更",

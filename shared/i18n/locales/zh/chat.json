@@ -35,6 +35,17 @@
         "fileUnavailable": "文件不可用",
         "outsideWorkspace": "文件位于工作空间之外"
     },
+    "fileCard": {
+        "openWith": "打开方式",
+        "openWithFile": "选择打开 {{name}} 的应用",
+        "openInBuiltInBrowser": "在内置浏览器中打开",
+        "searchingApplications": "正在查找应用",
+        "showInFinder": "在访达中显示",
+        "showInExplorer": "在文件资源管理器中显示",
+        "showInFileManager": "在文件管理器中显示",
+        "openWithFailed": "无法使用所选应用打开文件",
+        "revealFailed": "无法在文件夹中显示文件"
+    },
     "runError": {
         "title": "模型调用失败"
     },
@@ -61,6 +72,8 @@
         "imageSaved": "图片已保存",
         "copy": "复制回复",
         "copied": "已复制",
+        "turnDuration": "用时 {{duration}}",
+        "turnElapsed": "已处理 {{duration}}",
         "attachment": {
             "loading": "正在加载附件",
             "unavailable": "附件不可用",
@@ -73,7 +86,8 @@
         "tabs": {
             "changes": "变更",
             "preview": "预览",
-            "browser": "工作空间"
+            "browser": "工作空间",
+            "webBrowser": "网页浏览器"
         },
         "actions": {
             "back": "返回列表"
@@ -88,6 +102,51 @@
         "preview": {
             "emptyTitle": "尚未选择文件",
             "emptyHint": "请先点击对话里的文件卡片，侧栏会选中该文件后在此预览。"
+        },
+        "webBrowser": {
+            "actions": {
+                "back": "后退",
+                "forward": "前进",
+                "refresh": "刷新",
+                "more": "更多",
+                "forceRefresh": "强制刷新",
+                "clearCookies": "清除 Cookie",
+                "clearSiteData": "清除网站数据",
+                "openExternal": "在系统浏览器中打开"
+            },
+            "address": {
+                "label": "网页地址",
+                "placeholder": "输入网址"
+            },
+            "errors": {
+                "empty": "请输入网页地址。",
+                "absolutePath": "本地路径必须使用 file:/// 网址。",
+                "invalidUrl": "网页地址无效。",
+                "unsupportedProtocol": "不支持此网址协议。",
+                "reservedUrl": "无法打开此内部网址。",
+                "loadFailed": "网页加载失败。",
+                "clearCookiesFailed": "清除 Cookie 失败。",
+                "clearSiteDataFailed": "清除网站数据失败。",
+                "openExternalFailed": "无法在系统浏览器中打开网页。"
+            },
+            "success": {
+                "cookiesCleared": "Cookie 已清除。",
+                "siteDataCleared": "网站数据已清除。"
+            },
+            "crash": {
+                "title": "网页浏览器已停止运行",
+                "message": "浏览器页面意外关闭，浏览历史和页面状态已丢失。",
+                "recover": "恢复浏览器"
+            },
+            "permissionDialog": {
+                "title": "摄像头和麦克风权限",
+                "message": "{{origin}} 想要使用你的{{capability}}。",
+                "camera": "摄像头",
+                "microphone": "麦克风",
+                "cameraAndMicrophone": "摄像头和麦克风",
+                "allow": "允许",
+                "deny": "拒绝"
+            }
         }
     },
     "filePreview": {
@@ -154,6 +213,15 @@
             "zoomReset": "适配宽度",
             "pageInputAria": "当前页",
             "singlePageHint": "使用工具栏在 {{total}} 页之间切换"
+        },
+        "docx": {
+            "loadFailed": "Word 文档加载失败"
+        },
+        "pptx": {
+            "loadFailed": "演示文稿加载失败",
+            "previous": "上一张幻灯片",
+            "next": "下一张幻灯片",
+            "slidePosition": "{{current}} / {{total}}"
         },
         "sheet": {
             "loadFailed": "表格加载失败：{{error}}",
@@ -256,6 +324,8 @@
         "collapseAll": "一键折叠",
         "expandAll": "一键展开",
         "loadMore": "加载更多",
+        "aiReplying": "AI 正在回复",
+        "unreadReply": "未读回复",
         "loadMoreForWorkspace": "在 {{workspace}} 中再加载 {{count}} 个会话",
         "workspaceToggle": "展开或折叠工作空间 {{workspace}}",
         "renameWorkspace": "重命名工作空间 {{workspace}}",

@@ -2,6 +2,45 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { WorkspaceBrowserBody } from '@/components/file-preview/WorkspaceBrowserBody';
 
+const pptxViewerProps = vi.hoisted(() => [] as Array<{
+  filePath: string;
+  initialSlideIndex?: number;
+  onSlideIndexChange?: (index: number) => void;
+  onTooLarge?: (size?: number) => void;
+}>);
+
+const docxViewerProps = vi.hoisted(() => [] as Array<{
+  filePath: string;
+  onTooLarge?: (size?: number) => void;
+}>);
+
+vi.mock('@/components/file-preview/DocxViewer', () => ({
+  default: (props: { filePath: string; onTooLarge?: (size?: number) => void }) => {
+    docxViewerProps.push(props);
+    return <div data-testid="docx-viewer">{props.filePath}</div>;
+  },
+}));
+
+vi.mock('@/components/file-preview/PptxViewer', () => ({
+  default: (props: {
+    filePath: string;
+    initialSlideIndex?: number;
+    onSlideIndexChange?: (index: number) => void;
+    onTooLarge?: (size?: number) => void;
+  }) => {
+    pptxViewerProps.push(props);
+    return <div data-testid="pptx-viewer">{props.filePath}:{props.initialSlideIndex ?? 0}</div>;
+  },
+}));
+
+vi.mock('@/components/file-preview/PdfViewer', () => ({
+  default: ({ filePath }: { filePath: string }) => <div data-testid="pdf-viewer">{filePath}</div>,
+}));
+
+vi.mock('@/components/file-preview/SheetViewer', () => ({
+  default: ({ filePath }: { filePath: string }) => <div data-testid="sheet-viewer">{filePath}</div>,
+}));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (_key: string, options?: string | Record<string, unknown>) => {
@@ -18,7 +57,9 @@ const {
   loadWorkspaceTree,
   collectInitialExpanded,
   findNode,
+  treeMode,
 } = vi.hoisted(() => {
+  const treeMode = { office: false };
   const htmlNode = {
     name: 'dashboard.html',
     relPath: 'dashboard.html',
@@ -39,6 +80,23 @@ const {
     ext: '',
     mimeType: 'text/plain',
     contentType: 'text',
+  };
+
+  const docxNode = {
+    name: 'report.docx', relPath: 'report.docx', absPath: '/workspace/report.docx', isDir: false,
+    size: 1024, ext: '.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', contentType: 'document',
+  };
+  const pptxNode = {
+    name: 'slides.pptx', relPath: 'slides.pptx', absPath: '/workspace/slides.pptx', isDir: false,
+    size: 1024, ext: '.pptx', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', contentType: 'document',
+  };
+  const pdfNode = {
+    name: 'manual.pdf', relPath: 'manual.pdf', absPath: '/workspace/manual.pdf', isDir: false,
+    size: 1024, ext: '.pdf', mimeType: 'application/pdf', contentType: 'document',
+  };
+  const sheetNode = {
+    name: 'budget.xlsx', relPath: 'budget.xlsx', absPath: '/workspace/budget.xlsx', isDir: false,
+    size: 1024, ext: '.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', contentType: 'document',
   };
 
   const configHiddenNode = {
@@ -90,13 +148,16 @@ const {
   return {
     readTextFile: vi.fn(),
     statFile: vi.fn(),
+    treeMode,
     loadWorkspaceTree: vi.fn(async () => ({
       root: {
         name: 'workspace',
         relPath: '',
         absPath: '/workspace',
         isDir: true,
-        children: [htmlNode, envNode, configNode, srcNode],
+        children: treeMode.office
+          ? [docxNode, pptxNode, pdfNode, sheetNode]
+          : [htmlNode, envNode, configNode, srcNode],
       },
       truncated: false,
     })),
@@ -104,6 +165,10 @@ const {
     findNode: vi.fn((_root: unknown, relPath: string) => {
       if (relPath === 'dashboard.html') return htmlNode;
       if (relPath === '.env') return envNode;
+      if (relPath === 'report.docx') return docxNode;
+      if (relPath === 'slides.pptx') return pptxNode;
+      if (relPath === 'manual.pdf') return pdfNode;
+      if (relPath === 'budget.xlsx') return sheetNode;
       if (relPath === 'config') return configNode;
       if (relPath === 'config/.config.env') return configHiddenNode;
       if (relPath === 'src') return srcNode;
@@ -137,6 +202,9 @@ vi.mock('@/lib/workspace-tree', () => ({
 describe('WorkspaceBrowserBody', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    pptxViewerProps.length = 0;
+    docxViewerProps.length = 0;
+    treeMode.office = false;
   });
 
   it('loads the explicit workspace path instead of the agent workspace', async () => {
@@ -349,6 +417,122 @@ describe('WorkspaceBrowserBody', () => {
       'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation allow-downloads',
     );
     expect(screen.queryByText('<!doctype html>')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['report.docx', '/workspace/report.docx', 'docx-viewer'],
+    ['slides.pptx', '/workspace/slides.pptx', 'pptx-viewer'],
+  ])('stats %s before dispatching its Office viewer with the validated absolute path', async (name, path, testId) => {
+    treeMode.office = true;
+    let resolveStat!: (value: { ok: true; size: number; isFile: true }) => void;
+    statFile.mockReturnValueOnce(new Promise((resolve) => { resolveStat = resolve; }));
+    render(<WorkspaceBrowserBody agent={{ id: 'main', name: 'Main Agent', workspace: '/workspace' }} />);
+
+    fireEvent.click(await screen.findByText(name));
+
+    expect(statFile).toHaveBeenCalledWith(path);
+    expect(screen.queryByTestId(testId)).not.toBeInTheDocument();
+    expect(readTextFile).not.toHaveBeenCalledWith(path);
+
+    resolveStat({ ok: true, size: 1024, isFile: true });
+
+    expect(await screen.findByTestId(testId)).toHaveTextContent(path);
+  });
+
+  it('does not reuse a ready Office preflight while the next target stat is pending', async () => {
+    treeMode.office = true;
+    statFile
+      .mockResolvedValueOnce({ ok: true, size: 1024, isFile: true })
+      .mockResolvedValueOnce({ ok: true, size: 1024, isFile: true })
+      .mockReturnValueOnce(new Promise(() => undefined));
+    render(<WorkspaceBrowserBody agent={{ id: 'main', name: 'Main Agent', workspace: '/workspace' }} />);
+
+    fireEvent.click(await screen.findByText('slides.pptx'));
+    expect(await screen.findByTestId('pptx-viewer')).toBeVisible();
+
+    fireEvent.click(screen.getByText('report.docx'));
+    expect(await screen.findByTestId('docx-viewer')).toBeVisible();
+    pptxViewerProps.length = 0;
+
+    fireEvent.click(screen.getAllByText('slides.pptx')[0]);
+
+    expect(statFile).toHaveBeenLastCalledWith('/workspace/slides.pptx');
+    expect(screen.queryByTestId('docx-viewer')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('pptx-viewer')).not.toBeInTheDocument();
+    expect(pptxViewerProps).toHaveLength(0);
+  });
+
+  it('suppresses an Office parser when workspace preflight exceeds 20 MB', async () => {
+    treeMode.office = true;
+    statFile.mockResolvedValueOnce({ ok: true, size: 20 * 1024 * 1024 + 1, isFile: true });
+    render(<WorkspaceBrowserBody agent={{ id: 'main', name: 'Main Agent', workspace: '/workspace' }} />);
+
+    fireEvent.click(await screen.findByText('report.docx'));
+
+    expect(await screen.findByRole('button', { name: 'Open directly' })).toBeVisible();
+    expect(screen.queryByTestId('docx-viewer')).not.toBeInTheDocument();
+    expect(readTextFile).not.toHaveBeenCalledWith('/workspace/report.docx');
+  });
+
+  it.each([
+    ['report.docx', 'docx-viewer', () => docxViewerProps.at(-1)],
+    ['slides.pptx', 'pptx-viewer', () => pptxViewerProps.at(-1)],
+  ])('shows fallback actions when %s grows after a successful stat', async (name, testId, getProps) => {
+    treeMode.office = true;
+    statFile.mockResolvedValueOnce({ ok: true, size: 1024, isFile: true });
+    render(<WorkspaceBrowserBody agent={{ id: 'main', name: 'Main Agent', workspace: '/workspace' }} />);
+
+    fireEvent.click(await screen.findByText(name));
+    expect(await screen.findByTestId(testId)).toBeVisible();
+    getProps()?.onTooLarge?.(20 * 1024 * 1024 + 23);
+
+    expect(await screen.findByRole('button', { name: 'Open directly' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Show in file manager' })).toBeVisible();
+    expect(screen.queryByTestId(testId)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['report.docx', 'docx-viewer'],
+    ['slides.pptx', 'pptx-viewer'],
+  ])('still mounts %s when stat fails so the bounded binary read decides size', async (name, testId) => {
+    treeMode.office = true;
+    statFile.mockResolvedValueOnce({ ok: false, error: 'notFound' });
+    render(<WorkspaceBrowserBody agent={{ id: 'main', name: 'Main Agent', workspace: '/workspace' }} />);
+
+    fireEvent.click(await screen.findByText(name));
+
+    expect(await screen.findByTestId(testId)).toBeVisible();
+  });
+
+  it.each([
+    ['manual.pdf', 'pdf-viewer'],
+    ['budget.xlsx', 'sheet-viewer'],
+  ])('keeps existing eager %s viewer ordering while stat is pending', async (name, testId) => {
+    treeMode.office = true;
+    statFile.mockReturnValueOnce(new Promise(() => undefined));
+    render(<WorkspaceBrowserBody agent={{ id: 'main', name: 'Main Agent', workspace: '/workspace' }} />);
+
+    fireEvent.click(await screen.findByText(name));
+
+    expect(await screen.findByTestId(testId)).toBeVisible();
+  });
+
+  it('preserves a PowerPoint position per absolute target while conditionally mounting the parser', async () => {
+    treeMode.office = true;
+    statFile.mockResolvedValue({ ok: true, size: 1024, isFile: true });
+    const props = { agent: { id: 'main', name: 'Main Agent', workspace: '/workspace' } };
+    const { rerender } = render(<WorkspaceBrowserBody {...props} active />);
+
+    fireEvent.click(await screen.findByText('slides.pptx'));
+    expect(await screen.findByTestId('pptx-viewer')).toHaveTextContent('/workspace/slides.pptx:0');
+    pptxViewerProps.at(-1)?.onSlideIndexChange?.(4);
+
+    rerender(<WorkspaceBrowserBody {...props} active={false} />);
+    expect(screen.queryByTestId('pptx-viewer')).not.toBeInTheDocument();
+    expect(screen.getAllByText('slides.pptx')[0]).toBeVisible();
+
+    rerender(<WorkspaceBrowserBody {...props} active />);
+    expect(await screen.findByTestId('pptx-viewer')).toHaveTextContent('/workspace/slides.pptx:4');
   });
 
   it('toggles directories with custom row clicks without double toggling', async () => {

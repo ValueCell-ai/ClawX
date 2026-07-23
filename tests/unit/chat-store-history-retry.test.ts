@@ -2032,4 +2032,29 @@ describe('useChatStore startup history retry', () => {
     resolveSend?.({ runId: 'run-idle-test-2' });
     await sendPromise;
   });
+
+  it('clears persisted session attention after a production hard delete succeeds', async () => {
+    const deletedKey = 'agent:main:delete-me';
+    const { useChatStore } = await import('@/stores/chat');
+    const { useSessionAttentionStore } = await import('@/stores/session-attention');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:main',
+      sessions: [{ key: 'agent:main:main' }, { key: deletedKey }],
+    });
+    useSessionAttentionStore.setState({
+      bySessionKey: { [deletedKey]: { observedBusy: false, unread: true } },
+      visibleSessionKey: null,
+    });
+
+    await useChatStore.getState().deleteSession(deletedKey);
+
+    expect(useSessionAttentionStore.getState().bySessionKey[deletedKey]).toBeUndefined();
+    expect(JSON.parse(window.localStorage.getItem('clawx.session-attention') ?? '{}')).not.toEqual(
+      expect.objectContaining({
+        state: expect.objectContaining({
+          bySessionKey: expect.objectContaining({ [deletedKey]: expect.anything() }),
+        }),
+      }),
+    );
+  });
 });

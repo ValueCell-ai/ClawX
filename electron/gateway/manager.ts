@@ -54,7 +54,13 @@ import {
   loadGatewayReloadPolicy,
   type GatewayReloadPolicy,
 } from './reload-policy';
-import { classifyGatewayStderrMessage, recordGatewayStartupStderrLine } from './startup-stderr';
+import {
+  classifyGatewayStderrMessage,
+  GATEWAY_STARTUP_SLOW_STAGE_MS,
+  GATEWAY_STARTUP_SLOW_TOTAL_MS,
+  GatewayStartupTraceCollector,
+  recordGatewayStartupStderrLine,
+} from './startup-stderr';
 import { runGatewayStartupSequence } from './startup-orchestrator';
 import {
   hasFatalRuntimeFailureSignal,
@@ -180,6 +186,7 @@ export class GatewayManager extends EventEmitter {
   private startLock = false;
   private lastSpawnSummary: string | null = null;
   private recentStartupStderrLines: string[] = [];
+  private readonly startupTraceCollector = new GatewayStartupTraceCollector();
   private pendingRequests: Map<string, PendingGatewayRequest> = new Map();
   private deviceIdentity: DeviceIdentity | null = null;
   private restartInFlight: Promise<void> | null = null;
@@ -425,12 +432,23 @@ export class GatewayManager extends EventEmitter {
         onConnectedToManagedGateway: () => {
           this.startHealthCheck();
           const tConnected = Date.now();
-          logger.info('[metric] gateway.startup', {
+          const spawnToReadyMs = tReady && tSpawned ? tReady - tSpawned : undefined;
+          const startupTrace = this.startupTraceCollector.getSummary();
+          const startupMetric = {
             configSyncMs: tSpawned ? tSpawned - t0 : undefined,
-            spawnToReadyMs: tReady && tSpawned ? tReady - tSpawned : undefined,
+            spawnToReadyMs,
             readyToConnectMs: tReady ? tConnected - tReady : undefined,
             totalMs: tConnected - t0,
-          });
+            openclawTrace: startupTrace,
+          };
+          logger.info('[metric] gateway.startup', startupMetric);
+          if (spawnToReadyMs !== undefined && spawnToReadyMs >= GATEWAY_STARTUP_SLOW_TOTAL_MS) {
+            logger.warn('[gateway-startup] Slow managed Gateway startup detected', {
+              pid: this.status.pid,
+              spawnToReadyMs,
+              openclawTrace: startupTrace,
+            });
+          }
         },
         runDoctorRepair: async () => await runOpenClawDoctorRepair(),
         onDoctorRepairSuccess: () => {
@@ -1055,8 +1073,10 @@ export class GatewayManager extends EventEmitter {
     await unloadLaunchctlGatewayService();
     this.processExitCode = null;
 
-    // Per-process dedup map for stderr lines — resets on each new spawn.
+    // Per-process diagnostics reset on each new spawn so retries never mix
+    // timings or stderr deduplication state from different Gateway children.
     const stderrDedup = new Map<string, number>();
+    this.startupTraceCollector.reset();
 
     const { child, lastSpawnSummary } = await launchGatewayProcess({
       port: this.status.port,
@@ -1066,6 +1086,7 @@ export class GatewayManager extends EventEmitter {
       getShouldReconnect: () => this.shouldReconnect,
       onStderrLine: (line) => {
         recordGatewayStartupStderrLine(this.recentStartupStderrLines, line);
+        const traceStage = this.startupTraceCollector.record(line);
         const classified = classifyGatewayStderrMessage(line);
         if (classified.level === 'drop') return;
 
@@ -1080,8 +1101,22 @@ export class GatewayManager extends EventEmitter {
           return;
         }
 
+        if (traceStage) {
+          const message = `[gateway-startup] stage=${traceStage.name} durationMs=${traceStage.durationMs}`
+            + (traceStage.totalMs === undefined ? '' : ` totalMs=${traceStage.totalMs}`);
+          if (traceStage.durationMs >= GATEWAY_STARTUP_SLOW_STAGE_MS) {
+            logger.warn(`${message} slow=true`);
+          } else {
+            logger.info(message);
+          }
+          return;
+        }
         if (classified.level === 'debug') {
           logger.debug(`[Gateway stderr] ${classified.normalized}`);
+          return;
+        }
+        if (classified.level === 'info') {
+          logger.info(`[Gateway stderr] ${classified.normalized}`);
           return;
         }
         logger.warn(`[Gateway stderr] ${classified.normalized}`);

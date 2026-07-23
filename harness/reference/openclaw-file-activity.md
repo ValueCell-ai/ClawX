@@ -1,18 +1,18 @@
 # OpenClaw File Activity
 
-Status: current compatibility and safety reference, reviewed 2026-07-15.
+Status: current compatibility and safety reference, reviewed 2026-07-23.
 
 Related scenario: `acp-file-activity`
 
-Related rules: `tool-derived-file-safety`, `session-workspace-authority`, `attachment-access-safety`
+Related rules: `tool-derived-file-safety`, `session-workspace-authority`, `attachment-access-safety`, `office-preview-safety`
 
-Related tasks: `restore-acp-file-activity`, `acp-media-attachments`
+Related tasks: `restore-acp-file-activity`, `acp-media-attachments`, `acp-attachment-open-with`, `unify-acp-file-cards`, `office-document-preview`
 
 ## Semantics And Ownership
 
 File activity is a pure Renderer projection over the active ACP timeline. It records file changes declared by successful OpenClaw file-editing tool calls. It is not a Git diff, a verified disk diff, or a session-start baseline.
 
-ClawX does not scan or watch the workspace, create snapshots, infer shell/script side effects, parse arbitrary prose, call `sessions.files.list` to manufacture diffs, or persist an activity ledger. Main does not interpret tool semantics; it only performs workspace-scoped read/stat operations.
+ClawX does not scan or watch the workspace, create snapshots, infer shell/script side effects, parse arbitrary prose, call `sessions.files.list` to manufacture diffs, or persist an activity ledger. Main does not interpret tool semantics; it only performs workspace-scoped read/stat and explicit native file actions.
 
 The supported tools are exactly `write`, `edit`, and `apply_patch`. Tool identity is the trimmed lowercase segment before the first colon in OpenClaw's ACP title. Status must be `completed`. Unsupported, malformed, pending, running, failed, and cancelled calls remain ordinary tool cards but produce no file activity.
 
@@ -60,7 +60,7 @@ Line counts normalize CRLF, compare fragments, and sum additions/removals. Missi
 
 Tool paths are untrusted. `workspaceRoot` is the containment boundary and `executionCwd` is the ACP working directory. Relative paths resolve against execution cwd; both relative and absolute candidates must remain lexically inside workspace root and use the same path family. Replay without authoritative root and cwd produces no projection.
 
-Preview uses a relative reference end to end:
+Preview and explicit native actions use a relative reference end to end:
 
 ```ts
 type WorkspaceFileRef = {
@@ -69,19 +69,23 @@ type WorkspaceFileRef = {
 };
 ```
 
-Main independently canonicalizes each read/stat request, checks real paths and nearest existing parents, rejects traversal and symlink escape, and avoids following unsafe final links. Renderer lexical rejection prevents activity UI for obvious outside paths. A later Main rejection keeps the historical activity but shows localized unavailable feedback.
+Main independently canonicalizes each read/stat/native-action request, checks real paths and nearest existing parents, rejects traversal, non-files, and symlink escape, and avoids following unsafe final links. Handler discovery, selected-handler open, and reveal each re-resolve the `WorkspaceFileRef`; selected-handler open performs an additional callback revalidation immediately before native invocation. Renderer lexical rejection prevents activity UI for obvious outside paths. A later Main rejection keeps the historical activity while refusing the requested file operation.
 
-Tool-derived targets are read-only in-app previews. They never expose system open or reveal because path validation cannot be atomic with OS shell dispatch. Existing trusted workspace-browser targets may retain their established operations.
+Tool-derived targets are read-only in-app previews and never use naked-path shell APIs. Created and modified activity may expose a separate Open with menu whose native actions are backed only by workspace-scoped Host API operations; deleted activity does not. For HTML, the menu first offers browser navigation to the file URL constructed from the effective workspace root and contained relative path. The native adapter receives a Main-owned canonical path and opaque handler id, and Main revalidates the workspace reference before invocation. Linux offers only workspace-scoped reveal after the browser action where eligible.
+
+`src/pages/Chat/AcpFileCard.tsx` supplies the shared attachment/file-activity presentation shell and target-aware menu without sharing grants. In-limit DOCX/PPTX activity reaches the Office viewers through its `WorkspaceFileRef`; parsing and single-viewer constraints are documented in `harness/reference/office-document-preview.md`.
 
 ## Separation From Attachments
 
-File activity and user-facing attachments are separate projections and security boundaries. Incidental paths in tool input or output remain tool-derived evidence: they cannot become attachment cards and retain the preview-only restrictions above. Attachment evidence must instead come from standard ACP resource content, a Main-owned user staging record, or the bounded explicit assistant `MEDIA:` exception documented in `harness/reference/acp-generated-media-and-diagnostics.md#bounded-transcript-exceptions`.
+File activity and user-facing attachments are separate projections and security boundaries. Incidental paths in tool input or output remain tool-derived evidence: they cannot become attachment cards, resolve outside the workspace, or use attachment-scoped authorization. Attachment evidence must instead come from standard ACP resource content, a Main-owned user staging record, or the bounded explicit assistant `MEDIA:` exception documented in `harness/reference/acp-generated-media-and-diagnostics.md#bounded-transcript-exceptions`.
 
-Main establishes attachment session and relative-path context only when the ACP session load or creation succeeds. Each attachment resolve, preview read, and system or external open then revalidates the exact session, generation, reference, and canonical target; unlike tool-derived file activity, explicit attachment evidence may resolve outside the workspace. This attachment-scoped operation supports click-initiated system open without weakening the separate rule that incidental tool-derived targets never expose system open or reveal. The complete boundary is documented in `harness/reference/acp-attachment-access-control.md`.
+Main establishes attachment session and relative-path context only when the ACP session load or creation succeeds. Each attachment resolve, preview read, and system or external open then revalidates the exact session, generation, reference, and canonical target; unlike tool-derived file activity, explicit attachment evidence may resolve outside the workspace. File activity never enters that attachment pipeline: its explicit native actions remain restricted to the canonical workspace through `WorkspaceFileRef`. The complete attachment boundary is documented in `harness/reference/acp-attachment-access-control.md`.
 
 ## User Experience And Replay
 
-Each assistant turn shows one file button and one summary per eligible path. Created/modified buttons open current-file Preview; deleted buttons open Changes. Changes is session-scoped, grouped by file, and shows at most one diff editor per turn and path. Empty sessions explicitly state that the session has no file changes.
+Each assistant turn shows one file button and one summary per eligible path. Created/modified buttons open current-file Preview and include Open with; deleted buttons open Changes and omit Open with. Changes is session-scoped, grouped by file, and shows at most one diff editor per turn and path. Empty sessions explicitly state that the session has no file changes.
+
+When a preview supports multiple views, its segmented switcher shares the trailing side of the file name/path header rather than consuming a separate row. HTML files expose `Preview` then `Source`, default to the sandboxed rendered preview, and preserve the same scoped read result when switching views.
 
 Full ACP structured replay restores available activity through the same projection. Transcript-only or incomplete replay does not infer missing records. Session switch clears the projection with the active timeline.
 

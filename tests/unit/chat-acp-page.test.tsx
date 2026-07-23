@@ -249,6 +249,7 @@ vi.mock('react-i18next', () => ({
       };
       return labels[key] ?? key;
     },
+    i18n: { language: 'en' },
   }),
 }));
 
@@ -646,7 +647,11 @@ describe('ACP Chat page', () => {
       });
     });
     await waitFor(() => {
-      expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(sessionKey, '/workspace');
+      expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(
+        sessionKey,
+        '/workspace',
+        'Ship it',
+      );
     });
   });
 
@@ -669,7 +674,11 @@ describe('ACP Chat page', () => {
       });
     });
     await waitFor(() => {
-      expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(sessionKey, '/workspace');
+      expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(
+        sessionKey,
+        '/workspace',
+        'Ship it',
+      );
     });
   });
 
@@ -695,7 +704,11 @@ describe('ACP Chat page', () => {
     fireEvent.click(screen.getByTestId('mock-send'));
 
     await waitFor(() => {
-      expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(sessionKey, '/workspace');
+      expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(
+        sessionKey,
+        '/workspace',
+        'Ship it',
+      );
     });
     expect(acpState.loadSession).toHaveBeenCalledTimes(1);
 
@@ -800,6 +813,7 @@ describe('ACP Chat page', () => {
     expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(
       'agent:research:main',
       '/research-workspace',
+      'Ask research',
     );
     expect(acpState.sendPrompt).toHaveBeenCalledWith({
       sessionKey: 'agent:research:main',

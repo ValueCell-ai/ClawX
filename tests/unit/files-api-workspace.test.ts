@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   home: '',
   openPath: vi.fn(),
   showItemInFolder: vi.fn(),
+  listOpenHandlers: vi.fn(),
+  openWithHandler: vi.fn(),
   beforeOpen: undefined as undefined | ((path: string) => void | Promise<void>),
   beforeRealpath: undefined as undefined | ((path: string) => void | Promise<void>),
   afterStat: undefined as undefined | ((path: string) => void | Promise<void>),
@@ -36,6 +38,8 @@ describe('workspace-scoped files api', () => {
     vi.resetModules();
     mocks.openPath.mockReset().mockResolvedValue('');
     mocks.showItemInFolder.mockReset();
+    mocks.listOpenHandlers.mockReset().mockResolvedValue([]);
+    mocks.openWithHandler.mockReset().mockResolvedValue(undefined);
     mocks.beforeOpen = undefined;
     mocks.beforeRealpath = undefined;
     mocks.afterStat = undefined;
@@ -69,6 +73,11 @@ describe('workspace-scoped files api', () => {
           await mocks.afterStat?.(path);
           return result;
         },
+      },
+      openWith: {
+        platform: 'darwin',
+        list: mocks.listOpenHandlers,
+        open: mocks.openWithHandler,
       },
     });
   }
@@ -124,11 +133,90 @@ describe('workspace-scoped files api', () => {
     expect(await readdir(outsideDir)).toEqual([]);
   });
 
-  it('does not expose path-only scoped shell capabilities', async () => {
+  it('lists, opens, and reveals a regular workspace file through scoped services', async () => {
+    const canonicalTarget = await realpath(join(workspaceRoot, 'hello.txt'));
+    const ref = { workspaceRoot, relativePath: 'hello.txt' };
+    const handlerId = 'opaque:handler:4f2a';
+    mocks.listOpenHandlers.mockResolvedValueOnce([{
+      id: handlerId,
+      name: 'Text Reader',
+      isDefault: true,
+    }]);
+    mocks.openWithHandler.mockImplementationOnce(async (initialPath, selectedHandlerId, revalidateFile) => {
+      expect(initialPath).toBe(canonicalTarget);
+      expect(selectedHandlerId).toBe(handlerId);
+      await expect(revalidateFile()).resolves.toBe(canonicalTarget);
+    });
     const api = await getApi();
 
-    expect(api).not.toHaveProperty('openWorkspaceFile');
-    expect(api).not.toHaveProperty('revealWorkspaceFile');
+    await expect(api.listWorkspaceOpenHandlers(ref)).resolves.toEqual({
+      ok: true,
+      platform: 'darwin',
+      handlers: [{ handlerId, name: 'Text Reader', isDefault: true }],
+    });
+    await expect(api.openWorkspaceWith({ ref, handlerId })).resolves.toEqual({ ok: true });
+    await expect(api.revealWorkspaceFile(ref)).resolves.toEqual({ ok: true });
+
+    expect(mocks.listOpenHandlers).toHaveBeenCalledWith(canonicalTarget);
+    expect(mocks.openWithHandler).toHaveBeenCalledWith(
+      canonicalTarget,
+      handlerId,
+      expect.any(Function),
+    );
+    expect(mocks.showItemInFolder).toHaveBeenCalledWith(canonicalTarget);
+    expect(mocks.openPath).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-files, traversal, and symlink escapes for every workspace native action', async () => {
+    const outsideDir = join(testDir, 'native-action-outside');
+    await mkdir(outsideDir);
+    await writeFile(join(outsideDir, 'secret.txt'), 'secret');
+    await symlink(join(outsideDir, 'secret.txt'), join(workspaceRoot, 'escaped-file'));
+    const api = await getApi();
+    const cases = [
+      [{ workspaceRoot, relativePath: 'projects' }, 'notFile'],
+      [{ workspaceRoot, relativePath: '../outside.txt' }, 'outsideSandbox'],
+      [{ workspaceRoot, relativePath: 'escaped-file' }, 'outsideSandbox'],
+    ] as const;
+
+    for (const [ref, error] of cases) {
+      await expect(api.listWorkspaceOpenHandlers(ref)).resolves.toEqual({ ok: false, error });
+      await expect(api.openWorkspaceWith({ ref, handlerId: 'opaque-handler-id' }))
+        .resolves.toEqual({ ok: false, error });
+      await expect(api.revealWorkspaceFile(ref)).resolves.toEqual({ ok: false, error });
+    }
+
+    expect(mocks.listOpenHandlers).not.toHaveBeenCalled();
+    expect(mocks.openWithHandler).not.toHaveBeenCalled();
+    expect(mocks.showItemInFolder).not.toHaveBeenCalled();
+  });
+
+  it('revalidates the workspace target after handler selection and before native open', async () => {
+    const target = join(workspaceRoot, 'open-with-race.txt');
+    const outsideTarget = join(testDir, 'open-with-race-secret.txt');
+    await writeFile(target, 'safe');
+    await writeFile(outsideTarget, 'outside-secret');
+    const canonicalTarget = await realpath(target);
+    const nativeOpen = vi.fn();
+    mocks.openWithHandler.mockImplementationOnce(async (initialPath, _handlerId, revalidateFile) => {
+      expect(initialPath).toBe(canonicalTarget);
+      await rm(target);
+      await symlink(outsideTarget, target);
+      await revalidateFile();
+      nativeOpen();
+    });
+    const api = await getApi();
+
+    await expect(api.openWorkspaceWith({
+      ref: { workspaceRoot, relativePath: 'open-with-race.txt' },
+      handlerId: 'opaque-handler-id',
+    })).resolves.toEqual({ ok: false, error: 'outsideSandbox' });
+    expect(mocks.openWithHandler).toHaveBeenCalledWith(
+      canonicalTarget,
+      'opaque-handler-id',
+      expect.any(Function),
+    );
+    expect(nativeOpen).not.toHaveBeenCalled();
   });
 
   it('expands and canonicalizes workspace context and requires cwd containment', async () => {

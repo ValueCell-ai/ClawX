@@ -1,18 +1,34 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AcpToolCallCard } from '@/pages/Chat/AcpToolCallCard';
+import { AcpAttachmentPart } from '@/pages/Chat/AcpAttachmentPart';
 import { AcpTimeline } from '@/pages/Chat/AcpTimeline';
-import type { AcpTimelineSnapshot, ToolCallItem } from '@/lib/acp/timeline-types';
+import { AcpTurnFileActivity } from '@/pages/Chat/AcpTurnFileActivity';
+import type { AcpTimelineSnapshot, AttachmentRenderPart, ToolCallItem } from '@/lib/acp/timeline-types';
 import type { AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 
 const openAttachmentMock = vi.hoisted(() => vi.fn());
+const listAttachmentOpenHandlersMock = vi.hoisted(() => vi.fn());
+const openAttachmentWithMock = vi.hoisted(() => vi.fn());
+const revealAttachmentMock = vi.hoisted(() => vi.fn());
+const listWorkspaceOpenHandlersMock = vi.hoisted(() => vi.fn());
+const openWorkspaceWithMock = vi.hoisted(() => vi.fn());
+const revealWorkspaceFileMock = vi.hoisted(() => vi.fn());
 const thumbnailsMock = vi.hoisted(() => vi.fn());
+const toastErrorMock = vi.hoisted(() => vi.fn());
+const i18nLanguage = vi.hoisted(() => ({ value: 'en' }));
 
 vi.mock('@/lib/host-api', () => ({
   hostApi: {
     files: {
       openAttachment: openAttachmentMock,
+      listAttachmentOpenHandlers: listAttachmentOpenHandlersMock,
+      openAttachmentWith: openAttachmentWithMock,
+      revealAttachment: revealAttachmentMock,
+      listWorkspaceOpenHandlers: listWorkspaceOpenHandlersMock,
+      openWorkspaceWith: openWorkspaceWithMock,
+      revealWorkspaceFile: revealWorkspaceFileMock,
     },
     media: {
       thumbnails: thumbnailsMock,
@@ -20,9 +36,17 @@ vi.mock('@/lib/host-api', () => ({
   },
 }));
 
+vi.mock('sonner', () => ({
+  toast: {
+    error: toastErrorMock,
+  },
+}));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) => {
+      if (i18nLanguage.value === 'zh' && key === 'acp.turnDuration') return `用时 ${String(options?.duration ?? '')}`;
+      if (i18nLanguage.value === 'zh' && key === 'acp.turnElapsed') return `已处理 ${String(options?.duration ?? '')}`;
       const labels: Record<string, string> = {
         'acp.thought': 'Thought',
         'acp.tool': 'Tool',
@@ -38,12 +62,23 @@ vi.mock('react-i18next', () => ({
         'acp.loadFailed': 'Load failed',
         'acp.promptFailed': 'Prompt failed',
         'acp.unsupportedContent': 'Unsupported content',
+        'acp.turnDuration': 'Took {{duration}}',
+        'acp.turnElapsed': '{{duration}} elapsed',
         'acp.dismiss': 'Dismiss',
         'acp.attachment.loading': 'Loading attachment',
         'acp.attachment.unavailable': 'Attachment unavailable',
         'acp.attachment.open': 'Open {{name}}',
         'acp.attachment.preview': 'Preview {{name}}',
         'acp.attachment.openFailed': 'Could not open attachment',
+        'fileCard.openWith': 'Open with',
+        'fileCard.openWithFile': 'Open {{name}} with',
+        'fileCard.openInBuiltInBrowser': 'Open in built-in browser',
+        'fileCard.searchingApplications': 'Searching for applications',
+        'fileCard.showInFinder': 'Show in Finder',
+        'fileCard.showInExplorer': 'Show in File Explorer',
+        'fileCard.showInFileManager': 'Show in file manager',
+        'fileCard.openWithFailed': 'Could not open file with the selected application',
+        'fileCard.revealFailed': 'Could not show file in its folder',
         'fileActivity.created': 'Created',
         'fileActivity.modified': 'Modified',
         'fileActivity.deleted': 'Deleted',
@@ -52,8 +87,56 @@ vi.mock('react-i18next', () => ({
       };
       return (labels[key] ?? key).replace(/{{(\w+)}}/g, (_match, name: string) => String(options?.[name] ?? ''));
     },
+    i18n: { get language() { return i18nLanguage.value; } },
   }),
 }));
+
+const attachmentRef = {
+  sessionKey: 'agent:main:s1',
+  generation: 1,
+  uri: 'file:///workspace/report.pdf',
+};
+
+function availableAttachment(overrides: {
+  name?: string;
+  mimeType?: string;
+  size?: number;
+  target?: Extract<AttachmentRenderPart['access'], { status: 'available' }>['target'];
+  ref?: typeof attachmentRef;
+} = {}): AttachmentRenderPart {
+  const name = overrides.name ?? 'report.pdf';
+  const ref = overrides.ref ?? { ...attachmentRef, uri: `file:///workspace/${name}` };
+  return {
+    kind: 'attachment',
+    attachmentId: `attachment:${name}`,
+    reference: { uri: ref.uri, name },
+    source: 'acp-resource',
+    access: {
+      status: 'available',
+      identity: `opaque-${name}`,
+      target: overrides.target ?? { kind: 'local', scope: 'workspace', ref },
+      mimeType: overrides.mimeType ?? 'application/pdf',
+      size: overrides.size ?? 1024,
+    },
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+async function openAttachmentMenu(name = 'report.pdf') {
+  const trigger = screen.getByRole('button', { name: `Open ${name} with` });
+  fireEvent.keyDown(trigger, { key: 'Enter', code: 'Enter' });
+  await screen.findByRole('menu');
+  return trigger;
+}
 
 function snapshot(overrides: Partial<AcpTimelineSnapshot>): AcpTimelineSnapshot {
   return {
@@ -84,9 +167,23 @@ function toolCallItem(overrides: Partial<ToolCallItem>): ToolCallItem {
 describe('ACP chat timeline components', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    i18nLanguage.value = 'en';
+    window.electron.platform = 'darwin';
     openAttachmentMock.mockResolvedValue({ ok: true });
+    listAttachmentOpenHandlersMock.mockResolvedValue({ ok: true, platform: 'darwin', handlers: [] });
+    openAttachmentWithMock.mockResolvedValue({ ok: true });
+    revealAttachmentMock.mockResolvedValue({ ok: true });
+    listWorkspaceOpenHandlersMock.mockResolvedValue({ ok: true, platform: 'darwin', handlers: [] });
+    openWorkspaceWithMock.mockResolvedValue({ ok: true });
+    revealWorkspaceFileMock.mockResolvedValue({ ok: true });
     thumbnailsMock.mockResolvedValue({});
-    useArtifactPanel.setState({ open: false, tab: 'changes', focusedFile: null });
+    useArtifactPanel.setState({
+      open: false,
+      tab: 'changes',
+      focusedFile: null,
+      webBrowserNavigation: null,
+      webBrowserNavigationId: 0,
+    });
   });
 
   it('does not apply background highlighting to chat code', () => {
@@ -110,6 +207,97 @@ describe('ACP chat timeline components', () => {
 
     expect(blockCode).not.toHaveClass('bg-black/5');
     expect(inlineCode).not.toHaveClass('bg-black/5');
+  });
+
+  it('shows a fixed whole-turn duration on the ACP-replayed assistant turn', () => {
+    const state = snapshot({
+      itemOrder: ['user-a:0', 'assistant-a:0'],
+      itemsById: {
+        'user-a:0': {
+          kind: 'message-segment', id: 'user-a:0', role: 'user', messageId: 'user-a', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Measure this' }],
+        },
+        'assistant-a:0': {
+          kind: 'message-segment', id: 'assistant-a:0', role: 'assistant', messageId: 'assistant-a', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Measured' }],
+        },
+      },
+    });
+
+    render(<AcpTimeline
+      snapshot={state}
+      turnTimingsByUserMessageId={{
+        'user-a': { source: 'transcript', status: 'complete', durationMs: 6_400 },
+      }}
+    />);
+
+    expect(screen.getByTestId('acp-turn-duration')).toHaveTextContent('Took 6 sec');
+  });
+
+  it('floors Chinese whole-turn seconds, spaces the unit, and uses processing/completed copy', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(20_000);
+    i18nLanguage.value = 'zh';
+    const state = snapshot({
+      itemOrder: ['user-a:0', 'assistant-a:0', 'user-b:0', 'assistant-b:0'],
+      itemsById: {
+        'user-a:0': {
+          kind: 'message-segment', id: 'user-a:0', role: 'user', messageId: 'user-a', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Completed' }],
+        },
+        'assistant-a:0': {
+          kind: 'message-segment', id: 'assistant-a:0', role: 'assistant', messageId: 'assistant-a', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Done' }],
+        },
+        'user-b:0': {
+          kind: 'message-segment', id: 'user-b:0', role: 'user', messageId: 'user-b', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Running' }],
+        },
+        'assistant-b:0': {
+          kind: 'message-segment', id: 'assistant-b:0', role: 'assistant', messageId: 'assistant-b', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Working' }],
+        },
+      },
+    });
+
+    render(<AcpTimeline
+      snapshot={state}
+      turnTimingsByUserMessageId={{
+        'user-a': { source: 'transcript', status: 'complete', durationMs: 23_600 },
+        'user-b': { source: 'live', status: 'running', startedAtMs: 600 },
+      }}
+    />);
+
+    expect(screen.getByText('用时 23 秒')).toBeVisible();
+    expect(screen.getByText('已处理 19 秒')).toBeVisible();
+    vi.useRealTimers();
+  });
+
+  it('updates a running whole-turn elapsed duration from its original start time', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    const state = snapshot({
+      itemOrder: ['user-a:0', 'tool:read-file'],
+      itemsById: {
+        'user-a:0': {
+          kind: 'message-segment', id: 'user-a:0', role: 'user', messageId: 'user-a', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Read it' }],
+        },
+        'tool:read-file': toolCallItem({ status: 'running' }),
+      },
+    });
+
+    render(<AcpTimeline
+      snapshot={state}
+      turnTimingsByUserMessageId={{
+        'user-a': { source: 'live', status: 'running', startedAtMs: 7_000 },
+      }}
+    />);
+    expect(screen.getByTestId('acp-turn-duration')).toHaveTextContent('3 sec elapsed');
+
+    act(() => vi.advanceTimersByTime(1_000));
+    expect(screen.getByTestId('acp-turn-duration')).toHaveTextContent('4 sec elapsed');
+    vi.useRealTimers();
   });
 
   it('renders tool-only turn file controls once after timeline items and routes preview and changes', () => {
@@ -202,11 +390,114 @@ describe('ACP chat timeline components', () => {
     render(<AcpTimeline snapshot={state} fileActivity={projection} workspaceRoot="/workspace" />);
     expect(screen.getByTestId('acp-turn-file-activity')).not.toHaveTextContent('+');
     expect(screen.getByTestId('acp-turn-file-activity')).not.toHaveTextContent('-');
+    expect(screen.queryByRole('button', { name: 'Open old.md with' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId('acp-file-button'));
     expect(useArtifactPanel.getState().focusedChange).toMatchObject({
       relativePath: 'old.md',
       turnId,
       navigationId: expect.any(Number),
+    });
+    expect(listWorkspaceOpenHandlersMock).not.toHaveBeenCalled();
+    expect(openWorkspaceWithMock).not.toHaveBeenCalled();
+    expect(revealWorkspaceFileMock).not.toHaveBeenCalled();
+  });
+
+  it.each(['created', 'modified'] as const)(
+    'shows workspace Open with for %s activity and routes every menu action with a WorkspaceFileRef',
+    async (action) => {
+      const ref = { workspaceRoot: '/workspace', relativePath: 'report.md' };
+      listWorkspaceOpenHandlersMock.mockResolvedValue({
+        ok: true,
+        platform: 'darwin',
+        handlers: [{ handlerId: 'opaque-reader-id', name: 'Reader', isDefault: true }],
+      });
+      render(
+        <AcpTurnFileActivity
+          workspaceRoot={ref.workspaceRoot}
+          summaries={[{
+            turnId: `turn-${action}`,
+            relativePath: ref.relativePath,
+            action,
+            activities: [],
+            added: 1,
+            removed: action === 'modified' ? 1 : 0,
+          }]}
+        />,
+      );
+
+      await openAttachmentMenu(ref.relativePath);
+      expect(listWorkspaceOpenHandlersMock).toHaveBeenCalledWith(ref);
+      expect(listAttachmentOpenHandlersMock).not.toHaveBeenCalled();
+
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Reader' }));
+      await waitFor(() => expect(openWorkspaceWithMock).toHaveBeenCalledWith({
+        ref,
+        handlerId: 'opaque-reader-id',
+      }));
+      expect(openAttachmentWithMock).not.toHaveBeenCalled();
+
+      await openAttachmentMenu(ref.relativePath);
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Show in Finder' }));
+      await waitFor(() => expect(revealWorkspaceFileMock).toHaveBeenCalledWith(ref));
+      expect(revealAttachmentMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('opens HTML file activity in the built-in browser from the first Open with item', async () => {
+    render(
+      <AcpTurnFileActivity
+        workspaceRoot="/workspace/demo"
+        summaries={[{
+          turnId: 'turn-html',
+          relativePath: 'site/report #1.html',
+          action: 'created',
+          activities: [],
+          added: 1,
+          removed: 0,
+        }]}
+      />,
+    );
+
+    await openAttachmentMenu('site/report #1.html');
+    const items = screen.getAllByRole('menuitem');
+    expect(items[0]).toHaveTextContent('Open in built-in browser');
+    fireEvent.click(items[0]);
+
+    expect(useArtifactPanel.getState()).toMatchObject({
+      open: true,
+      tab: 'web-browser',
+      webBrowserInitialized: true,
+      webBrowserNavigation: {
+        url: 'file:///workspace/demo/site/report%20%231.html',
+      },
+    });
+    expect(listWorkspaceOpenHandlersMock).toHaveBeenCalledWith({
+      workspaceRoot: '/workspace/demo',
+      relativePath: 'site/report #1.html',
+    });
+  });
+
+  it.each(['report.docx', 'slides.pptx'])('routes active Office file activity %s through a workspace-scoped preview target', (relativePath) => {
+    render(
+      <AcpTurnFileActivity
+        workspaceRoot="/workspace"
+        summaries={[{
+          turnId: 'turn-office',
+          relativePath,
+          action: 'created',
+          activities: [],
+          added: null,
+          removed: null,
+        }]}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('acp-file-button'));
+
+    expect(useArtifactPanel.getState().focusedFile).toMatchObject({
+      filePath: relativePath,
+      contentType: 'document',
+      workspaceFileRef: { workspaceRoot: '/workspace', relativePath },
     });
   });
 
@@ -476,6 +767,342 @@ describe('ACP chat timeline components', () => {
     expect(screen.getByAltText('Chart preview')).toHaveAttribute('src', 'data:image/png;base64,abc');
   });
 
+  it('embeds the open-with control inside an eligible assistant preview card', () => {
+    const part = availableAttachment();
+    render(<AcpAttachmentPart part={part} />);
+
+    const preview = screen.getByRole('button', { name: 'Preview report.pdf' });
+    const trigger = screen.getByRole('button', { name: 'Open report.pdf with' });
+    expect(preview.parentElement).toBe(trigger.parentElement);
+    expect(preview.parentElement).toHaveClass('items-center', 'gap-1', 'p-1');
+    expect(preview).toHaveClass('flex-1', 'rounded-lg');
+    expect(preview).not.toHaveClass('rounded-l-xl');
+    expect(trigger).toHaveClass('rounded-md');
+    expect(trigger).not.toHaveClass('self-stretch', 'border-l', 'rounded-r-xl');
+
+    fireEvent.click(preview);
+
+    expect(useArtifactPanel.getState().focusedFile).toMatchObject({
+      fileName: 'report.pdf',
+      attachmentFileRef: part.access.status === 'available' && part.access.target.ref,
+    });
+    expect(listAttachmentOpenHandlersMock).not.toHaveBeenCalled();
+    expect(openAttachmentWithMock).not.toHaveBeenCalled();
+    expect(revealAttachmentMock).not.toHaveBeenCalled();
+  });
+
+  it('opens a local HTML attachment in the built-in browser from the first Open with item', async () => {
+    render(<AcpAttachmentPart part={availableAttachment({
+      name: 'site one.html',
+      mimeType: 'text/html',
+      ref: {
+        ...attachmentRef,
+        uri: '/workspace/site one.html',
+      },
+    })} />);
+
+    await openAttachmentMenu('site one.html');
+    const items = screen.getAllByRole('menuitem');
+    expect(items[0]).toHaveTextContent('Open in built-in browser');
+    fireEvent.click(items[0]);
+
+    expect(useArtifactPanel.getState()).toMatchObject({
+      open: true,
+      tab: 'web-browser',
+      webBrowserInitialized: true,
+      webBrowserNavigation: {
+        url: 'file:///workspace/site%20one.html',
+      },
+    });
+  });
+
+  it.each([
+    ['user tone', availableAttachment(), 'user'],
+    ['pending access', {
+      ...availableAttachment(),
+      access: { status: 'pending' as const },
+    }, 'assistant'],
+    ['unavailable access', {
+      ...availableAttachment(),
+      access: { status: 'unavailable' as const, reason: 'operationFailed' as const },
+    }, 'assistant'],
+    ['remote target', availableAttachment({
+      target: { kind: 'remote', ref: attachmentRef, url: 'https://example.com/report.pdf' },
+    }), 'assistant'],
+    ['system-open-only attachment', availableAttachment({ name: 'archive.zip', mimeType: 'application/zip' }), 'assistant'],
+    ['oversized preview attachment', availableAttachment({ size: 50 * 1024 * 1024 + 1 }), 'assistant'],
+  ] as const)('does not add the open-with trigger for %s', (_case, part, tone) => {
+    render(<AcpAttachmentPart part={part} tone={tone} />);
+    expect(screen.queryByRole('button', { name: / with$/ })).not.toBeInTheDocument();
+  });
+
+  it('opens a separate keyboard-accessible menu without activating preview', async () => {
+    render(<AcpAttachmentPart part={availableAttachment()} />);
+
+    const trigger = await openAttachmentMenu();
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(useArtifactPanel.getState().focusedFile).toBeNull();
+    expect(listAttachmentOpenHandlersMock).toHaveBeenCalledWith(attachmentRef);
+  });
+
+  it('shows reveal while discovery loads, then sorts the default first and the rest by locale', async () => {
+    const discovery = deferred<{
+      ok: true;
+      platform: 'darwin';
+      handlers: Array<{ handlerId: string; name: string; iconDataUrl?: string; isDefault: boolean }>;
+    }>();
+    listAttachmentOpenHandlersMock.mockReturnValueOnce(discovery.promise);
+    render(<AcpAttachmentPart part={availableAttachment()} />);
+
+    await openAttachmentMenu();
+    expect(screen.getByTestId('acp-attachment-open-with-loading')).toHaveTextContent('Searching for applications');
+    expect(screen.getByTestId('acp-attachment-reveal')).toHaveTextContent('Show in Finder');
+
+    const iconDataUrl = 'data:image/png;base64,iVBORw0KGgo=';
+    discovery.resolve({
+      ok: true,
+      platform: 'darwin',
+      handlers: [
+        { handlerId: 'beta', name: 'Beta', isDefault: false },
+        { handlerId: 'default', name: 'Zulu', iconDataUrl, isDefault: true },
+        { handlerId: 'alpha', name: 'Alpha', isDefault: false },
+      ],
+    });
+
+    await waitFor(() => expect(screen.queryByTestId('acp-attachment-open-with-loading')).not.toBeInTheDocument());
+    expect(screen.getAllByTestId('acp-attachment-open-with-app').map((row) => row.textContent)).toEqual([
+      'Zulu',
+      'Alpha',
+      'Beta',
+    ]);
+    expect(screen.getByTestId('acp-attachment-open-with-native-icon')).toHaveAttribute('src', iconDataUrl);
+    expect(screen.getByTestId('acp-attachment-open-with-native-icon')).toHaveClass('h-5', 'w-5');
+  });
+
+  it('uses a generic application icon for missing, invalid, oversized, and failed native icons', async () => {
+    const oversizedIcon = `data:image/png;base64,${'A'.repeat(65_536)}`;
+    listAttachmentOpenHandlersMock.mockResolvedValueOnce({
+      ok: true,
+      platform: 'darwin',
+      handlers: [
+        { handlerId: 'missing', name: 'Missing', isDefault: true },
+        { handlerId: 'invalid', name: 'Invalid', iconDataUrl: 'file:///Applications/Invalid.app', isDefault: false },
+        { handlerId: 'oversized', name: 'Oversized', iconDataUrl: oversizedIcon, isDefault: false },
+        { handlerId: 'broken', name: 'Broken', iconDataUrl: 'data:image/png;base64,broken', isDefault: false },
+      ],
+    });
+    render(<AcpAttachmentPart part={availableAttachment()} />);
+
+    await openAttachmentMenu();
+    await screen.findByText('Missing');
+    expect(screen.getAllByTestId('acp-attachment-open-with-generic-icon')).toHaveLength(3);
+    expect(screen.getAllByTestId('acp-attachment-open-with-generic-icon')[0]).toHaveClass('h-5', 'w-5');
+
+    fireEvent.error(screen.getByTestId('acp-attachment-open-with-native-icon'));
+    expect(screen.getAllByTestId('acp-attachment-open-with-generic-icon')).toHaveLength(4);
+  });
+
+  it('silently removes failed discovery while preserving reveal', async () => {
+    listAttachmentOpenHandlersMock
+      .mockRejectedValueOnce(new Error('discovery failed'))
+      .mockResolvedValueOnce({ ok: false, error: 'operationFailed' });
+    render(<AcpAttachmentPart part={availableAttachment()} />);
+
+    const trigger = await openAttachmentMenu();
+    await waitFor(() => expect(screen.queryByTestId('acp-attachment-open-with-loading')).not.toBeInTheDocument());
+    expect(screen.getByTestId('acp-attachment-reveal')).toBeEnabled();
+    expect(screen.queryByTestId('acp-attachment-open-with-app')).not.toBeInTheDocument();
+    expect(toastErrorMock).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape', code: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+    fireEvent.keyDown(trigger, { key: 'Enter', code: 'Enter' });
+    await screen.findByRole('menu');
+    await waitFor(() => expect(screen.queryByTestId('acp-attachment-open-with-loading')).not.toBeInTheDocument());
+    expect(screen.getByTestId('acp-attachment-reveal')).toBeEnabled();
+    expect(toastErrorMock).not.toHaveBeenCalled();
+  });
+
+  it('opens with the exact attachment ref and handler id and toasts only explicit action failure', async () => {
+    listAttachmentOpenHandlersMock.mockResolvedValue({
+      ok: true,
+      platform: 'darwin',
+      handlers: [{ handlerId: 'com.example.Reader', name: 'Reader', isDefault: true }],
+    });
+    render(<AcpAttachmentPart part={availableAttachment()} />);
+
+    await openAttachmentMenu();
+    fireEvent.click(await screen.findByText('Reader'));
+    await waitFor(() => expect(openAttachmentWithMock).toHaveBeenCalledWith({
+      ref: attachmentRef,
+      handlerId: 'com.example.Reader',
+    }));
+    expect(toastErrorMock).not.toHaveBeenCalled();
+    expect(useArtifactPanel.getState().focusedFile).toBeNull();
+
+    openAttachmentWithMock.mockResolvedValueOnce({ ok: false, error: 'operationFailed' });
+    await openAttachmentMenu();
+    fireEvent.click(await screen.findByText('Reader'));
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith('Could not open file with the selected application'));
+  });
+
+  it.each([
+    ['darwin', 'Show in Finder'],
+    ['win32', 'Show in File Explorer'],
+  ] as const)('reveals through the scoped host action with the %s platform label', async (platform, label) => {
+    window.electron.platform = platform;
+    revealAttachmentMock.mockResolvedValueOnce({ ok: false, error: 'operationFailed' });
+    render(<AcpAttachmentPart part={availableAttachment()} />);
+
+    await openAttachmentMenu();
+    fireEvent.click(screen.getByRole('menuitem', { name: label }));
+
+    await waitFor(() => expect(revealAttachmentMock).toHaveBeenCalledWith(attachmentRef));
+    expect(toastErrorMock).toHaveBeenCalledWith('Could not show file in its folder');
+  });
+
+  it('renders a reveal-only Linux menu without requesting application discovery', async () => {
+    window.electron.platform = 'linux';
+    render(<AcpAttachmentPart part={availableAttachment()} />);
+
+    await openAttachmentMenu();
+
+    expect(screen.getByRole('menuitem', { name: 'Show in file manager' })).toBeInTheDocument();
+    expect(screen.queryByTestId('acp-attachment-open-with-loading')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('acp-attachment-open-with-app')).not.toBeInTheDocument();
+    expect(listAttachmentOpenHandlersMock).not.toHaveBeenCalled();
+  });
+
+  it('discovers again after reopen, ignores the closed request, and restores trigger focus on Escape', async () => {
+    const first = deferred<{
+      ok: true;
+      platform: 'darwin';
+      handlers: Array<{ handlerId: string; name: string; isDefault: boolean }>;
+    }>();
+    const second = deferred<{
+      ok: true;
+      platform: 'darwin';
+      handlers: Array<{ handlerId: string; name: string; isDefault: boolean }>;
+    }>();
+    listAttachmentOpenHandlersMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    render(<AcpAttachmentPart part={availableAttachment()} />);
+
+    const trigger = await openAttachmentMenu();
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape', code: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+    expect(trigger).toHaveFocus();
+
+    fireEvent.keyDown(trigger, { key: 'Enter', code: 'Enter' });
+    await screen.findByRole('menu');
+    expect(listAttachmentOpenHandlersMock).toHaveBeenCalledTimes(2);
+    first.resolve({
+      ok: true,
+      platform: 'darwin',
+      handlers: [{ handlerId: 'stale', name: 'Stale App', isDefault: true }],
+    });
+    await act(async () => first.promise);
+    expect(screen.queryByText('Stale App')).not.toBeInTheDocument();
+
+    second.resolve({
+      ok: true,
+      platform: 'darwin',
+      handlers: [{ handlerId: 'fresh', name: 'Fresh App', isDefault: true }],
+    });
+    expect(await screen.findByText('Fresh App')).toBeInTheDocument();
+  });
+
+  it('never renders or activates resolved handlers after the attachment ref changes', async () => {
+    const refA = { ...attachmentRef, uri: 'file:///workspace/report-a.pdf' };
+    const refB = { ...attachmentRef, generation: 2, uri: 'file:///workspace/report-b.pdf' };
+    const discoveryB = deferred<{
+      ok: true;
+      platform: 'darwin';
+      handlers: Array<{ handlerId: string; name: string; isDefault: boolean }>;
+    }>();
+    listAttachmentOpenHandlersMock
+      .mockResolvedValueOnce({
+        ok: true,
+        platform: 'darwin',
+        handlers: [{ handlerId: 'app-a', name: 'App A', isDefault: true }],
+      })
+      .mockReturnValueOnce(discoveryB.promise);
+    const { rerender } = render(<AcpAttachmentPart part={availableAttachment({ ref: refA })} />);
+
+    await openAttachmentMenu();
+    expect(await screen.findByText('App A')).toBeInTheDocument();
+
+    rerender(<AcpAttachmentPart part={availableAttachment({ ref: refB })} />);
+    const staleRow = screen.queryByRole('menuitem', { name: 'App A' });
+    if (staleRow) fireEvent.click(staleRow);
+    expect(openAttachmentWithMock).not.toHaveBeenCalledWith({ ref: refB, handlerId: 'app-a' });
+    expect(staleRow).not.toBeInTheDocument();
+
+    await waitFor(() => expect(listAttachmentOpenHandlersMock).toHaveBeenLastCalledWith(refB));
+    discoveryB.resolve({
+      ok: true,
+      platform: 'darwin',
+      handlers: [{ handlerId: 'app-b', name: 'App B', isDefault: true }],
+    });
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'App B' }));
+
+    await waitFor(() => expect(openAttachmentWithMock).toHaveBeenCalledWith({ ref: refB, handlerId: 'app-b' }));
+    expect(openAttachmentWithMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores stale discovery after the attachment ref changes or the card unmounts', async () => {
+    const oldDiscovery = deferred<{
+      ok: true;
+      platform: 'darwin';
+      handlers: Array<{ handlerId: string; name: string; isDefault: boolean }>;
+    }>();
+    const newDiscovery = deferred<{
+      ok: true;
+      platform: 'darwin';
+      handlers: Array<{ handlerId: string; name: string; isDefault: boolean }>;
+    }>();
+    const unmountedDiscovery = deferred<{
+      ok: true;
+      platform: 'darwin';
+      handlers: Array<{ handlerId: string; name: string; isDefault: boolean }>;
+    }>();
+    listAttachmentOpenHandlersMock
+      .mockReturnValueOnce(oldDiscovery.promise)
+      .mockReturnValueOnce(newDiscovery.promise)
+      .mockReturnValueOnce(unmountedDiscovery.promise);
+    const { rerender, unmount } = render(<AcpAttachmentPart part={availableAttachment()} />);
+
+    await openAttachmentMenu();
+    const nextRef = { ...attachmentRef, generation: 2 };
+    rerender(<AcpAttachmentPart part={availableAttachment({ ref: nextRef })} />);
+    oldDiscovery.resolve({
+      ok: true,
+      platform: 'darwin',
+      handlers: [{ handlerId: 'old-ref', name: 'Old Ref App', isDefault: true }],
+    });
+    await act(async () => oldDiscovery.promise);
+    expect(screen.queryByText('Old Ref App')).not.toBeInTheDocument();
+
+    newDiscovery.resolve({
+      ok: true,
+      platform: 'darwin',
+      handlers: [{ handlerId: 'new-ref', name: 'New Ref App', isDefault: true }],
+    });
+    expect(await screen.findByText('New Ref App')).toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape', code: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+    await openAttachmentMenu();
+    unmount();
+    unmountedDiscovery.resolve({
+      ok: true,
+      platform: 'darwin',
+      handlers: [{ handlerId: 'unmounted', name: 'Unmounted App', isDefault: true }],
+    });
+    await act(async () => unmountedDiscovery.promise);
+    expect(screen.queryByText('Unmounted App')).not.toBeInTheDocument();
+  });
+
   it('renders pending and unavailable attachments as disabled paperclip rows', () => {
     const state = snapshot({
       itemOrder: ['msg-a:0', 'msg-a:1'],
@@ -568,8 +1195,26 @@ describe('ACP chat timeline components', () => {
   });
 
   it.each([
+    ['report.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['slides.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  ])('previews an authorized in-limit Office attachment %s', (name, mimeType) => {
+    const part = availableAttachment({ name, mimeType, size: 20 * 1024 * 1024 });
+    render(<AcpAttachmentPart part={part} />);
+
+    fireEvent.click(screen.getByRole('button', { name: `Preview ${name}` }));
+
+    expect(useArtifactPanel.getState().focusedFile).toMatchObject({
+      fileName: name,
+      contentType: 'document',
+      attachmentFileRef: part.access.status === 'available' && part.access.target.ref,
+    });
+    expect(openAttachmentMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
     ['archive.zip', 'application/zip', 1024],
-    ['report.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 1024],
+    ['large.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 20 * 1024 * 1024 + 1],
+    ['large.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 20 * 1024 * 1024 + 1],
     ['clip.mp3', 'audio/mpeg', 1024],
     ['movie.mp4', 'video/mp4', 1024],
     ['large.pdf', 'application/pdf', 50 * 1024 * 1024 + 1],
@@ -614,6 +1259,25 @@ describe('ACP chat timeline components', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open report.pdf' }));
 
     await waitFor(() => expect(openAttachmentMock).toHaveBeenCalledWith(ref));
+  });
+
+  it.each([
+    ['remote.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['remote.pptx', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
+  ])('opens remote Office attachment %s through the scoped host action', async (name, mimeType) => {
+    const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: `https://example.com/${name}` };
+    const part = availableAttachment({
+      name,
+      mimeType,
+      target: { kind: 'remote', ref, url: ref.uri },
+      ref,
+    });
+    render(<AcpAttachmentPart part={part} />);
+
+    fireEvent.click(screen.getByRole('button', { name: `Open ${name}` }));
+
+    await waitFor(() => expect(openAttachmentMock).toHaveBeenCalledWith(ref));
+    expect(useArtifactPanel.getState().focusedFile).toBeNull();
   });
 
   it('lifts early assistant attachments after later process and prose items and before file activity', () => {

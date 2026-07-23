@@ -6,10 +6,6 @@ taskType: runtime-bridge
 intent: Render standard ACP resources and recover only explicit OpenClaw MEDIA attachments omitted by the distributed ACP adapter through a bounded transcript compatibility projection.
 touchedAreas:
   - package.json
-  - docs/specs/2026-07-14-acp-media-attachments-design.md
-  - docs/plans/2026-07-14-acp-media-attachments.md
-  - docs/plans/2026-07-15-harness-spec-consolidation.md
-  - docs/plans/2026-07-16-acp-media-attached-turn-alignment.md
   - harness/specs/tasks/acp-media-attachments.md
   - harness/specs/tasks/fix-acp-history-load-races.md
   - harness/specs/tasks/fix-acp-media-attached-turn-alignment.md

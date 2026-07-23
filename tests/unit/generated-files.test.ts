@@ -2,13 +2,22 @@ import { describe, expect, it } from 'vitest';
 import {
   computeLineStats,
   extractGeneratedFiles,
+  getMimeTypeForExt,
+  isDocxPreviewExt,
+  isPptxPreviewExt,
   supportsInlineDiff,
   supportsInlineDocumentPreview,
   type GeneratedFile,
   type GeneratedFileBaseline,
 } from '@/lib/generated-files';
 import type { RawMessage } from '@/stores/chat';
-import { attachmentOpenMode, richFilePreviewKind } from '@/lib/file-preview-capabilities';
+import {
+  attachmentOpenMode,
+  filePreviewKind,
+  filePreviewMaxBytes,
+  isFilePreviewWithinSizeLimit,
+  richFilePreviewKind,
+} from '@/lib/file-preview-capabilities';
 
 function makeWriteFile(overrides: Partial<GeneratedFile> = {}): GeneratedFile {
   return {
@@ -73,7 +82,10 @@ describe('generated-files utilities', () => {
     // tab stays hidden for these formats.
     expect(supportsInlineDiff({ ext: '.pdf', contentType: 'document' })).toBe(false);
     expect(supportsInlineDiff({ ext: '.xlsx', contentType: 'document' })).toBe(false);
+    expect(supportsInlineDiff({ ext: '.doc', contentType: 'document' })).toBe(false);
     expect(supportsInlineDiff({ ext: '.docx', contentType: 'document' })).toBe(false);
+    expect(supportsInlineDiff({ ext: '.ppt', contentType: 'document' })).toBe(false);
+    expect(supportsInlineDiff({ ext: '.pptx', contentType: 'document' })).toBe(false);
 
     const stats = computeLineStats({
       filePath: '/tmp/report.pdf',
@@ -90,6 +102,26 @@ describe('generated-files utilities', () => {
     expect(stats).toBeNull();
   });
 
+  it('uses format-aware preview limits', () => {
+    const text = { kind: 'text' as const };
+    const docx = { kind: 'rich' as const, richKind: 'docx' as const };
+    const pptx = { kind: 'rich' as const, richKind: 'pptx' as const };
+    const pdf = { kind: 'rich' as const, richKind: 'pdf' as const };
+    const sheet = { kind: 'rich' as const, richKind: 'sheet' as const };
+
+    expect(filePreviewMaxBytes(text)).toBe(2 * 1024 * 1024);
+    expect(filePreviewMaxBytes(docx)).toBe(20 * 1024 * 1024);
+    expect(filePreviewMaxBytes(pptx)).toBe(20 * 1024 * 1024);
+    expect(filePreviewMaxBytes(pdf)).toBe(50 * 1024 * 1024);
+    expect(filePreviewMaxBytes(sheet)).toBe(50 * 1024 * 1024);
+
+    for (const target of [text, docx, pptx, pdf, sheet]) {
+      const limit = filePreviewMaxBytes(target);
+      expect(isFilePreviewWithinSizeLimit(target, limit)).toBe(true);
+      expect(isFilePreviewWithinSizeLimit(target, limit + 1)).toBe(false);
+    }
+  });
+
   it('uses shared preview limits and routes remote or unsupported attachments to system open', () => {
     const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: 'file:///workspace/file.txt' };
     const local = { kind: 'local' as const, scope: 'workspace' as const, ref };
@@ -100,13 +132,19 @@ describe('generated-files utilities', () => {
     expect(attachmentOpenMode({ ext: '.pdf', mimeType: 'application/pdf', size: 50 * 1024 * 1024, target: local })).toBe('preview');
     expect(attachmentOpenMode({ ext: '', mimeType: 'application/pdf', size: 1024, target: local })).toBe('preview');
     expect(attachmentOpenMode({ ext: '.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size: 50 * 1024 * 1024 + 1, target: local })).toBe('system');
+    expect(attachmentOpenMode({ ext: '.docx', mimeType: 'application/octet-stream', size: 20 * 1024 * 1024, target: local })).toBe('preview');
+    expect(attachmentOpenMode({ ext: '.docx', mimeType: 'application/octet-stream', size: 20 * 1024 * 1024 + 1, target: local })).toBe('system');
+    expect(attachmentOpenMode({ ext: '.pptx', mimeType: 'application/octet-stream', size: 20 * 1024 * 1024, target: local })).toBe('preview');
+    expect(attachmentOpenMode({ ext: '.pptx', mimeType: 'application/octet-stream', size: 20 * 1024 * 1024 + 1, target: local })).toBe('system');
     expect(attachmentOpenMode({ ext: '.zip', mimeType: 'application/zip', size: 100, target: local })).toBe('system');
     expect(attachmentOpenMode({ ext: '.txt', mimeType: 'text/plain', size: 100, target: remote })).toBe('system');
+    expect(attachmentOpenMode({ ext: '.docx', mimeType: 'application/octet-stream', size: 100, target: remote })).toBe('system');
+    expect(attachmentOpenMode({ ext: '.pptx', mimeType: 'application/octet-stream', size: 100, target: remote })).toBe('system');
   });
 
   it.each([
     '.zip', '.tar', '.gz', '.rar', '.7z',
-    '.doc', '.docx', '.ppt', '.pptx',
+    '.doc', '.ppt',
     '.mp3', '.wav', '.mp4', '.webm',
   ])('forces known unsupported extension %s to system open despite previewable MIME', (ext) => {
     const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: `/workspace/file${ext}` };
@@ -124,6 +162,8 @@ describe('generated-files utilities', () => {
     ['.csv', 'application/zip'],
     ['.pdf', 'text/plain'],
     ['.xlsx', 'text/plain'],
+    ['.docx', 'image/png'],
+    ['.pptx', 'application/pdf'],
   ])('preserves supported extension %s despite conflicting MIME', (ext, mimeType) => {
     const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: `/workspace/file${ext}` };
     expect(attachmentOpenMode({
@@ -135,10 +175,37 @@ describe('generated-files utilities', () => {
   });
 
   it('uses supported extensions before conflicting rich MIME viewer hints', () => {
+    expect(filePreviewKind({ ext: '.docx', mimeType: 'image/png' })).toBe('rich');
+    expect(filePreviewKind({ ext: '.pptx', mimeType: 'application/pdf' })).toBe('rich');
     expect(richFilePreviewKind({ ext: '.pdf', mimeType: 'image/png' })).toBe('pdf');
     expect(richFilePreviewKind({ ext: '.xlsx', mimeType: 'image/png' })).toBe('sheet');
+    expect(richFilePreviewKind({ ext: '.docx', mimeType: 'image/png' })).toBe('docx');
+    expect(richFilePreviewKind({ ext: '.pptx', mimeType: 'application/pdf' })).toBe('pptx');
     expect(richFilePreviewKind({ ext: '.txt', mimeType: 'image/png' })).toBeNull();
     expect(richFilePreviewKind({ ext: '', mimeType: 'image/png' })).toBe('image');
+  });
+
+  it('does not infer Office previews from OOXML MIME without a supported extension', () => {
+    const docxMime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const pptxMime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+
+    expect(filePreviewKind({ ext: '', mimeType: docxMime })).toBeNull();
+    expect(filePreviewKind({ ext: '.unknown', mimeType: pptxMime })).toBeNull();
+    expect(richFilePreviewKind({ ext: '', mimeType: docxMime })).toBeNull();
+    expect(richFilePreviewKind({ ext: '.unknown', mimeType: docxMime })).toBeNull();
+    expect(richFilePreviewKind({ ext: '', mimeType: pptxMime })).toBeNull();
+    expect(richFilePreviewKind({ ext: '.unknown', mimeType: pptxMime })).toBeNull();
+  });
+
+  it('classifies DOCX and PPTX extensions and MIME mappings exactly', () => {
+    expect(isDocxPreviewExt('.docx')).toBe(true);
+    expect(isDocxPreviewExt('.DOCX')).toBe(true);
+    expect(isDocxPreviewExt('.doc')).toBe(false);
+    expect(isPptxPreviewExt('.pptx')).toBe(true);
+    expect(isPptxPreviewExt('.PPTX')).toBe(true);
+    expect(isPptxPreviewExt('.ppt')).toBe(false);
+    expect(getMimeTypeForExt('.docx')).toBe('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    expect(getMimeTypeForExt('.pptx')).toBe('application/vnd.openxmlformats-officedocument.presentationml.presentation');
   });
 
   it('extracts write files with per-run baseline state and action', () => {

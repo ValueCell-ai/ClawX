@@ -30,7 +30,7 @@ type MutableTranscriptTurn = Omit<TranscriptMediaTurn, 'userOccurrenceFromTail'>
 type PendingMediaCandidate = Omit<OpenClawMediaCandidate, 'evidenceId'> & { evidenceSeed: string };
 type PendingTranscriptTurn = Omit<MutableTranscriptTurn, 'candidates'> & { candidates: PendingMediaCandidate[] };
 
-type AcpUserTurn = {
+export type AcpUserTurn = {
   turnId: string;
   messageIds: Set<string>;
   normalizedUserText: string;
@@ -208,7 +208,7 @@ function userPromptText(item: MessageSegmentItem): string {
     .join('');
 }
 
-function acpUserTurns(snapshot: AcpTimelineSnapshot): AcpUserTurn[] {
+export function acpUserTurns(snapshot: AcpTimelineSnapshot): AcpUserTurn[] {
   const turns: Array<Omit<AcpUserTurn, 'userOccurrenceFromTail'>> = [];
   let current: Omit<AcpUserTurn, 'userOccurrenceFromTail'> | null = null;
 
@@ -232,7 +232,7 @@ function acpUserTurns(snapshot: AcpTimelineSnapshot): AcpUserTurn[] {
   })));
 }
 
-function turnMatchKey(turn: { normalizedUserText: string; userOccurrenceFromTail: number }): string {
+export function turnMatchKey(turn: { normalizedUserText: string; userOccurrenceFromTail: number }): string {
   return JSON.stringify([turn.normalizedUserText, turn.userOccurrenceFromTail]);
 }
 
