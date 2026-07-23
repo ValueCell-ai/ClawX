@@ -297,6 +297,12 @@ test.describe('ClawX provider lifecycle', () => {
     await page.getByTestId('provider-card-moonshot-edit').hover();
     await page.getByTestId('provider-edit-moonshot-edit').click();
 
+    await expect(page.getByTestId('provider-edit-model-id-moonshot-edit')).toBeDisabled();
+    await expect(page.getByTestId('provider-edit-model-id-moonshot-edit')).toHaveValue('kimi-k2.6');
+    await expect(page.getByTestId('provider-edit-model-id-help-moonshot-edit')).toContainText(
+      'The model ID cannot be changed after creation.',
+    );
+
     await page.getByTestId('provider-edit-key-input-moonshot-edit').fill('sk-bad');
     await page.getByTestId('provider-edit-save-moonshot-edit').click();
     await expect(page.getByTestId('provider-edit-validation-error-moonshot-edit')).toContainText('Invalid API key');

@@ -53,6 +53,7 @@
       "replaceApiKeyHelp": "如果想保留当前已保存的 API key，这里留空即可。",
       "baseUrl": "基础 URL",
       "modelId": "模型 ID",
+      "modelIdEditDisabled": "模型 ID 创建后不可修改。如需使用其他模型 ID，请删除此 Provider 后重新添加。",
       "codePlanPreset": "Code Plan 预设",
       "codePlanMode": "Code Plan",
       "useCodePlanPreset": "使用 Ark Code Plan 预设",

@@ -53,6 +53,7 @@
       "replaceApiKeyHelp": "Leave this field empty if you want to keep the currently stored API key.",
       "baseUrl": "Base URL",
       "modelId": "Model ID",
+      "modelIdEditDisabled": "The model ID cannot be changed after creation. Delete this provider and add it again to use a different model ID.",
       "codePlanPreset": "Code Plan Preset",
       "codePlanMode": "Code Plan",
       "useCodePlanPreset": "Use Ark Code Plan Preset",
