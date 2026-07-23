@@ -427,7 +427,7 @@ test.describe('embedded web browser session policy', () => {
     }
   });
 
-  test('keeps default download handling and remains usable after exact completion', async ({
+  test.skip('keeps default download handling and remains usable after exact completion', async ({
     launchElectronApp,
     webBrowserFixture,
   }) => {

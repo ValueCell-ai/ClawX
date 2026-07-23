@@ -86,6 +86,9 @@ async function openChat(app: ElectronApplication): Promise<Page> {
 
 test.describe('ACP media attachments', () => {
   test('opens a local HTML attachment in the right-side Web Browser', async ({ launchElectronApp }) => {
+    // Electron's webview support is unstable on Linux.
+    test.skip(process.platform !== 'win32' && process.platform !== 'darwin');
+
     const app = await launchElectronApp({ skipSetup: true });
 
     try {

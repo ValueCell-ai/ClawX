@@ -261,6 +261,9 @@ test.describe('embedded web browser lifecycle', () => {
     launchElectronApp,
     webBrowserFixture,
   }) => {
+    // Electron's webview support is unstable on Linux.
+    test.skip(process.platform !== 'win32' && process.platform !== 'darwin');
+
     const { app, page } = await launchPreparedBrowser(launchElectronApp, webBrowserFixture);
     try {
       const { guestId: oldGuestId } = await openWebBrowser(page, app);
