@@ -968,14 +968,18 @@ test.describe('ClawX ACP inline timeline', () => {
       const page = await openChat(app);
 
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`)).toHaveCount(0);
+      await expect(page.getByText('[OpenClaw heartbeat poll]')).toHaveCount(0);
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([]);
+
+      await page.getByTestId('chat-composer-input').fill('Start a real conversation');
+      await page.getByTestId('chat-composer-send').click();
       await expect.poll(async () => {
         const loadSessionKeys = await getRecordedAcpLoadSessionKeys(app);
         return loadSessionKeys.some((sessionKey) => /^agent:main:session-/.test(sessionKey));
       }, { timeout: 30_000 }).toBe(true);
       const loadSessionKeys = await getRecordedAcpLoadSessionKeys(app);
       expect(loadSessionKeys).not.toContain(MAIN_SESSION_KEY);
-      await expect(page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`)).toHaveCount(0);
-      await expect(page.getByText('[OpenClaw heartbeat poll]')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
