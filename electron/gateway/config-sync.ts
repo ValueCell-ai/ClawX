@@ -33,7 +33,7 @@ import { buildProxyEnv, resolveProxySettings } from '../utils/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
-import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, syncTrustedOfficialPluginInstallRecord, resolvePluginNpmPackagePath } from '../utils/plugin-install';
+import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, syncTrustedOfficialPluginInstallRecord, resolvePluginNpmPackagePath } from '../utils/plugin-install';
 import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
 import { ensureOpenClaw2026_7_1UpgradeSnapshot } from '../utils/openclaw-upgrade-snapshot';
 import { stripSystemdSupervisorEnv } from './config-sync-env';
@@ -265,6 +265,18 @@ function cleanupUnconfiguredChannelPlugins(configuredChannels: string[]): boolea
     }
   }
   return succeeded;
+}
+
+function cleanupUnconfiguredChannelPluginInstallRecords(configuredChannels: string[]): void {
+  const configuredSet = new Set(configuredChannels);
+  for (const [channelType, { dirName }] of Object.entries(CHANNEL_PLUGIN_MAP)) {
+    if (configuredSet.has(channelType)) continue;
+    // Metadata can outlive the directory (for example after an interrupted
+    // 2026.6.10 → 2026.7.1 migration). OpenClaw validates tracked records even
+    // when the channel is no longer configured, so reconcile this on every
+    // launch rather than hiding it behind the directory-maintenance cache.
+    removeTrustedOfficialPluginInstallRecord(dirName);
+  }
 }
 
 function resolveImageGenerationPrimary(config: unknown): string | null {
@@ -527,7 +539,10 @@ export async function syncGatewayConfigBeforeLaunch(
     // Always refresh trusted install metadata through ClawX — this must not
     // be skipped when plugin-maintenance is cache-hit, otherwise official
     // external plugins like WhatsApp fail openKeyedStore at runtime.
-    measureSync(timingsMs, 'trustedPluginInstallSyncMs', repairTrustedOfficialPluginInstallRecords);
+    measureSync(timingsMs, 'trustedPluginInstallSyncMs', () => {
+      cleanupUnconfiguredChannelPluginInstallRecords(configuredChannels);
+      repairTrustedOfficialPluginInstallRecords();
+    });
   } catch (err) {
     logger.warn('Failed to auto-upgrade plugins:', err);
   }

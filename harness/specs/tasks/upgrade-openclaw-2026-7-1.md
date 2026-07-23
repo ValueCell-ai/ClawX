@@ -5,6 +5,7 @@ scenario: gateway-backend-communication
 taskType: runtime-bridge
 intent: Keep ClawX runtime and bundled channel plugins aligned with OpenClaw 2026.7.1 across supported platforms.
 touchedAreas:
+  - .github/workflows/check.yml
   - package.json
   - pnpm-lock.yaml
   - scripts/download-bundled-node.mjs
@@ -43,6 +44,7 @@ touchedAreas:
   - harness/specs/tasks/upgrade-openclaw-2026-7-1.md
 expectedUserBehavior:
   - Existing OpenClaw 2026.6.10 configuration, authentication, sessions, and channel credentials remain usable after upgrade, with a one-time pre-migration snapshot of mutable config/auth/SQLite state.
+  - ClawX reconciles old managed channel-plugin install records with its current mirrored extensions, removes records for unconfigured mirrors, and links declared `openclaw` peers to the bundled runtime before OpenClaw's post-core payload smoke check.
   - ClawX starts and communicates with the bundled OpenClaw 2026.7.1 Gateway, including migration and control-plane safe-mode startup states.
   - ClawX registers the compatibility-patched WeCom mirror as a local-path install with static channel metadata so OpenClaw startup migration does not replace it with the raw mismatched npm package.
   - Fatal runtime/SQLite incompatibility, EX_CONFIG exits, invalid migrations, and active migration leases do not enter unbounded Gateway restart loops.
@@ -73,7 +75,8 @@ acceptance:
   - Electron embeds Node 24.15.0 or newer within the Node 24 line and a WAL-reset-safe SQLite runtime.
   - The bundled Windows Node version satisfies OpenClaw 2026.7.1's declared engine range.
   - ClawX snapshots OpenClaw config, credentials, and SQLite databases with WAL/SHM sidecars once before the first 2026.7.1 prelaunch sync.
-  - ClawX writes plugin install metadata to OpenClaw 2026.7.1's canonical `state/openclaw.sqlite` index, removes legacy config records, and represents the patched WeCom mirror as a local path rather than an npm-managed install.
+  - ClawX writes plugin install metadata to OpenClaw 2026.7.1's canonical `state/openclaw.sqlite` index, removes legacy config records, and represents the patched WeCom and official Feishu mirrors as local paths rather than stale npm-managed installs.
+  - Configured mirrored plugins that declare an `openclaw` peer have a runtime link to the current bundled OpenClaw package before migration validation; stale install records for unconfigured mirrors are removed so missing directories cannot block startup.
   - Gateway recovery performs at most one doctor repair per startup flow and does not retry fatal runtime, EX_CONFIG, invalid migration, or active migration-lease failures indefinitely.
   - Electron Main reads current cron history through Gateway `cron.runs`, retains legacy JSONL as a compatibility fallback, and supplements only empty cron ACP replay in memory without replacing non-empty replay.
   - ACP 1.1 type checks, targeted runtime tests, communication regression checks, and harness validation pass.
