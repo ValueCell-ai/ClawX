@@ -80,6 +80,20 @@ const GATEWAY_FETCH_PRELOAD_SOURCE = `'use strict';
 })();
 `;
 
+export function buildGatewayRuntimeEnv(
+  forkEnv: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  return {
+    ...forkEnv,
+    // ClawX does not expose LAN discovery, so keep Bonjour disabled even if
+    // the parent process inherited an explicit opt-in value.
+    OPENCLAW_DISABLE_BONJOUR: '1',
+    // OpenClaw's built-in trace contains stage names and timings only. Keep it
+    // enabled so packaged startup incidents are diagnosable from normal logs.
+    OPENCLAW_GATEWAY_STARTUP_TRACE: '1',
+  };
+}
+
 function ensureGatewayFetchPreload(): string {
   const dest = path.join(app.getPath('userData'), 'gateway-fetch-preload.cjs');
   try {
@@ -118,7 +132,7 @@ export async function launchGatewayProcess(options: {
   );
   const lastSpawnSummary = `mode=${mode}, entry="${entryScript}", args="${options.sanitizeSpawnArgs(gatewayArgs).join(' ')}", cwd="${openclawDir}"`;
 
-  const runtimeEnv = { ...forkEnv };
+  const runtimeEnv = buildGatewayRuntimeEnv(forkEnv);
 
   // Disable OpenClaw's mDNS/Bonjour gateway advertiser unconditionally.
   //
@@ -136,7 +150,8 @@ export async function launchGatewayProcess(options: {
   // `startGatewayBonjourAdvertiser()` (openclaw `src/infra/bonjour.ts`,
   // `isDisabledByEnv()`).  Set after the `forkEnv` spread so any
   // pre-existing value inherited from the user shell cannot re-enable it.
-  runtimeEnv.OPENCLAW_DISABLE_BONJOUR = '1';
+  // buildGatewayRuntimeEnv() applies both this policy and startup tracing
+  // before any development-only environment augmentation below.
 
   // Only apply the fetch/child_process preload in dev mode.
   // In packaged builds Electron's UtilityProcess rejects NODE_OPTIONS
