@@ -149,19 +149,23 @@ describe('model option helpers', () => {
     ]);
   });
 
-  it('uses only the selected OAuth model when synced metadata contains stale model IDs', () => {
+  it.each([
+    ['api_key', 'openai-api-key'],
+    ['oauth_device', 'openai-device-oauth'],
+    ['oauth_browser', 'openai-browser-oauth'],
+  ] as const)('uses only the selected built-in model for %s accounts with stale metadata', (authMode, id) => {
     const openAiAccount = account({
-      id: 'openai-oauth',
+      id,
       vendorId: 'openai',
       label: 'OpenAI',
-      authMode: 'oauth_browser',
+      authMode,
       model: 'openai/gpt-5.6',
       metadata: { customModels: ['gpt-5.5', 'openai/gpt-5.6'] },
     });
 
     const options = buildConfiguredModelOptions(
       [openAiAccount],
-      [],
+      authMode === 'api_key' ? [status(id)] : [],
       vendors,
       openAiAccount.id,
     );
@@ -171,9 +175,11 @@ describe('model option helpers', () => {
         modelRef: 'openai/gpt-5.6',
         label: 'gpt-5.6 (OpenAI)',
         runtimeProviderKey: 'openai',
-        accountId: 'openai-oauth',
+        accountId: id,
       },
     ]);
+    expect(resolveConfiguredModelRef('openai/gpt-5.5', 'openai/gpt-5.5', options))
+      .toBe('openai/gpt-5.6');
   });
 
   it('preserves custom runtime keys that are already normalized', () => {

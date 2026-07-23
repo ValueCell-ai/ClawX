@@ -6,10 +6,11 @@ appliesTo:
   - gateway-backend-communication
 ---
 
-An OAuth provider account's explicit `model` is the authoritative model exposed
-for that account in interactive model selectors. Historical runtime model rows
-may remain available for capability preservation, but must not reappear as
-alternate OAuth selections through synchronized `metadata.customModels`.
+A single-model built-in provider account's explicit `model` is authoritative in
+interactive model selectors, regardless of whether it uses an API key, device
+OAuth, or browser OAuth. Historical runtime model rows may remain available for
+capability preservation, but must not reappear as alternate built-in selections
+through synchronized `metadata.customModels`.
 
 Before writing a selected model ID to OpenClaw, strip one leading provider
 prefix when it exactly matches the resolved runtime provider key. Preserve all
