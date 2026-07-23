@@ -33,6 +33,41 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The runtime compatibility test executes Electron to assert its embedded
+      # Node and SQLite versions, so this job cannot rely on the package alone.
+      # Use the same extraction path as Electron E2E because install.js can
+      # leave a partially extracted dist directory on GitHub-hosted runners.
+      - name: Install Electron binary for runtime compatibility test
+        shell: bash
+        env:
+          force_no_cache: 'true'
+        run: |
+          set -euo pipefail
+          unset ELECTRON_SKIP_BINARY_DOWNLOAD
+          ELECTRON_DIR="$(node -p "require('path').dirname(require.resolve('electron/package.json'))")"
+          echo "Electron package dir: $ELECTRON_DIR"
+          rm -rf "$ELECTRON_DIR/dist" "$ELECTRON_DIR/path.txt"
+          mkdir -p "$ELECTRON_DIR/dist"
+
+          ZIP="$(cd "$ELECTRON_DIR" && node -e "
+            const { downloadArtifact } = require('@electron/get');
+            const { version } = require('./package.json');
+            downloadArtifact({ version, artifactName: 'electron', force: true })
+              .then((z) => { process.stdout.write(z); process.exit(0); })
+              .catch((e) => { console.error(e); process.exit(1); });
+          ")"
+          ZIP_SIZE="$(stat -c%s "$ZIP")"
+          echo "Downloaded zip: $ZIP ($ZIP_SIZE bytes)"
+
+          unzip -oq "$ZIP" -d "$ELECTRON_DIR/dist"
+          echo "Extracted top-level entries: $(ls -1 "$ELECTRON_DIR/dist" | wc -l | tr -d ' ')"
+          if [ -f "$ELECTRON_DIR/dist/electron.d.ts" ]; then
+            mv "$ELECTRON_DIR/dist/electron.d.ts" "$ELECTRON_DIR/electron.d.ts"
+          fi
+          test -f "$ELECTRON_DIR/dist/electron"
+          chmod +x "$ELECTRON_DIR/dist/electron"
+          printf '%s' 'electron' > "$ELECTRON_DIR/path.txt"
+
       - name: Generate extension bridge
         run: pnpm run ext:bridge
 
