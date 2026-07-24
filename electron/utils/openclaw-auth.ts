@@ -1933,7 +1933,12 @@ function upsertOpenClawProviderEntry(
   if (options.api === 'anthropic-messages') {
     ensureAnthropicMessagesProviderDefaults(nextProvider, provider);
   }
-  if (options.apiKeyEnv) nextProvider.apiKey = options.apiKeyEnv;
+  // OpenClaw expands `${ENV_VAR}` placeholders inside config string values
+  // (the legacy `apiKeyEnv` field was removed in the 2026.6.x runtime). The
+  // value must be wrapped in `${...}`; a bare env name is treated as a literal
+  // string and sent verbatim as the bearer token, so every model call to that
+  // provider fails with 401 Invalid token while the real key sits unused in env.
+  if (options.apiKeyEnv) nextProvider.apiKey = '${' + options.apiKeyEnv + '}';
   if (options.headers !== undefined) {
     if (Object.keys(options.headers).length > 0) {
       nextProvider.headers = options.headers;
