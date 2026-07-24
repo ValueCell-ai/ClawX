@@ -26,6 +26,7 @@ import {
   getReconnectSkipReason,
   isOpenClawFatalConfigExitCode,
 } from './process-policy';
+import { removeOpenClaw2026_7_1UpgradeSnapshot } from '../utils/openclaw-upgrade-snapshot';
 import {
   clearPendingGatewayRequests,
   rejectPendingGatewayRequest,
@@ -196,6 +197,7 @@ export class GatewayManager extends EventEmitter {
   private readonly restartGovernor = new GatewayRestartGovernor();
   private reloadDebounceTimer: NodeJS.Timeout | null = null;
   private initialReadyHeartbeatRecoveryTimer: NodeJS.Timeout | null = null;
+  private upgradeSnapshotCleanupAttempted = false;
   private reloadPolicy: GatewayReloadPolicy = { ...DEFAULT_GATEWAY_RELOAD_POLICY };
   private reloadPolicyLoadedAt = 0;
   private reloadPolicyRefreshPromise: Promise<void> | null = null;
@@ -257,6 +259,7 @@ export class GatewayManager extends EventEmitter {
         logger.info('Gateway subsystems ready (event received)');
         this.setStatus({ gatewayReady: true });
       }
+      void this.cleanupOpenClawUpgradeSnapshot();
     });
     this.on('gateway:health', (payload) => {
       this.capabilityMonitor.recordOpenClawHealth(payload);
@@ -1354,6 +1357,20 @@ export class GatewayManager extends EventEmitter {
     if (!this.initialReadyHeartbeatRecoveryTimer) return;
     clearTimeout(this.initialReadyHeartbeatRecoveryTimer);
     this.initialReadyHeartbeatRecoveryTimer = null;
+  }
+
+  private async cleanupOpenClawUpgradeSnapshot(): Promise<void> {
+    if (this.upgradeSnapshotCleanupAttempted) return;
+    this.upgradeSnapshotCleanupAttempted = true;
+
+    try {
+      const result = await removeOpenClaw2026_7_1UpgradeSnapshot();
+      if (result.status === 'removed') {
+        logger.info(`[upgrade] Removed OpenClaw 2026.7.1 pre-migration snapshot: ${result.snapshotDir}`);
+      }
+    } catch (error) {
+      logger.warn('[upgrade] Failed to remove OpenClaw 2026.7.1 pre-migration snapshot:', error);
+    }
   }
 
   /**

@@ -173,9 +173,14 @@ async function getStableWindow(app: ElectronApplication): Promise<Page> {
         await currentWindow.waitForLoadState('domcontentloaded', { timeout: 2_000 });
         return currentWindow;
       } catch (error) {
-        if (!String(error).includes('has been closed')) {
+        const message = String(error);
+        if (!message.includes('has been closed') && !message.includes('Timeout')) {
           throw error;
         }
+        // The renderer can transiently navigate or replace its execution
+        // context while Electron is restoring the main window. Keep polling
+        // within the outer deadline instead of turning the 2s probe into the
+        // effective timeout for every E2E test.
       }
     }
 

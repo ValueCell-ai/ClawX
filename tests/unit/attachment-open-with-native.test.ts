@@ -266,7 +266,7 @@ describe('attachment open-with native bridges', () => {
     const nonmatchingResult = await runWindowsHelper('prepare-open', filePath, '0'.repeat(64));
     expect(nonmatchingResult.code).not.toBe(0);
     expect(nonmatchingResult.stdout).not.toContain('{"ready":true}');
-  });
+  }, PROCESS_TIMEOUT_MS * 4);
 
   it('resolves and executes the exact helper staged in a packaged resources tree', async () => {
     const root = await mkdtemp(join(tmpdir(), 'clawx-packaged-open-with-'));

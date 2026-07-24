@@ -43,7 +43,7 @@ touchedAreas:
   - harness/specs/rules/acp-chat-state-and-history.md
   - harness/specs/tasks/upgrade-openclaw-2026-7-1.md
 expectedUserBehavior:
-  - Existing OpenClaw 2026.6.10 configuration, authentication, sessions, and channel credentials remain usable after upgrade, with a one-time pre-migration snapshot of mutable config/auth/SQLite state.
+  - Existing OpenClaw 2026.6.10 configuration, authentication, sessions, and channel credentials remain usable after upgrade, with a one-time pre-migration snapshot of migration-critical config/auth/SQLite state that is removed after Gateway startup succeeds.
   - ClawX reconciles old managed channel-plugin install records with its current mirrored extensions, removes records for unconfigured mirrors, and links declared `openclaw` peers to the bundled runtime before OpenClaw's post-core payload smoke check.
   - ClawX starts and communicates with the bundled OpenClaw 2026.7.1 Gateway, including migration and control-plane safe-mode startup states.
   - ClawX registers the compatibility-patched WeCom mirror as a local-path install with static channel metadata so OpenClaw startup migration does not replace it with the raw mismatched npm package.
@@ -74,7 +74,7 @@ acceptance:
   - The lockfile resolves OpenClaw and all bundled channel plugins without incompatible peers or stale 2026.6.10 plugin packages.
   - Electron embeds Node 24.15.0 or newer within the Node 24 line and a WAL-reset-safe SQLite runtime.
   - The bundled Windows Node version satisfies OpenClaw 2026.7.1's declared engine range.
-  - ClawX snapshots OpenClaw config, credentials, and SQLite databases with WAL/SHM sidecars once before the first 2026.7.1 prelaunch sync.
+  - ClawX snapshots OpenClaw config and SQLite databases with WAL/SHM sidecars plus per-agent auth files once before the first 2026.7.1 prelaunch sync, excludes channel credentials under `credentials/`, and removes the snapshot after Gateway startup succeeds.
   - ClawX writes plugin install metadata to OpenClaw 2026.7.1's canonical `state/openclaw.sqlite` index, removes legacy config records, and represents the patched WeCom and official Feishu mirrors as local paths rather than stale npm-managed installs.
   - Configured mirrored plugins that declare an `openclaw` peer have a runtime link to the current bundled OpenClaw package before migration validation; stale install records for unconfigured mirrors are removed so missing directories cannot block startup.
   - Gateway recovery performs at most one doctor repair per startup flow and does not retry fatal runtime, EX_CONFIG, invalid migration, or active migration-lease failures indefinitely.
