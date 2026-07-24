@@ -1,9 +1,12 @@
 // @vitest-environment node
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ensureOpenClaw2026_7_1UpgradeSnapshot } from '@electron/utils/openclaw-upgrade-snapshot';
+import {
+  ensureOpenClaw2026_7_1UpgradeSnapshot,
+  removeOpenClaw2026_7_1UpgradeSnapshot,
+} from '@electron/utils/openclaw-upgrade-snapshot';
 
 const tempDirs: string[] = [];
 
@@ -18,7 +21,7 @@ afterEach(async () => {
 });
 
 describe('OpenClaw 2026.7.1 upgrade snapshot', () => {
-  it('copies config, SQLite sidecars, agent auth, and channel credentials once', async () => {
+  it('copies migration-critical config/auth/SQLite files once with restrictive modes', async () => {
     const stateDir = await createTempStateDir();
     const configPath = join(stateDir, 'openclaw.json');
     await mkdir(join(stateDir, 'state'), { recursive: true });
@@ -45,14 +48,51 @@ describe('OpenClaw 2026.7.1 upgrade snapshot', () => {
       'agents/main/agent/openclaw-agent.sqlite',
       'agents/main/agent/openclaw-agent.sqlite-wal',
       'agents/main/agent/auth-profiles.json',
-      'credentials/channel/token.json',
     ]));
     expect(first.files).not.toContain('agents/main/sessions/history.jsonl');
+    expect(first.files).not.toContain('credentials/channel/token.json');
+
+    const configMode = (await stat(join(first.snapshotDir, 'config', 'openclaw.json'))).mode & 0o777;
+    const markerMode = (await stat(join(first.snapshotDir, 'snapshot.json'))).mode & 0o777;
+    expect(configMode).toBe(0o600);
+    expect(markerMode).toBe(0o600);
 
     await writeFile(configPath, '{"version":"new"}\n');
     const second = await ensureOpenClaw2026_7_1UpgradeSnapshot({ stateDir, configPath });
     expect(second.status).toBe('exists');
     await expect(readFile(join(second.snapshotDir, 'config', 'openclaw.json'), 'utf8'))
       .resolves.toBe('{"version":"old"}\n');
+  });
+
+  it('removes the snapshot directory after successful cleanup', async () => {
+    const stateDir = await createTempStateDir();
+    const configPath = join(stateDir, 'openclaw.json');
+    await writeFile(configPath, '{"version":"old"}\n');
+
+    const created = await ensureOpenClaw2026_7_1UpgradeSnapshot({ stateDir, configPath });
+    expect(created.status).toBe('created');
+
+    const removed = await removeOpenClaw2026_7_1UpgradeSnapshot({ stateDir });
+    expect(removed.status).toBe('removed');
+    await expect(stat(join(removed.snapshotDir, 'snapshot.json'))).rejects.toThrow();
+
+    const missing = await removeOpenClaw2026_7_1UpgradeSnapshot({ stateDir });
+    expect(missing.status).toBe('missing');
+  });
+
+  it('does not follow symlinks when copying snapshot files', async () => {
+    const stateDir = await createTempStateDir();
+    const configPath = join(stateDir, 'openclaw.json');
+    const outsideSecret = join(stateDir, 'outside-secret.json');
+    await writeFile(configPath, '{"version":"old"}\n');
+    await writeFile(outsideSecret, '{"token":"outside"}\n');
+    await mkdir(join(stateDir, 'agents', 'main', 'agent'), { recursive: true });
+    await chmod(outsideSecret, 0o600);
+
+    const { symlink } = await import('node:fs/promises');
+    await symlink(outsideSecret, join(stateDir, 'agents', 'main', 'agent', 'auth-profiles.json'));
+
+    const snapshot = await ensureOpenClaw2026_7_1UpgradeSnapshot({ stateDir, configPath });
+    expect(snapshot.files).not.toContain('agents/main/agent/auth-profiles.json');
   });
 });
