@@ -852,6 +852,16 @@ describe('CcConnectRuntimeProvider', () => {
           reason: 'cc-connect-session-api',
         }),
       ]);
+      await expect(provider.listSessions()).resolves.toMatchObject({
+        success: true,
+        sessions: expect.arrayContaining([
+          expect.objectContaining({
+            key: 'feishu:chat-1:user-1',
+            agentId: 'main',
+            channel: 'feishu',
+          }),
+        ]),
+      });
       await provider.stop();
     } finally {
       vi.useRealTimers();

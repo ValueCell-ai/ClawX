@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   findHiddenOpenClawHeartbeatSession,
+  getChannelFromSessionKey,
   isChannelSessionKey,
   isClawXDesktopSessionKey,
   isPlaceholderChannelSession,
@@ -13,6 +14,9 @@ describe('session-key-utils', () => {
     expect(isChannelSessionKey('agent:main:feishu:ou_abc123')).toBe(true);
     expect(isChannelSessionKey('agent:main:telegram:12345')).toBe(true);
     expect(isChannelSessionKey('agent:main:whatsapp:dm:abc')).toBe(true);
+    expect(isChannelSessionKey('feishu:oc_probe:ou_probe')).toBe(true);
+    expect(getChannelFromSessionKey('feishu:oc_probe:ou_probe')).toBe('feishu');
+    expect(getChannelFromSessionKey('agent:main:telegram:12345')).toBe('telegram');
   });
 
   it('treats ClawX desktop session keys as non-channel', () => {

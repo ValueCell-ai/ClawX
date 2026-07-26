@@ -817,6 +817,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
         derivedTitle: session.derivedTitle,
         lastMessagePreview: session.lastMessagePreview,
         agentId: session.agentId,
+        channel: session.channel,
         updatedAt: session.updatedAt,
       })),
     };
@@ -2481,15 +2482,27 @@ function ccConnectApiSessionMetadata(session: CcConnectApiSessionRef, label?: st
   const providerTitle = session.name && !/^default$/i.test(session.name.trim())
     ? session.name
     : undefined;
+  const channel = ccConnectSessionChannel(session.logicalKey);
   return {
     key: session.logicalKey,
     displayName,
     derivedTitle: label || providerTitle || preview,
     lastMessagePreview: preview,
     agentId: session.agentId,
+    ...(channel ? { channel } : {}),
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
   };
+}
+
+function ccConnectSessionChannel(sessionKey: string): string | undefined {
+  const parts = sessionKey.split(':');
+  const channel = sessionKey.startsWith('agent:')
+    ? parts[2]
+    : parts[0];
+  return channel && CC_CONNECT_SUPPORTED_CHANNELS.has(channel)
+    ? channel
+    : undefined;
 }
 
 function parseCcConnectApiHistory(value: unknown): RawMessage[] {

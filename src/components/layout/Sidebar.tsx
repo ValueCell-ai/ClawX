@@ -811,7 +811,7 @@ export function Sidebar() {
                                         aria-label={channelName}
                                         className="shrink-0 truncate rounded-full bg-blue-500/10 px-2 py-0.5 text-2xs font-medium text-blue-700 dark:bg-blue-400/10 dark:text-blue-400"
                                       >
-                                        {channelName}
+                                        {channelName}:{' '}
                                       </span>
                                     )}
                                     <span className="truncate">{sessionLabel}</span>

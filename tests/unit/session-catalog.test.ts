@@ -17,6 +17,7 @@ describe('Gateway session catalog projection', () => {
       lastMessagePreview: 'Preview',
       thinkingLevel: 'high',
       model: 'model-a',
+      agentId: 'coder',
       updatedAt: '2026-07-20T00:00:00.000Z',
       status: ' RUNNING ',
       hasActiveRun: true,
@@ -35,6 +36,7 @@ describe('Gateway session catalog projection', () => {
       lastMessagePreview: 'Preview',
       thinkingLevel: 'high',
       model: 'model-a',
+      agentId: 'coder',
       updatedAt: Date.parse('2026-07-20T00:00:00.000Z'),
       status: 'running',
       hasActiveRun: true,
@@ -43,6 +45,19 @@ describe('Gateway session catalog projection', () => {
     expect(patch.values).toEqual(row);
     expect(patch.present).toEqual(new Set(Object.keys(row)));
     expect(row).not.toHaveProperty('ignored');
+  });
+
+  it('infers a channel from a cc-connect native session key', () => {
+    expect(normalizeGatewaySessionRow({
+      key: 'feishu:oc_probe:ou_probe',
+      agentId: 'coder',
+      derivedTitle: '飞书 hello',
+    })).toEqual({
+      key: 'feishu:oc_probe:ou_probe',
+      agentId: 'coder',
+      derivedTitle: '飞书 hello',
+      channel: 'feishu',
+    });
   });
 
   it('uses a nested session snapshot instead of top-level row fields', () => {

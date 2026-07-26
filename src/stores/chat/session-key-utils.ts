@@ -22,14 +22,20 @@ function hasUserAuthoredSessionText(value: string | undefined, sessionKey: strin
   return !NON_USER_SESSION_LABELS.has(text.toLowerCase());
 }
 
+export function getChannelFromSessionKey(sessionKey: string): string | null {
+  const parts = sessionKey.split(':');
+  const channel = sessionKey.startsWith('agent:')
+    ? parts[2]
+    : parts[0];
+  return channel && CHANNEL_SESSION_SEGMENTS.has(channel) ? channel : null;
+}
+
 /**
- * OpenClaw channel sessions use `agent:<id>:<channel>:...` (e.g. feishu DM keys).
+ * OpenClaw uses `agent:<id>:<channel>:...`, while cc-connect exposes its
+ * native `<channel>:...` key for channel sessions.
  */
 export function isChannelSessionKey(sessionKey: string): boolean {
-  if (!sessionKey.startsWith('agent:')) return false;
-  const parts = sessionKey.split(':');
-  if (parts.length < 3) return false;
-  return CHANNEL_SESSION_SEGMENTS.has(parts[2] ?? '');
+  return getChannelFromSessionKey(sessionKey) !== null;
 }
 
 export function isClawXDesktopSessionKey(sessionKey: string): boolean {
