@@ -534,8 +534,10 @@ itself and does not know either runtime's storage layout. Runtime records carry
 logical and runtime session ids, a stable turn identity, Agent/provider/model
 attribution, status, counters, and optional cost/content compatibility fields.
 
-The upstream audit was refreshed on 2026-07-13. npm still marks `1.4.1` as
-`latest`; `1.5.0-beta.1` is prerelease. Both source trees parse Codex
+The upstream audit was refreshed on 2026-07-26. npm still marks `1.4.1` as
+`latest`; `1.5.0-beta.2` is the newest prerelease. The beta.2 release contains
+only a Codex model-visibility fix on top of beta.1 and does not publish a usage
+API. The stable and prerelease source trees parse Codex
 `thread/tokenUsage/updated` into an internal `ContextUsageReporter`, but the
 documented Management and Bridge session detail responses still expose only
 message role/content/timestamp. When context display is enabled, the runtime
@@ -546,7 +548,8 @@ enabling `reply_footer` does not close the contract.
 
 Upstream PR [cc-connect#1428](https://github.com/chenhg5/cc-connect/pull/1428)
 proposes an opt-in Bridge `usage` observer. It is useful directionally, but its
-current head is conflicting and is not included in either published version.
+current head is conflicting and is not included in stable v1.4.1 or prerelease
+v1.5.0-beta.2.
 Its unversioned event contains `session_key`, `turn_id`, input/output/cache
 counts and user metadata, but omits `project`, provider/model identity,
 reasoning tokens, durable history semantics and replay after reconnect. Those

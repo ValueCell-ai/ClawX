@@ -1669,7 +1669,9 @@ describe('cc-connect local real verifier', () => {
         'upstream-public-token-usage',
       ]);
     const publicUsageGap = gaps.find((gap) => gap.id === 'upstream-public-token-usage');
-    expect(publicUsageGap?.reason).toContain('v1.5.0-beta.1');
+    expect(publicUsageGap?.reason).toContain('v1.5.0-beta.2');
+    expect(publicUsageGap?.reason).toContain('model visibility');
+    expect(publicUsageGap?.reason).toContain('currently conflicting');
     expect(publicUsageGap?.reason).toContain('PR #1428');
     expect(publicUsageGap?.reason).toContain('project/provider/model');
     expect(publicUsageGap?.reason).toContain('reconnect/replay');

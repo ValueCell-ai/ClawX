@@ -82,7 +82,7 @@ const RESIDUAL_VALIDATION_GAPS = [
     status: 'upstream-blocked',
     requiredForLocalReplacementGate: true,
     nextCommand: 'Upgrade to a pinned cc-connect release with a versioned, attributable, replayable per-turn usage API/event, wire it into RuntimeProvider.listUsage, and verify counters against a real provider oracle.',
-    reason: 'cc-connect v1.4.1 and v1.5.0-beta.1 expose no versioned Bridge or Management usage payload. Upstream PR #1428 proposes an unmerged observer, but omits project/provider/model attribution and durable reconnect/replay semantics. ClawX intentionally returns missing cc-connect usage instead of parsing footers or reading private session/Codex transcript files.',
+    reason: 'cc-connect v1.4.1 and v1.5.0-beta.2 expose no versioned Bridge or Management usage payload. The beta.2 release only changes Codex model visibility. Upstream PR #1428 proposes an unmerged, currently conflicting observer, but omits project/provider/model attribution and durable reconnect/replay semantics. ClawX intentionally returns missing cc-connect usage instead of parsing footers or reading private session/Codex transcript files.',
   },
   {
     id: 'real-scheduled-prompt-channel-cron-delivery',
