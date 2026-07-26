@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { dispatchProtocolEvent } from '@electron/gateway/event-dispatch';
+import { dispatchJsonRpcNotification, dispatchProtocolEvent } from '@electron/gateway/event-dispatch';
 
 function createMockEmitter() {
   const emitted: Array<{ event: string; payload: unknown }> = [];
@@ -68,10 +68,7 @@ describe('dispatchProtocolEvent', () => {
       type: 'run.ended',
       runId: 'run-1',
     }));
-    expect(emitter.emit).toHaveBeenCalledWith('notification', {
-      method: 'agent',
-      params: payload,
-    });
+    expect(emitter.emit).not.toHaveBeenCalledWith('notification', expect.anything());
   });
 
   it('normalizes terminal lifecycle phases as run.ended', () => {
@@ -102,7 +99,7 @@ describe('dispatchProtocolEvent', () => {
     });
   });
 
-  it('dispatches normalized agent runtime events alongside the legacy notification path', () => {
+  it('dispatches normalized agent runtime events without the unused legacy notification path', () => {
     const emitter = createMockEmitter();
     dispatchProtocolEvent(emitter, 'agent', {
       runId: 'run-1',
@@ -128,10 +125,29 @@ describe('dispatchProtocolEvent', () => {
       name: 'read',
       args: { filePath: '/tmp/demo.md' },
     });
-    expect(emitter.emit).toHaveBeenCalledWith('notification', {
+    expect(emitter.emit).not.toHaveBeenCalledWith('notification', expect.anything());
+  });
+
+  it('dispatches JSON-RPC agent events only through the normalized runtime path', () => {
+    const emitter = createMockEmitter();
+    dispatchJsonRpcNotification(emitter, {
+      jsonrpc: '2.0',
       method: 'agent',
-      params: expect.objectContaining({ runId: 'run-1', stream: 'tool' }),
+      params: {
+        runId: 'run-1',
+        sessionKey: 'agent:main:main',
+        stream: 'lifecycle',
+        seq: 1,
+        ts: 10,
+        data: { phase: 'start', startedAt: 10 },
+      },
     });
+
+    expect(emitter.emit).toHaveBeenCalledWith('chat:runtime-event', expect.objectContaining({
+      type: 'run.started',
+      runId: 'run-1',
+    }));
+    expect(emitter.emit).not.toHaveBeenCalledWith('notification', expect.anything());
   });
 
   it('suppresses tick events', () => {

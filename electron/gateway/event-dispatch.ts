@@ -27,7 +27,6 @@ export function dispatchProtocolEvent(
       if (normalized) {
         emitter.emit('chat:runtime-event', normalized);
       }
-      emitter.emit('notification', { method: event, params: payload });
       break;
     }
     case 'channel.status':
@@ -53,14 +52,17 @@ export function dispatchJsonRpcNotification(
   emitter: GatewayEventEmitter,
   notification: JsonRpcNotification,
 ): void {
-  emitter.emit('notification', notification);
   if (notification.method === 'agent') {
     const normalized = normalizeGatewayChatRuntimeEvent(notification.params);
     if (normalized) {
       emitter.emit('chat:runtime-event', normalized);
     }
+  } else {
+    emitter.emit('notification', notification);
   }
   switch (notification.method) {
+    case 'agent':
+      break;
     case GatewayEventType.CHANNEL_STATUS_CHANGED:
       emitter.emit('channel:status', notification.params as GatewayChannelStatusEvent);
       break;

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
@@ -146,7 +146,13 @@ export function AcpAssistantHoverBar({ text }: { text: string }) {
   );
 }
 
-export function AcpRenderPart({ part, tone = 'assistant' }: { part: RenderPart; tone?: RenderTone }) {
+export const AcpRenderPart = memo(function AcpRenderPart({
+  part,
+  tone = 'assistant',
+}: {
+  part: RenderPart;
+  tone?: RenderTone;
+}) {
   if (part.kind === 'markdown') {
     if (tone === 'user') {
       return (
@@ -161,9 +167,9 @@ export function AcpRenderPart({ part, tone = 'assistant' }: { part: RenderPart; 
   if (part.kind === 'image') return <AcpImagePart part={part} />;
   if (part.kind === 'attachment') return <AcpAttachmentPart part={part} />;
   return <AcpErrorPart message={part.message} />;
-}
+});
 
-export function AcpMessageSegment({ item }: { item: MessageSegmentItem }) {
+export const AcpMessageSegment = memo(function AcpMessageSegment({ item }: { item: MessageSegmentItem }) {
   const isUser = item.role === 'user';
   const clipboardText = useMemo(() => clipboardTextForParts(item.parts), [item.parts]);
   const orderedParts = useMemo(() => isUser
@@ -193,4 +199,4 @@ export function AcpMessageSegment({ item }: { item: MessageSegmentItem }) {
       </div>
     </div>
   );
-}
+});

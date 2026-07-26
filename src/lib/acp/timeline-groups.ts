@@ -40,7 +40,7 @@ function appendUserItem(groups: AcpTimelineDisplayGroup[], item: MessageSegmentI
   if (previous !== group) groups.push(group);
 
   const { attachments, remaining } = extractAttachments(item.parts);
-  group.items.push({ ...item, parts: remaining });
+  group.items.push(remaining === item.parts ? item : { ...item, parts: remaining });
   group.attachments.push(...attachments);
 }
 
@@ -49,11 +49,11 @@ function extractAttachments(parts: RenderPart[]): {
   remaining: RenderPart[];
 } {
   const attachments: AttachmentRenderPart[] = [];
-  const remaining: RenderPart[] = [];
   for (const part of parts) {
     if (part.kind === 'attachment') attachments.push(part);
-    else remaining.push(part);
   }
+  if (attachments.length === 0) return { attachments, remaining: parts };
+  const remaining = parts.filter((part) => part.kind !== 'attachment');
   return { attachments, remaining };
 }
 
@@ -84,19 +84,19 @@ function appendAssistantItem(groups: AcpTimelineDisplayGroup[], item: TimelineIt
   if (item.kind === 'message-segment') {
     const { attachments, remaining } = extractAttachments(item.parts);
     group.attachments.push(...attachments);
-    if (remaining.length > 0) group.items.push({ ...item, parts: remaining });
+    if (remaining.length > 0) group.items.push(remaining === item.parts ? item : { ...item, parts: remaining });
     return;
   }
   if (item.kind === 'thought') {
     const { attachments, remaining } = extractAttachments(item.parts);
     group.attachments.push(...attachments);
-    group.items.push({ ...item, parts: remaining });
+    group.items.push(remaining === item.parts ? item : { ...item, parts: remaining });
     return;
   }
   if (item.kind === 'tool-call') {
     const { attachments, remaining } = extractAttachments(item.outputParts);
     group.attachments.push(...attachments);
-    group.items.push({ ...item, outputParts: remaining });
+    group.items.push(remaining === item.outputParts ? item : { ...item, outputParts: remaining });
     return;
   }
   group.items.push(item);

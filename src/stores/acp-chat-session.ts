@@ -48,6 +48,7 @@ import { isCronSessionKey } from './chat/cron-session-utils';
 
 const EMPTY_SESSION_ID = '';
 const CANCEL_PERMISSION_OPTION_ID = '__cancelled__';
+const ACP_STREAM_RENDER_INTERVAL_MS = 16;
 const IMAGE_GENERATION_COMPAT_WINDOW_MS = 195_000;
 const IMAGE_GENERATION_TRANSCRIPT_RETRY_DELAYS_MS = [1500, 3000, 5000, 8000, 13_000, 21_000, 30_000, 30_000, 30_000, 30_000];
 
@@ -151,6 +152,7 @@ export type AcpChatSessionState = {
   cancel: () => Promise<void>;
   respondPermission: (requestId: string, optionId: string) => Promise<void>;
   applyUpdateEnvelope: (event: AcpSessionUpdateEnvelope) => void;
+  applyUpdateEnvelopes: (events: AcpSessionUpdateEnvelope[]) => void;
   applyPermissionRequest: (event: AcpPermissionRequestEnvelope) => void;
   recordImageGenerationStart: (event: AcpSessionUpdateEnvelope) => void;
   projectImageGenerationCompletion: (event: ImageGenerationCompletionEvidence, options?: ImageGenerationProjectionOptions) => Promise<void>;
@@ -1227,6 +1229,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     }
     try {
       const result = await hostApi.chat.sendAcpPrompt(payload);
+      flushQueuedAcpUpdates();
       const state = get();
       liveSessionSnapshots.delete(sessionKey);
       if (!isCurrentAction(state, sessionKey, generation)) return result.success;
@@ -1266,6 +1269,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       }
       return result.success;
     } catch (error) {
+      flushQueuedAcpUpdates();
       liveSessionSnapshots.delete(sessionKey);
       if (activeTranscriptSupplement === transcriptOperation) invalidateTranscriptSupplement();
       set((state) => (
@@ -1703,12 +1707,37 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
   },
 
   applyUpdateEnvelope(event) {
+    get().applyUpdateEnvelopes([event]);
+  },
+
+  applyUpdateEnvelopes(events) {
+    if (events.length === 0) return;
     const state = get();
-    if (state.loading) {
-      if (event.sessionKey === state.activeSessionKey) {
-        const updates = pendingLoadUpdates.get(event.generation) ?? [];
-        pendingLoadUpdates.set(event.generation, [...updates, event]);
-      } else {
+    let timeline = state.timeline;
+    const activeEvents: AcpSessionUpdateEnvelope[] = [];
+
+    for (const event of events) {
+      if (state.loading) {
+        if (event.sessionKey === state.activeSessionKey) {
+          const updates = pendingLoadUpdates.get(event.generation) ?? [];
+          pendingLoadUpdates.set(event.generation, [...updates, event]);
+        } else {
+          const liveSnapshot = liveSessionSnapshots.get(event.sessionKey);
+          if (liveSnapshot?.generation === event.generation) {
+            liveSessionSnapshots.set(event.sessionKey, deferInactiveImageUpdate({
+              ...liveSnapshot,
+              timeline: applyAcpSessionUpdate(
+                liveSnapshot.timeline,
+                event.notification,
+                { historical: !!event.historical },
+              ),
+            }, event));
+          }
+        }
+        continue;
+      }
+
+      if (event.sessionKey !== state.activeSessionKey || event.generation !== state.generation) {
         const liveSnapshot = liveSessionSnapshots.get(event.sessionKey);
         if (liveSnapshot?.generation === event.generation) {
           liveSessionSnapshots.set(event.sessionKey, deferInactiveImageUpdate({
@@ -1720,36 +1749,30 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
             ),
           }, event));
         }
+        continue;
       }
-      return;
+
+      timeline = applyAcpSessionUpdate(timeline, event.notification, { historical: !!event.historical });
+      activeEvents.push(event);
     }
-    if (event.sessionKey !== state.activeSessionKey || event.generation !== state.generation) {
-      const liveSnapshot = liveSessionSnapshots.get(event.sessionKey);
-      if (liveSnapshot?.generation === event.generation) {
-        liveSessionSnapshots.set(event.sessionKey, deferInactiveImageUpdate({
-          ...liveSnapshot,
-          timeline: applyAcpSessionUpdate(
-            liveSnapshot.timeline,
-            event.notification,
-            { historical: !!event.historical },
-          ),
-        }, event));
-      }
-      return;
-    }
-    const timeline = applyAcpSessionUpdate(state.timeline, event.notification, { historical: !!event.historical });
+
+    if (activeEvents.length === 0) return;
     const pending = newPendingAttachments(state.timeline, timeline);
     set({ timeline });
     if (state.sending) {
-      const liveSnapshot = liveSessionSnapshots.get(event.sessionKey);
-      if (liveSnapshot?.generation === event.generation) {
-        liveSessionSnapshots.set(event.sessionKey, { ...liveSnapshot, timeline });
+      const lastEvent = activeEvents[activeEvents.length - 1]!;
+      const liveSnapshot = liveSessionSnapshots.get(lastEvent.sessionKey);
+      if (liveSnapshot?.generation === lastEvent.generation) {
+        liveSessionSnapshots.set(lastEvent.sessionKey, { ...liveSnapshot, timeline });
       }
     }
-    resolvePendingAttachments(event.sessionKey, event.generation, pending);
-    get().recordImageGenerationStart(event);
-    const evidence = extractImageGenerationCompletionFromAcpEnvelope(event);
-    if (evidence) void get().projectImageGenerationCompletion(evidence);
+    const lastEvent = activeEvents[activeEvents.length - 1]!;
+    resolvePendingAttachments(lastEvent.sessionKey, lastEvent.generation, pending);
+    for (const event of activeEvents) {
+      get().recordImageGenerationStart(event);
+      const evidence = extractImageGenerationCompletionFromAcpEnvelope(event);
+      if (evidence) void get().projectImageGenerationCompletion(evidence);
+    }
   },
 
   applyPermissionRequest(event) {
@@ -1781,18 +1804,41 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
 }));
 
 let acpChatSubscribed = false;
+let queuedAcpUpdates: AcpSessionUpdateEnvelope[] = [];
+let queuedAcpUpdateTimer: ReturnType<typeof setTimeout> | undefined;
+
+function flushQueuedAcpUpdates(): void {
+  if (queuedAcpUpdateTimer) clearTimeout(queuedAcpUpdateTimer);
+  queuedAcpUpdateTimer = undefined;
+  if (queuedAcpUpdates.length === 0) return;
+  const updates = queuedAcpUpdates;
+  queuedAcpUpdates = [];
+  useAcpChatSessionStore.getState().applyUpdateEnvelopes(updates);
+}
+
+function enqueueAcpUpdate(event: AcpSessionUpdateEnvelope): void {
+  queuedAcpUpdates.push(event);
+  queuedAcpUpdateTimer ??= setTimeout(flushQueuedAcpUpdates, ACP_STREAM_RENDER_INTERVAL_MS);
+}
 
 export function ensureAcpChatSubscriptions(): void {
   if (acpChatSubscribed) return;
   acpChatSubscribed = true;
   hostEvents.onAcpSessionUpdate((event) => {
-    useAcpChatSessionStore.getState().applyUpdateEnvelope(event);
+    if (import.meta.env.MODE === 'test' || event.historical) {
+      flushQueuedAcpUpdates();
+      useAcpChatSessionStore.getState().applyUpdateEnvelope(event);
+      return;
+    }
+    enqueueAcpUpdate(event);
   });
   hostEvents.onAcpPermissionRequest((event) => {
+    flushQueuedAcpUpdates();
     useAcpChatSessionStore.getState().applyPermissionRequest(event);
   });
   hostEvents.onGatewayChatMessage((event) => {
     const evidence = extractImageGenerationCompletionFromGatewayChatMessage(event);
+    if (evidence) flushQueuedAcpUpdates();
     const state = useAcpChatSessionStore.getState();
     if (
       evidence
@@ -1801,6 +1847,7 @@ export function ensureAcpChatSubscriptions(): void {
   });
   hostEvents.onChatRuntimeEvent((event) => {
     const evidence = extractImageGenerationCompletionFromRuntimeEvent(event);
+    if (evidence) flushQueuedAcpUpdates();
     const state = useAcpChatSessionStore.getState();
     if (
       evidence

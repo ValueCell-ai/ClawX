@@ -12,6 +12,21 @@ function timelineWithItems(items: AcpTimelineSnapshot['itemsById']): AcpTimeline
 }
 
 describe('groupAcpTimelineItems', () => {
+  it('preserves unchanged item references so rendered history can bail out', () => {
+    const item: AcpTimelineSnapshot['itemsById'][string] = {
+      kind: 'message-segment',
+      id: 'assistant-a:0',
+      role: 'assistant',
+      messageId: 'assistant-a',
+      segmentIndex: 0,
+      parts: [{ kind: 'markdown', text: 'Stable history' }],
+    };
+
+    const [group] = groupAcpTimelineItems(timelineWithItems({ [item.id]: item }));
+
+    expect(group?.items[0]).toBe(item);
+  });
+
   it('groups assistant text, tool calls, and later assistant text into one assistant turn', () => {
     const groups = groupAcpTimelineItems(timelineWithItems({
       'assistant-a:0': {

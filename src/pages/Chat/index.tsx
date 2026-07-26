@@ -3,7 +3,7 @@
  * ACP-native runtime rendering. The legacy Gateway execution graph remains in
  * the codebase but is no longer part of the primary Chat render path.
  */
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ArrowDownToLine, FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -26,6 +26,7 @@ import {
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
 import { getAcpUserMessageAnchorId } from '@/lib/acp/timeline-anchors';
 import type { MessageSegmentItem, RenderPart } from '@/lib/acp/timeline-types';
+import { createEmptyAcpTimeline } from '@/lib/acp/reducer';
 import { projectOpenClawFileActivities, type AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 import { hostApi } from '@/lib/host-api';
 import { getSessionDisplayTitle } from '@shared/chat/session-title';
@@ -256,6 +257,16 @@ export function Chat() {
   );
 
   const acpTimeline = useAcpChatSessionStore((s) => s.timeline);
+  const renderedAcpTimeline = useDeferredValue(acpTimeline);
+  const emptyCurrentTimeline = useMemo(
+    () => createEmptyAcpTimeline(currentSessionKey ?? '', 0),
+    [currentSessionKey],
+  );
+  const visibleAcpTimeline = renderedAcpTimeline.sessionId === currentSessionKey
+    ? renderedAcpTimeline
+    : acpTimeline.sessionId === currentSessionKey
+      ? acpTimeline
+      : emptyCurrentTimeline;
   const acpTurnTimings = useAcpChatSessionStore((s) => s.turnTimingsByUserMessageId);
   const acpLoading = useAcpChatSessionStore((s) => s.loading);
   const acpSending = useAcpChatSessionStore((s) => s.sending);
@@ -391,7 +402,7 @@ export function Chat() {
   const isMac = platform === 'darwin';
   const isWindows = platform === 'win32';
   const composerBusy = acpSending || acpCancelling;
-  const showScrollToLatest = acpTimeline.itemOrder.length > 0 && !isAtBottom;
+  const showScrollToLatest = visibleAcpTimeline.itemOrder.length > 0 && !isAtBottom;
   const hasAttemptedAcpPromptForCurrentSession = lastPromptAttemptSessionKey === currentSessionKey;
   const visibleAcpError = !workspaceUnavailable && acpError
     && !(acpTimeline.itemOrder.length === 0 && !hasAttemptedAcpPromptForCurrentSession && isRecoverableInitialAcpLoadError(acpError))
@@ -416,24 +427,24 @@ export function Chat() {
       || resolvedWorkspaceContext?.key !== workspaceContextKey
       || resolvedWorkspaceContext.sessionKey !== currentSessionKey
       || acpActiveSessionKey !== currentSessionKey
-      || acpTimeline.sessionId !== currentSessionKey
+      || visibleAcpTimeline.sessionId !== currentSessionKey
     ) return EMPTY_FILE_ACTIVITY;
     return projectOpenClawFileActivities({
-      timeline: acpTimeline,
+      timeline: visibleAcpTimeline,
       workspaceRoot: resolvedWorkspaceContext.workspaceRoot,
       executionCwd: resolvedWorkspaceContext.executionCwd,
     });
-  }, [acpActiveSessionKey, acpTimeline, currentSessionKey, resolvedWorkspaceContext, workspaceContextKey]);
+  }, [acpActiveSessionKey, currentSessionKey, resolvedWorkspaceContext, visibleAcpTimeline, workspaceContextKey]);
   const questionDirectoryItems = useMemo(() => {
-    const userItems = acpTimeline.itemOrder
-      .map((itemId) => acpTimeline.itemsById[itemId])
+    const userItems = visibleAcpTimeline.itemOrder
+      .map((itemId) => visibleAcpTimeline.itemsById[itemId])
       .filter((item): item is MessageSegmentItem => item?.kind === 'message-segment' && item.role === 'user');
     return userItems.map((item, index) => ({
       itemId: item.id,
       anchorId: getAcpUserMessageAnchorId(item.id),
       title: buildQuestionDirectoryTitle(item, t('questionDirectory.fallback', { number: index + 1 })),
     }));
-  }, [acpTimeline, t]);
+  }, [t, visibleAcpTimeline]);
   const questionDirectoryVisible = questionDirectoryOpenSessionKey === currentSessionKey
     && questionDirectoryItems.length > 1;
 
@@ -495,11 +506,11 @@ export function Chat() {
                     <div className="flex min-h-[40vh] items-center justify-center" data-testid="acp-chat-loading">
                       <LoadingSpinner size="md" />
                     </div>
-                  ) : acpTimeline.itemOrder.length === 0 ? (
+                  ) : visibleAcpTimeline.itemOrder.length === 0 ? (
                     <AcpEmptyState />
                   ) : (
                     <AcpTimeline
-                      snapshot={acpTimeline}
+                      snapshot={visibleAcpTimeline}
                       turnTimingsByUserMessageId={acpTurnTimings}
                       fileActivity={fileActivity}
                       workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey
