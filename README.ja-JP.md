@@ -380,6 +380,8 @@ pnpm typecheck            # TypeScriptの型チェック
 pnpm test                 # ユニットテストを実行
 pnpm run test:e2e         # Electron E2E スモークテストを実行
 pnpm run test:e2e:headed  # 表示付きウィンドウで Electron E2E を実行
+pnpm run perf:chat        # 合成 Chat の Renderer/Main CPU プロファイルを取得
+pnpm run profile:main     # ビルド済みアプリを Main inspector の 9229 番ポートで起動
 pnpm run comms:replay     # 通信リプレイ指標を算出
 pnpm run comms:baseline   # 通信ベースラインを更新
 pnpm run comms:compare    # リプレイ指標をベースライン閾値と比較
@@ -394,6 +396,12 @@ pnpm package:linux        # Linux向けにパッケージ化
 ```
 
 ヘッドレス Linux では Electron テストに表示サーバーが必要です。`xvfb-run -a pnpm run test:e2e` を利用してください。
+
+### Electron パフォーマンス診断
+
+`pnpm run perf:chat` は隔離された合成 ACP ストリーミング負荷を実行し、Playwright の `test-results/` に `renderer-benchmark.json`、`renderer.cpuprofile`、`main.cpuprofile` を出力します。Renderer プロファイルは本番の store/render 経路を対象とし、合成 Main プロファイルは Main から Renderer への IPC fanout のみを測定して上流の OpenClaw/ACP サブプロセス経路を含みません。CPU プロファイルは Chrome DevTools で開けます。アーティファクトには生成されたテスト文字列だけが含まれ、製品テレメトリーには送信されません。測定値はハードウェアに依存するため、共通の絶対閾値ではなく同じマシン上の複数回の結果を比較してください。
+
+実際の Renderer を記録する場合は `CLAWX_REMOTE_DEBUGGING_PORT=9223 pnpm dev` で開発環境を起動し、Playwright または Chrome DevTools を `localhost:9223` に接続します。Electron Main を記録する場合は `pnpm run profile:main` を実行し、`chrome://inspect` で `localhost:9229` を設定して Electron Main target を選択します。WebSocket trace 自体を測定する場合を除き、`CLAWX_GATEWAY_WS_TRACE` は設定しないでください。
 
 ### 通信回帰チェック
 

@@ -342,6 +342,91 @@ export { closeElectronApp };
 export { getStableWindow };
 export { expect };
 
+export async function emitAcpSessionUpdates(
+  app: ElectronApplication,
+  input: {
+    sessionKey: string;
+    updates: Array<Record<string, unknown> & { sessionUpdate: string }>;
+    generation?: number;
+    historical?: boolean;
+    intervalMs?: number;
+  },
+): Promise<void> {
+  await app.evaluate(async ({ app: _app }, event) => {
+    const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+    for (const update of event.updates) {
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send('chat:acp-session-update', {
+          sessionKey: event.sessionKey,
+          generation: event.generation ?? 1,
+          ...(event.historical ? { historical: true } : {}),
+          notification: { sessionId: event.sessionKey, update },
+        });
+      }
+      if (event.intervalMs && event.intervalMs > 0) {
+        await new Promise((resolveWait) => setTimeout(resolveWait, event.intervalMs));
+      }
+    }
+  }, input);
+}
+
+export async function startMainCpuProfile(app: ElectronApplication): Promise<void> {
+  await app.evaluate(async () => {
+    const inspector = process.mainModule!.require('node:inspector') as typeof import('node:inspector');
+    const globals = globalThis as unknown as { __e2eMainCpuProfiler?: import('node:inspector').Session };
+    if (globals.__e2eMainCpuProfiler) throw new Error('Main CPU profiler is already running');
+
+    const session = new inspector.Session();
+    session.connect();
+    const post = (method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>> => (
+      new Promise((resolvePost, rejectPost) => {
+        session.post(method, params ?? {}, (error, result) => {
+          if (error) rejectPost(error);
+          else resolvePost((result ?? {}) as Record<string, unknown>);
+        });
+      })
+    );
+
+    try {
+      await post('Profiler.enable');
+      await post('Profiler.setSamplingInterval', { interval: 1_000 });
+      await post('Profiler.start');
+      globals.__e2eMainCpuProfiler = session;
+    } catch (error) {
+      session.disconnect();
+      throw error;
+    }
+  });
+}
+
+export async function stopMainCpuProfile(app: ElectronApplication): Promise<Record<string, unknown>> {
+  return await app.evaluate(async () => {
+    const globals = globalThis as unknown as { __e2eMainCpuProfiler?: import('node:inspector').Session };
+    const session = globals.__e2eMainCpuProfiler;
+    if (!session) throw new Error('Main CPU profiler is not running');
+    delete globals.__e2eMainCpuProfiler;
+
+    const post = (method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>> => (
+      new Promise((resolvePost, rejectPost) => {
+        session.post(method, params ?? {}, (error, result) => {
+          if (error) rejectPost(error);
+          else resolvePost((result ?? {}) as Record<string, unknown>);
+        });
+      })
+    );
+
+    try {
+      const result = await post('Profiler.stop');
+      await post('Profiler.disable');
+      const profile = result.profile;
+      if (!profile || typeof profile !== 'object') throw new Error('Main CPU profiler returned no profile');
+      return profile as Record<string, unknown>;
+    } finally {
+      session.disconnect();
+    }
+  });
+}
+
 export async function installIpcMocks(
   app: ElectronApplication,
   config: IpcMockConfig,

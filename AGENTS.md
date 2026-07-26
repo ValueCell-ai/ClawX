@@ -21,12 +21,15 @@ Standard dev commands are in `package.json` scripts and `README.md`. Key ones:
 | Comms baseline refresh | `pnpm run comms:baseline` |
 | Comms regression compare | `pnpm run comms:compare` |
 | E2E tests (Playwright) | `pnpm run test:e2e` |
+| Chat performance profiles | `pnpm run perf:chat` |
+| Electron Main inspector | `pnpm run profile:main` |
 | Build frontend only | `pnpm run build:vite` |
 
 ### Non-obvious caveats
 
 - **pnpm version**: The exact pnpm version is pinned via `packageManager` in `package.json`. Use `corepack enable && corepack prepare` to activate the correct version before installing.
 - **Electron on headless Linux**: The dbus errors (`Failed to connect to the bus`) are expected and harmless in a headless/cloud environment. The app still runs fine with `$DISPLAY` set (e.g., `:1` via Xvfb/VNC).
+- **Performance profiling**: `pnpm run perf:chat` writes synthetic Renderer/Main CPU profiles and versioned metrics under ignored Playwright `test-results/`. For live Renderer CDP use `CLAWX_REMOTE_DEBUGGING_PORT=9223 pnpm dev`; for live Main inspection use `pnpm run profile:main` and port 9229.
 - **`pnpm run lint` race condition**: If `pnpm run uv:download` was recently run, ESLint may fail with `ENOENT: no such file or directory, scandir '/workspace/temp_uv_extract'` because the temp directory was created and removed during download. Simply re-run lint after the download script finishes.
 - **Build scripts warning**: `pnpm install` may warn about ignored build scripts for `@discordjs/opus` and `koffi`. These are optional messaging-channel dependencies and the warnings are safe to ignore.
 - **`pnpm run init`**: This is a convenience script that runs `pnpm install` followed by `pnpm run uv:download`. Either run `pnpm run init` or run the two steps separately.
