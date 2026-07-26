@@ -3,11 +3,12 @@ import ReactMarkdown from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import { AlertCircle, Check, Copy, FileText, Sparkles } from 'lucide-react';
+import { AlertCircle, Check, Copy, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { MessageSegmentItem, RenderPart } from '@/lib/acp/timeline-types';
 import { cn } from '@/lib/utils';
 import { AcpImagePart, isSafeAcpImageSource } from './AcpImagePart';
+import { AcpAttachmentPart } from './AcpAttachmentPart';
 
 type RenderTone = 'assistant' | 'user' | 'process';
 
@@ -33,7 +34,11 @@ function AcpMarkdownPart({ text, tone }: { text: string; tone: RenderTone }) {
     <div
       className={cn(
         'prose prose-sm max-w-none break-words',
-        isUser ? 'prose-invert text-white [&_*]:text-inherit' : 'dark:prose-invert text-foreground',
+        isUser
+          ? // User messages skip full markdown rendering, so preserve \n line breaks in paragraphs
+            'prose-invert text-white [&_*]:text-inherit [&_p]:whitespace-pre-wrap'
+          : // AI replies render as full markdown where code blocks/lists handle line breaks natively
+            'dark:prose-invert text-foreground',
       )}
     >
       <ReactMarkdown
@@ -42,10 +47,10 @@ function AcpMarkdownPart({ text, tone }: { text: string; tone: RenderTone }) {
         components={{
           code({ className, children, ...props }) {
             const match = /language-(\w+)/.exec(className || '');
-            const isInline = !match && !className;
+            const isInline = !match && !className && !String(children).includes('\n');
             if (isInline) {
               return (
-                <code className="rounded bg-black/5 px-1.5 py-0.5 font-mono text-sm break-all dark:bg-white/10" {...props}>
+                <code className="font-mono text-sm break-all" {...props}>
                   {children}
                 </code>
               );
@@ -88,19 +93,6 @@ function AcpMarkdownPart({ text, tone }: { text: string; tone: RenderTone }) {
       >
         {normalizeLatexDelimiters(text)}
       </ReactMarkdown>
-    </div>
-  );
-}
-
-function AcpFilePart({ part }: { part: Extract<RenderPart, { kind: 'file' }> }) {
-  const { t } = useTranslation('chat');
-  const label = part.name || part.path || t('acp.unsupportedContent');
-
-  return (
-    <div className="flex max-w-full items-center gap-2 rounded-xl border border-black/10 bg-surface-input px-3 py-2 text-sm text-muted-foreground dark:border-white/10">
-      <FileText className="h-4 w-4 shrink-0" aria-hidden="true" />
-      <span className="min-w-0 truncate">{label}</span>
-      {part.mimeType && <span className="shrink-0 text-2xs text-muted-foreground/70">{part.mimeType}</span>}
     </div>
   );
 }
@@ -176,13 +168,19 @@ export function AcpRenderPart({ part, tone = 'assistant' }: { part: RenderPart; 
   }
 
   if (part.kind === 'image') return <AcpImagePart part={part} />;
-  if (part.kind === 'file') return <AcpFilePart part={part} />;
+  if (part.kind === 'attachment') return <AcpAttachmentPart part={part} />;
   return <AcpErrorPart message={part.message} />;
 }
 
 export function AcpMessageSegment({ item }: { item: MessageSegmentItem }) {
   const isUser = item.role === 'user';
   const clipboardText = useMemo(() => clipboardTextForParts(item.parts), [item.parts]);
+  const orderedParts = useMemo(() => isUser
+    ? [
+      ...item.parts.filter((part) => part.kind !== 'attachment'),
+      ...item.parts.filter((part) => part.kind === 'attachment'),
+    ]
+    : item.parts, [isUser, item.parts]);
 
   return (
     <div
@@ -197,7 +195,7 @@ export function AcpMessageSegment({ item }: { item: MessageSegmentItem }) {
         </div>
       )}
       <div className={cn('flex min-w-0 flex-col gap-2', isUser ? 'max-w-[80%] items-end' : 'w-full items-start')}>
-        {item.parts.map((part, index) => (
+        {orderedParts.map((part, index) => (
           <AcpRenderPart key={`${part.kind}:${index}`} part={part} tone={item.role} />
         ))}
         {!isUser && clipboardText.trim().length > 0 && <AcpAssistantHoverBar text={clipboardText} />}

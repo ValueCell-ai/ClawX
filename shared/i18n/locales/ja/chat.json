@@ -35,6 +35,17 @@
         "fileUnavailable": "ファイルを利用できません",
         "outsideWorkspace": "ファイルはワークスペース外にあります"
     },
+    "fileCard": {
+        "openWith": "アプリで開く",
+        "openWithFile": "{{name}} をアプリで開く",
+        "openInBuiltInBrowser": "内蔵ブラウザで開く",
+        "searchingApplications": "アプリを検索中",
+        "showInFinder": "Finder に表示",
+        "showInExplorer": "エクスプローラーに表示",
+        "showInFileManager": "ファイルマネージャーに表示",
+        "openWithFailed": "選択したアプリでファイルを開けませんでした",
+        "revealFailed": "ファイルをフォルダーに表示できませんでした"
+    },
     "runError": {
         "title": "モデル呼び出しに失敗しました"
     },
@@ -60,13 +71,23 @@
         "saveImage": "画像を別名で保存",
         "imageSaved": "画像を保存しました",
         "copy": "返信をコピー",
-        "copied": "コピーしました"
+        "copied": "コピーしました",
+        "turnDuration": "所要時間 {{duration}}",
+        "turnElapsed": "経過時間 {{duration}}",
+        "attachment": {
+            "loading": "添付ファイルを読み込み中",
+            "unavailable": "添付ファイルを利用できません",
+            "open": "{{name}} を開く",
+            "preview": "{{name}} をプレビュー",
+            "openFailed": "添付ファイルを開けませんでした"
+        }
     },
     "artifactPanel": {
         "tabs": {
             "changes": "変更",
             "preview": "プレビュー",
-            "browser": "ワークスペース"
+            "browser": "ワークスペース",
+            "webBrowser": "ウェブブラウザ"
         },
         "actions": {
             "back": "一覧に戻る"
@@ -81,6 +102,51 @@
         "preview": {
             "emptyTitle": "ファイルが選択されていません",
             "emptyHint": "まず会話内のファイルカードをクリックしてファイルを選択すると、ここにプレビューが表示されます。"
+        },
+        "webBrowser": {
+            "actions": {
+                "back": "戻る",
+                "forward": "進む",
+                "refresh": "再読み込み",
+                "more": "その他",
+                "forceRefresh": "強制再読み込み",
+                "clearCookies": "Cookie を消去",
+                "clearSiteData": "サイトデータを消去",
+                "openExternal": "システムブラウザで開く"
+            },
+            "address": {
+                "label": "ウェブアドレス",
+                "placeholder": "URL を入力"
+            },
+            "errors": {
+                "empty": "ウェブアドレスを入力してください。",
+                "absolutePath": "ローカルパスには file:/// URL を使用してください。",
+                "invalidUrl": "ウェブアドレスが無効です。",
+                "unsupportedProtocol": "この URL プロトコルはサポートされていません。",
+                "reservedUrl": "この内部 URL は開けません。",
+                "loadFailed": "ページを読み込めませんでした。",
+                "clearCookiesFailed": "Cookie を消去できませんでした。",
+                "clearSiteDataFailed": "サイトデータを消去できませんでした。",
+                "openExternalFailed": "システムブラウザでページを開けませんでした。"
+            },
+            "success": {
+                "cookiesCleared": "Cookie を消去しました。",
+                "siteDataCleared": "サイトデータを消去しました。"
+            },
+            "crash": {
+                "title": "ウェブブラウザが停止しました",
+                "message": "ブラウザページが予期せず終了しました。閲覧履歴とページの状態は失われました。",
+                "recover": "ブラウザを復旧"
+            },
+            "permissionDialog": {
+                "title": "カメラとマイクの許可",
+                "message": "{{origin}} が{{capability}}を使用しようとしています。",
+                "camera": "カメラ",
+                "microphone": "マイク",
+                "cameraAndMicrophone": "カメラとマイク",
+                "allow": "許可",
+                "deny": "拒否"
+            }
         }
     },
     "filePreview": {
@@ -148,6 +214,15 @@
             "pageInputAria": "現在のページ",
             "singlePageHint": "ツールバーから {{total}} ページを切り替えできます"
         },
+        "docx": {
+            "loadFailed": "Word 文書の読み込みに失敗しました"
+        },
+        "pptx": {
+            "loadFailed": "プレゼンテーションの読み込みに失敗しました",
+            "previous": "前のスライド",
+            "next": "次のスライド",
+            "slidePosition": "{{current}} / {{total}}"
+        },
         "sheet": {
             "loadFailed": "スプレッドシートの読み込みに失敗しました: {{error}}",
             "empty": "表示できるワークシートがありません",
@@ -166,6 +241,12 @@
         "pickFile": "左側のファイルを選択してプレビュー",
         "empty": "ワークスペースが空、またはアクセスできません",
         "truncated": "ディレクトリが大きいため、5000 件までで切り詰めました",
+        "unavailable": {
+            "title": "ワークスペースを利用できません",
+            "description": "このフォルダーは移動または削除された可能性があります。続行するには既存のフォルダーを選択してください: {{path}}",
+            "boundDescription": "このチャットのワークスペースは移動または削除された可能性があり、現在アクセスできません: {{path}}",
+            "chooseAction": "ワークスペースを選択"
+        },
         "actions": {
             "refresh": "更新",
             "openRootInFinder": "ルートをファイルマネージャーで表示"
@@ -230,7 +311,7 @@
         "gatewayDisconnectedPlaceholder": "ゲートウェイ未接続...",
         "send": "送信",
         "stop": "停止",
-        "working": "AI が処理中です",
+        "thinking": "考え中…",
         "gatewayConnected": "接続済み",
         "gatewayStarting": "起動中",
         "gatewayStatus": "ゲートウェイ {{state}} | ポート: {{port}} | PID: {{pid}}",
@@ -251,8 +332,21 @@
         "collapseAll": "すべて折りたたむ",
         "expandAll": "すべて展開",
         "loadMore": "もっと読み込む",
+        "aiReplying": "AI が返信中",
+        "unreadReply": "未読の返信",
         "loadMoreForWorkspace": "{{workspace}} でさらに {{count}} 件のセッションを読み込む",
-        "workspaceToggle": "ワークスペース {{workspace}} を切り替え"
+        "workspaceToggle": "ワークスペース {{workspace}} を切り替え",
+        "renameWorkspace": "ワークスペース {{workspace}} の名前を変更",
+        "workspaceUnavailableBadge": "利用不可",
+        "deleteWorkspace": "利用できないワークスペース {{workspace}} を削除",
+        "deleteWorkspaceTitle": "利用できないワークスペースを削除しますか？",
+        "deleteWorkspaceConfirm": "「{{workspace}}」とその中の全 {{count}} セッションを完全に削除しますか？この操作は元に戻せません。",
+        "deleteWorkspaceConfirmAction": "ワークスペースとセッションを削除",
+        "deleteWorkspacePartialFailure": "{{count}} 件のセッションを削除できなかったため、ワークスペースに残しました。",
+        "deleteWorkspaceCleanupFailed": "セッションは削除されましたが、保存済みワークスペースの記録を消去できませんでした。",
+        "workspaceName": "ワークスペース名",
+        "saveWorkspaceRename": "ワークスペース名を保存",
+        "cancelWorkspaceRename": "ワークスペース名の変更をキャンセル"
     },
     "historyBuckets": {
         "today": "今日",

@@ -65,7 +65,7 @@ expectedUserBehavior:
   - The Changes tab shows a session-level record grouped by file, with at most one diff editor per turn and file.
   - File headers in Changes use the same extension-aware icons as the Workspace file tree.
   - A New Session with no qualifying activity says that this session has no file changes yet.
-  - Tool-derived targets provide read-only in-app Preview with no system open or reveal action.
+  - Created and modified tool-derived targets provide read-only in-app Preview plus workspace-scoped Open with and reveal actions; deleted targets expose neither native action.
 requiredProfiles:
   - fast
   - comms
@@ -91,7 +91,7 @@ requiredTests:
 acceptance:
   - Only completed OpenClaw write, edit, and apply_patch canonical raw inputs produce file activity.
   - Failed and unsupported tools remain visible as ordinary tool cards but produce no file activity UI.
-  - Tool-derived Preview uses workspace-scoped read/stat host APIs without unscoped fallback and exposes no system open or reveal action because path-only OS shell calls cannot be atomic with Main validation.
+  - Tool-derived Preview uses workspace-scoped read/stat host APIs without unscoped fallback; later workspace-scoped native actions independently revalidate `WorkspaceFileRef` and never accept a naked canonical path from Renderer.
   - The feature does not scan the workspace, use Git, create source snapshots, or infer shell side effects.
   - Full ACP replay restores available file activity and incomplete replay does not invent it.
   - Changes file headers use the shared Material file icon instead of a generic change icon.

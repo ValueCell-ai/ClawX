@@ -5,6 +5,8 @@ import { AcpAssistantTurn } from './AcpAssistantTurn';
 import { AcpErrorBanner } from './AcpErrorBanner';
 import { AcpMessageSegment } from './AcpMessageSegment';
 import type { AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
+import { AcpAttachmentPart } from './AcpAttachmentPart';
+import type { AcpTurnTiming } from '@/lib/acp/turn-timings';
 
 export function AcpTimeline({
   snapshot,
@@ -14,6 +16,7 @@ export function AcpTimeline({
   onPermissionSelect,
   fileActivity,
   workspaceRoot,
+  turnTimingsByUserMessageId = {},
 }: {
   snapshot: AcpTimelineSnapshot;
   error?: string | null;
@@ -22,6 +25,7 @@ export function AcpTimeline({
   onPermissionSelect?: (requestId: string, optionId: string) => void;
   fileActivity?: AcpFileActivityProjection;
   workspaceRoot?: string;
+  turnTimingsByUserMessageId?: Record<string, AcpTurnTiming>;
 }) {
   const groups = groupAcpTimelineItems(snapshot);
 
@@ -41,6 +45,15 @@ export function AcpTimeline({
                   <AcpMessageSegment item={item} />
                 </div>
               ))}
+              {group.attachments.length > 0 && (
+                <div className="flex w-full justify-end">
+                  <div className="flex w-full max-w-[50%] flex-col items-end gap-2">
+                    {group.attachments.map((attachment) => (
+                      <AcpAttachmentPart key={attachment.attachmentId} part={attachment} tone="user" />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           );
         }
@@ -51,6 +64,7 @@ export function AcpTimeline({
               group={group}
               fileSummaries={fileActivity?.turnSummariesByTurnId[group.id]}
               workspaceRoot={workspaceRoot}
+              timing={group.userMessageId ? turnTimingsByUserMessageId[group.userMessageId] : undefined}
               onPermissionSelect={onPermissionSelect}
             />
           </div>

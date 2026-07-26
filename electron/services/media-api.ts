@@ -3,6 +3,10 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { RuntimeManager } from '../runtime/manager';
+import type { AttachmentFileRef } from '@shared/host-api/contract';
+import { resolveOutgoingMediaAttachment, type AttachmentAccess } from './attachment-access';
+import { resolveOpenClawStateDir } from '../utils/paths';
+import { getRuntimeOutgoingMediaRecordDirs } from '../utils/runtime-media-paths';
 import {
   CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
@@ -15,14 +19,22 @@ import {
   setImageGenerationConfig,
   type ImageGenerationModelConfig,
 } from '../utils/openclaw-image-generation';
-import { getRuntimeOutgoingMediaRecordDirs } from '../utils/runtime-media-paths';
 import { isRecord } from './payload-utils';
 
 type ThumbnailEntry = {
   filePath?: unknown;
   gatewayUrl?: unknown;
+  attachmentFileRef?: unknown;
+  key?: unknown;
   mimeType?: unknown;
 };
+
+type MediaApiDependencies = {
+  runtimeManager?: Pick<RuntimeManager, 'getStatus'>;
+  attachmentAccess?: Pick<AttachmentAccess, 'resolveAttachment' | 'readAttachmentBinary'>;
+};
+
+const OPAQUE_ATTACHMENT_KEY = /^[a-f0-9]{64}$/;
 
 type SaveImagePayload = {
   base64?: unknown;
@@ -64,37 +76,22 @@ async function generateImagePreview(filePath: string, mimeType: string): Promise
   }
 }
 
-async function resolveOutgoingMediaUrl(
-  gatewayUrl: string,
-  runtimeManager?: Pick<RuntimeManager, 'getStatus'>,
-): Promise<{ path: string; mimeType: string } | null> {
+function generateImagePreviewFromBuffer(buffer: Buffer, mimeType: string): string | null {
   try {
-    const match = gatewayUrl.match(/\/api\/chat\/media\/outgoing\/[^/]+\/([^/]+)\//);
-    if (!match) return null;
-    const attachmentId = decodeURIComponent(match[1]);
-    if (!/^[A-Za-z0-9._-]+$/.test(attachmentId)) return null;
-    const fsP = await import('node:fs/promises');
-    let raw: string | null = null;
-    for (const recordDir of getRuntimeOutgoingMediaRecordDirs(runtimeManager)) {
-      try {
-        raw = await fsP.readFile(join(recordDir, `${attachmentId}.json`), 'utf8');
-        break;
-      } catch {
-        // Try fallback runtime media records for historical messages.
-      }
+    if (mimeType === 'image/svg+xml') {
+      return `data:${mimeType};base64,${buffer.toString('base64')}`;
     }
-    if (!raw) return null;
-    const record = JSON.parse(raw) as {
-      original?: { path?: string; contentType?: string };
-    };
-    const original = record?.original;
-    if (!original?.path) return null;
-    return {
-      path: original.path,
-      mimeType: typeof original.contentType === 'string' && original.contentType
-        ? original.contentType
-        : 'application/octet-stream',
-    };
+    const img = nativeImage.createFromBuffer(buffer);
+    if (img.isEmpty()) return null;
+    const size = img.getSize();
+    const maxDim = 512;
+    if (size.width > maxDim || size.height > maxDim) {
+      const resized = size.width >= size.height
+        ? img.resize({ width: maxDim })
+        : img.resize({ height: maxDim });
+      return `data:image/png;base64,${resized.toPNG().toString('base64')}`;
+    }
+    return `data:${mimeType};base64,${buffer.toString('base64')}`;
   } catch {
     return null;
   }
@@ -105,7 +102,38 @@ function normalizeThumbnailEntries(payload: unknown): ThumbnailEntry[] {
   return Array.isArray(value) ? value as ThumbnailEntry[] : [];
 }
 
-export function createMediaApi(options: { runtimeManager?: Pick<RuntimeManager, 'getStatus'> } = {}): CompleteHostServiceRegistry['media'] {
+async function resolveRuntimeOutgoingMediaUrl(
+  gatewayUrl: string,
+  runtimeManager?: Pick<RuntimeManager, 'getStatus'>,
+): Promise<{ path: string; mimeType: string } | null> {
+  try {
+    const match = gatewayUrl.match(/\/api\/chat\/media\/outgoing\/[^/]+\/([^/]+)\//);
+    if (!match) return null;
+    const attachmentId = decodeURIComponent(match[1]);
+    if (!/^[A-Za-z0-9._-]+$/.test(attachmentId)) return null;
+    const fsP = await import('node:fs/promises');
+    for (const recordDir of getRuntimeOutgoingMediaRecordDirs(runtimeManager)) {
+      try {
+        const raw = await fsP.readFile(join(recordDir, `${attachmentId}.json`), 'utf8');
+        const record = JSON.parse(raw) as {
+          original?: { path?: string; contentType?: string };
+        };
+        if (!record.original?.path) continue;
+        return {
+          path: record.original.path,
+          mimeType: record.original.contentType || 'application/octet-stream',
+        };
+      } catch {
+        // Continue across current and historical runtime media roots.
+      }
+    }
+  } catch {
+    // Treat malformed or unavailable runtime media records as missing.
+  }
+  return null;
+}
+
+export function createMediaApi(dependencies: MediaApiDependencies = {}): CompleteHostServiceRegistry['media'] {
   return {
     thumbnails: async (payload) => {
       const entries = normalizeThumbnailEntries(payload);
@@ -113,6 +141,39 @@ export function createMediaApi(options: { runtimeManager?: Pick<RuntimeManager, 
       const results: Record<string, { preview: string | null; fileSize: number }> = {};
       for (const entry of entries) {
         const mimeType = typeof entry.mimeType === 'string' ? entry.mimeType : 'application/octet-stream';
+        if (entry.attachmentFileRef && typeof entry.attachmentFileRef === 'object') {
+          const key = typeof entry.key === 'string' && entry.key ? entry.key : null;
+          if (!key || !OPAQUE_ATTACHMENT_KEY.test(key) || !dependencies.attachmentAccess) continue;
+          const ref = entry.attachmentFileRef as AttachmentFileRef;
+          const resolution = await dependencies.attachmentAccess.resolveAttachment({ ref });
+          if (!resolution.ok
+            || resolution.identity !== key
+            || resolution.target.kind !== 'local') {
+            continue;
+          }
+          const readResult = await dependencies.attachmentAccess.readAttachmentBinary({
+            ref,
+          });
+          if (!readResult.ok) {
+            results[key] = { preview: null, fileSize: 0 };
+            continue;
+          }
+          const effectiveMimeType = mimeType === 'application/octet-stream'
+            ? readResult.mimeType
+            : mimeType;
+          const buffer = Buffer.from(
+            readResult.data.buffer,
+            readResult.data.byteOffset,
+            readResult.data.byteLength,
+          );
+          results[key] = {
+            preview: effectiveMimeType.startsWith('image/')
+              ? generateImagePreviewFromBuffer(buffer, effectiveMimeType)
+              : null,
+            fileSize: readResult.size,
+          };
+          continue;
+        }
         if (typeof entry.filePath === 'string' && entry.filePath) {
           try {
             const stat = await fsP.stat(entry.filePath);
@@ -127,7 +188,10 @@ export function createMediaApi(options: { runtimeManager?: Pick<RuntimeManager, 
         }
 
         if (typeof entry.gatewayUrl === 'string' && entry.gatewayUrl) {
-          const resolved = await resolveOutgoingMediaUrl(entry.gatewayUrl, options.runtimeManager);
+          const resolved = await resolveOutgoingMediaAttachment({
+            uri: entry.gatewayUrl,
+            stateDir: resolveOpenClawStateDir(),
+          }) ?? await resolveRuntimeOutgoingMediaUrl(entry.gatewayUrl, dependencies.runtimeManager);
           if (!resolved) {
             results[entry.gatewayUrl] = { preview: null, fileSize: 0 };
             continue;

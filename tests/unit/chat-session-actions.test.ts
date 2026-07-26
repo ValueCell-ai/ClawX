@@ -176,8 +176,13 @@ describe('chat session actions', () => {
     expect(next.activeRunId).toBeNull();
     expect(next.pendingFinal).toBe(false);
 
-    actions.acknowledgeAcpSessionCreated('agent:foo:session-1711111111111');
+    actions.acknowledgeAcpSessionCreated(
+      'agent:foo:session-1711111111111',
+      undefined,
+      'Investigate the sidebar title race',
+    );
     expect(h.read().sessions.find((s) => s.key === 'agent:foo:session-1711111111111')?.createdLocally).toBe(false);
+    expect(h.read().sessionLabels['agent:foo:session-1711111111111']).toBe('Investigate the sidebar title race');
     nowSpy.mockRestore();
   });
 
@@ -254,11 +259,18 @@ describe('chat session actions', () => {
     gatewayRpcMock.mockResolvedValueOnce({
       success: true,
       result: {
-        sessions: [{
-          key: 'agent:main:session-a',
-          displayName: 'Visible chat',
-          updatedAt: 1773281700000,
-        }],
+        sessions: [
+          {
+            key: pendingKey,
+            displayName: 'ACP',
+            updatedAt: 1773281800000,
+          },
+          {
+            key: 'agent:main:session-a',
+            displayName: 'Visible chat',
+            updatedAt: 1773281700000,
+          },
+        ],
       },
     });
 
@@ -323,6 +335,7 @@ describe('chat session actions', () => {
     const next = h.read();
     expect(next.currentSessionKey).toBe('agent:main:session-1711111111111');
     expect(next.sessions.map((session) => session.key)).toEqual(['agent:main:session-1711111111111']);
+    expect(next.sessions[0]?.createdLocally).toBe(true);
     expect(next.sessions.find((session) => session.key === 'agent:main:main')).toBeUndefined();
     nowSpy.mockRestore();
   });
@@ -376,6 +389,9 @@ describe('chat session actions', () => {
       'agent:main:session-1710000000000',
       'agent:main:session-1711111111111',
     ]);
+    expect(
+      next.sessions.find((session) => session.key === 'agent:main:session-1711111111111')?.createdLocally,
+    ).toBe(true);
     expect(next.messages).toEqual([]);
     expect(next.streamingText).toBe('');
     expect(next.streamingMessage).toBeNull();

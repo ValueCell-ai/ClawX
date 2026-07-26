@@ -2,7 +2,7 @@
  * IPC Handlers
  * Registers all IPC handlers for main-renderer communication
  */
-import { ipcMain, BrowserWindow, shell, dialog, app } from 'electron';
+import { ipcMain, BrowserWindow, shell, dialog, app, type Session } from 'electron';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, extname, basename, resolve, sep, relative } from 'node:path';
@@ -58,6 +58,9 @@ import { createSettingsApi } from '../services/settings-api';
 import { createChannelsApi } from '../services/channels-api';
 import { createAgentsApi } from '../services/agents-api';
 import { createChatApi } from '../services/chat-api';
+import { AcpSessionAccessRegistry } from '../services/acp-session-access-registry';
+import { createAttachmentAccess, StagedAttachmentRegistry } from '../services/attachment-access';
+import { createAttachmentOpenWithService } from '../services/attachment-open-with';
 import { createCronApi } from '../services/cron-api';
 import { createFilesApi } from '../services/files-api';
 import { createMediaApi } from '../services/media-api';
@@ -65,6 +68,8 @@ import { createProvidersApi } from '../services/providers-api';
 import { createSessionsApi } from '../services/sessions-api';
 import { createSkillsApi } from '../services/skills-api';
 import { createUsageApi, getRecentTokenHistoryForRuntime } from '../services/usage-api';
+import { createWebBrowserApi } from '../services/web-browser-api';
+import type { WebBrowserGuestRegistry } from './web-browser-policy';
 import {
   isLaunchAtStartupKey,
   isProxyKey,
@@ -85,12 +90,22 @@ export function registerIpcHandlers(
   clawHubService: ClawHubService,
   mainWindow: BrowserWindow,
   hostApiRegistry: HostApiRegistry,
+  browserSession: Session,
+  registry: WebBrowserGuestRegistry,
 ): void {
   // Unified request protocol (non-breaking: legacy channels remain available)
   registerUnifiedRequestHandlers(gatewayManager, runtimeManager);
 
   // Typed host invoke handlers (new renderer facade; legacy channels remain available)
-  registerTypedHostHandlers(gatewayManager, runtimeManager, clawHubService, mainWindow, hostApiRegistry);
+  registerTypedHostHandlers(
+    gatewayManager,
+    runtimeManager,
+    clawHubService,
+    mainWindow,
+    hostApiRegistry,
+    browserSession,
+    registry,
+  );
 
   // Gateway handlers
   registerGatewayHandlers(runtimeManager);
@@ -135,11 +150,22 @@ function registerTypedHostHandlers(
   clawHubService: ClawHubService,
   mainWindow: BrowserWindow,
   hostApiRegistry: HostApiRegistry,
+  browserSession: Session,
+  registry: WebBrowserGuestRegistry,
 ): void {
+  const acpSessionAccessRegistry = new AcpSessionAccessRegistry();
+  const stagedAttachments = new StagedAttachmentRegistry();
+  const attachmentOpenWith = createAttachmentOpenWithService();
+  const attachmentAccess = createAttachmentAccess({
+    sessionAccessRegistry: acpSessionAccessRegistry,
+    stagedAttachments,
+    openWith: attachmentOpenWith,
+  });
   hostApiRegistry.registerCoreServices({
     app: createAppApi(runtimeManager),
     openclaw: createOpenClawApi(),
     shell: createShellApi(),
+    webBrowser: createWebBrowserApi({ browserSession, registry }),
     dialog: createDialogApi(),
     window: createWindowApi(mainWindow),
     updates: createUpdatesApi(appUpdater),
@@ -150,10 +176,20 @@ function registerTypedHostHandlers(
     channels: createChannelsApi({ gatewayManager, runtimeManager, mainWindow }),
     agents: createAgentsApi({ gatewayManager, runtimeManager }),
     providers: createProvidersApi({ gatewayManager, runtimeManager, mainWindow }),
-    files: createFilesApi({ runtimeManager }),
-    media: createMediaApi({ runtimeManager }),
+    files: createFilesApi({
+      runtimeManager,
+      attachmentAccess,
+      openWith: attachmentOpenWith,
+      stagedAttachments,
+    }),
+    media: createMediaApi({ runtimeManager, attachmentAccess }),
     sessions: createSessionsApi(runtimeManager),
-    chat: createChatApi({ gatewayManager, runtimeManager, mainWindow }),
+    chat: createChatApi({
+      gatewayManager,
+      runtimeManager,
+      mainWindow,
+      acpSessionAccessRegistry,
+    }),
     cron: createCronApi({ gatewayManager, runtimeManager }),
     skills: createSkillsApi({ clawHubService, gatewayManager, runtimeManager }),
     usage: createUsageApi(runtimeManager),

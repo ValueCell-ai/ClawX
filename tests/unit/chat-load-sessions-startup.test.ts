@@ -121,16 +121,21 @@ describe('chat store loadSessions startup selection', () => {
   });
 
   it('preserves a locally-created current session across session refreshes before first send', async () => {
+    const pendingKey = 'agent:main:session-1711111111111';
     gatewayRpcMock.mockImplementation(async (method: string) => {
       if (method === 'sessions.list') {
-        return { sessions: [{ key: 'agent:main:session-a', displayName: 'Chat A', updatedAt: 5_000 }] };
+        return {
+          sessions: [
+            { key: pendingKey, displayName: 'ACP', updatedAt: 6_000 },
+            { key: 'agent:main:session-a', displayName: 'Chat A', updatedAt: 5_000 },
+          ],
+        };
       }
       if (method === 'chat.history') return { messages: [] };
       throw new Error(`Unexpected gateway RPC: ${method}`);
     });
 
     const { useChatStore } = await import('@/stores/chat');
-    const pendingKey = 'agent:main:session-1711111111111';
     useChatStore.setState({
       currentSessionKey: pendingKey,
       currentAgentId: 'main',
@@ -296,6 +301,11 @@ describe('chat store loadSessions startup selection', () => {
       'agent:main:session-a',
       'agent:main:session-1711111111111',
     ]);
+    expect(
+      useChatStore.getState().sessions.find(
+        (session) => session.key === 'agent:main:session-1711111111111',
+      )?.createdLocally,
+    ).toBe(true);
     nowSpy.mockRestore();
   });
 
@@ -343,6 +353,11 @@ describe('chat store loadSessions startup selection', () => {
       'agent:main:session-a',
       'agent:main:session-1711111111111',
     ]);
+    expect(
+      useChatStore.getState().sessions.find(
+        (session) => session.key === 'agent:main:session-1711111111111',
+      )?.createdLocally,
+    ).toBe(true);
     nowSpy.mockRestore();
   });
 

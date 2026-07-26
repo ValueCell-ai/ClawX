@@ -21,6 +21,7 @@ touchedAreas:
   - electron/main/**
   - electron/shared/**
   - electron/utils/**
+  - resources/**
   - shared/**
   - src/**
   - scripts/**

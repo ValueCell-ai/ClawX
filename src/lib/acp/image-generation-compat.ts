@@ -28,6 +28,7 @@ export type ImageGenerationCompletionEvidence = {
   toolCallId?: string;
   evidenceId: string;
   caption: string;
+  authoritativeCaption?: true;
   candidates: ImageGenerationMediaCandidate[];
 };
 
@@ -145,7 +146,40 @@ function hasStructuredMediaFields(value: unknown): boolean {
 function hasInternalUiDeliveryEvidence(value: unknown): boolean {
   const record = asRecord(value);
   if (!record) return false;
-  return stringValue(record.sourceReplySink)?.toLowerCase() === 'internal-ui';
+  if (stringValue(record.sourceReplySink)?.toLowerCase() !== 'internal-ui') return false;
+  const status = stringValue(record.status)?.toLowerCase();
+  const deliveryStatus = stringValue(record.deliveryStatus)?.toLowerCase();
+  return (status === undefined || status === 'ok')
+    && (deliveryStatus === undefined || deliveryStatus === 'sent');
+}
+
+function hasRejectedInternalUiDelivery(value: unknown): boolean {
+  const record = asRecord(value);
+  if (!record) return false;
+  const status = stringValue(record.status)?.toLowerCase();
+  const deliveryStatus = stringValue(record.deliveryStatus)?.toLowerCase();
+  return (status !== undefined && ['error', 'failed', 'rejected', 'cancelled'].includes(status))
+    || (deliveryStatus !== undefined && deliveryStatus !== 'sent');
+}
+
+function sourceReplyText(value: unknown): string | undefined {
+  if (!hasInternalUiDeliveryEvidence(value)) return undefined;
+  const text = asRecord(asRecord(value)?.sourceReply)?.text;
+  return typeof text === 'string' && text.trim() ? text : undefined;
+}
+
+function firstSourceReplyText(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const text = sourceReplyText(value);
+    if (text) return text;
+  }
+  return undefined;
+}
+
+function imageGenerationTaskId(value: unknown): string | undefined {
+  const text = stringValue(value);
+  if (!text) return undefined;
+  return text.match(/(?:^|:)image_generate:([0-9a-f-]{36})(?::|$)/i)?.[1];
 }
 
 function dedupeCandidates(candidates: ImageGenerationMediaCandidate[]): ImageGenerationMediaCandidate[] {
@@ -166,7 +200,7 @@ function textFromToolContent(content: unknown): string {
 
 function textFromContentBlock(block: unknown): string {
   const record = asRecord(block);
-  return record?.type === 'text' ? stringValue(record.text) ?? '' : '';
+  return record?.type === 'text' && typeof record.text === 'string' ? record.text : '';
 }
 
 function textFromMessageContent(content: unknown): string {
@@ -182,6 +216,32 @@ function collectMediaTagCandidates(text: string): ImageGenerationMediaCandidate[
     pushCandidate(candidates, match[1]);
   }
   return candidates;
+}
+
+function visibleAssistantText(text: string): string | undefined {
+  const withoutMedia = text.replace(MEDIA_TAG_RE, '');
+  const visible = withoutMedia
+    .replace(/^(?:[ \t]*\r?\n)+/, '')
+    .replace(/(?:\r?\n[ \t]*)+$/, '');
+  return visible.trim() ? visible : undefined;
+}
+
+function transcriptCompletionTrigger(message: RawMessage): { taskId: string; failed: boolean } | undefined {
+  if (transcriptRole(message) !== 'user') return undefined;
+  const record = message as RawMessage & { provenance?: unknown };
+  const provenance = asRecord(record.provenance);
+  const text = textFromMessageContent(message.content);
+  const failed = /^status:\s*(?:failed|error)\b/im.test(text);
+  if (
+    stringValue(provenance?.kind)?.toLowerCase() === 'inter_session'
+    && stringValue(provenance?.sourceTool)?.toLowerCase() === 'image_generate'
+  ) {
+    const taskId = imageGenerationTaskId(provenance?.sourceSessionKey);
+    if (taskId) return { taskId, failed };
+  }
+  const header = text.match(/^\[Inter-session message\][^\n]*sourceSession=(image_generate:[^\s]+)[^\n]*sourceTool=image_generate\b/i);
+  const taskId = imageGenerationTaskId(header?.[1]);
+  return taskId ? { taskId, failed } : undefined;
 }
 
 export function extractImageGenerationStartFromAcpEnvelope(
@@ -231,11 +291,12 @@ export function extractImageGenerationCompletionFromAcpEnvelope(
   const rawOutput = asRecord(update.rawOutput);
   const rawOutputDetails = asRecord(rawOutput?.details);
   if (!hasInternalUiDeliveryEvidence(rawOutput) && !hasInternalUiDeliveryEvidence(rawOutputDetails)) return null;
+  const caption = firstSourceReplyText(rawOutput, rawOutputDetails);
   const candidates = dedupeCandidates([
     ...collectStructuredMediaCandidates(rawOutput),
     ...collectStructuredMediaCandidates(rawOutputDetails),
   ]);
-  if (candidates.length === 0) return null;
+  if (!caption && candidates.length === 0) return null;
 
   const toolCallId = stringValue(update.toolCallId) ?? 'unknown-tool';
   return {
@@ -243,8 +304,9 @@ export function extractImageGenerationCompletionFromAcpEnvelope(
     source: 'acp-session-update',
     ...(event.historical ? { historical: true } : {}),
     ...(toolCallId !== 'unknown-tool' ? { toolCallId } : {}),
-    evidenceId: `acp:${event.sessionKey}:${toolCallId}:${candidates.map((entry) => entry.key).join('|')}`,
-    caption: GENERATED_IMAGE_CAPTION,
+    evidenceId: `acp:${event.sessionKey}:${toolCallId}:${candidates.map((entry) => entry.key).join('|') || 'text-only'}`,
+    caption: caption ?? GENERATED_IMAGE_CAPTION,
+    ...(caption ? { authoritativeCaption: true } : {}),
     candidates,
   };
 }
@@ -281,35 +343,74 @@ export function extractImageGenerationTranscriptSupplement(
 ): ImageGenerationTranscriptSupplement {
   const starts: ImageGenerationTaskStart[] = [];
   const completions: ImageGenerationCompletionEvidence[] = [];
-  const startedTaskIds = new Set<string>();
+  const seenTaskIds = new Set<string>();
+  const activeTaskIds = new Set<string>();
   const seenCompletionIds = new Set<string>();
   let latestStart: ImageGenerationTaskStart | null = null;
+  let completionTaskId: string | undefined;
+  let completionFailed = false;
 
   for (const message of messages) {
-    const start = transcriptImageGenerationStart(message, sessionKey);
-    if (start && !startedTaskIds.has(start.taskId)) {
-      starts.push(start);
-      startedTaskIds.add(start.taskId);
+    if (transcriptRole(message) === 'user') {
+      const trigger = transcriptCompletionTrigger(message);
+      if (trigger && activeTaskIds.has(trigger.taskId)) {
+        completionTaskId = trigger.taskId;
+        completionFailed = trigger.failed;
+        continue;
+      }
+      activeTaskIds.clear();
+      latestStart = null;
+      completionTaskId = undefined;
+      completionFailed = false;
+      continue;
     }
-    if (start) latestStart = start;
+    const start = transcriptImageGenerationStart(message, sessionKey);
+    if (start && !seenTaskIds.has(start.taskId)) {
+      starts.push(start);
+      seenTaskIds.add(start.taskId);
+    }
+    if (start) {
+      activeTaskIds.add(start.taskId);
+      latestStart = start;
+    }
 
-    if (transcriptRole(message) !== 'assistant' || startedTaskIds.size === 0) continue;
-    const candidates = collectMediaTagCandidates(textFromMessageContent(message.content));
-    if (candidates.length === 0) continue;
+    if (activeTaskIds.size === 0) continue;
+    const role = transcriptRole(message);
+    const details = asRecord(message.details);
+    const assistantText = role === 'assistant' ? textFromMessageContent(message.content) : '';
+    const candidates = role === 'assistant'
+      ? collectMediaTagCandidates(assistantText)
+      : role === 'toolresult' && message.toolName === MESSAGE_TOOL && hasInternalUiDeliveryEvidence(details)
+        ? collectStructuredMediaCandidates(details)
+        : [];
+    const caption = role === 'toolresult' && message.toolName === MESSAGE_TOOL
+      ? firstSourceReplyText(details)
+      : role === 'assistant' && (completionTaskId !== undefined || candidates.length > 0)
+        ? visibleAssistantText(assistantText)
+        : undefined;
+    if (!caption && candidates.length === 0) continue;
+    if (role === 'assistant' && completionTaskId && !completionFailed && candidates.length === 0) continue;
     const messageId = message.id ?? String(message.timestamp ?? completions.length);
-    const evidenceId = `transcript:${sessionKey}:${messageId}:${candidates.map((entry) => entry.key).join('|')}`;
+    const evidenceId = `transcript:${sessionKey}:${messageId}:${candidates.map((entry) => entry.key).join('|') || 'text-only'}`;
     if (seenCompletionIds.has(evidenceId)) continue;
     seenCompletionIds.add(evidenceId);
+    const taskId = completionTaskId ?? latestStart?.taskId;
     completions.push({
       sessionKey,
       source: 'transcript-history',
       historical: true,
-      ...(latestStart?.taskId ? { taskId: latestStart.taskId } : {}),
+      ...(taskId ? { taskId } : {}),
       ...(latestStart?.toolCallId ? { toolCallId: latestStart.toolCallId } : {}),
       evidenceId,
-      caption: GENERATED_IMAGE_CAPTION,
+      caption: caption ?? GENERATED_IMAGE_CAPTION,
+      ...(caption ? { authoritativeCaption: true } : {}),
       candidates,
     });
+    if (role === 'assistant' && taskId) {
+      activeTaskIds.delete(taskId);
+      completionTaskId = undefined;
+      completionFailed = false;
+    }
   }
 
   return { starts, completions };
@@ -327,29 +428,47 @@ export function extractImageGenerationCompletionFromGatewayChatMessage(
   const details = asRecord(message.details);
   const role = stringValue(message.role)?.toLowerCase();
   const toolName = stringValue(message.toolName);
+  const runId = stringValue(envelope.runId) ?? stringValue(root.runId) ?? 'unknown-run';
+  const sessionKey = stringValue(envelope.sessionKey) ?? stringValue(root.sessionKey);
+  const taskId = imageGenerationTaskId(runId) ?? imageGenerationTaskId(sessionKey);
+  const finalAssistantText = role === 'assistant' && taskId && stringValue(envelope.state)?.toLowerCase() === 'final'
+    ? textFromMessageContent(message.content)
+    : '';
+  const finalAssistantCaption = visibleAssistantText(finalAssistantText);
+  const finalAssistantCandidates = collectMediaTagCandidates(finalAssistantText);
   const assistantAttachedCandidates = role === 'assistant'
     ? collectStructuredMediaCandidates({ _attachedFiles: message._attachedFiles })
     : [];
   const trustedMessageToolResult = (role === 'toolresult' || role === 'tool_result') && toolName === MESSAGE_TOOL;
   const trustedAssistantMedia = assistantAttachedCandidates.length > 0;
   const trustedEnvelopeMedia = !nestedMessage && Boolean(stringValue(envelope.state)) && hasStructuredMediaFields(envelope);
-  if (!trustedMessageToolResult && !trustedAssistantMedia && !trustedEnvelopeMedia) return null;
+  const trustedFinalCompletion = Boolean(taskId && (finalAssistantCaption || finalAssistantCandidates.length > 0));
+  if (!trustedMessageToolResult && !trustedAssistantMedia && !trustedEnvelopeMedia && !trustedFinalCompletion) return null;
+  if (trustedMessageToolResult && (
+    message.isError === true
+    || hasRejectedInternalUiDelivery(message)
+    || hasRejectedInternalUiDelivery(details)
+  )) return null;
+  const sourceReplyCaption = trustedMessageToolResult
+    ? firstSourceReplyText(message, details)
+    : finalAssistantCaption;
 
   const candidates = dedupeCandidates([
     ...(trustedEnvelopeMedia ? collectStructuredMediaCandidates(envelope) : []),
     ...(trustedMessageToolResult ? collectStructuredMediaCandidates(message) : []),
     ...(trustedAssistantMedia ? assistantAttachedCandidates : []),
+    ...finalAssistantCandidates,
     ...(trustedMessageToolResult ? collectStructuredMediaCandidates(details) : []),
   ]);
-  if (candidates.length === 0) return null;
+  if (!sourceReplyCaption && candidates.length === 0) return null;
 
-  const runId = stringValue(envelope.runId) ?? stringValue(root.runId) ?? 'unknown-run';
-  const sessionKey = stringValue(envelope.sessionKey) ?? stringValue(root.sessionKey);
   return {
     ...(sessionKey ? { sessionKey } : {}),
     source: 'gateway-chat-message',
-    evidenceId: `gateway:${runId}:${candidates.map((entry) => entry.key).join('|')}`,
-    caption: GENERATED_IMAGE_CAPTION,
+    ...(taskId ? { taskId } : {}),
+    evidenceId: `gateway:${runId}:${candidates.map((entry) => entry.key).join('|') || 'text-only'}`,
+    caption: sourceReplyCaption ?? GENERATED_IMAGE_CAPTION,
+    ...(sourceReplyCaption ? { authoritativeCaption: true } : {}),
     candidates,
   };
 }
@@ -369,6 +488,11 @@ export function extractImageGenerationCompletionFromRuntimeEvent(
     const resultDetails = asRecord(result?.details);
     const meta = asRecord(record.meta);
     const metaDetails = asRecord(meta?.details);
+    if (
+      record.isError === true
+      || [record, result, resultDetails, meta, metaDetails].some(hasRejectedInternalUiDelivery)
+    ) return null;
+    const caption = firstSourceReplyText(record, result, resultDetails, meta, metaDetails);
     const candidates = dedupeCandidates([
       ...collectStructuredMediaCandidates(record),
       ...collectStructuredMediaCandidates(result),
@@ -376,23 +500,38 @@ export function extractImageGenerationCompletionFromRuntimeEvent(
       ...collectStructuredMediaCandidates(meta),
       ...collectStructuredMediaCandidates(metaDetails),
     ]);
-    if (name !== MESSAGE_TOOL || candidates.length === 0) return null;
+    if (name !== MESSAGE_TOOL || (!caption && candidates.length === 0)) return null;
+    const taskId = imageGenerationTaskId(sessionKey) ?? imageGenerationTaskId(record.runId);
     return {
       ...(sessionKey ? { sessionKey } : {}),
       source: 'runtime-event',
-      evidenceId: `runtime:tool.completed:${stringValue(record.runId) ?? 'unknown-run'}:${candidates.map((entry) => entry.key).join('|')}`,
-      caption: GENERATED_IMAGE_CAPTION,
+      ...(taskId ? { taskId } : {}),
+      ...(stringValue(record.toolCallId) ? { toolCallId: stringValue(record.toolCallId) } : {}),
+      evidenceId: `runtime:tool.completed:${stringValue(record.runId) ?? 'unknown-run'}:${candidates.map((entry) => entry.key).join('|') || 'text-only'}`,
+      caption: caption ?? GENERATED_IMAGE_CAPTION,
+      ...(caption ? { authoritativeCaption: true } : {}),
       candidates,
     };
   }
 
-  const candidates = collectStructuredMediaCandidates(record);
-  if (type !== 'assistant.delta' || candidates.length === 0) return null;
+  const taskId = imageGenerationTaskId(record.runId);
+  const phase = stringValue(record.phase)?.toLowerCase();
+  const finalText = taskId && phase === 'final_answer'
+    ? stringValue(record.text) ?? stringValue(record.delta) ?? ''
+    : '';
+  const caption = visibleAssistantText(finalText);
+  const candidates = dedupeCandidates([
+    ...collectStructuredMediaCandidates(record),
+    ...collectMediaTagCandidates(finalText),
+  ]);
+  if (type !== 'assistant.delta' || (!caption && candidates.length === 0)) return null;
   return {
     ...(sessionKey ? { sessionKey } : {}),
     source: 'runtime-event',
-    evidenceId: `runtime:assistant.delta:${stringValue(record.runId) ?? 'unknown-run'}:${candidates.map((entry) => entry.key).join('|')}`,
-    caption: GENERATED_IMAGE_CAPTION,
+    ...(taskId ? { taskId } : {}),
+    evidenceId: `runtime:assistant.delta:${stringValue(record.runId) ?? 'unknown-run'}:${candidates.map((entry) => entry.key).join('|') || 'text-only'}`,
+    caption: caption ?? GENERATED_IMAGE_CAPTION,
+    ...(caption ? { authoritativeCaption: true } : {}),
     candidates,
   };
 }
@@ -400,6 +539,8 @@ export function extractImageGenerationCompletionFromRuntimeEvent(
 export function imageGenerationEvidenceKey(evidence: ImageGenerationCompletionEvidence): string {
   const candidateKeys = Array.from(new Set(evidence.candidates.map((entry) => entry.key)))
     .sort();
-  const candidateSetKey = JSON.stringify(candidateKeys);
+  const candidateSetKey = candidateKeys.length > 0
+    ? JSON.stringify(candidateKeys)
+    : JSON.stringify(['text-only', evidence.taskId ?? evidence.toolCallId ?? evidence.evidenceId]);
   return `${evidence.sessionKey ?? 'unknown'}:image-generation:${candidateSetKey}`;
 }

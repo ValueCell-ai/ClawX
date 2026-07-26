@@ -51,6 +51,11 @@ describe('workspace context helpers', () => {
   it('formats labels for default and non-default workspaces', () => {
     expect(getWorkspaceDisplayLabel('~/.openclaw/workspace', '默认工作空间')).toBe('默认工作空间');
     expect(getWorkspaceDisplayLabel('/Users/alex/workspace/ClawX', '默认工作空间')).toBe('~/workspace/ClawX');
+    expect(getWorkspaceDisplayLabel(
+      '/Users/alex/workspace/ClawX',
+      '默认工作空间',
+      { '/Users/alex/workspace/ClawX': '我的项目' },
+    )).toBe('我的项目');
     expect(formatWorkspacePath('/home/alex/project')).toBe('~/project');
   });
 

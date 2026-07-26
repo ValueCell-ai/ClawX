@@ -10,6 +10,9 @@ const { acpState, agentsState, artifactPanelState, chatState, gatewayState, stic
     cancelling: false,
     error: null as string | null,
     activeSessionKey: 'agent:main:main' as string | null,
+    workspaceRoot: null as string | null,
+    cwd: null as string | null,
+    prepareLocalSession: vi.fn(),
     loadSession: vi.fn(),
     sendPrompt: vi.fn(),
     cancel: vi.fn(),
@@ -52,6 +55,13 @@ const { acpState, agentsState, artifactPanelState, chatState, gatewayState, stic
 }));
 
 const ensureAcpChatSubscriptions = vi.hoisted(() => vi.fn());
+const resolveWorkspaceContext = vi.hoisted(() => vi.fn());
+
+vi.mock('@/lib/host-api', () => ({
+  hostApi: {
+    files: { resolveWorkspaceContext },
+  },
+}));
 
 vi.mock('@/stores/acp-chat-session', () => ({
   ensureAcpChatSubscriptions,
@@ -212,12 +222,24 @@ function timelineWithProcessBlocks(): AcpTimelineSnapshot {
 describe('ACP Chat page inline timeline lifecycle', () => {
   beforeEach(() => {
     ensureAcpChatSubscriptions.mockReset();
+    resolveWorkspaceContext.mockReset();
+    resolveWorkspaceContext.mockImplementation(async (input: {
+      workspaceRoot: string;
+      executionCwd: string;
+    }) => ({
+      ok: true,
+      workspaceRoot: input.workspaceRoot,
+      executionCwd: input.executionCwd,
+    }));
     acpState.timeline = timelineWithProcessBlocks();
     acpState.loading = false;
     acpState.sending = false;
     acpState.cancelling = false;
     acpState.error = null;
     acpState.activeSessionKey = 'agent:main:main';
+    acpState.workspaceRoot = null;
+    acpState.cwd = null;
+    acpState.prepareLocalSession.mockReset();
     acpState.loadSession.mockReset();
     acpState.loadSession.mockResolvedValue(undefined);
     acpState.sendPrompt.mockReset();
@@ -261,8 +283,12 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     ]);
 
     await waitFor(() => {
-      expect(ensureAcpChatSubscriptions).toHaveBeenCalledTimes(1);
-      expect(acpState.loadSession).toHaveBeenCalledWith({ sessionKey: 'agent:main:main', cwd: '/workspace' });
+      expect(ensureAcpChatSubscriptions).toHaveBeenCalled();
+      expect(acpState.loadSession).toHaveBeenCalledWith({
+        sessionKey: 'agent:main:main',
+        workspaceRoot: '/workspace',
+        cwd: '/workspace',
+      });
     });
   });
 

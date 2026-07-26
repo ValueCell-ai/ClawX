@@ -9,6 +9,7 @@ const REVIEWER_WORKSPACE = '/workspace/reviewer';
 const IMAGE_TASK_ID = '0d2ee919-2dfd-4b72-9da3-d87e6ee56747';
 const GENERATED_IMAGE_PATH = '/workspace/.openclaw/media/tool-image-generation/generated-image.png';
 const GENERATED_IMAGE_PREVIEW = 'data:image/png;base64,iVBORw0KGgo=';
+const GENERATED_IMAGE_IDENTITY = 'e2e-transcript-generated-image';
 const DEFAULT_WORKSPACE_SEGMENT = '~%2F.openclaw%2Fworkspace';
 
 type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
@@ -28,12 +29,12 @@ function defaultWorkspaceSessionGroupTestId(): string {
 
 function baseHostApiMocks(loadResult: Record<string, unknown> = { success: true, generation: 1 }) {
   return {
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: MAIN_WORKSPACE }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: MAIN_WORKSPACE, createIfMissing: true }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: '/' }])]: loadResult,
-    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: '/', createIfMissing: true }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: MAIN_WORKSPACE, cwd: MAIN_WORKSPACE }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: MAIN_WORKSPACE, cwd: MAIN_WORKSPACE, createIfMissing: true }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: '/', cwd: '/' }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: '/', cwd: '/', createIfMissing: true }])]: loadResult,
     [stableStringify(['/api/agents', 'GET'])]: {
       ok: true,
       data: {
@@ -53,7 +54,10 @@ function baseHostApiMocks(loadResult: Record<string, unknown> = { success: true,
   };
 }
 
-async function installAcpChatMocks(app: ElectronApplication) {
+async function installAcpChatMocks(
+  app: ElectronApplication,
+  loadResult: Record<string, unknown> = { success: true, generation: 1 },
+) {
   await installIpcMocks(app, {
     gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
     gatewayRpc: {
@@ -64,22 +68,34 @@ async function installAcpChatMocks(app: ElectronApplication) {
         },
       },
     },
-    hostApi: baseHostApiMocks(),
+    hostApi: baseHostApiMocks(loadResult),
   });
 }
 
-async function installAcpLoadReplayMock(app: ElectronApplication, updates: AcpSessionUpdate[]) {
+async function installAcpLoadReplayMock(
+  app: ElectronApplication,
+  updates: AcpSessionUpdate[],
+  timings: Array<{
+    normalizedUserText: string;
+    userOccurrenceFromTail: number;
+    durationMs: number;
+  }> = [],
+) {
   await app.evaluate(async ({ app: _app }, payload) => {
-    const { BrowserWindow, ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
     type IpcInvokeHandler = (event: unknown, request: { id?: string; module?: string; action?: string; args?: unknown[] }) => Promise<unknown>;
     const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
     const originalHostInvoke = handlers?.get('host:invoke');
     ipcMain.removeHandler('host:invoke');
     ipcMain.handle('host:invoke', async (event: unknown, request: { id?: string; module?: string; action?: string; args?: unknown[] }) => {
       if (request?.module === 'chat' && request.action === 'loadAcpSession') {
-        for (const update of payload.updates as AcpSessionUpdate[]) {
-          for (const window of BrowserWindow.getAllWindows()) {
-            window.webContents.send('chat:acp-session-update', {
+        return {
+          id: request.id,
+          ok: true,
+          data: {
+            success: true,
+            generation: 1,
+            sessionUpdates: (payload.updates as AcpSessionUpdate[]).map((update) => ({
               sessionKey: payload.sessionKey,
               generation: 1,
               historical: true,
@@ -87,14 +103,20 @@ async function installAcpLoadReplayMock(app: ElectronApplication, updates: AcpSe
                 sessionId: payload.sessionKey,
                 update,
               },
-            });
-          }
-        }
-        return { id: request.id, ok: true, data: { success: true, generation: 1 } };
+            })),
+          },
+        };
+      }
+      if (request?.module === 'sessions' && request.action === 'turnTimings') {
+        return {
+          id: request.id,
+          ok: true,
+          data: { success: true, timings: payload.timings },
+        };
       }
       return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
     });
-  }, { sessionKey: MAIN_SESSION_KEY, updates });
+  }, { sessionKey: MAIN_SESSION_KEY, updates, timings });
 }
 
 async function installAcpLoadRecorderMock(app: ElectronApplication) {
@@ -212,6 +234,50 @@ async function installAcpPromptFailureMock(app: ElectronApplication, error: stri
   }, error);
 }
 
+async function installTargetAgentRequestRecorder(app: ElectronApplication) {
+  await app.evaluate(async ({ app: _app }, targetSessionKey) => {
+    const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type HostInvokeRequest = {
+      id?: string;
+      module?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+      args?: unknown[];
+    };
+    type RecordedRequest = { action: string; payload: Record<string, unknown> };
+    type IpcInvokeHandler = (event: unknown, request: HostInvokeRequest) => Promise<unknown>;
+    const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
+    const originalHostInvoke = handlers?.get('host:invoke');
+    const globals = globalThis as unknown as { __targetAgentRequests?: RecordedRequest[] };
+    globals.__targetAgentRequests = [];
+
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: HostInvokeRequest) => {
+      const requestPayload = request.payload ?? (Array.isArray(request.args) ? request.args[0] : undefined);
+      if (
+        request?.module === 'chat'
+        && (request.action === 'loadAcpSession' || request.action === 'sendAcpPrompt')
+        && requestPayload?.sessionKey === targetSessionKey
+      ) {
+        globals.__targetAgentRequests?.push({
+          action: request.action,
+          payload: requestPayload,
+        });
+        return { id: request.id, ok: true, data: { success: true, generation: 1 } };
+      }
+      return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
+    });
+  }, REVIEWER_SESSION_KEY);
+}
+
+async function getTargetAgentRequests(app: ElectronApplication) {
+  return await app.evaluate(async ({ app: _app }) => {
+    return (globalThis as unknown as {
+      __targetAgentRequests?: Array<{ action: string; payload: Record<string, unknown> }>;
+    }).__targetAgentRequests ?? [];
+  });
+}
+
 async function installAcpPromptDeferredMock(app: ElectronApplication) {
   await app.evaluate(async ({ app: _app }) => {
     const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
@@ -276,6 +342,103 @@ async function openChat(app: ElectronApplication) {
 }
 
 test.describe('ClawX ACP inline timeline', () => {
+  test('supplements an ACP-replayed assistant turn with historical duration', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installAcpChatMocks(app);
+      await installAcpLoadReplayMock(app, [
+        {
+          sessionUpdate: 'user_message_chunk',
+          messageId: 'timed-history-user',
+          content: { type: 'text', text: 'Measure this historical turn' },
+        },
+        {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'timed-history-assistant',
+          content: { type: 'text', text: 'Historical turn measured' },
+        },
+      ], [{
+        normalizedUserText: 'Measure this historical turn',
+        userOccurrenceFromTail: 1,
+        durationMs: 6_400,
+      }]);
+
+      const page = await openChat(app);
+      await expect(page.getByText('Historical turn measured')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('acp-turn-duration')).toHaveText('Took 6 sec');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('commits a long historical replay without exposing partial assistant text', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const paragraphChunks = Array.from({ length: 12 }, (_, index) => `Paragraph ${index + 1}.\n\n`);
+    const sessionUpdates = [
+      {
+        sessionKey: MAIN_SESSION_KEY,
+        generation: 1,
+        historical: true,
+        notification: {
+          sessionId: MAIN_SESSION_KEY,
+          update: {
+            sessionUpdate: 'user_message_chunk',
+            messageId: 'long-history-user',
+            content: { type: 'text', text: 'Write a 12-paragraph article' },
+          },
+        },
+      },
+      ...paragraphChunks.map((text) => ({
+        sessionKey: MAIN_SESSION_KEY,
+        generation: 1,
+        historical: true,
+        notification: {
+          sessionId: MAIN_SESSION_KEY,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            messageId: 'long-history-assistant',
+            content: { type: 'text', text },
+          },
+        },
+      })),
+    ];
+
+    try {
+      await installAcpChatMocks(app, { success: true, generation: 1, sessionUpdates });
+      const initialPage = await getStableWindow(app);
+      await initialPage.addInitScript(() => {
+        const observedLengths: number[] = [];
+        Object.defineProperty(window, '__acpObservedAssistantLengths', {
+          value: observedLengths,
+          configurable: true,
+        });
+        const observer = new MutationObserver(() => {
+          const assistant = document.querySelector('[data-testid="acp-assistant-message"]');
+          const length = assistant?.textContent?.length ?? 0;
+          if (length > 0 && observedLengths.at(-1) !== length) observedLengths.push(length);
+        });
+        const observe = () => {
+          observer.observe(document.documentElement, { childList: true, characterData: true, subtree: true });
+        };
+        if (document.documentElement) observe();
+        else window.addEventListener('DOMContentLoaded', observe, { once: true });
+      });
+
+      const page = await openChat(app);
+      const assistant = page.getByTestId('acp-assistant-message');
+      await expect(assistant).toContainText('Paragraph 1.', { timeout: 30_000 });
+      await expect(assistant).toContainText('Paragraph 12.');
+      const finalLength = await assistant.evaluate((element) => element.textContent?.length ?? 0);
+      const observedLengths = await page.evaluate(() => (
+        (window as unknown as { __acpObservedAssistantLengths?: number[] }).__acpObservedAssistantLengths ?? []
+      ));
+      expect(observedLengths).toEqual([finalLength]);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('renders ACP tool updates inline without the legacy execution graph', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
@@ -339,6 +502,61 @@ test.describe('ClawX ACP inline timeline', () => {
       ]);
 
       await expect(page.locator('.prose').filter({ hasText: 'Streaming response' })).toHaveCount(1);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('continues an ACP response while Chat is unmounted and shows the latest stream on return', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installAcpChatMocks(app);
+      await installAcpPromptDeferredMock(app);
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+
+      await page.getByTestId('chat-composer-input').fill('Keep working while I navigate');
+      await page.getByTestId('chat-composer-send').click();
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'navigation-stream',
+        content: { type: 'text', text: 'Before navigation. ' },
+      }]);
+      await expect(page.getByTestId('acp-assistant-message')).toContainText('Before navigation.');
+      const duration = page.getByTestId('acp-turn-duration');
+      await expect(duration).toContainText('elapsed');
+      const beforeNavigationSeconds = Number.parseFloat((await duration.textContent()) ?? '0');
+
+      await page.getByTestId('sidebar-nav-settings').click();
+      await expect(page.getByTestId('settings-page')).toBeVisible();
+      await page.waitForTimeout(1_100);
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'navigation-stream',
+        content: { type: 'text', text: 'While away. ' },
+      }]);
+
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await expect(page.getByTestId('chat-page')).toBeVisible();
+      await expect(page.getByTestId('acp-assistant-message')).toContainText('Before navigation. While away.');
+      await expect(duration).toContainText('elapsed');
+      expect(Number.parseFloat((await duration.textContent()) ?? '0')).toBeGreaterThan(beforeNavigationSeconds);
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'navigation-stream',
+        content: { type: 'text', text: 'After return.' },
+      }]);
+      await expect(page.getByTestId('acp-assistant-message')).toContainText(
+        'Before navigation. While away. After return.',
+      );
+
+      await resolveDeferredAcpPrompt(app);
+      await expect(page.getByTestId('chat-composer-send')).toBeVisible();
+      await expect(duration).toContainText('Took');
+      const completedDuration = await duration.textContent();
+      await page.waitForTimeout(1_100);
+      await expect(duration).toHaveText(completedDuration ?? '');
     } finally {
       await closeElectronApp(app);
     }
@@ -585,10 +803,44 @@ test.describe('ClawX ACP inline timeline', () => {
               },
             ],
           },
-          [stableStringify(['media', 'thumbnails', {
-            paths: [{ filePath: GENERATED_IMAGE_PATH, mimeType: 'image/png' }],
+          [stableStringify(['files', 'resolveAttachment', {
+            ref: {
+              sessionKey: MAIN_SESSION_KEY,
+              generation: 1,
+              uri: GENERATED_IMAGE_PATH,
+              transcriptMessageId: 'transcript-image-complete',
+            },
+            mimeType: 'image/png',
           }])]: {
-            [GENERATED_IMAGE_PATH]: { preview: GENERATED_IMAGE_PREVIEW, fileSize: 128 },
+            ok: true,
+            identity: GENERATED_IMAGE_IDENTITY,
+            displayName: 'generated-image.png',
+            mimeType: 'image/png',
+            size: 128,
+            target: {
+              kind: 'local',
+              scope: 'openclaw-media',
+              ref: {
+                sessionKey: MAIN_SESSION_KEY,
+                generation: 1,
+                uri: GENERATED_IMAGE_PATH,
+                transcriptMessageId: 'transcript-image-complete',
+              },
+            },
+          },
+          [stableStringify(['media', 'thumbnails', {
+            paths: [{
+              attachmentFileRef: {
+                sessionKey: MAIN_SESSION_KEY,
+                generation: 1,
+                uri: GENERATED_IMAGE_PATH,
+                transcriptMessageId: 'transcript-image-complete',
+              },
+              key: GENERATED_IMAGE_IDENTITY,
+              mimeType: 'image/png',
+            }],
+          }])]: {
+            [GENERATED_IMAGE_IDENTITY]: { preview: GENERATED_IMAGE_PREVIEW, fileSize: 128 },
           },
           [stableStringify(['media', 'saveImage', {
             base64: 'iVBORw0KGgo=',
@@ -640,7 +892,6 @@ test.describe('ClawX ACP inline timeline', () => {
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('acp-tool-call-card')).toContainText('Generate image');
-      await expect(page.getByText('Generated image is ready.')).toBeVisible({ timeout: 30_000 });
       const imagePart = page.getByTestId('acp-image-part');
       const image = imagePart.locator('img');
       await expect(image).toBeVisible();
@@ -717,20 +968,24 @@ test.describe('ClawX ACP inline timeline', () => {
       const page = await openChat(app);
 
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`)).toHaveCount(0);
+      await expect(page.getByText('[OpenClaw heartbeat poll]')).toHaveCount(0);
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([]);
+
+      await page.getByTestId('chat-composer-input').fill('Start a real conversation');
+      await page.getByTestId('chat-composer-send').click();
       await expect.poll(async () => {
         const loadSessionKeys = await getRecordedAcpLoadSessionKeys(app);
         return loadSessionKeys.some((sessionKey) => /^agent:main:session-/.test(sessionKey));
       }, { timeout: 30_000 }).toBe(true);
       const loadSessionKeys = await getRecordedAcpLoadSessionKeys(app);
       expect(loadSessionKeys).not.toContain(MAIN_SESSION_KEY);
-      await expect(page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`)).toHaveCount(0);
-      await expect(page.getByText('[OpenClaw heartbeat poll]')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
   });
 
-  test('shows the composer Zoomies indicator only while sending', async ({ launchElectronApp }) => {
+  test('shows the composer dot pulse and thinking label only while sending', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -739,17 +994,19 @@ test.describe('ClawX ACP inline timeline', () => {
       const page = await openChat(app);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('chat-composer-working-indicator')).toHaveCount(0);
-      await expect(page.getByTestId('chat-composer-zoomies')).toHaveCount(0);
+      await expect(page.getByTestId('chat-composer-dot-pulse')).toHaveCount(0);
 
       await page.getByTestId('chat-composer-input').fill('Hold the send state');
       await page.getByTestId('chat-composer-send').click();
 
       await expect(page.getByTestId('chat-composer-working-indicator')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('chat-composer-zoomies')).toBeVisible();
+      await expect(page.getByTestId('chat-composer-working-indicator')).toContainText('Thinking…');
+      await expect(page.getByTestId('chat-composer-dot-pulse')).toBeVisible();
+      await expect(page.getByTestId('chat-composer-zoomies')).toHaveCount(0);
 
       await resolveDeferredAcpPrompt(app);
       await expect(page.getByTestId('chat-composer-working-indicator')).toHaveCount(0, { timeout: 30_000 });
-      await expect(page.getByTestId('chat-composer-zoomies')).toHaveCount(0);
+      await expect(page.getByTestId('chat-composer-dot-pulse')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
@@ -785,6 +1042,87 @@ test.describe('ClawX ACP inline timeline', () => {
     }
   });
 
+  test('creates and sends the first prompt to a newly targeted agent workspace', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [
+                { key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE, updatedAt: new Date().toISOString() },
+              ],
+            },
+          },
+        },
+        hostApi: {
+          ...baseHostApiMocks(),
+          [stableStringify(['/api/agents', 'GET'])]: {
+            ok: true,
+            data: {
+              status: 200,
+              ok: true,
+              json: {
+                success: true,
+                agents: [
+                  {
+                    id: 'main',
+                    name: 'main',
+                    workspace: MAIN_WORKSPACE,
+                    mainSessionKey: MAIN_SESSION_KEY,
+                  },
+                  {
+                    id: 'reviewer',
+                    name: 'reviewer',
+                    workspace: REVIEWER_WORKSPACE,
+                    mainSessionKey: REVIEWER_SESSION_KEY,
+                    modelDisplay: 'mock-model',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+      await installTargetAgentRequestRecorder(app);
+
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+
+      await page.getByTestId('chat-composer-agent').click();
+      await page.getByRole('button', { name: 'reviewer mock-model' }).click();
+      await page.getByTestId('chat-composer-input').fill('Hello reviewer');
+      await page.getByTestId('chat-composer-send').click();
+
+      await expect.poll(async () => {
+        const requests = await getTargetAgentRequests(app);
+        return requests.some((request) => request.action === 'sendAcpPrompt');
+      }).toBe(true);
+
+      const requests = await getTargetAgentRequests(app);
+      expect(requests.filter((request) => request.action === 'loadAcpSession')).toEqual([{
+        action: 'loadAcpSession',
+        payload: {
+          sessionKey: REVIEWER_SESSION_KEY,
+          workspaceRoot: REVIEWER_WORKSPACE,
+          cwd: REVIEWER_WORKSPACE,
+          createIfMissing: true,
+        },
+      }]);
+      expect(requests.some((request) => (
+        request.action === 'sendAcpPrompt'
+        && request.payload.sessionKey === REVIEWER_SESSION_KEY
+        && request.payload.cwd === REVIEWER_WORKSPACE
+        && request.payload.message === 'Hello reviewer'
+      ))).toBe(true);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('keeps recoverable target-agent prompt failures visible after switching sessions', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     const error = "Error invoking remote method 'host:invoke': reply was never sent";
@@ -805,11 +1143,11 @@ test.describe('ClawX ACP inline timeline', () => {
         },
         hostApi: {
           ...baseHostApiMocks(),
-          [stableStringify(['chat', 'loadAcpSession', { sessionKey: REVIEWER_SESSION_KEY, cwd: REVIEWER_WORKSPACE }])]: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: REVIEWER_SESSION_KEY, workspaceRoot: REVIEWER_WORKSPACE, cwd: REVIEWER_WORKSPACE }])]: {
             success: true,
             generation: 1,
           },
-          [stableStringify(['chat', 'loadAcpSession', { sessionKey: REVIEWER_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: REVIEWER_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: {
             success: true,
             generation: 1,
           },

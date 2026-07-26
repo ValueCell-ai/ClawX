@@ -24,7 +24,9 @@ import {
   type GatewayLifecycleState,
   getReconnectScheduleDecision,
   getReconnectSkipReason,
+  isOpenClawFatalConfigExitCode,
 } from './process-policy';
+import { removeOpenClaw2026_7_1UpgradeSnapshot } from '../utils/openclaw-upgrade-snapshot';
 import {
   clearPendingGatewayRequests,
   rejectPendingGatewayRequest,
@@ -53,8 +55,19 @@ import {
   loadGatewayReloadPolicy,
   type GatewayReloadPolicy,
 } from './reload-policy';
-import { classifyGatewayStderrMessage, recordGatewayStartupStderrLine } from './startup-stderr';
+import {
+  classifyGatewayStderrMessage,
+  GATEWAY_STARTUP_SLOW_STAGE_MS,
+  GATEWAY_STARTUP_SLOW_TOTAL_MS,
+  GatewayStartupTraceCollector,
+  recordGatewayStartupStderrLine,
+} from './startup-stderr';
 import { runGatewayStartupSequence } from './startup-orchestrator';
+import {
+  hasFatalRuntimeFailureSignal,
+  hasInvalidConfigFailureSignal,
+  hasStartupMigrationLockSignal,
+} from './startup-recovery';
 import {
   GatewayCapabilityMonitor,
   type GatewayCapabilityName,
@@ -174,6 +187,7 @@ export class GatewayManager extends EventEmitter {
   private startLock = false;
   private lastSpawnSummary: string | null = null;
   private recentStartupStderrLines: string[] = [];
+  private readonly startupTraceCollector = new GatewayStartupTraceCollector();
   private pendingRequests: Map<string, PendingGatewayRequest> = new Map();
   private deviceIdentity: DeviceIdentity | null = null;
   private restartInFlight: Promise<void> | null = null;
@@ -183,6 +197,7 @@ export class GatewayManager extends EventEmitter {
   private readonly restartGovernor = new GatewayRestartGovernor();
   private reloadDebounceTimer: NodeJS.Timeout | null = null;
   private initialReadyHeartbeatRecoveryTimer: NodeJS.Timeout | null = null;
+  private upgradeSnapshotCleanupAttempted = false;
   private reloadPolicy: GatewayReloadPolicy = { ...DEFAULT_GATEWAY_RELOAD_POLICY };
   private reloadPolicyLoadedAt = 0;
   private reloadPolicyRefreshPromise: Promise<void> | null = null;
@@ -244,6 +259,7 @@ export class GatewayManager extends EventEmitter {
         logger.info('Gateway subsystems ready (event received)');
         this.setStatus({ gatewayReady: true });
       }
+      void this.cleanupOpenClawUpgradeSnapshot();
     });
     this.on('gateway:health', (payload) => {
       this.capabilityMonitor.recordOpenClawHealth(payload);
@@ -419,12 +435,23 @@ export class GatewayManager extends EventEmitter {
         onConnectedToManagedGateway: () => {
           this.startHealthCheck();
           const tConnected = Date.now();
-          logger.info('[metric] gateway.startup', {
+          const spawnToReadyMs = tReady && tSpawned ? tReady - tSpawned : undefined;
+          const startupTrace = this.startupTraceCollector.getSummary();
+          const startupMetric = {
             configSyncMs: tSpawned ? tSpawned - t0 : undefined,
-            spawnToReadyMs: tReady && tSpawned ? tReady - tSpawned : undefined,
+            spawnToReadyMs,
             readyToConnectMs: tReady ? tConnected - tReady : undefined,
             totalMs: tConnected - t0,
-          });
+            openclawTrace: startupTrace,
+          };
+          logger.info('[metric] gateway.startup', startupMetric);
+          if (spawnToReadyMs !== undefined && spawnToReadyMs >= GATEWAY_STARTUP_SLOW_TOTAL_MS) {
+            logger.warn('[gateway-startup] Slow managed Gateway startup detected', {
+              pid: this.status.pid,
+              spawnToReadyMs,
+              openclawTrace: startupTrace,
+            });
+          }
         },
         runDoctorRepair: async () => await runOpenClawDoctorRepair(),
         onDoctorRepairSuccess: () => {
@@ -444,7 +471,17 @@ export class GatewayManager extends EventEmitter {
         error
       );
       this.setStatus({ state: 'error', error: String(error) });
-      if (this.shouldReconnect) {
+      const fatalStartupFailure = isOpenClawFatalConfigExitCode(this.processExitCode)
+        || hasFatalRuntimeFailureSignal(error, this.recentStartupStderrLines)
+        || hasStartupMigrationLockSignal(error, this.recentStartupStderrLines)
+        || hasInvalidConfigFailureSignal(error, this.recentStartupStderrLines);
+      if (fatalStartupFailure) {
+        // OpenClaw 2026.7.1 uses EX_CONFIG for fatal configuration failures.
+        // Runtime and SQLite compatibility failures are likewise not repaired
+        // by restarting the same binary, so leave recovery to a manual start.
+        this.shouldReconnect = false;
+        logger.error('Gateway startup failed fatally; automatic reconnect disabled');
+      } else if (this.shouldReconnect) {
         logger.warn('Gateway start failed; scheduling auto-reconnect recovery');
         this.scheduleReconnect();
       }
@@ -1039,8 +1076,10 @@ export class GatewayManager extends EventEmitter {
     await unloadLaunchctlGatewayService();
     this.processExitCode = null;
 
-    // Per-process dedup map for stderr lines — resets on each new spawn.
+    // Per-process diagnostics reset on each new spawn so retries never mix
+    // timings or stderr deduplication state from different Gateway children.
     const stderrDedup = new Map<string, number>();
+    this.startupTraceCollector.reset();
 
     const { child, lastSpawnSummary } = await launchGatewayProcess({
       port: this.status.port,
@@ -1050,6 +1089,7 @@ export class GatewayManager extends EventEmitter {
       getShouldReconnect: () => this.shouldReconnect,
       onStderrLine: (line) => {
         recordGatewayStartupStderrLine(this.recentStartupStderrLines, line);
+        const traceStage = this.startupTraceCollector.record(line);
         const classified = classifyGatewayStderrMessage(line);
         if (classified.level === 'drop') return;
 
@@ -1064,8 +1104,22 @@ export class GatewayManager extends EventEmitter {
           return;
         }
 
+        if (traceStage) {
+          const message = `[gateway-startup] stage=${traceStage.name} durationMs=${traceStage.durationMs}`
+            + (traceStage.totalMs === undefined ? '' : ` totalMs=${traceStage.totalMs}`);
+          if (traceStage.durationMs >= GATEWAY_STARTUP_SLOW_STAGE_MS) {
+            logger.warn(`${message} slow=true`);
+          } else {
+            logger.info(message);
+          }
+          return;
+        }
         if (classified.level === 'debug') {
           logger.debug(`[Gateway stderr] ${classified.normalized}`);
+          return;
+        }
+        if (classified.level === 'info') {
+          logger.info(`[Gateway stderr] ${classified.normalized}`);
           return;
         }
         logger.warn(`[Gateway stderr] ${classified.normalized}`);
@@ -1086,16 +1140,23 @@ export class GatewayManager extends EventEmitter {
           this.setStatus({ state: 'stopped' });
         }
 
-        // Always attempt reconnect from process exit.  scheduleReconnect()
-        // internally checks shouldReconnect and reconnect-timer guards, so
-        // calling it unconditionally is safe — intentional stop() calls set
-        // shouldReconnect=false which makes scheduleReconnect() no-op.
-        //
-        // On Windows, the WS close handler intentionally skips reconnect
-        // (to avoid racing with this exit handler).  However, WS close
-        // fires *before* process exit and sets state='stopped', which
-        // previously caused this handler to also skip reconnect — leaving
-        // the gateway permanently dead with no recovery path.
+        const orchestratedStartupFailure = isOpenClawFatalConfigExitCode(code)
+          || hasFatalRuntimeFailureSignal(undefined, this.recentStartupStderrLines)
+          || hasStartupMigrationLockSignal(undefined, this.recentStartupStderrLines)
+          || hasInvalidConfigFailureSignal(undefined, this.recentStartupStderrLines);
+        if (orchestratedStartupFailure) {
+          // During startup the orchestrator may still perform its one bounded
+          // doctor repair. Do not race it with an independent reconnect timer.
+          // If orchestration cannot recover, start() disables reconnect in its
+          // catch path so migration/config failures cannot create an outer loop.
+          if (this.status.state !== 'starting') this.shouldReconnect = false;
+          logger.error(`Gateway process reported a non-retriable startup condition (code=${String(code)}); reconnect not scheduled`);
+          return;
+        }
+
+        // Always attempt reconnect from non-fatal process exits.
+        // scheduleReconnect() internally checks shouldReconnect and timer
+        // guards, so intentional stop() remains a no-op.
         this.scheduleReconnect();
       },
       onError: () => {
@@ -1296,6 +1357,20 @@ export class GatewayManager extends EventEmitter {
     if (!this.initialReadyHeartbeatRecoveryTimer) return;
     clearTimeout(this.initialReadyHeartbeatRecoveryTimer);
     this.initialReadyHeartbeatRecoveryTimer = null;
+  }
+
+  private async cleanupOpenClawUpgradeSnapshot(): Promise<void> {
+    if (this.upgradeSnapshotCleanupAttempted) return;
+    this.upgradeSnapshotCleanupAttempted = true;
+
+    try {
+      const result = await removeOpenClaw2026_7_1UpgradeSnapshot();
+      if (result.status === 'removed') {
+        logger.info(`[upgrade] Removed OpenClaw 2026.7.1 pre-migration snapshot: ${result.snapshotDir}`);
+      }
+    } catch (error) {
+      logger.warn('[upgrade] Failed to remove OpenClaw 2026.7.1 pre-migration snapshot:', error);
+    }
   }
 
   /**

@@ -1,7 +1,7 @@
 import { hostApi } from '@/lib/host-api';
 import { formatFileSize } from './format';
 
-export const DIRECT_OPEN_FALLBACK_EXTS = new Set(['.pdf', '.xls', '.xlsx']);
+export const DIRECT_OPEN_FALLBACK_EXTS = new Set(['.pdf', '.xls', '.xlsx', '.docx', '.pptx']);
 export const DIRECT_OPEN_FALLBACK_MIN_BYTES = 2 * 1024 * 1024;
 
 export function isDirectOpenFallbackExt(ext?: string | null): boolean {

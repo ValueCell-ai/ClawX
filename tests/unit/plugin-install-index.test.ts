@@ -38,7 +38,7 @@ describe('plugin install index sqlite persistence', () => {
 
   it('creates sqlite and upserts trusted whatsapp install records', async () => {
     const { upsertPluginInstallRecordsIntoSqlite } = await import('@electron/utils/plugin-install-index');
-    const sqlitePath = join(stateDir, 'openclaw.sqlite');
+    const sqlitePath = join(stateDir, 'state', 'openclaw.sqlite');
     const record = {
       source: 'npm',
       spec: '@openclaw/whatsapp',
@@ -71,7 +71,7 @@ describe('plugin install index sqlite persistence', () => {
 
   it('updates stale sqlite records when installPath changes', async () => {
     const { upsertPluginInstallRecordsIntoSqlite } = await import('@electron/utils/plugin-install-index');
-    const sqlitePath = join(stateDir, 'openclaw.sqlite');
+    const sqlitePath = join(stateDir, 'state', 'openclaw.sqlite');
     const stale = {
       source: 'npm',
       spec: '@openclaw/whatsapp',
@@ -101,5 +101,36 @@ describe('plugin install index sqlite persistence', () => {
 
     const persisted = JSON.parse(row.install_records_json) as Record<string, Record<string, unknown>>;
     expect(persisted.whatsapp.installPath).toBe(fresh.installPath);
+  });
+
+  it('removes compatibility-patched plugin records from canonical and legacy databases', async () => {
+    const {
+      removePluginInstallRecordsFromSqlite,
+      upsertPluginInstallRecordsIntoSqlite,
+    } = await import('@electron/utils/plugin-install-index');
+    const sqlitePath = join(stateDir, 'state', 'openclaw.sqlite');
+    const record = {
+      source: 'npm',
+      spec: '@wecom/wecom-openclaw-plugin',
+      installPath: '/home/test/.openclaw/extensions/wecom',
+      version: '2026.7.2',
+      resolvedName: '@wecom/wecom-openclaw-plugin',
+      resolvedVersion: '2026.7.2',
+      resolvedSpec: '@wecom/wecom-openclaw-plugin@2026.7.2',
+    };
+
+    expect(upsertPluginInstallRecordsIntoSqlite({ wecom: record })).toBe(true);
+    expect(removePluginInstallRecordsFromSqlite(['wecom'])).toBe(true);
+
+    const { DatabaseSync } = await import('node:sqlite');
+    const db = new DatabaseSync(sqlitePath);
+    const row = db.prepare(`
+      SELECT install_records_json
+        FROM installed_plugin_index
+       WHERE index_key = 'installed-plugin-index'
+    `).get() as { install_records_json: string };
+    db.close();
+
+    expect(JSON.parse(row.install_records_json)).not.toHaveProperty('wecom');
   });
 });

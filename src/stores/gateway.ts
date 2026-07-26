@@ -7,6 +7,8 @@ import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
 import type { GatewayNotification, GatewayHealth, GatewayStatus } from '../types/gateway';
 import type { ChatRuntimeEvent } from '../../shared/chat-runtime-events';
+import type { LoadSessionsOptions } from '../../shared/chat/types';
+import type { GatewaySessionsChangedPayload } from './chat/session-catalog';
 import { getCronSessionBaseKey, sessionKeysAreEquivalent } from './chat/cron-session-utils';
 
 let gatewayInitPromise: Promise<void> | null = null;
@@ -19,6 +21,8 @@ const LOAD_HISTORY_MIN_INTERVAL_MS = 800;
 let lastLoadSessionsAt = 0;
 let lastLoadHistoryAt = 0;
 let cronRepairTriggeredThisSession = false;
+let lastSynchronizedRuntimeIdentity: string | null = null;
+let gatewaySessionGeneration = 0;
 
 interface GatewayState {
   status: GatewayStatus;
@@ -137,7 +141,7 @@ function shouldProcessGatewayEvent(event: Record<string, unknown>): boolean {
 }
 
 function maybeLoadSessions(
-  state: { loadSessions: (force?: boolean) => Promise<void> },
+  state: { loadSessions: (options?: LoadSessionsOptions) => Promise<void> },
   force = false,
 ): void {
   const { status } = useGatewayStore.getState();
@@ -146,7 +150,7 @@ function maybeLoadSessions(
   const now = Date.now();
   if (!force && now - lastLoadSessionsAt < LOAD_SESSIONS_MIN_INTERVAL_MS) return;
   lastLoadSessionsAt = now;
-  void state.loadSessions(force);
+  void state.loadSessions(force ? { force: true } : undefined);
 }
 
 function maybeLoadHistory(
@@ -216,9 +220,62 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function getGatewayRuntimeIdentity(status: GatewayStatus): string {
+  return `${status.pid ?? 'none'}:${status.connectedAt ?? 'none'}:${status.port}`;
+}
+
+function synchronizeGatewaySessionCatalog(status: GatewayStatus): void {
+  if (status.state !== 'running' || status.gatewayReady === false) {
+    lastSynchronizedRuntimeIdentity = null;
+    return;
+  }
+
+  const identity = getGatewayRuntimeIdentity(status);
+  if (identity === lastSynchronizedRuntimeIdentity) return;
+  lastSynchronizedRuntimeIdentity = identity;
+  gatewaySessionGeneration += 1;
+  const generation = gatewaySessionGeneration;
+
+  void (async () => {
+    const chatModulePromise = import('./chat');
+    try {
+      const { synchronizeGatewaySessionGeneration } = await chatModulePromise;
+      synchronizeGatewaySessionGeneration(generation);
+    } catch {
+      // Hydration below reports import failures without blocking subscription.
+    }
+
+    try {
+      await useGatewayStore.getState().rpc('sessions.subscribe', {});
+    } catch (error) {
+      console.warn('Failed to subscribe to Gateway session changes:', error);
+    } finally {
+      try {
+        const { useChatStore } = await chatModulePromise;
+        await useChatStore.getState().loadSessions({
+          force: true,
+          gatewayGeneration: generation,
+        });
+      } catch (error) {
+        console.warn('Failed to hydrate Gateway session catalog:', error);
+      }
+    }
+  })();
+}
+
 function handleGatewayNotification(notification: GatewayNotification | undefined): void {
   const payload = notification;
   if (!payload || payload.method === 'agent') {
+    return;
+  }
+
+  if (payload.method === 'sessions.changed') {
+    const changed = asRecord(payload.params) as GatewaySessionsChangedPayload;
+    import('./chat')
+      .then(({ useChatStore }) => {
+        useChatStore.getState().handleSessionsChanged(changed);
+      })
+      .catch(() => {});
     return;
   }
 
@@ -377,11 +434,13 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
       try {
         const status = await hostApi.gateway.status();
         set({ status, isInitialized: true });
+        synchronizeGatewaySessionCatalog(status);
 
         if (!gatewayEventUnsubscribers) {
           const unsubscribers: Array<() => void> = [];
           unsubscribers.push(hostEvents.onGatewayStatus((payload) => {
             set({ status: payload });
+            synchronizeGatewaySessionCatalog(payload);
 
             // Trigger cron repair when gateway becomes ready
             if (!cronRepairTriggeredThisSession && payload.state === 'running') {
@@ -457,6 +516,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
                   );
                   set({ status: merged });
                 }
+                synchronizeGatewaySessionCatalog(latest);
               })
               .catch(() => { /* ignore */ });
           }, 30_000);
@@ -473,6 +533,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
           if (shouldReconcileGatewayStatus(merged, current)) {
             set({ status: merged });
           }
+          synchronizeGatewaySessionCatalog(refreshed);
         } catch {
           // Best-effort; the IPC listener will eventually reconcile.
         }

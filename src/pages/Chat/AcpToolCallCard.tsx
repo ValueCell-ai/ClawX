@@ -17,13 +17,6 @@ function statusLabelKey(status: ToolCallItem['status']): string {
   return `acp.${status}`;
 }
 
-function statusClasses(status: ToolCallItem['status']): string {
-  if (status === 'running') return 'text-blue-700 dark:text-blue-400 bg-black/5 dark:bg-white/10';
-  if (status === 'completed') return 'text-green-700 dark:text-green-400 bg-black/5 dark:bg-white/10';
-  if (status === 'failed') return 'text-red-700 dark:text-red-400 bg-black/5 dark:bg-white/10';
-  return 'text-amber-700 dark:text-amber-400 bg-black/5 dark:bg-white/10';
-}
-
 function StatusIcon({ status }: { status: ToolCallItem['status'] }) {
   if (status === 'running') return <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />;
   if (status === 'completed') return <CheckCircle2 className="h-4 w-4" aria-hidden="true" />;
@@ -49,7 +42,8 @@ function AcpToolOutputPart({ part }: { part: RenderPart }) {
 export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
   const { t } = useTranslation('chat');
   const hasDetails = Boolean(item.error) || item.outputParts.length > 0;
-  const shouldStartExpanded = !hasDetails || !(item.historical && item.status === 'completed');
+  const isFinished = item.status === 'completed' || item.status === 'failed';
+  const shouldStartExpanded = !hasDetails || !(item.historical && isFinished);
   const [expansionState, setExpansionState] = useState<ExpansionState>(() => ({
     toolCallId: item.toolCallId,
     expanded: shouldStartExpanded,
@@ -62,14 +56,14 @@ export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
   const expanded = (() => {
     if (!hasDetails) return true;
     if (manualOverride) return currentExpansionState.expanded;
-    if (item.historical && item.status === 'completed') return false;
-    if (item.status !== 'completed') return true;
+    if (item.historical && isFinished) return false;
+    if (!isFinished) return true;
     return currentExpansionState.expanded;
   })();
 
   useEffect(() => {
     if (manualOverride) return;
-    if (!hasDetails || item.historical || item.status !== 'completed') return;
+    if (!hasDetails || item.historical || !isFinished) return;
 
     const timer = window.setTimeout(() => {
       setExpansionState((state) => {
@@ -81,7 +75,7 @@ export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
       });
     }, TOOL_AUTO_COLLAPSE_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [hasDetails, item.historical, item.status, item.toolCallId, manualOverride, shouldStartExpanded]);
+  }, [hasDetails, item.historical, isFinished, item.toolCallId, manualOverride, shouldStartExpanded]);
 
   const toggleLabel = expanded ? t('acp.collapseTool') : t('acp.expandTool');
 
@@ -89,9 +83,9 @@ export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
     <div
       data-testid="acp-tool-call-card"
       data-expanded={expanded ? 'true' : 'false'}
-      className="rounded-2xl border border-black/10 bg-surface-modal px-4 py-3 shadow-sm dark:border-white/10"
+      className="rounded-lg px-0 py-0.5"
     >
-      <div className="flex min-w-0 items-start justify-between gap-3">
+      <div className="flex min-w-0 items-center justify-between gap-3">
         {hasDetails ? (
           <button
             type="button"
@@ -107,20 +101,20 @@ export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
             aria-expanded={expanded}
             aria-label={toggleLabel}
             title={toggleLabel}
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10"
+            className="flex min-w-0 p-1 flex-1 items-center gap-2 rounded-lg text-left transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10"
           >
             {expanded ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" /> : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
             <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('acp.tool')}</span>
-            <span className="min-w-0 truncate text-sm font-medium text-foreground">{item.title}</span>
+            <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{item.title}</span>
           </button>
         ) : (
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <Wrench className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('acp.tool')}</span>
-            <span className="min-w-0 truncate text-sm font-medium text-foreground">{item.title}</span>
+            <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{item.title}</span>
           </div>
         )}
-        <span className={cn('inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-medium uppercase tracking-wide', statusClasses(item.status))}>
+        <span className="inline-flex shrink-0 items-center gap-1 px-2 py-0.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
           <StatusIcon status={item.status} />
           {t(statusLabelKey(item.status))}
         </span>

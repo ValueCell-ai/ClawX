@@ -66,6 +66,7 @@ export function groupSessionsByWorkspace<TSession extends ChatSession>(
   sessionLastActivity: Record<string, number>,
   defaultWorkspaceLabel: string,
   globalWorkspace?: string | null,
+  workspaceLabels: Record<string, string> = {},
 ): Array<WorkspaceSessionGroup<TSession>> {
   const groupByWorkspace = new Map<string, WorkspaceSessionGroup<TSession>>();
 
@@ -75,7 +76,7 @@ export function groupSessionsByWorkspace<TSession extends ChatSession>(
     if (!group) {
       group = {
         workspacePath,
-        label: getWorkspaceDisplayLabel(workspacePath, defaultWorkspaceLabel),
+        label: getWorkspaceDisplayLabel(workspacePath, defaultWorkspaceLabel, workspaceLabels),
         sessions: [],
       };
       groupByWorkspace.set(workspacePath, group);

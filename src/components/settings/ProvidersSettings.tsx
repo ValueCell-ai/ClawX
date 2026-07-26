@@ -62,7 +62,11 @@ import type { ProviderCodexOAuthStatusResult } from '@shared/host-api/contract';
 
 const inputClasses = 'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const labelClasses = 'text-sm text-foreground/80 font-bold';
-type ArkMode = 'apikey' | 'codeplan';
+type CodePlanMode = 'apikey' | 'codeplan';
+
+function isZaiProviderType(type: string | undefined): boolean {
+  return type === 'zai' || type === 'zai-global';
+}
 
 function normalizeFallbackProviderIds(ids?: string[]): string[] {
   return Array.from(new Set((ids ?? []).filter(Boolean)));
@@ -117,14 +121,13 @@ function mergeHeadersWithUserAgent(
   return next;
 }
 
-function isArkCodePlanMode(
-  vendorId: string,
+function isCodePlanMode(
   baseUrl: string | undefined,
   modelId: string | undefined,
   codePlanPresetBaseUrl?: string,
   codePlanPresetModelId?: string,
 ): boolean {
-  if (vendorId !== 'ark' || !codePlanPresetBaseUrl || !codePlanPresetModelId) return false;
+  if (!codePlanPresetBaseUrl || !codePlanPresetModelId) return false;
   return (baseUrl || '').trim() === codePlanPresetBaseUrl && (modelId || '').trim() === codePlanPresetModelId;
 }
 
@@ -380,7 +383,7 @@ function ProviderCard({
   const [showFallback, setShowFallback] = useState(false);
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [arkMode, setArkMode] = useState<ArkMode>('apikey');
+  const [codePlanMode, setCodePlanMode] = useState<CodePlanMode>('apikey');
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const typeInfo = PROVIDER_TYPE_INFO.find((t) => t.id === account.vendorId);
@@ -392,7 +395,7 @@ function ProviderCard({
       modelId: typeInfo.codePlanPresetModelId,
     }
     : null;
-  const effectiveDocsUrl = account.vendorId === 'ark' && arkMode === 'codeplan'
+  const effectiveDocsUrl = codePlanMode === 'codeplan'
     ? (typeInfo?.codePlanDocsUrl || providerDocsUrl)
     : providerDocsUrl;
   const canEditModelConfig = Boolean(typeInfo?.showBaseUrl || showModelIdField);
@@ -409,9 +412,8 @@ function ProviderCard({
       setFallbackModelsText(normalizeFallbackModels(account.fallbackModels).join('\n'));
       setFallbackProviderIds(normalizeFallbackProviderIds(account.fallbackAccountIds));
       setValidationError(null);
-      setArkMode(
-        isArkCodePlanMode(
-          account.vendorId,
+      setCodePlanMode(
+        isCodePlanMode(
           account.baseUrl,
           account.model,
           typeInfo?.codePlanPresetBaseUrl,
@@ -455,21 +457,12 @@ function ProviderCard({
       }
 
       {
-        if (showModelIdField && !modelId.trim()) {
-          setValidationError(t('aiProviders.toast.modelRequired'));
-          setSaving(false);
-          return;
-        }
-
         const updates: Partial<ProviderConfig> = {};
         if (typeInfo?.showBaseUrl && (baseUrl.trim() || undefined) !== (account.baseUrl || undefined)) {
           updates.baseUrl = baseUrl.trim() || undefined;
         }
         if ((account.vendorId === 'custom' || account.vendorId === 'ollama') && apiProtocol !== account.apiProtocol) {
           updates.apiProtocol = apiProtocol;
-        }
-        if (showModelIdField && (modelId.trim() || undefined) !== (account.model || undefined)) {
-          updates.model = modelId.trim() || undefined;
         }
         const existingUserAgent = getUserAgentHeader(account.headers).trim();
         const nextUserAgent = userAgent.trim();
@@ -652,17 +645,21 @@ function ProviderCard({
                 <div className="space-y-1.5 pt-2">
                   <Label className={currentLabelClasses}>{t('aiProviders.dialog.modelId')}</Label>
                   <Input
+                    data-testid={`provider-edit-model-id-${account.id}`}
                     value={modelId}
-                    onChange={(e) => {
-                      setModelId(e.target.value);
-                      setValidationError(null);
-                    }}
+                    disabled
                     placeholder={typeInfo?.modelIdPlaceholder || 'provider/model-id'}
-                    className={currentInputClasses}
+                    className={cn(currentInputClasses, 'cursor-not-allowed opacity-70')}
                   />
+                  <p
+                    data-testid={`provider-edit-model-id-help-${account.id}`}
+                    className="text-xs text-muted-foreground"
+                  >
+                    {t('aiProviders.dialog.modelIdEditDisabled')}
+                  </p>
                 </div>
               )}
-              {account.vendorId === 'ark' && codePlanPreset && (
+              {codePlanPreset && (
                 <div className="space-y-1.5 pt-2">
                   <div className="flex items-center justify-between gap-2">
                     <Label className={currentLabelClasses}>{t('aiProviders.dialog.codePlanPreset')}</Label>
@@ -681,32 +678,39 @@ function ProviderCard({
                   <div className="flex gap-2 text-meta">
                     <button
                       type="button"
+                      data-testid={`provider-edit-codeplan-apikey-${account.id}`}
+                      disabled
                       onClick={() => {
-                        setArkMode('apikey');
+                        setCodePlanMode('apikey');
                         setBaseUrl(typeInfo?.defaultBaseUrl || '');
                         if (modelId.trim() === codePlanPreset.modelId) {
                           setModelId(typeInfo?.defaultModelId || '');
                         }
                       }}
-                      className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", arkMode === 'apikey' ? "bg-surface-modal border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
+                      className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", codePlanMode === 'apikey' ? "bg-surface-modal border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
                     >
                       {t('aiProviders.authModes.apiKey')}
                     </button>
                     <button
                       type="button"
+                      data-testid={`provider-edit-codeplan-mode-${account.id}`}
+                      disabled
                       onClick={() => {
-                        setArkMode('codeplan');
+                        setCodePlanMode('codeplan');
                         setBaseUrl(codePlanPreset.baseUrl);
                         setModelId(codePlanPreset.modelId);
                       }}
-                      className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", arkMode === 'codeplan' ? "bg-surface-modal border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
+                      className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", codePlanMode === 'codeplan' ? "bg-surface-modal border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
                     >
                       {t('aiProviders.dialog.codePlanMode')}
                     </button>
                   </div>
-                  {arkMode === 'codeplan' && (
+                  {codePlanMode === 'codeplan' && (
                     <p className="text-xs text-muted-foreground">
-                      {t('aiProviders.dialog.codePlanPresetDesc')}
+                      {t('aiProviders.dialog.codePlanPresetDesc', {
+                        baseUrl: codePlanPreset.baseUrl,
+                        modelId: codePlanPreset.modelId,
+                      })}
                     </p>
                   )}
                 </div>
@@ -878,11 +882,9 @@ function ProviderCard({
                       !newKey.trim()
                       && (baseUrl.trim() || undefined) === (account.baseUrl || undefined)
                       && userAgent.trim() === getUserAgentHeader(account.headers).trim()
-                      && (modelId.trim() || undefined) === (account.model || undefined)
                       && fallbackModelsEqual(normalizeFallbackModels(fallbackModelsText.split('\n')), account.fallbackModels)
                       && fallbackProviderIdsEqual(fallbackProviderIds, account.fallbackAccountIds)
                     )
-                    || Boolean(showModelIdField && !modelId.trim())
                   }
                 >
                   {validating || saving ? (
@@ -1343,7 +1345,7 @@ function AddProviderDialog({
   const [apiProtocol, setApiProtocol] = useState<ProviderAccount['apiProtocol']>('openai-completions');
   const [showAdvancedConfig, setShowAdvancedConfig] = useState(false);
   const [userAgent, setUserAgent] = useState('');
-  const [arkMode, setArkMode] = useState<ArkMode>('apikey');
+  const [codePlanMode, setCodePlanMode] = useState<CodePlanMode>('apikey');
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -1379,7 +1381,7 @@ function AddProviderDialog({
       setApiProtocol('openai-completions');
       setShowAdvancedConfig(false);
       setUserAgent('');
-      setArkMode('apikey');
+      setCodePlanMode('apikey');
       setShowKey(false);
       setSaving(false);
       setValidationError(null);
@@ -1401,7 +1403,7 @@ function AddProviderDialog({
       modelId: typeInfo.codePlanPresetModelId,
     }
     : null;
-  const effectiveDocsUrl = selectedType === 'ark' && arkMode === 'codeplan'
+  const effectiveDocsUrl = codePlanMode === 'codeplan'
     ? (typeInfo?.codePlanDocsUrl || providerDocsUrl)
     : providerDocsUrl;
   const isOAuth = typeInfo?.isOAuth ?? false;
@@ -1430,17 +1432,16 @@ function AddProviderDialog({
   }, [selectedVendor, isOAuth, supportsApiKey, oauthUiHidden]);
 
   useEffect(() => {
-    if (selectedType !== 'ark') {
-      setArkMode('apikey');
+    if (!typeInfo?.codePlanPresetBaseUrl || !typeInfo?.codePlanPresetModelId) {
+      setCodePlanMode('apikey');
       return;
     }
-    setArkMode(
-      isArkCodePlanMode(
-        'ark',
+    setCodePlanMode(
+      isCodePlanMode(
         baseUrl,
         modelId,
-        typeInfo?.codePlanPresetBaseUrl,
-        typeInfo?.codePlanPresetModelId,
+        typeInfo.codePlanPresetBaseUrl,
+        typeInfo.codePlanPresetModelId,
       ) ? 'codeplan' : 'apikey'
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1532,6 +1533,11 @@ function AddProviderDialog({
       toast.error(t('aiProviders.toast.minimaxConflict'));
       return;
     }
+    const hasZai = existingVendorIds.has('zai') || existingVendorIds.has('zai-global');
+    if (isZaiProviderType(selectedType) && hasZai) {
+      toast.error(t('aiProviders.toast.zaiConflict'));
+      return;
+    }
 
     setOauthFlowing(true);
     setOauthData(null);
@@ -1585,6 +1591,10 @@ function AddProviderDialog({
     const hasMinimax = existingVendorIds.has('minimax-portal') || existingVendorIds.has('minimax-portal-cn');
     if ((type.id === 'minimax-portal' || type.id === 'minimax-portal-cn') && hasMinimax) return false;
 
+    // Z.AI CN/Global both map to OpenClaw key `zai` — mutually exclusive in the UI.
+    const hasZai = existingVendorIds.has('zai') || existingVendorIds.has('zai-global');
+    if (isZaiProviderType(type.id) && hasZai) return false;
+
     const vendor = vendorMap.get(type.id);
     if (!vendor) {
       return !existingVendorIds.has(type.id) || type.id === 'custom';
@@ -1598,6 +1608,11 @@ function AddProviderDialog({
     const hasMinimax = existingVendorIds.has('minimax-portal') || existingVendorIds.has('minimax-portal-cn');
     if ((selectedType === 'minimax-portal' || selectedType === 'minimax-portal-cn') && hasMinimax) {
       toast.error(t('aiProviders.toast.minimaxConflict'));
+      return;
+    }
+    const hasZai = existingVendorIds.has('zai') || existingVendorIds.has('zai-global');
+    if (isZaiProviderType(selectedType) && hasZai) {
+      toast.error(t('aiProviders.toast.zaiConflict'));
       return;
     }
 
@@ -1692,7 +1707,7 @@ function AddProviderDialog({
                     setModelId(type.defaultModelId || '');
                     setUserAgent('');
                     setShowAdvancedConfig(false);
-                    setArkMode('apikey');
+                    setCodePlanMode('apikey');
                   }}
                   className="p-4 rounded-2xl border border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-center group"
                 >
@@ -1720,6 +1735,7 @@ function AddProviderDialog({
                 <div>
                   <p className="font-semibold text-sm">{typeInfo?.id === 'custom' ? t('aiProviders.custom') : typeInfo?.name}</p>
                   <button
+                  data-testid="add-provider-change-type"
                   onClick={() => {
                     setSelectedType(null);
                     setValidationError(null);
@@ -1727,7 +1743,7 @@ function AddProviderDialog({
                     setModelId('');
                     setUserAgent('');
                     setShowAdvancedConfig(false);
-                    setArkMode('apikey');
+                    setCodePlanMode('apikey');
                   }}
                   className="text-meta text-blue-500 hover:text-blue-600 font-medium"
                 >
@@ -1866,7 +1882,7 @@ function AddProviderDialog({
                     />
                   </div>
                 )}
-                {selectedType === 'ark' && codePlanPreset && (
+                {codePlanPreset && (
                   <div className="space-y-2.5">
                     <div className="flex items-center justify-between gap-2">
                       <Label className={labelClasses}>{t('aiProviders.dialog.codePlanPreset')}</Label>
@@ -1886,34 +1902,39 @@ function AddProviderDialog({
                     <div className="flex gap-2 text-meta">
                       <button
                         type="button"
+                        data-testid="add-provider-codeplan-apikey-tab"
                         onClick={() => {
-                          setArkMode('apikey');
+                          setCodePlanMode('apikey');
                           setBaseUrl(typeInfo?.defaultBaseUrl || '');
                           if (modelId.trim() === codePlanPreset.modelId) {
                             setModelId(typeInfo?.defaultModelId || '');
                           }
                           setValidationError(null);
                         }}
-                        className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", arkMode === 'apikey' ? "bg-surface-modal border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
+                        className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", codePlanMode === 'apikey' ? "bg-surface-modal border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
                       >
                         {t('aiProviders.authModes.apiKey')}
                       </button>
                       <button
                         type="button"
+                        data-testid="add-provider-codeplan-mode-tab"
                         onClick={() => {
-                          setArkMode('codeplan');
+                          setCodePlanMode('codeplan');
                           setBaseUrl(codePlanPreset.baseUrl);
                           setModelId(codePlanPreset.modelId);
                           setValidationError(null);
                         }}
-                        className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", arkMode === 'codeplan' ? "bg-surface-modal border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
+                        className={cn("flex-1 py-1.5 px-3 rounded-lg border transition-colors", codePlanMode === 'codeplan' ? "bg-surface-modal border-black/20 dark:border-white/20 shadow-sm font-medium" : "border-transparent bg-black/5 dark:bg-white/5 text-muted-foreground hover:bg-black/10 dark:hover:bg-white/10")}
                       >
                         {t('aiProviders.dialog.codePlanMode')}
                       </button>
                     </div>
-                    {arkMode === 'codeplan' && (
+                    {codePlanMode === 'codeplan' && (
                       <p className="text-xs text-muted-foreground">
-                        {t('aiProviders.dialog.codePlanPresetDesc')}
+                        {t('aiProviders.dialog.codePlanPresetDesc', {
+                          baseUrl: codePlanPreset.baseUrl,
+                          modelId: codePlanPreset.modelId,
+                        })}
                       </p>
                     )}
                   </div>

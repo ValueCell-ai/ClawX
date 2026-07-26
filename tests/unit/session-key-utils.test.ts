@@ -36,6 +36,38 @@ describe('session-key-utils', () => {
     expect(shouldIncludeSessionInSidebarList(placeholder)).toBe(false);
   });
 
+  it('hides locally-created desktop sessions until the first message', () => {
+    const pending: ChatSession = {
+      key: 'agent:main:session-1710000000000',
+      displayName: 'agent:main:session-1710000000000',
+      createdLocally: true,
+    };
+
+    expect(shouldIncludeSessionInSidebarList(pending)).toBe(false);
+
+    const acknowledged: ChatSession = {
+      ...pending,
+      createdLocally: false,
+    };
+
+    expect(shouldIncludeSessionInSidebarList(acknowledged)).toBe(true);
+  });
+
+  it('hides locally-created New Chat placeholders until the first message', () => {
+    const pending: ChatSession = {
+      key: 'agent:main:session-1710000000000',
+      displayName: 'agent:main:session-1710000000000',
+      createdLocally: true,
+    };
+    expect(shouldIncludeSessionInSidebarList(pending)).toBe(false);
+
+    const acknowledged: ChatSession = {
+      ...pending,
+      createdLocally: false,
+    };
+    expect(shouldIncludeSessionInSidebarList(acknowledged)).toBe(true);
+  });
+
   it('includes channel sessions once they have a message preview', () => {
     const active: ChatSession = {
       key: 'agent:main:feishu:ou_abc123',

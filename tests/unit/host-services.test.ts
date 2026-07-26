@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -299,10 +299,13 @@ vi.mock('@electron/utils/whatsapp-login', () => ({
 }));
 
 vi.mock('@electron/utils/paths', () => ({
+  expandPath: (path: string) => path,
   getOpenClawConfigDir: () => testOpenClawConfigDir,
   getOpenClawDir: () => testOpenClawConfigDir,
   getOpenClawResolvedDir: () => testOpenClawConfigDir,
   getOpenClawSkillsDir: () => join(homedir(), '.openclaw', 'skills'),
+  resolveOpenClawConfigDir: () => testOpenClawConfigDir,
+  resolveOpenClawStateDir: () => testOpenClawConfigDir,
 }));
 
 vi.mock('@electron/utils/proxy-fetch', () => ({
@@ -1740,5 +1743,101 @@ describe('host services', () => {
       sessionKey: 'agent:research:named',
       label: 'Renamed research',
     });
+  });
+
+  it('delegates all attachment-scoped file operations from the files service', async () => {
+    const attachmentAccess = {
+      resolveAttachment: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable', displayName: 'file' }),
+      readAttachmentText: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable' }),
+      readAttachmentBinary: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable' }),
+      openAttachment: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable' }),
+      listAttachmentOpenHandlers: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable' }),
+      openAttachmentWith: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable' }),
+      revealAttachment: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable' }),
+    };
+    const { createFilesApi } = await import('@electron/services/files-api');
+    const filesApi = createFilesApi({ attachmentAccess: attachmentAccess as never });
+    const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: 'file:///tmp/a.txt' };
+
+    await filesApi.resolveAttachment({ ref });
+    await filesApi.readAttachmentText(ref);
+    await filesApi.readAttachmentBinary({ ref, maxBytes: 5 });
+    await filesApi.openAttachment(ref);
+    await filesApi.listAttachmentOpenHandlers(ref);
+    await filesApi.openAttachmentWith({ ref, handlerId: 'com.apple.Preview' });
+    await filesApi.revealAttachment(ref);
+
+    expect(attachmentAccess.resolveAttachment).toHaveBeenCalledWith({ ref });
+    expect(attachmentAccess.readAttachmentText).toHaveBeenCalledWith(ref);
+    expect(attachmentAccess.readAttachmentBinary).toHaveBeenCalledWith({ ref, maxBytes: 5 });
+    expect(attachmentAccess.openAttachment).toHaveBeenCalledWith(ref);
+    expect(attachmentAccess.listAttachmentOpenHandlers).toHaveBeenCalledWith(ref);
+    expect(attachmentAccess.openAttachmentWith).toHaveBeenCalledWith({ ref, handlerId: 'com.apple.Preview' });
+    expect(attachmentAccess.revealAttachment).toHaveBeenCalledWith(ref);
+  });
+
+  it('fails attachment-scoped operations safely when attachment access is absent', async () => {
+    const { createFilesApi } = await import('@electron/services/files-api');
+    const filesApi = createFilesApi();
+    const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: 'file:///tmp/a.txt' };
+
+    await expect(filesApi.listAttachmentOpenHandlers(ref)).resolves.toEqual({
+      ok: false,
+      error: 'operationFailed',
+    });
+    await expect(filesApi.openAttachmentWith({ ref, handlerId: 'com.apple.Preview' })).resolves.toEqual({
+      ok: false,
+      error: 'operationFailed',
+    });
+    await expect(filesApi.revealAttachment(ref)).resolves.toEqual({
+      ok: false,
+      error: 'operationFailed',
+    });
+  });
+
+  it('registers exactly one typed web browser service without legacy IPC', () => {
+    const source = readFileSync(join(process.cwd(), 'electron/main/ipc-handlers.ts'), 'utf8');
+
+    expect(source.match(/\bwebBrowser\s*:/g)).toHaveLength(1);
+    expect(source).toContain('webBrowser: createWebBrowserApi({ browserSession, registry })');
+    expect(source).not.toMatch(/['"]webBrowser:/);
+  });
+
+  it('configures browser policy and typed handlers before the initial renderer load', () => {
+    const source = readFileSync(join(process.cwd(), 'electron/main/index.ts'), 'utf8');
+    const createWindowSource = source.slice(
+      source.indexOf('function createWindow('),
+      source.indexOf('function loadMainWindow('),
+    );
+    const configureIndex = source.indexOf('configureWebBrowserSession({');
+    const firstInitializationAwaitIndex = source.indexOf(
+      'await initTelemetry();',
+      source.indexOf('async function initialize()'),
+    );
+    const createMainWindowIndex = source.indexOf('const window = createMainWindow();');
+    const registerHandlersIndex = source.indexOf('registerIpcHandlers(');
+    const loadRendererIndex = source.indexOf('loadMainWindow(window);');
+    const appReadySource = source.slice(
+      source.indexOf('app.whenReady().then('),
+      source.indexOf("app.on('window-all-closed'"),
+    );
+    const initializeCompleteIndex = appReadySource.indexOf('await initialize();');
+    const activateHandlerIndex = appReadySource.indexOf("app.on('activate'");
+
+    expect(source.match(/new WebBrowserGuestRegistry\(\)/g)).toHaveLength(1);
+    expect(configureIndex).toBeGreaterThan(-1);
+    expect(configureIndex).toBeLessThan(firstInitializationAwaitIndex);
+    expect(createMainWindowIndex).toBeGreaterThan(configureIndex);
+    expect(registerHandlersIndex).toBeGreaterThan(createMainWindowIndex);
+    expect(loadRendererIndex).toBeGreaterThan(registerHandlersIndex);
+    expect(initializeCompleteIndex).toBeGreaterThan(-1);
+    expect(activateHandlerIndex).toBeGreaterThan(initializeCompleteIndex);
+    expect(appReadySource).not.toContain('void initialize()');
+    expect(createWindowSource.indexOf('new BrowserWindow(')).toBeLessThan(
+      createWindowSource.indexOf('installWebBrowserGuestPolicy('),
+    );
+    expect(createWindowSource).not.toContain('.loadURL(');
+    expect(createWindowSource).not.toContain('.loadFile(');
+    expect(source).toContain('getMainWindow: () => mainWindow');
   });
 });

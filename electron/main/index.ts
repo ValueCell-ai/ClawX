@@ -2,7 +2,7 @@
  * Electron Main Process Entry
  * Manages window creation, system tray, and IPC handlers
  */
-import { app, BrowserWindow, nativeImage, session, shell } from 'electron';
+import { app, BrowserWindow, nativeImage, session, shell, type Session } from 'electron';
 import { join } from 'path';
 import { GatewayManager } from '../gateway/manager';
 import { RuntimeManager } from '../runtime/manager';
@@ -35,6 +35,8 @@ import { getMacTrafficLightPosition, syncMacTrafficLightPosition } from './traff
 import { getSetting } from '../utils/store';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
+import { WebBrowserGuestRegistry, installWebBrowserGuestPolicy } from './web-browser-policy';
+import { configureWebBrowserSession } from './web-browser-session';
 import {
   clearPendingSecondInstanceFocus,
   consumeMainWindowReady,
@@ -158,6 +160,8 @@ let gatewayManager!: GatewayManager;
 let runtimeManager!: RuntimeManager;
 let clawHubService!: ClawHubService;
 const hostApiRegistry = new HostApiRegistry();
+const webBrowserGuestRegistry = new WebBrowserGuestRegistry();
+let webBrowserSession!: Session;
 const mainWindowFocusState = createMainWindowFocusState();
 const quitLifecycleState = createQuitLifecycleState();
 
@@ -201,8 +205,6 @@ function createWindow(): BrowserWindow {
   const isMac = process.platform === 'darwin';
   const isWindows = process.platform === 'win32';
   const useCustomTitleBar = isWindows;
-  const shouldSkipSetupForE2E = process.env.CLAWX_E2E_SKIP_SETUP === '1';
-
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -224,6 +226,11 @@ function createWindow(): BrowserWindow {
     show: false,
   });
 
+  installWebBrowserGuestPolicy(win.webContents, {
+    browserSession: webBrowserSession,
+    registry: webBrowserGuestRegistry,
+  });
+
   registerZoomShortcuts(win);
 
   // Handle external links — only allow safe protocols to prevent arbitrary
@@ -242,7 +249,12 @@ function createWindow(): BrowserWindow {
     return { action: 'deny' };
   });
 
-  // Load the app
+  return win;
+}
+
+function loadMainWindow(win: BrowserWindow): void {
+  const shouldSkipSetupForE2E = process.env.CLAWX_E2E_SKIP_SETUP === '1';
+
   if (process.env.VITE_DEV_SERVER_URL) {
     const rendererUrl = new URL(process.env.VITE_DEV_SERVER_URL);
     if (shouldSkipSetupForE2E) {
@@ -259,8 +271,6 @@ function createWindow(): BrowserWindow {
         : undefined,
     });
   }
-
-  return win;
 }
 
 function focusWindow(win: BrowserWindow): void {
@@ -347,6 +357,11 @@ async function initialize(): Promise<void> {
     logger.info(`Migrated ${migratedSecretCount} provider credential account(s) into the encrypted ClawX vault`);
   }
 
+  webBrowserSession = configureWebBrowserSession({
+    registry: webBrowserGuestRegistry,
+    getMainWindow: () => mainWindow,
+  });
+
   if (!isE2EMode) {
     // Warm up network optimization (non-blocking)
     void warmupNetworkOptimization();
@@ -366,13 +381,6 @@ async function initialize(): Promise<void> {
 
   // Create the main window
   const window = createMainWindow();
-
-  // Create system tray
-  if (!isE2EMode) {
-    createTray(window);
-  }
-
-  await runtimeManager.getActiveKind();
 
   // Override security headers ONLY for the OpenClaw Gateway Control UI.
   // The URL filter ensures this callback only fires for gateway requests,
@@ -398,7 +406,23 @@ async function initialize(): Promise<void> {
   );
 
   // Register IPC handlers
-  registerIpcHandlers(gatewayManager, runtimeManager, clawHubService, window, hostApiRegistry);
+  registerIpcHandlers(
+    gatewayManager,
+    runtimeManager,
+    clawHubService,
+    window,
+    hostApiRegistry,
+    webBrowserSession,
+    webBrowserGuestRegistry,
+  );
+
+  await runtimeManager.getActiveKind();
+  loadMainWindow(window);
+
+  // Create system tray
+  if (!isE2EMode) {
+    createTray(window);
+  }
 
   // Initialize extension system
   await extensionRegistry.initialize({
@@ -652,16 +676,19 @@ if (gotTheLock) {
   });
 
   // Application lifecycle
-  app.whenReady().then(() => {
-    void initialize().catch((error) => {
+  app.whenReady().then(async () => {
+    try {
+      await initialize();
+    } catch (error) {
       logger.error('Application initialization failed:', error);
-    });
+      return;
+    }
 
-    // Register activate handler AFTER app is ready to prevent
-    // "Cannot create BrowserWindow before app is ready" on macOS.
+    // Register only after initialization so activation cannot race the initial
+    // window or claim the single browser guest before host handlers are ready.
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
-        createMainWindow();
+        loadMainWindow(createMainWindow());
       } else {
         focusMainWindow();
       }

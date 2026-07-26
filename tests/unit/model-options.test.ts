@@ -5,6 +5,7 @@ import {
   formatModelRefLabel,
   formatProviderDisplayName,
   isConfiguredModelRefAvailable,
+  normalizeModelIdForRuntimeProvider,
   resolveConfiguredModelRef,
   resolveRuntimeProviderKey,
 } from '../../src/lib/model-options';
@@ -59,6 +60,9 @@ describe('model option helpers', () => {
   it('formats model refs using only the text after the provider prefix', () => {
     expect(formatModelRefLabel('openrouter/openai/gpt-5.5')).toBe('openai/gpt-5.5');
     expect(formatModelRefLabel('custom-alpha1234/model-alpha')).toBe('model-alpha');
+    expect(normalizeModelIdForRuntimeProvider('openai/gpt-5.6', 'openai')).toBe('gpt-5.6');
+    expect(normalizeModelIdForRuntimeProvider('openrouter/openai/gpt-5.6', 'openrouter'))
+      .toBe('openai/gpt-5.6');
   });
 
   it('formats provider display names using custom labels or vendor names', () => {
@@ -143,6 +147,39 @@ describe('model option helpers', () => {
         accountId,
       },
     ]);
+  });
+
+  it.each([
+    ['api_key', 'openai-api-key'],
+    ['oauth_device', 'openai-device-oauth'],
+    ['oauth_browser', 'openai-browser-oauth'],
+  ] as const)('uses only the selected built-in model for %s accounts with stale metadata', (authMode, id) => {
+    const openAiAccount = account({
+      id,
+      vendorId: 'openai',
+      label: 'OpenAI',
+      authMode,
+      model: 'openai/gpt-5.6',
+      metadata: { customModels: ['gpt-5.5', 'openai/gpt-5.6'] },
+    });
+
+    const options = buildConfiguredModelOptions(
+      [openAiAccount],
+      authMode === 'api_key' ? [status(id)] : [],
+      vendors,
+      openAiAccount.id,
+    );
+
+    expect(options).toEqual([
+      {
+        modelRef: 'openai/gpt-5.6',
+        label: 'gpt-5.6 (OpenAI)',
+        runtimeProviderKey: 'openai',
+        accountId: id,
+      },
+    ]);
+    expect(resolveConfiguredModelRef('openai/gpt-5.5', 'openai/gpt-5.5', options))
+      .toBe('openai/gpt-5.6');
   });
 
   it('preserves custom runtime keys that are already normalized', () => {

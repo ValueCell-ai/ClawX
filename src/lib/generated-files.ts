@@ -128,6 +128,8 @@ const TEXT_DOCUMENT_EXTS = new Set([
 ]);
 const PDF_PREVIEW_EXTS = new Set(['.pdf']);
 const SHEET_PREVIEW_EXTS = new Set(['.xlsx', '.xls']);
+const DOCX_PREVIEW_EXTS = new Set(['.docx']);
+const PPTX_PREVIEW_EXTS = new Set(['.pptx']);
 const CODE_EXTS = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
   '.py', '.rb', '.go', '.rs', '.java', '.kt', '.swift',
@@ -174,6 +176,8 @@ const EXT_MIME_MAP: Record<string, string> = {
   '.ogg': 'audio/ogg',
   '.flac': 'audio/flac',
   '.pdf': 'application/pdf',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   '.csv': 'text/csv',
 };
 
@@ -197,13 +201,18 @@ export function supportsInlineDocumentPreview(ext: string): boolean {
     TEXT_DOCUMENT_EXTS.has(lower)
     || PDF_PREVIEW_EXTS.has(lower)
     || SHEET_PREVIEW_EXTS.has(lower)
+    || DOCX_PREVIEW_EXTS.has(lower)
+    || PPTX_PREVIEW_EXTS.has(lower)
   );
 }
 
-/** True for binary documents we render via dedicated viewers (PDF / spreadsheet). */
+/** True for binary documents we render via dedicated viewers. */
 export function supportsRichDocumentPreview(ext: string): boolean {
   const lower = ext.toLowerCase();
-  return PDF_PREVIEW_EXTS.has(lower) || SHEET_PREVIEW_EXTS.has(lower);
+  return PDF_PREVIEW_EXTS.has(lower)
+    || SHEET_PREVIEW_EXTS.has(lower)
+    || DOCX_PREVIEW_EXTS.has(lower)
+    || PPTX_PREVIEW_EXTS.has(lower);
 }
 
 export function isHtmlPreviewExt(ext: string | null | undefined): boolean {
@@ -220,6 +229,16 @@ export function isPdfPreviewExt(ext: string | null | undefined): boolean {
 export function isSheetPreviewExt(ext: string | null | undefined): boolean {
   if (!ext) return false;
   return SHEET_PREVIEW_EXTS.has(ext.toLowerCase());
+}
+
+export function isDocxPreviewExt(ext: string | null | undefined): boolean {
+  if (!ext) return false;
+  return DOCX_PREVIEW_EXTS.has(ext.toLowerCase());
+}
+
+export function isPptxPreviewExt(ext: string | null | undefined): boolean {
+  if (!ext) return false;
+  return PPTX_PREVIEW_EXTS.has(ext.toLowerCase());
 }
 
 export function supportsInlineDiff(file: Pick<GeneratedFile, 'ext' | 'contentType'>): boolean {

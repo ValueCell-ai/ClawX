@@ -174,15 +174,18 @@ export function createSessionActions(
           });
 
           const { currentSessionKey, sessions: localSessions } = get();
-          const localWorkspaceBySessionKey = new Map(
-            localSessions
-              .filter((session) => session.workspacePath)
-              .map((session) => [session.key, session.workspacePath!] as const),
+          const localSessionByKey = new Map(
+            localSessions.map((session) => [session.key, session] as const),
           );
           const mergedSessions = dedupedSessions.map((session) => {
-            if (session.workspacePath) return session;
-            const workspacePath = localWorkspaceBySessionKey.get(session.key);
-            return workspacePath ? { ...session, workspacePath } : session;
+            const localSession = localSessionByKey.get(session.key);
+            const workspacePath = session.workspacePath ?? localSession?.workspacePath;
+            if (!localSession?.createdLocally && workspacePath === session.workspacePath) return session;
+            return {
+              ...session,
+              ...(workspacePath ? { workspacePath } : {}),
+              ...(localSession?.createdLocally ? { createdLocally: true } : {}),
+            };
           });
           let nextSessionKey = currentSessionKey || DEFAULT_SESSION_KEY;
           let replacedHiddenHeartbeatSession = false;
@@ -215,7 +218,11 @@ export function createSessionActions(
             && isClawXDesktopSessionKey(nextSessionKey)
             ? [
               ...mergedSessions,
-              localCurrentSession ?? { key: nextSessionKey, displayName: nextSessionKey },
+              localCurrentSession ?? {
+                key: nextSessionKey,
+                displayName: nextSessionKey,
+                ...(replacedHiddenHeartbeatSession ? { createdLocally: true } : {}),
+              },
             ]
             : mergedSessions;
 
@@ -354,7 +361,7 @@ export function createSessionActions(
       get().loadHistory();
     },
 
-    selectAcpSession: (key: string) => {
+    selectAcpSession: (key: string, workspacePath?: string) => {
       const { currentSessionKey, messages, sessionLastActivity, sessionLabels } = get();
       const leavingEmpty = !currentSessionKey.endsWith(':main')
         && messages.length === 0
@@ -372,10 +379,19 @@ export function createSessionActions(
         pendingFinal: false,
         lastUserMessageAt: null,
         pendingToolImages: [],
-        sessions: [
-          ...(leavingEmpty ? s.sessions.filter((session) => session.key !== currentSessionKey) : s.sessions),
-          ...(s.sessions.some((session) => session.key === key) ? [] : [{ key, displayName: key }]),
-        ],
+        sessions: (() => {
+          const sessions = leavingEmpty
+            ? s.sessions.filter((session) => session.key !== currentSessionKey)
+            : s.sessions;
+          const existingSession = sessions.find((session) => session.key === key);
+          if (!existingSession) {
+            return [...sessions, { key, displayName: key, ...(workspacePath ? { workspacePath } : {}) }];
+          }
+          if (!workspacePath || existingSession.workspacePath === workspacePath) return sessions;
+          return sessions.map((session) => (
+            session.key === key ? { ...session, workspacePath } : session
+          ));
+        })(),
         ...(leavingEmpty ? {
           sessionLabels: Object.fromEntries(
             Object.entries(s.sessionLabels).filter(([k]) => k !== currentSessionKey),
@@ -487,14 +503,32 @@ export function createSessionActions(
       }));
     },
 
-    acknowledgeAcpSessionCreated: (key: string) => {
-      set((s) => ({
-        sessions: s.sessions.map((session) => (
-          session.key === key && session.createdLocally
-            ? { ...session, createdLocally: false }
-            : session
-        )),
-      }));
+    acknowledgeAcpSessionCreated: (key: string, workspacePath?: string, initialPrompt?: string) => {
+      const normalizedWorkspacePath = workspacePath?.trim();
+      const initialLabel = key.endsWith(':main') ? '' : toSessionLabel(initialPrompt || '');
+      set((s) => {
+        const sessionEntry = s.sessions.find((session) => session.key === key);
+        return {
+          sessions: sessionEntry
+            ? s.sessions.map((session) => (
+              session.key === key && session.createdLocally
+                ? {
+                  ...session,
+                  createdLocally: false,
+                  ...(normalizedWorkspacePath ? { workspacePath: normalizedWorkspacePath } : {}),
+                }
+                : session
+            ))
+            : [...s.sessions, {
+              key,
+              displayName: key,
+              ...(normalizedWorkspacePath ? { workspacePath: normalizedWorkspacePath } : {}),
+            }],
+          ...(initialLabel && !sessionEntry?.label?.trim() && !s.sessionLabels[key]
+            ? { sessionLabels: { ...s.sessionLabels, [key]: initialLabel } }
+            : {}),
+        };
+      });
     },
 
     // ── Rename session ──

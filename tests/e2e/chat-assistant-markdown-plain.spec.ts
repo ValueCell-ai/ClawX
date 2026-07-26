@@ -81,19 +81,19 @@ test.describe('ClawX assistant reply Markdown styling', () => {
           },
         },
         hostApi: {
-          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: MAIN_WORKSPACE }])]: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: MAIN_WORKSPACE, cwd: MAIN_WORKSPACE }])]: {
             success: true,
             generation: 1,
           },
-          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: MAIN_WORKSPACE, createIfMissing: true }])]: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: MAIN_WORKSPACE, cwd: MAIN_WORKSPACE, createIfMissing: true }])]: {
             success: true,
             generation: 1,
           },
-          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: {
             success: true,
             generation: 1,
           },
-          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: {
             success: true,
             generation: 1,
           },
@@ -144,7 +144,10 @@ test.describe('ClawX assistant reply Markdown styling', () => {
       const assistantProse = page.getByTestId('acp-assistant-message').filter({ hasText: 'Plain Markdown reply' }).locator('.prose').first();
       await expect(assistantProse).toBeVisible({ timeout: 30_000 });
       await expect(assistantProse.locator('strong')).toHaveText('works');
-      await expect(assistantProse.locator('code')).toHaveText('worksToo()');
+      const inlineCode = assistantProse.locator('code');
+      await expect(inlineCode).toHaveText('worksToo()');
+      await expect.poll(() => inlineCode.evaluate((el) => window.getComputedStyle(el).backgroundColor))
+        .toBe('rgba(0, 0, 0, 0)');
 
       const assistantStyles = await assistantProse.evaluate((el) => {
         const style = window.getComputedStyle(el);

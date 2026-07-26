@@ -10,12 +10,13 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import type { WorkspaceFileRef } from '@/lib/file-preview-client';
+import type { AttachmentFileRef, WorkspaceFileRef } from '@/lib/file-preview-client';
 
 export interface HtmlPreviewProps {
   source: string;
   filePath: string;
   fileName?: string;
+  attachmentFileRef?: AttachmentFileRef;
   workspaceFileRef?: WorkspaceFileRef;
   className?: string;
 }
@@ -57,13 +58,14 @@ export default function HtmlPreview({
   source,
   filePath,
   fileName,
+  attachmentFileRef,
   workspaceFileRef,
   className,
 }: HtmlPreviewProps) {
   const { t } = useTranslation('chat');
   const srcDoc = useMemo(
-    () => workspaceFileRef ? source : injectBaseHref(source, filePath),
-    [source, filePath, workspaceFileRef],
+    () => attachmentFileRef || workspaceFileRef ? source : injectBaseHref(source, filePath),
+    [attachmentFileRef, source, filePath, workspaceFileRef],
   );
 
   return (

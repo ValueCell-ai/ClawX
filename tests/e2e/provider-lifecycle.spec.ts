@@ -400,6 +400,12 @@ test.describe('ClawX provider lifecycle', () => {
     await page.getByTestId('provider-card-moonshot-edit').hover();
     await page.getByTestId('provider-edit-moonshot-edit').click();
 
+    await expect(page.getByTestId('provider-edit-model-id-moonshot-edit')).toBeDisabled();
+    await expect(page.getByTestId('provider-edit-model-id-moonshot-edit')).toHaveValue('kimi-k2.6');
+    await expect(page.getByTestId('provider-edit-model-id-help-moonshot-edit')).toContainText(
+      'The model ID cannot be changed after creation.',
+    );
+
     await page.getByTestId('provider-edit-key-input-moonshot-edit').fill('sk-bad');
     await page.getByTestId('provider-edit-save-moonshot-edit').click();
     await expect(page.getByTestId('provider-edit-validation-error-moonshot-edit')).toContainText('Invalid API key');
@@ -409,5 +415,35 @@ test.describe('ClawX provider lifecycle', () => {
     await page.getByTestId('provider-edit-save-moonshot-edit').click();
 
     await expect(page.getByTestId('provider-edit-save-moonshot-edit')).toHaveCount(0);
+  });
+
+  test('shows Z.AI CN/Global options and Code Plan endpoint toggle', async ({ page }) => {
+    await completeSetup(page);
+
+    await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('providers-settings')).toBeVisible();
+
+    await page.getByTestId('providers-add-button').click();
+    await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
+    await expect(page.getByTestId('add-provider-type-zai')).toBeVisible();
+    await expect(page.getByTestId('add-provider-type-zai-global')).toBeVisible();
+
+    await page.getByTestId('add-provider-type-zai').click();
+    await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://open.bigmodel.cn/api/paas/v4');
+    await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('glm-5.2');
+    await expect(page.getByTestId('add-provider-codeplan-mode-tab')).toBeVisible();
+
+    await page.getByTestId('add-provider-codeplan-mode-tab').click();
+    await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://open.bigmodel.cn/api/coding/paas/v4');
+    await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('glm-5.2');
+
+    await page.getByTestId('add-provider-codeplan-apikey-tab').click();
+    await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://open.bigmodel.cn/api/paas/v4');
+
+    await page.getByTestId('add-provider-change-type').click();
+    await page.getByTestId('add-provider-type-zai-global').click();
+    await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://api.z.ai/api/paas/v4');
+    await page.getByTestId('add-provider-codeplan-mode-tab').click();
+    await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://api.z.ai/api/coding/paas/v4');
   });
 });

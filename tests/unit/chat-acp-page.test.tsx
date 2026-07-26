@@ -42,9 +42,11 @@ const { acpState, agentsState, artifactPanelState, artifactPanelProps, chatState
     } as AcpTimelineSnapshot,
     loading: false,
     sending: false,
+    pendingImageGenerationTaskIds: [] as string[],
     cancelling: false,
     error: null as string | null,
     activeSessionKey: 'agent:main:main' as string | null,
+    workspaceRoot: null as string | null,
     cwd: null as string | null,
     acceptedPromptSessionKeys: [] as string[],
     prepareLocalSession: vi.fn(),
@@ -106,9 +108,17 @@ const { acpState, agentsState, artifactPanelState, artifactPanelProps, chatState
 
 const ensureAcpChatSubscriptions = vi.hoisted(() => vi.fn());
 const resolveWorkspaceContext = vi.hoisted(() => vi.fn());
+const openDialog = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/host-api', () => ({
-  hostApi: { files: { resolveWorkspaceContext } },
+  hostApi: {
+    dialog: { open: openDialog },
+    files: { resolveWorkspaceContext },
+  },
+}));
+
+vi.mock('sonner', () => ({
+  toast: { error: vi.fn() },
 }));
 
 vi.mock('@/stores/acp-chat-session', () => ({
@@ -182,12 +192,14 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
         onClick={() => onSend('Ship it', [
           {
             status: 'ready',
+            id: 'staged-ready',
             stagedPath: '/tmp/ready.png',
             fileName: 'ready.png',
             mimeType: 'image/png',
           },
           {
             status: 'staging',
+            id: 'staged-pending',
             stagedPath: '/tmp/staging.txt',
             fileName: 'staging.txt',
             mimeType: 'text/plain',
@@ -228,11 +240,16 @@ vi.mock('react-i18next', () => ({
         'acp.promptFailed': 'Prompt failed',
         'acp.dismiss': 'Dismiss',
         'acp.unsupportedContent': 'Unsupported content',
+        'workspace.unavailable.title': 'Workspace unavailable',
+        'workspace.unavailable.description': `This folder is unavailable: ${String(options?.path ?? '')}`,
+        'workspace.unavailable.boundDescription': `This chat workspace is unavailable: ${String(options?.path ?? '')}`,
+        'workspace.unavailable.chooseAction': 'Choose workspace',
         'toolbar.currentAgent': `Talking to ${String(options?.agent ?? '')}`,
         'welcome.subtitle': 'What can I do for you?',
       };
       return labels[key] ?? key;
     },
+    i18n: { language: 'en' },
   }),
 }));
 
@@ -298,18 +315,21 @@ describe('ACP Chat page', () => {
     acpState.cancelling = false;
     acpState.error = null;
     acpState.activeSessionKey = 'agent:main:main';
+    acpState.workspaceRoot = null;
     acpState.cwd = null;
     acpState.acceptedPromptSessionKeys = [];
     acpState.timeline = populatedTimeline();
     acpState.prepareLocalSession.mockReset();
-    acpState.prepareLocalSession.mockImplementation((input: { sessionKey: string; cwd: string }) => {
+    acpState.prepareLocalSession.mockImplementation((input: { sessionKey: string; workspaceRoot: string; cwd: string }) => {
       acpState.activeSessionKey = input.sessionKey;
+      acpState.workspaceRoot = input.workspaceRoot;
       acpState.cwd = input.cwd;
       acpState.timeline = { ...emptyTimeline(), sessionId: input.sessionKey };
     });
     acpState.loadSession.mockReset();
-    acpState.loadSession.mockImplementation(async (input: { sessionKey: string; cwd: string }) => {
+    acpState.loadSession.mockImplementation(async (input: { sessionKey: string; workspaceRoot: string; cwd: string }) => {
       acpState.activeSessionKey = input.sessionKey;
+      acpState.workspaceRoot = input.workspaceRoot;
       acpState.cwd = input.cwd;
       return true;
     });
@@ -332,16 +352,31 @@ describe('ACP Chat page', () => {
     artifactPanelState.close.mockReset();
     artifactPanelProps.length = 0;
     resolveWorkspaceContext.mockReset();
-    resolveWorkspaceContext.mockReturnValue(new Promise(() => undefined));
+    resolveWorkspaceContext.mockImplementation(async (input: { workspaceRoot: string; executionCwd: string }) => ({
+      ok: true,
+      workspaceRoot: input.workspaceRoot,
+      executionCwd: input.executionCwd,
+    }));
+    openDialog.mockReset();
     chatState.sessions = [{ key: 'agent:main:main', workspacePath: '/workspace' }];
     chatState.currentSessionKey = 'agent:main:main';
     chatState.currentAgentId = 'main';
     chatState.loadSessions.mockReset();
     chatState.loadSessions.mockResolvedValue(undefined);
     chatState.selectAcpSession.mockReset();
-    chatState.selectAcpSession.mockImplementation((sessionKey: string) => {
+    chatState.selectAcpSession.mockImplementation((sessionKey: string, workspacePath?: string) => {
       chatState.currentSessionKey = sessionKey;
       chatState.currentAgentId = sessionKey.split(':')[1] || 'main';
+      const existingSession = chatState.sessions.find((session) => session.key === sessionKey);
+      if (existingSession) {
+        chatState.sessions = chatState.sessions.map((session) => (
+          session.key === sessionKey
+            ? { ...session, workspacePath: workspacePath ?? session.workspacePath }
+            : session
+        ));
+      } else {
+        chatState.sessions = [...chatState.sessions, { key: sessionKey, workspacePath }];
+      }
     });
     chatState.acknowledgeAcpSessionCreated.mockReset();
     settingsState.chatWorkspacePath = '/workspace';
@@ -365,22 +400,30 @@ describe('ACP Chat page', () => {
     ]);
 
     await waitFor(() => {
-      expect(ensureAcpChatSubscriptions).toHaveBeenCalledTimes(1);
-      expect(acpState.loadSession).toHaveBeenCalledWith({ sessionKey: 'agent:main:main', cwd: '/workspace' });
+      expect(ensureAcpChatSubscriptions).toHaveBeenCalled();
+      expect(acpState.loadSession).toHaveBeenCalledWith({
+        sessionKey: 'agent:main:main', workspaceRoot: '/workspace', cwd: '/workspace',
+      });
     });
   });
 
-  it('sends ready staged attachments and cancels through the ACP session store', () => {
+  it('sends ready staged attachments and cancels through the ACP session store', async () => {
+    acpState.workspaceRoot = '/workspace';
     acpState.cwd = '/workspace';
 
     render(<Chat />);
 
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false');
+    });
     fireEvent.click(screen.getByTestId('mock-send'));
     expect(acpState.sendPrompt).toHaveBeenCalledWith({
       sessionKey: 'agent:main:main',
       cwd: '/workspace',
       message: 'Ship it',
-      media: [{ filePath: '/tmp/ready.png', fileName: 'ready.png', mimeType: 'image/png' }],
+      media: [{
+        filePath: '/tmp/ready.png', stagingId: 'staged-ready', fileName: 'ready.png', mimeType: 'image/png',
+      }],
     });
 
     fireEvent.click(screen.getByTestId('mock-stop'));
@@ -398,7 +441,9 @@ describe('ACP Chat page', () => {
     const { rerender } = render(<Chat />);
 
     await waitFor(() => {
-      expect(acpState.loadSession).toHaveBeenCalledWith({ sessionKey: 'agent:main:main', cwd: '/session-workspace' });
+      expect(acpState.loadSession).toHaveBeenCalledWith({
+        sessionKey: 'agent:main:main', workspaceRoot: '/session-workspace', cwd: '/session-workspace',
+      });
     });
 
     agentsState.agents = [{ id: 'main', name: 'Main', workspace: '/resolved-workspace', mainSessionKey: 'agent:main:main' }];
@@ -419,7 +464,9 @@ describe('ACP Chat page', () => {
       expect(chatState.loadSessions).toHaveBeenCalledTimes(1);
     });
     await waitFor(() => {
-      expect(acpState.loadSession).toHaveBeenCalledWith({ sessionKey: 'agent:main:main', cwd: '/workspace', createIfMissing: true });
+      expect(acpState.loadSession).toHaveBeenCalledWith({
+        sessionKey: 'agent:main:main', workspaceRoot: '/workspace', cwd: '/workspace', createIfMissing: true,
+      });
     });
   });
 
@@ -434,6 +481,7 @@ describe('ACP Chat page', () => {
     await waitFor(() => {
       expect(acpState.loadSession).toHaveBeenCalledWith({
         sessionKey: 'agent:main:session-a',
+        workspaceRoot: '/Users/alex/workspace/ClawX',
         cwd: '/Users/alex/workspace/ClawX',
       });
     });
@@ -459,16 +507,62 @@ describe('ACP Chat page', () => {
     const { rerender } = render(<Chat />);
 
     await waitFor(() => {
-      expect(acpState.loadSession).toHaveBeenCalledWith({ sessionKey, cwd: '~/.openclaw/workspace' });
+      expect(acpState.loadSession).toHaveBeenCalledWith({
+        sessionKey, workspaceRoot: '~/.openclaw/workspace', cwd: '~/.openclaw/workspace',
+      });
     });
 
     chatState.sessions = [{ key: sessionKey, updatedAt: 1000, workspacePath: '/Users/alex/workspace/ClawX' }];
     rerender(<Chat />);
 
     await waitFor(() => {
-      expect(acpState.loadSession).toHaveBeenCalledWith({ sessionKey, cwd: '/Users/alex/workspace/ClawX' });
+      expect(acpState.loadSession).toHaveBeenCalledWith({
+        sessionKey,
+        workspaceRoot: '/Users/alex/workspace/ClawX',
+        cwd: '/Users/alex/workspace/ClawX',
+      });
     });
     resolveInitialLoad(true);
+  });
+
+  it('starts a new load when returning to a session whose earlier load is still pending', async () => {
+    const sessionKey = 'agent:main:session-a';
+    let resolveInitialLoad!: (loaded: boolean) => void;
+    const initialLoad = new Promise<boolean>((resolve) => {
+      resolveInitialLoad = resolve;
+    });
+    const localSessionKey = 'agent:main:session-local';
+    chatState.sessions = [{ key: sessionKey, workspacePath: '/workspace' }];
+    chatState.currentSessionKey = sessionKey;
+    acpState.activeSessionKey = null;
+    acpState.loadSession
+      .mockReturnValueOnce(initialLoad)
+      .mockResolvedValueOnce(true);
+
+    const { rerender } = render(<Chat />);
+    await waitFor(() => expect(acpState.loadSession).toHaveBeenCalledTimes(1));
+
+    chatState.sessions = [
+      { key: sessionKey, workspacePath: '/workspace' },
+      { key: localSessionKey, workspacePath: '/workspace', createdLocally: true },
+    ];
+    chatState.currentSessionKey = localSessionKey;
+    acpState.activeSessionKey = localSessionKey;
+    acpState.cwd = '/workspace';
+    rerender(<Chat />);
+    await waitFor(() => expect(resolveWorkspaceContext).toHaveBeenCalledTimes(2));
+
+    chatState.currentSessionKey = sessionKey;
+    rerender(<Chat />);
+
+    await waitFor(() => expect(resolveWorkspaceContext).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(acpState.loadSession).toHaveBeenCalledTimes(2));
+    expect(acpState.loadSession).toHaveBeenLastCalledWith({
+      sessionKey,
+      workspaceRoot: '/workspace',
+      cwd: '/workspace',
+    });
+    resolveInitialLoad(false);
   });
 
   it('does not create a local ACP session before first send', async () => {
@@ -484,6 +578,32 @@ describe('ACP Chat page', () => {
     expect(screen.getByTestId('mock-workspace-readonly')).toHaveTextContent('editable');
   });
 
+  it('blocks ACP creation and prompts for another folder when the global workspace is missing', async () => {
+    const sessionKey = 'agent:main:session-local';
+    chatState.sessions = [{ key: sessionKey, createdLocally: true }];
+    chatState.currentSessionKey = sessionKey;
+    acpState.activeSessionKey = null;
+    acpState.timeline = { ...emptyTimeline(), sessionId: sessionKey };
+    resolveWorkspaceContext.mockResolvedValue({ ok: false, error: 'notFound' });
+    openDialog.mockResolvedValue({ canceled: false, filePaths: ['D:\\projects\\next-workspace'] });
+
+    render(<Chat />);
+
+    const banner = await screen.findByTestId('workspace-unavailable-banner');
+    expect(banner).toHaveTextContent('Workspace unavailable');
+    expect(banner).toHaveTextContent('/workspace');
+    expect(acpState.prepareLocalSession).toHaveBeenCalledWith({
+      sessionKey, workspaceRoot: '/workspace', cwd: '/workspace',
+    });
+    expect(acpState.loadSession).not.toHaveBeenCalled();
+    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Choose workspace' }));
+    await waitFor(() => {
+      expect(settingsState.setChatWorkspacePath).toHaveBeenCalledWith('D:\\projects\\next-workspace');
+    });
+  });
+
   it('clears stale ACP content when switching to a local pending session', async () => {
     const sessionKey = 'agent:main:session-local';
     chatState.sessions = [{ key: sessionKey, createdLocally: true }];
@@ -494,7 +614,9 @@ describe('ACP Chat page', () => {
     const { rerender } = render(<Chat />);
 
     await waitFor(() => {
-      expect(acpState.prepareLocalSession).toHaveBeenCalledWith({ sessionKey, cwd: '/workspace' });
+      expect(acpState.prepareLocalSession).toHaveBeenCalledWith({
+        sessionKey, workspaceRoot: '/workspace', cwd: '/workspace',
+      });
     });
     rerender(<Chat />);
 
@@ -514,13 +636,22 @@ describe('ACP Chat page', () => {
     render(<Chat />);
 
     expect(acpState.loadSession).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false');
+    });
     fireEvent.click(screen.getByTestId('mock-send'));
 
     await waitFor(() => {
-      expect(acpState.loadSession).toHaveBeenCalledWith({ sessionKey, cwd: '/workspace', createIfMissing: true });
+      expect(acpState.loadSession).toHaveBeenCalledWith({
+        sessionKey, workspaceRoot: '/workspace', cwd: '/workspace', createIfMissing: true,
+      });
     });
     await waitFor(() => {
-      expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(sessionKey, '/workspace');
+      expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(
+        sessionKey,
+        '/workspace',
+        'Ship it',
+      );
     });
   });
 
@@ -532,13 +663,22 @@ describe('ACP Chat page', () => {
     acpState.cwd = '/workspace';
 
     render(<Chat />);
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false');
+    });
     fireEvent.click(screen.getByTestId('mock-send'));
 
     await waitFor(() => {
-      expect(acpState.loadSession).toHaveBeenCalledWith({ sessionKey, cwd: '/workspace', createIfMissing: true });
+      expect(acpState.loadSession).toHaveBeenCalledWith({
+        sessionKey, workspaceRoot: '/workspace', cwd: '/workspace', createIfMissing: true,
+      });
     });
     await waitFor(() => {
-      expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(sessionKey, '/workspace');
+      expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(
+        sessionKey,
+        '/workspace',
+        'Ship it',
+      );
     });
   });
 
@@ -558,10 +698,17 @@ describe('ACP Chat page', () => {
 
     const { rerender } = render(<Chat />);
 
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false');
+    });
     fireEvent.click(screen.getByTestId('mock-send'));
 
     await waitFor(() => {
-      expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(sessionKey, '/workspace');
+      expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(
+        sessionKey,
+        '/workspace',
+        'Ship it',
+      );
     });
     expect(acpState.loadSession).toHaveBeenCalledTimes(1);
 
@@ -584,9 +731,11 @@ describe('ACP Chat page', () => {
 
     render(<Chat />);
 
-    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false');
     await waitFor(() => {
-      expect(acpState.loadSession).toHaveBeenCalledWith({ sessionKey: 'agent:main:main', cwd: '/workspace' });
+      expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false');
+      expect(acpState.loadSession).toHaveBeenCalledWith({
+        sessionKey: 'agent:main:main', workspaceRoot: '/workspace', cwd: '/workspace',
+      });
     });
   });
 
@@ -595,28 +744,83 @@ describe('ACP Chat page', () => {
       { id: 'main', name: 'Main', workspace: '/workspace', mainSessionKey: 'agent:main:main' },
       { id: 'research', name: 'Research', workspace: '/research-workspace', mainSessionKey: 'agent:research:desk' },
     ];
+    chatState.sessions = [
+      { key: 'agent:main:main', workspacePath: '/workspace' },
+      { key: 'agent:research:desk', workspacePath: '/research-workspace' },
+    ];
 
     render(<Chat />);
 
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false');
+      expect(acpState.loadSession).toHaveBeenCalledWith({
+        sessionKey: 'agent:main:main', workspaceRoot: '/workspace', cwd: '/workspace',
+      });
+    });
+    acpState.loadSession.mockClear();
     fireEvent.click(screen.getByTestId('mock-send-target'));
 
     await waitFor(() => {
       expect(acpState.acceptedPromptSessionKeys).toContain('agent:research:desk');
     });
-    expect(acpState.loadSession).toHaveBeenCalledWith({ sessionKey: 'agent:research:desk', cwd: '/research-workspace' });
-    expect(chatState.selectAcpSession).toHaveBeenCalledWith('agent:research:desk');
+    expect(acpState.loadSession).toHaveBeenCalledWith({
+      sessionKey: 'agent:research:desk', workspaceRoot: '/research-workspace', cwd: '/research-workspace',
+    });
+    expect(chatState.selectAcpSession).toHaveBeenCalledWith('agent:research:desk', '/research-workspace');
     expect(acpState.sendPrompt).toHaveBeenCalledWith({
       sessionKey: 'agent:research:desk',
       cwd: '/research-workspace',
       message: 'Ask research',
       media: undefined,
     });
-    expect(acpState.loadSession.mock.invocationCallOrder.at(-1)!).toBeLessThan(
+    const targetLoadIndex = acpState.loadSession.mock.calls.findIndex(
+      ([input]) => input.sessionKey === 'agent:research:desk',
+    );
+    expect(acpState.loadSession.mock.invocationCallOrder[targetLoadIndex]!).toBeLessThan(
       acpState.sendPrompt.mock.invocationCallOrder.at(-1)!,
     );
     expect(chatState.selectAcpSession.mock.invocationCallOrder.at(-1)!).toBeLessThan(
-      acpState.loadSession.mock.invocationCallOrder.at(-1)!,
+      acpState.loadSession.mock.invocationCallOrder[targetLoadIndex]!,
     );
+  });
+
+  it('creates a new target agent session in its workspace before the first prompt', async () => {
+    agentsState.agents = [
+      { id: 'main', name: 'Main', workspace: '/workspace', mainSessionKey: 'agent:main:main' },
+      { id: 'research', name: 'Research', workspace: '/research-workspace', mainSessionKey: 'agent:research:main' },
+    ];
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false');
+    });
+    fireEvent.click(screen.getByTestId('mock-send-target'));
+
+    await waitFor(() => {
+      expect(acpState.acceptedPromptSessionKeys).toContain('agent:research:main');
+    });
+    expect(chatState.selectAcpSession).toHaveBeenCalledWith(
+      'agent:research:main',
+      '/research-workspace',
+    );
+    expect(acpState.loadSession).toHaveBeenCalledWith({
+      sessionKey: 'agent:research:main',
+      workspaceRoot: '/research-workspace',
+      cwd: '/research-workspace',
+      createIfMissing: true,
+    });
+    expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(
+      'agent:research:main',
+      '/research-workspace',
+      'Ask research',
+    );
+    expect(acpState.sendPrompt).toHaveBeenCalledWith({
+      sessionKey: 'agent:research:main',
+      cwd: '/research-workspace',
+      message: 'Ask research',
+      media: undefined,
+    });
   });
 
   it('reloads an active target ACP session before sending when its cwd is stale', async () => {
@@ -636,10 +840,18 @@ describe('ACP Chat page', () => {
     render(<Chat />);
 
     expect(acpState.loadSession).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false');
+    });
     fireEvent.click(screen.getByTestId('mock-send-target'));
 
     await waitFor(() => {
-      expect(acpState.loadSession).toHaveBeenCalledWith({ sessionKey, cwd: '/research-workspace' });
+      expect(acpState.loadSession).toHaveBeenCalledWith({
+        sessionKey,
+        workspaceRoot: '/research-workspace',
+        cwd: '/research-workspace',
+        createIfMissing: true,
+      });
     });
     expect(acpState.sendPrompt).toHaveBeenCalledWith({
       sessionKey,
@@ -657,6 +869,10 @@ describe('ACP Chat page', () => {
       { id: 'main', name: 'Main', workspace: '/workspace', mainSessionKey: 'agent:main:main' },
       { id: 'research', name: 'Research', workspace: '/research-workspace', mainSessionKey: 'agent:research:desk' },
     ];
+    chatState.sessions = [
+      { key: 'agent:main:main', workspacePath: '/workspace' },
+      { key: 'agent:research:desk', workspacePath: '/research-workspace' },
+    ];
     acpState.loadSession.mockImplementation(async (input: { sessionKey: string }) => {
       if (input.sessionKey === 'agent:research:desk') return false;
       acpState.activeSessionKey = input.sessionKey;
@@ -665,12 +881,17 @@ describe('ACP Chat page', () => {
 
     render(<Chat />);
 
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false');
+    });
     fireEvent.click(screen.getByTestId('mock-send-target'));
 
     await waitFor(() => {
-      expect(acpState.loadSession).toHaveBeenCalledWith({ sessionKey: 'agent:research:desk', cwd: '/research-workspace' });
+      expect(acpState.loadSession).toHaveBeenCalledWith({
+        sessionKey: 'agent:research:desk', workspaceRoot: '/research-workspace', cwd: '/research-workspace',
+      });
     });
-    expect(chatState.selectAcpSession).toHaveBeenCalledWith('agent:research:desk');
+    expect(chatState.selectAcpSession).toHaveBeenCalledWith('agent:research:desk', '/research-workspace');
     expect(acpState.sendPrompt).not.toHaveBeenCalled();
   });
 
@@ -703,7 +924,13 @@ describe('ACP Chat page', () => {
           role: 'user',
           messageId: 'msg-user',
           segmentIndex: 0,
-          parts: [{ kind: 'file', path: '/workspace/user-upload.md', name: 'user-upload.md', mimeType: 'text/markdown' }],
+          parts: [{
+            kind: 'attachment',
+            attachmentId: 'attachment:msg-user:0:0',
+            reference: { uri: '/workspace/user-upload.md', name: 'user-upload.md', mimeType: 'text/markdown' },
+            source: 'acp-resource',
+            access: { status: 'pending' },
+          }],
         },
         'msg-assistant:0': {
           kind: 'message-segment',
@@ -711,7 +938,13 @@ describe('ACP Chat page', () => {
           role: 'assistant',
           messageId: 'msg-assistant',
           segmentIndex: 0,
-          parts: [{ kind: 'file', path: '/workspace/report.md', name: 'report.md', mimeType: 'text/markdown' }],
+          parts: [{
+            kind: 'attachment',
+            attachmentId: 'attachment:msg-assistant:0:0',
+            reference: { uri: '/workspace/report.md', name: 'report.md', mimeType: 'text/markdown' },
+            source: 'acp-resource',
+            access: { status: 'pending' },
+          }],
         },
         'tool:write-file': {
           kind: 'tool-call',
@@ -720,7 +953,13 @@ describe('ACP Chat page', () => {
           title: 'write: app',
           status: 'completed',
           input: { path: '/Users/test/.openclaw/workspace/src/app.tsx', content: 'export {}' },
-          outputParts: [{ kind: 'file', path: '/workspace/src/app.tsx', name: 'app.tsx' }],
+          outputParts: [{
+            kind: 'attachment',
+            attachmentId: 'attachment:tool:write-file:0:0',
+            reference: { uri: '/workspace/src/app.tsx', name: 'app.tsx' },
+            source: 'acp-resource',
+            access: { status: 'pending' },
+          }],
           locations: [],
         },
       },

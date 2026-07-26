@@ -12,12 +12,14 @@ export type AcpSessionKeyPayload = {
 };
 
 export type AcpChatLoadPayload = AcpSessionKeyPayload & {
+  workspaceRoot: string;
   cwd: string;
   createIfMissing?: boolean;
 };
 
 export type AcpPromptMediaItem = {
   filePath: string;
+  stagingId: string;
   fileName?: string;
   mimeType?: string;
 };
@@ -40,6 +42,10 @@ export type AcpChatOperationResult = {
   success: boolean;
   error?: string;
   generation?: number;
+  /** The requested session still has a live prompt and was reactivated without history replay. */
+  resumedActivePrompt?: boolean;
+  /** Raw notifications collected while session/load is in progress. */
+  sessionUpdates?: AcpSessionUpdateEnvelope[];
 };
 
 export type AcpSessionUpdateEnvelope = {

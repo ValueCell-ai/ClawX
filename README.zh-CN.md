@@ -117,8 +117,19 @@ cc-connect 也负责消息平台桥接。当 cc-connect 是当前 runtime 时，
 通过现代化的聊天体验与 AI 智能体交互。支持多会话上下文、消息历史记录、Markdown 富文本渲染（包括 GitHub 风格表格以及由 KaTeX 渲染的 LaTeX 数学公式：`$行内$`、`$$块级$$`、`\(行内\)` 和 `\[块级\]`），以及在多 Agent 场景下通过主输入框中的 `@agent` 直接路由到目标智能体。
 从输入框插入的技能会以 `/技能名` 卡片形式显示；点击卡片可在右侧预览栏打开并阅读该技能的 `SKILL.md`。
 当你使用 `@agent` 选择其他智能体时，ClawX 会直接切换到该智能体自己的对话上下文，而不是经过默认智能体转发。各 Agent 工作区默认彼此分离，但更强的运行时隔离仍取决于 OpenClaw 的 sandbox 配置。
-会话侧边栏现在以工作空间优先组织：默认工作空间固定在最上方，其它工作空间按自然顺序排列，每个工作空间都可折叠或继续加载更多会话，行内会显示相对活跃时间直到悬停时露出操作按钮。可编辑的新对话中，输入框的工作空间卡片会打开一个小菜单，可切回默认工作空间或选择其它目录。
+会话侧边栏现在以工作空间优先组织：默认工作空间固定在最上方，其它工作空间按自然顺序排列，每个工作空间都可折叠或继续加载更多会话。AI 回复期间，会话行显示加载指示器；未查看的回复完成后显示蓝点；打开会话后恢复显示相对活跃时间，悬停时仍会露出操作按钮。导入的工作空间可从侧边栏标题处重命名，新名称会同步显示在对话输入框下方，同时悬浮标题仍可查看文件系统路径。如果当前所选会话存在有效工作空间，新对话会继承该工作空间，并在首次发送前保持可编辑。对于可编辑的新对话或未绑定对话，输入框的工作空间卡片会打开一个小菜单，列出最近使用及现有会话中的工作空间，并可切回默认工作空间或选择其它目录。如果保存的工作空间文件夹已被移动或删除，Chat 会暂停创建会话并提示选择现有文件夹，而不会持续重试失效路径。不可用的非默认工作空间会在侧边栏显示标记，并可在确认后删除；该操作会永久删除分组中的全部会话。OpenClaw 生成的 UUID 加日期兜底标题只有在与该会话 ID 匹配时才会被视为缺失标题，随后改用会话的首条用户消息展示，而不会被持久化为会话名称。
 每个 Agent 还可以单独覆盖自己的 `provider/model` 运行时设置；未覆盖的 Agent 会继续继承全局默认模型。
+
+Chat 右侧面板的工作空间和预览选项卡支持以只读方式预览 `.docx` 和 `.pptx` 文件。旧版 `.doc` 和 `.ppt` 文件不会在应用内预览，而是继续通过操作系统打开。DOCX 的分页效果可能与 Microsoft Word 不同；PPTX 预览不支持动画、切换效果或媒体播放。超过 20 MB 的 Office 文件不会在应用内预览。
+
+### 单页面 Web 浏览器
+Chat 右侧面板包含四个选项卡：工作空间、预览、变更和网页浏览器。网页浏览器会在首次使用时延迟创建一个实时页面；关闭面板、切换面板选项卡、切换聊天会话或前往 ClawX 的其它路由时，页面只会隐藏并继续运行，因此脚本、网络活动、音频和资源占用都可能持续。专用持久会话会在应用重启后保留 Cookie 和站点存储，但每次启动都从 `about:blank` 开始，不恢复上次的 URL、页面状态或导航历史。页面提供网站图标时，图标会显示在标题左侧；没有图标时，同尺寸占位图标会保持标题对齐，编辑地址时则隐藏整个图标位。该功能不提供额外浏览器标签页或窗口、书签、持久化历史、密码管理器或自动填充管理。
+
+顶层导航支持 HTTP、HTTPS 和明确输入的标准 `file:///` URL；普通文件系统路径及其它协议会被拒绝。打开本地文件会在 Chromium 的常规安全规则下向嵌入页面暴露其中可读取的内容；对 `file:` URL 使用**在系统浏览器中打开**时，操作系统也可能改用文件关联应用，而不是浏览器。允许的弹窗目标会替换当前页面，不会创建子窗口；这种同页面回退无法保留 `window.opener`、返回的窗口句柄、先打开空白页再写入内容的脚本弹窗，也不能完整保持 POST 请求体、referrer、命名窗口和窗口特性行为。
+
+下载完全沿用 Electron 和操作系统的默认行为。根据平台不同，系统可能显示原生“保存”对话框并需要用户操作；ClawX 不会指定自定义路径，也不提供下载进度、历史或管理界面。摄像头和麦克风权限会对每次请求显示原生“允许/拒绝”提示，且不会记住选择。剪贴板访问允许使用；地理位置、屏幕捕获、通知及其它权限均会被拒绝。
+
+**清除 Cookie**会删除浏览器会话中所有来源的 Cookie，同时保留缓存和站点存储。**清除网站数据**会删除所有来源的 HTTP/Chromium 缓存、Cache Storage、Local Storage、IndexedDB 和 Service Worker，同时保留 Cookie 与已下载文件。浏览器流量使用 Electron/Chromium 的系统代理解析；ClawX 客户端代理设置不会同步到该浏览器会话，修改这些设置也不会重新配置它。
 
 ### 📡 多频道管理
 同时配置和监控多个 AI 频道。每个频道独立运行，允许你为不同任务运行专门的智能体。
@@ -139,11 +150,12 @@ Skills 页面可展示来自多个 OpenClaw 来源的技能（托管目录、wor
 当 cc-connect runtime 处于启用状态时，ClawX 会把已启用的本地 skills 镜像到 app userData 下托管的 Codex home 中，让内置 Codex agent 使用同一套技能，而不读取全局 skill 目录。
 
 ### 🔐 安全的供应商集成
-连接多个 AI 供应商（OpenAI、Anthropic 等），凭证安全存储在系统原生密钥链中。OpenAI 同时支持 API Key 与浏览器 OAuth（Codex 订阅）登录。
+连接多个 AI 供应商（OpenAI、Anthropic、Z.AI / GLM 等），凭证安全存储在系统原生密钥链中。OpenAI 同时支持 API Key 与浏览器 OAuth（Codex 订阅）登录。
 在开发者模式下，独立的“图像生成”页面支持配置 OpenAI 兼容生图端点（Base URL、API Key 和模型名，例如 `gpt-image-2`），生图请求会走专用的 `/v1/images/generations` 服务，聊天仍继续使用正常的 OpenAI Provider。
 如果你通过 **自定义（Custom）Provider** 对接 OpenAI-compatible 网关，可以在 **设置 → AI Providers → 编辑 Provider** 中配置自定义 `User-Agent`，以提高兼容性。
 编辑或切换 Provider 时，ClawX 会保留已有的模型级能力元数据，例如 `input: ["text", "image"]`。新选择的自定义 Provider 模型会使用与 OpenClaw onboarding 一致的图片输入能力推断；未知模型默认按纯文本模型处理。
 自定义 Provider 的模型行还会写入显式的 `contextWindow`（按模型系列推断，例如 `gpt-5.x` → 272k），旧版本保存的模型行会在启动时自动回填，使 OpenClaw 能在长会话超限前主动压缩上下文，避免出现 "Context overflow" 报错。当你没有配置 compaction 时，ClawX 会默认写入 `agents.defaults.compaction.mode = "safeguard"` 和 `reserveTokensFloor = 50000`；你手动配置过的模型行或压缩配置永远不会被修改（仅可能回填缺失的 `reserveTokensFloor`）。
+Z.AI（国内站 / 国际站）会映射到 OpenClaw 内置的 `zai` 供应商（`ZAI_API_KEY`），默认模型为 `glm-5.2`。可通过 Code Plan 预设切换到编码套餐端点（`…/api/coding/paas/v4`），或使用普通 API 端点（`…/api/paas/v4`）；国内站与国际站互斥，因为它们共享同一个 OpenClaw 运行时 key。
 如果兼容网关的 `/models` 因非鉴权原因不可用，ClawX 会在校验 API Key 时自动降级为轻量的 `/chat/completions` 或 `/responses` 探测。
 
 ### 🌙 自适应主题
@@ -236,11 +248,18 @@ ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用
 
 Chat 传输会随当前 runtime 切换，但 Renderer 始终只经过同一个边界。OpenClaw Chat 使用由 Electron Main 持有的 ACP stdio bridge，Renderer 接收类型化 host events 并渲染内存中的 ACP timeline；cc-connect Chat 则由 `RuntimeManager` 通过 cc-connect BridgePlatform 分派，包括 session history、progress、approval 与 generated media。两种模式都使用同一套 Host API facade，Renderer 不会直接调用 Codex。非 Chat 能力也通过 runtime provider 分派，OpenClaw 专属操作只保留在 OpenClaw adapter 内。
 
-ACP Chat 可在 runtime 以可信结构化媒体投递图像生成结果时显示生成图片预览。历史 OpenClaw 回放中，assistant 的 `MEDIA:/path/to/file.png` 标记只有在同一会话已记录图像生成任务启动后才会被提升为预览。其它纯文本本地路径（如 `MEDIA: /path/to/file.png`）不会被当作图片预览；ClawX 通过 Electron Main 的主机媒体处理加载预览，而不是让 Renderer 任意访问文件系统。标准 ACP 图片内容仍是首选路径，并会直接渲染。
+打开其它会话或页面时，尚未完成的 ACP 回复仍会继续流式接收。若在回复完成前返回，ClawX 会恢复最新的内存 timeline 并继续显示实时输出；回复完成后，普通 ACP 历史回放仍是唯一事实来源。
+
+ACP assistant 回合会显示整轮耗时。Live 计时跟随客户端观测到的 prompt 生命周期，并在应用内导航后保持连续；历史耗时由 Electron Main 根据有界的 OpenClaw transcript 时间戳计算，而且只能标注 ACP 回放已经恢复出的回合。
+
+ACP Chat 会将标准 ACP resource 渲染为附件。用户选择的图片会显示为缩略图，并在悬停蒙层中显示文件名；其它可用的附件卡片会显示文件名，以及灰色、可截断的来源路径。当前 OpenClaw ACP adapter 遗漏 assistant 媒体时，显式的 assistant `MEDIA:` 指令也可恢复为附件卡片，且不会显示原始指令。现有本地文件引用（包括当前 workspace 外的路径）在每次预览或打开前，都会由 Electron Main 按精确的 session 和 generation 重新验证。AI 生成且可预览的本地附件（包括不超过 20 MB 的 `.docx` 和 `.pptx` 文件）会保留主要的只读应用内预览操作，并提供次级菜单，可通过兼容应用打开，或在 Finder、文件资源管理器或系统文件管理器中显示。对于本地 HTML 附件，该菜单第一项会在右侧网页浏览器中打开文件 URL。Office 预览在此处也有相同限制：`.doc` 和 `.ppt` 仍通过系统应用打开，DOCX 的分页效果可能与 Microsoft Word 不同，PPTX 的动画、切换效果和媒体播放不受支持。兼容应用发现仅在 macOS 和 Windows 上可用；在 Linux 上或发现失败时，会静默降级为仅显示文件位置。其它本地文件（包括超过 20 MB 的 Office 文件）会在用户点击后通过系统应用打开；远程 HTTP 和 HTTPS 附件会在用户点击后从外部打开。普通文本中的裸路径或行内路径不会被当作附件。
+
+ACP Chat 也可在 runtime 以可信结构化媒体投递图像生成结果时显示生成图片预览。对于可信的 OpenClaw internal-UI 投递和与生图任务关联的最终回复，ClawX 会保留原始的用户可见完成文案，包括只有文本的失败说明，而不会统一替换成通用图片文案。历史 OpenClaw 回放中，assistant 的图片 `MEDIA:` 标记只有在同一会话已记录图像生成任务启动后才会进入内联图片体验。ClawX 通过 Electron Main 的主机媒体处理加载预览，而不是让 Renderer 任意访问文件系统。标准 ACP 图片和 resource 内容仍是首选路径，并会直接渲染。
 
 ### ACP 文件活动语义
 
 - 文件活动由成功且已完成的 OpenClaw `write`、`edit` 和 `apply_patch` 调用投影而来。工具识别方式与 OpenClaw 官方 Chat UI 保持一致；仅接收已完成调用的筛选规则是 ClawX 特有的。
+- 已创建和已修改的活动行与可预览的 assistant 附件共用同一种文件卡片外壳和**打开方式**菜单，同时保留状态文字及可用的 `+/-` 统计。对于 HTML 文件，菜单第一项会在右侧**网页浏览器**中打开本地文件 URL 并激活该选项卡；已删除的活动行只保留 **Changes** 操作。应用列表、指定应用打开和显示文件位置都会由 Electron Main 根据 workspace 根目录与相对路径分别重新验证；工具路径不会因此变成附件，Renderer 也不会获得规范化系统路径。
 - `write` 按工具声明的语义显示：视为创建，并展示为全部新增的差异，即使该路径可能已经存在。
 - **Changes** 是按时间顺序记录工具声明活动的会话级记录，不是 Git 输出，也不是相对于已验证源码基线的差异。
 - 对每个文件，Changes 在每轮助手回复中最多展示一个 diff 编辑器。可安全串联的片段会合并，独立片段会拼接到同一个编辑器中，但不会被描述为基于完整文件基线的差异。
@@ -335,7 +354,7 @@ ACP Chat 可在 runtime 以可信结构化媒体投递图像生成结果时显�
 
 ### 前置要求
 
-- **Node.js**：22.19+（推荐 LTS 版本）
+- **Node.js**：对应主版本范围内的 22.22.3+、24.15.0+ 或 25.9.0+（推荐 Node 24 LTS）
 - **包管理器**：pnpm 9+（推荐）或 npm
 - **Linux（Ubuntu/Debian）**：运行 Electron 前，请先安装所需系统库：
   ```bash

@@ -73,6 +73,15 @@ function inferProviderVendorIdFromOpenClawEntry(
     }
   }
 
+  // OpenClaw stores a single `zai` key; pick CN vs Global UI vendor from baseUrl.
+  if (key === 'zai') {
+    const baseUrl = typeof entry.baseUrl === 'string' ? entry.baseUrl.toLowerCase() : '';
+    if (baseUrl.includes('api.z.ai')) {
+      return 'zai-global';
+    }
+    return 'zai';
+  }
+
   return ((BUILTIN_PROVIDER_TYPES as readonly string[]).includes(key) ? key : 'custom') as ProviderType | 'custom';
 }
 

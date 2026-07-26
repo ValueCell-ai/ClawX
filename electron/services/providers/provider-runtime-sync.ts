@@ -98,6 +98,10 @@ export function getOpenClawProviderKey(type: string, providerId: string): string
   if (type === 'minimax-portal-cn') {
     return 'minimax-portal';
   }
+  // OpenClaw Z.AI provider key is always `zai` (Global UI vendor aliases here).
+  if (type === 'zai-global') {
+    return 'zai';
+  }
   return type;
 }
 
@@ -317,7 +321,8 @@ async function syncRuntimeProviderConfig(
   config: ProviderConfig,
   context: RuntimeProviderSyncContext,
 ): Promise<void> {
-  await syncProviderConfigToOpenClaw(context.runtimeProviderKey, config.model, {
+  const modelId = normalizeRuntimeModelId(context.runtimeProviderKey, config.model);
+  await syncProviderConfigToOpenClaw(context.runtimeProviderKey, modelId, {
     baseUrl: normalizeProviderBaseUrl(config, config.baseUrl || context.meta?.baseUrl, context.api),
     api: context.api,
     apiKeyEnv: context.meta?.apiKeyEnv,
@@ -339,7 +344,7 @@ async function syncCustomProviderAgentModel(
     return;
   }
 
-  const modelId = config.model;
+  const modelId = normalizeRuntimeModelId(runtimeProviderKey, config.model);
   await updateAgentModelProvider(runtimeProviderKey, {
     baseUrl: normalizeProviderBaseUrl(config, config.baseUrl, config.apiProtocol || 'openai-completions'),
     api: config.apiProtocol || 'openai-completions',
@@ -412,6 +417,16 @@ function parseModelRef(modelRef: string): { providerKey: string; modelId: string
     providerKey: trimmed.slice(0, separatorIndex),
     modelId: trimmed.slice(separatorIndex + 1),
   };
+}
+
+function normalizeRuntimeModelId(
+  runtimeProviderKey: string,
+  modelId: string | undefined,
+): string | undefined {
+  const value = modelId?.trim();
+  if (!value) return undefined;
+  const prefix = `${runtimeProviderKey}/`;
+  return value.startsWith(prefix) ? value.slice(prefix.length) : value;
 }
 
 async function buildRuntimeProviderConfigMap(): Promise<Map<string, ProviderConfig>> {
@@ -542,7 +557,8 @@ export async function syncUpdatedProviderToRuntime(
   const defaultProviderId = await getDefaultProvider();
   const isDefaultProvider = defaultProviderId === config.id;
   if (isDefaultProvider) {
-    const modelOverride = config.model ? `${ock}/${config.model}` : undefined;
+    const selectedModelId = normalizeRuntimeModelId(ock, config.model);
+    const modelOverride = selectedModelId ? `${ock}/${selectedModelId}` : undefined;
     if (!isUnregisteredProviderType(config.type)) {
       if (shouldUseExplicitDefaultOverride(config, ock)) {
         await setOpenClawDefaultModelWithOverride(ock, modelOverride, {

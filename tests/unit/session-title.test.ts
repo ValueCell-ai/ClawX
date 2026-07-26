@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   isAcpWorkingDirectoryTruncatedTitle,
+  isOpenClawSessionIdFallbackTitle,
   stripAcpWorkingDirectoryPrefix,
 } from '@shared/chat/session-title'
 
@@ -49,6 +50,20 @@ describe('stripAcpWorkingDirectoryPrefix', () => {
         'Question\n[Working directory: ~/.openclaw/workspace]',
       ),
     ).toBe('Question\n[Working directory: ~/.openclaw/workspace]')
+  })
+})
+
+describe('isOpenClawSessionIdFallbackTitle', () => {
+  const sessionId = '72e4b28b-8477-4e29-b57e-e14448fd42d0'
+
+  it('identifies the UUID-prefix and date title generated for the same session', () => {
+    expect(isOpenClawSessionIdFallbackTitle('72e4b28b (2026-07-22)', sessionId)).toBe(true)
+  })
+
+  it('does not discard user labels or another session prefix', () => {
+    expect(isOpenClawSessionIdFallbackTitle('用浏览器打开B站', sessionId)).toBe(false)
+    expect(isOpenClawSessionIdFallbackTitle('9add3001 (2026-07-22)', sessionId)).toBe(false)
+    expect(isOpenClawSessionIdFallbackTitle('72e4b28b (2026-07-22)', undefined)).toBe(false)
   })
 })
 

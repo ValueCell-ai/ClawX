@@ -7,7 +7,7 @@
  * are sent with the message (no base64 over WebSocket).
  */
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Search, ChevronDown } from 'lucide-react';
+import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Search, ChevronDown, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -27,7 +27,7 @@ import { toast } from 'sonner';
 import { rendererExtensionRegistry } from '@/extensions/registry';
 import { collectDroppedFiles } from '@/lib/collect-dropped-files';
 import { fetchQuickAccessSkills } from '@/lib/quick-access-skills';
-import { DEFAULT_WORKSPACE_CWD } from '@/lib/workspace-context';
+import { DEFAULT_WORKSPACE_CWD, isDefaultWorkspacePath, normalizeWorkspacePath } from '@/lib/workspace-context';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -42,13 +42,20 @@ export interface FileAttachment {
   error?: string;
 }
 
+export interface ChatWorkspaceOption {
+  path: string;
+  label: string;
+}
+
 interface ChatInputProps {
   onSend: (text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => void;
   onStop?: () => void;
   disabled?: boolean;
   sending?: boolean;
+  imageGenerating?: boolean;
   workspaceLabel?: string;
   workspacePath?: string;
+  workspaceOptions?: ChatWorkspaceOption[];
   workspaceReadOnly?: boolean;
   onSelectWorkspace?: (path: string) => void;
 }
@@ -201,8 +208,10 @@ export function ChatInput({
   onStop,
   disabled = false,
   sending = false,
+  imageGenerating = false,
   workspaceLabel,
   workspacePath,
+  workspaceOptions = [],
   workspaceReadOnly = false,
   onSelectWorkspace,
 }: ChatInputProps) {
@@ -221,6 +230,7 @@ export function ChatInput({
   const [selectedSkill, setSelectedSkill] = useState<QuickAccessSkill | null>(null);
   const [switchingModelRef, setSwitchingModelRef] = useState<string | null>(null);
   const [optimisticModelRef, setOptimisticModelRef] = useState<string | null>(null);
+  const [providerSnapshotReady, setProviderSnapshotReady] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const skillPickerRef = useRef<HTMLDivElement>(null);
@@ -235,6 +245,7 @@ export function ChatInput({
   const providerStatuses = useProviderStore((s) => s.statuses);
   const providerDefaultAccountId = useProviderStore((s) => s.defaultAccountId);
   const providerVendors = useProviderStore((s) => s.vendors);
+  const providerError = useProviderStore((s) => s.error);
   const refreshProviderSnapshot = useProviderStore((s) => s.refreshProviderSnapshot);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const currentAgent = useMemo(
@@ -289,7 +300,17 @@ export function ChatInput({
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
   const openArtifactPreview = useArtifactPanel((s) => s.openPreview);
   useEffect(() => {
-    void refreshProviderSnapshot();
+    let cancelled = false;
+    void (async () => {
+      try {
+        await refreshProviderSnapshot();
+      } finally {
+        if (!cancelled) setProviderSnapshotReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [refreshProviderSnapshot]);
 
   useEffect(() => {
@@ -319,11 +340,11 @@ export function ChatInput({
   }, [workspaceSelectorDisabled]);
 
   useEffect(() => {
-    if (!currentAgent || switchingModelRef || optimisticModelRef) return;
+    if (!providerSnapshotReady || providerError || !currentAgent || switchingModelRef || optimisticModelRef) return;
     const override = (currentAgent.overrideModelRef || '').trim();
     if (!override || isConfiguredModelRefAvailable(override, modelOptions)) return;
     void updateAgentModel(currentAgent.id, null).catch(() => {});
-  }, [currentAgent, modelOptions, optimisticModelRef, switchingModelRef, updateAgentModel]);
+  }, [currentAgent, modelOptions, optimisticModelRef, providerError, providerSnapshotReady, switchingModelRef, updateAgentModel]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -523,12 +544,16 @@ export function ChatInput({
     event.stopPropagation();
   }, []);
 
-  const handleSelectDefaultWorkspace = useCallback(() => {
+  const handleSelectWorkspace = useCallback((path: string) => {
     if (workspaceSelectorDisabled || !onSelectWorkspace) return;
-    onSelectWorkspace(DEFAULT_WORKSPACE_CWD);
+    onSelectWorkspace(path);
     setWorkspaceMenuOpen(false);
     textareaRef.current?.focus();
   }, [onSelectWorkspace, workspaceSelectorDisabled]);
+
+  const handleSelectDefaultWorkspace = useCallback(() => {
+    handleSelectWorkspace(DEFAULT_WORKSPACE_CWD);
+  }, [handleSelectWorkspace]);
 
   const handleChooseOtherWorkspace = useCallback(async () => {
     if (workspaceSelectorDisabled || !onSelectWorkspace) return;
@@ -666,7 +691,11 @@ export function ChatInput({
 
   const allReady = attachments.length === 0 || attachments.every(a => a.status === 'ready');
   const hasFailedAttachments = attachments.some((a) => a.status === 'error');
-  const canSend = (input.trim() || attachments.length > 0) && allReady && !inputDisabled && !sending;
+  const canSend = (input.trim() || attachments.length > 0)
+    && allReady
+    && !inputDisabled
+    && !sending
+    && !imageGenerating;
   const canStop = sending && !inputDisabled && !!onStop;
 
   const handleSend = useCallback(async () => {
@@ -859,17 +888,40 @@ export function ChatInput({
             data-testid="chat-composer-working-indicator"
             role="status"
             aria-live="polite"
-            aria-label={t('composer.working')}
-            className="relative mb-2 flex h-1 overflow-hidden rounded-full"
+            aria-label={t('composer.thinking')}
+            className="mb-2 flex h-5 items-center gap-2 text-sm text-muted-foreground"
           >
-            <span className="sr-only">{t('composer.working')}</span>
             <span
-              data-testid="chat-composer-zoomies"
+              data-testid="chat-composer-dot-pulse"
               aria-hidden="true"
-              className="clawx-chat-working-zoomies"
+              className="clawx-chat-thinking-dot-pulse"
             >
-              <span className="clawx-chat-working-zoomies-inner" />
+              <span className="clawx-chat-thinking-dot-pulse-inner">
+                <span className="clawx-chat-thinking-dot-pulse-dot" />
+              </span>
             </span>
+            <span>{t('composer.thinking')}</span>
+          </div>
+        )}
+
+        {!sending && imageGenerating && (
+          <div
+            data-testid="chat-composer-image-generation-indicator"
+            role="status"
+            aria-live="polite"
+            aria-label={t('imageGeneration.generating')}
+            className="mb-2 flex h-5 items-center gap-2 text-sm text-muted-foreground"
+          >
+            <span
+              data-testid="chat-composer-image-generation-dot-pulse"
+              aria-hidden="true"
+              className="clawx-chat-thinking-dot-pulse"
+            >
+              <span className="clawx-chat-thinking-dot-pulse-inner">
+                <span className="clawx-chat-thinking-dot-pulse-dot" />
+              </span>
+            </span>
+            <span>{t('imageGeneration.generating')}</span>
           </div>
         )}
 
@@ -1175,11 +1227,11 @@ export function ChatInput({
                   tabIndex={workspaceSelectorDisabled ? -1 : undefined}
                   onClick={workspaceSelectorDisabled ? undefined : handleWorkspaceButtonClick}
                   className={cn(
-                    'inline-flex min-w-0 max-w-[260px] items-center gap-1 rounded-full border border-black/10 px-2 py-0.5',
-                    'bg-black/[0.02] text-tiny font-medium text-foreground/75 transition-colors dark:border-white/10 dark:bg-white/[0.04]',
+                    'inline-flex min-w-0 max-w-[260px] items-center gap-1 rounded-full border px-2 py-0.5',
+                    'bg-black/[0.02] text-tiny font-medium text-foreground/75 transition-colors dark:bg-white/[0.04]',
                     workspaceSelectorDisabled
-                      ? 'cursor-default opacity-80'
-                      : 'hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
+                      ? 'cursor-default border-transparent opacity-80'
+                      : 'border-black/10 hover:bg-black/5 hover:text-foreground dark:border-white/10 dark:hover:bg-white/10',
                   )}
                 >
                   <FolderOpen className="h-3 w-3 shrink-0" />
@@ -1193,25 +1245,54 @@ export function ChatInput({
                 {workspaceMenuOpen && !workspaceSelectorDisabled && (
                   <div
                     data-testid="chat-workspace-menu"
-                    className="absolute bottom-full left-0 z-20 mb-2 w-60 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
+                    className="absolute bottom-full left-0 z-20 mb-2 max-h-80 w-64 overflow-y-auto rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
                   >
                     <button
                       type="button"
                       data-testid="chat-workspace-default"
+                      aria-current={isDefaultWorkspacePath(workspacePath) ? 'true' : undefined}
                       onClick={handleSelectDefaultWorkspace}
-                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                      className={cn(
+                        'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/10',
+                        isDefaultWorkspacePath(workspacePath) && 'bg-black/5 dark:bg-white/10',
+                      )}
                     >
-                      <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span>{t('composer.defaultWorkspaceOption')}</span>
+                      <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">{t('composer.defaultWorkspaceOption')}</span>
+                      {isDefaultWorkspacePath(workspacePath) && <Check className="h-3.5 w-3.5 shrink-0" />}
                     </button>
+                    {workspaceOptions.map((option) => {
+                      const optionPath = normalizeWorkspacePath(option.path);
+                      if (!optionPath || isDefaultWorkspacePath(optionPath)) return null;
+                      const selected = optionPath === normalizeWorkspacePath(workspacePath);
+                      return (
+                        <button
+                          key={optionPath}
+                          type="button"
+                          data-testid={`chat-workspace-option-${encodeURIComponent(optionPath)}`}
+                          title={optionPath}
+                          aria-current={selected ? 'true' : undefined}
+                          onClick={() => handleSelectWorkspace(optionPath)}
+                          className={cn(
+                            'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/10',
+                            selected && 'bg-black/5 dark:bg-white/10',
+                          )}
+                        >
+                          <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                          {selected && <Check className="h-3.5 w-3.5 shrink-0" />}
+                        </button>
+                      );
+                    })}
+                    <div className="my-1 border-t border-black/5 dark:border-white/10" />
                     <button
                       type="button"
                       data-testid="chat-workspace-choose-other"
                       onClick={() => void handleChooseOtherWorkspace()}
-                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/10"
                     >
-                      <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span>{t('composer.chooseOtherWorkspaceOption')}</span>
+                      <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate">{t('composer.chooseOtherWorkspaceOption')}</span>
                     </button>
                   </div>
                 )}

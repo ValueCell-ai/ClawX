@@ -6,9 +6,10 @@
  * Monaco component graph.
  */
 import type { FileContentType, FileEditOp, GeneratedFileBaseline } from '@/lib/generated-files';
-import type { WorkspaceFileRef } from '@/lib/file-preview-client';
+import type { AttachmentFileRef, WorkspaceFileRef } from '@/lib/file-preview-client';
 
 export interface FilePreviewTarget {
+  attachmentFileRef?: AttachmentFileRef;
   workspaceFileRef?: WorkspaceFileRef;
   filePath: string;
   fileName: string;
@@ -47,9 +48,17 @@ export interface FilePreviewTarget {
 }
 
 export function getFilePreviewTargetIdentity(
-  target: Pick<FilePreviewTarget, 'filePath' | 'workspaceFileRef'>,
+  target: Pick<FilePreviewTarget, 'attachmentFileRef' | 'filePath' | 'workspaceFileRef'>,
 ): string {
-  return target.workspaceFileRef
+  return target.attachmentFileRef
+    ? `attachment:${JSON.stringify([
+      target.attachmentFileRef.sessionKey,
+      target.attachmentFileRef.generation,
+      target.attachmentFileRef.uri,
+      target.attachmentFileRef.stagingId,
+      target.attachmentFileRef.transcriptMessageId,
+    ])}`
+    : target.workspaceFileRef
     ? `workspace:${JSON.stringify([
       target.workspaceFileRef.workspaceRoot,
       target.workspaceFileRef.relativePath,

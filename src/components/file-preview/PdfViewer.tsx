@@ -14,13 +14,15 @@ import { useTranslation } from 'react-i18next';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import {
   readBinaryFile,
+  readAttachmentBinary,
   readWorkspaceBinary,
+  type AttachmentFileRef,
   type WorkspaceFileRef,
 } from '@/lib/file-preview-client';
 import { cn } from '@/lib/utils';
 import { getFilePreviewTargetIdentity } from './types';
+import { FILE_PREVIEW_MAX_BINARY_BYTES } from '@shared/file-preview/limits';
 
-const PDF_MAX_BYTES = 50 * 1024 * 1024;
 const PDF_VIEWER_PARAMS = 'toolbar=0&navpanes=0&scrollbar=1&view=FitH&zoom=page-width';
 const PDF_NATIVE_VIEWER_REVEAL_DELAY_MS = 900;
 
@@ -28,6 +30,7 @@ export interface PdfViewerProps {
   filePath: string;
   /** Optional file name shown in screen-reader labels and titles. */
   fileName?: string;
+  attachmentFileRef?: AttachmentFileRef;
   workspaceFileRef?: WorkspaceFileRef;
   surface?: 'default' | 'workspace';
   className?: string;
@@ -55,12 +58,13 @@ function withViewerParams(url: string): string {
 export default function PdfViewer({
   filePath,
   fileName,
+  attachmentFileRef,
   workspaceFileRef,
   surface = 'default',
   className,
 }: PdfViewerProps) {
   const { t } = useTranslation('chat');
-  const loadIdentity = getFilePreviewTargetIdentity({ filePath, workspaceFileRef });
+  const loadIdentity = getFilePreviewTargetIdentity({ filePath, attachmentFileRef, workspaceFileRef });
   const [state, setState] = useState<LoadState>({ identity: loadIdentity, status: 'loading' });
   const [iframeState, setIframeState] = useState<IframeState>({
     url: null,
@@ -79,16 +83,22 @@ export default function PdfViewer({
 
     void (async () => {
       try {
-        const res = workspaceFileRef
-          ? await readWorkspaceBinary({ ...workspaceFileRef, maxBytes: PDF_MAX_BYTES })
-          : await readBinaryFile(filePath, { maxBytes: PDF_MAX_BYTES });
+        const res = attachmentFileRef
+          ? await readAttachmentBinary(attachmentFileRef, FILE_PREVIEW_MAX_BINARY_BYTES)
+          : workspaceFileRef
+            ? await readWorkspaceBinary({ ...workspaceFileRef, maxBytes: FILE_PREVIEW_MAX_BINARY_BYTES })
+            : await readBinaryFile(filePath, { maxBytes: FILE_PREVIEW_MAX_BINARY_BYTES });
         if (cancelled) return;
-        if (!res.ok || !res.data) {
+        if (!res.ok) {
           if (res.error === 'tooLarge') {
             setState({ identity: loadIdentity, status: 'tooLarge', size: res.size });
             return;
           }
           setState({ identity: loadIdentity, status: 'error', message: String(res.error ?? 'unknown') });
+          return;
+        }
+        if (!res.data) {
+          setState({ identity: loadIdentity, status: 'error', message: 'unknown' });
           return;
         }
         const cloned = new Uint8Array(res.data.byteLength);
@@ -115,7 +125,7 @@ export default function PdfViewer({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [filePath, loadIdentity, workspaceFileRef]);
+  }, [attachmentFileRef, filePath, loadIdentity, workspaceFileRef]);
 
   useEffect(() => {
     if (!iframeState.loaded || !iframeState.url) return;

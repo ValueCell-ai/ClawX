@@ -5,6 +5,7 @@ import type { RuntimeManager } from '../runtime/manager';
 import type { RuntimeSendWithMediaPayload } from '../runtime/types';
 import { logger } from '../utils/logger';
 import { createAcpChatService } from './acp-chat-service';
+import type { AcpSessionAccessRegistry } from './acp-session-access-registry';
 import { isRecord } from './payload-utils';
 
 const VISION_MIME_TYPES = new Set([
@@ -121,12 +122,14 @@ export function createChatApi({
   gatewayManager,
   runtimeManager,
   mainWindow,
+  acpSessionAccessRegistry,
 }: {
   gatewayManager: GatewayManager;
   runtimeManager?: RuntimeManager;
   mainWindow: BrowserWindow;
+  acpSessionAccessRegistry: AcpSessionAccessRegistry;
 }): CompleteHostServiceRegistry['chat'] {
-  const acpChat = createAcpChatService(mainWindow, gatewayManager);
+  const acpChat = createAcpChatService(mainWindow, acpSessionAccessRegistry, gatewayManager);
   const openClawHandler = createChatSendWithMediaHandler(gatewayManager, logger);
   const withOpenClawAcp = async <T>(operation: () => Promise<T>) => {
     if (runtimeManager && await runtimeManager.getActiveKind() !== 'openclaw') {

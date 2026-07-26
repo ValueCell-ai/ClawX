@@ -20,18 +20,21 @@ import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import {
   readBinaryFile,
+  readAttachmentBinary,
   readWorkspaceBinary,
+  type AttachmentFileRef,
   type WorkspaceFileRef,
 } from '@/lib/file-preview-client';
 import { cn } from '@/lib/utils';
 import { getFilePreviewTargetIdentity } from './types';
+import { FILE_PREVIEW_MAX_BINARY_BYTES } from '@shared/file-preview/limits';
 
-const SHEET_MAX_BYTES = 50 * 1024 * 1024;
 const ROWS_PER_PAGE = 200;
 
 export interface SheetViewerProps {
   filePath: string;
   fileName?: string;
+  attachmentFileRef?: AttachmentFileRef;
   workspaceFileRef?: WorkspaceFileRef;
   className?: string;
 }
@@ -72,9 +75,9 @@ function formatCellValue(value: unknown): string {
   return String(value);
 }
 
-export default function SheetViewer({ filePath, fileName, workspaceFileRef, className }: SheetViewerProps) {
+export default function SheetViewer({ filePath, fileName, attachmentFileRef, workspaceFileRef, className }: SheetViewerProps) {
   const { t } = useTranslation('chat');
-  const loadIdentity = getFilePreviewTargetIdentity({ filePath, workspaceFileRef });
+  const loadIdentity = getFilePreviewTargetIdentity({ filePath, attachmentFileRef, workspaceFileRef });
   const [storedState, setState] = useState<LoadState>({ identity: loadIdentity, status: 'loading' });
   const state: LoadState = storedState.identity === loadIdentity
     ? storedState
@@ -91,16 +94,22 @@ export default function SheetViewer({ filePath, fileName, workspaceFileRef, clas
 
     void (async () => {
       try {
-        const res = workspaceFileRef
-          ? await readWorkspaceBinary({ ...workspaceFileRef, maxBytes: SHEET_MAX_BYTES })
-          : await readBinaryFile(filePath, { maxBytes: SHEET_MAX_BYTES });
+        const res = attachmentFileRef
+          ? await readAttachmentBinary(attachmentFileRef, FILE_PREVIEW_MAX_BINARY_BYTES)
+          : workspaceFileRef
+            ? await readWorkspaceBinary({ ...workspaceFileRef, maxBytes: FILE_PREVIEW_MAX_BINARY_BYTES })
+            : await readBinaryFile(filePath, { maxBytes: FILE_PREVIEW_MAX_BINARY_BYTES });
         if (cancelled) return;
-        if (!res.ok || !res.data) {
+        if (!res.ok) {
           if (res.error === 'tooLarge') {
             setState({ identity: loadIdentity, status: 'tooLarge', size: res.size });
             return;
           }
           setState({ identity: loadIdentity, status: 'error', message: String(res.error ?? 'unknown') });
+          return;
+        }
+        if (!res.data) {
+          setState({ identity: loadIdentity, status: 'error', message: 'unknown' });
           return;
         }
         const xlsx = await import('xlsx');
@@ -147,7 +156,7 @@ export default function SheetViewer({ filePath, fileName, workspaceFileRef, clas
     return () => {
       cancelled = true;
     };
-  }, [filePath, loadIdentity, workspaceFileRef]);
+  }, [attachmentFileRef, filePath, loadIdentity, workspaceFileRef]);
 
   const sheets = state.status === 'ready' ? state.sheets : null;
   const activeSheet = sheets?.[sheetIndex] ?? null;

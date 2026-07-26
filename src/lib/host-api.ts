@@ -2,6 +2,8 @@ import type {
   AgentCreatePayload,
   AgentUpdatePayload,
   AcpTraceRecordPayload,
+  AttachmentFileRef,
+  AttachmentSourceRef,
   ChannelAccountsPayload,
   ChannelSaveConfigPayload,
   ChannelTargetsPayload,
@@ -16,6 +18,8 @@ import type {
   MediaThumbnailEntry,
   OpenClawDoctorMode,
   OpenClawDoctorResult,
+  OpenAttachmentWithPayload,
+  OpenWorkspaceWithPayload,
   ProviderAccount,
   ProviderCodexOAuthLogoutPayload,
   ProviderCodexOAuthPayload,
@@ -23,6 +27,8 @@ import type {
   ProviderOAuthRequestPayload,
   ProviderUpdateWithKeyPayload,
   ProviderValidationPayload,
+  ReadAttachmentBinaryPayload,
+  ResolveAttachmentPayload,
   SaveImagePayload,
   SettingsKey,
   SettingsSnapshot,
@@ -37,6 +43,7 @@ import type {
   WorkspaceContextInput,
   WorkspaceFileRef,
 } from '@shared/host-api/contract';
+import type { WebBrowserNavigatePayload } from '@shared/web-browser';
 import type {
   AcpChatCancelPayload,
   AcpChatLoadPayload,
@@ -47,6 +54,13 @@ import type { CronJobCreateInput, CronJobUpdateInput } from '@shared/types/cron'
 import { invokeHost } from './host-api-client';
 
 export type {
+  AttachmentAccessError,
+  AttachmentFileRef,
+  AttachmentOpenHandler,
+  AttachmentOpenHandlersResult,
+  AttachmentRemoteRef,
+  AttachmentReadError,
+  AttachmentSourceRef,
   ChannelAccountsResult,
   ChannelCredentialValidationResult,
   ChannelFormValuesResult,
@@ -71,9 +85,13 @@ export type {
   OpenClawCliCommandResult,
   OpenClawDoctorResult,
   OpenClawStatusResult,
+  OpenAttachmentResult,
   ProviderAccountKeyInfo,
   ProviderDefaultAccountResult,
   ProviderValidationResult,
+  ReadAttachmentBinaryResult,
+  ReadAttachmentTextResult,
+  ResolveAttachmentResult,
   SessionHistoryResult,
   SessionLabelSummary,
   SessionSummariesResult,
@@ -86,6 +104,9 @@ export type {
   UsageHistoryEntry,
   WorkspaceContextInput,
   WorkspaceFileRef,
+  WorkspaceNativeFileError,
+  WorkspaceNativeFileResult,
+  WorkspaceOpenHandlersResult,
 } from '@shared/host-api/contract';
 
 export const hostApi = {
@@ -104,6 +125,12 @@ export const hostApi = {
     openExternal: (url: string) => invokeHost('shell', 'openExternal', { url } satisfies ShellOpenExternalPayload),
     showItemInFolder: (path: string) => invokeHost('shell', 'showItemInFolder', { path } satisfies ShellPathPayload),
     openPath: (path: string) => invokeHost('shell', 'openPath', { path } satisfies ShellPathPayload),
+  },
+  webBrowser: {
+    navigate: (url: string) => invokeHost('webBrowser', 'navigate', { url } satisfies WebBrowserNavigatePayload),
+    clearCookies: () => invokeHost('webBrowser', 'clearCookies'),
+    clearSiteData: () => invokeHost('webBrowser', 'clearSiteData'),
+    openExternal: () => invokeHost('webBrowser', 'openExternal'),
   },
   dialog: {
     open: (input: DialogOpenPayload) => invokeHost('dialog', 'open', input),
@@ -312,6 +339,26 @@ export const hostApi = {
       invokeHost('files', 'readWorkspaceBinary', input)
     ),
     statWorkspaceFile: (ref: WorkspaceFileRef) => invokeHost('files', 'statWorkspaceFile', ref),
+    listWorkspaceOpenHandlers: (ref: WorkspaceFileRef) => (
+      invokeHost('files', 'listWorkspaceOpenHandlers', ref)
+    ),
+    openWorkspaceWith: (input: OpenWorkspaceWithPayload) => (
+      invokeHost('files', 'openWorkspaceWith', input)
+    ),
+    revealWorkspaceFile: (ref: WorkspaceFileRef) => invokeHost('files', 'revealWorkspaceFile', ref),
+    resolveAttachment: (input: ResolveAttachmentPayload) => invokeHost('files', 'resolveAttachment', input),
+    readAttachmentText: (ref: AttachmentFileRef) => invokeHost('files', 'readAttachmentText', ref),
+    readAttachmentBinary: (input: ReadAttachmentBinaryPayload) => (
+      invokeHost('files', 'readAttachmentBinary', input)
+    ),
+    openAttachment: (ref: AttachmentSourceRef) => invokeHost('files', 'openAttachment', ref),
+    listAttachmentOpenHandlers: (ref: AttachmentFileRef) => (
+      invokeHost('files', 'listAttachmentOpenHandlers', ref)
+    ),
+    openAttachmentWith: (input: OpenAttachmentWithPayload) => (
+      invokeHost('files', 'openAttachmentWith', input)
+    ),
+    revealAttachment: (ref: AttachmentFileRef) => invokeHost('files', 'revealAttachment', ref),
   },
   media: {
     thumbnails: (input: { paths: MediaThumbnailEntry[] }) => invokeHost('media', 'thumbnails', input),
@@ -333,6 +380,9 @@ export const hostApi = {
     summaries: (input?: { sessionKeys?: string[]; limit?: number }) => invokeHost('sessions', 'summaries', input),
     history: (input: { sessionKey?: string; agentId?: string; sessionId?: string; limit?: number }) => (
       invokeHost('sessions', 'history', input)
+    ),
+    turnTimings: (input: { sessionKey: string; limit?: number }) => (
+      invokeHost('sessions', 'turnTimings', input)
     ),
   },
   chat: {

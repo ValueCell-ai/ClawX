@@ -187,6 +187,8 @@ describe('bisection 0d794cd vs de3046a', () => {
         sessions: [{ key: FEISHU_KEY }],
         loadSessions,
       });
+      await flushAsyncImports();
+      loadSessions.mockClear();
 
       handlers.get('gateway:sessions-changed')?.({
         sessionKey: OTHER_FEISHU_KEY,

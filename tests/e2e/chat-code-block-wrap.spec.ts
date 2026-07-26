@@ -84,19 +84,19 @@ test.describe('ClawX chat code block wrapping', () => {
           },
         },
         hostApi: {
-          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: MAIN_WORKSPACE }])]: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: MAIN_WORKSPACE, cwd: MAIN_WORKSPACE }])]: {
             success: true,
             generation: 1,
           },
-          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: MAIN_WORKSPACE, createIfMissing: true }])]: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: MAIN_WORKSPACE, cwd: MAIN_WORKSPACE, createIfMissing: true }])]: {
             success: true,
             generation: 1,
           },
-          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: {
             success: true,
             generation: 1,
           },
-          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: {
             success: true,
             generation: 1,
           },
@@ -137,6 +137,8 @@ test.describe('ClawX chat code block wrapping', () => {
 
       const codeBlock = assistantProse.locator('pre').first();
       await expect(codeBlock).toBeVisible();
+      const code = codeBlock.locator('code');
+      await expect(code).not.toHaveClass(/bg-black\/5/);
 
       const metrics = await codeBlock.evaluate((el) => {
         const style = window.getComputedStyle(el);
@@ -160,6 +162,8 @@ test.describe('ClawX chat code block wrapping', () => {
 
       await expect(codeBlock).toContainText(LONG_LOG_LINE);
       await expect(codeBlock).toContainText(LONG_PATH);
+      await expect.poll(() => code.evaluate((el) => window.getComputedStyle(el).backgroundColor))
+        .toBe('rgba(0, 0, 0, 0)');
     } finally {
       await closeElectronApp(app);
     }
