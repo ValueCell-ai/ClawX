@@ -9,6 +9,12 @@ export interface ClawXLegacyMigrationResult {
   target: string;
 }
 
+const LEGACY_ELECTRON_PROFILE_PATHS = [
+  'Local Storage',
+  'IndexedDB',
+  join('Partitions', 'clawx-web-browser'),
+] as const;
+
 async function exists(path: string): Promise<boolean> {
   return stat(path).then(() => true).catch(() => false);
 }
@@ -66,6 +72,13 @@ export async function migrateLegacyClawXData(options: {
   }
   for (const fileName of ['window-state.json', 'clawx-device-identity.json']) {
     await copyIfMissing(join(source, fileName), join(options.layout.electronUserDataDir, fileName), copied);
+  }
+  for (const relativePath of LEGACY_ELECTRON_PROFILE_PATHS) {
+    await copyIfMissing(
+      join(source, relativePath),
+      join(options.layout.electronUserDataDir, relativePath),
+      copied,
+    );
   }
   await copyIfMissing(
     join(source, 'runtimes', 'cc-connect'),

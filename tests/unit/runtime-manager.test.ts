@@ -100,6 +100,35 @@ describe('RuntimeManager', () => {
     expect(manager.listOperationCapabilities()['chat.abort']?.support).toBe('native');
   });
 
+  it('serializes overlapping runtime changes in invocation order', async () => {
+    settings.set('devModeUnlocked', true);
+    const { RuntimeManager } = await import('@electron/runtime/manager');
+    const openclawFixture = createProvider('openclaw');
+    const ccConnectFixture = createProvider('cc-connect');
+    let releaseStop!: () => void;
+    const stopGate = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    vi.mocked(openclawFixture.provider.stop).mockImplementationOnce(async () => {
+      await stopGate;
+    });
+    const manager = new RuntimeManager({
+      openclaw: openclawFixture.provider,
+      ccConnect: ccConnectFixture.provider,
+    });
+    await manager.getActiveKind();
+
+    const selectCcConnect = manager.setActiveKind('cc-connect');
+    await vi.waitFor(() => expect(openclawFixture.provider.stop).toHaveBeenCalledOnce());
+    const selectOpenClaw = manager.setActiveKind('openclaw');
+    releaseStop();
+    await Promise.all([selectCcConnect, selectOpenClaw]);
+
+    expect(ccConnectFixture.provider.stop).toHaveBeenCalledOnce();
+    expect(settings.get('runtimeKind')).toBe('openclaw');
+    expect(manager.getActiveProvider()).toBe(openclawFixture.provider);
+  });
+
   it('falls back to OpenClaw when cc-connect is stored without developer mode', async () => {
     settings.set('runtimeKind', 'cc-connect');
     settings.set('devModeUnlocked', false);

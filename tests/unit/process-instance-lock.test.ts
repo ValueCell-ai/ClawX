@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { acquireProcessInstanceFileLock } from '@electron/main/process-instance-lock';
 
 const tempDirs: string[] = [];
@@ -13,6 +13,7 @@ function createTempDir(): string {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
     if (!dir) continue;
@@ -220,6 +221,32 @@ describe('process instance file lock', () => {
     });
     lock.release();
     expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('atomically replaces structured heartbeat content without leaving temporary files', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-11T10:00:00.000Z'));
+    const root = createTempDir();
+    const lockPath = join(root, 'locks', 'writer.lock');
+    const lock = acquireProcessInstanceFileLock({
+      userDataDir: root,
+      lockName: 'writer',
+      lockPath,
+      pid: 4242,
+      heartbeatIntervalMs: 1_000,
+      metadata: {
+        appVersion: '1.2.3',
+        channel: 'stable',
+        executable: '/Applications/ClawX.app/Contents/MacOS/ClawX',
+      },
+    });
+
+    vi.advanceTimersByTime(1_000);
+
+    expect(JSON.parse(readFileSync(lockPath, 'utf8')).heartbeatAt).toBe('2026-07-11T10:00:01.000Z');
+    expect(readdirSync(join(root, 'locks'))).toEqual(['writer.lock']);
+    lock.release();
+    vi.useRealTimers();
   });
 
   it('requires both a dead pid and an expired heartbeat before recovery', () => {

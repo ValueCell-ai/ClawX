@@ -152,7 +152,58 @@ async function emitSessionSnapshot(
   }, input);
 }
 
+async function emitRuntimeSessionUpdated(
+  app: ElectronApplication,
+  input: { sessionKey: string; updatedAt: number; ts: number },
+): Promise<void> {
+  await app.evaluate(async ({ app: _app }, payload) => {
+    const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send('chat:runtime-event', {
+        type: 'session.updated',
+        runId: `session-sync-${payload.sessionKey}`,
+        sessionKey: payload.sessionKey,
+        updatedAt: payload.updatedAt,
+        ts: payload.ts,
+      });
+    }
+  }, input);
+}
+
 test.describe('ClawX sidebar session attention', () => {
+  test('keeps session ordering based on runtime activity rather than event delivery time', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installSessionAttentionMocks(app);
+      const page = await reloadStableWindow(app);
+      const controlRow = page.getByTestId(`sidebar-session-${CONTROL_SESSION_KEY}`);
+      const targetRow = page.getByTestId(`sidebar-session-${TARGET_SESSION_KEY}`);
+
+      await expect(controlRow).toBeVisible();
+      await expect(targetRow).toBeVisible();
+      await expect.poll(async () => {
+        const controlBox = await controlRow.boundingBox();
+        const targetBox = await targetRow.boundingBox();
+        return Boolean(controlBox && targetBox && controlBox.y < targetBox.y);
+      }).toBe(true);
+
+      await emitRuntimeSessionUpdated(app, {
+        sessionKey: TARGET_SESSION_KEY,
+        updatedAt: LIST_TS - 2_000,
+        ts: LIST_TS + 60_000,
+      });
+
+      await expect.poll(async () => {
+        const controlBox = await controlRow.boundingBox();
+        const targetBox = await targetRow.boundingBox();
+        return Boolean(controlBox && targetBox && controlBox.y < targetBox.y);
+      }).toBe(true);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('projects Gateway busy and unread state through Chat mount, key changes, and unmount', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 

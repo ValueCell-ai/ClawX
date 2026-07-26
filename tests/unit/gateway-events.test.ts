@@ -569,12 +569,14 @@ describe('gateway store event wiring', () => {
       runId: 'session-sync-1',
       sessionKey: channelSessionKey,
       updatedAt: 1773281731000,
+      ts: 1773281799000,
     });
     await flushAsyncImports();
 
     expect(loadSessions).toHaveBeenCalledWith(expect.objectContaining({ force: true }));
     expect(loadHistory).toHaveBeenCalledTimes(1);
     expect(handleRuntimeEvent).not.toHaveBeenCalled();
+    expect(useChatStore.getState().sessionLastActivity[channelSessionKey]).toBe(1773281731000);
   });
 
   it('forwards normalized chat runtime events through the dedicated host event channel', async () => {

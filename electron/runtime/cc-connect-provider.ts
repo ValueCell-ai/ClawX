@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { appendFile, chmod, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -2066,7 +2066,12 @@ function channelEnvKey(channelType: string, accountId: string, optionKey: string
     .replace(/[^A-Za-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .toUpperCase() || 'DEFAULT';
-  return `CLAWX_CHANNEL_${part(channelType)}_${part(accountId)}_${part(optionKey)}`;
+  const accountDigest = createHash('sha256')
+    .update(accountId)
+    .digest('hex')
+    .slice(0, 16)
+    .toUpperCase();
+  return `CLAWX_CHANNEL_${part(channelType)}_${part(accountId)}_${accountDigest}_${part(optionKey)}`;
 }
 
 function projectCcConnectChannelSecrets(

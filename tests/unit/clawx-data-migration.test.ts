@@ -26,18 +26,30 @@ describe('legacy ClawX data migration', () => {
     initializeClawXDataLayout(layout);
     await mkdir(join(source, 'runtimes', 'cc-connect'), { recursive: true });
     await mkdir(join(source, 'logs'), { recursive: true });
+    await mkdir(join(source, 'Local Storage', 'leveldb'), { recursive: true });
+    await mkdir(join(source, 'IndexedDB'), { recursive: true });
+    await mkdir(join(source, 'Partitions', 'clawx-web-browser'), { recursive: true });
     await writeFile(join(source, 'settings.json'), '{"runtimeKind":"cc-connect"}\n');
     await writeFile(join(source, 'clawx-providers.json'), '{"providerAccounts":{}}\n');
     await writeFile(join(source, 'runtimes', 'cc-connect', 'config.toml'), 'data_dir = "legacy"\n');
     await writeFile(join(source, 'logs', 'clawx.log'), 'legacy log\n');
+    await writeFile(join(source, 'Local Storage', 'leveldb', 'legacy.log'), 'renderer state\n');
+    await writeFile(join(source, 'IndexedDB', 'legacy.index'), 'indexed state\n');
+    await writeFile(join(source, 'Partitions', 'clawx-web-browser', 'Cookies'), 'browser state\n');
 
     const result = await migrateLegacyClawXData({ legacyElectronUserDataDir: source, layout });
 
-    expect(result.copied).toHaveLength(4);
+    expect(result.copied).toHaveLength(7);
     await expect(readFile(join(layout.appDir, 'settings.json'), 'utf8')).resolves.toContain('cc-connect');
     await expect(readFile(join(layout.appDir, 'clawx-providers.json'), 'utf8')).resolves.toContain('providerAccounts');
     await expect(readFile(join(layout.ccConnectRuntimeDir, 'config.toml'), 'utf8')).resolves.toContain('legacy');
     await expect(readFile(join(layout.logsDir, 'clawx.log'), 'utf8')).resolves.toContain('legacy log');
+    await expect(readFile(join(layout.electronUserDataDir, 'Local Storage', 'leveldb', 'legacy.log'), 'utf8'))
+      .resolves.toContain('renderer state');
+    await expect(readFile(join(layout.electronUserDataDir, 'IndexedDB', 'legacy.index'), 'utf8'))
+      .resolves.toContain('indexed state');
+    await expect(readFile(join(layout.electronUserDataDir, 'Partitions', 'clawx-web-browser', 'Cookies'), 'utf8'))
+      .resolves.toContain('browser state');
     await expect(readFile(join(source, 'settings.json'), 'utf8')).resolves.toContain('cc-connect');
     await expect(readFile(layout.migrationJournalPath, 'utf8')).resolves.toContain('legacy-electron-user-data-import');
   });

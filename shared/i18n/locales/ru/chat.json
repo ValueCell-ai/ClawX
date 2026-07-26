@@ -272,6 +272,7 @@
         "title": "Граф выполнения",
         "branchLabel": "ветвь",
         "thinkingLabel": "Думаю",
+        "toolProcessing": "Обработка результатов инструментов…",
         "interactionLabel": "Выберите действие",
         "errorLabel": "Ошибка модели",
         "imageGenerateLabel": "Генерация изображения",

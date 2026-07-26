@@ -85,6 +85,30 @@ describe('credential vault', () => {
     expect(index).not.toContain('feishu-secret');
   });
 
+  it('serializes overlapping provider and channel credential mutations', async () => {
+    await Promise.all([
+      setVaultSecret({
+        type: 'api_key',
+        accountId: 'openai-concurrent',
+        apiKey: 'provider-secret',
+      }, cipher),
+      replaceChannelVaultSecrets({
+        'feishu:concurrent': {
+          appSecret: 'channel-secret',
+        },
+      }, cipher),
+    ]);
+
+    await expect(getVaultSecret('openai-concurrent', cipher)).resolves.toMatchObject({
+      apiKey: 'provider-secret',
+    });
+    await expect(getChannelVaultSecrets(cipher)).resolves.toEqual({
+      'feishu:concurrent': {
+        appSecret: 'channel-secret',
+      },
+    });
+  });
+
   it('refuses plaintext fallback when OS encryption is unavailable', async () => {
     const unavailable = { ...cipher, isEncryptionAvailable: () => false };
     await expect(setVaultSecret({

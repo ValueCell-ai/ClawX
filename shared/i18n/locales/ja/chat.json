@@ -272,6 +272,7 @@
         "title": "実行グラフ",
         "branchLabel": "branch",
         "thinkingLabel": "考え中",
+        "toolProcessing": "ツールの結果を処理中…",
         "interactionLabel": "操作を選択",
         "errorLabel": "エラー",
         "imageGenerateLabel": "画像生成",

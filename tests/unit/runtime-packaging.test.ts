@@ -52,7 +52,8 @@ describe('runtime packaging guardrails', () => {
     expect(releaseWorkflow).toContain('runs-on: macos-15-intel');
     expect(releaseWorkflow).toContain('runs-on: ubuntu-24.04-arm');
     expect(releaseWorkflow.match(/smoke:cc-connect:packaged/g)).toHaveLength(5);
-    expect(releaseWorkflow.match(/--allow-unsigned=\$\{\{ github\.event_name == 'workflow_dispatch'/g)).toHaveLength(2);
+    expect(releaseWorkflow.match(/--allow-unsigned=\$\{\{ github\.event_name == 'workflow_dispatch'/g)).toHaveLength(1);
+    expect(releaseWorkflow).toContain('smoke:cc-connect:packaged -- --allow-unsigned=1');
     expect(releaseWorkflow).toContain('artifacts/cc-connect/packaged-smoke-*.json');
     expect(releaseWorkflow).toContain('artifacts/cc-connect/packaged-smoke-darwin-x64.json');
     expect(releaseWorkflow).toContain('artifacts/cc-connect/packaged-smoke-linux-arm64.json');

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 const LOCK_SCHEMA = 'clawx-instance-lock';
@@ -98,6 +98,17 @@ function readLockOwner(lockPath: string): ParsedLockOwner {
   return { kind: 'unknown' };
 }
 
+function writeLockAtomic(lockPath: string, content: string): void {
+  const temporaryPath = `${lockPath}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporaryPath, content, { encoding: 'utf8', mode: 0o600 });
+    renameSync(temporaryPath, lockPath);
+  } catch (error) {
+    rmSync(temporaryPath, { force: true });
+    throw error;
+  }
+}
+
 function heartbeatExpired(owner: ParsedLockOwner, expiryMs: number): boolean {
   if (owner.kind !== 'structured') return true;
   if (!owner.details.heartbeatAt) return true;
@@ -153,7 +164,7 @@ export function acquireProcessInstanceFileLock(
             if (currentOwner.kind !== 'structured' || currentOwner.details.ownerToken !== ownerToken) return;
             structuredContent.heartbeatAt = new Date().toISOString();
             try {
-              writeFileSync(lockPath, JSON.stringify(structuredContent), { encoding: 'utf8', mode: 0o600 });
+              writeLockAtomic(lockPath, JSON.stringify(structuredContent));
             } catch {
               // A missed heartbeat never transfers ownership.
             }

@@ -314,7 +314,14 @@ function handleGatewayNotification(notification: GatewayNotification | undefined
 function handleChatRuntimeEvent(event: ChatRuntimeEvent): void {
   const resolvedSessionKey = event.sessionKey ?? null;
   if (resolvedSessionKey) {
-    touchSessionActivity(resolvedSessionKey, typeof event.ts === 'number' ? event.ts : Date.now());
+    const activityMs = event.type === 'session.updated'
+      && typeof event.updatedAt === 'number'
+      && Number.isFinite(event.updatedAt)
+      ? event.updatedAt
+      : typeof event.ts === 'number' && Number.isFinite(event.ts)
+        ? event.ts
+        : Date.now();
+    touchSessionActivity(resolvedSessionKey, activityMs);
   }
 
   import('./chat')

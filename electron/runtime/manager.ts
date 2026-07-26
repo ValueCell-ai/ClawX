@@ -21,6 +21,7 @@ function normalizeRuntimeKind(value: unknown): RuntimeKind {
 export class RuntimeManager extends EventEmitter {
   private activeKind: RuntimeKind | null = null;
   private readonly providers: Record<RuntimeKind, RuntimeProvider>;
+  private selectionQueue: Promise<void> = Promise.resolve();
 
   constructor(options: RuntimeManagerOptions) {
     super();
@@ -33,6 +34,11 @@ export class RuntimeManager extends EventEmitter {
   }
 
   async getActiveKind(): Promise<RuntimeKind> {
+    await this.selectionQueue;
+    return await this.ensureActiveKind();
+  }
+
+  private async ensureActiveKind(): Promise<RuntimeKind> {
     if (!this.activeKind) {
       const persistedKind = normalizeRuntimeKind(await getSetting('runtimeKind'));
       const devModeUnlocked = await getSetting('devModeUnlocked');
@@ -53,18 +59,24 @@ export class RuntimeManager extends EventEmitter {
   }
 
   async setActiveKind(kind: RuntimeKind): Promise<void> {
-    const requestedKind = normalizeRuntimeKind(kind);
-    const devModeUnlocked = await getSetting('devModeUnlocked');
-    const nextKind = requestedKind === 'cc-connect' && devModeUnlocked !== true
-      ? 'openclaw'
-      : requestedKind;
-    const previous = this.getActiveProvider();
-    if ((this.activeKind ?? 'openclaw') !== nextKind) {
-      await previous.stop();
-    }
-    this.activeKind = nextKind;
-    await setSetting('runtimeKind', nextKind);
-    this.emit('status', this.getStatus());
+    const change = async () => {
+      await this.ensureActiveKind();
+      const requestedKind = normalizeRuntimeKind(kind);
+      const devModeUnlocked = await getSetting('devModeUnlocked');
+      const nextKind = requestedKind === 'cc-connect' && devModeUnlocked !== true
+        ? 'openclaw'
+        : requestedKind;
+      const previous = this.getActiveProvider();
+      if (this.activeKind !== nextKind) {
+        await previous.stop();
+      }
+      this.activeKind = nextKind;
+      await setSetting('runtimeKind', nextKind);
+      this.emit('status', this.getStatus());
+    };
+    const result = this.selectionQueue.then(change, change);
+    this.selectionQueue = result.then(() => undefined, () => undefined);
+    await result;
   }
 
   listCapabilities(): RuntimeCapabilities {

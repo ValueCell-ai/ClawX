@@ -20,6 +20,24 @@ describe('workspace session grouping', () => {
     expect(groups[0].sessions.map((entry) => entry.activityMs)).toEqual([nowMs - 60_000, nowMs - 10 * 24 * 60 * 60 * 1000]);
   });
 
+  it('uses the session key as a deterministic tie-breaker for equal activity', () => {
+    const sessions = [
+      { key: 'agent:main:session-z', workspacePath: '/repo/a', updatedAt: 100 },
+      { key: 'agent:main:session-a', workspacePath: '/repo/a', updatedAt: 100 },
+    ];
+
+    const forward = groupSessionsByWorkspace(sessions, {}, 'Default workspace');
+    const reversed = groupSessionsByWorkspace([...sessions].reverse(), {}, 'Default workspace');
+
+    expect(forward[0].sessions.map((entry) => entry.session.key)).toEqual([
+      'agent:main:session-a',
+      'agent:main:session-z',
+    ]);
+    expect(reversed[0].sessions.map((entry) => entry.session.key)).toEqual(
+      forward[0].sessions.map((entry) => entry.session.key),
+    );
+  });
+
   it('puts the default workspace first even when another workspace has newer activity', () => {
     const groups = groupSessionsByWorkspace(
       [

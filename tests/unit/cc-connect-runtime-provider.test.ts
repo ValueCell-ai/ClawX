@@ -1761,12 +1761,12 @@ describe('CcConnectRuntimeProvider', () => {
     const configPath = join(tempDir, 'runtimes', 'cc-connect', 'config.toml');
     const config = await readFile(configPath, 'utf8');
     expect(config).toContain('type = "telegram"');
-    expect(config).toContain('token = "${CLAWX_CHANNEL_TELEGRAM_OPS_BOT_TOKEN}"');
+    expect(config).toContain('token = "${CLAWX_CHANNEL_TELEGRAM_OPS_BOT_97E5EE705CF97037_TOKEN}"');
     expect(config).toContain('allow_from = "12345,67890"');
     expect(config).toContain('share_session_in_channel = true');
     expect(config).toContain('type = "lark"');
     expect(config).toContain('app_id = "cli_lark"');
-    expect(config).toContain('app_secret = "${CLAWX_CHANNEL_FEISHU_LARK_BOT_APP_SECRET}"');
+    expect(config).toContain('app_secret = "${CLAWX_CHANNEL_FEISHU_LARK_BOT_EF4B2215E6CC6D77_APP_SECRET}"');
     expect(config).toContain('domain = "https://open.larksuite.com"');
     expect(config).toContain('admin_from = "clawx-desktop,ou_cron_admin"');
     expect(config).not.toContain('[projects.platforms.options]\nadmin_from');
@@ -1779,7 +1779,7 @@ describe('CcConnectRuntimeProvider', () => {
     expect(config).toContain('progress_style = "compact"');
     expect(config).toContain('port = "8080"');
     expect(config).toContain('callback_path = "/feishu/webhook"');
-    expect(config).toContain('encrypt_key = "${CLAWX_CHANNEL_FEISHU_LARK_BOT_ENCRYPT_KEY}"');
+    expect(config).toContain('encrypt_key = "${CLAWX_CHANNEL_FEISHU_LARK_BOT_EF4B2215E6CC6D77_ENCRYPT_KEY}"');
     expect(config).not.toContain('telegram-secret-token');
     expect(config).not.toContain('lark-secret');
     expect(config).not.toContain('encrypt-key');
@@ -1788,9 +1788,9 @@ describe('CcConnectRuntimeProvider', () => {
     }
     expect(forkMock).toHaveBeenCalledWith(binaryPath, expect.any(Array), expect.objectContaining({
       env: expect.objectContaining({
-        CLAWX_CHANNEL_TELEGRAM_OPS_BOT_TOKEN: 'telegram-secret-token',
-        CLAWX_CHANNEL_FEISHU_LARK_BOT_APP_SECRET: 'lark-secret',
-        CLAWX_CHANNEL_FEISHU_LARK_BOT_ENCRYPT_KEY: 'encrypt-key',
+        CLAWX_CHANNEL_TELEGRAM_OPS_BOT_97E5EE705CF97037_TOKEN: 'telegram-secret-token',
+        CLAWX_CHANNEL_FEISHU_LARK_BOT_EF4B2215E6CC6D77_APP_SECRET: 'lark-secret',
+        CLAWX_CHANNEL_FEISHU_LARK_BOT_EF4B2215E6CC6D77_ENCRYPT_KEY: 'encrypt-key',
       }),
     }));
 
@@ -1847,6 +1847,46 @@ describe('CcConnectRuntimeProvider', () => {
     });
   });
 
+  it('keeps normalized channel account credential environment keys distinct', async () => {
+    readOpenClawConfigMock.mockResolvedValue({
+      channels: {
+        telegram: {
+          accounts: {
+            'team-a': { token: 'hyphen-secret' },
+            team_a: { token: 'underscore-secret' },
+          },
+        },
+      },
+    });
+    const binaryPath = join(tempDir, 'cc-connect');
+    await writeFile(binaryPath, '#!/bin/sh\n', { mode: 0o755 });
+    const { CcConnectRuntimeProvider } = await import('@electron/runtime/cc-connect-provider');
+    const provider = new CcConnectRuntimeProvider({
+      binaryPath,
+      codexPath: join(tempDir, 'codex'),
+      bridgeAdapter: createBridgeAdapterMock() as never,
+      skillSyncer: vi.fn(async () => ({ skills: [] })),
+      providerProfileLoader: vi.fn(async () => createProviderProfile()) as never,
+    });
+    const child = createChild();
+    forkMock.mockReturnValueOnce(child);
+
+    const startPromise = provider.start();
+    await vi.waitFor(() => expect(forkMock).toHaveBeenCalledOnce());
+    child.emit('spawn');
+    await startPromise;
+
+    const config = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'config.toml'), 'utf8');
+    expect(config).toContain('token = "${CLAWX_CHANNEL_TELEGRAM_TEAM_A_96C2886C51D1DFB4_TOKEN}"');
+    expect(config).toContain('token = "${CLAWX_CHANNEL_TELEGRAM_TEAM_A_112CD0CB52EEA635_TOKEN}"');
+    expect(forkMock).toHaveBeenCalledWith(binaryPath, expect.any(Array), expect.objectContaining({
+      env: expect.objectContaining({
+        CLAWX_CHANNEL_TELEGRAM_TEAM_A_96C2886C51D1DFB4_TOKEN: 'hyphen-secret',
+        CLAWX_CHANNEL_TELEGRAM_TEAM_A_112CD0CB52EEA635_TOKEN: 'underscore-secret',
+      }),
+    }));
+  });
+
   it('maps Feishu China accounts to the cc-connect feishu platform block', async () => {
     readOpenClawConfigMock.mockResolvedValue({
       channels: {
@@ -1901,7 +1941,7 @@ describe('CcConnectRuntimeProvider', () => {
     const config = await readFile(join(tempDir, 'runtimes', 'cc-connect', 'config.toml'), 'utf8');
     expect(config).toContain('type = "feishu"');
     expect(config).toContain('app_id = "cli_feishu_cn"');
-    expect(config).toContain('app_secret = "${CLAWX_CHANNEL_FEISHU_CN_BOT_APP_SECRET}"');
+    expect(config).toContain('app_secret = "${CLAWX_CHANNEL_FEISHU_CN_BOT_F6C9626ECE160651_APP_SECRET}"');
     expect(config).toContain('domain = "https://open.feishu.cn"');
     expect(config).toContain('admin_from = "clawx-desktop,ou_cron_admin_cn"');
     expect(config).not.toContain('[projects.platforms.options]\nadmin_from');
@@ -1909,7 +1949,7 @@ describe('CcConnectRuntimeProvider', () => {
     expect(config).not.toContain('feishu-secret');
     expect(forkMock).toHaveBeenCalledWith(binaryPath, expect.any(Array), expect.objectContaining({
       env: expect.objectContaining({
-        CLAWX_CHANNEL_FEISHU_CN_BOT_APP_SECRET: 'feishu-secret',
+        CLAWX_CHANNEL_FEISHU_CN_BOT_F6C9626ECE160651_APP_SECRET: 'feishu-secret',
       }),
     }));
 
@@ -2065,7 +2105,7 @@ describe('CcConnectRuntimeProvider', () => {
     expect(config).toContain(`work_dir = "${openClawResearchWorkspace.replace(/\\/g, '\\\\')}"`);
     expect(telegramIndex).toBeGreaterThan(researchProjectIndex);
     expect(config.slice(mainProjectIndex, researchProjectIndex)).not.toContain('type = "telegram"');
-    expect(config.slice(researchProjectIndex)).toContain('token = "${CLAWX_CHANNEL_TELEGRAM_OPS_BOT_TOKEN}"');
+    expect(config.slice(researchProjectIndex)).toContain('token = "${CLAWX_CHANNEL_TELEGRAM_OPS_BOT_97E5EE705CF97037_TOKEN}"');
     expect(config).not.toContain('telegram-secret-token');
   });
 

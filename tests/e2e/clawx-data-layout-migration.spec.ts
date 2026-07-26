@@ -11,7 +11,10 @@ test.describe('ClawX canonical data layout migration', () => {
     const legacyDir = join(homeDir, 'legacy-electron-user-data');
     const legacySettingsPath = join(legacyDir, 'settings.json');
     const legacyProvidersPath = join(legacyDir, 'clawx-providers.json');
-    await mkdir(legacyDir, { recursive: true });
+    const legacyRendererStatePath = join(legacyDir, 'Local Storage', 'leveldb', 'legacy-state.log');
+    const legacyBrowserStatePath = join(legacyDir, 'Partitions', 'clawx-web-browser', 'Cookies');
+    await mkdir(join(legacyDir, 'Local Storage', 'leveldb'), { recursive: true });
+    await mkdir(join(legacyDir, 'Partitions', 'clawx-web-browser'), { recursive: true });
     await writeFile(legacySettingsPath, JSON.stringify({
       language: 'en',
       runtimeKind: 'cc-connect',
@@ -35,6 +38,8 @@ test.describe('ClawX canonical data layout migration', () => {
       apiKeys: {},
       defaultProviderAccountId: 'legacy-openai-oauth',
     }, null, 2), 'utf8');
+    await writeFile(legacyRendererStatePath, 'legacy renderer state\n', 'utf8');
+    await writeFile(legacyBrowserStatePath, 'legacy browser state\n', 'utf8');
 
     const launchOptions = {
       skipSetup: true,
@@ -51,11 +56,13 @@ test.describe('ClawX canonical data layout migration', () => {
       const electronUserData = await app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'));
       expect(electronUserData).toBe(join(dataRoot, 'system', 'electron'));
 
-      const [settings, providers, versionFile, migrationJournal] = await Promise.all([
+      const [settings, providers, versionFile, migrationJournal, rendererState, browserState] = await Promise.all([
         readFile(join(dataRoot, 'app', 'settings.json'), 'utf8'),
         readFile(join(dataRoot, 'app', 'clawx-providers.json'), 'utf8'),
         readFile(join(dataRoot, 'state', 'data-version.json'), 'utf8'),
         readFile(join(dataRoot, 'state', 'migration-journal.jsonl'), 'utf8'),
+        readFile(join(dataRoot, 'system', 'electron', 'Local Storage', 'leveldb', 'legacy-state.log'), 'utf8'),
+        readFile(join(dataRoot, 'system', 'electron', 'Partitions', 'clawx-web-browser', 'Cookies'), 'utf8'),
       ]);
       expect(JSON.parse(settings)).toMatchObject({ runtimeKind: 'cc-connect', gatewayAutoStart: false });
       expect(JSON.parse(providers)).toMatchObject({
@@ -69,6 +76,8 @@ test.describe('ClawX canonical data layout migration', () => {
       expect(migrationRecord.source).toBe(await realpath(legacyDir));
       expect(migrationJournal).toContain('settings.json');
       expect(migrationJournal).toContain('clawx-providers.json');
+      expect(rendererState).toContain('legacy renderer state');
+      expect(browserState).toContain('legacy browser state');
 
       await expect(access(legacySettingsPath)).resolves.toBeUndefined();
       await expect(access(legacyProvidersPath)).resolves.toBeUndefined();

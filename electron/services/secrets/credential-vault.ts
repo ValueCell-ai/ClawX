@@ -7,6 +7,7 @@ import { getClawXDataLayout, resolveClawXDataRoot } from '../../utils/clawx-data
 
 const VAULT_SCHEMA = 'clawx-credential-vault';
 const VAULT_VERSION = 1;
+let credentialMutationQueue: Promise<void> = Promise.resolve();
 
 type CredentialVaultDocument = {
   schema: typeof VAULT_SCHEMA;
@@ -69,6 +70,12 @@ async function writeAtomic(path: string, content: string | Buffer, mode = 0o600)
   await chmod(path, mode).catch(() => {});
 }
 
+function serializeCredentialMutation<T>(mutation: () => Promise<T>): Promise<T> {
+  const result = credentialMutationQueue.then(mutation, mutation);
+  credentialMutationQueue = result.then(() => undefined, () => undefined);
+  return result;
+}
+
 export async function readCredentialVault(
   cipher: CredentialCipher = defaultCredentialCipher(),
 ): Promise<CredentialVaultDocument> {
@@ -123,24 +130,28 @@ export async function setVaultSecret(
   secret: ProviderSecret,
   cipher: CredentialCipher = defaultCredentialCipher(),
 ): Promise<void> {
-  const document = await readCredentialVault(cipher);
-  document.secrets[secret.accountId] = secret;
-  await writeCredentialVault(document, cipher);
+  await serializeCredentialMutation(async () => {
+    const document = await readCredentialVault(cipher);
+    document.secrets[secret.accountId] = secret;
+    await writeCredentialVault(document, cipher);
+  });
 }
 
 export async function deleteVaultSecret(
   accountId: string,
   cipher: CredentialCipher = defaultCredentialCipher(),
 ): Promise<void> {
-  const document = await readCredentialVault(cipher);
-  if (!(accountId in document.secrets)) return;
-  delete document.secrets[accountId];
-  if (Object.keys(document.secrets).length === 0 && Object.keys(document.channelSecrets).length === 0) {
-    const { vaultPath, indexPath } = credentialPaths();
-    await Promise.all([rm(vaultPath, { force: true }), rm(indexPath, { force: true })]);
-    return;
-  }
-  await writeCredentialVault(document, cipher);
+  await serializeCredentialMutation(async () => {
+    const document = await readCredentialVault(cipher);
+    if (!(accountId in document.secrets)) return;
+    delete document.secrets[accountId];
+    if (Object.keys(document.secrets).length === 0 && Object.keys(document.channelSecrets).length === 0) {
+      const { vaultPath, indexPath } = credentialPaths();
+      await Promise.all([rm(vaultPath, { force: true }), rm(indexPath, { force: true })]);
+      return;
+    }
+    await writeCredentialVault(document, cipher);
+  });
 }
 
 export async function getChannelVaultSecrets(
@@ -153,12 +164,14 @@ export async function replaceChannelVaultSecrets(
   channelSecrets: Record<string, Record<string, string>>,
   cipher: CredentialCipher = defaultCredentialCipher(),
 ): Promise<void> {
-  const document = await readCredentialVault(cipher);
-  document.channelSecrets = channelSecrets;
-  if (Object.keys(document.secrets).length === 0 && Object.keys(channelSecrets).length === 0) {
-    const { vaultPath, indexPath } = credentialPaths();
-    await Promise.all([rm(vaultPath, { force: true }), rm(indexPath, { force: true })]);
-    return;
-  }
-  await writeCredentialVault(document, cipher);
+  await serializeCredentialMutation(async () => {
+    const document = await readCredentialVault(cipher);
+    document.channelSecrets = channelSecrets;
+    if (Object.keys(document.secrets).length === 0 && Object.keys(channelSecrets).length === 0) {
+      const { vaultPath, indexPath } = credentialPaths();
+      await Promise.all([rm(vaultPath, { force: true }), rm(indexPath, { force: true })]);
+      return;
+    }
+    await writeCredentialVault(document, cipher);
+  });
 }

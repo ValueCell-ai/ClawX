@@ -91,7 +91,10 @@ export function groupSessionsByWorkspace<TSession extends ChatSession>(
   return Array.from(groupByWorkspace.values())
     .map((group) => ({
       ...group,
-      sessions: [...group.sessions].sort((left, right) => right.activityMs - left.activityMs),
+      sessions: [...group.sessions].sort((left, right) => (
+        right.activityMs - left.activityMs
+        || left.session.key.localeCompare(right.session.key)
+      )),
     }))
     .sort(compareWorkspaceGroups);
 }

@@ -272,6 +272,7 @@
         "title": "执行关系图",
         "branchLabel": "分支",
         "thinkingLabel": "思考中",
+        "toolProcessing": "正在处理工具结果…",
         "interactionLabel": "选择操作",
         "errorLabel": "模型调用失败",
         "imageGenerateLabel": "图片生成",

@@ -272,6 +272,7 @@
         "title": "Execution Graph",
         "branchLabel": "branch",
         "thinkingLabel": "Thinking",
+        "toolProcessing": "Processing tool results…",
         "interactionLabel": "Choose an action",
         "errorLabel": "Error",
         "imageGenerateLabel": "Image generation",
