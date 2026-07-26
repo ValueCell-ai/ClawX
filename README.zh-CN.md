@@ -117,6 +117,7 @@ cc-connect 也负责消息平台桥接。当 cc-connect 是当前 runtime 时，
 通过现代化的聊天体验与 AI 智能体交互。支持多会话上下文、消息历史记录、Markdown 富文本渲染（包括 GitHub 风格表格以及由 KaTeX 渲染的 LaTeX 数学公式：`$行内$`、`$$块级$$`、`\(行内\)` 和 `\[块级\]`），以及在多 Agent 场景下通过主输入框中的 `@agent` 直接路由到目标智能体。
 从输入框插入的技能会以 `/技能名` 卡片形式显示；点击卡片可在右侧预览栏打开并阅读该技能的 `SKILL.md`。
 当你使用 `@agent` 选择其他智能体时，ClawX 会直接切换到该智能体自己的对话上下文，而不是经过默认智能体转发。各 Agent 工作区默认彼此分离，但更强的运行时隔离仍取决于 OpenClaw 的 sandbox 配置。
+会话侧边栏现在以工作空间优先组织：默认工作空间固定在最上方，其它工作空间按自然顺序排列，每个工作空间都可折叠或继续加载更多会话，行内会显示相对活跃时间直到悬停时露出操作按钮。可编辑的新对话中，输入框的工作空间卡片会打开一个小菜单，可切回默认工作空间或选择其它目录。
 每个 Agent 还可以单独覆盖自己的 `provider/model` 运行时设置；未覆盖的 Agent 会继续继承全局默认模型。
 
 ### 📡 多频道管理
@@ -233,6 +234,19 @@ ClawX 内置了代理设置，适用于需要通过本地代理客户端访问�
 
 ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用统一客户端抽象，协议选择与进程生命周期由 Electron 主进程统一管理：
 
+Chat 传输会随当前 runtime 切换，但 Renderer 始终只经过同一个边界。OpenClaw Chat 使用由 Electron Main 持有的 ACP stdio bridge，Renderer 接收类型化 host events 并渲染内存中的 ACP timeline；cc-connect Chat 则由 `RuntimeManager` 通过 cc-connect BridgePlatform 分派，包括 session history、progress、approval 与 generated media。两种模式都使用同一套 Host API facade，Renderer 不会直接调用 Codex。非 Chat 能力也通过 runtime provider 分派，OpenClaw 专属操作只保留在 OpenClaw adapter 内。
+
+ACP Chat 可在 runtime 以可信结构化媒体投递图像生成结果时显示生成图片预览。历史 OpenClaw 回放中，assistant 的 `MEDIA:/path/to/file.png` 标记只有在同一会话已记录图像生成任务启动后才会被提升为预览。其它纯文本本地路径（如 `MEDIA: /path/to/file.png`）不会被当作图片预览；ClawX 通过 Electron Main 的主机媒体处理加载预览，而不是让 Renderer 任意访问文件系统。标准 ACP 图片内容仍是首选路径，并会直接渲染。
+
+### ACP 文件活动语义
+
+- 文件活动由成功且已完成的 OpenClaw `write`、`edit` 和 `apply_patch` 调用投影而来。工具识别方式与 OpenClaw 官方 Chat UI 保持一致；仅接收已完成调用的筛选规则是 ClawX 特有的。
+- `write` 按工具声明的语义显示：视为创建，并展示为全部新增的差异，即使该路径可能已经存在。
+- **Changes** 是按时间顺序记录工具声明活动的会话级记录，不是 Git 输出，也不是相对于已验证源码基线的差异。
+- 对每个文件，Changes 在每轮助手回复中最多展示一个 diff 编辑器。可安全串联的片段会合并，独立片段会拼接到同一个编辑器中，但不会被描述为基于完整文件基线的差异。
+- Shell 命令、脚本、用户或 IDE 产生的副作用不会被检测。
+- 完整的 ACP 回放可以恢复已记录的文件活动；如果回放不完整，ClawX 不会通过回退推断来补造缺失活动。
+
 ```
 ┌───────────────────────────────────────────────────────────────────┐
 │                        ClawX 桌面应用                              │
@@ -259,17 +273,17 @@ ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用
                                │ 类型化 IPC 请求
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                  主进程 Host Services 与 Gateway Manager          │
+│                  主进程 Host Services 与 Runtime Manager          │
 │                                                                 │
 │  • host:invoke 类型化服务分发                                      │
 │  • 设置、文件、会话、技能、供应商、诊断服务                           │
-│  • 主进程持有 Gateway WebSocket 并负责进程监控                       │
+│  • Runtime 选择、传输与进程监控                                     │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
                                │ 主进程持有 WebSocket
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                     OpenClaw 网关                                │
+│                     OpenClaw 网关路径（图示）                      │
 │                                                                 │
 │  • AI 智能体运行时与编排                                           │
 │  • 消息频道管理                                                   │
@@ -281,7 +295,7 @@ ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用
 
 - **进程隔离**：AI 运行时在独立进程中运行，确保即使在高负载计算期间 UI 也能保持响应
 - **前端调用单一入口**：渲染层统一走 host-api/api-client，不感知底层协议细节
-- **主进程掌控传输策略**：Gateway WebSocket 只由 Electron Main 持有，渲染进程通过类型化 IPC 调用 Main
+- **主进程掌控传输策略**：OpenClaw ACP/Gateway 传输与 cc-connect BridgePlatform 分派都由 Electron Main 持有，渲染进程通过类型化 IPC 调用 Main
 - **扩展 IPC 贡献点**：主进程扩展通过类型化 IPC 注册表贡献 host-api action，而不是挂载 HTTP route
 - **优雅恢复**：内置重连、超时、退避逻辑，自动处理瞬时故障
 - **安全存储**：API 密钥和敏感数据利用操作系统原生的安全存储机制
@@ -421,7 +435,7 @@ pnpm run smoke:cc-connect:packaged # 启动当前平台 unpacked app，验证 cc
 
 ### 通信回归检查
 
-当 PR 涉及通信链路（Gateway 事件、Chat 收发流程、Channel 投递、传输回退）时，建议执行：
+当 PR 涉及通信链路（Gateway 事件、ACP Chat bridge 收发流程、Channel 投递、传输回退）时，建议执行：
 
 ```bash
 pnpm run comms:replay

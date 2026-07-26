@@ -27,6 +27,7 @@ import { toast } from 'sonner';
 import { rendererExtensionRegistry } from '@/extensions/registry';
 import { collectDroppedFiles } from '@/lib/collect-dropped-files';
 import { fetchQuickAccessSkills } from '@/lib/quick-access-skills';
+import { DEFAULT_WORKSPACE_CWD } from '@/lib/workspace-context';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -46,6 +47,10 @@ interface ChatInputProps {
   onStop?: () => void;
   disabled?: boolean;
   sending?: boolean;
+  workspaceLabel?: string;
+  workspacePath?: string;
+  workspaceReadOnly?: boolean;
+  onSelectWorkspace?: (path: string) => void;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -191,7 +196,16 @@ function readFileAsBase64(file: globalThis.File): Promise<string> {
 
 // ── Component ────────────────────────────────────────────────────
 
-export function ChatInput({ onSend, onStop, disabled = false, sending = false }: ChatInputProps) {
+export function ChatInput({
+  onSend,
+  onStop,
+  disabled = false,
+  sending = false,
+  workspaceLabel,
+  workspacePath,
+  workspaceReadOnly = false,
+  onSelectWorkspace,
+}: ChatInputProps) {
   const { t } = useTranslation('chat');
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
@@ -199,6 +213,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const [pickerOpen, setPickerOpen] = useState(false);
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [skillQuery, setSkillQuery] = useState('');
   const [quickSkills, setQuickSkills] = useState<QuickAccessSkill[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
@@ -210,6 +225,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const pickerRef = useRef<HTMLDivElement>(null);
   const skillPickerRef = useRef<HTMLDivElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
+  const workspaceMenuRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
   const gatewayStatus = useGatewayStore((s) => s.status);
   const agents = useAgentsStore((s) => s.agents);
@@ -268,10 +284,10 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   const showModelPicker = modelOptions.length > 1;
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
   const isGatewayUsable = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
-  const inputDisabled = disabled || !isGatewayUsable;
+  const inputDisabled = disabled;
+  const workspaceSelectorDisabled = workspaceReadOnly || inputDisabled || sending || !onSelectWorkspace;
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
   const openArtifactPreview = useArtifactPanel((s) => s.openPreview);
-
   useEffect(() => {
     void refreshProviderSnapshot();
   }, [refreshProviderSnapshot]);
@@ -295,6 +311,12 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   useEffect(() => {
     setOptimisticModelRef(null);
   }, [currentAgent?.modelRef, currentAgentId]);
+
+  useEffect(() => {
+    if (workspaceSelectorDisabled) {
+      setWorkspaceMenuOpen(false);
+    }
+  }, [workspaceSelectorDisabled]);
 
   useEffect(() => {
     if (!currentAgent || switchingModelRef || optimisticModelRef) return;
@@ -332,23 +354,40 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
   }, [agents, currentAgentId, targetAgentId]);
 
   useEffect(() => {
-    if (!pickerOpen && !skillPickerOpen && !modelPickerOpen) return;
+    if (!pickerOpen && !skillPickerOpen && !modelPickerOpen && !workspaceMenuOpen) return;
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node;
       const insideAgentPicker = pickerRef.current?.contains(target);
       const insideSkillPicker = skillPickerRef.current?.contains(target);
       const insideModelPicker = modelPickerRef.current?.contains(target);
-      if (!insideAgentPicker && !insideSkillPicker && !insideModelPicker) {
+      const insideWorkspaceMenu = workspaceMenuRef.current?.contains(target);
+      if (!insideAgentPicker && !insideSkillPicker && !insideModelPicker && !insideWorkspaceMenu) {
         setPickerOpen(false);
         setSkillPickerOpen(false);
         setModelPickerOpen(false);
+        setWorkspaceMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handlePointerDown);
     return () => {
       document.removeEventListener('mousedown', handlePointerDown);
     };
-  }, [modelPickerOpen, pickerOpen, skillPickerOpen]);
+  }, [modelPickerOpen, pickerOpen, skillPickerOpen, workspaceMenuOpen]);
+
+  useEffect(() => {
+    if (!pickerOpen && !skillPickerOpen && !modelPickerOpen && !workspaceMenuOpen) return;
+    const handleDocumentKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setPickerOpen(false);
+      setSkillPickerOpen(false);
+      setModelPickerOpen(false);
+      setWorkspaceMenuOpen(false);
+    };
+    document.addEventListener('keydown', handleDocumentKeyDown, true);
+    return () => {
+      document.removeEventListener('keydown', handleDocumentKeyDown, true);
+    };
+  }, [modelPickerOpen, pickerOpen, skillPickerOpen, workspaceMenuOpen]);
 
   useEffect(() => {
     setSelectedSkill((prev) => {
@@ -358,6 +397,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
       return null;
     });
     setSkillPickerOpen(false);
+    setWorkspaceMenuOpen(false);
     setSkillQuery('');
     setQuickSkills([]);
     setSkillsError(null);
@@ -468,6 +508,46 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
       textareaRef.current?.focus();
     }
   }, [currentAgent, defaultModelRef, effectiveModelRef, switchingModelRef, t, updateAgentModel]);
+
+  const handleWorkspaceButtonClick = useCallback(() => {
+    if (workspaceSelectorDisabled) return;
+    setPickerOpen(false);
+    setSkillPickerOpen(false);
+    setModelPickerOpen(false);
+    setWorkspaceMenuOpen((open) => !open);
+  }, [workspaceSelectorDisabled]);
+
+  const handleWorkspaceKeyDown = useCallback((event: React.KeyboardEvent) => {
+    if (event.key !== 'Escape') return;
+    setWorkspaceMenuOpen(false);
+    event.stopPropagation();
+  }, []);
+
+  const handleSelectDefaultWorkspace = useCallback(() => {
+    if (workspaceSelectorDisabled || !onSelectWorkspace) return;
+    onSelectWorkspace(DEFAULT_WORKSPACE_CWD);
+    setWorkspaceMenuOpen(false);
+    textareaRef.current?.focus();
+  }, [onSelectWorkspace, workspaceSelectorDisabled]);
+
+  const handleChooseOtherWorkspace = useCallback(async () => {
+    if (workspaceSelectorDisabled || !onSelectWorkspace) return;
+    setWorkspaceMenuOpen(false);
+    try {
+      const result = await hostApi.dialog.open({
+        title: t('composer.workspacePickerTitle'),
+        buttonLabel: t('composer.workspacePickerButton'),
+        defaultPath: workspacePath,
+        properties: ['openDirectory', 'createDirectory'],
+      });
+      const selected = result.filePaths[0]?.trim();
+      if (!result.canceled && selected) onSelectWorkspace(selected);
+    } catch {
+      toast.error(t('composer.workspacePickerFailed'));
+    } finally {
+      textareaRef.current?.focus();
+    }
+  }, [onSelectWorkspace, t, workspacePath, workspaceSelectorDisabled]);
 
   // ── File staging via native dialog / Electron drag-drop paths ──
 
@@ -629,6 +709,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
     setTargetAgentId(null);
     setPickerOpen(false);
     setSkillPickerOpen(false);
+    setWorkspaceMenuOpen(false);
   }, [input, attachments, canSend, onSend, targetAgentId]);
 
   const handleStop = useCallback(() => {
@@ -693,6 +774,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
       if (e.key === 'Escape') {
         setPickerOpen(false);
         setSkillPickerOpen(false);
+        setModelPickerOpen(false);
+        setWorkspaceMenuOpen(false);
         return;
       }
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -771,6 +854,25 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
       onDrop={handleDrop}
     >
       <div className="w-full">
+        {sending && (
+          <div
+            data-testid="chat-composer-working-indicator"
+            role="status"
+            aria-live="polite"
+            aria-label={t('composer.working')}
+            className="relative mb-2 flex h-1 overflow-hidden rounded-full"
+          >
+            <span className="sr-only">{t('composer.working')}</span>
+            <span
+              data-testid="chat-composer-zoomies"
+              aria-hidden="true"
+              className="clawx-chat-working-zoomies"
+            >
+              <span className="clawx-chat-working-zoomies-inner" />
+            </span>
+          </div>
+        )}
+
         {/* Attachment Previews */}
         {attachments.length > 0 && (
           <div className="flex gap-2 mb-3 flex-wrap">
@@ -866,6 +968,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
                   )}
                   onClick={() => {
                     setSkillPickerOpen(false);
+                    setModelPickerOpen(false);
+                    setWorkspaceMenuOpen(false);
                     setPickerOpen((open) => !open);
                   }}
                   disabled={inputDisabled || sending}
@@ -907,6 +1011,8 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
                 )}
                 onClick={() => {
                   setPickerOpen(false);
+                  setModelPickerOpen(false);
+                  setWorkspaceMenuOpen(false);
                   setSkillPickerOpen((open) => !open);
                 }}
                 disabled={inputDisabled || sending}
@@ -990,6 +1096,7 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
                   onClick={() => {
                     setPickerOpen(false);
                     setSkillPickerOpen(false);
+                    setWorkspaceMenuOpen(false);
                     setModelPickerOpen((open) => !open);
                   }}
                   disabled={inputDisabled || sending || !currentAgent || !!switchingModelRef}
@@ -1055,40 +1162,98 @@ export function ChatInput({ onSend, onStop, disabled = false, sending = false }:
             </Button>
           </div>
         </div>
-        <div className="mt-2.5 flex items-center justify-between gap-2 text-tiny text-muted-foreground/60 px-4">
-          <div className="flex items-center gap-1.5">
-            <div className={cn(
-              "w-1.5 h-1.5 rounded-full",
-              isGatewayUsable ? "bg-green-500/80" : "bg-red-500/80",
-            )} />
-            <span>
-              {t('composer.gatewayStatus', {
-                state: isGatewayUsable
-                  ? t('composer.gatewayConnected')
-                  : gatewayStatus.state === 'running'
-                    ? 'starting'
-                    : gatewayStatus.state,
-                port: gatewayStatus.port,
-                pid: gatewayStatus.pid ? `| pid: ${gatewayStatus.pid}` : '',
-              })}
-            </span>
-            {chatComposerStatusComponents.map((Component, index) => (
-              <Component key={`${index}`} gatewayStatus={gatewayStatus} />
-            ))}
+        <div className="mt-2.5 flex min-w-0 items-center justify-between gap-2 text-tiny text-muted-foreground/60">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            {workspaceLabel && workspacePath && (
+              <div ref={workspaceMenuRef} className="relative min-w-0 shrink" onKeyDown={handleWorkspaceKeyDown}>
+                <button
+                  type="button"
+                  data-testid="chat-workspace-selector"
+                  title={workspacePath}
+                  aria-disabled={workspaceSelectorDisabled ? 'true' : undefined}
+                  aria-expanded={!workspaceSelectorDisabled ? workspaceMenuOpen : undefined}
+                  tabIndex={workspaceSelectorDisabled ? -1 : undefined}
+                  onClick={workspaceSelectorDisabled ? undefined : handleWorkspaceButtonClick}
+                  className={cn(
+                    'inline-flex min-w-0 max-w-[260px] items-center gap-1 rounded-full border border-black/10 px-2 py-0.5',
+                    'bg-black/[0.02] text-tiny font-medium text-foreground/75 transition-colors dark:border-white/10 dark:bg-white/[0.04]',
+                    workspaceSelectorDisabled
+                      ? 'cursor-default opacity-80'
+                      : 'hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
+                  )}
+                >
+                  <FolderOpen className="h-3 w-3 shrink-0" />
+                  <span className="min-w-0 truncate">
+                    {t('composer.workspacePrefix', { workspace: workspaceLabel })}
+                  </span>
+                  {!workspaceSelectorDisabled && (
+                    <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform', workspaceMenuOpen && 'rotate-180')} />
+                  )}
+                </button>
+                {workspaceMenuOpen && !workspaceSelectorDisabled && (
+                  <div
+                    data-testid="chat-workspace-menu"
+                    className="absolute bottom-full left-0 z-20 mb-2 w-60 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
+                  >
+                    <button
+                      type="button"
+                      data-testid="chat-workspace-default"
+                      onClick={handleSelectDefaultWorkspace}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                    >
+                      <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span>{t('composer.defaultWorkspaceOption')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="chat-workspace-choose-other"
+                      onClick={() => void handleChooseOtherWorkspace()}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                    >
+                      <FolderOpen className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span>{t('composer.chooseOtherWorkspaceOption')}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          {hasFailedAttachments && (
-            <Button
-              variant="link"
-              size="sm"
-              className="h-auto p-0 text-tiny"
-              onClick={() => {
-                setAttachments((prev) => prev.filter((att) => att.status !== 'error'));
-                void pickFiles();
-              }}
-            >
-              {t('composer.retryFailedAttachments')}
-            </Button>
-          )}
+
+          <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 overflow-hidden text-right">
+            <div className="flex min-w-0 items-center justify-end gap-1.5 overflow-hidden">
+              <div className={cn(
+                'h-1.5 w-1.5 shrink-0 rounded-full',
+                isGatewayUsable ? 'bg-green-500/80' : 'bg-red-500/80',
+              )} />
+              <span className="min-w-0 truncate">
+                {t('composer.gatewayStatus', {
+                  state: isGatewayUsable
+                    ? t('composer.gatewayConnected')
+                    : gatewayStatus.state === 'running'
+                      ? t('composer.gatewayStarting')
+                      : gatewayStatus.state,
+                  port: gatewayStatus.port,
+                  pid: gatewayStatus.pid ?? '',
+                })}
+              </span>
+              {chatComposerStatusComponents.map((Component, index) => (
+                <Component key={`${index}`} gatewayStatus={gatewayStatus} />
+              ))}
+            </div>
+            {hasFailedAttachments && (
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto shrink-0 p-0 text-tiny"
+                onClick={() => {
+                  setAttachments((prev) => prev.filter((att) => att.status !== 'error'));
+                  void pickFiles();
+                }}
+              >
+                {t('composer.retryFailedAttachments')}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>

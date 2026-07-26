@@ -56,7 +56,9 @@ export function createChatActions(
   ChatState,
   | 'loadSessions'
   | 'switchSession'
+  | 'selectAcpSession'
   | 'newSession'
+  | 'acknowledgeAcpSessionCreated'
   | 'deleteSession'
   | 'renameSession'
   | 'cleanupEmptySession'

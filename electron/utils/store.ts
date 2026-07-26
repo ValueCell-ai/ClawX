@@ -6,6 +6,7 @@
 import { randomBytes } from 'crypto';
 import { app } from 'electron';
 import { resolveSupportedLanguage } from '@shared/language';
+import { DEFAULT_WORKSPACE_CWD } from '@shared/workspace';
 import type { RuntimeKind } from '@shared/types/gateway';
 import { getClawXDataLayout, resolveClawXDataRoot } from './clawx-data-layout';
 
@@ -54,6 +55,8 @@ export interface AppSettings {
   // UI State
   sidebarCollapsed: boolean;
   devModeUnlocked: boolean;
+  chatWorkspacePath: string;
+  recentWorkspacePaths: string[];
 
   // Presets
   selectedBundles: string[];
@@ -106,6 +109,8 @@ function createDefaultSettings(): AppSettings {
     // UI State
     sidebarCollapsed: false,
     devModeUnlocked: false,
+    chatWorkspacePath: DEFAULT_WORKSPACE_CWD,
+    recentWorkspacePaths: [DEFAULT_WORKSPACE_CWD],
 
     // Presets
     selectedBundles: ['productivity', 'developer'],

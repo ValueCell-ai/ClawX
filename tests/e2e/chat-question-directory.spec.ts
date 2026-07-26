@@ -1,6 +1,11 @@
+import type { ElectronApplication } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 const SESSION_KEY = 'agent:main:main';
+const MAIN_WORKSPACE = '/workspace';
+const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
+
+type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -40,8 +45,7 @@ const longQuestionDirectoryHistory = [
 ];
 
 async function installQuestionDirectoryMocks(
-  app: Awaited<ReturnType<typeof import('./fixtures/electron').launchElectronApp>>,
-  messages: Array<{ role: string; content: string; timestamp: number }>,
+  app: ElectronApplication,
 ) {
   await installIpcMocks(app, {
     gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
@@ -49,19 +53,27 @@ async function installQuestionDirectoryMocks(
       [stableStringify(['sessions.list', {}])]: {
         success: true,
         result: {
-          sessions: [{ key: SESSION_KEY, displayName: 'main' }],
+          sessions: [{ key: SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE }],
         },
-      },
-      [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-        success: true,
-        result: { messages },
-      },
-      [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
-        success: true,
-        result: { messages },
       },
     },
     hostApi: {
+      [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: MAIN_WORKSPACE }])]: {
+        success: true,
+        generation: 1,
+      },
+      [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: MAIN_WORKSPACE, createIfMissing: true }])]: {
+        success: true,
+        generation: 1,
+      },
+      [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: {
+        success: true,
+        generation: 1,
+      },
+      [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: {
+        success: true,
+        generation: 1,
+      },
       [stableStringify(['/api/gateway/status', 'GET'])]: {
         ok: true,
         data: {
@@ -75,22 +87,52 @@ async function installQuestionDirectoryMocks(
         data: {
           status: 200,
           ok: true,
-          json: {
-            success: true,
-            agents: [{ id: 'main', name: 'main' }],
+            json: {
+              success: true,
+              agents: [{ id: 'main', name: 'main', workspace: MAIN_WORKSPACE, mainSessionKey: SESSION_KEY }],
+            },
           },
         },
-      },
     },
   });
 }
 
+function messagesToAcpUpdates(messages: Array<{ role: string; content: string }>): AcpSessionUpdate[] {
+  return messages.map((message, index) => ({
+    sessionUpdate: message.role === 'user' ? 'user_message' : 'agent_message',
+    messageId: `question-directory-${index}`,
+    content: [{ type: 'text', text: message.content }],
+  }));
+}
+
+async function emitAcpSessionUpdates(app: ElectronApplication, updates: AcpSessionUpdate[]) {
+  await app.evaluate(
+    async ({ app: _app }, payload) => {
+      const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+      for (const update of payload.updates) {
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('chat:acp-session-update', {
+            sessionKey: payload.sessionKey,
+            generation: 1,
+            historical: true,
+            notification: {
+              sessionId: payload.sessionKey,
+              update,
+            },
+          });
+        }
+      }
+    },
+    { sessionKey: SESSION_KEY, updates },
+  );
+}
+
 test.describe('ClawX chat question directory', () => {
-  test('shows a toolbar button that opens a clickable in-conversation question directory', async ({ launchElectronApp }) => {
+  test('opens the ACP question directory for seeded history', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
-      await installQuestionDirectoryMocks(app, seededHistory);
+      await installQuestionDirectoryMocks(app);
 
       const page = await getStableWindow(app);
       await page.setViewportSize({ width: 1600, height: 900 });
@@ -103,30 +145,51 @@ test.describe('ClawX chat question directory', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+      await emitAcpSessionUpdates(app, messagesToAcpUpdates(seededHistory));
+      await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
 
       const toggle = page.getByTestId('chat-question-directory-toggle');
-      await expect(toggle).toBeVisible();
+      await expect(toggle).toBeEnabled();
       await toggle.click();
 
       const directory = page.getByTestId('chat-question-directory');
-      await expect(directory).toBeVisible({ timeout: 30_000 });
+      await expect(directory).toBeVisible();
       await expect(directory).toContainText('Question directory');
+      await expect(directory.getByTestId(/^chat-question-directory-item-/)).toHaveCount(4);
       await expect(directory).toContainText('First question: summarize the market opening.');
+      await expect(directory).toContainText('Second question: list the strongest sectors.');
+      await expect(directory).toContainText('Third question: explain notable risks.');
       await expect(directory).toContainText('Fourth question: prepare the final action plan.');
-      await expect(directory.locator('button')).toHaveCount(4);
 
-      await page.getByTestId('chat-question-directory-item-6').click();
-      await expect(page.getByTestId('chat-message-6')).toBeInViewport();
+      const userMessageAnchorIds = [
+        'acp-user-message-question-directory-0:0',
+        'acp-user-message-question-directory-2:0',
+        'acp-user-message-question-directory-4:0',
+        'acp-user-message-question-directory-6:0',
+      ];
+      for (const id of userMessageAnchorIds) {
+        await expect(page.locator(`[id="${id}"]`)).toHaveCount(1);
+      }
+
+      const firstUserMessage = page.locator('[id="acp-user-message-question-directory-0:0"]');
+      await expect(firstUserMessage).not.toBeInViewport();
+      await page.getByTestId('chat-question-directory-item-question-directory-0:0').click();
+      await expect(firstUserMessage).toBeInViewport();
+      await expect(page.getByTestId('acp-user-message')).toHaveCount(4);
+      const timeline = page.getByTestId('acp-chat-timeline');
+      await expect(timeline.getByText('First question: summarize the market opening.')).toBeVisible();
+      await expect(timeline.getByText('Fourth question: prepare the final action plan.')).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }
   });
 
-  test('scrolls the question directory to show the latest question', async ({ launchElectronApp }) => {
+  test('opens the restored question directory with the latest ACP question in long history', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
-      await installQuestionDirectoryMocks(app, longQuestionDirectoryHistory);
+      await installQuestionDirectoryMocks(app);
 
       const page = await getStableWindow(app);
       await page.setViewportSize({ width: 1600, height: 900 });
@@ -139,16 +202,15 @@ test.describe('ClawX chat question directory', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
-      await page.getByTestId('chat-question-directory-toggle').click();
-
-      const directory = page.getByTestId('chat-question-directory');
-      await expect(directory).toBeVisible({ timeout: 30_000 });
-      await expect(directory).toContainText('15');
-
-      const lastItem = page.getByTestId(`chat-question-directory-item-${longQuestionDirectoryHistory.length - 2}`);
-      await expect(lastItem).toBeVisible();
-      await expect(lastItem).toContainText(latestQuestion);
-      await expect(lastItem).toBeInViewport();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+      await emitAcpSessionUpdates(app, messagesToAcpUpdates(longQuestionDirectoryHistory));
+      await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('acp-user-message')).toHaveCount(15);
+      await expect(page.getByText(latestQuestion, { exact: true })).toBeVisible();
+      const toggle = page.getByTestId('chat-question-directory-toggle');
+      await expect(toggle).toBeEnabled();
+      await toggle.click();
+      await expect(page.getByTestId('chat-question-directory')).toContainText(latestQuestion);
     } finally {
       await closeElectronApp(app);
     }

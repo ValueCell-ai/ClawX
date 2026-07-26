@@ -17,10 +17,10 @@
  *      Radix-driven components read these directly.
  *
  *   2. ClawX surface tokens (--surface-modal / --surface-input /
- *      --surface-sidebar). Three light-mode "cream paper" layers added
+ *      --surface-sidebar). Three light-mode neutral layers added
  *      by ClawX. In dark mode each one is redirected to an existing
  *      shadcn token (--card / --muted / --background) so we don't have
- *      to maintain a second dark-cream palette.
+ *      to maintain a second dark surface palette.
  *
  * Usage:
  *   - Application code should always go through Tailwind utilities, e.g.
@@ -49,8 +49,8 @@
  *     bg-muted   (when used as a panel) →  bg-surface-input
  *     bg-[hsl(var(--xxx))] / arbitrary  →  bg-<named-token>
  *
- *     bg-surface-modal = raised cream  panels, popovers, inputs, cards
- *     bg-surface-input = recessed cream  code/log <pre>, segmented track
+ *     bg-surface-modal = raised neutral panels, popovers, inputs, cards
+ *     bg-surface-input = recessed neutral code/log <pre>, segmented track
  *
  *     Never write `dark:bg-card` / `dark:bg-muted` companion classes —
  *     the surface tokens already redirect in dark mode.
@@ -81,7 +81,7 @@
  *     status dot          :  bg-{green|yellow|red}-500    (no dark variant)
  *
  *     Avoid `text-X-400` alone — that shade is tuned for dark mode and
- *     washes out against the cream light theme. Same for `bg-red-900/20`
+ *     washes out against the light theme. Same for `bg-red-900/20`
  *     panel backgrounds (a dark-only relic).
  *
  *   NEUTRAL GREYS  (escape hatches → semantic tokens)
@@ -117,9 +117,8 @@
 @layer base {
   :root {
     /* ── shadcn semantic tokens (light) ─────────────────────────── */
-    /* Lightened ClawX cream page background; gentler than pure white
-     *           for long sessions in front of the editor. */
-    --background: 45 30% 96.6%;
+    /* Clean neutral page background matching the white/gray light theme. */
+    --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
@@ -140,25 +139,19 @@
     --ring: 221.2 83.2% 53.3%;
     --radius: 0.5rem;
 
-    /* ── ClawX cream surfaces (light) ────────────────────────────
+    /* ── ClawX neutral surfaces (light) ───────────────────────────
      *
-     * Three stacked cream layers — think "a cream paper laid on top
-     * of a slightly paler cream paper". The contrast between layers
-     * is deliberately low so we can suggest hierarchy without using
-     * heavy shadows. Pixel values are extracted from the hex literals
-     * that used to be sprinkled across components.
+     * Three stacked neutral layers. The app shell stays white while
+     * recessed controls and the sidebar use subtle gray contrast.
      *
-     *   --surface-modal   = lifted cream   large rounded modal panels (top);
-     *                                      slightly lighter than --background
-     *                                      so dialogs feel raised
-     *   --surface-input   = recessed cream inputs / selects / code panes;
-     *                                      slightly darker than --background
-     *                                      so fields feel inset
-     *   --surface-sidebar = sidebar cream  left navigation rail (often /60)
+     *   --surface-modal   = lifted neutral panels, dialogs, popovers,
+     *                       composer, cards
+     *   --surface-input   = recessed neutral inputs / selects / code panes
+     *   --surface-sidebar = sidebar neutral navigation rail (often /60)
      * ─────────────────────────────────────────────────────────── */
-    --surface-modal: 45 30% 97.6%;
-    --surface-input: 45 22% 94%;
-    --surface-sidebar: 45 16% 94%;
+    --surface-modal: 0 0% 100%;
+    --surface-input: 0 0% 96.5%;
+    --surface-sidebar: 0 0% 96%;
 
     /* ── ClawX usage accents (light) ─────────────────────────────
      *
@@ -203,7 +196,7 @@
     --input: 240 3% 18%;
     --ring: 217.2 91.2% 59.8%;
 
-    /* In dark mode the three cream surfaces collapse onto existing
+    /* In dark mode the three neutral surfaces collapse onto existing
      * shadcn tokens:
      *     modal   → card
      *     input   → muted
@@ -272,6 +265,70 @@
     .clawx-dialog-content[data-state] {
       animation: none;
     }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .clawx-chat-working-zoomies-inner::after {
+      animation: none !important;
+      transform: translateX(0) !important;
+    }
+  }
+
+  .clawx-chat-working-zoomies {
+    --clawx-zoomies-bg-opacity: 0.14;
+    --clawx-zoomies-color: hsl(var(--primary));
+    --clawx-zoomies-speed: 1.15s;
+    align-items: center;
+    display: inline-flex;
+    flex-shrink: 0;
+    height: 100%;
+    justify-content: center;
+    width: 100%;
+  }
+
+  .clawx-chat-working-zoomies-inner {
+    align-items: center;
+    border-radius: 9999px;
+    display: flex;
+    height: 100%;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+    transform: translate3d(0, 0, 0);
+    width: 100%;
+  }
+
+  .clawx-chat-working-zoomies-inner::before {
+    background-color: var(--clawx-zoomies-color);
+    content: '';
+    height: 100%;
+    left: 0;
+    opacity: var(--clawx-zoomies-bg-opacity);
+    position: absolute;
+    top: 0;
+    transition: background-color 0.3s ease;
+    width: 100%;
+  }
+
+  .clawx-chat-working-zoomies-inner::after {
+    animation: clawx-chat-working-zoomies var(--clawx-zoomies-speed) ease-in-out infinite;
+    background-color: var(--clawx-zoomies-color);
+    border-radius: 9999px;
+    content: '';
+    height: 100%;
+    transform: translateX(-100%);
+    transition: background-color 0.3s ease;
+    width: 100%;
+  }
+}
+
+@keyframes clawx-chat-working-zoomies {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
   }
 }
 
@@ -350,7 +407,7 @@
   @apply bg-muted-foreground/30;
 }
 
-/* Monaco's default light diff theme is pure white; keep it aligned with ClawX's cream app background. */
+/* Monaco's default light diff theme is pure white; keep it aligned with ClawX's light app background. */
 :root:not(.dark) .clawx-diff-editor .monaco-diff-editor,
 :root:not(.dark) .clawx-diff-editor .monaco-editor,
 :root:not(.dark) .clawx-diff-editor .monaco-editor-background,

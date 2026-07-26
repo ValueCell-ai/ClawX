@@ -1,6 +1,11 @@
+import type { ElectronApplication } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 const SESSION_KEY = 'agent:main:main';
+const MAIN_WORKSPACE = '/workspace';
+const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
+
+type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -11,14 +16,15 @@ function stableStringify(value: unknown): string {
   return `{${entries.join(',')}}`;
 }
 
-const seededHistory = [
+const seededUpdates: AcpSessionUpdate[] = [
   {
-    role: 'user',
+    sessionUpdate: 'user_message',
+    messageId: 'latex-user',
     content: [{ type: 'text', text: 'Show me Einstein\'s mass-energy equivalence and a definite integral.' }],
-    timestamp: Date.now(),
   },
   {
-    role: 'assistant',
+    sessionUpdate: 'agent_message',
+    messageId: 'latex-assistant',
     content: [{
       type: 'text',
       text: [
@@ -35,9 +41,30 @@ const seededHistory = [
         '\\[\\sum_{i=1}^n i = \\frac{n(n+1)}{2}\\]',
       ].join('\n'),
     }],
-    timestamp: Date.now(),
   },
 ];
+
+async function emitAcpSessionUpdates(app: ElectronApplication, updates: AcpSessionUpdate[]) {
+  await app.evaluate(
+    async ({ app: _app }, payload) => {
+      const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+      for (const update of payload.updates) {
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('chat:acp-session-update', {
+            sessionKey: payload.sessionKey,
+            generation: 1,
+            historical: true,
+            notification: {
+              sessionId: payload.sessionKey,
+              update,
+            },
+          });
+        }
+      }
+    },
+    { sessionKey: SESSION_KEY, updates },
+  );
+}
 
 test.describe('ClawX chat LaTeX rendering', () => {
   test('renders KaTeX markup for $...$, $$...$$, \\(...\\) and \\[...\\] delimiters', async ({ launchElectronApp }) => {
@@ -50,19 +77,27 @@ test.describe('ClawX chat LaTeX rendering', () => {
           [stableStringify(['sessions.list', {}])]: {
             success: true,
             result: {
-              sessions: [{ key: SESSION_KEY, displayName: 'main' }],
+              sessions: [{ key: SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE }],
             },
-          },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: seededHistory },
-          },
-          [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: seededHistory },
           },
         },
         hostApi: {
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: MAIN_WORKSPACE }])]: {
+            success: true,
+            generation: 1,
+          },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: MAIN_WORKSPACE, createIfMissing: true }])]: {
+            success: true,
+            generation: 1,
+          },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: {
+            success: true,
+            generation: 1,
+          },
+          [stableStringify(['chat', 'loadAcpSession', { sessionKey: SESSION_KEY, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: {
+            success: true,
+            generation: 1,
+          },
           [stableStringify(['/api/gateway/status', 'GET'])]: {
             ok: true,
             data: {
@@ -78,7 +113,7 @@ test.describe('ClawX chat LaTeX rendering', () => {
               ok: true,
               json: {
                 success: true,
-                agents: [{ id: 'main', name: 'main' }],
+                agents: [{ id: 'main', name: 'main', workspace: MAIN_WORKSPACE, mainSessionKey: SESSION_KEY }],
               },
             },
           },
@@ -95,13 +130,18 @@ test.describe('ClawX chat LaTeX rendering', () => {
       }
 
       await expect(page.getByTestId('main-layout')).toBeVisible();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+      await emitAcpSessionUpdates(app, seededUpdates);
+
+      const timeline = page.getByTestId('acp-chat-timeline');
+      await expect(timeline).toBeVisible({ timeout: 30_000 });
 
       // Wait for a KaTeX inline rendering to appear.
-      await expect(page.locator('.katex').first()).toBeVisible({ timeout: 30_000 });
+      await expect(timeline.locator('.katex').first()).toBeVisible({ timeout: 30_000 });
       // Inline math: $E=mc^2$
-      await expect(page.locator('.katex').filter({ hasText: /E\s*=\s*mc/ }).first()).toBeVisible();
+      await expect(timeline.locator('.katex').filter({ hasText: /E\s*=\s*mc/ }).first()).toBeVisible();
       // Display math: both $$...$$ and \[...\] forms produce .katex-display blocks.
-      await expect(page.locator('.katex-display')).toHaveCount(2);
+      await expect(timeline.locator('.katex-display')).toHaveCount(2);
     } finally {
       await closeElectronApp(app);
     }

@@ -26,8 +26,41 @@
         "openFolder": "Открыть папку",
         "viewAll": "Все изменения"
     },
+    "fileActivity": {
+        "created": "Создан",
+        "modified": "Изменён",
+        "deleted": "Удалён",
+        "fileButton": "{{action}}: {{path}}",
+        "changeRecord": "Показать изменения {{path}}",
+        "fileUnavailable": "Файл недоступен",
+        "outsideWorkspace": "Файл находится вне рабочей области"
+    },
     "runError": {
         "title": "Ошибка вызова модели"
+    },
+    "acp": {
+        "thought": "Размышление",
+        "tool": "Инструмент",
+        "expandTool": "Развернуть результат инструмента",
+        "collapseTool": "Свернуть результат инструмента",
+        "permission": "Разрешение",
+        "plan": "План",
+        "running": "Выполняется",
+        "pending": "Ожидает",
+        "completed": "Завершено",
+        "failed": "Ошибка",
+        "cancelled": "Отменено",
+        "loadFailed": "Не удалось загрузить сеанс",
+        "promptFailed": "Не удалось отправить запрос",
+        "unsupportedContent": "Неподдерживаемое содержимое",
+        "dismiss": "Закрыть",
+        "image": "Изображение",
+        "copyImage": "Копировать изображение",
+        "imageCopied": "Изображение скопировано",
+        "saveImage": "Сохранить изображение как",
+        "imageSaved": "Изображение сохранено",
+        "copy": "Копировать ответ",
+        "copied": "Скопировано"
     },
     "artifactPanel": {
         "tabs": {
@@ -40,8 +73,10 @@
         },
         "changes": {
             "heading": "Изменения файлов ({{count}})",
-            "empty": "В этом разговоре пока нет изменений файлов",
-            "selectFileHint": "Нажмите на карточку файла в чате или «Просмотр изменений», чтобы открыть diff."
+            "empty": "В этом сеансе пока нет изменений файлов.",
+            "selectFileHint": "Нажмите на карточку файла в чате или «Просмотр изменений», чтобы открыть diff.",
+            "changeRecord": "Изменение {{number}}",
+            "diffUnavailable": "Diff для этого изменения недоступен."
         },
         "preview": {
             "emptyTitle": "Файл не выбран",
@@ -125,16 +160,15 @@
     },
     "workspace": {
         "title": "Рабочая область",
+        "defaultLabel": "Рабочая область по умолчанию",
+        "header": "Agent: {{agent}} · Каталог: {{directory}}",
         "freshBadge": "Обновлено в этот раз",
         "pickFile": "Выберите файл слева для предпросмотра",
         "empty": "Рабочая область пуста или недоступна",
         "truncated": "Каталог обрезан — показаны первые 5000 узлов",
         "actions": {
             "refresh": "Обновить",
-            "openRootInFinder": "Показать корень в файловом менеджере",
-            "toggleHidden": "Скрытые файлы",
-            "showHidden": "Показать скрытые файлы",
-            "hideHidden": "Скрыть скрытые файлы"
+            "openRootInFinder": "Показать корень в файловом менеджере"
         }
     },
     "taskPanel": {
@@ -174,7 +208,9 @@
     "imageGeneration": {
         "generating": "Изображение генерируется, подождите…",
         "previewLoading": "Загрузка предпросмотра изображения…",
-        "previewUnavailable": "Предпросмотр изображения временно недоступен"
+        "previewUnavailable": "Создание изображения завершено, но предпросмотр загрузить не удалось.",
+        "generatedReady": "Сгенерированное изображение готово.",
+        "generatedReadyWithMissing": "Сгенерированное изображение готово, но некоторые изображения не удалось загрузить."
     },
     "composer": {
         "attachFiles": "Прикрепить файлы",
@@ -194,13 +230,29 @@
         "gatewayDisconnectedPlaceholder": "Шлюз не подключён...",
         "send": "Отправить",
         "stop": "Остановить",
+        "working": "AI работает",
         "gatewayConnected": "подключён",
-        "gatewayStatus": "шлюз {{state}} | порт: {{port}} {{pid}}",
+        "gatewayStarting": "запуск",
+        "gatewayStatus": "шлюз {{state}} | порт: {{port}} | PID: {{pid}}",
         "retryFailedAttachments": "Повторить неудавшиеся вложения",
+        "workspacePrefix": "{{workspace}}",
+        "workspacePickerTitle": "Выберите папку рабочей области",
+        "workspacePickerButton": "Использовать рабочую область",
+        "workspacePickerFailed": "Не удалось открыть выбор рабочей области",
+        "defaultWorkspaceOption": "Рабочая область по умолчанию",
+        "chooseOtherWorkspaceOption": "Выбрать другой каталог…",
         "folderDropUnsupported": "Не удалось прикрепить эту папку. Перетащите её снова или вставьте путь к папке в сообщение.",
         "folderAttachment": "Папка",
         "skillPreviewTooltip": "Предпросмотр SKILL.md",
         "skillPreviewNotFound": "Skill не найден. Откройте список Skill, чтобы обновить его."
+    },
+    "sessionList": {
+        "title": "Список сессий",
+        "collapseAll": "Свернуть все",
+        "expandAll": "Развернуть все",
+        "loadMore": "Загрузить еще",
+        "loadMoreForWorkspace": "Загрузить еще {{count}} сессий в {{workspace}}",
+        "workspaceToggle": "Переключить рабочую область {{workspace}}"
     },
     "historyBuckets": {
         "today": "Сегодня",

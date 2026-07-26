@@ -1,171 +1,221 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { ArtifactPanel } from '@/components/file-preview/ArtifactPanel';
 import { ARTIFACT_PANEL_DEFAULT_WIDTH, useArtifactPanel } from '@/stores/artifact-panel';
-import type { GeneratedFile } from '@/lib/generated-files';
+import type { AcpSessionFileGroup } from '@/lib/acp/openclaw-file-activities';
+
+const shellShowItemInFolder = vi.fn(async () => undefined);
+
+vi.mock('@/lib/host-api', () => ({
+  hostApi: {
+    shell: { showItemInFolder: (...args: unknown[]) => shellShowItemInFolder(...args) },
+  },
+}));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (_key: string, defaultValue?: string) => defaultValue ?? '',
+    t: (key: string, options?: string | Record<string, unknown>) => {
+      if (typeof options === 'string') return options;
+      const labels: Record<string, string> = {
+        'artifactPanel.tabs.browser': 'Workspace',
+        'artifactPanel.tabs.preview': 'Preview',
+        'artifactPanel.tabs.changes': 'Changes',
+        'artifactPanel.changes.heading': `File changes (${String(options?.count ?? '')})`,
+        'artifactPanel.changes.empty': 'This session has no file changes yet.',
+        'artifactPanel.changes.diffUnavailable': 'Diff unavailable',
+        'artifactPanel.changes.changeRecord': `Change ${String(options?.number ?? '')}`,
+        'filePreview.actions.close': 'Close',
+      };
+      return labels[key] ?? '';
+    },
   }),
 }));
 
 vi.mock('@/components/file-preview/FilePreviewBody', () => ({
-  FilePreviewBody: ({ file, mode }: { file: { fileName: string; filePath: string }; mode: string }) => (
-    <div data-testid="file-preview-body">
-      <span>{mode}</span>
-      <span>{file.fileName}</span>
-      <span>{file.filePath}</span>
-    </div>
+  FilePreviewBody: ({ file, mode }: { file: { fileName: string }; mode: string }) => (
+    <div data-testid="file-preview-body">{mode}:{file.fileName}</div>
   ),
 }));
 
-vi.mock('@/components/file-preview/WorkspaceBrowserBody', () => ({
-  WorkspaceBrowserBody: () => <div data-testid="workspace-browser" />,
+vi.mock('@/components/file-preview/MonacoDiffViewer', () => ({
+  default: ({ filePath, original, modified }: { filePath: string; original: string; modified: string }) => (
+    <div data-testid="monaco-diff-viewer">{filePath}:{original}:{modified}</div>
+  ),
 }));
 
-function makeGeneratedFile(overrides: Partial<GeneratedFile> = {}): GeneratedFile {
-  return {
-    filePath: '/tmp/test_example.py',
-    fileName: 'test_example.py',
-    ext: '.py',
-    mimeType: 'text/x-python',
-    contentType: 'code',
-    action: 'modified',
-    fullContent: 'print("hello")\n',
-    lastSeenIndex: 1,
-    ...overrides,
-  };
+const { workspaceBrowserProps } = vi.hoisted(() => ({
+  workspaceBrowserProps: [] as Array<Record<string, unknown>>,
+}));
+
+vi.mock('@/components/file-preview/WorkspaceBrowserBody', () => ({
+  WorkspaceBrowserBody: (props: Record<string, unknown>) => {
+    workspaceBrowserProps.push(props);
+    return <div data-testid="workspace-browser" />;
+  },
+}));
+
+function groups(): AcpSessionFileGroup[] {
+  return [
+    {
+      relativePath: 'src/first.ts',
+      activities: [
+        {
+          turnId: 'turn-1', toolCallId: 'edit-1', toolName: 'edit', relativePath: 'src/first.ts', action: 'modified', sequence: 0,
+          fragments: [
+            { oldText: 'one', newText: 'two', sequence: 0 },
+            { oldText: 'three', newText: 'four', sequence: 1 },
+          ],
+        },
+        {
+          turnId: 'turn-2', toolCallId: 'edit-2', toolName: 'edit', relativePath: 'src/first.ts', action: 'modified', sequence: 2,
+          fragments: [],
+        },
+      ],
+    },
+    {
+      relativePath: 'src/second.ts',
+      activities: [{
+        turnId: 'turn-3', toolCallId: 'delete-1', toolName: 'apply_patch', relativePath: 'src/second.ts', action: 'deleted', sequence: 3, fragments: [],
+      }],
+    },
+  ];
 }
 
 afterEach(() => {
-  useArtifactPanel.setState({
-    open: false,
-    tab: 'changes',
-    focusedFile: null,
-    widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
+  vi.clearAllMocks();
+  act(() => {
+    useArtifactPanel.setState({
+      open: false,
+      tab: 'changes',
+      focusedFile: null,
+      focusedChange: null,
+      widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
+    });
   });
 });
 
 describe('ArtifactPanel', () => {
-  it('keeps chat-opened SKILL.md focused when switching to changes', () => {
+  it('passes effective workspace path to the workspace browser', () => {
+    workspaceBrowserProps.length = 0;
+    useArtifactPanel.setState({ open: true, tab: 'browser' });
+    render(
+      <ArtifactPanel
+        fileGroups={[]}
+        uniqueFileCount={0}
+        agent={{ id: 'main', name: 'Main Agent', workspace: '/agent/workspace' }}
+        workspacePath="/session/workspace"
+        workspaceLabel="~/session/workspace"
+      />,
+    );
+    expect(workspaceBrowserProps.at(-1)).toMatchObject({ workspacePath: '/session/workspace', workspaceLabel: '~/session/workspace' });
+  });
+
+  it('always keeps Changes available for rich preview files', () => {
+    useArtifactPanel.setState({
+      open: true,
+      tab: 'preview',
+      focusedFile: { filePath: 'report.pdf', fileName: 'report.pdf', ext: '.pdf', mimeType: 'application/pdf', contentType: 'document' },
+    });
+    render(<ArtifactPanel fileGroups={groups()} uniqueFileCount={2} agent={null} />);
+
+    expect(screen.getByTestId('artifact-panel-tab-changes')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('artifact-panel-tab-changes'));
+    expect(screen.getByText('File changes (2)')).toBeInTheDocument();
+  });
+
+  it('keeps Changes but removes the rich open-folder action for scoped files', () => {
+    useArtifactPanel.setState({
+      open: true,
+      tab: 'preview',
+      focusedFile: {
+        filePath: 'reports/report.pdf',
+        fileName: 'report.pdf',
+        ext: '.pdf',
+        mimeType: 'application/pdf',
+        contentType: 'document',
+        workspaceFileRef: { workspaceRoot: '/workspace', relativePath: 'reports/report.pdf' },
+      },
+    });
+    render(<ArtifactPanel fileGroups={groups()} uniqueFileCount={2} agent={null} />);
+
+    expect(screen.getByTestId('artifact-panel-tab-changes')).toBeInTheDocument();
+    expect(screen.queryByTestId('artifact-panel-action-open-folder')).not.toBeInTheDocument();
+    expect(shellShowItemInFolder).not.toHaveBeenCalled();
+  });
+
+  it('retains the rich open-folder action for trusted files', () => {
+    useArtifactPanel.setState({
+      open: true,
+      tab: 'preview',
+      focusedFile: { filePath: '/tmp/report.pdf', fileName: 'report.pdf', ext: '.pdf', mimeType: 'application/pdf', contentType: 'document' },
+    });
+    render(<ArtifactPanel fileGroups={groups()} uniqueFileCount={2} agent={null} />);
+
+    fireEvent.click(screen.getByTestId('artifact-panel-action-open-folder'));
+    expect(shellShowItemInFolder).toHaveBeenCalledWith('/tmp/report.pdf');
+  });
+
+  it('renders the exact empty state and ignores unrelated preview focus', () => {
     useArtifactPanel.setState({
       open: true,
       tab: 'changes',
-      focusedFile: {
-        filePath: '~/.openclaw/skills/open-baidu/SKILL.md',
-        fileName: 'SKILL.md',
-        ext: '.md',
-        mimeType: 'text/markdown',
-        contentType: 'document',
-      },
-      widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
+      focusedFile: { filePath: 'notes.md', fileName: 'notes.md', ext: '.md', mimeType: 'text/markdown', contentType: 'document' },
     });
-
-    render(
-      <ArtifactPanel
-        files={[makeGeneratedFile()]}
-        agent={null}
-      />,
-    );
-
-    const previewBodies = screen.getAllByTestId('file-preview-body');
-    expect(previewBodies[0]).toHaveTextContent('SKILL.md');
-    expect(previewBodies[0]).toHaveTextContent('~/.openclaw/skills/open-baidu/SKILL.md');
-    expect(screen.queryByText('test_example.py')).not.toBeInTheDocument();
+    render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
+    expect(screen.getByText('This session has no file changes yet.')).toBeInTheDocument();
+    expect(screen.getByText('This session has no file changes yet.').closest('.hidden')).toBeNull();
+    expect(screen.getByTestId('file-preview-body').closest('.hidden')).not.toBeNull();
   });
 
-  it('keeps the selected preview file after visiting the workspace tab', () => {
-    useArtifactPanel.setState({
-      open: true,
-      tab: 'preview',
-      focusedFile: {
-        filePath: '~/.openclaw/skills/open-xueqiu/SKILL.md',
-        fileName: 'SKILL.md',
-        ext: '.md',
-        mimeType: 'text/markdown',
-        contentType: 'document',
-      },
-      widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
-    });
+  it('renders one diff per turn and file and keeps unavailable records independently', () => {
+    useArtifactPanel.setState({ open: true, tab: 'changes' });
+    render(<ArtifactPanel fileGroups={groups()} uniqueFileCount={2} agent={null} />);
 
-    render(
-      <ArtifactPanel
-        files={[makeGeneratedFile()]}
-        agent={null}
-      />,
-    );
-
-    expect(screen.getAllByTestId('file-preview-body')[1]).toHaveTextContent('SKILL.md');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Workspace' }));
-    expect(screen.getByTestId('workspace-browser')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
-    expect(screen.getAllByTestId('file-preview-body')[1]).toHaveTextContent('SKILL.md');
-    expect(screen.queryByText('No file selected')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('acp-change-file-group').map((node) => node.getAttribute('data-path'))).toEqual([
+      'src/first.ts',
+      'src/second.ts',
+    ]);
+    expect(screen.getAllByTestId('monaco-diff-viewer').map((node) => node.textContent)).toEqual([
+      'src/first.ts:one\n\nthree:two\n\nfour',
+    ]);
+    expect(screen.getAllByText('Diff unavailable')).toHaveLength(2);
   });
 
-  it('keeps panel tab buttons above iframe previews so changes stays clickable', () => {
-    useArtifactPanel.setState({
-      open: true,
-      tab: 'preview',
-      focusedFile: {
-        filePath: '/tmp/demo.html',
-        fileName: 'demo.html',
-        ext: '.html',
-        mimeType: 'text/html',
-        contentType: 'document',
-      },
-      widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
-    });
+  it('expands file groups that arrive after an initially empty projection', () => {
+    useArtifactPanel.setState({ open: true, tab: 'changes' });
+    const { rerender } = render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
 
-    render(
-      <ArtifactPanel
-        files={[makeGeneratedFile({
-          filePath: '/tmp/demo.html',
-          fileName: 'demo.html',
-          ext: '.html',
-          mimeType: 'text/html',
-          contentType: 'document',
-        })]}
-        agent={null}
-      />,
-    );
+    rerender(<ArtifactPanel fileGroups={groups()} uniqueFileCount={2} agent={null} />);
 
-    const changesButton = screen.getByTestId('artifact-panel-tab-changes');
-    expect(changesButton.className).toContain('z-40');
-    expect(changesButton.parentElement?.parentElement?.className).toContain('z-30');
-
-    fireEvent.pointerDown(changesButton, { button: 0 });
-    expect(screen.getAllByTestId('file-preview-body')[0]).toHaveTextContent('diff');
+    expect(screen.getAllByTestId('monaco-diff-viewer')).toHaveLength(1);
   });
 
-  it('marks macOS chrome so preview tabs and content stay clickable', () => {
-    window.electron.platform = 'darwin';
+  it('expands and scrolls to the focused turn, then lets the user collapse it', () => {
+    const scrollIntoView = vi.fn();
+    const focus = { relativePath: 'src/first.ts', turnId: 'turn-2' };
+    Element.prototype.scrollIntoView = scrollIntoView;
+    useArtifactPanel.getState().openChanges(focus);
+    render(<ArtifactPanel fileGroups={groups()} uniqueFileCount={2} agent={null} />);
 
-    useArtifactPanel.setState({
-      open: true,
-      tab: 'preview',
-      focusedFile: {
-        filePath: '/tmp/demo.md',
-        fileName: 'demo.md',
-        ext: '.md',
-        mimeType: 'text/markdown',
-        contentType: 'document',
-      },
-      widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
+    const header = screen.getByTestId('acp-change-file-src/first.ts');
+    expect(header).toHaveAttribute('aria-expanded', 'true');
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('acp-change-activity-2')).toBeInTheDocument();
+
+    fireEvent.click(header);
+
+    expect(header).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('acp-change-activity-2')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('acp-change-file-src/second.ts'));
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      useArtifactPanel.getState().openChanges(focus);
     });
 
-    render(
-      <ArtifactPanel
-        files={[makeGeneratedFile()]}
-        agent={null}
-      />,
-    );
-
-    expect(screen.getByTestId('artifact-panel')).toHaveClass('no-drag');
-    expect(screen.getByTestId('artifact-panel-drag-region')).toHaveClass('drag-region');
-    expect(screen.getByTestId('artifact-panel-tab-preview').parentElement).toHaveClass('no-drag');
+    expect(header).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('acp-change-activity-2')).toBeInTheDocument();
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
   });
 });

@@ -3,6 +3,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ChatInput } from '@/pages/Chat/ChatInput';
 import { TooltipProvider } from '@/components/ui/tooltip';
 const hostApiFetchMock = vi.hoisted(() => vi.fn());
+const hostApiDialogOpenMock = vi.hoisted(() => vi.fn());
+const toastErrorMock = vi.hoisted(() => vi.fn());
 const { agentsState, chatState, gatewayState, providersState, artifactPanelMocks } = vi.hoisted(() => ({
   agentsState: {
     agents: [] as Array<Record<string, unknown>>,
@@ -65,6 +67,15 @@ vi.mock('@/lib/host-api', () => ({
         body: JSON.stringify(input),
       }),
     },
+    dialog: {
+      open: hostApiDialogOpenMock,
+    },
+  },
+}));
+
+vi.mock('sonner', () => ({
+  toast: {
+    error: toastErrorMock,
   },
 }));
 
@@ -100,10 +111,24 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Stop';
     case 'composer.gatewayConnected':
       return 'connected';
+    case 'composer.gatewayStarting':
+      return 'starting';
     case 'composer.gatewayStatus':
       return `gateway ${String(vars?.state ?? '')} | port: ${String(vars?.port ?? '')} ${String(vars?.pid ?? '')}`.trim();
     case 'composer.retryFailedAttachments':
       return 'Retry failed attachments';
+    case 'composer.workspacePrefix':
+      return String(vars?.workspace ?? '');
+    case 'composer.defaultWorkspaceOption':
+      return 'Default workspace';
+    case 'composer.chooseOtherWorkspaceOption':
+      return 'Choose another folder...';
+    case 'composer.workspacePickerTitle':
+      return 'Select workspace folder';
+    case 'composer.workspacePickerButton':
+      return 'Use workspace';
+    case 'composer.workspacePickerFailed':
+      return 'Could not open workspace picker';
     case 'composer.skillPreviewTooltip':
       return 'Preview SKILL.md';
     case 'composer.skillPreviewNotFound':
@@ -127,6 +152,67 @@ function renderChatInput(onSend = vi.fn()) {
   );
 }
 
+function configureAgentAndModelPickers() {
+  const now = '2025-01-01T00:00:00.000Z';
+  agentsState.agents = [
+    {
+      id: 'main',
+      name: 'Main',
+      isDefault: true,
+      modelDisplay: 'MiniMax',
+      inheritedModel: true,
+      workspace: '~/.openclaw/workspace',
+      agentDir: '~/.openclaw/agents/main/agent',
+      mainSessionKey: 'agent:main:main',
+      channelTypes: [],
+    },
+    {
+      id: 'research',
+      name: 'Research',
+      isDefault: false,
+      modelDisplay: 'Claude',
+      inheritedModel: false,
+      workspace: '~/.openclaw/workspace-research',
+      agentDir: '~/.openclaw/agents/research/agent',
+      mainSessionKey: 'agent:research:desk',
+      channelTypes: [],
+    },
+  ];
+  agentsState.defaultModelRef = 'custom-aaaaaaaa/gpt-a';
+  providersState.accounts = [
+    {
+      id: 'aaaaaaaa',
+      vendorId: 'custom',
+      label: 'Alpha',
+      authMode: 'api_key',
+      baseUrl: 'http://127.0.0.1:1/v1',
+      model: 'custom-aaaaaaaa/gpt-a',
+      enabled: true,
+      isDefault: true,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: 'bbbbbbbb',
+      vendorId: 'custom',
+      label: 'Beta',
+      authMode: 'api_key',
+      baseUrl: 'http://127.0.0.1:2/v1',
+      model: 'custom-bbbbbbbb/gpt-b',
+      enabled: true,
+      isDefault: false,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ];
+  providersState.statuses = [
+    { id: 'aaaaaaaa', name: 'Alpha', type: 'custom', hasKey: true, keyMasked: 'sk-***', enabled: true, createdAt: now, updatedAt: now },
+    { id: 'bbbbbbbb', name: 'Beta', type: 'custom', hasKey: true, keyMasked: 'sk-***', enabled: true, createdAt: now, updatedAt: now },
+  ];
+  providersState.defaultAccountId = 'aaaaaaaa';
+  vi.mocked(hostApiFetchMock).mockResolvedValue({ success: true, skills: [] });
+}
+
 describe('ChatInput agent targeting', () => {
   beforeEach(() => {
     agentsState.agents = [];
@@ -139,7 +225,520 @@ describe('ChatInput agent targeting', () => {
     providersState.defaultAccountId = null;
     providersState.refreshProviderSnapshot.mockReset();
     vi.mocked(hostApiFetchMock).mockReset();
+    vi.mocked(hostApiDialogOpenMock).mockReset();
+    toastErrorMock.mockReset();
     artifactPanelMocks.openPreview.mockReset();
+  });
+
+  it('renders the Zoomies working indicator while a message is sending', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput onSend={vi.fn()} sending />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByTestId('chat-composer-working-indicator')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-composer-zoomies')).toBeInTheDocument();
+  });
+
+  it('renders editable workspace selector in the composer footer', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="~/workspace/ClawX"
+          workspacePath="/Users/alex/workspace/ClawX"
+          workspaceReadOnly={false}
+          onSelectWorkspace={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    const button = screen.getByTestId('chat-workspace-selector');
+    expect(button).toHaveTextContent('~/workspace/ClawX');
+    expect(button).toHaveAttribute('title', '/Users/alex/workspace/ClawX');
+    expect(button).not.toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('places workspace selector before the gateway status in the composer footer', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="~/workspace/ClawX"
+          workspacePath="/Users/alex/workspace/ClawX"
+          workspaceReadOnly={false}
+          onSelectWorkspace={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    const workspaceSelector = screen.getByTestId('chat-workspace-selector');
+    const gatewayStatus = screen.getByText(/gateway connected \| port: 18789/i);
+
+    expect(workspaceSelector.compareDocumentPosition(gatewayStatus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('renders read-only workspace selector for bound sessions', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="默认工作空间"
+          workspacePath="~/.openclaw/workspace"
+          workspaceReadOnly
+          onSelectWorkspace={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    const button = screen.getByTestId('chat-workspace-selector');
+    expect(button).toHaveTextContent('默认工作空间');
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+
+    fireEvent.click(button);
+
+    expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
+  });
+
+  it('workspace selector opens a native directory picker for editable sessions', async () => {
+    const onSelectWorkspace = vi.fn();
+    vi.mocked(hostApiDialogOpenMock).mockResolvedValue({
+      canceled: false,
+      filePaths: ['/Users/alex/next-project'],
+    });
+
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="Project workspace"
+          workspacePath="/Users/alex/project"
+          workspaceReadOnly={false}
+          onSelectWorkspace={onSelectWorkspace}
+        />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('chat-workspace-choose-other'));
+
+    await waitFor(() => {
+      expect(hostApiDialogOpenMock).toHaveBeenCalledWith({
+        title: 'Select workspace folder',
+        buttonLabel: 'Use workspace',
+        defaultPath: '/Users/alex/project',
+        properties: ['openDirectory', 'createDirectory'],
+      });
+    });
+    expect(onSelectWorkspace).toHaveBeenCalledWith('/Users/alex/next-project');
+  });
+
+  it('uses disclosure semantics for workspace options instead of menu roles', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="Project workspace"
+          workspacePath="/Users/alex/project"
+          workspaceReadOnly={false}
+          onSelectWorkspace={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    const button = screen.getByTestId('chat-workspace-selector');
+    fireEvent.click(button);
+
+    expect(button).toHaveAttribute('aria-expanded', 'true');
+    expect(button).not.toHaveAttribute('aria-haspopup', 'menu');
+    expect(screen.getByTestId('chat-workspace-menu')).not.toHaveAttribute('role', 'menu');
+    expect(screen.getByTestId('chat-workspace-default')).not.toHaveAttribute('role', 'menuitem');
+    expect(screen.getByTestId('chat-workspace-choose-other')).not.toHaveAttribute('role', 'menuitem');
+  });
+
+  it('closes the workspace menu with Escape', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="~/workspace/ClawX"
+          workspacePath="/Users/alex/workspace/ClawX"
+          workspaceReadOnly={false}
+          onSelectWorkspace={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    const button = screen.getByTestId('chat-workspace-selector');
+    fireEvent.click(button);
+    expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
+
+    fireEvent.keyDown(button, { key: 'Escape' });
+
+    expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('closes the workspace menu when Escape is pressed outside the selector', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="~/workspace/ClawX"
+          workspacePath="/Users/alex/workspace/ClawX"
+          workspaceReadOnly={false}
+          onSelectWorkspace={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    const button = screen.getByTestId('chat-workspace-selector');
+    fireEvent.click(button);
+    expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('keeps workspace menu ancestors from clipping the dropdown', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="~/workspace/ClawX"
+          workspacePath="/Users/alex/workspace/ClawX"
+          workspaceReadOnly={false}
+          onSelectWorkspace={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+
+    const ancestorClasses: string[] = [];
+    let element = screen.getByTestId('chat-workspace-menu').parentElement;
+    while (element && element !== document.body) {
+      ancestorClasses.push(element.className);
+      element = element.parentElement;
+    }
+
+    expect(ancestorClasses.some((className) => className.split(/\s+/).includes('overflow-hidden'))).toBe(false);
+  });
+
+  it('keeps the workspace menu closed after the selector is disabled and re-enabled', () => {
+    const onSelectWorkspace = vi.fn();
+    const { rerender } = render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="Project workspace"
+          workspacePath="/Users/alex/project"
+          workspaceReadOnly={false}
+          onSelectWorkspace={onSelectWorkspace}
+        />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
+
+    rerender(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          disabled
+          workspaceLabel="Project workspace"
+          workspacePath="/Users/alex/project"
+          workspaceReadOnly={false}
+          onSelectWorkspace={onSelectWorkspace}
+        />
+      </TooltipProvider>,
+    );
+    expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
+
+    rerender(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="Project workspace"
+          workspacePath="/Users/alex/project"
+          workspaceReadOnly={false}
+          onSelectWorkspace={onSelectWorkspace}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-workspace-selector')).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('workspace selector can choose the default workspace from the menu', () => {
+    const onSelectWorkspace = vi.fn();
+
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="~/workspace/ClawX"
+          workspacePath="/Users/alex/workspace/ClawX"
+          workspaceReadOnly={false}
+          onSelectWorkspace={onSelectWorkspace}
+        />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.click(screen.getByTestId('chat-workspace-default'));
+
+    expect(onSelectWorkspace).toHaveBeenCalledWith('~/.openclaw/workspace');
+    expect(hostApiDialogOpenMock).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
+  });
+
+  it('closes the workspace menu on outside click', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="~/workspace/ClawX"
+          workspacePath="/Users/alex/workspace/ClawX"
+          workspaceReadOnly={false}
+          onSelectWorkspace={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
+
+    fireEvent.mouseDown(document.body);
+
+    expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
+  });
+
+  it('keeps composer popovers from overlapping the workspace menu', async () => {
+    agentsState.agents = [
+      {
+        id: 'main',
+        name: 'Main',
+        isDefault: true,
+        modelDisplay: 'MiniMax',
+        inheritedModel: true,
+        workspace: '~/.openclaw/workspace',
+        agentDir: '~/.openclaw/agents/main/agent',
+        mainSessionKey: 'agent:main:main',
+        channelTypes: [],
+      },
+      {
+        id: 'research',
+        name: 'Research',
+        isDefault: false,
+        modelDisplay: 'Claude',
+        inheritedModel: false,
+        workspace: '~/.openclaw/workspace-research',
+        agentDir: '~/.openclaw/agents/research/agent',
+        mainSessionKey: 'agent:research:desk',
+        channelTypes: [],
+      },
+    ];
+    vi.mocked(hostApiFetchMock).mockResolvedValue({ success: true, skills: [] });
+
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="~/workspace/ClawX"
+          workspacePath="/Users/alex/workspace/ClawX"
+          workspaceReadOnly={false}
+          onSelectWorkspace={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('chat-composer-agent'));
+    expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
+    expect(screen.getByText('Research')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    expect(screen.queryByText('Research')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('chat-composer-skill'));
+    expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Search skills')).toBeInTheDocument();
+    expect(await screen.findByText('No matching skills found')).toBeInTheDocument();
+  });
+
+  it('closes an open model picker when opening the agent picker', () => {
+    configureAgentAndModelPickers();
+
+    renderChatInput();
+
+    fireEvent.click(screen.getByTestId('chat-model-picker-button'));
+    expect(screen.getByTestId('chat-model-picker-menu')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('chat-composer-agent'));
+
+    expect(screen.queryByTestId('chat-model-picker-menu')).not.toBeInTheDocument();
+    expect(screen.getByText('Research')).toBeInTheDocument();
+  });
+
+  it('closes an open model picker when opening the skill picker', async () => {
+    configureAgentAndModelPickers();
+
+    renderChatInput();
+
+    fireEvent.click(screen.getByTestId('chat-model-picker-button'));
+    expect(screen.getByTestId('chat-model-picker-menu')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('chat-composer-skill'));
+
+    expect(screen.queryByTestId('chat-model-picker-menu')).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Search skills')).toBeInTheDocument();
+    expect(await screen.findByText('No matching skills found')).toBeInTheDocument();
+  });
+
+  it('closes the focused skill picker search with Escape', async () => {
+    configureAgentAndModelPickers();
+
+    renderChatInput();
+
+    fireEvent.click(screen.getByTestId('chat-composer-skill'));
+    const searchInput = screen.getByPlaceholderText('Search skills');
+    searchInput.focus();
+    expect(searchInput).toHaveFocus();
+
+    fireEvent.keyDown(searchInput, { key: 'Escape' });
+
+    expect(screen.queryByPlaceholderText('Search skills')).not.toBeInTheDocument();
+    expect(await screen.findByText('gateway connected | port: 18789')).toBeInTheDocument();
+  });
+
+  it('read-only workspace selector does not open the native picker', () => {
+    const onSelectWorkspace = vi.fn();
+
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="Default workspace"
+          workspacePath="~/.openclaw/workspace"
+          workspaceReadOnly
+          onSelectWorkspace={onSelectWorkspace}
+        />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+
+    expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
+    expect(hostApiDialogOpenMock).not.toHaveBeenCalled();
+    expect(onSelectWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('disabled workspace selector is announced disabled and does not open the native picker', () => {
+    const onSelectWorkspace = vi.fn();
+
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          disabled
+          workspaceLabel="Project workspace"
+          workspacePath="/Users/alex/project"
+          workspaceReadOnly={false}
+          onSelectWorkspace={onSelectWorkspace}
+        />
+      </TooltipProvider>,
+    );
+
+    const button = screen.getByTestId('chat-workspace-selector');
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+
+    fireEvent.click(button);
+
+    expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
+    expect(hostApiDialogOpenMock).not.toHaveBeenCalled();
+    expect(onSelectWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('sending workspace selector is announced disabled and does not open the native picker', () => {
+    const onSelectWorkspace = vi.fn();
+
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          sending
+          workspaceLabel="Project workspace"
+          workspacePath="/Users/alex/project"
+          workspaceReadOnly={false}
+          onSelectWorkspace={onSelectWorkspace}
+        />
+      </TooltipProvider>,
+    );
+
+    const button = screen.getByTestId('chat-workspace-selector');
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+
+    fireEvent.click(button);
+
+    expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
+    expect(hostApiDialogOpenMock).not.toHaveBeenCalled();
+    expect(onSelectWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('workspace selector without a selection callback is announced disabled and does not open the native picker', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="Project workspace"
+          workspacePath="/Users/alex/project"
+          workspaceReadOnly={false}
+        />
+      </TooltipProvider>,
+    );
+
+    const button = screen.getByTestId('chat-workspace-selector');
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+
+    fireEvent.click(button);
+
+    expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
+    expect(hostApiDialogOpenMock).not.toHaveBeenCalled();
+  });
+
+  it('workspace selector reports dialog failures without selecting a workspace', async () => {
+    const onSelectWorkspace = vi.fn();
+    vi.mocked(hostApiDialogOpenMock).mockRejectedValue(new Error('dialog failed'));
+
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          workspaceLabel="Project workspace"
+          workspacePath="/Users/alex/project"
+          workspaceReadOnly={false}
+          onSelectWorkspace={onSelectWorkspace}
+        />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.click(screen.getByTestId('chat-workspace-choose-other'));
+
+    await waitFor(() => {
+      expect(toastErrorMock).toHaveBeenCalledWith('Could not open workspace picker');
+    });
+    expect(onSelectWorkspace).not.toHaveBeenCalled();
   });
 
   it('hides the @agent picker when only one agent is configured', () => {
@@ -227,7 +826,8 @@ describe('ChatInput agent targeting', () => {
     expect(onSend).toHaveBeenCalledWith('Hello direct agent', undefined, 'research');
   });
 
-  it('disables the input while gateway is running but not yet ready', () => {
+  it('keeps the ACP composer enabled while gateway is running but not yet ready', () => {
+    const onSend = vi.fn();
     gatewayState.status = { state: 'running', port: 18789, gatewayReady: false };
     agentsState.agents = [
       {
@@ -276,11 +876,17 @@ describe('ChatInput agent targeting', () => {
     ];
     providersState.defaultAccountId = 'aaaaaaaa';
 
-    renderChatInput();
+    renderChatInput(onSend);
 
-    expect(screen.getByTestId('chat-composer-input')).toBeDisabled();
-    expect(screen.getByTestId('chat-composer-skill')).toBeDisabled();
-    expect(screen.getByTestId('chat-model-picker-button')).toBeDisabled();
+    const input = screen.getByTestId('chat-composer-input');
+    expect(input).not.toBeDisabled();
+    expect(screen.getByTestId('chat-composer-skill')).not.toBeDisabled();
+    expect(screen.getByTestId('chat-model-picker-button')).not.toBeDisabled();
+
+    fireEvent.change(input, { target: { value: 'Send through ACP' } });
+    fireEvent.click(screen.getByTitle('Send'));
+
+    expect(onSend).toHaveBeenCalledWith('Send through ACP', undefined, null);
   });
 
   it('shows starting status while gateway is running but not yet ready', () => {

@@ -1,8 +1,10 @@
+import type { BrowserWindow } from 'electron';
 import type { GatewayManager } from '../gateway/manager';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { RuntimeManager } from '../runtime/manager';
 import type { RuntimeSendWithMediaPayload } from '../runtime/types';
 import { logger } from '../utils/logger';
+import { createAcpChatService } from './acp-chat-service';
 import { isRecord } from './payload-utils';
 
 const VISION_MIME_TYPES = new Set([
@@ -45,14 +47,14 @@ export function createChatSendWithMediaHandler(
   log = logger,
 ): (payload?: unknown) => ReturnType<CompleteHostServiceRegistry['chat']['sendWithMedia']> {
   return async (payload) => {
-      const body = isRecord(payload) ? payload as ChatSendWithMediaPayload : {};
-      const sessionKey = typeof body.sessionKey === 'string' ? body.sessionKey : '';
-      const idempotencyKey = typeof body.idempotencyKey === 'string' ? body.idempotencyKey : '';
-      if (!sessionKey || !idempotencyKey) {
-        return { success: false, error: 'Invalid chat send payload' };
-      }
+    const body = isRecord(payload) ? payload as ChatSendWithMediaPayload : {};
+    const sessionKey = typeof body.sessionKey === 'string' ? body.sessionKey : '';
+    const idempotencyKey = typeof body.idempotencyKey === 'string' ? body.idempotencyKey : '';
+    if (!sessionKey || !idempotencyKey) {
+      return { success: false, error: 'Invalid chat send payload' };
+    }
 
-      try {
+    try {
         let message = typeof body.message === 'string' ? body.message : '';
         const imageAttachments: Array<Record<string, unknown>> = [];
         const fileReferences: string[] = [];
@@ -63,7 +65,7 @@ export function createChatSendWithMediaHandler(
           for (const item of media) {
             const exists = await fsP.access(item.filePath).then(() => true, () => false);
             log.info(
-              `[chat:sendWithMedia] Processing file: ${item.fileName} (${item.mimeType}), path: ${item.filePath}, exists: ${exists}, isVision: ${VISION_MIME_TYPES.has(item.mimeType)}`,
+              `[chat:sendWithMedia] Processing media: name=${item.fileName}, mimeType=${item.mimeType}, exists=${exists}, isVision=${VISION_MIME_TYPES.has(item.mimeType)}`,
             );
 
             fileReferences.push(
@@ -99,34 +101,46 @@ export function createChatSendWithMediaHandler(
         }
 
         log.info(
-          `[chat:sendWithMedia] Sending: message="${message.substring(0, 100)}", attachments=${imageAttachments.length}, fileRefs=${fileReferences.length}`,
+          `[chat:sendWithMedia] Sending: messageLength=${message.length}, attachments=${imageAttachments.length}, fileRefs=${fileReferences.length}`,
         );
         const result = await gatewayManager.rpc('chat.send', rpcParams, 120000);
-        log.info(`[chat:sendWithMedia] RPC result: ${JSON.stringify(result)}`);
-        const response = isRecord(result) && typeof result.runId === 'string'
-          ? { runId: result.runId }
+        const hasRunId = isRecord(result) && typeof result.runId === 'string';
+        log.info(`[chat:sendWithMedia] RPC result: runId=${hasRunId ? 'present' : 'absent'}`);
+        const response = hasRunId
+          ? { runId: result.runId as string }
           : undefined;
         return { success: true, ...(response ? { result: response } : {}) };
-      } catch (error) {
-        log.error(`[chat:sendWithMedia] Error: ${String(error)}`);
-        return { success: false, error: String(error) };
-      }
+    } catch (error) {
+      log.error(`[chat:sendWithMedia] Error: ${String(error)}`);
+      return { success: false, error: String(error) };
+    }
   };
 }
 
 export function createChatApi({
   gatewayManager,
   runtimeManager,
+  mainWindow,
 }: {
   gatewayManager: GatewayManager;
   runtimeManager?: RuntimeManager;
+  mainWindow: BrowserWindow;
 }): CompleteHostServiceRegistry['chat'] {
+  const acpChat = createAcpChatService(mainWindow, gatewayManager);
   const openClawHandler = createChatSendWithMediaHandler(gatewayManager, logger);
+  const withOpenClawAcp = async <T>(operation: () => Promise<T>) => {
+    if (runtimeManager && await runtimeManager.getActiveKind() !== 'openclaw') {
+      return {
+        success: false,
+        error: 'ACP chat is only available for the OpenClaw runtime',
+      } as T;
+    }
+    return operation();
+  };
+
   return {
     sendWithMedia: async (payload) => {
-      if (!runtimeManager) {
-        return openClawHandler(payload);
-      }
+      if (!runtimeManager) return openClawHandler(payload);
       try {
         const result = await runtimeManager.getActiveProvider().sendMessageWithMedia(
           (isRecord(payload) ? payload : {}) as RuntimeSendWithMediaPayload,
@@ -136,5 +150,9 @@ export function createChatApi({
         return { success: false, error: String(error) };
       }
     },
+    loadAcpSession: (payload) => withOpenClawAcp(() => acpChat.loadSession(payload)),
+    sendAcpPrompt: (payload) => withOpenClawAcp(() => acpChat.sendPrompt(payload)),
+    cancelAcpSession: (payload) => withOpenClawAcp(() => acpChat.cancelSession(payload)),
+    respondAcpPermission: (payload) => withOpenClawAcp(() => acpChat.respondPermission(payload)),
   };
 }

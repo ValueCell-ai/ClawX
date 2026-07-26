@@ -27,9 +27,14 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
-import { readTextFile, statFile, writeTextFile } from '@/lib/file-preview-client';
-import { hostApi } from '@/lib/host-api';
-import type { FilePreviewTarget } from './types';
+import {
+  readTextFile,
+  readWorkspaceText,
+  statFile,
+  statWorkspaceFile,
+  writeTextFile,
+} from '@/lib/file-preview-client';
+import { getFilePreviewTargetIdentity, type FilePreviewTarget } from './types';
 import {
   isHtmlPreviewExt,
   isPdfPreviewExt,
@@ -42,6 +47,7 @@ import { FilePreviewIcon } from './file-card-utils';
 import { formatFileSize } from './format';
 import {
   confirmAndOpenFile,
+  revealFile,
   shouldOfferDirectOpenFallback,
 } from './open-file-utils';
 import MarkdownPreview from './MarkdownPreview';
@@ -85,13 +91,12 @@ export interface FilePreviewBodyProps {
 }
 
 type LoadState =
-  | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'ready'; content: string; size?: number; readOnly: boolean }
-  | { status: 'tooLarge'; size?: number }
-  | { status: 'binary' }
-  | { status: 'outsideSandbox' }
-  | { status: 'error'; message: string };
+  | { identity: string; status: 'loading' }
+  | { identity: string; status: 'ready'; content: string; size?: number; readOnly: boolean }
+  | { identity: string; status: 'tooLarge'; size?: number }
+  | { identity: string; status: 'binary' }
+  | { identity: string; status: 'outsideSandbox' }
+  | { identity: string; status: 'error'; message: string };
 
 type Tab = 'source' | 'preview' | 'diff';
 
@@ -211,7 +216,11 @@ export function FilePreviewBody({
   hideHeader = false,
 }: FilePreviewBodyProps) {
   const { t } = useTranslation('chat');
-  const [state, setState] = useState<LoadState>({ status: 'idle' });
+  const loadIdentity = getFilePreviewTargetIdentity(file);
+  const [storedState, setState] = useState<LoadState>({ identity: loadIdentity, status: 'loading' });
+  const state: LoadState = storedState.identity === loadIdentity
+    ? storedState
+    : { identity: loadIdentity, status: 'loading' };
   const [draft, setDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<Tab>('source');
@@ -219,7 +228,7 @@ export function FilePreviewBody({
 
   // Preview / diff modes are read-only by definition — those views are
   // for inspecting content, not editing it.
-  const enforcedReadOnly = readOnly || mode === 'preview' || mode === 'diff';
+  const enforcedReadOnly = readOnly || !!file.workspaceFileRef || mode === 'preview' || mode === 'diff';
   const tabs = useMemo(() => tabsForFile(file, mode), [file, mode]);
   const unsupportedPreviewFormat = file.contentType === 'document' && !supportsInlineDocumentPreview(file.ext);
   const unsupportedDiffFormat = mode === 'diff' && !supportsInlineDiff(file);
@@ -236,7 +245,7 @@ export function FilePreviewBody({
     // Diff-only mode renders entirely from the captured tool payload —
     // no disk read needed, so we can mark the body "ready" immediately.
     if (mode === 'diff') {
-      setState({ status: 'ready', content: '', readOnly: enforcedReadOnly });
+      setState({ identity: loadIdentity, status: 'ready', content: '', readOnly: enforcedReadOnly });
       setDraft(null);
       return () => {
         cancelled = true;
@@ -244,9 +253,11 @@ export function FilePreviewBody({
     }
 
     if (unsupportedPreviewFormat) {
-      setState({ status: 'ready', content: '', readOnly: enforcedReadOnly });
+      setState({ identity: loadIdentity, status: 'ready', content: '', readOnly: enforcedReadOnly });
       setDraft(null);
-      void statFile(file.filePath)
+      void (file.workspaceFileRef
+        ? statWorkspaceFile(file.workspaceFileRef)
+        : statFile(file.filePath))
         .then((res) => {
           if (cancelled || !res.ok) return;
           setSize(res.size);
@@ -266,28 +277,30 @@ export function FilePreviewBody({
       // "direct open" fallback so users still have a way out.
       if (typeof file.size === 'number' && file.size > RICH_PREVIEW_MAX_BYTES) {
         setSize(file.size);
-        setState({ status: 'tooLarge', size: file.size });
+        setState({ identity: loadIdentity, status: 'tooLarge', size: file.size });
         setDraft(null);
         return () => {
           cancelled = true;
         };
       }
-      setState({ status: 'loading' });
+      setState({ identity: loadIdentity, status: 'loading' });
       setDraft(null);
-      void statFile(file.filePath)
+      void (file.workspaceFileRef
+        ? statWorkspaceFile(file.workspaceFileRef)
+        : statFile(file.filePath))
         .then((res) => {
           if (cancelled) return;
           if (res.ok && typeof res.size === 'number' && res.size > RICH_PREVIEW_MAX_BYTES) {
             setSize(res.size);
-            setState({ status: 'tooLarge', size: res.size });
+            setState({ identity: loadIdentity, status: 'tooLarge', size: res.size });
             return;
           }
           if (res.ok) setSize(res.size);
-          setState({ status: 'ready', content: '', readOnly: enforcedReadOnly });
+          setState({ identity: loadIdentity, status: 'ready', content: '', readOnly: enforcedReadOnly });
         })
         .catch(() => {
           if (cancelled) return;
-          setState({ status: 'ready', content: '', readOnly: enforcedReadOnly });
+          setState({ identity: loadIdentity, status: 'ready', content: '', readOnly: enforcedReadOnly });
         });
       return () => {
         cancelled = true;
@@ -295,34 +308,37 @@ export function FilePreviewBody({
     }
 
     if (file.contentType === 'snapshot' || file.contentType === 'video' || file.contentType === 'audio') {
-      setState({ status: 'ready', content: '', readOnly: enforcedReadOnly });
+      setState({ identity: loadIdentity, status: 'ready', content: '', readOnly: enforcedReadOnly });
       setDraft(null);
       return () => {
         cancelled = true;
       };
     }
 
-    setState({ status: 'loading' });
-    readTextFile(file.filePath)
+    setState({ identity: loadIdentity, status: 'loading' });
+    (file.workspaceFileRef
+      ? readWorkspaceText(file.workspaceFileRef)
+      : readTextFile(file.filePath))
       .then((res) => {
         if (cancelled) return;
         if (!res.ok) {
           if (res.error === 'tooLarge') {
-            setState({ status: 'tooLarge', size: res.size });
+            setState({ identity: loadIdentity, status: 'tooLarge', size: res.size });
             return;
           }
           if (res.error === 'binary') {
-            setState({ status: 'binary' });
+            setState({ identity: loadIdentity, status: 'binary' });
             return;
           }
           if (res.error === 'outsideSandbox') {
-            setState({ status: 'outsideSandbox' });
+            setState({ identity: loadIdentity, status: 'outsideSandbox' });
             return;
           }
-          setState({ status: 'error', message: String(res.error ?? 'unknown') });
+          setState({ identity: loadIdentity, status: 'error', message: String(res.error ?? 'unknown') });
           return;
         }
         setState({
+          identity: loadIdentity,
           status: 'ready',
           content: res.content ?? '',
           size: res.size,
@@ -333,14 +349,19 @@ export function FilePreviewBody({
       })
       .catch((err) => {
         if (cancelled) return;
-        setState({ status: 'error', message: err instanceof Error ? err.message : String(err) });
+        setState({
+          identity: loadIdentity,
+          status: 'error',
+          message: err instanceof Error ? err.message : String(err),
+        });
       });
     return () => {
       cancelled = true;
     };
-  }, [file, enforcedReadOnly, mode, tabs, unsupportedPreviewFormat, isRichDocumentPreview]);
+  }, [file, loadIdentity, enforcedReadOnly, mode, tabs, unsupportedPreviewFormat, isRichDocumentPreview]);
 
   const effectiveReadOnly = state.status === 'ready' ? state.readOnly : true;
+  const allowSystemActions = !file.workspaceFileRef;
   const dirty =
     state.status === 'ready' && !state.readOnly && draft != null && draft !== state.content;
 
@@ -350,7 +371,7 @@ export function FilePreviewBody({
     try {
       const res = await writeTextFile(file.filePath, draft);
       if (!res.ok) throw new Error(res.error ?? 'unknown');
-      setState({ status: 'ready', content: draft, size, readOnly: false });
+      setState({ identity: loadIdentity, status: 'ready', content: draft, size, readOnly: false });
       toast.success(t('filePreview.toast.saved', 'Saved to disk'));
     } catch (err) {
       const code = err instanceof Error ? err.message : String(err);
@@ -364,22 +385,27 @@ export function FilePreviewBody({
     } finally {
       setSaving(false);
     }
-  }, [file, dirty, draft, size, t]);
+  }, [file, loadIdentity, dirty, draft, size, t]);
 
   const handleRevert = useCallback(() => {
-    if (state.status !== 'ready') return;
-    setDraft(state.content);
-  }, [state]);
+    if (storedState.identity !== loadIdentity || storedState.status !== 'ready') return;
+    setDraft(storedState.content);
+  }, [storedState, loadIdentity]);
 
   const handleOpenInFinder = useCallback(() => {
-    hostApi.shell.showItemInFolder(file.filePath).catch(() => {
+    revealFile(file).catch(() => {
       toast.error(t('filePreview.errors.openInFinderFailed', 'Could not reveal in file manager'));
     });
   }, [file, t]);
 
   const handleOpenDirectly = useCallback(async () => {
     try {
-      await confirmAndOpenFile({ filePath: file.filePath, fileName: file.fileName, size, t });
+      await confirmAndOpenFile({
+        filePath: file.filePath,
+        fileName: file.fileName,
+        size,
+        t,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       toast.error(t('filePreview.errors.openFailed', { defaultValue: 'Open failed: {{error}}', error: message }));
@@ -387,7 +413,7 @@ export function FilePreviewBody({
   }, [file, size, t]);
 
   const renderUnsupportedFormat = () => {
-    const directOpen = shouldOfferDirectOpenFallback(file.ext, size);
+    const directOpen = allowSystemActions && shouldOfferDirectOpenFallback(file.ext, size);
     return (
     <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
       <div className="space-y-1.5">
@@ -396,7 +422,7 @@ export function FilePreviewBody({
             ? t('filePreview.errors.largeBinaryOpenTitle', 'This file is too large for inline preview')
             : t('filePreview.errors.unsupportedFormatTitle', 'This file format is not supported for inline preview or diff')}
         </p>
-        <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
+        {allowSystemActions && <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
           {directOpen
             ? t('filePreview.errors.largeBinaryOpenHint', {
               defaultValue: 'This file is {{size}}. ClawX does not provide an inline preview for it. You can confirm to open it directly in your system default app.',
@@ -406,7 +432,7 @@ export function FilePreviewBody({
               'filePreview.errors.unsupportedFormatHint',
               'Only directly readable files such as text and Markdown support inline preview and diff. Please open this file in your file manager.',
             )}
-        </p>
+        </p>}
       </div>
       <div className="flex flex-wrap items-center justify-center gap-2">
         {directOpen && (
@@ -414,10 +440,10 @@ export function FilePreviewBody({
             {t('filePreview.actions.openDirectly', 'Open directly')}
           </Button>
         )}
-        <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
+        {allowSystemActions && <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
           <FolderOpen className="mr-2 h-4 w-4" />
           {t('filePreview.actions.openInFinder', 'Show in file manager')}
-        </Button>
+        </Button>}
       </div>
     </div>
   );
@@ -427,7 +453,7 @@ export function FilePreviewBody({
     if (unsupportedPreviewFormat || unsupportedDiffFormat) {
       return renderUnsupportedFormat();
     }
-    if (state.status === 'loading' || state.status === 'idle') {
+    if (state.status === 'loading') {
       return (
         <div className="flex h-full items-center justify-center">
           <LoadingSpinner />
@@ -435,7 +461,7 @@ export function FilePreviewBody({
       );
     }
     if (state.status === 'tooLarge') {
-      const directOpen = shouldOfferDirectOpenFallback(file.ext, state.size ?? size);
+      const directOpen = allowSystemActions && shouldOfferDirectOpenFallback(file.ext, state.size ?? size);
       return (
         <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
           <p>
@@ -455,10 +481,10 @@ export function FilePreviewBody({
                 {t('filePreview.actions.openDirectly', 'Open directly')}
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
+            {allowSystemActions && <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
               <FolderOpen className="mr-2 h-4 w-4" />
               {t('filePreview.actions.openInFinder', 'Show in file manager')}
-            </Button>
+            </Button>}
           </div>
         </div>
       );
@@ -467,10 +493,10 @@ export function FilePreviewBody({
       return (
         <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
           <p>{t('filePreview.errors.binary', 'Binary files do not support text preview')}</p>
-          <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
+          {allowSystemActions && <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
             <FolderOpen className="mr-2 h-4 w-4" />
             {t('filePreview.actions.openInFinder', 'Show in file manager')}
-          </Button>
+          </Button>}
         </div>
       );
     }
@@ -484,17 +510,17 @@ export function FilePreviewBody({
             <p className="text-sm font-medium text-foreground">
               {t('filePreview.errors.outsideSandboxTitle', 'Unable to read this file')}
             </p>
-            <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
+            {allowSystemActions && <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
               {t(
                 'filePreview.errors.outsideSandboxHint',
                 'ClawX cannot read this path. The file may have been moved, deleted, or may not be accessible to the current account. You can inspect it in your file manager.',
               )}
-            </p>
+            </p>}
           </div>
-          <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
+          {allowSystemActions && <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
             <FolderOpen className="mr-2 h-4 w-4" />
             {t('filePreview.actions.openInFinder', 'Show in file manager')}
-          </Button>
+          </Button>}
         </div>
       );
     }
@@ -507,10 +533,10 @@ export function FilePreviewBody({
       return (
         <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
           <p>{hint}</p>
-          <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
+          {allowSystemActions && <Button variant="outline" size="sm" onClick={handleOpenInFinder}>
             <FolderOpen className="mr-2 h-4 w-4" />
             {t('filePreview.actions.openInFinder', 'Show in file manager')}
-          </Button>
+          </Button>}
         </div>
       );
     }
@@ -539,7 +565,11 @@ export function FilePreviewBody({
           {tabs.includes('source') && (
             <TabsContent value="source" className="m-0 h-full">
               {file.contentType === 'snapshot' ? (
-                <ImageViewer filePath={file.filePath} fileName={file.fileName} />
+                <ImageViewer
+                  filePath={file.filePath}
+                  fileName={file.fileName}
+                  workspaceFileRef={file.workspaceFileRef}
+                />
               ) : (
                 <Suspense
                   fallback={
@@ -561,7 +591,11 @@ export function FilePreviewBody({
           {tabs.includes('preview') && (
             <TabsContent value="preview" className="m-0 h-full overflow-auto">
               {file.contentType === 'snapshot' ? (
-                <ImageViewer filePath={file.filePath} fileName={file.fileName} />
+                <ImageViewer
+                  filePath={file.filePath}
+                  fileName={file.fileName}
+                  workspaceFileRef={file.workspaceFileRef}
+                />
               ) : isPdfPreviewExt(file.ext) ? (
                 <Suspense
                   fallback={
@@ -570,7 +604,11 @@ export function FilePreviewBody({
                     </div>
                   }
                 >
-                  <PdfViewerLazy filePath={file.filePath} fileName={file.fileName} />
+                  <PdfViewerLazy
+                    filePath={file.filePath}
+                    fileName={file.fileName}
+                    workspaceFileRef={file.workspaceFileRef}
+                  />
                 </Suspense>
               ) : isSheetPreviewExt(file.ext) ? (
                 <Suspense
@@ -580,7 +618,11 @@ export function FilePreviewBody({
                     </div>
                   }
                 >
-                  <SheetViewerLazy filePath={file.filePath} fileName={file.fileName} />
+                  <SheetViewerLazy
+                    filePath={file.filePath}
+                    fileName={file.fileName}
+                    workspaceFileRef={file.workspaceFileRef}
+                  />
                 </Suspense>
               ) : file.contentType === 'document' ? (
                 isHtmlPreviewExt(file.ext) ? (
@@ -588,6 +630,7 @@ export function FilePreviewBody({
                     source={draft ?? state.content}
                     filePath={file.filePath}
                     fileName={file.fileName}
+                    workspaceFileRef={file.workspaceFileRef}
                   />
                 ) : (
                   <MarkdownPreview source={draft ?? state.content} />

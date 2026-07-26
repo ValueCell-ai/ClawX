@@ -1,3 +1,5 @@
+// Legacy Gateway Chat visualization retained only for tests or non-ACP migration cleanup.
+// ACP Chat renders ordered inline timeline blocks instead.
 import { useState } from 'react';
 import { CheckCircle2, ChevronDown, ChevronRight, CircleDashed, GitBranch, Link, MessageSquare, Wrench, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';

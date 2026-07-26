@@ -11,9 +11,9 @@ import {
   symlinkSync,
   unlinkSync,
 } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { spawn, type ForkOptions } from 'node:child_process';
 import { homedir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { delimiter, join, dirname } from 'node:path';
 import { getOpenClawDir, getOpenClawEntryPath } from './paths';
 import { logger } from './logger';
 
@@ -98,6 +98,158 @@ export function getOpenClawCliCommand(): string {
   return `node ${quoteForPosix(entryPath)}`;
 }
 
+export type OpenClawCliSpawnSpec = {
+  command: string;
+  args: string[];
+  env?: NodeJS.ProcessEnv;
+  shell?: boolean;
+};
+
+type OpenClawEmbeddedForkOptions = ForkOptions & { windowsHide?: boolean };
+
+export type OpenClawEmbeddedForkSpec = {
+  modulePath: string;
+  args: string[];
+  options: OpenClawEmbeddedForkOptions;
+};
+
+function fileExists(path: string): boolean {
+  return existsSync(path);
+}
+
+function getWindowsCmdWrapperSpawnSpec(cmdPath: string): OpenClawCliSpawnSpec {
+  return {
+    command: process.env.ComSpec || 'cmd.exe',
+    args: ['/d', '/s', '/c', `"${cmdPath}"`],
+  };
+}
+
+function getExecutableFromPath(command: string): string | null {
+  const pathEnv = process.env.PATH || '';
+  for (const dir of pathEnv.split(delimiter)) {
+    if (!dir) continue;
+    const candidate = join(dir, command);
+    if (fileExists(candidate)) return candidate;
+  }
+  return null;
+}
+
+function getDevNodeExecPath(): string | null {
+  const nodeCommand = process.platform === 'win32' ? 'node.exe' : 'node';
+  return getExecutableFromPath(nodeCommand);
+}
+
+export function getOpenClawCliSpawnSpec(): OpenClawCliSpawnSpec {
+  const entryPath = getOpenClawEntryPath();
+  const platform = process.platform;
+
+  if (platform === 'darwin' || platform === 'linux') {
+    const localBinPath = join(homedir(), '.local', 'bin', 'openclaw');
+    if (fileExists(localBinPath)) {
+      return { command: localBinPath, args: [] };
+    }
+  }
+
+  if (platform === 'linux' && fileExists('/usr/local/bin/openclaw')) {
+    return { command: '/usr/local/bin/openclaw', args: [] };
+  }
+
+  if (!app.isPackaged) {
+    const openclawDir = getOpenClawDir();
+    const nodeModulesDir = dirname(openclawDir);
+    const binName = platform === 'win32' ? 'openclaw.cmd' : 'openclaw';
+    const binPath = join(nodeModulesDir, '.bin', binName);
+
+    if (fileExists(binPath)) {
+      if (platform === 'win32') {
+        return getWindowsCmdWrapperSpawnSpec(binPath);
+      }
+
+      return { command: binPath, args: [], shell: false };
+    }
+  }
+
+  const packagedWrapper = getPackagedCliWrapperPath();
+  if (packagedWrapper) {
+    if (platform === 'win32') {
+      return getWindowsCmdWrapperSpawnSpec(packagedWrapper);
+    }
+
+    return { command: packagedWrapper, args: [], shell: false };
+  }
+
+  if (app.isPackaged) {
+    if (platform === 'win32') {
+      const bundledNode = getPackagedWindowsNodePath();
+      if (bundledNode) {
+        return { command: bundledNode, args: [entryPath] };
+      }
+    }
+
+    return {
+      command: process.execPath,
+      args: [entryPath],
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    };
+  }
+
+  return { command: 'node', args: [entryPath] };
+}
+
+function getOpenClawEmbeddedExecPath(): { execPath: string; electronRunAsNode: boolean } {
+  if (!app.isPackaged) {
+    const nodeExecPath = getDevNodeExecPath();
+    if (nodeExecPath) return { execPath: nodeExecPath, electronRunAsNode: false };
+    if (process.versions?.electron) {
+      throw new Error('Node executable not found on PATH for embedded OpenClaw launch');
+    }
+  }
+
+  if (app.isPackaged && process.platform === 'win32') {
+    const bundledNode = getPackagedWindowsNodePath();
+    if (bundledNode) return { execPath: bundledNode, electronRunAsNode: false };
+  }
+
+  if (app.isPackaged && process.platform === 'darwin') {
+    const helperPath = getPackagedMacOSHelperPath();
+    if (!helperPath) {
+      throw new Error('ClawX Helper executable not found for embedded OpenClaw launch');
+    }
+    return { execPath: helperPath, electronRunAsNode: true };
+  }
+
+  return { execPath: process.execPath, electronRunAsNode: Boolean(process.versions?.electron) };
+}
+
+export function getOpenClawEmbeddedForkSpec(args: string[] = []): OpenClawEmbeddedForkSpec {
+  const { execPath, electronRunAsNode } = getOpenClawEmbeddedExecPath();
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    OPENCLAW_NO_RESPAWN: '1',
+    OPENCLAW_EMBEDDED_IN: 'ClawX',
+    OPENCLAW_EXEC_SHELL_SNAPSHOT: '0',
+  };
+
+  if (electronRunAsNode) {
+    env.ELECTRON_RUN_AS_NODE = '1';
+  } else {
+    delete env.ELECTRON_RUN_AS_NODE;
+  }
+
+  return {
+    modulePath: getOpenClawEntryPath(),
+    args,
+    options: {
+      cwd: getOpenClawDir(),
+      env,
+      execPath,
+      execArgv: [],
+      stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+      windowsHide: true,
+    },
+  };
+}
+
 // ── Packaged CLI wrapper path ────────────────────────────────────────────────
 
 function getPackagedCliWrapperPath(): string | null {
@@ -118,6 +270,20 @@ function getPackagedCliWrapperPath(): string | null {
 function getWindowsPowerShellPath(): string {
   const systemRoot = process.env.SystemRoot || 'C:\\Windows';
   return join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+}
+
+function getPackagedMacOSHelperPath(): string | null {
+  if (process.platform !== 'darwin' || !app.isPackaged) return null;
+  const appName = app.getName();
+  const helperName = `${appName} Helper`;
+  const helperPath = join(
+    dirname(process.execPath),
+    '../Frameworks',
+    `${helperName}.app`,
+    'Contents/MacOS',
+    helperName,
+  );
+  return existsSync(helperPath) ? helperPath : null;
 }
 
 // ── macOS / Linux install ────────────────────────────────────────────────────
@@ -328,18 +494,8 @@ export async function autoInstallCliIfNeeded(
 // ── Completion helpers ───────────────────────────────────────────────────────
 
 function getNodeExecForCli(): string {
-  if (process.platform === 'darwin' && app.isPackaged) {
-    const appName = app.getName();
-    const helperName = `${appName} Helper`;
-    const helperPath = join(
-      dirname(process.execPath),
-      '../Frameworks',
-      `${helperName}.app`,
-      'Contents/MacOS',
-      helperName,
-    );
-    if (existsSync(helperPath)) return helperPath;
-  }
+  const helperPath = getPackagedMacOSHelperPath();
+  if (helperPath) return helperPath;
   return process.execPath;
 }
 

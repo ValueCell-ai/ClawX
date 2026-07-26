@@ -237,6 +237,11 @@ vi.mock('@electron/services/providers/provider-runtime-sync', () => ({
   getOpenClawProviderKey: vi.fn((type: string) => type),
 }));
 
+vi.mock('@electron/utils/openclaw-auth', () => ({
+  removeProviderFromOpenClaw: vi.fn(),
+  saveProviderKeyToOpenClaw: vi.fn(),
+}));
+
 vi.mock('@electron/services/providers/provider-service', () => ({
   getProviderService: () => providerServiceMock,
 }));
@@ -326,6 +331,8 @@ const baseSettings = {
   proxyBypassRules: '',
   launchAtStartup: false,
   theme: 'system',
+  chatWorkspacePath: '~/.openclaw/workspace',
+  recentWorkspacePaths: ['~/.openclaw/workspace'],
 };
 
 describe('host services', () => {
@@ -493,6 +500,21 @@ describe('host services', () => {
     expect(syncLaunchAtStartupSettingFromStoreMock).toHaveBeenCalledTimes(2);
     expect(syncProxyConfigToOpenClawMock).toHaveBeenCalledTimes(1);
     expect(gatewayManager.restart).not.toHaveBeenCalled();
+  });
+
+  it('accepts chat workspace settings through the typed settings API', async () => {
+    setSettingMock.mockResolvedValue(undefined);
+
+    const { createSettingsApi } = await import('@electron/services/settings-api');
+    const api = createSettingsApi({
+      getStatus: () => ({ state: 'stopped' }),
+      restart: vi.fn(),
+    } as never);
+
+    await expect(api.set({ key: 'chatWorkspacePath', value: '/Users/alex/workspace/ClawX' })).resolves.toEqual({ success: true });
+    await expect(api.set({ key: 'recentWorkspacePaths', value: ['/Users/alex/workspace/ClawX'] })).resolves.toEqual({ success: true });
+    expect(setSettingMock).toHaveBeenCalledWith('chatWorkspacePath', '/Users/alex/workspace/ClawX');
+    expect(setSettingMock).toHaveBeenCalledWith('recentWorkspacePaths', ['/Users/alex/workspace/ClawX']);
   });
 
   it('routes gateway rpc through backpressure', async () => {
@@ -1555,6 +1577,43 @@ describe('host services', () => {
     expect(snapshot.gatewayErrLogTail).toBe('');
   });
 
+  it('records and returns ACP diagnostics trace entries', async () => {
+    const { clearAcpTraceForTests } = await import('@electron/services/acp-trace');
+    const { createDiagnosticsApi } = await import('@electron/services/diagnostics-api');
+    clearAcpTraceForTests();
+    const gatewayManager = { getStatus: vi.fn(() => ({ state: 'running', port: 18789 })) };
+    const diagnosticsApi = createDiagnosticsApi({ gatewayManager: gatewayManager as never });
+
+    await expect(diagnosticsApi.recordAcpTrace({
+      event: 'image-generation:projection-rejected',
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      details: { reason: 'no-fresh-context' },
+    })).resolves.toEqual({ success: true });
+
+    const snapshot = await diagnosticsApi.acpTrace();
+    expect(snapshot.entries).toContainEqual(expect.objectContaining({
+      source: 'renderer',
+      event: 'image-generation:projection-rejected',
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+    }));
+  });
+
+  it('rejects malformed ACP diagnostics trace payloads', async () => {
+    const { clearAcpTraceForTests } = await import('@electron/services/acp-trace');
+    const { createDiagnosticsApi } = await import('@electron/services/diagnostics-api');
+    clearAcpTraceForTests();
+    const gatewayManager = { getStatus: vi.fn(() => ({ state: 'running', port: 18789 })) };
+    const diagnosticsApi = createDiagnosticsApi({ gatewayManager: gatewayManager as never });
+
+    await expect(diagnosticsApi.recordAcpTrace({ event: '' })).resolves.toEqual({
+      success: false,
+      error: 'Invalid ACP trace payload',
+    });
+    await expect(diagnosticsApi.acpTrace()).resolves.toMatchObject({ entries: [] });
+  });
+
   it('reads only selected log files from the log directory', async () => {
     const selectedLog = join(logDir, 'clawx-selected.log');
     writeFileSync(selectedLog, 'one\ntwo\nthree\n');
@@ -1577,7 +1636,10 @@ describe('host services', () => {
     };
     const { createChatApi } = await import('@electron/services/chat-api');
 
-    await expect(createChatApi({ gatewayManager: gatewayManager as never }).sendWithMedia({
+    await expect(createChatApi({
+      gatewayManager: gatewayManager as never,
+      mainWindow: {} as never,
+    }).sendWithMedia({
       sessionKey: 'agent:main:main',
       message: 'inspect this',
       idempotencyKey: 'idem-123',
@@ -1617,7 +1679,7 @@ describe('host services', () => {
         type: 'message',
         message: {
           role: 'user',
-          content: 'Hello from transcript',
+          content: '[Working directory: ~/.openclaw/workspace]\n\nSender: test-user\n[Working directory: ~/.openclaw/workspace]\n\nHello from transcript',
           timestamp: 1000,
         },
       }),
@@ -1640,13 +1702,18 @@ describe('host services', () => {
           sessionKey: 'agent:main:abc123',
           firstUserText: 'Hello from transcript',
           lastTimestamp: 1001000,
+          workspacePath: null,
         }],
       });
     await expect(sessionsApi.history({ sessionKey: 'agent:main:abc123', limit: 5 }))
       .resolves.toMatchObject({
         success: true,
         messages: [
-          { role: 'user', content: 'Hello from transcript', timestamp: 1000 },
+          {
+            role: 'user',
+            content: '[Working directory: ~/.openclaw/workspace]\n\nSender: test-user\n[Working directory: ~/.openclaw/workspace]\n\nHello from transcript',
+            timestamp: 1000,
+          },
           { role: 'assistant', content: 'Hi', timestamp: 1001 },
         ],
       });

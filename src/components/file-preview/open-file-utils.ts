@@ -53,8 +53,10 @@ export async function confirmAndOpenFile(params: {
   if (result?.response !== 1) return false;
 
   const openResult = await hostApi.shell.openPath(filePath);
-  if (openResult) {
-    throw new Error(openResult);
-  }
+  if (openResult) throw new Error(openResult);
   return true;
+}
+
+export async function revealFile(target: { filePath: string }): Promise<void> {
+  await hostApi.shell.showItemInFolder(target.filePath);
 }

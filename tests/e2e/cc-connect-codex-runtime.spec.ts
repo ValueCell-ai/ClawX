@@ -552,14 +552,38 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       await page.getByTestId('chat-composer-input').fill('hello codex runtime');
       await page.getByTestId('chat-composer-send').click();
 
-      const readHistory = async () => await page.evaluate(async () => {
+      await expect.poll(async () => {
+        const content = await readFile(bridgeMessagesPath, 'utf8').catch(() => '');
+        return content.trim().split(/\r?\n/)
+          .filter(Boolean)
+          .map((line) => JSON.parse(line))
+          .find((message) => message.type === 'message' && message.content === 'hello codex runtime') ?? null;
+      }, { timeout: 30_000 }).not.toBeNull();
+      const bridgeMessages = (await readFile(bridgeMessagesPath, 'utf8'))
+        .trim()
+        .split(/\r?\n/)
+        .filter(Boolean)
+        .map((line) => JSON.parse(line));
+      const sentBridgeMessage = bridgeMessages.find(
+        (message) => message.type === 'message' && message.content === 'hello codex runtime',
+      );
+      expect(sentBridgeMessage).toMatchObject({
+        type: 'message',
+        content: 'hello codex runtime',
+        project: 'clawx-main',
+        session_key: expect.stringMatching(/^clawx:main:session-\d+$/),
+      });
+      const bridgeSessionKey = String(sentBridgeMessage.session_key);
+      const logicalSessionKey = `agent:${bridgeSessionKey.slice('clawx:'.length)}`;
+
+      const readHistory = async () => await page.evaluate(async (sessionKey) => {
         return await window.clawx.hostInvoke({
           id: `runtime-history-${Date.now()}`,
           module: 'sessions',
           action: 'history',
-          payload: { sessionKey: 'agent:main:main', limit: 20 },
+          payload: { sessionKey, limit: 20 },
         });
-      });
+      }, logicalSessionKey);
       await expect.poll(async () => readHistory(), { timeout: 30_000 }).toMatchObject({
         ok: true,
         data: {
@@ -572,16 +596,6 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       });
 
       await expect(page.getByText('cc-connect bridge E2E response')).toBeVisible({ timeout: 30_000 });
-      const bridgeMessages = (await readFile(bridgeMessagesPath, 'utf8')).trim().split(/\r?\n/).map((line) => JSON.parse(line));
-      expect(bridgeMessages).toEqual(expect.arrayContaining([
-        expect.objectContaining({
-          type: 'message',
-          content: 'hello codex runtime',
-          project: 'clawx-main',
-          session_key: 'clawx:main:main',
-        }),
-      ]));
-
       const history = await readHistory();
       expect(history).toMatchObject({
         ok: true,
@@ -614,7 +628,7 @@ test.describe('cc-connect + Codex runtime E2E', () => {
       const approvalPacket = approvalBridgeMessages.find((message) => message.type === 'card_action');
       expect(approvalPacket).toMatchObject({
         type: 'card_action',
-        session_key: 'clawx:main:main',
+        session_key: bridgeSessionKey,
         project: 'clawx-main',
         action: 'perm:allow',
       });

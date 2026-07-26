@@ -116,6 +116,7 @@ cc-connect はメッセージング platform bridge も担当します。cc-conn
 モダンなチャット体験を通じてAIエージェントとコミュニケーションできます。複数の会話コンテキスト、メッセージ履歴、Markdownによるリッチコンテンツレンダリング（GitHub 風テーブルや KaTeX による LaTeX 数式 `$インライン$`、`$$ブロック$$`、`\(インライン\)`、`\[ブロック\]` を含む）に加え、マルチエージェント構成ではメイン入力欄の `@agent` から対象エージェントへ直接ルーティングできます。
 コンポーザーから挿入した Skill は `/skill-name` 形式のチップとして表示され、チップをクリックすると右側のプレビュー側欄でその Skill の `SKILL.md` を開けます。
 `@agent` で別のエージェントを選ぶと、ClawX はデフォルトエージェントを経由せず、そのエージェント自身の会話コンテキストへ直接切り替えます。各エージェントのワークスペースは既定で分離されていますが、より強い実行時分離は OpenClaw の sandbox 設定に依存します。
+セッション側欄はワークスペース優先で整理され、既定ワークスペースを先頭に固定し、その他のワークスペースは自然順に並べます。各ワークスペースは折りたたみや追加読み込みができ、行にはホバーで操作ボタンが出るまで相対アクティビティ時刻が表示されます。編集可能なチャットでは、コンポーザーのワークスペースチップから既定ワークスペースへ戻すか別フォルダーを選ぶ小さなメニューを開けます。
 各 Agent は `provider/model` の実行時設定を個別に上書きできます。上書きしていない Agent は引き続きグローバルの既定モデルを継承します。
 
 ### 📡 マルチチャネル管理
@@ -229,6 +230,19 @@ ClawXには、Electron、OpenClaw Gateway、任意の cc-connect/Codex runtime�
 
 ClawXは、**デュアルプロセス + Host API 統一アクセス**構成を採用しています。Renderer は単一クライアント抽象を呼び出し、プロトコル選択とライフサイクルは Main が管理します：
 
+Chat transport は active runtime に応じて切り替わりますが、Renderer の境界は 1 つに保たれます。OpenClaw Chat は Electron Main が所有する ACP stdio bridge を使用し、Renderer は型付き host event を受け取ってメモリ上の ACP timeline を描画します。cc-connect Chat は `RuntimeManager` から cc-connect BridgePlatform 経由で dispatch され、session history、progress、approval、generated media も同じ経路を通ります。両モードで Renderer は同じ Host API facade を使い、Codex を直接呼び出しません。非 Chat 機能も runtime provider 経由で dispatch され、OpenClaw 固有操作は OpenClaw adapter 内に限定されます。
+
+ACP Chat は、runtime が画像生成メディアを信頼できる構造化メディアとして配信した場合に、生成画像のプレビューを表示できます。OpenClaw の履歴リプレイ中は、同じセッションで画像生成タスク開始が記録されている場合に限り、assistant の `MEDIA:/path/to/file.png` マーカーもプレビューへ昇格されます。`MEDIA: /path/to/file.png` のようなその他の単なるローカルパスのテキストはプレビューとして扱われません。ClawX は Renderer から任意にファイルシステムへアクセスするのではなく、Electron Main のホストメディア処理を通じてプレビューを読み込みます。標準 ACP 画像コンテンツは引き続き推奨パスであり、そのまま描画されます。
+
+### ACP ファイルアクティビティのセマンティクス
+
+- ファイルアクティビティは、成功して完了した OpenClaw の `write`、`edit`、`apply_patch` 呼び出しから投影されます。ツールの認識方法は公式 OpenClaw Chat UI に準拠し、完了した呼び出しだけに絞る処理は ClawX 固有です。
+- `write` はツールが宣言したとおり、作成および全行追加の差分として表示されます。対象パスがすでに存在する可能性がある場合も同様です。
+- **Changes** は、ツールが宣言したアクティビティを時系列に並べたセッション単位の記録です。Git の出力でも、検証済みソースベースラインに対する差分でもありません。
+- 各ファイルについて、Changes はアシスタントの各ターンに最大 1 つの diff エディターを表示します。安全に連結できるフラグメントは合成し、独立したフラグメントは 1 つのエディターに連結しますが、完全なファイルベースラインとの差分であるとはみなしません。
+- シェルコマンド、スクリプト、ユーザー、IDE による副作用は検出されません。
+- 完全な ACP リプレイからは記録済みのファイルアクティビティを復元できます。リプレイが不完全な場合、ClawX はフォールバック推論で欠落したアクティビティを補いません。
+
 ```
 ┌────────────────────────────────────────────────────────────────────┐
 │                        ClawX デスクトップアプリ                       │
@@ -255,17 +269,17 @@ ClawXは、**デュアルプロセス + Host API 統一アクセス**構成を�
                                │ 型付き IPC リクエスト
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                Main Host Services と Gateway Manager              │
+│                Main Host Services と Runtime Manager              │
 │                                                                 │
 │  • host:invoke 型付きサービスディスパッチ                            │
 │  • 設定、ファイル、セッション、スキル、プロバイダー、診断サービス          │
-│  • Main が Gateway WebSocket とプロセス監視を所有                    │
+│  • Runtime 選択、transport、プロセス監視を所有                       │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
                                │ Main 所有 WebSocket
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                     OpenClaw ゲートウェイ                         │
+│                     OpenClaw Gateway 経路（図示）                  │
 │                                                                 │
 │  • AIエージェントランタイムとオーケストレーション                       │
 │  • メッセージチャネル管理                                           │
@@ -277,7 +291,7 @@ ClawXは、**デュアルプロセス + Host API 統一アクセス**構成を�
 
 - **プロセス分離**: AIランタイムは別プロセスで動作し、重い計算処理中でもUIの応答性を確保します
 - **フロントエンド呼び出しの単一入口**: Renderer は host-api/api-client を通じて呼び出し、下位プロトコルに依存しません
-- **Mainによるトランスポート制御**: Gateway WebSocket は Electron Main のみが所有し、Renderer は型付き IPC で Main と通信します
+- **Mainによるトランスポート制御**: OpenClaw ACP/Gateway transport と cc-connect BridgePlatform dispatch は Electron Main が所有し、Renderer は型付き IPC で Main と通信します
 - **拡張 IPC コントリビューション**: Main プロセス拡張は HTTP route ではなく、型付き IPC レジストリを通じて host-api action を提供します
 - **グレースフルリカバリ**: 再接続・タイムアウト・バックオフで一時的障害を自動処理します
 - **セキュアストレージ**: APIキーや機密データは、OSのネイティブセキュアストレージ機構を活用します
@@ -417,7 +431,7 @@ pnpm run smoke:cc-connect:packaged # ネイティブ unpacked app を起動し�
 
 ### 通信回帰チェック
 
-PR が通信経路（Gateway イベント、Chat 送受信フロー、Channel 配信、トランスポートのフォールバック）に触れる場合は、次を実行してください。
+PR が通信経路（Gateway イベント、ACP Chat bridge の送受信フロー、Channel 配信、トランスポートのフォールバック）に触れる場合は、次を実行してください。
 
 ```bash
 pnpm run comms:replay

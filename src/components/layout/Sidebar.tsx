@@ -24,6 +24,8 @@ import {
   ImagePlus,
   Moon,
   ChevronRight,
+  ChevronsUpDown,
+  ChevronsDownUp,
   Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -33,17 +35,18 @@ import { useSettingsStore } from '@/stores/settings';
 import { useChatStore } from '@/stores/chat';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
-import { getSessionActivityMs, getSessionBucket, type SessionBucketKey } from './session-buckets';
+import { groupSessionsByWorkspace } from './session-buckets';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { hostApi } from '@/lib/host-api';
+import { formatSessionRelativeTime } from '@/lib/relative-time';
 import { SIDEBAR_COLLAPSED_WIDTH, MAC_SIDEBAR_CHROME_HEIGHT } from '@shared/sidebar-layout';
 import { useTranslation } from 'react-i18next';
 import logoSvg from '@/assets/logo.svg';
 import { useNewChatAction } from './use-new-chat-action';
-import { CHANNEL_NAMES, type ChannelType } from '@/types/channel';
+import { CHANNEL_NAMES } from '@/types/channel';
 
 interface NavItemProps {
   to: string;
@@ -65,17 +68,13 @@ function NavItem({ to, icon, label, badge, collapsed, onClick, testId }: NavItem
         cn(
           'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
           'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
-          isActive
-            ? 'bg-black/5 dark:bg-white/10 text-foreground'
-            : '',
-          collapsed && 'justify-center px-0'
+          isActive ? 'bg-black/5 dark:bg-white/10 text-foreground' : '',
+          collapsed && 'justify-center px-0',
         )
       }
     >
       <>
-        <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">
-          {icon}
-        </div>
+        <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">{icon}</div>
         {!collapsed && (
           <>
             <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
@@ -92,23 +91,33 @@ function NavItem({ to, icon, label, badge, collapsed, onClick, testId }: NavItem
 }
 
 const INITIAL_NOW_MS = Date.now();
-const DEFAULT_EXPANDED_SESSION_BUCKETS: Record<SessionBucketKey, boolean> = {
-  today: true,
-  withinWeek: true,
-  withinMonth: false,
-  older: false,
-};
+const INITIAL_WORKSPACE_SESSION_LIMIT = 5;
+const WORKSPACE_SESSION_LIMIT_INCREMENT = 5;
+
+function getWorkspaceTestIdSegment(workspacePath: string): string {
+  return encodeURIComponent(workspacePath.trim() || 'workspace');
+}
+
+export function getWorkspaceGroupStateKey(workspacePath: string): string {
+  return workspacePath;
+}
+
+export function getWorkspaceGroupTestId(workspacePath: string): string {
+  return `workspace-session-group-${getWorkspaceTestIdSegment(workspacePath)}`;
+}
+
+export function getWorkspaceGroupToggleTestId(workspacePath: string): string {
+  return `workspace-session-group-toggle-${getWorkspaceTestIdSegment(workspacePath)}`;
+}
+
+function getWorkspaceLoadMoreTestId(workspacePath: string): string {
+  return `workspace-session-load-more-${getWorkspaceTestIdSegment(workspacePath)}`;
+}
 
 function getAgentIdFromSessionKey(sessionKey: string): string {
   if (!sessionKey.startsWith('agent:')) return 'main';
   const [, agentId] = sessionKey.split(':');
   return agentId || 'main';
-}
-
-function getChannelNameFromSessionKey(sessionKey: string): string | null {
-  const [channelType] = sessionKey.split(':');
-  if (!channelType || channelType === 'agent' || channelType === 'clawx') return null;
-  return CHANNEL_NAMES[channelType as ChannelType] || channelType;
 }
 
 export function Sidebar() {
@@ -119,6 +128,7 @@ export function Sidebar() {
   const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth);
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
   const runtimeKind = useSettingsStore((state) => state.runtimeKind);
+  const chatWorkspacePath = useSettingsStore((state) => state.chatWorkspacePath);
   const [isResizing, setIsResizing] = useState(false);
   const stopResizeRef = useRef<(() => void) | null>(null);
 
@@ -169,7 +179,7 @@ export function Sidebar() {
 
   const navigate = useNavigate();
   const isOnChat = useLocation().pathname === '/';
-  const { t } = useTranslation(['common', 'chat']);
+  const { t, i18n } = useTranslation(['common', 'chat']);
 
   const getSessionLabel = (
     key: string,
@@ -177,16 +187,14 @@ export function Sidebar() {
     label?: string,
     derivedTitle?: string,
     lastMessagePreview?: string,
-  ) => {
-    const baseLabel = sessionLabels[key] ?? label ?? derivedTitle ?? lastMessagePreview ?? displayName ?? key;
-    const channelName = getChannelNameFromSessionKey(key);
-    return channelName ? `${channelName}: ${baseLabel}` : baseLabel;
-  };
+  ) => sessionLabels[key]
+    ?? (label?.trim() ? label : derivedTitle ?? lastMessagePreview ?? displayName ?? key);
 
   const controlUiLabel = gatewayStatus.runtimeKind === 'cc-connect'
     ? t('common:sidebar.ccConnectPage')
     : t('common:sidebar.openClawPage');
-  const dreamsNavEnabled = devModeUnlocked && (gatewayStatus.runtimeKind ?? runtimeKind ?? 'openclaw') === 'openclaw';
+  const dreamsNavEnabled = devModeUnlocked
+    && (gatewayStatus.runtimeKind ?? runtimeKind) === 'openclaw';
 
   const openControlUi = async (view?: 'dreams', label = controlUiLabel) => {
     try {
@@ -210,9 +218,8 @@ export function Sidebar() {
   const [editingSessionKey, setEditingSessionKey] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
   const [nowMs, setNowMs] = useState(INITIAL_NOW_MS);
-  const [expandedSessionBuckets, setExpandedSessionBuckets] = useState<Record<SessionBucketKey, boolean>>(
-    () => ({ ...DEFAULT_EXPANDED_SESSION_BUCKETS }),
-  );
+  const [collapsedWorkspaceGroups, setCollapsedWorkspaceGroups] = useState<Record<string, boolean>>({});
+  const [workspaceVisibleSessionCounts, setWorkspaceVisibleSessionCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -253,6 +260,11 @@ export function Sidebar() {
     setEditingSessionKey(null);
   };
 
+  const handleRenameBlur = (event: React.FocusEvent<HTMLDivElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    void handleRenameSubmit();
+  };
+
   const handleRenameKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -262,10 +274,19 @@ export function Sidebar() {
     }
   };
 
-  const toggleSessionBucket = (bucketKey: SessionBucketKey) => {
-    setExpandedSessionBuckets((current) => ({
+  const toggleWorkspaceGroup = (workspacePath: string) => {
+    const stateKey = getWorkspaceGroupStateKey(workspacePath);
+    setCollapsedWorkspaceGroups((current) => ({
       ...current,
-      [bucketKey]: !current[bucketKey],
+      [stateKey]: !(current[stateKey] ?? false),
+    }));
+  };
+
+  const loadMoreWorkspaceSessions = (workspacePath: string) => {
+    const stateKey = getWorkspaceGroupStateKey(workspacePath);
+    setWorkspaceVisibleSessionCounts((current) => ({
+      ...current,
+      [stateKey]: (current[stateKey] ?? INITIAL_WORKSPACE_SESSION_LIMIT) + WORKSPACE_SESSION_LIMIT_INCREMENT,
     }));
   };
 
@@ -312,43 +333,75 @@ export function Sidebar() {
     () => Object.fromEntries((agents ?? []).map((agent) => [agent.id, agent.name])),
     [agents],
   );
-  const sessionBuckets: Array<{ key: SessionBucketKey; label: string; sessions: typeof sessions }> = [
-    { key: 'today', label: t('chat:historyBuckets.today'), sessions: [] },
-    { key: 'withinWeek', label: t('chat:historyBuckets.withinWeek'), sessions: [] },
-    { key: 'withinMonth', label: t('chat:historyBuckets.withinMonth'), sessions: [] },
-    { key: 'older', label: t('chat:historyBuckets.older'), sessions: [] },
-  ];
-  const sessionBucketMap = Object.fromEntries(sessionBuckets.map((bucket) => [bucket.key, bucket])) as Record<
-    SessionBucketKey,
-    (typeof sessionBuckets)[number]
-  >;
+  const workspaceSessionGroups = groupSessionsByWorkspace(
+    sessions,
+    sessionLastActivity,
+    t('chat:workspace.defaultLabel'),
+    chatWorkspacePath,
+  );
+  const allWorkspaceGroupsCollapsed = workspaceSessionGroups.length > 0
+    && workspaceSessionGroups.every((group) => collapsedWorkspaceGroups[getWorkspaceGroupStateKey(group.workspacePath)] ?? false);
 
-  for (const { session, activityMs } of sessions
-    .map((session) => ({
-      session,
-      activityMs: getSessionActivityMs(session, sessionLastActivity),
-    }))
-    .sort((a, b) => b.activityMs - a.activityMs)) {
-    const bucketKey = getSessionBucket(activityMs, nowMs);
-    sessionBucketMap[bucketKey].sessions.push(session);
-  }
+  const toggleAllWorkspaceGroups = () => {
+    const nextCollapsed = !allWorkspaceGroupsCollapsed;
+    setCollapsedWorkspaceGroups((current) => {
+      const next = { ...current };
+      for (const group of workspaceSessionGroups) {
+        next[getWorkspaceGroupStateKey(group.workspacePath)] = nextCollapsed;
+      }
+      return next;
+    });
+  };
 
   const hiddenRoutes = rendererExtensionRegistry.getHiddenRoutes();
   const extraNavItems = rendererExtensionRegistry.getExtraNavItems();
 
   const coreNavItems = [
-    { to: '/models', icon: <Cpu className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.models'), testId: 'sidebar-nav-models' },
-    { to: '/agents', icon: <Bot className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.agents'), testId: 'sidebar-nav-agents' },
-    { to: '/channels', icon: <Network className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.channels'), testId: 'sidebar-nav-channels' },
-    { to: '/skills', icon: <Puzzle className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.skills'), testId: 'sidebar-nav-skills' },
-    { to: '/cron', icon: <Clock className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.cronTasks'), testId: 'sidebar-nav-cron' },
+    {
+      to: '/models',
+      icon: <Cpu className="h-4 w-4" strokeWidth={2} />,
+      label: t('sidebar.models'),
+      testId: 'sidebar-nav-models',
+    },
+    {
+      to: '/agents',
+      icon: <Bot className="h-4 w-4" strokeWidth={2} />,
+      label: t('sidebar.agents'),
+      testId: 'sidebar-nav-agents',
+    },
+    {
+      to: '/channels',
+      icon: <Network className="h-4 w-4" strokeWidth={2} />,
+      label: t('sidebar.channels'),
+      testId: 'sidebar-nav-channels',
+    },
+    {
+      to: '/skills',
+      icon: <Puzzle className="h-4 w-4" strokeWidth={2} />,
+      label: t('sidebar.skills'),
+      testId: 'sidebar-nav-skills',
+    },
+    {
+      to: '/cron',
+      icon: <Clock className="h-4 w-4" strokeWidth={2} />,
+      label: t('sidebar.cronTasks'),
+      testId: 'sidebar-nav-cron',
+    },
     ...(devModeUnlocked
       ? [
-        { to: '/image-generation', icon: <ImagePlus className="h-4 w-4" strokeWidth={2} />, label: t('common:sidebar.imageGeneration'), testId: 'sidebar-nav-image-generation' },
-        ...(dreamsNavEnabled
-          ? [{ to: '/dreams', icon: <Moon className="h-4 w-4" strokeWidth={2} />, label: t('common:sidebar.openClawDreams'), testId: 'sidebar-nav-dreams' }]
-          : []),
-      ]
+          {
+            to: '/image-generation',
+            icon: <ImagePlus className="h-4 w-4" strokeWidth={2} />,
+            label: t('common:sidebar.imageGeneration'),
+            testId: 'sidebar-nav-image-generation',
+          },
+          ...(dreamsNavEnabled ? [{
+            to: '/dreams',
+            icon: <Moon className="h-4 w-4" strokeWidth={2} />,
+            label: t('common:sidebar.openClawDreams'),
+            testId: 'sidebar-nav-dreams',
+          }] : []),
+        ]
       : []),
   ];
 
@@ -382,17 +435,12 @@ export function Sidebar() {
 
       {/* Top Header Toggle */}
       <div
-        className={cn(
-          'flex shrink-0 items-center p-2 h-8',
-          sidebarCollapsed ? 'justify-center' : 'justify-between',
-        )}
+        className={cn('flex shrink-0 items-center p-2 h-8', sidebarCollapsed ? 'justify-center' : 'justify-between')}
       >
         {!sidebarCollapsed && (
           <div className="flex items-center gap-2 px-2 overflow-hidden">
             <img src={logoSvg} alt="ClawX" className="h-5 w-auto shrink-0" />
-            <span className="text-sm font-semibold truncate whitespace-nowrap text-foreground/90">
-              ClawX
-            </span>
+            <span className="text-sm font-semibold truncate whitespace-nowrap text-foreground/90">ClawX</span>
           </div>
         )}
         <Button
@@ -414,13 +462,13 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex flex-col gap-1 px-2">
+      <nav className="flex flex-col gap-1 px-2 mt-2">
         <button
           type="button"
           data-testid="sidebar-new-chat"
           onClick={handleNewChat}
           className={cn(
-            'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-2 transition-colors',
+            'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
             'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
             sidebarCollapsed && 'justify-center px-0',
           )}
@@ -428,160 +476,237 @@ export function Sidebar() {
           <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">
             <Plus className="h-4 w-4" strokeWidth={2} />
           </div>
-          {!sidebarCollapsed && <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">{t('sidebar.newChat')}</span>}
+          {!sidebarCollapsed && (
+            <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">
+              {t('sidebar.newChat')}
+            </span>
+          )}
         </button>
 
         {navItems.map((item) => (
-          <NavItem
-            key={item.to}
-            {...item}
-            collapsed={sidebarCollapsed}
-          />
+          <NavItem key={item.to} {...item} collapsed={sidebarCollapsed} />
         ))}
       </nav>
 
       {/* Session list — below Settings, only when expanded */}
       {!sidebarCollapsed && sessions.length > 0 && (
-        <div className="mt-4 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2 space-y-1">
-          {sessionBuckets.map((bucket) => {
-            const isBucketExpanded = expandedSessionBuckets[bucket.key] ?? false;
-            return (
-              <div key={bucket.key} data-testid={`session-bucket-${bucket.key}`} className="pt-2">
-                <button
-                  type="button"
-                  data-testid={`session-bucket-toggle-${bucket.key}`}
-                  aria-expanded={isBucketExpanded}
-                  onClick={() => toggleSessionBucket(bucket.key)}
-                  className={cn(
-                    'flex w-full items-center gap-1 rounded-md px-2.5 py-1 text-left text-tiny font-medium',
-                    'text-muted-foreground/60 tracking-tight transition-colors',
-                    'hover:bg-black/5 hover:text-muted-foreground dark:hover:bg-white/5',
-                  )}
+        <div className="mt-4 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2">
+          <div className="mb-1 flex items-center justify-between gap-2 pl-2.5">
+            <span className="text-tiny font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
+              {t('chat:sessionList.title')}
+            </span>
+            <button
+              type="button"
+              data-testid="session-list-toggle-all"
+              aria-label={allWorkspaceGroupsCollapsed ? t('chat:sessionList.expandAll') : t('chat:sessionList.collapseAll')}
+              title={allWorkspaceGroupsCollapsed ? t('chat:sessionList.expandAll') : t('chat:sessionList.collapseAll')}
+              onClick={toggleAllWorkspaceGroups}
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
+            >
+              <span aria-hidden="true" className="flex h-3.5 w-3.5 items-center justify-center">
+                {allWorkspaceGroupsCollapsed ? (
+                  <ChevronsUpDown className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronsDownUp className="h-3.5 w-3.5" />
+                )}
+              </span>
+            </button>
+          </div>
+
+          <div className="space-y-1.5">
+            {workspaceSessionGroups.map((workspaceGroup) => {
+              const workspaceStateKey = getWorkspaceGroupStateKey(workspaceGroup.workspacePath);
+              const collapsed = collapsedWorkspaceGroups[workspaceStateKey] ?? false;
+              const visibleCount = workspaceVisibleSessionCounts[workspaceStateKey] ?? INITIAL_WORKSPACE_SESSION_LIMIT;
+              const visibleSessions = workspaceGroup.sessions.slice(0, visibleCount);
+              const hiddenCount = Math.max(0, workspaceGroup.sessions.length - visibleSessions.length);
+              const loadMoreCount = Math.min(WORKSPACE_SESSION_LIMIT_INCREMENT, hiddenCount);
+
+              return (
+                <div
+                  key={workspaceGroup.workspacePath}
+                  data-testid={getWorkspaceGroupTestId(workspaceGroup.workspacePath)}
+                  className="space-y-1"
                 >
-                  <ChevronRight
-                    className={cn(
-                      'h-3 w-3 shrink-0 transition-transform',
-                      isBucketExpanded && 'rotate-90',
-                    )}
-                  />
-                  <span>{bucket.label}</span>
-                </button>
-                {isBucketExpanded && bucket.sessions.map((s) => {
-                  const agentId = s.agentId || getAgentIdFromSessionKey(s.key);
-                  const agentName = agentNameById[agentId] || agentId;
-                  const isEditing = editingSessionKey === s.key;
-                  const sessionLabel = getSessionLabel(
-                    s.key,
-                    s.displayName,
-                    s.label,
-                    s.derivedTitle,
-                    s.lastMessagePreview,
-                  );
-                  const channelType = s.channel && s.channel !== 'webchat' ? s.channel : null;
-                  const channelName = channelType ? CHANNEL_NAMES[channelType as keyof typeof CHANNEL_NAMES] ?? channelType : null;
-                  return (
-                    <div key={s.key} className="group relative flex items-center">
-                      {isEditing ? (
-                        <div className="flex w-full items-center gap-1 px-1.5 py-1">
-                          <Input
-                            autoFocus
-                            value={editingLabel}
-                            onChange={(e) => setEditingLabel(e.target.value)}
-                            onKeyDown={handleRenameKeyDown}
-                            onBlur={() => void handleRenameSubmit()}
-                            className="h-7 min-w-0 flex-1 text-meta"
-                            aria-label={t('common:sidebar.renameSessionPlaceholder')}
-                          />
-                          <button
-                            aria-label={t('common:sidebar.saveSessionRename')}
-                            onMouseDown={(e) => { e.preventDefault(); void handleRenameSubmit(); }}
-                            className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground"
-                          >
-                            <Check className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            aria-label={t('common:sidebar.cancelSessionRename')}
-                            onMouseDown={(e) => { e.preventDefault(); handleRenameCancel(); }}
-                            className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-destructive"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <button
-                            data-testid={`sidebar-session-${s.key}`}
-                            onClick={() => {
-                              if (currentSessionKey === s.key) {
-                                void loadHistory(false);
-                              } else {
-                                switchSession(s.key);
-                              }
-                              navigate('/');
-                            }}
-                            onDoubleClick={() => handleStartRename(s.key, sessionLabel)}
+                  <button
+                    type="button"
+                    data-testid={getWorkspaceGroupToggleTestId(workspaceGroup.workspacePath)}
+                    aria-expanded={!collapsed}
+                    aria-label={t('chat:sessionList.workspaceToggle', { workspace: workspaceGroup.label })}
+                    onClick={() => toggleWorkspaceGroup(workspaceGroup.workspacePath)}
+                    className="flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-meta font-semibold text-foreground/75 transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/5"
+                    title={workspaceGroup.label}
+                  >
+                    <ChevronRight
+                      className={cn(
+                        'h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform',
+                        !collapsed && 'rotate-90',
+                      )}
+                    />
+                    <span className="min-w-0 flex-1 truncate">{workspaceGroup.label}</span>
+                    <span className="shrink-0 text-2xs font-medium text-muted-foreground/60">
+                      {workspaceGroup.sessions.length}
+                    </span>
+                  </button>
+
+                  {!collapsed && (
+                    <div className="space-y-0.5">
+                      {visibleSessions.map(({ session: s, activityMs }) => {
+                        const agentId = s.agentId || getAgentIdFromSessionKey(s.key);
+                        const agentName = agentNameById[agentId] || agentId;
+                        const isEditing = editingSessionKey === s.key;
+                        const isCurrentSession = isOnChat && currentSessionKey === s.key;
+                        const sessionLabel = getSessionLabel(
+                          s.key,
+                          s.displayName,
+                          s.label,
+                          s.derivedTitle,
+                          s.lastMessagePreview,
+                        );
+                        const relativeTime = formatSessionRelativeTime(activityMs, nowMs, i18n.language);
+                        const channelType = s.channel && s.channel !== 'webchat' ? s.channel : null;
+                        const channelName = channelType
+                          ? (CHANNEL_NAMES[channelType as keyof typeof CHANNEL_NAMES] ?? channelType)
+                          : null;
+
+                        return (
+                          <div
+                            key={s.key}
                             className={cn(
-                              'w-full text-left rounded-lg px-2.5 py-1.5 text-meta transition-colors pr-16',
-                              'hover:bg-black/5 dark:hover:bg-white/5',
-                              isOnChat && currentSessionKey === s.key
-                                ? 'bg-black/5 dark:bg-white/10 text-foreground font-medium'
-                                : 'text-foreground/75',
+                              'group flex items-center rounded-lg transition-colors',
+                              'hover:bg-black/5 focus-within:bg-black/5 dark:hover:bg-white/5 dark:focus-within:bg-white/5',
+                              !isEditing && isCurrentSession
+                                ? 'bg-black/5 dark:bg-white/10'
+                                : '',
                             )}
                           >
-                            <div className="flex min-w-0 items-center gap-2">
-                              <span className="shrink-0 rounded-full bg-black/[0.04] px-2 py-0.5 text-2xs font-medium text-foreground/70 dark:bg-white/[0.08]">
-                                {agentName}
-                              </span>
-                              {channelType && channelName && (
-                                <span
-                                  title={channelName}
-                                  aria-label={channelName}
-                                  className="shrink-0 truncate rounded-full bg-blue-500/10 px-2 py-0.5 text-2xs font-medium text-blue-700 dark:bg-blue-400/10 dark:text-blue-400"
+                            {isEditing ? (
+                              <div className="flex w-full items-center gap-1 px-1.5 py-1" onBlur={handleRenameBlur}>
+                                <Input
+                                  autoFocus
+                                  value={editingLabel}
+                                  onChange={(e) => setEditingLabel(e.target.value)}
+                                  onKeyDown={handleRenameKeyDown}
+                                  className="h-7 min-w-0 flex-1 text-meta"
+                                  aria-label={t('common:sidebar.renameSessionPlaceholder')}
+                                />
+                                <button
+                                  type="button"
+                                  aria-label={t('common:sidebar.saveSessionRename')}
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() => void handleRenameSubmit()}
+                                  className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground"
                                 >
-                                  {channelName}
-                                </span>
-                              )}
-                              <span className="truncate">{sessionLabel}</span>
-                            </div>
-                          </button>
-                          <div className={cn(
-                            'absolute right-1 flex items-center gap-0.5 transition-opacity',
-                            'opacity-0 group-hover:opacity-100',
-                          )}>
-                            <button
-                              aria-label={t('common:sidebar.renameSession')}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleStartRename(s.key, sessionLabel);
-                              }}
-                              className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              data-testid={`sidebar-session-delete-${s.key}`}
-                              aria-label={t('common:sidebar.deleteSession')}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSessionToDelete({
-                                  key: s.key,
-                                  label: sessionLabel,
-                                });
-                                setDeleteDialogOpen(true);
-                              }}
-                              className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                                  <Check className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label={t('common:sidebar.cancelSessionRename')}
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={handleRenameCancel}
+                                  className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-destructive"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <button
+                                  data-testid={`sidebar-session-${s.key}`}
+                                  aria-current={isCurrentSession ? 'page' : undefined}
+                                  onClick={() => {
+                                    if (currentSessionKey === s.key) {
+                                      void loadHistory(false);
+                                    } else {
+                                      switchSession(s.key);
+                                    }
+                                    navigate('/');
+                                  }}
+                                  onDoubleClick={() => handleStartRename(s.key, sessionLabel)}
+                                  className={cn(
+                                    'flex-1 min-w-0 text-left px-2.5 py-1.5 text-meta',
+                                    isCurrentSession
+                                      ? 'text-foreground font-medium'
+                                      : 'text-foreground/75',
+                                  )}
+                                >
+                                  <div className="flex min-w-0 items-center gap-2">
+                                    <span className="shrink-0 rounded-full bg-black/[0.04] px-2 py-0.5 text-2xs font-medium text-foreground/70 dark:bg-white/[0.08]">
+                                      {agentName}
+                                    </span>
+                                    {channelType && channelName && (
+                                      <span
+                                        title={channelName}
+                                        aria-label={channelName}
+                                        className="shrink-0 truncate rounded-full bg-blue-500/10 px-2 py-0.5 text-2xs font-medium text-blue-700 dark:bg-blue-400/10 dark:text-blue-400"
+                                      >
+                                        {channelName}
+                                      </span>
+                                    )}
+                                    <span className="truncate">{sessionLabel}</span>
+                                  </div>
+                                </button>
+                                {relativeTime && (
+                                  <span
+                                    title={new Date(activityMs).toLocaleString()}
+                                    className="shrink-0 pr-2 text-2xs font-medium text-muted-foreground/55 group-hover:hidden group-focus-within:hidden"
+                                  >
+                                    {relativeTime}
+                                  </span>
+                                )}
+                                <div className="hidden items-center gap-0.5 pr-1.5 group-hover:flex group-focus-within:flex">
+                                  <button
+                                    aria-label={t('common:sidebar.renameSession')}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleStartRename(s.key, sessionLabel);
+                                    }}
+                                    className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    data-testid={`sidebar-session-delete-${s.key}`}
+                                    aria-label={t('common:sidebar.deleteSession')}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSessionToDelete({
+                                        key: s.key,
+                                        label: sessionLabel,
+                                      });
+                                      setDeleteDialogOpen(true);
+                                    }}
+                                    className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </>
+                            )}
                           </div>
-                        </>
+                        );
+                      })}
+
+                      {hiddenCount > 0 && (
+                        <button
+                          type="button"
+                          data-testid={getWorkspaceLoadMoreTestId(workspaceGroup.workspacePath)}
+                          aria-label={t('chat:sessionList.loadMoreForWorkspace', {
+                            count: loadMoreCount,
+                            workspace: workspaceGroup.label,
+                          })}
+                          onClick={() => loadMoreWorkspaceSessions(workspaceGroup.workspacePath)}
+                          className="ml-2 rounded-md px-2 py-1 text-tiny font-medium text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
+                        >
+                          {t('chat:sessionList.loadMore')}
+                        </button>
                       )}
                     </div>
-                  );
-                })}
-              </div>
-            );
-          })}
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -616,22 +741,24 @@ export function Sidebar() {
         </div>
 
         <NavLink
-            to="/settings"
-            data-testid="sidebar-nav-settings"
-            className={({ isActive }) =>
-              cn(
-                'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
-                'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
-                isActive && 'bg-black/5 dark:bg-white/10 text-foreground',
-                sidebarCollapsed ? 'justify-center px-0' : ''
-              )
-            }
-          >
+          to="/settings"
+          data-testid="sidebar-nav-settings"
+          className={({ isActive }) =>
+            cn(
+              'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
+              'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
+              isActive && 'bg-black/5 dark:bg-white/10 text-foreground',
+              sidebarCollapsed ? 'justify-center px-0' : '',
+            )
+          }
+        >
           <>
             <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">
               <SettingsIcon className="h-4 w-4" strokeWidth={2} />
             </div>
-            {!sidebarCollapsed && <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{t('sidebar.settings')}</span>}
+            {!sidebarCollapsed && (
+              <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{t('sidebar.settings')}</span>
+            )}
           </>
         </NavLink>
 
@@ -642,7 +769,7 @@ export function Sidebar() {
             className={cn(
               'sidebar-nav-text flex h-auto w-full items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
               'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
-              sidebarCollapsed ? 'justify-center px-0' : 'justify-start'
+              sidebarCollapsed ? 'justify-center px-0' : 'justify-start',
             )}
             onClick={openDevConsole}
           >
@@ -651,7 +778,9 @@ export function Sidebar() {
             </div>
             {!sidebarCollapsed && (
               <>
-                <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">{controlUiLabel}</span>
+                <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">
+                  {controlUiLabel}
+                </span>
                 <ExternalLink className="ml-auto h-3 w-3 shrink-0 opacity-50 text-current" />
               </>
             )}

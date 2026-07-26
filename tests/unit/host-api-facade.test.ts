@@ -192,6 +192,37 @@ describe('hostApi facade', () => {
     }));
   });
 
+  it('routes ACP diagnostics trace calls through hostInvoke', async () => {
+    hostInvoke
+      .mockResolvedValueOnce({ id: 'req-1', ok: true, data: { capturedAt: 123, maxSize: 500, size: 0, entries: [] } })
+      .mockResolvedValueOnce({ id: 'req-2', ok: true, data: { success: true } });
+    const { hostApi } = await import('@/lib/host-api');
+    const payload = {
+      event: 'image-generation:projection-rejected',
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      details: { reason: 'no-fresh-context' },
+    };
+
+    await expect(hostApi.diagnostics.acpTrace()).resolves.toEqual({
+      capturedAt: 123,
+      maxSize: 500,
+      size: 0,
+      entries: [],
+    });
+    await expect(hostApi.diagnostics.recordAcpTrace(payload)).resolves.toEqual({ success: true });
+
+    expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      module: 'diagnostics',
+      action: 'acpTrace',
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      module: 'diagnostics',
+      action: 'recordAcpTrace',
+      payload,
+    }));
+  });
+
   it('calls providers.list through hostInvoke', async () => {
     hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: [] });
     const { hostApi } = await import('@/lib/host-api');
@@ -279,6 +310,40 @@ describe('hostApi facade', () => {
     }));
   });
 
+  it('passes workspace-scoped file payloads unchanged through hostInvoke', async () => {
+    hostInvoke.mockResolvedValue({ id: 'req', ok: true, data: { ok: true } });
+    const { hostApi } = await import('@/lib/host-api');
+    const context = { workspaceRoot: '~/.openclaw/workspace', executionCwd: 'projects/demo' };
+    const ref = { workspaceRoot: '/workspace', relativePath: 'src/index.ts' };
+    const binaryInput = { ...ref, maxBytes: 2048 };
+
+    await hostApi.files.resolveWorkspaceContext(context);
+    await hostApi.files.readWorkspaceText(ref);
+    await hostApi.files.readWorkspaceBinary(binaryInput);
+    await hostApi.files.statWorkspaceFile(ref);
+
+    const actions = [
+      ['resolveWorkspaceContext', context],
+      ['readWorkspaceText', ref],
+      ['readWorkspaceBinary', binaryInput],
+      ['statWorkspaceFile', ref],
+    ];
+    actions.forEach(([action, payload], index) => {
+      expect(hostInvoke).toHaveBeenNthCalledWith(index + 1, expect.objectContaining({
+        module: 'files',
+        action,
+        payload,
+      }));
+    });
+  });
+
+  it('does not expose workspace-scoped shell actions', async () => {
+    const { hostApi } = await import('@/lib/host-api');
+
+    expect(hostApi.files).not.toHaveProperty('openWorkspaceFile');
+    expect(hostApi.files).not.toHaveProperty('revealWorkspaceFile');
+  });
+
   it('calls chat.sendWithMedia through hostInvoke', async () => {
     hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { success: true } });
     const { hostApi } = await import('@/lib/host-api');
@@ -287,6 +352,49 @@ describe('hostApi facade', () => {
     expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
       module: 'chat',
       action: 'sendWithMedia',
+    }));
+  });
+
+  it('routes ACP chat methods through hostInvoke', async () => {
+    hostInvoke
+      .mockResolvedValueOnce({ id: 'req-1', ok: true, data: { success: true, generation: 1 } })
+      .mockResolvedValueOnce({ id: 'req-2', ok: true, data: { success: true, generation: 2 } })
+      .mockResolvedValueOnce({ id: 'req-3', ok: true, data: { success: true } })
+      .mockResolvedValueOnce({ id: 'req-4', ok: true, data: { success: true } });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await hostApi.chat.loadAcpSession({ sessionKey: 'main', cwd: '/workspace/project' });
+    await hostApi.chat.sendAcpPrompt({
+      sessionKey: 'main',
+      cwd: '/workspace/project',
+      message: 'hello',
+    });
+    await hostApi.chat.cancelAcpSession({ sessionKey: 'main' });
+    await hostApi.chat.respondAcpPermission({
+      sessionKey: 'main',
+      requestId: 'perm-1',
+      outcome: { outcome: 'cancelled' },
+    });
+
+    expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      module: 'chat',
+      action: 'loadAcpSession',
+      payload: { sessionKey: 'main', cwd: '/workspace/project' },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      module: 'chat',
+      action: 'sendAcpPrompt',
+      payload: { sessionKey: 'main', cwd: '/workspace/project', message: 'hello' },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      module: 'chat',
+      action: 'cancelAcpSession',
+      payload: { sessionKey: 'main' },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(4, expect.objectContaining({
+      module: 'chat',
+      action: 'respondAcpPermission',
+      payload: { sessionKey: 'main', requestId: 'perm-1', outcome: { outcome: 'cancelled' } },
     }));
   });
 

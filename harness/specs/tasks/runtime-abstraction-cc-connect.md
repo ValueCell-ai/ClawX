@@ -7,8 +7,12 @@ intent: Keep OpenClaw as the default and rollback runtime while making cc-connec
 touchedAreas:
   - .env.cc-connect.local.example
   - .github/workflows/**
+  - .gitignore
+  - .prettierrc
+  - AGENTS.md
   - README*.md
   - docs/**
+  - harness/reference/**
   - harness/src/**
   - harness/specs/**
   - electron/extensions/**
@@ -24,6 +28,7 @@ touchedAreas:
   - package.json
   - pnpm-lock.yaml
   - electron-builder.yml
+  - tailwind.config.js
 expectedUserBehavior:
   - OpenClaw remains selected by default and can be restored without deleting cc-connect data.
   - cc-connect remains behind Developer Mode but can run real GUI chat without any direct ClawX-to-Codex path.
@@ -42,6 +47,8 @@ requiredProfiles:
   - comms
 requiredTests:
   - tests/unit/runtime-manager.test.ts
+  - tests/unit/chat-runtime-routing.test.ts
+  - tests/unit/runtime-chat-execution-graph.test.tsx
   - tests/unit/cc-connect-runtime-provider.test.ts
   - tests/unit/cc-connect-bridge-adapter.test.ts
   - tests/unit/cc-connect-provider-profile.test.ts
@@ -68,6 +75,7 @@ acceptance:
   - Canonical Agent/channel saves in cc-connect mode update only the ClawX runtime config and encrypted vault; OpenClaw start/restart explicitly rebuilds the compatibility projection before Gateway startup, and a newer projection never overrides existing canonical state by mtime.
   - The shared-root writer lock is acquired before layout initialization or migration and fails closed on acquisition errors. A real two-Electron E2E proves the duplicate exits before runtime/scheduler construction, cannot replace the live owner, and a successor acquires the lock after clean shutdown.
   - Host API calls are routed through RuntimeManager and the active RuntimeProvider.
+  - OpenClaw may use the Main-owned ACP Chat path, but cc-connect GUI Chat must render the Runtime Chat path and Main must reject ACP operations while cc-connect is active.
   - Runtime events carry stable event/run/turn/session/project sequencing and survive Bridge reconnect without duplication.
   - The cc-connect Bridge adapter sends the protocol-compatible 25-second client ping, reconnects after an unexpected disconnect, and never reconnects after an intentional runtime stop.
   - Account-level OAuth homes and encrypted API keys are isolated per Provider Account.

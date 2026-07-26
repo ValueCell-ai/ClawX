@@ -1,3 +1,10 @@
+import type {
+  AcpChatCancelPayload,
+  AcpChatLoadPayload,
+  AcpChatOperationResult,
+  AcpChatPromptPayload,
+  AcpChatRespondPermissionPayload,
+} from '../acp-chat/types';
 import type { RawMessage } from '../chat/types';
 import type { AgentsSnapshot } from '../types/agent';
 import type { CronJob, CronJobCreateInput, CronJobUpdateInput } from '../types/cron';
@@ -119,6 +126,8 @@ export type SettingsSnapshot = Partial<{
   sidebarWidth: number;
   devModeUnlocked: boolean;
   setupComplete: boolean;
+  chatWorkspacePath: string;
+  recentWorkspacePaths: string[];
 }>;
 export type SettingsKey = keyof SettingsSnapshot & string;
 export type SettingsValue = SettingsSnapshot[SettingsKey];
@@ -252,6 +261,30 @@ export type AgentUpdateModelPayload = {
 export type AgentIdPayload = { id: string };
 export type AgentChannelPayload = { id: string; channelType: string };
 
+export type AcpTraceSource = 'main' | 'renderer';
+export type AcpTraceEntry = {
+  seq: number;
+  timestamp: string;
+  source: AcpTraceSource;
+  event: string;
+  direction?: string;
+  sessionKey?: string;
+  generation?: number;
+  details?: unknown;
+};
+export type AcpTraceRecordPayload = {
+  event: string;
+  direction?: string;
+  sessionKey?: string;
+  generation?: number;
+  details?: unknown;
+};
+export type AcpTraceSnapshot = {
+  capturedAt: number;
+  maxSize: number;
+  size: number;
+  entries: AcpTraceEntry[];
+};
 export type DiagnosticsGatewaySnapshotResult = JsonRecord;
 
 export type ProviderType =
@@ -431,6 +464,14 @@ export type StagedFileResult = {
 export type StagePathsPayload = { filePaths: string[] };
 export type StageBufferPayload = { base64: string; fileName: string; mimeType?: string };
 export type FilePathPayload = { path: string };
+export type WorkspaceFileRef = {
+  workspaceRoot: string;
+  relativePath: string;
+};
+export type WorkspaceContextInput = {
+  workspaceRoot: string;
+  executionCwd: string;
+};
 export type FileReadBinaryOptions = { maxBytes?: number };
 export type FilePreviewTreeOptions = {
   maxDepth?: number;
@@ -448,6 +489,7 @@ export type FilePreviewError =
   | 'notFound'
   | 'notDirectory'
   | 'invalidContent'
+  | 'operationFailed'
   | (string & {});
 export type ReadTextFileResult = {
   ok: boolean;
@@ -596,6 +638,8 @@ export type SessionLabelSummary = {
   sessionKey: string;
   firstUserText: string | null;
   lastTimestamp: number | null;
+  workspacePath: string | null;
+  heartbeatOnly?: boolean;
 };
 export type SessionSummariesResult = HostSuccess & {
   summaries?: SessionLabelSummary[];
@@ -805,6 +849,8 @@ export type HostApiContract = {
   };
   diagnostics: {
     gatewaySnapshot: () => DiagnosticsGatewaySnapshotResult;
+    acpTrace: () => AcpTraceSnapshot;
+    recordAcpTrace: (payload: AcpTraceRecordPayload) => HostSuccess;
   };
   providers: {
     list: () => ProviderWithKeyInfo[];
@@ -847,6 +893,15 @@ export type HostApiContract = {
     stat: (payload: FilePathPayload) => StatFileResult;
     listDir: (payload: FilePathPayload) => FileListDirResult;
     listTree: (payload: FileListTreePayload) => FileListTreeResult;
+    resolveWorkspaceContext: (input: WorkspaceContextInput) => Promise<{
+      ok: boolean;
+      workspaceRoot?: string;
+      executionCwd?: string;
+      error?: FilePreviewError;
+    }>;
+    readWorkspaceText: (ref: WorkspaceFileRef) => Promise<ReadTextFileResult>;
+    readWorkspaceBinary: (input: WorkspaceFileRef & { maxBytes?: number }) => Promise<ReadBinaryFileResult>;
+    statWorkspaceFile: (ref: WorkspaceFileRef) => Promise<StatFileResult>;
   };
   media: {
     thumbnails: (payload: MediaThumbnailsPayload) => MediaThumbnailResult;
@@ -864,6 +919,10 @@ export type HostApiContract = {
   };
   chat: {
     sendWithMedia: (payload: ChatSendWithMediaPayload) => ChatSendWithMediaResult;
+    loadAcpSession: (payload: AcpChatLoadPayload) => AcpChatOperationResult;
+    sendAcpPrompt: (payload: AcpChatPromptPayload) => AcpChatOperationResult;
+    cancelAcpSession: (payload: AcpChatCancelPayload) => AcpChatOperationResult;
+    respondAcpPermission: (payload: AcpChatRespondPermissionPayload) => AcpChatOperationResult;
   };
   cron: {
     list: () => CronJob[];

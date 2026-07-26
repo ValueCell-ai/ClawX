@@ -13,6 +13,8 @@ const SESSIONS_LIST_PAYLOAD = {
   includeDerivedTitles: true,
   includeLastMessage: true,
 };
+const MAIN_SESSION_KEY = 'agent:main:main';
+const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
 
 test.describe('ClawX gateway lifecycle resilience', () => {
   test('app remains fully navigable while gateway is disconnected', async ({ page }) => {
@@ -229,27 +231,63 @@ test.describe('ClawX gateway lifecycle resilience', () => {
           data: {
             status: 200,
             ok: true,
-            json: { success: true, agents: [{ id: 'main', name: 'main' }] },
+            json: { success: true, agents: [{ id: 'main', name: 'main', workspace: DEFAULT_WORKSPACE, mainSessionKey: MAIN_SESSION_KEY }] },
           },
+        },
+        [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: {
+          success: true,
+          generation: 1,
         },
       },
       gatewayRpc: {
         [stableStringify(['sessions.list', SESSIONS_LIST_PAYLOAD])]: {
-          sessions: [{ key: 'agent:main:main', displayName: 'main' }],
-        },
-        [stableStringify(['chat.history', { sessionKey: 'agent:main:main', limit: 200, maxChars: 500000 }])]: {
-          messages: [
-            { role: 'user', content: 'hello', timestamp: 1000 },
-            { role: 'assistant', content: 'history after ready', timestamp: 1001 },
-          ],
+          success: true,
+          result: { sessions: [] },
         },
       },
     });
 
     await completeSetup(page);
-    await page.getByTestId('sidebar-new-chat').click();
     await expect(page.getByTestId('sidebar-gateway-restarting')).toHaveAttribute('data-state', 'visible');
     await expect(page.getByText('history after ready')).toHaveCount(0);
+
+    await installIpcMocks(electronApp, {
+      gatewayStatus: { state: 'running', port: 18789, pid: 200, connectedAt: 2, gatewayReady: true },
+      hostApi: {
+        [stableStringify(['/api/gateway/status', 'GET'])]: {
+          ok: true,
+          data: {
+            status: 200,
+            ok: true,
+            json: { state: 'running', port: 18789, pid: 200, connectedAt: 2, gatewayReady: true },
+          },
+        },
+        [stableStringify(['/api/agents', 'GET'])]: {
+          ok: true,
+          data: {
+            status: 200,
+            ok: true,
+            json: { success: true, agents: [{ id: 'main', name: 'main', workspace: DEFAULT_WORKSPACE, mainSessionKey: MAIN_SESSION_KEY }] },
+          },
+        },
+        [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: {
+          success: true,
+          generation: 1,
+        },
+      },
+      gatewayRpc: {
+        [stableStringify(['sessions.list', SESSIONS_LIST_PAYLOAD])]: {
+          success: true,
+          result: {
+            sessions: [{ key: MAIN_SESSION_KEY, displayName: 'history after ready', updatedAt: 1001 }],
+          },
+        },
+      },
+    });
+
+    // Chat session loading is throttled; let the initial empty load age out so
+    // the ready transition exercises the reload path instead of the throttle.
+    await page.waitForTimeout(1_300);
 
     await electronApp.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0];
@@ -262,7 +300,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
       });
     });
 
-    await expect(page.getByText('history after ready')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`)).toContainText('history after ready', { timeout: 10_000 });
     await expect(page.getByTestId('sidebar-gateway-restarting')).toHaveAttribute('data-state', 'hidden');
   });
 });

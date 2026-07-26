@@ -321,6 +321,16 @@ as native `projects.platforms` entries and do not load OpenClaw plugins.
 GUI Chat registers as a cc-connect Bridge adapter. cc-connect invokes Codex and
 emits all run activity over Bridge. The normalized envelope is:
 
+OpenClaw and cc-connect intentionally use different provider-owned Chat
+transports behind the same ClawX route. OpenClaw uses the Main-owned ACP
+session transport introduced by the OpenClaw runtime. cc-connect renders the
+Runtime Chat implementation and sends through `RuntimeManager` -> active
+`RuntimeProvider` -> BridgePlatform. Renderer routing follows the active
+runtime status, not only the pending Settings selection. As defense in depth,
+Main rejects ACP load, prompt, cancel, and permission requests whenever
+cc-connect is active; typed media sends remain dispatched through the active
+runtime provider.
+
 The adapter follows the pinned cc-connect Web Admin client lifecycle: after
 `register_ack` it sends a JSON `ping` every 25 seconds, reconnects after 3
 seconds when the socket drops, and stops both timers during an intentional

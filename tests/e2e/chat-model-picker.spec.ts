@@ -77,6 +77,9 @@ test.describe('ClawX chat model picker', () => {
           if (request?.module === 'gateway' && request.action === 'status') {
             return makeResponse(request.id, { state: 'running', port: 18789, pid: 12345, gatewayReady: true });
           }
+          if (request?.module === 'chat' && request.action === 'loadAcpSession') {
+            return makeResponse(request.id, { success: true, generation: 1 });
+          }
           if (request?.module === 'gateway' && request.action === 'rpc') {
             const method = typeof body?.method === 'string' ? body.method : '';
             const params = body?.params ?? null;

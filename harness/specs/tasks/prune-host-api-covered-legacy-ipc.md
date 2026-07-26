@@ -8,7 +8,6 @@ touchedAreas:
   - README.md
   - README.zh-CN.md
   - README.ja-JP.md
-  - docs/superpowers/**
   - harness/**
   - electron/**
   - src/**

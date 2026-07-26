@@ -85,6 +85,10 @@ export interface ChatSession {
   hasActiveRun?: boolean;
   /** Channel provider that last delivered to this session (e.g. webchat, feishu, discord). */
   channel?: string;
+  /** OpenClaw ACP session cwd, mirrored for display and routing. OpenClaw is the source of truth. */
+  workspacePath?: string;
+  /** Renderer-local placeholder created by New Chat before ACP has created the backing session. */
+  createdLocally?: boolean;
 }
 
 export interface ToolStatus {
@@ -146,7 +150,9 @@ export interface ChatState {
   // Actions
   loadSessions: (force?: boolean) => Promise<void>;
   switchSession: (key: string) => void;
+  selectAcpSession: (key: string) => void;
   newSession: () => void;
+  acknowledgeAcpSessionCreated: (key: string, workspacePath?: string) => void;
   deleteSession: (key: string) => Promise<void>;
   renameSession: (key: string, label: string) => Promise<void>;
   cleanupEmptySession: () => void;

@@ -26,8 +26,41 @@
         "openFolder": "Open folder",
         "viewAll": "View all changes"
     },
+    "fileActivity": {
+        "created": "Created",
+        "modified": "Modified",
+        "deleted": "Deleted",
+        "fileButton": "{{action}} {{path}}",
+        "changeRecord": "View changes for {{path}}",
+        "fileUnavailable": "File unavailable",
+        "outsideWorkspace": "File is outside the workspace"
+    },
     "runError": {
         "title": "Model call failed"
+    },
+    "acp": {
+        "thought": "Thought",
+        "tool": "Tool",
+        "expandTool": "Expand tool result",
+        "collapseTool": "Collapse tool result",
+        "permission": "Permission",
+        "plan": "Plan",
+        "running": "Running",
+        "pending": "Pending",
+        "completed": "Completed",
+        "failed": "Failed",
+        "cancelled": "Cancelled",
+        "loadFailed": "Failed to load session",
+        "promptFailed": "Failed to send prompt",
+        "unsupportedContent": "Unsupported content",
+        "dismiss": "Dismiss",
+        "image": "Image",
+        "copyImage": "Copy image",
+        "imageCopied": "Image copied",
+        "saveImage": "Save image as",
+        "imageSaved": "Image saved",
+        "copy": "Copy response",
+        "copied": "Copied"
     },
     "artifactPanel": {
         "tabs": {
@@ -40,8 +73,10 @@
         },
         "changes": {
             "heading": "File changes ({{count}})",
-            "empty": "No file changes in this conversation yet",
-            "selectFileHint": "Click a file card in the chat or “View changes” to open a diff."
+            "empty": "This session has no file changes yet.",
+            "selectFileHint": "Click a file card in the chat or “View changes” to open a diff.",
+            "changeRecord": "Change {{number}}",
+            "diffUnavailable": "Diff unavailable for this change."
         },
         "preview": {
             "emptyTitle": "No file selected",
@@ -125,16 +160,15 @@
     },
     "workspace": {
         "title": "Workspace",
+        "defaultLabel": "Default workspace",
+        "header": "Agent: {{agent}} · Directory: {{directory}}",
         "freshBadge": "Updated this run",
         "pickFile": "Select a file from the left to preview",
         "empty": "Workspace is empty or inaccessible",
         "truncated": "Directory truncated — only the first 5000 entries shown",
         "actions": {
             "refresh": "Refresh",
-            "openRootInFinder": "Reveal workspace in file manager",
-            "toggleHidden": "Toggle hidden files",
-            "showHidden": "Show hidden files",
-            "hideHidden": "Hide hidden files"
+            "openRootInFinder": "Reveal workspace in file manager"
         }
     },
     "taskPanel": {
@@ -174,7 +208,9 @@
     "imageGeneration": {
         "generating": "Generating image, please wait…",
         "previewLoading": "Loading image preview…",
-        "previewUnavailable": "Image preview is temporarily unavailable"
+        "previewUnavailable": "Image generation completed, but the preview could not be loaded.",
+        "generatedReady": "Generated image is ready.",
+        "generatedReadyWithMissing": "Generated image is ready. Some images could not be loaded."
     },
     "composer": {
         "attachFiles": "Attach files",
@@ -194,13 +230,29 @@
         "gatewayDisconnectedPlaceholder": "Gateway not connected...",
         "send": "Send",
         "stop": "Stop",
+        "working": "AI is working",
         "gatewayConnected": "connected",
-        "gatewayStatus": "gateway {{state}} | port: {{port}} {{pid}}",
+        "gatewayStarting": "starting",
+        "gatewayStatus": "gateway {{state}} | port: {{port}} | pid: {{pid}}",
         "retryFailedAttachments": "Retry failed attachments",
+        "workspacePrefix": "{{workspace}}",
+        "workspacePickerTitle": "Select workspace folder",
+        "workspacePickerButton": "Use workspace",
+        "workspacePickerFailed": "Could not open workspace picker",
+        "defaultWorkspaceOption": "Default workspace",
+        "chooseOtherWorkspaceOption": "Choose another folder...",
         "folderDropUnsupported": "Couldn't attach this folder. Drag it again, or paste the folder path into your message.",
         "folderAttachment": "Folder",
         "skillPreviewTooltip": "Preview SKILL.md",
         "skillPreviewNotFound": "Could not find this skill. Open the skill picker to refresh the list."
+    },
+    "sessionList": {
+        "title": "Sessions",
+        "collapseAll": "Collapse all",
+        "expandAll": "Expand all",
+        "loadMore": "Load more",
+        "loadMoreForWorkspace": "Load {{count}} more sessions in {{workspace}}",
+        "workspaceToggle": "Toggle workspace {{workspace}}"
     },
     "historyBuckets": {
         "today": "Today",

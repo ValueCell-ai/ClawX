@@ -10,30 +10,37 @@ import { ZoomIn, ZoomOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { readBinaryFile } from '@/lib/file-preview-client';
+import {
+  readBinaryFile,
+  readWorkspaceBinary,
+  type WorkspaceFileRef,
+} from '@/lib/file-preview-client';
 import { cn } from '@/lib/utils';
+import { getFilePreviewTargetIdentity } from './types';
 
 const IMAGE_MAX_BYTES = 50 * 1024 * 1024;
 
 export interface ImageViewerProps {
   filePath: string;
   fileName: string;
+  workspaceFileRef?: WorkspaceFileRef;
   className?: string;
 }
 
 type LoadState =
-  | { filePath: string; status: 'loading' }
-  | { filePath: string; status: 'tooLarge'; size?: number }
-  | { filePath: string; status: 'error'; message: string }
-  | { filePath: string; status: 'ready'; url: string };
+  | { identity: string; status: 'loading' }
+  | { identity: string; status: 'tooLarge'; size?: number }
+  | { identity: string; status: 'error'; message: string }
+  | { identity: string; status: 'ready'; url: string };
 
-export default function ImageViewer({ filePath, fileName, className }: ImageViewerProps) {
+export default function ImageViewer({ filePath, fileName, workspaceFileRef, className }: ImageViewerProps) {
   const { t } = useTranslation('chat');
   const [zoomed, setZoomed] = useState(false);
-  const [state, setState] = useState<LoadState>({ filePath, status: 'loading' });
-  const currentState: LoadState = state.filePath === filePath
+  const loadIdentity = getFilePreviewTargetIdentity({ filePath, workspaceFileRef });
+  const [state, setState] = useState<LoadState>({ identity: loadIdentity, status: 'loading' });
+  const currentState: LoadState = state.identity === loadIdentity
     ? state
-    : { filePath, status: 'loading' };
+    : { identity: loadIdentity, status: 'loading' };
 
   useEffect(() => {
     let cancelled = false;
@@ -41,14 +48,16 @@ export default function ImageViewer({ filePath, fileName, className }: ImageView
 
     void (async () => {
       try {
-        const res = await readBinaryFile(filePath, { maxBytes: IMAGE_MAX_BYTES });
+        const res = workspaceFileRef
+          ? await readWorkspaceBinary({ ...workspaceFileRef, maxBytes: IMAGE_MAX_BYTES })
+          : await readBinaryFile(filePath, { maxBytes: IMAGE_MAX_BYTES });
         if (cancelled) return;
         if (!res.ok || !res.data) {
           if (res.error === 'tooLarge') {
-            setState({ filePath, status: 'tooLarge', size: res.size });
+            setState({ identity: loadIdentity, status: 'tooLarge', size: res.size });
             return;
           }
-          setState({ filePath, status: 'error', message: String(res.error ?? 'unknown') });
+          setState({ identity: loadIdentity, status: 'error', message: String(res.error ?? 'unknown') });
           return;
         }
         const cloned = new Uint8Array(res.data.byteLength);
@@ -58,11 +67,11 @@ export default function ImageViewer({ filePath, fileName, className }: ImageView
           URL.revokeObjectURL(objectUrl);
           return;
         }
-        setState({ filePath, status: 'ready', url: objectUrl });
+        setState({ identity: loadIdentity, status: 'ready', url: objectUrl });
       } catch (err) {
         if (cancelled) return;
         setState({
-          filePath,
+          identity: loadIdentity,
           status: 'error',
           message: err instanceof Error ? err.message : String(err),
         });
@@ -75,7 +84,7 @@ export default function ImageViewer({ filePath, fileName, className }: ImageView
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [filePath]);
+  }, [filePath, loadIdentity, workspaceFileRef]);
 
   if (currentState.status === 'loading') {
     return (

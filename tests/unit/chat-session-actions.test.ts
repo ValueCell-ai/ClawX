@@ -28,7 +28,18 @@ vi.mock('@/lib/host-api', () => ({
 
 type ChatLikeState = {
   currentSessionKey: string;
-  sessions: Array<{ key: string; displayName?: string; updatedAt?: number; status?: string; hasActiveRun?: boolean }>;
+  sessions: Array<{
+    key: string;
+    label?: string;
+    displayName?: string;
+    derivedTitle?: string;
+    lastMessagePreview?: string;
+    updatedAt?: number;
+    status?: string;
+    hasActiveRun?: boolean;
+    createdLocally?: boolean;
+    workspacePath?: string;
+  }>;
   messages: Array<{ role: string; timestamp?: number; content?: unknown }>;
   sessionLabels: Record<string, string>;
   sessionLastActivity: Record<string, number>;
@@ -38,6 +49,7 @@ type ChatLikeState = {
   streamingTools: unknown[];
   activeRunId: string | null;
   error: string | null;
+  runError: string | null;
   pendingFinal: boolean;
   lastUserMessageAt: number | null;
   pendingToolImages: unknown[];
@@ -57,6 +69,7 @@ function makeHarness(initial?: Partial<ChatLikeState>) {
     streamingTools: [],
     activeRunId: null,
     error: null,
+    runError: null,
     pendingFinal: false,
     lastUserMessageAt: null,
     pendingToolImages: [],
@@ -157,11 +170,14 @@ describe('chat session actions', () => {
     actions.newSession();
     const next = h.read();
     expect(next.currentSessionKey).toBe('agent:foo:session-1711111111111');
-    expect(next.sessions.some((s) => s.key === 'agent:foo:session-1711111111111')).toBe(true);
+    expect(next.sessions.find((s) => s.key === 'agent:foo:session-1711111111111')?.createdLocally).toBe(true);
     expect(next.messages).toEqual([]);
     expect(next.streamingText).toBe('');
     expect(next.activeRunId).toBeNull();
     expect(next.pendingFinal).toBe(false);
+
+    actions.acknowledgeAcpSessionCreated('agent:foo:session-1711111111111');
+    expect(h.read().sessions.find((s) => s.key === 'agent:foo:session-1711111111111')?.createdLocally).toBe(false);
     nowSpy.mockRestore();
   });
 
@@ -196,6 +212,182 @@ describe('chat session actions', () => {
     expect(h.read().sessionLastActivity['agent:main:main']).toBe(1773281700000);
     expect(h.read().sessionLastActivity['agent:main:cron:job-1']).toBe(1773281731621);
     expect(h.read().sessions.find((session) => session.key === 'agent:main:cron:job-1')?.updatedAt).toBe(1773281731621);
+  });
+
+  it('falls back from a missing current session unless it is locally pending', async () => {
+    const { createSessionActions } = await import('@/stores/chat/session-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:session-pending',
+      sessions: [],
+      messages: [],
+    });
+    const actions = createSessionActions(h.set as never, h.get as never);
+
+    gatewayRpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        sessions: [{
+          key: 'agent:main:session-a',
+          displayName: 'Visible chat',
+          updatedAt: 1773281700000,
+        }],
+      },
+    });
+
+    await actions.loadSessions();
+
+    const next = h.read();
+    expect(next.currentSessionKey).toBe('agent:main:session-a');
+    expect(next.sessions.map((session) => session.key)).toEqual(['agent:main:session-a']);
+  });
+
+  it('preserves a locally-created current session across session refreshes before first send', async () => {
+    const { createSessionActions } = await import('@/stores/chat/session-actions');
+    const pendingKey = 'agent:main:session-1711111111111';
+    const h = makeHarness({
+      currentSessionKey: pendingKey,
+      sessions: [{ key: pendingKey, displayName: pendingKey, createdLocally: true }],
+      messages: [],
+    });
+    const actions = createSessionActions(h.set as never, h.get as never);
+
+    gatewayRpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        sessions: [{
+          key: 'agent:main:session-a',
+          displayName: 'Visible chat',
+          updatedAt: 1773281700000,
+        }],
+      },
+    });
+
+    await actions.loadSessions();
+
+    const next = h.read();
+    const pendingSession = next.sessions.find((session) => session.key === pendingKey);
+    expect(next.currentSessionKey).toBe(pendingKey);
+    expect(pendingSession?.createdLocally).toBe(true);
+  });
+
+  it('loadSessions preserves mirrored workspacePath when backend returns the same key without cwd', async () => {
+    const { createSessionActions } = await import('@/stores/chat/session-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:session-a',
+      sessions: [{ key: 'agent:main:session-a', workspacePath: '/Users/alex/workspace/ClawX' }],
+      messages: [],
+    });
+    const actions = createSessionActions(h.set as never, h.get as never);
+
+    gatewayRpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        sessions: [{
+          key: 'agent:main:session-a',
+          displayName: 'Visible chat',
+          updatedAt: 1773281700000,
+        }],
+      },
+    });
+
+    await actions.loadSessions();
+
+    expect(h.read().sessions.find((session) => session.key === 'agent:main:session-a')?.workspacePath)
+      .toBe('/Users/alex/workspace/ClawX');
+  });
+
+  it('moves away from a heartbeat-only current session during sessions load', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1711111111111);
+    const { createSessionActions } = await import('@/stores/chat/session-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+      sessions: [],
+      messages: [],
+    });
+    const actions = createSessionActions(h.set as never, h.get as never);
+
+    gatewayRpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        sessions: [{
+          key: 'agent:main:main',
+          displayName: 'ClawX',
+          lastMessagePreview: '[OpenClaw heartbeat poll]',
+          updatedAt: 1773281700000,
+        }],
+      },
+    });
+
+    await actions.loadSessions();
+
+    const next = h.read();
+    expect(next.currentSessionKey).toBe('agent:main:session-1711111111111');
+    expect(next.sessions.map((session) => session.key)).toEqual(['agent:main:session-1711111111111']);
+    expect(next.sessions.find((session) => session.key === 'agent:main:main')).toBeUndefined();
+    nowSpy.mockRestore();
+  });
+
+  it('keeps the fresh replacement when visible sessions could otherwise be fallback candidates', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1711111111111);
+    const { createSessionActions } = await import('@/stores/chat/session-actions');
+    const h = makeHarness({
+      currentSessionKey: 'agent:main:main',
+      sessions: [],
+      messages: [{ role: 'assistant', content: 'stale visible content' }],
+      streamingText: 'stale stream',
+      streamingMessage: { role: 'assistant', content: 'stale stream' },
+      streamingTools: [{ name: 'tool', status: 'running' }],
+      sending: true,
+      activeRunId: 'run-stale',
+      error: 'stale error',
+      runError: 'old run error',
+      pendingFinal: true,
+      lastUserMessageAt: 1773281600000,
+      pendingToolImages: [{ fileName: 'stale.png' }],
+    });
+    const actions = createSessionActions(h.set as never, h.get as never);
+
+    gatewayRpcMock.mockResolvedValueOnce({
+      success: true,
+      result: {
+        sessions: [
+          {
+            key: 'agent:main:main',
+            displayName: 'ClawX',
+            lastMessagePreview: '[OpenClaw heartbeat poll]',
+            updatedAt: 1773281700000,
+          },
+          {
+            key: 'agent:main:session-1710000000000',
+            displayName: 'ClawX',
+            lastMessagePreview: 'Summarize the repository structure',
+            updatedAt: 1773281800000,
+          },
+        ],
+      },
+    });
+
+    await actions.loadSessions();
+
+    const next = h.read();
+    expect(next.currentSessionKey).toBe('agent:main:session-1711111111111');
+    expect(next.currentSessionKey).not.toBe('agent:main:session-1710000000000');
+    expect(next.sessions.map((session) => session.key)).toEqual([
+      'agent:main:session-1710000000000',
+      'agent:main:session-1711111111111',
+    ]);
+    expect(next.messages).toEqual([]);
+    expect(next.streamingText).toBe('');
+    expect(next.streamingMessage).toBeNull();
+    expect(next.streamingTools).toEqual([]);
+    expect(next.sending).toBe(false);
+    expect(next.activeRunId).toBeNull();
+    expect(next.error).toBeNull();
+    expect(next.runError).toBeNull();
+    expect(next.pendingFinal).toBe(false);
+    expect(next.lastUserMessageAt).toBeNull();
+    expect(next.pendingToolImages).toEqual([]);
+    nowSpy.mockRestore();
   });
 
   it('clears stale current-run state when sessions.list reports the current session is idle', async () => {

@@ -116,6 +116,7 @@ Complete the entire setup—from installation to your first AI interaction—thr
 Communicate with AI agents through a modern chat experience. Support for multiple conversation contexts, message history, rich content rendering with Markdown (including GitHub-flavored tables and KaTeX-powered LaTeX math: `$inline$`, `$$block$$`, `\(inline\)`, and `\[block\]`), and direct `@agent` routing in the main composer for multi-agent setups.
 Skills you insert from the composer appear as `/skill-name` chips; click a chip to open the preview sidebar and read that skill's `SKILL.md`.
 When you target another agent with `@agent`, ClawX switches into that agent's own conversation context directly instead of relaying through the default agent. Agent workspaces stay separate by default, and stronger isolation depends on OpenClaw sandbox settings.
+The session sidebar is workspace-first: the default workspace stays at the top, other workspaces sort naturally, each workspace can collapse or load more sessions, and rows show relative activity until hover reveals actions. Editable chats expose the composer workspace chip as a small menu for returning to the default workspace or choosing another folder.
 Each agent can also override its own `provider/model` runtime setting; agents without overrides continue inheriting the global default model.
 
 ### 📡 Multi-Channel Management
@@ -232,6 +233,19 @@ Notes:
 
 ClawX employs a **dual-process architecture** with a unified host API layer. The renderer talks to a single client abstraction, while Electron Main owns protocol selection and process lifecycle:
 
+Chat transport follows the active runtime while preserving one renderer boundary. OpenClaw Chat uses an ACP stdio bridge owned by Electron Main; the renderer receives typed host events and renders an in-memory ACP timeline. cc-connect Chat is dispatched by `RuntimeManager` through cc-connect BridgePlatform, including session history, progress, approvals, and generated media. The renderer uses the same Host API facade in both modes and never invokes Codex directly. Non-Chat capabilities are also dispatched through runtime providers; OpenClaw-specific operations remain behind the OpenClaw adapter.
+
+ACP Chat can display generated image previews when image-generation media is delivered by the runtime as trusted structured media. During historical OpenClaw replay, assistant `MEDIA:/path/to/file.png` markers are also promoted only when they follow a recorded image-generation task start for that session. Other plain local-path text such as `MEDIA: /path/to/file.png` is not interpreted as a preview; ClawX loads previews through host media handling in Electron Main, not arbitrary renderer filesystem access. Standard ACP image content remains the preferred path and renders directly.
+
+### ACP File Activity Semantics
+
+- File activity is projected from successful, completed OpenClaw `write`, `edit`, and `apply_patch` calls. Tool recognition follows the official OpenClaw Chat UI; filtering to completed calls is specific to ClawX.
+- A `write` is shown as the tool declares it: a creation with an all-added diff, even if the path may already exist.
+- **Changes** is a chronological, session-level record of tool-declared activity. It is not Git output or a verified diff against a source baseline.
+- For each file, Changes renders at most one diff editor per assistant turn. Sequential fragments are composed when safe; independent fragments share one concatenated editor without claiming a complete-file baseline.
+- Side effects made by shell commands, scripts, users, or IDEs are not detected.
+- A full ACP replay can restore recorded file activity. If replay is incomplete, ClawX does not infer missing activity through fallback behavior.
+
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                        ClawX Desktop App                         │
@@ -258,17 +272,17 @@ ClawX employs a **dual-process architecture** with a unified host API layer. The
                                │ Typed IPC requests
                                ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                Main Host Services & Gateway Manager              │
+│             Main Host Services & Runtime Manager                 │
 │                                                                  │
 │  • host:invoke typed service dispatcher                          │
 │  • Settings, files, sessions, skills, providers, diagnostics     │
-│  • Main-owned Gateway WebSocket and process supervision          │
+│  • Runtime selection, transport, and process supervision         │
 └──────────────────────────────┬───────────────────────────────────┘
                                │
                                │ Main-owned WebSocket
                                ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                     OpenClaw Gateway                             │
+│              OpenClaw Gateway path (shown)                       │
 │                                                                  │
 │  • AI agent runtime and orchestration                            │
 │  • Message channel management                                    │
@@ -280,7 +294,7 @@ ClawX employs a **dual-process architecture** with a unified host API layer. The
 
 - **Process Isolation**: The AI runtime operates in a separate process, ensuring UI responsiveness even during heavy computation
 - **Single Entry for Frontend Calls**: Renderer requests go through host-api/api-client; protocol details are hidden behind a stable interface
-- **Main-Process Transport Ownership**: Electron Main owns the Gateway WebSocket; the renderer talks to Main over typed IPC
+- **Main-Process Transport Ownership**: Electron Main owns OpenClaw ACP/Gateway transports and cc-connect BridgePlatform dispatch; the renderer talks to Main over typed IPC
 - **Extension IPC Contributions**: Main-process extensions contribute host-api actions through the typed IPC registry instead of HTTP routes
 - **Graceful Recovery**: Built-in reconnect, timeout, and backoff logic handles transient failures automatically
 - **Secure Storage**: API keys and sensitive data leverage the operating system's native secure storage mechanisms
@@ -420,7 +434,7 @@ On headless Linux, run Electron tests under a display server such as `xvfb-run -
 
 ### Communication Regression Checks
 
-When a PR changes communication paths (gateway events, chat runtime send/receive flow, channel delivery, or transport fallback), run:
+When a PR changes communication paths (gateway events, ACP Chat bridge send/receive flow, channel delivery, or transport fallback), run:
 
 ```bash
 pnpm run comms:replay

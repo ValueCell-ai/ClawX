@@ -26,8 +26,41 @@
         "openFolder": "打开文件夹",
         "viewAll": "查看文件变更"
     },
+    "fileActivity": {
+        "created": "已创建",
+        "modified": "已修改",
+        "deleted": "已删除",
+        "fileButton": "{{action}} {{path}}",
+        "changeRecord": "查看 {{path}} 的变更",
+        "fileUnavailable": "文件不可用",
+        "outsideWorkspace": "文件位于工作空间之外"
+    },
     "runError": {
         "title": "模型调用失败"
+    },
+    "acp": {
+        "thought": "思考",
+        "tool": "工具",
+        "expandTool": "展开工具结果",
+        "collapseTool": "折叠工具结果",
+        "permission": "权限",
+        "plan": "计划",
+        "running": "进行中",
+        "pending": "待处理",
+        "completed": "已完成",
+        "failed": "失败",
+        "cancelled": "已取消",
+        "loadFailed": "会话加载失败",
+        "promptFailed": "发送提示失败",
+        "unsupportedContent": "不支持的内容",
+        "dismiss": "关闭",
+        "image": "图片",
+        "copyImage": "复制图片",
+        "imageCopied": "图片已复制",
+        "saveImage": "另存为图片",
+        "imageSaved": "图片已保存",
+        "copy": "复制回复",
+        "copied": "已复制"
     },
     "artifactPanel": {
         "tabs": {
@@ -40,8 +73,10 @@
         },
         "changes": {
             "heading": "文件变更（{{count}} 个）",
-            "empty": "本会话尚无文件变更",
-            "selectFileHint": "请点击对话中的文件卡片，或「查看文件变更」打开 diff。"
+            "empty": "此会话尚无文件变更。",
+            "selectFileHint": "请点击对话中的文件卡片，或「查看文件变更」打开 diff。",
+            "changeRecord": "变更 {{number}}",
+            "diffUnavailable": "此变更无法显示差异。"
         },
         "preview": {
             "emptyTitle": "尚未选择文件",
@@ -125,16 +160,15 @@
     },
     "workspace": {
         "title": "工作空间",
+        "defaultLabel": "默认工作空间",
+        "header": "Agent：{{agent}} · 目录：{{directory}}",
         "freshBadge": "本轮新增",
         "pickFile": "从左侧选择一个文件预览",
         "empty": "工作空间为空或无法访问",
         "truncated": "目录过大，已截断显示前 5000 个节点",
         "actions": {
             "refresh": "刷新",
-            "openRootInFinder": "在文件管理器中显示根目录",
-            "toggleHidden": "显示/隐藏隐藏文件",
-            "showHidden": "显示隐藏文件",
-            "hideHidden": "隐藏隐藏文件"
+            "openRootInFinder": "在文件管理器中显示根目录"
         }
     },
     "taskPanel": {
@@ -173,8 +207,10 @@
     },
     "imageGeneration": {
         "generating": "图片生成中，请稍候…",
-        "previewLoading": "正在载入图片预览…",
-        "previewUnavailable": "图片预览暂时不可用"
+        "previewLoading": "正在加载图片预览…",
+        "previewUnavailable": "图片生成已完成，但无法加载预览。",
+        "generatedReady": "生成的图片已准备好。",
+        "generatedReadyWithMissing": "生成的图片已准备好，但有部分图片无法加载。"
     },
     "composer": {
         "attachFiles": "添加文件",
@@ -194,13 +230,29 @@
         "gatewayDisconnectedPlaceholder": "网关未连接...",
         "send": "发送",
         "stop": "停止",
+        "working": "AI 正在工作",
         "gatewayConnected": "已连接",
-        "gatewayStatus": "gateway {{state}} | port: {{port}} {{pid}}",
+        "gatewayStarting": "启动中",
+        "gatewayStatus": "网关{{state}} ｜ 端口：{{port}} ｜ 进程 ID：{{pid}}",
         "retryFailedAttachments": "重试失败的附件",
+        "workspacePrefix": "{{workspace}}",
+        "workspacePickerTitle": "选择工作空间文件夹",
+        "workspacePickerButton": "使用此工作空间",
+        "workspacePickerFailed": "无法打开工作空间选择器",
+        "defaultWorkspaceOption": "默认工作空间",
+        "chooseOtherWorkspaceOption": "选择其他目录…",
         "folderDropUnsupported": "无法添加此文件夹。请重新拖入，或在消息中粘贴文件夹路径。",
         "folderAttachment": "文件夹",
         "skillPreviewTooltip": "预览 SKILL.md",
         "skillPreviewNotFound": "找不到该技能。请打开技能列表以刷新。"
+    },
+    "sessionList": {
+        "title": "会话列表",
+        "collapseAll": "一键折叠",
+        "expandAll": "一键展开",
+        "loadMore": "加载更多",
+        "loadMoreForWorkspace": "在 {{workspace}} 中再加载 {{count}} 个会话",
+        "workspaceToggle": "展开或折叠工作空间 {{workspace}}"
     },
     "historyBuckets": {
         "today": "今天",

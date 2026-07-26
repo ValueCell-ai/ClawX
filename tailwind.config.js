@@ -21,7 +21,7 @@
  *      ...) we add three ClawX-private groups:
  *        - brand        : Apple-system blue used for primary CTAs
  *        - skill        : highlight blue for inline /skill chips in chat
- *        - surface.{modal,input,sidebar}: a 3-layer cream-paper background
+ *        - surface.{modal,input,sidebar}: a 3-layer neutral background
  *                          system in light mode. In dark mode each layer
  *                          collapses to an existing shadcn token through
  *                          CSS variables, so callers don't need to write
@@ -243,12 +243,12 @@ module.exports = {
           'fg-dark': '#2563EB',   // chip text (dark mode)
         },
 
-        // ── C. ClawX cream surfaces ──────────────────────────────────
+        // ── C. ClawX neutral surfaces ────────────────────────────────
         // We use `<alpha-value>` placeholders so Tailwind auto-emits
         // `bg-surface-xxx/{alpha}` rules. Concrete pixel values live in
         // globals.css; in dark mode the same CSS variables redirect to
         // shadcn's existing dark tokens to avoid maintaining a second
-        // (dark) cream palette.
+        // dark surface palette.
         surface: {
           modal: 'hsl(var(--surface-modal) / <alpha-value>)',
           input: 'hsl(var(--surface-input) / <alpha-value>)',

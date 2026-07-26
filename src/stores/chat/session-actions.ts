@@ -1,5 +1,9 @@
 import { hostApi } from '@/lib/host-api';
-import { isClawXDesktopSessionKey, shouldIncludeSessionInSidebarList } from './session-key-utils';
+import {
+  findHiddenOpenClawHeartbeatSession,
+  isClawXDesktopSessionKey,
+  shouldIncludeSessionInSidebarList,
+} from './session-key-utils';
 import { pickStartupSessionFallback } from './session-selection';
 import { clearPendingOptimisticUserMessages, getCanonicalPrefixFromSessions, getMessageText, toMs } from './helpers';
 import { DEFAULT_CANONICAL_PREFIX, DEFAULT_SESSION_KEY, type ChatSession, type RawMessage } from './types';
@@ -24,6 +28,13 @@ function getAgentIdFromSessionKey(sessionKey: string): string {
 function getAgentIdForSessionKey(sessionKey: string, sessions: ChatSession[]): string {
   const sessionAgentId = sessions.find((session) => session.key === sessionKey)?.agentId;
   return sessionAgentId || getAgentIdFromSessionKey(sessionKey);
+}
+
+function getCanonicalPrefixFromSessionKey(sessionKey: string): string | null {
+  if (!sessionKey.startsWith('agent:')) return null;
+  const parts = sessionKey.split(':');
+  if (parts.length < 2) return null;
+  return `${parts[0]}:${parts[1]}`;
 }
 
 function toSessionLabel(text: string, maxLength = 50): string {
@@ -112,7 +123,7 @@ function reconcileCurrentSessionIdleFromBackend(set: ChatSet, get: ChatGet, sess
 export function createSessionActions(
   set: ChatSet,
   get: ChatGet,
-): Pick<SessionHistoryActions, 'loadSessions' | 'switchSession' | 'newSession' | 'deleteSession' | 'renameSession' | 'cleanupEmptySession'> {
+): Pick<SessionHistoryActions, 'loadSessions' | 'switchSession' | 'selectAcpSession' | 'newSession' | 'acknowledgeAcpSessionCreated' | 'deleteSession' | 'renameSession' | 'cleanupEmptySession'> {
   return {
     loadSessions: async () => {
       try {
@@ -126,7 +137,7 @@ export function createSessionActions(
 
         if (data) {
           const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
-          const sessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => ({
+          const normalizedSessions: ChatSession[] = rawSessions.map((s: Record<string, unknown>) => ({
             key: String(s.key || ''),
             label: s.label ? String(s.label) : undefined,
             displayName: s.displayName ? String(s.displayName) : undefined,
@@ -139,7 +150,8 @@ export function createSessionActions(
             status: parseSessionStatus(s.status),
             hasActiveRun: typeof s.hasActiveRun === 'boolean' ? s.hasActiveRun : undefined,
             channel: s.lastChannel ? String(s.lastChannel) : undefined,
-          })).filter((s: ChatSession) => shouldIncludeSessionInSidebarList(s));
+          }));
+          const sessions = normalizedSessions.filter((s: ChatSession) => shouldIncludeSessionInSidebarList(s));
 
           const canonicalBySuffix = new Map<string, string>();
           for (const session of sessions) {
@@ -161,31 +173,51 @@ export function createSessionActions(
             return true;
           });
 
-          const { currentSessionKey } = get();
+          const { currentSessionKey, sessions: localSessions } = get();
+          const localWorkspaceBySessionKey = new Map(
+            localSessions
+              .filter((session) => session.workspacePath)
+              .map((session) => [session.key, session.workspacePath!] as const),
+          );
+          const mergedSessions = dedupedSessions.map((session) => {
+            if (session.workspacePath) return session;
+            const workspacePath = localWorkspaceBySessionKey.get(session.key);
+            return workspacePath ? { ...session, workspacePath } : session;
+          });
           let nextSessionKey = currentSessionKey || DEFAULT_SESSION_KEY;
+          let replacedHiddenHeartbeatSession = false;
+          const hiddenCurrentSession = findHiddenOpenClawHeartbeatSession(nextSessionKey, normalizedSessions);
+          if (hiddenCurrentSession) {
+            const prefix = getCanonicalPrefixFromSessionKey(nextSessionKey)
+              ?? getCanonicalPrefixFromSessions(sessions)
+              ?? DEFAULT_CANONICAL_PREFIX;
+            nextSessionKey = `${prefix}:session-${Date.now()}`;
+            replacedHiddenHeartbeatSession = true;
+          }
           if (!nextSessionKey.startsWith('agent:')) {
             const canonicalMatch = canonicalBySuffix.get(nextSessionKey);
             if (canonicalMatch) {
               nextSessionKey = canonicalMatch;
             }
           }
-          if (!dedupedSessions.find((s) => s.key === nextSessionKey) && dedupedSessions.length > 0) {
-            const isNewEmptySession = get().messages.length === 0;
-            if (!isNewEmptySession) {
-              const fallbackKey = pickStartupSessionFallback(nextSessionKey, dedupedSessions);
+          if (!replacedHiddenHeartbeatSession && !mergedSessions.find((s) => s.key === nextSessionKey) && mergedSessions.length > 0) {
+            const hasLocalPendingSession = localSessions.some((session) => session.key === nextSessionKey);
+            if (!hasLocalPendingSession) {
+              const fallbackKey = pickStartupSessionFallback(nextSessionKey, mergedSessions);
               if (fallbackKey) {
                 nextSessionKey = fallbackKey;
               }
             }
           }
 
-          const sessionsWithCurrent = !dedupedSessions.find((s) => s.key === nextSessionKey) && nextSessionKey
+          const localCurrentSession = localSessions.find((session) => session.key === nextSessionKey);
+          const sessionsWithCurrent = !mergedSessions.find((s) => s.key === nextSessionKey) && nextSessionKey
             && isClawXDesktopSessionKey(nextSessionKey)
             ? [
-              ...dedupedSessions,
-              { key: nextSessionKey, displayName: nextSessionKey },
+              ...mergedSessions,
+              localCurrentSession ?? { key: nextSessionKey, displayName: nextSessionKey },
             ]
-            : dedupedSessions;
+            : mergedSessions;
 
           const discoveredActivity = Object.fromEntries(
             sessionsWithCurrent
@@ -193,6 +225,7 @@ export function createSessionActions(
               .map((session) => [session.key, session.updatedAt!]),
           );
 
+          const sessionChanged = currentSessionKey !== nextSessionKey;
           set((state) => ({
             sessions: sessionsWithCurrent,
             currentSessionKey: nextSessionKey,
@@ -201,6 +234,19 @@ export function createSessionActions(
               ...state.sessionLastActivity,
               ...discoveredActivity,
             },
+            ...(sessionChanged ? {
+              messages: [],
+              sending: false,
+              streamingText: '',
+              streamingMessage: null,
+              streamingTools: [],
+              activeRunId: null,
+              error: null,
+              runError: null,
+              pendingFinal: false,
+              lastUserMessageAt: null,
+              pendingToolImages: [],
+            } : {}),
           }));
           reconcileCurrentSessionIdleFromBackend(set, get, sessionsWithCurrent);
           applySessionBackendLabels(set, sessionsWithCurrent);
@@ -208,7 +254,7 @@ export function createSessionActions(
           const gatewayRuntimeKey = getSessionLabelHydrationRuntimeKey(undefined);
           const shouldHydrateSessionLabels = isSessionLabelHydrationReady(gatewayRuntimeKey, true);
 
-          if (currentSessionKey !== nextSessionKey) {
+          if (sessionChanged) {
             get().loadHistory();
           }
 
@@ -308,6 +354,39 @@ export function createSessionActions(
       get().loadHistory();
     },
 
+    selectAcpSession: (key: string) => {
+      const { currentSessionKey, messages, sessionLastActivity, sessionLabels } = get();
+      const leavingEmpty = !currentSessionKey.endsWith(':main')
+        && messages.length === 0
+        && !sessionLastActivity[currentSessionKey]
+        && !sessionLabels[currentSessionKey];
+      set((s) => ({
+        currentSessionKey: key,
+        currentAgentId: getAgentIdFromSessionKey(key),
+        messages: [],
+        streamingText: '',
+        streamingMessage: null,
+        streamingTools: [],
+        activeRunId: null,
+        error: null,
+        pendingFinal: false,
+        lastUserMessageAt: null,
+        pendingToolImages: [],
+        sessions: [
+          ...(leavingEmpty ? s.sessions.filter((session) => session.key !== currentSessionKey) : s.sessions),
+          ...(s.sessions.some((session) => session.key === key) ? [] : [{ key, displayName: key }]),
+        ],
+        ...(leavingEmpty ? {
+          sessionLabels: Object.fromEntries(
+            Object.entries(s.sessionLabels).filter(([k]) => k !== currentSessionKey),
+          ),
+          sessionLastActivity: Object.fromEntries(
+            Object.entries(s.sessionLastActivity).filter(([k]) => k !== currentSessionKey),
+          ),
+        } : {}),
+      }));
+    },
+
     // ── Delete session ──
     //
     // NOTE: The OpenClaw Gateway does NOT expose a sessions.delete (or equivalent)
@@ -382,7 +461,7 @@ export function createSessionActions(
         && !sessionLabels[currentSessionKey];
       const prefix = getCanonicalPrefixFromSessions(get().sessions) ?? DEFAULT_CANONICAL_PREFIX;
       const newKey = `${prefix}:session-${Date.now()}`;
-      const newSessionEntry: ChatSession = { key: newKey, displayName: newKey };
+      const newSessionEntry: ChatSession = { key: newKey, displayName: newKey, createdLocally: true };
       set((s) => ({
         currentSessionKey: newKey,
         currentAgentId: getAgentIdFromSessionKey(newKey),
@@ -405,6 +484,16 @@ export function createSessionActions(
         pendingFinal: false,
         lastUserMessageAt: null,
         pendingToolImages: [],
+      }));
+    },
+
+    acknowledgeAcpSessionCreated: (key: string) => {
+      set((s) => ({
+        sessions: s.sessions.map((session) => (
+          session.key === key && session.createdLocally
+            ? { ...session, createdLocally: false }
+            : session
+        )),
       }));
     },
 

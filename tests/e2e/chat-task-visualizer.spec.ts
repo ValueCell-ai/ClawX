@@ -1,8 +1,11 @@
+import type { ElectronApplication } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 const PROJECT_MANAGER_SESSION_KEY = 'agent:main:main';
-const CODER_SESSION_KEY = 'agent:coder:subagent:child-123';
-const CODER_SESSION_ID = 'child-session-id';
+const PROJECT_MANAGER_WORKSPACE = '/workspace';
+const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
+
+type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -13,394 +16,199 @@ function stableStringify(value: unknown): string {
   return `{${entries.join(',')}}`;
 }
 
-const seededHistory = [
-  {
-    role: 'user',
-    content: [{ type: 'text', text: '[Mon 2026-04-06 15:18 GMT+8] Analyze Velaria uncommitted changes' }],
-    timestamp: Date.now(),
-  },
-  {
-    role: 'assistant',
-    content: [{
-      type: 'toolCall',
-      id: 'spawn-call',
-      name: 'sessions_spawn',
-      arguments: { agentId: 'coder', task: 'analyze core blocks' },
-    }],
-    timestamp: Date.now(),
-  },
-  {
-    role: 'toolResult',
-    toolCallId: 'spawn-call',
-    toolName: 'sessions_spawn',
-    content: [{
-      type: 'text',
-      text: JSON.stringify({
-        status: 'accepted',
-        childSessionKey: CODER_SESSION_KEY,
-        runId: 'child-run-id',
-        mode: 'run',
-      }, null, 2),
-    }],
-    details: {
-      status: 'accepted',
-      childSessionKey: CODER_SESSION_KEY,
-      runId: 'child-run-id',
-      mode: 'run',
-    },
-    isError: false,
-    timestamp: Date.now(),
-  },
-  {
-    role: 'assistant',
-    content: [{
-      type: 'toolCall',
-      id: 'yield-call',
-      name: 'sessions_yield',
-      arguments: { message: 'I asked coder to break down the core blocks of ~/Velaria uncommitted changes; will give you the conclusion when it returns.' },
-    }],
-    timestamp: Date.now(),
-  },
-  {
-    role: 'toolResult',
-    toolCallId: 'yield-call',
-    toolName: 'sessions_yield',
-    content: [{
-      type: 'text',
-      text: JSON.stringify({
-        status: 'yielded',
-        message: 'I asked coder to break down the core blocks of ~/Velaria uncommitted changes; will give you the conclusion when it returns.',
-      }, null, 2),
-    }],
-    details: {
-      status: 'yielded',
-      message: 'I asked coder to break down the core blocks of ~/Velaria uncommitted changes; will give you the conclusion when it returns.',
-    },
-    isError: false,
-    timestamp: Date.now(),
-  },
-  {
-    role: 'user',
-    content: [{
-      type: 'text',
-      text: `[Internal task completion event]
-source: subagent
-session_key: ${CODER_SESSION_KEY}
-session_id: ${CODER_SESSION_ID}
-type: subagent task
-status: completed successfully`,
-    }],
-    timestamp: Date.now(),
-  },
-  {
-    role: 'assistant',
-    content: [{ type: 'text', text: 'Coder has finished the analysis, here are the conclusions.' }],
-    _attachedFiles: [
-      {
-        fileName: 'CHECKLIST.md',
-        mimeType: 'text/markdown',
-        fileSize: 433,
-        preview: null,
-        filePath: '/Users/bytedance/.openclaw/workspace/CHECKLIST.md',
-        source: 'tool-result',
+function baseHostApiMocks(loadResult: Record<string, unknown> = { success: true, generation: 1 }) {
+  return {
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, cwd: PROJECT_MANAGER_WORKSPACE }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, cwd: PROJECT_MANAGER_WORKSPACE, createIfMissing: true }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, cwd: '/' }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, cwd: DEFAULT_WORKSPACE }])]: loadResult,
+    [stableStringify(['chat', 'loadAcpSession', { sessionKey: PROJECT_MANAGER_SESSION_KEY, cwd: DEFAULT_WORKSPACE, createIfMissing: true }])]: loadResult,
+    [stableStringify(['/api/agents', 'GET'])]: {
+      ok: true,
+      data: {
+        status: 200,
+        ok: true,
+        json: {
+          success: true,
+          agents: [{
+            id: 'main',
+            name: 'main',
+            workspace: PROJECT_MANAGER_WORKSPACE,
+            mainSessionKey: PROJECT_MANAGER_SESSION_KEY,
+          }],
+        },
       },
-    ],
-    timestamp: Date.now(),
-  },
-];
+    },
+  };
+}
 
-const childTranscriptMessages = [
-  {
-    role: 'user',
-    content: [{ type: 'text', text: 'Analyze the core content of ~/Velaria uncommitted changes' }],
-    timestamp: Date.now(),
-  },
-  {
-    role: 'assistant',
-    content: [{
-      type: 'toolCall',
-      id: 'coder-exec-call',
-      name: 'exec',
-      arguments: {
-        command: "cd ~/Velaria && git status --short && sed -n '1,200p' src/dataflow/core/logical/planner/plan.h",
-        workdir: '/Users/bytedance/.openclaw/workspace-coder',
+async function installAcpChatMocks(
+  app: ElectronApplication,
+  loadResult: Record<string, unknown> = { success: true, generation: 1 },
+) {
+  await installIpcMocks(app, {
+    gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
+    gatewayRpc: {
+      [stableStringify(['sessions.list', {}])]: {
+        success: true,
+        result: {
+          sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
+        },
       },
-    }],
-    timestamp: Date.now(),
-  },
-  {
-    role: 'toolResult',
-    toolCallId: 'coder-exec-call',
-    toolName: 'exec',
-    content: [{ type: 'text', text: 'M src/dataflow/core/logical/planner/plan.h' }],
-    details: {
-      status: 'completed',
-      aggregated: "M src/dataflow/core/logical/planner/plan.h\nM src/dataflow/core/execution/runtime/execution_optimizer.cc",
-      cwd: '/Users/bytedance/.openclaw/workspace-coder',
     },
-    isError: false,
-    timestamp: Date.now(),
-  },
-  {
-    role: 'assistant',
-    content: [{ type: 'text', text: 'Analysis complete, there are 4 key blocks.' }],
-    timestamp: Date.now(),
-  },
-];
+    hostApi: baseHostApiMocks(loadResult),
+  });
+}
+
+async function emitAcpSessionUpdates(
+  app: ElectronApplication,
+  updates: AcpSessionUpdate[],
+  generation = 1,
+) {
+  await app.evaluate(
+    async ({ app: _app }, payload) => {
+      const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+      for (const update of payload.updates) {
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('chat:acp-session-update', {
+            sessionKey: payload.sessionKey,
+            generation: payload.generation,
+            notification: {
+              sessionId: payload.sessionKey,
+              update,
+            },
+          });
+        }
+      }
+    },
+    { sessionKey: PROJECT_MANAGER_SESSION_KEY, generation, updates },
+  );
+}
+
+async function emitAcpPermissionRequest(app: ElectronApplication, generation = 1) {
+  await app.evaluate(
+    async ({ app: _app }, payload) => {
+      const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send('chat:acp-permission-request', {
+          sessionKey: payload.sessionKey,
+          generation: payload.generation,
+          requestId: 'approve-edit',
+          request: {
+            sessionId: payload.sessionKey,
+            toolCall: { toolCallId: 'edit-file', title: 'Allow edit?' },
+            options: [{ optionId: 'allow_once', name: 'Allow once', kind: 'allow' }],
+          },
+        });
+      }
+    },
+    { sessionKey: PROJECT_MANAGER_SESSION_KEY, generation },
+  );
+}
+
+async function openChat(app: ElectronApplication) {
+  const page = await getStableWindow(app);
+  try {
+    await page.reload();
+  } catch (error) {
+    if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
+      throw error;
+    }
+  }
+  await expect(page.getByTestId('main-layout')).toBeVisible();
+  return page;
+}
 
 const longRunPrompt = 'Inspect the workspace and summarize the result';
 const longRunProcessSegments = Array.from({ length: 9 }, (_, index) => `Checked source ${index + 1}.`);
 const longRunSummary = 'Here is the summary.';
 const longRunReplyText = `${longRunProcessSegments.join(' ')} ${longRunSummary}`;
-const longRunHistory = [
-  {
-    role: 'user',
-    content: [{ type: 'text', text: longRunPrompt }],
-    timestamp: Date.now(),
-  },
-  ...longRunProcessSegments.map((segment, index) => ({
-    role: 'assistant',
-    id: `long-run-step-${index + 1}`,
-    content: [{ type: 'text', text: segment }],
-    timestamp: Date.now(),
-  })),
-  {
-    role: 'assistant',
-    id: 'long-run-final',
-    content: [{ type: 'text', text: longRunReplyText }],
-    timestamp: Date.now(),
-  },
-];
 
-const errorRunPrompt = '你是什么模型？';
-const errorRunHistory = [
-  {
-    role: 'user',
-    content: [{ type: 'text', text: errorRunPrompt }],
-    timestamp: Date.now(),
-  },
-  {
-    role: 'assistant',
-    id: 'error-final',
-    content: [],
-    stopReason: 'error',
-    errorMessage: '404 Resource not found',
-    timestamp: Date.now(),
-  },
-];
-
-test.describe('ClawX chat execution graph', () => {
-  test('renders internal yield status and linked subagent branch from mocked IPC', async ({ launchElectronApp }) => {
+test.describe('ClawX ACP chat timeline', () => {
+  test('renders inline ACP thought, tool, permission, and plan blocks from mocked IPC', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
-      await installIpcMocks(app, {
-        gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
-        gatewayRpc: {
-          [stableStringify(['sessions.list', {}])]: {
-            success: true,
-            result: {
-              sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
-            },
-          },
-          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-            success: true,
-            result: {
-              messages: seededHistory,
-            },
-          },
-          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
-            success: true,
-            result: {
-              messages: seededHistory,
-            },
-          },
-        },
-        hostApi: {
-          [stableStringify(['/api/gateway/status', 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: { state: 'running', port: 18789, pid: 12345 },
-            },
-          },
-          [stableStringify(['/api/chat/sessions', 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: {
-                success: true,
-                result: {
-                  sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
-                },
-              },
-            },
-          },
-          [stableStringify(['/api/chat/history', 'POST'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: {
-                success: true,
-                result: {
-                  messages: seededHistory,
-                },
-              },
-            },
-          },
-          [stableStringify(['/api/agents', 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: {
-                success: true,
-                agents: [
-                  { id: 'main', name: 'main' },
-                  { id: 'coder', name: 'coder' },
-                ],
-              },
-            },
-          },
-          [stableStringify([`/api/sessions/transcript?agentId=coder&sessionId=${CODER_SESSION_ID}`, 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: {
-                success: true,
-                messages: childTranscriptMessages,
-              },
-            },
-          },
-        },
-      });
+      await installAcpChatMocks(app);
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
-      const page = await getStableWindow(app);
-      try {
-        await page.reload();
-      } catch (error) {
-        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
-          throw error;
-        }
-      }
-      await expect(page.getByTestId('main-layout')).toBeVisible();
-      await expect(page.getByTestId('chat-execution-graph')).toBeVisible({ timeout: 30_000 });
-      // Completed runs auto-collapse into a single-line summary button. Expand
-      // it first so the underlying step details are rendered.
-      const graph = page.getByTestId('chat-execution-graph');
-      if ((await graph.getAttribute('data-collapsed')) === 'true') {
-        await graph.click();
-      }
-      await expect(
-        page.locator('[data-testid="chat-execution-graph"] [data-testid="chat-execution-step"]').getByText('sessions_yield', { exact: true }),
-      ).toBeVisible();
-      await expect(page.getByText('coder subagent')).toBeVisible();
-      await expect(
-        page.locator('[data-testid="chat-execution-graph"] [data-testid="chat-execution-step"]').getByText('exec', { exact: true }),
-      ).toBeVisible();
-      const execRow = page.locator('[data-testid="chat-execution-step"]').filter({ hasText: 'exec' }).first();
-      await execRow.click();
-      await expect(execRow.locator('pre')).toBeVisible();
-      await expect(page.locator('[data-testid="chat-execution-graph"]').getByText('I asked coder to break down the core blocks of ~/Velaria uncommitted changes; will give you the conclusion when it returns.')).toBeVisible();
-      await expect(page.getByText('CHECKLIST.md')).toHaveCount(0);
+      await emitAcpSessionUpdates(app, [
+        {
+          sessionUpdate: 'user_message',
+          messageId: 'msg-user',
+          content: [{ type: 'text', text: 'Read the file and propose changes' }],
+        },
+        {
+          sessionUpdate: 'agent_thought_chunk',
+          messageId: 'assistant-run',
+          content: { type: 'text', text: 'Need to inspect the current implementation first.' },
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'read-file',
+          title: 'Read file',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'Loaded src/pages/Chat/index.tsx' } }],
+          locations: [],
+        },
+      ]);
+      await emitAcpPermissionRequest(app);
+      await emitAcpSessionUpdates(app, [
+        {
+          sessionUpdate: 'plan',
+          entries: [{ content: 'Update Chat page tests', status: 'pending' }],
+        },
+        {
+          sessionUpdate: 'agent_message',
+          messageId: 'msg-assistant',
+          content: [{ type: 'text', text: 'The Chat page now renders ACP timeline blocks inline.' }],
+        },
+      ]);
+
+      await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
+      await expect(page.getByTestId('acp-thought-block')).toContainText('Need to inspect the current implementation first.');
+      await expect(page.getByTestId('acp-tool-call-card')).toContainText('Read file');
+      await expect(page.getByTestId('acp-tool-call-card')).toContainText('Loaded src/pages/Chat/index.tsx');
+      await expect(page.getByTestId('acp-permission-card')).toContainText('Allow edit?');
+      await expect(page.getByTestId('acp-plan-item')).toContainText('Update Chat page tests');
+      await expect(page.getByText('The Chat page now renders ACP timeline blocks inline.')).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }
   });
 
-  test('preserves long execution history counts and strips the full folded reply prefix', async ({ launchElectronApp }) => {
+  test('renders long ACP process history inline and keeps the final answer separate', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
-      await installIpcMocks(app, {
-        gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
-        gatewayRpc: {
-          [stableStringify(['sessions.list', {}])]: {
-            success: true,
-            result: {
-              sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
-            },
-          },
-          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-            success: true,
-            result: {
-              messages: longRunHistory,
-            },
-          },
-          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
-            success: true,
-            result: {
-              messages: longRunHistory,
-            },
-          },
-        },
-        hostApi: {
-          [stableStringify(['/api/gateway/status', 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: { state: 'running', port: 18789, pid: 12345 },
-            },
-          },
-          [stableStringify(['/api/chat/sessions', 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: {
-                success: true,
-                result: {
-                  sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
-                },
-              },
-            },
-          },
-          [stableStringify(['/api/chat/history', 'POST'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: {
-                success: true,
-                result: {
-                  messages: longRunHistory,
-                },
-              },
-            },
-          },
-          [stableStringify(['/api/agents', 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: {
-                success: true,
-                agents: [{ id: 'main', name: 'main' }],
-              },
-            },
-          },
-        },
-      });
+      await installAcpChatMocks(app);
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
-      const page = await getStableWindow(app);
-      try {
-        await page.reload();
-      } catch (error) {
-        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
-          throw error;
-        }
-      }
+      await emitAcpSessionUpdates(app, [
+        {
+          sessionUpdate: 'user_message',
+          messageId: 'long-run-user',
+          content: [{ type: 'text', text: longRunPrompt }],
+        },
+        ...longRunProcessSegments.map((segment, index) => ({
+          sessionUpdate: 'agent_message',
+          messageId: `long-run-step-${index + 1}`,
+          content: [{ type: 'text', text: segment }],
+        })),
+        {
+          sessionUpdate: 'agent_message',
+          messageId: 'long-run-final',
+          content: [{ type: 'text', text: longRunSummary }],
+        },
+      ]);
 
-      await expect(page.getByTestId('main-layout')).toBeVisible();
-      await expect(page.getByTestId('chat-execution-graph')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('chat-execution-graph')).toHaveAttribute('data-collapsed', 'true');
-      await expect(page.getByTestId('chat-execution-graph')).toContainText(/0\s+(tool calls|个工具调用)/);
-      await expect(page.getByTestId('chat-execution-graph')).toContainText(/9\s+(process messages|条过程消息)/);
+      await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
+      await expect(page.getByText(longRunProcessSegments[0], { exact: true })).toBeVisible();
+      await expect(page.getByText(longRunProcessSegments.at(-1)!, { exact: true })).toBeVisible();
       await expect(page.getByText(longRunSummary, { exact: true })).toBeVisible();
       await expect(page.getByText(longRunReplyText, { exact: true })).toHaveCount(0);
     } finally {
@@ -408,99 +216,21 @@ test.describe('ClawX chat execution graph', () => {
     }
   });
 
-  test('surfaces terminal model errors and stops the stale thinking state', async ({ launchElectronApp }) => {
+  test('surfaces ACP load errors and does not render stale graph thinking state', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
-      await installIpcMocks(app, {
-        gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
-        gatewayRpc: {
-          [stableStringify(['sessions.list', {}])]: {
-            success: true,
-            result: {
-              sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
-            },
-          },
-          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-            success: true,
-            result: {
-              messages: errorRunHistory,
-            },
-          },
-          [stableStringify(['chat.history', { sessionKey: PROJECT_MANAGER_SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
-            success: true,
-            result: {
-              messages: errorRunHistory,
-            },
-          },
-        },
-        hostApi: {
-          [stableStringify(['/api/gateway/status', 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: { state: 'running', port: 18789, pid: 12345 },
-            },
-          },
-          [stableStringify(['/api/chat/sessions', 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: {
-                success: true,
-                result: {
-                  sessions: [{ key: PROJECT_MANAGER_SESSION_KEY, displayName: 'main' }],
-                },
-              },
-            },
-          },
-          [stableStringify(['/api/chat/history', 'POST'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: {
-                success: true,
-                result: {
-                  messages: errorRunHistory,
-                },
-              },
-            },
-          },
-          [stableStringify(['/api/agents', 'GET'])]: {
-            ok: true,
-            data: {
-              status: 200,
-              ok: true,
-              json: {
-                success: true,
-                agents: [{ id: 'main', name: 'main' }],
-              },
-            },
-          },
-        },
-      });
+      await installAcpChatMocks(app, { success: false, error: '404 Resource not found', generation: 1 });
+      const page = await openChat(app);
 
-      const page = await getStableWindow(app);
-      try {
-        await page.reload();
-      } catch (error) {
-        if (!String(error).includes('ERR_FILE_NOT_FOUND')) {
-          throw error;
-        }
-      }
-
-      await expect(page.getByTestId('main-layout')).toBeVisible();
-      await expect(page.getByText('404 Resource not found')).toBeVisible({ timeout: 30_000 });
-      const runErrorCallout = page.getByTestId('chat-run-error');
-      await expect(runErrorCallout).toBeVisible({ timeout: 30_000 });
-      await expect(runErrorCallout).toContainText('404 Resource not found');
-      await page.getByTestId('chat-run-error-dismiss').click();
-      await expect(runErrorCallout).toHaveCount(0);
+      const errorBanner = page.getByTestId('acp-error-banner');
+      await expect(errorBanner).toBeVisible({ timeout: 30_000 });
+      await expect(errorBanner).toContainText('404 Resource not found');
       await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
       await expect(page.getByTestId('chat-execution-step-thinking-trailing')).toHaveCount(0);
+
+      await page.getByRole('button', { name: 'Dismiss' }).click();
+      await expect(errorBanner).toHaveCount(0);
       await expect(page.getByText('404 Resource not found')).toHaveCount(0);
       await page.getByTestId('chat-composer-input').fill('retry');
       await expect(page.getByTestId('chat-composer-send')).toBeEnabled();
@@ -508,5 +238,4 @@ test.describe('ClawX chat execution graph', () => {
       await closeElectronApp(app);
     }
   });
-
 });

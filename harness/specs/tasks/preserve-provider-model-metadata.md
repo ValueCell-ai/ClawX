@@ -5,8 +5,6 @@ scenario: gateway-backend-communication
 taskType: runtime-bridge
 intent: Prevent ClawX provider save, update, and default-switch flows from deleting user-authored models.providers model metadata, while giving newly selected custom-provider models the same image-input inference used by OpenClaw onboarding.
 touchedAreas:
-  - docs/superpowers/specs/2026-06-09-provider-model-metadata-preservation-design.md
-  - docs/superpowers/plans/2026-06-09-provider-model-metadata-preservation.md
   - harness/specs/tasks/preserve-provider-model-metadata.md
   - harness/specs/rules/provider-model-metadata-preservation.md
   - harness/specs/scenarios/gateway-backend-communication.md

@@ -18,8 +18,13 @@ import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { readBinaryFile } from '@/lib/file-preview-client';
+import {
+  readBinaryFile,
+  readWorkspaceBinary,
+  type WorkspaceFileRef,
+} from '@/lib/file-preview-client';
 import { cn } from '@/lib/utils';
+import { getFilePreviewTargetIdentity } from './types';
 
 const SHEET_MAX_BYTES = 50 * 1024 * 1024;
 const ROWS_PER_PAGE = 200;
@@ -27,6 +32,7 @@ const ROWS_PER_PAGE = 200;
 export interface SheetViewerProps {
   filePath: string;
   fileName?: string;
+  workspaceFileRef?: WorkspaceFileRef;
   className?: string;
 }
 
@@ -37,11 +43,10 @@ interface SheetSnapshot {
 }
 
 type LoadState =
-  | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'tooLarge'; size?: number }
-  | { status: 'error'; message: string }
-  | { status: 'ready'; sheets: SheetSnapshot[] };
+  | { identity: string; status: 'loading' }
+  | { identity: string; status: 'tooLarge'; size?: number }
+  | { identity: string; status: 'error'; message: string }
+  | { identity: string; status: 'ready'; sheets: SheetSnapshot[] };
 
 function colLetter(index: number): string {
   let n = index + 1;
@@ -67,29 +72,35 @@ function formatCellValue(value: unknown): string {
   return String(value);
 }
 
-export default function SheetViewer({ filePath, fileName, className }: SheetViewerProps) {
+export default function SheetViewer({ filePath, fileName, workspaceFileRef, className }: SheetViewerProps) {
   const { t } = useTranslation('chat');
-  const [state, setState] = useState<LoadState>({ status: 'idle' });
+  const loadIdentity = getFilePreviewTargetIdentity({ filePath, workspaceFileRef });
+  const [storedState, setState] = useState<LoadState>({ identity: loadIdentity, status: 'loading' });
+  const state: LoadState = storedState.identity === loadIdentity
+    ? storedState
+    : { identity: loadIdentity, status: 'loading' };
   const [sheetIndex, setSheetIndex] = useState(0);
   const [page, setPage] = useState(0);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setState({ status: 'loading' });
+    setState({ identity: loadIdentity, status: 'loading' });
     setSheetIndex(0);
     setPage(0);
 
     void (async () => {
       try {
-        const res = await readBinaryFile(filePath, { maxBytes: SHEET_MAX_BYTES });
+        const res = workspaceFileRef
+          ? await readWorkspaceBinary({ ...workspaceFileRef, maxBytes: SHEET_MAX_BYTES })
+          : await readBinaryFile(filePath, { maxBytes: SHEET_MAX_BYTES });
         if (cancelled) return;
         if (!res.ok || !res.data) {
           if (res.error === 'tooLarge') {
-            setState({ status: 'tooLarge', size: res.size });
+            setState({ identity: loadIdentity, status: 'tooLarge', size: res.size });
             return;
           }
-          setState({ status: 'error', message: String(res.error ?? 'unknown') });
+          setState({ identity: loadIdentity, status: 'error', message: String(res.error ?? 'unknown') });
           return;
         }
         const xlsx = await import('xlsx');
@@ -122,10 +133,11 @@ export default function SheetViewer({ filePath, fileName, className }: SheetView
           return { name, rows, columnLetters };
         });
         if (cancelled) return;
-        setState({ status: 'ready', sheets });
+        setState({ identity: loadIdentity, status: 'ready', sheets });
       } catch (err) {
         if (cancelled) return;
         setState({
+          identity: loadIdentity,
           status: 'error',
           message: err instanceof Error ? err.message : String(err),
         });
@@ -135,9 +147,10 @@ export default function SheetViewer({ filePath, fileName, className }: SheetView
     return () => {
       cancelled = true;
     };
-  }, [filePath]);
+  }, [filePath, loadIdentity, workspaceFileRef]);
 
-  const activeSheet = state.status === 'ready' ? state.sheets[sheetIndex] : null;
+  const sheets = state.status === 'ready' ? state.sheets : null;
+  const activeSheet = sheets?.[sheetIndex] ?? null;
   const totalRows = activeSheet?.rows.length ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalRows / ROWS_PER_PAGE));
   const startRow = page * ROWS_PER_PAGE;
@@ -158,8 +171,8 @@ export default function SheetViewer({ filePath, fileName, className }: SheetView
   );
 
   const sheetTabs = useMemo(() => {
-    if (state.status !== 'ready') return null;
-    return state.sheets.map((sheet, idx) => (
+    if (!sheets) return null;
+    return sheets.map((sheet, idx) => (
       <button
         key={`${sheet.name}-${idx}`}
         type="button"
@@ -176,9 +189,9 @@ export default function SheetViewer({ filePath, fileName, className }: SheetView
         {sheet.name || t('filePreview.sheet.unnamedSheet', { defaultValue: 'Sheet {{idx}}', idx: idx + 1 })}
       </button>
     ));
-  }, [state, sheetIndex, handleSelectSheet, t]);
+  }, [sheets, sheetIndex, handleSelectSheet, t]);
 
-  if (state.status === 'idle' || state.status === 'loading') {
+  if (state.status === 'loading') {
     return (
       <div className={cn('flex h-full items-center justify-center', className)}>
         <LoadingSpinner />

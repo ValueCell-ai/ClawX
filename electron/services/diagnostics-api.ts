@@ -10,9 +10,10 @@ import { logger } from '../utils/logger';
 import { getOpenClawConfigDir } from '../utils/paths';
 import { buildGatewayHealthSummary } from '../utils/gateway-health';
 import { buildChannelAccountsView, getChannelStatusDiagnostics } from './channels-api';
+import { getAcpTraceSnapshot, recordRendererAcpTrace } from './acp-trace';
 import {
-  getCcConnectCodexHomeDir,
   getCcConnectBinaryPath,
+  getCcConnectCodexHomeDir,
   getCcConnectConfigPath,
   getCcConnectManagedDir,
   getCcConnectProviderProfilePath,
@@ -292,5 +293,7 @@ export function createDiagnosticsApi(ctx: DiagnosticsApiContext): CompleteHostSe
         gatewayErrLogTail: await readTail(join(openClawDir, 'logs', 'gateway.err.log')),
       };
     },
+    acpTrace: async () => getAcpTraceSnapshot(),
+    recordAcpTrace: async (payload) => recordRendererAcpTrace(payload),
   };
 }

@@ -12,8 +12,13 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { readBinaryFile } from '@/lib/file-preview-client';
+import {
+  readBinaryFile,
+  readWorkspaceBinary,
+  type WorkspaceFileRef,
+} from '@/lib/file-preview-client';
 import { cn } from '@/lib/utils';
+import { getFilePreviewTargetIdentity } from './types';
 
 const PDF_MAX_BYTES = 50 * 1024 * 1024;
 const PDF_VIEWER_PARAMS = 'toolbar=0&navpanes=0&scrollbar=1&view=FitH&zoom=page-width';
@@ -23,15 +28,16 @@ export interface PdfViewerProps {
   filePath: string;
   /** Optional file name shown in screen-reader labels and titles. */
   fileName?: string;
+  workspaceFileRef?: WorkspaceFileRef;
   surface?: 'default' | 'workspace';
   className?: string;
 }
 
 type LoadState =
-  | { filePath: string; status: 'loading' }
-  | { filePath: string; status: 'tooLarge'; size?: number }
-  | { filePath: string; status: 'error'; message: string }
-  | { filePath: string; status: 'ready'; url: string };
+  | { identity: string; status: 'loading' }
+  | { identity: string; status: 'tooLarge'; size?: number }
+  | { identity: string; status: 'error'; message: string }
+  | { identity: string; status: 'ready'; url: string };
 
 type IframeState = {
   url: string | null;
@@ -49,19 +55,21 @@ function withViewerParams(url: string): string {
 export default function PdfViewer({
   filePath,
   fileName,
+  workspaceFileRef,
   surface = 'default',
   className,
 }: PdfViewerProps) {
   const { t } = useTranslation('chat');
-  const [state, setState] = useState<LoadState>({ filePath, status: 'loading' });
+  const loadIdentity = getFilePreviewTargetIdentity({ filePath, workspaceFileRef });
+  const [state, setState] = useState<LoadState>({ identity: loadIdentity, status: 'loading' });
   const [iframeState, setIframeState] = useState<IframeState>({
     url: null,
     loaded: false,
     revealed: false,
   });
-  const currentState: LoadState = state.filePath === filePath
+  const currentState: LoadState = state.identity === loadIdentity
     ? state
-    : { filePath, status: 'loading' };
+    : { identity: loadIdentity, status: 'loading' };
   const currentUrl = currentState.status === 'ready' ? currentState.url : null;
   const iframeRevealed = !!currentUrl && iframeState.url === currentUrl && iframeState.revealed;
 
@@ -71,14 +79,16 @@ export default function PdfViewer({
 
     void (async () => {
       try {
-        const res = await readBinaryFile(filePath, { maxBytes: PDF_MAX_BYTES });
+        const res = workspaceFileRef
+          ? await readWorkspaceBinary({ ...workspaceFileRef, maxBytes: PDF_MAX_BYTES })
+          : await readBinaryFile(filePath, { maxBytes: PDF_MAX_BYTES });
         if (cancelled) return;
         if (!res.ok || !res.data) {
           if (res.error === 'tooLarge') {
-            setState({ filePath, status: 'tooLarge', size: res.size });
+            setState({ identity: loadIdentity, status: 'tooLarge', size: res.size });
             return;
           }
-          setState({ filePath, status: 'error', message: String(res.error ?? 'unknown') });
+          setState({ identity: loadIdentity, status: 'error', message: String(res.error ?? 'unknown') });
           return;
         }
         const cloned = new Uint8Array(res.data.byteLength);
@@ -88,11 +98,11 @@ export default function PdfViewer({
           URL.revokeObjectURL(objectUrl);
           return;
         }
-        setState({ filePath, status: 'ready', url: objectUrl });
+        setState({ identity: loadIdentity, status: 'ready', url: objectUrl });
       } catch (err) {
         if (cancelled) return;
         setState({
-          filePath,
+          identity: loadIdentity,
           status: 'error',
           message: err instanceof Error ? err.message : String(err),
         });
@@ -105,7 +115,7 @@ export default function PdfViewer({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [filePath]);
+  }, [filePath, loadIdentity, workspaceFileRef]);
 
   useEffect(() => {
     if (!iframeState.loaded || !iframeState.url) return;

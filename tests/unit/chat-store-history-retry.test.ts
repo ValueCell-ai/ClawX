@@ -131,6 +131,161 @@ describe('useChatStore startup history retry', () => {
     setTimeoutSpy.mockRestore();
   });
 
+  it('strips ACP working-directory metadata from a non-main history-derived label', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:session-a',
+      currentAgentId: 'main',
+      sessions: [{ key: 'agent:main:session-a' }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+    gatewayRpcMock.mockResolvedValueOnce({
+      messages: [{
+        role: 'user',
+        content: '[Working directory: ~/.openclaw/workspace]\n\nHistory prompt',
+        timestamp: 1000,
+      }],
+    });
+
+    await useChatStore.getState().loadHistory(false);
+
+    expect(useChatStore.getState().sessionLabels['agent:main:session-a']).toBe('History prompt');
+  });
+
+  it('keeps an explicit non-main label when history and summaries provide automatic titles', async () => {
+    const sessionKey = 'agent:main:manual-label';
+    const manualLabel = '[Working directory: /user-chosen]\n  This deliberately long manual title looks like a marker and must remain exactly as entered.  ';
+    const summaryTimestamp = 2000;
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: sessionKey,
+      currentAgentId: 'main',
+      sessions: [{ key: sessionKey, label: manualLabel }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+    gatewayRpcMock.mockResolvedValueOnce({
+      messages: [{
+        role: 'user',
+        content: '[Working directory: ~/.openclaw/workspace]\n\nHistory-derived automatic title',
+        timestamp: 1000,
+      }],
+    });
+    hostApiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/sessions/summaries') {
+        return {
+          success: true,
+          summaries: [{
+            sessionKey,
+            firstUserText: '[Working directory: ~/.openclaw/workspace]\n\nSummary-derived automatic title',
+            lastTimestamp: summaryTimestamp,
+          }],
+        };
+      }
+      return { messages: [] };
+    });
+
+    await useChatStore.getState().loadHistory(false);
+    await vi.waitFor(() => {
+      expect(hostApiFetchMock).toHaveBeenCalledWith('/api/sessions/summaries', {
+        method: 'POST',
+        body: JSON.stringify({ sessionKeys: [sessionKey] }),
+      });
+      expect(useChatStore.getState().sessionLastActivity[sessionKey]).toBe(summaryTimestamp);
+    });
+
+    const state = useChatStore.getState();
+    expect(state.sessionLabels[sessionKey]).toBeUndefined();
+    expect(state.sessions.find((session) => session.key === sessionKey)?.label).toBe(manualLabel);
+  });
+
+  it('keeps an explicitly labeled empty source session when switching', async () => {
+    const sourceKey = 'agent:main:explicit-label-source';
+    const targetKey = 'agent:main:target';
+    const explicitLabel = '[Working directory: /user-chosen]\n  This deliberately long manual title looks like a marker and must remain exactly as entered.  ';
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: sourceKey,
+      currentAgentId: 'main',
+      sessions: [
+        { key: sourceKey, label: explicitLabel },
+        { key: targetKey },
+      ],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    useChatStore.getState().switchSession(targetKey);
+
+    expect(useChatStore.getState().sessions).toContainEqual({ key: sourceKey, label: explicitLabel });
+  });
+
+  it('keeps an explicitly labeled empty current session during cleanup', async () => {
+    const sessionKey = 'agent:main:explicit-label-current';
+    const explicitLabel = '[Working directory: /user-chosen]\n  This deliberately long manual title looks like a marker and must remain exactly as entered.  ';
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: sessionKey,
+      currentAgentId: 'main',
+      sessions: [{ key: sessionKey, label: explicitLabel }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    useChatStore.getState().cleanupEmptySession();
+
+    expect(useChatStore.getState().sessions).toContainEqual({ key: sessionKey, label: explicitLabel });
+  });
+
   it('renders local transcript fallback while the initial gateway history request is still pending', async () => {
     const { useChatStore } = await import('@/stores/chat');
     useChatStore.setState({
@@ -929,6 +1084,74 @@ describe('useChatStore startup history retry', () => {
 
     resolveSend?.({ runId: 'run-1' });
     await sendPromise;
+  });
+
+  it('uses raw first-prompt text for an optimistic non-main session label', async () => {
+    const sessionKey = 'agent:main:session-raw-title';
+    const prompt = '[Working directory: /user-authored] Plan';
+    const { useChatStore } = await import('@/stores/chat');
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'chat.send') return { runId: 'run-raw-title' };
+      throw new Error(`Unexpected gateway RPC: ${method}`);
+    });
+    useChatStore.setState({
+      currentSessionKey: sessionKey,
+      currentAgentId: 'main',
+      sessions: [{ key: sessionKey }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    await useChatStore.getState().sendMessage(prompt);
+
+    expect(useChatStore.getState().sessionLabels[sessionKey]).toBe(prompt);
+  });
+
+  it('does not cache a first prompt for a non-main session with an explicit label', async () => {
+    const sessionKey = 'agent:main:session-manual-title';
+    const manualLabel = '[Working directory: /user-chosen]\n  This deliberately long manual title looks like a marker and must remain exactly as entered.  ';
+    const { useChatStore } = await import('@/stores/chat');
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'chat.send') return { runId: 'run-manual-title' };
+      throw new Error(`Unexpected gateway RPC: ${method}`);
+    });
+    useChatStore.setState({
+      currentSessionKey: sessionKey,
+      currentAgentId: 'main',
+      sessions: [{ key: sessionKey, label: manualLabel }],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+    });
+
+    await useChatStore.getState().sendMessage('[Working directory: ~/.openclaw/workspace]\n\nAutomatic first prompt');
+
+    const state = useChatStore.getState();
+    expect(state.sessions.find((session) => session.key === sessionKey)?.label).toBe(manualLabel);
+    expect(state.sessionLabels[sessionKey]).toBeUndefined();
   });
 
   it('does not restore a pending optimistic message after deleting the session', async () => {

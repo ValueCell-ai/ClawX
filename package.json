@@ -4,13 +4,17 @@
     "pnpm": {
         "onlyBuiltDependencies": [
             "@discordjs/opus",
+            "@google/genai",
             "@whiskeysockets/baileys",
             "electron",
+            "electron-winstaller",
             "esbuild",
             "koffi",
             "node-llama-cpp",
+            "openclaw",
             "protobufjs",
-            "sharp"
+            "sharp",
+            "tree-sitter-bash"
         ],
         "overrides": {
             "isbinaryfile": "^5.0.0"
@@ -124,14 +128,17 @@
         "postversion": "node scripts/post-version-push.mjs"
     },
     "dependencies": {
+        "@agentclientprotocol/sdk": "~0.17.0",
         "electron-store": "^11.0.2",
         "electron-updater": "^6.8.3",
         "croner": "^10.0.1",
         "node-machine-id": "^1.1.12",
         "posthog-node": "^5.28.0",
         "tar": "^6.2.1",
+        "timeago.js": "^4.0.2",
         "ws": "^8.19.0",
-        "yaml": "^2.9.0"
+        "yaml": "^2.9.0",
+        "zod": "^4.4.3"
     },
     "devDependencies": {
         "@buape/carbon": "0.16.0",
@@ -198,6 +205,7 @@
         "katex": "^0.16.45",
         "lru-cache": "^11.2.6",
         "lucide-react": "^0.563.0",
+        "material-file-icons": "^2.4.0",
         "monaco-editor": "^0.55.1",
         "mpg123-decoder": "^1.0.3",
         "ms": "^2.1.3",
@@ -209,6 +217,7 @@
         "postcss": "^8.5.6",
         "qrcode-terminal": "0.12.0",
         "react": "^19.2.4",
+        "react-arborist": "^3.13.2",
         "react-dom": "^19.2.4",
         "react-i18next": "^16.5.4",
         "react-markdown": "^10.1.0",

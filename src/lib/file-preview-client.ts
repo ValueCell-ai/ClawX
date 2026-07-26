@@ -1,6 +1,8 @@
 import type {
   FilePreviewTreeOptions,
   FileReadBinaryOptions,
+  WorkspaceContextInput,
+  WorkspaceFileRef,
 } from '@shared/host-api/contract';
 import { hostApi } from './host-api';
 
@@ -16,6 +18,8 @@ export type {
   ReadTextFileResult,
   StatFileResult,
   WriteTextFileResult,
+  WorkspaceContextInput,
+  WorkspaceFileRef,
 } from '@shared/host-api/contract';
 
 export const readTextFile = (path: string) => hostApi.files.readText(path);
@@ -30,3 +34,12 @@ export const listTree = (
   path: string,
   opts?: FilePreviewTreeOptions,
 ) => hostApi.files.listTree(path, opts);
+
+export const resolveWorkspaceContext = (input: WorkspaceContextInput) => (
+  hostApi.files.resolveWorkspaceContext(input)
+);
+export const readWorkspaceText = (ref: WorkspaceFileRef) => hostApi.files.readWorkspaceText(ref);
+export const readWorkspaceBinary = (input: WorkspaceFileRef & { maxBytes?: number }) => (
+  hostApi.files.readWorkspaceBinary(input)
+);
+export const statWorkspaceFile = (ref: WorkspaceFileRef) => hostApi.files.statWorkspaceFile(ref);
