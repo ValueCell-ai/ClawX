@@ -44,8 +44,6 @@ const { acpState, agentsState, artifactPanelState, chatState, settingsState } = 
     sessions: [{ key: 'agent:main:main', workspacePath: '/workspace' }],
     currentSessionKey: 'agent:main:main',
     currentAgentId: 'main',
-    loading: false,
-    refresh: vi.fn(),
     loadSessions: vi.fn().mockResolvedValue(undefined),
     selectAcpSession: vi.fn(),
     acknowledgeAcpSessionCreated: vi.fn(),
@@ -84,20 +82,12 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, params?: Record<string, unknown> | string) => {
       if (typeof params === 'string') return params;
-      if (key === 'executionGraph.collapsedSummary') {
-        return `collapsed ${String(params?.toolCount ?? '')} ${String(params?.processCount ?? '')}`.trim();
-      }
-      if (key === 'executionGraph.agentRun') return 'Main execution';
-      if (key === 'executionGraph.title') return 'Execution Graph';
-      if (key === 'executionGraph.collapseAction') return 'Collapse';
-      if (key === 'executionGraph.thinkingLabel') return 'Thinking';
       if (key === 'acp.tool') return 'Tool';
       if (key === 'acp.completed') return 'Completed';
       if (key === 'acp.toolGroupSummary') return `${String(params?.count ?? '')} tool calls`;
       if (key === 'acp.expandToolGroup') return 'Expand tool calls';
       if (key === 'acp.collapseToolGroup') return 'Collapse tool calls';
       if (key === 'welcome.subtitle') return 'What can I do for you?';
-      if (key.startsWith('taskPanel.stepStatus.')) return key.split('.').at(-1) ?? key;
       return key;
     },
   }),
@@ -212,6 +202,5 @@ describe('Chat leading ACP tool calls', () => {
     expect(screen.queryByTestId('acp-tool-call-card')).not.toBeInTheDocument();
     expect(screen.getByText('Continue the task')).toBeInTheDocument();
     expect(screen.getByText('Finished.')).toBeInTheDocument();
-    expect(screen.queryByTestId('chat-execution-graph')).not.toBeInTheDocument();
   });
 });

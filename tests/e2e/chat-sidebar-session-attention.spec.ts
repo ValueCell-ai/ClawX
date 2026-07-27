@@ -70,16 +70,6 @@ async function installSessionAttentionMocks(app: ElectronApplication): Promise<v
       [stableStringify(['sessions.subscribe', {}])]: { success: true, result: {} },
       [stableStringify(['sessions.list', SESSIONS_LIST_PAYLOAD])]: sessionsList,
       [stableStringify(['sessions.list', {}])]: sessionsList,
-      ...Object.fromEntries(sessionKeys.flatMap((sessionKey) => [
-        [stableStringify(['chat.history', { sessionKey, limit: 200, maxChars: 500000 }]), {
-          success: true,
-          result: { messages: [] },
-        }],
-        [stableStringify(['chat.history', { sessionKey, limit: 1000, maxChars: 500000 }]), {
-          success: true,
-          result: { messages: [] },
-        }],
-      ])),
     },
     hostApi: {
       [stableStringify(['settings', 'getAll', null])]: {

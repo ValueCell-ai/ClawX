@@ -1,16 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  computeLineStats,
-  extractGeneratedFiles,
+  basenameOf,
+  classifyFileExt,
+  extnameOf,
   getMimeTypeForExt,
   isDocxPreviewExt,
   isPptxPreviewExt,
-  supportsInlineDiff,
   supportsInlineDocumentPreview,
-  type GeneratedFile,
-  type GeneratedFileBaseline,
+  supportsRichDocumentPreview,
 } from '@/lib/generated-files';
-import type { RawMessage } from '@/stores/chat';
 import {
   attachmentOpenMode,
   filePreviewKind,
@@ -19,87 +17,36 @@ import {
   richFilePreviewKind,
 } from '@/lib/file-preview-capabilities';
 
-function makeWriteFile(overrides: Partial<GeneratedFile> = {}): GeneratedFile {
-  return {
-    filePath: '/tmp/example.ts',
-    fileName: 'example.ts',
-    ext: '.ts',
-    mimeType: 'text/typescript',
-    contentType: 'code',
-    action: 'modified',
-    fullContent: 'const value = 2\nconsole.log(value)\n',
-    lastSeenIndex: 1,
-    ...overrides,
-  };
-}
-
 describe('generated-files utilities', () => {
-  it('computes write line stats from an existing-file baseline', () => {
-    const stats = computeLineStats(
-      makeWriteFile({
-        baseline: { status: 'ok', content: 'const value = 1\nconsole.log(value)\n' },
-      }),
-    );
-
-    expect(stats).toEqual({ added: 1, removed: 1 });
-  });
-
-  it('treats missing baseline as a new file for line stats', () => {
-    const stats = computeLineStats(
-      makeWriteFile({
-        action: 'created',
-        baseline: { status: 'missing' },
-        fullContent: 'line 1\nline 2\n',
-      }),
-    );
-
-    expect(stats).toEqual({ added: 2, removed: 0 });
-  });
-
-  it('refuses to fake precise line stats when baseline is unavailable', () => {
-    const stats = computeLineStats(
-      makeWriteFile({
-        baseline: { status: 'unavailable', reason: 'outsideSandbox' },
-      }),
-    );
-
-    expect(stats).toBeNull();
-  });
-
-  it('routes html documents to rendered inline preview and text diff support', () => {
+  it('routes text documents to rendered inline preview', () => {
     expect(supportsInlineDocumentPreview('.html')).toBe(true);
     expect(supportsInlineDocumentPreview('.htm')).toBe(true);
-    expect(supportsInlineDiff({ ext: '.html', contentType: 'document' })).toBe(true);
+    expect(supportsInlineDocumentPreview('.md')).toBe(true);
   });
 
-  it('routes pdf/spreadsheet to rich-doc preview but never to text diff', () => {
-    expect(supportsInlineDocumentPreview('.md')).toBe(true);
-    // PDFs and spreadsheets now render through dedicated viewers, so they
-    // qualify for inline preview...
+  it('routes supported binary documents to rich preview', () => {
     expect(supportsInlineDocumentPreview('.pdf')).toBe(true);
     expect(supportsInlineDocumentPreview('.xlsx')).toBe(true);
-    // ...but diffing binary content is still meaningless, so the diff
-    // tab stays hidden for these formats.
-    expect(supportsInlineDiff({ ext: '.pdf', contentType: 'document' })).toBe(false);
-    expect(supportsInlineDiff({ ext: '.xlsx', contentType: 'document' })).toBe(false);
-    expect(supportsInlineDiff({ ext: '.doc', contentType: 'document' })).toBe(false);
-    expect(supportsInlineDiff({ ext: '.docx', contentType: 'document' })).toBe(false);
-    expect(supportsInlineDiff({ ext: '.ppt', contentType: 'document' })).toBe(false);
-    expect(supportsInlineDiff({ ext: '.pptx', contentType: 'document' })).toBe(false);
+    expect(supportsInlineDocumentPreview('.docx')).toBe(true);
+    expect(supportsInlineDocumentPreview('.pptx')).toBe(true);
+    expect(supportsRichDocumentPreview('.PDF')).toBe(true);
+    expect(supportsRichDocumentPreview('.xlsx')).toBe(true);
+    expect(supportsRichDocumentPreview('.docx')).toBe(true);
+    expect(supportsRichDocumentPreview('.pptx')).toBe(true);
+    expect(supportsRichDocumentPreview('.doc')).toBe(false);
+    expect(supportsRichDocumentPreview('.ppt')).toBe(false);
+  });
 
-    const stats = computeLineStats({
-      filePath: '/tmp/report.pdf',
-      fileName: 'report.pdf',
-      ext: '.pdf',
-      mimeType: 'application/pdf',
-      contentType: 'document',
-      action: 'modified',
-      fullContent: 'pretend text payload',
-      baseline: { status: 'ok', content: 'older pretend text payload' },
-      lastSeenIndex: 1,
-    });
-
-    expect(stats).toBeNull();
+  it('preserves extension, path, and content-type classification', () => {
+    expect(basenameOf(String.raw`C:\workspace\src\index.ts`)).toBe('index.ts');
+    expect(extnameOf('/workspace/archive.tar.gz')).toBe('.gz');
+    expect(extnameOf('/workspace/.env')).toBe('');
+    expect(classifyFileExt('.png')).toBe('snapshot');
+    expect(classifyFileExt('.tsx')).toBe('code');
+    expect(classifyFileExt('.pdf')).toBe('document');
+    expect(classifyFileExt('.mp4')).toBe('video');
+    expect(classifyFileExt('.wav')).toBe('audio');
+    expect(classifyFileExt('.zip')).toBe('other');
   });
 
   it('uses format-aware preview limits', () => {
@@ -208,81 +155,5 @@ describe('generated-files utilities', () => {
     expect(isPptxPreviewExt('.ppt')).toBe(false);
     expect(getMimeTypeForExt('.docx')).toBe('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     expect(getMimeTypeForExt('.pptx')).toBe('application/vnd.openxmlformats-officedocument.presentationml.presentation');
-  });
-
-  it('extracts write files with per-run baseline state and action', () => {
-    const messages: RawMessage[] = [
-      { role: 'user', content: 'update file', timestamp: 1 },
-      {
-        role: 'assistant',
-        content: [{
-          type: 'tool_use',
-          id: 'write-1',
-          name: 'Write',
-          input: {
-            file_path: '/tmp/example.ts',
-            content: 'const value = 2\n',
-          },
-        }],
-      },
-    ];
-
-    const baselineByPath = new Map<string, GeneratedFileBaseline>([
-      ['/tmp/example.ts', { status: 'ok', content: 'const value = 1\n' }],
-    ]);
-
-    const files = extractGeneratedFiles(messages, 0, 1, (filePath) => baselineByPath.get(filePath));
-
-    expect(files).toHaveLength(1);
-    expect(files[0]).toMatchObject({
-      filePath: '/tmp/example.ts',
-      action: 'modified',
-      baseline: { status: 'ok', content: 'const value = 1\n' },
-    });
-  });
-
-  it('keeps new-file writes marked as created when the baseline says missing', () => {
-    const messages: RawMessage[] = [
-      { role: 'user', content: 'create file', timestamp: 1 },
-      {
-        role: 'assistant',
-        content: [{
-          type: 'tool_use',
-          id: 'write-1',
-          name: 'Write',
-          input: {
-            file_path: '/tmp/new-file.ts',
-            content: 'export const created = true\n',
-          },
-        }],
-      },
-    ];
-
-    const files = extractGeneratedFiles(messages, 0, 1, () => ({ status: 'missing' }));
-
-    expect(files).toHaveLength(1);
-    expect(files[0]).toMatchObject({
-      filePath: '/tmp/new-file.ts',
-      action: 'created',
-      baseline: { status: 'missing' },
-    });
-  });
-
-  it('computes edit snippet stats from joined edit hunks', () => {
-    const stats = computeLineStats({
-      filePath: '/tmp/example.ts',
-      fileName: 'example.ts',
-      ext: '.ts',
-      mimeType: 'text/typescript',
-      contentType: 'code',
-      action: 'modified',
-      edits: [
-        { old: 'alpha\n', new: 'beta\n' },
-        { old: 'gamma\n', new: 'delta\n' },
-      ],
-      lastSeenIndex: 1,
-    });
-
-    expect(stats).toEqual({ added: 2, removed: 2 });
   });
 });

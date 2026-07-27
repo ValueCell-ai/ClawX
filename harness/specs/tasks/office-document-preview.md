@@ -30,7 +30,6 @@ touchedAreas:
   - shared/i18n/locales/ru/chat.json
   - tests/unit/harness-specs.test.ts
   - tests/unit/generated-files.test.ts
-  - tests/unit/generated-files-panel.test.tsx
   - tests/unit/open-file-utils.test.ts
   - tests/unit/file-preview-body.test.tsx
   - tests/unit/workspace-browser-body.test.tsx
@@ -54,7 +53,7 @@ expectedUserBehavior:
   - Authorized PPTX files at or below 20 MB render one slide at a time with localized previous and next controls, while at most one viewer is mounted in the Renderer.
   - The Chat Preview header offers a localized fullscreen toggle that fills the Renderer viewport, preserves the current target and slide position, and exits from its header control or Escape.
   - Legacy DOC and PPT files, remote attachments, and over-limit Office files retain their existing safe system-open, unsupported, or too-large behavior according to target authority.
-  - Existing image, PDF, spreadsheet, HTML, Markdown, source, diff, attachment, and workspace behavior remains unchanged.
+  - Existing image, PDF, spreadsheet, HTML, Markdown, source, ACP Changes, attachment, and workspace behavior remains unchanged.
 requiredProfiles:
   - fast
   - e2e
@@ -66,7 +65,7 @@ requiredRules:
   - office-preview-safety
   - docs-sync
 requiredTests:
-  - pnpm exec vitest run tests/unit/generated-files.test.ts tests/unit/generated-files-panel.test.tsx tests/unit/open-file-utils.test.ts tests/unit/file-preview-body.test.tsx tests/unit/workspace-browser-body.test.tsx tests/unit/rich-file-viewers.test.tsx tests/unit/office-file-viewers.test.tsx tests/unit/artifact-panel.test.tsx tests/unit/acp-chat-components.test.tsx tests/unit/i18n-locale-parity.test.ts tests/unit/harness-specs.test.ts
+  - pnpm exec vitest run tests/unit/generated-files.test.ts tests/unit/open-file-utils.test.ts tests/unit/file-preview-body.test.tsx tests/unit/workspace-browser-body.test.tsx tests/unit/rich-file-viewers.test.tsx tests/unit/office-file-viewers.test.tsx tests/unit/artifact-panel.test.tsx tests/unit/acp-chat-components.test.tsx tests/unit/i18n-locale-parity.test.ts tests/unit/harness-specs.test.ts
   - pnpm run typecheck
   - pnpm run lint:check
   - pnpm run build:vite

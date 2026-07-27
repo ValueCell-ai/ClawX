@@ -157,10 +157,6 @@ async function installFileActivityMocks(app: ElectronApplication, options: {
           })),
         },
       },
-      [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-        success: true,
-        result: { messages: [] },
-      },
     },
     hostApi,
     hostApiErrors: options.scopedReadError ? { [scopedReadKey]: options.scopedReadError } : undefined,

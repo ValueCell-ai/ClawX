@@ -133,9 +133,17 @@ describe('Gateway Store', () => {
   it('should proxy gateway rpc through ipc', async () => {
     hostApiMock.gateway.rpc.mockResolvedValueOnce({ ok: true });
 
-    const result = await useGatewayStore.getState().rpc<{ ok: boolean }>('chat.history', { limit: 10 }, 5000);
+    const result = await useGatewayStore.getState().rpc<{ ok: boolean }>(
+      'sessions.list',
+      { includeDerivedTitles: true },
+      5000,
+    );
 
     expect(result.ok).toBe(true);
-    expect(hostApiMock.gateway.rpc).toHaveBeenCalledWith('chat.history', { limit: 10 }, 5000);
+    expect(hostApiMock.gateway.rpc).toHaveBeenCalledWith(
+      'sessions.list',
+      { includeDerivedTitles: true },
+      5000,
+    );
   });
 });

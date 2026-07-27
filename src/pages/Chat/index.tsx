@@ -1,7 +1,6 @@
 /**
  * Chat Page
- * ACP-native runtime rendering. The legacy Gateway execution graph remains in
- * the codebase but is no longer part of the primary Chat render path.
+ * ACP-native runtime rendering through the ordered inline timeline.
  */
 import { Suspense, lazy, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ArrowDownToLine, FolderOpen } from 'lucide-react';
@@ -382,6 +381,7 @@ export function Chat() {
     if (currentSession?.createdLocally) return;
     const createIfMissing = !currentSession;
     acpLoadInFlightKeyRef.current = acpLoadKey;
+    if (createIfMissing) selectAcpSession(currentSessionKey, cwd);
     void loadAcpSession({
       sessionKey: currentSessionKey,
       workspaceRoot: cwd,
@@ -389,14 +389,14 @@ export function Chat() {
       ...(createIfMissing ? { createIfMissing: true } : {}),
     }).then((loaded) => {
       if (loaded && createIfMissing) {
-        acknowledgeAcpSessionCreated(currentSessionKey);
+        acknowledgeAcpSessionCreated(currentSessionKey, cwd);
       }
     }).finally(() => {
       if (acpLoadInFlightKeyRef.current === acpLoadKey) {
         acpLoadInFlightKeyRef.current = null;
       }
     });
-  }, [acknowledgeAcpSessionCreated, acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSessionKey, cwd, loadAcpSession, sessionDiscoveryAttempted, sessions, workspaceContextAvailable]);
+  }, [acknowledgeAcpSessionCreated, acpActiveSessionKey, acpCwd, acpWorkspaceRoot, currentSessionKey, cwd, loadAcpSession, selectAcpSession, sessionDiscoveryAttempted, sessions, workspaceContextAvailable]);
 
   const platform = window.electron?.platform;
   const isMac = platform === 'darwin';
@@ -552,6 +552,7 @@ export function Chat() {
             const sessionKey = targetAgent
               ? targetAgent.mainSessionKey || `agent:${targetAgent.id}:main`
               : currentSessionKey;
+            const existingSession = sessions.find((session) => session.key === sessionKey);
             setLastPromptAttemptSessionKey(sessionKey);
             const promptCwd = targetAgent?.workspace || cwd;
             const media = attachments
@@ -562,7 +563,7 @@ export function Chat() {
                 fileName: file.fileName,
                 mimeType: file.mimeType,
               }));
-            if (targetAgent) {
+            if (targetAgent || !existingSession) {
               selectAcpSession(sessionKey, promptCwd);
             }
             void (async () => {
@@ -573,7 +574,6 @@ export function Chat() {
                 }).catch(() => ({ ok: false }));
                 if (!promptWorkspace.ok) return;
               }
-              const existingSession = sessions.find((session) => session.key === sessionKey);
               const createIfMissing = !existingSession || !!existingSession.createdLocally;
               if (
                 createIfMissing

@@ -6,12 +6,9 @@ const runtimeStatus = {
   connectedAt: 0,
 };
 
-const { gatewayRpcMock, hostApiFetchMock, agentsState } = vi.hoisted(() => ({
+const { gatewayRpcMock, hostApiFetchMock } = vi.hoisted(() => ({
   gatewayRpcMock: vi.fn(),
   hostApiFetchMock: vi.fn(),
-  agentsState: {
-    agents: [] as Array<Record<string, unknown>>,
-  },
 }));
 
 function deferred<T>() {
@@ -33,29 +30,16 @@ vi.mock('@/stores/gateway', () => ({
   },
 }));
 
-vi.mock('@/stores/agents', () => ({
-  useAgentsStore: {
-    getState: () => agentsState,
-  },
-}));
-
 vi.mock('@/lib/host-api', () => ({
   hostApiFetch: (...args: unknown[]) => hostApiFetchMock(...args),
   hostApi: {
-    media: {
-      thumbnails: vi.fn(async () => ({})),
-    },
     sessions: {
       summaries: (input: unknown) => hostApiFetchMock('/api/sessions/summaries', {
         method: 'POST',
         body: JSON.stringify(input),
       }),
-      history: vi.fn(async () => ({ messages: [] })),
       delete: vi.fn(async () => ({ success: true })),
       rename: vi.fn(async () => ({ success: true })),
-    },
-    chat: {
-      sendWithMedia: vi.fn(async () => ({ success: true, result: { runId: 'run-media' } })),
     },
   },
 }));
@@ -69,7 +53,6 @@ describe('chat store session label summary hydration', () => {
     runtimeStatus.port = 18789;
     runtimeStatus.connectedAt = Date.now();
     window.localStorage.clear();
-    agentsState.agents = [];
     gatewayRpcMock.mockReset();
     hostApiFetchMock.mockReset();
     hostApiFetchMock.mockImplementation(async (path: string) => {
@@ -137,91 +120,6 @@ describe('chat store session label summary hydration', () => {
       {},
       {},
     )).toBeNull();
-  });
-
-  it('hydrates sidebar titles immediately after sessions load because summaries do not use gateway chat.history', async () => {
-    gatewayRpcMock.mockImplementation(async (method: string) => {
-      if (method === 'sessions.list') {
-        return {
-          sessions: [
-            { key: 'agent:main:session-a', displayName: 'Session A', updatedAt: 1000 },
-            { key: 'agent:main:main', displayName: 'Main', updatedAt: 1001 },
-          ],
-        };
-      }
-
-      if (method === 'chat.history') {
-        return {
-          messages: [{ role: 'user', content: 'visible chat', timestamp: Date.now() }],
-        };
-      }
-
-      throw new Error(`Unexpected gateway RPC: ${method}`);
-    });
-
-    hostApiFetchMock.mockImplementation(async (path: string) => {
-      if (path === '/api/chat/history') {
-        throw new Error('No route for mocked chat host API');
-      }
-      if (path === '/api/chat/sessions') {
-        return {
-          success: true,
-          result: {
-            sessions: [
-              { key: 'agent:main:session-a', displayName: 'Session A', updatedAt: 1000 },
-              { key: 'agent:main:main', displayName: 'Main', updatedAt: 1001 },
-            ],
-          },
-        };
-      }
-      return {
-        success: true,
-        summaries: [
-          {
-            sessionKey: 'agent:main:session-a',
-            firstUserText: 'should hydrate immediately',
-            lastTimestamp: 1_700_000_000_000,
-          },
-        ],
-      };
-    });
-
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      currentSessionKey: 'agent:main:main',
-      currentAgentId: 'main',
-      sessions: [],
-      messages: [],
-      sessionLabels: {},
-      sessionLastActivity: {},
-      sending: false,
-      activeRunId: null,
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      pendingFinal: false,
-      lastUserMessageAt: null,
-      pendingToolImages: [],
-      error: null,
-      loading: false,
-      thinkingLevel: null,
-      runError: null,
-    });
-
-    await useChatStore.getState().loadSessions();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(hostApiFetchMock).toHaveBeenCalledWith('/api/sessions/summaries', {
-      method: 'POST',
-      body: JSON.stringify({ sessionKeys: ['agent:main:session-a', 'agent:main:main'] }),
-    });
-    expect(useChatStore.getState().sessionLabels['agent:main:session-a']).toBe('should hydrate immediately');
-
-    const backgroundHistoryCalls = gatewayRpcMock.mock.calls.filter(
-      ([method, params]) => method === 'chat.history' && (params as Record<string, unknown> | undefined)?.limit === 1000,
-    );
-    expect(backgroundHistoryCalls).toHaveLength(0);
   });
 
   it('replaces OpenClaw UUID-date fallback labels with the first user prompt', async () => {
@@ -704,7 +602,7 @@ describe('chat store session label summary hydration', () => {
     expect(useChatStore.getState().sessionLabels['agent:main:session-a']?.startsWith('[Working directory: /user-chosen]')).toBe(true);
   });
 
-  it('keeps a formatted explicit backend label during history and summary refreshes', async () => {
+  it('keeps a formatted explicit backend label during repeated catalog and summary refreshes', async () => {
     const sessionKey = 'agent:main:session-a';
     const explicitLabel = '[Working directory: /user-chosen]\nManual title  ';
     const expectedDisplayLabel = '[Working directory: /user-chosen]\nManual title';
@@ -719,16 +617,6 @@ describe('chat store session label summary hydration', () => {
           ],
         };
       }
-      if (method === 'chat.history') {
-        return {
-          messages: [{
-            role: 'user',
-            content: '[Working directory: ~/.openclaw/workspace]\n\nHistory automatic title',
-            timestamp: 1000,
-          }],
-        };
-      }
-
       throw new Error(`Unexpected gateway RPC: ${method}`);
     });
     hostApiFetchMock.mockImplementation(async (path: string) => {
@@ -783,23 +671,14 @@ describe('chat store session label summary hydration', () => {
       expect(summaryRequests).toBe(1);
     });
 
-    await useChatStore.getState().loadHistory(false);
+    await useChatStore.getState().loadSessions({ force: true });
 
-    await vi.waitFor(() => {
-      const summaryCalls = hostApiFetchMock.mock.calls.filter(([path]) => path === '/api/sessions/summaries');
-      expect(summaryCalls).toHaveLength(2);
-      expect(summaryCalls[1]).toEqual([
-        '/api/sessions/summaries',
-        {
-          method: 'POST',
-          body: JSON.stringify({ sessionKeys: [sessionKey, 'agent:main:main'] }),
-        },
-      ]);
-      expect(useChatStore.getState().sessionLastActivity[sessionKey]).toBe(2_000);
-    });
+    expect(hostApiFetchMock.mock.calls.filter(
+      ([path]) => path === '/api/sessions/summaries',
+    )).toHaveLength(1);
 
     const state = useChatStore.getState();
-    expect(state.sessionLabels[sessionKey]).toBeUndefined();
+    expect(state.sessionLabels[sessionKey]).toBe(expectedDisplayLabel);
     expect(state.sessions.find((session) => session.key === sessionKey)?.label).toBe(explicitLabel);
   });
 
@@ -929,12 +808,6 @@ describe('chat store session label summary hydration', () => {
         };
       }
 
-      if (method === 'chat.history') {
-        return {
-          messages: [{ role: 'user', content: 'visible chat', timestamp: Date.now() }],
-        };
-      }
-
       throw new Error(`Unexpected gateway RPC: ${method}`);
     });
 
@@ -997,7 +870,7 @@ describe('chat store session label summary hydration', () => {
     expect(useChatStore.getState().sessionLabels['agent:main:session-b']).toBe('Beta title');
   });
 
-  it('hydrates session labels through the host API instead of gateway chat.history fan-out', async () => {
+  it('hydrates missing session labels and activity from host summaries', async () => {
     gatewayRpcMock.mockImplementation(async (method: string) => {
       if (method === 'sessions.list') {
         return {
@@ -1007,12 +880,6 @@ describe('chat store session label summary hydration', () => {
             { key: 'agent:main:session-c', displayName: 'Session C', updatedAt: 1002 },
             { key: 'agent:main:main', displayName: 'Main', updatedAt: 1003 },
           ],
-        };
-      }
-
-      if (method === 'chat.history') {
-        return {
-          messages: [{ role: 'user', content: 'visible chat', timestamp: Date.now() }],
         };
       }
 
@@ -1060,10 +927,6 @@ describe('chat store session label summary hydration', () => {
       runError: null,
     });
 
-    await useChatStore.getState().loadHistory(false);
-    hostApiFetchMock.mockClear();
-    gatewayRpcMock.mockClear();
-
     vi.advanceTimersByTime(1_500);
     await useChatStore.getState().loadSessions();
     await Promise.resolve();
@@ -1075,10 +938,6 @@ describe('chat store session label summary hydration', () => {
     });
     expect(useChatStore.getState().sessionLabels['agent:main:session-c']).toBe('needs label');
     expect(useChatStore.getState().sessionLastActivity['agent:main:session-c']).toBe(1_700_000_000_123);
-    const backgroundHistoryCalls = gatewayRpcMock.mock.calls.filter(
-      ([method, params]) => method === 'chat.history' && (params as Record<string, unknown> | undefined)?.limit === 1000,
-    );
-    expect(backgroundHistoryCalls).toHaveLength(0);
   });
 
   it('does not re-request label hydration for unchanged sessions across repeated loadSessions calls', async () => {
@@ -1089,12 +948,6 @@ describe('chat store session label summary hydration', () => {
             { key: 'agent:main:session-a', displayName: 'Session A', updatedAt: 1000 },
             { key: 'agent:main:main', displayName: 'Main', updatedAt: 1001 },
           ],
-        };
-      }
-
-      if (method === 'chat.history') {
-        return {
-          messages: [{ role: 'user', content: 'visible chat', timestamp: Date.now() }],
         };
       }
 
@@ -1170,12 +1023,6 @@ describe('chat store session label summary hydration', () => {
             { key: 'agent:main:session-a', displayName: 'Session A', updatedAt: sessionVersion },
             { key: 'agent:main:main', displayName: 'Main', updatedAt: 1001 },
           ],
-        };
-      }
-
-      if (method === 'chat.history') {
-        return {
-          messages: [{ role: 'user', content: 'visible chat', timestamp: Date.now() }],
         };
       }
 
@@ -1276,12 +1123,6 @@ describe('chat store session label summary hydration', () => {
         };
       }
 
-      if (method === 'chat.history') {
-        return {
-          messages: [{ role: 'user', content: 'visible chat', timestamp: Date.now() }],
-        };
-      }
-
       throw new Error(`Unexpected gateway RPC: ${method} ${JSON.stringify(params)}`);
     });
 
@@ -1326,7 +1167,7 @@ describe('chat store session label summary hydration', () => {
       runError: null,
     });
 
-    await useChatStore.getState().loadHistory(false);
+    await useChatStore.getState().loadSessions({ force: true });
     await Promise.resolve();
     await Promise.resolve();
 
@@ -1374,10 +1215,19 @@ describe('chat store session label summary hydration', () => {
       sessionLastActivity: { [unrelatedKey]: 1_700_000_009_000 },
     });
 
-    await useChatStore.getState().loadSessions({ force: true, gatewayGeneration: 1 });
-    expect(summaryCalls).toBe(1);
-
+    const firstLoading = useChatStore.getState().loadSessions({ force: true, gatewayGeneration: 1 });
+    await vi.waitFor(() => expect(summaryCalls).toBe(1));
     const reloading = useChatStore.getState().loadSessions({ force: true, gatewayGeneration: 2 });
+    oldSummary.resolve({
+      success: true,
+      summaries: [{
+        sessionKey,
+        firstUserText: 'stale title',
+        lastTimestamp: 1_700_000_001_000,
+        workspacePath: '/stale',
+      }],
+    });
+    await vi.waitFor(() => expect(listCalls).toBe(2));
     useChatStore.getState().handleSessionsChanged({ sessionKey, reason: 'delete', ts: 21 });
     useChatStore.getState().handleSessionsChanged({
       key: sessionKey,
@@ -1391,22 +1241,8 @@ describe('chat store session label summary hydration', () => {
         { key: unrelatedKey, label: 'Unrelated', workspacePath: '/unrelated' },
       ],
     });
-    await reloading;
-    expect(summaryCalls).toBe(2);
-
-    oldSummary.resolve({
-      success: true,
-      summaries: [{
-        sessionKey,
-        firstUserText: 'stale title',
-        lastTimestamp: 1_700_000_001_000,
-        workspacePath: '/stale',
-      }],
-    });
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.waitFor(() => expect(summaryCalls).toBe(2));
     expect(useChatStore.getState().sessionLabels[sessionKey]).toBeUndefined();
-    expect(useChatStore.getState().sessionLastActivity[sessionKey]).toBe(1_700_000_000_000);
     expect(useChatStore.getState().sessions.find((session) => session.key === sessionKey)?.workspacePath).toBeUndefined();
 
     newSummary.resolve({
@@ -1418,6 +1254,7 @@ describe('chat store session label summary hydration', () => {
         workspacePath: '/fresh',
       }],
     });
+    await Promise.all([firstLoading, reloading]);
     await vi.waitFor(() => {
       expect(useChatStore.getState().sessionLabels[sessionKey]).toBe('fresh title');
     });
@@ -1427,79 +1264,4 @@ describe('chat store session label summary hydration', () => {
     expect(useChatStore.getState().sessionLastActivity[unrelatedKey]).toBe(1_700_000_009_000);
   });
 
-  it('drops a stale visible-session refresh after buffered delete-recreate', async () => {
-    const sessionKey = 'agent:main:recreated-refresh';
-    const list = deferred<Record<string, unknown>>();
-    const oldRefresh = deferred<Record<string, unknown>>();
-    const newSummary = deferred<Record<string, unknown>>();
-    let summaryCalls = 0;
-
-    gatewayRpcMock.mockImplementation((method: string) => {
-      if (method === 'chat.history') return Promise.resolve({ messages: [] });
-      if (method === 'sessions.list') return list.promise;
-      throw new Error(`Unexpected gateway RPC: ${method}`);
-    });
-    hostApiFetchMock.mockImplementation((path: string) => {
-      if (path !== '/api/sessions/summaries') return Promise.resolve({ success: true });
-      summaryCalls += 1;
-      return summaryCalls === 1 ? oldRefresh.promise : newSummary.promise;
-    });
-
-    const { useChatStore } = await import('@/stores/chat');
-    useChatStore.setState({
-      currentSessionKey: sessionKey,
-      currentAgentId: 'main',
-      sessions: [{ key: sessionKey, updatedAt: 1_700_000_000_000 }],
-      messages: [],
-      sessionLabels: {},
-      sessionLastActivity: {},
-      loading: false,
-    });
-
-    await useChatStore.getState().loadHistory(false);
-    expect(summaryCalls).toBe(1);
-
-    const reloading = useChatStore.getState().loadSessions({ force: true, gatewayGeneration: 1 });
-    useChatStore.getState().handleSessionsChanged({ sessionKey, reason: 'delete', ts: 31 });
-    useChatStore.getState().handleSessionsChanged({
-      key: sessionKey,
-      ts: 32,
-      session: { key: sessionKey, updatedAt: 1_700_000_000_000 },
-    });
-    list.resolve({
-      ts: 30,
-      sessions: [{ key: sessionKey, updatedAt: 1_700_000_000_000 }],
-    });
-    await reloading;
-    expect(summaryCalls).toBe(2);
-
-    oldRefresh.resolve({
-      success: true,
-      summaries: [{
-        sessionKey,
-        firstUserText: 'stale refresh',
-        lastTimestamp: 1_700_000_003_000,
-        workspacePath: '/stale-refresh',
-      }],
-    });
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(useChatStore.getState().sessionLabels[sessionKey]).toBeUndefined();
-    expect(useChatStore.getState().sessions[0]?.workspacePath).toBeUndefined();
-
-    newSummary.resolve({
-      success: true,
-      summaries: [{
-        sessionKey,
-        firstUserText: 'fresh refresh',
-        lastTimestamp: 1_700_000_004_000,
-        workspacePath: '/fresh-refresh',
-      }],
-    });
-    await vi.waitFor(() => {
-      expect(useChatStore.getState().sessionLabels[sessionKey]).toBe('fresh refresh');
-    });
-    expect(useChatStore.getState().sessionLastActivity[sessionKey]).toBe(1_700_000_004_000);
-    expect(useChatStore.getState().sessions[0]?.workspacePath).toBe('/fresh-refresh');
-  });
 });

@@ -30,15 +30,14 @@ touchedAreas:
   - tests/unit/acp-*.test.tsx
   - tests/unit/chat-input.test.tsx
   - tests/unit/chat-acp-page.test.tsx
-  - tests/unit/chat-page-execution-graph.test.tsx
+  - tests/unit/chat-acp-inline-timeline.test.tsx
   - tests/unit/host-api-facade.test.ts
   - tests/unit/host-events.test.ts
   - tests/unit/host-services.test.ts
   - tests/unit/openclaw-cli.test.ts
-  - tests/unit/task-visualization.test.ts
   - tests/e2e/chat-acp-inline-timeline.spec.ts
   - tests/e2e/chat-run-state-events.spec.ts
-  - tests/e2e/chat-task-visualizer.spec.ts
+  - tests/e2e/chat-acp-process-timeline.spec.ts
   - README.md
   - README.zh-CN.md
   - README.ja-JP.md
@@ -46,7 +45,6 @@ expectedUserBehavior:
   - Opening a Chat session loads history through ACP session/load replay.
   - Sending a Chat prompt uses ACP session/prompt, shows an optimistic user segment, and coalesces it with the ACP user echo.
   - Thinking, tool calls, permission requests, plans, generated files, and generated images appear as inline timeline blocks in ACP event order.
-  - The old Execution Graph aggregation is not used for the ACP Chat path.
   - Renderer does not call Gateway HTTP or WebSocket endpoints directly.
   - Gateway-backed models, providers, plugins, skills, doctor, workspace, settings, and media configuration continue to work.
 requiredProfiles:
@@ -67,9 +65,9 @@ requiredRules:
 requiredTests:
   - pnpm run typecheck
   - pnpm exec vitest run tests/unit/acp-host-contract.test.ts tests/unit/acp-chat-service.test.ts tests/unit/acp-reducer.test.ts tests/unit/acp-chat-store.test.ts tests/unit/acp-chat-components.test.tsx tests/unit/chat-acp-page.test.tsx
-  - pnpm exec vitest run tests/unit/host-api-facade.test.ts tests/unit/host-events.test.ts tests/unit/openclaw-cli.test.ts tests/unit/host-services.test.ts tests/unit/chat-page-execution-graph.test.tsx tests/unit/task-visualization.test.ts
+  - pnpm exec vitest run tests/unit/host-api-facade.test.ts tests/unit/host-events.test.ts tests/unit/openclaw-cli.test.ts tests/unit/host-services.test.ts tests/unit/chat-acp-inline-timeline.test.tsx
   - pnpm exec playwright test tests/e2e/chat-acp-inline-timeline.spec.ts
-  - pnpm exec playwright test tests/e2e/chat-run-state-events.spec.ts tests/e2e/chat-task-visualizer.spec.ts
+  - pnpm exec playwright test tests/e2e/chat-run-state-events.spec.ts tests/e2e/chat-acp-process-timeline.spec.ts
   - pnpm run comms:replay
   - pnpm run comms:compare
 acceptance:
@@ -77,7 +75,7 @@ acceptance:
   - Main forwards ACP SessionNotification envelopes and permission request envelopes without translating text, thinking, tools, or media into legacy Chat events.
   - Renderer reduces ACP notifications into an in-memory ordered timeline.
   - No ClawX ACP replay ledger, Chat history cache, or reduced timeline persistence is introduced.
-  - The primary Chat page does not use gateway:chat-message or chat:runtime-event as ordinary Chat timeline sources; restricted image-generation compatibility evidence remains allowed.
+  - The primary Chat page uses ACP notifications and replay as its ordinary timeline sources; bounded image-generation compatibility evidence remains allowed.
   - Inline process blocks preserve ordering between assistant message segments.
 docs:
   required: true

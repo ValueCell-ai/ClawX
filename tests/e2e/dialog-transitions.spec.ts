@@ -159,12 +159,6 @@ test.describe('dialog transitions', () => {
               updatedAt: nowMs,
             }],
           },
-          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-            messages: [],
-          },
-          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
-            messages: [],
-          },
         },
         hostApi: {
           [stableStringify(['/api/gateway/status', 'GET'])]: {
@@ -214,6 +208,23 @@ test.describe('dialog transitions', () => {
 
       await expect(confirmDialog).toContainText('Preserved session');
 
+      await installIpcMocks(app, {
+        hostApi: {
+          [stableStringify(['sessions', 'delete', { id: MAIN_SESSION_KEY }])]: {
+            success: false,
+            error: 'Session is locked',
+          },
+        },
+      });
+      await page.getByTestId('confirm-dialog-confirm-button').click();
+      await expect(confirmDialog).toBeVisible();
+      await expect(sessionRow).toBeVisible();
+
+      await installIpcMocks(app, {
+        hostApi: {
+          [stableStringify(['sessions', 'delete', { id: MAIN_SESSION_KEY }])]: { success: true },
+        },
+      });
       await page.getByTestId('confirm-dialog-confirm-button').click();
       await expect(confirmDialog).toHaveAttribute('data-state', 'closed');
       await expect(confirmDialog).toContainText('Preserved session');

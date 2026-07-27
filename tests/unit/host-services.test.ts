@@ -382,28 +382,29 @@ describe('host services', () => {
     expect(setSettingMock).toHaveBeenCalledWith('recentWorkspacePaths', ['/Users/alex/workspace/ClawX']);
   });
 
-  it('routes gateway rpc through backpressure', async () => {
+  it('routes validated generic gateway rpc directly to the manager', async () => {
     const gatewayManager = {
       rpc: vi.fn(async () => ({ ok: true })),
     };
-    const backpressure = {
-      run: vi.fn(async (_method, _params, _timeoutMs, runner) => runner('chat.history', { limit: 1 }, 42)),
-    };
     const { createGatewayApi } = await import('@electron/services/gateway-api');
+    const gatewayApi = createGatewayApi(gatewayManager as never);
 
-    await expect(createGatewayApi(gatewayManager as never, backpressure as never).rpc({
-      method: 'chat.history',
-      params: { limit: 1 },
+    await expect(gatewayApi.rpc({
+      method: ' sessions.list ',
+      params: { includeDerivedTitles: true },
       timeoutMs: 42,
     })).resolves.toEqual({ ok: true });
 
-    expect(backpressure.run).toHaveBeenCalledWith(
-      'chat.history',
-      { limit: 1 },
+    expect(gatewayManager.rpc).toHaveBeenCalledWith(
+      'sessions.list',
+      { includeDerivedTitles: true },
       42,
-      expect.any(Function),
     );
-    expect(gatewayManager.rpc).toHaveBeenCalledWith('chat.history', { limit: 1 }, 42);
+    await expect(gatewayApi.rpc({ method: '   ' })).rejects.toThrow('Invalid gateway RPC method');
+    await expect(gatewayApi.rpc({ method: 'status', timeoutMs: 0 })).rejects.toThrow(
+      'Invalid gateway RPC timeout',
+    );
+    expect(gatewayManager.rpc).toHaveBeenCalledTimes(1);
   });
 
   it('exposes provider account snapshot actions through the typed providers service', async () => {
@@ -979,39 +980,19 @@ describe('host services', () => {
     );
   });
 
-  it('sends staged media through the typed chat service with gateway attachments', async () => {
-    const mediaPath = join(tmpdir(), `clawx-host-services-media-${Date.now()}.png`);
-    writeFileSync(mediaPath, 'fake-image-bytes');
-    const gatewayManager = {
-      rpc: vi.fn().mockResolvedValue({ runId: 'run-123' }),
-    };
+  it('registers exactly the four ACP chat actions', async () => {
     const { createChatApi } = await import('@electron/services/chat-api');
 
-    await expect(createChatApi({
-      gatewayManager: gatewayManager as never,
+    expect(Object.keys(createChatApi({
+      gatewayManager: {} as never,
       mainWindow: {} as never,
-    }).sendWithMedia({
-      sessionKey: 'agent:main:main',
-      message: 'inspect this',
-      idempotencyKey: 'idem-123',
-      media: [{ filePath: mediaPath, mimeType: 'image/png', fileName: 'image.png' }],
-    })).resolves.toEqual({ success: true, result: { runId: 'run-123' } });
-
-    expect(gatewayManager.rpc).toHaveBeenCalledWith(
-      'chat.send',
-      {
-        sessionKey: 'agent:main:main',
-        message: `inspect this\n\n[media attached: ${mediaPath} (image/png) | ${mediaPath}]`,
-        deliver: false,
-        idempotencyKey: 'idem-123',
-        attachments: [{
-          content: Buffer.from('fake-image-bytes').toString('base64'),
-          mimeType: 'image/png',
-          fileName: 'image.png',
-        }],
-      },
-      120000,
-    );
+      acpSessionAccessRegistry: {} as never,
+    }))).toEqual([
+      'loadAcpSession',
+      'sendAcpPrompt',
+      'cancelAcpSession',
+      'respondAcpPermission',
+    ]);
   });
 
   it('loads session summaries and transcript history through the typed sessions service', async () => {

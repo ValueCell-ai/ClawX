@@ -147,14 +147,6 @@ test.describe('ClawX chat workspace session list', () => {
             success: true,
             result: { sessions },
           },
-          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: [] },
-          },
-          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: [] },
-          },
         },
         hostApi: {
           [stableStringify(['/api/gateway/status', 'GET'])]: {
@@ -223,11 +215,6 @@ test.describe('ClawX chat workspace session list', () => {
     const app = await launchElectronApp({ skipSetup: true });
     const oldTimestampMs = Date.now() - 35 * 24 * 60 * 60 * 1000;
     const prompt = 'Investigate the sidebar title race';
-    const seededHistory = [
-      { role: 'user', content: 'Existing conversation', timestamp: oldTimestampMs },
-      { role: 'assistant', content: 'Existing reply', timestamp: oldTimestampMs + 1000 },
-    ];
-
     try {
       await installIpcMocks(app, {
         gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
@@ -241,14 +228,6 @@ test.describe('ClawX chat workspace session list', () => {
                 updatedAt: oldTimestampMs,
               }],
             },
-          },
-          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: seededHistory },
-          },
-          [stableStringify(['chat.history', { sessionKey: MAIN_SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
-            success: true,
-            result: { messages: seededHistory },
           },
         },
         hostApi: {
@@ -361,10 +340,6 @@ test.describe('ClawX chat workspace session list', () => {
                 },
               ],
             },
-          },
-          [stableStringify(['chat.history', null])]: {
-            success: true,
-            result: { messages: [] },
           },
         },
         hostApi: {

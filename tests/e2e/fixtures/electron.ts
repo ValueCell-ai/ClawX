@@ -743,7 +743,6 @@ export async function installAttachmentHostFixture(
     gatewayRpc: {
       [stableStringify(['sessions.list', {}])]: sessionsList,
       [stableStringify(['sessions.list', { includeDerivedTitles: true, includeLastMessage: true }])]: sessionsList,
-      [stableStringify(['chat.history', null])]: { success: true, result: { messages: [] } },
     },
     hostApi: {
       [stableStringify(['settings', 'getAll', null])]: {

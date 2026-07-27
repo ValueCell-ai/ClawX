@@ -11,7 +11,6 @@ touchedAreas:
   - harness/specs/rules/session-workspace-authority.md
   - src/pages/Chat/index.tsx
   - shared/chat/types.ts
-  - src/stores/chat/session-actions.ts
   - src/stores/chat.ts
   - tests/unit/chat-acp-page.test.tsx
   - tests/e2e/chat-acp-inline-timeline.spec.ts

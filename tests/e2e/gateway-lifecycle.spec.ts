@@ -214,7 +214,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
     await expect(restartIndicator).toHaveAttribute('data-state', 'hidden');
   });
 
-  test('chat sidebar history reloads when gateway becomes ready after restart', async ({ electronApp, page }) => {
+  test('chat sidebar session catalog reloads when gateway becomes ready after restart', async ({ electronApp, page }) => {
     await installIpcMocks(electronApp, {
       gatewayStatus: { state: 'running', port: 18789, pid: 100, connectedAt: 1, gatewayReady: false },
       hostApi: {

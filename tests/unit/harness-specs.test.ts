@@ -256,6 +256,24 @@ describe('harness specs', () => {
     expect(acpChatScenario?.data.ownedPaths).toContain('tests/e2e/chat-acp-attachments.spec.ts');
   });
 
+  it('keeps the structural task example on current ACP session catalog behavior', async () => {
+    const example = await loadSpec('harness/specs/tasks/maintain-session-catalog-reconciliation.example.md');
+
+    expect(example.data).toMatchObject({
+      id: 'maintain-session-catalog-reconciliation',
+      scenario: 'gateway-backend-communication',
+      taskType: 'runtime-bridge',
+      requiredProfiles: ['fast', 'comms'],
+      docs: { required: false },
+    });
+    expect(example.data.requiredTests).toEqual([
+      'tests/unit/session-catalog.test.ts',
+      'tests/unit/chat-session-management.test.ts',
+    ]);
+    expect(example.body).toContain('session catalog alongside ACP Chat');
+    expect(example.body).not.toMatch(/chat\.history|sendMessage|activeRunId|pendingFinal/);
+  });
+
   it('parses Markdown frontmatter with arrays and nested docs', () => {
     const spec = parseFrontmatter(`---
 id: example
@@ -274,7 +292,7 @@ Body`);
   });
 
   it('matches repository glob paths', () => {
-    expect(pathMatchesAny('src/stores/chat/history-actions.ts', ['src/stores/chat/**'])).toBe(true);
+    expect(pathMatchesAny('src/stores/chat/runtime-graph.ts', ['src/stores/chat/**'])).toBe(true);
     expect(pathMatchesAny('src/lib/host-api.ts', ['src/lib/host-api.ts'])).toBe(true);
     expect(pathMatchesAny('src/pages/Chat/index.tsx', ['electron/gateway/**'])).toBe(false);
   });

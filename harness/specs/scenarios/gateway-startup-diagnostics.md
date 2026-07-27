@@ -42,7 +42,7 @@ Treat these as the same incident family until proven otherwise:
 - `[gateway-startup] Slow managed Gateway startup detected`
 - `[gateway:rpc] doctor.memory.status failed`
 - `[gateway:rpc] doctor.memory.dreamDiary failed`
-- `chat.history unavailable during gateway startup`
+- `sessions.list unavailable during gateway startup`
 - Port `18789` is listening, but Gateway HTTP or WebSocket RPC does not return.
 
 Important distinction:
@@ -188,7 +188,7 @@ Expected mitigation:
 
 Symptoms:
 
-- Gateway handshake completes, but `system-presence`, `chat.history`, or `doctor.memory.*` times out during the first minutes.
+- Gateway handshake completes, but `system-presence`, `sessions.list`, or `doctor.memory.*` times out during the first minutes.
 - Logs mention cron repair, channel account checks, session lock cleanup, memory-core cron reconciliation, or active embedded/task runs.
 
 Expected behavior:
@@ -288,7 +288,7 @@ pnpm exec vitest run tests/unit/openclaw-auth.test.ts tests/unit/skills-symlink-
 pnpm run build:vite
 ```
 
-If the change touches Gateway send/receive, fallback, readiness, or chat history, also run:
+If the change touches Gateway send/receive, generic RPC dispatch, fallback, or readiness, also run:
 
 ```bash
 pnpm run comms:replay

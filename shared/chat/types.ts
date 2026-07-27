@@ -1,6 +1,4 @@
-import type { ChatRuntimeEvent } from '../chat-runtime-events';
-
-/** Metadata for locally-attached files (not from Gateway) */
+/** Metadata for files attached to ACP prompts or projected by bounded ACP media compatibility. */
 export interface AttachedFileMeta {
   fileName: string;
   mimeType: string;
@@ -21,7 +19,7 @@ export interface AttachedFileMeta {
   gatewayUrl?: string;
 }
 
-/** Raw message from OpenClaw chat.history */
+/** Structured OpenClaw transcript message used by bounded ACP supplements. */
 export interface RawMessage {
   role: 'user' | 'assistant' | 'system' | 'toolresult';
   content: unknown; // string | ContentBlock[]
@@ -48,7 +46,7 @@ export interface RawMessage {
       workspaceDir?: string;
     }>;
   };
-  /** Local-only: file metadata for user-uploaded attachments (not sent to/from Gateway) */
+  /** Renderer metadata for user-selected files included in an ACP prompt. */
   _attachedFiles?: AttachedFileMeta[];
 }
 
@@ -122,56 +120,16 @@ export type LoadSessionsOptions = {
   gatewayGeneration?: number;
 };
 
-export interface ToolStatus {
-  id?: string;
-  toolCallId?: string;
-  name: string;
-  status: 'running' | 'completed' | 'error';
-  durationMs?: number;
-  summary?: string;
-  updatedAt: number;
-}
-
-export interface ChatRuntimeRunState {
-  runId: string;
-  sessionKey?: string;
-  status: 'running' | 'completed' | 'error' | 'aborted';
-  startedAt?: number;
-  endedAt?: number;
-  assistantText: string;
-  thinkingText: string;
-  events: ChatRuntimeEvent[];
-}
-
 export interface DeleteSessionsResult {
   deletedKeys: string[];
   failedKeys: string[];
 }
 
+export type DeleteSessionResult =
+  | { success: true }
+  | { success: false; error: string };
+
 export interface ChatState {
-  // Messages
-  messages: RawMessage[];
-  loading: boolean;
-  loadingMoreHistory: boolean;
-  hasMoreHistory: boolean;
-  error: string | null;
-  runError: string | null;
-  /** Per-session runError text dismissed by the user (sessionKey -> error message). */
-  dismissedRunErrors: Record<string, string>;
-
-  // Streaming
-  sending: boolean;
-  activeRunId: string | null;
-  streamingText: string;
-  streamingMessage: unknown | null;
-  streamingTools: ToolStatus[];
-  pendingFinal: boolean;
-  lastUserMessageAt: number | null;
-  /** Images collected from tool results, attached to the next assistant message */
-  pendingToolImages: AttachedFileMeta[];
-  runtimeRuns: Record<string, ChatRuntimeRunState>;
-
-  // Sessions
   sessions: ChatSession[];
   currentSessionKey: string;
   currentAgentId: string;
@@ -180,38 +138,15 @@ export interface ChatState {
   /** Last message timestamp (ms) per session key, used for sorting */
   sessionLastActivity: Record<string, number>;
 
-  // Thinking
-  thinkingLevel: string | null;
-
-  // Actions
   loadSessions: (options?: LoadSessionsOptions) => Promise<void>;
   handleSessionsChanged: (payload: GatewaySessionsChangedPayload) => void;
   switchSession: (key: string) => void;
   selectAcpSession: (key: string, workspacePath?: string) => void;
   newSession: () => void;
   acknowledgeAcpSessionCreated: (key: string, workspacePath?: string, initialPrompt?: string) => void;
-  deleteSession: (key: string) => Promise<void>;
+  deleteSession: (key: string) => Promise<DeleteSessionResult>;
   deleteSessions: (keys: string[]) => Promise<DeleteSessionsResult>;
   renameSession: (key: string, label: string) => Promise<void>;
-  cleanupEmptySession: () => void;
-  loadHistory: (quiet?: boolean) => Promise<void>;
-  loadMoreHistory: () => Promise<void>;
-  sendMessage: (
-    text: string,
-    attachments?: Array<{
-      fileName: string;
-      mimeType: string;
-      fileSize: number;
-      stagedPath: string;
-      preview: string | null;
-    }>,
-    targetAgentId?: string | null,
-  ) => Promise<void>;
-  abortRun: () => Promise<void>;
-  handleChatEvent: (event: Record<string, unknown>) => void;
-  handleRuntimeEvent: (event: ChatRuntimeEvent) => void;
-  refresh: () => Promise<void>;
-  clearError: () => void;
 }
 
 export const DEFAULT_CANONICAL_PREFIX = 'agent:main';

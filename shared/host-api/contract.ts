@@ -717,18 +717,6 @@ export type SessionSummariesResult = HostSuccess & {
 export type SessionDeletePayload = { id: string };
 export type SessionRenamePayload = { id: string; title: string };
 
-export type ChatMediaItem = { filePath: string; mimeType?: string; fileName?: string };
-export type ChatSendWithMediaPayload = {
-  sessionKey: string;
-  message?: string;
-  deliver?: boolean;
-  idempotencyKey: string;
-  media?: ChatMediaItem[];
-};
-export type ChatSendWithMediaResult = HostSuccess & {
-  result?: { runId?: string };
-};
-
 export type CronUpdatePayload = { id: string; input: CronJobUpdateInput };
 export type CronIdPayload = { id: string };
 export type CronTogglePayload = CronIdPayload & { enabled: boolean };
@@ -987,7 +975,6 @@ export type HostApiContract = {
     turnTimings: (payload: SessionTurnTimingsPayload) => SessionTurnTimingsResult;
   };
   chat: {
-    sendWithMedia: (payload: ChatSendWithMediaPayload) => ChatSendWithMediaResult;
     loadAcpSession: (payload: AcpChatLoadPayload) => AcpChatOperationResult;
     sendAcpPrompt: (payload: AcpChatPromptPayload) => AcpChatOperationResult;
     cancelAcpSession: (payload: AcpChatCancelPayload) => AcpChatOperationResult;

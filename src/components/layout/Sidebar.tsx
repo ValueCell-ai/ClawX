@@ -159,7 +159,6 @@ export function Sidebar() {
   const deleteSessions = useChatStore((s) => s.deleteSessions);
   const renameSession = useChatStore((s) => s.renameSession);
   const loadSessions = useChatStore((s) => s.loadSessions);
-  const loadHistory = useChatStore((s) => s.loadHistory);
   const sessionAttentionByKey = useSessionAttentionStore((s) => s.bySessionKey);
   const markRead = useSessionAttentionStore((s) => s.markRead);
   const handleNewChat = useNewChatAction();
@@ -170,26 +169,10 @@ export function Sidebar() {
   const gatewayRestarting = isGatewayRestarting(gatewayStatus);
   const gatewayRuntimeKey = `${gatewayStatus.pid ?? 'none'}:${gatewayStatus.connectedAt ?? 'none'}:${gatewayStatus.port}`;
 
-  const hasLoadedCurrentRuntimeRef = useRef(false);
-
-  useEffect(() => {
-    hasLoadedCurrentRuntimeRef.current = false;
-  }, [gatewayRuntimeKey]);
-
   useEffect(() => {
     if (!isGatewayReady) return;
-    let cancelled = false;
-    (async () => {
-      await loadSessions();
-      if (cancelled) return;
-      if (hasLoadedCurrentRuntimeRef.current) return;
-      hasLoadedCurrentRuntimeRef.current = true;
-      await loadHistory(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [gatewayRuntimeKey, isGatewayReady, loadHistory, loadSessions]);
+    void loadSessions();
+  }, [gatewayRuntimeKey, isGatewayReady, loadSessions]);
   const agents = useAgentsStore((s) => s.agents);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
 
@@ -765,9 +748,7 @@ export function Sidebar() {
                                   aria-current={isCurrentSession ? 'page' : undefined}
                                   onClick={() => {
                                     markRead(s.key);
-                                    if (currentSessionKey === s.key) {
-                                      void loadHistory(false);
-                                    } else {
+                                    if (currentSessionKey !== s.key) {
                                       switchSession(s.key);
                                     }
                                     navigate('/');
@@ -988,7 +969,8 @@ export function Sidebar() {
         onConfirm={async () => {
           const targetSession = sessionToDelete;
           if (!targetSession) return;
-          await deleteSession(targetSession.key);
+          const result = await deleteSession(targetSession.key);
+          if (!result.success) return;
           if (currentSessionKey === targetSession.key) navigate('/');
           setDeleteDialogOpen(false);
         }}

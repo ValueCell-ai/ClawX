@@ -69,9 +69,6 @@
  *   ─────────────────────────────────────────────────────────────────────
  *     bg-black/30 dark:bg-black/60      (canonical: components/ui/sheet.tsx)
  *
- *     Image lightbox may use bg-black/80 when a darker scrim is intentional
- *     (see pages/Chat/ChatMessage.tsx).
- *
  *   STATUS COLOURS  (success / warning / error)
  *   ─────────────────────────────────────────────────────────────────────
  *     icon + inline text  :  text-{green|yellow|red}-700  dark:text-…-400

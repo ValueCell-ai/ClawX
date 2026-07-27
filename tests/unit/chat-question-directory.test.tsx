@@ -51,8 +51,6 @@ const { acpState, chatState, settingsState } = vi.hoisted(() => ({
     sessions: [{ key: 'agent:main:main', workspacePath: '/workspace' }],
     currentSessionKey: 'agent:main:main',
     currentAgentId: 'main',
-    loading: false,
-    refresh: vi.fn(),
     loadSessions: vi.fn().mockResolvedValue(undefined),
     selectAcpSession: vi.fn(),
     acknowledgeAcpSessionCreated: vi.fn(),
@@ -70,33 +68,8 @@ vi.mock('@/stores/acp-chat-session', () => ({
   useAcpChatSessionStore: (selector: (state: typeof acpState) => unknown) => selector(acpState),
 }));
 
-const legacyChatFields = {
-  currentSessionKey: 'agent:main:main',
-  currentAgentId: 'main',
-  sessionLabels: {},
-  loadingMoreHistory: false,
-  hasMoreHistory: false,
-  sending: false,
-  error: null,
-  runError: null,
-  streamingMessage: null,
-  streamingTools: [],
-  pendingFinal: false,
-  activeRunId: null,
-  sendMessage: vi.fn(),
-  abortRun: vi.fn(),
-  clearError: vi.fn(),
-  loadMoreHistory: vi.fn(),
-  loadHistory: vi.fn(),
-  cleanupEmptySession: vi.fn(),
-  lastUserMessageAt: null,
-};
-
 vi.mock('@/stores/chat', () => ({
-  useChatStore: (selector: (state: typeof chatState & typeof legacyChatFields) => unknown) => selector({
-    ...legacyChatFields,
-    ...chatState,
-  }),
+  useChatStore: (selector: (state: typeof chatState) => unknown) => selector(chatState),
 }));
 
 vi.mock('@/stores/settings', () => ({
@@ -205,7 +178,6 @@ describe('Chat question directory', () => {
     chatState.sessions = [{ key: 'agent:main:main', workspacePath: '/workspace' }];
     chatState.currentSessionKey = 'agent:main:main';
     chatState.currentAgentId = 'main';
-    chatState.refresh.mockReset();
     settingsState.chatWorkspacePath = '/workspace';
   });
 

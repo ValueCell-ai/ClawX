@@ -9,7 +9,6 @@ import { HOST_EVENT_CHANNELS } from '@shared/host-events/contract';
 describe('ACP Chat host contract', () => {
   it('exposes typed chat host methods', () => {
     expect(acpChatHostApiActions).toEqual([
-      'sendWithMedia',
       'loadAcpSession',
       'sendAcpPrompt',
       'cancelAcpSession',

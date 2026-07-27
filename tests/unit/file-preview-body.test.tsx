@@ -503,7 +503,7 @@ describe('FilePreviewBody', () => {
       />,
     );
 
-    expect(await screen.findByText('This file format is not supported for inline preview or diff')).toBeVisible();
+    expect(await screen.findByText('This file format is not supported for inline preview')).toBeVisible();
     expect(screen.queryByRole('button', { name: 'Open directly' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Show in file manager' })).not.toBeInTheDocument();
     expect(dialogMessageMock).not.toHaveBeenCalled();

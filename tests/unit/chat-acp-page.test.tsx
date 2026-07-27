@@ -71,31 +71,13 @@ const { acpState, agentsState, artifactPanelState, artifactPanelProps, chatState
   },
   artifactPanelProps: [] as Array<{ fileGroups: unknown[]; uniqueFileCount: number; agent: unknown; runStartedAt?: number | null }>,
   chatState: {
-    messages: [],
     sessions: [],
     currentSessionKey: 'agent:main:main',
     currentAgentId: 'main',
     sessionLabels: {},
-    loading: false,
-    loadingMoreHistory: false,
-    hasMoreHistory: false,
-    sending: false,
-    error: null,
-    runError: null,
-    streamingMessage: null,
-    streamingTools: [],
-    pendingFinal: false,
-    activeRunId: null,
-    runtimeRuns: {},
-    sendMessage: vi.fn(),
     loadSessions: vi.fn(),
     selectAcpSession: vi.fn(),
     acknowledgeAcpSessionCreated: vi.fn(),
-    abortRun: vi.fn(),
-    clearError: vi.fn(),
-    loadMoreHistory: vi.fn(),
-    cleanupEmptySession: vi.fn(),
-    lastUserMessageAt: null,
   },
   gatewayState: {
     status: { state: 'running', gatewayReady: true, port: 18789 },
@@ -223,10 +205,6 @@ vi.mock('@/components/file-preview/ArtifactPanel', () => ({
 
 vi.mock('@/components/file-preview/PanelResizeDivider', () => ({
   PanelResizeDivider: () => null,
-}));
-
-vi.mock('@/pages/Chat/ExecutionGraphCard', () => ({
-  ExecutionGraphCard: () => <div data-testid="chat-execution-graph" />,
 }));
 
 vi.mock('react-i18next', () => ({
@@ -375,7 +353,7 @@ describe('ACP Chat page', () => {
             : session
         ));
       } else {
-        chatState.sessions = [...chatState.sessions, { key: sessionKey, workspacePath }];
+        chatState.sessions = [...chatState.sessions, { key: sessionKey, workspacePath, createdLocally: true }];
       }
     });
     chatState.acknowledgeAcpSessionCreated.mockReset();
@@ -384,11 +362,10 @@ describe('ACP Chat page', () => {
     gatewayState.status = { state: 'running', gatewayReady: true, port: 18789 };
   });
 
-  it('renders ACP inline timeline content instead of the execution graph', async () => {
+  it('renders ACP inline timeline content', async () => {
     const { container } = render(<Chat />);
 
     expect(screen.getByTestId('acp-chat-timeline')).toBeInTheDocument();
-    expect(screen.queryByTestId('chat-execution-graph')).not.toBeInTheDocument();
     expect(screen.getByText('List project files')).toBeInTheDocument();
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent('List files');
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent('src/pages/Chat/index.tsx');
@@ -467,6 +444,151 @@ describe('ACP Chat page', () => {
       expect(acpState.loadSession).toHaveBeenCalledWith({
         sessionKey: 'agent:main:main', workspaceRoot: '/workspace', cwd: '/workspace', createIfMissing: true,
       });
+      expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(
+        'agent:main:main',
+        '/workspace',
+      );
+    });
+  });
+
+  it('does not load ACP until session discovery publishes the hydrated workspace', async () => {
+    const sessionKey = 'agent:main:hydrated-workspace';
+    let finishDiscovery!: () => void;
+    acpState.activeSessionKey = null;
+    chatState.sessions = [];
+    chatState.currentSessionKey = 'agent:main:main';
+    chatState.loadSessions.mockImplementation(() => new Promise<void>((resolve) => {
+      finishDiscovery = () => {
+        chatState.currentSessionKey = sessionKey;
+        chatState.sessions = [{ key: sessionKey, workspacePath: '/hydrated-workspace' }];
+        resolve();
+      };
+    }));
+
+    render(<Chat />);
+
+    await waitFor(() => expect(chatState.loadSessions).toHaveBeenCalledTimes(1));
+    expect(acpState.loadSession).not.toHaveBeenCalled();
+
+    finishDiscovery();
+    await waitFor(() => {
+      expect(acpState.loadSession).toHaveBeenCalledWith({
+        sessionKey,
+        workspaceRoot: '/hydrated-workspace',
+        cwd: '/hydrated-workspace',
+      });
+    });
+  });
+
+  it('preserves an optimistic absent session when automatic ACP creation fails during catalog reconciliation', async () => {
+    const sessionKey = 'agent:main:session-auto-missing';
+    const fallbackSessionKey = 'agent:main:fallback';
+    let finishCatalog!: () => void;
+    chatState.sessions = [];
+    chatState.currentSessionKey = sessionKey;
+    acpState.activeSessionKey = null;
+    acpState.workspaceRoot = null;
+    acpState.cwd = null;
+    acpState.timeline = { ...emptyTimeline(), sessionId: sessionKey };
+    acpState.loadSession.mockResolvedValue(false);
+    chatState.loadSessions.mockImplementation(() => new Promise<void>((resolve) => {
+      finishCatalog = () => {
+        const optimisticSession = chatState.sessions.find((session) => session.key === sessionKey);
+        if (optimisticSession?.workspacePath) {
+          chatState.sessions = [{ ...optimisticSession, displayName: 'Reconciled automatic session' }];
+        } else {
+          chatState.currentSessionKey = fallbackSessionKey;
+          chatState.sessions = [{ key: fallbackSessionKey, workspacePath: '/fallback' }];
+        }
+        resolve();
+      };
+    }));
+    const catalogRequest = chatState.loadSessions();
+
+    render(<Chat />);
+
+    await waitFor(() => {
+      expect(chatState.selectAcpSession).toHaveBeenCalledWith(sessionKey, '/workspace');
+      expect(acpState.loadSession).toHaveBeenCalledWith({
+        sessionKey,
+        workspaceRoot: '/workspace',
+        cwd: '/workspace',
+        createIfMissing: true,
+      });
+    });
+    expect(chatState.acknowledgeAcpSessionCreated).not.toHaveBeenCalled();
+    expect(chatState.selectAcpSession.mock.invocationCallOrder.at(-1)!).toBeLessThan(
+      acpState.loadSession.mock.invocationCallOrder.at(-1)!,
+    );
+
+    finishCatalog();
+    await catalogRequest;
+    expect(chatState.currentSessionKey).toBe(sessionKey);
+    expect(chatState.sessions).toEqual([{
+      key: sessionKey,
+      workspacePath: '/workspace',
+      createdLocally: true,
+      displayName: 'Reconciled automatic session',
+    }]);
+  });
+
+  it('defers placeholder creation until send and retries failed first-send ACP creation', async () => {
+    const sessionKey = 'agent:main:session-auto-retry';
+    chatState.sessions = [{
+      key: sessionKey,
+      displayName: sessionKey,
+      workspacePath: '/workspace',
+      createdLocally: true,
+    }];
+    chatState.currentSessionKey = sessionKey;
+    acpState.activeSessionKey = null;
+    acpState.workspaceRoot = null;
+    acpState.cwd = null;
+    acpState.timeline = { ...emptyTimeline(), sessionId: sessionKey };
+    acpState.loadSession
+      .mockResolvedValueOnce(false)
+      .mockImplementation(async (input: { sessionKey: string; workspaceRoot: string; cwd: string }) => {
+        acpState.activeSessionKey = input.sessionKey;
+        acpState.workspaceRoot = input.workspaceRoot;
+        acpState.cwd = input.cwd;
+        return true;
+      });
+
+    const { rerender } = render(<Chat />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'false');
+    });
+    expect(acpState.loadSession).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('mock-send'));
+    await waitFor(() => expect(acpState.loadSession).toHaveBeenCalledTimes(1));
+    expect(acpState.loadSession).toHaveBeenLastCalledWith({
+      sessionKey,
+      workspaceRoot: '/workspace',
+      cwd: '/workspace',
+      createIfMissing: true,
+    });
+    expect(chatState.acknowledgeAcpSessionCreated).not.toHaveBeenCalled();
+    expect(acpState.sendPrompt).not.toHaveBeenCalled();
+
+    rerender(<Chat />);
+    fireEvent.click(screen.getByTestId('mock-send'));
+
+    await waitFor(() => {
+      expect(acpState.loadSession).toHaveBeenCalledTimes(2);
+      expect(acpState.loadSession).toHaveBeenLastCalledWith({
+        sessionKey,
+        workspaceRoot: '/workspace',
+        cwd: '/workspace',
+        createIfMissing: true,
+      });
+      expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(
+        sessionKey,
+        '/workspace',
+        'Ship it',
+      );
+      expect(acpState.sendPrompt).toHaveBeenCalledWith(expect.objectContaining({ sessionKey }));
     });
   });
 
@@ -724,6 +846,40 @@ describe('ACP Chat page', () => {
     render(<Chat />);
 
     expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-disabled', 'true');
+  });
+
+  it('optimistically binds an absent current session before first-send ACP creation', async () => {
+    const sessionKey = 'agent:main:session-send-missing';
+    chatState.sessions = [];
+    chatState.currentSessionKey = sessionKey;
+    acpState.activeSessionKey = sessionKey;
+    acpState.workspaceRoot = '/workspace';
+    acpState.cwd = '/workspace';
+    acpState.timeline = { ...emptyTimeline(), sessionId: sessionKey };
+    render(<Chat />);
+    await waitFor(() => expect(resolveWorkspaceContext).toHaveBeenCalled());
+    acpState.loadSession.mockClear();
+    chatState.selectAcpSession.mockClear();
+
+    fireEvent.click(screen.getByTestId('mock-send'));
+
+    await waitFor(() => {
+      expect(chatState.selectAcpSession).toHaveBeenCalledWith(sessionKey, '/workspace');
+      expect(acpState.loadSession).toHaveBeenCalledWith({
+        sessionKey,
+        workspaceRoot: '/workspace',
+        cwd: '/workspace',
+        createIfMissing: true,
+      });
+      expect(chatState.acknowledgeAcpSessionCreated).toHaveBeenCalledWith(
+        sessionKey,
+        '/workspace',
+        'Ship it',
+      );
+    });
+    expect(chatState.selectAcpSession.mock.invocationCallOrder.at(-1)!).toBeLessThan(
+      acpState.loadSession.mock.invocationCallOrder.at(-1)!,
+    );
   });
 
   it('loads ACP sessions and keeps the composer enabled while Gateway is stopped', async () => {

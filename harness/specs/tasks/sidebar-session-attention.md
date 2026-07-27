@@ -29,8 +29,7 @@ touchedAreas:
   - shared/i18n/locales/ru/chat.json
   - tests/unit/gateway-events.test.ts
   - tests/unit/gateway-event-dispatch.test.ts
-  - tests/unit/gateway-bisection-0d794cd.test.ts
-  - tests/unit/chat-store-history-retry.test.ts
+  - tests/unit/chat-session-management.test.ts
   - tests/unit/chat-store-session-label-fetch.test.ts
   - tests/unit/session-label-hydration.test.ts
   - tests/unit/sidebar-session-buckets.test.ts
@@ -59,7 +58,7 @@ requiredRules:
   - comms-regression
   - docs-sync
 requiredTests:
-  - pnpm exec vitest run tests/unit/harness-specs.test.ts tests/unit/session-attention.test.ts tests/unit/session-status.test.ts tests/unit/session-catalog.test.ts tests/unit/session-label-hydration.test.ts tests/unit/gateway-events.test.ts tests/unit/chat-store-history-retry.test.ts tests/unit/chat-store-session-label-fetch.test.ts tests/unit/sidebar-session-buckets.test.ts
+  - pnpm exec vitest run tests/unit/harness-specs.test.ts tests/unit/session-attention.test.ts tests/unit/session-status.test.ts tests/unit/session-catalog.test.ts tests/unit/session-label-hydration.test.ts tests/unit/gateway-events.test.ts tests/unit/chat-session-management.test.ts tests/unit/chat-store-session-label-fetch.test.ts tests/unit/sidebar-session-buckets.test.ts
   - pnpm exec vitest run tests/unit/i18n-locale-parity.test.ts tests/unit/gateway-event-dispatch.test.ts
   - pnpm run typecheck
   - pnpm run lint:check

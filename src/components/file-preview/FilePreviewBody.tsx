@@ -2,19 +2,14 @@
  * Inline file preview body.
  *
  * Renders the icon header (file name / path / save / revert) and a
- * minimal tabbed view for a single file.  Documents (Markdown) render
- * only their `preview` tab; code / other text files render `source`.
- * A `diff` tab is added when the file is editable AND there are
- * AI-applied edits to display.  The metadata `info` tab has been
- * intentionally removed — path / size are visible in the header bar.
+ * minimal tabbed view for a single file. Documents (Markdown) render
+ * their `preview` tab; code / other text files render `source`.
  *
- * The `mode` prop narrows the tab set for callers that want a single,
- * fixed view (e.g. the artifact panel's preview tab forces `preview`, and
- * the changes tab's right pane forces `diff`).
+ * The `mode` prop lets callers force a read-only preview surface.
  *
  * Used by:
  *   - `FilePreviewOverlay` for the Skills detail Sheet (read-only).
- *   - `ArtifactPanel`'s ChangesTab and PreviewTab.
+ *   - `ArtifactPanel`'s PreviewTab.
  *
  * All sandbox / read-only / large-file / binary edge cases are handled
  * here so callers only pass a `FilePreviewTarget` and a `readOnly` flag.
@@ -36,10 +31,7 @@ import {
 } from '@/lib/file-preview-client';
 import { getFilePreviewTargetIdentity, type FilePreviewTarget } from './types';
 import { previewDisplayPath } from './build-preview-target';
-import {
-  isHtmlPreviewExt,
-  supportsInlineDiff,
-} from '@/lib/generated-files';
+import { isHtmlPreviewExt } from '@/lib/generated-files';
 import {
   filePreviewKind,
   isFilePreviewWithinSizeLimit,
@@ -57,7 +49,6 @@ import ImageViewer from './ImageViewer';
 import { HtmlPreviewAnchor } from '@/components/web-browser/WebBrowserAnchor';
 
 const MonacoViewerLazy = lazy(() => import('./MonacoViewer'));
-const MonacoDiffViewerLazy = lazy(() => import('./MonacoDiffViewer'));
 const PdfViewerLazy = lazy(() => import('./PdfViewer'));
 const SheetViewerLazy = lazy(() => import('./SheetViewer'));
 const DocxViewerLazy = lazy(() => import('./DocxViewer'));
@@ -66,12 +57,10 @@ const PptxViewerLazy = lazy(() => import('./PptxViewer'));
 /**
  * Tab set for the body.
  *
- *   - 'full'    – default: preview / source / diff as appropriate.
- *   - 'preview' – render-only; hides the diff tab and forces read-only.
- *   - 'diff'    – diff-only; the body collapses to a single diff view
- *                 with no tab strip, save/revert, or source toggle.
+ *   - 'full'    – default: preview / source as appropriate.
+ *   - 'preview' – render-only and read-only.
  */
-export type FilePreviewBodyMode = 'full' | 'preview' | 'diff';
+export type FilePreviewBodyMode = 'full' | 'preview';
 
 export interface FilePreviewBodyProps {
   file: FilePreviewTarget;
@@ -84,7 +73,7 @@ export interface FilePreviewBodyProps {
   trailingHeader?: React.ReactNode;
   /** Optional left padding override for headers rendered beneath native window chrome. */
   headerLeftInset?: number;
-  /** Limit the visible tabs.  Default: 'full'. */
+  /** Control whether the surface is editable. Default: 'full'. */
   mode?: FilePreviewBodyMode;
   /** When true, hide the file header (name / path / actions). */
   hideHeader?: boolean;
@@ -102,14 +91,9 @@ type LoadState =
   | { identity: string; status: 'outsideSandbox' }
   | { identity: string; status: 'error'; message: string };
 
-type Tab = 'source' | 'preview' | 'diff';
+type Tab = 'source' | 'preview';
 
-function tabsForFile(file: FilePreviewTarget, mode: FilePreviewBodyMode): Tab[] {
-  // Diff-only mode short-circuits. Callers (e.g. the changes tab's right
-  // pane) want a pure git-style diff with no tab strip — but only for
-  // formats where inline diff is actually supported.
-  if (mode === 'diff') return supportsInlineDiff(file) ? ['diff'] : [];
-
+function tabsForFile(file: FilePreviewTarget): Tab[] {
   const previewKind = filePreviewKind(file);
   if (!previewKind) return [];
   const richPreview = richFilePreviewKind(file);
@@ -127,85 +111,12 @@ function tabsForFile(file: FilePreviewTarget, mode: FilePreviewBodyMode): Tab[] 
   } else {
     tabs.push('source');
   }
-  // Diff tab appears in 'full' mode whenever we captured a Write/Edit
-  // payload — read-only is fine, the diff is informational only.
-  if (
-    mode === 'full' &&
-    supportsInlineDiff(file) &&
-    (file.fullContent != null || (file.edits != null && file.edits.length > 0))
-  ) {
-    tabs.push('diff');
-  }
   return tabs;
 }
 
 function pickInitialTab(tabs: Tab[], file: FilePreviewTarget): Tab {
   if (file.contentType === 'document' && tabs.includes('preview')) return 'preview';
-  // For changes view (edited code), prefer the diff tab if present so
-  // the user sees the change immediately on click.
-  if (tabs.includes('diff') && file.contentType !== 'document') return 'diff';
   return tabs[0] ?? 'source';
-}
-
-function normaliseEol(s: string): string {
-  return s.replace(/\r\n/g, '\n');
-}
-
-type DiffPair = {
-  /** Left pane.  `null` makes Monaco render the side as empty (new-file). */
-  oldContent: string | null;
-  /** Right pane. */
-  newContent: string;
-  /**
-   * - `whole`       – right pane is the full file (Write tool).
-   * - `snippet`     – left/right are the joined Edit op old/new strings.
-   * - `unavailable` – the chat captured no payload to diff against.
-   */
-  kind: 'whole' | 'snippet' | 'unavailable';
-};
-
-/** Visual separator between MultiEdit hunks. */
-const SNIPPET_SEPARATOR = '\n\n';
-
-/**
- * Build a diff pair purely from the captured tool payload — never reads
- * disk. Edit tools show the exact old → new snippet swap. Write-family
- * tools prefer the captured baseline when available, so modified files
- * render a true before/after diff instead of a misleading all-green view.
- */
-function computeDiffPair(file: FilePreviewTarget): DiffPair {
-  // Edit / StrReplace / MultiEdit — show the snippet swap directly.
-  if (file.edits && file.edits.length > 0) {
-    const lefts = file.edits.map((op) => normaliseEol(op.old ?? ''));
-    const rights = file.edits.map((op) => normaliseEol(op.new ?? ''));
-    const left = lefts.join(SNIPPET_SEPARATOR);
-    const right = rights.join(SNIPPET_SEPARATOR);
-    if (left || right) {
-      return { oldContent: left, newContent: right, kind: 'snippet' };
-    }
-  }
-
-  if (file.fullContent != null) {
-    if (file.baseline?.status === 'ok') {
-      return {
-        oldContent: normaliseEol(file.baseline.content),
-        newContent: normaliseEol(file.fullContent),
-        kind: 'whole',
-      };
-    }
-    if (file.baseline?.status === 'missing') {
-      return { oldContent: null, newContent: normaliseEol(file.fullContent), kind: 'whole' };
-    }
-    if (file.baseline?.status === 'unavailable') {
-      return { oldContent: null, newContent: '', kind: 'unavailable' };
-    }
-    if (file.action === 'created') {
-      return { oldContent: null, newContent: normaliseEol(file.fullContent), kind: 'whole' };
-    }
-    return { oldContent: null, newContent: '', kind: 'unavailable' };
-  }
-
-  return { oldContent: null, newContent: '', kind: 'unavailable' };
 }
 
 export function FilePreviewBody({
@@ -232,16 +143,14 @@ export function FilePreviewBody({
   const [tab, setTab] = useState<Tab>('source');
   const [size, setSize] = useState<number | undefined>(file.size);
 
-  // Preview / diff modes are read-only by definition — those views are
-  // for inspecting content, not editing it.
-  const enforcedReadOnly = readOnly || !!file.attachmentFileRef || !!file.workspaceFileRef || mode === 'preview' || mode === 'diff';
-  const tabs = useMemo(() => tabsForFile(file, mode), [file, mode]);
-  const unsupportedPreviewFormat = mode !== 'diff' && filePreviewKind(file) == null;
-  const unsupportedDiffFormat = mode === 'diff' && !supportsInlineDiff(file);
+  // Preview mode is for inspecting content, not editing it.
+  const enforcedReadOnly = readOnly || !!file.attachmentFileRef || !!file.workspaceFileRef || mode === 'preview';
+  const tabs = useMemo(() => tabsForFile(file), [file]);
+  const unsupportedPreviewFormat = filePreviewKind(file) == null;
   const richPreview = richFilePreviewKind(file);
   // Binary document previews own their own loading
   // pipeline — we must not pipe them through `readTextFile` (which would
-  // reject them as binary) and the diff tab is intentionally hidden.
+  // reject them as binary).
   const isRichDocumentPreview = richPreview === 'pdf'
     || richPreview === 'sheet'
     || richPreview === 'docx'
@@ -260,16 +169,6 @@ export function FilePreviewBody({
     let cancelled = false;
     setTab(pickInitialTab(tabs, file));
     setSize(file.size);
-
-    // Diff-only mode renders entirely from the captured tool payload —
-    // no disk read needed, so we can mark the body "ready" immediately.
-    if (mode === 'diff') {
-      setState({ identity: loadIdentity, status: 'ready', content: '', readOnly: enforcedReadOnly });
-      setDraft(null);
-      return () => {
-        cancelled = true;
-      };
-    }
 
     if (unsupportedPreviewFormat) {
       setState({ identity: loadIdentity, status: 'ready', content: '', readOnly: enforcedReadOnly });
@@ -399,7 +298,7 @@ export function FilePreviewBody({
     return () => {
       cancelled = true;
     };
-  }, [file, loadIdentity, enforcedReadOnly, mode, tabs, unsupportedPreviewFormat, isRichDocumentPreview, richPreview, richPreviewLimitTarget]);
+  }, [file, loadIdentity, enforcedReadOnly, tabs, unsupportedPreviewFormat, isRichDocumentPreview, richPreview, richPreviewLimitTarget]);
 
   const effectiveReadOnly = state.status === 'ready' ? state.readOnly : true;
   const allowSystemActions = !file.attachmentFileRef && !file.workspaceFileRef;
@@ -461,7 +360,7 @@ export function FilePreviewBody({
         <p className="text-sm font-medium text-foreground">
           {directOpen
             ? t('filePreview.errors.largeBinaryOpenTitle', 'This file is too large for inline preview')
-            : t('filePreview.errors.unsupportedFormatTitle', 'This file format is not supported for inline preview or diff')}
+            : t('filePreview.errors.unsupportedFormatTitle', 'This file format is not supported for inline preview')}
         </p>
         {allowSystemActions && <p className="max-w-md text-xs leading-relaxed text-muted-foreground">
           {directOpen
@@ -471,7 +370,7 @@ export function FilePreviewBody({
             })
             : t(
               'filePreview.errors.unsupportedFormatHint',
-              'Only directly readable files such as text and Markdown support inline preview and diff. Please open this file in your file manager.',
+              'Only directly readable files such as text and Markdown support inline preview. Please open this file in your file manager.',
             )}
         </p>}
       </div>
@@ -491,7 +390,7 @@ export function FilePreviewBody({
   };
 
   const renderBody = () => {
-    if (unsupportedPreviewFormat || unsupportedDiffFormat) {
+    if (unsupportedPreviewFormat) {
       return renderUnsupportedFormat();
     }
     if (state.status === 'loading') {
@@ -701,46 +600,6 @@ export function FilePreviewBody({
               )}
             </TabsContent>
           )}
-          {tabs.includes('diff') && (
-            <TabsContent value="diff" className="m-0 h-full">
-              <Suspense
-                fallback={
-                  <div className="flex h-full items-center justify-center">
-                    <LoadingSpinner />
-                  </div>
-                }
-              >
-                {(() => {
-                  const pair = computeDiffPair(file);
-                  if (pair.kind === 'unavailable') {
-                    return (
-                      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-                        <p className="max-w-md text-sm text-muted-foreground">
-                          {t(
-                            'filePreview.diff.unavailable',
-                            'This session did not capture an exact baseline for this file, so a diff cannot be generated.',
-                          )}
-                        </p>
-                        <p className="max-w-md text-2xs text-muted-foreground/90">
-                          {t(
-                            'filePreview.diff.unavailableHint',
-                            'Use the Preview tab above to view the current file contents. For an exact diff, compare versions in Git or another external tool.',
-                          )}
-                        </p>
-                      </div>
-                    );
-                  }
-                  return (
-                    <MonacoDiffViewerLazy
-                      filePath={file.filePath}
-                      original={pair.oldContent}
-                      modified={pair.newContent}
-                    />
-                  );
-                })()}
-              </Suspense>
-            </TabsContent>
-          )}
       </div>
     );
   };
@@ -781,7 +640,6 @@ export function FilePreviewBody({
                 <TabsTrigger key={id} value={id} className="px-2.5 py-1 text-xs">
                   {id === 'source' && t('filePreview.tabs.source', 'Source')}
                   {id === 'preview' && t('filePreview.tabs.preview', 'Preview')}
-                  {id === 'diff' && t('filePreview.tabs.changes', 'Changes')}
                 </TabsTrigger>
               ))}
             </TabsList>

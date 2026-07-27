@@ -133,11 +133,9 @@ test.describe('ClawX cron run live status', () => {
       await expect(cronSidebarButton).toBeVisible({ timeout: 30_000 });
       await cronSidebarButton.click();
 
-      // Transcript replay now arrives through ACP; the legacy execution graph stays absent.
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await emitAcpSessionUpdates(app, CRON_BASE_KEY, [cronTriggerUpdate], true);
       await expect(page.getByText(CRON_TRIGGER_TEXT)).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
 
       await emitAcpSessionUpdates(app, CRON_BASE_KEY, [{
         sessionUpdate: 'tool_call',
@@ -150,7 +148,6 @@ test.describe('ClawX cron run live status', () => {
 
       await expect(page.getByTestId('acp-tool-call-card')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('acp-tool-call-card')).toContainText('web_search');
-      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
 
       await emitAcpSessionUpdates(app, CRON_BASE_KEY, [{
         sessionUpdate: 'tool_call_update',
@@ -293,7 +290,6 @@ test.describe('ClawX cron run live status', () => {
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await emitAcpSessionUpdates(app, CRON_BASE_KEY, [cronTriggerUpdate], true);
       await expect(page.getByText(CRON_TRIGGER_TEXT)).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
 
       // Simulate joining a run already in progress: the first ACP update the
       // renderer sees is a tool card, and it still renders live in the current session.
@@ -308,7 +304,6 @@ test.describe('ClawX cron run live status', () => {
 
       await expect(page.getByTestId('acp-tool-call-card')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('acp-tool-call-card')).toContainText('read');
-      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
 
       await emitAcpSessionUpdates(app, CRON_BASE_KEY, [{
         sessionUpdate: 'tool_call_update',

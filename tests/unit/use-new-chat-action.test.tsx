@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { chatState, navigateMock, settingsState } = vi.hoisted(() => ({
   chatState: {
-    messages: [] as unknown[],
     currentSessionKey: 'agent:main:main',
     sessions: [] as Array<{ key: string; workspacePath?: string; createdLocally?: boolean }>,
     newSession: vi.fn(),
@@ -37,7 +36,6 @@ vi.mock('@/stores/settings', () => {
 
 describe('useNewChatAction', () => {
   beforeEach(() => {
-    chatState.messages = [];
     chatState.currentSessionKey = 'agent:main:main';
     chatState.sessions = [];
     chatState.newSession.mockReset();
@@ -46,7 +44,7 @@ describe('useNewChatAction', () => {
     navigateMock.mockReset();
   });
 
-  it('starts a fresh local chat even when the legacy message list is empty', async () => {
+  it('starts a fresh local chat from catalog state alone', async () => {
     const { useNewChatAction } = await import('@/components/layout/use-new-chat-action');
     const { result } = renderHook(() => useNewChatAction());
 

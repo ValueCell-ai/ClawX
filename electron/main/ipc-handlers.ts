@@ -42,7 +42,6 @@ import {
 } from '../services/providers/provider-runtime-sync';
 import { validateApiKeyWithProvider } from '../services/providers/provider-validation';
 import { appUpdater } from './updater';
-import { GatewayRpcBackpressure } from '../gateway/rpc-backpressure';
 import { HostApiRegistry, registerHostInvokeHandler } from './ipc/host-invoke';
 import { createAppApi } from '../services/app-api';
 import { createOpenClawApi } from '../services/openclaw-api';
@@ -77,8 +76,6 @@ import {
   type AppResponse,
 } from './ipc/request-helpers';
 import { createMenu } from './menu';
-
-const gatewayRpcBackpressure = new GatewayRpcBackpressure();
 
 /**
  * Register all IPC handlers
@@ -167,7 +164,7 @@ function registerTypedHostHandlers(
     updates: createUpdatesApi(appUpdater),
     uv: createUvApi(),
     settings: createSettingsApi(gatewayManager),
-    gateway: createGatewayApi(gatewayManager, gatewayRpcBackpressure),
+    gateway: createGatewayApi(gatewayManager),
     logs: createLogsApi(),
     channels: createChannelsApi({ gatewayManager, mainWindow }),
     agents: createAgentsApi({ gatewayManager }),
@@ -724,12 +721,7 @@ function registerGatewayHandlers(gatewayManager: GatewayManager): void {
   // Gateway RPC call
   ipcMain.handle('gateway:rpc', async (_, method: string, params?: unknown, timeoutMs?: number) => {
     try {
-      const result = await gatewayRpcBackpressure.run(
-        method,
-        params,
-        timeoutMs,
-        (rpcMethod, rpcParams, rpcTimeoutMs) => gatewayManager.rpc(rpcMethod, rpcParams, rpcTimeoutMs),
-      );
+      const result = await gatewayManager.rpc(method, params, timeoutMs);
       return { success: true, result };
     } catch (error) {
       logger.warn(`[gateway:rpc] ${method} failed (timeoutMs=${timeoutMs ?? 30000}): ${String(error)}`);

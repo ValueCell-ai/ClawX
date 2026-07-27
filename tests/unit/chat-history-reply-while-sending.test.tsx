@@ -44,8 +44,6 @@ const { acpState, agentsState, artifactPanelState, chatState, settingsState } = 
     sessions: [{ key: 'agent:main:main', workspacePath: '/workspace' }],
     currentSessionKey: 'agent:main:main',
     currentAgentId: 'main',
-    loading: false,
-    refresh: vi.fn(),
     loadSessions: vi.fn().mockResolvedValue(undefined),
     selectAcpSession: vi.fn(),
     acknowledgeAcpSessionCreated: vi.fn(),
@@ -84,15 +82,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, params?: Record<string, unknown> | string) => {
       if (typeof params === 'string') return params;
-      if (key === 'executionGraph.collapsedSummary') {
-        return `collapsed ${String(params?.toolCount ?? '')} ${String(params?.processCount ?? '')}`.trim();
-      }
-      if (key === 'executionGraph.agentRun') return 'Main execution';
-      if (key === 'executionGraph.title') return 'Execution Graph';
-      if (key === 'executionGraph.collapseAction') return 'Collapse';
-      if (key === 'executionGraph.thinkingLabel') return 'Thinking';
       if (key === 'welcome.subtitle') return 'What can I do for you?';
-      if (key.startsWith('taskPanel.stepStatus.')) return key.split('.').at(-1) ?? key;
       return key;
     },
   }),

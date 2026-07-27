@@ -24,32 +24,13 @@ vi.mock('@/lib/host-api', () => ({
 }));
 
 const chatState = {
-  messages: [],
   sessions: [{ key: 'main:test' }],
   currentSessionKey: 'main:test',
   currentAgentId: 'main',
   sessionLabels: {},
-  loading: false,
-  loadingMoreHistory: false,
-  hasMoreHistory: false,
-  sending: false,
-  error: null,
-  runError: null,
-  streamingMessage: null,
-  streamingTools: [],
-  pendingFinal: false,
-  activeRunId: null,
-  sendMessage: vi.fn(),
-  abortRun: vi.fn(),
-  clearError: vi.fn(),
   loadSessions: vi.fn().mockResolvedValue(undefined),
   selectAcpSession: vi.fn(),
   acknowledgeAcpSessionCreated: vi.fn(),
-  loadMoreHistory: vi.fn(),
-  loadHistory: vi.fn(),
-  refresh: vi.fn(),
-  cleanupEmptySession: vi.fn(),
-  lastUserMessageAt: null,
 };
 
 vi.mock('@/stores/chat', () => ({

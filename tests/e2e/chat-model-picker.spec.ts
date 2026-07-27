@@ -59,9 +59,6 @@ test.describe('ClawX chat model picker', () => {
           if (method === 'sessions.list') {
             return { success: true, result: { sessions: [{ key: 'agent:main:main', displayName: 'main' }] } };
           }
-          if (method === 'chat.history') {
-            return { success: true, result: { messages: [] } };
-          }
           return { success: true, result: {} };
         });
 
@@ -107,9 +104,6 @@ test.describe('ClawX chat model picker', () => {
             hostRequests.push({ path: `gateway:${method}`, method: 'RPC', body: params });
             if (method === 'sessions.list') {
               return makeResponse(request.id, { success: true, result: { sessions: [{ key: 'agent:main:main', displayName: 'main' }] } });
-            }
-            if (method === 'chat.history') {
-              return makeResponse(request.id, { success: true, result: { messages: [] } });
             }
             return makeResponse(request.id, { success: true, result: {} });
           }

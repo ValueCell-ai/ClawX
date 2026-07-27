@@ -58,7 +58,7 @@ describe('GatewayManager diagnostics', () => {
     });
     expect(manager.getDiagnostics().lastAliveAt).toBe(Date.now());
 
-    const successPromise = manager.rpc<{ ok: boolean }>('chat.history', {}, 1000);
+    const successPromise = manager.rpc<{ ok: boolean }>('sessions.list', {}, 1000);
     const successRequestId = Array.from(
       (manager as unknown as { pendingRequests: Map<string, unknown> }).pendingRequests.keys(),
     )[0];

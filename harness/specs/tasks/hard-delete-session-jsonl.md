@@ -8,9 +8,9 @@ touchedAreas:
   - electron/main/ipc-handlers.ts
   - electron/services/sessions-api.ts
   - electron/utils/session-files.ts
-  - src/stores/chat/session-actions.ts
   - src/stores/chat.ts
   - tests/unit/host-services.test.ts
+  - tests/unit/chat-session-management.test.ts
   - harness/specs/tasks/hard-delete-session-jsonl.md
   - AGENTS.md
 expectedUserBehavior:
@@ -19,19 +19,18 @@ expectedUserBehavior:
   - When the pointer's runtimeFile points outside the sessions/ folder (the OPENCLAW_TRAJECTORY_DIR override), that off-disk runtime file is also unlinked so no orphan trajectory remains anywhere on disk.
   - The session entry is removed from sessions.json so OpenClaw sessions.list stops returning it.
   - The sidebar list, sessionLabels and sessionLastActivity for the deleted key are cleared in the renderer store.
-  - Any pending optimistic user message cache for the deleted session key is cleared so a later history reload cannot resurrect deleted chat bubbles.
   - Token usage history reported by the Dashboard stops including the deleted session.
 requiredProfiles:
   - fast
   - comms
 requiredTests:
   - tests/unit/host-services.test.ts
-  - tests/unit/chat-session-actions.test.ts
+  - tests/unit/chat-session-management.test.ts
 acceptance:
   - Renderer continues to use src/lib/host-api.ts and src/lib/api-client.ts; no new direct ipcRenderer or Gateway HTTP calls.
   - Typed host session deletion and the legacy session:delete IPC handler unlink the same set of files for a given session id, sharing electron/utils/session-files.ts so the disk contract cannot drift.
   - The handler tolerates ENOENT (file already gone) and still updates sessions.json so the sidebar stops listing the entry.
-  - Renderer delete-session paths clear any in-memory pending optimistic user messages for the deleted key before subsequent history loads run.
+  - Renderer delete-session paths clear catalog labels, activity, selection, and persisted attention for deleted keys.
   - agentId from the sessionKey is validated against /^[A-Za-z0-9][A-Za-z0-9_-]*$/ in both surfaces and any sessionFile resolved to a path outside the agent sessions/ directory is refused (defence-in-depth against a corrupt sessions.json).
   - Absolute-path detection accepts POSIX paths, Windows backslash paths (C:\...) and Windows forward-slash paths (C:/...) so the sweep works on every supported OS.
   - The sweep also unlinks <id>.trajectory.jsonl and <id>.trajectory-path.json sidecars produced by OpenClaw's runtime trajectory writer.

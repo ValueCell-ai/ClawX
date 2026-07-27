@@ -167,7 +167,6 @@ test.describe('ClawX ACP chat timeline', () => {
       ]);
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
       await expect(page.getByTestId('acp-thought-block')).toContainText('Need to inspect the current implementation first.');
       await expect(page.getByTestId('acp-tool-call-card')).toContainText('Read file');
       await expect(page.getByTestId('acp-tool-call-card')).toContainText('Loaded src/pages/Chat/index.tsx');
@@ -206,7 +205,6 @@ test.describe('ClawX ACP chat timeline', () => {
       ]);
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
       await expect(page.getByText(longRunProcessSegments[0], { exact: true })).toBeVisible();
       await expect(page.getByText(longRunProcessSegments.at(-1)!, { exact: true })).toBeVisible();
       await expect(page.getByText(longRunSummary, { exact: true })).toBeVisible();
@@ -216,7 +214,7 @@ test.describe('ClawX ACP chat timeline', () => {
     }
   });
 
-  test('surfaces ACP load errors and does not render stale graph thinking state', async ({ launchElectronApp }) => {
+  test('surfaces ACP load errors and allows a retry', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -226,9 +224,6 @@ test.describe('ClawX ACP chat timeline', () => {
       const errorBanner = page.getByTestId('acp-error-banner');
       await expect(errorBanner).toBeVisible({ timeout: 30_000 });
       await expect(errorBanner).toContainText('404 Resource not found');
-      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
-      await expect(page.getByTestId('chat-execution-step-thinking-trailing')).toHaveCount(0);
-
       await page.getByRole('button', { name: 'Dismiss' }).click();
       await expect(errorBanner).toHaveCount(0);
       await expect(page.getByText('404 Resource not found')).toHaveCount(0);

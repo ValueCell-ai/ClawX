@@ -12,11 +12,9 @@ touchedAreas:
   - shared/chat/types.ts
   - src/pages/Chat/index.tsx
   - src/stores/chat.ts
-  - src/stores/chat/session-actions.ts
   - src/stores/chat/session-catalog.ts
   - tests/unit/chat-acp-page.test.tsx
   - tests/unit/chat-load-sessions-startup.test.ts
-  - tests/unit/chat-session-actions.test.ts
   - tests/unit/chat-store-session-label-fetch.test.ts
   - tests/unit/session-catalog.test.ts
   - tests/e2e/chat-new-session-date.spec.ts
@@ -32,7 +30,7 @@ requiredRules:
   - session-workspace-authority
   - sidebar-session-attention-authority
 requiredTests:
-  - pnpm exec vitest run tests/unit/session-catalog.test.ts tests/unit/chat-load-sessions-startup.test.ts tests/unit/chat-session-actions.test.ts tests/unit/chat-store-session-label-fetch.test.ts tests/unit/chat-acp-page.test.tsx
+  - pnpm exec vitest run tests/unit/session-catalog.test.ts tests/unit/chat-load-sessions-startup.test.ts tests/unit/chat-store-session-label-fetch.test.ts tests/unit/chat-acp-page.test.tsx
   - pnpm run build:vite && pnpm exec playwright test tests/e2e/chat-new-session-date.spec.ts
   - pnpm run typecheck
 acceptance:

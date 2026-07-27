@@ -1,5 +1,12 @@
 import type { ElectronApplication } from '@playwright/test';
-import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
+import {
+  closeElectronApp,
+  expect,
+  getRecordedHostInvocations,
+  getStableWindow,
+  installIpcMocks,
+  test,
+} from './fixtures/electron';
 import { expandAcpToolCallsGroup } from './fixtures/acp-timeline';
 
 const MAIN_SESSION_KEY = 'agent:main:main';
@@ -70,6 +77,7 @@ async function installAcpChatMocks(
       },
     },
     hostApi: baseHostApiMocks(loadResult),
+    recordHostInvocations: true,
   });
 }
 
@@ -383,6 +391,27 @@ async function openChat(app: ElectronApplication) {
 }
 
 test.describe('ClawX ACP inline timeline', () => {
+  test('does not use legacy history on startup or current-session clicks', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installAcpChatMocks(app);
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await page.waitForTimeout(100);
+
+      expect((await getRecordedHostInvocations(app)).some((call) => (
+        call.module === 'gateway'
+        && call.action === 'rpc'
+        && call.payload?.method === 'chat.history'
+      ))).toBe(false);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('supplements an ACP-replayed assistant turn with historical duration', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
@@ -508,7 +537,7 @@ test.describe('ClawX ACP inline timeline', () => {
     }
   });
 
-  test('renders ACP tool updates inline without the legacy execution graph', async ({ launchElectronApp }) => {
+  test('renders ACP tool updates inline', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -533,7 +562,6 @@ test.describe('ClawX ACP inline timeline', () => {
       ]);
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
       await expect(page.getByTestId('acp-tool-call-card')).toBeVisible();
       await expect(page.getByTestId('acp-tool-call-card')).toContainText('Read package.json');
       await expect(page.getByTestId('acp-tool-call-card')).toContainText('Loaded package metadata');

@@ -418,17 +418,6 @@ describe('hostApi facade', () => {
     }));
   });
 
-  it('calls chat.sendWithMedia through hostInvoke', async () => {
-    hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { success: true } });
-    const { hostApi } = await import('@/lib/host-api');
-
-    await hostApi.chat.sendWithMedia({ sessionKey: 'main', message: 'hello', idempotencyKey: 'k' });
-    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
-      module: 'chat',
-      action: 'sendWithMedia',
-    }));
-  });
-
   it('routes ACP chat methods through hostInvoke', async () => {
     hostInvoke
       .mockResolvedValueOnce({ id: 'req-1', ok: true, data: { success: true, generation: 1 } })
@@ -436,6 +425,13 @@ describe('hostApi facade', () => {
       .mockResolvedValueOnce({ id: 'req-3', ok: true, data: { success: true } })
       .mockResolvedValueOnce({ id: 'req-4', ok: true, data: { success: true } });
     const { hostApi } = await import('@/lib/host-api');
+
+    expect(Object.keys(hostApi.chat)).toEqual([
+      'loadAcpSession',
+      'sendAcpPrompt',
+      'cancelAcpSession',
+      'respondAcpPermission',
+    ]);
 
     await hostApi.chat.loadAcpSession({
       sessionKey: 'main',

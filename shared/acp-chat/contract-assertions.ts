@@ -3,7 +3,6 @@ import type { HostEventContract } from '../host-events/contract';
 import type { AcpSessionUpdateEnvelope } from './types';
 
 export const acpChatHostApiActions = [
-  'sendWithMedia',
   'loadAcpSession',
   'sendAcpPrompt',
   'cancelAcpSession',

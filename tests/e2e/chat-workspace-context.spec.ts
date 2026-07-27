@@ -96,7 +96,6 @@ type WorkspaceMockOptions = {
   recentWorkspacePaths?: string[];
   workspaceLabels?: Record<string, string>;
   unavailableWorkspacePath?: string;
-  sessionHistory?: Array<{ role: string; content: unknown; timestamp?: number }>;
   sessionId?: string;
   sessionLabel?: string;
   sessionDerivedTitle?: string | null;
@@ -106,7 +105,6 @@ type WorkspaceMockOptions = {
 async function installWorkspaceMocks(app: ElectronApplication, options: WorkspaceMockOptions = {}) {
   const nowMs = Date.now();
   const gatewayStatus = { state: 'running', gatewayReady: true, port: 18789, pid: 12345, connectedAt: nowMs };
-  const sessionHistory = options.sessionHistory ?? [];
   const recentWorkspacePaths = options.recentWorkspacePaths ?? [DEFAULT_WORKSPACE];
   const inheritedRecentWorkspacePaths = [
     SESSION_WORKSPACE,
@@ -160,14 +158,6 @@ async function installWorkspaceMocks(app: ElectronApplication, options: Workspac
         result: {
           sessions: [sessionRow],
         },
-      },
-      [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 200, maxChars: 500000 }])]: {
-        success: true,
-        result: { messages: sessionHistory },
-      },
-      [stableStringify(['chat.history', { sessionKey: SESSION_KEY, limit: 1000, maxChars: 500000 }])]: {
-        success: true,
-        result: { messages: sessionHistory },
       },
     },
     hostApi: {

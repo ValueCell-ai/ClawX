@@ -10,7 +10,6 @@ ownedPaths:
   - src/hooks/use-workspace-availability.ts
   - src/stores/settings.ts
   - src/stores/chat.ts
-  - src/stores/chat/session-actions.ts
   - src/stores/chat/session-catalog.ts
   - src/stores/session-attention.ts
   - src/stores/chat/session-status.ts
@@ -49,7 +48,6 @@ ownedPaths:
   - tests/unit/i18n-locale-parity.test.ts
   - tests/unit/session-buckets.test.ts
   - tests/unit/generated-files.test.ts
-  - tests/unit/generated-files-panel.test.tsx
   - tests/unit/open-file-utils.test.ts
   - tests/unit/file-preview-body.test.tsx
   - tests/unit/workspace-browser-body.test.tsx

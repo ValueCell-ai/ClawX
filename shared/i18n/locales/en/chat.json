@@ -12,19 +12,13 @@
     },
     "noLogs": "(No logs available yet)",
     "scrollToLatest": "Back to bottom",
-    "loadMoreHistory": "Load earlier messages",
-    "loadingMoreHistory": "Loading more…",
     "toolbar": {
         "refresh": "Refresh chat",
         "currentAgent": "Talking to {{agent}}",
         "workspace": "Workspace"
     },
     "generatedFiles": {
-        "title": "File changes ({{count}})",
-        "created": "Created",
-        "modified": "Modified",
-        "openFolder": "Open folder",
-        "viewAll": "View all changes"
+        "openFolder": "Open folder"
     },
     "fileActivity": {
         "created": "Created",
@@ -111,9 +105,7 @@
     "filePreview": {
         "tabs": {
             "source": "Source",
-            "preview": "Preview",
-            "changes": "Changes",
-            "info": "Info"
+            "preview": "Preview"
         },
         "actions": {
             "save": "Save",
@@ -126,11 +118,6 @@
             "exitFullscreen": "Exit fullscreen",
             "openHtmlExternally": "Open HTML in system browser",
             "retry": "Retry"
-        },
-        "info": {
-            "path": "Path",
-            "size": "Size",
-            "type": "Type"
         },
         "toast": {
             "saved": "Saved to disk",
@@ -146,8 +133,8 @@
             "notFound": "File not found",
             "loadFailed": "Load failed: {{error}}",
             "noPreview": "No preview available for this file",
-            "unsupportedFormatTitle": "This file format is not supported for built-in preview or diff",
-            "unsupportedFormatHint": "Built-in preview and diff currently support directly readable text/Markdown-style files only. Open the file in the file manager instead.",
+            "unsupportedFormatTitle": "This file format is not supported for built-in preview",
+            "unsupportedFormatHint": "Built-in preview currently supports directly readable text/Markdown-style files only. Open the file in the file manager instead.",
             "largeBinaryOpenTitle": "This file is too large for built-in preview",
             "largeBinaryOpenHint": "This file is {{size}}. ClawX cannot preview it inline, but you can confirm and open it with the system default app.",
             "openInFinderFailed": "Could not reveal file",
@@ -157,13 +144,6 @@
         },
         "html": {
             "crashed": "HTML preview stopped"
-        },
-        "diff": {
-            "noChanges": "No changes to display",
-            "newFile": "New file — no original to compare",
-            "tooLarge": "File too large — diff view disabled, switch to the Source tab to view the full content",
-            "unavailable": "The current chat did not capture a precise baseline for this file, so no diff is available.",
-            "unavailableHint": "Use the Preview tab for the current file; use Git or another VCS for an exact diff."
         },
         "confirmOpen": {
             "title": "Open file",
@@ -220,35 +200,8 @@
             "openRootInFinder": "Reveal workspace in file manager"
         }
     },
-    "taskPanel": {
-        "eyebrow": "Run View",
-        "title": "Task Outline",
-        "emptyTitle": "No structured steps yet",
-        "emptyBody": "Once a run starts, ClawX will surface thinking, tool calls, and handoff states here.",
-        "status": {
-            "idle": "Idle",
-            "running_one": "1 active step",
-            "running_other": "{{count}} active steps"
-        },
-        "stepStatus": {
-            "running": "Running",
-            "completed": "Done",
-            "error": "Error"
-        }
-    },
-    "executionGraph": {
-        "title": "Execution Graph",
-        "branchLabel": "branch",
-        "thinkingLabel": "Thinking",
-        "errorLabel": "Error",
-        "imageGenerateLabel": "Image generation",
-        "agentRun": "{{agent}} execution",
-        "collapsedSummary": "{{toolCount}} tool calls · {{processCount}} process messages",
-        "collapseAction": "Collapse execution graph"
-    },
     "imageGeneration": {
         "generating": "Generating image, please wait…",
-        "previewLoading": "Loading image preview…",
         "previewUnavailable": "Image generation completed, but the preview could not be loaded.",
         "generatedReady": "Generated image is ready.",
         "generatedReadyWithMissing": "Generated image is ready. Some images could not be loaded."

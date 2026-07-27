@@ -76,7 +76,7 @@ touchedAreas:
   - tests/unit/acp-host-contract.test.ts
   - tests/unit/acp-chat-service.test.ts
   - tests/unit/chat-acp-page.test.tsx
-  - tests/unit/chat-page-execution-graph.test.tsx
+  - tests/unit/chat-acp-inline-timeline.test.tsx
   - tests/unit/attachment-access.test.ts
   - tests/unit/files-api-workspace.test.ts
   - tests/unit/media-api.test.ts
@@ -98,7 +98,6 @@ touchedAreas:
   - tests/e2e/chat-acp-inline-timeline.spec.ts
   - tests/e2e/chat-assistant-markdown-plain.spec.ts
   - tests/e2e/chat-code-block-wrap.spec.ts
-  - tests/e2e/chat-history-startup-retry.spec.ts
   - tests/e2e/chat-latex-rendering.spec.ts
   - tests/e2e/chat-new-session-date.spec.ts
   - tests/e2e/chat-question-directory.spec.ts
@@ -106,7 +105,7 @@ touchedAreas:
   - tests/e2e/chat-scroll-pin-bottom.spec.ts
   - tests/e2e/chat-scroll-to-latest.spec.ts
   - tests/e2e/chat-table-header-light.spec.ts
-  - tests/e2e/chat-task-visualizer.spec.ts
+  - tests/e2e/chat-acp-process-timeline.spec.ts
   - tests/e2e/chat-workspace-context.spec.ts
   - tests/e2e/cron-run-live-status.spec.ts
   - tests/e2e/fixtures/electron.ts

@@ -159,7 +159,7 @@ async function openChat(app: ElectronApplication) {
 }
 
 test.describe('ClawX chat run state events', () => {
-  test('renders ACP tool run-state updates inline without the legacy execution graph', async ({ launchElectronApp }) => {
+  test('renders ACP tool run-state updates inline', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -197,7 +197,6 @@ test.describe('ClawX chat run state events', () => {
       ]);
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
       await expect(page.getByTestId('acp-thought-block')).toContainText('Need to inspect a file before answering.');
       await expect(page.getByTestId('acp-tool-call-card')).toContainText('Read /tmp/demo.md');
       await expect(page.getByTestId('acp-tool-call-card')).toContainText('Read complete');
@@ -230,7 +229,6 @@ test.describe('ClawX chat run state events', () => {
       await expect(page.getByTestId('acp-image-part')).toBeVisible();
       await expect(page.getByTestId('acp-image-part').locator('img')).toBeVisible();
       await expect(page.getByTestId('image-preview-unavailable')).toHaveCount(0);
-      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
@@ -264,7 +262,6 @@ test.describe('ClawX chat run state events', () => {
       ]);
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
       const toolCard = page.getByTestId('acp-tool-call-card');
       await expect(toolCard).toContainText('Send generated image');
       if (await toolCard.getAttribute('data-expanded') !== 'true') {
@@ -339,7 +336,6 @@ test.describe('ClawX chat run state events', () => {
       await expect(image).toHaveAttribute('src', ONE_PIXEL_PNG_DATA_URL);
       await expect(page.getByTestId('chat-composer-image-generation-indicator')).toHaveCount(0);
       await expect(page.getByTestId('image-preview-unavailable')).toHaveCount(0);
-      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
@@ -448,7 +444,6 @@ test.describe('ClawX chat run state events', () => {
       const image = timeline.getByRole('img', { name: 'Image' });
       await expect(image).toBeVisible();
       await expect(image).toHaveAttribute('src', ONE_PIXEL_PNG_DATA_URL);
-      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
@@ -498,7 +493,6 @@ test.describe('ClawX chat run state events', () => {
       const image = timeline.getByRole('img', { name: 'Image' });
       await expect(image).toBeVisible();
       await expect(image).toHaveAttribute('src', ONE_PIXEL_PNG_DATA_URL);
-      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
@@ -550,7 +544,6 @@ test.describe('ClawX chat run state events', () => {
       await expect(page.getByText(`MEDIA: ${untrustedPath}`)).toBeVisible();
       await expect(timeline.getByTestId('acp-image-part')).toHaveCount(0);
       await expect(timeline.getByRole('img', { name: 'Image' })).toHaveCount(0);
-      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
@@ -603,7 +596,6 @@ test.describe('ClawX chat run state events', () => {
       await expect(svgCard).toBeEnabled();
       await expect(svgCard).toContainText(filePath);
       await expect(page.getByTestId('acp-image-part').locator('img')).toBeVisible();
-      await expect(page.getByTestId('chat-execution-graph')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }

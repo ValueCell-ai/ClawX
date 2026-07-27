@@ -23,8 +23,8 @@ describe('gateway ws trace', () => {
   });
 
   it('summarizes request and event frames', () => {
-    expect(summarizeGatewayFrameForTrace({ type: 'req', id: '1', method: 'chat.history' }))
-      .toEqual('req id=1 method=chat.history');
+    expect(summarizeGatewayFrameForTrace({ type: 'req', id: '1', method: 'sessions.list' }))
+      .toEqual('req id=1 method=sessions.list');
     expect(summarizeGatewayFrameForTrace({ type: 'event', event: 'chat' }))
       .toEqual('event chat');
   });

@@ -1,6 +1,6 @@
 # ACP Chat Architecture And Timeline
 
-Status: current architecture reference, reviewed 2026-07-15.
+Status: current architecture reference, reviewed 2026-07-27.
 
 Related scenario: `acp-chat-experience`
 
@@ -19,7 +19,7 @@ Chat UI -> host-api -> Main ACP service -> openclaw acp
 session/update -> Main routing envelope -> Renderer reducer -> timeline -> React
 ```
 
-Gateway remains responsible for non-Chat capabilities. Restricted Gateway host-event evidence may supplement asynchronous image-generation completion, but it is not a source for ordinary Chat messages or tool history.
+Gateway remains responsible for non-Chat capabilities. Renderer Chat does not call ordinary Gateway `chat.history` or `chat.send`, and Main has no Chat-history polling, coalescing, or backpressure specialization. Generic Gateway RPC requests retain Main-owned validation and timeout handling before direct `GatewayManager.rpc` dispatch. Restricted Gateway host-event evidence may supplement asynchronous image-generation completion, but it is not a source for ordinary Chat messages or tool history.
 
 ## Identity And Race Protection
 
@@ -88,7 +88,7 @@ Available attachment cards contain a primary semantic action with keyboard activ
 
 ## Chat Behaviors
 
-- The primary Chat view does not render the legacy Execution Graph.
+- The primary Chat view renders process activity directly in the ordered ACP timeline.
 - A recoverable initial `reply was never sent` load failure may leave an empty new-chat page usable; prompt failures remain visible.
 - The working indicator follows the same sending state as the Stop action and supports reduced motion.
 - The question directory is derived only from active user message segments. Duplicate text remains separate, titles use the first non-empty Markdown part, and textless entries use a localized fallback. Fewer than two questions disables navigation. When open, the directory floats above the conversation without changing the chat column width. Selection scrolls smoothly to the current-snapshot anchor; a missing anchor is a safe no-op. The UI caps the directory at 300 recent entries and reports the hidden count when older entries are omitted.

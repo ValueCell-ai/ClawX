@@ -251,13 +251,12 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     stickState.scrollToBottom.mockReset();
   });
 
-  it('renders ACP process blocks inline instead of the legacy execution graph', async () => {
+  it('renders ACP process blocks in timeline order', async () => {
     const { Chat } = await import('@/pages/Chat/index');
 
     const { container } = render(<Chat />);
 
     expect(screen.getByTestId('acp-chat-timeline')).toBeInTheDocument();
-    expect(screen.queryByTestId('chat-execution-graph')).not.toBeInTheDocument();
     expect(screen.getByTestId('acp-thought-block')).toHaveTextContent('Need to inspect the current implementation first.');
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent('Read file');
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent('Loaded src/pages/Chat/index.tsx');
@@ -307,20 +306,16 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     expect(screen.getByTestId('acp-chat-timeline')).toBeInTheDocument();
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent('Read file');
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent('Running');
-    expect(screen.queryByTestId('chat-execution-graph')).not.toBeInTheDocument();
     expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-sending', 'true');
   });
 
-  it('renders ACP load errors as inline timeline errors without the graph trailing state', async () => {
+  it('renders ACP load errors as inline timeline errors', async () => {
     acpState.error = '404 Resource not found';
     const { Chat } = await import('@/pages/Chat/index');
 
     render(<Chat />);
 
     expect(screen.getByTestId('acp-error-banner')).toHaveTextContent('404 Resource not found');
-    expect(screen.queryByTestId('chat-execution-graph')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('chat-execution-step-thinking-trailing')).not.toBeInTheDocument();
-
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
 
     expect(acpState.clearError).toHaveBeenCalledTimes(1);
@@ -340,7 +335,7 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     expect(stickState.scrollToBottom).toHaveBeenCalledWith({ animation: 'smooth', ignoreEscapes: true });
   });
 
-  it('renders a nonblank ACP empty state instead of an empty execution graph', async () => {
+  it('renders a nonblank ACP empty state', async () => {
     acpState.timeline = emptyTimeline();
     const { Chat } = await import('@/pages/Chat/index');
 
@@ -348,6 +343,5 @@ describe('ACP Chat page inline timeline lifecycle', () => {
 
     expect(screen.getByTestId('acp-chat-empty-state')).toHaveTextContent('What can I do for you?');
     expect(screen.queryByTestId('acp-chat-timeline')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('chat-execution-graph')).not.toBeInTheDocument();
   });
 });

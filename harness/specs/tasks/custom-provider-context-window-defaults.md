@@ -68,4 +68,3 @@ for the model. Try /reset (or /new) ...". Users also had no
 - Renderer UI for editing contextWindow per model.
 - Writing `maxTokens` for non-anthropic providers (changes request payloads).
 - Backfill for non-custom (registry/ollama) provider entries.
-- Image attachment compression in `chat:sendWithMedia`.

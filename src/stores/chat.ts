@@ -1,54 +1,27 @@
-/**
- * Chat State Store
- * Manages chat messages, sessions, and streaming state.
- * Communicates with OpenClaw Gateway through the Main-owned host API.
- */
-import { create } from 'zustand';
-import { hostApi, type ChatSendWithMediaResult, type SessionLabelSummary } from '@/lib/host-api';
+import { create, type StoreApi } from 'zustand';
+import { hostApi, type SessionLabelSummary } from '@/lib/host-api';
 import {
   isAcpWorkingDirectoryTruncatedTitle,
   isOpenClawSessionIdFallbackTitle,
   stripAcpWorkingDirectoryPrefix,
 } from '@shared/chat/session-title';
-import { useGatewayStore } from './gateway';
-import { useAgentsStore } from './agents';
-import type { ChatRuntimeEvent } from '../../shared/chat-runtime-events';
-import { buildBaselineRunKey, captureBaseline, clearBaselines } from './baseline-cache';
-import { isCronSessionKey, sessionKeysAreEquivalent } from './chat/cron-session-utils';
-import {
-  findHiddenOpenClawHeartbeatSession,
-  isClawXDesktopSessionKey,
-  isOpenClawHeartbeatOnlySession,
-  shouldIncludeSessionInSidebarList,
-} from './chat/session-key-utils';
 import {
   isOpenClawHeartbeatPollText,
   OPENCLAW_HEARTBEAT_POLL_SENTINEL,
 } from '@shared/chat/openclaw-internal';
-import { fetchCronSessionHistory } from '@/lib/cron-session-history';
+import { useGatewayStore } from './gateway';
 import { pickStartupSessionFallback } from './chat/session-selection';
 import {
   applyGatewaySessionsChanged,
   normalizeGatewaySessionRow,
   type GatewaySessionsChangedPayload,
 } from './chat/session-catalog';
-import { useSessionAttentionStore, type SessionAttentionTransition } from './session-attention';
 import {
-  CHAT_HISTORY_DISK_FALLBACK_TIMEOUT_MS,
-  CHAT_HISTORY_STARTUP_FALLBACK_RACE_MS,
-  CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS,
-  classifyHistoryStartupRetryError,
-  getHistoryLoadingSafetyTimeout,
-  getStartupHistoryTimeoutOverride,
-  shouldRetryStartupHistoryLoad,
-  sleep,
-} from './chat/history-startup-retry';
-import {
-  buildChatHistoryRpcParams,
-  getChatHistoryMaxChars,
-} from './chat/history-rpc-params';
-import { loadSessionTranscriptFallback } from './chat/history-transcript-fallback';
-import { hydrateGatewayHistoryFromTranscript } from './chat/history-transcript-hydrate';
+  findHiddenOpenClawHeartbeatSession,
+  isClawXDesktopSessionKey,
+  isOpenClawHeartbeatOnlySession,
+  shouldIncludeSessionInSidebarList,
+} from './chat/session-key-utils';
 import {
   LABEL_FETCH_RETRY_DELAYS_MS,
   abandonSessionLabelHydration,
@@ -59,138 +32,48 @@ import {
   getSessionLabelHydrationVersion,
   isSessionLabelHydrationVersionCurrent,
 } from './chat/session-label-hydration';
+import { useSessionAttentionStore, type SessionAttentionTransition } from './session-attention';
 import {
   DEFAULT_CANONICAL_PREFIX,
   DEFAULT_SESSION_KEY,
-  type AttachedFileMeta,
   type ChatSession,
   type ChatState,
-  type ContentBlock,
-  type RawMessage,
-  type ToolStatus,
-} from './chat/types';
-import type { ChatGet, ChatSet } from './chat/store-api';
-import { applyRuntimeEventToRuns, extractToolCompletedFiles } from './chat/runtime-graph';
-import { enrichWithToolCallAttachments, shouldDropMessageFromHistory } from './chat/helpers';
-import {
-  isGeneratingStatusNarration,
-  isInternalAssistantReplyText,
-  isOpenClawRuntimeEventPrompt,
-} from '@/pages/Chat/message-utils';
-
-export type {
-  AttachedFileMeta,
-  ChatSession,
-  ContentBlock,
-  RawMessage,
-  ToolStatus,
-  ChatRuntimeRunState,
 } from './chat/types';
 
-// Module-level timestamp tracking the last chat event received.
-// Used by the safety timeout to avoid false-positive "no response" errors
-// during tool-use conversations where streamingMessage is temporarily cleared
-// between tool-result finals and the next delta.
-let _lastChatEventAt = 0;
+export type { ChatSession } from './chat/types';
 
-/** Normalize a timestamp to milliseconds. Handles both seconds and ms. */
-function toMs(ts: number): number {
-  // Timestamps < 1e12 are in seconds (before ~2033); >= 1e12 are milliseconds
-  return ts < 1e12 ? ts * 1000 : ts;
+type ChatSet = StoreApi<ChatState>['setState'];
+
+let loadSessionsInFlight: Promise<void> | null = null;
+let lastLoadSessionsAt = 0;
+let sessionCatalogGeneration = 0;
+let loadSessionsContext: {
+  generation: number;
+  events: GatewaySessionsChangedPayload[];
+} | null = null;
+let pendingGenerationSessionEvents: {
+  generation: number;
+  events: GatewaySessionsChangedPayload[];
+} | null = null;
+let queuedForcedSessionGeneration: number | null = null;
+let standaloneForcedSessionReloadPending = false;
+const latestSessionEventTsByKey = new Map<string, number>();
+let successfulSessionListTsFloor: number | null = null;
+let localSessionCatalogRevision = 0;
+const pendingCatalogConfirmationSessionKeys = new Set<string>();
+
+const SESSION_LOAD_MIN_INTERVAL_MS = 1_200;
+
+function markLocalSessionCatalogMutation(): void {
+  localSessionCatalogRevision += 1;
 }
 
-// Timer for fallback history polling during active sends.
-// If no streaming events arrive within a few seconds, we periodically
-// poll chat.history to surface intermediate tool-call turns.
-let _historyPollTimer: ReturnType<typeof setTimeout> | null = null;
-
-// Timer for delayed error finalization. When the Gateway reports a mid-stream
-// error (e.g. "terminated"), it may retry internally and recover. We wait
-// before committing the error to give the recovery path a chance.
-let _errorRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
-let _loadSessionsInFlight: Promise<void> | null = null;
-let _lastLoadSessionsAt = 0;
-let _sessionCatalogGeneration = 0;
-let _loadSessionsContext: {
-  generation: number;
-  events: GatewaySessionsChangedPayload[];
-} | null = null;
-let _pendingGenerationSessionEvents: {
-  generation: number;
-  events: GatewaySessionsChangedPayload[];
-} | null = null;
-let _queuedForcedSessionGeneration: number | null = null;
-let _standaloneForcedSessionReloadPending = false;
-const _latestSessionEventTsByKey = new Map<string, number>();
-let _successfulSessionListTsFloor: number | null = null;
-const _historyLoadInFlight = new Map<string, Promise<void>>();
-const _lastHistoryLoadAtBySession = new Map<string, number>();
-const _forceNextHistoryLoadBySession = new Set<string>();
-const _foregroundHistoryLoadSeen = new Set<string>();
-const _sessionHistoryCache = new Map<string, { messages: RawMessage[]; thinkingLevel: string | null }>();
-
-type SessionRunState = Pick<
-  ChatState,
-  | 'sending'
-  | 'activeRunId'
-  | 'pendingFinal'
-  | 'lastUserMessageAt'
-  | 'streamingText'
-  | 'streamingMessage'
-  | 'streamingTools'
-  | 'pendingToolImages'
->;
-
-const DEFAULT_SESSION_RUN_STATE: SessionRunState = {
-  sending: false,
-  activeRunId: null,
-  pendingFinal: false,
-  lastUserMessageAt: null,
-  streamingText: '',
-  streamingMessage: null,
-  streamingTools: [],
-  pendingToolImages: [],
-};
-
-const _sessionRunStateCache = new Map<string, SessionRunState>();
-let _sendGenerationCounter = 0;
-const _activeSendGenerationBySession = new Map<string, number>();
-const SESSION_LOAD_MIN_INTERVAL_MS = 1_200;
-const HISTORY_LOAD_MIN_INTERVAL_MS = 800;
-const CHAT_EVENT_DEDUPE_TTL_MS = 30_000;
-const HISTORY_PAGE_SIZE = 200;
-const HISTORY_MAX_RENDERED_MESSAGES = 1_000;
-const _chatEventDedupe = new Map<string, number>();
-const OPTIMISTIC_USER_MESSAGE_TTL_MS = 30 * 60 * 1000;
-/** Max skew between the renderer optimistic send time and Gateway transcript timestamps. */
-const OPTIMISTIC_USER_TIMESTAMP_MATCH_MS = 120_000;
-/** Grace period before surfacing mid-run Gateway errors that often self-recover. */
-const ERROR_RECOVERY_DELAY_MS = 12_000;
-/** OpenClaw LLM idle timeout before an internal retry. */
-const LLM_IDLE_HINT_MS = 120_000;
-/** Wait past one LLM idle window before declaring a hard no-response failure. */
-const NO_RESPONSE_SAFETY_TIMEOUT_MS = 130_000;
-/** Delay before the first fallback transcript poll after a send. */
-const HISTORY_POLL_START_DELAY_MS = 3_000;
-/** Interval between fallback transcript poll ticks during an active send. */
-const HISTORY_POLL_INTERVAL_MS = 5_000;
-/** Only issue the fallback poll RPC after this much streamed-event silence. */
-const HISTORY_POLL_EVENT_SILENCE_MS = 10_000;
-
-type PendingOptimisticUserMessage = {
-  message: RawMessage;
-  timestampMs: number;
-  createdAtMs: number;
-};
-
-const _pendingOptimisticUserMessages = new Map<string, PendingOptimisticUserMessage[]>();
-
 export function synchronizeGatewaySessionGeneration(generation: number): void {
-  if (!Number.isFinite(generation) || generation <= _sessionCatalogGeneration) return;
-  _sessionCatalogGeneration = generation;
-  _latestSessionEventTsByKey.clear();
-  _successfulSessionListTsFloor = null;
-  _pendingGenerationSessionEvents = { generation, events: [] };
+  if (!Number.isFinite(generation) || generation <= sessionCatalogGeneration) return;
+  sessionCatalogGeneration = generation;
+  latestSessionEventTsByKey.clear();
+  successfulSessionListTsFloor = null;
+  pendingGenerationSessionEvents = { generation, events: [] };
 }
 
 function getSessionsChangedExactKey(payload: GatewaySessionsChangedPayload): string | null {
@@ -211,11 +94,8 @@ function getSessionEventUncertainty(events: GatewaySessionsChangedPayload[]): {
   for (const event of events) {
     if (typeof event.ts === 'number' && Number.isFinite(event.ts)) continue;
     const eventKey = getSessionsChangedExactKey(event);
-    if (eventKey) {
-      keys.add(eventKey);
-    } else {
-      unscoped = true;
-    }
+    if (eventKey) keys.add(eventKey);
+    else unscoped = true;
   }
   return { keys, unscoped };
 }
@@ -246,6 +126,44 @@ function hasExplicitSessionLabel(session: ChatSession | undefined): boolean {
   return typeof session?.label === 'string'
     && Boolean(session.label.trim())
     && !isSyntheticSessionFallbackLabel(session, session.label);
+}
+
+function cleanSessionLabelText(text: string): string {
+  return text
+    .replace(/^Sender\s*\([^)]*\)\s*:\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
+    .replace(/^Sender\s*\([^)]*\)\s*:\s*\{[\s\S]*?\}\s*/i, '')
+    .replace(/^Sender\s*\([^)]*\)\s*:\s*[^\n]*(?:\n\s*)*/i, '')
+    .replace(/^Sender\s*:\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
+    .replace(/^Sender\s*:\s*\{[\s\S]*?\}\s*/i, '')
+    .replace(/^Sender\s*:\s*[^\n]*(?:\n\s*)*/i, '')
+    .replace(/^```json\n[\s\S]*?```\s*/i, '')
+    .replace(/^\{[\s\S]*?\}\s*/i, '')
+    .replace(/\s*\[media attached:[^\]]*\]/g, '')
+    .replace(/\s*\[message_id:\s*[^\]]+\]/g, '')
+    .replace(/^Conversation info\s*\([^)]*\):\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
+    .replace(/^Conversation info\s*\([^)]*\):\s*\{[\s\S]*?\}\s*/i, '')
+    .replace(/^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+[^\]]+\]\s*/i, '')
+    .trim();
+}
+
+function toSessionLabel(text: string, maxLength = 50): string {
+  const cleaned = cleanSessionLabelText(text).trim();
+  if (!cleaned) return '';
+  return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength)}…` : cleaned;
+}
+
+function toAutomaticSessionLabel(text: string, maxLength = 50): string {
+  if (isOpenClawHeartbeatPollText(text) || isAcpWorkingDirectoryTruncatedTitle(text)) return '';
+  const textAfterInitialPrefix = stripAcpWorkingDirectoryPrefix(text);
+  const cleaned = cleanSessionLabelText(textAfterInitialPrefix);
+  const stripCwdExposedByCleanup = !textAfterInitialPrefix.startsWith('[Working directory: ')
+    && cleaned.startsWith('[Working directory: ');
+  const normalized = stripCwdExposedByCleanup
+    ? stripAcpWorkingDirectoryPrefix(cleaned)
+    : cleaned;
+  const title = normalized.trim();
+  if (!title || isOpenClawHeartbeatPollText(title)) return '';
+  return title.length > maxLength ? `${title.slice(0, maxLength)}…` : title;
 }
 
 function applySessionBackendLabels(set: ChatSet, sessions: ChatSession[]): void {
@@ -301,7 +219,7 @@ function isHeartbeatOnlySummaryForSession(
 function getHeartbeatCachedLabelCleanup(
   sessions: ChatSession[],
   sessionLabels: Record<string, string>,
-): { hiddenSessionKeys: Set<string>; staleLabelKeys: Set<string>; labelKeys: Set<string> } {
+): { hiddenSessionKeys: Set<string>; labelKeys: Set<string> } {
   const hiddenSessionKeys = new Set<string>();
   const staleLabelKeys = new Set<string>();
 
@@ -311,16 +229,12 @@ function getHeartbeatCachedLabelCleanup(
       ...session,
       lastMessagePreview: OPENCLAW_HEARTBEAT_POLL_SENTINEL,
     };
-    if (isOpenClawHeartbeatOnlySession(heartbeatMarkedSession)) {
-      hiddenSessionKeys.add(session.key);
-    } else {
-      staleLabelKeys.add(session.key);
-    }
+    if (isOpenClawHeartbeatOnlySession(heartbeatMarkedSession)) hiddenSessionKeys.add(session.key);
+    else staleLabelKeys.add(session.key);
   }
 
   return {
     hiddenSessionKeys,
-    staleLabelKeys,
     labelKeys: new Set([...hiddenSessionKeys, ...staleLabelKeys]),
   };
 }
@@ -345,1757 +259,21 @@ async function fetchSessionLabelSummaries(sessionKeys: string[]): Promise<Sessio
   return Array.isArray(response?.summaries) ? response.summaries : [];
 }
 
-function applySessionLabelSummaries(
-  set: ChatSet,
-  summaries: SessionLabelSummary[],
-  requestVersions?: ReadonlyMap<string, string>,
-): void {
-  if (summaries.length === 0) return;
-  set((state) => {
-    let nextLabels = state.sessionLabels;
-    let nextActivity = state.sessionLastActivity;
-    let nextSessions = state.sessions;
-    let switchPatch: Partial<ChatState> | null = null;
-    let changed = false;
-
-    for (const summary of summaries) {
-      const session = nextSessions.find((entry) => entry.key === summary.sessionKey);
-      if (requestVersions) {
-        const requestVersion = requestVersions.get(summary.sessionKey);
-        if (
-          !requestVersion
-          || !session
-          || !isSessionLabelHydrationVersionCurrent(summary.sessionKey, requestVersion)
-          || getSessionLabelHydrationVersion(session, nextActivity) !== requestVersion
-        ) {
-          continue;
-        }
-      }
-      if (isHeartbeatOnlySummaryForSession(session, summary)) {
-        if (nextSessions === state.sessions) {
-          nextSessions = [...state.sessions];
-        }
-        nextSessions = nextSessions.filter((entry) => entry.key !== summary.sessionKey);
-        if (nextLabels === state.sessionLabels) {
-          nextLabels = { ...state.sessionLabels };
-        }
-        delete nextLabels[summary.sessionKey];
-        if (nextActivity === state.sessionLastActivity) {
-          nextActivity = { ...state.sessionLastActivity };
-        }
-        delete nextActivity[summary.sessionKey];
-        clearCachedSessionHistory(summary.sessionKey);
-        clearCachedSessionRunState(summary.sessionKey);
-        changed = true;
-
-        if (state.currentSessionKey === summary.sessionKey) {
-          clearHistoryPoll();
-          const prefix = getCanonicalPrefixFromSessionKey(summary.sessionKey) ?? DEFAULT_CANONICAL_PREFIX;
-          const replacementKey = `${prefix}:session-${Date.now()}`;
-          switchPatch = buildSessionSwitchPatch(
-            {
-              ...state,
-              sessions: nextSessions,
-              sessionLabels: nextLabels,
-              sessionLastActivity: nextActivity,
-            },
-            replacementKey,
-            { createdLocally: true },
-          );
-          clearCachedSessionHistory(summary.sessionKey);
-          clearCachedSessionRunState(summary.sessionKey);
-          if (switchPatch.sessions) nextSessions = switchPatch.sessions;
-          if (switchPatch.sessionLabels) nextLabels = switchPatch.sessionLabels;
-          if (switchPatch.sessionLastActivity) nextActivity = switchPatch.sessionLastActivity;
-        }
-        continue;
-      }
-
-      const labelText = toAutomaticSessionLabel(summary.firstUserText || '');
-      // Only auto-hydrate missing labels. Existing entries include user renames
-      // and must not be overwritten by transcript-derived titles.
-      const existingLabel = nextLabels[summary.sessionKey]?.trim();
-      const existingLabelIsFallback = isSyntheticSessionFallbackLabel(session, existingLabel);
-      if (labelText && (!existingLabel || existingLabelIsFallback) && !hasExplicitSessionLabel(session)) {
-        if (nextLabels === state.sessionLabels) {
-          nextLabels = { ...state.sessionLabels };
-        }
-        nextLabels[summary.sessionKey] = labelText;
-        changed = true;
-      }
-
-      if (typeof summary.lastTimestamp === 'number' && Number.isFinite(summary.lastTimestamp)) {
-        if (nextActivity[summary.sessionKey] !== summary.lastTimestamp) {
-          if (nextActivity === state.sessionLastActivity) {
-            nextActivity = { ...state.sessionLastActivity };
-          }
-          nextActivity[summary.sessionKey] = summary.lastTimestamp;
-          changed = true;
-        }
-      }
-
-      const workspacePath = typeof summary.workspacePath === 'string'
-        ? summary.workspacePath.trim()
-        : '';
-      if (workspacePath) {
-        const sessionIndex = nextSessions.findIndex((session) => session.key === summary.sessionKey);
-        const existingSession = sessionIndex >= 0 ? nextSessions[sessionIndex] : undefined;
-        if (existingSession && existingSession.workspacePath !== workspacePath) {
-          if (nextSessions === state.sessions) {
-            nextSessions = [...state.sessions];
-          }
-          nextSessions[sessionIndex] = { ...existingSession, workspacePath };
-          changed = true;
-        }
-      }
-    }
-
-    if (!changed) return {};
-
-    const patch: Partial<ChatState> = switchPatch ? { ...switchPatch } : {};
-    if (nextLabels !== state.sessionLabels) patch.sessionLabels = nextLabels;
-    if (nextActivity !== state.sessionLastActivity) patch.sessionLastActivity = nextActivity;
-    if (nextSessions !== state.sessions) patch.sessions = nextSessions;
-    return patch;
-  });
-}
-
-async function refreshVisibleSessionSummaries(
-  set: ChatSet,
-  get: ChatGet,
-  sessionKeys?: string[],
-): Promise<void> {
-  const sessions = get().sessions;
-  const targetKeys = (sessionKeys && sessionKeys.length > 0
-    ? sessionKeys
-    : sessions.map((session) => session.key)
-  ).filter((key) => key && key.startsWith('agent:'));
-  if (targetKeys.length === 0) return;
-  const sessionLastActivity = get().sessionLastActivity;
-  const requestVersions = new Map(
-    sessions
-      .filter((session) => targetKeys.includes(session.key))
-      .map((session) => [
-        session.key,
-        getSessionLabelHydrationVersion(session, sessionLastActivity),
-      ] as const),
-  );
-
-  try {
-    const summaries = await fetchSessionLabelSummaries(targetKeys);
-    applySessionLabelSummaries(set, summaries, requestVersions);
-  } catch (error) {
-    console.warn('[session summaries] refresh failed:', error);
-  }
-}
-
-function cleanSessionLabelText(text: string): string {
-  return text
-    .replace(/^Sender\s*\([^)]*\)\s*:\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
-    .replace(/^Sender\s*\([^)]*\)\s*:\s*\{[\s\S]*?\}\s*/i, '')
-    .replace(/^Sender\s*\([^)]*\)\s*:\s*[^\n]*(?:\n\s*)*/i, '')
-    .replace(/^Sender\s*:\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
-    .replace(/^Sender\s*:\s*\{[\s\S]*?\}\s*/i, '')
-    .replace(/^Sender\s*:\s*[^\n]*(?:\n\s*)*/i, '')
-    .replace(/^```json\n[\s\S]*?```\s*/i, '')
-    .replace(/^\{[\s\S]*?\}\s*/i, '')
-    .replace(/\s*\[media attached:[^\]]*\]/g, '')
-    .replace(/\s*\[message_id:\s*[^\]]+\]/g, '')
-    .replace(/^Conversation info\s*\([^)]*\):\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
-    .replace(/^Conversation info\s*\([^)]*\):\s*\{[\s\S]*?\}\s*/i, '')
-    .replace(/^\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+[^\]]+\]\s*/i, '')
-    .trim();
-}
-
-function toSessionLabel(text: string, maxLength = 50): string {
-  const cleaned = cleanSessionLabelText(text).trim();
-  if (!cleaned) return '';
-  return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength)}…` : cleaned;
-}
-
-function toAutomaticSessionLabel(text: string, maxLength = 50): string {
-  if (isOpenClawHeartbeatPollText(text)) return '';
-  if (isAcpWorkingDirectoryTruncatedTitle(text)) return '';
-  const textAfterInitialPrefix = stripAcpWorkingDirectoryPrefix(text);
-  const cleaned = cleanSessionLabelText(textAfterInitialPrefix);
-  const stripCwdExposedByCleanup = !textAfterInitialPrefix.startsWith('[Working directory: ')
-    && cleaned.startsWith('[Working directory: ');
-  const normalized = stripCwdExposedByCleanup
-    ? stripAcpWorkingDirectoryPrefix(cleaned)
-    : cleaned;
-  const title = normalized.trim();
-  if (isOpenClawHeartbeatPollText(title)) return '';
-  if (!title) return '';
-  return title.length > maxLength ? `${title.slice(0, maxLength)}…` : title;
-}
-
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`Timed out after ${timeoutMs}ms`)), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-async function loadLocalHistoryFallback(
-  sessionKey: string,
-  limit = 200,
-  options: { timeoutMs?: number; logTimeout?: boolean } = {},
-): Promise<RawMessage[]> {
-  const fallbackPromise = isCronSessionKey(sessionKey)
-    ? loadCronFallbackMessages(sessionKey, limit)
-    : loadSessionTranscriptFallback(sessionKey, limit);
-  const timeoutMs = options.timeoutMs ?? CHAT_HISTORY_DISK_FALLBACK_TIMEOUT_MS;
-  if (timeoutMs <= 0) {
-    return [];
-  }
-  return withTimeout(fallbackPromise, timeoutMs).catch((error) => {
-    if (options.logTimeout !== false) {
-      console.warn('[chat.history] local fallback timed out:', error);
-    }
-    return [];
-  });
-}
-
-function clearErrorRecoveryTimer(): void {
-  if (_errorRecoveryTimer) {
-    clearTimeout(_errorRecoveryTimer);
-    _errorRecoveryTimer = null;
-  }
-}
-
-function isRecoverableRuntimeError(errorMessage: string): boolean {
-  const normalized = errorMessage.trim().toLowerCase();
-  if (!normalized) return false;
-  return /\bterminated\b/.test(normalized)
-    || /\baborted\b/.test(normalized)
-    || normalized.includes('econnreset')
-    || normalized.includes('connection reset');
-}
-
-function scheduleRecoverableRuntimeError(commit: () => void): void {
-  clearErrorRecoveryTimer();
-  _errorRecoveryTimer = setTimeout(() => {
-    _errorRecoveryTimer = null;
-    commit();
-  }, ERROR_RECOVERY_DELAY_MS);
-}
-
-function clearHistoryPoll(): void {
-  if (_historyPollTimer) {
-    clearTimeout(_historyPollTimer);
-    _historyPollTimer = null;
-  }
-}
-
-function forceNextHistoryLoad(sessionKey: string): void {
-  _forceNextHistoryLoadBySession.add(sessionKey);
-}
-
-function cloneHistoryMessages(messages: RawMessage[]): RawMessage[] {
-  return messages.map((message) => ({
-    ...message,
-    _attachedFiles: message._attachedFiles?.map((file) => ({ ...file })),
-  }));
-}
-
-function cacheSessionHistory(sessionKey: string, messages: RawMessage[], thinkingLevel: string | null): void {
-  _sessionHistoryCache.set(sessionKey, {
-    messages: cloneHistoryMessages(messages),
-    thinkingLevel,
-  });
-}
-
-function getCachedSessionHistory(sessionKey: string): { messages: RawMessage[]; thinkingLevel: string | null } | null {
-  const cached = _sessionHistoryCache.get(sessionKey);
-  if (!cached) return null;
-  return {
-    messages: cloneHistoryMessages(cached.messages),
-    thinkingLevel: cached.thinkingLevel,
-  };
-}
-
-function clearCachedSessionHistory(sessionKey: string): void {
-  _sessionHistoryCache.delete(sessionKey);
-}
-
-function captureSessionRunState(sessionKey: string, state: SessionRunState): void {
-  _sessionRunStateCache.set(sessionKey, {
-    sending: state.sending,
-    activeRunId: state.activeRunId,
-    pendingFinal: state.pendingFinal,
-    lastUserMessageAt: state.lastUserMessageAt,
-    streamingText: state.streamingText,
-    streamingMessage: state.streamingMessage,
-    streamingTools: [...state.streamingTools],
-    pendingToolImages: state.pendingToolImages.map((file) => ({ ...file })),
-  });
-}
-
-function getCachedSessionRunState(sessionKey: string): SessionRunState {
-  const cached = _sessionRunStateCache.get(sessionKey);
-  if (!cached) return DEFAULT_SESSION_RUN_STATE;
-  return {
-    sending: cached.sending,
-    activeRunId: cached.activeRunId,
-    pendingFinal: cached.pendingFinal,
-    lastUserMessageAt: cached.lastUserMessageAt,
-    streamingText: cached.streamingText,
-    streamingMessage: cached.streamingMessage,
-    streamingTools: [...cached.streamingTools],
-    pendingToolImages: cached.pendingToolImages.map((file) => ({ ...file })),
-  };
-}
-
-function clearCachedSessionRunState(sessionKey: string): void {
-  _sessionRunStateCache.delete(sessionKey);
-}
-
-function cloneSessionRunState(state: SessionRunState): SessionRunState {
-  return {
-    sending: state.sending,
-    activeRunId: state.activeRunId,
-    pendingFinal: state.pendingFinal,
-    lastUserMessageAt: state.lastUserMessageAt,
-    streamingText: state.streamingText,
-    streamingMessage: state.streamingMessage,
-    streamingTools: [...state.streamingTools],
-    pendingToolImages: state.pendingToolImages.map((file) => ({ ...file })),
-  };
-}
-
-function updateCachedSessionRunStateFromRuntimeEvent(event: ChatRuntimeEvent): void {
-  const sessionKey = event.sessionKey;
-  if (!sessionKey) return;
-  const cached = _sessionRunStateCache.get(sessionKey);
-  if (!cached) return;
-
-  const next = cloneSessionRunState(cached);
-  const matchesCachedRun = next.activeRunId != null && event.runId === next.activeRunId;
-  const isCurrentUntrackedSend = next.activeRunId == null
-    && next.sending
-    && (
-      typeof event.ts !== 'number'
-      || next.lastUserMessageAt == null
-      || event.ts >= next.lastUserMessageAt - 1_000
-    );
-
-  if (event.type === 'run.started') {
-    if (next.activeRunId == null || matchesCachedRun) {
-      next.activeRunId = event.runId;
-      next.sending = true;
-    }
-    _sessionRunStateCache.set(sessionKey, next);
-    return;
-  }
-
-  if (event.type === 'run.ended' && (matchesCachedRun || isCurrentUntrackedSend)) {
-    _sessionRunStateCache.set(sessionKey, DEFAULT_SESSION_RUN_STATE);
-  }
-}
-
-function getHistoryForegroundLoadKey(sessionKey: string): string {
-  const gatewayState = useGatewayStore.getState?.() as { status?: { pid?: number; connectedAt?: number; port?: number } } | undefined;
-  const gatewayStatus = gatewayState?.status;
-  const gatewayRuntimeKey = `${gatewayStatus?.pid ?? 'none'}:${gatewayStatus?.connectedAt ?? 'none'}:${gatewayStatus?.port ?? 'none'}`;
-  return `${gatewayRuntimeKey}|${sessionKey}`;
-}
-
-function pruneChatEventDedupe(now: number): void {
-  for (const [key, ts] of _chatEventDedupe.entries()) {
-    if (now - ts > CHAT_EVENT_DEDUPE_TTL_MS) {
-      _chatEventDedupe.delete(key);
-    }
-  }
-}
-
-function buildChatEventDedupeKey(eventState: string, event: Record<string, unknown>): string | null {
-  const runId = event.runId != null ? String(event.runId) : '';
-  const sessionKey = event.sessionKey != null ? String(event.sessionKey) : '';
-  const seq = event.seq != null ? String(event.seq) : '';
-  // Some gateways emit multiple `delta` updates without a monotonically
-  // increasing `seq`. Deduping those by just `runId + sessionKey + state`
-  // collapses legitimate stream progression, so only seq-backed deltas are
-  // safe to dedupe generically.
-  if (eventState === 'delta' && !seq) {
-    return null;
-  }
-  if (runId || sessionKey || seq || eventState) {
-    return [runId, sessionKey, seq, eventState].join('|');
-  }
-  const msg = (event.message && typeof event.message === 'object')
-    ? event.message as Record<string, unknown>
-    : null;
-  if (msg) {
-    const messageId = msg.id != null ? String(msg.id) : '';
-    const stopReason = msg.stopReason ?? msg.stop_reason;
-    if (messageId || stopReason) {
-      return `msg|${messageId}|${String(stopReason ?? '')}|${eventState}`;
-    }
-  }
-  return null;
-}
-
-function getFinalMessageIdDedupeKey(eventState: string, event: Record<string, unknown>): string | null {
-  if (eventState !== 'final') return null;
-  const msg = (event.message && typeof event.message === 'object')
-    ? event.message as Record<string, unknown>
-    : null;
-  if (msg?.id != null) return `final-msgid|${String(msg.id)}`;
-  return null;
-}
-
-function isDuplicateChatEvent(eventState: string, event: Record<string, unknown>): boolean {
-  const key = buildChatEventDedupeKey(eventState, event);
-  const msgKey = getFinalMessageIdDedupeKey(eventState, event);
-  if (!key && !msgKey) return false;
-  const now = Date.now();
-  pruneChatEventDedupe(now);
-  if ((key && _chatEventDedupe.has(key)) || (msgKey && _chatEventDedupe.has(msgKey))) {
-    return true;
-  }
-  if (key) _chatEventDedupe.set(key, now);
-  if (msgKey) _chatEventDedupe.set(msgKey, now);
-  return false;
-}
-
-// ── Local image cache ─────────────────────────────────────────
-// The Gateway doesn't store image attachments in session content blocks,
-// so we cache them locally keyed by staged file path (which appears in the
-// [media attached: <path> ...] reference in the Gateway's user message text).
-// Keying by path avoids the race condition of keying by runId (which is only
-// available after the RPC returns, but history may load before that).
-const IMAGE_CACHE_KEY = 'clawx:image-cache';
-const IMAGE_CACHE_MAX = 100; // max entries to prevent unbounded growth
-
-function loadImageCache(): Map<string, AttachedFileMeta> {
-  try {
-    const raw = localStorage.getItem(IMAGE_CACHE_KEY);
-    if (raw) {
-      const entries = JSON.parse(raw) as Array<[string, AttachedFileMeta]>;
-      return new Map(entries);
-    }
-  } catch { /* ignore parse errors */ }
-  return new Map();
-}
-
-function saveImageCache(cache: Map<string, AttachedFileMeta>): void {
-  try {
-    // Evict oldest entries if over limit
-    const entries = Array.from(cache.entries());
-    const trimmed = entries.length > IMAGE_CACHE_MAX
-      ? entries.slice(entries.length - IMAGE_CACHE_MAX)
-      : entries;
-    localStorage.setItem(IMAGE_CACHE_KEY, JSON.stringify(trimmed));
-  } catch { /* ignore quota errors */ }
-}
-
-const _imageCache = loadImageCache();
-
-function normalizeBlockText(text: string | undefined): string {
-  return typeof text === 'string' ? text.replace(/\r\n/g, '\n').trim() : '';
-}
-
-function compactProgressiveTextParts(parts: string[]): string[] {
-  const compacted: string[] = [];
-
-  for (const part of parts) {
-    const current = normalizeBlockText(part);
-    if (!current) continue;
-
-    const previous = compacted.at(-1);
-    if (!previous) {
-      compacted.push(part);
-      continue;
-    }
-
-    const normalizedPrevious = normalizeBlockText(previous);
-    if (!normalizedPrevious) {
-      compacted[compacted.length - 1] = part;
-      continue;
-    }
-
-    if (current === normalizedPrevious || normalizedPrevious.startsWith(current)) {
-      continue;
-    }
-
-    if (current.startsWith(normalizedPrevious)) {
-      compacted[compacted.length - 1] = part;
-      continue;
-    }
-
-    compacted.push(part);
-  }
-
-  return compacted;
-}
-
-function normalizeLiveContentBlocks(content: ContentBlock[]): ContentBlock[] {
-  return content.map((block) => ({ ...block }));
-}
-
-function normalizeStreamingMessage(message: unknown): unknown {
-  if (!message || typeof message !== 'object') return message;
-
-  const rawMessage = message as RawMessage;
-  const rawContent = rawMessage.content;
-  if (!Array.isArray(rawContent)) return rawMessage;
-
-  const normalizedContent = normalizeLiveContentBlocks(rawContent as ContentBlock[]);
-  const didChange = normalizedContent.some((block, index) => block !== rawContent[index])
-    || normalizedContent.length !== rawContent.length;
-
-  return didChange
-    ? { ...rawMessage, content: normalizedContent }
-    : rawMessage;
-}
-
-/**
- * Strip Gateway-injected metadata that does NOT exist on the renderer's
- * optimistic user message but is echoed back when the Gateway persists it:
- *   - leading sender metadata `Sender (untrusted metadata): ...`
- *   - leading timestamp `[Wed 2026-04-22 10:30 GMT+8] `
- *   - `[message_id: uuid]` tags sprinkled throughout the text
- *   - `[media attached: path (mime) | path]` references appended when the
- *     renderer sends attachments via `chat:sendWithMedia`
- *   - Gateway-injected "Conversation info (untrusted metadata): ..." blocks
- *
- * Keeping this aligned with `cleanUserText` in `pages/Chat/message-utils.ts`
- * is important: the user bubble renders the cleaned text, so the comparison
- * used to dedupe optimistic vs server echoes must operate on the same
- * cleaned form — otherwise the same visible message renders twice.
- *
- * Order matters: the `[media attached: ...]` lines are commonly emitted
- * BETWEEN the Sender block and the `[Mon ... GMT+8]` timestamp prefix.
- * If we strip the timestamp before the media-attached lines, the timestamp
- * regex (`^\s*\[(?:Mon|...)]`) can never match because the leading `[` is
- * `[media attached:` instead — leaving the timestamp in the normalized
- * comparison text and breaking optimistic-vs-echo dedupe.
- */
-function stripInboundMediaVisionEnvelope(text: string): string {
-  if (!/\[Image\]/i.test(text) && !/^User text:/im.test(text) && !/\nDescription:\s*\n/i.test(text)) {
-    return text;
-  }
-
-  let result = text.replace(/^\s*\[Image\]\s*\n?/i, '');
-
-  const userTextBlock = result.match(/^User text:\s*\n([\s\S]*?)(?:\n\s*Description:\s*\n[\s\S]*)?\s*$/i);
-  if (userTextBlock) {
-    const userText = userTextBlock[1].trim();
-    return /^Process the attached file\(s\)\.\s*$/i.test(userText) ? '' : userText;
-  }
-
-  return result.replace(/\n\s*Description:\s*\n[\s\S]*$/i, '').trim();
-}
-
-function stripGatewayUserMetadata(text: string): string {
-  return stripInboundMediaVisionEnvelope(
-    text
-    .replace(/\s*\[media attached:[^\]]*\]/g, '')
-    .replace(/\s*\[message_id:\s*[^\]]+\]/g, '')
-    .replace(/^Sender\s*\([^)]*\)\s*:\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
-    .replace(/^Sender\s*\([^)]*\)\s*:\s*\{[\s\S]*?\}\s*/i, '')
-    .replace(/^Sender\s*\([^)]*\)\s*:\s*[^\n]*(?:\n\s*)*/i, '')
-    .replace(/^Sender\s*:\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
-    .replace(/^Sender\s*:\s*\{[\s\S]*?\}\s*/i, '')
-    .replace(/^Sender\s*:\s*[^\n]*(?:\n\s*)*/i, '')
-    .replace(/^Conversation info\s*\([^)]*\):\s*```[a-z]*\n[\s\S]*?```\s*/i, '')
-    .replace(/^Conversation info\s*\([^)]*\):\s*\{[\s\S]*?\}\s*/i, '')
-    .replace(/^\s*\[(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+[^\]]+\]\s*/i, ''),
-  );
-}
-
-function normalizeComparableUserText(content: unknown): string {
-  const text = stripGatewayUserMetadata(getMessageText(content))
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (/^\(file attached\)$/i.test(text)) return '';
-  return text;
-}
-
-function getComparableAttachmentSignature(message: Pick<RawMessage, '_attachedFiles'>): string {
-  const files = (message._attachedFiles || [])
-    .map((file) => file.filePath || `${file.fileName}|${file.mimeType}|${file.fileSize}`)
-    .filter(Boolean)
-    .sort();
-  return files.join('::');
-}
-
-function matchesOptimisticUserMessage(
-  candidate: RawMessage,
-  optimistic: RawMessage,
-  optimisticTimestampMs: number,
-): boolean {
-  if (candidate.role !== 'user') return false;
-
-  const optimisticText = normalizeComparableUserText(optimistic.content);
-  const candidateText = normalizeComparableUserText(candidate.content);
-  const sameText = optimisticText.length > 0 && optimisticText === candidateText;
-
-  const optimisticAttachments = getComparableAttachmentSignature(optimistic);
-  const candidateAttachments = getComparableAttachmentSignature(candidate);
-  const sameAttachments = optimisticAttachments.length > 0 && optimisticAttachments === candidateAttachments;
-
-  const hasOptimisticTimestamp = Number.isFinite(optimisticTimestampMs) && optimisticTimestampMs > 0;
-  const hasCandidateTimestamp = candidate.timestamp != null;
-  const timestampMatches = hasOptimisticTimestamp && hasCandidateTimestamp
-    ? Math.abs(toMs(candidate.timestamp as number) - optimisticTimestampMs) < OPTIMISTIC_USER_TIMESTAMP_MATCH_MS
-    : false;
-
-  if (sameText && sameAttachments) return true;
-  if (sameText && (!optimisticAttachments || !candidateAttachments) && (timestampMatches || !hasCandidateTimestamp)) return true;
-  if (sameAttachments && (!optimisticText || !candidateText) && (timestampMatches || !hasCandidateTimestamp)) return true;
-
-  const optimisticHadAttachmentsOnly = optimisticAttachments.length > 0 && !optimisticText;
-  const candidateIsAttachmentEcho = !candidateText
-    && /\[(?:media attached:|\s*Image\s*\])/i.test(getMessageText(candidate.content));
-  if (optimisticHadAttachmentsOnly && candidateIsAttachmentEcho && (timestampMatches || !hasCandidateTimestamp)) {
-    return true;
-  }
-  return false;
-}
-
-function rememberPendingOptimisticUserMessage(sessionKey: string, message: RawMessage, timestampMs: number): void {
-  const now = Date.now();
-  const existing = (_pendingOptimisticUserMessages.get(sessionKey) || [])
-    .filter((entry) => now - entry.createdAtMs <= OPTIMISTIC_USER_MESSAGE_TTL_MS);
-  existing.push({ message, timestampMs, createdAtMs: now });
-  _pendingOptimisticUserMessages.set(sessionKey, existing);
-}
-
-function clearPendingOptimisticUserMessages(sessionKey: string): void {
-  _pendingOptimisticUserMessages.delete(sessionKey);
-}
-
-function mergePendingOptimisticUserMessages(sessionKey: string, loadedMessages: RawMessage[]): RawMessage[] {
-  const pending = _pendingOptimisticUserMessages.get(sessionKey);
-  if (!pending || pending.length === 0) return loadedMessages;
-
-  const now = Date.now();
-  let merged = loadedMessages;
-  const stillPending: PendingOptimisticUserMessage[] = [];
-
-  for (const entry of pending) {
-    if (now - entry.createdAtMs > OPTIMISTIC_USER_MESSAGE_TTL_MS) {
-      continue;
-    }
-
-    const hasServerEcho = hasOptimisticServerEcho(loadedMessages, entry.message, entry.timestampMs);
-    if (hasServerEcho) {
-      continue;
-    }
-
-    const alreadyRendered = merged.some((message) =>
-      message.id === entry.message.id || matchesOptimisticUserMessage(message, entry.message, entry.timestampMs),
-    );
-    if (!alreadyRendered) {
-      const insertAt = merged.findIndex((message) =>
-        typeof message.timestamp === 'number' && toMs(message.timestamp) > entry.timestampMs,
-      );
-      merged = insertAt === -1
-        ? [...merged, entry.message]
-        : [...merged.slice(0, insertAt), entry.message, ...merged.slice(insertAt)];
-    }
-
-    stillPending.push(entry);
-  }
-
-  if (stillPending.length > 0) {
-    _pendingOptimisticUserMessages.set(sessionKey, stillPending);
-  } else {
-    _pendingOptimisticUserMessages.delete(sessionKey);
-  }
-
-  return merged;
-}
-
-function snapshotStreamingAssistantMessage(
-  currentStream: RawMessage | null,
-  existingMessages: RawMessage[],
-  runId: string,
-): RawMessage[] {
-  if (!currentStream) return [];
-
-  const normalizedStream = normalizeStreamingMessage(currentStream) as RawMessage;
-  const streamRole = normalizedStream.role;
-  if (streamRole !== 'assistant' && streamRole !== undefined) return [];
-
-  const snapId = normalizedStream.id || `${runId || 'run'}-turn-${existingMessages.length}`;
-  if (existingMessages.some((message) => message.id === snapId)) return [];
-
-  return [{
-    ...normalizedStream,
-    role: 'assistant',
-    id: snapId,
-  }];
-}
-
-function getLatestOptimisticUserMessage(messages: RawMessage[], userTimestampMs: number): RawMessage | undefined {
-  return [...messages].reverse().find(
-    (message) => message.role === 'user'
-      && (!message.timestamp || Math.abs(toMs(message.timestamp) - userTimestampMs) < OPTIMISTIC_USER_TIMESTAMP_MATCH_MS),
-  );
-}
-
-function hasOptimisticServerEcho(
-  loadedMessages: RawMessage[],
-  optimistic: RawMessage,
-  optimisticTimestampMs: number,
-): boolean {
-  if (loadedMessages.some((message) =>
-    matchesOptimisticUserMessage(message, optimistic, optimisticTimestampMs),
-  )) {
-    return true;
-  }
-
-  const optimisticText = normalizeComparableUserText(optimistic.content);
-  if (!optimisticText) return false;
-
-  const matchingUsers = loadedMessages.filter(
-    (message) => message.role === 'user'
-      && normalizeComparableUserText(message.content) === optimisticText,
-  );
-  if (matchingUsers.length !== 1) return false;
-
-  const candidate = matchingUsers[0]!;
-  if (candidate.timestamp == null) return true;
-
-  return Math.abs(toMs(candidate.timestamp as number) - optimisticTimestampMs) < OPTIMISTIC_USER_TIMESTAMP_MATCH_MS;
-}
-
-function dropRedundantOptimisticUserMessages(sessionKey: string, messages: RawMessage[]): RawMessage[] {
-  const pending = _pendingOptimisticUserMessages.get(sessionKey);
-  if (!pending?.length) return messages;
-
-  const pendingIds = new Set(
-    pending
-      .map((entry) => entry.message.id)
-      .filter((id): id is string => typeof id === 'string' && id.length > 0),
-  );
-  if (pendingIds.size === 0) return messages;
-
-  return messages.filter((message) => {
-    if (message.role !== 'user' || !message.id || !pendingIds.has(message.id)) {
-      return true;
-    }
-    const entry = pending.find((candidate) => candidate.message.id === message.id);
-    if (!entry) return true;
-    return !hasOptimisticServerEcho(
-      messages.filter((candidate) => candidate !== message),
-      entry.message,
-      entry.timestampMs,
-    );
-  });
-}
-
-/** Extract plain text from message content (string or content blocks) */
-function getMessageText(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    const parts = (content as Array<{ type?: string; text?: string }>)
-      .filter(b => b.type === 'text' && b.text)
-      .map(b => b.text!);
-    return compactProgressiveTextParts(parts).join('\n');
-  }
-  return '';
-}
-
-function getMessageTextForFilter(msg: { content?: unknown; text?: unknown }): string {
-  const fromContent = getMessageText(msg.content);
-  if (fromContent.trim()) return fromContent;
-  if (typeof msg.text === 'string') return msg.text;
-  return '';
-}
-
-function getMessageStopReason(message: RawMessage | unknown): string | null {
-  if (!message || typeof message !== 'object') return null;
-  const msg = message as Record<string, unknown>;
-  const rawStopReason = msg.stopReason ?? msg.stop_reason;
-  if (typeof rawStopReason !== 'string') return null;
-  const normalized = rawStopReason.trim().toLowerCase();
-  return normalized || null;
-}
-
-function getMessageErrorMessage(message: RawMessage | unknown): string | null {
-  if (!message || typeof message !== 'object') return null;
-  const msg = message as Record<string, unknown>;
-  const rawError = msg.errorMessage ?? msg.error_message;
-  if (typeof rawError !== 'string') return null;
-  const normalized = rawError.trim();
-  return normalized || null;
-}
-
-function isTerminalAssistantErrorMessage(message: RawMessage | unknown): boolean {
-  if (!message || typeof message !== 'object') return false;
-  const msg = message as Record<string, unknown>;
-  return msg.role === 'assistant' && getMessageStopReason(message) === 'error';
-}
-
-function shouldShowRunError(
-  sessionKey: string,
-  errorMessage: string | null | undefined,
-  dismissedBySession: Record<string, string>,
-): string | null {
-  if (!errorMessage) return null;
-  if (dismissedBySession[sessionKey] === errorMessage) return null;
-  return errorMessage;
-}
-
-function withoutDismissedRunError(
-  dismissedBySession: Record<string, string>,
-  sessionKey: string,
-): Record<string, string> {
-  if (!(sessionKey in dismissedBySession)) return dismissedBySession;
-  const next = { ...dismissedBySession };
-  delete next[sessionKey];
-  return next;
-}
-
-/** Extract media file refs from [media attached: <path> (<mime>) | ...] patterns */
-function extractMediaRefs(text: string): Array<{ filePath: string; mimeType: string }> {
-  const refs: Array<{ filePath: string; mimeType: string }> = [];
-  const regex = /\[media attached:\s*([^\s(]+)\s*\(([^)]+)\)\s*\|[^\]]*\]/g;
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    refs.push({ filePath: match[1], mimeType: match[2] });
-  }
-  return refs;
-}
-
-/** Map common file extensions to MIME types */
-function mimeFromExtension(filePath: string): string {
-  const ext = filePath.split('.').pop()?.toLowerCase() || '';
-  const map: Record<string, string> = {
-    // Images
-    'png': 'image/png',
-    'jpg': 'image/jpeg',
-    'jpeg': 'image/jpeg',
-    'gif': 'image/gif',
-    'webp': 'image/webp',
-    'bmp': 'image/bmp',
-    'avif': 'image/avif',
-    'svg': 'image/svg+xml',
-    // Documents
-    'pdf': 'application/pdf',
-    'doc': 'application/msword',
-    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'xls': 'application/vnd.ms-excel',
-    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    'ppt': 'application/vnd.ms-powerpoint',
-    'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    'txt': 'text/plain',
-    'csv': 'text/csv',
-    'md': 'text/markdown',
-    'rtf': 'application/rtf',
-    'epub': 'application/epub+zip',
-    // Archives
-    'zip': 'application/zip',
-    'tar': 'application/x-tar',
-    'gz': 'application/gzip',
-    'rar': 'application/vnd.rar',
-    '7z': 'application/x-7z-compressed',
-    // Audio
-    'mp3': 'audio/mpeg',
-    'wav': 'audio/wav',
-    'ogg': 'audio/ogg',
-    'aac': 'audio/aac',
-    'flac': 'audio/flac',
-    'm4a': 'audio/mp4',
-    // Video
-    'mp4': 'video/mp4',
-    'mov': 'video/quicktime',
-    'avi': 'video/x-msvideo',
-    'mkv': 'video/x-matroska',
-    'webm': 'video/webm',
-    'm4v': 'video/mp4',
-  };
-  return map[ext] || 'application/octet-stream';
-}
-
-function extractFilePathsFromToolArgs(args: Record<string, unknown>): string[] {
-  const paths: string[] = [];
-  const direct = args.file_path ?? args.filePath ?? args.path ?? args.file ?? args.media ?? args.mediaUrl;
-  if (typeof direct === 'string' && direct.trim()) paths.push(direct.trim());
-  const mediaUrls = args.mediaUrls;
-  if (Array.isArray(mediaUrls)) {
-    for (const value of mediaUrls) {
-      if (typeof value === 'string' && value.trim()) paths.push(value.trim());
-    }
-  }
-
-  const attachments = args.attachments;
-  if (Array.isArray(attachments)) {
-    for (const item of attachments) {
-      if (!item || typeof item !== 'object') continue;
-      const att = item as Record<string, unknown>;
-      const filePath = att.filePath ?? att.file_path ?? att.path ?? att.file;
-      if (typeof filePath === 'string' && filePath.trim()) {
-        paths.push(filePath.trim());
-      }
-    }
-  }
-
-  return paths;
-}
-
-function isImagePathLike(value: string): boolean {
-  return /\.(?:png|jpe?g|gif|webp|bmp|avif|svg)(?:$|[?#])/i.test(value.trim());
-}
-
-function collectMediaValues(record: Record<string, unknown> | null | undefined): string[] {
-  if (!record) return [];
-  const values: string[] = [];
-  const push = (value: unknown) => {
-    if (typeof value === 'string' && value.trim()) values.push(value.trim());
-  };
-  push(record.media);
-  push(record.mediaUrl);
-  push(record.filePath);
-  const mediaUrls = record.mediaUrls;
-  if (Array.isArray(mediaUrls)) {
-    for (const value of mediaUrls) push(value);
-  }
-  return values;
-}
-
-function parseMessageToolResultJson(msg: RawMessage): Record<string, unknown> | null {
-  const text = getMessageText(msg.content);
-  if (!text.trim()) return null;
-  try {
-    const parsed = JSON.parse(text);
-    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
-  } catch {
-    return null;
-  }
-}
-
-type MessageToolDelivery = {
-  files: AttachedFileMeta[];
-  text: string;
-  internalUi: boolean;
-};
-
-function collectMessageToolDelivery(msg: RawMessage): MessageToolDelivery | null {
-  if (!isToolResultRole(msg.role)) return null;
-  if (msg.toolName !== 'message') return null;
-
-  const details = msg.details && typeof msg.details === 'object'
-    ? msg.details as Record<string, unknown>
-    : parseMessageToolResultJson(msg);
-  if (!details) return null;
-  if (String(details.status ?? '').toLowerCase() === 'error') return null;
-
-  const sourceReply = details.sourceReply && typeof details.sourceReply === 'object'
-    ? details.sourceReply as Record<string, unknown>
-    : null;
-  const seen = new Set<string>();
-  const files: AttachedFileMeta[] = [];
-
-  for (const media of [...collectMediaValues(details), ...collectMediaValues(sourceReply)]) {
-    if (seen.has(media)) continue;
-    seen.add(media);
-    if (media.startsWith('/api/chat/media/')) {
-      files.push({
-        fileName: 'image',
-        mimeType: 'image/png',
-        fileSize: 0,
-        preview: null,
-        gatewayUrl: media,
-        source: 'gateway-media',
-      });
-      continue;
-    }
-    if (!isImagePathLike(media)) continue;
-    files.push({ ...makeAttachedFile({ filePath: media, mimeType: mimeFromExtension(media) }), source: 'tool-result' });
-  }
-
-  const sourceReplyText = sourceReply?.text;
-  const detailsMessage = details.message;
-  return {
-    files,
-    text: typeof sourceReplyText === 'string' && sourceReplyText.trim()
-      ? sourceReplyText.trim()
-      : typeof detailsMessage === 'string' ? detailsMessage.trim() : '',
-    internalUi: details.sourceReplySink === 'internal-ui'
-      || details.sourceReplyDeliveryMode === 'message_tool_only',
-  };
-}
-
-function createInternalUiDeliveryReply(msg: RawMessage, delivery: MessageToolDelivery): RawMessage | null {
-  if (!delivery.internalUi || (!delivery.text && delivery.files.length === 0)) return null;
-  const idBase = msg.id || msg.toolCallId;
-  return {
-    role: 'assistant',
-    content: delivery.text ? [{ type: 'text', text: delivery.text }] : [],
-    timestamp: msg.timestamp,
-    ...(idBase ? { id: `${idBase}:source-reply` } : {}),
-    _attachedFiles: delivery.files,
-  };
-}
-
-const DIRECTORY_MIME_TYPE = 'application/x-directory';
-
-function trimPathTerminators(filePath: string): string {
-  return filePath.replace(/[，。；;,.!?]+$/u, '');
-}
-
-/**
- * Extract raw file paths from message text.
- * Detects absolute paths (Unix: / or ~/, Windows: C:\ etc.) ending with common file extensions.
- * Handles both image and non-image files, consistent with channel push message behavior.
- *
- * Also recognises the `MEDIA:` / `media:` prefix the OpenClaw runtime
- * emits for produced artifacts (e.g.
- * `MEDIA:/tmp/desktop_screenshot.png`, `MEDIA:C:\Users\me\out.svg`) — without this the leading colon
- * trips the URL guard on the unix regex below and the artifact never
- * surfaces as an attachment. Mirrors `chat/helpers.ts::extractRawFilePaths`.
- */
-function extractRawFilePaths(text: string): Array<{ filePath: string; mimeType: string }> {
-  const refs: Array<{ filePath: string; mimeType: string }> = [];
-  const seen = new Set<string>();
-  const exts = 'png|jpe?g|gif|webp|bmp|avif|svg|pdf|docx?|xlsx?|pptx?|txt|csv|md|rtf|epub|zip|tar|gz|rar|7z|mp3|wav|ogg|aac|flac|m4a|mp4|mov|avi|mkv|webm|m4v';
-  // Tagged media references (MEDIA:/path, media:~/path, MEDIA:C:\path, ...). The agent
-  // runtime uses this prefix as an explicit "this is an artifact" marker,
-  // so we want them recognised even though the leading colon would
-  // normally look like a URL scheme. After matching we punch the entire
-  // `MEDIA:<path>` span out of the working text so the generic unix
-  // regex below doesn't double-count the bare `/path` suffix.
-  // The character class deliberately allows ASCII spaces inside the path so
-  // that macOS' default screenshot filename ("截屏 2026-05-06 17.46.51.png")
-  // and other space-containing paths the agent emits with the explicit
-  // `MEDIA:` marker still resolve. Newline and quote characters remain
-  // path terminators so we don't accidentally swallow trailing prose.
-  const taggedRegex = new RegExp(`(?<![A-Za-z0-9/\\\\])(?:MEDIA|media):((?:\\/|~\\/|[A-Za-z]:\\\\)[^\\n"'()\\[\\],<>` + '`' + `]*?\\.(?:${exts}))(?=$|[\\s\\n"'()\\[\\],<>` + '`' + `]|[，。；;,.!?])`, 'g');
-  let workingText = text;
-  let taggedMatch: RegExpExecArray | null;
-  while ((taggedMatch = taggedRegex.exec(text)) !== null) {
-    const p = taggedMatch[1];
-    if (p && !seen.has(p)) {
-      seen.add(p);
-      refs.push({ filePath: p, mimeType: mimeFromExtension(p) });
-    }
-    // Mask the matched span so subsequent regexes can't re-discover the
-    // same path (e.g. `/two.xlsx` from `MEDIA:~/two.xlsx`).
-    const start = taggedMatch.index;
-    const end = start + taggedMatch[0].length;
-    workingText = workingText.slice(0, start) + ' '.repeat(end - start) + workingText.slice(end);
-  }
-  // Unix absolute paths (/... or ~/...) — lookbehind rejects mid-token slashes
-  // (e.g. "path/to/file.mp4", "https://example.com/file.mp4")
-  const unixRegex = new RegExp(`(?<![\\w./:])((?:\\/|~\\/)[^\\s\\n"'()\`\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
-  // Windows absolute paths (C:\... D:\...) — lookbehind rejects drive letter glued to a word
-  const winRegex = new RegExp(`(?<![\\w])([A-Za-z]:\\\\[^\\s\\n"'()\`\\[\\],<>]*?\\.(?:${exts}))`, 'gi');
-  const skillPathBoundary = '(?=$|\\s|[\\x5b\\x5d"\'`(),<>，。；;,.!?])';
-  const skillPathPart = '[^\\\\/\\s\\n"\'`()\\x5b\\x5d,<>]+';
-  const skillPathTail = '[^\\s\\n"\'`()\\x5b\\x5d,<>]*?';
-  const skillDirRegex = new RegExp(
-    `(?<![\\w./:])((?:~[\\\\/]\\.openclaw[\\\\/]skills[\\\\/]${skillPathPart})|(?:(?:\\/|[A-Za-z]:\\\\)${skillPathTail}[\\\\/]\\.openclaw[\\\\/]skills[\\\\/]${skillPathPart}))${skillPathBoundary}`,
-    'gi',
-  );
-  for (const regex of [unixRegex, winRegex, skillDirRegex]) {
-    let match;
-    while ((match = regex.exec(workingText)) !== null) {
-      const p = trimPathTerminators(match[1]);
-      if (p && !seen.has(p)) {
-        seen.add(p);
-        refs.push({
-          filePath: p,
-          mimeType: regex === skillDirRegex ? DIRECTORY_MIME_TYPE : mimeFromExtension(p),
-        });
-      }
-    }
-  }
-  return refs;
-}
-
-/**
- * Extract images from a content array (including nested tool_result content).
- * Converts them to AttachedFileMeta entries with preview set to data URL or remote URL.
- */
-function extractImagesAsAttachedFiles(content: unknown): AttachedFileMeta[] {
-  if (!Array.isArray(content)) return [];
-  const files: AttachedFileMeta[] = [];
-
-  for (const block of content as ContentBlock[]) {
-    if (block.type === 'image') {
-      // Path 1: Anthropic source-wrapped format {source: {type, media_type, data}}
-      if (block.source) {
-        const src = block.source;
-        const mimeType = src.media_type || 'image/jpeg';
-
-        if (src.type === 'base64' && src.data) {
-          files.push({
-            fileName: 'image',
-            mimeType,
-            fileSize: 0,
-            preview: `data:${mimeType};base64,${src.data}`,
-          });
-        } else if (src.type === 'url' && src.url) {
-          files.push({
-            fileName: 'image',
-            mimeType,
-            fileSize: 0,
-            preview: src.url,
-          });
-        }
-      }
-      // Path 2: Flat format from Gateway tool results {data, mimeType}
-      else if (block.data) {
-        const mimeType = block.mimeType || 'image/jpeg';
-        files.push({
-          fileName: 'image',
-          mimeType,
-          fileSize: 0,
-          preview: `data:${mimeType};base64,${block.data}`,
-        });
-      }
-      // Path 3: Flat URL form from Gateway-injected assistant-media messages.
-      // See `src/stores/chat/helpers.ts` for the canonical implementation.
-      else if (block.url) {
-        const mimeType = block.mimeType || 'image/jpeg';
-        const fileName = typeof block.alt === 'string' && block.alt
-          ? block.alt
-          : 'image';
-        files.push({
-          fileName,
-          mimeType,
-          fileSize: 0,
-          preview: null,
-          gatewayUrl: block.url,
-          source: 'gateway-media',
-        });
-      }
-    }
-    // Recurse into tool_result content blocks
-    if ((block.type === 'tool_result' || block.type === 'toolResult') && block.content) {
-      files.push(...extractImagesAsAttachedFiles(block.content));
-    }
-  }
-  return files;
-}
-
-/**
- * Build an AttachedFileMeta entry for a file ref, using cache if available.
- */
-function makeAttachedFile(ref: { filePath: string; mimeType: string }): AttachedFileMeta {
-  const cached = _imageCache.get(ref.filePath);
-  if (cached) return { ...cached, filePath: ref.filePath };
-  const fileName = ref.filePath.split(/[\\/]/).pop() || 'file';
-  return { fileName, mimeType: ref.mimeType, fileSize: 0, preview: null, filePath: ref.filePath };
-}
-
-/**
- * Extract file path from a tool call's arguments by toolCallId.
- * Searches common argument names: file_path, filePath, path, file.
- */
-function getToolCallFilePath(msg: RawMessage, toolCallId: string): string | undefined {
-  if (!toolCallId) return undefined;
-
-  // Anthropic/normalized format — toolCall blocks in content array
-  const content = msg.content;
-  if (Array.isArray(content)) {
-    for (const block of content as ContentBlock[]) {
-      if ((block.type === 'tool_use' || block.type === 'toolCall') && block.id === toolCallId) {
-        const args = (block.input ?? block.arguments) as Record<string, unknown> | undefined;
-        if (args) {
-          const paths = extractFilePathsFromToolArgs(args);
-          if (paths[0]) return paths[0];
-        }
-      }
-    }
-  }
-
-  // OpenAI format — tool_calls array on the message itself
-  const msgAny = msg as unknown as Record<string, unknown>;
-  const toolCalls = msgAny.tool_calls ?? msgAny.toolCalls;
-  if (Array.isArray(toolCalls)) {
-    for (const tc of toolCalls as Array<Record<string, unknown>>) {
-      if (tc.id !== toolCallId) continue;
-      const fn = (tc.function ?? tc) as Record<string, unknown>;
-      let args: Record<string, unknown> | undefined;
-      try {
-        args = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : (fn.arguments ?? fn.input) as Record<string, unknown>;
-      } catch { /* ignore */ }
-      if (args) {
-        const paths = extractFilePathsFromToolArgs(args);
-        if (paths[0]) return paths[0];
-      }
-    }
-  }
-
-  return undefined;
-}
-
-/**
- * Collect all tool call file paths from a message into a Map<toolCallId, filePath>.
- */
-function collectToolCallPaths(msg: RawMessage, paths: Map<string, string>): void {
-  const content = msg.content;
-  if (Array.isArray(content)) {
-    for (const block of content as ContentBlock[]) {
-      if ((block.type === 'tool_use' || block.type === 'toolCall') && block.id) {
-        const args = (block.input ?? block.arguments) as Record<string, unknown> | undefined;
-        if (args) {
-          const filePaths = extractFilePathsFromToolArgs(args);
-          if (filePaths[0]) paths.set(block.id, filePaths[0]);
-        }
-      }
-    }
-  }
-  const msgAny = msg as unknown as Record<string, unknown>;
-  const toolCalls = msgAny.tool_calls ?? msgAny.toolCalls;
-  if (Array.isArray(toolCalls)) {
-    for (const tc of toolCalls as Array<Record<string, unknown>>) {
-      const id = typeof tc.id === 'string' ? tc.id : '';
-      if (!id) continue;
-      const fn = (tc.function ?? tc) as Record<string, unknown>;
-      let args: Record<string, unknown> | undefined;
-      try {
-        args = typeof fn.arguments === 'string' ? JSON.parse(fn.arguments) : (fn.arguments ?? fn.input) as Record<string, unknown>;
-      } catch { /* ignore */ }
-      if (args) {
-        const filePaths = extractFilePathsFromToolArgs(args);
-        if (filePaths[0]) paths.set(id, filePaths[0]);
-      }
-    }
-  }
-}
-
-function assistantHasToolCallId(msg: RawMessage, toolCallId: string): boolean {
-  if (!toolCallId) return false;
-  const content = msg.content;
-  if (Array.isArray(content)) {
-    for (const block of content as ContentBlock[]) {
-      if ((block.type === 'tool_use' || block.type === 'toolCall') && block.id === toolCallId) {
-        return true;
-      }
-    }
-  }
-  const msgAny = msg as unknown as Record<string, unknown>;
-  const toolCalls = msgAny.tool_calls ?? msgAny.toolCalls;
-  return Array.isArray(toolCalls) && toolCalls.some((tc) =>
-    tc && typeof tc === 'object' && (tc as Record<string, unknown>).id === toolCallId,
-  );
-}
-
-/**
- * Before filtering tool_result messages from history, scan them for any file/image
- * content and attach those to the immediately following assistant message.
- * This mirrors channel push message behavior where tool outputs surface files to the UI.
- * Handles:
- *   - Image content blocks (base64 / url)
- *   - [media attached: path (mime) | path] text patterns in tool result output
- *   - Raw file paths in tool result text
- */
-function enrichWithToolResultFiles(messages: RawMessage[]): RawMessage[] {
-  const pending: AttachedFileMeta[] = [];
-  const toolCallPaths = new Map<string, string>();
-  const enriched: RawMessage[] = [];
-
-  for (const msg of messages) {
-    // Track file paths from assistant tool call arguments for later matching
-    if (msg.role === 'assistant') {
-      collectToolCallPaths(msg, toolCallPaths);
-    }
-
-    if (isToolResultRole(msg.role)) {
-      const delivery = collectMessageToolDelivery(msg);
-      const deliveredFiles = delivery?.files ?? [];
-      const internalUiReply = delivery ? createInternalUiDeliveryReply(msg, delivery) : null;
-      if (internalUiReply) {
-        enriched.push(msg, internalUiReply);
-        continue;
-      }
-      if (deliveredFiles.length > 0) {
-        let attachIndex = -1;
-        if (msg.toolCallId) {
-          for (let index = enriched.length - 1; index >= 0; index -= 1) {
-            const candidate = enriched[index];
-            if (candidate?.role !== 'assistant') continue;
-            if (assistantHasToolCallId(candidate, msg.toolCallId)) {
-              attachIndex = index;
-              break;
-            }
-          }
-        }
-
-        if (attachIndex >= 0) {
-          const target = enriched[attachIndex]!;
-          const existingKeys = new Set(
-            (target._attachedFiles || []).map(file => file.filePath || file.gatewayUrl).filter(Boolean),
-          );
-          const newFiles = deliveredFiles.filter(file => {
-            const key = file.filePath || file.gatewayUrl;
-            return !key || !existingKeys.has(key);
-          });
-          if (newFiles.length > 0) {
-            enriched[attachIndex] = {
-              ...target,
-              _attachedFiles: [...(target._attachedFiles || []), ...newFiles],
-            };
-          }
-        } else {
-          pending.push(...deliveredFiles);
-        }
-      }
-
-      // Resolve file path from the matching tool call
-      const matchedPath = msg.toolCallId ? toolCallPaths.get(msg.toolCallId) : undefined;
-
-      // 1. Image/file content blocks in the structured content array.
-      //    Images embedded inside a tool result are the model's vision data
-      //    (e.g. `read /tmp/foo.png` re-encoded as JPEG so the model can "see"
-      //    the file) — they are NOT user-facing artifacts. The agent surfaces
-      //    user-facing images through `MEDIA:/path` text + the Gateway's
-      //    `assistant-media` injection. Surfacing the vision data here would
-      //    duplicate every screenshot the agent inspects.
-      const imageFiles = extractImagesAsAttachedFiles(msg.content)
-        .filter(file => !file.mimeType.startsWith('image/'));
-      if (matchedPath) {
-        for (const f of imageFiles) {
-          if (!f.filePath) {
-            f.filePath = matchedPath;
-            f.fileName = matchedPath.split(/[\\/]/).pop() || 'image';
-          }
-        }
-      }
-      // Tag all files from tool results so ChatMessage can suppress them
-      // in segments that already have an ExecutionGraphCard.
-      for (const f of imageFiles) f.source = 'tool-result';
-      pending.push(...imageFiles);
-
-      // 2. [media attached: ...] patterns in tool result text output
-      const text = getMessageText(msg.content);
-      if (text) {
-        const mediaRefs = extractMediaRefs(text);
-        const mediaRefPaths = new Set(mediaRefs.map(r => r.filePath));
-        for (const ref of mediaRefs) {
-          pending.push({ ...makeAttachedFile(ref), source: 'tool-result' });
-        }
-        // 3. Raw NON-image file paths in tool result text (documents,
-        //    audio, video, ...). Image paths are deliberately ignored:
-        //    `ls -la /tmp/foo.png`, `sips ... && ls -la *.jpg`, etc.
-        //    spam intermediate paths that the user does not want to see
-        //    rendered as separate cards. The canonical user-facing image
-        //    is whatever the agent later emits via `MEDIA:/path` (which
-        //    the Gateway turns into a dedicated assistant-media bubble).
-        for (const ref of extractRawFilePaths(text)) {
-          if (mediaRefPaths.has(ref.filePath)) continue;
-          if (ref.mimeType.startsWith('image/')) continue;
-          pending.push({ ...makeAttachedFile(ref), source: 'tool-result' });
-        }
-      }
-
-      enriched.push(msg); // will be filtered later
-      continue;
-    }
-
-    if (msg.role === 'assistant' && pending.length > 0) {
-      const toAttach = pending.splice(0);
-      // Deduplicate against files already on the assistant message
-      const existingKeys = new Set(
-        (msg._attachedFiles || []).map(f => f.filePath || f.gatewayUrl).filter(Boolean),
-      );
-      const newFiles = toAttach.filter(f => {
-        const key = f.filePath || f.gatewayUrl;
-        return !key || !existingKeys.has(key);
-      });
-      if (newFiles.length === 0) {
-        enriched.push(msg);
-        continue;
-      }
-      enriched.push({
-        ...msg,
-        _attachedFiles: [...(msg._attachedFiles || []), ...newFiles],
-      });
-      continue;
-    }
-
-    enriched.push(msg);
-  }
-
-  return enriched;
-}
-
-/**
- * Restore _attachedFiles for messages loaded from history.
- * Handles:
- *   1. [media attached: path (mime) | path] patterns (attachment-button flow)
- *   2. Raw image file paths typed in message text (e.g. /Users/.../image.png)
- * Uses local cache for previews when available; missing previews are loaded async.
- */
-function enrichWithCachedImages(messages: RawMessage[]): RawMessage[] {
-  // Pre-compute, per index, whether the *next* assistant message is a
-  // Gateway-injected `assistant-media` bubble (i.e. has at least one
-  // `image` content block carrying a flat URL). When that bubble exists,
-  // the canonical user-facing rendering of the artifact is the bubble
-  // itself — anything the agent emitted via `MEDIA:/path` in its prior
-  // text turn would just duplicate the same image, so image-typed raw
-  // refs on that prior message should be dropped here.
-  const nextHasGatewayMediaBubble = messages.map((_, idx) => {
-    const next = messages[idx + 1];
-    if (!next || next.role !== 'assistant') return false;
-    return extractImagesAsAttachedFiles(next.content).some(f => f.gatewayUrl);
-  });
-
-  return messages.map((msg, idx) => {
-    // Only process user and assistant messages.
-    if (msg.role !== 'user' && msg.role !== 'assistant') return msg;
-    const text = getMessageText(msg.content);
-
-    // Path 0: Gateway-injected outgoing media on this same message
-    // (an `assistant-media` bubble — image block with flat `url`).
-    const gatewayMediaFiles: AttachedFileMeta[] = msg.role === 'assistant'
-      ? extractImagesAsAttachedFiles(msg.content).filter(file => file.gatewayUrl)
-      : [];
-
-    // Path 1: [media attached: path (mime) | path] — guaranteed format from attachment button
-    const mediaRefs = extractMediaRefs(text);
-    const mediaRefPaths = new Set(mediaRefs.map(r => r.filePath));
-
-    // Path 2: Raw file paths.
-    // For assistant messages: scan own text AND the nearest preceding user message text,
-    // but only for non-tool-only assistant messages (i.e. the final answer turn).
-    let rawRefs: Array<{ filePath: string; mimeType: string }> = [];
-    if (msg.role === 'assistant' && !isToolOnlyMessage(msg)) {
-      // Own text
-      rawRefs = extractRawFilePaths(text).filter(r => !mediaRefPaths.has(r.filePath));
-
-      // Nearest preceding user message text (look back up to 5 messages)
-      const seenPaths = new Set(rawRefs.map(r => r.filePath));
-      for (let i = idx - 1; i >= Math.max(0, idx - 5); i--) {
-        const prev = messages[i];
-        if (!prev) break;
-        if (prev.role === 'user') {
-          const prevText = getMessageText(prev.content);
-          for (const ref of extractRawFilePaths(prevText)) {
-            if (!mediaRefPaths.has(ref.filePath) && !seenPaths.has(ref.filePath)) {
-              seenPaths.add(ref.filePath);
-              rawRefs.push(ref);
-            }
-          }
-          break; // only use the nearest user message
-        }
-      }
-    }
-
-    // Dedup vs Gateway-injected bubble: if the very next assistant message
-    // is a Gateway `assistant-media` bubble, drop image-typed raw refs on
-    // *this* message — the bubble already covers them.
-    if (msg.role === 'assistant' && nextHasGatewayMediaBubble[idx]) {
-      rawRefs = rawRefs.filter(r => !r.mimeType.startsWith('image/'));
-    }
-
-    const allRefs = [...mediaRefs, ...rawRefs];
-    if (allRefs.length === 0 && gatewayMediaFiles.length === 0) {
-      // Preserve any previously-attached `_attachedFiles` (e.g. set by
-      // `enrichWithToolResultFiles` for non-image artifacts). When nothing
-      // new applies, returning `msg` unmodified keeps those attachments.
-      return msg;
-    }
-
-    const existingFiles = msg._attachedFiles || [];
-    const existingPaths = new Set(existingFiles.map(file => file.filePath).filter(Boolean));
-    const existingGatewayUrls = new Set(
-      existingFiles.map(file => file.gatewayUrl).filter(Boolean) as string[],
-    );
-    const files: AttachedFileMeta[] = allRefs
-      .filter(ref => !existingPaths.has(ref.filePath))
-      .map(ref => {
-        const cached = _imageCache.get(ref.filePath);
-        if (cached) return { ...cached, filePath: ref.filePath, source: 'message-ref' as const };
-        const fileName = ref.filePath.split(/[\\/]/).pop() || 'file';
-        return { fileName, mimeType: ref.mimeType, fileSize: 0, preview: null, filePath: ref.filePath, source: 'message-ref' as const };
-      });
-    const dedupedGatewayMedia = gatewayMediaFiles.filter(
-      file => file.gatewayUrl && !existingGatewayUrls.has(file.gatewayUrl),
-    );
-    if (files.length === 0 && dedupedGatewayMedia.length === 0) return msg;
-    return { ...msg, _attachedFiles: [...existingFiles, ...files, ...dedupedGatewayMedia] };
-  });
-}
-
-type PreviewRef = { filePath?: string; gatewayUrl?: string; mimeType: string };
-
-const IMAGE_PREVIEW_RETRY_DELAYS_MS = [300, 900, 1800];
-
-function waitForPreviewRetry(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function collectMissingPreviewRefs(messages: RawMessage[]): PreviewRef[] {
-  const needPreview: PreviewRef[] = [];
-  const seenKeys = new Set<string>();
-
-  for (const msg of messages) {
-    if (!msg._attachedFiles) continue;
-
-    // Path 1: files with explicit filePath OR gatewayUrl
-    for (const file of msg._attachedFiles) {
-      const key = file.filePath || file.gatewayUrl;
-      if (!key || seenKeys.has(key)) continue;
-      const needsLoad = file.mimeType.startsWith('image/')
-        ? !file.preview && file.previewStatus !== 'unavailable'
-        : file.fileSize === 0;
-      if (!needsLoad) continue;
-      seenKeys.add(key);
-      if (file.filePath) {
-        needPreview.push({ filePath: file.filePath, mimeType: file.mimeType });
-      } else if (file.gatewayUrl) {
-        needPreview.push({ gatewayUrl: file.gatewayUrl, mimeType: file.mimeType });
-      }
-    }
-
-    // Path 2: [media attached: ...] patterns (legacy — in case filePath wasn't stored)
-    if (msg.role === 'user') {
-      const text = getMessageText(msg.content);
-      const refs = extractMediaRefs(text);
-      for (let i = 0; i < refs.length; i++) {
-        const file = msg._attachedFiles[i];
-        const ref = refs[i];
-        if (!file || !ref || seenKeys.has(ref.filePath)) continue;
-        const needsLoad = ref.mimeType.startsWith('image/')
-          ? !file.preview && file.previewStatus !== 'unavailable'
-          : file.fileSize === 0;
-        if (needsLoad) {
-          seenKeys.add(ref.filePath);
-          needPreview.push({ filePath: ref.filePath, mimeType: ref.mimeType });
-        }
-      }
-    }
-  }
-
-  return needPreview;
-}
-
-function applyPreviewResults(
-  messages: RawMessage[],
-  thumbnails: Record<string, { preview: string | null; fileSize: number }>,
-): boolean {
-  let updated = false;
-  for (const msg of messages) {
-    if (!msg._attachedFiles) continue;
-
-    // Update files that have filePath OR gatewayUrl
-    for (const file of msg._attachedFiles) {
-      const key = file.filePath || file.gatewayUrl;
-      if (!key) continue;
-      const thumb = thumbnails[key];
-      if (thumb && (thumb.preview || thumb.fileSize)) {
-        if (thumb.preview) file.preview = thumb.preview;
-        if (thumb.fileSize) file.fileSize = thumb.fileSize;
-        delete file.previewStatus;
-        if (file.filePath) {
-          _imageCache.set(file.filePath, { ...file });
-        }
-        updated = true;
-      }
-    }
-
-    // Legacy: update by index for [media attached: ...] refs
-    if (msg.role === 'user') {
-      const text = getMessageText(msg.content);
-      const refs = extractMediaRefs(text);
-      for (let i = 0; i < refs.length; i++) {
-        const file = msg._attachedFiles[i];
-        const ref = refs[i];
-        if (!file || !ref || file.filePath) continue; // skip if already handled via filePath
-        const thumb = thumbnails[ref.filePath];
-        if (thumb && (thumb.preview || thumb.fileSize)) {
-          if (thumb.preview) file.preview = thumb.preview;
-          if (thumb.fileSize) file.fileSize = thumb.fileSize;
-          delete file.previewStatus;
-          _imageCache.set(ref.filePath, { ...file });
-          updated = true;
-        }
-      }
-    }
-  }
-
-  if (updated) saveImageCache(_imageCache);
-  return updated;
-}
-
-function markMissingImagePreviewsUnavailable(messages: RawMessage[]): boolean {
-  let updated = false;
-  for (const msg of messages) {
-    if (!msg._attachedFiles) continue;
-    for (const file of msg._attachedFiles) {
-      if (!file.mimeType.startsWith('image/')) continue;
-      if (file.preview || file.previewStatus === 'unavailable') continue;
-      if (!file.filePath && !file.gatewayUrl) continue;
-      file.previewStatus = 'unavailable';
-      updated = true;
-    }
-  }
-  return updated;
-}
-
-/**
- * Async: load missing previews from disk via IPC for messages that have
- * _attachedFiles with null previews. Updates messages in-place and triggers re-render.
- * Handles both [media attached: ...] patterns and raw filePath entries.
- */
-async function loadMissingPreviews(messages: RawMessage[]): Promise<boolean> {
-  // See helpers.ts loadMissingPreviews for the canonical comment block —
-  // this monolithic copy is kept in sync so legacy chat.ts callers also
-  // resolve Gateway-injected outgoing media URLs into local previews.
-  let updatedAny = false;
-  let attempt = 0;
-
-  while (true) {
-    const needPreview = collectMissingPreviewRefs(messages);
-    if (needPreview.length === 0) return updatedAny;
-    if (attempt > 0) {
-      const delayMs = IMAGE_PREVIEW_RETRY_DELAYS_MS[attempt - 1];
-      if (delayMs) await waitForPreviewRetry(delayMs);
-    }
-
-    try {
-      const thumbnails = await hostApi.media.thumbnails({
-        paths: needPreview,
-      });
-      if (applyPreviewResults(messages, thumbnails)) {
-        updatedAny = true;
-      }
-    } catch (err) {
-      console.warn('[loadMissingPreviews] Failed:', err);
-      return updatedAny;
-    }
-
-    if (!collectMissingPreviewRefs(messages).some((ref) => ref.mimeType.startsWith('image/'))) {
-      return updatedAny;
-    }
-    if (attempt >= IMAGE_PREVIEW_RETRY_DELAYS_MS.length) {
-      return markMissingImagePreviewsUnavailable(messages) || updatedAny;
-    }
-    attempt += 1;
-  }
-}
-
-function getCanonicalPrefixFromSessions(sessions: ChatSession[]): string | null {
-  const canonical = sessions.find((s) => s.key.startsWith('agent:'))?.key;
-  if (!canonical) return null;
-  const parts = canonical.split(':');
+function getCanonicalPrefixFromSessionKey(sessionKey: string): string | null {
+  if (!sessionKey.startsWith('agent:')) return null;
+  const parts = sessionKey.split(':');
   if (parts.length < 2) return null;
   return `${parts[0]}:${parts[1]}`;
 }
 
+function getCanonicalPrefixFromSessions(sessions: ChatSession[]): string | null {
+  const canonical = sessions.find((session) => session.key.startsWith('agent:'))?.key;
+  return canonical ? getCanonicalPrefixFromSessionKey(canonical) : null;
+}
+
 function getAgentIdFromSessionKey(sessionKey: string): string {
   if (!sessionKey.startsWith('agent:')) return 'main';
-  const parts = sessionKey.split(':');
-  return parts[1] || 'main';
-}
-
-function sessionIndicatesIdle(session: ChatSession | undefined): boolean {
-  if (!session) return false;
-  if (session.hasActiveRun === false) return true;
-  return session.status === 'done'
-    || session.status === 'completed'
-    || session.status === 'finished'
-    || session.status === 'failed'
-    || session.status === 'error'
-    || session.status === 'aborted'
-    || session.status === 'cancelled';
-}
-
-function reconcileCurrentSessionIdleFromBackend(
-  set: (partial: Partial<ChatState> | ((state: ChatState) => Partial<ChatState>)) => void,
-  get: () => ChatState,
-  sessions: ChatSession[],
-): void {
-  const state = get();
-  if (!state.sending && state.activeRunId == null && !state.pendingFinal) return;
-
-  const current = sessions.find((session) => session.key === state.currentSessionKey);
-  if (!sessionIndicatesIdle(current)) return;
-
-  // Avoid clearing a brand-new send from stale sessions.list metadata.  The
-  // backend's session row must have been updated at or after the user message
-  // that armed the renderer run state.
-  if (
-    state.lastUserMessageAt != null
-    && typeof current?.updatedAt === 'number'
-    && current.updatedAt < toMs(state.lastUserMessageAt)
-  ) {
-    return;
-  }
-
-  set({
-    sending: false,
-    activeRunId: null,
-    pendingFinal: false,
-    lastUserMessageAt: null,
-    streamingText: '',
-    streamingMessage: null,
-    streamingTools: [],
-    pendingToolImages: [],
-  });
-}
-
-async function loadCronFallbackMessages(sessionKey: string, limit = 200): Promise<RawMessage[]> {
-  if (!isCronSessionKey(sessionKey)) return [];
-  try {
-    return await fetchCronSessionHistory(sessionKey, limit);
-  } catch (error) {
-    console.warn('Failed to load cron fallback history:', error);
-    return [];
-  }
-}
-
-async function fetchChatSessionsList(): Promise<Record<string, unknown>> {
-  return useGatewayStore.getState().rpc<Record<string, unknown>>('sessions.list', {
-    includeDerivedTitles: true,
-    includeLastMessage: true,
-  });
-}
-
-async function fetchChatHistory(
-  sessionKey: string,
-  limit: number,
-  maxChars?: number,
-  timeoutMs?: number,
-): Promise<Record<string, unknown>> {
-  const params = {
-    sessionKey,
-    limit,
-    ...(typeof maxChars === 'number' ? { maxChars } : {}),
-  };
-  return useGatewayStore.getState().rpc<Record<string, unknown>>('chat.history', params, timeoutMs);
-}
-
-async function sendChatMessageViaHostApi(params: {
-  sessionKey: string;
-  message: string;
-  deliver?: boolean;
-  idempotencyKey: string;
-}): Promise<{ runId?: string }> {
-  return useGatewayStore.getState().rpc<{ runId?: string }>('chat.send', params, 120000);
-}
-
-async function abortChatRunViaHostApi(sessionKey: string): Promise<void> {
-  await useGatewayStore.getState().rpc('chat.abort', { sessionKey });
-}
-
-function normalizeAgentId(value: string | undefined | null): string {
-  return (value ?? '').trim().toLowerCase() || 'main';
-}
-
-function buildFallbackMainSessionKey(agentId: string): string {
-  return `agent:${normalizeAgentId(agentId)}:main`;
-}
-
-function resolveMainSessionKeyForAgent(agentId: string | undefined | null): string | null {
-  if (!agentId) return null;
-  const normalizedAgentId = normalizeAgentId(agentId);
-  const summary = useAgentsStore.getState().agents.find((agent) => agent.id === normalizedAgentId);
-  return summary?.mainSessionKey || buildFallbackMainSessionKey(normalizedAgentId);
+  return sessionKey.split(':')[1] || 'main';
 }
 
 function ensureSessionEntry(
@@ -2123,1093 +301,705 @@ function clearSessionEntryFromMap<T extends Record<string, unknown>>(entries: T,
 }
 
 function buildSessionSwitchPatch(
-  state: Pick<
-    ChatState,
-    | 'currentSessionKey'
-    | 'messages'
-    | 'sessions'
-    | 'sessionLabels'
-    | 'sessionLastActivity'
-    | 'thinkingLevel'
-    | 'sending'
-    | 'activeRunId'
-    | 'pendingFinal'
-    | 'lastUserMessageAt'
-    | 'streamingText'
-    | 'streamingMessage'
-    | 'streamingTools'
-    | 'pendingToolImages'
-  >,
+  state: Pick<ChatState, 'currentSessionKey' | 'sessions' | 'sessionLabels' | 'sessionLastActivity'>,
   nextSessionKey: string,
   options: { createdLocally?: boolean; workspacePath?: string } = {},
 ): Partial<ChatState> {
-  captureSessionRunState(state.currentSessionKey, state);
-  if (state.messages.length > 0) {
-    cacheSessionHistory(
-      state.currentSessionKey,
-      cloneHistoryMessages(state.messages),
-      state.thinkingLevel ?? null,
-    );
-  }
-  // Only treat sessions with no history records and no activity timestamp as empty.
-  // Relying solely on messages.length is unreliable because switchSession clears
-  // the current messages before loadHistory runs, creating a race condition that
-  // could cause sessions with real history to be incorrectly removed from the sidebar.
-  const leavingEmpty = !state.currentSessionKey.endsWith(':main')
-    && state.messages.length === 0
-    && !state.sessionLastActivity[state.currentSessionKey]
-    && !state.sessionLabels[state.currentSessionKey]
-    && !hasExplicitSessionLabel(state.sessions.find((session) => session.key === state.currentSessionKey));
-
-  const nextSessions = leavingEmpty
+  const leavingLocalPlaceholder = state.currentSessionKey !== nextSessionKey
+    && state.sessions.some((session) => (
+      session.key === state.currentSessionKey && session.createdLocally === true
+    ));
+  const sessions = leavingLocalPlaceholder
     ? state.sessions.filter((session) => session.key !== state.currentSessionKey)
     : state.sessions;
-  const cachedNextSession = getCachedSessionHistory(nextSessionKey);
-  const cachedRunState = getCachedSessionRunState(nextSessionKey);
 
   return {
     currentSessionKey: nextSessionKey,
     currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
-    sessions: ensureSessionEntry(nextSessions, nextSessionKey, options),
-    sessionLabels: leavingEmpty
+    sessions: ensureSessionEntry(sessions, nextSessionKey, options),
+    sessionLabels: leavingLocalPlaceholder
       ? clearSessionEntryFromMap(state.sessionLabels, state.currentSessionKey)
       : state.sessionLabels,
-    sessionLastActivity: leavingEmpty
+    sessionLastActivity: leavingLocalPlaceholder
       ? clearSessionEntryFromMap(state.sessionLastActivity, state.currentSessionKey)
       : state.sessionLastActivity,
-    messages: cachedNextSession?.messages ?? [],
-    hasMoreHistory: cachedNextSession ? cachedNextSession.messages.length >= HISTORY_PAGE_SIZE : false,
-    loadingMoreHistory: false,
-    thinkingLevel: cachedNextSession?.thinkingLevel ?? state.thinkingLevel ?? null,
-    ...cachedRunState,
-    error: null,
-    runError: null,
   };
 }
 
-function getCanonicalPrefixFromSessionKey(sessionKey: string): string | null {
-  if (!sessionKey.startsWith('agent:')) return null;
-  const parts = sessionKey.split(':');
-  if (parts.length < 2) return null;
-  return `${parts[0]}:${parts[1]}`;
-}
-
-function isToolOnlyMessage(message: RawMessage | undefined): boolean {
-  if (!message) return false;
-  if (isToolResultRole(message.role)) return true;
-
-  const msg = message as unknown as Record<string, unknown>;
-  const content = message.content;
-
-  // Check OpenAI-format tool_calls field (real-time streaming from OpenAI-compatible models)
-  const toolCalls = msg.tool_calls ?? msg.toolCalls;
-  const hasOpenAITools = Array.isArray(toolCalls) && toolCalls.length > 0;
-
-  if (!Array.isArray(content)) {
-    // Content is not an array — check if there's OpenAI-format tool_calls
-    if (hasOpenAITools) {
-      // Has tool calls but content might be empty/string — treat as tool-only
-      // if there's no meaningful text content
-      const textContent = typeof content === 'string' ? content.trim() : '';
-      return textContent.length === 0;
-    }
-    return false;
+function repairMissingCurrentSelection(
+  currentSessionKey: string,
+  sessions: ChatSession[],
+): {
+  sessions: ChatSession[];
+  currentSessionKey: string;
+  currentAgentId: string;
+} {
+  if (sessions.some((session) => session.key === currentSessionKey)) {
+    return {
+      sessions,
+      currentSessionKey,
+      currentAgentId: getAgentIdFromSessionKey(currentSessionKey),
+    };
   }
 
-  let hasTool = hasOpenAITools;
-  let hasText = false;
-  let hasNonToolContent = false;
-
-  for (const block of content as ContentBlock[]) {
-    if (block.type === 'tool_use' || block.type === 'tool_result' || block.type === 'toolCall' || block.type === 'toolResult') {
-      hasTool = true;
-      continue;
-    }
-    if (block.type === 'text' && block.text && block.text.trim()) {
-      hasText = true;
-      continue;
-    }
-    // Only actual image output disqualifies a tool-only message.
-    // Thinking blocks are internal reasoning that can accompany tool_use — they
-    // should NOT prevent the message from being treated as an intermediate tool step.
-    if (block.type === 'image') {
-      hasNonToolContent = true;
-    }
+  const fallbackKey = pickStartupSessionFallback(currentSessionKey, sessions);
+  if (fallbackKey) {
+    return {
+      sessions,
+      currentSessionKey: fallbackKey,
+      currentAgentId: getAgentIdFromSessionKey(fallbackKey),
+    };
   }
 
-  return hasTool && !hasText && !hasNonToolContent;
-}
-
-function isToolResultRole(role: unknown): boolean {
-  if (!role) return false;
-  const normalized = String(role).toLowerCase();
-  return normalized === 'toolresult' || normalized === 'tool_result';
-}
-
-/** True for internal plumbing messages that should never be shown in the UI. */
-function isInternalMessage(msg: { role?: unknown; content?: unknown; idempotencyKey?: unknown; model?: unknown; text?: unknown }): boolean {
-  if (msg.role === 'system') return true;
-  const text = getMessageTextForFilter(msg);
-  if (msg.role === 'assistant') {
-    if (isInternalAssistantReplyText(text)) return true;
-    if (isGeneratingStatusNarration(text)) return true;
-    // OpenClaw's gateway writes a fallback `assistant-media` transcript
-    // message when its `createManagedOutgoingImageBlocks` pipeline fails
-    // ("could not be prepared" warning in stderr). The fallback has:
-    //   - model: 'gateway-injected'
-    //   - idempotencyKey: '<runId>:assistant-media'
-    //   - content: text-only `MEDIA:<staging path>` (NOT an image-url block)
-    // The staging path lives in `~/.openclaw/media/outbound/` which has a
-    // 120s TTL — the file is gone by the time the user reads the chat.
-    // The original `MEDIA:/tmp/...` path is already on the previous
-    // assistant message (the agent's actual reply), so the fallback is
-    // pure duplicate noise. Hide it in the UI so it neither shows a
-    // broken card nor competes with the real reply for layout space.
-    const idempotencyKey = typeof msg.idempotencyKey === 'string' ? msg.idempotencyKey : '';
-    const isGatewayInjectedFallback = msg.model === 'gateway-injected'
-      && idempotencyKey.endsWith(':assistant-media');
-    if (isGatewayInjectedFallback) {
-      const hasImageUrlBlock = Array.isArray(msg.content)
-        && (msg.content as ContentBlock[]).some(
-          (block) => block.type === 'image' && typeof block.url === 'string' && !!block.url,
-        );
-      // Real gateway-media bubbles (with an image-url block) ARE the
-      // canonical render — keep them. Only hide the text-only fallback.
-      if (!hasImageUrlBlock) return true;
-    }
-    if (!text.trim() && Array.isArray(msg.content)) {
-      const blocks = msg.content as ContentBlock[];
-      const hasThinking = blocks.some((block) => block.type === 'thinking' && block.thinking?.trim());
-      const hasVisibleText = blocks.some((block) => block.type === 'text' && block.text?.trim());
-      if (hasThinking && !hasVisibleText) return true;
-    }
-  }
-  if (msg.role === 'user' && /^\[OpenClaw heartbeat poll\]\s*$/i.test(text.trim())) return true;
-  // Runtime system injections: these arrive as user or assistant-role messages
-  // but are internal plumbing (exec results, async-command notices, time pings, etc.)
-  if ((msg.role === 'user' || msg.role === 'assistant') && isRuntimeSystemInjection(text)) return true;
-  return false;
-}
-
-/**
- * Detect runtime-injected system messages that should be hidden from the chat UI.
- * These are injected by the OpenClaw runtime as user-role messages and include:
- *   - "System (untrusted): ..." — exec results, tool output, etc.
- *   - "An async command you ran earlier has completed" — async completion notices
- *   - "Current time: ..." followed by nothing else — periodic heartbeat time pings
- *   - "Handle the result internally. Do not relay it to the user" — internal directives
- */
-function isRuntimeSystemInjection(text: string): boolean {
-  if (!text) return false;
-  const normalized = text.trim();
-  if (/^\s*System\s*\(untrusted\)\s*:/i.test(normalized)) return true;
-  if (
-    /An async command you ran earlier has completed/i.test(normalized)
-    && /Do not relay it to the user unless explicitly requested/i.test(normalized)
+  const prefix = getCanonicalPrefixFromSessionKey(currentSessionKey)
+    ?? getCanonicalPrefixFromSessions(sessions)
+    ?? DEFAULT_CANONICAL_PREFIX;
+  let suffix = Date.now();
+  let placeholderKey = `${prefix}:session-${suffix}`;
+  while (
+    placeholderKey === currentSessionKey
+    || sessions.some((session) => session.key === placeholderKey)
   ) {
-    return true;
+    suffix += 1;
+    placeholderKey = `${prefix}:session-${suffix}`;
   }
-  if (/^\[Inter-session message\]/i.test(normalized)) return true;
-  if (isOpenClawRuntimeEventPrompt(normalized)) return true;
-
-  if (
-    /^\s*Current time\s*:/i.test(normalized)
-    && /^\s*Current time\s*:[^\n]*\/\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+UTC\s*$/i.test(normalized)
-  ) {
-    return true;
-  }
-  return false;
+  return {
+    sessions: ensureSessionEntry(sessions, placeholderKey, { createdLocally: true }),
+    currentSessionKey: placeholderKey,
+    currentAgentId: getAgentIdFromSessionKey(placeholderKey),
+  };
 }
 
-// ── Write tool_use baseline capture ─────────────────────────────
-//
-// Tool name sets mirror generated-files.ts so we detect the same tools.
-const BASELINE_WRITE_TOOLS = new Set([
-  'Write', 'write_file', 'create_file', 'WriteFile', 'createFile', 'write',
-]);
-const BASELINE_EDIT_TOOLS = new Set([
-  'Edit', 'edit', 'edit_file', 'EditFile',
-  'StrReplace', 'str_replace', 'str_replace_editor',
-  'MultiEdit', 'multi_edit', 'multiEdit',
-]);
-const BASELINE_FILE_PATH_KEYS = ['file_path', 'filepath', 'path', 'fileName', 'file_name', 'target_path'];
-
-function pickFilePathFromInput(input: unknown): string | null {
-  if (!input || typeof input !== 'object') return null;
-  const rec = input as Record<string, unknown>;
-  for (const key of BASELINE_FILE_PATH_KEYS) {
-    const value = rec[key];
-    if (typeof value === 'string' && value.trim()) return value.trim();
-  }
-  return null;
+function getRemovedSessionKeys(before: ChatSession[], after: ChatSession[]): Set<string> {
+  const remainingKeys = new Set(after.map((session) => session.key));
+  return new Set(before.filter((session) => !remainingKeys.has(session.key)).map((session) => session.key));
 }
 
-/**
- * Scan a streaming message for Write/Edit tool_use blocks and trigger
- * async baseline reads from disk for each target file.  Called on every
- * `delta` event; `captureBaseline` is idempotent — duplicate calls for
- * the same path are no-ops.
- */
-function isBaselineRealUserMessage(message: RawMessage | undefined): boolean {
-  if (!message || message.role !== 'user') return false;
-  const content = message.content;
-  if (!Array.isArray(content)) return true;
-  const blocks = content as Array<{ type?: string }>;
-  return blocks.length === 0 || !blocks.every((block) => block.type === 'tool_result' || block.type === 'toolResult');
-}
+function applySessionLabelSummaries(
+  set: ChatSet,
+  summaries: SessionLabelSummary[],
+  requestVersions?: ReadonlyMap<string, string>,
+): void {
+  if (summaries.length === 0) return;
+  set((state) => {
+    let nextLabels = state.sessionLabels;
+    let nextActivity = state.sessionLastActivity;
+    let nextSessions = state.sessions;
+    let switchPatch: Partial<ChatState> | null = null;
+    let changed = false;
 
-function countBaselineRealUserMessages(messages: RawMessage[]): number {
-  let count = 0;
-  for (const message of messages) {
-    if (isBaselineRealUserMessage(message)) count += 1;
-  }
-  return count;
-}
+    for (const summary of summaries) {
+      const session = nextSessions.find((entry) => entry.key === summary.sessionKey);
+      if (requestVersions) {
+        const requestVersion = requestVersions.get(summary.sessionKey);
+        if (
+          !requestVersion
+          || !session
+          || !isSessionLabelHydrationVersionCurrent(summary.sessionKey, requestVersion)
+          || getSessionLabelHydrationVersion(session, nextActivity) !== requestVersion
+        ) continue;
+      }
 
-function getBaselineRunKeyForMessages(sessionKey: string, messages: RawMessage[]): string | null {
-  const userTurnOrdinal = countBaselineRealUserMessages(messages);
-  return buildBaselineRunKey(sessionKey, userTurnOrdinal);
-}
+      if (isHeartbeatOnlySummaryForSession(session, summary)) {
+        nextSessions = nextSessions.filter((entry) => entry.key !== summary.sessionKey);
+        nextLabels = clearSessionEntryFromMap(nextLabels, summary.sessionKey);
+        nextActivity = clearSessionEntryFromMap(nextActivity, summary.sessionKey);
+        changed = true;
 
-function captureBaselinesFromMessage(message: unknown, runKey: string | null): void {
-  if (!runKey || !message || typeof message !== 'object') return;
-  const content = (message as Record<string, unknown>).content;
-  if (!Array.isArray(content)) return;
-  for (const block of content as ContentBlock[]) {
-    if (block.type !== 'tool_use' && block.type !== 'toolCall') continue;
-    const name = typeof block.name === 'string' ? block.name : '';
-    if (!name) continue;
-    if (!BASELINE_WRITE_TOOLS.has(name) && !BASELINE_EDIT_TOOLS.has(name)) continue;
-    const input = block.input ?? block.arguments;
-    const filePath = pickFilePathFromInput(input);
-    if (filePath) captureBaseline(runKey, filePath);
-  }
-}
+        if (state.currentSessionKey === summary.sessionKey) {
+          const prefix = getCanonicalPrefixFromSessionKey(summary.sessionKey) ?? DEFAULT_CANONICAL_PREFIX;
+          switchPatch = buildSessionSwitchPatch(
+            {
+              ...state,
+              sessions: nextSessions,
+              sessionLabels: nextLabels,
+              sessionLastActivity: nextActivity,
+            },
+            `${prefix}:session-${Date.now()}`,
+            { createdLocally: true },
+          );
+          if (switchPatch.sessions) nextSessions = switchPatch.sessions;
+          if (switchPatch.sessionLabels) nextLabels = switchPatch.sessionLabels;
+          if (switchPatch.sessionLastActivity) nextActivity = switchPatch.sessionLastActivity;
+        }
+        continue;
+      }
 
-function extractTextFromContent(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
-  const parts: string[] = [];
-  for (const block of content as ContentBlock[]) {
-    if (block.type === 'text' && block.text) {
-      parts.push(block.text);
-    }
-  }
-  return parts.join('\n');
-}
+      const labelText = toAutomaticSessionLabel(summary.firstUserText || '');
+      const existingLabel = nextLabels[summary.sessionKey]?.trim();
+      const existingLabelIsFallback = isSyntheticSessionFallbackLabel(session, existingLabel);
+      if (labelText && (!existingLabel || existingLabelIsFallback) && !hasExplicitSessionLabel(session)) {
+        if (nextLabels === state.sessionLabels) nextLabels = { ...state.sessionLabels };
+        nextLabels[summary.sessionKey] = labelText;
+        changed = true;
+      }
 
-function summarizeToolOutput(text: string): string | undefined {
-  const trimmed = text.trim();
-  if (!trimmed) return undefined;
-  const lines = trimmed.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  if (lines.length === 0) return undefined;
-  const summaryLines = lines.slice(0, 2);
-  let summary = summaryLines.join(' / ');
-  if (summary.length > 160) {
-    summary = `${summary.slice(0, 157)}...`;
-  }
-  return summary;
-}
+      if (typeof summary.lastTimestamp === 'number' && Number.isFinite(summary.lastTimestamp)) {
+        if (nextActivity[summary.sessionKey] !== summary.lastTimestamp) {
+          if (nextActivity === state.sessionLastActivity) nextActivity = { ...state.sessionLastActivity };
+          nextActivity[summary.sessionKey] = summary.lastTimestamp;
+          changed = true;
+        }
+      }
 
-function normalizeToolStatus(rawStatus: unknown, fallback: 'running' | 'completed'): ToolStatus['status'] {
-  const status = typeof rawStatus === 'string' ? rawStatus.toLowerCase() : '';
-  if (status === 'error' || status === 'failed') return 'error';
-  if (status === 'completed' || status === 'success' || status === 'done') return 'completed';
-  return fallback;
-}
-
-function parseDurationMs(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  const parsed = typeof value === 'string' ? Number(value) : NaN;
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function extractToolUseUpdates(message: unknown): ToolStatus[] {
-  if (!message || typeof message !== 'object') return [];
-  const msg = message as Record<string, unknown>;
-  const updates: ToolStatus[] = [];
-
-  // Path 1: Anthropic/normalized format — tool blocks inside content array
-  const content = msg.content;
-  if (Array.isArray(content)) {
-    for (const block of content as ContentBlock[]) {
-      if ((block.type !== 'tool_use' && block.type !== 'toolCall') || !block.name) continue;
-      updates.push({
-        id: block.id || block.name,
-        toolCallId: block.id,
-        name: block.name,
-        status: 'running',
-        updatedAt: Date.now(),
-      });
-    }
-  }
-
-  // Path 2: OpenAI format — tool_calls array on the message itself
-  if (updates.length === 0) {
-    const toolCalls = msg.tool_calls ?? msg.toolCalls;
-    if (Array.isArray(toolCalls)) {
-      for (const tc of toolCalls as Array<Record<string, unknown>>) {
-        const fn = (tc.function ?? tc) as Record<string, unknown>;
-        const name = typeof fn.name === 'string' ? fn.name : '';
-        if (!name) continue;
-        const id = typeof tc.id === 'string' ? tc.id : name;
-        updates.push({
-          id,
-          toolCallId: typeof tc.id === 'string' ? tc.id : undefined,
-          name,
-          status: 'running',
-          updatedAt: Date.now(),
-        });
+      const workspacePath = typeof summary.workspacePath === 'string' ? summary.workspacePath.trim() : '';
+      if (workspacePath) {
+        const sessionIndex = nextSessions.findIndex((entry) => entry.key === summary.sessionKey);
+        const existingSession = sessionIndex >= 0 ? nextSessions[sessionIndex] : undefined;
+        if (existingSession && existingSession.workspacePath !== workspacePath) {
+          if (nextSessions === state.sessions) nextSessions = [...state.sessions];
+          nextSessions[sessionIndex] = { ...existingSession, workspacePath };
+          changed = true;
+        }
       }
     }
-  }
 
-  return updates;
-}
-
-function extractToolResultBlocks(message: unknown, eventState: string): ToolStatus[] {
-  if (!message || typeof message !== 'object') return [];
-  const msg = message as Record<string, unknown>;
-  const content = msg.content;
-  if (!Array.isArray(content)) return [];
-
-  const updates: ToolStatus[] = [];
-  for (const block of content as ContentBlock[]) {
-    if (block.type !== 'tool_result' && block.type !== 'toolResult') continue;
-    const outputText = extractTextFromContent(block.content ?? block.text ?? '');
-    const summary = summarizeToolOutput(outputText);
-    updates.push({
-      id: block.id || block.name || 'tool',
-      toolCallId: block.id,
-      name: block.name || block.id || 'tool',
-      status: normalizeToolStatus(undefined, eventState === 'delta' ? 'running' : 'completed'),
-      summary,
-      updatedAt: Date.now(),
-    });
-  }
-
-  return updates;
-}
-
-function extractToolResultUpdate(message: unknown, eventState: string): ToolStatus | null {
-  if (!message || typeof message !== 'object') return null;
-  const msg = message as Record<string, unknown>;
-  const role = typeof msg.role === 'string' ? msg.role.toLowerCase() : '';
-  if (!isToolResultRole(role)) return null;
-
-  const toolName = typeof msg.toolName === 'string' ? msg.toolName : (typeof msg.name === 'string' ? msg.name : '');
-  const toolCallId = typeof msg.toolCallId === 'string' ? msg.toolCallId : undefined;
-  const details = (msg.details && typeof msg.details === 'object') ? msg.details as Record<string, unknown> : undefined;
-  const rawStatus = (msg.status ?? details?.status);
-  const fallback = eventState === 'delta' ? 'running' : 'completed';
-  const status = normalizeToolStatus(rawStatus, fallback);
-  const durationMs = parseDurationMs(details?.durationMs ?? details?.duration ?? (msg as Record<string, unknown>).durationMs);
-
-  const outputText = (details && typeof details.aggregated === 'string')
-    ? details.aggregated
-    : extractTextFromContent(msg.content);
-  const summary = summarizeToolOutput(outputText) ?? summarizeToolOutput(String(details?.error ?? msg.error ?? ''));
-
-  const name = toolName || toolCallId || 'tool';
-  const id = toolCallId || name;
-
-  return {
-    id,
-    toolCallId,
-    name,
-    status,
-    durationMs,
-    summary,
-    updatedAt: Date.now(),
-  };
-}
-
-function mergeToolStatus(existing: ToolStatus['status'], incoming: ToolStatus['status']): ToolStatus['status'] {
-  const order: Record<ToolStatus['status'], number> = { running: 0, completed: 1, error: 2 };
-  return order[incoming] >= order[existing] ? incoming : existing;
-}
-
-function upsertToolStatuses(current: ToolStatus[], updates: ToolStatus[]): ToolStatus[] {
-  if (updates.length === 0) return current;
-  const next = [...current];
-  for (const update of updates) {
-    const key = update.toolCallId || update.id || update.name;
-    if (!key) continue;
-    const index = next.findIndex((tool) => (tool.toolCallId || tool.id || tool.name) === key);
-    if (index === -1) {
-      next.push(update);
-      continue;
+    if (!changed) return {};
+    if (nextSessions !== state.sessions || switchPatch?.currentSessionKey) {
+      markLocalSessionCatalogMutation();
     }
-    const existing = next[index];
-    next[index] = {
-      ...existing,
-      ...update,
-      name: update.name || existing.name,
-      status: mergeToolStatus(existing.status, update.status),
-      durationMs: update.durationMs ?? existing.durationMs,
-      summary: update.summary ?? existing.summary,
-      updatedAt: update.updatedAt || existing.updatedAt,
-    };
-  }
-  return next;
-}
-
-/**
- * Only treat an explicit chat.send ack timeout as recoverable.
- * Gateway stopped / Gateway not connected are hard failures that
- * should still terminate the send immediately.
- */
-function isRecoverableChatSendTimeout(error: string): boolean {
-  return error.includes('RPC timeout: chat.send');
-}
-
-function collectToolUpdates(message: unknown, eventState: string): ToolStatus[] {
-  const updates: ToolStatus[] = [];
-  const toolResultUpdate = extractToolResultUpdate(message, eventState);
-  if (toolResultUpdate) updates.push(toolResultUpdate);
-  updates.push(...extractToolResultBlocks(message, eventState));
-  updates.push(...extractToolUseUpdates(message));
-  return updates;
-}
-
-/**
- * True when an assistant message carries user-visible final output (text or
- * image). NOTE: `thinking` blocks are intentionally excluded — they are the
- * model's internal monologue and frequently precede tool calls in models like
- * MiniMax-M2.7 and gpt-5.5. Treating thinking as "final content" causes the
- * history-poll closer in applyLoadedMessages and the runtime final handler to
- * misclassify intermediate `[thinking, toolCall]` turns as completed replies,
- * which prematurely tears down the `sending` / `activeRunId` / `pendingFinal`
- * lifecycle flags and makes the Thinking… indicator vanish mid-tool-chain.
- */
-function messageHasImageContent(message: RawMessage | undefined): boolean {
-  if (!message) return false;
-  if ((message._attachedFiles ?? []).some((file) => file.mimeType.startsWith('image/'))) return true;
-  const content = message.content;
-  return Array.isArray(content) && (content as ContentBlock[]).some((block) => block.type === 'image');
-}
-
-function hasNonToolAssistantContent(message: RawMessage | undefined): boolean {
-  if (!message) return false;
-  if (typeof message.content === 'string' && message.content.trim()) return true;
-
-  const content = message.content;
-  if (Array.isArray(content)) {
-    for (const block of content as ContentBlock[]) {
-      if (block.type === 'text' && block.text && block.text.trim()) return true;
-      if (block.type === 'image') return true;
-    }
-  }
-  if (messageHasImageContent(message)) return true;
-
-  const msg = message as unknown as Record<string, unknown>;
-  if (typeof msg.text === 'string' && msg.text.trim()) return true;
-
-  return false;
-}
-
-/**
- * True when an assistant message is still waiting on a tool result, i.e. it
- * represents an intermediate tool-use turn rather than a finished reply.
- * Detected via:
- *   - explicit stop_reason = "tool_use" / "toolUse"
- *   - any tool_use / toolCall block in `content`
- *   - OpenAI-format `tool_calls` array
- * Used by applyLoadedMessages and the runtime `final` handler to keep the
- * `sending` / `activeRunId` / `pendingFinal` flags armed across tool rounds.
- */
-function hasPendingToolUse(message: RawMessage | undefined): boolean {
-  if (!message) return false;
-  const reason = getMessageStopReason(message);
-  if (reason === 'tool_use' || reason === 'tooluse') return true;
-
-  const content = message.content;
-  if (Array.isArray(content)) {
-    for (const block of content as ContentBlock[]) {
-      if (block.type === 'tool_use' || block.type === 'toolCall') return true;
-    }
-  }
-
-  const msg = message as unknown as Record<string, unknown>;
-  const toolCalls = msg.tool_calls ?? msg.toolCalls;
-  if (Array.isArray(toolCalls) && toolCalls.length > 0) return true;
-
-  return false;
-}
-
-function isRealUserBoundaryMessage(msg: RawMessage): boolean {
-  if (msg.role !== 'user') return false;
-  if (!Array.isArray(msg.content)) return true;
-  const blocks = msg.content as Array<{ type?: string }>;
-  return blocks.length === 0 || !blocks.every((block) => block.type === 'tool_result' || block.type === 'toolResult');
-}
-
-function segmentHasMeaningfulAssistantProgress(segment: RawMessage[]): boolean {
-  return segment.some((msg) => {
-    if (msg.role !== 'assistant') return false;
-    if (isTerminalAssistantErrorMessage(msg)) return true;
-    if (hasPendingToolUse(msg) || isToolOnlyMessage(msg)) return true;
-    return hasNonToolAssistantContent(msg);
+    const patch: Partial<ChatState> = switchPatch ? { ...switchPatch } : {};
+    if (nextLabels !== state.sessionLabels) patch.sessionLabels = nextLabels;
+    if (nextActivity !== state.sessionLastActivity) patch.sessionLastActivity = nextActivity;
+    if (nextSessions !== state.sessions) patch.sessions = nextSessions;
+    return patch;
   });
 }
 
-/** True when the post-user segment has real run output (not a thinking-only stub). */
-function hasMeaningfulAssistantProgressAfterLastUser(messages: RawMessage[]): boolean {
-  return segmentHasMeaningfulAssistantProgress(postUserSegmentMessages(messages));
+function isGatewayStartupError(error: unknown): boolean {
+  const message = String(error).toLowerCase();
+  return message.includes('unavailable during gateway startup')
+    || message.includes('unavailable during startup')
+    || message.includes('not yet ready')
+    || message.includes('service not initialized');
 }
 
-/** True when streaming state carries visible progress (not a role-only placeholder). */
-function hasMeaningfulStreamingActivity(
-  streamingMessage: unknown | null,
-  streamingText: string,
-  streamingTools: ToolStatus[],
-): boolean {
-  if (streamingText.trim()) return true;
-  if (streamingTools.length > 0) return true;
-  if (!streamingMessage || typeof streamingMessage !== 'object') return false;
-
-  const msg = streamingMessage as RawMessage;
-  if (typeof msg.content === 'string' && msg.content.trim()) return true;
-
-  const content = msg.content;
-  if (Array.isArray(content)) {
-    for (const block of content as ContentBlock[]) {
-      if (block.type === 'text' && block.text?.trim()) return true;
-      if (block.type === 'thinking' && block.thinking?.trim()) return true;
-      if (block.type === 'tool_use' || block.type === 'toolCall') return true;
-      if (block.type === 'image') return true;
-    }
-  }
-
-  const raw = msg as unknown as Record<string, unknown>;
-  if (typeof raw.text === 'string' && raw.text.trim()) return true;
-  const toolCalls = raw.tool_calls ?? raw.toolCalls;
-  return Array.isArray(toolCalls) && toolCalls.length > 0;
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function hasAssistantProgressSinceSend(messages: RawMessage[], lastUserMessageAt: number | null): boolean {
-  if (!lastUserMessageAt) return false;
-  const normalized = [...messages];
-  while (normalized.length > 0) {
-    const last = normalized[normalized.length - 1];
-    if (last.role === 'user' && !last.timestamp) {
-      normalized.pop();
-      continue;
-    }
-    break;
-  }
-  return hasMeaningfulAssistantProgressAfterLastUser(normalized);
-}
-
-function postUserSegmentMessages(filteredMessages: RawMessage[]): RawMessage[] {
-  for (let i = filteredMessages.length - 1; i >= 0; i -= 1) {
-    if (isRealUserBoundaryMessage(filteredMessages[i])) {
-      return filteredMessages.slice(i + 1);
-    }
-  }
-  return [];
-}
-
-/** Segment after the user turn that matches the in-flight send (not prior history). */
-function getOpenRunSegmentFromHistory(
-  filteredMessages: RawMessage[],
-  lastUserMessageAt: number | null,
-): RawMessage[] {
-  if (lastUserMessageAt == null) {
-    return postUserSegmentMessages(filteredMessages);
-  }
-  const userMsTs = toMs(lastUserMessageAt);
-  const CLOCK_SKEW_MS = 5_000;
-  for (let i = filteredMessages.length - 1; i >= 0; i -= 1) {
-    const message = filteredMessages[i];
-    if (!isRealUserBoundaryMessage(message)) continue;
-    const ts = message.timestamp ? toMs(message.timestamp as number) : null;
-    if (ts == null) continue;
-    if (ts + CLOCK_SKEW_MS >= userMsTs && ts <= userMsTs + OPTIMISTIC_USER_TIMESTAMP_MATCH_MS) {
-      return filteredMessages.slice(i + 1);
-    }
-  }
-  return [];
-}
-
-/** Only treat inbound runs as user-visible for this long after the last user send. */
-const USER_INITIATED_RUN_MAX_AGE_MS = 10 * 60 * 1000;
-
-function hasCachedActiveUserRun(sessionKey: string): boolean {
-  const cached = getCachedSessionRunState(sessionKey);
-  return cached.sending || cached.activeRunId != null || cached.pendingFinal;
-}
-
-function shouldTrackInboundRunLifecycle(
-  state: Pick<ChatState, 'lastUserMessageAt' | 'sending' | 'activeRunId' | 'pendingFinal'>,
-  sessionKey?: string,
-): boolean {
-  if (state.sending || state.activeRunId != null || state.pendingFinal) return true;
-  if (sessionKey && hasCachedActiveUserRun(sessionKey)) return true;
-  // Cron sessions are explicit, user-scheduled tasks. When the user is viewing
-  // the cron session and it fires, surface the live running state — unlike the
-  // background :main heartbeat runs this guard otherwise suppresses.
-  if (sessionKey && isCronSessionKey(sessionKey)) return true;
-  if (!state.lastUserMessageAt) return false;
-  return Date.now() - toMs(state.lastUserMessageAt) <= USER_INITIATED_RUN_MAX_AGE_MS;
-}
-
-function isFailedAssistantTurnMessage(message: RawMessage | unknown): boolean {
-  if (!message || typeof message !== 'object') return false;
-  const msg = message as RawMessage;
-  if (msg.role !== 'assistant') return false;
-  return /\[assistant turn failed/i.test(getMessageText(msg.content));
-}
-
-function segmentHasOpenToolRun(segmentMessages: RawMessage[]): boolean {
-  if (segmentMessages.length === 0) return false;
-  const hasToolActivity = segmentMessages.some(
-    (message) => message.role === 'assistant' && (hasPendingToolUse(message) || isToolOnlyMessage(message)),
-  );
-  if (!hasToolActivity) return false;
-
-  let lastToolUseOffset = -1;
-  for (let i = segmentMessages.length - 1; i >= 0; i -= 1) {
-    const message = segmentMessages[i];
-    if (message.role === 'assistant' && (hasPendingToolUse(message) || isToolOnlyMessage(message))) {
-      lastToolUseOffset = i;
-      break;
-    }
-  }
-
-  // The tool run is closed if any assistant message after the last tool call
-  // is a non-tool response — either with visible content or a thinking-only
-  // terminal turn (the model ended without producing more tool calls).
-  return !segmentMessages.some((message, index) => {
-    if (index <= lastToolUseOffset) return false;
-    if (message.role !== 'assistant') return false;
-    if (hasPendingToolUse(message)) return false;
-    if (hasNonToolAssistantContent(message)) return true;
-    return !isToolOnlyMessage(message);
+async function fetchChatSessionsList(): Promise<Record<string, unknown>> {
+  return useGatewayStore.getState().rpc<Record<string, unknown>>('sessions.list', {
+    includeDerivedTitles: true,
+    includeLastMessage: true,
   });
 }
-
-function findLastRealUserMessage(messages: RawMessage[]): RawMessage | null {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (isRealUserBoundaryMessage(messages[i])) {
-      return messages[i];
-    }
-  }
-  return null;
-}
-
-function dedupeAttachedFiles(files: AttachedFileMeta[]): AttachedFileMeta[] {
-  const seen = new Set<string>();
-  const next: AttachedFileMeta[] = [];
-  for (const file of files) {
-    const key = file.filePath || `${file.fileName}|${file.mimeType}|${file.preview || ''}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    next.push(file);
-  }
-  return next;
-}
-
-function runtimeToolEventToStatus(event: ChatRuntimeEvent): ToolStatus | null {
-  if (event.type === 'tool.started') {
-    return {
-      id: event.toolCallId,
-      toolCallId: event.toolCallId,
-      name: event.name,
-      status: 'running',
-      summary: typeof event.args === 'string' ? event.args : undefined,
-      updatedAt: event.ts ?? Date.now(),
-    };
-  }
-  if (event.type === 'tool.updated') {
-    return {
-      id: event.toolCallId,
-      toolCallId: event.toolCallId,
-      name: event.name,
-      status: 'running',
-      summary: typeof event.partialResult === 'string' ? event.partialResult : undefined,
-      updatedAt: event.ts ?? Date.now(),
-    };
-  }
-  if (event.type === 'tool.completed') {
-    return {
-      id: event.toolCallId,
-      toolCallId: event.toolCallId,
-      name: event.name,
-      status: event.isError ? 'error' : 'completed',
-      summary: typeof event.result === 'string' ? event.result : undefined,
-      updatedAt: event.ts ?? Date.now(),
-    };
-  }
-  return null;
-}
-
-// ── Store ────────────────────────────────────────────────────────
 
 export const useChatStore = create<ChatState>((set, get) => ({
-  messages: [],
-  loading: false,
-  loadingMoreHistory: false,
-  hasMoreHistory: false,
-  error: null,
-  runError: null,
-  dismissedRunErrors: {},
-
-  sending: false,
-  activeRunId: null,
-  streamingText: '',
-  streamingMessage: null,
-  streamingTools: [],
-  pendingFinal: false,
-  lastUserMessageAt: null,
-  pendingToolImages: [],
-  runtimeRuns: {},
-
   sessions: [],
   currentSessionKey: DEFAULT_SESSION_KEY,
   currentAgentId: 'main',
   sessionLabels: {},
   sessionLastActivity: {},
 
-  thinkingLevel: null,
-
-  // ── Load sessions via sessions.list ──
-
   loadSessions: async (options) => {
     const requestedGeneration = options?.gatewayGeneration;
     if (typeof requestedGeneration === 'number' && Number.isFinite(requestedGeneration)) {
-      if (requestedGeneration < _sessionCatalogGeneration) return;
+      if (requestedGeneration < sessionCatalogGeneration) return;
       synchronizeGatewaySessionGeneration(requestedGeneration);
     }
 
     const now = Date.now();
-    if (_loadSessionsInFlight) {
-      let observedFlight = _loadSessionsInFlight;
+    if (loadSessionsInFlight) {
+      let observedFlight = loadSessionsInFlight;
       if (options?.force) {
-        _queuedForcedSessionGeneration = Math.max(
-          _queuedForcedSessionGeneration ?? _sessionCatalogGeneration,
-          _sessionCatalogGeneration,
+        queuedForcedSessionGeneration = Math.max(
+          queuedForcedSessionGeneration ?? sessionCatalogGeneration,
+          sessionCatalogGeneration,
         );
       }
       while (observedFlight) {
         await observedFlight;
         if (!options?.force) break;
-        const successorFlight = _loadSessionsInFlight;
+        const successorFlight = loadSessionsInFlight;
         if (!successorFlight || successorFlight === observedFlight) break;
         observedFlight = successorFlight;
       }
       return;
     }
-    if (!options?.force && now - _lastLoadSessionsAt < SESSION_LOAD_MIN_INTERVAL_MS) {
-      return;
-    }
+    if (!options?.force && now - lastLoadSessionsAt < SESSION_LOAD_MIN_INTERVAL_MS) return;
 
     const runFlight = async (initialGeneration: number): Promise<void> => {
       let generation = initialGeneration;
       let internalFollowUpUsed = false;
       let previousGatewayListKeys: Set<string> | null = null;
       const suppressedSessionKeys = new Set<string>();
+      const advanceGeneration = (nextGeneration: number): void => {
+        if (nextGeneration !== generation) {
+          previousGatewayListKeys = null;
+          suppressedSessionKeys.clear();
+        }
+        generation = nextGeneration;
+      };
+
       while (true) {
-        const pendingEvents = _pendingGenerationSessionEvents?.generation === generation
-          ? _pendingGenerationSessionEvents.events
+        const pendingEvents = pendingGenerationSessionEvents?.generation === generation
+          ? pendingGenerationSessionEvents.events
           : [];
-        if (_pendingGenerationSessionEvents?.generation === generation) {
-          _pendingGenerationSessionEvents = null;
+        if (pendingGenerationSessionEvents?.generation === generation) {
+          pendingGenerationSessionEvents = null;
         }
         const context = { generation, events: pendingEvents };
-        _loadSessionsContext = context;
+        loadSessionsContext = context;
         let needsFollowUp = false;
+
         try {
+          const localRevisionBeforeRequest = localSessionCatalogRevision;
           const data = await fetchChatSessionsList();
-          if (data && generation === _sessionCatalogGeneration) {
-          const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
-          const normalizedSessions: ChatSession[] = rawSessions.map(
-            (session: Record<string, unknown>) => normalizeGatewaySessionRow(session),
-          );
-          const sessions = normalizedSessions.filter((s: ChatSession) => shouldIncludeSessionInSidebarList(s));
+          if (generation === sessionCatalogGeneration) {
+            const rawSessions = Array.isArray(data.sessions) ? data.sessions : [];
+            const normalizedSessions = rawSessions.map((session) => (
+              normalizeGatewaySessionRow(session as Record<string, unknown>)
+            ));
+            const normalizedSessionKeys = new Set(normalizedSessions.map((session) => session.key));
+            const sessions = normalizedSessions.filter(shouldIncludeSessionInSidebarList);
 
-          const canonicalBySuffix = new Map<string, string>();
-          for (const session of sessions) {
-            if (!session.key.startsWith('agent:')) continue;
-            const parts = session.key.split(':');
-            if (parts.length < 3) continue;
-            const suffix = parts.slice(2).join(':');
-            if (suffix && !canonicalBySuffix.has(suffix)) {
-              canonicalBySuffix.set(suffix, session.key);
+            const canonicalBySuffix = new Map<string, string>();
+            for (const session of sessions) {
+              if (!session.key.startsWith('agent:')) continue;
+              const parts = session.key.split(':');
+              if (parts.length < 3) continue;
+              const suffix = parts.slice(2).join(':');
+              if (suffix && !canonicalBySuffix.has(suffix)) canonicalBySuffix.set(suffix, session.key);
             }
-          }
 
-          // Deduplicate: if both short and canonical existed, keep canonical only
-          const seen = new Set<string>();
-          const dedupedSessions = sessions.filter((s) => {
-            if (!s.key.startsWith('agent:') && canonicalBySuffix.has(s.key)) return false;
-            if (seen.has(s.key)) return false;
-            seen.add(s.key);
-            return true;
-          });
+            const seen = new Set<string>();
+            const dedupedSessions = sessions.filter((session) => {
+              if (!session.key.startsWith('agent:') && canonicalBySuffix.has(session.key)) return false;
+              if (seen.has(session.key)) return false;
+              seen.add(session.key);
+              return true;
+            });
 
-          const { currentSessionKey, sessions: localSessions, sessionLabels: currentSessionLabels } = get();
-          const localSessionByKey = new Map(
-            localSessions.map((session) => [session.key, session] as const),
-          );
-          const mergedSessions = dedupedSessions.map((session) => {
-            const localSession = localSessionByKey.get(session.key);
-            const workspacePath = session.workspacePath ?? localSession?.workspacePath;
-            if (!localSession?.createdLocally && workspacePath === session.workspacePath) return session;
-            return {
-              ...session,
-              ...(workspacePath ? { workspacePath } : {}),
-              ...(localSession?.createdLocally ? { createdLocally: true } : {}),
-            };
-          });
-          if (previousGatewayListKeys) {
-            const currentKeys = new Set(localSessions.map((session) => session.key));
-            for (const sessionKey of previousGatewayListKeys) {
-              if (!currentKeys.has(sessionKey)) suppressedSessionKeys.add(sessionKey);
-            }
-          }
-          previousGatewayListKeys = new Set(mergedSessions.map((session) => session.key));
-          const heartbeatLabelCleanup = getHeartbeatCachedLabelCleanup(mergedSessions, currentSessionLabels);
-          for (const sessionKey of heartbeatLabelCleanup.hiddenSessionKeys) {
-            clearCachedSessionHistory(sessionKey);
-            clearCachedSessionRunState(sessionKey);
-            clearSessionLabelHydrationTracking(sessionKey);
-          }
-          let visibleMergedSessions = heartbeatLabelCleanup.hiddenSessionKeys.size > 0
-            ? mergedSessions.filter((session) => !heartbeatLabelCleanup.hiddenSessionKeys.has(session.key))
-            : mergedSessions;
-          if (suppressedSessionKeys.size > 0) {
-            visibleMergedSessions = visibleMergedSessions.filter(
-              (session) => !suppressedSessionKeys.has(session.key),
+            const {
+              currentSessionKey,
+              sessions: localSessions,
+              sessionLabels: currentSessionLabels,
+              sessionLastActivity: currentSessionActivity,
+            } = get();
+            const localSessionByKey = new Map(
+              localSessions.map((session) => [session.key, session] as const),
             );
-          }
-          const listTs = typeof data.ts === 'number' && Number.isFinite(data.ts)
-            ? data.ts
-            : undefined;
-          const uncertainty = getSessionEventUncertainty(context.events);
-          const toOrderableAttentionRows = (rows: ChatSession[]): ChatSession[] => (
-            uncertainty.keys.size === 0
-              ? rows
-              : rows.filter((session) => !uncertainty.keys.has(session.key))
-          );
-          const attentionTransitions: SessionAttentionTransition[] = [
-            { type: 'rows', rows: toOrderableAttentionRows(visibleMergedSessions) },
-          ];
-          const deletedSessionKeys = new Set<string>();
-          const attentionOrderIsReliable = listTs !== undefined && !uncertainty.unscoped;
-
-          if (listTs === undefined) {
-            needsFollowUp = true;
-          } else {
-            _successfulSessionListTsFloor = Math.max(
-              _successfulSessionListTsFloor ?? -Infinity,
-              listTs,
-            );
-            for (const session of visibleMergedSessions) {
-              _latestSessionEventTsByKey.set(
-                session.key,
-                Math.max(_latestSessionEventTsByKey.get(session.key) ?? -Infinity, listTs),
-              );
-            }
-          }
-
-          for (const event of context.events) {
-            const eventTs = typeof event.ts === 'number' && Number.isFinite(event.ts)
-              ? event.ts
-              : undefined;
-            if (listTs === undefined || eventTs === undefined) {
-              needsFollowUp = true;
-              continue;
-            }
-            if (eventTs < listTs) continue;
-
-            const result = applyGatewaySessionsChanged(
-              visibleMergedSessions,
-              event,
-              _latestSessionEventTsByKey,
-            );
-            if (result.applied) {
-              visibleMergedSessions = result.sessions;
-              if (result.deletedKey) {
-                clearSessionLabelHydrationTracking(result.deletedKey);
-                if (!uncertainty.keys.has(result.deletedKey)) {
-                  attentionTransitions.push({ type: 'delete', sessionKey: result.deletedKey });
-                }
-              } else {
-                attentionTransitions.push({
-                  type: 'rows',
-                  rows: toOrderableAttentionRows(visibleMergedSessions),
-                });
-              }
-            }
-            if (result.deletedKey) deletedSessionKeys.add(result.deletedKey);
-            if (result.requiresReload) needsFollowUp = true;
-          }
-
-          if (attentionOrderIsReliable) {
-            useSessionAttentionStore.getState().reconcileSessionTransitions(attentionTransitions);
-          }
-          const labelCleanupKeys = new Set([
-            ...heartbeatLabelCleanup.labelKeys,
-            ...deletedSessionKeys,
-          ]);
-          const activityCleanupKeys = new Set([
-            ...heartbeatLabelCleanup.hiddenSessionKeys,
-            ...deletedSessionKeys,
-          ]);
-          let nextSessionKey = currentSessionKey || DEFAULT_SESSION_KEY;
-          let replacedHiddenHeartbeatSession = false;
-          const hiddenCurrentSession = findHiddenOpenClawHeartbeatSession(nextSessionKey, normalizedSessions);
-          if (hiddenCurrentSession || heartbeatLabelCleanup.hiddenSessionKeys.has(nextSessionKey)) {
-            const prefix = getCanonicalPrefixFromSessionKey(nextSessionKey)
-              ?? getCanonicalPrefixFromSessions(sessions)
-              ?? DEFAULT_CANONICAL_PREFIX;
-            nextSessionKey = `${prefix}:session-${Date.now()}`;
-            replacedHiddenHeartbeatSession = true;
-          }
-          if (!nextSessionKey.startsWith('agent:')) {
-            const canonicalMatch = canonicalBySuffix.get(nextSessionKey);
-            if (canonicalMatch) {
-              nextSessionKey = canonicalMatch;
-            }
-          }
-          if (!replacedHiddenHeartbeatSession && !visibleMergedSessions.find((s) => s.key === nextSessionKey) && visibleMergedSessions.length > 0) {
-            // Preserve only locally-created pending sessions. On initial boot the
-            // default ghost key (`agent:main:main`) should yield to real history.
-            const hasLocalPendingSession = localSessions.some((session) => session.key === nextSessionKey);
-            if (!hasLocalPendingSession) {
-              const fallbackKey = pickStartupSessionFallback(nextSessionKey, visibleMergedSessions);
-              if (fallbackKey) {
-                nextSessionKey = fallbackKey;
-              }
-            }
-          }
-
-          const localCurrentSession = localSessions.find((session) => session.key === nextSessionKey);
-          const sessionsWithCurrent = !visibleMergedSessions.find((s) => s.key === nextSessionKey) && nextSessionKey
-            && isClawXDesktopSessionKey(nextSessionKey)
-            ? [
-              ...visibleMergedSessions,
-              localCurrentSession ?? {
-                key: nextSessionKey,
-                displayName: nextSessionKey,
-                ...(replacedHiddenHeartbeatSession ? { createdLocally: true } : {}),
-              },
-            ]
-            : visibleMergedSessions;
-
-          const previousSessionKey = currentSessionKey;
-          if (previousSessionKey !== nextSessionKey) {
-            // Mirror switchSession: stop in-flight history polls and swap cached
-            // history/run state immediately. Without this, a background loadSessions
-            // can retarget currentSessionKey (e.g. to a cron heartbeat session)
-            // while messages[] still holds the prior conversation until
-            // chat.history returns — which looks like cross-session contamination.
-            clearHistoryPoll();
-            set((state) => {
-              const switchPatch = buildSessionSwitchPatch(state, nextSessionKey);
+            const mergedSessions = dedupedSessions.map((session) => {
+              const localSession = localSessionByKey.get(session.key);
+              const workspacePath = session.workspacePath ?? localSession?.workspacePath;
+              if (!localSession?.createdLocally && workspacePath === session.workspacePath) return session;
               return {
-                ...switchPatch,
-                sessions: sessionsWithCurrent,
-                sessionLabels: omitRecordKeys(
-                  switchPatch.sessionLabels ?? state.sessionLabels,
-                  labelCleanupKeys,
-                ),
-                sessionLastActivity: mergeSessionActivity(
-                  omitRecordKeys(
-                    switchPatch.sessionLastActivity ?? state.sessionLastActivity,
-                    activityCleanupKeys,
-                  ),
-                  sessionsWithCurrent,
-                ),
+                ...session,
+                ...(workspacePath ? { workspacePath } : {}),
+                ...(localSession?.createdLocally ? { createdLocally: true } : {}),
               };
             });
-          } else {
-            set((state) => ({
-              sessions: sessionsWithCurrent,
-              currentSessionKey: nextSessionKey,
-              currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
-              sessionLabels: omitRecordKeys(state.sessionLabels, labelCleanupKeys),
-              sessionLastActivity: mergeSessionActivity(
-                omitRecordKeys(state.sessionLastActivity, activityCleanupKeys),
-                sessionsWithCurrent,
-              ),
-            }));
-          }
-          reconcileCurrentSessionIdleFromBackend(set, get, sessionsWithCurrent);
-          applySessionBackendLabels(set, sessionsWithCurrent);
 
-          // Background: fetch first user message for every non-main session to populate labels upfront.
-          // This uses the Host API local transcript summary route, not Gateway
-          // chat.history, so it can run immediately without starving the
-          // foreground history load during startup/restart.
-          const existingSessionLabels = get().sessionLabels;
-          const existingSessionActivity = get().sessionLastActivity;
-          const sessionsToLabel = sessionsWithCurrent
-            .map((session) => ({
-              session,
-              candidate: getSessionLabelHydrationCandidate(
+            if (previousGatewayListKeys) {
+              const currentKeys = new Set(localSessions.map((session) => session.key));
+              for (const sessionKey of previousGatewayListKeys) {
+                if (!currentKeys.has(sessionKey)) suppressedSessionKeys.add(sessionKey);
+              }
+            }
+            previousGatewayListKeys = new Set(mergedSessions.map((session) => session.key));
+
+            const heartbeatCleanup = getHeartbeatCachedLabelCleanup(mergedSessions, currentSessionLabels);
+            for (const sessionKey of heartbeatCleanup.hiddenSessionKeys) {
+              clearSessionLabelHydrationTracking(sessionKey);
+            }
+            let visibleMergedSessions = heartbeatCleanup.hiddenSessionKeys.size > 0
+              ? mergedSessions.filter((session) => !heartbeatCleanup.hiddenSessionKeys.has(session.key))
+              : mergedSessions;
+            if (suppressedSessionKeys.size > 0) {
+              visibleMergedSessions = visibleMergedSessions.filter(
+                (session) => !suppressedSessionKeys.has(session.key),
+              );
+            }
+            const pendingConfirmationSessions = localSessions.filter((session) => (
+              pendingCatalogConfirmationSessionKeys.has(session.key)
+              && !normalizedSessionKeys.has(session.key)
+            ));
+            if (pendingConfirmationSessions.length > 0) {
+              visibleMergedSessions = [...visibleMergedSessions, ...pendingConfirmationSessions];
+            }
+
+            const listTs = typeof data.ts === 'number' && Number.isFinite(data.ts) ? data.ts : undefined;
+            const uncertainty = getSessionEventUncertainty(context.events);
+            const toOrderableAttentionRows = (rows: ChatSession[]): ChatSession[] => (
+              uncertainty.keys.size === 0
+                ? rows
+                : rows.filter((session) => !uncertainty.keys.has(session.key))
+            );
+            const attentionTransitions: SessionAttentionTransition[] = [
+              { type: 'rows', rows: toOrderableAttentionRows(visibleMergedSessions) },
+            ];
+            const removedSessionKeys = new Set<string>();
+            const observedPendingConfirmationKeys = new Set(
+              [...pendingCatalogConfirmationSessionKeys].filter((key) => normalizedSessionKeys.has(key)),
+            );
+            const attentionOrderIsReliable = listTs !== undefined && !uncertainty.unscoped;
+
+            if (listTs === undefined) {
+              needsFollowUp = true;
+            } else {
+              successfulSessionListTsFloor = Math.max(successfulSessionListTsFloor ?? -Infinity, listTs);
+              for (const session of visibleMergedSessions) {
+                latestSessionEventTsByKey.set(
+                  session.key,
+                  Math.max(latestSessionEventTsByKey.get(session.key) ?? -Infinity, listTs),
+                );
+              }
+            }
+
+            for (const event of context.events) {
+              const eventTs = typeof event.ts === 'number' && Number.isFinite(event.ts)
+                ? event.ts
+                : undefined;
+              if (listTs === undefined || eventTs === undefined) {
+                needsFollowUp = true;
+                continue;
+              }
+              if (eventTs < listTs) continue;
+
+              const sessionsBeforeEvent = visibleMergedSessions;
+              const result = applyGatewaySessionsChanged(
+                visibleMergedSessions,
+                event,
+                latestSessionEventTsByKey,
+              );
+              const eventRemovedSessionKeys = getRemovedSessionKeys(
+                sessionsBeforeEvent,
+                result.sessions,
+              );
+              if (result.deletedKey) eventRemovedSessionKeys.add(result.deletedKey);
+              if (result.applied) {
+                visibleMergedSessions = result.sessions;
+                const eventKey = getSessionsChangedExactKey(event);
+                if (eventKey && pendingCatalogConfirmationSessionKeys.has(eventKey)) {
+                  observedPendingConfirmationKeys.add(eventKey);
+                }
+                if (eventRemovedSessionKeys.size > 0) {
+                  for (const removedKey of eventRemovedSessionKeys) {
+                    clearSessionLabelHydrationTracking(removedKey);
+                    if (!uncertainty.keys.has(removedKey)) {
+                      attentionTransitions.push({ type: 'delete', sessionKey: removedKey });
+                    }
+                  }
+                } else {
+                  attentionTransitions.push({
+                    type: 'rows',
+                    rows: toOrderableAttentionRows(visibleMergedSessions),
+                  });
+                }
+              }
+              for (const removedKey of eventRemovedSessionKeys) removedSessionKeys.add(removedKey);
+              if (result.requiresReload) needsFollowUp = true;
+            }
+
+            const labelCleanupKeys = new Set([
+              ...heartbeatCleanup.labelKeys,
+              ...removedSessionKeys,
+            ]);
+            const activityCleanupKeys = new Set([
+              ...heartbeatCleanup.hiddenSessionKeys,
+              ...removedSessionKeys,
+            ]);
+
+            let nextSessionKey = currentSessionKey || DEFAULT_SESSION_KEY;
+            let replacedHiddenHeartbeatSession = false;
+            const hiddenCurrentSession = findHiddenOpenClawHeartbeatSession(
+              nextSessionKey,
+              normalizedSessions,
+            );
+            if (hiddenCurrentSession || heartbeatCleanup.hiddenSessionKeys.has(nextSessionKey)) {
+              const prefix = getCanonicalPrefixFromSessionKey(nextSessionKey)
+                ?? getCanonicalPrefixFromSessions(sessions)
+                ?? DEFAULT_CANONICAL_PREFIX;
+              nextSessionKey = `${prefix}:session-${Date.now()}`;
+              replacedHiddenHeartbeatSession = true;
+            }
+            if (!nextSessionKey.startsWith('agent:')) {
+              const canonicalMatch = canonicalBySuffix.get(nextSessionKey);
+              if (canonicalMatch) nextSessionKey = canonicalMatch;
+            }
+            if (removedSessionKeys.has(nextSessionKey)) {
+              const selection = repairMissingCurrentSelection(nextSessionKey, visibleMergedSessions);
+              visibleMergedSessions = selection.sessions;
+              nextSessionKey = selection.currentSessionKey;
+            }
+            if (
+              !replacedHiddenHeartbeatSession
+              && !visibleMergedSessions.some((session) => session.key === nextSessionKey)
+              && visibleMergedSessions.length > 0
+            ) {
+              const hasLocalPendingSession = localSessions.some(
+                (session) => session.key === nextSessionKey && session.createdLocally,
+              );
+              if (!hasLocalPendingSession) {
+                const fallbackKey = pickStartupSessionFallback(nextSessionKey, visibleMergedSessions);
+                if (fallbackKey) nextSessionKey = fallbackKey;
+              }
+            }
+
+            const localCurrentSession = localSessions.find((session) => session.key === nextSessionKey);
+            const currentSessionToInsert = localCurrentSession
+              && (
+                localCurrentSession.createdLocally
+                || pendingCatalogConfirmationSessionKeys.has(nextSessionKey)
+              )
+              ? localCurrentSession
+              : {
+                  ...(localCurrentSession ?? {
+                    key: nextSessionKey,
+                    displayName: nextSessionKey,
+                  }),
+                  createdLocally: true,
+                };
+            let sessionsWithCurrent = !visibleMergedSessions.some((session) => session.key === nextSessionKey)
+              && nextSessionKey
+              && isClawXDesktopSessionKey(nextSessionKey)
+              ? [
+                  ...visibleMergedSessions,
+                  currentSessionToInsert,
+                ]
+              : visibleMergedSessions;
+
+            const selectedSession = sessionsWithCurrent.find(
+              (session) => session.key === nextSessionKey,
+            );
+            const hydrationCandidates = sessionsWithCurrent
+              .map((session) => ({
                 session,
-                existingSessionLabels,
-                existingSessionActivity,
-                { includeWorkspacePath: true },
-              ),
-            }))
-            .filter((entry) => entry.candidate != null)
-            .map((entry) => ({
-              session: entry.session,
-              version: entry.candidate!.version,
-            }));
-          if (sessionsToLabel.length > 0) {
-            void (async () => {
-              let pending = sessionsToLabel.filter(({ session, version }) => beginSessionLabelHydration(session.key, version));
+                candidate: getSessionLabelHydrationCandidate(
+                  session,
+                  currentSessionLabels,
+                  currentSessionActivity,
+                  { includeWorkspacePath: true },
+                ),
+              }))
+              .filter((entry) => entry.candidate != null)
+              .map((entry) => ({ session: entry.session, version: entry.candidate!.version }));
+            const selectedCandidate = selectedSession && !selectedSession.createdLocally
+              && !selectedSession.workspacePath?.trim()
+              ? hydrationCandidates.find(({ session }) => session.key === selectedSession.key)
+              : undefined;
+            const processedEventCount = context.events.length;
+            let selectedSummary: SessionLabelSummary | undefined;
+            let awaitedSummaries: SessionLabelSummary[] | null = null;
+            let awaitedHydrationFailed = false;
+            let awaitedHydrations: typeof hydrationCandidates = [];
+
+            if (selectedSession && selectedCandidate) {
+              awaitedHydrations = hydrationCandidates.filter(({ session, version }) => (
+                beginSessionLabelHydration(session.key, version)
+              ));
               for (let attempt = 0; attempt <= LABEL_FETCH_RETRY_DELAYS_MS.length; attempt += 1) {
                 try {
                   const summaries = await fetchSessionLabelSummaries(
-                    pending.map(({ session }) => session.key),
+                    awaitedHydrations.map(({ session }) => session.key),
                   );
-                  applySessionLabelSummaries(
-                    set,
-                    summaries,
-                    new Map(pending.map(({ session, version }) => [session.key, version])),
-                  );
-                  const summaryBySessionKey = new Map(
-                    summaries.map((summary) => [summary.sessionKey, summary]),
-                  );
-
-                  for (const { session, version } of pending) {
-                    const summary = summaryBySessionKey.get(session.key);
-                    const labelText = toAutomaticSessionLabel(summary?.firstUserText || '');
-                    finishSessionLabelHydration(session.key, version, labelText ? 'labeled' : 'empty');
-                  }
-                  break;
-                } catch (err) {
-                  const retryableStartup = classifyHistoryStartupRetryError(err) === 'gateway_startup';
-                  for (const { session, version } of pending) {
-                    if (retryableStartup) {
+                  if (generation !== sessionCatalogGeneration) {
+                    for (const { session, version } of awaitedHydrations) {
                       abandonSessionLabelHydration(session.key, version);
-                    } else {
-                      finishSessionLabelHydration(session.key, version, 'error');
                     }
-                  }
-                  if (!retryableStartup || attempt >= LABEL_FETCH_RETRY_DELAYS_MS.length) {
                     break;
                   }
-                  await sleep(LABEL_FETCH_RETRY_DELAYS_MS[attempt]!);
-                  pending = pending.filter(({ session, version }) => beginSessionLabelHydration(session.key, version));
-                  if (pending.length === 0) break;
+                  awaitedSummaries = summaries;
+                  selectedSummary = summaries.find(
+                    (summary) => summary.sessionKey === selectedSession.key,
+                  );
+                  break;
+                } catch (error) {
+                  const retryableStartup = isGatewayStartupError(error);
+                  if (!retryableStartup || attempt >= LABEL_FETCH_RETRY_DELAYS_MS.length) {
+                    awaitedHydrationFailed = true;
+                    break;
+                  }
+                  for (const { session, version } of awaitedHydrations) {
+                    abandonSessionLabelHydration(session.key, version);
+                  }
+                  await delay(LABEL_FETCH_RETRY_DELAYS_MS[attempt]!);
+                  if (generation !== sessionCatalogGeneration) break;
+                  awaitedHydrations = hydrationCandidates.filter(({ session, version }) => (
+                    beginSessionLabelHydration(session.key, version)
+                  ));
+                  if (awaitedHydrations.length === 0) break;
                 }
               }
-            })();
-          }
+            }
 
-          if (previousSessionKey !== nextSessionKey) {
-            void get().loadHistory();
+            const lateEvents = context.events.slice(processedEventCount);
+            const localCatalogChanged = localSessionCatalogRevision !== localRevisionBeforeRequest;
+            const canPublish = generation === sessionCatalogGeneration
+              && lateEvents.length === 0
+              && !localCatalogChanged;
+            if (!canPublish) {
+              for (const { session, version } of awaitedHydrations) {
+                abandonSessionLabelHydration(session.key, version);
+              }
+            }
+            if (localCatalogChanged && generation === sessionCatalogGeneration) {
+              queuedForcedSessionGeneration = Math.max(
+                queuedForcedSessionGeneration ?? generation,
+                generation,
+              );
+            }
+            if (lateEvents.length > 0 && generation === sessionCatalogGeneration) {
+              const pendingEvents = pendingGenerationSessionEvents?.generation === generation
+                ? pendingGenerationSessionEvents.events
+                : [];
+              pendingGenerationSessionEvents = {
+                generation,
+                events: [...pendingEvents, ...lateEvents],
+              };
+              needsFollowUp = true;
+            }
+
+            if (canPublish) {
+              for (const key of observedPendingConfirmationKeys) {
+                pendingCatalogConfirmationSessionKeys.delete(key);
+              }
+              if (selectedSummary && isHeartbeatOnlySummaryForSession(selectedSession, selectedSummary)) {
+                sessionsWithCurrent = sessionsWithCurrent.filter(
+                  (session) => session.key !== selectedSummary!.sessionKey,
+                );
+                labelCleanupKeys.add(selectedSummary.sessionKey);
+                activityCleanupKeys.add(selectedSummary.sessionKey);
+                attentionTransitions.push({
+                  type: 'delete',
+                  sessionKey: selectedSummary.sessionKey,
+                });
+                const selection = repairMissingCurrentSelection(nextSessionKey, sessionsWithCurrent);
+                sessionsWithCurrent = selection.sessions;
+                nextSessionKey = selection.currentSessionKey;
+              } else if (selectedSummary?.workspacePath?.trim()) {
+                const workspacePath = selectedSummary.workspacePath.trim();
+                sessionsWithCurrent = sessionsWithCurrent.map((session) => (
+                  session.key === selectedSummary!.sessionKey
+                    ? { ...session, workspacePath }
+                    : session
+                ));
+              }
+
+              if (attentionOrderIsReliable) {
+                useSessionAttentionStore.getState().reconcileSessionTransitions(attentionTransitions);
+              }
+              set((state) => {
+                const selectedCatalogSession = selectedSummary
+                  ? sessionsWithCurrent.find((session) => session.key === selectedSummary.sessionKey)
+                  : undefined;
+                let sessionLabels = omitRecordKeys(state.sessionLabels, labelCleanupKeys);
+                let sessionLastActivity = mergeSessionActivity(
+                  omitRecordKeys(state.sessionLastActivity, activityCleanupKeys),
+                  sessionsWithCurrent,
+                );
+                const summaryLabel = selectedSummary && selectedCatalogSession
+                  ? toAutomaticSessionLabel(selectedSummary.firstUserText || '')
+                  : '';
+                if (
+                  summaryLabel
+                  && !sessionLabels[selectedSummary!.sessionKey]
+                  && !hasExplicitSessionLabel(selectedCatalogSession)
+                ) {
+                  sessionLabels = { ...sessionLabels, [selectedSummary!.sessionKey]: summaryLabel };
+                }
+                if (
+                  selectedSummary
+                  && selectedCatalogSession
+                  && typeof selectedSummary.lastTimestamp === 'number'
+                  && Number.isFinite(selectedSummary.lastTimestamp)
+                ) {
+                  sessionLastActivity = {
+                    ...sessionLastActivity,
+                    [selectedSummary.sessionKey]: selectedSummary.lastTimestamp,
+                  };
+                }
+                return {
+                  sessions: sessionsWithCurrent,
+                  currentSessionKey: nextSessionKey,
+                  currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
+                  sessionLabels,
+                  sessionLastActivity,
+                };
+              });
+              applySessionBackendLabels(set, sessionsWithCurrent);
+              if (awaitedSummaries) {
+                applySessionLabelSummaries(
+                  set,
+                  awaitedSummaries,
+                  new Map(awaitedHydrations.map(
+                    ({ session, version }) => [session.key, version],
+                  )),
+                );
+              }
+              for (const { session, version } of awaitedHydrations) {
+                const summary = awaitedSummaries?.find(
+                  (entry) => entry.sessionKey === session.key,
+                );
+                const labelText = toAutomaticSessionLabel(summary?.firstUserText || '');
+                finishSessionLabelHydration(
+                  session.key,
+                  version,
+                  awaitedHydrationFailed ? 'error' : labelText ? 'labeled' : 'empty',
+                );
+              }
+
+              const existingSessionLabels = get().sessionLabels;
+              const existingSessionActivity = get().sessionLastActivity;
+              const sessionsToLabel = sessionsWithCurrent
+                .map((session) => ({
+                  session,
+                  candidate: getSessionLabelHydrationCandidate(
+                    session,
+                    existingSessionLabels,
+                    existingSessionActivity,
+                    { includeWorkspacePath: true },
+                  ),
+                }))
+                .filter((entry) => entry.candidate != null)
+                .map((entry) => ({ session: entry.session, version: entry.candidate!.version }));
+
+              if (sessionsToLabel.length > 0) {
+                void (async () => {
+                  let pending = sessionsToLabel.filter(({ session, version }) => (
+                    beginSessionLabelHydration(session.key, version)
+                  ));
+                  for (let attempt = 0; attempt <= LABEL_FETCH_RETRY_DELAYS_MS.length; attempt += 1) {
+                    try {
+                      const summaries = await fetchSessionLabelSummaries(
+                        pending.map(({ session }) => session.key),
+                      );
+                      applySessionLabelSummaries(
+                        set,
+                        summaries,
+                        new Map(pending.map(({ session, version }) => [session.key, version])),
+                      );
+                      const summaryBySessionKey = new Map(
+                        summaries.map((summary) => [summary.sessionKey, summary]),
+                      );
+                      for (const { session, version } of pending) {
+                        const summary = summaryBySessionKey.get(session.key);
+                        const labelText = toAutomaticSessionLabel(summary?.firstUserText || '');
+                        finishSessionLabelHydration(session.key, version, labelText ? 'labeled' : 'empty');
+                      }
+                      break;
+                    } catch (error) {
+                      const retryableStartup = isGatewayStartupError(error);
+                      for (const { session, version } of pending) {
+                        if (retryableStartup) abandonSessionLabelHydration(session.key, version);
+                        else finishSessionLabelHydration(session.key, version, 'error');
+                      }
+                      if (!retryableStartup || attempt >= LABEL_FETCH_RETRY_DELAYS_MS.length) break;
+                      await delay(LABEL_FETCH_RETRY_DELAYS_MS[attempt]!);
+                      pending = pending.filter(({ session, version }) => (
+                        beginSessionLabelHydration(session.key, version)
+                      ));
+                      if (pending.length === 0) break;
+                    }
+                  }
+                })();
+              }
+            }
           }
-          }
-        } catch (err) {
-          console.warn('Failed to load sessions:', err);
-          if (generation === _sessionCatalogGeneration) {
+        } catch (error) {
+          console.warn('Failed to load sessions:', error);
+          if (generation === sessionCatalogGeneration) {
             let reducedSessions = get().sessions;
             const uncertainty = getSessionEventUncertainty(context.events);
             const toOrderableAttentionRows = (rows: ChatSession[]): ChatSession[] => (
@@ -3218,23 +1008,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 : rows.filter((session) => !uncertainty.keys.has(session.key))
             );
             const attentionTransitions: SessionAttentionTransition[] = [];
-            const deletedSessionKeys = new Set<string>();
+            const removedSessionKeys = new Set<string>();
+            const observedPendingConfirmationKeys = new Set<string>();
             let appliedAny = false;
+
             for (const event of context.events) {
               if (typeof event.ts !== 'number' || !Number.isFinite(event.ts)) continue;
-              if (_successfulSessionListTsFloor !== null && event.ts < _successfulSessionListTsFloor) continue;
+              if (successfulSessionListTsFloor !== null && event.ts < successfulSessionListTsFloor) continue;
+              const sessionsBeforeEvent = reducedSessions;
               const result = applyGatewaySessionsChanged(
                 reducedSessions,
                 event,
-                _latestSessionEventTsByKey,
+                latestSessionEventTsByKey,
               );
+              const eventRemovedSessionKeys = getRemovedSessionKeys(
+                sessionsBeforeEvent,
+                result.sessions,
+              );
+              if (result.deletedKey) eventRemovedSessionKeys.add(result.deletedKey);
               if (result.applied) {
                 appliedAny = true;
                 reducedSessions = result.sessions;
-                if (result.deletedKey) {
-                  clearSessionLabelHydrationTracking(result.deletedKey);
-                  if (!uncertainty.keys.has(result.deletedKey)) {
-                    attentionTransitions.push({ type: 'delete', sessionKey: result.deletedKey });
+                const eventKey = getSessionsChangedExactKey(event);
+                if (eventKey && pendingCatalogConfirmationSessionKeys.has(eventKey)) {
+                  observedPendingConfirmationKeys.add(eventKey);
+                }
+                if (eventRemovedSessionKeys.size > 0) {
+                  for (const removedKey of eventRemovedSessionKeys) {
+                    clearSessionLabelHydrationTracking(removedKey);
+                    if (!uncertainty.keys.has(removedKey)) {
+                      attentionTransitions.push({ type: 'delete', sessionKey: removedKey });
+                    }
                   }
                 } else {
                   attentionTransitions.push({
@@ -3243,235 +1047,251 @@ export const useChatStore = create<ChatState>((set, get) => ({
                   });
                 }
               }
-              if (result.deletedKey) deletedSessionKeys.add(result.deletedKey);
+              for (const removedKey of eventRemovedSessionKeys) removedSessionKeys.add(removedKey);
             }
 
             if (appliedAny) {
+              for (const key of observedPendingConfirmationKeys) {
+                pendingCatalogConfirmationSessionKeys.delete(key);
+              }
               if (!uncertainty.unscoped && attentionTransitions.length > 0) {
                 useSessionAttentionStore.getState().reconcileSessionTransitions(attentionTransitions);
               }
               set((state) => {
                 let sessionLabels = state.sessionLabels;
                 let sessionLastActivity = state.sessionLastActivity;
-                for (const deletedKey of deletedSessionKeys) {
-                  sessionLabels = clearSessionEntryFromMap(sessionLabels, deletedKey);
-                  sessionLastActivity = clearSessionEntryFromMap(sessionLastActivity, deletedKey);
+                for (const removedKey of removedSessionKeys) {
+                  sessionLabels = clearSessionEntryFromMap(sessionLabels, removedKey);
+                  sessionLastActivity = clearSessionEntryFromMap(sessionLastActivity, removedKey);
                 }
+                const selection = repairMissingCurrentSelection(
+                  state.currentSessionKey,
+                  reducedSessions,
+                );
                 return {
-                  sessions: reducedSessions,
+                  sessions: selection.sessions,
                   sessionLabels,
-                  sessionLastActivity: mergeSessionActivity(sessionLastActivity, reducedSessions),
+                  sessionLastActivity: mergeSessionActivity(sessionLastActivity, selection.sessions),
+                  currentSessionKey: selection.currentSessionKey,
+                  currentAgentId: selection.currentAgentId,
                 };
               });
-              reconcileCurrentSessionIdleFromBackend(set, get, reducedSessions);
-              applySessionBackendLabels(set, reducedSessions);
+              applySessionBackendLabels(set, get().sessions);
             }
             needsFollowUp = true;
           }
         } finally {
-          if (_loadSessionsContext === context) _loadSessionsContext = null;
-          _lastLoadSessionsAt = Date.now();
+          if (loadSessionsContext === context) loadSessionsContext = null;
+          lastLoadSessionsAt = Date.now();
         }
 
-        const queuedGeneration = _queuedForcedSessionGeneration;
+        const queuedGeneration = queuedForcedSessionGeneration;
         if (queuedGeneration !== null) {
-          _queuedForcedSessionGeneration = null;
-          generation = queuedGeneration;
+          queuedForcedSessionGeneration = null;
+          advanceGeneration(queuedGeneration);
           internalFollowUpUsed = false;
           continue;
         }
         if (needsFollowUp && !internalFollowUpUsed) {
           internalFollowUpUsed = true;
-          generation = _sessionCatalogGeneration;
+          advanceGeneration(sessionCatalogGeneration);
           continue;
         }
         break;
       }
     };
 
-    let activeFlight = runFlight(_sessionCatalogGeneration);
-    _loadSessionsInFlight = activeFlight;
+    let activeFlight = runFlight(sessionCatalogGeneration);
+    loadSessionsInFlight = activeFlight;
     try {
       while (true) {
         await activeFlight;
-        const queuedGeneration = _queuedForcedSessionGeneration;
+        const queuedGeneration = queuedForcedSessionGeneration;
         if (queuedGeneration === null) break;
-        _queuedForcedSessionGeneration = null;
-        if (queuedGeneration < _sessionCatalogGeneration) continue;
+        queuedForcedSessionGeneration = null;
+        if (queuedGeneration < sessionCatalogGeneration) continue;
         activeFlight = runFlight(queuedGeneration);
-        _loadSessionsInFlight = activeFlight;
+        loadSessionsInFlight = activeFlight;
       }
     } finally {
-      if (_loadSessionsInFlight === activeFlight) {
-        _loadSessionsInFlight = null;
-      }
+      if (loadSessionsInFlight === activeFlight) loadSessionsInFlight = null;
     }
   },
 
   handleSessionsChanged: (payload) => {
-    if (_loadSessionsContext?.generation === _sessionCatalogGeneration) {
-      _loadSessionsContext.events.push(payload);
+    if (loadSessionsContext?.generation === sessionCatalogGeneration) {
+      loadSessionsContext.events.push(payload);
       return;
     }
-    if (_pendingGenerationSessionEvents?.generation === _sessionCatalogGeneration) {
-      _pendingGenerationSessionEvents.events.push(payload);
+    if (pendingGenerationSessionEvents?.generation === sessionCatalogGeneration) {
+      pendingGenerationSessionEvents.events.push(payload);
       return;
     }
 
     const requestForcedReload = (): void => {
-      if (!_standaloneForcedSessionReloadPending) {
-        _standaloneForcedSessionReloadPending = true;
-        void get().loadSessions({
-          force: true,
-          gatewayGeneration: _sessionCatalogGeneration,
-        }).finally(() => {
-          _standaloneForcedSessionReloadPending = false;
-        });
-      }
+      if (standaloneForcedSessionReloadPending) return;
+      standaloneForcedSessionReloadPending = true;
+      void get().loadSessions({
+        force: true,
+        gatewayGeneration: sessionCatalogGeneration,
+      }).finally(() => {
+        standaloneForcedSessionReloadPending = false;
+      });
     };
 
     if (typeof payload.ts !== 'number' || !Number.isFinite(payload.ts)) {
       requestForcedReload();
       return;
     }
-    if (_successfulSessionListTsFloor !== null && payload.ts < _successfulSessionListTsFloor) {
-      return;
-    }
+    if (successfulSessionListTsFloor !== null && payload.ts < successfulSessionListTsFloor) return;
 
+    const sessionsBeforeEvent = get().sessions;
     const result = applyGatewaySessionsChanged(
-      get().sessions,
+      sessionsBeforeEvent,
       payload,
-      _latestSessionEventTsByKey,
+      latestSessionEventTsByKey,
     );
     if (result.applied) {
+      const removedSessionKeys = getRemovedSessionKeys(sessionsBeforeEvent, result.sessions);
+      if (result.deletedKey) removedSessionKeys.add(result.deletedKey);
       const eventKey = typeof payload.session?.key === 'string'
         ? payload.session.key.trim()
-        : typeof payload.sessionKey === 'string'
-          ? payload.sessionKey.trim()
-          : typeof payload.key === 'string' ? payload.key.trim() : '';
+          : typeof payload.sessionKey === 'string'
+            ? payload.sessionKey.trim()
+            : typeof payload.key === 'string' ? payload.key.trim() : '';
+      if (eventKey) pendingCatalogConfirmationSessionKeys.delete(eventKey);
       const affectedRow = result.sessions.find((session) => session.key === eventKey);
-      if (affectedRow) {
-        useSessionAttentionStore.getState().reconcileSessionRows([affectedRow]);
+      if (affectedRow) useSessionAttentionStore.getState().reconcileSessionRows([affectedRow]);
+      for (const removedKey of removedSessionKeys) {
+        clearSessionLabelHydrationTracking(removedKey);
+        useSessionAttentionStore.getState().removeSession(removedKey);
       }
-      set((state) => ({
-        sessions: result.sessions,
-        sessionLabels: result.deletedKey
-          ? clearSessionEntryFromMap(state.sessionLabels, result.deletedKey)
-          : state.sessionLabels,
-        sessionLastActivity: result.deletedKey
-          ? clearSessionEntryFromMap(state.sessionLastActivity, result.deletedKey)
-          : mergeSessionActivity(state.sessionLastActivity, result.sessions),
-      }));
-      reconcileCurrentSessionIdleFromBackend(set, get, result.sessions);
-      applySessionBackendLabels(set, result.sessions);
+      set((state) => {
+        let sessionLabels = state.sessionLabels;
+        let sessionLastActivity = state.sessionLastActivity;
+        for (const removedKey of removedSessionKeys) {
+          sessionLabels = clearSessionEntryFromMap(sessionLabels, removedKey);
+          sessionLastActivity = clearSessionEntryFromMap(sessionLastActivity, removedKey);
+        }
+        const selection = repairMissingCurrentSelection(state.currentSessionKey, result.sessions);
+        return {
+          sessions: selection.sessions,
+          sessionLabels,
+          sessionLastActivity: mergeSessionActivity(sessionLastActivity, selection.sessions),
+          currentSessionKey: selection.currentSessionKey,
+          currentAgentId: selection.currentAgentId,
+        };
+      });
+      applySessionBackendLabels(set, get().sessions);
     }
-    if (result.deletedKey) {
-      clearSessionLabelHydrationTracking(result.deletedKey);
-      useSessionAttentionStore.getState().removeSession(result.deletedKey);
-    }
-    if (result.requiresReload) {
-      requestForcedReload();
-    }
+    if (result.requiresReload) requestForcedReload();
   },
 
-  // ── Switch session ──
-
-  switchSession: (key: string) => {
+  switchSession: (key) => {
     if (key === get().currentSessionKey) return;
-    // Stop any background polling for the old session before switching.
-    // This prevents the poll timer from firing after the switch and loading
-    // the wrong session's history into the new session's view.
-    clearHistoryPoll();
-    clearBaselines();
-    set((s) => buildSessionSwitchPatch(s, key));
-    get().loadHistory();
+    markLocalSessionCatalogMutation();
+    set((state) => buildSessionSwitchPatch(state, key));
   },
 
-  selectAcpSession: (key: string, workspacePath?: string) => {
+  selectAcpSession: (key, workspacePath) => {
     if (
       key === get().currentSessionKey
       && (!workspacePath || get().sessions.find((session) => session.key === key)?.workspacePath === workspacePath)
     ) return;
-    clearHistoryPoll();
-    clearBaselines();
-    set((s) => buildSessionSwitchPatch(s, key, { workspacePath }));
+    markLocalSessionCatalogMutation();
+    set((state) => buildSessionSwitchPatch(state, key, { createdLocally: true, workspacePath }));
   },
 
-  // ── Delete session ──
-  //
-  // NOTE: The OpenClaw Gateway does NOT expose a sessions.delete (or equivalent)
-  // RPC — confirmed by inspecting client.ts, protocol.ts and the full codebase.
-  // Deletion is therefore performed locally: the renderer drops the session
-  // from the sidebar / labels / activity maps and the Main process hard-deletes
-  // the on-disk transcript so it stops appearing in sessions.list and stops
-  // contributing to the Dashboard token-usage history.
+  newSession: () => {
+    const { currentSessionKey, sessions } = get();
+    const prefix = getCanonicalPrefixFromSessionKey(currentSessionKey)
+      ?? getCanonicalPrefixFromSessions(sessions)
+      ?? DEFAULT_CANONICAL_PREFIX;
+    markLocalSessionCatalogMutation();
+    set((state) => buildSessionSwitchPatch(
+      state,
+      `${prefix}:session-${Date.now()}`,
+      { createdLocally: true },
+    ));
+  },
 
-  deleteSession: async (key: string) => {
-    clearCachedSessionHistory(key);
-    clearCachedSessionRunState(key);
-    clearSessionLabelHydrationTracking(key);
-    clearPendingOptimisticUserMessages(key);
-    // Hard-delete the session's JSONL transcript on disk.
-    // The main process unlinks <id>.jsonl plus any leftover
-    // <id>.deleted.jsonl and <id>.jsonl.reset.* siblings, then removes the
-    // entry from sessions.json so sessions.list stops surfacing it.
-    let hardDeleteSucceeded = false;
+  acknowledgeAcpSessionCreated: (key, workspacePath, initialPrompt) => {
+    const normalizedWorkspacePath = workspacePath?.trim();
+    const initialLabel = key.endsWith(':main') ? '' : toSessionLabel(initialPrompt || '');
+    pendingCatalogConfirmationSessionKeys.add(key);
+    markLocalSessionCatalogMutation();
+    set((state) => {
+      const sessionEntry = state.sessions.find((session) => session.key === key);
+      return {
+        sessions: sessionEntry
+          ? state.sessions.map((session) => (
+              session.key === key && session.createdLocally
+                ? (() => {
+                    const acknowledgedSession = { ...session };
+                    delete acknowledgedSession.createdLocally;
+                    return {
+                      ...acknowledgedSession,
+                      ...(normalizedWorkspacePath ? { workspacePath: normalizedWorkspacePath } : {}),
+                    };
+                  })()
+                : session
+            ))
+          : [...state.sessions, {
+              key,
+              displayName: key,
+              ...(normalizedWorkspacePath ? { workspacePath: normalizedWorkspacePath } : {}),
+            }],
+        ...(initialLabel && !hasExplicitSessionLabel(sessionEntry) && !state.sessionLabels[key]
+          ? { sessionLabels: { ...state.sessionLabels, [key]: initialLabel } }
+          : {}),
+      };
+    });
+  },
+
+  deleteSession: async (key) => {
     try {
       const result = await hostApi.sessions.delete(key);
       if (!result.success) {
-        console.warn(`[deleteSession] IPC reported failure for ${key}:`, result.error);
-      } else {
-        hardDeleteSucceeded = true;
+        const error = result.error || 'Failed to delete session';
+        console.warn(`[deleteSession] API reported failure for ${key}:`, error);
+        return { success: false, error };
       }
-    } catch (err) {
-      console.warn(`[deleteSession] IPC call failed for ${key}:`, err);
-    }
-    if (hardDeleteSucceeded) {
-      useSessionAttentionStore.getState().removeSession(key);
+    } catch (error) {
+      console.warn(`[deleteSession] API call failed for ${key}:`, error);
+      return { success: false, error: String(error) };
     }
 
-    const { currentSessionKey, sessions } = get();
-    const remaining = sessions.filter((s) => s.key !== key);
+    clearSessionLabelHydrationTracking(key);
+    useSessionAttentionStore.getState().removeSession(key);
+    pendingCatalogConfirmationSessionKeys.delete(key);
 
-    if (currentSessionKey === key) {
-      // Switched away from deleted session — pick the first remaining or create new
-      const next = remaining[0];
-      set((s) => ({
-        sessions: remaining,
-        sessionLabels: Object.fromEntries(Object.entries(s.sessionLabels).filter(([k]) => k !== key)),
-        sessionLastActivity: Object.fromEntries(Object.entries(s.sessionLastActivity).filter(([k]) => k !== key)),
-        messages: [],
-        streamingText: '',
-        streamingMessage: null,
-        streamingTools: [],
-        activeRunId: null,
-        error: null,
-        runError: null,
-        pendingFinal: false,
-        lastUserMessageAt: null,
-        pendingToolImages: [],
-        currentSessionKey: next?.key ?? DEFAULT_SESSION_KEY,
-        currentAgentId: getAgentIdFromSessionKey(next?.key ?? DEFAULT_SESSION_KEY),
-      }));
-      if (next) {
-        get().loadHistory();
-      }
-    } else {
-      set((s) => ({
-        sessions: remaining,
-        sessionLabels: Object.fromEntries(Object.entries(s.sessionLabels).filter(([k]) => k !== key)),
-        sessionLastActivity: Object.fromEntries(Object.entries(s.sessionLastActivity).filter(([k]) => k !== key)),
-      }));
-    }
+    markLocalSessionCatalogMutation();
+    set((state) => {
+      const remaining = state.sessions.filter((session) => session.key !== key);
+      const selection = state.currentSessionKey === key
+        ? repairMissingCurrentSelection(state.currentSessionKey, remaining)
+        : {
+            sessions: remaining,
+            currentSessionKey: state.currentSessionKey,
+            currentAgentId: state.currentAgentId,
+          };
+      return {
+        sessions: selection.sessions,
+        sessionLabels: clearSessionEntryFromMap(state.sessionLabels, key),
+        sessionLastActivity: clearSessionEntryFromMap(state.sessionLastActivity, key),
+        currentSessionKey: selection.currentSessionKey,
+        currentAgentId: selection.currentAgentId,
+      };
+    });
+    return { success: true };
   },
 
-  deleteSessions: async (keys: string[]) => {
+  deleteSessions: async (keys) => {
     const requestedKeys = [...new Set(keys)].filter(Boolean);
     const deletedKeys: string[] = [];
     const failedKeys: string[] = [];
 
-    // Main rewrites each agent's sessions.json during deletion. Keep these
-    // operations sequential so two sessions for the same agent cannot race.
+    // Main rewrites each agent's sessions.json, so deletes must stay sequential.
     for (const key of requestedKeys) {
       try {
         const result = await hostApi.sessions.delete(key);
@@ -3481,119 +1301,46 @@ export const useChatStore = create<ChatState>((set, get) => ({
         failedKeys.push(key);
       }
     }
-
     if (deletedKeys.length === 0) return { deletedKeys, failedKeys };
 
     const deletedSet = new Set(deletedKeys);
     for (const key of deletedKeys) {
-      clearCachedSessionHistory(key);
-      clearCachedSessionRunState(key);
       clearSessionLabelHydrationTracking(key);
-      clearPendingOptimisticUserMessages(key);
+      useSessionAttentionStore.getState().removeSession(key);
+      pendingCatalogConfirmationSessionKeys.delete(key);
     }
-
-    const before = get();
-    const remaining = before.sessions.filter((session) => !deletedSet.has(session.key));
-    const currentWasDeleted = deletedSet.has(before.currentSessionKey);
-    const next = currentWasDeleted ? remaining[0] : undefined;
-
-    set((state) => ({
-      sessions: state.sessions.filter((session) => !deletedSet.has(session.key)),
-      sessionLabels: Object.fromEntries(
-        Object.entries(state.sessionLabels).filter(([key]) => !deletedSet.has(key)),
-      ),
-      sessionLastActivity: Object.fromEntries(
-        Object.entries(state.sessionLastActivity).filter(([key]) => !deletedSet.has(key)),
-      ),
-      ...(currentWasDeleted
-        ? {
-          messages: [],
-          streamingText: '',
-          streamingMessage: null,
-          streamingTools: [],
-          activeRunId: null,
-          error: null,
-          runError: null,
-          pendingFinal: false,
-          lastUserMessageAt: null,
-          pendingToolImages: [],
-          currentSessionKey: next?.key ?? DEFAULT_SESSION_KEY,
-          currentAgentId: getAgentIdFromSessionKey(next?.key ?? DEFAULT_SESSION_KEY),
-        }
-        : {}),
-    }));
-
-    if (currentWasDeleted && next) await get().loadHistory();
+    markLocalSessionCatalogMutation();
+    set((state) => {
+      const remaining = state.sessions.filter((session) => !deletedSet.has(session.key));
+      const currentWasDeleted = deletedSet.has(state.currentSessionKey);
+      const selection = currentWasDeleted
+        ? repairMissingCurrentSelection(state.currentSessionKey, remaining)
+        : {
+            sessions: remaining,
+            currentSessionKey: state.currentSessionKey,
+            currentAgentId: state.currentAgentId,
+          };
+      return {
+        sessions: selection.sessions,
+        sessionLabels: Object.fromEntries(
+          Object.entries(state.sessionLabels).filter(([key]) => !deletedSet.has(key)),
+        ),
+        sessionLastActivity: Object.fromEntries(
+          Object.entries(state.sessionLastActivity).filter(([key]) => !deletedSet.has(key)),
+        ),
+        currentSessionKey: selection.currentSessionKey,
+        currentAgentId: selection.currentAgentId,
+      };
+    });
     return { deletedKeys, failedKeys };
   },
 
-  // ── New session ──
-
-  newSession: () => {
-    // Generate a new unique session key and switch to it.
-    // NOTE: We intentionally do NOT call sessions.reset on the old session.
-    // sessions.reset archives (renames) the session JSONL file, making old
-    // conversation history inaccessible when the user switches back to it.
-    const { currentSessionKey, sessions } = get();
-    const prefix = getCanonicalPrefixFromSessionKey(currentSessionKey)
-      ?? getCanonicalPrefixFromSessions(sessions)
-      ?? DEFAULT_CANONICAL_PREFIX;
-    const newKey = `${prefix}:session-${Date.now()}`;
-
-    // Use the same switch patch as explicit sidebar switching so a running
-    // source session keeps its cached lifecycle. Without this, New Chat clears
-    // the active run globally; switching back to the still-running session then
-    // shows only the local transcript snapshot and loses the live execution UI.
-    clearHistoryPoll();
-    clearBaselines();
-    set((s) => buildSessionSwitchPatch(s, newKey, { createdLocally: true }));
-  },
-
-  acknowledgeAcpSessionCreated: (key: string, workspacePath?: string, initialPrompt?: string) => {
-    const normalizedWorkspacePath = workspacePath?.trim();
-    const initialLabel = key.endsWith(':main') ? '' : toSessionLabel(initialPrompt || '');
-    set((s) => {
-      const sessionEntry = s.sessions.find((session) => session.key === key);
-      return {
-        sessions: sessionEntry
-          ? s.sessions.map((session) => (
-            session.key === key && session.createdLocally
-              ? {
-                ...session,
-                createdLocally: false,
-                ...(normalizedWorkspacePath ? { workspacePath: normalizedWorkspacePath } : {}),
-              }
-              : session
-          ))
-          : [...s.sessions, {
-            key,
-            displayName: key,
-            ...(normalizedWorkspacePath ? { workspacePath: normalizedWorkspacePath } : {}),
-          }],
-        ...(initialLabel && !hasExplicitSessionLabel(sessionEntry) && !s.sessionLabels[key]
-          ? { sessionLabels: { ...s.sessionLabels, [key]: initialLabel } }
-          : {}),
-      };
-    });
-  },
-
-  // ── Rename session ──
-
-  renameSession: async (key: string, label: string) => {
+  renameSession: async (key, label) => {
     const normalized = label.trim();
-    if (!normalized) {
-      throw new Error('Session label cannot be empty');
-    }
+    if (!normalized) throw new Error('Session label cannot be empty');
 
-    try {
-      const result = await hostApi.sessions.rename(key, normalized);
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to rename session');
-      }
-    } catch (err) {
-      console.error(`[renameSession] API call failed for ${key}:`, err);
-      throw err;
-    }
+    const result = await hostApi.sessions.rename(key, normalized);
+    if (!result.success) throw new Error(result.error || 'Failed to rename session');
 
     const session = get().sessions.find((entry) => entry.key === key);
     if (session) {
@@ -3603,1599 +1350,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
         'backend-label',
       );
     }
-
-    set((s) => ({
-      sessions: s.sessions.map((entry) =>
-        entry.key === key ? { ...entry, label: normalized } : entry,
-      ),
-      sessionLabels: { ...s.sessionLabels, [key]: normalized },
+    markLocalSessionCatalogMutation();
+    set((state) => ({
+      sessions: state.sessions.map((entry) => (
+        entry.key === key ? { ...entry, label: normalized } : entry
+      )),
+      sessionLabels: { ...state.sessionLabels, [key]: normalized },
     }));
-  },
-
-  // ── Cleanup empty session on navigate away ──
-
-  cleanupEmptySession: () => {
-    const { currentSessionKey, messages, sessions, sessionLastActivity, sessionLabels } = get();
-    // Only remove non-main sessions that were never used (no messages sent).
-    // This mirrors the "leavingEmpty" logic in switchSession so that creating
-    // a new session and immediately navigating away doesn't leave a ghost entry
-    // in the sidebar.
-    // Also check sessionLastActivity and sessionLabels comprehensively to prevent
-    // falsely treating sessions with history as empty due to switchSession clearing messages early.
-    const isEmptyNonMain = !currentSessionKey.endsWith(':main')
-      && messages.length === 0
-      && !sessionLastActivity[currentSessionKey]
-      && !sessionLabels[currentSessionKey]
-      && !hasExplicitSessionLabel(sessions.find((session) => session.key === currentSessionKey));
-    if (!isEmptyNonMain) return;
-    set((s) => ({
-      sessions: s.sessions.filter((sess) => sess.key !== currentSessionKey),
-      sessionLabels: Object.fromEntries(
-        Object.entries(s.sessionLabels).filter(([k]) => k !== currentSessionKey),
-      ),
-      sessionLastActivity: Object.fromEntries(
-        Object.entries(s.sessionLastActivity).filter(([k]) => k !== currentSessionKey),
-      ),
-    }));
-  },
-
-  // ── Load chat history ──
-
-  loadHistory: async (quiet = false) => {
-    const { currentSessionKey } = get();
-    const foregroundLoadKey = getHistoryForegroundLoadKey(currentSessionKey);
-    const isInitialForegroundLoad = !quiet && !_foregroundHistoryLoadSeen.has(foregroundLoadKey);
-    const historyTimeoutOverride = getStartupHistoryTimeoutOverride(isInitialForegroundLoad);
-    const forceLoad = _forceNextHistoryLoadBySession.delete(currentSessionKey);
-    const existingLoad = _historyLoadInFlight.get(currentSessionKey);
-    const shouldShowForegroundLoading = !quiet && get().messages.length === 0;
-    if (existingLoad) {
-      await existingLoad;
-      if (!forceLoad) {
-        return;
-      }
-      if (get().currentSessionKey !== currentSessionKey) {
-        return;
-      }
-    }
-
-    const lastLoadAt = _lastHistoryLoadAtBySession.get(currentSessionKey) || 0;
-    if (!forceLoad && quiet && Date.now() - lastLoadAt < HISTORY_LOAD_MIN_INTERVAL_MS) {
-      return;
-    }
-
-    if (shouldShowForegroundLoading) set({ loading: true, error: null, runError: null });
-
-    // Safety guard: if history loading takes too long, force loading to false
-    // to prevent the UI from being stuck in a spinner forever.
-    let loadingTimedOut = false;
-    const loadingSafetyTimer = shouldShowForegroundLoading ? setTimeout(() => {
-      loadingTimedOut = true;
-      set({ loading: false });
-    }, getHistoryLoadingSafetyTimeout(isInitialForegroundLoad)) : null;
-
-    const loadPromise = (async () => {
-      const isCurrentSession = () => get().currentSessionKey === currentSessionKey;
-      const getPreviewMergeKey = (message: RawMessage): string => (
-        `${message.id ?? ''}|${message.role}|${message.timestamp ?? ''}|${getMessageText(message.content)}`
-      );
-      const mergeHydratedMessages = (
-        currentMessages: RawMessage[],
-        hydratedMessages: RawMessage[],
-      ): RawMessage[] => {
-        const hydratedFilesByKey = new Map(
-          hydratedMessages
-            .filter((message) => message._attachedFiles?.length)
-            .map((message) => [
-              getPreviewMergeKey(message),
-              message._attachedFiles!.map((file) => ({ ...file })),
-            ]),
-        );
-
-        return currentMessages.map((message) => {
-          const attachedFiles = hydratedFilesByKey.get(getPreviewMergeKey(message));
-          return attachedFiles
-            ? { ...message, _attachedFiles: attachedFiles }
-            : message;
-        });
-      };
-      type AttachedFile = NonNullable<RawMessage['_attachedFiles']>[number];
-      const getAttachmentMergeKey = (file: AttachedFile): string | null => (
-        file.filePath || file.gatewayUrl || null
-      );
-      const preserveExistingAttachmentPreviews = (
-        currentMessages: RawMessage[],
-        nextMessages: RawMessage[],
-      ): RawMessage[] => {
-        const currentFilesByMessageKey = new Map<string, Map<string, AttachedFile>>();
-        for (const message of currentMessages) {
-          if (!message._attachedFiles?.length) continue;
-          const filesByKey = new Map<string, AttachedFile>();
-          for (const file of message._attachedFiles) {
-            const key = getAttachmentMergeKey(file);
-            if (!key) continue;
-            if (!file.preview && !file.fileSize && !file.previewStatus) continue;
-            filesByKey.set(key, file);
-          }
-          if (filesByKey.size > 0) {
-            currentFilesByMessageKey.set(getPreviewMergeKey(message), filesByKey);
-          }
-        }
-
-        if (currentFilesByMessageKey.size === 0) return nextMessages;
-
-        return nextMessages.map((message) => {
-          if (!message._attachedFiles?.length) return message;
-          const currentFiles = currentFilesByMessageKey.get(getPreviewMergeKey(message));
-          if (!currentFiles) return message;
-
-          let changed = false;
-          const attachedFiles = message._attachedFiles.map((file) => {
-            const key = getAttachmentMergeKey(file);
-            const currentFile = key ? currentFiles.get(key) : undefined;
-            if (!currentFile) return file;
-
-            let nextFile = file;
-            if (!nextFile.preview && currentFile.preview) {
-              nextFile = { ...nextFile, preview: currentFile.preview };
-              changed = true;
-            }
-            if (!nextFile.fileSize && currentFile.fileSize) {
-              nextFile = { ...nextFile, fileSize: currentFile.fileSize };
-              changed = true;
-            }
-            if (!nextFile.previewStatus && currentFile.previewStatus) {
-              nextFile = { ...nextFile, previewStatus: currentFile.previewStatus };
-              changed = true;
-            }
-            return nextFile;
-          });
-
-          return changed ? { ...message, _attachedFiles: attachedFiles } : message;
-        });
-      };
-
-      const applyLoadFailure = (errorMessage: string | null) => {
-        if (!isCurrentSession()) return;
-        set((state) => {
-          const mergedMessages = mergePendingOptimisticUserMessages(currentSessionKey, state.messages);
-          return {
-            loading: false,
-            error: shouldShowForegroundLoading && errorMessage ? errorMessage : state.error,
-            ...(mergedMessages.length > 0 ? { messages: mergedMessages } : { messages: [] as RawMessage[] }),
-          };
-        });
-      };
-
-      const applyLoadedMessages = (rawMessages: RawMessage[], thinkingLevel: string | null) => {
-      // Guard: if the user switched sessions while this async load was in
-      // flight, discard the result to prevent overwriting the new session's
-      // messages with stale data from the old session.
-      if (!isCurrentSession()) return false;
-
-      // Before filtering: attach images/files from tool_result messages to the next assistant message
-      const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
-      const messagesWithToolAttachments = enrichWithToolCallAttachments(messagesWithToolImages);
-      const filteredMessages = messagesWithToolAttachments.filter((msg) => !shouldDropMessageFromHistory(msg));
-      // Restore file attachments for user/assistant messages (from cache + text patterns)
-      const enrichedMessages = enrichWithCachedImages(filteredMessages);
-
-      // Preserve optimistic user messages independently from sending state.
-      // Gateway phase=end can clear sending before chat.history has persisted
-      // the user turn; without this, an early quiet reload briefly removes it.
-      let finalMessages = mergePendingOptimisticUserMessages(currentSessionKey, enrichedMessages);
-      const userMsgAt = get().lastUserMessageAt;
-      if (get().sending && userMsgAt) {
-        const userMsMs = toMs(userMsgAt);
-        const optimistic = getLatestOptimisticUserMessage(get().messages, userMsMs);
-        const hasMatchingUser = optimistic
-          ? hasOptimisticServerEcho(finalMessages, optimistic, userMsMs)
-          : false;
-        if (optimistic && !hasMatchingUser) {
-          finalMessages = [...finalMessages, optimistic];
-        }
-      }
-      finalMessages = dropRedundantOptimisticUserMessages(currentSessionKey, finalMessages);
-      finalMessages = preserveExistingAttachmentPreviews(get().messages, finalMessages);
-
-      const { pendingFinal, lastUserMessageAt, sending: isSendingNow } = get();
-      const userMsTs = lastUserMessageAt != null ? toMs(lastUserMessageAt) : 0;
-      const isAfterUserMsg = (msg: RawMessage): boolean => {
-        if (lastUserMessageAt == null) return true;
-        if (!msg.timestamp) return false;
-        return toMs(msg.timestamp) >= userMsTs;
-      };
-      const isRealUserBoundary = (msg: RawMessage): boolean => {
-        if (msg.role !== 'user') return false;
-        if (!Array.isArray(msg.content)) return true;
-        const blocks = msg.content as Array<{ type?: string }>;
-        return blocks.length === 0 || !blocks.every((block) => block.type === 'tool_result' || block.type === 'toolResult');
-      };
-      const openRunSegment = isSendingNow && lastUserMessageAt != null
-        ? getOpenRunSegmentFromHistory(filteredMessages, lastUserMessageAt)
-        : postUserSegmentMessages(filteredMessages);
-      const postBoundaryMessages = isSendingNow && lastUserMessageAt != null
-        ? openRunSegment
-        : (lastUserMessageAt != null
-          ? filteredMessages.filter((msg) => isAfterUserMsg(msg))
-          : (() => {
-              for (let i = filteredMessages.length - 1; i >= 0; i -= 1) {
-                if (isRealUserBoundary(filteredMessages[i])) {
-                  return filteredMessages.slice(i + 1);
-                }
-              }
-              return filteredMessages;
-            })());
-        const lastAssistantAfterBoundary = [...postBoundaryMessages].reverse().find((msg) => msg.role === 'assistant');
-        const latestTerminalAssistantErrorMessage = lastAssistantAfterBoundary
-          && (getMessageStopReason(lastAssistantAfterBoundary) === 'error'
-            || isFailedAssistantTurnMessage(lastAssistantAfterBoundary))
-          ? (getMessageErrorMessage(lastAssistantAfterBoundary)
-            ?? (isFailedAssistantTurnMessage(lastAssistantAfterBoundary)
-              ? getMessageText(lastAssistantAfterBoundary.content)
-              : null))
-          : null;
-      const historyErrorIsTransient = Boolean(
-        latestTerminalAssistantErrorMessage
-        && isSendingNow
-        && isRecoverableRuntimeError(latestTerminalAssistantErrorMessage),
-      );
-
-      set({
-        messages: finalMessages,
-        thinkingLevel,
-        loading: false,
-        runError: historyErrorIsTransient
-          ? null
-          : shouldShowRunError(
-            currentSessionKey,
-            latestTerminalAssistantErrorMessage,
-            get().dismissedRunErrors,
-          ),
-      });
-      cacheSessionHistory(currentSessionKey, finalMessages, thinkingLevel);
-
-      // Seed a missing label from immutable history only. Once a label exists
-      // for a session, do not rewrite it during later history refreshes; users
-      // perceive the sidebar title as a stable conversation identifier, not a
-      // live summary of the latest turn.
-      const isMainSession = currentSessionKey.endsWith(':main');
-      const currentSession = get().sessions.find((session) => session.key === currentSessionKey);
-      if (!isMainSession && !hasExplicitSessionLabel(currentSession) && !get().sessionLabels[currentSessionKey]) {
-        const firstUserMsg = finalMessages.find((m) => m.role === 'user');
-        if (firstUserMsg) {
-          const labelText = toAutomaticSessionLabel(getMessageText(firstUserMsg.content));
-          if (labelText) {
-            set((s) => (
-              s.sessionLabels[currentSessionKey]
-                ? {}
-                : { sessionLabels: { ...s.sessionLabels, [currentSessionKey]: labelText } }
-            ));
-          }
-        }
-      }
-
-      // Record last activity time from the last message in history
-      const lastMsg = finalMessages[finalMessages.length - 1];
-      if (lastMsg?.timestamp) {
-        const lastAt = toMs(lastMsg.timestamp);
-        set((s) => ({
-          sessionLastActivity: { ...s.sessionLastActivity, [currentSessionKey]: lastAt },
-        }));
-      }
-
-      // Async: load missing image previews from disk (updates in background)
-      loadMissingPreviews(finalMessages).then((updated) => {
-        if (!isCurrentSession()) return;
-        if (updated) {
-          set((state) => ({
-            messages: mergeHydratedMessages(state.messages, finalMessages),
-          }));
-        }
-      });
-
-      if (latestTerminalAssistantErrorMessage && !historyErrorIsTransient) {
-        clearHistoryPoll();
-        set({
-          sending: false,
-          activeRunId: null,
-          pendingFinal: false,
-          lastUserMessageAt: null,
-        });
-        return true;
-      }
-
-      // History poll is the fallback when Gateway streaming events are missing
-      // (WS disconnect, console-only runs, etc.). Any assistant turn after the
-      // user's message counts as progress so the safety timeout does not emit a
-      // false "No response received" error while tool chains are still running.
-      const progressSegment = openRunSegment;
-      if (isSendingNow && segmentHasMeaningfulAssistantProgress(progressSegment)) {
-        _lastChatEventAt = Date.now();
-        if (get().error || get().runError) {
-          set({ error: null, runError: null });
-        }
-      }
-
-      // Promote pendingFinal only when there's a *final-looking* assistant
-      // message after the user — i.e. one that has actual user-visible output
-      // (text/image) AND is not still waiting on a tool result. This used to
-      // promote on *any* assistant message after the user, which fired on the
-      // very first `[thinking, toolCall]` intermediate turn and then paired
-      // with the closer below to clobber the entire run state.
-      if (isSendingNow && !pendingFinal) {
-        const hasFinalLikeAssistant = openRunSegment.some((msg) => {
-          if (msg.role !== 'assistant') return false;
-          if (hasPendingToolUse(msg)) return false;
-          return hasNonToolAssistantContent(msg);
-        });
-        if (hasFinalLikeAssistant) {
-          set({ pendingFinal: true });
-        }
-      }
-
-      // If pendingFinal, check whether the AI produced a final text response.
-      // CRITICAL: reject intermediate tool turns (thinking+tool_use, mixed
-      // thinking+text+tool_use, etc.) so the run stays "open" across all tool
-      // rounds. Without `hasPendingToolUse` the closer matches the first
-      // `[thinking, toolCall]` intermediate turn (because thinking *used to*
-      // count as non-tool content), clears `sending` / `activeRunId` /
-      // `pendingFinal`, and makes the Thinking… indicator vanish mid-chain.
-      if (pendingFinal || get().pendingFinal) {
-        const recentAssistant = [...openRunSegment].reverse().find((msg) => {
-          if (msg.role !== 'assistant') return false;
-          if (hasPendingToolUse(msg)) return false;
-          return hasNonToolAssistantContent(msg);
-        });
-        if (recentAssistant) {
-          clearHistoryPoll();
-          set({ sending: false, activeRunId: null, pendingFinal: false, runError: null });
-          captureSessionRunState(currentSessionKey, DEFAULT_SESSION_RUN_STATE);
-        }
-      }
-
-      // Unstick lifecycle when history already has a conclusive reply but the
-      // Gateway never emitted a terminal phase event (WS drop, console run, etc.).
-      // Allow unsticking when streamingTools is empty OR all entries are completed
-      // (completed tool entries linger after tool rounds and must not block this).
-      const noRunningTools = !get().streamingTools.some((t) => t.status === 'running');
-      if (isSendingNow && !get().streamingMessage && noRunningTools) {
-        const openSegment = openRunSegment;
-        const hasConclusiveReply = openSegment.some((message) => {
-          if (message.role !== 'assistant') return false;
-          if (hasPendingToolUse(message)) return false;
-          return hasNonToolAssistantContent(message);
-        });
-        const hasDeliveredImageReply = openSegment.some((message) => message.role === 'assistant' && messageHasImageContent(message));
-        if (hasDeliveredImageReply && !segmentHasOpenToolRun(openSegment)) {
-          clearHistoryPoll();
-          set({
-            sending: false,
-            activeRunId: null,
-            pendingFinal: false,
-            lastUserMessageAt: null,
-            runError: null,
-            streamingMessage: null,
-            streamingText: '',
-            streamingTools: [],
-            pendingToolImages: [],
-          });
-          captureSessionRunState(currentSessionKey, DEFAULT_SESSION_RUN_STATE);
-        } else if (hasConclusiveReply && !segmentHasOpenToolRun(openSegment)) {
-          clearHistoryPoll();
-          set({
-            sending: false,
-            activeRunId: null,
-            pendingFinal: false,
-            lastUserMessageAt: null,
-            runError: null,
-          });
-          captureSessionRunState(currentSessionKey, DEFAULT_SESSION_RUN_STATE);
-        }
-        // Also unstick when all tool calls are resolved but the model's
-        // terminal response was thinking-only (no visible content). The
-        // `segmentHasOpenToolRun` update above detects this, but we still
-        // need an explicit conclusive-reply fallback for the case where
-        // hasConclusiveReply is false (thinking-only terminal turn).
-        if (!hasConclusiveReply && !segmentHasOpenToolRun(openSegment) && openSegment.length > 0) {
-          clearHistoryPoll();
-          set({
-            sending: false,
-            activeRunId: null,
-            pendingFinal: false,
-            lastUserMessageAt: null,
-            runError: null,
-          });
-          captureSessionRunState(currentSessionKey, DEFAULT_SESSION_RUN_STATE);
-        }
-      }
-
-      // After session switch the renderer may have reset run lifecycle flags even
-      // though the Gateway is still executing a user-initiated turn. Re-arm only
-      // when this session had an active cached run (e.g. user switched away
-      // mid-send). Do not re-arm from stale :main heartbeat/tool history alone.
-      if (!get().sending && !latestTerminalAssistantErrorMessage && hasCachedActiveUserRun(currentSessionKey)) {
-        const openSegment = postUserSegmentMessages(filteredMessages);
-        if (segmentHasOpenToolRun(openSegment)) {
-          const lastUser = findLastRealUserMessage(filteredMessages);
-          const inferredUserAt = lastUser?.timestamp ? toMs(lastUser.timestamp) : Date.now();
-          set({
-            sending: true,
-            pendingFinal: true,
-            lastUserMessageAt: inferredUserAt,
-          });
-          captureSessionRunState(currentSessionKey, get());
-        }
-      }
-
-      if (
-        get().sending
-        && !latestTerminalAssistantErrorMessage
-        && !shouldTrackInboundRunLifecycle(get(), currentSessionKey)
-      ) {
-        clearHistoryPoll();
-        set({
-          sending: false,
-          activeRunId: null,
-          pendingFinal: false,
-          lastUserMessageAt: null,
-        });
-      }
-      return true;
-      };
-
-      let localFallbackApplied = false;
-      let gatewayHistorySettled = false;
-
-      const applyLocalFallbackMessages = async (
-        options: { onlyWhileGatewayPending?: boolean; logTimeout?: boolean } = {},
-      ): Promise<boolean> => {
-        const fallbackMessages = await loadLocalHistoryFallback(currentSessionKey, 200, {
-          logTimeout: options.logTimeout,
-        });
-        if (
-          fallbackMessages.length === 0
-          || !isCurrentSession()
-          || (options.onlyWhileGatewayPending && gatewayHistorySettled)
-        ) {
-          return false;
-        }
-
-        const applied = applyLoadedMessages(fallbackMessages, null);
-        if (!applied) return false;
-
-        localFallbackApplied = true;
-        set({ hasMoreHistory: fallbackMessages.length >= HISTORY_PAGE_SIZE });
-        if (isInitialForegroundLoad) {
-          _foregroundHistoryLoadSeen.add(foregroundLoadKey);
-          void refreshVisibleSessionSummaries(set, get);
-        }
-        return true;
-      };
-
-      const applyStartupFallbackAfterGrace = async (): Promise<'fallback' | 'none'> => {
-        if (!isInitialForegroundLoad || !shouldShowForegroundLoading) {
-          return 'none';
-        }
-        await sleep(CHAT_HISTORY_STARTUP_FALLBACK_RACE_MS);
-        if (!isCurrentSession() || gatewayHistorySettled) {
-          return 'none';
-        }
-        const applied = await applyLocalFallbackMessages({
-          onlyWhileGatewayPending: true,
-          logTimeout: false,
-        });
-        return applied ? 'fallback' : 'none';
-      };
-
-      const loadGatewayHistory = async (): Promise<void> => {
-      try {
-        const fallbackMessages: RawMessage[] = [];
-        const chatHistoryParams = buildChatHistoryRpcParams(
-          currentSessionKey,
-          HISTORY_PAGE_SIZE,
-          getChatHistoryMaxChars(),
-        );
-
-        let data: Record<string, unknown> | null = null;
-        let lastError: unknown = null;
-
-        for (let attempt = 0; attempt <= CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS.length; attempt += 1) {
-          if (!isCurrentSession()) {
-            break;
-          }
-
-          try {
-            data = await fetchChatHistory(
-              currentSessionKey,
-              HISTORY_PAGE_SIZE,
-              chatHistoryParams.maxChars,
-              historyTimeoutOverride,
-            );
-            lastError = null;
-            break;
-          } catch (error) {
-            lastError = error;
-          }
-
-          if (!isCurrentSession()) {
-            break;
-          }
-
-          const errorKind = classifyHistoryStartupRetryError(lastError);
-          const shouldRetry = isInitialForegroundLoad
-            && attempt < CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS.length
-            && shouldRetryStartupHistoryLoad(useGatewayStore.getState().status, errorKind);
-
-          if (!shouldRetry) {
-            break;
-          }
-
-          console.warn('[chat.history] startup retry scheduled', {
-            sessionKey: currentSessionKey,
-            attempt: attempt + 1,
-            gatewayState: useGatewayStore.getState().status.state,
-            errorKind,
-            error: String(lastError),
-          });
-          await sleep(CHAT_HISTORY_STARTUP_RETRY_DELAYS_MS[attempt]!);
-        }
-
-        if (data) {
-          let rawMessages = Array.isArray(data.messages) ? data.messages as RawMessage[] : [];
-          const thinkingLevel = data.thinkingLevel ? String(data.thinkingLevel) : null;
-          if (rawMessages.length === 0 && isCronSessionKey(currentSessionKey)) {
-            rawMessages = fallbackMessages.length > 0
-              ? fallbackMessages
-              : await loadLocalHistoryFallback(currentSessionKey, 200);
-          } else if (rawMessages.length > 0) {
-            rawMessages = await hydrateGatewayHistoryFromTranscript(
-              currentSessionKey,
-              rawMessages,
-              HISTORY_PAGE_SIZE,
-              get().messages,
-            );
-          }
-
-          if (rawMessages.length === 0 && localFallbackApplied && !isCronSessionKey(currentSessionKey)) {
-            set({ loading: false });
-            return;
-          }
-
-          const applied = applyLoadedMessages(rawMessages, thinkingLevel);
-          if (applied) {
-            set({ hasMoreHistory: rawMessages.length >= HISTORY_PAGE_SIZE });
-          }
-          if (applied && isInitialForegroundLoad) {
-            _foregroundHistoryLoadSeen.add(foregroundLoadKey);
-            void refreshVisibleSessionSummaries(set, get);
-          }
-        } else {
-          const errorKind = classifyHistoryStartupRetryError(lastError);
-          if (isCurrentSession() && isInitialForegroundLoad && errorKind) {
-            console.warn('[chat.history] startup retry exhausted', {
-              sessionKey: currentSessionKey,
-              gatewayState: useGatewayStore.getState().status.state,
-              error: String(lastError),
-            });
-          }
-
-          const appliedLateFallback = fallbackMessages.length > 0
-            ? applyLoadedMessages(fallbackMessages, null)
-            : await applyLocalFallbackMessages();
-          if (appliedLateFallback) {
-            if (fallbackMessages.length > 0) {
-              localFallbackApplied = true;
-              set({ hasMoreHistory: fallbackMessages.length >= HISTORY_PAGE_SIZE });
-              if (isInitialForegroundLoad) {
-                _foregroundHistoryLoadSeen.add(foregroundLoadKey);
-                void refreshVisibleSessionSummaries(set, get);
-              }
-            }
-          } else if (localFallbackApplied) {
-            set({ loading: false });
-          } else if (errorKind === 'timeout' && isInitialForegroundLoad) {
-            // Keep startup usable while Gateway RPC routing catches up.  The
-            // Sidebar/gateway event refreshes will retry quietly instead of
-            // showing a transient "RPC timeout: chat.history" error.
-            set({ loading: false });
-          } else {
-            applyLoadFailure(
-              (lastError instanceof Error ? lastError.message : String(lastError))
-              || 'Failed to load chat history',
-            );
-          }
-        }
-      } catch (err) {
-        console.warn('Failed to load chat history:', err);
-        const applied = await applyLocalFallbackMessages();
-        if (!applied && localFallbackApplied) {
-          set({ loading: false });
-        } else if (!applied) {
-          applyLoadFailure(String(err));
-        }
-      } finally {
-        gatewayHistorySettled = true;
-      }
-      };
-
-      const gatewayLoadPromise = loadGatewayHistory();
-      if (isInitialForegroundLoad && shouldShowForegroundLoading) {
-        await Promise.race([
-          gatewayLoadPromise.then(() => 'gateway' as const),
-          applyStartupFallbackAfterGrace(),
-        ]);
-      }
-      await gatewayLoadPromise;
-    })();
-
-    _historyLoadInFlight.set(currentSessionKey, loadPromise);
-    try {
-      await loadPromise;
-    } finally {
-      // Clear the safety timer on normal completion
-      if (loadingSafetyTimer) clearTimeout(loadingSafetyTimer);
-      if (!loadingTimedOut) {
-        // Only update load time if we actually didn't time out and the
-        // completed request still belongs to the selected session.  Stale
-        // loads from a session switch must not debounce the next foreground
-        // startup attempt for that same session.
-        if (get().currentSessionKey === currentSessionKey) {
-          _lastHistoryLoadAtBySession.set(currentSessionKey, Date.now());
-        }
-      }
-      
-      const active = _historyLoadInFlight.get(currentSessionKey);
-      if (active === loadPromise) {
-        _historyLoadInFlight.delete(currentSessionKey);
-      }
-    }
-  },
-
-  loadMoreHistory: async () => {
-    const { currentSessionKey, messages, loadingMoreHistory, hasMoreHistory } = get();
-    if (loadingMoreHistory || !hasMoreHistory || messages.length === 0) return;
-
-    set({ loadingMoreHistory: true, error: null });
-    try {
-      const nextLimit = Math.min(messages.length + HISTORY_PAGE_SIZE, HISTORY_MAX_RENDERED_MESSAGES);
-      const rawMessages = await loadLocalHistoryFallback(currentSessionKey, nextLimit);
-      if (get().currentSessionKey !== currentSessionKey) return;
-      if (rawMessages.length === 0) {
-        set({ hasMoreHistory: false, loadingMoreHistory: false });
-        return;
-      }
-
-      // Reuse the normal history application path by replacing the visible
-      // window with a larger suffix from the transcript.  This keeps render
-      // cost bounded while allowing long conversations to page backwards.
-      const messagesWithToolImages = enrichWithToolResultFiles(rawMessages);
-      const messagesWithToolAttachments = enrichWithToolCallAttachments(messagesWithToolImages);
-      const filteredMessages = messagesWithToolAttachments.filter((msg) => !shouldDropMessageFromHistory(msg));
-      const enrichedMessages = enrichWithCachedImages(filteredMessages);
-      set({
-        messages: enrichedMessages,
-        loadingMoreHistory: false,
-        hasMoreHistory: rawMessages.length >= nextLimit && nextLimit < HISTORY_MAX_RENDERED_MESSAGES,
-      });
-      cacheSessionHistory(currentSessionKey, enrichedMessages, get().thinkingLevel);
-      void loadMissingPreviews(enrichedMessages).then((updated) => {
-        if (!updated || get().currentSessionKey !== currentSessionKey) return;
-        set((state) => ({
-          messages: state.messages.map((message) => {
-            const match = enrichedMessages.find((candidate) => (
-              `${candidate.id ?? ''}|${candidate.role}|${candidate.timestamp ?? ''}|${getMessageText(candidate.content)}`
-              === `${message.id ?? ''}|${message.role}|${message.timestamp ?? ''}|${getMessageText(message.content)}`
-            ));
-            return match?._attachedFiles?.length ? { ...message, _attachedFiles: match._attachedFiles } : message;
-          }),
-        }));
-      });
-    } catch (error) {
-      console.warn('Failed to load more history:', error);
-      set({ loadingMoreHistory: false, error: String(error) });
-    } finally {
-      if (get().currentSessionKey === currentSessionKey) {
-        set({ loadingMoreHistory: false });
-      }
-    }
-  },
-
-  // ── Send message ──
-
-  sendMessage: async (
-    text: string,
-    attachments?: Array<{ fileName: string; mimeType: string; fileSize: number; stagedPath: string; preview: string | null }>,
-    targetAgentId?: string | null,
-  ) => {
-    const trimmed = text.trim();
-    if (!trimmed && (!attachments || attachments.length === 0)) return;
-
-    const targetSessionKey = resolveMainSessionKeyForAgent(targetAgentId) ?? get().currentSessionKey;
-
-    // Guard against double-submit before React re-renders with sending=true.
-    if (get().sending && targetSessionKey === get().currentSessionKey) {
-      return;
-    }
-
-    if (targetSessionKey !== get().currentSessionKey) {
-      set((s) => buildSessionSwitchPatch(s, targetSessionKey));
-      await get().loadHistory(true);
-    }
-
-    const currentSessionKey = targetSessionKey;
-    const sendGeneration = ++_sendGenerationCounter;
-    _activeSendGenerationBySession.set(currentSessionKey, sendGeneration);
-
-    // Add user message optimistically (with local file metadata for UI display)
-    const nowMs = Date.now();
-    const userMsg: RawMessage = {
-      role: 'user',
-      content: trimmed || (attachments?.length ? '(file attached)' : ''),
-      timestamp: nowMs / 1000,
-      id: crypto.randomUUID(),
-      _attachedFiles: attachments?.map(a => ({
-        fileName: a.fileName,
-        mimeType: a.mimeType,
-        fileSize: a.fileSize,
-        preview: a.preview,
-        filePath: a.stagedPath,
-      })),
-    };
-    rememberPendingOptimisticUserMessage(currentSessionKey, userMsg, nowMs);
-    set((s) => ({
-      messages: [...s.messages, userMsg],
-      sending: true,
-      error: null,
-      runError: null,
-      dismissedRunErrors: withoutDismissedRunError(s.dismissedRunErrors, currentSessionKey),
-      streamingText: '',
-      streamingMessage: null,
-      streamingTools: [],
-      pendingFinal: false,
-      lastUserMessageAt: nowMs,
-    }));
-
-    // Update session label with first user message text as soon as it's sent
-    const { sessionLabels, messages, sessions } = get();
-    const isFirstMessage = !messages.slice(0, -1).some((m) => m.role === 'user');
-    const currentSession = sessions.find((session) => session.key === currentSessionKey);
-    if (!currentSessionKey.endsWith(':main') && !hasExplicitSessionLabel(currentSession) && isFirstMessage && !sessionLabels[currentSessionKey] && trimmed) {
-      const labelText = toSessionLabel(trimmed);
-      if (labelText) {
-        set((s) => ({ sessionLabels: { ...s.sessionLabels, [currentSessionKey]: labelText } }));
-      }
-    }
-
-    // Mark this session as most recently active
-    set((s) => ({ sessionLastActivity: { ...s.sessionLastActivity, [currentSessionKey]: nowMs } }));
-
-    // Runtime progress now comes from Main-owned streamed events. We still
-    // keep the no-response safety timeout, but history polling is no longer
-    // the primary active-run path.
-    _lastChatEventAt = Date.now();
-    clearHistoryPoll();
-    clearErrorRecoveryTimer();
-
-    // Fallback transcript poll: streamed runtime events are the primary
-    // active-run path, but when they go missing entirely (first run right
-    // after gateway startup, silent WS drops, event-normalization gaps) the
-    // safety timeout above would fire a false "No response received" error
-    // even though the gateway is making progress. Polling chat.history keeps
-    // progress detection honest in that case. The RPC is skipped while
-    // streamed events are fresh, so healthy runs issue no extra requests.
-    const pollHistoryFallback = () => {
-      _historyPollTimer = null;
-      const state = get();
-      if (!state.sending || state.currentSessionKey !== currentSessionKey) return;
-      if (Date.now() - _lastChatEventAt >= HISTORY_POLL_EVENT_SILENCE_MS) {
-        void state.loadHistory(true);
-      }
-      _historyPollTimer = setTimeout(pollHistoryFallback, HISTORY_POLL_INTERVAL_MS);
-    };
-    _historyPollTimer = setTimeout(pollHistoryFallback, HISTORY_POLL_START_DELAY_MS);
-
-    const checkStuck = () => {
-      const state = get();
-      if (!state.sending) return;
-
-      const hasStream = hasMeaningfulStreamingActivity(
-        state.streamingMessage,
-        state.streamingText,
-        state.streamingTools,
-      );
-      if (hasStream) {
-        setTimeout(checkStuck, 10_000);
-        return;
-      }
-
-      // Gateway run-start / model-switch deltas can set `{ role: 'assistant' }`
-      // with no payload. That placeholder must not block the safety timeout.
-      if (state.streamingMessage || state.streamingText) {
-        set({ streamingMessage: null, streamingText: '' });
-      }
-
-      const sendAgeMs = state.lastUserMessageAt
-        ? Date.now() - toMs(state.lastUserMessageAt)
-        : 0;
-      const hasProgress = hasAssistantProgressSinceSend(state.messages, state.lastUserMessageAt);
-
-      if (sendAgeMs >= LLM_IDLE_HINT_MS && !state.runError && !hasProgress) {
-        set({
-          runError: 'The model did not respond within 120 seconds. Retrying…',
-        });
-      }
-
-      if (state.pendingFinal) {
-        if (hasProgress) {
-          setTimeout(checkStuck, 10_000);
-          return;
-        }
-        set({ pendingFinal: false });
-      }
-
-      if (hasProgress) {
-        _lastChatEventAt = Date.now();
-        if (state.error || state.runError) {
-          set({ error: null, runError: null });
-        }
-        setTimeout(checkStuck, 10_000);
-        return;
-      }
-
-      if (Date.now() - _lastChatEventAt < NO_RESPONSE_SAFETY_TIMEOUT_MS) {
-        setTimeout(checkStuck, 10_000);
-        return;
-      }
-
-      clearHistoryPoll();
-      set({
-        error: 'No response received from the model. The provider may be unavailable or the API key may have insufficient quota. Please check your provider settings.',
-        sending: false,
-        activeRunId: null,
-        lastUserMessageAt: null,
-        pendingFinal: false,
-        streamingMessage: null,
-        streamingText: '',
-      });
-    };
-    setTimeout(checkStuck, 30_000);
-
-    const clearSendGenerationIfCurrent = () => {
-      if (_activeSendGenerationBySession.get(currentSessionKey) === sendGeneration) {
-        _activeSendGenerationBySession.delete(currentSessionKey);
-      }
-    };
-
-    const applySendFailure = (errorMsg: string) => {
-      const latest = get();
-      const sendStillCurrent = _activeSendGenerationBySession.get(currentSessionKey) === sendGeneration;
-      const canApplyToCurrentSession = latest.currentSessionKey === currentSessionKey
-        && latest.lastUserMessageAt === nowMs;
-
-      if (sendStillCurrent && canApplyToCurrentSession) {
-        clearSendGenerationIfCurrent();
-        clearHistoryPoll();
-        set({ error: errorMsg, sending: false });
-        return;
-      }
-
-      if (sendStillCurrent && latest.currentSessionKey !== currentSessionKey) {
-        const cached = _sessionRunStateCache.get(currentSessionKey);
-        if (cached?.lastUserMessageAt === nowMs) {
-          clearSendGenerationIfCurrent();
-          _sessionRunStateCache.set(currentSessionKey, DEFAULT_SESSION_RUN_STATE);
-          return;
-        }
-      }
-
-      console.warn('[sendMessage] Ignoring stale chat.send failure', {
-        error: errorMsg,
-        sessionKey: currentSessionKey,
-      });
-    };
-
-    try {
-      const idempotencyKey = crypto.randomUUID();
-      const hasMedia = attachments && attachments.length > 0;
-      if (hasMedia) {
-        console.log('[sendMessage] Media paths:', attachments!.map(a => a.stagedPath));
-      }
-
-      // Cache image attachments BEFORE the IPC call to avoid race condition:
-      // history may reload (via Gateway event) before the RPC returns.
-      // Keyed by staged file path which appears in [media attached: <path> ...].
-      if (hasMedia && attachments) {
-        for (const a of attachments) {
-          _imageCache.set(a.stagedPath, {
-            fileName: a.fileName,
-            mimeType: a.mimeType,
-            fileSize: a.fileSize,
-            preview: a.preview,
-          });
-        }
-        saveImageCache(_imageCache);
-      }
-
-      let result: ChatSendWithMediaResult;
-
-      if (hasMedia) {
-        result = await hostApi.chat.sendWithMedia({
-          sessionKey: currentSessionKey,
-          message: trimmed || 'Process the attached file(s).',
-          deliver: false,
-          idempotencyKey,
-          media: attachments.map((a) => ({
-            filePath: a.stagedPath,
-            mimeType: a.mimeType,
-            fileName: a.fileName,
-          })),
-        });
-      } else {
-        const rpcResult = await sendChatMessageViaHostApi({
-          sessionKey: currentSessionKey,
-          message: trimmed,
-          deliver: false,
-          idempotencyKey,
-        });
-        result = { success: true, result: rpcResult };
-      }
-
-      console.log(`[sendMessage] RPC result: success=${result.success}, runId=${result.result?.runId || 'none'}`);
-
-      if (!result.success) {
-        const errorMsg = result.error || 'Failed to send message';
-        if (isRecoverableChatSendTimeout(errorMsg)) {
-          console.warn(`[sendMessage] Recoverable chat.send timeout, keeping poll alive: ${errorMsg}`);
-        } else {
-          applySendFailure(errorMsg);
-        }
-      } else if (result.result?.runId) {
-        const returnedRunId = result.result.runId;
-        const latest = get();
-        const sendStillCurrent = _activeSendGenerationBySession.get(currentSessionKey) === sendGeneration;
-        const canAttachToCurrentSession = latest.currentSessionKey === currentSessionKey
-          && latest.sending
-          && latest.lastUserMessageAt === nowMs
-          && (latest.activeRunId == null || latest.activeRunId === returnedRunId);
-
-        if (sendStillCurrent && canAttachToCurrentSession) {
-          set({ activeRunId: returnedRunId });
-        } else if (sendStillCurrent && latest.currentSessionKey !== currentSessionKey) {
-          const cached = _sessionRunStateCache.get(currentSessionKey);
-          if (cached?.sending
-            && cached.lastUserMessageAt === nowMs
-            && (cached.activeRunId == null || cached.activeRunId === returnedRunId)) {
-            captureSessionRunState(currentSessionKey, { ...cached, activeRunId: returnedRunId });
-          }
-        } else {
-          console.warn('[sendMessage] Ignoring stale chat.send runId', {
-            runId: returnedRunId,
-            sessionKey: currentSessionKey,
-          });
-        }
-      }
-    } catch (err) {
-      const errStr = String(err);
-      if (isRecoverableChatSendTimeout(errStr)) {
-        console.warn(`[sendMessage] Recoverable chat.send timeout, keeping poll alive: ${errStr}`);
-      } else {
-        applySendFailure(errStr);
-      }
-    }
-  },
-
-  // ── Abort active run ──
-
-  abortRun: async () => {
-    clearHistoryPoll();
-    clearErrorRecoveryTimer();
-    const { currentSessionKey } = get();
-    set({ sending: false, streamingText: '', streamingMessage: null, pendingFinal: false, lastUserMessageAt: null, pendingToolImages: [] });
-    set({ streamingTools: [] });
-
-    try {
-      await abortChatRunViaHostApi(currentSessionKey);
-    } catch (err) {
-      set({ error: String(err) });
-    }
-  },
-
-  // ── Handle incoming chat events from Gateway ──
-
-  handleChatEvent: (event: Record<string, unknown>) => {
-    const runId = String(event.runId || '');
-    const eventState = String(event.state || '');
-    const eventSessionKey = event.sessionKey != null ? String(event.sessionKey) : null;
-    const { activeRunId, currentSessionKey } = get();
-
-    // Only process events for the current session (when sessionKey is present).
-    // Cron runtime/chat events arrive under the run-scoped key
-    // (agent:<id>:cron:<jobId>:run:<sessionId>) while the UI tracks the base
-    // cron key — treat those as the same session via equivalence.
-    const matchesCurrentSession = eventSessionKey == null
-      || sessionKeysAreEquivalent(eventSessionKey, currentSessionKey);
-    if (eventSessionKey != null && !matchesCurrentSession) {
-      return;
-    }
-
-    // Only process events for the active run (or if no active run set).
-    // Inbound channel traffic (Feishu/Telegram/etc.) on the current session uses a
-    // different runId than a stale desktop activeRunId — still refresh history on finals.
-    if (activeRunId && runId && runId !== activeRunId) {
-      const isCurrentSession = matchesCurrentSession;
-      const inboundTerminal = eventState === 'final' || eventState === 'error'
-        || (event.message && typeof event.message === 'object'
-          && getMessageStopReason(event.message as Record<string, unknown>) != null);
-      if (isCurrentSession && inboundTerminal) {
-        void get().loadHistory(true);
-      }
-      return;
-    }
-
-    if (isDuplicateChatEvent(eventState, event)) {
-      return;
-    }
-
-    _lastChatEventAt = Date.now();
-
-    // Defensive: if state is missing but we have a message, try to infer state.
-    let resolvedState = eventState;
-    if (!resolvedState && event.message && typeof event.message === 'object') {
-      const msg = event.message as Record<string, unknown>;
-        const stopReason = getMessageStopReason(msg);
-        if (stopReason === 'error') {
-          resolvedState = 'error';
-        } else if (stopReason) {
-          resolvedState = 'final';
-      } else if (msg.role || msg.content) {
-        resolvedState = 'delta';
-      }
-    }
-
-    // Streaming data pauses the fallback transcript poll implicitly: each
-    // event refreshes _lastChatEventAt, so the poll skips its RPC while the
-    // stream is healthy. Do NOT clear the poll timer here — it must stay
-    // armed to recover progress tracking if the stream stalls mid-run.
-    const hasUsefulData = resolvedState === 'delta' || resolvedState === 'final'
-      || resolvedState === 'error' || resolvedState === 'aborted';
-    if (hasUsefulData) {
-      // Adopt run started from another client only for user-initiated turns.
-      // Background :main heartbeat runs must not surface "Thinking..." in the UI.
-      const { sending } = get();
-      if (!sending && runId && shouldTrackInboundRunLifecycle(get(), currentSessionKey)) {
-        set({ sending: true, activeRunId: runId, error: null, runError: null });
-      }
-    }
-
-    switch (resolvedState) {
-      case 'started': {
-        const { sending: currentSending } = get();
-        if (!currentSending && runId && shouldTrackInboundRunLifecycle(get(), currentSessionKey)) {
-          set({ sending: true, activeRunId: runId, error: null, runError: null });
-        }
-        break;
-      }
-      case 'delta': {
-        // Clear any stale error (including RPC timeout) when new data arrives.
-        if (_errorRecoveryTimer) {
-          clearErrorRecoveryTimer();
-        }
-        if (get().error || get().runError) {
-          set({ error: null, runError: null });
-        }
-        const updates = collectToolUpdates(event.message, resolvedState);
-        // Capture baseline file content from disk before the runtime
-        // executes Write tool calls — enables proper before/after diff.
-        captureBaselinesFromMessage(
-          event.message,
-          getBaselineRunKeyForMessages(currentSessionKey, get().messages),
-        );
-        set((s) => ({
-          streamingMessage: (() => {
-            if (event.message && typeof event.message === 'object') {
-              const msgRole = (event.message as RawMessage).role;
-              if (isToolResultRole(msgRole)) return s.streamingMessage;
-            }
-            return normalizeStreamingMessage(event.message ?? s.streamingMessage);
-          })(),
-          streamingTools: updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools,
-        }));
-        break;
-      }
-      case 'final': {
-        clearErrorRecoveryTimer();
-        if (get().error || get().runError) set({ error: null, runError: null });
-        // Message complete - add to history and clear streaming
-        const finalMsg = event.message as RawMessage | undefined;
-        if (finalMsg) {
-          const normalizedFinalMessage = normalizeStreamingMessage(finalMsg) as RawMessage;
-          if (isTerminalAssistantErrorMessage(normalizedFinalMessage)) {
-            get().handleChatEvent({
-              ...event,
-              state: 'error',
-              errorMessage: getMessageErrorMessage(normalizedFinalMessage) ?? event.errorMessage,
-              message: normalizedFinalMessage,
-            });
-            break;
-          }
-          const updates = collectToolUpdates(normalizedFinalMessage, resolvedState);
-          // Filter out internal-only final responses (NO_REPLY, HEARTBEAT_OK, etc.)
-          // before adding to messages. Without this guard, the internal token appears
-          // briefly in the UI until loadHistory replaces the message list — and if the
-          // quiet-mode reload is debounced away, the token can stay visible permanently.
-          if (isInternalMessage(normalizedFinalMessage)) {
-            const sessionKeyForReload = get().currentSessionKey;
-            set({
-              streamingText: '',
-              streamingMessage: null,
-              sending: false,
-              activeRunId: null,
-              pendingFinal: false,
-              streamingTools: [],
-              pendingToolImages: [],
-            });
-            clearHistoryPoll();
-            forceNextHistoryLoad(sessionKeyForReload);
-            void get().loadHistory(true);
-            break;
-          }
-          if (isToolResultRole(normalizedFinalMessage.role)) {
-            // Resolve file path from the streaming assistant message's matching tool call
-            const currentStreamForPath = get().streamingMessage as RawMessage | null;
-            const matchedPath = (currentStreamForPath && normalizedFinalMessage.toolCallId)
-              ? getToolCallFilePath(currentStreamForPath, normalizedFinalMessage.toolCallId)
-              : undefined;
-
-            // Mirror `enrichWithToolResultFiles`: collect non-image artifacts
-            // for the next assistant message. Images embedded inside a tool
-            // result (read tool's vision data) and raw image paths in the
-            // tool's stdout (sips / ls / file output) are NOT user-facing —
-            // the canonical render is the Gateway-injected `assistant-media`
-            // bubble that follows the agent's `MEDIA:` text. Surfacing those
-            // intermediate images here would duplicate every screenshot the
-            // agent inspects on its way to the final artifact.
-            const toolFiles: AttachedFileMeta[] = extractImagesAsAttachedFiles(
-              normalizedFinalMessage.content,
-            ).filter(file => !file.mimeType.startsWith('image/'));
-            const delivery = collectMessageToolDelivery(normalizedFinalMessage);
-            const deliveredFiles = delivery?.files ?? [];
-            const internalUiReply = delivery
-              ? createInternalUiDeliveryReply(normalizedFinalMessage, delivery)
-              : null;
-            if (matchedPath) {
-              for (const f of toolFiles) {
-                if (!f.filePath) {
-                  f.filePath = matchedPath;
-                  f.fileName = matchedPath.split(/[\\/]/).pop() || 'image';
-                }
-              }
-            }
-            const text = getMessageText(normalizedFinalMessage.content);
-            if (text) {
-              const mediaRefs = extractMediaRefs(text);
-              const mediaRefPaths = new Set(mediaRefs.map(r => r.filePath));
-              for (const ref of mediaRefs) toolFiles.push(makeAttachedFile(ref));
-              for (const ref of extractRawFilePaths(text)) {
-                if (mediaRefPaths.has(ref.filePath)) continue;
-                if (ref.mimeType.startsWith('image/')) continue;
-                toolFiles.push(makeAttachedFile(ref));
-              }
-            }
-            set((s) => {
-              // Preserve the assistant turn that requested the tool before the
-              // tool result clears streaming state. Runtime events render the
-              // live execution graph, but the legacy chat-event path still
-              // needs this snapshot for providers/transports that do not emit
-              // complete runtime tool events.
-              const currentStream = s.streamingMessage as RawMessage | null;
-              const snapshotMsgs = snapshotStreamingAssistantMessage(currentStream, s.messages, runId);
-              const snapshotWithDeliveredFiles = !internalUiReply && deliveredFiles.length > 0 && snapshotMsgs.length > 0
-                ? snapshotMsgs.map((snapshot, index) => index === snapshotMsgs.length - 1
-                  ? {
-                    ...snapshot,
-                    _attachedFiles: dedupeAttachedFiles([
-                      ...(snapshot._attachedFiles || []),
-                      ...deliveredFiles,
-                    ]),
-                  }
-                  : snapshot)
-                : snapshotMsgs;
-              const appendedMessages = [
-                ...snapshotWithDeliveredFiles,
-                ...(internalUiReply ? [internalUiReply] : []),
-              ];
-              return {
-                messages: appendedMessages.length > 0 ? [...s.messages, ...appendedMessages] : s.messages,
-                streamingText: '',
-                streamingMessage: null,
-                pendingFinal: true,
-                pendingToolImages: toolFiles.length > 0 || (!internalUiReply && deliveredFiles.length > 0 && snapshotWithDeliveredFiles.length === 0)
-                  ? dedupeAttachedFiles([
-                    ...s.pendingToolImages,
-                    ...toolFiles,
-                    ...(!internalUiReply && snapshotWithDeliveredFiles.length === 0 ? deliveredFiles : []),
-                  ])
-                  : s.pendingToolImages,
-                streamingTools: updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools,
-              };
-            });
-            break;
-          }
-          // Mixed `[thinking, text, toolCall]` messages with stop_reason="tool_use"
-          // (some MiniMax / gpt-5.5 variants emit these) are still intermediate
-          // turns even though they carry user-visible text. Treat them as
-          // tool-only for lifecycle purposes so the run stays "open" until the
-          // truly final reply (without a pending tool call) arrives.
-          const pendingTool = hasPendingToolUse(normalizedFinalMessage);
-          const toolOnly = isToolOnlyMessage(normalizedFinalMessage) || pendingTool;
-          const hasOutput = !pendingTool && hasNonToolAssistantContent(normalizedFinalMessage);
-          // When the model ends its turn with only `thinking` blocks (no text,
-          // no images, no tool calls), `hasOutput` is false and `toolOnly` is
-          // false. This is a valid terminal state (the model decided not to
-          // produce user-visible content — common after image_generate +
-          // message-send tool chains on MiniMax-M2.7). Without this flag the
-          // lifecycle stays armed indefinitely, leaving the UI stuck on
-          // "Thinking…" even though the run is complete.
-          const isEmptyTerminalResponse = !toolOnly && !hasOutput && !pendingTool;
-          const clearLifecycle = hasOutput || isEmptyTerminalResponse;
-          const msgId = normalizedFinalMessage.id || (toolOnly ? `run-${runId}-tool-${Date.now()}` : `run-${runId}`);
-          set((s) => {
-            const nextTools = updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools;
-            const streamingTools = clearLifecycle ? [] : nextTools;
-
-            // Note: it would be tempting to also surface `MEDIA:/path`
-            // markers from `normalizedFinalMessage.content`'s text here, so
-            // the agent's reply could attach the original file directly
-            // (`/tmp/...png`) without waiting for the post-final history
-            // reload. However, OpenClaw's `splitTrailingDirective`
-            // (selection-D8_ELZa7.js ~line 904) strips `MEDIA:/...` lines
-            // out of the streaming text BEFORE it reaches the client, so
-            // the `final` event we get here never contains the marker.
-            // Image surfacing is fully handled by the post-final reload
-            // below + `enrichWithCachedImages` (which dereferences the
-            // assistant-media bubble's `block.url`).
-            const pendingImgs = s.pendingToolImages;
-            const msgWithImages: RawMessage = pendingImgs.length > 0
-              ? {
-                ...normalizedFinalMessage,
-                role: (normalizedFinalMessage.role || 'assistant') as RawMessage['role'],
-                id: msgId,
-                _attachedFiles: [...(normalizedFinalMessage._attachedFiles || []), ...pendingImgs],
-              }
-              : { ...normalizedFinalMessage, role: (normalizedFinalMessage.role || 'assistant') as RawMessage['role'], id: msgId };
-            const clearPendingImages = { pendingToolImages: [] as AttachedFileMeta[] };
-            // Check if message already exists (prevent duplicates)
-            const alreadyExists = s.messages.some(m => m.id === msgId);
-            if (alreadyExists) {
-              return toolOnly ? {
-                streamingText: '',
-                streamingMessage: null,
-                pendingFinal: true,
-                streamingTools,
-                ...clearPendingImages,
-              } : {
-                streamingText: '',
-                streamingMessage: null,
-                sending: clearLifecycle ? false : s.sending,
-                activeRunId: clearLifecycle ? null : s.activeRunId,
-                pendingFinal: clearLifecycle ? false : true,
-                streamingTools,
-                ...clearPendingImages,
-              };
-            }
-            return toolOnly ? {
-              messages: [...s.messages, msgWithImages],
-              streamingText: '',
-              streamingMessage: null,
-              pendingFinal: true,
-              streamingTools,
-              ...clearPendingImages,
-            } : {
-              messages: [...s.messages, msgWithImages],
-              streamingText: '',
-              streamingMessage: null,
-              sending: clearLifecycle ? false : s.sending,
-              activeRunId: clearLifecycle ? null : s.activeRunId,
-              pendingFinal: clearLifecycle ? false : true,
-              streamingTools,
-              ...clearPendingImages,
-            };
-          });
-          // After the final response, quietly reload history to surface all intermediate
-          // tool-use turns (thinking + tool blocks) from the Gateway's authoritative record.
-          // Also reload for empty terminal responses (thinking-only) so the
-          // delayed follow-up can pick up the Gateway's `assistant-media`
-          // bubble that may still be getting written.
-          if (clearLifecycle && !toolOnly) {
-            clearHistoryPoll();
-            captureSessionRunState(get().currentSessionKey, DEFAULT_SESSION_RUN_STATE);
-            void get().loadHistory(true);
-
-            // OpenClaw's gateway processes `MEDIA:/path` markers in the
-            // assistant reply asynchronously, in the `dispatch.deliver` of
-            // the `final` payload (see openclaw/dist/chat-DM9hSaNV.js's
-            // `appendWebchatAgentMediaTranscriptIfNeeded`):
-            //   1. copy the original file under
-            //      `~/.openclaw/media/outgoing/originals/<uuid>`
-            //   2. write the record JSON under
-            //      `~/.openclaw/media/outgoing/records/<id>.json`
-            //   3. `appendAssistantTranscriptMessage` writes a follow-up
-            //      `assistant-media` message to the session JSONL, with
-            //      `idempotencyKey: "<runId>:assistant-media"`.
-            // That follow-up message is **only persisted** — it is NOT
-            // re-broadcast as a streaming event. The streaming `final`
-            // we just consumed only contains the agent's text. The
-            // assistant-media bubble can only be retrieved via
-            // `chat.history`, and the persistence runs on the order of
-            // ~400-500ms after the streaming final.
-            //
-            // The immediate `loadHistory(true)` above therefore races the
-            // gateway's write and almost always misses the bubble.
-            //
-            // CRITICAL: we cannot detect from the streaming final alone
-            // whether the agent emitted a `MEDIA:/path` marker — OpenClaw's
-            // `splitTrailingDirective` (selection-D8_ELZa7.js line ~904)
-            // strips `MEDIA:/...` lines from the broadcast text BEFORE it
-            // reaches the client, so the streaming `final` text is always
-            // the user-facing prose without the marker. The MEDIA: marker
-            // only appears in the persisted JSONL transcript (msg N) and
-            // its companion `assistant-media` bubble (msg N+1).
-            //
-            // We therefore unconditionally schedule ONE follow-up quiet
-            // reload ~1500ms after every assistant `final`. The cost is
-            // a single extra in-process RPC per assistant turn (cheap);
-            // when there's no media the second reload returns the same
-            // history snapshot and is a no-op for the UI.
-            // `forceNextHistoryLoad` bypasses `HISTORY_LOAD_MIN_INTERVAL_MS`
-            // so the call is not suppressed by the throttle.
-            const sessionKeyAtFinal = get().currentSessionKey;
-            setTimeout(() => {
-              if (get().currentSessionKey !== sessionKeyAtFinal) {
-                return;
-              }
-              forceNextHistoryLoad(sessionKeyAtFinal);
-              void get().loadHistory(true);
-            }, 1500);
-          }
-        } else {
-          // No message in final event - reload history to get complete data
-          set({ streamingText: '', streamingMessage: null, pendingFinal: true });
-          get().loadHistory();
-        }
-        break;
-      }
-      case 'error': {
-        const errorMsg = String(
-          event.errorMessage
-          || getMessageErrorMessage(event.message)
-          || 'An error occurred',
-        );
-        const terminalAssistantError = isTerminalAssistantErrorMessage(event.message);
-        const wasSending = get().sending;
-        const sessionKeyAtError = get().currentSessionKey;
-        const recoverable = wasSending && isRecoverableRuntimeError(errorMsg);
-
-        const commitRuntimeError = () => {
-          const currentStream = get().streamingMessage as RawMessage | null;
-          const errorSnapshot = snapshotStreamingAssistantMessage(
-            currentStream,
-            get().messages,
-            `error-${runId || Date.now()}`,
-          );
-          if (errorSnapshot.length > 0) {
-            set((s) => ({
-              messages: [...s.messages, ...errorSnapshot],
-            }));
-          }
-
-          set({
-            error: terminalAssistantError ? null : errorMsg,
-            runError: terminalAssistantError ? errorMsg : null,
-            sending: false,
-            activeRunId: null,
-            streamingText: '',
-            streamingMessage: null,
-            streamingTools: [],
-            pendingFinal: false,
-            lastUserMessageAt: null,
-            pendingToolImages: [],
-          });
-
-          clearHistoryPoll();
-          clearErrorRecoveryTimer();
-          if (wasSending) {
-            void get().loadHistory(true);
-          }
-        };
-
-        if (recoverable) {
-          scheduleRecoverableRuntimeError(() => {
-            if (get().currentSessionKey !== sessionKeyAtError) return;
-            if (runId && get().activeRunId && get().activeRunId !== runId) return;
-            if (!get().sending && !get().error && !get().runError) return;
-            commitRuntimeError();
-          });
-          break;
-        }
-
-        commitRuntimeError();
-        break;
-      }
-      case 'aborted': {
-        clearHistoryPoll();
-        clearErrorRecoveryTimer();
-        set({
-          sending: false,
-          activeRunId: null,
-          streamingText: '',
-          streamingMessage: null,
-          streamingTools: [],
-          pendingFinal: false,
-          lastUserMessageAt: null,
-          pendingToolImages: [],
-        });
-        break;
-      }
-      default: {
-        // Unknown or empty state — if we're currently sending and receive an event
-        // with a message, attempt to process it as streaming data. This handles
-        // edge cases where the Gateway sends events without a state field.
-        const { sending } = get();
-        if (sending && event.message && typeof event.message === 'object') {
-          console.warn(`[handleChatEvent] Unknown event state "${resolvedState}", treating message as streaming delta. Event keys:`, Object.keys(event));
-          const updates = collectToolUpdates(event.message, 'delta');
-          set((s) => ({
-            streamingMessage: event.message ?? s.streamingMessage,
-            streamingTools: updates.length > 0 ? upsertToolStatuses(s.streamingTools, updates) : s.streamingTools,
-          }));
-        }
-        break;
-      }
-    }
-  },
-
-  handleRuntimeEvent: (event: ChatRuntimeEvent) => {
-    const eventSessionKey = event.sessionKey ?? null;
-    const initialState = get();
-    const { activeRunId, currentSessionKey } = initialState;
-    // Cron runs stream under the run-scoped session key while the UI tracks the
-    // base cron key; equivalence binds those run-scoped events to the session
-    // the user is viewing so the live graph/Thinking state renders in realtime.
-    const matchesCurrentSession = eventSessionKey != null
-      && sessionKeysAreEquivalent(eventSessionKey, currentSessionKey);
-    const matchesActiveRun = activeRunId != null && event.runId === activeRunId;
-
-    const runtimeRuns = applyRuntimeEventToRuns(initialState.runtimeRuns, event);
-    const nextPatch: Partial<ChatState> = { runtimeRuns };
-
-    // Always retain structured runtime events, even for inactive sessions.
-    // When the user switches away during a run and returns later, the Chat page
-    // must be able to reconstruct the live execution graph from runtimeRuns
-    // instead of relying only on the on-disk transcript snapshot.
-    // Session-less runtime events are only safe to apply to active UI when they
-    // match the active run; otherwise they are stored but do not affect the
-    // current composer/graph state.
-    if (!matchesCurrentSession && !matchesActiveRun) {
-      updateCachedSessionRunStateFromRuntimeEvent(event);
-      set(nextPatch);
-      return;
-    }
-
-    _lastChatEventAt = Date.now();
-    const appliesToActiveUi = matchesActiveRun || (activeRunId == null && matchesCurrentSession);
-
-    if (event.type === 'run.started') {
-      if (matchesCurrentSession && (activeRunId == null || matchesActiveRun)) {
-        nextPatch.activeRunId = event.runId;
-        nextPatch.error = null;
-        nextPatch.runError = null;
-        if (!initialState.sending && shouldTrackInboundRunLifecycle(initialState, currentSessionKey)) {
-          nextPatch.sending = true;
-        }
-      }
-      set(nextPatch);
-      return;
-    }
-
-    // Adopt an in-progress run when joining it mid-flight. Opening a cron
-    // session whose scheduled run is already executing means `run.started` was
-    // emitted before the renderer began tracking this session, so streamed
-    // delta/tool events arrive with no `activeRunId`. Without adoption the live
-    // execution graph and the running/Thinking indicator never appear until the
-    // user switches sessions. Gated on `shouldTrackInboundRunLifecycle` so
-    // background `:main` heartbeat runs stay silent.
-    if (
-      event.type !== 'run.ended'
-      && matchesCurrentSession
-      && activeRunId == null
-      && !initialState.sending
-      && shouldTrackInboundRunLifecycle(initialState, currentSessionKey)
-    ) {
-      nextPatch.activeRunId = event.runId;
-      nextPatch.sending = true;
-      nextPatch.error = null;
-      nextPatch.runError = null;
-    }
-
-    if (event.type === 'assistant.delta' || event.type === 'thinking.delta') {
-      if (appliesToActiveUi && (initialState.error || initialState.runError)) {
-        nextPatch.error = null;
-        nextPatch.runError = null;
-      }
-      set(nextPatch);
-      return;
-    }
-
-    const toolStatus = runtimeToolEventToStatus(event);
-    if (toolStatus && appliesToActiveUi && (initialState.error || initialState.runError)) {
-      nextPatch.error = null;
-      nextPatch.runError = null;
-    }
-
-    if (event.type === 'tool.completed' && appliesToActiveUi) {
-      const files = extractToolCompletedFiles(event);
-      if (files.length > 0) {
-        nextPatch.pendingToolImages = dedupeAttachedFiles([
-          ...initialState.pendingToolImages,
-          ...files,
-        ]);
-      }
-    }
-
-    if (event.type === 'run.ended') {
-      const latestState = get();
-      const terminalMatchesActiveRun = latestState.activeRunId != null && event.runId === latestState.activeRunId;
-      const terminalIsForCurrentUntrackedSend = latestState.activeRunId == null
-        && matchesCurrentSession
-        && latestState.sending
-        && (
-          typeof event.ts !== 'number'
-          || latestState.lastUserMessageAt == null
-          || event.ts >= latestState.lastUserMessageAt - 1_000
-        );
-      const shouldClearActiveRun = terminalMatchesActiveRun || terminalIsForCurrentUntrackedSend;
-
-      if (shouldClearActiveRun) {
-        nextPatch.sending = false;
-        nextPatch.activeRunId = null;
-        nextPatch.pendingFinal = false;
-        nextPatch.lastUserMessageAt = null;
-        nextPatch.streamingTools = [];
-        if (event.status === 'error' && event.error) {
-          nextPatch.error = null;
-          nextPatch.runError = event.error;
-        }
-        if (event.status === 'aborted') {
-          nextPatch.streamingMessage = null;
-          nextPatch.streamingText = '';
-          nextPatch.pendingToolImages = [];
-        }
-      }
-    }
-
-    set(nextPatch);
-  },
-
-  // ── Refresh: reload history + sessions ──
-
-  refresh: async () => {
-    const { loadHistory, loadSessions } = get();
-    await Promise.all([loadHistory(), loadSessions()]);
-  },
-
-  clearError: () => {
-    const { runError, currentSessionKey, dismissedRunErrors } = get();
-    set({
-      error: null,
-      runError: null,
-      ...(runError
-        ? { dismissedRunErrors: { ...dismissedRunErrors, [currentSessionKey]: runError } }
-        : {}),
-    });
   },
 }));
-
-export function syncCachedSessionRunIdle(sessionKey: string): void {
-  captureSessionRunState(sessionKey, DEFAULT_SESSION_RUN_STATE);
-}

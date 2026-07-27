@@ -12,19 +12,13 @@
     },
     "noLogs": "（ログはまだありません）",
     "scrollToLatest": "最下部に戻る",
-    "loadMoreHistory": "以前のメッセージを読み込む",
-    "loadingMoreHistory": "読み込み中…",
     "toolbar": {
         "refresh": "チャットを更新",
         "currentAgent": "現在の会話相手: {{agent}}",
         "workspace": "ワークスペース"
     },
     "generatedFiles": {
-        "title": "ファイルの変更（{{count}} 件）",
-        "created": "新規",
-        "modified": "更新",
-        "openFolder": "フォルダーを開く",
-        "viewAll": "ファイル変更を見る"
+        "openFolder": "フォルダーを開く"
     },
     "fileActivity": {
         "created": "作成済み",
@@ -111,9 +105,7 @@
     "filePreview": {
         "tabs": {
             "source": "ソース",
-            "preview": "プレビュー",
-            "changes": "変更",
-            "info": "情報"
+            "preview": "プレビュー"
         },
         "actions": {
             "save": "保存",
@@ -126,11 +118,6 @@
             "exitFullscreen": "全画面表示を終了",
             "openHtmlExternally": "HTML をシステムブラウザで開く",
             "retry": "再試行"
-        },
-        "info": {
-            "path": "パス",
-            "size": "サイズ",
-            "type": "種類"
         },
         "toast": {
             "saved": "ディスクに保存しました",
@@ -146,8 +133,8 @@
             "notFound": "ファイルが見つかりません",
             "loadFailed": "読み込みに失敗しました: {{error}}",
             "noPreview": "このファイルにはプレビューがありません",
-            "unsupportedFormatTitle": "このファイル形式は内蔵プレビューまたは差分表示に未対応です",
-            "unsupportedFormatHint": "現在、内蔵プレビューと差分表示は直接読み取れるテキスト/Markdown 系ファイルのみ対応しています。ファイルマネージャーで開いてください。",
+            "unsupportedFormatTitle": "このファイル形式は内蔵プレビューに未対応です",
+            "unsupportedFormatHint": "現在、内蔵プレビューは直接読み取れるテキスト/Markdown 系ファイルのみ対応しています。ファイルマネージャーで開いてください。",
             "largeBinaryOpenTitle": "このファイルは大きいため内蔵プレビューできません",
             "largeBinaryOpenHint": "このファイルは {{size}} です。ClawX では内蔵プレビューできませんが、確認後にシステム既定のアプリで開けます。",
             "openInFinderFailed": "ファイルマネージャーで表示できません",
@@ -157,13 +144,6 @@
         },
         "html": {
             "crashed": "HTML プレビューが停止しました"
-        },
-        "diff": {
-            "noChanges": "表示する変更はありません",
-            "newFile": "新規ファイルのため比較対象がありません",
-            "tooLarge": "ファイルが大きすぎるため diff ビューは無効化されました。完全な内容は「ソース」タブで確認してください",
-            "unavailable": "この会話ではこのファイルの正確な変更ベースラインを取得できなかったため、差分を生成できません。",
-            "unavailableHint": "「プレビュー」で現在の内容を確認するか、Git などで正確な差分を参照してください。"
         },
         "confirmOpen": {
             "title": "ファイルを開く",
@@ -220,35 +200,8 @@
             "openRootInFinder": "ルートをファイルマネージャーで表示"
         }
     },
-    "taskPanel": {
-        "eyebrow": "実行ビュー",
-        "title": "タスクの流れ",
-        "emptyTitle": "まだ構造化されたステップはありません",
-        "emptyBody": "実行が始まると、ClawX は思考・ツール呼び出し・最終化の状態をここに表示します。",
-        "status": {
-            "idle": "待機中",
-            "running_one": "進行中 1 件",
-            "running_other": "進行中 {{count}} 件"
-        },
-        "stepStatus": {
-            "running": "実行中",
-            "completed": "完了",
-            "error": "エラー"
-        }
-    },
-    "executionGraph": {
-        "title": "実行グラフ",
-        "branchLabel": "branch",
-        "thinkingLabel": "考え中",
-        "errorLabel": "エラー",
-        "imageGenerateLabel": "画像生成",
-        "agentRun": "{{agent}} の実行",
-        "collapsedSummary": "ツール呼び出し {{toolCount}} 件 · プロセスメッセージ {{processCount}} 件",
-        "collapseAction": "実行グラフを折りたたむ"
-    },
     "imageGeneration": {
         "generating": "画像を生成しています。しばらくお待ちください…",
-        "previewLoading": "画像プレビューを読み込み中…",
         "previewUnavailable": "画像生成は完了しましたが、プレビューを読み込めませんでした。",
         "generatedReady": "生成された画像の準備ができました。",
         "generatedReadyWithMissing": "生成された画像の準備ができましたが、一部の画像を読み込めませんでした。"
