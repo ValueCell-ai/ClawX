@@ -118,7 +118,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Test Windows attachment open-with bridge
-        run: pnpm exec vitest run tests/unit/attachment-open-with.test.ts tests/unit/attachment-open-with-native.test.ts
+        run: pnpm exec vitest run tests/unit/attachment-open-with.test.ts tests/unit/attachment-open-with-native.test.ts tests/unit/safe-fs.test.ts
 
       - name: Generate extension bridge
         run: pnpm run ext:bridge

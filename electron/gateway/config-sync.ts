@@ -1,6 +1,6 @@
 import { app } from 'electron';
 import path from 'path';
-import { existsSync, readFileSync, mkdirSync, readdirSync, rmSync, symlinkSync } from 'fs';
+import { existsSync, readFileSync, mkdirSync, readdirSync, symlinkSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 
@@ -34,6 +34,7 @@ import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
 import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, syncTrustedOfficialPluginInstallRecord, resolvePluginNpmPackagePath } from '../utils/plugin-install';
+import { safeRmSync } from '../utils/safe-fs';
 import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
 import { ensureOpenClaw2026_7_1UpgradeSnapshot } from '../utils/openclaw-upgrade-snapshot';
 import { stripSystemdSupervisorEnv } from './config-sync-env';
@@ -120,7 +121,7 @@ function cleanupStaleBuiltInExtensions(): void {
     if (existsSync(fsPath(extDir))) {
       logger.info(`[plugin] Removing stale built-in extension copy: ${ext}`);
       try {
-        rmSync(fsPath(extDir), { recursive: true, force: true });
+        safeRmSync(fsPath(extDir));
       } catch (err) {
         logger.warn(`[plugin] Failed to remove stale extension ${ext}:`, err);
       }
@@ -192,7 +193,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean 
         logger.info(`[plugin] ${isInstalled ? 'Auto-upgrading' : 'Installing'} ${channelType} plugin${isInstalled ? `: ${installedVersion} → ${sourceVersion}` : `: ${sourceVersion}`} (bundled)`);
         try {
           mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
-          rmSync(fsPath(targetDir), { recursive: true, force: true });
+          safeRmSync(fsPath(targetDir));
           cpSyncSafe(bundledDir, targetDir);
           fixupPluginManifest(targetDir);
           syncTrustedOfficialPluginInstallRecord(dirName, targetDir);
@@ -258,7 +259,7 @@ function cleanupUnconfiguredChannelPlugins(configuredChannels: string[]): boolea
 
     logger.info(`[plugin] Removing unconfigured channel plugin: ${channelType} (${dirName})`);
     try {
-      rmSync(fsPath(targetDir), { recursive: true, force: true });
+      safeRmSync(fsPath(targetDir));
     } catch (err) {
       logger.warn(`[plugin] Failed to remove unconfigured channel plugin ${channelType}:`, err);
       succeeded = false;
