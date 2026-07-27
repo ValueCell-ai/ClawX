@@ -12,7 +12,6 @@ import { Button } from '@/components/ui/button';
 import { useAgentsStore } from '@/stores/agents';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { useChatStore } from '@/stores/chat';
-import { useGatewayStore } from '@/stores/gateway';
 import { useSessionAttentionStore } from '@/stores/session-attention';
 import { useSettingsStore } from '@/stores/settings';
 import { ensureAcpChatSubscriptions, useAcpChatSessionStore } from '@/stores/acp-chat-session';
@@ -33,7 +32,6 @@ import { ChatInput, type ChatWorkspaceOption, type FileAttachment } from './Chat
 import { ChatToolbar } from './ChatToolbar';
 import { AcpTimeline } from './AcpTimeline';
 import { AcpErrorBanner } from './AcpErrorBanner';
-import { RuntimeChat } from './RuntimeChat';
 
 const ArtifactPanelLazy = lazy(() =>
   import('@/components/file-preview/ArtifactPanel').then((m) => ({ default: m.ArtifactPanel })),
@@ -174,7 +172,7 @@ function WorkspaceUnavailableBanner({
   );
 }
 
-function AcpChat() {
+export function Chat() {
   ensureAcpChatSubscriptions();
 
   const { t } = useTranslation('chat');
@@ -619,11 +617,6 @@ function AcpChat() {
       )}
     </div>
   );
-}
-
-export function Chat() {
-  const runtimeKind = useGatewayStore((state) => state.status.runtimeKind);
-  return runtimeKind === 'cc-connect' ? <RuntimeChat /> : <AcpChat />;
 }
 
 export default Chat;

@@ -3,7 +3,7 @@ id: acp-native-chat
 title: Move Chat to ACP-native Main-owned stdio transport and Renderer reducer
 scenario: gateway-backend-communication
 taskType: runtime-bridge
-intent: Replace the OpenClaw Chat stream/history path with ACP session/load, session/prompt, session/cancel, session/update, and session/request_permission while keeping cc-connect Chat owned by RuntimeManager and BridgePlatform.
+intent: Replace the ClawX-specific Chat stream/history path with ACP session/load, session/prompt, session/cancel, session/update, and session/request_permission while keeping non-Chat Gateway capabilities intact.
 touchedAreas:
   - harness/specs/tasks/acp-native-chat.md
   - package.json
@@ -31,8 +31,6 @@ touchedAreas:
   - tests/unit/chat-input.test.tsx
   - tests/unit/chat-acp-page.test.tsx
   - tests/unit/chat-page-execution-graph.test.tsx
-  - tests/unit/chat-runtime-routing.test.ts
-  - tests/unit/runtime-chat-execution-graph.test.tsx
   - tests/unit/host-api-facade.test.ts
   - tests/unit/host-events.test.ts
   - tests/unit/host-services.test.ts
@@ -45,9 +43,8 @@ touchedAreas:
   - README.zh-CN.md
   - README.ja-JP.md
 expectedUserBehavior:
-  - With OpenClaw active, opening a Chat session loads history through ACP session/load replay.
-  - With OpenClaw active, sending a Chat prompt uses ACP session/prompt, shows an optimistic user segment, and coalesces it with the ACP user echo.
-  - With cc-connect active, Chat continues through RuntimeManager, the active RuntimeProvider, and cc-connect BridgePlatform; ClawX does not start or call OpenClaw ACP.
+  - Opening a Chat session loads history through ACP session/load replay.
+  - Sending a Chat prompt uses ACP session/prompt, shows an optimistic user segment, and coalesces it with the ACP user echo.
   - Thinking, tool calls, permission requests, plans, generated files, and generated images appear as inline timeline blocks in ACP event order.
   - The old Execution Graph aggregation is not used for the ACP Chat path.
   - Renderer does not call Gateway HTTP or WebSocket endpoints directly.
@@ -77,8 +74,6 @@ requiredTests:
   - pnpm run comms:compare
 acceptance:
   - Main starts and reuses openclaw acp through a spawn-safe CLI spec and @agentclientprotocol/sdk ClientSideConnection.
-  - Renderer selects ACP Chat only when the active runtime status is OpenClaw and selects Runtime Chat when it is cc-connect.
-  - Main rejects ACP load, prompt, cancel, and permission operations while cc-connect is active, and typed Chat send remains dispatched through the active RuntimeProvider.
   - Main forwards ACP SessionNotification envelopes and permission request envelopes without translating text, thinking, tools, or media into legacy Chat events.
   - Renderer reduces ACP notifications into an in-memory ordered timeline.
   - No ClawX ACP replay ledger, Chat history cache, or reduced timeline persistence is introduced.

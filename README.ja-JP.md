@@ -93,17 +93,7 @@ ClawXは公式の**OpenClaw**コアを直接ベースに構築されています
 
 私たちはアップストリームのOpenClawプロジェクトとの厳密な整合性を維持することにコミットしており、公式リリースが提供する最新の機能、安定性の改善、エコシステムの互換性に常にアクセスできることを保証します。
 
-開発者モードを有効にし、OpenClaw が active runtime の場合、サイドバーにはネイティブの Dreams ページも表示され、ClawX 内で OpenClaw の記憶レビュー、夢日記、基本メンテナンス操作を扱えます。詳細な診断が必要な場合は、そのページから完全版の OpenClaw Dreams UI も開けます。
-
-ClawX には runtime 抽象レイヤーもあります。OpenClaw は既定 runtime とロールバック経路のままで、**設定 → Gateway → Runtime** から任意の同梱 `cc-connect` runtime に切り替えられます。パッケージ版は cc-connect バイナリと OpenAI Codex ネイティブ CLI bundle の両方を app resources に含め、runtime 起動はグローバルインストール、PATH 上のバイナリ、起動時ダウンロードに依存しません。ClawX はアップグレード後も共有できる app config、credential、runtime data、skills、workspace を `~/.clawx`（または `CLAWX_DATA_HOME`）に保持し、`~/.cc-connect` を自動変更しません。GUI chat は cc-connect BridgePlatform 経由で Codex project agent に接続し、管理 project は cc-connect の Codex app-server stdio backend を使うため、Codex transcript を読まずに tool progress を共通 Chat execution graph へ反映できます。承認ボタンと cc-connect card の選択肢は実行グラフに表示され、応答はすべて cc-connect の公開 `card_action` プロトコルを通じて返されます。Runtime が生成した画像、ファイル、音声、動画の packet も BridgePlatform 経由で返り、Chat の添付として表示され続けます。各 Agent は既定でフルオートを使用し、Agent のモデル/runtime 設定で「承認を求める」（`suggest`）を個別に選択できます。新しい agent は `~/.clawx/workspaces/agents/<id>` を使い、既存の OpenClaw workspace は移動や所有権変更なしで元のパスを再利用できます。provider/model、native cron、enabled skills は管理された cc-connect/Codex runtime に同期されます。
-
-Agent と channel の設定は `~/.clawx` を canonical source とします。cc-connect が active の間は保存しても `~/.openclaw/openclaw.json` を書き換えず、OpenClaw に戻すと Gateway 起動前に互換 projection を再生成します。
-
-cc-connect mode では、Codex provider sync は OpenAI API key、OpenAI OAuth/Codex、Ollama、および Responses API を公開する OpenAI-compatible Custom provider をサポートします。Custom provider の header は環境変数参照として管理 config に書き込まれるため、secret や session header は永続化されません。Chat Completions として設定された Custom provider は、この経路が Codex の Responses wire API を使うため、chat 配信前に unsupported として報告されます。
-
-OAuth provider account ごとに独立した管理 `CODEX_HOME` を持ちます。runtime 起動時にユーザーのグローバル Codex login を自動採用することはなく、選択した account に対する明示的な Codex OAuth import が必要です。
-
-cc-connect はメッセージング platform bridge も担当します。cc-connect が active runtime の場合、channel status probe は OpenClaw Gateway に固定せず runtime abstraction 経由でルーティングされ、設定済み channel account はバインド先 agent を所有する cc-connect project にミラーされます。channel の保存や削除では cc-connect Management API で管理 config を reload し、可能な場合は完全な runtime restart なしで platform 変更を反映します。Developer Mode のサイドバーのページショートカットは cc-connect Web Admin を開き、OpenClaw Dreams ショートカットは OpenClaw runtime 専用のままです。
+開発者モードを有効にすると、サイドバーにはネイティブの Dreams ページも表示され、ClawX 内で OpenClaw の記憶レビュー、夢日記、基本メンテナンス操作を扱えます。詳細な診断が必要な場合は、そのページから完全版の OpenClaw Dreams UI も開けます。
 
 ---
 
@@ -139,14 +129,12 @@ ClawX には Tencent 公式の個人 WeChat チャンネルプラグインも同
 ### ⏰ Cronベースの自動化
 AIタスクを自動的に実行するようスケジュール設定できます。トリガーを定義し、間隔を設定することで、手動介入なしにAIエージェントを24時間稼働させることができます。
 定期タスク画面では外部配信を「送信アカウント」と「受信先ターゲット」の 2 段階セレクターで設定できるようになりました。対応チャネルでは、受信先候補をチャネルのディレクトリ機能や既知セッション履歴から自動検出するため、`jobs.json` を手で編集する必要はありません。タスクのメッセージ入力欄でも、メインのチャット入力と同じインライン `/skill` トークン記法でスキルを挿入できるようになりました（選択中のエージェントに応じて読み込み）。スケジュールされたプロンプトから直接スキルを起動できます。スケジュール選択は**繰り返し**と**1回のみ**のタブに分かれました。繰り返しは毎時・毎日・平日・毎週・カスタム（生の cron）の頻度を時刻／曜日コントロール付きで選べ、1回のみは選択した日付（曜日を表示）と時刻に一度だけ実行します。1回のみのタスクは未来の時刻を指定する必要があり、実行後はランタイムにより自動的に削除されます。
-runtime が **今すぐ実行** を非同期で受け付ける場合、ClawX はトリガー確認をブロックせず、Cron カードに最新の完了結果が表示されるか、制限された停止条件に達するまで runtime 管理のジョブをバックグラウンド更新します。
 
 
 ### 🧩 拡張可能なスキルシステム
 事前構築されたスキルでAIエージェントを拡張できます。統合 Skills ページはローカル優先で、管理ディレクトリや workspace のスキルをスキャンし、Gateway に依存せず有効/無効を切り替えられます。エンタープライズ拡張がある場合は、その拡張が提供する marketplace も表示できます。
 ClawX はドキュメント処理スキル（`pdf`、`xlsx`、`docx`、`pptx`）もフル内容で同梱し、起動時に管理スキルディレクトリ（既定 `~/.openclaw/skills`）へ自動配備し、初回インストール時に既定で有効化します。
 Skills ページでは OpenClaw の複数ソース（管理ディレクトリ、workspace、追加スキルディレクトリ）から検出されたスキルを表示でき、各スキルの実際のパスを確認して実フォルダを直接開けます。OpenClaw 同梱の bundled skill については、コミュニティ版ではパッケージにも表示にも `skill-creator` のみを残し、dev 起動時と packaged 起動時の両方で他の bundled skill を物理的に削除します。さらに、削除済み bundled skill の古い `openclaw.json` エントリも一緒に掃除します。
-cc-connect runtime が有効な場合、有効化されたローカル skills は app userData 配下の管理 Codex home にミラーされ、同梱 Codex agent がグローバル skill ディレクトリを読まずに同じ skill セットを使えます。
 
 ### 🔐 セキュアなプロバイダー統合
 複数のAIプロバイダー（OpenAI、Anthropic、Z.AI / GLMなど）に接続でき、資格情報はシステムのネイティブキーチェーンに安全に保存されます。OpenAI は API キーとブラウザ OAuth（Codex サブスクリプション）の両方に対応しています。
@@ -208,7 +196,7 @@ ClawXを初めて起動すると、**セットアップウィザード**が以�
 
 ### プロキシ設定
 
-ClawXには、Electron、OpenClaw Gateway、任意の cc-connect/Codex runtime、またはTelegramなどのチャネルがローカルプロキシクライアントを介してインターネットにアクセスする必要がある環境向けに、組み込みのプロキシ設定が含まれています。
+ClawXには、Electron、OpenClaw Gateway、またはTelegramなどのチャネルがローカルプロキシクライアントを介してインターネットにアクセスする必要がある環境向けに、組み込みのプロキシ設定が含まれています。
 
 **設定 → ゲートウェイ → プロキシ**を開いて以下を設定します：
 
@@ -229,11 +217,10 @@ ClawXには、Electron、OpenClaw Gateway、任意の cc-connect/Codex runtime�
 - `host:port`のみの値はHTTPとして扱われます。
 - 高度なプロキシフィールドが空の場合、ClawXは`プロキシサーバー`にフォールバックします。
 - プロキシ設定を保存すると、Electronのネットワーク設定が即座に再適用され、ゲートウェイが自動的に再起動されます。
-- cc-connect runtime モードでは、Codex 子プロセスが同じ `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、バイパス環境値を継承します。
 - ClawXはTelegramが有効な場合、プロキシをOpenClawのTelegramチャネル設定にも同期します。
 - ClawXのプロキシが無効な状態では、Gatewayの通常再起動時に既存のTelegramチャネルプロキシ設定を保持します。
 - OpenClaw設定のTelegramプロキシを明示的に消したい場合は、プロキシ無効の状態で一度「保存」を実行してください。
-- **設定 → 詳細 → 開発者** の Runtime Doctor は、OpenClaw では `openclaw doctor --json` を実行します。cc-connect では同梱の `cc-connect doctor user-isolation` と `codex doctor --json` を組み合わせ、モード 0600 の監査レポートを ClawX 管理の runtime ディレクトリへ保存します。Doctor Fix は OpenClaw 専用です。
+- **設定 → 詳細 → 開発者** では **OpenClaw Doctor** を実行でき、`openclaw doctor --json` の診断出力をアプリ内で確認できます。
 - Windows のパッケージ版では、同梱された `openclaw` CLI/TUI は端末入力を安定させるため、同梱の `node.exe` エントリーポイント経由で実行されます。
 
 ---
@@ -242,7 +229,7 @@ ClawXには、Electron、OpenClaw Gateway、任意の cc-connect/Codex runtime�
 
 ClawXは、**デュアルプロセス + Host API 統一アクセス**構成を採用しています。Renderer は単一クライアント抽象を呼び出し、プロトコル選択とライフサイクルは Main が管理します：
 
-Chat transport は active runtime に応じて切り替わりますが、Renderer の境界は 1 つに保たれます。OpenClaw Chat は Electron Main が所有する ACP stdio bridge を使用し、Renderer は型付き host event を受け取ってメモリ上の ACP timeline を描画します。cc-connect Chat は `RuntimeManager` から cc-connect BridgePlatform 経由で dispatch され、session history、progress、approval、generated media も同じ経路を通ります。両モードで Renderer は同じ Host API facade を使い、Codex を直接呼び出しません。非 Chat 機能も runtime provider 経由で dispatch され、OpenClaw 固有操作は OpenClaw adapter 内に限定されます。
+Chat は Electron Main が所有する ACP stdio bridge を使用します。Renderer は型付き host event を受け取り、メモリ上の ACP timeline を描画します。Gateway は providers、models、skills、workspace、settings、diagnostics、media configuration などの非 Chat 機能を引き続き担当します。
 
 別の会話やページを開いても、未完了の ACP 応答はストリーミングを継続します。完了前に戻ると最新のメモリ内 timeline が復元され、ライブ応答の表示が続きます。完了後は通常の ACP 履歴リプレイが引き続き唯一の正となります。
 
@@ -288,17 +275,17 @@ ACP Chat は、runtime が画像生成メディアを信頼できる構造化メ
                                │ 型付き IPC リクエスト
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                Main Host Services と Runtime Manager              │
+│                Main Host Services と Gateway Manager              │
 │                                                                 │
 │  • host:invoke 型付きサービスディスパッチ                            │
 │  • 設定、ファイル、セッション、スキル、プロバイダー、診断サービス          │
-│  • Runtime 選択、transport、プロセス監視を所有                       │
+│  • Main が Gateway WebSocket とプロセス監視を所有                    │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
                                │ Main 所有 WebSocket
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                     OpenClaw Gateway 経路（図示）                  │
+│                     OpenClaw ゲートウェイ                         │
 │                                                                 │
 │  • AIエージェントランタイムとオーケストレーション                       │
 │  • メッセージチャネル管理                                           │
@@ -310,7 +297,7 @@ ACP Chat は、runtime が画像生成メディアを信頼できる構造化メ
 
 - **プロセス分離**: AIランタイムは別プロセスで動作し、重い計算処理中でもUIの応答性を確保します
 - **フロントエンド呼び出しの単一入口**: Renderer は host-api/api-client を通じて呼び出し、下位プロトコルに依存しません
-- **Mainによるトランスポート制御**: OpenClaw ACP/Gateway transport と cc-connect BridgePlatform dispatch は Electron Main が所有し、Renderer は型付き IPC で Main と通信します
+- **Mainによるトランスポート制御**: ACP Chat stdio bridge と Gateway トランスポートは Electron Main が所有し、Renderer は型付き IPC で Main と通信します
 - **拡張 IPC コントリビューション**: Main プロセス拡張は HTTP route ではなく、型付き IPC レジストリを通じて host-api action を提供します
 - **グレースフルリカバリ**: 再接続・タイムアウト・バックオフで一時的障害を自動処理します
 - **セキュアストレージ**: APIキーや機密データは、OSのネイティブセキュアストレージ機構を活用します
@@ -319,7 +306,7 @@ ACP Chat は、runtime が画像生成メディアを信頼できる構造化メ
 ### プロセスモデルと Gateway トラブルシューティング
 
 - ClawX は Electron アプリのため、**1つのアプリインスタンスでも複数プロセス（main/renderer/zygote/utility）が表示される**のが正常です。
-- 単一起動保護は Electron のロックに加え、`~/.clawx/locks` 配下のインストール横断 writer lock も使用します。ClawX は共有データ初期化、移行、runtime、scheduler の起動前にこのロックを取得し、所有権を確認できない場合は起動を拒否します。
+- 単一起動保護は Electron のロックに加え、ローカルのプロセスロックファイルも併用し、デスクトップ IPC / セッションバスが不安定な環境でも重複起動を防ぎます。
 - ローリングアップグレード中に旧版/新版が混在すると、単一起動保護の挙動が非対称になる場合があります。安定運用のため、デスクトップクライアントは可能な限り同一バージョンへ揃えてください。
 - ただし OpenClaw Gateway の待受は常に**単一**であるべきです。`127.0.0.1:18789` を Listen しているプロセスは1つだけです。
 - Gateway の readiness は `system-presence`、`health`、`status` などの OpenClaw コア信号を基準にし、memory、Dreams、チャネルの失敗はグローバルな Gateway 障害ではなく capability degradation として表示します。
@@ -386,8 +373,6 @@ AI を開発ワークフローに統合できます。エージェントを使�
 ```
 ### 利用可能なコマンド
 
-cc-connect の実環境検証はローカル env ファイルを読み込めますが、リポジトリ内の認証情報ファイルは gitignore されている必要があります。リポジトリ外の `--env-file` パスは利用でき、レポートには書き込まれません。`.env.cc-connect.local.example` は `.env.cc-connect.local` のフィールドテンプレートです。
-
 ```bash
 # 開発
 pnpm run init             # 依存関係のインストール + バンドルバイナリ（uv、agent-browser）のダウンロード
@@ -400,39 +385,10 @@ pnpm typecheck            # TypeScriptの型チェック
 # テスト
 pnpm test                 # ユニットテストを実行
 pnpm run test:e2e         # Electron E2E スモークテストを実行
-pnpm run test:e2e:cc-connect:codex-oauth-lifecycle # 実認証情報なしで cc-connect Codex OAuth Host API の status/import/logout を検証
-CLAWX_REAL_OAUTH_E2E=1 CLAWX_REAL_CODEX_AUTH_JSON="$HOME/.codex/auth.json" pnpm run test:e2e:cc-connect:real-oauth # 実 OAuth tool execution と Chat execution graph を検証
 pnpm run test:e2e:headed  # 表示付きウィンドウで Electron E2E を実行
 pnpm run comms:replay     # 通信リプレイ指標を算出
 pnpm run comms:baseline   # 通信ベースラインを更新
 pnpm run comms:compare    # リプレイ指標をベースライン閾値と比較
-pnpm run verify:cc-connect:local-real      # ローカル cc-connect 実環境検証の事前レポートを書き出す
-pnpm run verify:cc-connect:local-real:run  # 安全なローカル cc-connect 実環境検証を実行してレポートを書き出す
-pnpm run verify:cc-connect:local-real:oauth # CLAWX_REAL_CODEX_AUTH_JSON に完全な refresh token フィールドがある場合、開発版 cc-connect の実 OAuth 総合スモークも実行
-pnpm run verify:cc-connect:local-real:oauth-all # CLAWX_REAL_CODEX_AUTH_JSON に完全な refresh token フィールドがある場合、開発版とパッケージ版 cc-connect の実 OAuth スモークも実行
-pnpm run verify:cc-connect:local-real:api-key # ローカル OpenAI-compatible API-key chat/abort スモークを実行し、認証情報がある場合は実 OpenAI API-key スモークも実行
-pnpm run verify:cc-connect:local-real:feishu # 認証情報と CLAWX_REAL_CODEX_AUTH_JSON がある場合に実 Feishu/Lark ライフサイクルスモークも実行
-pnpm run verify:cc-connect:local-real:feishu-inbound # サンドボックス tenant fixture が有効な場合に実 Feishu/Lark inbound marker スモークも実行
-pnpm run verify:cc-connect:local-real:scheduled-cron # 実 native exec cron を実行し、Codex auth がある場合は public cc-connect session history で native prompt scheduling も検証
-pnpm run verify:cc-connect:local-real:all # 利用可能なローカル cc-connect 実環境検証をすべて実行し、外部 gate handoff を書き出す
-pnpm run verify:cc-connect:local-real:all-strict # リリース候補検証では全実認証情報と runtime parity coverage の PASS を必須にし、失敗前にも handoff を書き出す
-pnpm run verify:cc-connect:local-real:replacement-ready # replacement readiness を必須にし、不足認証情報を別の事前失敗にはしない。失敗前にも handoff を書き出す
-pnpm run verify:cc-connect:local-real:replacement-ready:check # 同じ readiness gate を実行し、前回のレポート成果物は上書きしない
-pnpm run verify:cc-connect:local-real:packaged-oauth # CLAWX_REAL_CODEX_AUTH_JSON に完全な refresh token フィールドがある場合、パッケージ版 cc-connect の実 OAuth スモークも実行
-pnpm run verify:cc-connect:local-real:external-gates:check # 残りの required external gates を非破壊で確認し、レポート成果物は上書きしない
-pnpm run verify:cc-connect:local-real:external-gates # 残りの required external gates のみを実行し、3件すべて PASS の場合だけ成功
-pnpm run verify:cc-connect:local-real:handoff # 残りの外部 gate 向けに認証情報を含まない handoff checklist を生成
-
-# レポートは artifacts/cc-connect/local-real-validation-report.{json,md} に出力されます。
-# :all、:all-strict、:replacement-ready、:external-gates、または :handoff は artifacts/cc-connect/local-real-external-gates.{md,json} に外部 gate handoff を出力します。
-# JSON handoff は machine-readable で、sanitize 済みの status、env var 名、command、安全メモのみを含みます。
-# runtimeMatrixStatus は pass/partial/fail の coverage と hard gate の終了状態を分けて表示します。
-# --no-write、replacement-ready:check、または external-gates:check は非破壊の gate check に使えます。不足 precondition と次の command は秘密値なしで表示されます。
-# validationGaps はローカル hard gate の不足と full parity に必要な follow-up evidence gap を分けて記録します。
-# partial レポートには秘密値を含まない後続コマンドの Next Actions が含まれます。
-# 実認証情報は、未追跡かつ gitignore 済みの .env.cc-connect.local、--env-file=<path>、
-# または CLAWX_REAL_ENV_FILE / CLAWX_REAL_ENV_FILES で渡せます。明示的な process env が優先されます。
-# API-key スモークでは、デフォルトモデルが利用できない場合に CLAWX_REAL_OPENAI_MODEL を設定できます。
 
 # ビルド＆パッケージ
 pnpm run build:vite       # フロントエンドのみビルド
@@ -441,9 +397,6 @@ pnpm package              # 現在のプラットフォーム向けにパッケ�
 pnpm package:mac          # macOS向けにパッケージ化
 pnpm package:win          # Windows向けにパッケージ化
 pnpm package:linux        # Linux向けにパッケージ化
-pnpm run verify:runtime-bundles # ダウンロード済み cc-connect/Codex bundle の manifest とバイナリを検証
-pnpm run verify:packaged-runtime-resources -- --resources=<path> --platform=<darwin|win32|linux> --arch=<x64|arm64> # 最終 Electron runtime resources を検証
-pnpm run smoke:cc-connect:packaged # ネイティブ unpacked app を起動し、cc-connect の起動/状態/Cron/Doctor/ロールバック/クリーンアップを検証
 ```
 
 ヘッドレス Linux では Electron テストに表示サーバーが必要です。`xvfb-run -a pnpm run test:e2e` を利用してください。

@@ -94,17 +94,7 @@ ClawX 直接基于官方 **OpenClaw** 核心构建。无需单独安装，我们
 
 我们致力于与上游 OpenClaw 项目保持严格同步，确保你始终可以使用官方发布的最新功能、稳定性改进和生态兼容性。
 
-打开开发者模式且当前 runtime 为 OpenClaw 时，侧边栏还会提供原生 Dreams 页面，可在 ClawX 内查看 OpenClaw 记忆回顾、梦境日记，并执行基础维护操作；需要更深诊断时仍可从该页面打开完整 OpenClaw Dreams UI。
-
-ClawX 现在也包含 runtime 抽象层。OpenClaw 仍是默认 runtime 和回滚路径，你可以在 **设置 → 网关 → Runtime** 切换到可选的内置 `cc-connect` runtime。打包产物会同时内置 cc-connect 二进制和 OpenAI Codex 原生 CLI bundle；runtime 启动不依赖全局安装、PATH 二进制或运行时下载。ClawX 会把可跨升级复用的 app 配置、凭据、runtime 数据、skills 和 workspace 放在 `~/.clawx`（或 `CLAWX_DATA_HOME`），不会自动修改 `~/.cc-connect`。GUI chat 会通过 cc-connect BridgePlatform 连接到 Codex project agent；托管 project 固定使用 cc-connect 的 Codex app-server stdio backend，使工具进度可以驱动共用的 Chat execution graph，而不读取 Codex transcript。审批按钮和 cc-connect card 选项都会显示在执行图中，响应统一通过 cc-connect 公共 `card_action` 协议返回。Runtime 生成的图片、文件、音频和视频包也通过 BridgePlatform 返回，并持续显示为 Chat 附件。每个 Agent 默认使用全自动模式，也可以在 Agent 的模型/runtime 设置中独立选择“需要审批”（`suggest`）。新 agent 使用 `~/.clawx/workspaces/agents/<id>`；已有 OpenClaw workspace 可以按原路径复用，ClawX 不移动也不接管它。Provider/model、原生 cron 任务和已启用 skills 会同步到托管的 cc-connect/Codex runtime。
-
-Agent 和频道设置以 `~/.clawx` 为唯一 canonical 数据源。cc-connect 处于启用状态时，保存设置不会改写 `~/.openclaw/openclaw.json`；切回 OpenClaw 后，Gateway 启动前会重新生成这份兼容投影。
-
-在 cc-connect 模式下，Codex provider 同步支持 OpenAI API Key、OpenAI OAuth/Codex、Ollama，以及暴露 Responses API 的 OpenAI-compatible Custom provider。Custom provider header 会以环境变量引用写入托管配置，避免持久化密钥或 session header。配置为 Chat Completions 的 Custom provider 会在 chat 投递前被明确标记为不支持，因为这条路径使用 Codex 的 Responses wire API。
-
-每个 OAuth provider account 都有独立的托管 `CODEX_HOME`。runtime 启动不会自动采用用户全局 Codex 登录；必须对选中的 account 显式执行 Codex OAuth 导入。
-
-cc-connect 也负责消息平台桥接。当 cc-connect 是当前 runtime 时，频道状态探测会通过 runtime 抽象层路由，而不是继续固定查询 OpenClaw Gateway；已配置的频道账号会同步到其绑定 agent 所属的 cc-connect project，频道保存/删除会通过 cc-connect Management API reload 托管配置，在可行时无需完整重启 runtime 就让 platform 变更生效；开发者模式侧边栏的页面入口会打开 cc-connect Web Admin，OpenClaw Dreams 入口仍只在 OpenClaw runtime 下显示。
+打开开发者模式后，侧边栏还会提供原生 Dreams 页面，可在 ClawX 内查看 OpenClaw 记忆回顾、梦境日记，并执行基础维护操作；需要更深诊断时仍可从该页面打开完整 OpenClaw Dreams UI。
 
 ---
 
@@ -140,14 +130,12 @@ ClawX 现在还内置了腾讯官方个人微信渠道插件，可直接在 Chan
 ### ⏰ 定时任务自动化
 调度 AI 任务自动执行。定义触发器、设置时间间隔，让 AI 智能体 7×24 小时不间断工作。
 现在定时任务页面已经可以直接配置外部投递，统一拆成“发送账号”和“接收目标”两个下拉选择。对于已支持的通道，接收目标会从通道目录能力或已知会话历史中自动发现，不需要再手动修改 `jobs.json`。任务的消息输入框也支持像主对话框那样以内联 `/skill` 令牌的方式插入技能（按所选智能体范围加载），让定时提示词可以直接触发技能。调度选择器现在分为**周期**和**单次**两个选项卡：周期支持每小时、每天、工作日、每周、自定义（原始 cron）等频率，并内置时间/星期选择；单次则在所选日期（显示星期）和时间执行一次。单次任务必须设置为未来时间，并会在执行完成后由运行时自动清除。
-当 runtime 异步接受**立即运行**时，ClawX 会保持触发确认非阻塞，并在后台刷新 runtime 自己管理的任务，直到 Cron 卡片显示最新完成结果或达到有界停止条件。
 
 
 ### 🧩 可扩展技能系统
 通过预构建的技能扩展 AI 智能体的能力。集成的 Skills 页面采用“本地优先”方式：会扫描托管目录与 workspace 技能目录，并且无需依赖 Gateway 即可启用或停用技能；在企业扩展接管时，也可以显示扩展提供的 marketplace。
 ClawX 还会内置预装完整的文档处理技能（`pdf`、`xlsx`、`docx`、`pptx`），在启动时自动部署到托管技能目录（默认 `~/.openclaw/skills`），并在首次安装时默认启用。
 Skills 页面可展示来自多个 OpenClaw 来源的技能（托管目录、workspace、额外技能目录），并显示每个技能的实际路径，便于直接打开真实安装位置。对于 OpenClaw 自带的 bundled skills，社区版现在在打包产物里只保留并展示 `skill-creator`；开发模式和打包版启动时都会直接清理其它 bundled skill，同时把这些已删除 bundled skill 在 `openclaw.json` 中残留的旧配置一并移除。
-当 cc-connect runtime 处于启用状态时，ClawX 会把已启用的本地 skills 镜像到 app userData 下托管的 Codex home 中，让内置 Codex agent 使用同一套技能，而不读取全局 skill 目录。
 
 ### 🔐 安全的供应商集成
 连接多个 AI 供应商（OpenAI、Anthropic、Z.AI / GLM 等），凭证安全存储在系统原生密钥链中。OpenAI 同时支持 API Key 与浏览器 OAuth（Codex 订阅）登录。
@@ -212,7 +200,7 @@ pnpm dev
 
 ### 代理设置
 
-ClawX 内置了代理设置，适用于需要通过本地代理客户端访问外网的场景，包括 Electron 本身、OpenClaw Gateway、可选的 cc-connect/Codex runtime，以及 Telegram 这类频道的联网请求。
+ClawX 内置了代理设置，适用于需要通过本地代理客户端访问外网的场景，包括 Electron 本身、OpenClaw Gateway，以及 Telegram 这类频道的联网请求。
 
 打开 **设置 → 网关 → 代理**，配置以下内容：
 
@@ -233,11 +221,10 @@ ClawX 内置了代理设置，适用于需要通过本地代理客户端访问�
 - 只填写 `host:port` 时，会按 HTTP 代理处理。
 - 高级代理项留空时，会自动回退到“代理服务器”。
 - 保存代理设置后，Electron 网络层会立即重新应用代理，并自动重启 Gateway。
-- 在 cc-connect runtime 模式下，Codex 子进程会继承同一组 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 和绕过规则环境变量。
 - 如果启用了 Telegram，ClawX 还会把代理同步到 OpenClaw 的 Telegram 频道配置中。
 - 当 ClawX 代理处于关闭状态时，Gateway 的常规重启会保留已有的 Telegram 频道代理配置。
 - 如果你要明确清空 OpenClaw 中的 Telegram 代理，请在关闭代理后点一次“保存代理设置”。
-- 在 **设置 → 高级 → 开发者** 中，Runtime Doctor 会在 OpenClaw 模式执行 `openclaw doctor --json`；在 cc-connect 模式组合执行内置的 `cc-connect doctor user-isolation` 与 `codex doctor --json`，并把权限为 0600 的审计报告写入 ClawX 托管 runtime 目录。Doctor Fix 仍只支持 OpenClaw。
+- 在 **设置 → 高级 → 开发者** 中，可以直接运行 **OpenClaw Doctor**，执行 `openclaw doctor --json` 并在应用内查看诊断输出。
 - 在 Windows 打包版本中，内置的 `openclaw` CLI/TUI 会通过随包分发的 `node.exe` 入口运行，以保证终端输入行为稳定。
 
 ---
@@ -246,7 +233,7 @@ ClawX 内置了代理设置，适用于需要通过本地代理客户端访问�
 
 ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用统一客户端抽象，协议选择与进程生命周期由 Electron 主进程统一管理：
 
-Chat 传输会随当前 runtime 切换，但 Renderer 始终只经过同一个边界。OpenClaw Chat 使用由 Electron Main 持有的 ACP stdio bridge，Renderer 接收类型化 host events 并渲染内存中的 ACP timeline；cc-connect Chat 则由 `RuntimeManager` 通过 cc-connect BridgePlatform 分派，包括 session history、progress、approval 与 generated media。两种模式都使用同一套 Host API facade，Renderer 不会直接调用 Codex。非 Chat 能力也通过 runtime provider 分派，OpenClaw 专属操作只保留在 OpenClaw adapter 内。
+Chat 使用由 Electron Main 持有的 ACP stdio bridge。Renderer 接收类型化 host events，并渲染内存中的 ACP timeline。Gateway 仍负责 providers、models、skills、workspace、settings、diagnostics 和 media configuration 等非 Chat 能力。
 
 打开其它会话或页面时，尚未完成的 ACP 回复仍会继续流式接收。若在回复完成前返回，ClawX 会恢复最新的内存 timeline 并继续显示实时输出；回复完成后，普通 ACP 历史回放仍是唯一事实来源。
 
@@ -292,17 +279,17 @@ ACP Chat 也可在 runtime 以可信结构化媒体投递图像生成结果时�
                                │ 类型化 IPC 请求
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                  主进程 Host Services 与 Runtime Manager          │
+│                  主进程 Host Services 与 Gateway Manager          │
 │                                                                 │
 │  • host:invoke 类型化服务分发                                      │
 │  • 设置、文件、会话、技能、供应商、诊断服务                           │
-│  • Runtime 选择、传输与进程监控                                     │
+│  • 主进程持有 Gateway WebSocket 并负责进程监控                       │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
                                │ 主进程持有 WebSocket
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                     OpenClaw 网关路径（图示）                      │
+│                     OpenClaw 网关                                │
 │                                                                 │
 │  • AI 智能体运行时与编排                                           │
 │  • 消息频道管理                                                   │
@@ -314,7 +301,7 @@ ACP Chat 也可在 runtime 以可信结构化媒体投递图像生成结果时�
 
 - **进程隔离**：AI 运行时在独立进程中运行，确保即使在高负载计算期间 UI 也能保持响应
 - **前端调用单一入口**：渲染层统一走 host-api/api-client，不感知底层协议细节
-- **主进程掌控传输策略**：OpenClaw ACP/Gateway 传输与 cc-connect BridgePlatform 分派都由 Electron Main 持有，渲染进程通过类型化 IPC 调用 Main
+- **主进程掌控传输策略**：ACP Chat stdio bridge 与 Gateway 传输都由 Electron Main 持有，渲染进程通过类型化 IPC 调用 Main
 - **扩展 IPC 贡献点**：主进程扩展通过类型化 IPC 注册表贡献 host-api action，而不是挂载 HTTP route
 - **优雅恢复**：内置重连、超时、退避逻辑，自动处理瞬时故障
 - **安全存储**：API 密钥和敏感数据利用操作系统原生的安全存储机制
@@ -323,7 +310,7 @@ ACP Chat 也可在 runtime 以可信结构化媒体投递图像生成结果时�
 ### 进程模型与 Gateway 排障
 
 - ClawX 基于 Electron，**单个应用实例出现多个系统进程是正常现象**（main/renderer/zygote/utility）。
-- 单实例保护同时使用 Electron 自带锁和 `~/.clawx/locks` 下的跨安装 writer lock。ClawX 会在共享数据初始化、迁移、runtime 或 scheduler 启动前取得文件锁；无法确认所有权时会拒绝启动。
+- 单实例保护同时使用 Electron 自带锁与本地进程文件锁回退机制，可在桌面会话总线异常时避免重复启动。
 - 滚动升级期间若新旧版本混跑，单实例保护仍可能出现不对称行为。为保证稳定性，建议桌面客户端尽量统一升级到同一版本。
 - 但 OpenClaw Gateway 监听应始终保持**单实例**：`127.0.0.1:18789` 只能有一个监听者。
 - Gateway readiness 以 OpenClaw 的 `system-presence`、`health`、`status` 等核心信号为准；memory、Dreams 或频道失败会显示为能力降级，而不是全局 Gateway 故障。
@@ -390,8 +377,6 @@ ACP Chat 也可在 runtime 以可信结构化媒体投递图像生成结果时�
 ```
 ### 常用命令
 
-cc-connect 真实验证可以加载本地 env 文件，但仓库内的凭据文件必须被 gitignore；仓库外 `--env-file` 路径可以使用且不会写入报告。`.env.cc-connect.local.example` 是 `.env.cc-connect.local` 的字段模板。
-
 ```bash
 # 开发
 pnpm run init             # 安装依赖并下载捆绑二进制（uv、agent-browser）
@@ -404,39 +389,10 @@ pnpm typecheck            # TypeScript 类型检查
 # 测试
 pnpm test                 # 运行单元测试
 pnpm run test:e2e         # 运行 Electron E2E 冒烟测试
-pnpm run test:e2e:cc-connect:codex-oauth-lifecycle # 无需真实凭证验证 cc-connect Codex OAuth Host API 状态/导入/登出
-CLAWX_REAL_OAUTH_E2E=1 CLAWX_REAL_CODEX_AUTH_JSON="$HOME/.codex/auth.json" pnpm run test:e2e:cc-connect:real-oauth # 验证真实 OAuth 工具执行和 Chat execution graph
 pnpm run test:e2e:headed  # 以可见窗口运行 Electron E2E 测试
 pnpm run comms:replay     # 计算通信回放指标
 pnpm run comms:baseline   # 刷新通信基线快照
 pnpm run comms:compare    # 将回放指标与基线阈值对比
-pnpm run verify:cc-connect:local-real      # 写入本地 cc-connect 真实验证前置报告
-pnpm run verify:cc-connect:local-real:run  # 执行安全的本地 cc-connect 真实验证检查并写入报告
-pnpm run verify:cc-connect:local-real:oauth # CLAWX_REAL_CODEX_AUTH_JSON 包含完整 refresh token 字段时额外执行开发版 cc-connect 真实 OAuth 综合冒烟
-pnpm run verify:cc-connect:local-real:oauth-all # CLAWX_REAL_CODEX_AUTH_JSON 包含完整 refresh token 字段时额外执行开发版和打包版 cc-connect 真实 OAuth 冒烟
-pnpm run verify:cc-connect:local-real:api-key # 执行本地 OpenAI-compatible API-key chat/abort 冒烟；有真实凭证时额外执行真实 OpenAI API-key 冒烟
-pnpm run verify:cc-connect:local-real:feishu # 有凭证和 CLAWX_REAL_CODEX_AUTH_JSON 时额外执行真实飞书/Lark 生命周期冒烟
-pnpm run verify:cc-connect:local-real:feishu-inbound # 沙箱租户入站 fixture 启用时额外执行真实飞书/Lark inbound marker 冒烟
-pnpm run verify:cc-connect:local-real:scheduled-cron # 执行真实原生 exec cron；有 Codex auth 时通过 cc-connect public session history 验证原生 prompt 调度
-pnpm run verify:cc-connect:local-real:all # 执行所有可用的本地 cc-connect 真实验证路径，并写入外部门禁交接清单
-pnpm run verify:cc-connect:local-real:all-strict # 发布候选验证要求所有真实凭证和 runtime parity 覆盖都通过；失败前也会写入交接清单
-pnpm run verify:cc-connect:local-real:replacement-ready # 要求 replacement readiness 通过，但不把缺失凭证单独作为前置失败；失败前也会写入交接清单
-pnpm run verify:cc-connect:local-real:replacement-ready:check # 同样检查 readiness，但不覆盖上一次报告产物
-pnpm run verify:cc-connect:local-real:packaged-oauth # CLAWX_REAL_CODEX_AUTH_JSON 包含完整 refresh token 字段时额外执行打包版 cc-connect 真实 OAuth 冒烟
-pnpm run verify:cc-connect:local-real:external-gates:check # 非破坏性检查剩余 required external gates，不覆盖报告产物
-pnpm run verify:cc-connect:local-real:external-gates # 只运行剩余 required external gates，三项全部通过才成功
-pnpm run verify:cc-connect:local-real:handoff # 生成不含凭证的剩余外部门禁交接清单
-
-# 报告写入 artifacts/cc-connect/local-real-validation-report.{json,md}；
-# :all、:all-strict、:replacement-ready、:external-gates 或 :handoff 会把外部门禁交接清单写入 artifacts/cc-connect/local-real-external-gates.{md,json}。
-# JSON 交接清单可供机器读取，只包含清洗后的状态、环境变量名、命令和安全说明。
-# runtimeMatrixStatus 会把 pass/partial/fail 覆盖状态和硬门禁退出状态分开展示。
-# 使用 --no-write、replacement-ready:check 或 external-gates:check 做非破坏性门禁检查；缺失前置条件和下一步命令会以不含密钥值的形式打印。
-# validationGaps 会区分本地硬门禁缺口和完整替代所需的 follow-up 证据缺口。
-# partial 报告会包含 Next Actions，列出后续命令且不写入密钥值。
-# 真实凭证可通过未跟踪且已 gitignore 的 .env.cc-connect.local、--env-file=<path>、
-# 或 CLAWX_REAL_ENV_FILE / CLAWX_REAL_ENV_FILES 提供；显式进程环境变量优先。
-# API-key 冒烟在默认模型不可用时可设置 CLAWX_REAL_OPENAI_MODEL。
 
 # 构建与打包
 pnpm run build:vite       # 仅构建前端
@@ -445,9 +401,6 @@ pnpm package              # 为当前平台打包（包含预装技能资源）
 pnpm package:mac          # 为 macOS 打包
 pnpm package:win          # 为 Windows 打包
 pnpm package:linux        # 为 Linux 打包
-pnpm run verify:runtime-bundles # 校验下载的 cc-connect/Codex bundle manifest 与二进制
-pnpm run verify:packaged-runtime-resources -- --resources=<路径> --platform=<darwin|win32|linux> --arch=<x64|arm64> # 校验最终 Electron runtime resources
-pnpm run smoke:cc-connect:packaged # 启动当前平台 unpacked app，验证 cc-connect 启动/状态/Cron/Doctor/回滚/清理
 ```
 
 在无头 Linux 环境下，Electron 测试需要显示服务；可使用 `xvfb-run -a pnpm run test:e2e`。

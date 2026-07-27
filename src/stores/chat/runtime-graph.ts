@@ -71,8 +71,7 @@ function sameRuntimeEvent(left: ChatRuntimeEvent | undefined, right: ChatRuntime
       && right.toolCallId === left.toolCallId
       && right.status === left.status
       && right.phase === left.phase
-      && right.message === left.message
-      && stableRuntimeFingerprint(right.actions) === stableRuntimeFingerprint(left.actions);
+      && right.message === left.message;
   }
   if (left.type === 'assistant.delta') {
     return right.type === left.type && right.text === left.text && right.delta === left.delta;
@@ -110,10 +109,10 @@ export function applyRuntimeEventToRuns(
       break;
     case 'assistant.delta': {
       const incoming = event.text ?? event.delta ?? '';
-      if (event.replace) {
-        nextRun.assistantText = incoming;
-      } else if (incoming) {
-        if (event.text) {
+      if (incoming) {
+        if (event.replace) {
+          nextRun.assistantText = incoming;
+        } else if (event.text) {
           nextRun.assistantText = event.text.startsWith(nextRun.assistantText)
             ? event.text
             : event.text;

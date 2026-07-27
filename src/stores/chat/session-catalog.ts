@@ -1,6 +1,6 @@
 import type { ChatSession, GatewaySessionsChangedPayload } from './types';
 import { parseCronSessionKey } from './cron-session-utils';
-import { getChannelFromSessionKey, shouldIncludeSessionInSidebarList } from './session-key-utils';
+import { shouldIncludeSessionInSidebarList } from './session-key-utils';
 
 export type { GatewaySessionsChangedPayload } from './types';
 
@@ -22,7 +22,6 @@ const STRING_FIELDS = [
   'thinkingLevel',
   'model',
   'workspacePath',
-  'agentId',
 ] as const satisfies readonly SessionField[];
 
 function hasOwn(raw: Record<string, unknown>, key: string): boolean {
@@ -110,12 +109,6 @@ export function normalizeGatewaySessionPatch(raw: Record<string, unknown>): Norm
       cleared.add('channel');
     } else if (typeof channel === 'string' && channel) {
       values.channel = channel;
-    }
-  } else {
-    const inferredChannel = getChannelFromSessionKey(key);
-    if (inferredChannel) {
-      present.add('channel');
-      values.channel = inferredChannel;
     }
   }
 

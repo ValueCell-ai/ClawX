@@ -272,20 +272,11 @@
         "title": "Граф выполнения",
         "branchLabel": "ветвь",
         "thinkingLabel": "Думаю",
-        "toolProcessing": "Обработка результатов инструментов…",
-        "interactionLabel": "Выберите действие",
         "errorLabel": "Ошибка модели",
         "imageGenerateLabel": "Генерация изображения",
         "agentRun": "Выполнение {{agent}}",
         "collapsedSummary": "Вызовов инструментов: {{toolCount}} · Промежуточных сообщений: {{processCount}}",
-        "collapseAction": "Свернуть граф выполнения",
-        "approval": {
-            "allow": "Разрешить один раз",
-            "allowAll": "Разрешить для этого запуска",
-            "deny": "Запретить",
-            "answer": "Ответить",
-            "failed": "Не удалось отправить ответ на запрос разрешения"
-        }
+        "collapseAction": "Свернуть граф выполнения"
     },
     "imageGeneration": {
         "generating": "Изображение генерируется, подождите…",

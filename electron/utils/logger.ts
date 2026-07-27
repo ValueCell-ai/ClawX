@@ -11,7 +11,6 @@ import { app } from 'electron';
 import { join } from 'path';
 import { existsSync, mkdirSync, appendFileSync } from 'fs';
 import { appendFile, open, readdir, stat } from 'fs/promises';
-import { getClawXDataLayout } from './clawx-data-layout';
 
 /**
  * Log levels
@@ -81,27 +80,8 @@ function flushBufferSync(): void {
   writeBuffer = [];
 }
 
-type LoggerGlobalState = typeof globalThis & {
-  __clawxLoggerExitFlushers?: Set<() => void>;
-  __clawxLoggerExitHandlerRegistered?: boolean;
-};
-
-const loggerGlobalState = globalThis as LoggerGlobalState;
-const loggerExitFlushers = loggerGlobalState.__clawxLoggerExitFlushers ?? new Set<() => void>();
-loggerGlobalState.__clawxLoggerExitFlushers = loggerExitFlushers;
-loggerExitFlushers.add(flushBufferSync);
-
-// Ensure all buffered data reaches disk before the process exits. Vitest can
-// reload this module many times, so keep one process listener and fan out to
-// each module instance's buffer flusher.
-if (!loggerGlobalState.__clawxLoggerExitHandlerRegistered) {
-  process.on('exit', () => {
-    for (const flush of loggerExitFlushers) {
-      flush();
-    }
-  });
-  loggerGlobalState.__clawxLoggerExitHandlerRegistered = true;
-}
+// Ensure all buffered data reaches disk before the process exits.
+process.on('exit', flushBufferSync);
 
 // ── Initialisation ───────────────────────────────────────────────
 
@@ -115,7 +95,7 @@ export function initLogger(): void {
       currentLevel = LogLevel.INFO;
     }
 
-    logDir = getClawXDataLayout().logsDir;
+    logDir = join(app.getPath('userData'), 'logs');
 
     if (!existsSync(logDir)) {
       mkdirSync(logDir, { recursive: true });

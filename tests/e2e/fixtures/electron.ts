@@ -5,16 +5,11 @@ import { access, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promise
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import type { RawMessage } from '../../../shared/chat/types';
 
 export type LaunchElectronOptions = {
   skipSetup?: boolean;
-  omitUserDataOverride?: boolean;
-  initialUserDataDir?: string;
-  timeoutMs?: number;
-  env?: Record<string, string>;
   additionalArgs?: string[];
 };
 
@@ -165,20 +160,6 @@ async function allocatePort(): Promise<number> {
   });
 }
 
-async function removeDirWithRetry(path: string): Promise<void> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    try {
-      await rm(path, { recursive: true, force: true });
-      return;
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
-    }
-  }
-  throw lastError;
-}
-
 async function getStableWindow(app: ElectronApplication): Promise<Page> {
   const deadline = Date.now() + 30_000;
   let page = await app.firstWindow();
@@ -215,30 +196,6 @@ async function getStableWindow(app: ElectronApplication): Promise<Page> {
 
 async function closeElectronApp(app: ElectronApplication, timeoutMs = 5_000): Promise<void> {
   let closed = false;
-  const waitForProcessExit = async (processTimeoutMs = 2_000): Promise<boolean> => {
-    try {
-      const child = app.process();
-      if (child.exitCode !== null || child.killed) return true;
-      return await Promise.race([
-        new Promise<boolean>((resolve) => child.once('exit', () => resolve(true))),
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), processTimeoutMs)),
-      ]);
-    } catch {
-      // Ignore process inspection failures during e2e teardown.
-      return true;
-    }
-  };
-  const forceKillProcess = async () => {
-    try {
-      const child = app.process();
-      if (child.exitCode === null && !child.killed) {
-        child.kill('SIGKILL');
-      }
-      await waitForProcessExit(1_000);
-    } catch {
-      // Ignore process kill failures during e2e teardown.
-    }
-  };
 
   await Promise.race([
     (async () => {
@@ -257,23 +214,21 @@ async function closeElectronApp(app: ElectronApplication, timeoutMs = 5_000): Pr
   ]);
 
   if (closed) {
-    if (!await waitForProcessExit()) {
-      await forceKillProcess();
-    }
     return;
   }
 
   try {
     await app.close();
-    if (!await waitForProcessExit()) {
-      await forceKillProcess();
-    }
     return;
   } catch {
     // Fall through to process kill if Playwright cannot close the app cleanly.
   }
 
-  await forceKillProcess();
+  try {
+    app.process().kill('SIGKILL');
+  } catch {
+    // Ignore process kill failures during e2e teardown.
+  }
 }
 
 async function seedE2eSettings(userDataDir: string): Promise<void> {
@@ -307,12 +262,7 @@ async function launchClawXElectron(
     : {};
   return await electron.launch({
     executablePath: electronBinaryPath,
-    args: [
-      '--lang=en-US',
-      ...(options.initialUserDataDir ? [`--user-data-dir=${options.initialUserDataDir}`] : []),
-      ...(options.additionalArgs ?? []),
-      electronEntry,
-    ],
+    args: ['--lang=en-US', ...(options.additionalArgs ?? []), electronEntry],
     env: {
       ...process.env,
       ...electronEnv,
@@ -325,41 +275,33 @@ async function launchClawXElectron(
       LC_ALL: 'en_US.UTF-8',
       LANGUAGE: 'en',
       CLAWX_E2E: '1',
-      CLAWX_E2E_CREDENTIAL_KEY: randomUUID(),
-      ...(options.omitUserDataOverride ? {} : { CLAWX_USER_DATA_DIR: userDataDir }),
+      CLAWX_USER_DATA_DIR: userDataDir,
       ...(options.skipSetup ? { CLAWX_E2E_SKIP_SETUP: '1' } : {}),
       CLAWX_PORT_CLAWX_HOST_API: String(hostApiPort),
-      ...(options.env ?? {}),
     },
-    timeout: options.timeoutMs ?? 90_000,
+    timeout: 90_000,
   });
 }
 
 export const test = base.extend<ElectronFixtures>({
   homeDir: async ({ browserName: _browserName }, provideHomeDir) => {
-    const overrideHomeDir = process.env.CLAWX_E2E_HOME_DIR?.trim();
-    const homeDir = overrideHomeDir || await mkdtemp(join(tmpdir(), 'clawx-e2e-home-'));
+    const homeDir = await mkdtemp(join(tmpdir(), 'clawx-e2e-home-'));
     await mkdir(join(homeDir, '.config'), { recursive: true });
     await mkdir(join(homeDir, 'AppData', 'Local'), { recursive: true });
     await mkdir(join(homeDir, 'AppData', 'Roaming'), { recursive: true });
     try {
       await provideHomeDir(homeDir);
     } finally {
-      if (!overrideHomeDir) {
-        await removeDirWithRetry(homeDir);
-      }
+      await rm(homeDir, { recursive: true, force: true });
     }
   },
 
   userDataDir: async ({ browserName: _browserName }, provideUserDataDir) => {
-    const overrideUserDataDir = process.env.CLAWX_E2E_USER_DATA_DIR?.trim();
-    const userDataDir = overrideUserDataDir || await mkdtemp(join(tmpdir(), 'clawx-e2e-user-data-'));
+    const userDataDir = await mkdtemp(join(tmpdir(), 'clawx-e2e-user-data-'));
     try {
       await provideUserDataDir(userDataDir);
     } finally {
-      if (!overrideUserDataDir) {
-        await removeDirWithRetry(userDataDir);
-      }
+      await rm(userDataDir, { recursive: true, force: true });
     }
   },
 
@@ -415,18 +357,9 @@ export async function installIpcMocks(
         return `{${entries.join(',')}}`;
       };
 
-      const invokeHandlers = () => (ipcMain as unknown as {
+      const originalHostInvoke = (ipcMain as unknown as {
         _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
-      })._invokeHandlers;
-      const hostInvokeDeadline = Date.now() + 10_000;
-      let originalHostInvoke = invokeHandlers()?.get('host:invoke');
-      while (!originalHostInvoke && Date.now() < hostInvokeDeadline) {
-        await new Promise((resolve) => setTimeout(resolve, 25));
-        originalHostInvoke = invokeHandlers()?.get('host:invoke');
-      }
-      if (!originalHostInvoke) {
-        throw new Error('Timed out waiting for the production host:invoke handler');
-      }
+      })._invokeHandlers?.get('host:invoke');
       const globals = globalThis as unknown as {
         __e2eHostInvocations?: RecordedHostInvocation[];
         __e2eLegacyIpcInvocations?: RecordedLegacyIpcInvocation[];

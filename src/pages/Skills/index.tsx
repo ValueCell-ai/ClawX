@@ -14,7 +14,6 @@ import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
 import { hostApi } from '@/lib/host-api';
-import type { SkillsRuntimeTargetResult } from '@/lib/host-api';
 import { isGatewayStopped } from '@/lib/gateway-status';
 import { toast } from 'sonner';
 import type { Skill } from '@/types/skill';
@@ -267,8 +266,6 @@ export function Skills() {
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
   const [marketplaceAvailable, setMarketplaceAvailable] = useState(false);
-  const [skillsTarget, setSkillsTarget] = useState<SkillsRuntimeTargetResult | null>(null);
-  const [skillsDirPath, setSkillsDirPath] = useState('~/.openclaw/skills');
 
   const gatewayRunning = gatewayStatus.state === 'running';
   const gatewayReportedReady = gatewayStatus.gatewayReady !== false;
@@ -386,7 +383,7 @@ export function Skills() {
 
   const handleOpenSkillsFolder = useCallback(async () => {
     try {
-      const skillsDir = skillsTarget?.openDir || await hostApi.openclaw.getSkillsDir();
+      const skillsDir = await hostApi.openclaw.getSkillsDir();
       if (!skillsDir) {
         throw new Error('Skills directory not available');
       }
@@ -405,7 +402,7 @@ export function Skills() {
     } catch (err) {
       toast.error(t('toast.failedOpenFolder') + ': ' + String(err));
     }
-  }, [skillsTarget?.openDir, t]);
+  }, [t]);
 
   const handleOpenSkillFolder = useCallback(
     async (skill: Skill) => {
@@ -425,26 +422,13 @@ export function Skills() {
     [t],
   );
 
+  const [skillsDirPath, setSkillsDirPath] = useState('~/.openclaw/skills');
+
   useEffect(() => {
-    let cancelled = false;
-    hostApi.skills.target()
-      .then((target) => {
-        if (cancelled) return;
-        setSkillsTarget(target);
-        setSkillsDirPath(target.sourceDir || target.openDir);
-      })
-      .catch(async (error) => {
-        console.error(error);
-        try {
-          const dir = await hostApi.openclaw.getSkillsDir();
-          if (!cancelled) setSkillsDirPath(dir);
-        } catch (fallbackError) {
-          console.error(fallbackError);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+    hostApi.openclaw
+      .getSkillsDir()
+      .then((dir) => setSkillsDirPath(dir))
+      .catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -513,14 +497,6 @@ export function Skills() {
               {t('title')}
             </h1>
             <p className="text-subtitle text-foreground/70 font-medium">{t('subtitle')}</p>
-            {skillsTarget?.mirrorMode === 'runtime-mirror' && (
-              <p
-                data-testid="skills-runtime-target"
-                className="mt-2 max-w-xl break-all text-xs font-medium text-foreground/55"
-              >
-                {t('runtimeTarget.mirror', { path: skillsTarget.openDir })}
-              </p>
-            )}
           </div>
 
           <div className="flex items-center gap-3 md:mt-2">
@@ -530,7 +506,7 @@ export function Skills() {
                 className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors shrink-0 text-meta font-medium px-4 h-8 rounded-full border border-black/10 dark:border-white/10 flex items-center justify-center text-foreground/80 hover:text-foreground"
               >
                 <FolderOpen className="h-4 w-4 mr-2" />
-                {t(skillsTarget?.mirrorMode === 'runtime-mirror' ? 'openRuntimeFolder' : 'openFolder')}
+                {t('openFolder')}
               </button>
             )}
           </div>

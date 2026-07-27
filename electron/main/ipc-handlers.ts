@@ -8,7 +8,6 @@ import { homedir } from 'node:os';
 import { join, extname, basename, resolve, sep, relative } from 'node:path';
 import { syncMacTrafficLightPosition } from './traffic-light-layout';
 import { GatewayManager } from '../gateway/manager';
-import { RuntimeManager } from '../runtime/manager';
 import { ClawHubService } from '../gateway/clawhub';
 import {
   type ProviderConfig,
@@ -30,7 +29,7 @@ import { deviceOAuthManager } from '../utils/device-oauth';
 import { browserOAuthManager } from '../utils/browser-oauth';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
-import { getCcConnectMediaDir, getOpenClawMediaDir } from '../utils/runtime-media-paths';
+import { getRecentTokenUsageHistory } from '../utils/token-usage';
 import { getProviderService } from '../services/providers/provider-service';
 import {
   getOpenClawProviderKey,
@@ -67,7 +66,7 @@ import { createMediaApi } from '../services/media-api';
 import { createProvidersApi } from '../services/providers-api';
 import { createSessionsApi } from '../services/sessions-api';
 import { createSkillsApi } from '../services/skills-api';
-import { createUsageApi, getRecentTokenHistoryForRuntime } from '../services/usage-api';
+import { createUsageApi } from '../services/usage-api';
 import { createWebBrowserApi } from '../services/web-browser-api';
 import type { WebBrowserGuestRegistry } from './web-browser-policy';
 import {
@@ -86,7 +85,6 @@ const gatewayRpcBackpressure = new GatewayRpcBackpressure();
  */
 export function registerIpcHandlers(
   gatewayManager: GatewayManager,
-  runtimeManager: RuntimeManager,
   clawHubService: ClawHubService,
   mainWindow: BrowserWindow,
   hostApiRegistry: HostApiRegistry,
@@ -94,12 +92,11 @@ export function registerIpcHandlers(
   registry: WebBrowserGuestRegistry,
 ): void {
   // Unified request protocol (non-breaking: legacy channels remain available)
-  registerUnifiedRequestHandlers(gatewayManager, runtimeManager);
+  registerUnifiedRequestHandlers(gatewayManager);
 
   // Typed host invoke handlers (new renderer facade; legacy channels remain available)
   registerTypedHostHandlers(
     gatewayManager,
-    runtimeManager,
     clawHubService,
     mainWindow,
     hostApiRegistry,
@@ -108,13 +105,13 @@ export function registerIpcHandlers(
   );
 
   // Gateway handlers
-  registerGatewayHandlers(runtimeManager);
+  registerGatewayHandlers(gatewayManager);
 
   // OpenClaw handlers
   registerOpenClawHandlers();
 
   // Provider handlers
-  registerProviderHandlers(gatewayManager, runtimeManager);
+  registerProviderHandlers(gatewayManager);
 
   // Shell handlers
   registerShellHandlers();
@@ -129,7 +126,7 @@ export function registerIpcHandlers(
   registerSettingsHandlers(gatewayManager);
 
   // Usage handlers
-  registerUsageHandlers(runtimeManager);
+  registerUsageHandlers();
 
   // Cron task handlers (proxy to Gateway RPC)
   registerCronHandlers(gatewayManager);
@@ -146,7 +143,6 @@ export function registerIpcHandlers(
 
 function registerTypedHostHandlers(
   gatewayManager: GatewayManager,
-  runtimeManager: RuntimeManager,
   clawHubService: ClawHubService,
   mainWindow: BrowserWindow,
   hostApiRegistry: HostApiRegistry,
@@ -162,7 +158,7 @@ function registerTypedHostHandlers(
     openWith: attachmentOpenWith,
   });
   hostApiRegistry.registerCoreServices({
-    app: createAppApi(runtimeManager),
+    app: createAppApi(),
     openclaw: createOpenClawApi(),
     shell: createShellApi(),
     webBrowser: createWebBrowserApi({ browserSession, registry }),
@@ -170,34 +166,28 @@ function registerTypedHostHandlers(
     window: createWindowApi(mainWindow),
     updates: createUpdatesApi(appUpdater),
     uv: createUvApi(),
-    settings: createSettingsApi(gatewayManager, runtimeManager),
-    gateway: createGatewayApi(runtimeManager, gatewayRpcBackpressure, gatewayManager),
+    settings: createSettingsApi(gatewayManager),
+    gateway: createGatewayApi(gatewayManager, gatewayRpcBackpressure),
     logs: createLogsApi(),
-    channels: createChannelsApi({ gatewayManager, runtimeManager, mainWindow }),
-    agents: createAgentsApi({ gatewayManager, runtimeManager }),
-    providers: createProvidersApi({ gatewayManager, runtimeManager, mainWindow }),
+    channels: createChannelsApi({ gatewayManager, mainWindow }),
+    agents: createAgentsApi({ gatewayManager }),
+    providers: createProvidersApi({ gatewayManager, mainWindow }),
     files: createFilesApi({
-      runtimeManager,
       attachmentAccess,
       openWith: attachmentOpenWith,
       stagedAttachments,
     }),
-    media: createMediaApi({ runtimeManager, attachmentAccess }),
-    sessions: createSessionsApi(runtimeManager),
-    chat: createChatApi({
-      gatewayManager,
-      runtimeManager,
-      mainWindow,
-      acpSessionAccessRegistry,
-    }),
-    cron: createCronApi({ gatewayManager, runtimeManager }),
-    skills: createSkillsApi({ clawHubService, gatewayManager, runtimeManager }),
-    usage: createUsageApi(runtimeManager),
+    media: createMediaApi({ attachmentAccess }),
+    sessions: createSessionsApi(),
+    chat: createChatApi({ gatewayManager, mainWindow, acpSessionAccessRegistry }),
+    cron: createCronApi({ gatewayManager }),
+    skills: createSkillsApi({ clawHubService, gatewayManager }),
+    usage: createUsageApi(),
   });
   registerHostInvokeHandler(hostApiRegistry);
 }
 
-function registerUnifiedRequestHandlers(gatewayManager: GatewayManager, runtimeManager: RuntimeManager): void {
+function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {
   const providerService = getProviderService();
   const handleProxySettingsChange = async () => {
     const settings = await getAllSettings();
@@ -547,7 +537,12 @@ function registerUnifiedRequestHandlers(gatewayManager: GatewayManager, runtimeM
         }
         case 'usage': {
           if (request.action === 'recentTokenHistory') {
-            data = await getRecentTokenHistoryForRuntime(request.payload, runtimeManager);
+            const payload = request.payload as { limit?: number } | number | undefined;
+            const limit = typeof payload === 'number' ? payload : payload?.limit;
+            const safeLimit = typeof limit === 'number' && Number.isFinite(limit)
+              ? Math.max(Math.floor(limit), 1)
+              : undefined;
+            data = await getRecentTokenUsageHistory(safeLimit);
             break;
           }
           return {
@@ -720,10 +715,10 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
 /**
  * Gateway-related IPC handlers
  */
-function registerGatewayHandlers(runtimeManager: RuntimeManager): void {
+function registerGatewayHandlers(gatewayManager: GatewayManager): void {
   // Get Gateway status
   ipcMain.handle('gateway:status', () => {
-    return runtimeManager.getStatus();
+    return gatewayManager.getStatus();
   });
 
   // Gateway RPC call
@@ -733,7 +728,7 @@ function registerGatewayHandlers(runtimeManager: RuntimeManager): void {
         method,
         params,
         timeoutMs,
-        (rpcMethod, rpcParams, rpcTimeoutMs) => runtimeManager.rpc(rpcMethod, rpcParams, rpcTimeoutMs),
+        (rpcMethod, rpcParams, rpcTimeoutMs) => gatewayManager.rpc(rpcMethod, rpcParams, rpcTimeoutMs),
       );
       return { success: true, result };
     } catch (error) {
@@ -812,10 +807,7 @@ function registerWhatsAppHandlers(mainWindow: BrowserWindow): void {
 /**
  * Provider-related IPC handlers
  */
-function registerProviderHandlers(
-  gatewayManager: GatewayManager,
-  runtimeManager: RuntimeManager,
-): void {
+function registerProviderHandlers(gatewayManager: GatewayManager): void {
   const providerService = getProviderService();
   const legacyProviderChannelsWarned = new Set<string>();
   const logLegacyProviderChannel = (channel: string): void => {
@@ -833,14 +825,9 @@ function registerProviderHandlers(
     logger.info(`[IPC] Scheduling Gateway restart after ${provider} OAuth success for ${accountId}...`);
     gatewayManager.debouncedRestart(8000);
   });
-  browserOAuthManager.on('oauth:success', async ({ provider, accountId }) => {
-    try {
-      if (await runtimeManager.getActiveKind() !== 'openclaw') return;
-      logger.info(`[IPC] Scheduling Gateway restart after ${provider} OAuth success for ${accountId}...`);
-      gatewayManager.debouncedRestart(8000);
-    } catch (error) {
-      logger.warn('[IPC] Failed to resolve active runtime after browser OAuth success:', error);
-    }
+  browserOAuthManager.on('oauth:success', ({ provider, accountId }) => {
+    logger.info(`[IPC] Scheduling Gateway restart after ${provider} OAuth success for ${accountId}...`);
+    gatewayManager.debouncedRestart(8000);
   });
 
   // Get all providers with key info
@@ -1239,9 +1226,12 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     return { success: true, settings };
   });
 }
-function registerUsageHandlers(runtimeManager: RuntimeManager): void {
-  ipcMain.handle('usage:recentTokenHistory', async (_, payload?: number | { limit?: number; runtimeKind?: unknown }) => {
-    return await getRecentTokenHistoryForRuntime(payload, runtimeManager);
+function registerUsageHandlers(): void {
+  ipcMain.handle('usage:recentTokenHistory', async (_, limit?: number) => {
+    const safeLimit = typeof limit === 'number' && Number.isFinite(limit)
+      ? Math.max(Math.floor(limit), 1)
+      : undefined;
+    return await getRecentTokenUsageHistory(safeLimit);
   });
 }
 /**
@@ -1325,7 +1315,7 @@ function getMimeType(ext: string): string {
   return EXT_MIME_MAP[ext.toLowerCase()] || 'application/octet-stream';
 }
 
-const OPENCLAW_OUTBOUND_DIR = join(getOpenClawMediaDir(), 'outbound');
+const OUTBOUND_DIR = join(homedir(), '.openclaw', 'media', 'outbound');
 
 // ── File preview (sandboxed) ──────────────────────────────────────────
 //
@@ -1394,14 +1384,14 @@ function isPathInside(child: string, parent: string): boolean {
  */
 function getFilePreviewWriteRoots(): string[] {
   const roots: string[] = [];
-  roots.push(resolve(join(homedir(), '.openclaw')));
-  roots.push(resolve(getCcConnectMediaDir()));
+  const openclawDir = join(homedir(), '.openclaw');
+  roots.push(resolve(openclawDir));
   try {
     roots.push(resolve(app.getPath('userData')));
   } catch {
     // ignore — userData should always exist
   }
-  roots.push(resolve(OPENCLAW_OUTBOUND_DIR));
+  roots.push(resolve(OUTBOUND_DIR));
   return roots;
 }
 

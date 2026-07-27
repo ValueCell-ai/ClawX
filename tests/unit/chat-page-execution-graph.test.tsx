@@ -41,12 +41,7 @@ const { acpState, agentsState, artifactPanelState, chatState, gatewayState, stic
     acknowledgeAcpSessionCreated: vi.fn(),
   },
   gatewayState: {
-    status: {
-      state: 'running',
-      gatewayReady: true,
-      port: 18789,
-      runtimeKind: 'openclaw' as 'openclaw' | 'cc-connect',
-    },
+    status: { state: 'running', gatewayReady: true, port: 18789 },
   },
   stickState: {
     isAtBottom: true,
@@ -132,10 +127,6 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
   ChatInput: ({ disabled, sending }: { disabled?: boolean; sending?: boolean }) => (
     <div data-testid="mock-chat-input" data-disabled={disabled ? 'true' : 'false'} data-sending={sending ? 'true' : 'false'} />
   ),
-}));
-
-vi.mock('@/pages/Chat/RuntimeChat', () => ({
-  RuntimeChat: () => <div data-testid="runtime-chat-route" />,
 }));
 
 vi.mock('@/components/file-preview/ArtifactPanel', () => ({
@@ -255,7 +246,7 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     artifactPanelState.close.mockReset();
     chatState.currentSessionKey = 'agent:main:main';
     chatState.currentAgentId = 'main';
-    gatewayState.status = { state: 'running', gatewayReady: true, port: 18789, runtimeKind: 'openclaw' };
+    gatewayState.status = { state: 'running', gatewayReady: true, port: 18789 };
     stickState.isAtBottom = true;
     stickState.scrollToBottom.mockReset();
   });
@@ -290,17 +281,6 @@ describe('ACP Chat page inline timeline lifecycle', () => {
         cwd: '/workspace',
       });
     });
-  });
-
-  it('routes cc-connect to Runtime Chat without activating ACP subscriptions', async () => {
-    gatewayState.status.runtimeKind = 'cc-connect';
-    const { Chat } = await import('@/pages/Chat/index');
-
-    render(<Chat />);
-
-    expect(screen.getByTestId('runtime-chat-route')).toBeInTheDocument();
-    expect(screen.queryByTestId('acp-chat-timeline')).not.toBeInTheDocument();
-    expect(ensureAcpChatSubscriptions).not.toHaveBeenCalled();
   });
 
   it('keeps ACP tool status in the inline timeline while the composer is busy', async () => {

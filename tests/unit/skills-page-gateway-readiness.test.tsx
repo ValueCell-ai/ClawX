@@ -11,9 +11,8 @@ const installSkillMock = vi.fn();
 const uninstallSkillMock = vi.fn();
 const clawhubCapabilityMock = vi.fn();
 const clawhubOpenSkillPathMock = vi.fn();
-const skillsTargetMock = vi.fn();
 const openclawGetSkillsDirMock = vi.fn();
-const shellOpenPathMock = vi.fn();
+const shellOpenExternalMock = vi.fn();
 
 const { gatewayState, skillsState } = vi.hoisted(() => ({
   gatewayState: {
@@ -57,10 +56,9 @@ vi.mock('@/lib/host-api', () => ({
       getSkillsDir: () => openclawGetSkillsDirMock(),
     },
     shell: {
-      openPath: (...args: unknown[]) => shellOpenPathMock(...args),
+      openExternal: (...args: unknown[]) => shellOpenExternalMock(...args),
     },
     skills: {
-      target: () => skillsTargetMock(),
       clawhubCapability: () => clawhubCapabilityMock(),
       clawhubOpenSkillPath: (...args: unknown[]) => clawhubOpenSkillPathMock(...args),
     },
@@ -79,10 +77,7 @@ vi.mock('@/extensions/registry', () => ({
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, options?: Record<string, unknown>) => {
-      if (key === 'runtimeTarget.mirror') return `runtimeTarget.mirror ${String(options?.path || '')}`;
-      return key;
-    },
+    t: (key: string) => key,
   }),
 }));
 
@@ -102,15 +97,7 @@ describe('Skills page gateway readiness', () => {
     gatewayState.status = { state: 'running', port: 18789, gatewayReady: true };
     skillsState.skills = [];
     openclawGetSkillsDirMock.mockResolvedValue('/tmp/.openclaw/skills');
-    shellOpenPathMock.mockResolvedValue(undefined);
-    skillsTargetMock.mockResolvedValue({
-      success: true,
-      runtimeKind: 'openclaw',
-      sourceDir: '/tmp/.openclaw/skills',
-      openDir: '/tmp/.openclaw/skills',
-      runtimeDir: '/tmp/.openclaw/skills',
-      mirrorMode: 'source',
-    });
+    shellOpenExternalMock.mockResolvedValue(undefined);
     clawhubCapabilityMock.mockResolvedValue({ success: true, capability: { canSearch: false, canInstall: false } });
     clawhubOpenSkillPathMock.mockResolvedValue({ success: true });
     fetchSkillsMock.mockResolvedValue(true);
@@ -184,33 +171,6 @@ describe('Skills page gateway readiness', () => {
     fireEvent.click(screen.getByTestId('skills-filter-disabled'));
     expect(screen.queryByText('PDF')).not.toBeInTheDocument();
     expect(screen.getByText('XLSX')).toBeInTheDocument();
-  });
-
-  it('shows and opens the cc-connect runtime skills mirror target', async () => {
-    gatewayState.status = { state: 'running', port: 9820, runtimeKind: 'cc-connect', gatewayReady: true };
-    skillsTargetMock.mockResolvedValue({
-      success: true,
-      runtimeKind: 'cc-connect',
-      sourceDir: '/tmp/.openclaw/skills',
-      openDir: '/tmp/clawx/runtimes/cc-connect/codex-home/skills',
-      runtimeDir: '/tmp/clawx/runtimes/cc-connect/codex-home/skills',
-      manifestPath: '/tmp/clawx/runtimes/cc-connect/codex-home/skills/manifest.json',
-      mirrorMode: 'runtime-mirror',
-    });
-    skillsState.skills = [
-      { id: 'pdf', name: 'PDF', description: 'enabled skill', enabled: true, source: 'openclaw-managed' },
-    ];
-
-    render(<Skills />);
-
-    await act(async () => {
-      await Promise.resolve();
-      await vi.advanceTimersByTimeAsync(1_600);
-    });
-
-    expect(screen.getByTestId('skills-runtime-target')).toHaveTextContent('/tmp/clawx/runtimes/cc-connect/codex-home/skills');
-    fireEvent.click(screen.getByText('openRuntimeFolder'));
-    expect(shellOpenPathMock).toHaveBeenCalledWith('/tmp/clawx/runtimes/cc-connect/codex-home/skills');
   });
 
   it('shows manifest versions but still hides slug badges and hash-only preinstalled versions', async () => {

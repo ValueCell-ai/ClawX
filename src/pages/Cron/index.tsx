@@ -45,7 +45,6 @@ import { useChatStore } from '@/stores/chat';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { formatRelativeTime, cn } from '@/lib/utils';
 import { fetchQuickAccessSkills } from '@/lib/quick-access-skills';
-import { isRuntimeOperationSupported } from '@/lib/runtime-operation-capabilities';
 import { toast } from 'sonner';
 import type { CronJob, CronJobCreateInput, CronSchedule, ScheduleType } from '@/types/cron';
 import type { QuickAccessSkill } from '@/types/skill';
@@ -1476,28 +1475,13 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
 interface CronJobCardProps {
   job: CronJob;
   deliveryAccountName?: string;
-  canUpdate: boolean;
-  canDelete: boolean;
-  canToggle: boolean;
-  canTrigger: boolean;
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
   onDelete: () => void;
   onTrigger: () => Promise<void>;
 }
 
-function CronJobCard({
-  job,
-  deliveryAccountName,
-  canUpdate,
-  canDelete,
-  canToggle,
-  canTrigger,
-  onToggle,
-  onEdit,
-  onDelete,
-  onTrigger,
-}: CronJobCardProps) {
+function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onTrigger }: CronJobCardProps) {
   const { t } = useTranslation('cron');
   const [triggering, setTriggering] = useState(false);
   const agents = useAgentsStore((s) => s.agents);
@@ -1529,11 +1513,8 @@ function CronJobCard({
   return (
     <div
       data-testid={`cron-job-card-${job.id}`}
-      className={cn(
-        'group flex flex-col p-5 rounded-2xl bg-transparent border border-transparent transition-all relative overflow-hidden',
-        canUpdate ? 'cursor-pointer hover:bg-black/5 dark:hover:bg-white/5' : 'cursor-default',
-      )}
-      onClick={canUpdate ? onEdit : undefined}
+      className="group flex flex-col p-5 rounded-2xl bg-transparent border border-transparent hover:bg-black/5 dark:hover:bg-white/5 transition-all relative overflow-hidden cursor-pointer"
+      onClick={onEdit}
     >
       <div className="flex items-start justify-between gap-3 mb-4">
         <div className="flex items-center gap-4 min-w-0 flex-1">
@@ -1565,7 +1546,7 @@ function CronJobCard({
           className="flex items-center gap-2 shrink-0"
           onClick={(e) => e.stopPropagation()}
         >
-          <Switch checked={job.enabled} disabled={!canToggle} onCheckedChange={onToggle} />
+          <Switch checked={job.enabled} onCheckedChange={onToggle} />
         </div>
       </div>
 
@@ -1592,11 +1573,7 @@ function CronJobCard({
           )}
 
           {job.lastRun && (
-            <span
-              data-testid={`cron-job-card-last-run-${job.id}`}
-              data-run-status={job.lastRun.success ? 'success' : 'error'}
-              className="flex items-center gap-1.5"
-            >
+            <span className="flex items-center gap-1.5">
               <History className="h-3.5 w-3.5" />
               {t('card.last')}: {formatRelativeTime(job.lastRun.time)}
               {job.lastRun.success ? (
@@ -1634,7 +1611,7 @@ function CronJobCard({
             variant="ghost"
             size="sm"
             onClick={handleTrigger}
-            disabled={triggering || !canTrigger}
+            disabled={triggering}
             className="h-8 px-3 text-foreground/70 hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 rounded-lg text-meta font-medium transition-colors"
           >
             {triggering ? (
@@ -1648,7 +1625,6 @@ function CronJobCard({
             variant="ghost"
             size="sm"
             onClick={handleDelete}
-            disabled={!canDelete}
             className="h-8 px-3 text-destructive/70 hover:text-destructive hover:bg-destructive/10 rounded-lg text-meta font-medium transition-colors"
           >
             <Trash2 className="h-3.5 w-3.5 mr-1.5" />
@@ -1671,12 +1647,6 @@ export function Cron() {
 
   const isGatewayRunning = gatewayStatus.state === 'running';
   const showGatewayUnavailableWarning = isGatewayStopped(gatewayStatus);
-  const canListCron = isGatewayRunning && isRuntimeOperationSupported(gatewayStatus, 'cron.list');
-  const canCreateCron = isGatewayRunning && isRuntimeOperationSupported(gatewayStatus, 'cron.create');
-  const canUpdateCron = isGatewayRunning && isRuntimeOperationSupported(gatewayStatus, 'cron.update');
-  const canDeleteCron = isGatewayRunning && isRuntimeOperationSupported(gatewayStatus, 'cron.delete');
-  const canToggleCron = isGatewayRunning && isRuntimeOperationSupported(gatewayStatus, 'cron.toggle');
-  const canRunCron = isGatewayRunning && isRuntimeOperationSupported(gatewayStatus, 'cron.run');
 
   const fetchConfiguredChannels = useCallback(async () => {
     try {
@@ -1693,10 +1663,10 @@ export function Cron() {
 
   // Fetch jobs on mount
   useEffect(() => {
-    if (canListCron) {
+    if (isGatewayRunning) {
       fetchJobs();
     }
-  }, [fetchJobs, canListCron]);
+  }, [fetchJobs, isGatewayRunning]);
 
   useEffect(() => {
     void fetchConfiguredChannels();
@@ -1763,7 +1733,7 @@ export function Cron() {
                 void fetchJobs();
                 void fetchConfiguredChannels();
               }}
-              disabled={!canListCron}
+              disabled={!isGatewayRunning}
               className="h-9 text-meta font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors"
             >
               <RefreshCw className="h-3.5 w-3.5 mr-2" />
@@ -1775,7 +1745,7 @@ export function Cron() {
                 setEditingJob(undefined);
                 setShowDialog(true);
               }}
-              disabled={!canCreateCron}
+              disabled={!isGatewayRunning}
               className="h-9 text-meta font-medium rounded-full px-4 shadow-none"
             >
               <Plus className="h-3.5 w-3.5 mr-2" />
@@ -1864,7 +1834,7 @@ export function Cron() {
                   setEditingJob(undefined);
                   setShowDialog(true);
                 }}
-                disabled={!canCreateCron}
+                disabled={!isGatewayRunning}
                 className="rounded-full px-6 h-10"
               >
                 <Plus className="h-4 w-4 mr-2" />
@@ -1882,10 +1852,6 @@ export function Cron() {
                     key={job.id}
                     job={job}
                     deliveryAccountName={deliveryAccountName}
-                    canUpdate={canUpdateCron}
-                    canDelete={canDeleteCron}
-                    canToggle={canToggleCron}
-                    canTrigger={canRunCron}
                     onToggle={(enabled) => handleToggle(job.id, enabled)}
                     onEdit={() => {
                       setEditingJob(job);

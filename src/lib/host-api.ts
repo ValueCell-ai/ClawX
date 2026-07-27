@@ -21,8 +21,6 @@ import type {
   OpenAttachmentWithPayload,
   OpenWorkspaceWithPayload,
   ProviderAccount,
-  ProviderCodexOAuthLogoutPayload,
-  ProviderCodexOAuthPayload,
   ProviderConfig,
   ProviderOAuthRequestPayload,
   ProviderUpdateWithKeyPayload,
@@ -39,7 +37,6 @@ import type {
   SkillUpdateConfigPayload,
   SkillUpdatePayload,
   UpdateChannel,
-  UsageHistoryPayload,
   WorkspaceContextInput,
   WorkspaceFileRef,
 } from '@shared/host-api/contract';
@@ -98,7 +95,6 @@ export type {
   SettingsResetResult,
   SettingsSnapshot,
   SkillConfigsResult,
-  SkillsRuntimeTargetResult,
   SkillsStatusResult,
   StagedFileResult,
   UsageHistoryEntry,
@@ -226,17 +222,9 @@ export const hostApi = {
         ...input,
       })
     ),
-    updateModel: (
-      id: string,
-      modelRef: string | null,
-      providerAccountId?: string | null,
-      permissionMode?: 'suggest' | 'full-auto',
-    ) => invokeHost('agents', 'updateModel', {
-      id,
-      modelRef,
-      ...(providerAccountId !== undefined ? { providerAccountId } : {}),
-      ...(permissionMode ? { permissionMode } : {}),
-    }),
+    updateModel: (id: string, modelRef: string | null) => (
+      invokeHost('agents', 'updateModel', { id, modelRef })
+    ),
     delete: (id: string) => invokeHost('agents', 'delete', { id }),
     assignChannel: (id: string, channelType: string) => (
       invokeHost('agents', 'assignChannel', { id, channelType })
@@ -304,15 +292,6 @@ export const hostApi = {
     requestOAuth: (input: ProviderOAuthRequestPayload) => invokeHost('providers', 'requestOAuth', input),
     cancelOAuth: () => invokeHost('providers', 'cancelOAuth'),
     submitOAuth: (input: { code: string }) => invokeHost('providers', 'submitOAuth', input),
-    codexOAuthStatus: (input?: ProviderCodexOAuthPayload) => (
-      invokeHost('providers', 'codexOAuthStatus', input)
-    ),
-    importCodexOAuth: (input?: ProviderCodexOAuthPayload) => (
-      invokeHost('providers', 'importCodexOAuth', input)
-    ),
-    logoutCodexOAuth: (input?: ProviderCodexOAuthLogoutPayload) => (
-      invokeHost('providers', 'logoutCodexOAuth', input)
-    ),
   },
   files: {
     stagePaths: (input: { filePaths: string[] }) => invokeHost('files', 'stagePaths', input),
@@ -406,7 +385,6 @@ export const hostApi = {
   },
   skills: {
     local: () => invokeHost('skills', 'local'),
-    target: () => invokeHost('skills', 'target'),
     configs: () => invokeHost('skills', 'configs'),
     allConfigs: () => invokeHost('skills', 'allConfigs'),
     getConfig: (skillKey: string) => invokeHost('skills', 'getConfig', { skillKey }),
@@ -428,8 +406,8 @@ export const hostApi = {
     ),
   },
   usage: {
-    recentTokenHistory: (input?: number | UsageHistoryPayload) => (
-      invokeHost('usage', 'recentTokenHistory', typeof input === 'number' ? { limit: input } : input)
+    recentTokenHistory: (limit?: number) => (
+      invokeHost('usage', 'recentTokenHistory', { limit })
     ),
   },
 };

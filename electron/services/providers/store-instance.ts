@@ -1,6 +1,3 @@
-import { app } from 'electron';
-import { getClawXDataLayout, resolveClawXDataRoot } from '../../utils/clawx-data-layout';
-
 // Lazy-load electron-store (ESM module) from the main process only.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let providerStore: any = null;
@@ -10,7 +7,6 @@ export async function getClawXProviderStore() {
     const Store = (await import('electron-store')).default;
     providerStore = new Store({
       name: 'clawx-providers',
-      cwd: getClawXDataLayout(resolveClawXDataRoot(process.env, app.getPath('userData'))).appDir,
       defaults: {
         schemaVersion: 0,
         providers: {} as Record<string, unknown>,

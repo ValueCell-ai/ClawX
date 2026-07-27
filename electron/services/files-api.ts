@@ -29,9 +29,7 @@ import {
   FILE_PREVIEW_MAX_TEXT_BYTES,
 } from '@shared/file-preview/limits';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
-import type { RuntimeManager } from '../runtime/manager';
-import { expandPath } from '../utils/paths';
-import { getRuntimeOutboundMediaDir } from '../utils/runtime-media-paths';
+import { expandPath, resolveOpenClawStateDir } from '../utils/paths';
 import {
   resolveClawXStagingDir,
   type AttachmentAccess,
@@ -140,7 +138,6 @@ type WorkspaceFs = {
 
 type FilesApiDependencies = {
   workspaceFs?: WorkspaceFs;
-  runtimeManager?: Pick<RuntimeManager, 'getStatus'>;
   attachmentAccess?: AttachmentAccess;
   openWith?: AttachmentOpenWithService;
   stagedAttachments?: StagedAttachmentRegistry;
@@ -379,7 +376,7 @@ function getWorkspaceBinaryCap(value: unknown): number {
   return Math.max(1, Math.min(maxBytes ?? FILE_PREVIEW_MAX_BINARY_BYTES, FILE_PREVIEW_MAX_BINARY_BYTES));
 }
 
-function getFilePreviewWriteRoots(runtimeManager?: Pick<RuntimeManager, 'getStatus'>): string[] {
+function getFilePreviewWriteRoots(): string[] {
   const roots: string[] = [];
   roots.push(resolve(join(homedir(), '.openclaw')));
   try {
@@ -388,14 +385,12 @@ function getFilePreviewWriteRoots(runtimeManager?: Pick<RuntimeManager, 'getStat
     // ignore
   }
   roots.push(resolve(resolveClawXStagingDir()));
-  roots.push(resolve(getRuntimeOutboundMediaDir(runtimeManager)));
   return roots;
 }
 
 async function resolveSandboxedPath(
   input: string,
   mode: 'read' | 'write' = 'read',
-  runtimeManager?: Pick<RuntimeManager, 'getStatus'>,
 ): Promise<ResolvedSandboxedPath> {
   if (!input.trim()) {
     throw new Error('outsideSandbox');
@@ -408,7 +403,7 @@ async function resolveSandboxedPath(
   } catch {
     real = resolve(expanded);
   }
-  const writeRoots = getFilePreviewWriteRoots(runtimeManager);
+  const writeRoots = getFilePreviewWriteRoots();
   if (writeRoots.some((root) => isPathInside(real, root))) {
     return { realPath: real, readOnly: false };
   }
@@ -483,17 +478,7 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
       return pinned;
     };
 
-    const runtimeOutboundDir = resolve(getRuntimeOutboundMediaDir(dependencies.runtimeManager));
-    const runtimeStateDir = dirname(dirname(runtimeOutboundDir));
-    const isCcConnect = dependencies.runtimeManager?.getStatus().runtimeKind === 'cc-connect';
-    const stateDir = isCcConnect
-      ? await (async () => {
-        const dataRootPath = dirname(dirname(runtimeStateDir));
-        const dataRoot = await ensureDirectory(dataRootPath);
-        const runtimesDir = await ensureDirectory(join(dataRoot.canonicalPath, 'runtimes'), dataRoot);
-        return ensureDirectory(runtimeStateDir, runtimesDir);
-      })()
-      : await ensureDirectory(runtimeStateDir);
+    const stateDir = await ensureDirectory(resolveOpenClawStateDir());
     const mediaDir = await ensureDirectory(join(stateDir.canonicalPath, 'media'), stateDir);
     const outboundDir = await ensureDirectory(join(mediaDir.canonicalPath, 'outbound'), mediaDir);
     const stagingRoot = await ensureDirectory(join(outboundDir.canonicalPath, 'clawx-staging'), outboundDir);
@@ -859,11 +844,7 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
     },
     readText: async (payload) => {
       try {
-        const { realPath: real, readOnly } = await resolveSandboxedPath(
-          requirePath(payload),
-          'read',
-          dependencies.runtimeManager,
-        );
+        const { realPath: real, readOnly } = await resolveSandboxedPath(requirePath(payload), 'read');
         const fsP = await import('node:fs/promises');
         const stat = await fsP.stat(real);
         if (!stat.isFile()) return { ok: false, error: 'notFound' };
@@ -888,11 +869,7 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
       try {
         const body = isRecord(payload) ? payload as PathPayload : {};
         const opts = getBinaryOptions(body.opts);
-        const { realPath: real, readOnly } = await resolveSandboxedPath(
-          requirePath(payload),
-          'read',
-          dependencies.runtimeManager,
-        );
+        const { realPath: real, readOnly } = await resolveSandboxedPath(requirePath(payload), 'read');
         const fsP = await import('node:fs/promises');
         const stat = await fsP.stat(real);
         if (!stat.isFile()) return { ok: false, error: 'notFound' };
@@ -922,11 +899,7 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
         if (Buffer.byteLength(body.content, 'utf8') > FILE_PREVIEW_MAX_TEXT_BYTES) {
           return { ok: false, error: 'tooLarge' };
         }
-        const { realPath: real } = await resolveSandboxedPath(
-          requirePath(payload),
-          'write',
-          dependencies.runtimeManager,
-        );
+        const { realPath: real } = await resolveSandboxedPath(requirePath(payload), 'write');
         const fsP = await import('node:fs/promises');
         let stat;
         try {
@@ -946,11 +919,7 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
     },
     stat: async (payload) => {
       try {
-        const { realPath: real, readOnly } = await resolveSandboxedPath(
-          requirePath(payload),
-          'read',
-          dependencies.runtimeManager,
-        );
+        const { realPath: real, readOnly } = await resolveSandboxedPath(requirePath(payload), 'read');
         const fsP = await import('node:fs/promises');
         const stat = await fsP.stat(real);
         return {
@@ -970,11 +939,7 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
     },
     listDir: async (payload) => {
       try {
-        const { realPath: real } = await resolveSandboxedPath(
-          requirePath(payload),
-          'read',
-          dependencies.runtimeManager,
-        );
+        const { realPath: real } = await resolveSandboxedPath(requirePath(payload), 'read');
         const fsP = await import('node:fs/promises');
         const dirents = await fsP.readdir(real, { withFileTypes: true });
         const entries = await Promise.all(dirents.map(async (entry) => {
@@ -1004,11 +969,7 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
       try {
         const body = isRecord(payload) ? payload as PathPayload : {};
         const opts = getTreeOptions(body.opts);
-        const { realPath: real } = await resolveSandboxedPath(
-          requirePath(payload),
-          'read',
-          dependencies.runtimeManager,
-        );
+        const { realPath: real } = await resolveSandboxedPath(requirePath(payload), 'read');
         const fsP = await import('node:fs/promises');
         const stat = await fsP.stat(real);
         if (!stat.isDirectory()) return { ok: false, error: 'notDirectory' };

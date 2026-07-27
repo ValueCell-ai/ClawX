@@ -14,10 +14,7 @@ class DiagnosticsExtension implements HostApiProviderExtension {
   }
 
   getHostApiContributions(ctx: ExtensionContext): HostApiContribution[] {
-    const diagnostics = createDiagnosticsApi({
-      gatewayManager: ctx.gatewayManager,
-      runtimeManager: ctx.runtimeManager,
-    });
+    const diagnostics = createDiagnosticsApi({ gatewayManager: ctx.gatewayManager });
     const actions: Record<string, RuntimeHostAction> = {
       gatewaySnapshot: () => diagnostics.gatewaySnapshot(),
       acpTrace: () => diagnostics.acpTrace(),

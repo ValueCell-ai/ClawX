@@ -2,7 +2,6 @@ import { openSync, closeSync, fstatSync, readSync } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
-import type { RuntimeManager } from '../runtime/manager';
 import { stripAcpWorkingDirectoryPrefix } from '@shared/chat/session-title';
 import { isOpenClawHeartbeatPollText } from '@shared/chat/openclaw-internal';
 import type { RawMessage } from '@shared/chat/types';
@@ -622,15 +621,9 @@ async function renameSession(sessionKey: string, label: string): Promise<{ succe
   return { success: true };
 }
 
-export function createSessionsApi(runtimeManager?: RuntimeManager): CompleteHostServiceRegistry['sessions'] {
+export function createSessionsApi(): CompleteHostServiceRegistry['sessions'] {
   return {
-    delete: async (payload) => {
-      const provider = runtimeManager?.getActiveProvider();
-      if (provider?.listCapabilities().sessions) {
-        return provider.deleteSession(payload);
-      }
-      return deleteSession(getSessionKey(payload));
-    },
+    delete: async (payload) => deleteSession(getSessionKey(payload)),
     rename: async (payload) => {
       const body = isRecord(payload) ? payload as SessionPayload : {};
       const sessionKey = getSessionKey(payload);
@@ -638,17 +631,9 @@ export function createSessionsApi(runtimeManager?: RuntimeManager): CompleteHost
       if (typeof label !== 'string') {
         throw new Error('Label cannot be empty');
       }
-      const provider = runtimeManager?.getActiveProvider();
-      if (provider?.listCapabilities().sessions) {
-        return provider.rpc('sessions.rename', { sessionKey, label }) as Promise<{ success: boolean; error?: string }>;
-      }
       return renameSession(sessionKey, label);
     },
     summaries: async (payload) => {
-      const provider = runtimeManager?.getActiveProvider();
-      if (provider?.listCapabilities().sessions) {
-        return provider.listSessions(payload) as ReturnType<CompleteHostServiceRegistry['sessions']['summaries']>;
-      }
       const body = isRecord(payload) ? payload as SessionPayload : {};
       const sessionKeys = Array.isArray(body.sessionKeys)
         ? body.sessionKeys.filter((value): value is string => typeof value === 'string' && value.startsWith('agent:'))
@@ -663,10 +648,6 @@ export function createSessionsApi(runtimeManager?: RuntimeManager): CompleteHost
       };
     },
     history: async (payload) => {
-      const provider = runtimeManager?.getActiveProvider();
-      if (provider?.listCapabilities().history) {
-        return provider.loadHistory(payload) as ReturnType<CompleteHostServiceRegistry['sessions']['history']>;
-      }
       const body = isRecord(payload) ? payload as SessionPayload : {};
       const limit = getLimit(payload);
 

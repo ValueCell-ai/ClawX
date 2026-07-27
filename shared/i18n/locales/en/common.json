@@ -12,7 +12,6 @@
         "models": "Models",
         "deleteSessionConfirm": "Delete \"{{label}}\"?",
         "openClawPage": "OpenClaw Page",
-        "ccConnectPage": "CC Connect Page",
         "openClawDreams": "Dreams",
         "renameSession": "Rename",
         "deleteSession": "Delete",

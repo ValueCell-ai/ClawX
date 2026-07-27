@@ -12,9 +12,6 @@ import { getOpenClawResolvedDir } from './paths';
 import * as logger from './logger';
 import { proxyAwareFetch } from './proxy-fetch';
 import { withConfigLock } from './config-mutex';
-import { readClawXRuntimeConfig, writeClawXRuntimeConfig } from './clawx-runtime-config';
-import { getChannelVaultSecrets, replaceChannelVaultSecrets } from '../services/secrets/credential-vault';
-import { getSetting } from './store';
 import {
     OPENCLAW_WECHAT_CHANNEL_TYPE,
     isWechatChannelType,
@@ -456,95 +453,6 @@ export interface OpenClawConfig {
     [key: string]: unknown;
 }
 
-const CHANNEL_SECRET_FIELDS = new Set([
-    'accessToken',
-    'appPassword',
-    'appSecret',
-    'appToken',
-    'botSecret',
-    'botToken',
-    'callbackAesKey',
-    'callbackToken',
-    'channelAccessToken',
-    'channelSecret',
-    'channelToken',
-    'clientSecret',
-    'corpSecret',
-    'encryptKey',
-    'password',
-    'secret',
-    'serviceAccountKey',
-    'token',
-]);
-
-function cloneConfig(config: OpenClawConfig): OpenClawConfig {
-    return JSON.parse(JSON.stringify(config)) as OpenClawConfig;
-}
-
-function channelCredentialId(channelType: string, accountId: string): string {
-    return `${channelType}:${accountId}`;
-}
-
-function stripChannelSecrets(config: OpenClawConfig): {
-    config: OpenClawConfig;
-    secrets: Record<string, Record<string, string>>;
-    found: boolean;
-} {
-    const sanitized = cloneConfig(config);
-    const secrets: Record<string, Record<string, string>> = {};
-    let found = false;
-    for (const [channelType, section] of Object.entries(sanitized.channels ?? {})) {
-        const accounts = section.accounts && typeof section.accounts === 'object'
-            ? section.accounts as Record<string, ChannelConfigData>
-            : null;
-        const defaultAccountId = typeof section.defaultAccount === 'string' && section.defaultAccount.trim()
-            ? section.defaultAccount.trim()
-            : 'default';
-        const entries: Array<[string, ChannelConfigData]> = [
-            [defaultAccountId, section],
-            ...Object.entries(accounts ?? {}),
-        ];
-        for (const [accountId, account] of entries) {
-            const accountSecrets: Record<string, string> = {};
-            for (const field of CHANNEL_SECRET_FIELDS) {
-                const value = account[field];
-                if (typeof value !== 'string' || !value) continue;
-                accountSecrets[field] = value;
-                delete account[field];
-                found = true;
-            }
-            if (Object.keys(accountSecrets).length > 0) {
-                const credentialId = channelCredentialId(channelType, accountId);
-                secrets[credentialId] = { ...(secrets[credentialId] ?? {}), ...accountSecrets };
-            }
-        }
-    }
-    return { config: sanitized, secrets, found };
-}
-
-function hydrateChannelSecrets(
-    config: OpenClawConfig,
-    secrets: Record<string, Record<string, string>>,
-): OpenClawConfig {
-    const hydrated = cloneConfig(config);
-    for (const [channelType, section] of Object.entries(hydrated.channels ?? {})) {
-        const accounts = section.accounts && typeof section.accounts === 'object'
-            ? section.accounts as Record<string, ChannelConfigData>
-            : null;
-        const defaultAccountId = typeof section.defaultAccount === 'string' && section.defaultAccount.trim()
-            ? section.defaultAccount.trim()
-            : 'default';
-        const entries: Array<[string, ChannelConfigData]> = [
-            [defaultAccountId, section],
-            ...Object.entries(accounts ?? {}),
-        ];
-        for (const [accountId, account] of entries) {
-            Object.assign(account, secrets[channelCredentialId(channelType, accountId)] ?? {});
-        }
-    }
-    return hydrated;
-}
-
 // ── Config I/O ───────────────────────────────────────────────────
 
 async function ensureConfigDir(): Promise<void> {
@@ -553,7 +461,7 @@ async function ensureConfigDir(): Promise<void> {
     }
 }
 
-async function readOpenClawCompatibilityConfig(): Promise<OpenClawConfig> {
+export async function readOpenClawConfig(): Promise<OpenClawConfig> {
     await ensureConfigDir();
 
     if (!(await fileExists(CONFIG_FILE))) {
@@ -570,21 +478,9 @@ async function readOpenClawCompatibilityConfig(): Promise<OpenClawConfig> {
     }
 }
 
-export async function readOpenClawConfig(): Promise<OpenClawConfig> {
-    const config = await readClawXRuntimeConfig({
-        readOpenClawCompatibility: readOpenClawCompatibilityConfig,
-        openClawConfigPath: CONFIG_FILE,
-    });
-    const stripped = stripChannelSecrets(config);
-    if (stripped.found) {
-        await replaceChannelVaultSecrets(stripped.secrets);
-        await writeClawXRuntimeConfig(stripped.config);
-        return config;
-    }
-    return hydrateChannelSecrets(config, await getChannelVaultSecrets());
-}
-
 export async function writeOpenClawConfig(config: OpenClawConfig): Promise<void> {
+    await ensureConfigDir();
+
     try {
         // Enable graceful in-process reload authorization for SIGUSR1 flows.
         const commands =
@@ -594,23 +490,12 @@ export async function writeOpenClawConfig(config: OpenClawConfig): Promise<void>
         commands.restart = true;
         config.commands = commands;
 
-        const stripped = stripChannelSecrets(config);
-        await replaceChannelVaultSecrets(stripped.secrets);
-        await writeClawXRuntimeConfig(stripped.config);
-        if (await getSetting('runtimeKind').catch(() => 'openclaw') === 'openclaw') {
-            await writeOpenClawCompatibilityProjection(config);
-        }
+        await writeFile(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
     } catch (error) {
         logger.error('Failed to write OpenClaw config', error);
         console.error('Failed to write OpenClaw config:', error);
         throw error;
     }
-}
-
-export async function writeOpenClawCompatibilityProjection(config?: OpenClawConfig): Promise<void> {
-    await ensureConfigDir();
-    const projected = config ?? await readOpenClawConfig();
-    await writeFile(CONFIG_FILE, JSON.stringify(projected, null, 2), { encoding: 'utf8', mode: 0o600 });
 }
 
 // ── Channel operations ───────────────────────────────────────────
@@ -803,26 +688,14 @@ function transformChannelConfig(
         }
     }
 
-    if (channelType === 'feishu') {
-        const adminUsers = transformedConfig.adminUsers;
-        delete transformedConfig.adminUsers;
-        if (typeof adminUsers === 'string') {
-            const admins = adminUsers.split(',').map((value) => value.trim()).filter(Boolean);
-            transformedConfig.adminFrom = admins.length > 0
-                ? admins
-                : existingAccountConfig.adminFrom;
-        }
-    }
-
     if (channelType === 'feishu' || channelType === 'wecom') {
         const existingDmPolicy = existingAccountConfig.dmPolicy === 'pairing' ? 'open' : existingAccountConfig.dmPolicy;
-        const hasExplicitAllowFrom = transformedConfig.allowFrom !== undefined;
+        transformedConfig.dmPolicy = transformedConfig.dmPolicy ?? existingDmPolicy ?? 'open';
+
         let allowFrom = (transformedConfig.allowFrom ?? existingAccountConfig.allowFrom ?? ['*']) as string[];
         if (!Array.isArray(allowFrom)) {
             allowFrom = [allowFrom] as string[];
         }
-        transformedConfig.dmPolicy = transformedConfig.dmPolicy
-            ?? (hasExplicitAllowFrom && !allowFrom.includes('*') ? 'allowlist' : existingDmPolicy ?? 'open');
 
         if (transformedConfig.dmPolicy === 'open' && !allowFrom.includes('*')) {
             allowFrom = [...allowFrom, '*'];
@@ -878,9 +751,6 @@ function migrateLegacyChannelConfigToAccounts(
     channelSection: ChannelConfigData,
     defaultAccountId: string = DEFAULT_ACCOUNT_ID,
 ): void {
-    const targetAccountId = typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
-        ? channelSection.defaultAccount.trim()
-        : defaultAccountId;
     const legacyPayload = getLegacyChannelPayload(channelSection);
     const legacyKeys = Object.keys(legacyPayload);
     const existingAccounts = getChannelAccountsMap(channelSection);
@@ -888,15 +758,15 @@ function migrateLegacyChannelConfigToAccounts(
 
     if (legacyKeys.length === 0) {
         if (hasAccounts && typeof channelSection.defaultAccount !== 'string') {
-            channelSection.defaultAccount = targetAccountId;
+            channelSection.defaultAccount = defaultAccountId;
         }
         return;
     }
 
     const accounts = ensureChannelAccountsMap(channelSection);
-    const existingDefaultAccount = accounts[targetAccountId] ?? {};
+    const existingDefaultAccount = accounts[defaultAccountId] ?? {};
 
-    accounts[targetAccountId] = {
+    accounts[defaultAccountId] = {
         ...(channelSection.enabled !== undefined ? { enabled: channelSection.enabled } : {}),
         ...legacyPayload,
         ...existingDefaultAccount,
@@ -905,7 +775,7 @@ function migrateLegacyChannelConfigToAccounts(
     channelSection.defaultAccount =
         typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
             ? channelSection.defaultAccount
-            : targetAccountId;
+            : defaultAccountId;
 
     for (const key of legacyKeys) {
         delete channelSection[key];
@@ -982,10 +852,7 @@ export async function saveChannelConfig(
         }
 
         const channelSection = currentConfig.channels[resolvedChannelType];
-        const currentDefaultAccountId = typeof channelSection.defaultAccount === 'string' && channelSection.defaultAccount.trim()
-            ? channelSection.defaultAccount.trim()
-            : DEFAULT_ACCOUNT_ID;
-        migrateLegacyChannelConfigToAccounts(channelSection, currentDefaultAccountId);
+        migrateLegacyChannelConfigToAccounts(channelSection, DEFAULT_ACCOUNT_ID);
 
         // Guard: reject if this bot/app credential is already used by another account.
         assertNoDuplicateCredential(resolvedChannelType, config, channelSection, resolvedAccountId);
@@ -1117,9 +984,6 @@ function extractFormValues(channelType: string, saved: ChannelConfigData): Recor
             }
         }
     } else {
-        if (channelType === 'feishu' && Array.isArray(saved.adminFrom)) {
-            values.adminUsers = saved.adminFrom.join(', ');
-        }
         for (const [key, value] of Object.entries(saved)) {
             if (typeof value === 'string' && key !== 'enabled') {
                 values[key] = value;

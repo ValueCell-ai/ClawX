@@ -19,7 +19,6 @@ interface ExecutionGraphCardProps {
    */
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
-  onApprovalAction?: (runId: string, action: string) => Promise<void>;
 }
 
 const TOOL_ROW_EXTRA_INDENT_PX = 8;
@@ -40,16 +39,9 @@ function GraphStatusIcon({ status }: { status: TaskStep['status'] }) {
   return <CircleDashed className="h-4 w-4" />;
 }
 
-function StepDetailCard({
-  step,
-  onApprovalAction,
-}: {
-  step: TaskStep;
-  onApprovalAction?: ExecutionGraphCardProps['onApprovalAction'];
-}) {
+function StepDetailCard({ step }: { step: TaskStep }) {
   const { t } = useTranslation('chat');
   const [expanded, setExpanded] = useState(false);
-  const [submittingAction, setSubmittingAction] = useState<string | null>(null);
   const hasDetail = !!step.detail;
   // Narration steps (intermediate pure-text assistant messages folded from
   // the chat stream) are rendered without a label/status pill: the message
@@ -69,22 +61,7 @@ function StepDetailCard({
   const hideStatusText = (isTool || isSystem) && step.status === 'completed';
   const detailPreview = step.detail?.replace(/\s+/g, ' ').trim();
   const canExpand = hasDetail;
-  const displayLabel = step.approval?.kind === 'choice'
-    ? t('executionGraph.interactionLabel')
-    : isThinking
-      ? t('executionGraph.thinkingLabel')
-      : (isTool ? displayToolLabel : step.label);
-  const canRespondToApproval = step.approval?.status === 'pending'
-    && step.approval.actions.length > 0
-    && onApprovalAction;
-  const approvalActionLabel = (action: string, label?: string) => {
-    if (label) return label;
-    if (action === 'perm:allow') return t('executionGraph.approval.allow');
-    if (action === 'perm:allow_all') return t('executionGraph.approval.allowAll');
-    if (action === 'perm:deny') return t('executionGraph.approval.deny');
-    if (action.startsWith('askq:')) return action.slice('askq:'.length) || t('executionGraph.approval.answer');
-    return action;
-  };
+    const displayLabel = isThinking ? t('executionGraph.thinkingLabel') : (isTool ? displayToolLabel : step.label);
 
   return (
     <div
@@ -190,34 +167,6 @@ function StepDetailCard({
               </pre>
             </div>
           )}
-      {canRespondToApproval && (
-        <div className="mt-2 flex flex-wrap gap-2" data-testid="chat-approval-actions">
-          {step.approval!.actions.map(({ action, label }) => (
-            <button
-              key={action}
-              type="button"
-              data-testid={`chat-approval-action-${action}`}
-              disabled={submittingAction !== null}
-              className={cn(
-                'min-h-8 rounded-md border px-3 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50',
-                action === 'perm:deny'
-                  ? 'border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/30'
-                  : 'border-black/10 bg-surface-input text-foreground hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10',
-              )}
-              onClick={async () => {
-                setSubmittingAction(action);
-                try {
-                  await onApprovalAction(step.approval!.runId, action);
-                } finally {
-                  setSubmittingAction(null);
-                }
-              }}
-            >
-              {approvalActionLabel(action, label)}
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -229,7 +178,6 @@ export function ExecutionGraphCard({
   suppressThinking = false,
   expanded: controlledExpanded,
   onExpandedChange,
-  onApprovalAction,
 }: ExecutionGraphCardProps) {
   const { t } = useTranslation('chat');
 
@@ -345,7 +293,7 @@ export function ExecutionGraphCard({
                   </div>
                 </div>
               </div>
-              <StepDetailCard step={step} onApprovalAction={onApprovalAction} />
+              <StepDetailCard step={step} />
             </div>
           </div>
         )})}
@@ -359,14 +307,7 @@ export function ExecutionGraphCard({
               data-testid="chat-execution-step-thinking-trailing"
               style={{ marginLeft: `${TOOL_ROW_EXTRA_INDENT_PX}px` }}
             >
-              <div className="flex w-6 shrink-0 justify-center">
-                <div
-                  className="flex h-6 w-6 items-center justify-center text-muted-foreground"
-                  data-testid="chat-execution-step-thinking-trailing-icon"
-                >
-                  <CircleDashed className="h-3.5 w-3.5" />
-                </div>
-              </div>
+              <div className="w-6 shrink-0" />
               <div className="min-w-0 flex-1 text-sm text-muted-foreground">
                 <span className="font-medium">{t('executionGraph.thinkingLabel')}</span>
                 <AnimatedDots className="ml-1 inline-flex text-sm" />

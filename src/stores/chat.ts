@@ -1993,9 +1993,6 @@ function getAgentIdFromSessionKey(sessionKey: string): string {
   return parts[1] || 'main';
 }
 
-function getAgentIdForSessionKey(sessionKey: string, sessions: ChatSession[]): string {
-  return sessions.find((session) => session.key === sessionKey)?.agentId || getAgentIdFromSessionKey(sessionKey);
-}
 function sessionIndicatesIdle(session: ChatSession | undefined): boolean {
   if (!session) return false;
   if (session.hasActiveRun === false) return true;
@@ -2101,13 +2098,6 @@ function resolveMainSessionKeyForAgent(agentId: string | undefined | null): stri
   return summary?.mainSessionKey || buildFallbackMainSessionKey(normalizedAgentId);
 }
 
-function resolveTargetSessionKey(currentSessionKey: string, targetAgentId: string | undefined | null): string {
-  if (!targetAgentId || !currentSessionKey.startsWith('agent:')) {
-    return currentSessionKey;
-  }
-  return resolveMainSessionKeyForAgent(targetAgentId) ?? currentSessionKey;
-}
-
 function ensureSessionEntry(
   sessions: ChatSession[],
   sessionKey: string,
@@ -2179,7 +2169,7 @@ function buildSessionSwitchPatch(
 
   return {
     currentSessionKey: nextSessionKey,
-    currentAgentId: getAgentIdForSessionKey(nextSessionKey, nextSessions),
+    currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
     sessions: ensureSessionEntry(nextSessions, nextSessionKey, options),
     sessionLabels: leavingEmpty
       ? clearSessionEntryFromMap(state.sessionLabels, state.currentSessionKey)
@@ -2891,6 +2881,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (requestedGeneration < _sessionCatalogGeneration) return;
       synchronizeGatewaySessionGeneration(requestedGeneration);
     }
+
     const now = Date.now();
     if (_loadSessionsInFlight) {
       let observedFlight = _loadSessionsInFlight;
@@ -3137,7 +3128,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             set((state) => ({
               sessions: sessionsWithCurrent,
               currentSessionKey: nextSessionKey,
-              currentAgentId: getAgentIdForSessionKey(nextSessionKey, sessionsWithCurrent),
+              currentAgentId: getAgentIdFromSessionKey(nextSessionKey),
               sessionLabels: omitRecordKeys(state.sessionLabels, labelCleanupKeys),
               sessionLastActivity: mergeSessionActivity(
                 omitRecordKeys(state.sessionLastActivity, activityCleanupKeys),
@@ -3460,7 +3451,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         lastUserMessageAt: null,
         pendingToolImages: [],
         currentSessionKey: next?.key ?? DEFAULT_SESSION_KEY,
-        currentAgentId: getAgentIdForSessionKey(next?.key ?? DEFAULT_SESSION_KEY, remaining),
+        currentAgentId: getAgentIdFromSessionKey(next?.key ?? DEFAULT_SESSION_KEY),
       }));
       if (next) {
         get().loadHistory();
@@ -4320,7 +4311,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const trimmed = text.trim();
     if (!trimmed && (!attachments || attachments.length === 0)) return;
 
-    const targetSessionKey = resolveTargetSessionKey(get().currentSessionKey, targetAgentId);
+    const targetSessionKey = resolveMainSessionKeyForAgent(targetAgentId) ?? get().currentSessionKey;
 
     // Guard against double-submit before React re-renders with sending=true.
     if (get().sending && targetSessionKey === get().currentSessionKey) {

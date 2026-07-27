@@ -2,11 +2,9 @@ import { dialog, nativeImage } from 'electron';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
-import type { RuntimeManager } from '../runtime/manager';
 import type { AttachmentFileRef } from '@shared/host-api/contract';
 import { resolveOutgoingMediaAttachment, type AttachmentAccess } from './attachment-access';
 import { resolveOpenClawStateDir } from '../utils/paths';
-import { getRuntimeOutgoingMediaRecordDirs } from '../utils/runtime-media-paths';
 import {
   CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
@@ -30,7 +28,6 @@ type ThumbnailEntry = {
 };
 
 type MediaApiDependencies = {
-  runtimeManager?: Pick<RuntimeManager, 'getStatus'>;
   attachmentAccess?: Pick<AttachmentAccess, 'resolveAttachment' | 'readAttachmentBinary'>;
 };
 
@@ -102,37 +99,6 @@ function normalizeThumbnailEntries(payload: unknown): ThumbnailEntry[] {
   return Array.isArray(value) ? value as ThumbnailEntry[] : [];
 }
 
-async function resolveRuntimeOutgoingMediaUrl(
-  gatewayUrl: string,
-  runtimeManager?: Pick<RuntimeManager, 'getStatus'>,
-): Promise<{ path: string; mimeType: string } | null> {
-  try {
-    const match = gatewayUrl.match(/\/api\/chat\/media\/outgoing\/[^/]+\/([^/]+)\//);
-    if (!match) return null;
-    const attachmentId = decodeURIComponent(match[1]);
-    if (!/^[A-Za-z0-9._-]+$/.test(attachmentId)) return null;
-    const fsP = await import('node:fs/promises');
-    for (const recordDir of getRuntimeOutgoingMediaRecordDirs(runtimeManager)) {
-      try {
-        const raw = await fsP.readFile(join(recordDir, `${attachmentId}.json`), 'utf8');
-        const record = JSON.parse(raw) as {
-          original?: { path?: string; contentType?: string };
-        };
-        if (!record.original?.path) continue;
-        return {
-          path: record.original.path,
-          mimeType: record.original.contentType || 'application/octet-stream',
-        };
-      } catch {
-        // Continue across current and historical runtime media roots.
-      }
-    }
-  } catch {
-    // Treat malformed or unavailable runtime media records as missing.
-  }
-  return null;
-}
-
 export function createMediaApi(dependencies: MediaApiDependencies = {}): CompleteHostServiceRegistry['media'] {
   return {
     thumbnails: async (payload) => {
@@ -191,7 +157,7 @@ export function createMediaApi(dependencies: MediaApiDependencies = {}): Complet
           const resolved = await resolveOutgoingMediaAttachment({
             uri: entry.gatewayUrl,
             stateDir: resolveOpenClawStateDir(),
-          }) ?? await resolveRuntimeOutgoingMediaUrl(entry.gatewayUrl, dependencies.runtimeManager);
+          });
           if (!resolved) {
             results[entry.gatewayUrl] = { preview: null, fileSize: 0 };
             continue;
