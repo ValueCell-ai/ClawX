@@ -394,8 +394,10 @@ writes sanitized evidence under
 `artifacts/cc-connect/real-oauth-approval-request.png`. These screenshots keep
 the tool type, approval controls, lifecycle state, generated filename, and
 assistant result visible while masking the isolated managed workspace path.
-Reading Codex JSONL,
-wrapping Codex stdout, or spawning a second Codex bridge remains forbidden.
+Reading Codex JSONL as a real-time event source, wrapping Codex stdout, or
+spawning a second Codex bridge remains forbidden. Section 8 documents the sole
+bounded historical exception for Channel tool packets omitted by public
+cc-connect history.
 
 The local-real verifier performs runtime checks with real filesystem paths but
 replaces repository, home, and temporary roots with `<repo>`, `<home>`, and
@@ -454,18 +456,35 @@ assistant rendering, and an unchanged cc-connect PID.
 
 ## 8. Sessions and history
 
-Session inventory, history, and deletion use only cc-connect's public
-Management/Bridge session endpoints. ClawX does not read or mutate cc-connect
-session JSON files. User-assigned titles are ClawX UI metadata stored atomically
-in `app/cc-connect-session-metadata.json`; deleting a public session deletes its
-title in the same Host API operation. On first use, labels from the old
-ClawX-owned `.clawx-supplemental-history.json` are imported without copying its
-history payload.
+Session inventory, ordinary user/assistant history, and deletion use
+cc-connect's public Management/Bridge session endpoints. ClawX does not read or
+mutate cc-connect session JSON files. User-assigned titles are ClawX UI metadata
+stored atomically in `app/cc-connect-session-metadata.json`; deleting a public
+session deletes its title in the same Host API operation. On first use, labels
+from the old ClawX-owned `.clawx-supplemental-history.json` are imported without
+copying its history payload.
 
 The production Bridge adapter contains no parser for cc-connect session JSON or
 Codex transcripts. It retains only messages observed on the current public
-Bridge connection for immediate event delivery; durable list/history/delete
-always come from the provider's public Management session client.
+Bridge connection for immediate event delivery; durable list/delete and
+authoritative ordinary messages always come from the provider's public
+Management session client.
+
+Pinned cc-connect can omit historical tool packets from public history for
+Channel-originated sessions even though Codex recorded and executed those
+tools. After public history has loaded, the provider may apply one degraded,
+best-effort compatibility supplement that contributes only tool calls and
+their results. It cannot create or replace user, assistant, system, attachment,
+approval, real-time event, or usage records.
+
+Candidate Codex JSONL files must match the owning Agent workspace. A stale or
+exact `agent_session_id` does not bypass that check. Fallback discovery is
+bounded to recent public user-turn text and the timestamp of that exact user
+record, nearby transcript date directories, bounded path/file caches, and
+truncated tool output. Missing, stale, cross-workspace, or ambiguous evidence
+leaves public history unchanged. This exception does not satisfy replacement
+readiness and must be removed when the pinned cc-connect runtime exposes
+durable public Channel tool history.
 
 ClawX owns logical session identity and display metadata; cc-connect owns
 runtime sessions and message history. Public session responses carry the
@@ -474,10 +493,12 @@ optional display labels and never copies runtime credentials or message
 history.
 
 cc-connect Session REST/Management APIs are the only production source for
-list, create, history, switch, and delete. Rename uses an official endpoint if
-the pinned binary exposes it; otherwise ClawX stores only the display label in
-its logical index and does not rewrite cc-connect private JSON. Hard delete is
-reported successful only after the runtime API confirms deletion.
+list, create, ordinary message history, switch, and delete. The bounded
+Channel tool supplement above is the only historical content exception. Rename
+uses an official endpoint if the pinned binary exposes it; otherwise ClawX
+stores only the display label in its logical index and does not rewrite
+cc-connect private JSON. Hard delete is reported successful only after the
+runtime API confirms deletion.
 
 Runtime or provider switching preserves visible historical turns and detaches
 the old backend binding. The first subsequent message creates a new runtime

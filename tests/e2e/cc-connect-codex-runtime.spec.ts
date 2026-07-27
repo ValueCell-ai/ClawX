@@ -309,6 +309,9 @@ wss.on('connection', (ws) => {
     }
     if (msg.type === 'message') {
       writeBridgeMessage(msg);
+      if (String(msg.content || '').includes('stay pending until runtime stops')) {
+        return;
+      }
       if (String(msg.content || '').includes('require approval')) {
         pendingApprovals.set(msg.reply_ctx, msg);
         ws.send(JSON.stringify({
@@ -867,6 +870,23 @@ test.describe('cc-connect + Codex runtime E2E', () => {
           session_key: 'clawx:analysis:member-2',
         }),
       ]));
+
+      await page.getByTestId('chat-composer-input').fill('stay pending until runtime stops');
+      await page.getByTestId('chat-composer-send').click();
+      await expect.poll(async () => {
+        const content = await readFile(bridgeMessagesPath, 'utf8').catch(() => '');
+        return content.includes('stay pending until runtime stops');
+      }, { timeout: 30_000 }).toBe(true);
+
+      const stopResult = await page.evaluate(async () => {
+        return await window.clawx.hostInvoke({
+          id: 'runtime-stop-with-pending-run',
+          module: 'gateway',
+          action: 'stop',
+        });
+      });
+      expect(stopResult).toMatchObject({ ok: true, data: { success: true } });
+      await expect(page.getByText('cc-connect runtime stopped before the run completed')).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }

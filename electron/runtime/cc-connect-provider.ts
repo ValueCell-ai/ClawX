@@ -30,6 +30,7 @@ import {
 } from './cc-connect-paths';
 import { buildCcConnectWebAdminUrl, CC_CONNECT_MANAGEMENT_PORT } from './cc-connect-control-ui';
 import {
+  CC_CONNECT_SESSION_INSTANCE_MARKER,
   ccConnectProjectNameForAgent,
   ccConnectProjectNameForSessionKey,
   CLAWX_BRIDGE_ADMIN_USER_ID,
@@ -53,6 +54,7 @@ import {
   FileCcConnectSessionMetadataStore,
   type CcConnectSessionMetadataStore,
 } from './cc-connect-session-metadata';
+import { loadCcConnectCodexTranscriptTools } from './cc-connect-codex-transcript';
 import { readOpenClawConfig, type ChannelConfigData, type OpenClawConfig } from '../utils/channel-config';
 import { expandPath, getOpenClawConfigDir } from '../utils/paths';
 import * as logger from '../utils/logger';
@@ -148,6 +150,7 @@ type CcConnectApiSessionRef = {
   active: boolean;
   createdAt: number;
   updatedAt: number;
+  agentSessionId?: string;
   lastMessage?: Record<string, unknown>;
 };
 
@@ -550,6 +553,7 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
   private currentProviderProfile: CodexProviderProfile | null = null;
   private currentProjectProfiles: CodexProviderProfile[] = [];
   private currentProjectProfileByAgent = new Map<string, CodexProviderProfile>();
+  private currentProjectWorkDirByAgent = new Map<string, string>();
   private currentChannelEnv: Record<string, string> = {};
   private sessionSyncTimer: ReturnType<typeof setInterval> | null = null;
   private sessionSyncPolling = false;
@@ -836,8 +840,43 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       return { success: false, error: 'Session not found' };
     }
     const publicMessages = await this.sessionApi.loadHistory(session);
+    const channel = ccConnectSessionChannel(session.logicalKey);
+    let transcriptMessages: RawMessage[] = [];
+    if (channel) {
+      const codexHomeDirs = new Set([
+        this.currentProjectProfileByAgent.get(session.agentId)?.codexHomeDir,
+        this.currentProviderProfile?.codexHomeDir,
+        ...this.currentProjectProfiles.map((profile) => profile.codexHomeDir),
+        getCcConnectCodexHomeDir(),
+      ].filter((value): value is string => Boolean(value)));
+      const transcriptTurnHints = publicMessages.slice(-limit).flatMap((message) => {
+        const content = message.role === 'user' ? runtimeMessageText(message.content) : '';
+        return content && typeof message.timestamp === 'number'
+          ? [{ content, timestamp: message.timestamp }]
+          : [];
+      });
+      if (session.agentSessionId || transcriptTurnHints.length > 0) {
+        transcriptMessages = await loadCcConnectCodexTranscriptTools(
+          codexHomeDirs,
+          session.agentSessionId ?? '',
+          transcriptTurnHints,
+          this.currentProjectWorkDirByAgent.get(session.agentId),
+        ).catch((error) => {
+          logger.warn('[cc-connect] failed to load Codex tool history', {
+            sessionKey,
+            channel,
+            agentSessionId: session.agentSessionId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return [];
+        });
+      }
+    }
     const bridgeMessages = await this.bridgeAdapter.loadHistory(sessionKey, limit);
-    const messages = mergeCcConnectHistory(publicMessages, bridgeMessages).slice(-limit);
+    const messages = mergeCcConnectHistory(
+      mergeCcConnectHistory(publicMessages, transcriptMessages),
+      bridgeMessages,
+    ).slice(-limit);
     return {
       success: true,
       messages,
@@ -1256,6 +1295,10 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
     this.currentProjectProfileByAgent = new Map(configuredProjects.flatMap((project) => (
       project.providerProfile ? [[project.agentId, project.providerProfile] as const] : []
     )));
+    this.currentProjectWorkDirByAgent = new Map(configuredProjects.map((project) => [
+      project.agentId,
+      project.workDir,
+    ]));
     const channelPlatforms = collectCcConnectChannelPlatforms(openClawConfig).filter((platform) => !platform.error);
     this.currentChannelEnv = Object.assign({}, ...channelPlatforms.map((platform) => platform.env));
     await writeFile(configPath, defaultConfig({
@@ -1457,6 +1500,8 @@ export class CcConnectRuntimeProvider extends EventEmitter implements RuntimePro
       'GET',
       `/projects/${encodeURIComponent(session.projectName)}/sessions/${encodeURIComponent(session.id)}?history_limit=1000`,
     );
+    const detail = isRecord(result) ? result : {};
+    session.agentSessionId = ccString(detail, ['agent_session_id', 'agentSessionId']) || undefined;
     return parseCcConnectApiHistory(result);
   }
 
@@ -2371,8 +2416,13 @@ function hasRuntimeAttachments(message: RawMessage): boolean {
   return Array.isArray(message._attachedFiles) && message._attachedFiles.length > 0;
 }
 
+function hasRuntimeToolResult(message: RawMessage): boolean {
+  return message.role === 'toolresult' && Boolean(message.toolCallId || message.id);
+}
+
 function runtimeSupplementKey(message: RawMessage): string {
   if (hasRuntimeToolCall(message)) return `tool:${runtimeToolCallKey(message)}`;
+  if (hasRuntimeToolResult(message)) return `tool-result:${message.toolCallId || message.id}`;
   if (message.id) return `attachment:${message.id}`;
   const attachments = (message._attachedFiles ?? []).map((file) => [
     file.filePath,
@@ -2386,12 +2436,12 @@ function runtimeSupplementKey(message: RawMessage): string {
 
 function mergeCcConnectHistory(publicMessages: RawMessage[], bridgeMessages: RawMessage[]): RawMessage[] {
   const supplementalMessages = bridgeMessages.filter((message) => (
-    hasRuntimeToolCall(message) || hasRuntimeAttachments(message)
+    hasRuntimeToolCall(message) || hasRuntimeToolResult(message) || hasRuntimeAttachments(message)
   ));
   if (supplementalMessages.length === 0) return publicMessages;
   const seenSupplements = new Set(
     publicMessages
-      .filter((message) => hasRuntimeToolCall(message) || hasRuntimeAttachments(message))
+      .filter((message) => hasRuntimeToolCall(message) || hasRuntimeToolResult(message) || hasRuntimeAttachments(message))
       .map(runtimeSupplementKey),
   );
   const merged = [...publicMessages];
@@ -2433,7 +2483,10 @@ export function ccConnectSessionLogicalKey(
     const baseKey = `agent:${agentId}:cron:scheduled`;
     return active ? baseKey : `${baseKey}:${id}`;
   }
-  if (!sessionKey.startsWith('clawx:')) return sessionKey;
+  if (!sessionKey.startsWith('clawx:')) {
+    const baseKey = `agent:${agentId}:${sessionKey}`;
+    return active ? baseKey : `${baseKey}:${CC_CONNECT_SESSION_INSTANCE_MARKER}:${id}`;
+  }
   const [, keyAgentId = 'main', ...keyParts] = sessionKey.split(':');
   const scopedAgentId = agentIdFromCcConnectProjectName(projectName) || normalizeAgentId(keyAgentId) || 'main';
   const baseKey = `agent:${scopedAgentId}:${keyParts.join(':') || 'main'}`;

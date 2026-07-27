@@ -12,7 +12,15 @@ test.describe('ClawX canonical data layout migration', () => {
     const legacySettingsPath = join(legacyDir, 'settings.json');
     const legacyProvidersPath = join(legacyDir, 'clawx-providers.json');
     const legacyRendererStatePath = join(legacyDir, 'Local Storage', 'leveldb', 'legacy-state.log');
-    const legacyBrowserStatePath = join(legacyDir, 'Partitions', 'clawx-web-browser', 'Cookies');
+    // Avoid Chromium opening or replacing its live Cookies database while this test
+    // verifies recursive partition migration, especially on Windows.
+    const legacyBrowserStateFile = 'legacy-browser-state.txt';
+    const legacyBrowserStatePath = join(
+      legacyDir,
+      'Partitions',
+      'clawx-web-browser',
+      legacyBrowserStateFile,
+    );
     await mkdir(join(legacyDir, 'Local Storage', 'leveldb'), { recursive: true });
     await mkdir(join(legacyDir, 'Partitions', 'clawx-web-browser'), { recursive: true });
     await writeFile(legacySettingsPath, JSON.stringify({
@@ -62,7 +70,14 @@ test.describe('ClawX canonical data layout migration', () => {
         readFile(join(dataRoot, 'state', 'data-version.json'), 'utf8'),
         readFile(join(dataRoot, 'state', 'migration-journal.jsonl'), 'utf8'),
         readFile(join(dataRoot, 'system', 'electron', 'Local Storage', 'leveldb', 'legacy-state.log'), 'utf8'),
-        readFile(join(dataRoot, 'system', 'electron', 'Partitions', 'clawx-web-browser', 'Cookies'), 'utf8'),
+        readFile(join(
+          dataRoot,
+          'system',
+          'electron',
+          'Partitions',
+          'clawx-web-browser',
+          legacyBrowserStateFile,
+        ), 'utf8'),
       ]);
       expect(JSON.parse(settings)).toMatchObject({ runtimeKind: 'cc-connect', gatewayAutoStart: false });
       expect(JSON.parse(providers)).toMatchObject({

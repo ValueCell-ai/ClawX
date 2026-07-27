@@ -106,6 +106,7 @@ const BRIDGE_HEARTBEAT_INTERVAL_MS = 25_000;
 const BRIDGE_RECONNECT_DELAY_MS = 3_000;
 const CLAWX_PROJECT_PREFIX = 'clawx-';
 export const CLAWX_BRIDGE_ADMIN_USER_ID = 'clawx-desktop';
+export const CC_CONNECT_SESSION_INSTANCE_MARKER = '$session';
 const ABORTED_RUN_TTL_MS = 10 * 60_000;
 const PROGRESS_CARD_PAYLOAD_PREFIX = '__cc_connect_progress_card_v1__:';
 const TOOL_START_TYPES = new Set(['tool_start', 'tool.started', 'tool_call', 'tool_call_start', 'tool_use', 'tool_use_start']);
@@ -404,9 +405,29 @@ export function toCcConnectBridgeSessionKey(sessionKey: string): string {
   if (sessionKey.startsWith('clawx:')) return sessionKey;
   if (!sessionKey.startsWith('agent:')) return sessionKey;
   const [, scope = 'main', ...userParts] = sessionKey.split(':');
+  const bridgeParts = userParts.at(-2) === CC_CONNECT_SESSION_INSTANCE_MARKER
+    ? userParts.slice(0, -2)
+    : userParts;
+  if (CC_CONNECT_CHANNEL_SESSION_PREFIXES.has(bridgeParts[0] || '')) {
+    return bridgeParts.join(':');
+  }
   const user = userParts.join(':') || 'main';
   return `clawx:${scope || 'main'}:${user || 'main'}`;
 }
+
+const CC_CONNECT_CHANNEL_SESSION_PREFIXES = new Set([
+  'dingtalk',
+  'discord',
+  'feishu',
+  'lark',
+  'line',
+  'qq',
+  'qqbot',
+  'slack',
+  'telegram',
+  'wecom',
+  'weixin',
+]);
 
 function normalizeClawXAgentId(value: string | undefined): string {
   const normalized = (value || 'main')
@@ -423,6 +444,10 @@ export function ccConnectProjectNameForAgent(agentId: string): string {
 }
 
 export function ccConnectProjectNameForSessionKey(sessionKey: string): string {
+  if (sessionKey.startsWith('agent:')) {
+    const [, agentId] = sessionKey.split(':');
+    return ccConnectProjectNameForAgent(agentId);
+  }
   const bridgeKey = toCcConnectBridgeSessionKey(sessionKey);
   if (!bridgeKey.startsWith('clawx:')) return ccConnectProjectNameForAgent('main');
   const [, agentId] = bridgeKey.split(':');
@@ -502,6 +527,7 @@ export class CcConnectBridgeAdapter {
     this.shouldReconnect = false;
     this.clearHeartbeat();
     this.clearReconnectTimer();
+    this.failPendingRuns('cc-connect runtime stopped before the run completed');
     const sockets = new Set([
       ...this.connectingSockets,
       ...(this.socket ? [this.socket] : []),
@@ -815,13 +841,14 @@ export class CcConnectBridgeAdapter {
           }
           return;
         }
-        this.handleServerMessage(parsed);
+        this.handleServerMessage(parsed, socket);
       });
       socket.once('error', (error) => finish(error));
       socket.once('close', () => {
         if (this.socket === socket) {
           this.socket = null;
           this.clearHeartbeat();
+          this.failPendingRuns('cc-connect bridge disconnected before the run completed');
           this.scheduleReconnect();
         }
         finish(new Error('cc-connect bridge connection closed'));
@@ -878,7 +905,8 @@ export class CcConnectBridgeAdapter {
     }
   }
 
-  private handleServerMessage(message: Record<string, unknown>): void {
+  private handleServerMessage(message: Record<string, unknown>, sourceSocket: WebSocket): void {
+    if (sourceSocket !== this.socket) return;
     const progressItems = parseBridgeProgressItems(message.content);
     if (progressItems) {
       logger.debug(
@@ -1561,6 +1589,24 @@ export class CcConnectBridgeAdapter {
     this.terminalCardRuns.delete(pending.runId);
   }
 
+  private failPendingRuns(error: string): void {
+    const failedAt = Date.now();
+    for (const pending of Array.from(this.pendingRuns.values())) {
+      if (this.pendingRuns.get(pending.runId) !== pending) continue;
+      this.completeOpenProgressTools(pending.runId, true);
+      this.abortedRuns.set(pending.runId, {
+        sessionKey: pending.sessionKey,
+        abortedAt: failedAt,
+      });
+      void this.finishPendingRun(pending, {
+        text: error,
+        isError: true,
+        appendMessage: false,
+        timestamp: failedAt,
+      });
+    }
+  }
+
   private completeOpenProgressTools(runId: string, isError: boolean): void {
     for (const state of this.progressByHandle.values()) {
       if (state.runId !== runId) continue;
@@ -1598,7 +1644,10 @@ export class CcConnectBridgeAdapter {
       pending.sessionKey === sessionKey || toCcConnectBridgeSessionKey(pending.sessionKey) === bridgeSessionKey
     ));
     if (hasPendingForSession) return false;
-    return Array.from(this.abortedRuns.values()).some((aborted) => aborted.sessionKey === sessionKey);
+    return Array.from(this.abortedRuns.values()).some((aborted) => (
+      aborted.sessionKey === sessionKey
+      || toCcConnectBridgeSessionKey(aborted.sessionKey) === bridgeSessionKey
+    ));
   }
 
   private pruneAbortedRuns(): void {

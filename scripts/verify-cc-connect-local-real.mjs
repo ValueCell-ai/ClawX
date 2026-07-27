@@ -1991,6 +1991,7 @@ function buildCoverage(report) {
         'Host API sessions.rename updates cc-connect-owned session labels and titles',
         'Host API sessions.delete removes cc-connect-owned session state and history',
         'channel session display names preserve cc-connect chat/user metadata',
+        'bounded historical Channel tool supplement accepts only workspace- and turn-matched Codex evidence omitted by public history',
       ],
       evidence: [runtimeProviderUnit.command, bridgeAdapterUnit.command, mockBridgeE2e.command].filter(Boolean).join(' && ')
         || runtimeProviderUnit.reason

@@ -36,10 +36,13 @@ describe('cc-connect BridgePlatform adapter', () => {
     expect(toCcConnectBridgeSessionKey('agent:main:main')).toBe('clawx:main:main');
     expect(toCcConnectBridgeSessionKey('agent:research:desk')).toBe('clawx:research:desk');
     expect(toCcConnectBridgeSessionKey('agent:main:cron:job-123')).toBe('clawx:main:cron:job-123');
+    expect(toCcConnectBridgeSessionKey('agent:research:feishu:chat-1:user-1')).toBe('feishu:chat-1:user-1');
+    expect(toCcConnectBridgeSessionKey('agent:research:feishu:chat-1:user-1:$session:s2')).toBe('feishu:chat-1:user-1');
     expect(toCcConnectBridgeSessionKey('clawx:main:main')).toBe('clawx:main:main');
     expect(toCcConnectBridgeSessionKey('feishu:chat-1:user-1')).toBe('feishu:chat-1:user-1');
     expect(ccConnectProjectNameForSessionKey('agent:research:desk')).toBe('clawx-research');
     expect(ccConnectProjectNameForSessionKey('agent:research:cron:job-123')).toBe('clawx-research');
+    expect(ccConnectProjectNameForSessionKey('agent:research:feishu:chat-1:user-1')).toBe('clawx-research');
     expect(ccConnectProjectNameForSessionKey('feishu:chat-1:user-1')).toBe('clawx-main');
   });
 
@@ -115,8 +118,9 @@ describe('cc-connect BridgePlatform adapter', () => {
       });
     });
 
+    let adapter: CcConnectBridgeAdapter | undefined;
     try {
-      const adapter = new CcConnectBridgeAdapter({
+      adapter = new CcConnectBridgeAdapter({
         port,
         token: 'token',
         project: 'clawx-main',
@@ -129,6 +133,12 @@ describe('cc-connect BridgePlatform adapter', () => {
         message: 'ping',
         idempotencyKey: 'idem-1',
       })).resolves.toEqual(expect.objectContaining({ runId: expect.stringMatching(/^cc-connect-/) }));
+      const channelRun = await adapter.send({
+        sessionKey: 'agent:coder:feishu:chat-1:user-1',
+        message: 'channel ping',
+        idempotencyKey: 'idem-2',
+      });
+      expect(channelRun).toEqual(expect.objectContaining({ runId: expect.stringMatching(/^cc-connect-/) }));
 
       await vi.waitFor(() => {
         expect(emitted).toEqual(expect.arrayContaining([
@@ -146,6 +156,12 @@ describe('cc-connect BridgePlatform adapter', () => {
             sessionKey: 'agent:research:desk',
             status: 'completed',
           })],
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'run.ended',
+            runId: channelRun.runId,
+            sessionKey: 'agent:coder:feishu:chat-1:user-1',
+            status: 'completed',
+          })],
         ]));
       });
 
@@ -155,17 +171,31 @@ describe('cc-connect BridgePlatform adapter', () => {
           session_key: 'clawx:research:desk',
           project: 'clawx-research',
         }),
+        expect.objectContaining({
+          type: 'message',
+          session_key: 'feishu:chat-1:user-1',
+          project: 'clawx-coder',
+        }),
       ]));
-      await expect(adapter.listSessions()).resolves.toEqual([
+      const sessions = await adapter.listSessions();
+      expect(sessions).toHaveLength(2);
+      expect(sessions).toEqual(expect.arrayContaining([
         expect.objectContaining({
           key: 'agent:research:desk',
           agentId: 'research',
           derivedTitle: 'ping',
           lastMessagePreview: 'pong',
         }),
-      ]);
+        expect.objectContaining({
+          key: 'agent:coder:feishu:chat-1:user-1',
+          agentId: 'coder',
+          derivedTitle: 'channel ping',
+          lastMessagePreview: 'pong',
+        }),
+      ]));
       await adapter.close();
     } finally {
+      await adapter?.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
@@ -913,6 +943,8 @@ describe('cc-connect BridgePlatform adapter', () => {
     });
     const sockets: WebSocket[] = [];
     const received: Record<string, unknown>[] = [];
+    const emitted: Array<[string, unknown]> = [];
+    const progressPrefix = '__cc_connect_progress_card_v1__:';
 
     server.on('connection', (socket) => {
       sockets.push(socket);
@@ -921,6 +953,28 @@ describe('cc-connect BridgePlatform adapter', () => {
         received.push(parsed);
         if (parsed.type === 'register') {
           socket.send(JSON.stringify({ type: 'register_ack', ok: true }));
+          return;
+        }
+        if (parsed.type === 'message') {
+          if (sockets.indexOf(socket) === 0) {
+            socket.send(JSON.stringify({
+              type: 'preview_start',
+              ref_id: 'dropped-progress',
+              session_key: parsed.session_key,
+              reply_ctx: parsed.reply_ctx,
+              content: `${progressPrefix}${JSON.stringify({
+                version: 2,
+                state: 'running',
+                items: [{ kind: 'tool_use', tool: 'Bash', text: 'sleep 30' }],
+              })}`,
+            }));
+          } else {
+            socket.send(JSON.stringify({
+              type: 'reply',
+              session_key: parsed.session_key,
+              content: 'reply after dropped connection',
+            }));
+          }
         }
       });
     });
@@ -929,7 +983,7 @@ describe('cc-connect BridgePlatform adapter', () => {
       port,
       token: 'token',
       project: 'clawx-main',
-      emit: vi.fn(),
+      emit: ((event: string, payload: unknown) => emitted.push([event, payload])) as never,
       heartbeatIntervalMs: 20,
       reconnectDelayMs: 20,
     });
@@ -942,10 +996,60 @@ describe('cc-connect BridgePlatform adapter', () => {
         ]));
       });
 
+      const droppedRun = await adapter.send({
+        sessionKey: 'agent:coder:feishu:chat-1:user-1',
+        message: 'drop this run',
+        idempotencyKey: 'idem-before-drop',
+      });
+      await vi.waitFor(() => {
+        expect(emitted).toEqual(expect.arrayContaining([
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'tool.started',
+            runId: droppedRun.runId,
+            toolCallId: `${droppedRun.runId}:progress:0`,
+          })],
+        ]));
+      });
       sockets[0]?.close();
       await vi.waitFor(() => {
         expect(sockets).toHaveLength(2);
         expect(adapter.isConnected()).toBe(true);
+        expect(emitted).toEqual(expect.arrayContaining([
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'tool.completed',
+            runId: droppedRun.runId,
+            toolCallId: `${droppedRun.runId}:progress:0`,
+            isError: true,
+            meta: expect.objectContaining({
+              status: 'failed',
+              success: false,
+              inferredFromRunCompletion: true,
+            }),
+          })],
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'run.ended',
+            runId: droppedRun.runId,
+            sessionKey: 'agent:coder:feishu:chat-1:user-1',
+            status: 'error',
+            error: 'cc-connect bridge disconnected before the run completed',
+          })],
+        ]));
+      });
+
+      const replacementRun = await adapter.send({
+        sessionKey: 'agent:coder:feishu:chat-1:user-1',
+        message: 'answer after reconnect',
+        idempotencyKey: 'idem-after-drop',
+      });
+      await vi.waitFor(() => {
+        expect(emitted).toEqual(expect.arrayContaining([
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'run.ended',
+            runId: replacementRun.runId,
+            sessionKey: 'agent:coder:feishu:chat-1:user-1',
+            status: 'completed',
+          })],
+        ]));
       });
 
       await adapter.close();
@@ -953,6 +1057,82 @@ describe('cc-connect BridgePlatform adapter', () => {
       await new Promise((resolve) => setTimeout(resolve, 80));
       expect(sockets).toHaveLength(connectionCountAfterClose);
       expect(adapter.isConnected()).toBe(false);
+    } finally {
+      await adapter.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('ends pending runs on close so they cannot block reply routing after reconnect', async () => {
+    const server = new WebSocketServer({ port: 0 });
+    const port = await new Promise<number>((resolve) => {
+      server.once('listening', () => {
+        const address = server.address();
+        resolve(typeof address === 'object' && address ? address.port : 0);
+      });
+    });
+    const emitted: Array<[string, unknown]> = [];
+    let sentMessages = 0;
+
+    server.on('connection', (socket) => {
+      socket.on('message', (data) => {
+        const parsed = JSON.parse(String(data)) as Record<string, unknown>;
+        if (parsed.type === 'register') {
+          socket.send(JSON.stringify({ type: 'register_ack', ok: true }));
+          return;
+        }
+        if (parsed.type !== 'message') return;
+        sentMessages += 1;
+        if (sentMessages === 2) {
+          socket.send(JSON.stringify({
+            type: 'reply',
+            session_key: parsed.session_key,
+            content: 'reply after reconnect',
+          }));
+        }
+      });
+    });
+
+    const adapter = new CcConnectBridgeAdapter({
+      port,
+      token: 'token',
+      project: 'clawx-main',
+      emit: ((event: string, payload: unknown) => emitted.push([event, payload])) as never,
+    });
+
+    try {
+      const first = await adapter.send({
+        sessionKey: 'agent:coder:feishu:chat-1:user-1',
+        message: 'never answered',
+        idempotencyKey: 'idem-before-close',
+      });
+      await adapter.close();
+
+      expect(emitted).toEqual(expect.arrayContaining([
+        ['chat:runtime-event', expect.objectContaining({
+          type: 'run.ended',
+          runId: first.runId,
+          sessionKey: 'agent:coder:feishu:chat-1:user-1',
+          status: 'error',
+          error: 'cc-connect runtime stopped before the run completed',
+        })],
+      ]));
+
+      const second = await adapter.send({
+        sessionKey: 'agent:coder:feishu:chat-1:user-1',
+        message: 'answer this',
+        idempotencyKey: 'idem-after-close',
+      });
+      await vi.waitFor(() => {
+        expect(emitted).toEqual(expect.arrayContaining([
+          ['chat:runtime-event', expect.objectContaining({
+            type: 'run.ended',
+            runId: second.runId,
+            sessionKey: 'agent:coder:feishu:chat-1:user-1',
+            status: 'completed',
+          })],
+        ]));
+      });
     } finally {
       await adapter.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
