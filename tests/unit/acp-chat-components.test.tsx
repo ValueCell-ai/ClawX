@@ -52,6 +52,10 @@ vi.mock('react-i18next', () => ({
         'acp.tool': 'Tool',
         'acp.expandTool': 'Expand tool result',
         'acp.collapseTool': 'Collapse tool result',
+        'acp.expandToolGroup': 'Expand tool calls',
+        'acp.collapseToolGroup': 'Collapse tool calls',
+        'acp.toolGroupSummary': '{{count}} tool calls',
+        'acp.toolGroupSummaryWithFailures': '{{count}} tool calls · {{failedCount}} failed',
         'acp.permission': 'Permission',
         'acp.plan': 'Plan',
         'acp.running': 'Running',
@@ -559,6 +563,86 @@ describe('ACP chat timeline components', () => {
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent('File contents loaded.');
     expect(screen.getByTestId('acp-plan-item')).toHaveTextContent('Update component tests');
     expect(screen.getByText('Second assistant segment.')).toBeInTheDocument();
+  });
+
+  it('collapses multiple completed tool calls into one group after the turn settles', () => {
+    const state = snapshot({
+      itemOrder: ['tool:exec-1', 'tool:image-1', 'tool:process-1', 'msg-a:0'],
+      itemsById: {
+        'tool:exec-1': toolCallItem({ id: 'tool:exec-1', toolCallId: 'exec-1', title: 'exec' }),
+        'tool:image-1': toolCallItem({ id: 'tool:image-1', toolCallId: 'image-1', title: 'image', outputParts: [] }),
+        'tool:process-1': toolCallItem({ id: 'tool:process-1', toolCallId: 'process-1', title: 'process', outputParts: [] }),
+        'msg-a:0': {
+          kind: 'message-segment',
+          id: 'msg-a:0',
+          role: 'assistant',
+          messageId: 'msg-a',
+          segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'All done.' }],
+        },
+      },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+
+    const group = screen.getByTestId('acp-tool-calls-group');
+    expect(group).toHaveAttribute('data-collapsed', 'true');
+    expect(group).toHaveTextContent('3 tool calls');
+    expect(screen.queryByTestId('acp-tool-call-card')).not.toBeInTheDocument();
+  });
+
+  it('expands the tool group to show individual tool cards when clicked', () => {
+    const state = snapshot({
+      itemOrder: ['tool:exec-1', 'tool:image-1', 'msg-a:0'],
+      itemsById: {
+        'tool:exec-1': toolCallItem({ id: 'tool:exec-1', toolCallId: 'exec-1', title: 'exec' }),
+        'tool:image-1': toolCallItem({ id: 'tool:image-1', toolCallId: 'image-1', title: 'image', outputParts: [] }),
+        'msg-a:0': {
+          kind: 'message-segment',
+          id: 'msg-a:0',
+          role: 'assistant',
+          messageId: 'msg-a',
+          segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Done.' }],
+        },
+      },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+
+    fireEvent.click(screen.getByTestId('acp-tool-calls-group'));
+    expect(screen.getByTestId('acp-tool-calls-group')).toHaveAttribute('data-collapsed', 'false');
+    expect(screen.getAllByTestId('acp-tool-call-card')).toHaveLength(2);
+    expect(screen.getByText('exec')).toBeInTheDocument();
+    expect(screen.getByText('image')).toBeInTheDocument();
+  });
+
+  it('keeps a running turn tool group expanded until the turn completes', () => {
+    const state = snapshot({
+      itemOrder: ['user-a:0', 'tool:exec-1', 'tool:image-1'],
+      itemsById: {
+        'user-a:0': {
+          kind: 'message-segment',
+          id: 'user-a:0',
+          role: 'user',
+          messageId: 'user-a',
+          segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Generate assets' }],
+        },
+        'tool:exec-1': toolCallItem({ id: 'tool:exec-1', toolCallId: 'exec-1', title: 'exec', status: 'running', outputParts: [] }),
+        'tool:image-1': toolCallItem({ id: 'tool:image-1', toolCallId: 'image-1', title: 'image', status: 'completed', outputParts: [] }),
+      },
+    });
+
+    render(<AcpTimeline
+      snapshot={state}
+      turnTimingsByUserMessageId={{
+        'user-a': { source: 'live', status: 'running', startedAtMs: Date.now() - 2_000 },
+      }}
+    />);
+
+    expect(screen.getByTestId('acp-tool-calls-group')).toHaveAttribute('data-collapsed', 'false');
+    expect(screen.getAllByTestId('acp-tool-call-card')).toHaveLength(2);
   });
 
   it('keeps completed tool results expanded until the delayed auto-collapse runs', () => {

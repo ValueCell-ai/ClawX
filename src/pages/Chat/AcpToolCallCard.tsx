@@ -39,7 +39,7 @@ function AcpToolOutputPart({ part }: { part: RenderPart }) {
   return <AcpRenderPart part={part} tone="process" />;
 }
 
-export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
+export function AcpToolCallCard({ item, grouped = false }: { item: ToolCallItem; grouped?: boolean }) {
   const { t } = useTranslation('chat');
   const hasDetails = Boolean(item.error) || item.outputParts.length > 0;
   const isFinished = item.status === 'completed' || item.status === 'failed';
@@ -83,7 +83,7 @@ export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
     <div
       data-testid="acp-tool-call-card"
       data-expanded={expanded ? 'true' : 'false'}
-      className="rounded-lg px-0 py-0.5"
+      className={cn('rounded-lg px-0', grouped ? 'py-0' : 'py-0.5')}
     >
       <div className="flex min-w-0 items-center justify-between gap-3">
         {hasDetails ? (
@@ -101,14 +101,17 @@ export function AcpToolCallCard({ item }: { item: ToolCallItem }) {
             aria-expanded={expanded}
             aria-label={toggleLabel}
             title={toggleLabel}
-            className="flex min-w-0 p-1 flex-1 items-center gap-2 rounded-lg text-left transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10"
+            className={cn(
+              'flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left leading-5 transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10',
+              grouped ? 'px-1 py-1' : 'p-1',
+            )}
           >
             {expanded ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" /> : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
             <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('acp.tool')}</span>
             <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{item.title}</span>
           </button>
         ) : (
-          <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className={cn('flex min-w-0 flex-1 items-center gap-2 leading-5', grouped && 'px-1 py-1')}>
             <Wrench className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('acp.tool')}</span>
             <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{item.title}</span>

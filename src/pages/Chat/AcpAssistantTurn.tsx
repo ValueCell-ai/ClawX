@@ -7,10 +7,64 @@ import { AcpPermissionCard } from './AcpPermissionCard';
 import { AcpPlanItem } from './AcpPlanItem';
 import { AcpThoughtBlock } from './AcpThoughtBlock';
 import { AcpToolCallCard } from './AcpToolCallCard';
+import { AcpToolCallsGroup } from './AcpToolCallsGroup';
 import type { AcpTurnFileSummary } from '@/lib/acp/openclaw-file-activities';
 import { AcpTurnFileActivity } from './AcpTurnFileActivity';
 import { AcpAttachmentPart } from './AcpAttachmentPart';
 import type { AcpTurnTiming } from '@/lib/acp/turn-timings';
+import type { TimelineItem, ToolCallItem } from '@/lib/acp/timeline-types';
+
+type TurnRenderItem =
+  | TimelineItem
+  | { kind: 'tool-call-group'; id: string; items: ToolCallItem[] };
+
+function partitionTurnItems(items: TimelineItem[]): TurnRenderItem[] {
+  const result: TurnRenderItem[] = [];
+  let toolRun: ToolCallItem[] = [];
+
+  const flushTools = () => {
+    if (toolRun.length === 0) return;
+    if (toolRun.length === 1) {
+      result.push(toolRun[0]);
+    } else {
+      result.push({ kind: 'tool-call-group', id: `tool-group:${toolRun[0].id}`, items: [...toolRun] });
+    }
+    toolRun = [];
+  };
+
+  for (const item of items) {
+    if (item.kind === 'tool-call') {
+      toolRun.push(item);
+      continue;
+    }
+    flushTools();
+    result.push(item);
+  }
+  flushTools();
+  return result;
+}
+
+function isToolGroupSettled(
+  toolItems: ToolCallItem[],
+  timing: AcpTurnTiming | undefined,
+  turnItems: TimelineItem[],
+): boolean {
+  if (timing?.status === 'complete') return true;
+  if (timing?.status === 'running') return false;
+  if (toolItems.length > 0 && toolItems.every((item) => item.historical)) return true;
+
+  const allFinished = toolItems.every((item) => item.status === 'completed' || item.status === 'failed');
+  if (!allFinished) return false;
+
+  const lastToolId = toolItems[toolItems.length - 1]?.id;
+  const lastToolIndex = turnItems.findIndex((item) => item.id === lastToolId);
+  const hasAssistantReplyAfter = turnItems.slice(lastToolIndex + 1).some(
+    (item) => item.kind === 'message-segment' && item.role === 'assistant',
+  );
+  if (hasAssistantReplyAfter) return true;
+
+  return turnItems.every((item) => item.kind === 'tool-call');
+}
 
 function assistantTurnClipboardText(group: AcpAssistantTurnDisplayGroup): string {
   const textSegments: string[] = [];
@@ -76,6 +130,7 @@ export function AcpAssistantTurn({
   onPermissionSelect?: (requestId: string, optionId: string) => void;
 }) {
   const clipboardText = useMemo(() => assistantTurnClipboardText(group), [group]);
+  const renderItems = useMemo(() => partitionTurnItems(group.items), [group.items]);
 
   return (
     <div data-testid="acp-assistant-turn" className="group flex w-full justify-start gap-3">
@@ -86,7 +141,18 @@ export function AcpAssistantTurn({
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col items-start gap-3">
-        {group.items.map((item) => {
+        {renderItems.map((item) => {
+          if (item.kind === 'tool-call-group') {
+            return (
+              <div key={item.id} className="w-full">
+                <AcpToolCallsGroup
+                  items={item.items}
+                  collapsedByDefault={isToolGroupSettled(item.items, timing, group.items)}
+                />
+              </div>
+            );
+          }
+
           if (item.kind === 'message-segment') {
             if (item.role === 'user') return <AcpMessageSegment key={item.id} item={item} />;
             return (
