@@ -21,6 +21,13 @@ function errnoCode(error: unknown): string | undefined {
     : undefined;
 }
 
+function resolveRealPath(input: string): string {
+  // Node's JavaScript realpath implementation can split a Windows namespaced
+  // path (\\?\C:\...) at the drive colon and try to lstat "C:". The native
+  // implementation accepts the same long-path form without reparsing it.
+  return realpathSync.native(input);
+}
+
 function removeLinkEntry(entryPath: string): void {
   // Never recursively remove a link. In particular, an NTFS junction may point
   // at the bundled OpenClaw runtime outside the plugin tree.
@@ -65,7 +72,7 @@ function removeDirectoryEntry(entryPath: string, deletionRootRealPath: string): 
   if (stat.isDirectory()) {
     // Resolve before descending. If resolution fails, propagate the error rather
     // than falling back to fs.rmSync(), which could follow an outbound junction.
-    const entryRealPath = realpathSync(entryPath);
+    const entryRealPath = resolveRealPath(entryPath);
     if (!isPathInside(deletionRootRealPath, entryRealPath)) {
       throw new Error(`Refusing to recursively delete directory outside root: ${entryPath} -> ${entryRealPath}`);
     }
@@ -107,8 +114,8 @@ export function safeRmSync(targetPath: string): void {
 
   // Fail closed when either path cannot be resolved. Falling back to recursive
   // rm here would reintroduce the junction traversal this helper prevents.
-  const parentRealPath = realpathSync(dirname(targetPath));
-  const deletionRootRealPath = realpathSync(targetPath);
+  const parentRealPath = resolveRealPath(dirname(targetPath));
+  const deletionRootRealPath = resolveRealPath(targetPath);
   if (!isPathInside(parentRealPath, deletionRootRealPath)) {
     throw new Error(`Refusing to recursively delete directory outside parent: ${targetPath} -> ${deletionRootRealPath}`);
   }

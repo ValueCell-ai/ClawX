@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, toNamespacedPath } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { existsSync } from 'node:fs';
 import { safeRmSync } from '@electron/utils/safe-fs';
@@ -57,6 +57,19 @@ describe('safeRmSync', () => {
     const missing = join(root, 'does-not-exist');
 
     expect(() => safeRmSync(missing)).not.toThrow();
+  });
+
+  it.runIf(process.platform === 'win32')('removes a directory tree through a Windows namespaced path', () => {
+    root = mkdtempSync(join(tmpdir(), 'clawx-safe-rm-namespaced-'));
+    const pluginDir = join(root, 'extensions', 'wecom');
+    const namespacedPluginDir = toNamespacedPath(pluginDir);
+
+    mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(join(pluginDir, 'openclaw.plugin.json'), '{"id":"wecom"}');
+
+    expect(namespacedPluginDir).toMatch(/^\\\\\?\\/);
+    expect(() => safeRmSync(namespacedPluginDir)).not.toThrow();
+    expect(existsSync(pluginDir)).toBe(false);
   });
 
   it('runs the junction regression test in the Windows CI job', () => {
