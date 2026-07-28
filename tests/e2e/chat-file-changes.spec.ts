@@ -243,6 +243,18 @@ async function sendPrompt(page: Page, prompt: string) {
   await page.getByTestId('chat-composer-send').click();
 }
 
+async function expectVisibleToolCallCards(page: Page, count: number) {
+  const group = page.getByTestId('acp-tool-calls-group');
+  if (count > 1) {
+    await expect(group).toBeVisible({ timeout: 30_000 });
+    if (await group.getAttribute('data-collapsed') === 'true') {
+      await group.click();
+    }
+    await expect(group).toHaveAttribute('data-collapsed', 'false');
+  }
+  await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(count, { timeout: 30_000 });
+}
+
 async function openChanges(page: Page) {
   await page.getByTestId('chat-toolbar-workspace').click();
   const panel = page.getByTestId('artifact-panel');
@@ -419,7 +431,7 @@ test.describe('ClawX chat file changes', () => {
       const page = await openChat(app);
       await sendPrompt(page, 'Run non-file activity');
 
-      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(2, { timeout: 30_000 });
+      await expectVisibleToolCallCards(page, 2);
       const failedWrite = page.getByTestId('acp-tool-call-card').filter({ hasText: 'Write: failed.ts' });
       const unsupportedRead = page.getByTestId('acp-tool-call-card').filter({ hasText: 'Read: unsupported.ts' });
       await expect(failedWrite).toContainText('Failed');
