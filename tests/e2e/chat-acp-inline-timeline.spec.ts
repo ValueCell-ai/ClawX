@@ -1,5 +1,6 @@
 import type { ElectronApplication } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
+import { expandAcpToolCallsGroup } from './fixtures/acp-timeline';
 
 const MAIN_SESSION_KEY = 'agent:main:main';
 const MAIN_WORKSPACE = '/workspace';
@@ -823,8 +824,7 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(group).toHaveAttribute('data-collapsed', 'true');
       await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(0);
 
-      await group.click();
-      await expect(group).toHaveAttribute('data-collapsed', 'false');
+      await expandAcpToolCallsGroup(page);
       await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(3);
       await expect(page.getByTestId('acp-assistant-turn')).toContainText('Hangzhou is cloudy today.');
     } finally {

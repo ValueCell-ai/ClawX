@@ -9,6 +9,7 @@ import {
   installIpcMocks,
   test,
 } from './fixtures/electron';
+import { expectVisibleToolCallCards } from './fixtures/acp-timeline';
 
 const MAIN_SESSION_KEY = 'agent:main:main';
 const OTHER_SESSION_KEY = 'agent:main:other';
@@ -241,18 +242,6 @@ async function openChat(app: ElectronApplication): Promise<Page> {
 async function sendPrompt(page: Page, prompt: string) {
   await page.getByTestId('chat-composer-input').fill(prompt);
   await page.getByTestId('chat-composer-send').click();
-}
-
-async function expectVisibleToolCallCards(page: Page, count: number) {
-  const group = page.getByTestId('acp-tool-calls-group');
-  if (count > 1) {
-    await expect(group).toBeVisible({ timeout: 30_000 });
-    if (await group.getAttribute('data-collapsed') === 'true') {
-      await group.click();
-    }
-    await expect(group).toHaveAttribute('data-collapsed', 'false');
-  }
-  await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(count, { timeout: 30_000 });
 }
 
 async function openChanges(page: Page) {
