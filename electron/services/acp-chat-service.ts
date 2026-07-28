@@ -394,12 +394,15 @@ export class AcpChatService {
       }
       this.permissionsEnabled = true;
       const messageId = payload.messageId ?? randomUUID();
+      const isSlashCommand = payload.message?.trimStart().startsWith('/') === true;
       await connection.prompt({
         sessionId: acpSessionId,
         prompt,
         // ACP 1.1 removed messageId from the PromptRequest wire shape. Keep
         // ClawX correlation metadata in the protocol extension envelope.
-        _meta: { sessionKey: payload.sessionKey, prefixCwd: true, messageId },
+        // OpenClaw must receive slash commands without its textual cwd prefix
+        // so the Gateway can classify and fold command replies into chat final.
+        _meta: { sessionKey: payload.sessionKey, prefixCwd: !isSlashCommand, messageId },
       });
       this.trace('session/prompt:success', {
         sessionKey: payload.sessionKey,

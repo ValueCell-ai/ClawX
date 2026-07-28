@@ -243,6 +243,27 @@ describe('AcpChatService', () => {
     });
   });
 
+  it.each([
+    '/status',
+    '  /compact',
+  ])('disables the ACP cwd prefix for %s', async (message) => {
+    const { service, connection } = await createService();
+
+    await service.loadSession({ sessionKey: 'agent:pi:session-123', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true });
+    await expect(service.sendPrompt({
+      sessionKey: 'agent:pi:session-123',
+      cwd: '/repo',
+      message,
+      messageId: 'msg-command',
+    })).resolves.toEqual({ success: true, generation: 1 });
+
+    expect(connection.prompt).toHaveBeenCalledWith({
+      sessionId: 'acp-session-1',
+      prompt: [{ type: 'text', text: message.trim() }],
+      _meta: { sessionKey: 'agent:pi:session-123', prefixCwd: false, messageId: 'msg-command' },
+    });
+  });
+
   it('rewrites fresh-session ACP updates to the ClawX session key for the renderer', async () => {
     const { service, send } = await createService();
 
