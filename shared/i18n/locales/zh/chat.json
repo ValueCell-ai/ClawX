@@ -57,7 +57,6 @@
         "expandToolGroup": "展开工具调用",
         "collapseToolGroup": "折叠工具调用",
         "toolGroupSummary": "{{count}} 个工具调用",
-        "toolGroupSummaryWithFailures": "{{count}} 个工具调用 · {{failedCount}} 个失败",
         "permission": "权限",
         "plan": "计划",
         "running": "进行中",

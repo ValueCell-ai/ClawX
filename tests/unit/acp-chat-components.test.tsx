@@ -55,7 +55,6 @@ vi.mock('react-i18next', () => ({
         'acp.expandToolGroup': 'Expand tool calls',
         'acp.collapseToolGroup': 'Collapse tool calls',
         'acp.toolGroupSummary': '{{count}} tool calls',
-        'acp.toolGroupSummaryWithFailures': '{{count}} tool calls · {{failedCount}} failed',
         'acp.permission': 'Permission',
         'acp.plan': 'Plan',
         'acp.running': 'Running',

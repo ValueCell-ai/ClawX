@@ -57,7 +57,6 @@
         "expandToolGroup": "ツール呼び出しを展開",
         "collapseToolGroup": "ツール呼び出しを折りたたむ",
         "toolGroupSummary": "ツール呼び出し {{count}} 件",
-        "toolGroupSummaryWithFailures": "ツール呼び出し {{count}} 件 · 失敗 {{failedCount}} 件",
         "permission": "権限",
         "plan": "計画",
         "running": "実行中",

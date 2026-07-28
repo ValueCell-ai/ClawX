@@ -57,7 +57,6 @@
         "expandToolGroup": "Развернуть вызовы инструментов",
         "collapseToolGroup": "Свернуть вызовы инструментов",
         "toolGroupSummary": "Вызовов инструментов: {{count}}",
-        "toolGroupSummaryWithFailures": "Вызовов инструментов: {{count}} · Ошибок: {{failedCount}}",
         "permission": "Разрешение",
         "plan": "План",
         "running": "Выполняется",

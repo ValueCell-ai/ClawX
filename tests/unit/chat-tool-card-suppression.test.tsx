@@ -94,9 +94,6 @@ vi.mock('react-i18next', () => ({
       if (key === 'acp.tool') return 'Tool';
       if (key === 'acp.completed') return 'Completed';
       if (key === 'acp.toolGroupSummary') return `${String(params?.count ?? '')} tool calls`;
-      if (key === 'acp.toolGroupSummaryWithFailures') {
-        return `${String(params?.count ?? '')} tool calls · ${String(params?.failedCount ?? '')} failed`;
-      }
       if (key === 'acp.expandToolGroup') return 'Expand tool calls';
       if (key === 'acp.collapseToolGroup') return 'Collapse tool calls';
       if (key === 'welcome.subtitle') return 'What can I do for you?';

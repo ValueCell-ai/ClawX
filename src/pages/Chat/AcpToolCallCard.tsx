@@ -107,13 +107,17 @@ export function AcpToolCallCard({ item, grouped = false }: { item: ToolCallItem;
             )}
           >
             {expanded ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" /> : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
-            <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('acp.tool')}</span>
+            {!grouped && (
+              <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('acp.tool')}</span>
+            )}
             <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{item.title}</span>
           </button>
         ) : (
           <div className={cn('flex min-w-0 flex-1 items-center gap-2 leading-5', grouped && 'px-1 py-1')}>
-            <Wrench className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('acp.tool')}</span>
+            {!grouped && <Wrench className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
+            {!grouped && (
+              <span className="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('acp.tool')}</span>
+            )}
             <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{item.title}</span>
           </div>
         )}

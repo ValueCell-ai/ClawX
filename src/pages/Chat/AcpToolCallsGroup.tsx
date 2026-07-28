@@ -29,12 +29,7 @@ export function AcpToolCallsGroup({
   }, [collapsedByDefault, items, manualOverride]);
 
   const toggleLabel = expanded ? t('acp.collapseToolGroup') : t('acp.expandToolGroup');
-  const completedCount = items.filter((item) => item.status === 'completed').length;
-  const failedCount = items.filter((item) => item.status === 'failed').length;
-  const summaryKey = failedCount > 0 ? 'acp.toolGroupSummaryWithFailures' : 'acp.toolGroupSummary';
-  const summaryParams = failedCount > 0
-    ? { count: items.length, failedCount }
-    : { count: items.length, completedCount, failedCount };
+  const summary = t('acp.toolGroupSummary', { count: items.length });
 
   if (!expanded) {
     return (
@@ -53,7 +48,7 @@ export function AcpToolCallsGroup({
         <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
         <Wrench className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         <span className="min-w-0 truncate font-medium">
-          {t(summaryKey, summaryParams)}
+          {summary}
         </span>
       </button>
     );
@@ -75,7 +70,7 @@ export function AcpToolCallsGroup({
         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         <Wrench className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         <span className="min-w-0 truncate font-medium">
-          {t(summaryKey, summaryParams)}
+          {summary}
         </span>
       </button>
 
