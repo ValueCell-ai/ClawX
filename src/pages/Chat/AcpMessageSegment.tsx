@@ -26,21 +26,11 @@ function normalizeLatexDelimiters(input: string): string {
   return parts.join('');
 }
 
-function AcpMarkdownPart({ text, tone }: { text: string; tone: RenderTone }) {
+function AcpMarkdownPart({ text }: { text: string }) {
   const { t } = useTranslation('chat');
-  const isUser = tone === 'user';
 
   return (
-    <div
-      className={cn(
-        'prose prose-sm max-w-none break-words',
-        isUser
-          ? // User messages skip full markdown rendering, so preserve \n line breaks in paragraphs
-            'prose-invert text-white [&_*]:text-inherit [&_p]:whitespace-pre-wrap'
-          : // AI replies render as full markdown where code blocks/lists handle line breaks natively
-            'dark:prose-invert text-foreground',
-      )}
-    >
+    <div className="prose prose-sm max-w-none break-words text-foreground dark:prose-invert">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false, output: 'html' }]]}
@@ -160,11 +150,11 @@ export function AcpRenderPart({ part, tone = 'assistant' }: { part: RenderPart; 
     if (tone === 'user') {
       return (
         <div className="rounded-2xl bg-brand px-4 py-3 text-white shadow-sm">
-          <AcpMarkdownPart text={part.text} tone={tone} />
+          <p className="whitespace-pre-wrap break-words">{part.text}</p>
         </div>
       );
     }
-    return <AcpMarkdownPart text={part.text} tone={tone} />;
+    return <AcpMarkdownPart text={part.text} />;
   }
 
   if (part.kind === 'image') return <AcpImagePart part={part} />;

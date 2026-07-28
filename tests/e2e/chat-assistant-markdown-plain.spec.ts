@@ -24,7 +24,7 @@ const seededUpdates: AcpSessionUpdate[] = [
   {
     sessionUpdate: 'user_message',
     messageId: 'plain-markdown-user',
-    content: [{ type: 'text', text: 'Please render a Markdown reply plainly.' }],
+    content: [{ type: 'text', text: '**Please** render `this input` literally.\n# Not a heading' }],
   },
   {
     sessionUpdate: 'agent_message',
@@ -65,8 +65,8 @@ async function emitAcpSessionUpdates(app: ElectronApplication, updates: AcpSessi
   );
 }
 
-test.describe('ClawX assistant reply Markdown styling', () => {
-  test('renders assistant text as plain Markdown while keeping user prompts bubbled', async ({ launchElectronApp }, testInfo) => {
+test.describe('ClawX chat Markdown styling', () => {
+  test('renders assistant Markdown while keeping user input literal and bubbled', async ({ launchElectronApp }, testInfo) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -138,8 +138,10 @@ test.describe('ClawX assistant reply Markdown styling', () => {
         root.classList.add('light');
       });
 
-      const userBubble = page.getByTestId('acp-user-message').filter({ hasText: 'Please render a Markdown reply plainly.' }).locator('div.rounded-2xl.bg-brand').first();
+      const userBubble = page.getByTestId('acp-user-message').filter({ hasText: 'Please' }).locator('div.rounded-2xl.bg-brand').first();
       await expect(userBubble).toBeVisible({ timeout: 30_000 });
+      await expect(userBubble.locator('p')).toHaveText('**Please** render `this input` literally.\n# Not a heading');
+      await expect(userBubble.locator('strong, code, h1')).toHaveCount(0);
 
       const assistantProse = page.getByTestId('acp-assistant-message').filter({ hasText: 'Plain Markdown reply' }).locator('.prose').first();
       await expect(assistantProse).toBeVisible({ timeout: 30_000 });

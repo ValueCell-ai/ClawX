@@ -212,6 +212,34 @@ describe('ACP chat timeline components', () => {
     expect(inlineCode).not.toHaveClass('bg-black/5');
   });
 
+  it('renders user input as literal text instead of Markdown', () => {
+    const userText = '**bold** and `inlineCode()`\n# heading\n- list item';
+    const state = snapshot({
+      itemOrder: ['msg-u:0'],
+      itemsById: {
+        'msg-u:0': {
+          kind: 'message-segment',
+          id: 'msg-u:0',
+          role: 'user',
+          messageId: 'msg-u',
+          segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: userText }],
+        },
+      },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+
+    const userMessage = screen.getByTestId('acp-user-message');
+    const paragraph = userMessage.querySelector('p');
+    expect(paragraph?.textContent).toBe(userText);
+    expect(paragraph).toHaveClass('whitespace-pre-wrap');
+    expect(userMessage.querySelector('strong')).not.toBeInTheDocument();
+    expect(userMessage.querySelector('code')).not.toBeInTheDocument();
+    expect(userMessage.querySelector('h1')).not.toBeInTheDocument();
+    expect(userMessage.querySelector('li')).not.toBeInTheDocument();
+  });
+
   it('shows a fixed whole-turn duration on the ACP-replayed assistant turn', () => {
     const state = snapshot({
       itemOrder: ['user-a:0', 'assistant-a:0'],
