@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { hostApi } from '@/lib/host-api';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import type { WebBrowserWebviewElement } from '@/types/web-browser';
+import { WebBrowserHome } from './WebBrowserHome';
 import { WebBrowserToolbar } from './WebBrowserToolbar';
 
 interface WebviewElementProps extends HTMLAttributes<HTMLElement>, RefAttributes<WebBrowserWebviewElement> {
@@ -116,6 +117,7 @@ export function WebBrowserHost(): React.ReactElement | null {
   const [clearingCookies, setClearingCookies] = useState(false);
   const [clearingSiteData, setClearingSiteData] = useState(false);
   const [crashed, setCrashed] = useState(false);
+  const [homeVisible, setHomeVisible] = useState(true);
   const [generation, setGeneration] = useState(0);
   const hostRef = useRef<HTMLDivElement>(null);
   const webviewRef = useRef<WebBrowserWebviewElement | null>(null);
@@ -131,6 +133,7 @@ export function WebBrowserHost(): React.ReactElement | null {
   const currentUrlRef = useRef<string>(WEB_BROWSER_INITIAL_URL);
   const requestedNavigationRef = useRef(requestedNavigation);
   const handledNavigationIdRef = useRef(0);
+  const homePinnedRef = useRef(false);
   translationRef.current = t;
   requestedNavigationRef.current = requestedNavigation;
 
@@ -170,6 +173,8 @@ export function WebBrowserHost(): React.ReactElement | null {
       || attachedWebviewRef.current !== guest
     ) return;
     handledNavigationIdRef.current = request.id;
+    homePinnedRef.current = false;
+    setHomeVisible(false);
     currentUrlRef.current = request.url;
     setUrl(request.url);
     setTitle('');
@@ -235,6 +240,9 @@ export function WebBrowserHost(): React.ReactElement | null {
     const syncAllowedUrl = (nextUrl: string) => {
       currentUrlRef.current = nextUrl;
       setUrl(nextUrl);
+      if (nextUrl !== WEB_BROWSER_INITIAL_URL && !homePinnedRef.current) {
+        setHomeVisible(false);
+      }
       const allowedUrl = normalizeWebBrowserTopLevelUrl(nextUrl);
       if (allowedUrl) lastAllowedUrlRef.current = allowedUrl;
     };
@@ -255,6 +263,8 @@ export function WebBrowserHost(): React.ReactElement | null {
       const recoveryUrl = pendingRecoveryUrlRef.current;
       pendingRecoveryUrlRef.current = null;
       if (!recoveryUrl) return;
+      homePinnedRef.current = false;
+      setHomeVisible(false);
       void runNavigation(recoveryUrl, false);
     };
     const onDidStartLoading = () => {
@@ -365,7 +375,11 @@ export function WebBrowserHost(): React.ReactElement | null {
     ) return;
     guest.reloadIgnoringCache();
   };
-  const handleNavigate = (nextUrl: string) => runNavigation(nextUrl, true);
+  const handleNavigate = async (nextUrl: string) => {
+    await runNavigation(nextUrl, true);
+    homePinnedRef.current = false;
+    setHomeVisible(false);
+  };
   const handleClearCookies = async () => {
     const guest = webviewRef.current;
     const guestGeneration = webviewGenerationRef.current;
@@ -410,6 +424,7 @@ export function WebBrowserHost(): React.ReactElement | null {
     setFaviconUrl(null);
     setCanGoBack(false);
     setCanGoForward(false);
+    setHomeVisible(true);
     setGeneration((current) => current + 1);
     setCrashed(false);
   };
@@ -436,13 +451,14 @@ export function WebBrowserHost(): React.ReactElement | null {
       style={style}
     >
       <WebBrowserToolbar
-        title={title}
-        url={url}
-        faviconUrl={faviconUrl}
+        title={homeVisible ? '' : title}
+        url={homeVisible ? WEB_BROWSER_INITIAL_URL : url}
+        faviconUrl={homeVisible ? null : faviconUrl}
         addressNavigationId={addressNavigationId}
-        canGoBack={canGoBack}
-        canGoForward={canGoForward}
+        canGoBack={homeVisible ? url !== WEB_BROWSER_INITIAL_URL : canGoBack}
+        canGoForward={!homeVisible && canGoForward}
         visible={!hostHidden && !crashed}
+        homeVisible={homeVisible}
         crashed={crashed}
         clearingCookies={clearingCookies}
         clearingSiteData={clearingSiteData}
@@ -450,9 +466,22 @@ export function WebBrowserHost(): React.ReactElement | null {
         onAddressError={(error) => {
           toast.error(t(`artifactPanel.webBrowser.errors.${ADDRESS_ERROR_KEYS[error]}`));
         }}
-        onBack={() => callAttached((guest) => guest.goBack())}
+        onBack={() => {
+          if (homeVisible) {
+            homePinnedRef.current = false;
+            setHomeVisible(false);
+            setAddressNavigationId((current) => current + 1);
+            return;
+          }
+          callAttached((guest) => guest.goBack());
+        }}
         onForward={() => callAttached((guest) => guest.goForward())}
         onRefresh={() => callAttached((guest) => guest.reload())}
+        onHome={() => {
+          homePinnedRef.current = true;
+          setHomeVisible(true);
+          setAddressNavigationId((current) => current + 1);
+        }}
         onForceRefresh={() => callAttached((guest) => guest.reloadIgnoringCache())}
         onClearCookies={() => void handleClearCookies()}
         onClearSiteData={() => void handleClearSiteData()}
@@ -473,16 +502,23 @@ export function WebBrowserHost(): React.ReactElement | null {
           </Button>
         </div>
       ) : (
-        <WebviewElement
-          key={generation}
-          ref={setWebviewRef}
-          data-testid="web-browser-webview"
-          src={WEB_BROWSER_INITIAL_URL}
-          partition={WEB_BROWSER_PARTITION}
-          useragent={WEB_BROWSER_USER_AGENT}
-          allowpopups=""
-          className="min-h-0 flex-1"
-        />
+        <div className="relative flex min-h-0 flex-1">
+          {homeVisible && (
+            <WebBrowserHome />
+          )}
+          <WebviewElement
+            key={generation}
+            ref={setWebviewRef}
+            data-testid="web-browser-webview"
+            src={WEB_BROWSER_INITIAL_URL}
+            partition={WEB_BROWSER_PARTITION}
+            useragent={WEB_BROWSER_USER_AGENT}
+            allowpopups=""
+            className={homeVisible
+              ? 'invisible min-h-0 flex-1 pointer-events-none'
+              : 'min-h-0 flex-1'}
+          />
+        </div>
       )}
     </div>
   );

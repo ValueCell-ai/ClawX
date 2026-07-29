@@ -237,6 +237,16 @@ describe('WebBrowserHost lifecycle', () => {
     expect(screen.getByTestId('web-browser-address-display')).toHaveAccessibleName(
       /file:\/\/\/workspace\/site\.html/,
     );
+    const guest = webview();
+    fireEvent.click(screen.getByTestId('web-browser-home-button'));
+    expect(screen.getByTestId('web-browser-home')).toBeVisible();
+    expect(screen.getByTestId('web-browser-address-input')).toHaveFocus();
+    expect(webview()).toBe(guest);
+    expect(guest).toHaveClass('invisible', 'pointer-events-none');
+
+    fireEvent.click(screen.getByTestId('web-browser-back'));
+    expect(screen.queryByTestId('web-browser-home')).not.toBeInTheDocument();
+    expect(webview()).toBe(guest);
   });
 
   it('creates one fixed, preload-free guest lazily and preserves its DOM identity while hidden', async () => {
@@ -638,6 +648,7 @@ describe('WebBrowserHost lifecycle', () => {
     renderHost();
     initialize(anchor);
     const guest = webview();
+    emit(guest, 'did-navigate', { url: 'https://example.com/' });
 
     openMoreMenu();
     fireEvent.click(await screen.findByTestId('web-browser-clear-cookies'));
@@ -658,6 +669,7 @@ describe('WebBrowserHost lifecycle', () => {
     initialize(anchor);
     const failedGuest = webview();
     emit(failedGuest, 'did-attach');
+    emit(failedGuest, 'did-navigate', { url: 'https://example.com/' });
 
     openMoreMenu();
     fireEvent.click(await screen.findByTestId('web-browser-clear-site-data'));

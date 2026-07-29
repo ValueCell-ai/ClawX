@@ -113,6 +113,7 @@ test.describe('embedded web browser navigation', () => {
         browserWindowCount: 1,
       });
       await expect(page.getByTestId('web-browser-address-input')).toBeFocused();
+      await expect(page.getByRole('img', { name: 'ClawX' })).toBeVisible();
       expect(typeof snapshot.guestId).toBe('number');
 
       for (const testId of [
@@ -120,6 +121,7 @@ test.describe('embedded web browser navigation', () => {
         'web-browser-back',
         'web-browser-forward',
         'web-browser-refresh',
+        'web-browser-home-button',
         'web-browser-address-input',
         'web-browser-more',
         'web-browser-webview',
@@ -154,7 +156,8 @@ test.describe('embedded web browser navigation', () => {
       const initial = await openWebBrowser(page, app);
       const guestId = initial.guestId!;
 
-      await navigateFromAddress(page, webBrowserFixture.urls.start);
+      await page.getByTestId('web-browser-address-input').fill(webBrowserFixture.urls.start);
+      await page.getByTestId('web-browser-address-input').press('Enter');
       await expectGuestAt(app, {
         guestId,
         url: webBrowserFixture.urls.start,
@@ -167,6 +170,12 @@ test.describe('embedded web browser navigation', () => {
         'src',
         new URL('/favicon.svg', webBrowserFixture.urls.start).href,
       );
+      await page.getByTestId('web-browser-home-button').click();
+      await expect(page.getByTestId('web-browser-home')).toBeVisible();
+      await expect(page.getByTestId('web-browser-address-input')).toBeFocused();
+      await page.getByTestId('web-browser-back').click();
+      await expect(page.getByTestId('web-browser-home')).toHaveCount(0);
+      await expectGuestAt(app, { guestId, url: webBrowserFixture.urls.start });
       await executeInWebBrowserGuest(app, guestId, "document.querySelector('#second-link').click(); true");
       await expect.poll(() => getWebBrowserShellCalls(app)).toEqual({
         openExternal: [webBrowserFixture.urls.second],

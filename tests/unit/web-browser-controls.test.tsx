@@ -6,6 +6,7 @@ import {
   WebBrowserAddressControl,
 } from '@/components/web-browser/WebBrowserAddressControl';
 import { WebBrowserToolbar } from '@/components/web-browser/WebBrowserToolbar';
+import { WebBrowserHome } from '@/components/web-browser/WebBrowserHome';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -13,6 +14,7 @@ vi.mock('react-i18next', () => ({
       'artifactPanel.webBrowser.actions.back': 'Back',
       'artifactPanel.webBrowser.actions.forward': 'Forward',
       'artifactPanel.webBrowser.actions.refresh': 'Refresh',
+      'artifactPanel.webBrowser.actions.home': 'Home',
       'artifactPanel.webBrowser.actions.more': 'More',
       'artifactPanel.webBrowser.actions.forceRefresh': 'Force Refresh',
       'artifactPanel.webBrowser.actions.clearCookies': 'Clear Cookies',
@@ -65,6 +67,7 @@ function toolbarProps(
     canGoBack: true,
     canGoForward: true,
     visible: true,
+    homeVisible: false,
     crashed: false,
     clearingCookies: false,
     clearingSiteData: false,
@@ -73,6 +76,7 @@ function toolbarProps(
     onBack: vi.fn(),
     onForward: vi.fn(),
     onRefresh: vi.fn(),
+    onHome: vi.fn(),
     onForceRefresh: vi.fn(),
     onClearCookies: vi.fn(),
     onClearSiteData: vi.fn(),
@@ -356,6 +360,15 @@ describe('WebBrowserAddressControl', () => {
   });
 });
 
+describe('WebBrowserHome', () => {
+  it('shows only the ClawX logo in the page area', () => {
+    render(<WebBrowserHome />);
+    expect(screen.getByRole('img', { name: 'ClawX' })).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+});
+
 describe('WebBrowserToolbar', () => {
   it('uses native disabled navigation semantics and calls toolbar actions exactly once', () => {
     const props = toolbarProps({ canGoBack: false, canGoForward: false });
@@ -372,6 +385,8 @@ describe('WebBrowserToolbar', () => {
 
     fireEvent.click(screen.getByTestId('web-browser-refresh'));
     expect(props.onRefresh).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByTestId('web-browser-home-button'));
+    expect(props.onHome).toHaveBeenCalledTimes(1);
 
     const enabled = toolbarProps();
     renderToolbar(enabled);
@@ -379,6 +394,16 @@ describe('WebBrowserToolbar', () => {
     fireEvent.click(screen.getAllByTestId('web-browser-forward')[1]);
     expect(enabled.onBack).toHaveBeenCalledTimes(1);
     expect(enabled.onForward).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables page-only controls while Home is visible', () => {
+    const props = toolbarProps({ homeVisible: true });
+    renderToolbar(props);
+
+    expect(screen.getByTestId('web-browser-home-button')).toBeDisabled();
+    expect(screen.getByTestId('web-browser-refresh')).toBeDisabled();
+    openMoreMenu();
+    expect(screen.queryByTestId('web-browser-force-refresh')).not.toBeInTheDocument();
   });
 
   it('calls each More action exactly once', async () => {

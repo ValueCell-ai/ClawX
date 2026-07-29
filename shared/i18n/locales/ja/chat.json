@@ -112,6 +112,7 @@
                 "back": "戻る",
                 "forward": "進む",
                 "refresh": "再読み込み",
+                "home": "ホーム",
                 "more": "その他",
                 "forceRefresh": "強制再読み込み",
                 "clearCookies": "Cookie を消去",

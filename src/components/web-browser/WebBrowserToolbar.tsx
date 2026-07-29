@@ -6,6 +6,7 @@ import {
   Database,
   Ellipsis,
   ExternalLink,
+  House,
   RefreshCw,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -29,6 +30,7 @@ export interface WebBrowserToolbarProps {
   canGoBack: boolean;
   canGoForward: boolean;
   visible: boolean;
+  homeVisible: boolean;
   crashed: boolean;
   clearingCookies: boolean;
   clearingSiteData: boolean;
@@ -37,6 +39,7 @@ export interface WebBrowserToolbarProps {
   onBack: () => void;
   onForward: () => void;
   onRefresh: () => void;
+  onHome: () => void;
   onForceRefresh: () => void;
   onClearCookies: () => void;
   onClearSiteData: () => void;
@@ -166,6 +169,7 @@ export function WebBrowserToolbar({
   canGoBack,
   canGoForward,
   visible,
+  homeVisible,
   crashed,
   clearingCookies,
   clearingSiteData,
@@ -174,6 +178,7 @@ export function WebBrowserToolbar({
   onBack,
   onForward,
   onRefresh,
+  onHome,
   onForceRefresh,
   onClearCookies,
   onClearSiteData,
@@ -183,9 +188,10 @@ export function WebBrowserToolbar({
   const backLabel = t('artifactPanel.webBrowser.actions.back');
   const forwardLabel = t('artifactPanel.webBrowser.actions.forward');
   const refreshLabel = t('artifactPanel.webBrowser.actions.refresh');
+  const homeLabel = t('artifactPanel.webBrowser.actions.home');
   const moreLabel = t('artifactPanel.webBrowser.actions.more');
 
-  const menuAvailable = visible && !crashed;
+  const menuAvailable = visible && !crashed && !homeVisible;
 
   return (
     <div
@@ -211,9 +217,18 @@ export function WebBrowserToolbar({
       <ToolbarButton
         label={refreshLabel}
         testId="web-browser-refresh"
+        disabled={homeVisible}
         onClick={onRefresh}
       >
         <RefreshCw className="h-4 w-4" />
+      </ToolbarButton>
+      <ToolbarButton
+        label={homeLabel}
+        testId="web-browser-home-button"
+        disabled={homeVisible}
+        onClick={onHome}
+      >
+        <House className="h-4 w-4" />
       </ToolbarButton>
 
       <WebBrowserAddressControl

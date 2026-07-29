@@ -24,6 +24,7 @@ touchedAreas:
   - src/stores/artifact-panel.ts
   - src/components/file-preview/ArtifactPanel.tsx
   - src/components/web-browser/WebBrowserAddressControl.tsx
+  - src/components/web-browser/WebBrowserHome.tsx
   - src/components/web-browser/WebBrowserAnchor.tsx
   - src/components/web-browser/WebBrowserHost.tsx
   - src/components/web-browser/WebBrowserToolbar.tsx
@@ -59,6 +60,7 @@ touchedAreas:
 expectedUserBehavior:
   - The artifact panel normally shows one localized Web Browser tab after Changes, distinct from the Workspace browser; it hides that tab while Preview is showing a non-HTML file.
   - First selection lazily creates one hardened guest at about:blank; later tab, panel, session, and route changes hide it while scripts, network activity, audio, and resource use may continue.
+  - The initial surface is a trusted ClawX home overlay showing only the product logo; URL entry remains in the existing toolbar, and Home returns to that overlay without injecting application UI into guest content or destroying the current guest.
   - Address, history, refresh, clear-data, crash recovery, popup, and external-open actions reuse the registered guest and allow only HTTP, HTTPS, and explicit standard file URLs at the top level.
   - Address input treats a host followed by a numeric port as a schemeless HTTPS destination, while Main never performs scheme completion.
   - The title state shows a page-provided favicon or same-size placeholder without a hover URL tooltip, address editing hides the icon slot, and every More menu action has an icon.
@@ -97,6 +99,7 @@ requiredTests:
   - pnpm run test:e2e
 acceptance:
   - Exactly one lazily created webview uses persist:clawx-web-browser, about:blank, and the fixed cross-platform UserAgent with no guest preload or Node integration.
+  - The default and Home-button surface renders outside the guest and shows only the ClawX logo; the existing localized toolbar address input navigates through the typed Host API.
   - The initialized guest remains mounted and preserves live state and history across panel, artifact-tab, chat-session, and route hiding; restart returns to about:blank without URL, page-state, or history restoration.
   - Main validates typed navigation, page navigation, redirects, popup targets, and external opening for only HTTP, HTTPS, and explicit standard file URLs; local-file exposure is documented.
   - Renderer parsing preserves host-plus-numeric-port input as an HTTPS host destination, while Main-facing normalization requires an explicit allowed scheme.
