@@ -34,7 +34,7 @@ import { cn } from '@/lib/utils';
 import { isGatewayRestarting } from '@/lib/gateway-status';
 import { rendererExtensionRegistry } from '@/extensions/registry';
 import { useSettingsStore } from '@/stores/settings';
-import { useChatStore, type ChatSession } from '@/stores/chat';
+import { useChatStore } from '@/stores/chat';
 import { useSessionAttentionStore } from '@/stores/session-attention';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
@@ -54,7 +54,7 @@ import { useNewChatAction } from './use-new-chat-action';
 import { isDefaultWorkspacePath } from '@/lib/workspace-context';
 import { useWorkspaceAvailability } from '@/hooks/use-workspace-availability';
 import { projectSessionRunState } from '@/stores/chat/session-status';
-import { isOpenClawSessionIdFallbackTitle } from '@shared/chat/session-title';
+import { getSessionDisplayTitle } from '@shared/chat/session-title';
 
 interface NavItemProps {
   to: string;
@@ -201,19 +201,6 @@ export function Sidebar() {
 
   const navigate = useNavigate();
   const isOnChat = useLocation().pathname === '/';
-
-  const getSessionLabel = (session: ChatSession) => {
-    const candidates = [
-      sessionLabels[session.key],
-      session.label,
-      session.derivedTitle,
-      session.displayName,
-    ];
-    return candidates.find((candidate) => (
-      candidate?.trim()
-      && !isOpenClawSessionIdFallbackTitle(candidate, session.sessionId)
-    ))?.trim() ?? session.key;
-  };
 
   const openControlUi = async (view?: 'dreams', label = 'OpenClaw Page') => {
     try {
@@ -726,7 +713,7 @@ export function Sidebar() {
                         const agentName = agentNameById[agentId] || agentId;
                         const isEditing = editingSessionKey === s.key;
                         const isCurrentSession = isOnChat && currentSessionKey === s.key;
-                        const sessionLabel = getSessionLabel(s);
+                        const sessionLabel = getSessionDisplayTitle(s, sessionLabels);
                         const relativeTime = formatSessionRelativeTime(activityMs, nowMs, i18n.language);
                         const runState = projectSessionRunState(s);
                         const attention = sessionAttentionByKey[s.key];

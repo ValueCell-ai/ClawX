@@ -28,6 +28,7 @@ import { getAcpUserMessageAnchorId } from '@/lib/acp/timeline-anchors';
 import type { MessageSegmentItem, RenderPart } from '@/lib/acp/timeline-types';
 import { projectOpenClawFileActivities, type AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 import { hostApi } from '@/lib/host-api';
+import { getSessionDisplayTitle } from '@shared/chat/session-title';
 import { ChatInput, type ChatWorkspaceOption, type FileAttachment } from './ChatInput';
 import { ChatToolbar } from './ChatToolbar';
 import { AcpTimeline } from './AcpTimeline';
@@ -179,6 +180,7 @@ export function Chat() {
 
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
   const sessions = useChatStore((s) => s.sessions);
+  const sessionLabels = useChatStore((s) => s.sessionLabels);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const loadSessions = useChatStore((s) => s.loadSessions);
   const selectAcpSession = useChatStore((s) => s.selectAcpSession);
@@ -204,6 +206,9 @@ export function Chat() {
     () => sessions.find((session) => session.key === currentSessionKey) ?? null,
     [currentSessionKey, sessions],
   );
+  const currentSessionTitle = currentSession
+    ? getSessionDisplayTitle(currentSession, sessionLabels)
+    : currentSessionKey;
   const effectiveWorkspace = useMemo(
     () => resolveEffectiveWorkspace({ session: currentSession, globalWorkspace: chatWorkspacePath }),
     [chatWorkspacePath, currentSession],
@@ -445,8 +450,22 @@ export function Chat() {
       style={{ height: isMac ? 'calc(100vh - 1px)' : 'calc(100vh - 2.5rem)' }}
     >
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="relative flex shrink-0 items-center justify-end px-4 py-2">
+        <div className={cn(
+          'relative flex shrink-0 items-center px-4 py-2',
+          isWindows ? 'gap-4' : 'justify-end',
+        )}>
           <div data-testid="chat-toolbar-drag-region" className="drag-region absolute inset-0 z-0" aria-hidden="true" />
+          {isWindows && (
+            <div className="drag-region relative z-10 min-w-0 flex-1">
+              <h1
+                data-testid="chat-session-title"
+                title={currentSessionTitle}
+                className="truncate text-sm font-medium text-foreground"
+              >
+                {currentSessionTitle}
+              </h1>
+            </div>
+          )}
           <div data-testid="chat-toolbar-actions" className="no-drag relative z-10">
             <ChatToolbar
               questionDirectoryOpen={questionDirectoryVisible}
