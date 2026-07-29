@@ -596,9 +596,17 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-assistant-avatar')).toBeVisible();
 
       await assistantMessage.hover();
-      await page.getByTestId('acp-assistant-copy').click();
+      const copyButton = page.getByTestId('acp-assistant-copy');
+      await expect.poll(async () => {
+        const [assistantBox, copyBox] = await Promise.all([
+          assistantMessage.boundingBox(),
+          copyButton.boundingBox(),
+        ]);
+        return !!assistantBox && !!copyBox && copyBox.x <= assistantBox.x + 8;
+      }).toBe(true);
+      await copyButton.click();
 
-      await expect(page.getByTestId('acp-assistant-copy')).toHaveAttribute('aria-label', 'Copied');
+      await expect(copyButton).toHaveAttribute('aria-label', 'Copied');
       await expect.poll(() => page.evaluate(() => (window as unknown as { __acpCopiedText?: string }).__acpCopiedText)).toBe('Copy this ACP answer');
     } finally {
       await closeElectronApp(app);
