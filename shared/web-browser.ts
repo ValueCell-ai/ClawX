@@ -15,6 +15,7 @@ export type WebBrowserAddressResult =
   | { ok: false; reason: WebBrowserAddressErrorCode };
 
 export type WebBrowserNavigatePayload = { url: string };
+export type WebBrowserOpenExternalPayload = { url: string };
 
 const SCHEME_PATTERN = /^[a-z][a-z\d+.-]*:/i;
 const HOST_WITH_NUMERIC_PORT_PATTERN = /^[^/?#:\s]+:\d+(?:[/?#]|$)/;
@@ -80,4 +81,11 @@ export function normalizeWebBrowserTopLevelUrl(input: string): string | null {
 
 export function canOpenWebBrowserExternally(input: string): boolean {
   return normalizeWebBrowserTopLevelUrl(input) !== null;
+}
+
+export function normalizeExternalWebUrl(input: string): string | null {
+  const normalized = normalizeWebBrowserTopLevelUrl(input);
+  if (!normalized) return null;
+  const protocol = new URL(normalized).protocol;
+  return protocol === 'http:' || protocol === 'https:' ? normalized : null;
 }

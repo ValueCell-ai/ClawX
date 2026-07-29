@@ -253,7 +253,7 @@ async function openChanges(page: Page) {
 }
 
 test.describe('ClawX chat file changes', () => {
-  test('opens HTML file activity in the Web Browser from Open with', async ({ launchElectronApp }) => {
+  test('opens HTML file activity in the Web Browser from its primary action', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     try {
       await installFileActivityMocks(app, {
@@ -264,18 +264,9 @@ test.describe('ClawX chat file changes', () => {
       const page = await openChat(app);
       await sendPrompt(page, 'Create HTML');
 
-      const openWith = page.getByRole('button', { name: 'Open site/demo.html with' });
-      await expect(openWith).toBeVisible({ timeout: 30_000 });
-      await openWith.click();
-      const menu = page.getByTestId('acp-attachment-open-with-menu');
-      await expect(menu).toBeVisible();
-      const browserItem = page.getByTestId('acp-file-open-in-built-in-browser');
-      await expect(menu).toContainText('Open in built-in browser');
-      await expect(page.getByRole('menuitem').first()).toHaveAttribute(
-        'data-testid',
-        'acp-file-open-in-built-in-browser',
-      );
-      await browserItem.click();
+      const fileActivity = page.getByRole('button', { name: 'Created site/demo.html' });
+      await expect(fileActivity).toBeVisible({ timeout: 30_000 });
+      await fileActivity.click();
 
       const panel = page.getByTestId('artifact-panel');
       await expect(panel).toBeVisible();

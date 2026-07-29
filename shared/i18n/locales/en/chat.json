@@ -104,7 +104,8 @@
         },
         "preview": {
             "emptyTitle": "No file selected",
-            "emptyHint": "Click a file card in the chat first; the selected file will preview here."
+            "emptyHint": "Click a file card in the chat first; the selected file will preview here.",
+            "fullscreenLabel": "Fullscreen file preview"
         },
         "webBrowser": {
             "actions": {
@@ -116,6 +117,10 @@
                 "clearCookies": "Clear Cookies",
                 "clearSiteData": "Clear Site Data",
                 "openExternal": "Open in System Browser"
+            },
+            "linkMenu": {
+                "openInClawX": "Open in ClawX",
+                "openInSystemBrowser": "Open in system browser"
             },
             "address": {
                 "label": "Web address",
@@ -165,7 +170,9 @@
             "revert": "Revert",
             "openInFinder": "Reveal in file manager",
             "openDirectly": "Open directly",
-            "close": "Close"
+            "close": "Close",
+            "enterFullscreen": "Enter fullscreen",
+            "exitFullscreen": "Exit fullscreen"
         },
         "info": {
             "path": "Path",

@@ -57,13 +57,14 @@ touchedAreas:
   - README.ja-JP.md
   - README.ru-RU.md
 expectedUserBehavior:
-  - The artifact panel shows one localized Web Browser tab after Changes, distinct from the Workspace browser.
+  - The artifact panel normally shows one localized Web Browser tab after Changes, distinct from the Workspace browser; it hides that tab while Preview is showing a non-HTML file.
   - First selection lazily creates one hardened guest at about:blank; later tab, panel, session, and route changes hide it while scripts, network activity, audio, and resource use may continue.
   - Address, history, refresh, clear-data, crash recovery, popup, and external-open actions reuse the registered guest and allow only HTTP, HTTPS, and explicit standard file URLs at the top level.
   - Address input treats a host followed by a numeric port as a schemeless HTTPS destination, while Main never performs scheme completion.
   - The title state shows a page-provided favicon or same-size placeholder without a hover URL tooltip, address editing hides the icon slot, and every More menu action has an icon.
   - Cookies and site storage persist in persist:clawx-web-browser, while guest creation, URL, page state, and history do not restore after application restart.
-  - Allowed popup targets replace the current page without a child window and cannot preserve window.opener, returned handles, initially blank scripted popups, or full POST/referrer/named-window behavior.
+  - HTTP(S) content links and popup targets open in the system browser by default without a child window; their localized context menu can explicitly keep an allowed target in the current guest.
+  - Local `.html` and `.htm` files opened from Chat file surfaces use the registered guest by default, and relative or hostless file links stay internal.
   - Camera and microphone prompt for every request without remembered grants, clipboard variants are allowed, and geolocation, display capture, notifications, and every other permission are denied.
   - Clear Cookies removes only cookies for every origin; Clear Site Data removes cache, Cache Storage, Local Storage, IndexedDB, and Service Workers for every origin while preserving cookies and downloaded files.
   - Downloads retain Electron and operating-system defaults, which may show a native Save dialog and wait for user interaction; ClawX adds no custom path or manager.
@@ -99,13 +100,14 @@ acceptance:
   - The initialized guest remains mounted and preserves live state and history across panel, artifact-tab, chat-session, and route hiding; restart returns to about:blank without URL, page-state, or history restoration.
   - Main validates typed navigation, page navigation, redirects, popup targets, and external opening for only HTTP, HTTPS, and explicit standard file URLs; local-file exposure is documented.
   - Renderer parsing preserves host-plus-numeric-port input as an HTTPS host destination, while Main-facing normalization requires an explicit allowed scheme.
-  - Every popup is denied as a child, an allowed target reuses the current guest, and window.opener, handles, initially blank scripted popups, and full POST/referrer/named-window compatibility are not promised.
+  - Every popup is denied as a child; HTTP(S) targets open externally by default, file targets may reuse the current guest, and window.opener, handles, initially blank scripted popups, and full POST/referrer/named-window compatibility are not promised.
+  - HTTP(S) content-link activation is external by default, while a localized link context menu can explicitly choose registered-guest or system-browser opening without exposing a guest preload or bridge.
   - Media prompts once per request without persistence, clipboard is allowed, and geolocation, display capture, notifications, and all other permissions are denied.
   - Clear Cookies and Clear Site Data operate across every origin with their documented disjoint storage scopes and preserve downloaded files.
   - Downloads are not canceled or assigned a path by ClawX, may wait on native Save UI, and have no custom manager; unattended completion or a system Downloads path is not promised.
   - The dedicated session uses system proxy resolution without ClawX client-proxy synchronization or connection recycling.
   - External opening reads and validates the registered guest URL; file URLs use shell.openExternal and may open an OS-associated application, never shell.openPath.
-  - Every browser control and error uses four-locale text, localized accessible names and tooltips where applicable, semantic disabled behavior, project design tokens, and the stable selectors in the durable reference; the title control has no URL tooltip, reserves a fixed-size favicon or placeholder slot only outside address editing, and every More menu action has a Lucide icon.
+  - Every browser control and error uses four-locale text, localized accessible names and tooltips where applicable, semantic disabled behavior, project design tokens, and the stable selectors in the durable reference; the title control has no URL tooltip, reserves a fixed-size favicon or placeholder slot only outside address editing, and every More menu action has a Lucide icon. A non-HTML Preview hides the Web Browser tab without destroying its guest.
   - Unit, Electron E2E, communication regression, Harness, type, lint, build, and documentation checks pass.
 docs:
   required: true

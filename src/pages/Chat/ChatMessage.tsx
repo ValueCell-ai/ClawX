@@ -13,6 +13,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { createPortal } from 'react-dom';
+import { BrowserLink } from '@/components/common/BrowserLink';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { statFile } from '@/lib/file-preview-client';
@@ -679,11 +680,11 @@ function AssistantMarkdown({
             );
           },
           a({ href, children }) {
-            return (
-              <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-words break-all">
+            return href ? (
+              <BrowserLink href={href} className="text-primary hover:underline break-words break-all">
                 {children}
-              </a>
-            );
+              </BrowserLink>
+            ) : <>{children}</>;
           },
           img({ src, alt }) {
             if (!src || isUnresolvableImageUrl(String(src))) return null;

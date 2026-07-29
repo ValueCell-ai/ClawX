@@ -4,10 +4,17 @@ import {
   WEB_BROWSER_PARTITION,
   WEB_BROWSER_USER_AGENT,
   normalizeWebBrowserTopLevelUrl,
+  normalizeExternalWebUrl,
 } from '../../shared/web-browser';
 import { logger } from '../utils/logger';
 
 const DENY_WINDOW_OPEN = { action: 'deny' } as const;
+
+export interface WebBrowserLinkMenuRequest {
+  url: string;
+  openInternal: () => void;
+  openExternal: () => void;
+}
 
 export class WebBrowserGuestRegistry {
   private guest: WebContents | null = null;
@@ -88,9 +95,13 @@ export function installWebBrowserGuestPolicy(
   options: {
     browserSession: Session;
     registry: WebBrowserGuestRegistry;
+    openExternal?: (url: string) => Promise<void>;
+    showLinkMenu?: (request: WebBrowserLinkMenuRequest) => void;
   },
 ): () => void {
   const { browserSession, registry } = options;
+  const openExternal = options.openExternal ?? (async () => undefined);
+  const showLinkMenu = options.showLinkMenu ?? (() => undefined);
   let attachmentPending = false;
   let cleanupGuestPolicy: (() => void) | null = null;
 
@@ -136,15 +147,23 @@ export function installWebBrowserGuestPolicy(
 
     guest.setUserAgent(WEB_BROWSER_USER_AGENT);
 
-    const rejectDisallowedNavigation = (
+    const handlePageNavigation = (
       details: Electron.Event<Electron.WebContentsWillNavigateEventParams>,
     ): void => {
-      if (!details.isMainFrame || normalizeWebBrowserTopLevelUrl(details.url) !== null) {
+      if (!details.isMainFrame) return;
+      const target = normalizeWebBrowserTopLevelUrl(details.url);
+      if (!target) {
+        logger.warn(`[WebBrowser] Blocked top-level navigation to ${details.url}`);
+        details.preventDefault();
         return;
       }
 
-      logger.warn(`[WebBrowser] Blocked top-level navigation to ${details.url}`);
+      const externalTarget = normalizeExternalWebUrl(target);
+      if (!externalTarget) return;
       details.preventDefault();
+      void openExternal(externalTarget).catch((error) => {
+        logger.warn(`[WebBrowser] Failed to open page navigation externally ${externalTarget}:`, error);
+      });
     };
 
     const rejectDisallowedRedirect = (
@@ -158,7 +177,7 @@ export function installWebBrowserGuestPolicy(
       details.preventDefault();
     };
 
-    // Same-tab fallback cannot preserve window.opener, returned window handles, or full POST/referrer fidelity.
+    // Denied popup children cannot preserve window.opener, returned handles, or full POST/referrer fidelity.
     guest.setWindowOpenHandler(({ url }) => {
       const target = normalizeWebBrowserTopLevelUrl(url);
       if (!target || !registry.owns(guest)) {
@@ -166,16 +185,43 @@ export function installWebBrowserGuestPolicy(
         return DENY_WINDOW_OPEN;
       }
 
-      try {
-        void guest.loadURL(target).catch((error) => {
-          logger.warn(`[WebBrowser] Failed to load popup target ${target}:`, error);
+      const externalTarget = normalizeExternalWebUrl(target);
+      if (externalTarget) {
+        void openExternal(externalTarget).catch((error) => {
+          logger.warn(`[WebBrowser] Failed to open popup target externally ${externalTarget}:`, error);
         });
-      } catch (error) {
-        logger.warn(`[WebBrowser] Failed to load popup target ${target}:`, error);
+      } else {
+        try {
+          void guest.loadURL(target).catch((error) => {
+            logger.warn(`[WebBrowser] Failed to load popup target ${target}:`, error);
+          });
+        } catch (error) {
+          logger.warn(`[WebBrowser] Failed to load popup target ${target}:`, error);
+        }
       }
 
       return DENY_WINDOW_OPEN;
     });
+
+    const handleContextMenu = (_event: Electron.Event, params: Electron.ContextMenuParams): void => {
+      const target = normalizeExternalWebUrl(params.linkURL);
+      if (!target || !registry.owns(guest)) return;
+      showLinkMenu({
+        url: target,
+        openInternal: () => {
+          if (!registry.owns(guest)) return;
+          void guest.loadURL(target).catch((error) => {
+            logger.warn(`[WebBrowser] Failed to load context-menu target ${target}:`, error);
+          });
+        },
+        openExternal: () => {
+          if (!registry.owns(guest)) return;
+          void openExternal(target).catch((error) => {
+            logger.warn(`[WebBrowser] Failed to open context-menu target externally ${target}:`, error);
+          });
+        },
+      });
+    };
 
     let cleaned = false;
     const cleanup = (): void => {
@@ -184,8 +230,9 @@ export function installWebBrowserGuestPolicy(
       }
       cleaned = true;
 
-      guest.off('will-navigate', rejectDisallowedNavigation);
+      guest.off('will-navigate', handlePageNavigation);
       guest.off('will-redirect', rejectDisallowedRedirect);
+      guest.off('context-menu', handleContextMenu);
       guest.off('destroyed', cleanup);
       if (!guest.isDestroyed()) {
         guest.setWindowOpenHandler(() => DENY_WINDOW_OPEN);
@@ -195,8 +242,9 @@ export function installWebBrowserGuestPolicy(
       }
     };
 
-    guest.on('will-navigate', rejectDisallowedNavigation);
+    guest.on('will-navigate', handlePageNavigation);
     guest.on('will-redirect', rejectDisallowedRedirect);
+    guest.on('context-menu', handleContextMenu);
     guest.once('destroyed', cleanup);
     cleanupGuestPolicy = cleanup;
   };

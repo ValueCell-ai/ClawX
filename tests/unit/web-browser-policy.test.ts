@@ -202,14 +202,16 @@ describe('web browser attachment policy', () => {
     expect(guest.setUserAgent).toHaveBeenCalledOnce();
     expect(guest.listenerCount('will-navigate')).toBe(1);
     expect(guest.listenerCount('will-redirect')).toBe(1);
+    expect(guest.listenerCount('context-menu')).toBe(1);
   });
 
-  it('always denies popups and loads only allowed targets in the same guest', async () => {
+  it('always denies popups, opens HTTP externally, and keeps file targets internal', async () => {
     const browserSession = {} as Session;
     const embedder = new MockWebContents('window', {} as Session);
     const guest = new MockWebContents('webview', browserSession);
     const registry = new WebBrowserGuestRegistry();
-    installWebBrowserGuestPolicy(asWebContents(embedder), { browserSession, registry });
+    const openExternal = vi.fn<(url: string) => Promise<void>>().mockResolvedValue(undefined);
+    installWebBrowserGuestPolicy(asWebContents(embedder), { browserSession, registry, openExternal });
     attachGuest(embedder, guest);
 
     expect(guest.setUserAgent).toHaveBeenCalledWith(WEB_BROWSER_USER_AGENT);
@@ -217,7 +219,11 @@ describe('web browser attachment policy', () => {
 
     const allowed = guest.windowOpenHandler!({ url: ' HTTPS://EXAMPLE.COM/path ' } as never);
     expect(allowed).toEqual({ action: 'deny' });
-    expect(guest.loadURL).toHaveBeenCalledWith('https://example.com/path');
+    expect(openExternal).toHaveBeenCalledWith('https://example.com/path');
+    expect(guest.loadURL).not.toHaveBeenCalled();
+
+    expect(guest.windowOpenHandler!({ url: 'file:///tmp/report.html' } as never)).toEqual({ action: 'deny' });
+    expect(guest.loadURL).toHaveBeenCalledWith('file:///tmp/report.html');
 
     for (const url of ['about:blank', 'javascript:alert(1)', 'data:text/plain,hello']) {
       expect(guest.windowOpenHandler!({ url } as never)).toEqual({ action: 'deny' });
@@ -225,26 +231,37 @@ describe('web browser attachment policy', () => {
     expect(guest.loadURL).toHaveBeenCalledTimes(1);
     expect(warnMock).toHaveBeenCalledTimes(3);
 
-    guest.loadURL.mockRejectedValueOnce(new Error('load failed'));
+    openExternal.mockRejectedValueOnce(new Error('open failed'));
     expect(guest.windowOpenHandler!({ url: 'https://failure.example/' } as never)).toEqual({ action: 'deny' });
     await vi.waitFor(() => expect(warnMock).toHaveBeenCalledTimes(4));
   });
 
-  it('blocks disallowed page navigation and only main-frame redirects', () => {
+  it('opens HTTP page navigation externally, keeps files internal, and filters redirects', () => {
     const browserSession = {} as Session;
     const embedder = new MockWebContents('window', {} as Session);
     const guest = new MockWebContents('webview', browserSession);
+    const openExternal = vi.fn<(url: string) => Promise<void>>().mockResolvedValue(undefined);
     installWebBrowserGuestPolicy(asWebContents(embedder), {
       browserSession,
       registry: new WebBrowserGuestRegistry(),
+      openExternal,
     });
     attachGuest(embedder, guest);
 
-    for (const url of ['https://example.com/', 'http://localhost:3000/', 'file:///tmp/page.html']) {
+    for (const url of ['https://example.com/', 'http://localhost:3000/']) {
       const event = Object.assign(preventableEvent(), { url, isMainFrame: true });
       guest.emit('will-navigate', event);
-      expect(event.preventDefault).not.toHaveBeenCalled();
+      expect(event.preventDefault).toHaveBeenCalledOnce();
     }
+    expect(openExternal).toHaveBeenNthCalledWith(1, 'https://example.com/');
+    expect(openExternal).toHaveBeenNthCalledWith(2, 'http://localhost:3000/');
+
+    const fileNavigation = Object.assign(preventableEvent(), {
+      url: 'file:///tmp/page.html',
+      isMainFrame: true,
+    });
+    guest.emit('will-navigate', fileNavigation);
+    expect(fileNavigation.preventDefault).not.toHaveBeenCalled();
 
     for (const url of ['about:blank', 'chrome://settings', 'file://server/page.html']) {
       const event = Object.assign(preventableEvent(), { url, isMainFrame: true });
@@ -274,6 +291,36 @@ describe('web browser attachment policy', () => {
     expect(subframeRedirect.preventDefault).not.toHaveBeenCalled();
   });
 
+  it('offers explicit internal and external actions for HTTP link context menus', () => {
+    const browserSession = {} as Session;
+    const embedder = new MockWebContents('window', {} as Session);
+    const guest = new MockWebContents('webview', browserSession);
+    const registry = new WebBrowserGuestRegistry();
+    const openExternal = vi.fn<(url: string) => Promise<void>>().mockResolvedValue(undefined);
+    const showLinkMenu = vi.fn();
+    installWebBrowserGuestPolicy(asWebContents(embedder), {
+      browserSession,
+      registry,
+      openExternal,
+      showLinkMenu,
+    });
+    attachGuest(embedder, guest);
+
+    guest.emit('context-menu', {}, { linkURL: ' HTTPS://EXAMPLE.COM/a path ' });
+
+    expect(showLinkMenu).toHaveBeenCalledOnce();
+    const request = showLinkMenu.mock.calls[0]![0];
+    expect(request.url).toBe('https://example.com/a%20path');
+    request.openInternal();
+    expect(guest.loadURL).toHaveBeenCalledWith('https://example.com/a%20path');
+    request.openExternal();
+    expect(openExternal).toHaveBeenCalledWith('https://example.com/a%20path');
+
+    guest.emit('context-menu', {}, { linkURL: 'file:///tmp/page.html' });
+    guest.emit('context-menu', {}, { linkURL: 'mailto:test@example.com' });
+    expect(showLinkMenu).toHaveBeenCalledOnce();
+  });
+
   it('removes installed listeners on guest destruction and installer cleanup', () => {
     const browserSession = {} as Session;
     const embedder = new MockWebContents('window', {} as Session);
@@ -287,9 +334,11 @@ describe('web browser attachment policy', () => {
 
     expect(firstGuest.listenerCount('will-navigate')).toBe(1);
     expect(firstGuest.listenerCount('will-redirect')).toBe(1);
+    expect(firstGuest.listenerCount('context-menu')).toBe(1);
     firstGuest.destroy();
     expect(firstGuest.listenerCount('will-navigate')).toBe(0);
     expect(firstGuest.listenerCount('will-redirect')).toBe(0);
+    expect(firstGuest.listenerCount('context-menu')).toBe(0);
     expect(registry.current()).toBeNull();
 
     const replacementGuest = new MockWebContents('webview', browserSession);
@@ -299,6 +348,7 @@ describe('web browser attachment policy', () => {
     expect(embedder.listenerCount('did-attach-webview')).toBe(0);
     expect(replacementGuest.listenerCount('will-navigate')).toBe(0);
     expect(replacementGuest.listenerCount('will-redirect')).toBe(0);
+    expect(replacementGuest.listenerCount('context-menu')).toBe(0);
     expect(registry.current()).toBe(replacementGuest);
 
     replacementGuest.destroy();

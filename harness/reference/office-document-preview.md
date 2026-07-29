@@ -135,6 +135,12 @@ Workspace and Preview surfaces remain mounted to preserve surrounding UI state, 
 
 Cleanup queues the active instance's public `destroy()` exactly once after preceding dependency work. ClawX removes all listeners, observers, timers, animation frames, queued request references, and its direct instance and Canvas ownership. The dependency limitations below mean this does not claim full internal reclamation.
 
+## Fullscreen Preview Surface
+
+The Chat Preview header exposes a localized icon control that moves the selected `FilePreviewBody` into a portal filling the Renderer viewport. This is an application overlay, not Electron window fullscreen, and applies consistently to every file format supported by the Preview surface. It preserves target identity and target-keyed PPTX slide position while switching between compact panel layout and full layout.
+
+The same header control exits fullscreen, and Escape provides a keyboard exit. Switching away from the Preview artifact tab also closes the overlay. Portal transitions may remount a viewer, but the previous PPTX lifecycle is torn down before the replacement becomes active so the single-mounted-viewer invariant remains intact.
+
 ## States And Errors
 
 Both viewers expose four lifecycle states:
@@ -152,7 +158,7 @@ Errors use localized format-specific generic messages and never show parser exce
 - Editing, saving, comments, tracked changes, Word search, or table-of-contents tooling.
 - Pixel-identical Microsoft Word or PowerPoint layout.
 - DOCX link opening or application-window navigation from generated content.
-- PPTX thumbnails, keyboard shortcuts, animation, transitions, media playback, fullscreen, presenter mode, or automatic slide shows.
+- PPTX thumbnails, slide-navigation keyboard shortcuts, animation, transitions, media playback, presenter mode, or automatic slide shows. The generic Preview surface can fill the application viewport, but it does not implement PowerPoint presenter behavior or native Electron fullscreen.
 - Remote-attachment downloading for preview.
 - Main-process, server, cloud, or external-service conversion.
 - Changes to existing PDF, spreadsheet, image, HTML, Markdown, source, or diff behavior.
@@ -188,4 +194,4 @@ Renderer authority, DOCX isolation/options/links/zoom, PPTX construction/sizing/
 
 Surface preflight, authority-specific fallback, conditional mounting, and position ownership are anchored by `src/components/file-preview/FilePreviewBody.tsx`, `src/components/file-preview/WorkspaceBrowserBody.tsx`, `src/components/file-preview/ArtifactPanel.tsx`, `src/pages/Chat/AcpTurnFileActivity.tsx`, `src/pages/Chat/AcpAttachmentPart.tsx`, `tests/unit/file-preview-body.test.tsx`, `tests/unit/workspace-browser-body.test.tsx`, `tests/unit/artifact-panel.test.tsx`, and `tests/unit/acp-chat-components.test.tsx`.
 
-`tests/e2e/office-document-preview.spec.ts` uses real deterministic DOCX/PPTX packages to anchor Shadow Root page rendering, Canvas pixels, chart completion, slide navigation, per-target position restoration, constrained-panel resizing, the single-mounted-viewer invariant, Host API read routes, and absence of legacy direct IPC.
+`tests/e2e/office-document-preview.spec.ts` uses real deterministic DOCX/PPTX packages to anchor Shadow Root page rendering, Canvas pixels, chart completion, slide navigation, per-target position restoration, constrained-panel resizing, viewport-filling Preview transitions, the single-mounted-viewer invariant, Host API read routes, and absence of legacy direct IPC.

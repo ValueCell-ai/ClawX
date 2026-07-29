@@ -2,6 +2,7 @@ import { FileDiff, FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { buildWorkspacePreviewTarget } from '@/components/file-preview/build-preview-target';
 import type { AcpTurnFileSummary } from '@/lib/acp/openclaw-file-activities';
+import { localHtmlBrowserUrl } from '@/lib/local-html-browser';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { AcpFileCard } from './AcpFileCard';
 
@@ -15,6 +16,7 @@ export function AcpTurnFileActivity({
   const { t } = useTranslation('chat');
   const openChanges = useArtifactPanel((state) => state.openChanges);
   const openPreview = useArtifactPanel((state) => state.openPreview);
+  const openWebBrowser = useArtifactPanel((state) => state.openWebBrowser);
 
   if (summaries.length === 0) return null;
 
@@ -23,6 +25,11 @@ export function AcpTurnFileActivity({
       {summaries.map((summary) => {
         const focus = { relativePath: summary.relativePath, turnId: summary.turnId };
         const actionLabel = t(`fileActivity.${summary.action}`);
+        const workspaceTarget = {
+          kind: 'workspace' as const,
+          ref: { workspaceRoot, relativePath: summary.relativePath },
+        };
+        const browserUrl = localHtmlBrowserUrl(workspaceTarget, summary.relativePath);
         return (
           <AcpFileCard
             key={summary.relativePath}
@@ -32,6 +39,8 @@ export function AcpTurnFileActivity({
             onPrimary={() => {
               if (summary.action === 'deleted') {
                 openChanges(focus);
+              } else if (browserUrl) {
+                openWebBrowser(browserUrl);
               } else {
                 openPreview(buildWorkspacePreviewTarget({ workspaceRoot, relativePath: summary.relativePath }));
               }
@@ -40,8 +49,7 @@ export function AcpTurnFileActivity({
               ? undefined
               : {
                   target: {
-                    kind: 'workspace',
-                    ref: { workspaceRoot, relativePath: summary.relativePath },
+                    ...workspaceTarget,
                   },
                   name: summary.relativePath,
                 }}

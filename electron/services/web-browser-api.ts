@@ -1,7 +1,7 @@
 import { shell, type Session, type WebContents } from 'electron';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { WebBrowserGuestRegistry } from '../main/web-browser-policy';
-import { normalizeWebBrowserTopLevelUrl } from '../../shared/web-browser';
+import { normalizeExternalWebUrl, normalizeWebBrowserTopLevelUrl } from '../../shared/web-browser';
 
 export interface WebBrowserApiDependencies {
   browserSession: Session;
@@ -64,6 +64,14 @@ export function createWebBrowserApi(
     async openExternal() {
       const guest = requireLiveGuest(registry);
       await openExternal(requireAllowedUrl(guest.getURL()));
+    },
+
+    async openExternalUrl({ url }) {
+      const allowedUrl = normalizeExternalWebUrl(url);
+      if (!allowedUrl) {
+        throw new Error('External web URL is not allowed');
+      }
+      await openExternal(allowedUrl);
     },
   };
 }

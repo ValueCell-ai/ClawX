@@ -115,6 +115,7 @@ describe('hostApi facade', () => {
     await hostApi.webBrowser.clearCookies();
     await hostApi.webBrowser.clearSiteData();
     await hostApi.webBrowser.openExternal();
+    await hostApi.webBrowser.openExternalUrl('https://example.com/link');
 
     expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
       module: 'webBrowser',
@@ -133,7 +134,12 @@ describe('hostApi facade', () => {
       module: 'webBrowser',
       action: 'openExternal',
     }));
-    expect(hostInvoke.mock.calls.slice(1).every(([request]) => !('payload' in request))).toBe(true);
+    expect(hostInvoke).toHaveBeenNthCalledWith(5, expect.objectContaining({
+      module: 'webBrowser',
+      action: 'openExternalUrl',
+      payload: { url: 'https://example.com/link' },
+    }));
+    expect(hostInvoke.mock.calls.slice(1, 4).every(([request]) => !('payload' in request))).toBe(true);
   });
 
   it('passes log file path and tail lines through hostInvoke', async () => {

@@ -104,7 +104,8 @@
         },
         "preview": {
             "emptyTitle": "ファイルが選択されていません",
-            "emptyHint": "まず会話内のファイルカードをクリックしてファイルを選択すると、ここにプレビューが表示されます。"
+            "emptyHint": "まず会話内のファイルカードをクリックしてファイルを選択すると、ここにプレビューが表示されます。",
+            "fullscreenLabel": "ファイルの全画面プレビュー"
         },
         "webBrowser": {
             "actions": {
@@ -116,6 +117,10 @@
                 "clearCookies": "Cookie を消去",
                 "clearSiteData": "サイトデータを消去",
                 "openExternal": "システムブラウザで開く"
+            },
+            "linkMenu": {
+                "openInClawX": "ClawX で開く",
+                "openInSystemBrowser": "システムブラウザで開く"
             },
             "address": {
                 "label": "ウェブアドレス",
@@ -165,7 +170,9 @@
             "revert": "元に戻す",
             "openInFinder": "ファイルマネージャーで表示",
             "openDirectly": "直接開く",
-            "close": "閉じる"
+            "close": "閉じる",
+            "enterFullscreen": "全画面表示",
+            "exitFullscreen": "全画面表示を終了"
         },
         "info": {
             "path": "パス",

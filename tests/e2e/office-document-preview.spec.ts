@@ -303,6 +303,22 @@ test.describe('real Office document previews', () => {
       expect(panelWidthPct).toBeLessThanOrEqual(28.5);
       await assertSinglePptxViewer(page);
 
+      const constrainedCanvas = await waitForStableCanvas(canvas);
+      await page.getByTestId('file-preview-fullscreen-toggle').click();
+      const fullscreenLayer = page.getByTestId('file-preview-fullscreen-layer');
+      await expect(fullscreenLayer).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Exit fullscreen' })).toBeVisible();
+      const fullscreenCanvas = await waitForStableCanvas(canvas);
+      expect(fullscreenCanvas.clientWidth).toBeGreaterThan(constrainedCanvas.clientWidth);
+      expect(fullscreenCanvas.clientHeight).toBeGreaterThan(constrainedCanvas.clientHeight);
+      await assertSinglePptxViewer(page);
+
+      await page.getByRole('button', { name: 'Exit fullscreen' }).click();
+      await expect(fullscreenLayer).not.toBeAttached();
+      await expect(page.getByRole('button', { name: 'Enter fullscreen' })).toBeVisible();
+      await waitForStableCanvas(canvas);
+      await assertSinglePptxViewer(page);
+
       const hostCalls = await fixture.getHostInvocations();
       expect(hostCalls).toEqual(expect.arrayContaining([
         expect.objectContaining({

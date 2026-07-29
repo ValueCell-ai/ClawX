@@ -15,6 +15,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
 import { readTextFile, statFile } from '@/lib/file-preview-client';
 import { hostApi } from '@/lib/host-api';
+import { absolutePathToFileUrl } from '@/lib/local-html-browser';
 import {
   isDocxPreviewExt,
   isHtmlPreviewExt,
@@ -35,6 +36,7 @@ import {
   type WorkspaceTreeNode,
 } from '@/lib/workspace-tree';
 import type { AgentSummary } from '@/types/agent';
+import { useArtifactPanel } from '@/stores/artifact-panel';
 import { formatFileSize } from './format';
 import {
   confirmAndOpenFile,
@@ -451,6 +453,10 @@ export function WorkspaceBrowserBody({
             onActivate={(node) => {
               if (node.data.isDir) {
                 node.toggle();
+                return;
+              }
+              if (isHtmlPreviewExt(node.data.ext)) {
+                useArtifactPanel.getState().openWebBrowser(absolutePathToFileUrl(node.data.absPath));
                 return;
               }
               setSelectedRel(node.data.relPath);

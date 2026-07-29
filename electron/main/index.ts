@@ -2,7 +2,7 @@
  * Electron Main Process Entry
  * Manages window creation, system tray, and IPC handlers
  */
-import { app, BrowserWindow, nativeImage, session, shell, type Session } from 'electron';
+import { app, BrowserWindow, Menu, nativeImage, session, shell, type Session } from 'electron';
 import { join } from 'path';
 import { GatewayManager } from '../gateway/manager';
 import { registerIpcHandlers } from './ipc-handlers';
@@ -34,6 +34,8 @@ import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
 import { WebBrowserGuestRegistry, installWebBrowserGuestPolicy } from './web-browser-policy';
 import { configureWebBrowserSession } from './web-browser-session';
+import { WEB_BROWSER_LINK_MENU_LABELS } from '@shared/i18n/resources';
+import { resolveSupportedLanguage } from '@shared/language';
 import {
   clearPendingSecondInstanceFocus,
   consumeMainWindowReady,
@@ -204,6 +206,18 @@ function createWindow(): BrowserWindow {
   installWebBrowserGuestPolicy(win.webContents, {
     browserSession: webBrowserSession,
     registry: webBrowserGuestRegistry,
+    openExternal: (url) => shell.openExternal(url),
+    showLinkMenu: ({ openInternal, openExternal }) => {
+      void getSetting('language').then((language) => {
+        const labels = WEB_BROWSER_LINK_MENU_LABELS[resolveSupportedLanguage(language)];
+        Menu.buildFromTemplate([
+          { label: labels.openInClawX, click: openInternal },
+          { label: labels.openInSystemBrowser, click: openExternal },
+        ]).popup({ window: win });
+      }).catch((error) => {
+        logger.warn('[WebBrowser] Failed to show link context menu:', error);
+      });
+    },
   });
 
   registerZoomShortcuts(win);

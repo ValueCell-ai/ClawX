@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { CheckCircle2, ChevronDown, ChevronRight, CircleDashed, GitBranch, Link, MessageSquare, Wrench, XCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { BrowserLink } from '@/components/common/BrowserLink';
 import { cn } from '@/lib/utils';
 import type { TaskStep } from './task-visualization';
 
@@ -89,16 +90,14 @@ function StepDetailCard({ step }: { step: TaskStep }) {
             <div className="flex min-w-0 items-center gap-2">
               <p className="shrink-0 text-sm font-medium text-muted-foreground">{displayLabel}</p>
               {isTool && step.label === 'web_fetch' && step.url && (
-                <a
+                <BrowserLink
                   href={step.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
                   className="shrink-0 text-muted-foreground hover:text-foreground"
                   title={step.url}
                 >
                   <Link className="h-3.5 w-3.5" />
-                </a>
+                </BrowserLink>
               )}
               {isFlatRow && detailPreview && !expanded && (
                 <p className="min-w-0 truncate text-xs leading-4 text-muted-foreground/80">

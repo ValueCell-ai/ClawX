@@ -3,7 +3,6 @@ import { WEB_BROWSER_USER_AGENT } from '../../shared/web-browser';
 import { closeElectronApp, expect, getStableWindow } from './fixtures/electron';
 import {
   executeInWebBrowserGuest,
-  executeInWebBrowserGuestAndWaitForLoad,
   getWebBrowserMainSnapshot,
   getWebBrowserShellCalls,
   prepareWebBrowserApp,
@@ -168,6 +167,16 @@ test.describe('embedded web browser navigation', () => {
         'src',
         new URL('/favicon.svg', webBrowserFixture.urls.start).href,
       );
+      await executeInWebBrowserGuest(app, guestId, "document.querySelector('#second-link').click(); true");
+      await expect.poll(() => getWebBrowserShellCalls(app)).toEqual({
+        openExternal: [webBrowserFixture.urls.second],
+        openPath: [],
+      });
+      await expectMainSnapshotToRemain(app, {
+        guestId,
+        url: webBrowserFixture.urls.start,
+        matchingGuestCount: 1,
+      });
       await executeInWebBrowserGuest(app, guestId, "history.pushState({}, '', '#same-document'); true");
       await expect(page.getByTestId('web-browser-favicon')).toHaveAttribute(
         'src',
@@ -235,7 +244,7 @@ test.describe('embedded web browser navigation', () => {
     }
   });
 
-  test('reuses the guest for allowed popups and blocks disallowed targets and redirects', async ({
+  test('opens HTTP popups externally and blocks disallowed targets and redirects', async ({
     launchElectronApp,
     webBrowserFixture,
   }) => {
@@ -247,28 +256,29 @@ test.describe('embedded web browser navigation', () => {
       await expect(page.getByTestId('web-browser-address-display')).toBeVisible();
 
       await executeInWebBrowserGuest(app, guestId!, "document.querySelector('#popup-link').click(); true");
-      await expectGuestAt(app, {
+      await expect.poll(() => getWebBrowserShellCalls(app)).toEqual({
+        openExternal: [webBrowserFixture.urls.popupTarget],
+        openPath: [],
+      });
+      await expectMainSnapshotToRemain(app, {
         guestId,
-        url: webBrowserFixture.urls.popupTarget,
-        title: 'Popup Target',
+        url: webBrowserFixture.urls.popups,
         matchingGuestCount: 1,
         browserWindowCount: 1,
       });
 
-      await navigateFromAddress(page, webBrowserFixture.urls.popups);
-      await expectGuestAt(app, { guestId, url: webBrowserFixture.urls.popups });
-      await expect(page.getByTestId('web-browser-address-display')).toBeVisible();
       await executeInWebBrowserGuest(app, guestId!, "document.querySelector('#popup-script').click(); true");
-      await expectGuestAt(app, {
+      await expect.poll(() => getWebBrowserShellCalls(app)).toEqual({
+        openExternal: [webBrowserFixture.urls.popupTarget, webBrowserFixture.urls.popupTarget],
+        openPath: [],
+      });
+      await expectMainSnapshotToRemain(app, {
         guestId,
-        url: webBrowserFixture.urls.popupTarget,
+        url: webBrowserFixture.urls.popups,
         matchingGuestCount: 1,
         browserWindowCount: 1,
       });
 
-      await navigateFromAddress(page, webBrowserFixture.urls.popups);
-      await expectGuestAt(app, { guestId, url: webBrowserFixture.urls.popups });
-      await expect(page.getByTestId('web-browser-address-display')).toBeVisible();
       await executeInWebBrowserGuest(app, guestId!, "window.open('data:text/html,blocked', '_blank'); true");
       await expectMainSnapshotToRemain(app, {
         guestId,
@@ -277,11 +287,7 @@ test.describe('embedded web browser navigation', () => {
         browserWindowCount: 1,
       });
 
-      await executeInWebBrowserGuestAndWaitForLoad(
-        app,
-        guestId!,
-        `location.assign(${JSON.stringify(webBrowserFixture.urls.disallowedRedirect)}); true`,
-      );
+      await navigateFromAddress(page, webBrowserFixture.urls.disallowedRedirect);
       await expect.poll(() => webBrowserFixture.requestCount('/redirect-disallowed')).toBe(1);
       const blockedRedirect = await getWebBrowserMainSnapshot(app);
       expect(blockedRedirect).toMatchObject({

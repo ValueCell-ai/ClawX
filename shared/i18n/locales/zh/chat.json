@@ -104,7 +104,8 @@
         },
         "preview": {
             "emptyTitle": "尚未选择文件",
-            "emptyHint": "请先点击对话里的文件卡片，侧栏会选中该文件后在此预览。"
+            "emptyHint": "请先点击对话里的文件卡片，侧栏会选中该文件后在此预览。",
+            "fullscreenLabel": "全屏文件预览"
         },
         "webBrowser": {
             "actions": {
@@ -116,6 +117,10 @@
                 "clearCookies": "清除 Cookie",
                 "clearSiteData": "清除网站数据",
                 "openExternal": "在系统浏览器中打开"
+            },
+            "linkMenu": {
+                "openInClawX": "在 ClawX 中打开",
+                "openInSystemBrowser": "在系统浏览器中打开"
             },
             "address": {
                 "label": "网页地址",
@@ -165,7 +170,9 @@
             "revert": "撤销",
             "openInFinder": "在文件管理器中显示",
             "openDirectly": "直接打开",
-            "close": "关闭"
+            "close": "关闭",
+            "enterFullscreen": "全屏预览",
+            "exitFullscreen": "退出全屏"
         },
         "info": {
             "path": "路径",

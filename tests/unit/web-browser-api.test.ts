@@ -190,6 +190,29 @@ describe('web browser host service', () => {
     expect(openExternal).toHaveBeenCalledWith('https://example.com/current%20path');
   });
 
+  it('opens an explicit normalized HTTP(S) content link without requiring a guest', async () => {
+    const openExternal = vi.fn<(url: string) => Promise<void>>().mockResolvedValue(undefined);
+    const api = createWebBrowserApi({ browserSession, registry, openExternal });
+
+    await expect(api.openExternalUrl({ url: ' HTTPS://Example.COM/a path ' })).resolves.toBeUndefined();
+
+    expect(openExternal).toHaveBeenCalledWith('https://example.com/a%20path');
+  });
+
+  it.each([
+    'file:///tmp/page.html',
+    'mailto:test@example.com',
+    'javascript:alert(1)',
+    'data:text/html,bad',
+    'example.com',
+  ])('rejects explicit non-HTTP external URL %j', async (url) => {
+    const openExternal = vi.fn<(target: string) => Promise<void>>().mockResolvedValue(undefined);
+    const api = createWebBrowserApi({ browserSession, registry, openExternal });
+
+    await expect(api.openExternalUrl({ url })).rejects.toThrow();
+    expect(openExternal).not.toHaveBeenCalled();
+  });
+
   it('passes standard file URLs to shell.openExternal and never shell.openPath', async () => {
     const guest = registerGuest(registry);
     guest.url = 'file:///tmp/report%20one.html';

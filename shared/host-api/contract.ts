@@ -10,7 +10,7 @@ import type { AgentsSnapshot } from '../types/agent';
 import type { CronJob, CronJobCreateInput, CronJobUpdateInput } from '../types/cron';
 import type { GatewayHealth, GatewayStatus } from '../types/gateway';
 import type { MarketplaceSkill, QuickAccessSkill, Skill } from '../types/skill';
-import type { WebBrowserNavigatePayload } from '../web-browser';
+import type { WebBrowserNavigatePayload, WebBrowserOpenExternalPayload } from '../web-browser';
 
 export type JsonRecord = Record<string, unknown>;
 export type HostSuccess = { success: boolean; error?: string };
@@ -835,6 +835,7 @@ export type HostApiContract = {
     clearCookies: () => void;
     clearSiteData: () => void;
     openExternal: () => void;
+    openExternalUrl: (payload: WebBrowserOpenExternalPayload) => void;
   };
   dialog: {
     open: (payload: DialogOpenPayload) => DialogOpenResult;

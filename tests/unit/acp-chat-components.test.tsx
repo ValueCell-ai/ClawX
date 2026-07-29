@@ -508,6 +508,34 @@ describe('ACP chat timeline components', () => {
     });
   });
 
+  it('opens HTML file activity in the built-in browser from its primary action', () => {
+    render(
+      <AcpTurnFileActivity
+        workspaceRoot="/workspace/demo"
+        summaries={[{
+          turnId: 'turn-html-primary',
+          relativePath: 'site/report #1.html',
+          action: 'created',
+          activities: [],
+          added: 1,
+          removed: 0,
+        }]}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('acp-file-button'));
+
+    expect(useArtifactPanel.getState()).toMatchObject({
+      open: true,
+      tab: 'web-browser',
+      webBrowserInitialized: true,
+      webBrowserNavigation: {
+        url: 'file:///workspace/demo/site/report%20%231.html',
+      },
+    });
+    expect(useArtifactPanel.getState().focusedFile).toBeNull();
+  });
+
   it.each(['report.docx', 'slides.pptx'])('routes active Office file activity %s through a workspace-scoped preview target', (relativePath) => {
     render(
       <AcpTurnFileActivity
@@ -925,6 +953,29 @@ describe('ACP chat timeline components', () => {
         url: 'file:///workspace/site%20one.html',
       },
     });
+  });
+
+  it('opens a local HTML attachment in the built-in browser from its primary action', () => {
+    render(<AcpAttachmentPart part={availableAttachment({
+      name: 'site one.html',
+      mimeType: 'text/html',
+      ref: {
+        ...attachmentRef,
+        uri: '/workspace/site one.html',
+      },
+    })} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preview site one.html' }));
+
+    expect(useArtifactPanel.getState()).toMatchObject({
+      open: true,
+      tab: 'web-browser',
+      webBrowserInitialized: true,
+      webBrowserNavigation: {
+        url: 'file:///workspace/site%20one.html',
+      },
+    });
+    expect(useArtifactPanel.getState().focusedFile).toBeNull();
   });
 
   it.each([

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { WorkspaceBrowserBody } from '@/components/file-preview/WorkspaceBrowserBody';
+import { useArtifactPanel } from '@/stores/artifact-panel';
 
 const pptxViewerProps = vi.hoisted(() => [] as Array<{
   filePath: string;
@@ -205,6 +206,12 @@ describe('WorkspaceBrowserBody', () => {
     pptxViewerProps.length = 0;
     docxViewerProps.length = 0;
     treeMode.office = false;
+    useArtifactPanel.setState({
+      open: false,
+      tab: 'browser',
+      webBrowserInitialized: false,
+      webBrowserNavigation: null,
+    });
   });
 
   it('loads the explicit workspace path instead of the agent workspace', async () => {
@@ -389,14 +396,7 @@ describe('WorkspaceBrowserBody', () => {
     expect(folder.parentElement).toHaveClass('h-full');
   });
 
-  it('renders html files as sandboxed HTML preview instead of raw source', async () => {
-    readTextFile.mockResolvedValueOnce({
-      ok: true,
-      content: '<!doctype html><html><body><h1 id="title">Dashboard</h1></body></html>',
-      size: 72,
-      readOnly: true,
-    });
-
+  it('opens HTML tree nodes in the built-in browser by default', async () => {
     render(
       <WorkspaceBrowserBody
         agent={{ id: 'main', name: 'Main Agent', workspace: '/workspace' }}
@@ -410,13 +410,15 @@ describe('WorkspaceBrowserBody', () => {
 
     fireEvent.click(screen.getByText('dashboard.html'));
 
-    const frame = await screen.findByTestId('html-preview-frame');
-    expect(frame).toBeVisible();
-    expect(frame).toHaveAttribute(
-      'sandbox',
-      'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation allow-downloads',
-    );
-    expect(screen.queryByText('<!doctype html>')).not.toBeInTheDocument();
+    expect(useArtifactPanel.getState()).toMatchObject({
+      open: true,
+      tab: 'web-browser',
+      webBrowserInitialized: true,
+      webBrowserNavigation: {
+        url: 'file:///workspace/dashboard.html',
+      },
+    });
+    expect(readTextFile).not.toHaveBeenCalled();
   });
 
   it.each([

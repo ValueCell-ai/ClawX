@@ -4,6 +4,7 @@ import {
   WEB_BROWSER_PARTITION,
   WEB_BROWSER_USER_AGENT,
   canOpenWebBrowserExternally,
+  normalizeExternalWebUrl,
   normalizeWebBrowserTopLevelUrl,
   parseWebBrowserAddress,
   type WebBrowserAddressErrorCode,
@@ -84,5 +85,15 @@ describe('web browser URL policy', () => {
     ['data:text/plain,hello', false],
   ])('reports external-open eligibility for %s as %s', (input, expected) => {
     expect(canOpenWebBrowserExternally(input)).toBe(expected);
+  });
+
+  it.each([
+    [' HTTPS://EXAMPLE.COM/a path ', 'https://example.com/a%20path'],
+    ['http://localhost:3000', 'http://localhost:3000/'],
+    ['file:///tmp/example.html', null],
+    ['mailto:test@example.com', null],
+    ['example.com', null],
+  ])('normalizes HTTP(S)-only external URL %s as %s', (input, expected) => {
+    expect(normalizeExternalWebUrl(input)).toBe(expected);
   });
 });

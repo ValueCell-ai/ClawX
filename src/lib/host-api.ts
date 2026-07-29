@@ -40,7 +40,7 @@ import type {
   WorkspaceContextInput,
   WorkspaceFileRef,
 } from '@shared/host-api/contract';
-import type { WebBrowserNavigatePayload } from '@shared/web-browser';
+import type { WebBrowserNavigatePayload, WebBrowserOpenExternalPayload } from '@shared/web-browser';
 import type {
   AcpChatCancelPayload,
   AcpChatLoadPayload,
@@ -127,6 +127,9 @@ export const hostApi = {
     clearCookies: () => invokeHost('webBrowser', 'clearCookies'),
     clearSiteData: () => invokeHost('webBrowser', 'clearSiteData'),
     openExternal: () => invokeHost('webBrowser', 'openExternal'),
+    openExternalUrl: (url: string) => (
+      invokeHost('webBrowser', 'openExternalUrl', { url } satisfies WebBrowserOpenExternalPayload)
+    ),
   },
   dialog: {
     open: (input: DialogOpenPayload) => invokeHost('dialog', 'open', input),

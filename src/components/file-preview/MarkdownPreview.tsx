@@ -20,6 +20,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import remarkFrontmatter from 'remark-frontmatter';
 import rehypeKatex from 'rehype-katex';
+import { BrowserLink } from '@/components/common/BrowserLink';
 import { cn } from '@/lib/utils';
 
 export interface MarkdownPreviewProps {
@@ -78,16 +79,11 @@ export default function MarkdownPreview({ source, className }: MarkdownPreviewPr
               {children}
             </h4>
           ),
-          a: ({ children, href }) => (
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary underline-offset-2 hover:underline"
-            >
+          a: ({ children, href }) => href ? (
+            <BrowserLink href={href} className="text-primary underline-offset-2 hover:underline">
               {children}
-            </a>
-          ),
+            </BrowserLink>
+          ) : <>{children}</>,
           code: ({ className: codeClass, children, ...props }) => {
             const match = /language-(\w+)/.exec(codeClass || '');
             const isInline = !match && !codeClass && !String(children).includes('\n');

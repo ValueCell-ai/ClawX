@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { AlertCircle, Check, Copy, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { BrowserLink } from '@/components/common/BrowserLink';
 import type { MessageSegmentItem, RenderPart } from '@/lib/acp/timeline-types';
 import { cn } from '@/lib/utils';
 import { AcpImagePart, isSafeAcpImageSource } from './AcpImagePart';
@@ -62,11 +63,11 @@ function AcpMarkdownPart({ text }: { text: string }) {
             );
           },
           a({ href, children }) {
-            return (
-              <a href={href} target="_blank" rel="noopener noreferrer" className="break-all text-primary hover:underline">
+            return href ? (
+              <BrowserLink href={href} className="break-all text-primary hover:underline">
                 {children}
-              </a>
-            );
+              </BrowserLink>
+            ) : <>{children}</>;
           },
           img({ src, alt }) {
             const imageSource = typeof src === 'string' ? src : '';

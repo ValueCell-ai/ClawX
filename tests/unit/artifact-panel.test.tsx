@@ -25,7 +25,10 @@ vi.mock('react-i18next', () => ({
         'artifactPanel.changes.empty': 'This session has no file changes yet.',
         'artifactPanel.changes.diffUnavailable': 'Diff unavailable',
         'artifactPanel.changes.changeRecord': `Change ${String(options?.number ?? '')}`,
+        'artifactPanel.preview.fullscreenLabel': 'Fullscreen file preview',
         'filePreview.actions.close': 'Close',
+        'filePreview.actions.enterFullscreen': 'Enter fullscreen',
+        'filePreview.actions.exitFullscreen': 'Exit fullscreen',
       };
       return labels[key] ?? '';
     },
@@ -45,6 +48,7 @@ vi.mock('@/components/file-preview/FilePreviewBody', () => ({
       <div data-testid="file-preview-body">
         {String(props.mode)}:{file.fileName}
         {props.active === true && file.ext === '.pptx' && <div data-testid="pptx-viewer">preview</div>}
+        {props.trailingHeader as React.ReactNode}
       </div>
     );
   },
@@ -123,6 +127,26 @@ describe('ArtifactPanel', () => {
       'artifact-panel-tab-changes',
       'artifact-panel-tab-web-browser',
     ]);
+  });
+
+  it('hides the Web Browser tab while a non-HTML file is being previewed', () => {
+    useArtifactPanel.setState({
+      open: true,
+      tab: 'preview',
+      focusedFile: {
+        filePath: 'budget.xlsx',
+        fileName: 'budget.xlsx',
+        ext: '.xlsx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        contentType: 'document',
+      },
+    });
+    render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
+
+    expect(screen.queryByTestId('artifact-panel-tab-web-browser')).not.toBeInTheDocument();
+
+    act(() => useArtifactPanel.getState().setTab('changes'));
+    expect(screen.getByTestId('artifact-panel-tab-web-browser')).toBeVisible();
   });
 
   it('selects Web Browser and registers its empty layout anchor', () => {
@@ -218,6 +242,36 @@ describe('ArtifactPanel', () => {
     expect(workspaceBrowserProps.at(-1)).toMatchObject({ active: false });
     expect(filePreviewBodyProps.at(-1)).toMatchObject({ active: false });
     expect(screen.queryByTestId('pptx-viewer')).not.toBeInTheDocument();
+  });
+
+  it('opens the selected file in a fullscreen layer and exits with Escape', () => {
+    useArtifactPanel.setState({
+      open: true,
+      tab: 'preview',
+      focusedFile: {
+        filePath: '/tmp/report.pdf', fileName: 'report.pdf', ext: '.pdf',
+        mimeType: 'application/pdf', contentType: 'document',
+      },
+    });
+    render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
+
+    expect(filePreviewBodyProps.at(-1)).toMatchObject({ compact: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Enter fullscreen' }));
+
+    expect(screen.getByRole('dialog', { name: 'Fullscreen file preview' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toHaveFocus();
+    expect(filePreviewBodyProps.at(-1)).toMatchObject({ compact: false });
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(screen.queryByTestId('file-preview-fullscreen-layer')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Enter fullscreen' })).toBeInTheDocument();
+    expect(filePreviewBodyProps.at(-1)).toMatchObject({ compact: true });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Enter fullscreen' }));
+    act(() => useArtifactPanel.getState().setTab('changes'));
+    expect(screen.queryByTestId('file-preview-fullscreen-layer')).not.toBeInTheDocument();
   });
 
   it('preserves the viewer-reported PowerPoint position for each preview target', () => {

@@ -5,17 +5,13 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
   hostApi,
-  type AttachmentFileRef,
   type AttachmentOpenHandler,
-  type WorkspaceFileRef,
 } from '@/lib/host-api';
 import { cn } from '@/lib/utils';
-import { extnameOf, isHtmlPreviewExt } from '@/lib/generated-files';
+import { localHtmlBrowserUrl, type LocalHtmlBrowserTarget } from '@/lib/local-html-browser';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 
-export type AcpFileTarget =
-  | { kind: 'attachment'; ref: AttachmentFileRef }
-  | { kind: 'workspace'; ref: WorkspaceFileRef };
+export type AcpFileTarget = LocalHtmlBrowserTarget;
 
 const MAX_ICON_DATA_URL_LENGTH = 65_536;
 
@@ -39,40 +35,6 @@ function fileTargetKey(target: AcpFileTarget): string {
     target.ref.stagingId,
     target.ref.transcriptMessageId,
   ]);
-}
-
-function absolutePathToFileUrl(filePath: string): string {
-  const normalized = filePath.replace(/\\/g, '/');
-  const absolutePath = normalized.startsWith('/') ? normalized : `/${normalized}`;
-  const encodedPath = absolutePath
-    .split('/')
-    .map((segment, index) => {
-      if (index === 0) return '';
-      if (index === 1 && /^[A-Za-z]:$/.test(segment)) return segment;
-      return encodeURIComponent(segment);
-    })
-    .join('/');
-  return `file://${encodedPath}`;
-}
-
-function builtInBrowserUrl(target: AcpFileTarget, name: string): string | null {
-  if (!isHtmlPreviewExt(extnameOf(name))) return null;
-  if (target.kind === 'workspace') {
-    const root = target.ref.workspaceRoot.replace(/[\\/]+$/, '');
-    const relativePath = target.ref.relativePath.replace(/^[\\/]+/, '');
-    return absolutePathToFileUrl(`${root}/${relativePath}`);
-  }
-  try {
-    const url = new URL(target.ref.uri);
-    if (url.protocol !== 'file:') return null;
-    if (!url.hostname) return url.href;
-    if (url.hostname.toLowerCase() !== 'localhost') return null;
-    return absolutePathToFileUrl(decodeURIComponent(url.pathname));
-  } catch {
-    return /^(?:[\\/]|[A-Za-z]:[\\/])/.test(target.ref.uri)
-      ? absolutePathToFileUrl(target.ref.uri)
-      : null;
-  }
 }
 
 function ApplicationIcon({ iconDataUrl }: { iconDataUrl?: string }) {
@@ -111,7 +73,7 @@ export function AcpFileOpenWith({ target, name }: { target: AcpFileTarget; name:
   const requestToken = useRef(0);
   const currentTargetKey = useRef(targetKey);
   const platform = window.electron.platform;
-  const browserUrl = builtInBrowserUrl(target, name);
+  const browserUrl = localHtmlBrowserUrl(target, name);
   const targetKind = target.kind;
   const attachmentSessionKey = target.kind === 'attachment' ? target.ref.sessionKey : undefined;
   const attachmentGeneration = target.kind === 'attachment' ? target.ref.generation : undefined;

@@ -12,7 +12,7 @@ This reference is authoritative for the implemented Web Browser design. The task
 
 ## Scope And Non-Goals
 
-The Web Browser is the fixed fourth artifact-panel tab with store value `web-browser`. It is distinct from the Workspace file browser, whose value remains `browser`. The tab provides one embedded browsing context with back, forward, refresh, title/address, favicon, force refresh, data clearing, and external-open controls.
+The Web Browser uses artifact-panel store value `web-browser` and is distinct from the Workspace file browser, whose value remains `browser`. It normally appears as the fourth tab. While Preview is actively showing a non-HTML file, the Web Browser tab is omitted so an older page is not presented as relevant to that file; the existing guest remains hidden and becomes reachable again after leaving Preview. The tab provides one embedded browsing context with back, forward, refresh, title/address, favicon, force refresh, data clearing, and external-open controls.
 
 The feature does not provide multiple tabs or windows, bookmarks, a browsing-history interface, URL or history restoration after restart, password or autofill management, remembered permission grants, geolocation, display capture, a download manager, a custom download destination, or full compatibility with sites that require a distinct popup browsing context. Favicons are implemented and are not a non-goal. A hover URL tooltip is intentionally absent. User-facing labels and errors are owned by the current `chat` locale resources in `shared/i18n/locales/{en,zh,ja,ru}/chat.json`; old design-document label examples are not authoritative.
 
@@ -47,7 +47,9 @@ The persistent partition retains cookies and site storage. Only artifact-panel w
 
 `normalizeWebBrowserTopLevelUrl` is the stricter Main-facing policy. It trims and canonicalizes but never completes a missing scheme, never converts a path, and accepts the same `http:`, `https:`, and `file:///` set while rejecting `about:blank`. The initial `about:blank` is allowed only as part of the verified attachment identity before guest navigation policy is installed.
 
-Main applies that strict policy to typed navigation, crash recovery, main-frame `will-navigate`, main-frame `will-redirect`, popup targets, and the registered guest's current URL before external opening. Subframe redirects and ordinary document subresources are not filtered by this top-level policy. Explicit `file:///` support deliberately permits a user to load locally readable files, subject to Chromium origin isolation and enabled web security.
+Main applies that strict policy to typed navigation, crash recovery, main-frame `will-navigate`, main-frame `will-redirect`, popup targets, and the registered guest's current URL before toolbar external opening. `normalizeExternalWebUrl` is the narrower content-link policy and accepts only canonical HTTP(S) URLs. Subframe redirects and ordinary document subresources are not filtered by this top-level policy. Explicit `file:///` support deliberately permits a user to load locally readable files, subject to Chromium origin isolation and enabled web security.
+
+Local `.html` and `.htm` attachments, file-activity rows, and Workspace tree nodes use their existing authorized local target to build an explicit file URL and select Web Browser as their primary action. Other file formats retain their existing Preview, Changes, or system-open behavior. Relative and hostless file navigation initiated by a local page remains in the guest.
 
 ## One-Guest Host Geometry, Visibility, And Focus
 
@@ -79,11 +81,15 @@ Immediately after BrowserWindow construction, before loading Renderer content, `
 
 Hardening deletes preload and forces Node integration off in the main frame, subframes, and workers; plugins and insecure-content execution off; context isolation, sandboxing, and web security on. On `did-attach-webview`, Main additionally verifies webview type and exact Session, completes registry ownership, reapplies the fixed UserAgent, and installs top-level navigation, redirect, popup, cleanup, and destruction handling. The guest receives neither the ClawX preload nor `window.clawx`, `window.electron`, Node globals, or the host bridge. Ownership is released only when the registered guest is destroyed; only then may recovery reserve a replacement.
 
-## Popup Policy And Rationale
+## Content Links, Context Menus, And Popup Policy
 
-Every `setWindowOpenHandler` result is `deny`, so no child BrowserWindow, BrowserView, WebContentsView, or second webview is created. If the target passes strict top-level normalization and the handler still owns the guest, Main manually loads it in that guest; unsupported targets and load failures are logged.
+Ordinary HTTP(S) link activation in Chat Markdown, Markdown Preview, execution details, and legacy Markdown uses `hostApi.webBrowser.openExternalUrl`. Main accepts only `normalizeExternalWebUrl` output before `shell.openExternal`. The shared `BrowserLink` context menu offers localized `Open in ClawX` and `Open in system browser` actions; the internal action uses the existing `openWebBrowser` store path.
 
-A distinct child browsing context is required to preserve `window.opener`, but the one-tab product cannot make one guest simultaneously be opener and child or adopt a child into the existing webview. Same-tab fallback is therefore intentional and cannot preserve returned window handles, initially blank popups populated later, `_blank` POST bodies, full referrer fidelity, named-window behavior, or window features.
+Guest main-frame `will-navigate` sends HTTP(S) destinations to the system browser and prevents the guest transition. The guest `context-menu` event accepts only an HTTP(S) `linkURL` and presents the same two localized actions through a native Electron menu. Its internal callback explicitly calls `guest.loadURL()` after rechecking registry ownership; no preload or guest bridge is added.
+
+Every `setWindowOpenHandler` result is `deny`, so no child BrowserWindow, BrowserView, WebContentsView, or second webview is created. HTTP(S) popup targets open externally by default. An allowed hostless file target may load in the current guest; unsupported targets and failures are logged.
+
+A distinct child browsing context is required to preserve `window.opener`, but the one-tab product creates none. External HTTP(S) handling and internal file fallback cannot preserve returned window handles, initially blank popups populated later, `_blank` POST bodies, full referrer fidelity, named-window behavior, or window features.
 
 ## Permission Policy
 
@@ -112,7 +118,7 @@ Electron default download behavior and the operating system's native flow remain
 
 The dedicated Session uses Electron/Chromium system proxy resolution. It does not inherit or synchronize ClawX client proxy settings, call `setProxy`, recycle browser connections after client-proxy changes, or alter `defaultSession` behavior.
 
-External opening takes no Renderer URL argument. Main reads the registered guest's current URL, strictly validates and normalizes it, then calls `shell.openExternal`. `about:blank` is disabled. An allowed file URL remains a URL and is never passed to `shell.openPath`; the operating system may open its associated application rather than a browser.
+Toolbar external opening takes no Renderer URL argument. Main reads the registered guest's current URL, strictly validates and normalizes it, then calls `shell.openExternal`. `about:blank` is disabled. An allowed file URL remains a URL and is never passed to `shell.openPath`; the operating system may open its associated application rather than a browser. Content-link external opening takes a typed Renderer URL but accepts only normalized HTTP(S), never file or another scheme.
 
 ## Failure Semantics And Crash Recovery
 
@@ -125,7 +131,7 @@ Parser errors keep the current page and active draft and show the error mapped f
 The following non-obvious decisions must retain concise adjacent source comments. The reference carries the full rationale; comments should explain the local invariant rather than duplicate this document.
 
 - `WebBrowserHost`: removing a hidden webview destroys its guest, so inactive states hide the route-stable host instead.
-- `installWebBrowserGuestPolicy`: popup children are denied and allowed targets use lossy same-tab fallback, including its opener/handle/fidelity limitation.
+- `installWebBrowserGuestPolicy`: popup children are denied; HTTP(S) page and popup navigation is external by default, while explicit context-menu and file navigation can reuse the registered guest.
 - `configureWebBrowserSession`: geolocation is denied because ClawX provides no location service.
 - `configureWebBrowserSession`: the download observer deliberately preserves Electron/OS default save behavior by neither cancelling nor assigning a path.
 - `configureWebBrowserSession`: the macOS-shaped UserAgent is intentionally fixed on every platform for stable compatibility and deterministic requests.
@@ -143,11 +149,11 @@ The following non-obvious decisions must retain concise adjacent source comments
 
 ## Implementation Anchors
 
-Shared policy is defined by `WEB_BROWSER_PARTITION`, `WEB_BROWSER_INITIAL_URL`, `WEB_BROWSER_USER_AGENT`, `parseWebBrowserAddress`, `normalizeWebBrowserTopLevelUrl`, and `canOpenWebBrowserExternally` in `shared/web-browser.ts`. The typed privileged surface is `hostApi.webBrowser.navigate`, `clearCookies`, `clearSiteData`, and no-argument `openExternal`.
+Shared policy is defined by `WEB_BROWSER_PARTITION`, `WEB_BROWSER_INITIAL_URL`, `WEB_BROWSER_USER_AGENT`, `parseWebBrowserAddress`, `normalizeWebBrowserTopLevelUrl`, `normalizeExternalWebUrl`, and `canOpenWebBrowserExternally` in `shared/web-browser.ts`. The typed privileged surface is `hostApi.webBrowser.navigate`, `clearCookies`, `clearSiteData`, no-argument toolbar `openExternal`, and HTTP(S)-only `openExternalUrl`.
 
 Main ownership is anchored by `WebBrowserGuestRegistry`, `isExpectedWebBrowserAttachment`, `hardenWebBrowserPreferences`, and `installWebBrowserGuestPolicy` in `electron/main/web-browser-policy.ts`; `configureWebBrowserSession` in `electron/main/web-browser-session.ts`; startup sequencing in `electron/main/index.ts`; and `createWebBrowserApi` in `electron/services/web-browser-api.ts`.
 
-Renderer ownership is anchored by the `ArtifactTab` value `web-browser`, `webBrowserInitialized`, `openWebBrowser`, and `setWebBrowserAnchor` in `src/stores/artifact-panel.ts`, plus `WebBrowserAnchor`, `WebBrowserHost`, `WebBrowserToolbar`, and `WebBrowserAddressControl`. `MainLayout` mounts one `WebBrowserHost` outside routed content.
+Renderer ownership is anchored by the `ArtifactTab` value `web-browser`, `webBrowserInitialized`, `openWebBrowser`, and `setWebBrowserAnchor` in `src/stores/artifact-panel.ts`, plus `BrowserLink`, `localHtmlBrowserUrl`, `WebBrowserAnchor`, `WebBrowserHost`, `WebBrowserToolbar`, and `WebBrowserAddressControl`. `MainLayout` mounts one `WebBrowserHost` outside routed content.
 
 Stable acceptance selectors are:
 
@@ -160,7 +166,7 @@ Stable acceptance selectors are:
 
 Contract and locale coverage is anchored by `tests/unit/harness-specs.test.ts` and `tests/unit/i18n-locale-parity.test.ts`. Shared and privileged boundaries are covered by `tests/unit/web-browser-url.test.ts`, `tests/unit/host-api-facade.test.ts`, `tests/unit/web-browser-policy.test.ts`, `tests/unit/web-browser-session.test.ts`, `tests/unit/web-browser-api.test.ts`, and `tests/unit/host-services.test.ts`. Renderer behavior and placement are covered by `tests/unit/artifact-panel-store.test.ts`, `tests/unit/artifact-panel.test.tsx`, `tests/unit/web-browser-controls.test.tsx`, `tests/unit/web-browser-host.test.tsx`, and `tests/unit/main-layout.test.tsx`.
 
-`tests/e2e/web-browser-navigation.spec.ts` anchors lazy creation, tab order, controls, title/favicon presentation, absence of a hover URL tooltip, allowed and rejected navigation, same-guest popups, fixed UserAgent, explicit file URLs, and external opening. `tests/e2e/web-browser-lifecycle.spec.ts` anchors hidden background lifetime, geometry, crash replacement, cookie persistence, and lack of URL/history restoration. `tests/e2e/web-browser-policy.spec.ts` anchors guest isolation, cross-origin clearing scopes, per-request media prompts, clipboard and denied permissions, and untouched Electron/OS download behavior, including the native macOS save-sheet path.
+`tests/e2e/web-browser-navigation.spec.ts` anchors lazy creation, tab order, controls, title/favicon presentation, absence of a hover URL tooltip, explicit navigation, default-external page links and popups, fixed UserAgent, explicit file URLs, and toolbar external opening. Attachment and file-activity E2E anchor default local-HTML routing. `tests/e2e/web-browser-lifecycle.spec.ts` anchors hidden background lifetime, geometry, crash replacement, cookie persistence, and lack of URL/history restoration. `tests/e2e/web-browser-policy.spec.ts` anchors guest isolation, cross-origin clearing scopes, per-request media prompts, clipboard and denied permissions, and untouched Electron/OS download behavior, including the native macOS save-sheet path.
 
 ## Validation Limitations
 

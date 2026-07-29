@@ -10,6 +10,10 @@ import {
   test,
   type RecordedHostInvocation,
 } from './fixtures/electron';
+import {
+  executeInWebBrowserGuest,
+  getWebBrowserMainSnapshot,
+} from './fixtures/web-browser';
 
 const MAIN_SESSION_KEY = 'agent:main:main';
 const OTHER_SESSION_KEY = 'agent:main:other';
@@ -112,15 +116,9 @@ test.describe('ACP media attachments', () => {
       await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [[]]);
 
       const page = await openChat(app);
-      const trigger = page.getByRole('button', { name: 'Open browser demo.html with', exact: true });
-      await expect(trigger).toBeEnabled({ timeout: 30_000 });
-      await trigger.click();
-      const browserItem = page.getByTestId('acp-file-open-in-built-in-browser');
-      await expect(page.getByRole('menuitem').first()).toHaveAttribute(
-        'data-testid',
-        'acp-file-open-in-built-in-browser',
-      );
-      await browserItem.click();
+      const attachment = page.getByRole('button', { name: 'Preview browser demo.html', exact: true });
+      await expect(attachment).toBeEnabled({ timeout: 30_000 });
+      await attachment.click();
 
       const expectedUrl = pathToFileURL(htmlPath).href;
       const panel = page.getByTestId('artifact-panel');
@@ -252,7 +250,7 @@ test.describe('ACP media attachments', () => {
     }
   });
 
-  test('keeps the HTML preview and source switcher in the file header', async ({ launchElectronApp }) => {
+  test('opens links from a local HTML attachment in the system browser by default', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -261,7 +259,7 @@ test.describe('ACP media attachments', () => {
       });
       const htmlPath = await fixture.createWorkspaceFile(
         'inline-preview.html',
-        '<!doctype html><html><body><h1>Inline HTML preview</h1></body></html>',
+        '<!doctype html><html><body><a id="external" href="https://example.com/from-html">External</a></body></html>',
       );
       await fixture.setSessionReplay(MAIN_SESSION_KEY, [
         userUpdate('html-preview-user', 'Show the HTML file'),
@@ -279,19 +277,18 @@ test.describe('ACP media attachments', () => {
       await expect(attachment).toBeEnabled({ timeout: 30_000 });
       await attachment.click();
 
-      const panel = page.getByTestId('artifact-panel');
-      const fileHeader = panel.locator('header').filter({ hasText: 'inline-preview.html' });
-      const viewTabs = fileHeader.getByTestId('file-preview-view-tabs');
-      await expect(viewTabs).toBeVisible();
-      await expect(viewTabs.getByRole('tab', { name: 'Preview', exact: true })).toHaveAttribute('data-state', 'active');
-      await expect(panel.getByTestId('html-preview-frame')).toBeVisible();
-
-      await viewTabs.getByRole('tab', { name: 'Source', exact: true }).click();
-      await expect(viewTabs.getByRole('tab', { name: 'Source', exact: true })).toHaveAttribute('data-state', 'active');
-      await expect(panel.getByTestId('html-preview-frame')).toHaveCount(0);
-
-      await viewTabs.getByRole('tab', { name: 'Preview', exact: true }).click();
-      await expect(panel.getByTestId('html-preview-frame')).toBeVisible();
+      await expect.poll(() => getWebBrowserMainSnapshot(app)).toMatchObject({
+        url: pathToFileURL(htmlPath).href,
+        matchingGuestCount: 1,
+      });
+      const guestId = (await getWebBrowserMainSnapshot(app)).guestId;
+      if (!guestId) throw new Error('Web Browser guest was not created');
+      await executeInWebBrowserGuest(app, guestId, "document.querySelector('#external').click(); true");
+      await expect.poll(() => fixture.getShellInvocations()).toContainEqual({
+        module: 'shell',
+        action: 'openExternal',
+        payload: { url: 'https://example.com/from-html' },
+      });
       expect(await getRecordedLegacyIpcInvocations(app)).toEqual([]);
     } finally {
       await closeElectronApp(app);
@@ -580,6 +577,7 @@ test.describe('ACP media attachments', () => {
       const panel = page.getByTestId('artifact-panel');
       await expect(panel).toBeVisible();
       await expect(panel.getByTestId('artifact-panel-tab-preview')).toBeVisible();
+      await expect(panel.getByTestId('artifact-panel-tab-web-browser')).toHaveCount(0);
       await expect(panel.getByText('Operations')).toBeVisible({ timeout: 30_000 });
       await expect.poll(async () => (await fixture.getHostInvocations()).some((call) => (
         call.module === 'files'
