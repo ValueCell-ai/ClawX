@@ -201,7 +201,7 @@ describe('provider metadata', () => {
 
     expect(openai).toMatchObject({
       showModelId: true,
-      defaultModelId: 'gpt-5.5',
+      defaultModelId: 'gpt-5.6-sol',
       isOAuth: true,
       supportsApiKey: true,
     });
@@ -216,7 +216,7 @@ describe('provider metadata', () => {
       expect(shouldShowProviderModelId(provider, true)).toBe(true);
     }
 
-    expect(resolveProviderModelForSave(openai, '   ', false)).toBe('gpt-5.5');
+    expect(resolveProviderModelForSave(openai, '   ', false)).toBe('gpt-5.6-sol');
     expect(resolveProviderModelForSave(google, '   ', false)).toBe('gemini-3.1-pro-preview');
     expect(resolveProviderModelForSave(minimax, '   ', false)).toBe('MiniMax-M3');
     expect(resolveProviderModelForSave(minimaxCn, '   ', false)).toBe('MiniMax-M3');

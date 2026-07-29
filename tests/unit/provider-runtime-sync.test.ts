@@ -234,7 +234,7 @@ describe('provider-runtime-sync refresh strategy', () => {
     expect(gateway.debouncedRestart).not.toHaveBeenCalled();
   });
 
-  it('uses gpt-5.5 as the browser OAuth default model for OpenAI', async () => {
+  it('uses gpt-5.6-sol as the browser OAuth default model for OpenAI', async () => {
     mocks.getProvider.mockResolvedValue(
       createProvider({
         id: 'openai-personal',
@@ -257,7 +257,7 @@ describe('provider-runtime-sync refresh strategy', () => {
 
     expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledWith(
       'openai',
-      'openai/gpt-5.5',
+      'openai/gpt-5.6-sol',
       {
         baseUrl: 'https://chatgpt.com/backend-api/codex',
         api: 'openai-chatgpt-responses',

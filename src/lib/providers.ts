@@ -172,9 +172,9 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
     requiresApiKey: true,
     isOAuth: true,
     supportsApiKey: true,
-    defaultModelId: 'gpt-5.5',
+    defaultModelId: 'gpt-5.6-sol',
     showModelId: true,
-    modelIdPlaceholder: 'gpt-5.5',
+    modelIdPlaceholder: 'gpt-5.6-sol',
     apiKeyUrl: 'https://platform.openai.com/api-keys',
   },
   {
