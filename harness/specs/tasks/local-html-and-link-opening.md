@@ -31,6 +31,9 @@ touchedAreas:
   - src/components/file-preview/MarkdownPreview.tsx
   - src/components/file-preview/ArtifactPanel.tsx
   - src/components/file-preview/WorkspaceBrowserBody.tsx
+  - src/components/web-browser/WebBrowserHome.tsx
+  - src/components/web-browser/WebBrowserHost.tsx
+  - src/components/web-browser/WebBrowserToolbar.tsx
   - src/pages/Chat/AcpAttachmentPart.tsx
   - src/pages/Chat/AcpFileCard.tsx
   - src/pages/Chat/AcpMessageSegment.tsx
@@ -44,10 +47,13 @@ touchedAreas:
   - tests/unit/web-browser-api.test.ts
   - tests/unit/web-browser-policy.test.ts
   - tests/unit/workspace-browser-body.test.tsx
+  - tests/unit/web-browser-controls.test.tsx
+  - tests/unit/web-browser-host.test.tsx
   - tests/e2e/chat-acp-attachments.spec.ts
   - tests/e2e/chat-file-changes.spec.ts
   - tests/e2e/office-document-preview.spec.ts
   - tests/e2e/web-browser-navigation.spec.ts
+  - tests/e2e/web-browser-policy.spec.ts
   - README.md
   - README.zh-CN.md
   - README.ja-JP.md
@@ -78,7 +84,7 @@ requiredTests:
   - pnpm run build:vite
   - pnpm run comms:replay
   - pnpm run comms:compare
-  - pnpm exec playwright test tests/e2e/chat-acp-attachments.spec.ts tests/e2e/chat-file-changes.spec.ts tests/e2e/web-browser-navigation.spec.ts --workers=1
+  - pnpm exec playwright test tests/e2e/chat-acp-attachments.spec.ts tests/e2e/chat-file-changes.spec.ts tests/e2e/web-browser-navigation.spec.ts tests/e2e/web-browser-policy.spec.ts --workers=1
 acceptance:
   - The default internal-file route is extension-authoritative and applies only to `.html` and `.htm`; other preview and system-open behavior remains unchanged.
   - Renderer-derived local HTML URLs preserve existing attachment and Workspace target constraints and are never used for external HTTP(S) opening.

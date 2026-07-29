@@ -112,22 +112,14 @@ function expectSeededSiteData(data: StoredSiteData, label: string): void {
 }
 
 async function navigateGuest(
+  page: Page,
   app: ElectronApplication,
   guestId: number,
   url: string,
   title: string,
 ): Promise<void> {
-  await executeInWebBrowserGuestAndWaitForLoad(
-    app,
-    guestId,
-    `location.assign(${JSON.stringify(url)}); true`,
-  );
-  await expect.poll(() => getWebBrowserMainSnapshot(app)).toMatchObject({
-    guestId,
-    isLoading: false,
-    title,
-    url,
-  });
+  const snapshot = await navigateFromAddress(page, app, url, title);
+  expect(snapshot).toMatchObject({ guestId, isLoading: false });
 }
 
 async function reloadGuest(app: ElectronApplication, guestId: number): Promise<void> {
@@ -215,7 +207,7 @@ test.describe('embedded web browser session policy', () => {
     const { app, page, policy } = await launchPreparedBrowser(launchElectronApp, webBrowserFixture);
     try {
       const { guestId } = await openWebBrowser(page, app);
-      await navigateGuest(app, guestId!, webBrowserFixture.urls.storagePolicy, 'Storage Fixture');
+      await navigateGuest(page, app, guestId!, webBrowserFixture.urls.storagePolicy, 'Storage Fixture');
       const primary = await seedSiteData(app, guestId!, 'primary');
       expectSeededSiteData(primary, 'primary');
       await expect(getWebBrowserCookieValue(
@@ -223,7 +215,7 @@ test.describe('embedded web browser session policy', () => {
         webBrowserFixture.urls.storagePolicy,
         'fixture-primary',
       )).resolves.toBe('cookie-primary');
-      await navigateGuest(app, guestId!, webBrowserFixture.urls.storageAlternate, 'Storage Fixture');
+      await navigateGuest(page, app, guestId!, webBrowserFixture.urls.storageAlternate, 'Storage Fixture');
       const alternate = await seedSiteData(app, guestId!, 'alternate');
       expectSeededSiteData(alternate, 'alternate');
       await expect(getWebBrowserCookieValue(
@@ -262,7 +254,7 @@ test.describe('embedded web browser session policy', () => {
         'fixture-alternate',
       )).resolves.toBeNull();
 
-      await navigateGuest(app, guestId!, webBrowserFixture.urls.storagePolicy, 'Storage Fixture');
+      await navigateGuest(page, app, guestId!, webBrowserFixture.urls.storagePolicy, 'Storage Fixture');
       await expect(readSiteData(app, guestId!)).resolves.toEqual(primary);
       expect(webBrowserFixture.requestCount('/cache-resource')).toBe(cacheRequests);
     } finally {
@@ -278,7 +270,7 @@ test.describe('embedded web browser session policy', () => {
     const { app, page, policy } = await launchPreparedBrowser(launchElectronApp, webBrowserFixture);
     try {
       const { guestId } = await openWebBrowser(page, app);
-      await navigateGuest(app, guestId!, webBrowserFixture.urls.storagePolicy, 'Storage Fixture');
+      await navigateGuest(page, app, guestId!, webBrowserFixture.urls.storagePolicy, 'Storage Fixture');
       const primary = await seedSiteData(app, guestId!, 'primary');
       expectSeededSiteData(primary, 'primary');
       await expect(getWebBrowserCookieValue(
@@ -286,7 +278,7 @@ test.describe('embedded web browser session policy', () => {
         webBrowserFixture.urls.storagePolicy,
         'fixture-primary',
       )).resolves.toBe('cookie-primary');
-      await navigateGuest(app, guestId!, webBrowserFixture.urls.storageAlternate, 'Storage Fixture');
+      await navigateGuest(page, app, guestId!, webBrowserFixture.urls.storageAlternate, 'Storage Fixture');
       const alternate = await seedSiteData(app, guestId!, 'alternate');
       expectSeededSiteData(alternate, 'alternate');
       await expect(getWebBrowserCookieValue(
@@ -331,7 +323,7 @@ test.describe('embedded web browser session policy', () => {
         serviceWorkers: 0,
       });
       expect(clearedAlternate.httpCache).not.toBe(alternate.httpCache);
-      await navigateGuest(app, guestId!, webBrowserFixture.urls.storagePolicy, 'Storage Fixture');
+      await navigateGuest(page, app, guestId!, webBrowserFixture.urls.storagePolicy, 'Storage Fixture');
       const clearedPrimary = await readSiteData(app, guestId!);
       expect(clearedPrimary).toEqual({
         cacheStorage: false,
