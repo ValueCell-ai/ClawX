@@ -371,6 +371,7 @@ test.describe('ACP media attachments', () => {
           sessionUpdate: 'agent_message',
           messageId: 'ineligible-reply',
           content: [
+            { type: 'text', text: 'Reference: [External reference](https://example.test/reference)' },
             { type: 'resource_link', uri: 'https://example.test/remote-report.pdf', name: 'Remote report.pdf', mimeType: 'application/pdf' },
             { type: 'resource_link', uri: missingPath, name: 'Missing report.pdf', mimeType: 'application/pdf' },
             { type: 'resource_link', uri: zipPath, name: 'System open.zip', mimeType: 'application/zip' },
@@ -384,6 +385,10 @@ test.describe('ACP media attachments', () => {
       await expect(page.getByText('Remote report.pdf')).toBeVisible();
       await expect(page.getByText('Missing report.pdf')).toBeVisible();
       await expect(page.getByText('System open.zip')).toBeVisible();
+      const externalReference = page.getByText('External reference', { exact: true });
+      await expect(externalReference).toBeVisible();
+      await expect(externalReference).not.toHaveAttribute('href');
+      await expect(page.getByRole('link', { name: 'External reference' })).toHaveCount(0);
       for (const name of ['User report.pdf', 'Remote report.pdf', 'Missing report.pdf', 'System open.zip']) {
         await expect(page.getByRole('button', { name: `Open ${name} with`, exact: true })).toHaveCount(0);
       }

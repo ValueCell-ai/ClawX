@@ -57,10 +57,11 @@ touchedAreas:
   - README.md
   - README.zh-CN.md
   - README.ja-JP.md
+  - README.ru-RU.md
 expectedUserBehavior:
   - Activating an available local `.html` or `.htm` attachment, file-activity row, or Workspace tree node opens its file URL in ClawX Web Browser by default.
-  - Activating an HTTP(S) content link opens it in the system browser from Chat, Markdown preview, execution details, local HTML, and pages already shown in ClawX Web Browser.
-  - Right-clicking an HTTP(S) content link offers localized actions to open it in ClawX or in the system browser.
+  - HTTP(S) links rendered by ClawX in Chat, Markdown preview, and execution details appear as ordinary text and cannot be clicked or opened from a context menu.
+  - HTTP(S) links inside local HTML and pages shown in ClawX Web Browser open in the system browser on ordinary activation; right-clicking offers explicit internal and external actions.
   - Relative and explicit hostless file links from local HTML stay inside ClawX, while unsupported schemes remain blocked.
   - Previewing a non-HTML file hides the Web Browser tab so a previously opened page is not presented as related to the selected file.
 requiredProfiles:
@@ -88,9 +89,9 @@ requiredTests:
 acceptance:
   - The default internal-file route is extension-authoritative and applies only to `.html` and `.htm`; other preview and system-open behavior remains unchanged.
   - Renderer-derived local HTML URLs preserve existing attachment and Workspace target constraints and are never used for external HTTP(S) opening.
-  - A typed Host API operation accepts only normalized HTTP(S) destinations before calling `shell.openExternal`; file and non-web schemes are rejected.
+  - ClawX-rendered HTTP(S) content links have no anchor semantics, link styling, click handler, or context menu; a typed Host API operation remains available for guest policy and accepts only normalized HTTP(S) destinations before calling `shell.openExternal`.
   - Guest user navigation and popup handling send HTTP(S) destinations externally, keep allowed file navigation internal, deny every child window, and preserve explicit address and context-menu internal navigation.
-  - Link context menus expose exactly the localized internal and external actions without giving guest content a preload, Node integration, or ClawX bridge.
+  - Guest link context menus expose exactly the localized internal and external actions without giving guest content a preload, Node integration, or ClawX bridge.
   - A non-HTML Preview omits the Web Browser tab without clearing or destroying the hidden guest.
   - English, Chinese, Japanese, and Russian strings, focused unit and Electron E2E coverage, communication regression checks, Harness validation, and synchronized documentation pass.
 docs:

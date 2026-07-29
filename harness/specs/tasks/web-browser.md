@@ -65,7 +65,7 @@ expectedUserBehavior:
   - Address input treats a host followed by a numeric port as a schemeless HTTPS destination, while Main never performs scheme completion.
   - The title state shows a page-provided favicon or same-size placeholder without a hover URL tooltip, address editing hides the icon slot, and every More menu action has an icon.
   - Cookies and site storage persist in persist:clawx-web-browser, while guest creation, URL, page state, and history do not restore after application restart.
-  - HTTP(S) content links and popup targets open in the system browser by default without a child window; their localized context menu can explicitly keep an allowed target in the current guest.
+  - ClawX-rendered HTTP(S) links are inert plain text; links and popup targets inside guest pages open in the system browser by default without a child window, and the guest context menu can explicitly keep an allowed target in the current guest.
   - Local `.html` and `.htm` files opened from Chat file surfaces use the registered guest by default, and relative or hostless file links stay internal.
   - Camera and microphone prompt for every request without remembered grants, clipboard variants are allowed, and geolocation, display capture, notifications, and every other permission are denied.
   - Clear Cookies removes only cookies for every origin; Clear Site Data removes cache, Cache Storage, Local Storage, IndexedDB, and Service Workers for every origin while preserving cookies and downloaded files.

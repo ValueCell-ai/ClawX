@@ -83,7 +83,7 @@ Hardening deletes preload and forces Node integration off in the main frame, sub
 
 ## Content Links, Context Menus, And Popup Policy
 
-Ordinary HTTP(S) link activation in Chat Markdown, Markdown Preview, execution details, and legacy Markdown uses `hostApi.webBrowser.openExternalUrl`. Main accepts only `normalizeExternalWebUrl` output before `shell.openExternal`. The shared `BrowserLink` context menu offers localized `Open in ClawX` and `Open in system browser` actions; the internal action uses the existing `openWebBrowser` store path.
+Chat Markdown, Markdown Preview, execution details, and legacy Markdown render HTTP(S) links through `BrowserLink` as ordinary text without anchor styling, click behavior, or a context menu. This temporary Renderer policy does not change links inside guest pages.
 
 Guest main-frame `will-navigate` sends HTTP(S) destinations to the system browser and prevents the guest transition. The guest `context-menu` event accepts only an HTTP(S) `linkURL` and presents the same two localized actions through a native Electron menu. Its internal callback explicitly calls `guest.loadURL()` after rechecking registry ownership; no preload or guest bridge is added.
 
@@ -118,7 +118,7 @@ Electron default download behavior and the operating system's native flow remain
 
 The dedicated Session uses Electron/Chromium system proxy resolution. It does not inherit or synchronize ClawX client proxy settings, call `setProxy`, recycle browser connections after client-proxy changes, or alter `defaultSession` behavior.
 
-Toolbar external opening takes no Renderer URL argument. Main reads the registered guest's current URL, strictly validates and normalizes it, then calls `shell.openExternal`. `about:blank` is disabled. An allowed file URL remains a URL and is never passed to `shell.openPath`; the operating system may open its associated application rather than a browser. Content-link external opening takes a typed Renderer URL but accepts only normalized HTTP(S), never file or another scheme.
+Toolbar external opening takes no Renderer URL argument. Main reads the registered guest's current URL, strictly validates and normalizes it, then calls `shell.openExternal`. `about:blank` is disabled. An allowed file URL remains a URL and is never passed to `shell.openPath`; the operating system may open its associated application rather than a browser. The typed Renderer URL route remains HTTP(S)-only even though ClawX-rendered content links are currently inert.
 
 ## Failure Semantics And Crash Recovery
 
