@@ -19,7 +19,7 @@ import {
 export type BrowserOAuthProviderType = 'openai';
 
 const OPENAI_RUNTIME_PROVIDER_ID = 'openai';
-const OPENAI_OAUTH_DEFAULT_MODEL = 'gpt-5.5';
+const OPENAI_OAUTH_DEFAULT_MODEL = 'gpt-5.6-sol';
 
 class BrowserOAuthManager extends EventEmitter {
   private activeAccountId: string | null = null;

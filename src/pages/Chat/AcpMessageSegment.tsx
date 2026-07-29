@@ -127,7 +127,7 @@ export function AcpAssistantHoverBar({ text }: { text: string }) {
   const label = copied ? t('acp.copied') : t('acp.copy');
 
   return (
-    <div className="flex w-full justify-end px-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+    <div className="flex w-full justify-start px-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
       <button
         type="button"
         data-testid="acp-assistant-copy"
