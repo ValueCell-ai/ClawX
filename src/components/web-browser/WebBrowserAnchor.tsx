@@ -1,15 +1,15 @@
 import { useCallback } from 'react';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 
-export function WebBrowserAnchor() {
+export function HtmlPreviewAnchor() {
   const registerAnchor = useCallback((anchor: HTMLDivElement | null) => {
-    useArtifactPanel.getState().setWebBrowserAnchor(anchor);
+    useArtifactPanel.getState().setHtmlPreviewAnchor(anchor);
   }, []);
 
   return (
     <div
       ref={registerAnchor}
-      data-testid="web-browser-anchor"
+      data-testid="html-preview-anchor"
       className="h-full min-h-0 w-full"
     />
   );

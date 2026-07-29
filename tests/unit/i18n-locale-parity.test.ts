@@ -15,7 +15,6 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   I18N_RESOURCES,
-  WEB_BROWSER_PERMISSION_LABELS,
 } from '@shared/i18n/resources';
 
 const REFERENCE_LOCALE = 'en';
@@ -222,53 +221,23 @@ describe('i18n locale parity', () => {
     );
   });
 
-  it('ships the complete Web Browser UI and Main permission label contract', () => {
-    const requiredWebBrowserKeys = [
-      'actions.back',
-      'actions.forward',
-      'actions.refresh',
-      'actions.more',
-      'actions.forceRefresh',
-      'actions.clearCookies',
-      'actions.clearSiteData',
-      'actions.openExternal',
-      'address.label',
-      'address.placeholder',
-      'errors.empty',
-      'errors.absolutePath',
-      'errors.invalidUrl',
-      'errors.unsupportedProtocol',
-      'errors.reservedUrl',
-      'errors.loadFailed',
-      'errors.clearCookiesFailed',
-      'errors.clearSiteDataFailed',
-      'errors.openExternalFailed',
-      'success.cookiesCleared',
-      'success.siteDataCleared',
-      'crash.title',
-      'crash.message',
-      'crash.recover',
-      'permissionDialog.title',
-      'permissionDialog.message',
-      'permissionDialog.camera',
-      'permissionDialog.microphone',
-      'permissionDialog.cameraAndMicrophone',
-      'permissionDialog.allow',
-      'permissionDialog.deny',
-    ];
-
+  it('ships the complete local HTML preview contract without browser UI strings', () => {
     for (const locale of ['en', 'zh', 'ja', 'ru'] as const) {
       const chat = I18N_RESOURCES[locale].chat as JsonObject;
-      expect(getValueAtPath(chat, 'artifactPanel.tabs.webBrowser')).toBeTypeOf('string');
-      for (const key of requiredWebBrowserKeys) {
+      expect(getValueAtPath(chat, 'artifactPanel.tabs.webBrowser')).toBeUndefined();
+      expect(getValueAtPath(chat, 'artifactPanel.webBrowser')).toBeUndefined();
+      for (const key of [
+        'filePreview.actions.openHtmlExternally',
+        'filePreview.actions.retry',
+        'filePreview.errors.htmlLoadFailed',
+        'filePreview.errors.openHtmlExternallyFailed',
+        'filePreview.html.crashed',
+      ]) {
         expect(
-          getValueAtPath(chat, `artifactPanel.webBrowser.${key}`),
-          `${locale} is missing artifactPanel.webBrowser.${key}`,
+          getValueAtPath(chat, key),
+          `${locale} is missing ${key}`,
         ).toBeTypeOf('string');
       }
-      expect(WEB_BROWSER_PERMISSION_LABELS[locale]).toBe(
-        getValueAtPath(chat, 'artifactPanel.webBrowser.permissionDialog'),
-      );
     }
   });
 });

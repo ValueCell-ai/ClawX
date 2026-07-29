@@ -15,7 +15,6 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
 import { readTextFile, statFile } from '@/lib/file-preview-client';
 import { hostApi } from '@/lib/host-api';
-import { absolutePathToFileUrl } from '@/lib/local-html-browser';
 import {
   isDocxPreviewExt,
   isHtmlPreviewExt,
@@ -43,8 +42,8 @@ import {
   shouldOfferDirectOpenFallback,
 } from './open-file-utils';
 import { MaterialFileIcon } from './MaterialFileIcon';
+import { buildWorkspacePreviewTarget } from './build-preview-target';
 import MarkdownPreview from './MarkdownPreview';
-import HtmlPreview from './HtmlPreview';
 import ImageViewer from './ImageViewer';
 import { getFilePreviewTargetIdentity } from './types';
 
@@ -456,7 +455,10 @@ export function WorkspaceBrowserBody({
                 return;
               }
               if (isHtmlPreviewExt(node.data.ext)) {
-                useArtifactPanel.getState().openWebBrowser(absolutePathToFileUrl(node.data.absPath));
+                useArtifactPanel.getState().openPreview(buildWorkspacePreviewTarget({
+                  workspaceRoot: workspace,
+                  relativePath: node.data.relPath,
+                }));
                 return;
               }
               setSelectedRel(node.data.relPath);
@@ -671,16 +673,6 @@ export function WorkspaceBrowserBody({
           />
         </Suspense>
       ) : null;
-    }
-
-    if (isHtmlPreviewExt(selectedNode.ext)) {
-      return (
-        <HtmlPreview
-          source={displayedFileState.content}
-          filePath={selectedNode.absPath}
-          fileName={selectedNode.name}
-        />
-      );
     }
 
     if (selectedNode.contentType === 'document') {

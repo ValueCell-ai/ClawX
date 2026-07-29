@@ -209,8 +209,7 @@ describe('WorkspaceBrowserBody', () => {
     useArtifactPanel.setState({
       open: false,
       tab: 'browser',
-      webBrowserInitialized: false,
-      webBrowserNavigation: null,
+      htmlPreviewAnchor: null,
     });
   });
 
@@ -412,10 +411,12 @@ describe('WorkspaceBrowserBody', () => {
 
     expect(useArtifactPanel.getState()).toMatchObject({
       open: true,
-      tab: 'web-browser',
-      webBrowserInitialized: true,
-      webBrowserNavigation: {
-        url: 'file:///workspace/dashboard.html',
+      tab: 'preview',
+      focusedFile: {
+        workspaceFileRef: {
+          workspaceRoot: '/workspace',
+          relativePath: 'dashboard.html',
+        },
       },
     });
     expect(readTextFile).not.toHaveBeenCalled();

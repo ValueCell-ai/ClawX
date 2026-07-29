@@ -1,7 +1,7 @@
 import { shell, type Session, type WebContents } from 'electron';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { WebBrowserGuestRegistry } from '../main/web-browser-policy';
-import { normalizeExternalWebUrl, normalizeWebBrowserTopLevelUrl } from '../../shared/web-browser';
+import { normalizeWebBrowserHtmlFileUrl } from '../../shared/web-browser';
 
 export interface WebBrowserApiDependencies {
   browserSession: Session;
@@ -18,9 +18,9 @@ function requireLiveGuest(registry: WebBrowserGuestRegistry): WebContents {
 }
 
 function requireAllowedUrl(url: string): string {
-  const normalizedUrl = normalizeWebBrowserTopLevelUrl(url);
+  const normalizedUrl = normalizeWebBrowserHtmlFileUrl(url);
   if (!normalizedUrl) {
-    throw new Error('Web browser URL is not allowed');
+    throw new Error('Only local HTML file URLs are allowed');
   }
   return normalizedUrl;
 }
@@ -34,7 +34,7 @@ function isAbortedLoad(error: unknown): boolean {
 export function createWebBrowserApi(
   dependencies: WebBrowserApiDependencies,
 ): CompleteHostServiceRegistry['webBrowser'] {
-  const { browserSession, registry } = dependencies;
+  const { registry } = dependencies;
   const openExternal = dependencies.openExternal ?? ((url: string) => shell.openExternal(url));
 
   return {
@@ -48,30 +48,8 @@ export function createWebBrowserApi(
       }
     },
 
-    async clearCookies() {
-      await browserSession.clearStorageData({ storages: ['cookies'] });
-    },
-
-    async clearSiteData() {
-      await Promise.all([
-        browserSession.clearCache(),
-        browserSession.clearStorageData({
-          storages: ['cachestorage', 'localstorage', 'indexdb', 'serviceworkers'],
-        }),
-      ]);
-    },
-
-    async openExternal() {
-      const guest = requireLiveGuest(registry);
-      await openExternal(requireAllowedUrl(guest.getURL()));
-    },
-
-    async openExternalUrl({ url }) {
-      const allowedUrl = normalizeExternalWebUrl(url);
-      if (!allowedUrl) {
-        throw new Error('External web URL is not allowed');
-      }
-      await openExternal(allowedUrl);
+    async openExternal({ url }) {
+      await openExternal(requireAllowedUrl(url));
     },
   };
 }

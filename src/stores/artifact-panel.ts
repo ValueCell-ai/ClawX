@@ -17,7 +17,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { FilePreviewTarget } from '@/components/file-preview/types';
 
-export type ArtifactTab = 'changes' | 'preview' | 'browser' | 'web-browser';
+export type ArtifactTab = 'changes' | 'preview' | 'browser';
 
 export type ArtifactChangeFocus = {
   relativePath: string;
@@ -27,11 +27,6 @@ export type ArtifactChangeFocus = {
 
 export type ArtifactChangeNavigation = ArtifactChangeFocus & {
   navigationId: number;
-};
-
-export type WebBrowserNavigation = {
-  id: number;
-  url: string;
 };
 
 /** Width clamp (% of the chat container). */
@@ -49,10 +44,7 @@ interface ArtifactPanelState {
   focusedFile: FilePreviewTarget | null;
   focusedChange: ArtifactChangeNavigation | null;
   changeNavigationId: number;
-  webBrowserInitialized: boolean;
-  webBrowserAnchor: HTMLElement | null;
-  webBrowserNavigation: WebBrowserNavigation | null;
-  webBrowserNavigationId: number;
+  htmlPreviewAnchor: HTMLElement | null;
   /** Persisted panel width as a % of the chat container (clamped on read). */
   widthPct: number;
   setTab: (tab: ArtifactTab) => void;
@@ -63,9 +55,7 @@ interface ArtifactPanelState {
   openPreview: (file?: FilePreviewTarget | null) => void;
   /** Open the workspace browser tab. */
   openBrowser: () => void;
-  /** Open and lazily initialize the web browser tab. */
-  openWebBrowser: (url?: string) => void;
-  setWebBrowserAnchor: (anchor: HTMLElement | null) => void;
+  setHtmlPreviewAnchor: (anchor: HTMLElement | null) => void;
   toggle: () => void;
   close: () => void;
   /** Update the panel width (clamped). */
@@ -87,10 +77,7 @@ export const useArtifactPanel = create<ArtifactPanelState>()(
       focusedFile: null,
       focusedChange: null,
       changeNavigationId: 0,
-      webBrowserInitialized: false,
-      webBrowserAnchor: null,
-      webBrowserNavigation: null,
-      webBrowserNavigationId: 0,
+      htmlPreviewAnchor: null,
       widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
       setTab: (tab) => {
         // The browser tab has its own internal workspace-tree selection, so
@@ -98,7 +85,6 @@ export const useArtifactPanel = create<ArtifactPanelState>()(
         set({
           tab,
           focusedFile: get().focusedFile,
-          ...(tab === 'web-browser' ? { webBrowserInitialized: true } : {}),
         });
       },
       setFocusedFile: (focusedFile) => set({ focusedFile }),
@@ -113,18 +99,7 @@ export const useArtifactPanel = create<ArtifactPanelState>()(
       }),
       openPreview: (file = null) => set({ open: true, tab: 'preview', focusedFile: file ?? null }),
       openBrowser: () => set({ open: true, tab: 'browser', focusedFile: get().focusedFile }),
-      openWebBrowser: (url) => set((state) => {
-        const navigationId = url ? state.webBrowserNavigationId + 1 : state.webBrowserNavigationId;
-        return {
-          open: true,
-          tab: 'web-browser',
-          webBrowserInitialized: true,
-          focusedFile: state.focusedFile,
-          webBrowserNavigationId: navigationId,
-          webBrowserNavigation: url ? { id: navigationId, url } : state.webBrowserNavigation,
-        };
-      }),
-      setWebBrowserAnchor: (webBrowserAnchor) => set({ webBrowserAnchor }),
+      setHtmlPreviewAnchor: (htmlPreviewAnchor) => set({ htmlPreviewAnchor }),
       toggle: () => set((s) => ({ open: !s.open })),
       close: () => set({ open: false, focusedFile: null, focusedChange: null }),
       setWidthPct: (pct) => set({ widthPct: clampWidth(pct) }),

@@ -53,13 +53,13 @@ The versioned attention store persists only exact-key `observedBusy` and `unread
 
 The complete projection, persistence, list/event ordering, failure recovery, and future `sessions.patch({ unread: false })` migration are documented in `harness/reference/sidebar-session-attention.md`.
 
-## Workspace Browser And Web Browser
+## Workspace Browser And Local HTML Preview
 
-The right panel tabs are Workspace, Preview, Changes, and Web Browser. Workspace keeps the existing store tab value `browser`; the unrelated Electron Web Browser uses `web-browser`. The Workspace tree uses `react-arborist`, includes hidden files, uses relative path as node identity, and remains read-only: no edit, drag/drop, or multi-select. Agent and path tags replace the older `Workspace - agent` header. Home is compacted to `~`, the path's final segment remains visible, and the full value is available as a title.
+The right panel tabs are Workspace, Preview, and Changes. Workspace keeps the store tab value `browser`; authorized local HTML opens in `preview`. The Workspace tree uses `react-arborist`, includes hidden files, uses relative path as node identity, and remains read-only: no edit, drag/drop, or multi-select. Agent and path tags replace the older `Workspace - agent` header. Home is compacted to `~`, the path's final segment remains visible, and the full value is available as a title.
 
 File icons come only from trusted bundled assets. Selecting a file preserves the existing preview behavior and backend boundary.
 
-The Web Browser is a fixed fourth tab with one persistent Electron guest. `ArtifactTab` keeps `browser` and `web-browser` distinct; `WebBrowserAnchor` marks the panel body while the route-stable `WebBrowserHost` mounted by `MainLayout` owns the live guest. The stable panel selectors are `artifact-panel-tabs`, `artifact-panel-tab-web-browser`, and `web-browser-anchor`; the global surface selectors are `web-browser-host` and `web-browser-webview`. Its session, security, lifecycle, permission, popup, download, proxy, and data-clearing contract is documented separately in `harness/reference/web-browser.md`.
+Local HTML Preview uses one hardened Electron guest as an implementation detail. The HTML anchor marks the Preview body while the route-stable host mounted by `MainLayout` owns the guest. There is no browser tab, empty guest entry, Home page, or address bar. Stable selectors are `html-preview-anchor`, `html-preview-host`, and `html-preview-webview`. Its file-only security and inert-link contract is documented separately in `harness/reference/web-browser.md`.
 
 ## Office Document Preview
 
@@ -73,6 +73,6 @@ The Chat question directory belongs to the active ACP timeline rather than works
 
 ## Validation Anchors
 
-Key tests include `tests/unit/workspace-context.test.ts`, `tests/unit/session-title.test.ts`, `tests/unit/session-buckets.test.ts`, `tests/unit/sidebar-session-buckets.test.ts`, `tests/unit/use-new-chat-action.test.tsx`, `tests/unit/chat-store-session-label-fetch.test.ts`, `tests/unit/workspace-browser-body.test.tsx`, `tests/unit/office-file-viewers.test.tsx`, `tests/unit/chat-acp-page.test.tsx`, `tests/unit/artifact-panel-store.test.ts`, `tests/unit/artifact-panel.test.tsx`, `tests/unit/main-layout.test.tsx`, `tests/e2e/chat-workspace-context.spec.ts` including inherited/recent/known-workspace selection and synthetic-title replacement coverage, `tests/e2e/chat-new-session-date.spec.ts`, `tests/e2e/chat-acp-inline-timeline.spec.ts`, `tests/e2e/chat-question-directory.spec.ts`, `tests/e2e/chat-sidebar-session-attention.spec.ts`, `tests/e2e/office-document-preview.spec.ts`, and the three final Web Browser E2E specs linked from `harness/reference/web-browser.md`.
+Key tests include `tests/unit/workspace-context.test.ts`, `tests/unit/session-title.test.ts`, `tests/unit/session-buckets.test.ts`, `tests/unit/sidebar-session-buckets.test.ts`, `tests/unit/use-new-chat-action.test.tsx`, `tests/unit/chat-store-session-label-fetch.test.ts`, `tests/unit/workspace-browser-body.test.tsx`, `tests/unit/office-file-viewers.test.tsx`, `tests/unit/chat-acp-page.test.tsx`, `tests/unit/artifact-panel-store.test.ts`, `tests/unit/artifact-panel.test.tsx`, `tests/unit/main-layout.test.tsx`, `tests/unit/web-browser-host.test.tsx`, `tests/e2e/chat-workspace-context.spec.ts`, `tests/e2e/chat-acp-attachments.spec.ts`, `tests/e2e/chat-file-changes.spec.ts`, and `tests/e2e/office-document-preview.spec.ts`.
 
 This reference consolidates the former workspace sidebar, chat workspace context, sidebar workspace UI, and ACP working-directory title designs. The later flat activity-sorted sidebar supersedes the earlier recency buckets.

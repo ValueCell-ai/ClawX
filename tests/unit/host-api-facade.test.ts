@@ -107,39 +107,23 @@ describe('hostApi facade', () => {
     }));
   });
 
-  it('routes web browser operations through hostInvoke', async () => {
+  it('routes local HTML preview operations through hostInvoke', async () => {
     hostInvoke.mockResolvedValue({ id: 'req', ok: true, data: undefined });
     const { hostApi } = await import('@/lib/host-api');
 
-    await hostApi.webBrowser.navigate('https://example.com/');
-    await hostApi.webBrowser.clearCookies();
-    await hostApi.webBrowser.clearSiteData();
-    await hostApi.webBrowser.openExternal();
-    await hostApi.webBrowser.openExternalUrl('https://example.com/link');
+    await hostApi.webBrowser.navigate('file:///workspace/site.html');
+    await hostApi.webBrowser.openExternal('file:///workspace/site.html');
 
     expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
       module: 'webBrowser',
       action: 'navigate',
-      payload: { url: 'https://example.com/' },
+      payload: { url: 'file:///workspace/site.html' },
     }));
     expect(hostInvoke).toHaveBeenNthCalledWith(2, expect.objectContaining({
       module: 'webBrowser',
-      action: 'clearCookies',
-    }));
-    expect(hostInvoke).toHaveBeenNthCalledWith(3, expect.objectContaining({
-      module: 'webBrowser',
-      action: 'clearSiteData',
-    }));
-    expect(hostInvoke).toHaveBeenNthCalledWith(4, expect.objectContaining({
-      module: 'webBrowser',
       action: 'openExternal',
+      payload: { url: 'file:///workspace/site.html' },
     }));
-    expect(hostInvoke).toHaveBeenNthCalledWith(5, expect.objectContaining({
-      module: 'webBrowser',
-      action: 'openExternalUrl',
-      payload: { url: 'https://example.com/link' },
-    }));
-    expect(hostInvoke.mock.calls.slice(1, 4).every(([request]) => !('payload' in request))).toBe(true);
   });
 
   it('passes log file path and tail lines through hostInvoke', async () => {

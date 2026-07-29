@@ -89,7 +89,7 @@ async function openChat(app: ElectronApplication): Promise<Page> {
 }
 
 test.describe('ACP media attachments', () => {
-  test('opens a local HTML attachment in the right-side Web Browser', async ({ launchElectronApp }) => {
+  test('opens a local HTML attachment in the right-side Preview tab', async ({ launchElectronApp }) => {
     // Electron's webview support is unstable on Linux.
     test.skip(process.platform !== 'win32' && process.platform !== 'darwin');
 
@@ -123,16 +123,16 @@ test.describe('ACP media attachments', () => {
       const expectedUrl = pathToFileURL(htmlPath).href;
       const panel = page.getByTestId('artifact-panel');
       await expect(panel).toBeVisible();
-      await expect(panel.getByTestId('artifact-panel-tab-web-browser')).toHaveClass(/bg-foreground\/10/);
-      await expect(page.getByTestId('web-browser-host')).toHaveAttribute('aria-hidden', 'false');
+      await expect(panel.getByTestId('artifact-panel-tab-preview')).toHaveClass(/bg-foreground\/10/);
+      await expect(panel.getByTestId('artifact-panel-tab-web-browser')).toHaveCount(0);
+      await expect(page.getByTestId('html-preview-host')).toHaveAttribute('aria-hidden', 'false');
+      await expect(panel.getByTestId('html-preview-open-external')).toBeVisible();
       await expect.poll(async () => (await fixture.getHostInvocations()).some((request) => (
         request.module === 'webBrowser'
         && request.action === 'navigate'
         && request.payload?.url === expectedUrl
       ))).toBe(true);
-      await expect(page.getByTestId('web-browser-address-display')).toHaveAccessibleName(
-        new RegExp(expectedUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
-      );
+      await expect(page.getByTestId('web-browser-address-display')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
@@ -250,7 +250,7 @@ test.describe('ACP media attachments', () => {
     }
   });
 
-  test('opens links from a local HTML attachment in the system browser by default', async ({ launchElectronApp }) => {
+  test('previews local HTML while blocking every link and popup', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -276,19 +276,26 @@ test.describe('ACP media attachments', () => {
       const attachment = page.getByRole('button', { name: 'Preview inline-preview.html', exact: true });
       await expect(attachment).toBeEnabled({ timeout: 30_000 });
       await attachment.click();
+      await expect(page.getByTestId('artifact-panel-tab-preview')).toBeVisible();
+      await expect(page.getByTestId('artifact-panel-tab-web-browser')).toHaveCount(0);
 
       await expect.poll(() => getWebBrowserMainSnapshot(app)).toMatchObject({
         url: pathToFileURL(htmlPath).href,
         matchingGuestCount: 1,
       });
       const guestId = (await getWebBrowserMainSnapshot(app)).guestId;
-      if (!guestId) throw new Error('Web Browser guest was not created');
-      await executeInWebBrowserGuest(app, guestId, "document.querySelector('#external').click(); true");
-      await expect.poll(() => fixture.getShellInvocations()).toContainEqual({
-        module: 'shell',
-        action: 'openExternal',
-        payload: { url: 'https://example.com/from-html' },
+      if (!guestId) throw new Error('HTML preview guest was not created');
+      await executeInWebBrowserGuest(
+        app,
+        guestId,
+        "document.querySelector('#external').click(); window.open('https://example.com/popup'); location.assign('https://example.com/script'); true",
+      );
+      await page.waitForTimeout(500);
+      await expect(getWebBrowserMainSnapshot(app)).resolves.toMatchObject({
+        url: pathToFileURL(htmlPath).href,
+        matchingGuestCount: 1,
       });
+      expect(await fixture.getShellInvocations()).toEqual([]);
       expect(await getRecordedLegacyIpcInvocations(app)).toEqual([]);
     } finally {
       await closeElectronApp(app);

@@ -38,3 +38,26 @@ export function localHtmlBrowserUrl(target: LocalHtmlBrowserTarget, name: string
       : null;
   }
 }
+
+export function htmlPreviewFileUrl(file: {
+  attachmentFileRef?: AttachmentFileRef;
+  workspaceFileRef?: WorkspaceFileRef;
+  filePath: string;
+  fileName: string;
+  ext: string;
+}): string | null {
+  if (!isHtmlPreviewExt(file.ext)) return null;
+  if (file.attachmentFileRef) {
+    return localHtmlBrowserUrl(
+      { kind: 'attachment', ref: file.attachmentFileRef },
+      file.fileName,
+    );
+  }
+  if (file.workspaceFileRef) {
+    return localHtmlBrowserUrl(
+      { kind: 'workspace', ref: file.workspaceFileRef },
+      file.fileName,
+    );
+  }
+  return absolutePathToFileUrl(file.filePath);
+}

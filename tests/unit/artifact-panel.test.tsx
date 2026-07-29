@@ -5,10 +5,12 @@ import { ARTIFACT_PANEL_DEFAULT_WIDTH, useArtifactPanel } from '@/stores/artifac
 import type { AcpSessionFileGroup } from '@/lib/acp/openclaw-file-activities';
 
 const shellShowItemInFolder = vi.fn(async () => undefined);
+const openHtmlExternal = vi.fn(async () => undefined);
 
 vi.mock('@/lib/host-api', () => ({
   hostApi: {
     shell: { showItemInFolder: (...args: unknown[]) => shellShowItemInFolder(...args) },
+    webBrowser: { openExternal: (...args: unknown[]) => openHtmlExternal(...args) },
   },
 }));
 
@@ -20,7 +22,6 @@ vi.mock('react-i18next', () => ({
         'artifactPanel.tabs.browser': 'Workspace',
         'artifactPanel.tabs.preview': 'Preview',
         'artifactPanel.tabs.changes': 'Changes',
-        'artifactPanel.tabs.webBrowser': 'Web Browser',
         'artifactPanel.changes.heading': `File changes (${String(options?.count ?? '')})`,
         'artifactPanel.changes.empty': 'This session has no file changes yet.',
         'artifactPanel.changes.diffUnavailable': 'Diff unavailable',
@@ -29,6 +30,7 @@ vi.mock('react-i18next', () => ({
         'filePreview.actions.close': 'Close',
         'filePreview.actions.enterFullscreen': 'Enter fullscreen',
         'filePreview.actions.exitFullscreen': 'Exit fullscreen',
+        'filePreview.actions.openHtmlExternally': 'Open HTML in system browser',
       };
       return labels[key] ?? '';
     },
@@ -109,27 +111,24 @@ afterEach(() => {
       focusedFile: null,
       focusedChange: null,
       widthPct: ARTIFACT_PANEL_DEFAULT_WIDTH,
-      webBrowserInitialized: false,
-      webBrowserAnchor: null,
+      htmlPreviewAnchor: null,
     });
   });
 });
 
 describe('ArtifactPanel', () => {
-  it('renders one localized Web Browser tab immediately after Changes', () => {
+  it('renders only Workspace, Preview, and Changes tabs', () => {
     render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
 
     const tabs = screen.getByTestId('artifact-panel-tabs');
-    expect(screen.getAllByRole('button', { name: 'Web Browser' })).toHaveLength(1);
     expect(Array.from(tabs.children).map((tab) => tab.getAttribute('data-testid'))).toEqual([
       'artifact-panel-tab-browser',
       'artifact-panel-tab-preview',
       'artifact-panel-tab-changes',
-      'artifact-panel-tab-web-browser',
     ]);
   });
 
-  it('hides the Web Browser tab while a non-HTML file is being previewed', () => {
+  it('does not render a general Web Browser tab', () => {
     useArtifactPanel.setState({
       open: true,
       tab: 'preview',
@@ -144,36 +143,9 @@ describe('ArtifactPanel', () => {
     render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
 
     expect(screen.queryByTestId('artifact-panel-tab-web-browser')).not.toBeInTheDocument();
-
-    act(() => useArtifactPanel.getState().setTab('changes'));
-    expect(screen.getByTestId('artifact-panel-tab-web-browser')).toBeVisible();
   });
 
-  it('selects Web Browser and registers its empty layout anchor', () => {
-    const { unmount } = render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
-
-    fireEvent.click(screen.getByTestId('artifact-panel-tab-web-browser'));
-
-    const anchor = screen.getByTestId('web-browser-anchor');
-    expect(useArtifactPanel.getState()).toMatchObject({
-      tab: 'web-browser',
-      webBrowserInitialized: true,
-    });
-    expect(useArtifactPanel.getState().webBrowserAnchor).toBe(anchor);
-    expect(anchor).toHaveClass('h-full', 'min-h-0', 'w-full');
-    expect(anchor.parentElement?.children).toHaveLength(1);
-    expect(anchor.parentElement).not.toHaveClass('hidden');
-    expect(screen.getByTestId('workspace-browser').closest('.hidden')).not.toBeNull();
-    expect(screen.queryByTestId('file-preview-body')).not.toBeInTheDocument();
-
-    unmount();
-    expect(useArtifactPanel.getState()).toMatchObject({
-      webBrowserAnchor: null,
-      webBrowserInitialized: true,
-    });
-  });
-
-  it('keeps the rich-preview folder action after all four tabs', () => {
+  it('keeps the rich-preview folder action after all three tabs', () => {
     useArtifactPanel.setState({
       focusedFile: { filePath: '/tmp/report.pdf', fileName: 'report.pdf', ext: '.pdf', mimeType: 'application/pdf', contentType: 'document' },
     });
@@ -183,7 +155,6 @@ describe('ArtifactPanel', () => {
       'artifact-panel-tab-browser',
       'artifact-panel-tab-preview',
       'artifact-panel-tab-changes',
-      'artifact-panel-tab-web-browser',
       'artifact-panel-action-open-folder',
     ]);
   });
@@ -193,8 +164,8 @@ describe('ArtifactPanel', () => {
 
     const tabs = screen.getByTestId('artifact-panel-tabs');
     expect(tabs).toHaveClass('overflow-x-auto');
-    expect(Array.from(tabs.children).slice(0, 4)).toHaveLength(4);
-    for (const tab of Array.from(tabs.children).slice(0, 4)) {
+    expect(Array.from(tabs.children).slice(0, 3)).toHaveLength(3);
+    for (const tab of Array.from(tabs.children).slice(0, 3)) {
       expect(tab).toHaveClass('shrink-0');
     }
   });

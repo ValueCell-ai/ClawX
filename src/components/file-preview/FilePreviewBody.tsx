@@ -53,8 +53,8 @@ import {
   shouldOfferDirectOpenFallback,
 } from './open-file-utils';
 import MarkdownPreview from './MarkdownPreview';
-import HtmlPreview from './HtmlPreview';
 import ImageViewer from './ImageViewer';
+import { HtmlPreviewAnchor } from '@/components/web-browser/WebBrowserAnchor';
 
 const MonacoViewerLazy = lazy(() => import('./MonacoViewer'));
 const MonacoDiffViewerLazy = lazy(() => import('./MonacoDiffViewer'));
@@ -687,13 +687,7 @@ export function FilePreviewBody({
                 ) : null
               ) : file.contentType === 'document' ? (
                 isHtmlPreviewExt(file.ext) ? (
-                  <HtmlPreview
-                    source={draft ?? state.content}
-                    filePath={file.filePath}
-                    fileName={file.fileName}
-                    attachmentFileRef={file.attachmentFileRef}
-                    workspaceFileRef={file.workspaceFileRef}
-                  />
+                  <HtmlPreviewAnchor />
                 ) : (
                   <MarkdownPreview source={draft ?? state.content} />
                 )

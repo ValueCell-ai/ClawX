@@ -8,7 +8,6 @@ import type { AttachmentRenderPart } from '@/lib/acp/timeline-types';
 import { attachmentOpenMode } from '@/lib/file-preview-capabilities';
 import { basenameOf, extnameOf } from '@/lib/generated-files';
 import { hostApi } from '@/lib/host-api';
-import { localHtmlBrowserUrl } from '@/lib/local-html-browser';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { AcpFileCard } from './AcpFileCard';
 
@@ -131,20 +130,10 @@ export function AcpAttachmentPart({ part, tone = 'assistant' }: { part: Attachme
     mode === 'preview'
       ? part.access.target.ref
       : null;
-  const browserUrl =
-    part.access.status === 'available' &&
-    part.access.target.kind === 'local'
-      ? localHtmlBrowserUrl({ kind: 'attachment', ref: part.access.target.ref }, name)
-      : null;
-
   const activate = async () => {
     if (part.access.status !== 'available') return;
     if (mode === 'preview') {
-      if (browserUrl) {
-        useArtifactPanel.getState().openWebBrowser(browserUrl);
-      } else {
-        useArtifactPanel.getState().openPreview(buildAttachmentPreviewTarget(part));
-      }
+      useArtifactPanel.getState().openPreview(buildAttachmentPreviewTarget(part));
       return;
     }
     try {
@@ -213,7 +202,11 @@ export function AcpAttachmentPart({ part, tone = 'assistant' }: { part: Attachme
       primaryDisabled={disabled}
       onPrimary={() => void activate()}
       openWith={openWithFileRef
-        ? { target: { kind: 'attachment', ref: openWithFileRef }, name }
+        ? {
+            target: { kind: 'attachment', ref: openWithFileRef },
+            name,
+            previewTarget: buildAttachmentPreviewTarget(part),
+          }
         : undefined}
     >
       {attachmentContent}

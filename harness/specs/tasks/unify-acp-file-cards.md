@@ -36,7 +36,7 @@ touchedAreas:
   - README.ja-JP.md
 expectedUserBehavior:
   - Created and modified file-activity rows keep Preview and Changes controls and add the same Open with menu used by eligible assistant attachments.
-  - HTML file activity and eligible local HTML attachments put Open in built-in browser first; selecting it opens and activates the Web Browser tab at the file URL.
+  - HTML file activity and eligible local HTML attachments put Open in built-in Preview first; selecting it opens and activates the Preview tab.
   - Deleted file-activity rows continue to open Changes and never show Open with.
   - macOS and Windows list compatible applications; Linux and discovery failure retain reveal-only behavior.
 requiredProfiles:
@@ -67,7 +67,7 @@ requiredTests:
 acceptance:
   - Attachment and file-activity variants use one file-card shell and one target-aware Open with menu while retaining their distinct references and authorization models.
   - Only created and modified file activity exposes Open with; deleted activity retains only Changes behavior.
-  - HTML Open with menus place the built-in browser action first and separate it from native applications; the action opens and activates the right-side Web Browser even before its guest has attached.
+  - HTML Open with menus place the built-in Preview action first and separate it from native applications; the action opens and activates the right-side Preview tab.
   - Renderer supplies only a workspace root, relative path, and opaque selected handler id for workspace operations and never receives a canonical path or native command.
   - Main independently canonicalizes and contains the target, rejects non-files and symlink escapes, and freshly revalidates before handler discovery, selected-handler invocation, and reveal.
   - Linux performs no application discovery and offers only reveal through the same workspace-scoped action.

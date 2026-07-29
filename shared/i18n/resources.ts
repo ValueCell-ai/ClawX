@@ -129,22 +129,3 @@ export const MENU_LABELS: Record<LanguageCode, MenuLabels> = {
   ja: jaMenu,
   ru: ruMenu,
 };
-
-export type WebBrowserPermissionLabels =
-  typeof enChat.artifactPanel.webBrowser.permissionDialog;
-
-export const WEB_BROWSER_PERMISSION_LABELS: Record<LanguageCode, WebBrowserPermissionLabels> = {
-  en: enChat.artifactPanel.webBrowser.permissionDialog,
-  zh: zhChat.artifactPanel.webBrowser.permissionDialog,
-  ja: jaChat.artifactPanel.webBrowser.permissionDialog,
-  ru: ruChat.artifactPanel.webBrowser.permissionDialog,
-};
-
-export type WebBrowserLinkMenuLabels = typeof enChat.artifactPanel.webBrowser.linkMenu;
-
-export const WEB_BROWSER_LINK_MENU_LABELS: Record<LanguageCode, WebBrowserLinkMenuLabels> = {
-  en: enChat.artifactPanel.webBrowser.linkMenu,
-  zh: zhChat.artifactPanel.webBrowser.linkMenu,
-  ja: jaChat.artifactPanel.webBrowser.linkMenu,
-  ru: ruChat.artifactPanel.webBrowser.linkMenu,
-};

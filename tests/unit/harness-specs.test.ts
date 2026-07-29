@@ -62,15 +62,10 @@ describe('harness specs', () => {
     }
   });
 
-  it('defines the Web Browser harness contract', async () => {
+  it('defines the local HTML preview harness contract', async () => {
     const expectedRules = [
       'renderer-main-boundary',
-      'backend-communication-boundary',
-      'api-client-transport-policy',
-      'host-api-fallback-policy',
-      'ui-i18n-design-tokens',
       'web-browser-security-and-lifecycle',
-      'comms-regression',
       'docs-sync',
     ];
     const [task, rules, scenarios, browserReference] = await Promise.all([
@@ -88,33 +83,26 @@ describe('harness specs', () => {
       id: 'web-browser',
       scenario: 'gateway-backend-communication',
       taskType: 'runtime-bridge',
-      requiredProfiles: ['fast', 'comms', 'e2e'],
+      requiredProfiles: ['fast'],
       requiredRules: expectedRules,
       docs: { required: true },
     });
     expect(expectedRules.filter((ruleId) => !ruleIds.has(ruleId))).toEqual([]);
     expect(workspaceScenario?.data.ownedPaths).toEqual(expect.arrayContaining([
       'src/components/web-browser/**',
-      'tests/e2e/web-browser-navigation.spec.ts',
-      'tests/e2e/web-browser-lifecycle.spec.ts',
-      'tests/e2e/web-browser-policy.spec.ts',
+      'tests/e2e/chat-acp-attachments.spec.ts',
+      'tests/e2e/chat-file-changes.spec.ts',
     ]));
     expect(workspaceScenario?.body).toContain('harness/reference/web-browser.md');
 
     for (const contractAnchor of [
       'persist:clawx-web-browser',
-      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.7559.236 Electron/40.8.4 Safari/537.36',
-      '`http:`',
-      '`https:`',
       '`file:///`',
-      'single registered guest',
-      '| Permission | Check path | Request path | Persistence |',
-      'Clear Cookies',
-      'Clear Site Data',
-      '`window.opener`',
-      'Electron default download',
-      'system proxy',
-      '## Validation Anchors',
+      'one-live-guest registry',
+      'All links are inert',
+      'denies all permissions',
+      'cancels downloads',
+      'blocks network protocols',
     ]) {
       expect(browserReference).toContain(contractAnchor);
     }
@@ -179,11 +167,11 @@ describe('harness specs', () => {
     ]);
 
     for (const anchor of [
-      'Trust Model And Ownership',
-      'numeric port',
-      'Main Startup And Attachment Ordering',
-      'Failure Semantics And Crash Recovery',
-      'Rejected Alternatives',
+      'User flow',
+      'Link behavior',
+      'Renderer flow',
+      'Main boundary',
+      'Security consequence',
     ]) {
       expect(browserReference).toContain(anchor);
     }

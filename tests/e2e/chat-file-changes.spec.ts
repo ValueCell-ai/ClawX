@@ -253,7 +253,7 @@ async function openChanges(page: Page) {
 }
 
 test.describe('ClawX chat file changes', () => {
-  test('opens HTML file activity in the Web Browser from its primary action', async ({ launchElectronApp }) => {
+  test('opens HTML file activity in the Preview tab from its primary action', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     try {
       await installFileActivityMocks(app, {
@@ -270,8 +270,9 @@ test.describe('ClawX chat file changes', () => {
 
       const panel = page.getByTestId('artifact-panel');
       await expect(panel).toBeVisible();
-      await expect(panel.getByTestId('artifact-panel-tab-web-browser')).toHaveClass(/bg-foreground\/10/);
-      await expect(page.getByTestId('web-browser-host')).toHaveAttribute('aria-hidden', 'false');
+      await expect(panel.getByTestId('artifact-panel-tab-preview')).toHaveClass(/bg-foreground\/10/);
+      await expect(panel.getByTestId('artifact-panel-tab-web-browser')).toHaveCount(0);
+      await expect(page.getByTestId('html-preview-host')).toHaveAttribute('aria-hidden', 'false');
       await expect.poll(async () => (await getRecordedHostInvocations(app)).some((request) => (
         request.module === 'webBrowser'
         && request.action === 'navigate'

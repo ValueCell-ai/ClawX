@@ -86,6 +86,6 @@ Channel/plugin migration behavior is also part of this scenario when ClawX rewri
 
 Scheduled-task history is Main-owned backend data. Current OpenClaw versions must be queried through the Gateway `cron.runs` RPC; direct file reads are allowed only as a compatibility fallback for older file-backed runtimes. When a cron base session has no ACP replay, Renderer may project that typed host result into a generation-scoped, in-memory historical ACP timeline, but must not replace or duplicate non-empty ACP replay.
 
-The Web Browser privileged bridge is also Main-owned: Renderer address and recovery navigation, data clearing, and external opening flow through the typed Host API. The artifact tab value `web-browser` identifies this Electron guest and remains distinct from the Workspace file browser value `browser`; UI ownership stays in `chat-workspace-and-navigation`. The durable guest contract is `harness/reference/web-browser.md`.
+The local HTML Preview privileged bridge is also Main-owned: Renderer may load a validated local HTML file or open that current file externally through the typed Host API. The guest is an implementation detail of the existing `preview` tab; there is no `web-browser` artifact tab or general address navigation. The durable guest contract is `harness/reference/web-browser.md`.
 
 Gateway session-catalog subscription, normalization, ordered list/event replay, attention transitions, and reconnect recovery are documented in `harness/reference/sidebar-session-attention.md`.

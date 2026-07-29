@@ -2,7 +2,6 @@ import { FileDiff, FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { buildWorkspacePreviewTarget } from '@/components/file-preview/build-preview-target';
 import type { AcpTurnFileSummary } from '@/lib/acp/openclaw-file-activities';
-import { localHtmlBrowserUrl } from '@/lib/local-html-browser';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { AcpFileCard } from './AcpFileCard';
 
@@ -16,7 +15,6 @@ export function AcpTurnFileActivity({
   const { t } = useTranslation('chat');
   const openChanges = useArtifactPanel((state) => state.openChanges);
   const openPreview = useArtifactPanel((state) => state.openPreview);
-  const openWebBrowser = useArtifactPanel((state) => state.openWebBrowser);
 
   if (summaries.length === 0) return null;
 
@@ -29,7 +27,6 @@ export function AcpTurnFileActivity({
           kind: 'workspace' as const,
           ref: { workspaceRoot, relativePath: summary.relativePath },
         };
-        const browserUrl = localHtmlBrowserUrl(workspaceTarget, summary.relativePath);
         return (
           <AcpFileCard
             key={summary.relativePath}
@@ -39,8 +36,6 @@ export function AcpTurnFileActivity({
             onPrimary={() => {
               if (summary.action === 'deleted') {
                 openChanges(focus);
-              } else if (browserUrl) {
-                openWebBrowser(browserUrl);
               } else {
                 openPreview(buildWorkspacePreviewTarget({ workspaceRoot, relativePath: summary.relativePath }));
               }
@@ -52,6 +47,10 @@ export function AcpTurnFileActivity({
                     ...workspaceTarget,
                   },
                   name: summary.relativePath,
+                  previewTarget: buildWorkspacePreviewTarget({
+                    workspaceRoot,
+                    relativePath: summary.relativePath,
+                  }),
                 }}
             trailing={(
               <button

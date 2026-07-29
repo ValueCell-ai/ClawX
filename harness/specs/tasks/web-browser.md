@@ -1,123 +1,35 @@
 ---
 id: web-browser
-title: Add the single-tab Electron Web Browser
+title: Retire the general embedded Web Browser
 scenario: gateway-backend-communication
 taskType: runtime-bridge
-intent: Add one persistent, hardened Electron webview to the Chat artifact panel with Main-owned navigation, session, permission, popup, download, and site-data policy.
+intent: Preserve the hardened guest only as an implementation detail of local HTML Preview and remove every general browsing surface.
 touchedAreas:
-  - harness/reference/web-browser.md
-  - harness/specs/rules/web-browser-security-and-lifecycle.md
   - harness/specs/tasks/web-browser.md
-  - shared/web-browser.ts
-  - shared/host-api/contract.ts
-  - shared/i18n/resources.ts
-  - shared/i18n/locales/en/chat.json
-  - shared/i18n/locales/zh/chat.json
-  - shared/i18n/locales/ja/chat.json
-  - shared/i18n/locales/ru/chat.json
-  - electron/main/web-browser-policy.ts
-  - electron/main/web-browser-session.ts
-  - electron/main/index.ts
-  - electron/main/ipc-handlers.ts
-  - electron/services/web-browser-api.ts
-  - src/lib/host-api.ts
-  - src/stores/artifact-panel.ts
-  - src/components/file-preview/ArtifactPanel.tsx
-  - src/components/web-browser/WebBrowserAddressControl.tsx
-  - src/components/web-browser/WebBrowserHome.tsx
-  - src/components/web-browser/WebBrowserAnchor.tsx
-  - src/components/web-browser/WebBrowserHost.tsx
-  - src/components/web-browser/WebBrowserToolbar.tsx
-  - src/components/ui/dropdown-menu.tsx
-  - src/components/layout/MainLayout.tsx
-  - src/types/web-browser.ts
-  - tests/unit/harness-specs.test.ts
-  - tests/unit/web-browser-url.test.ts
-  - tests/unit/host-api-facade.test.ts
-  - tests/unit/web-browser-policy.test.ts
-  - tests/unit/web-browser-session.test.ts
-  - tests/unit/i18n-locale-parity.test.ts
-  - tests/unit/web-browser-api.test.ts
-  - tests/unit/host-services.test.ts
-  - tests/unit/artifact-panel-store.test.ts
-  - tests/unit/artifact-panel.test.tsx
-  - tests/unit/web-browser-controls.test.tsx
-  - tests/unit/web-browser-host.test.tsx
-  - tests/unit/main-layout.test.tsx
-  - tests/e2e/fixtures/web-browser.ts
-  - tests/e2e/fixtures/electron.ts
-  - tests/e2e/web-browser-navigation.spec.ts
-  - tests/e2e/web-browser-lifecycle.spec.ts
-  - tests/e2e/web-browser-policy.spec.ts
-  - harness/reference/chat-workspace-and-navigation.md
-  - harness/specs/rules/ui-i18n-design-tokens.md
-  - harness/specs/scenarios/chat-workspace-and-navigation.md
-  - harness/specs/scenarios/gateway-backend-communication.md
-  - README.md
-  - README.zh-CN.md
-  - README.ja-JP.md
-  - README.ru-RU.md
+  - harness/specs/tasks/local-html-and-link-opening.md
+  - harness/specs/rules/web-browser-security-and-lifecycle.md
+  - harness/reference/web-browser.md
 expectedUserBehavior:
-  - The artifact panel normally shows one localized Web Browser tab after Changes, distinct from the Workspace browser; it hides that tab while Preview is showing a non-HTML file.
-  - First selection lazily creates one hardened guest at about:blank; later tab, panel, session, and route changes hide it while scripts, network activity, audio, and resource use may continue.
-  - The initial surface is a trusted ClawX home overlay showing only the product logo; URL entry remains in the existing toolbar, and Home returns to that overlay without injecting application UI into guest content or destroying the current guest.
-  - Address, history, refresh, clear-data, crash recovery, popup, and external-open actions reuse the registered guest and allow only HTTP, HTTPS, and explicit standard file URLs at the top level.
-  - Address input treats a host followed by a numeric port as a schemeless HTTPS destination, while Main never performs scheme completion.
-  - The title state shows a page-provided favicon or same-size placeholder without a hover URL tooltip, address editing hides the icon slot, and every More menu action has an icon.
-  - Cookies and site storage persist in persist:clawx-web-browser, while guest creation, URL, page state, and history do not restore after application restart.
-  - ClawX-rendered HTTP(S) links are inert plain text; links and popup targets inside guest pages open in the system browser by default without a child window, and the guest context menu can explicitly keep an allowed target in the current guest.
-  - Local `.html` and `.htm` files opened from Chat file surfaces use the registered guest by default, and relative or hostless file links stay internal.
-  - Camera and microphone prompt for every request without remembered grants, clipboard variants are allowed, and geolocation, display capture, notifications, and every other permission are denied.
-  - Clear Cookies removes only cookies for every origin; Clear Site Data removes cache, Cache Storage, Local Storage, IndexedDB, and Service Workers for every origin while preserving cookies and downloaded files.
-  - Downloads retain Electron and operating-system defaults, which may show a native Save dialog and wait for user interaction; ClawX adds no custom path or manager.
-  - Browser traffic uses system proxy resolution and is neither configured nor reconfigured from ClawX client proxy settings.
-  - Opening an allowed file URL externally may launch the operating system's associated application rather than a browser.
+  - ClawX has no standalone Web Browser tab, Home surface, address input, browsing history, site-data controls, or custom guest link menu.
+  - The retained guest appears only while Preview displays an authorized local HTML file.
+  - Every link is inert; users may only choose to preview the HTML file in ClawX or open that file in the system browser.
 requiredProfiles:
   - fast
-  - comms
-  - e2e
 requiredRules:
   - renderer-main-boundary
-  - backend-communication-boundary
-  - api-client-transport-policy
-  - host-api-fallback-policy
-  - ui-i18n-design-tokens
   - web-browser-security-and-lifecycle
-  - comms-regression
   - docs-sync
 requiredTests:
-  - pnpm harness validate --spec harness/specs/tasks/web-browser.md
-  - pnpm exec vitest run tests/unit/harness-specs.test.ts tests/unit/i18n-locale-parity.test.ts
-  - pnpm run lint:check
-  - pnpm run typecheck
-  - pnpm test
-  - pnpm run comms:replay
-  - pnpm run comms:compare
-  - pnpm run harness:ci
-  - pnpm run build:vite
-  - pnpm exec playwright test tests/e2e/web-browser-navigation.spec.ts tests/e2e/web-browser-lifecycle.spec.ts tests/e2e/web-browser-policy.spec.ts --workers=1
-  - pnpm run test:e2e
+  - pnpm harness validate --spec harness/specs/tasks/local-html-and-link-opening.md
+  - pnpm exec vitest run tests/unit/web-browser-host.test.tsx tests/unit/web-browser-policy.test.ts tests/unit/web-browser-session.test.ts tests/unit/web-browser-api.test.ts --maxWorkers=1
 acceptance:
-  - Exactly one lazily created webview uses persist:clawx-web-browser, about:blank, and the fixed cross-platform UserAgent with no guest preload or Node integration.
-  - The default and Home-button surface renders outside the guest and shows only the ClawX logo; the existing localized toolbar address input navigates through the typed Host API.
-  - The initialized guest remains mounted and preserves live state and history across panel, artifact-tab, chat-session, and route hiding; restart returns to about:blank without URL, page-state, or history restoration.
-  - Main validates typed navigation, page navigation, redirects, popup targets, and external opening for only HTTP, HTTPS, and explicit standard file URLs; local-file exposure is documented.
-  - Renderer parsing preserves host-plus-numeric-port input as an HTTPS host destination, while Main-facing normalization requires an explicit allowed scheme.
-  - Every popup is denied as a child; HTTP(S) targets open externally by default, file targets may reuse the current guest, and window.opener, handles, initially blank scripted popups, and full POST/referrer/named-window compatibility are not promised.
-  - HTTP(S) content-link activation is external by default, while a localized link context menu can explicitly choose registered-guest or system-browser opening without exposing a guest preload or bridge.
-  - Media prompts once per request without persistence, clipboard is allowed, and geolocation, display capture, notifications, and all other permissions are denied.
-  - Clear Cookies and Clear Site Data operate across every origin with their documented disjoint storage scopes and preserve downloaded files.
-  - Downloads are not canceled or assigned a path by ClawX, may wait on native Save UI, and have no custom manager; unattended completion or a system Downloads path is not promised.
-  - The dedicated session uses system proxy resolution without ClawX client-proxy synchronization or connection recycling.
-  - External opening reads and validates the registered guest URL; file URLs use shell.openExternal and may open an OS-associated application, never shell.openPath.
-  - Every browser control and error uses four-locale text, localized accessible names and tooltips where applicable, semantic disabled behavior, project design tokens, and the stable selectors in the durable reference; the title control has no URL tooltip, reserves a fixed-size favicon or placeholder slot only outside address editing, and every More menu action has a Lucide icon. A non-HTML Preview hides the Web Browser tab without destroying its guest.
-  - Unit, Electron E2E, communication regression, Harness, type, lint, build, and documentation checks pass.
+  - No renderer route or control can initialize a blank guest or navigate to an HTTP(S) address.
+  - The local HTML guest blocks links, navigation, redirects, popups, downloads, network requests, and permissions.
+  - Local HTML Preview and system-browser opening remain Main-validated.
 docs:
   required: true
 ---
 
-## Related Contracts
+# General browser retirement
 
-The primary runtime bridge remains rooted in `gateway-backend-communication`. Artifact-panel placement, route-stable host ownership, and the distinction between Workspace `browser` and Electron `web-browser` are linked through `chat-workspace-and-navigation` and `harness/reference/chat-workspace-and-navigation.md`.
-
-`harness/reference/web-browser.md`, this task, and `harness/specs/rules/web-browser-security-and-lifecycle.md` are the authoritative durable design, acceptance, and enforcement records. The reference owns implemented decisions, rationale, rejected alternatives, limitations, symbols, selectors, and test anchors; historical design and implementation-plan files are not inputs to this task.
+The active implementation task is `local-html-and-link-opening`. This compatibility task records that the former general browser is intentionally removed.
