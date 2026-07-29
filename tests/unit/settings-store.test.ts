@@ -51,4 +51,23 @@ describe('settings workspace cleanup', () => {
     expect(useSettingsStore.getState().chatWorkspacePath).toBe('/kept');
     expect(useSettingsStore.getState().recentWorkspacePaths).toEqual(['/kept']);
   });
+
+  it('preserves the first imported workspace name when a duplicate is added', () => {
+    const firstWorkspace = '/repo/z/发票';
+    const secondWorkspace = '/repo/a/发票';
+    useSettingsStore.setState({
+      chatWorkspacePath: DEFAULT_WORKSPACE_CWD,
+      recentWorkspacePaths: [DEFAULT_WORKSPACE_CWD],
+      workspaceLabels: {},
+    });
+
+    useSettingsStore.getState().setChatWorkspacePath(firstWorkspace);
+    useSettingsStore.getState().setChatWorkspacePath(secondWorkspace);
+    useSettingsStore.getState().setChatWorkspacePath(firstWorkspace);
+
+    expect(useSettingsStore.getState().workspaceLabels).toMatchObject({
+      [firstWorkspace]: '发票',
+      [secondWorkspace]: '发票1',
+    });
+  });
 });

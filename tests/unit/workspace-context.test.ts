@@ -50,13 +50,42 @@ describe('workspace context helpers', () => {
 
   it('formats labels for default and non-default workspaces', () => {
     expect(getWorkspaceDisplayLabel('~/.openclaw/workspace', '默认工作空间')).toBe('默认工作空间');
-    expect(getWorkspaceDisplayLabel('/Users/alex/workspace/ClawX', '默认工作空间')).toBe('~/workspace/ClawX');
+    expect(getWorkspaceDisplayLabel('/Users/alex/workspace/ClawX', '默认工作空间')).toBe('ClawX');
     expect(getWorkspaceDisplayLabel(
       '/Users/alex/workspace/ClawX',
       '默认工作空间',
       { '/Users/alex/workspace/ClawX': '我的项目' },
     )).toBe('我的项目');
     expect(formatWorkspacePath('/home/alex/project')).toBe('~/project');
+  });
+
+  it('derives short default workspace labels from the final folder name', () => {
+    expect(getWorkspaceDisplayLabel('/Users/alex/Documents/FDE/端界智能', '默认工作空间')).toBe('端界智能');
+    expect(getWorkspaceDisplayLabel('/Users/alex/Documents/FDE/天成/财务部/苏州/发票', '默认工作空间')).toBe('发票');
+  });
+
+  it('disambiguates duplicate workspace folder names with numeric suffixes', () => {
+    const paths = [
+      '/Users/alex/Documents/FDE/z/发票',
+      '/Users/alex/Documents/FDE/a/发票',
+    ];
+
+    expect(getWorkspaceDisplayLabel(paths[0], '默认工作空间', {}, paths)).toBe('发票');
+    expect(getWorkspaceDisplayLabel(paths[1], '默认工作空间', {}, paths)).toBe('发票1');
+  });
+
+  it('uses a numeric suffix when a custom label occupies the original name', () => {
+    const paths = [
+      '/Users/alex/Documents/FDE/天成/财务部/苏州/发票',
+      '/Users/alex/Documents/FDE/其他/发票',
+    ];
+
+    expect(getWorkspaceDisplayLabel(
+      paths[0],
+      '默认工作空间',
+      { [paths[1]]: '发票' },
+      paths,
+    )).toBe('发票1');
   });
 
   it('groups sessions without cwd under default workspace', () => {

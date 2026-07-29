@@ -451,8 +451,8 @@ describe('sidebar session helpers', () => {
 
     renderSidebar();
 
-    const alphaLoadMore = screen.getByRole('button', { name: 'Load 1 more sessions in /repo/alpha' });
-    const betaLoadMore = screen.getByRole('button', { name: 'Load 1 more sessions in /repo/beta' });
+    const alphaLoadMore = screen.getByRole('button', { name: 'Load 1 more sessions in alpha' });
+    const betaLoadMore = screen.getByRole('button', { name: 'Load 1 more sessions in beta' });
 
     expect(alphaLoadMore).toHaveTextContent('Load more');
     expect(betaLoadMore).toHaveTextContent('Load more');

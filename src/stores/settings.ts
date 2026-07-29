@@ -8,7 +8,11 @@ import i18n from '@/i18n';
 import { hostApi } from '@/lib/host-api';
 import { resolveSupportedLanguage } from '@shared/language';
 import { DEFAULT_WORKSPACE_CWD, MAX_RECENT_WORKSPACES } from '@shared/workspace';
-import { normalizeWorkspacePath } from '@/lib/workspace-context';
+import {
+  getWorkspaceDisplayLabel,
+  isDefaultWorkspacePath,
+  normalizeWorkspacePath,
+} from '@/lib/workspace-context';
 
 type Theme = 'light' | 'dark' | 'system';
 type UpdateChannel = 'stable' | 'beta' | 'dev';
@@ -174,14 +178,31 @@ export const useSettingsStore = create<SettingsState>()(
         void hostApi.settings.set('devModeUnlocked', devModeUnlocked).catch(() => { });
       },
       setChatWorkspacePath: (chatWorkspacePath) => {
-        const normalized = chatWorkspacePath.trim() || DEFAULT_WORKSPACE_CWD;
+        const normalized = normalizeWorkspacePath(chatWorkspacePath) ?? DEFAULT_WORKSPACE_CWD;
         set((state) => {
           const recentWorkspacePaths = [
             normalized,
-            ...state.recentWorkspacePaths.filter((entry) => entry !== normalized),
+            ...state.recentWorkspacePaths.filter((entry) => normalizeWorkspacePath(entry) !== normalized),
           ].slice(0, MAX_RECENT_WORKSPACES);
-          void hostApi.settings.setMany({ chatWorkspacePath: normalized, recentWorkspacePaths }).catch(() => { });
-          return { chatWorkspacePath: normalized, recentWorkspacePaths };
+          const existingLabel = state.workspaceLabels[normalized]?.trim()
+            || state.workspaceLabels[chatWorkspacePath.trim()]?.trim();
+          const workspaceLabels = !isDefaultWorkspacePath(normalized) && !existingLabel
+            ? {
+              ...state.workspaceLabels,
+              [normalized]: getWorkspaceDisplayLabel(
+                normalized,
+                '',
+                state.workspaceLabels,
+                [...state.recentWorkspacePaths, normalized],
+              ),
+            }
+            : state.workspaceLabels;
+          void hostApi.settings.setMany({
+            chatWorkspacePath: normalized,
+            recentWorkspacePaths,
+            ...(workspaceLabels !== state.workspaceLabels ? { workspaceLabels } : {}),
+          }).catch(() => { });
+          return { chatWorkspacePath: normalized, recentWorkspacePaths, workspaceLabels };
         });
       },
       setWorkspaceLabel: (workspacePath, label) => {

@@ -10,7 +10,7 @@ import {
 
 const SESSION_KEY = 'agent:main:session-a';
 const SESSION_WORKSPACE = '/Users/e2e/workspace/ClawX';
-const SESSION_WORKSPACE_LABEL = '~/workspace/ClawX';
+const SESSION_WORKSPACE_LABEL = 'ClawX';
 const GLOBAL_WORKSPACE = '/Users/e2e/workspace/GlobalProject';
 const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
 const AUTO_TITLE_WITH_CWD = `[Working directory: ${DEFAULT_WORKSPACE}]\n\nWorkspace chat`;

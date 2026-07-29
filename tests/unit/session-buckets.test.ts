@@ -78,6 +78,22 @@ describe('workspace session grouping', () => {
     expect(groups[0].label).toBe('产品项目');
   });
 
+  it('uses known workspace order to suffix duplicate folder names', () => {
+    const firstWorkspace = '/repo/z/发票';
+    const secondWorkspace = '/repo/a/发票';
+    const groups = groupSessionsByWorkspace(
+      [{ key: 'agent:main:session-project', workspacePath: firstWorkspace, updatedAt: 1 }],
+      {},
+      '默认工作空间',
+      undefined,
+      {},
+      [firstWorkspace, secondWorkspace],
+    );
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].label).toBe('发票');
+  });
+
   it('groups default-equivalent workspace paths with sessions missing cwd', () => {
     const groups = groupSessionsByWorkspace(
       [

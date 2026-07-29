@@ -144,6 +144,7 @@ export function Sidebar() {
   const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth);
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
   const chatWorkspacePath = useSettingsStore((state) => state.chatWorkspacePath);
+  const recentWorkspacePaths = useSettingsStore((state) => state.recentWorkspacePaths);
   const workspaceLabels = useSettingsStore((state) => state.workspaceLabels);
   const setWorkspaceLabel = useSettingsStore((state) => state.setWorkspaceLabel);
   const removeWorkspace = useSettingsStore((state) => state.removeWorkspace);
@@ -412,6 +413,11 @@ export function Sidebar() {
     t('chat:workspace.defaultLabel'),
     chatWorkspacePath,
     workspaceLabels,
+    [
+      ...recentWorkspacePaths,
+      chatWorkspacePath,
+      ...sessions.map((session) => session.workspacePath).filter((path): path is string => !!path),
+    ],
   );
   const workspaceAvailability = useWorkspaceAvailability(
     workspaceSessionGroups.map((group) => group.workspacePath),

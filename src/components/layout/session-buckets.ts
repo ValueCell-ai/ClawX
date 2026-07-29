@@ -67,8 +67,13 @@ export function groupSessionsByWorkspace<TSession extends ChatSession>(
   defaultWorkspaceLabel: string,
   globalWorkspace?: string | null,
   workspaceLabels: Record<string, string> = {},
+  knownWorkspacePaths: readonly string[] = [],
 ): Array<WorkspaceSessionGroup<TSession>> {
   const groupByWorkspace = new Map<string, WorkspaceSessionGroup<TSession>>();
+  const allWorkspacePaths = [
+    ...knownWorkspacePaths,
+    ...sessions.map((session) => getCanonicalWorkspacePathForGrouping(session, globalWorkspace)),
+  ];
 
   for (const session of sessions) {
     const workspacePath = getCanonicalWorkspacePathForGrouping(session, globalWorkspace);
@@ -76,7 +81,12 @@ export function groupSessionsByWorkspace<TSession extends ChatSession>(
     if (!group) {
       group = {
         workspacePath,
-        label: getWorkspaceDisplayLabel(workspacePath, defaultWorkspaceLabel, workspaceLabels),
+        label: getWorkspaceDisplayLabel(
+          workspacePath,
+          defaultWorkspaceLabel,
+          workspaceLabels,
+          allWorkspacePaths,
+        ),
         sessions: [],
       };
       groupByWorkspace.set(workspacePath, group);

@@ -209,10 +209,9 @@ export function Chat() {
     [chatWorkspacePath, currentSession],
   );
   const cwd = effectiveWorkspace.cwd;
-  const workspaceLabel = getWorkspaceDisplayLabel(cwd, t('workspace.defaultLabel'), workspaceLabels);
-  const workspaceOptions = useMemo<ChatWorkspaceOption[]>(() => {
+  const allWorkspacePaths = useMemo(() => {
     const seen = new Set<string>();
-    const options: ChatWorkspaceOption[] = [];
+    const paths: string[] = [];
     const candidatePaths = [
       ...recentWorkspacePaths,
       chatWorkspacePath,
@@ -225,13 +224,27 @@ export function Chat() {
       const identity = /^[A-Za-z]:\//.test(slashedPath) ? slashedPath.toLowerCase() : slashedPath;
       if (seen.has(identity)) continue;
       seen.add(identity);
-      options.push({
-        path: normalized,
-        label: getWorkspaceDisplayLabel(normalized, t('workspace.defaultLabel'), workspaceLabels),
-      });
+      paths.push(normalized);
     }
-    return options;
-  }, [chatWorkspacePath, recentWorkspacePaths, sessions, t, workspaceLabels]);
+    return paths;
+  }, [chatWorkspacePath, recentWorkspacePaths, sessions]);
+  const workspaceLabel = getWorkspaceDisplayLabel(
+    cwd,
+    t('workspace.defaultLabel'),
+    workspaceLabels,
+    allWorkspacePaths,
+  );
+  const workspaceOptions = useMemo<ChatWorkspaceOption[]>(() => {
+    return allWorkspacePaths.map((normalized) => ({
+      path: normalized,
+      label: getWorkspaceDisplayLabel(
+        normalized,
+        t('workspace.defaultLabel'),
+        workspaceLabels,
+        allWorkspacePaths,
+      ),
+    }));
+  }, [allWorkspacePaths, t, workspaceLabels]);
   const currentAgent = useMemo(
     () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
     [agents, currentAgentId],
