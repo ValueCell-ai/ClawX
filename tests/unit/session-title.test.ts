@@ -88,6 +88,10 @@ describe('getSessionDisplayTitle', () => {
       label: '72e4b28b (2026-07-22)',
     }, {})).toBe('Derived title')
   })
+
+  it('falls back safely when session labels are unavailable', () => {
+    expect(getSessionDisplayTitle(session)).toBe('Generated title')
+  })
 })
 
 describe('isAcpWorkingDirectoryTruncatedTitle', () => {

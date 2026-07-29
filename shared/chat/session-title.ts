@@ -31,7 +31,7 @@ export function isOpenClawSessionIdFallbackTitle(
 /** Resolve the same human-readable title used for a session everywhere in the UI. */
 export function getSessionDisplayTitle(
   session: SessionTitleSource,
-  sessionLabels: Record<string, string>,
+  sessionLabels: Record<string, string> = {},
 ): string {
   const candidates = [
     sessionLabels[session.key],
