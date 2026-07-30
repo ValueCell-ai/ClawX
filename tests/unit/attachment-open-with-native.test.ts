@@ -27,12 +27,15 @@ import {
   HANDLER_NAME_MAX_LENGTH,
   NATIVE_PATH_MAX_LENGTH,
   PROCESS_MAX_BUFFER_BYTES,
-  PROCESS_TIMEOUT_MS,
   createAttachmentOpenWithService,
   type AttachmentOpenWithDependencies,
 } from '@electron/services/attachment-open-with';
 
 const temporaryDirectories: string[] = [];
+// Native smoke tests include cold PowerShell startup, Add-Type compilation,
+// and Windows Defender scanning on a fresh CI runner. Production still keeps
+// its separate five-second process bound, covered by mocked service tests.
+const NATIVE_SMOKE_TIMEOUT_MS = 30_000;
 
 function hasControlCharacters(value: string): boolean {
   return [...value].some((character) => {
@@ -117,7 +120,7 @@ async function runWindowsHelper(...args: string[]): Promise<{
     const timeout = setTimeout(() => {
       child.kill();
       finish(new Error('native Windows helper timeout'));
-    }, PROCESS_TIMEOUT_MS);
+    }, NATIVE_SMOKE_TIMEOUT_MS);
     const finish = (error?: Error, code: number | null = null) => {
       if (settled) return;
       settled = true;
@@ -214,7 +217,7 @@ describe('attachment open-with native bridges', () => {
       const timeout = setTimeout(() => {
         child.kill();
         finish(new Error('native matched prepare-open timeout'));
-      }, PROCESS_TIMEOUT_MS);
+      }, NATIVE_SMOKE_TIMEOUT_MS);
       const finish = (error?: Error, code: number | null = null) => {
         if (settled) return;
         settled = true;
@@ -266,7 +269,7 @@ describe('attachment open-with native bridges', () => {
     const nonmatchingResult = await runWindowsHelper('prepare-open', filePath, '0'.repeat(64));
     expect(nonmatchingResult.code).not.toBe(0);
     expect(nonmatchingResult.stdout).not.toContain('{"ready":true}');
-  }, PROCESS_TIMEOUT_MS * 4);
+  }, NATIVE_SMOKE_TIMEOUT_MS * 4);
 
   it('resolves and executes the exact helper staged in a packaged resources tree', async () => {
     const root = await mkdtemp(join(tmpdir(), 'clawx-packaged-open-with-'));

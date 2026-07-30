@@ -104,7 +104,7 @@ The authoritative durable requirements are `harness/reference/acp-attachment-acc
 | Acceptance behavior | Test or durable rule |
 | --- | --- |
 | Deterministic handler normalization, presentation-only caching, 256/512/4096 and process/protocol bounds, icon degradation, sanitized environment, static JXA, SHA-256 Windows IDs, Main-owned association input, and post-ready invocation | `tests/unit/attachment-open-with.test.ts`, `attachment-access-safety` |
-| Real macOS and Windows native bridge validity, static bundled helper resolution, and packaged-resource identity | `tests/unit/attachment-open-with-native.test.ts`, `.github/workflows/check.yml`, `.github/workflows/release.yml` |
+| Real macOS and Windows native bridge validity, static bundled helper resolution, and packaged-resource identity; native CI smoke allows cold PowerShell compilation overhead while mocked service tests enforce the production process timeout | `tests/unit/attachment-open-with-native.test.ts`, `tests/unit/attachment-open-with.test.ts`, `.github/workflows/check.yml`, `.github/workflows/release.yml` |
 | Per-operation attachment authorization, generation revalidation, forged-handler rejection, scoped reveal, and sensitive diagnostic-payload exclusion | `tests/unit/attachment-access.test.ts`, `attachment-access-safety` |
 | Shared `AcpFileCard` sibling controls, exact attachment eligibility, lazy/repeated discovery, stale-result rejection, sorting, icon fallback, silent failure, localization, and keyboard interaction | `tests/unit/acp-chat-components.test.tsx`, `ui-i18n-design-tokens` |
 | End-to-end click routing, typed host requests, platform menu behavior, and failure isolation | `tests/e2e/chat-acp-attachments.spec.ts` |
