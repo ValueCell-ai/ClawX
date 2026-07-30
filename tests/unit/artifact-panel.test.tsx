@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { ArtifactPanel } from '@/components/file-preview/ArtifactPanel';
 import { ARTIFACT_PANEL_DEFAULT_WIDTH, useArtifactPanel } from '@/stores/artifact-panel';
 import type { AcpSessionFileGroup } from '@/lib/acp/openclaw-file-activities';
+import { MAC_TRAFFIC_LIGHT_SAFE_INSET } from '@shared/sidebar-layout';
 
 const shellShowItemInFolder = vi.fn(async () => undefined);
 const openHtmlExternal = vi.fn(async () => undefined);
@@ -226,13 +227,19 @@ describe('ArtifactPanel', () => {
     });
     render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
 
-    expect(filePreviewBodyProps.at(-1)).toMatchObject({ compact: true });
+    expect(filePreviewBodyProps.at(-1)).toMatchObject({
+      compact: true,
+      headerLeftInset: undefined,
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Enter fullscreen' }));
 
     expect(screen.getByRole('dialog', { name: 'Fullscreen file preview' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toHaveFocus();
-    expect(filePreviewBodyProps.at(-1)).toMatchObject({ compact: false });
+    expect(filePreviewBodyProps.at(-1)).toMatchObject({
+      compact: false,
+      headerLeftInset: MAC_TRAFFIC_LIGHT_SAFE_INSET,
+    });
 
     fireEvent.keyDown(window, { key: 'Escape' });
 
@@ -243,6 +250,31 @@ describe('ArtifactPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Enter fullscreen' }));
     act(() => useArtifactPanel.getState().setTab('changes'));
     expect(screen.queryByTestId('file-preview-fullscreen-layer')).not.toBeInTheDocument();
+  });
+
+  it('does not reserve traffic-light space for fullscreen previews off macOS', () => {
+    const originalPlatform = window.electron.platform;
+    window.electron.platform = 'linux';
+    try {
+      useArtifactPanel.setState({
+        open: true,
+        tab: 'preview',
+        focusedFile: {
+          filePath: '/tmp/report.pdf', fileName: 'report.pdf', ext: '.pdf',
+          mimeType: 'application/pdf', contentType: 'document',
+        },
+      });
+      render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Enter fullscreen' }));
+
+      expect(filePreviewBodyProps.at(-1)).toMatchObject({
+        compact: false,
+        headerLeftInset: undefined,
+      });
+    } finally {
+      window.electron.platform = originalPlatform;
+    }
   });
 
   it('preserves the viewer-reported PowerPoint position for each preview target', () => {

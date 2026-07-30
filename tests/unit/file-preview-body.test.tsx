@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { FilePreviewBody } from '@/components/file-preview/FilePreviewBody';
 import type { FilePreviewTarget } from '@/components/file-preview/types';
+import { MAC_TRAFFIC_LIGHT_SAFE_INSET } from '@shared/sidebar-layout';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -88,6 +89,19 @@ describe('FilePreviewBody', () => {
     readAttachmentText.mockResolvedValue({ ok: false, error: 'binary' });
     statFile.mockResolvedValue({ ok: true, size: 1024, isFile: true });
     statWorkspaceFile.mockResolvedValue({ ok: true, size: 1024, isFile: true });
+  });
+
+  it('applies an optional native-chrome safe inset only to the file header', () => {
+    render(
+      <FilePreviewBody
+        file={makePreviewTarget()}
+        headerLeftInset={MAC_TRAFFIC_LIGHT_SAFE_INSET}
+      />,
+    );
+
+    expect(screen.getByTestId('file-preview-header')).toHaveStyle({
+      paddingLeft: `${MAC_TRAFFIC_LIGHT_SAFE_INSET}px`,
+    });
   });
 
   it('renders HTML through the dedicated Preview anchor instead of an iframe', async () => {

@@ -24,6 +24,9 @@ export const MAC_TRAFFIC_LIGHT_GROUP_WIDTH =
 export const SIDEBAR_COLLAPSED_WIDTH =
   4 * MAC_TRAFFIC_LIGHT_GAP + 3 * MAC_TRAFFIC_LIGHT_BUTTON_SIZE;
 
+/** Left inset that clears the native macOS traffic-light group (px). */
+export const MAC_TRAFFIC_LIGHT_SAFE_INSET = SIDEBAR_COLLAPSED_WIDTH;
+
 export function getMacTrafficLightFrameHeight(darwinMajor: number): number {
   return darwinMajor >= 25
     ? MAC_TRAFFIC_LIGHT_FRAME_HEIGHT_TAHOE

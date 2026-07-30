@@ -50,7 +50,7 @@ function htmlFile() {
   };
 }
 
-function makeAnchor() {
+function makeAnchor(parent: HTMLElement = document.body) {
   const anchor = document.createElement('div');
   anchor.getBoundingClientRect = () => ({
     x: 10,
@@ -63,7 +63,7 @@ function makeAnchor() {
     bottom: 500,
     toJSON: () => ({}),
   } as DOMRect);
-  document.body.append(anchor);
+  parent.append(anchor);
   return anchor;
 }
 
@@ -145,6 +145,22 @@ describe('HTML preview host', () => {
 
     expect(webview()).toBe(guest);
     expect(screen.getByTestId('html-preview-host')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('raises the guest above the fullscreen preview layer', () => {
+    const fullscreenLayer = document.createElement('div');
+    fullscreenLayer.dataset.testid = 'file-preview-fullscreen-layer';
+    document.body.append(fullscreenLayer);
+    useArtifactPanel.setState({
+      open: true,
+      tab: 'preview',
+      focusedFile: htmlFile(),
+      htmlPreviewAnchor: makeAnchor(fullscreenLayer),
+    });
+
+    render(<WebBrowserHost />);
+
+    expect(screen.getByTestId('html-preview-host')).toHaveStyle({ zIndex: '110' });
   });
 
   it('recreates a crashed guest without adding browser controls', () => {

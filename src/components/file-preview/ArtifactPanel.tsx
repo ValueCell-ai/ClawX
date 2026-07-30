@@ -29,6 +29,7 @@ import { FilePreviewBody } from './FilePreviewBody';
 import { WorkspaceBrowserBody } from './WorkspaceBrowserBody';
 import { WORKSPACE_BROWSER_ENABLED } from './workspace-browser-config';
 import { AcpSessionChangesView } from './AcpSessionChangesView';
+import { MAC_TRAFFIC_LIGHT_SAFE_INSET } from '@shared/sidebar-layout';
 
 export interface ArtifactPanelProps {
   fileGroups: AcpSessionFileGroup[];
@@ -198,6 +199,7 @@ interface PreviewTabProps {
 
 function PreviewTab({ focusedFile, active }: PreviewTabProps) {
   const { t } = useTranslation('chat');
+  const isMac = window.electron?.platform === 'darwin';
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [pptxSlidePositions] = useState(() => new Map<string, number>());
   const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
@@ -256,6 +258,7 @@ function PreviewTab({ focusedFile, active }: PreviewTabProps) {
         key={identity}
         file={focusedFile}
         compact={!isFullscreen}
+        headerLeftInset={isFullscreen && isMac ? MAC_TRAFFIC_LIGHT_SAFE_INSET : undefined}
         mode="preview"
         active={active}
         initialPptxSlideIndex={pptxSlidePositions.get(identity) ?? 0}

@@ -127,6 +127,11 @@ test.describe('ACP media attachments', () => {
       await expect(panel.getByTestId('artifact-panel-tab-web-browser')).toHaveCount(0);
       await expect(page.getByTestId('html-preview-host')).toHaveAttribute('aria-hidden', 'false');
       await expect(panel.getByTestId('html-preview-open-external')).toBeVisible();
+      await panel.getByTestId('file-preview-fullscreen-toggle').click();
+      await expect(page.getByTestId('file-preview-fullscreen-layer')).toBeVisible();
+      await expect(page.getByTestId('html-preview-host')).toHaveCSS('z-index', '110');
+      await expect(page.getByTestId('html-preview-webview')).toBeVisible();
+      await page.getByTestId('file-preview-fullscreen-toggle').click();
       await expect.poll(async () => (await fixture.getHostInvocations()).some((request) => (
         request.module === 'webBrowser'
         && request.action === 'navigate'

@@ -10,6 +10,7 @@ import {
   test,
   type AttachmentHostFixture,
 } from './fixtures/electron';
+import { MAC_TRAFFIC_LIGHT_SAFE_INSET } from '../../shared/sidebar-layout';
 
 const MAIN_SESSION_KEY = 'agent:main:main';
 const OFFICE_FIXTURE_DIR = resolve(process.cwd(), 'tests/e2e/fixtures/office');
@@ -308,6 +309,10 @@ test.describe('real Office document previews', () => {
       const fullscreenLayer = page.getByTestId('file-preview-fullscreen-layer');
       await expect(fullscreenLayer).toBeVisible();
       await expect(page.getByRole('button', { name: 'Exit fullscreen' })).toBeVisible();
+      await expect(page.getByTestId('file-preview-header')).toHaveCSS(
+        'padding-left',
+        process.platform === 'darwin' ? `${MAC_TRAFFIC_LIGHT_SAFE_INSET}px` : '20px',
+      );
       const fullscreenCanvas = await waitForStableCanvas(canvas);
       expect(fullscreenCanvas.clientWidth).toBeGreaterThan(constrainedCanvas.clientWidth);
       expect(fullscreenCanvas.clientHeight).toBeGreaterThan(constrainedCanvas.clientHeight);

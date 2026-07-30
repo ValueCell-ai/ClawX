@@ -22,7 +22,7 @@ All links are inert:
 
 HTML entry points build an ordinary `FilePreviewTarget` and call `useArtifactPanel.openPreview`. `FilePreviewBody` renders an HTML anchor in Preview. The route-stable host in `MainLayout` overlays one webview on that anchor and asks `hostApi.webBrowser.navigate` to load the selected file.
 
-The host has no browser chrome. It exists only for an HTML `focusedFile`, remains hidden and inert when Preview is not visible, and can recover a crashed guest without restoring browsing state.
+The host has no browser chrome. It exists only for an HTML `focusedFile`, remains hidden and inert when Preview is not visible, and can recover a crashed guest without restoring browsing state. Because the guest is route-stable and positioned over a Renderer anchor, it raises its stacking level above the fullscreen Preview layer whenever that anchor is portaled to the fullscreen surface.
 
 ## Main boundary
 

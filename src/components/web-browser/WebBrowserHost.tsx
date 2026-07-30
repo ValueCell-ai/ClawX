@@ -24,6 +24,7 @@ interface HostGeometry {
   top: number;
   width: number;
   height: number;
+  fullscreen: boolean;
 }
 
 interface DidFailLoadEvent extends Event {
@@ -42,6 +43,7 @@ function readGeometry(anchor: HTMLElement): HostGeometry | null {
     top: bounds.top,
     width: bounds.width,
     height: bounds.height,
+    fullscreen: anchor.closest('[data-testid="file-preview-fullscreen-layer"]') !== null,
   };
 }
 
@@ -171,6 +173,7 @@ export function WebBrowserHost(): React.ReactElement | null {
     top: geometry?.top ?? 0,
     width: geometry?.width ?? 0,
     height: geometry?.height ?? 0,
+    zIndex: geometry?.fullscreen ? 110 : 20,
     visibility: visible ? 'visible' : 'hidden',
     pointerEvents: visible ? 'auto' : 'none',
   };
@@ -181,7 +184,7 @@ export function WebBrowserHost(): React.ReactElement | null {
       aria-busy={loading}
       aria-hidden={!visible}
       inert={!visible}
-      className="z-20 flex min-h-0 flex-col overflow-hidden bg-white"
+      className="flex min-h-0 flex-col overflow-hidden bg-white"
       style={style}
     >
       {crashed ? (
