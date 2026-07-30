@@ -42,6 +42,7 @@ export interface AppSettings {
   proxyHttpsServer: string;
   proxyAllServer: string;
   proxyBypassRules: string;
+  memorySearchFtsMigrationVersion: number;
 
   // Update
   updateChannel: 'stable' | 'beta' | 'dev';
@@ -96,6 +97,7 @@ function createDefaultSettings(): AppSettings {
     proxyHttpsServer: '',
     proxyAllServer: '',
     proxyBypassRules: '<local>;localhost;127.0.0.1;::1',
+    memorySearchFtsMigrationVersion: 0,
 
     // Update
     updateChannel: 'stable',

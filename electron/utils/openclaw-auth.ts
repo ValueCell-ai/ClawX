@@ -29,9 +29,13 @@ import {
 } from './provider-keys';
 import { normalizePiAiModelCost, type PiAiModelCostRates } from '../shared/pi-ai-model-cost';
 import { withConfigLock } from './config-mutex';
-import { ensureMemorySearchDisabledDefault, hasUserMemorySearchConfig } from './openclaw-memory-search';
+import {
+  ensureMemorySearchFtsDefault,
+  hasUserMemorySearchConfig,
+  MEMORY_SEARCH_FTS_MIGRATION_VERSION,
+} from './openclaw-memory-search';
 import { PORTS } from './config';
-import { getSetting } from './store';
+import { getSetting, setSetting } from './store';
 import {
   assertValidApiProtocol,
   normalizeOpenClawApiProtocol,
@@ -2713,16 +2717,31 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     }
 
     // ── Memory search default ──
-    // OpenClaw defaults to the openai embedding provider; without a key that
-    // yields doctor errors and a broken memory_search tool. Seed enabled=false
-    // only when the user has no memorySearch config anywhere AND no OpenAI key
-    // (i.e. the default embedding model is unusable). Existing user config is
-    // never modified.
-    if (!hasUserMemorySearchConfig(config)
-      && !(await getProviderApiKeyFromOpenClaw('openai'))
-      && ensureMemorySearchDisabledDefault(config)) {
+    // OpenClaw 2026.7.1 supports provider=none as an explicit FTS-only mode.
+    // Migrate ClawX's exact legacy disabled default once, and otherwise seed
+    // FTS only when the user has no memorySearch config or OpenAI embedding key.
+    const memorySearchMigrationVersion = Number(
+      await getSetting('memorySearchFtsMigrationVersion'),
+    ) || 0;
+    const shouldMigrateLegacyMemorySearch =
+      memorySearchMigrationVersion < MEMORY_SEARCH_FTS_MIGRATION_VERSION;
+    let memorySearchDefaultResult = shouldMigrateLegacyMemorySearch
+      && hasUserMemorySearchConfig(config)
+      ? ensureMemorySearchFtsDefault(config, true)
+      : 'unchanged';
+
+    if (memorySearchDefaultResult === 'unchanged'
+      && !hasUserMemorySearchConfig(config)
+      && !(await getProviderApiKeyFromOpenClaw('openai'))) {
+      memorySearchDefaultResult = ensureMemorySearchFtsDefault(config);
+    }
+
+    if (memorySearchDefaultResult !== 'unchanged') {
       modified = true;
-      console.log('[batch-sync] Seeded agents.defaults.memorySearch.enabled=false (no embedding provider configured)');
+      console.log(
+        `[batch-sync] ${memorySearchDefaultResult === 'migrated' ? 'Migrated' : 'Seeded'} `
+        + 'agents.defaults.memorySearch to FTS-only mode',
+      );
     }
 
     // ── Custom provider contextWindow backfill ──
@@ -2735,6 +2754,12 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     if (modified) {
       await writeOpenClawJson(config);
       console.log('Synced gateway token, browser config, web_fetch SSRF policy, and session idle to openclaw.json');
+    }
+    if (shouldMigrateLegacyMemorySearch) {
+      await setSetting(
+        'memorySearchFtsMigrationVersion',
+        MEMORY_SEARCH_FTS_MIGRATION_VERSION,
+      );
     }
   });
 }

@@ -4,12 +4,13 @@ import { mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { testHome, testUserData, getSettingMock } = vi.hoisted(() => {
+const { testHome, testUserData, getSettingMock, setSettingMock } = vi.hoisted(() => {
   const suffix = Math.random().toString(36).slice(2);
   return {
     testHome: `/tmp/clawx-openclaw-auth-${suffix}`,
     testUserData: `/tmp/clawx-openclaw-auth-user-data-${suffix}`,
     getSettingMock: vi.fn(),
+    setSettingMock: vi.fn(),
   };
 });
 
@@ -35,6 +36,7 @@ vi.mock('electron', () => ({
 
 vi.mock('@electron/utils/store', () => ({
   getSetting: getSettingMock,
+  setSetting: setSettingMock,
 }));
 
 vi.mock('@electron/utils/paths', async () => {
@@ -2292,10 +2294,14 @@ describe('batchSyncConfigFields', () => {
   beforeEach(async () => {
     vi.resetModules();
     vi.restoreAllMocks();
+    getSettingMock.mockReset();
+    setSettingMock.mockReset();
     getSettingMock.mockImplementation(async (key: string) => {
       if (key === 'gatewayPort') return 18789;
+      if (key === 'memorySearchFtsMigrationVersion') return 0;
       return undefined;
     });
+    setSettingMock.mockResolvedValue(undefined);
     await rm(testHome, { recursive: true, force: true });
     await rm(testUserData, { recursive: true, force: true });
   });
@@ -2389,6 +2395,76 @@ describe('batchSyncConfigFields', () => {
     const config = await readOpenClawJson();
     const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
     expect(defaults.compaction).toEqual({ mode: 'default', reserveTokensFloor: 30000 });
+  });
+
+  it('seeds FTS-only memory search when no OpenAI embedding key exists', async () => {
+    await writeOpenClawJson({ gateway: { auth: { mode: 'token', token: 'old' } } });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
+    expect(defaults.memorySearch).toEqual({ enabled: true, provider: 'none' });
+    expect(setSettingMock).toHaveBeenCalledWith('memorySearchFtsMigrationVersion', 1);
+  });
+
+  it('keeps OpenClaw defaults when an OpenAI embedding key exists', async () => {
+    await writeOpenClawJson({ gateway: { auth: { mode: 'token', token: 'old' } } });
+    await writeAgentAuthProfiles('main', {
+      version: 1,
+      profiles: {
+        'openai:default': {
+          type: 'api_key',
+          provider: 'openai',
+          key: 'sk-openai-test',
+        },
+      },
+      order: { openai: ['openai:default'] },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
+    expect(defaults.memorySearch).toBeUndefined();
+    expect(setSettingMock).toHaveBeenCalledWith('memorySearchFtsMigrationVersion', 1);
+  });
+
+  it('migrates the exact legacy disabled memory-search default once', async () => {
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      agents: { defaults: { memorySearch: { enabled: false } } },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
+    expect(defaults.memorySearch).toEqual({ enabled: true, provider: 'none' });
+    expect(setSettingMock).toHaveBeenCalledWith('memorySearchFtsMigrationVersion', 1);
+  });
+
+  it('respects an explicit memory-search opt-out after the migration completed', async () => {
+    getSettingMock.mockImplementation(async (key: string) => {
+      if (key === 'gatewayPort') return 18789;
+      if (key === 'memorySearchFtsMigrationVersion') return 1;
+      return undefined;
+    });
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      agents: { defaults: { memorySearch: { enabled: false } } },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
+    expect(defaults.memorySearch).toEqual({ enabled: false });
+    expect(setSettingMock).not.toHaveBeenCalled();
   });
 
   it('backfills contextWindow on custom provider model rows that lack one', async () => {
