@@ -290,12 +290,37 @@ test.describe('ACP media attachments', () => {
       });
       const guestId = (await getWebBrowserMainSnapshot(app)).guestId;
       if (!guestId) throw new Error('HTML preview guest was not created');
-      await executeInWebBrowserGuest(
+      const linkPolicy = await executeInWebBrowserGuest<{
+        pointerEvents: string;
+        textDecorationLine: string;
+        color: string;
+        parentColor: string;
+        popupBlocked: boolean;
+      }>(
         app,
         guestId,
-        "document.querySelector('#external').click(); window.open('https://example.com/popup'); setTimeout(() => location.assign('https://example.com/script'), 50); true",
+        `(() => {
+          const link = document.querySelector('#external');
+          if (!(link instanceof HTMLAnchorElement) || !link.parentElement) {
+            throw new Error('Expected external link');
+          }
+          const style = getComputedStyle(link);
+          return {
+            pointerEvents: style.pointerEvents,
+            textDecorationLine: style.textDecorationLine,
+            color: style.color,
+            parentColor: getComputedStyle(link.parentElement).color,
+            popupBlocked: window.open('https://example.com/popup') === null,
+          };
+        })()`,
       );
-      await page.waitForTimeout(500);
+      expect(linkPolicy).toEqual({
+        pointerEvents: 'none',
+        textDecorationLine: 'none',
+        color: linkPolicy.parentColor,
+        parentColor: linkPolicy.parentColor,
+        popupBlocked: true,
+      });
       await expect(getWebBrowserMainSnapshot(app)).resolves.toMatchObject({
         url: pathToFileURL(htmlPath).href,
         matchingGuestCount: 1,
