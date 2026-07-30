@@ -293,7 +293,7 @@ test.describe('ACP media attachments', () => {
       await executeInWebBrowserGuest(
         app,
         guestId,
-        "document.querySelector('#external').click(); window.open('https://example.com/popup'); location.assign('https://example.com/script'); true",
+        "document.querySelector('#external').click(); window.open('https://example.com/popup'); setTimeout(() => location.assign('https://example.com/script'), 50); true",
       );
       await page.waitForTimeout(500);
       await expect(getWebBrowserMainSnapshot(app)).resolves.toMatchObject({

@@ -260,6 +260,15 @@ test.describe('ClawX chat file changes', () => {
         liveByPrompt: {
           'Create HTML': writeSequence('write-html', 'site/demo.html', '<h1>Demo</h1>'),
         },
+        scopedRead: {
+          'site/demo.html': {
+            ok: true,
+            content: '<h1>Demo</h1>',
+            size: 13,
+            mimeType: 'text/html',
+            readOnly: true,
+          },
+        },
       });
       const page = await openChat(app);
       await sendPrompt(page, 'Create HTML');
