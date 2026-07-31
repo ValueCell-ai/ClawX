@@ -926,7 +926,10 @@ function backfillCustomProviderModelContextWindows(config: Record<string, unknow
     for (const row of rows) {
       if (!isPlainRecord(row) || typeof row.id !== 'string' || !row.id) continue;
       if (typeof row.contextWindow === 'number' || typeof row.contextTokens === 'number') continue;
-      row.contextWindow = inferCustomModelContextWindow(row.id);
+      row.contextWindow = inferCustomModelContextWindow(row.id, {
+        providerKey,
+        apiProtocol: typeof entry.api === 'string' ? entry.api : undefined,
+      });
       backfilled.push(`${providerKey}/${row.id}`);
     }
   }
@@ -1919,7 +1922,10 @@ function upsertOpenClawProviderEntry(
         input: inferCustomModelInputModalities(id),
         // Without an explicit contextWindow OpenClaw cannot budget compaction
         // for custom providers and long sessions die with context overflow.
-        contextWindow: inferCustomModelContextWindow(id),
+        contextWindow: inferCustomModelContextWindow(id, {
+          providerKey: provider,
+          apiProtocol: options.api,
+        }),
       }
       : {}),
   }));
@@ -2819,7 +2825,10 @@ async function updateModelsJsonProviderEntriesForAgents(
         && typeof base.contextWindow !== 'number'
         && typeof base.contextTokens !== 'number'
       ) {
-        base.contextWindow = inferCustomModelContextWindow(m.id);
+        base.contextWindow = inferCustomModelContextWindow(m.id, {
+          providerKey: providerType,
+          apiProtocol: entry.api,
+        });
       }
       return {
         ...base,

@@ -985,7 +985,7 @@ describe('syncProviderConfigToOpenClaw', () => {
     expect(models).toEqual([
       expect.objectContaining({
         id: 'gpt-5.5',
-        contextWindow: 272000,
+        contextWindow: 1000000,
       }),
     ]);
   });
@@ -2497,7 +2497,7 @@ describe('batchSyncConfigFields', () => {
     const custom = (providers['custom-enterpri'] as Record<string, unknown>).models as Array<Record<string, unknown>>;
     const moonshot = (providers.moonshot as Record<string, unknown>).models as Array<Record<string, unknown>>;
 
-    expect(custom[0]).toEqual(expect.objectContaining({ id: 'gpt-5.5', contextWindow: 272000 }));
+    expect(custom[0]).toEqual(expect.objectContaining({ id: 'gpt-5.5', contextWindow: 1000000 }));
     // Rows with explicit contextTokens are user-owned — leave untouched.
     expect(custom[1].contextWindow).toBeUndefined();
     expect(custom[1].contextTokens).toBe(32000);
