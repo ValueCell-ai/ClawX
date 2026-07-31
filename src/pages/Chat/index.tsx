@@ -255,6 +255,33 @@ export function Chat() {
     [agents, currentAgentId],
   );
 
+  // When the effective workspace falls back to the default (~/.openclaw/workspace)
+  // but the current agent has its own dedicated workspace, prefer the agent's
+  // workspace for the ArtifactPanel file browser so users see their agent-specific
+  // files (AGENTS.md, TOOLS.md, etc.) rather than the generic defaults.
+  const artifactPanelWorkspace = useMemo(() => {
+    // If the workspace was explicitly chosen by the user (session-bound or
+    // a non-default global selection), respect that choice.
+    const isImplicitDefault =
+      effectiveWorkspace.source === 'default' ||
+      (effectiveWorkspace.source === 'global' && isDefaultWorkspacePath(cwd));
+    if (!isImplicitDefault) return cwd;
+    // Otherwise prefer the current agent's dedicated workspace if available.
+    const agentWs = currentAgent?.workspace;
+    if (agentWs && !isDefaultWorkspacePath(agentWs)) return agentWs;
+    return cwd;
+  }, [cwd, effectiveWorkspace.source, currentAgent?.workspace]);
+
+  const artifactPanelWorkspaceLabel = useMemo(() => {
+    if (artifactPanelWorkspace === cwd) return workspaceLabel;
+    return getWorkspaceDisplayLabel(
+      artifactPanelWorkspace,
+      t('workspace.defaultLabel'),
+      workspaceLabels,
+      allWorkspacePaths,
+    );
+  }, [artifactPanelWorkspace, cwd, workspaceLabel, t, workspaceLabels, allWorkspacePaths]);
+
   const acpTimeline = useAcpChatSessionStore((s) => s.timeline);
   const acpTurnTimings = useAcpChatSessionStore((s) => s.turnTimingsByUserMessageId);
   const acpLoading = useAcpChatSessionStore((s) => s.loading);
@@ -639,8 +666,8 @@ export function Chat() {
                 fileGroups={fileActivity.fileGroups}
                 uniqueFileCount={fileActivity.uniqueFileCount}
                 agent={currentAgent}
-                workspacePath={cwd}
-                workspaceLabel={workspaceLabel}
+                workspacePath={artifactPanelWorkspace}
+                workspaceLabel={artifactPanelWorkspaceLabel}
                 runStartedAt={null}
               />
             </Suspense>
