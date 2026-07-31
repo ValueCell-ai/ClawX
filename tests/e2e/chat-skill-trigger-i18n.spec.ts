@@ -132,6 +132,9 @@ test.describe('ClawX chat skill trigger', () => {
       await page.getByText('/create-skill', { exact: true }).click();
       await expect(page.getByTestId('chat-composer-input')).toHaveValue('Draft /create-skill  a new helper');
       await expect(page.getByTestId('chat-composer-skill-token')).toHaveText('/create-skill');
+      await expect(page.getByTestId('chat-composer-skill-token')).toHaveJSProperty('tagName', 'SPAN');
+      await expect(page.getByTestId('chat-composer-input')).not.toHaveClass(/text-transparent/);
+      await expect(page.getByTestId('chat-composer-highlight')).toHaveClass(/text-transparent/);
     } finally {
       await closeElectronApp(app);
     }

@@ -1063,6 +1063,8 @@ describe('ChatInput agent targeting', () => {
     expect(screen.getByTestId('chat-composer-skill')).toHaveTextContent('Skill');
     expect(textbox).toHaveValue('Draft /create-skill  a new helper');
     expect(screen.getByTestId('chat-composer-skill-token')).toHaveTextContent('/create-skill');
+    expect(textbox.className).not.toContain('text-transparent');
+    expect(screen.getByTestId('chat-composer-highlight').className).toContain('text-transparent');
 
     fireEvent.click(screen.getByTitle('Send'));
 

@@ -233,6 +233,14 @@
     @apply text-sm font-normal leading-4;
   }
 
+  .clawx-skill-token-overlay {
+    background-color: color-mix(in srgb, #2f6bff 14%, hsl(var(--surface-modal)));
+  }
+
+  .dark .clawx-skill-token-overlay {
+    background-color: color-mix(in srgb, #2f6bff 18%, hsl(var(--surface-modal)));
+  }
+
   .clawx-dialog-overlay {
     @apply fixed inset-0 z-50 bg-black/30 dark:bg-black/60;
   }
