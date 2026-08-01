@@ -33,7 +33,7 @@ import { buildProxyEnv, resolveProxySettings } from '../utils/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
-import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, syncTrustedOfficialPluginInstallRecord, resolvePluginNpmPackagePath } from '../utils/plugin-install';
+import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, resolvePluginNpmPackagePath } from '../utils/plugin-install';
 import { safeRmSync } from '../utils/safe-fs';
 import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
 import { ensureOpenClaw2026_7_1UpgradeSnapshot } from '../utils/openclaw-upgrade-snapshot';
@@ -196,7 +196,6 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean 
           safeRmSync(fsPath(targetDir));
           cpSyncSafe(bundledDir, targetDir);
           fixupPluginManifest(targetDir);
-          syncTrustedOfficialPluginInstallRecord(dirName, targetDir);
         } catch (err) {
           logger.warn(`[plugin] Failed to ${isInstalled ? 'auto-upgrade' : 'install'} ${channelType} plugin:`, err);
           succeeded = false;
@@ -205,7 +204,6 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean 
         // Same version already installed — still patch manifest ID in case it was
         // never corrected (e.g. installed before MANIFEST_ID_FIXES included this plugin).
         fixupPluginManifest(targetDir);
-        syncTrustedOfficialPluginInstallRecord(dirName, targetDir);
       }
       continue;
     }
@@ -219,7 +217,6 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean 
         // Skip only if installed AND same version — but still patch manifest ID.
         if (isInstalled && installedVersion && sourceVersion === installedVersion) {
           fixupPluginManifest(targetDir);
-          syncTrustedOfficialPluginInstallRecord(dirName, targetDir);
           continue;
         }
 
@@ -229,7 +226,6 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean 
           mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
           copyPluginFromNodeModules(npmPkgPath, targetDir, npmName);
           fixupPluginManifest(targetDir);
-          syncTrustedOfficialPluginInstallRecord(dirName, targetDir);
         } catch (err) {
           logger.warn(`[plugin] Failed to ${isInstalled ? 'auto-upgrade' : 'install'} ${channelType} plugin from node_modules:`, err);
           succeeded = false;
@@ -268,7 +264,7 @@ function cleanupUnconfiguredChannelPlugins(configuredChannels: string[]): boolea
   return succeeded;
 }
 
-function cleanupUnconfiguredChannelPluginInstallRecords(configuredChannels: string[]): void {
+async function cleanupUnconfiguredChannelPluginInstallRecords(configuredChannels: string[]): Promise<void> {
   const configuredSet = new Set(configuredChannels);
   for (const [channelType, { dirName }] of Object.entries(CHANNEL_PLUGIN_MAP)) {
     if (configuredSet.has(channelType)) continue;
@@ -276,7 +272,7 @@ function cleanupUnconfiguredChannelPluginInstallRecords(configuredChannels: stri
     // 2026.6.10 → 2026.7.1 migration). OpenClaw validates tracked records even
     // when the channel is no longer configured, so reconcile this on every
     // launch rather than hiding it behind the directory-maintenance cache.
-    removeTrustedOfficialPluginInstallRecord(dirName);
+    await removeTrustedOfficialPluginInstallRecord(dirName);
   }
 }
 
@@ -540,9 +536,9 @@ export async function syncGatewayConfigBeforeLaunch(
     // Always refresh trusted install metadata through ClawX — this must not
     // be skipped when plugin-maintenance is cache-hit, otherwise official
     // external plugins like WhatsApp fail openKeyedStore at runtime.
-    measureSync(timingsMs, 'trustedPluginInstallSyncMs', () => {
-      cleanupUnconfiguredChannelPluginInstallRecords(configuredChannels);
-      repairTrustedOfficialPluginInstallRecords();
+    await measureAsync(timingsMs, 'trustedPluginInstallSyncMs', async () => {
+      await cleanupUnconfiguredChannelPluginInstallRecords(configuredChannels);
+      await repairTrustedOfficialPluginInstallRecords();
     });
   } catch (err) {
     logger.warn('Failed to auto-upgrade plugins:', err);

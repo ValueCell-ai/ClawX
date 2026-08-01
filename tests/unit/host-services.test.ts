@@ -13,6 +13,9 @@ const {
   deleteChannelAccountConfigMock,
   deleteChannelConfigMock,
   ensureFeishuPluginInstalledMock,
+  ensureScopedChannelBindingMock,
+  ensureClawXContextMock,
+  ensureWeChatPluginInstalledMock,
   getAllSettingsMock,
   getChannelFormValuesMock,
   getSettingMock,
@@ -23,6 +26,7 @@ const {
   listConfiguredChannelAccountsFromConfigMock,
   listConfiguredChannelsFromConfigMock,
   listConfiguredChannelsMock,
+  migrateLegacyChannelWideBindingMock,
   providerAccountToConfigMock,
   providerServiceMock,
   readOpenClawConfigMock,
@@ -30,6 +34,8 @@ const {
   removeAgentWorkspaceDirectoryMock,
   resetSettingsMock,
   saveChannelConfigMock,
+  setChannelDefaultAccountMock,
+  setChannelEnabledMock,
   setSettingMock,
   syncDefaultProviderToRuntimeMock,
   syncDeletedProviderToRuntimeMock,
@@ -39,6 +45,9 @@ const {
   testOpenClawConfigDir,
   updateAgentNameMock,
   validateApiKeyWithProviderMock,
+  saveWeChatAccountStateMock,
+  startWeChatLoginSessionMock,
+  waitForWeChatLoginSessionMock,
 } = vi.hoisted(() => ({
   applyProxySettingsMock: vi.fn(),
   assignChannelAccountToAgentMock: vi.fn(),
@@ -49,6 +58,9 @@ const {
   deleteChannelAccountConfigMock: vi.fn(),
   deleteChannelConfigMock: vi.fn(),
   ensureFeishuPluginInstalledMock: vi.fn(),
+  ensureScopedChannelBindingMock: vi.fn(),
+  ensureClawXContextMock: vi.fn(),
+  ensureWeChatPluginInstalledMock: vi.fn(),
   getAllSettingsMock: vi.fn(),
   getChannelFormValuesMock: vi.fn(),
   getSettingMock: vi.fn(),
@@ -59,6 +71,7 @@ const {
   listConfiguredChannelAccountsFromConfigMock: vi.fn(),
   listConfiguredChannelsFromConfigMock: vi.fn(),
   listConfiguredChannelsMock: vi.fn(),
+  migrateLegacyChannelWideBindingMock: vi.fn(),
   providerAccountToConfigMock: vi.fn((account: Record<string, unknown>) => ({
     id: account.id,
     name: account.label,
@@ -98,6 +111,8 @@ const {
   removeAgentWorkspaceDirectoryMock: vi.fn(),
   resetSettingsMock: vi.fn(),
   saveChannelConfigMock: vi.fn(),
+  setChannelDefaultAccountMock: vi.fn(),
+  setChannelEnabledMock: vi.fn(),
   setSettingMock: vi.fn(),
   syncDefaultProviderToRuntimeMock: vi.fn(),
   syncDeletedProviderToRuntimeMock: vi.fn(),
@@ -107,6 +122,9 @@ const {
   testOpenClawConfigDir: '/tmp/clawx-host-services-openclaw',
   updateAgentNameMock: vi.fn(),
   validateApiKeyWithProviderMock: vi.fn(),
+  saveWeChatAccountStateMock: vi.fn(),
+  startWeChatLoginSessionMock: vi.fn(),
+  waitForWeChatLoginSessionMock: vi.fn(),
 }));
 
 vi.mock('@electron/utils/store', () => ({
@@ -154,8 +172,8 @@ vi.mock('@electron/utils/channel-config', () => ({
   listConfiguredChannelsFromConfig: (...args: unknown[]) => listConfiguredChannelsFromConfigMock(...args),
   readOpenClawConfig: (...args: unknown[]) => readOpenClawConfigMock(...args),
   saveChannelConfig: (...args: unknown[]) => saveChannelConfigMock(...args),
-  setChannelDefaultAccount: vi.fn(),
-  setChannelEnabled: vi.fn(),
+  setChannelDefaultAccount: (...args: unknown[]) => setChannelDefaultAccountMock(...args),
+  setChannelEnabled: (...args: unknown[]) => setChannelEnabledMock(...args),
   validateChannelConfig: vi.fn(),
   validateChannelCredentials: vi.fn(),
 }));
@@ -167,8 +185,10 @@ vi.mock('@electron/utils/agent-config', () => ({
   clearChannelBinding: (...args: unknown[]) => clearChannelBindingMock(...args),
   createAgent: (...args: unknown[]) => createAgentMock(...args),
   deleteAgentConfig: (...args: unknown[]) => deleteAgentConfigMock(...args),
+  ensureScopedChannelBinding: (...args: unknown[]) => ensureScopedChannelBindingMock(...args),
   listAgentsSnapshot: (...args: unknown[]) => listAgentsSnapshotMock(...args),
   listAgentsSnapshotFromConfig: (...args: unknown[]) => listAgentsSnapshotFromConfigMock(...args),
+  migrateLegacyChannelWideBinding: (...args: unknown[]) => migrateLegacyChannelWideBindingMock(...args),
   removeAgentWorkspaceDirectory: (...args: unknown[]) => removeAgentWorkspaceDirectoryMock(...args),
   resolveAccountIdForAgent: vi.fn((agentId: string) => agentId === 'main' ? 'default' : agentId),
   updateAgentModel: vi.fn(),
@@ -180,13 +200,13 @@ vi.mock('@electron/utils/plugin-install', () => ({
   ensureDingTalkPluginInstalled: vi.fn(),
   ensureFeishuPluginInstalled: (...args: unknown[]) => ensureFeishuPluginInstalledMock(...args),
   ensureQQBotPluginInstalled: vi.fn(),
-  ensureWeChatPluginInstalled: vi.fn(),
+  ensureWeChatPluginInstalled: (...args: unknown[]) => ensureWeChatPluginInstalledMock(...args),
   ensureWeComPluginInstalled: vi.fn(),
   ensureWhatsAppPluginInstalled: vi.fn(),
 }));
 
 vi.mock('@electron/utils/openclaw-workspace', () => ({
-  ensureClawXContext: vi.fn(),
+  ensureClawXContext: (...args: unknown[]) => ensureClawXContextMock(...args),
 }));
 
 vi.mock('@electron/services/providers/provider-runtime-sync', () => ({
@@ -237,9 +257,9 @@ vi.mock('@electron/utils/device-oauth', () => ({
 
 vi.mock('@electron/utils/wechat-login', () => ({
   cancelWeChatLoginSession: vi.fn(),
-  saveWeChatAccountState: vi.fn(),
-  startWeChatLoginSession: vi.fn(),
-  waitForWeChatLoginSession: vi.fn(),
+  saveWeChatAccountState: (...args: unknown[]) => saveWeChatAccountStateMock(...args),
+  startWeChatLoginSession: (...args: unknown[]) => startWeChatLoginSessionMock(...args),
+  waitForWeChatLoginSession: (...args: unknown[]) => waitForWeChatLoginSessionMock(...args),
 }));
 
 vi.mock('@electron/utils/whatsapp-login', () => ({
@@ -323,6 +343,8 @@ describe('host services', () => {
     providerServiceMock.setDefaultAccount.mockResolvedValue(undefined);
     validateApiKeyWithProviderMock.mockResolvedValue({ valid: true });
     ensureFeishuPluginInstalledMock.mockResolvedValue({ installed: true });
+    ensureWeChatPluginInstalledMock.mockResolvedValue({ installed: true });
+    ensureClawXContextMock.mockResolvedValue(undefined);
     rmSync(logDir, { recursive: true, force: true });
     rmSync(testOpenClawConfigDir, { recursive: true, force: true });
     mkdirSync(logDir, { recursive: true });
@@ -498,6 +520,28 @@ describe('host services', () => {
       'sk-test',
       gatewayManager,
     );
+  });
+
+  it('removes provider runtime state before deleting the local provider record', async () => {
+    const provider = {
+      id: 'custom-local',
+      name: 'Local',
+      type: 'custom',
+      baseUrl: 'http://127.0.0.1:1234/v1',
+      enabled: true,
+    };
+    providerServiceMock._getProviderInternal.mockResolvedValue(provider);
+    const gatewayManager = {};
+    const { createProvidersApi } = await import('@electron/services/providers-api');
+
+    await expect(createProvidersApi({
+      gatewayManager: gatewayManager as never,
+      mainWindow: {} as never,
+    }).delete({ providerId: provider.id })).resolves.toEqual({ success: true });
+
+    expect(syncDeletedProviderToRuntimeMock).toHaveBeenCalledWith(provider, provider.id, gatewayManager);
+    expect(syncDeletedProviderToRuntimeMock.mock.invocationCallOrder[0])
+      .toBeLessThan(providerServiceMock._deleteProviderInternal.mock.invocationCallOrder[0]);
   });
 
   it('sets the default provider account and syncs runtime defaults', async () => {
@@ -723,7 +767,7 @@ describe('host services', () => {
     await expect(channelsApi.targets({ accountId: 'ding-main' })).rejects.toThrow('channelType is required');
   });
 
-  it('saves channel binding for existing agents and schedules channel refresh', async () => {
+  it('saves channel binding for existing agents without scheduling lifecycle work', async () => {
     listAgentsSnapshotMock.mockResolvedValue({
       agents: [{ id: 'main', name: 'Main' }],
       defaultAgentId: 'main',
@@ -746,11 +790,37 @@ describe('host services', () => {
     })).resolves.toEqual({ success: true });
 
     expect(assignChannelAccountToAgentMock).toHaveBeenCalledWith('main', 'feishu', 'default');
-    expect(gatewayManager.debouncedRestart).toHaveBeenCalledWith(150);
+    expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
   });
 
-  it('installs plugin, saves config, ensures scoped binding, and schedules refresh on saveConfig', async () => {
+  it('requests legacy migration inside the scoped binding transaction', async () => {
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'research', name: 'Research' }],
+      defaultAgentId: 'research',
+      defaultModelRef: null,
+      configuredChannelTypes: ['feishu'],
+      channelOwners: {},
+      channelAccountOwners: {},
+    });
+    const { createChannelsApi } = await import('@electron/services/channels-api');
+
+    await expect(createChannelsApi({ gatewayManager: {} as never }).bindingSave({
+      channelType: 'feishu',
+      accountId: 'research',
+      agentId: 'research',
+    })).resolves.toEqual({ success: true });
+
+    expect(assignChannelAccountToAgentMock).toHaveBeenCalledWith(
+      'research',
+      'feishu',
+      'research',
+      { migrateLegacy: true },
+    );
+    expect(migrateLegacyChannelWideBindingMock).not.toHaveBeenCalled();
+  });
+
+  it('installs plugin, saves config, and ensures scoped binding without scheduling lifecycle work', async () => {
     listAgentsSnapshotMock.mockResolvedValue({
       agents: [{ id: 'main', name: 'Main' }],
       defaultAgentId: 'main',
@@ -779,11 +849,12 @@ describe('host services', () => {
       { appId: 'cli_new', appSecret: 'new-secret' },
       'default',
     );
-    expect(assignChannelAccountToAgentMock).toHaveBeenCalledWith('main', 'feishu', 'default');
-    expect(gatewayManager.debouncedRestart).toHaveBeenCalledWith(150);
+    expect(ensureScopedChannelBindingMock).toHaveBeenCalledWith('feishu', 'default');
+    expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
+    expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
   });
 
-  it('deletes agents by restarting gateway, removing workspace, and returning snapshot', async () => {
+  it('deletes agents by awaiting config commit then removing workspace without restarting', async () => {
     const snapshot = {
       agents: [],
       defaultAgentId: 'main',
@@ -796,7 +867,7 @@ describe('host services', () => {
     deleteAgentConfigMock.mockResolvedValue({ snapshot, removedEntry });
     removeAgentWorkspaceDirectoryMock.mockResolvedValue(undefined);
     const gatewayManager = {
-      getStatus: vi.fn(() => ({ state: 'running' })),
+      getStatus: vi.fn(() => ({ state: 'stopped' })),
       restart: vi.fn().mockResolvedValue(undefined),
     };
     const { createAgentsApi } = await import('@electron/services/agents-api');
@@ -805,11 +876,13 @@ describe('host services', () => {
       .resolves.toEqual({ success: true, ...snapshot });
 
     expect(deleteAgentConfigMock).toHaveBeenCalledWith('code');
-    expect(gatewayManager.restart).toHaveBeenCalledTimes(1);
+    expect(gatewayManager.restart).not.toHaveBeenCalled();
     expect(removeAgentWorkspaceDirectoryMock).toHaveBeenCalledWith(removedEntry);
+    expect(deleteAgentConfigMock.mock.invocationCallOrder[0])
+      .toBeLessThan(removeAgentWorkspaceDirectoryMock.mock.invocationCallOrder[0]);
   });
 
-  it('updates agent model and schedules gateway reload', async () => {
+  it('updates agent model without scheduling lifecycle work', async () => {
     const snapshot = {
       agents: [{ id: 'main', modelRef: 'custom-enterpri/claude-sonnet-4' }],
       defaultAgentId: 'main',
@@ -837,10 +910,10 @@ describe('host services', () => {
     expect(agentConfig.updateAgentModel).toHaveBeenCalledWith('main', 'custom-enterpri/claude-sonnet-4');
     expect(providerRuntimeSync.syncAllProviderAuthToRuntime).toHaveBeenCalledTimes(1);
     expect(providerRuntimeSync.syncAgentModelOverrideToRuntime).toHaveBeenCalledWith('main');
-    expect(gatewayManager.debouncedReload).toHaveBeenCalledTimes(1);
+    expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
   });
 
-  it('assigns agent channels and schedules gateway reload', async () => {
+  it('assigns agent channels without scheduling lifecycle work', async () => {
     const snapshot = {
       agents: [{ id: 'main', channelTypes: ['feishu'] }],
       defaultAgentId: 'main',
@@ -862,7 +935,160 @@ describe('host services', () => {
     })).resolves.toEqual({ success: true, ...snapshot });
 
     expect(assignChannelToAgentMock).toHaveBeenCalledWith('main', 'feishu');
-    expect(gatewayManager.debouncedReload).toHaveBeenCalledTimes(1);
+    expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
+  });
+
+  it('creates and updates agents without scheduling lifecycle work', async () => {
+    const snapshot = {
+      agents: [{ id: 'writer', name: 'Writer' }],
+      defaultAgentId: 'main',
+      defaultModelRef: null,
+      configuredChannelTypes: [],
+      channelOwners: {},
+      channelAccountOwners: {},
+    };
+    createAgentMock.mockResolvedValue(snapshot);
+    updateAgentNameMock.mockResolvedValue(snapshot);
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state: 'running' })),
+      debouncedReload: vi.fn(),
+      debouncedRestart: vi.fn(),
+      restart: vi.fn(),
+    };
+    const { createAgentsApi } = await import('@electron/services/agents-api');
+    const agentsApi = createAgentsApi({ gatewayManager: gatewayManager as never });
+
+    await expect(agentsApi.create({ name: 'Writer' })).resolves.toEqual({ success: true, ...snapshot });
+    await expect(agentsApi.update({ id: 'writer', name: 'Writer' })).resolves.toEqual({ success: true, ...snapshot });
+
+    expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
+    expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
+    expect(gatewayManager.restart).not.toHaveBeenCalled();
+  });
+
+  it('removes agent channel bindings without scheduling lifecycle work', async () => {
+    listAgentsSnapshotMock
+      .mockResolvedValueOnce({
+        agents: [{ id: 'writer' }],
+        defaultAgentId: 'main',
+        defaultModelRef: null,
+        configuredChannelTypes: ['feishu'],
+        channelOwners: { feishu: 'writer' },
+        channelAccountOwners: { 'feishu:writer': 'writer' },
+      })
+      .mockResolvedValueOnce({
+        agents: [{ id: 'writer' }],
+        defaultAgentId: 'main',
+        defaultModelRef: null,
+        configuredChannelTypes: [],
+        channelOwners: {},
+        channelAccountOwners: {},
+      });
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state: 'running' })),
+      debouncedReload: vi.fn(),
+      debouncedRestart: vi.fn(),
+      restart: vi.fn(),
+    };
+    const { createAgentsApi } = await import('@electron/services/agents-api');
+
+    await createAgentsApi({ gatewayManager: gatewayManager as never }).removeChannel({
+      id: 'writer',
+      channelType: 'feishu',
+    });
+
+    expect(deleteChannelAccountConfigMock).toHaveBeenCalledWith('feishu', 'writer');
+    expect(clearChannelBindingMock).toHaveBeenCalledWith('feishu', 'writer');
+    expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
+    expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
+    expect(gatewayManager.restart).not.toHaveBeenCalled();
+  });
+
+  it('handles channel default, binding delete, enable, delete, login, and no-change without lifecycle work', async () => {
+    getChannelFormValuesMock.mockResolvedValue({ appId: 'same', appSecret: 'same-secret' });
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'main', name: 'Main' }],
+      defaultAgentId: 'main',
+      defaultModelRef: null,
+      configuredChannelTypes: ['feishu'],
+      channelOwners: {},
+      channelAccountOwners: {},
+    });
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state: 'running' })),
+      debouncedReload: vi.fn(),
+      debouncedRestart: vi.fn(),
+      restart: vi.fn(),
+    };
+    const { createChannelsApi } = await import('@electron/services/channels-api');
+    const channelsApi = createChannelsApi({ gatewayManager: gatewayManager as never });
+
+    await channelsApi.setDefaultAccount({ channelType: 'feishu', accountId: 'default' });
+    await channelsApi.bindingDelete({ channelType: 'feishu', accountId: 'default' });
+    await channelsApi.setEnabled({ channelType: 'feishu', enabled: true });
+    await channelsApi.deleteConfig({ channelType: 'feishu', accountId: 'default' });
+    await channelsApi.deleteConfig({ channelType: 'feishu' });
+    await channelsApi.startLogin({ channelType: 'whatsapp', accountId: 'default' });
+    await expect(channelsApi.saveConfig({
+      channelType: 'feishu',
+      accountId: 'default',
+      config: { appId: 'same', appSecret: 'same-secret' },
+    })).resolves.toEqual({ success: true, noChange: true });
+
+    expect(setChannelDefaultAccountMock).toHaveBeenCalledWith('feishu', 'default');
+    expect(clearChannelBindingMock).toHaveBeenCalledWith('feishu', 'default');
+    expect(setChannelEnabledMock).toHaveBeenCalledWith('feishu', true);
+    expect(deleteChannelAccountConfigMock).toHaveBeenCalledWith('feishu', 'default');
+    expect(deleteChannelConfigMock).toHaveBeenCalledWith('feishu');
+    expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
+    expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
+    expect(gatewayManager.restart).not.toHaveBeenCalled();
+  });
+
+  it('does not register OAuth success restart listeners', () => {
+    const source = readFileSync(join(process.cwd(), 'electron/main/ipc-handlers.ts'), 'utf8');
+
+    expect(source).not.toMatch(/\.on\(['"]oauth:success['"]/);
+    expect(source).not.toContain('debouncedRestart(8000)');
+  });
+
+  it('persists successful WeChat login without scheduling lifecycle work', async () => {
+    startWeChatLoginSessionMock.mockResolvedValue({
+      qrcodeUrl: 'https://example.com/qr',
+      sessionKey: 'session-1',
+    });
+    waitForWeChatLoginSessionMock.mockResolvedValue({
+      connected: true,
+      accountId: 'wx-account',
+      botToken: 'wx-token',
+      baseUrl: 'https://api.example.com',
+      userId: 'wx-user',
+    });
+    saveWeChatAccountStateMock.mockResolvedValue('wx-account');
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'main', name: 'Main' }],
+      defaultAgentId: 'main',
+      defaultModelRef: null,
+      configuredChannelTypes: ['openclaw-weixin'],
+      channelOwners: {},
+      channelAccountOwners: {},
+    });
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state: 'running' })),
+      debouncedReload: vi.fn(),
+      debouncedRestart: vi.fn(),
+      restart: vi.fn(),
+    };
+    const { createChannelsApi } = await import('@electron/services/channels-api');
+
+    await createChannelsApi({ gatewayManager: gatewayManager as never }).startLogin({ channelType: 'wechat' });
+
+    await vi.waitFor(() => {
+      expect(saveChannelConfigMock).toHaveBeenCalledWith('wechat', { enabled: true }, 'wx-account');
+    });
+    expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
+    expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
+    expect(gatewayManager.restart).not.toHaveBeenCalled();
   });
 
   it('returns diagnostics snapshot with channel view and log tails', async () => {

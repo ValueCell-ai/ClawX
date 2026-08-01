@@ -1,22 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
-  readOpenClawConfigMock,
-  writeOpenClawConfigMock,
-  withConfigLockMock,
+  mutateOpenClawConfigMock,
 } = vi.hoisted(() => ({
-  readOpenClawConfigMock: vi.fn(),
-  writeOpenClawConfigMock: vi.fn(),
-  withConfigLockMock: vi.fn(async (fn: () => Promise<unknown>) => await fn()),
+  mutateOpenClawConfigMock: vi.fn(),
 }));
 
-vi.mock('@electron/utils/channel-config', () => ({
-  readOpenClawConfig: readOpenClawConfigMock,
-  writeOpenClawConfig: writeOpenClawConfigMock,
-}));
-
-vi.mock('@electron/utils/config-mutex', () => ({
-  withConfigLock: withConfigLockMock,
+vi.mock('@electron/gateway/config-delivery', () => ({
+  mutateOpenClawConfig: mutateOpenClawConfigMock,
 }));
 
 vi.mock('@electron/utils/logger', () => ({
@@ -33,15 +24,26 @@ describe('syncProxyConfigToOpenClaw', () => {
     vi.clearAllMocks();
   });
 
+  function useCoordinatorConfig(config: Record<string, unknown>): void {
+    mutateOpenClawConfigMock.mockImplementation(async (
+      mutator: (snapshot: Record<string, unknown>) => void | Promise<void>,
+    ) => {
+      const before = JSON.stringify(config);
+      await mutator(config);
+      return JSON.stringify(config) !== before;
+    });
+  }
+
   it('preserves existing telegram proxy on startup-style sync when proxy is disabled', async () => {
-    readOpenClawConfigMock.mockResolvedValue({
+    const config = {
       channels: {
         telegram: {
           botToken: 'token',
           proxy: 'socks5://127.0.0.1:7891',
         },
       },
-    });
+    };
+    useCoordinatorConfig(config);
 
     const { syncProxyConfigToOpenClaw } = await import('@electron/utils/openclaw-proxy');
 
@@ -54,18 +56,20 @@ describe('syncProxyConfigToOpenClaw', () => {
       proxyBypassRules: '',
     });
 
-    expect(writeOpenClawConfigMock).not.toHaveBeenCalled();
+    expect(config.channels.telegram.proxy).toBe('socks5://127.0.0.1:7891');
+    expect(mutateOpenClawConfigMock).toHaveBeenCalledOnce();
   });
 
   it('clears telegram proxy when explicitly requested while proxy is disabled', async () => {
-    readOpenClawConfigMock.mockResolvedValue({
+    const config = {
       channels: {
         telegram: {
           botToken: 'token',
-          proxy: 'socks5://127.0.0.1:7891',
+          proxy: 'socks5://127.0.0.1:7891' as string | undefined,
         },
       },
-    });
+    };
+    useCoordinatorConfig(config);
 
     const { syncProxyConfigToOpenClaw } = await import('@electron/utils/openclaw-proxy');
 
@@ -80,10 +84,7 @@ describe('syncProxyConfigToOpenClaw', () => {
       preserveExistingWhenDisabled: false,
     });
 
-    expect(writeOpenClawConfigMock).toHaveBeenCalledTimes(1);
-    const updatedConfig = writeOpenClawConfigMock.mock.calls[0][0] as {
-      channels: { telegram: Record<string, unknown> };
-    };
-    expect(updatedConfig.channels.telegram.proxy).toBeUndefined();
+    expect(mutateOpenClawConfigMock).toHaveBeenCalledOnce();
+    expect(config.channels.telegram.proxy).toBeUndefined();
   });
 });

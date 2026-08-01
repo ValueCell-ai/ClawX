@@ -226,6 +226,8 @@ Notes:
 
 ClawX employs a **dual-process architecture** with a unified host API layer. The renderer talks to a single client abstraction, while Electron Main owns protocol selection and process lifecycle:
 
+Electron Main also owns OpenClaw configuration delivery. While the Gateway is running, ClawX reads the authoritative `config.get` snapshot and commits changes with `config.set`; while it is stopped or starting, the same coordinator updates the resolved JSON5 config file without starting the Gateway. Ordinary provider, agent, channel, binding, skill, and model changes therefore do not replace the Gateway process. Full restarts remain for process-launch environment changes such as proxy settings, explicit user actions, and health or crash recovery. Auth-profile SQLite updates use OpenClaw's `secrets.reload` RPC so running agents see new credentials without a process restart.
+
 Chat uses an ACP stdio bridge owned by Electron Main. Renderer receives typed host events and renders an in-memory ACP timeline. Gateway remains responsible for non-Chat capabilities such as providers, models, skills, workspace, settings, diagnostics, and media configuration.
 
 An unfinished ACP response keeps streaming when you open another conversation or page. Returning before it finishes restores the latest in-memory timeline and continues the live response; once it finishes, normal ACP history replay remains the source of truth.

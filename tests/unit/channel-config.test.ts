@@ -46,6 +46,12 @@ async function readOpenClawJson(): Promise<Record<string, unknown>> {
   return JSON.parse(content) as Record<string, unknown>;
 }
 
+async function writeOpenClawJson(config: unknown): Promise<void> {
+  const openclawDir = join(testHome, '.openclaw');
+  await mkdir(openclawDir, { recursive: true });
+  await writeFile(join(openclawDir, 'openclaw.json'), JSON.stringify(config, null, 2), 'utf8');
+}
+
 describe('channel credential normalization and duplicate checks', () => {
   beforeEach(async () => {
     vi.resetAllMocks();
@@ -160,9 +166,9 @@ describe('WeCom plugin configuration', () => {
   });
 
   it('normalizes feishu plugin registration to openclaw-lark and removes built-in feishu on save', async () => {
-    const { saveChannelConfig, writeOpenClawConfig } = await import('@electron/utils/channel-config');
+    const { saveChannelConfig } = await import('@electron/utils/channel-config');
 
-    await writeOpenClawConfig({
+    await writeOpenClawJson({
       plugins: {
         enabled: true,
         allow: ['custom-plugin', 'feishu', 'feishu-openclaw-plugin'],
@@ -206,9 +212,9 @@ describe('WeCom plugin configuration', () => {
   });
 
   it('keeps whatsapp plugin registration when saving plugin-backed config', async () => {
-    const { saveChannelConfig, writeOpenClawConfig } = await import('@electron/utils/channel-config');
+    const { saveChannelConfig } = await import('@electron/utils/channel-config');
 
-    await writeOpenClawConfig({
+    await writeOpenClawJson({
       plugins: {
         enabled: true,
         allow: ['whatsapp'],
@@ -271,9 +277,9 @@ describe('WeCom plugin configuration', () => {
   });
 
   it('sanitizes legacy discord guild channel allow flags before writing', async () => {
-    const { saveChannelConfig, writeOpenClawConfig } = await import('@electron/utils/channel-config');
+    const { saveChannelConfig } = await import('@electron/utils/channel-config');
 
-    await writeOpenClawConfig({
+    await writeOpenClawJson({
       channels: {
         discord: {
           enabled: true,
@@ -326,9 +332,9 @@ describe('WeChat dangling plugin cleanup', () => {
   });
 
   it('removes dangling openclaw-weixin plugin registration and state when no channel config exists', async () => {
-    const { cleanupDanglingWeChatPluginState, writeOpenClawConfig } = await import('@electron/utils/channel-config');
+    const { cleanupDanglingWeChatPluginState } = await import('@electron/utils/channel-config');
 
-    await writeOpenClawConfig({
+    await writeOpenClawJson({
       plugins: {
         enabled: true,
         allow: ['openclaw-weixin'],
@@ -349,6 +355,95 @@ describe('WeChat dangling plugin cleanup', () => {
     const config = await readOpenClawJson();
     expect(config.plugins).toBeUndefined();
     expect(existsSync(join(testHome, '.openclaw', 'openclaw-weixin'))).toBe(false);
+  });
+});
+
+describe('coordinated channel config delivery', () => {
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    vi.resetModules();
+    await rm(testHome, { recursive: true, force: true });
+    await rm(testUserData, { recursive: true, force: true });
+  });
+
+  it('mutates the running coordinator snapshot without replacing it from the local file', async () => {
+    await writeOpenClawJson({ localOnly: true });
+    let runningConfig: Record<string, unknown> = { gatewayOnly: true };
+    let hash = 'hash-1';
+    const manager = {
+      getStatus: vi.fn(() => ({ state: 'running' as const })),
+      rpc: vi.fn(async (method: string, params: unknown) => {
+        if (method === 'config.get') return { raw: JSON.stringify(runningConfig), hash };
+        if (method === 'config.set') {
+          runningConfig = JSON.parse((params as { raw: string }).raw) as Record<string, unknown>;
+          hash = 'hash-2';
+          return { ok: true };
+        }
+        throw new Error(`Unexpected RPC method: ${method}`);
+      }),
+    };
+    const { registerOpenClawConfigCoordinator } = await import('@electron/gateway/config-delivery');
+    registerOpenClawConfigCoordinator(manager);
+    const channelConfig = await import('@electron/utils/channel-config');
+
+    await channelConfig.saveChannelConfig('telegram', { botToken: 'gateway-token' }, 'default');
+
+    expect(runningConfig).toMatchObject({
+      gatewayOnly: true,
+      channels: {
+        telegram: {
+          accounts: { default: { botToken: 'gateway-token' } },
+        },
+      },
+    });
+    expect(await readOpenClawJson()).toEqual({ localOnly: true });
+    expect(channelConfig).not.toHaveProperty('writeOpenClawConfig');
+  });
+
+  it('reads the resolved OpenClaw config path', async () => {
+    const customPath = join(testHome, 'custom', 'runtime.json');
+    await mkdir(join(testHome, 'custom'), { recursive: true });
+    await writeFile(customPath, JSON.stringify({ customPath: true }), 'utf8');
+    process.env.OPENCLAW_CONFIG_PATH = customPath;
+
+    try {
+      const { readOpenClawConfig } = await import('@electron/utils/channel-config');
+      await expect(readOpenClawConfig()).resolves.toEqual({ customPath: true });
+    } finally {
+      delete process.env.OPENCLAW_CONFIG_PATH;
+    }
+  });
+
+  it('reads the running coordinator snapshot instead of the local file', async () => {
+    await writeOpenClawJson({ localOnly: true });
+    const manager = {
+      getStatus: vi.fn(() => ({ state: 'running' as const })),
+      rpc: vi.fn(async (method: string) => {
+        if (method === 'config.get') {
+          return { raw: '{ gatewayOnly: true }', hash: 'hash-1' };
+        }
+        throw new Error(`Unexpected RPC method: ${method}`);
+      }),
+    };
+    const { registerOpenClawConfigCoordinator } = await import('@electron/gateway/config-delivery');
+    registerOpenClawConfigCoordinator(manager);
+    const { readOpenClawConfig } = await import('@electron/utils/channel-config');
+
+    await expect(readOpenClawConfig()).resolves.toEqual({ gatewayOnly: true });
+  });
+
+  it('accepts JSON5 syntax when reading the resolved OpenClaw config path', async () => {
+    const customPath = join(testHome, 'custom', 'runtime.json5');
+    await mkdir(join(testHome, 'custom'), { recursive: true });
+    await writeFile(customPath, '{\n  // comment\n  customPath: true,\n}\n', 'utf8');
+    process.env.OPENCLAW_CONFIG_PATH = customPath;
+
+    try {
+      const { readOpenClawConfig } = await import('@electron/utils/channel-config');
+      await expect(readOpenClawConfig()).resolves.toEqual({ customPath: true });
+    } finally {
+      delete process.env.OPENCLAW_CONFIG_PATH;
+    }
   });
 });
 

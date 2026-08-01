@@ -5,6 +5,7 @@
 import { app, BrowserWindow, nativeImage, session, shell, type Session } from 'electron';
 import { join } from 'path';
 import { GatewayManager } from '../gateway/manager';
+import { registerOpenClawConfigCoordinator } from '../gateway/config-delivery';
 import { registerIpcHandlers } from './ipc-handlers';
 import { HostApiRegistry } from './ipc/host-invoke';
 import { createTray } from './tray';
@@ -588,6 +589,7 @@ if (gotTheLock) {
   }
 
   gatewayManager = new GatewayManager();
+  registerOpenClawConfigCoordinator(gatewayManager);
   clawHubService = new ClawHubService();
 
   // Register builtin extensions and load manifest

@@ -18,8 +18,10 @@ const {
   mockLoggerInfo,
   mockUpsertPluginInstallRecordsIntoSqlite,
   mockRemovePluginInstallRecordsFromSqlite,
+  mockMutateOpenClawConfig,
   mockHomedir,
   mockApp,
+  configState,
 } = vi.hoisted(() => ({
   mockExistsSync: vi.fn(),
   mockCpSync: vi.fn(),
@@ -38,10 +40,14 @@ const {
   mockLoggerInfo: vi.fn(),
   mockUpsertPluginInstallRecordsIntoSqlite: vi.fn(() => true),
   mockRemovePluginInstallRecordsFromSqlite: vi.fn(() => true),
+  mockMutateOpenClawConfig: vi.fn(),
   mockHomedir: vi.fn(() => '/home/test'),
   mockApp: {
     isPackaged: true,
     getAppPath: vi.fn(() => '/mock/app'),
+  },
+  configState: {
+    authoritative: {} as Record<string, unknown>,
   },
 }));
 
@@ -106,6 +112,10 @@ vi.mock('@electron/utils/plugin-install-index', () => ({
   ensureOpenClawStateDirExists: vi.fn(),
 }));
 
+vi.mock('@electron/gateway/config-delivery', () => ({
+  mutateOpenClawConfig: mockMutateOpenClawConfig,
+}));
+
 function setPlatform(platform: NodeJS.Platform): void {
   Object.defineProperty(process, 'platform', {
     value: platform,
@@ -136,6 +146,14 @@ describe('plugin installer diagnostics', () => {
     mockWriteFileSync.mockImplementation(() => undefined);
     mockReaddirSync.mockReturnValue([]);
     mockRealpathSync.mockImplementation((input: string) => input);
+    configState.authoritative = {};
+    mockMutateOpenClawConfig.mockImplementation(async (
+      mutator: (config: Record<string, unknown>) => void | Promise<void>,
+    ) => {
+      const before = structuredClone(configState.authoritative);
+      await mutator(configState.authoritative);
+      return JSON.stringify(before) !== JSON.stringify(configState.authoritative);
+    });
   });
 
   afterEach(() => {
@@ -192,7 +210,7 @@ describe('plugin installer diagnostics', () => {
 
   it('returns source-missing warning when bundled mirror cannot be found', async () => {
     const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');
-    const result = ensurePluginInstalled('wecom', ['/bundle/wecom'], 'WeCom');
+    const result = await ensurePluginInstalled('wecom', ['/bundle/wecom'], 'WeCom');
 
     expect(result.installed).toBe(false);
     expect(result.warning).toContain('Bundled WeCom plugin mirror not found');
@@ -219,7 +237,7 @@ describe('plugin installer diagnostics', () => {
     });
 
     const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');
-    const result = ensurePluginInstalled('wecom', [sourceDir], 'WeCom');
+    const result = await ensurePluginInstalled('wecom', [sourceDir], 'WeCom');
 
     expect(result).toEqual({
       installed: false,
@@ -271,7 +289,7 @@ describe('plugin installer diagnostics', () => {
     });
 
     const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');
-    const result = ensurePluginInstalled('wecom', [sourceDir], 'WeCom');
+    const result = await ensurePluginInstalled('wecom', [sourceDir], 'WeCom');
 
     expect(result.installed).toBe(false);
     expect(result.warning).toBe('Failed to install bundled WeCom plugin mirror');
@@ -291,26 +309,16 @@ describe('plugin installer diagnostics', () => {
   });
 
   it('writes trusted SQLite metadata for mirrored official whatsapp plugin', async () => {
-    const configPath = '/home/test/.openclaw/openclaw.json';
     const targetDir = '/home/test/.openclaw/extensions/whatsapp';
     const sourceDir = '/bundle/whatsapp';
 
     mockExistsSync.mockImplementation((input: string) => {
       const value = String(input);
       return value.includes('openclaw.plugin.json')
-        || value === configPath
         || value.includes('/bundle/whatsapp/package.json')
         || value.includes(`${targetDir}/package.json`);
     });
     mockReadFileSync.mockImplementation((input: string) => {
-      if (String(input) === configPath) {
-        return JSON.stringify({
-          plugins: {
-            allow: ['whatsapp'],
-            enabled: true,
-          },
-        });
-      }
       if (String(input).endsWith('package.json')) {
         return JSON.stringify({ version: '2026.6.10' });
       }
@@ -319,7 +327,7 @@ describe('plugin installer diagnostics', () => {
     mockRealpathSync.mockImplementation((input: string) => input);
 
     const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');
-    const result = ensurePluginInstalled('whatsapp', [sourceDir], 'WhatsApp');
+    const result = await ensurePluginInstalled('whatsapp', [sourceDir], 'WhatsApp');
 
     expect(result.installed).toBe(true);
     expect(mockUpsertPluginInstallRecordsIntoSqlite).toHaveBeenCalledWith({
@@ -331,29 +339,26 @@ describe('plugin installer diagnostics', () => {
   });
 
   it('removes WeCom updater metadata for the patched legacy-compatible plugin id', async () => {
-    const configPath = '/home/test/.openclaw/openclaw.json';
     const targetDir = '/home/test/.openclaw/extensions/wecom';
+    configState.authoritative = {
+      gatewayOnly: true,
+      plugins: {
+        installs: {
+          wecom: {
+            source: 'npm',
+            spec: '@wecom/wecom-openclaw-plugin',
+            version: '2026.6.23',
+          },
+        },
+      },
+    };
 
     mockExistsSync.mockImplementation((input: string) => {
       const value = String(input);
-      return value === configPath
-        || value === `${targetDir}/openclaw.plugin.json`
+      return value === `${targetDir}/openclaw.plugin.json`
         || value === `${targetDir}/package.json`;
     });
     mockReadFileSync.mockImplementation((input: string) => {
-      if (String(input) === configPath) {
-        return JSON.stringify({
-          plugins: {
-            installs: {
-              wecom: {
-                source: 'npm',
-                spec: '@wecom/wecom-openclaw-plugin',
-                version: '2026.6.23',
-              },
-            },
-          },
-        });
-      }
       if (String(input) === `${targetDir}/package.json`) {
         return JSON.stringify({ version: '2026.7.2' });
       }
@@ -362,12 +367,10 @@ describe('plugin installer diagnostics', () => {
     mockRealpathSync.mockImplementation((input: string) => input);
 
     const { syncTrustedOfficialPluginInstallRecord } = await import('@electron/utils/plugin-install');
-    expect(syncTrustedOfficialPluginInstallRecord('wecom', targetDir)).toBe(true);
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      configPath,
-      expect.not.stringContaining('"installs"'),
-      'utf-8',
-    );
+    await expect(syncTrustedOfficialPluginInstallRecord('wecom', targetDir)).resolves.toBe(true);
+    expect(configState.authoritative).toEqual({ gatewayOnly: true, plugins: {} });
+    expect(mockMutateOpenClawConfig).toHaveBeenCalledOnce();
+    expect(mockWriteFileSync).not.toHaveBeenCalled();
     expect(mockRemovePluginInstallRecordsFromSqlite).toHaveBeenCalledWith(['wecom-openclaw-plugin']);
     expect(mockUpsertPluginInstallRecordsIntoSqlite).toHaveBeenCalledWith({
       wecom: expect.objectContaining({
@@ -380,26 +383,23 @@ describe('plugin installer diagnostics', () => {
   });
 
   it('replaces legacy Feishu npm ownership with the ClawX path mirror', async () => {
-    const configPath = '/home/test/.openclaw/openclaw.json';
     const targetDir = '/home/test/.openclaw/extensions/feishu-openclaw-plugin';
+    configState.authoritative = {
+      gatewayOnly: true,
+      plugins: {
+        installs: {
+          'openclaw-lark': { source: 'npm', version: '2026.6.10' },
+          'feishu-openclaw-plugin': { source: 'npm', version: '2026.6.10' },
+        },
+      },
+    };
 
     mockExistsSync.mockImplementation((input: string) => {
       const value = String(input);
-      return value === configPath
-        || value === `${targetDir}/openclaw.plugin.json`
+      return value === `${targetDir}/openclaw.plugin.json`
         || value === `${targetDir}/package.json`;
     });
     mockReadFileSync.mockImplementation((input: string) => {
-      if (String(input) === configPath) {
-        return JSON.stringify({
-          plugins: {
-            installs: {
-              'openclaw-lark': { source: 'npm', version: '2026.6.10' },
-              'feishu-openclaw-plugin': { source: 'npm', version: '2026.6.10' },
-            },
-          },
-        });
-      }
       if (String(input) === `${targetDir}/package.json`) {
         return JSON.stringify({ version: '2026.7.9' });
       }
@@ -407,13 +407,11 @@ describe('plugin installer diagnostics', () => {
     });
 
     const { syncTrustedOfficialPluginInstallRecord } = await import('@electron/utils/plugin-install');
-    expect(syncTrustedOfficialPluginInstallRecord('feishu-openclaw-plugin', targetDir)).toBe(true);
+    await expect(syncTrustedOfficialPluginInstallRecord('feishu-openclaw-plugin', targetDir)).resolves.toBe(true);
 
-    expect(mockWriteFileSync).toHaveBeenCalledWith(
-      configPath,
-      expect.not.stringContaining('"installs"'),
-      'utf-8',
-    );
+    expect(configState.authoritative).toEqual({ gatewayOnly: true, plugins: {} });
+    expect(mockMutateOpenClawConfig).toHaveBeenCalledOnce();
+    expect(mockWriteFileSync).not.toHaveBeenCalled();
     expect(mockRemovePluginInstallRecordsFromSqlite).toHaveBeenCalledWith([
       'feishu-openclaw-plugin',
       'feishu',
@@ -432,7 +430,8 @@ describe('plugin installer diagnostics', () => {
     mockExistsSync.mockReturnValue(false);
 
     const { removeTrustedOfficialPluginInstallRecord } = await import('@electron/utils/plugin-install');
-    expect(removeTrustedOfficialPluginInstallRecord('whatsapp')).toBe(true);
+    await expect(removeTrustedOfficialPluginInstallRecord('whatsapp')).resolves.toBe(true);
+    expect(mockMutateOpenClawConfig).toHaveBeenCalledOnce();
     expect(mockRemovePluginInstallRecordsFromSqlite).toHaveBeenCalledWith(['whatsapp']);
   });
 

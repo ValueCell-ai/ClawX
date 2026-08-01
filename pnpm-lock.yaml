@@ -20,6 +20,9 @@ importers:
       electron-updater:
         specifier: ^6.8.3
         version: 6.8.3
+      json5:
+        specifier: 2.2.3
+        version: 2.2.3
       node-machine-id:
         specifier: ^1.1.12
         version: 1.1.12

@@ -44,6 +44,7 @@ conditionalProfiles:
       - channels/agents/settings UI depends on new backend response shape
       - Web Browser guest, navigation, session, permission, or data policy changes
 requiredRules:
+  - openclaw-config-delivery
   - renderer-main-boundary
   - backend-communication-boundary
   - api-client-transport-policy
@@ -74,6 +75,8 @@ forbiddenPatterns:
 ---
 
 Gateway backend communication covers all ClawX paths that move data between the visual desktop UI and OpenClaw runtime/backend services.
+
+Coordinator-owned OpenClaw config mutations and their `config.get`/`config.set` transaction contract are documented in `harness/reference/openclaw-config-delivery.md`.
 
 Allowed flow:
 Renderer page/component -> `src/lib/host-api.ts` or `src/lib/api-client.ts` -> Electron Main typed host service or IPC handler -> Main-owned OpenClaw Gateway WebSocket -> runtime result -> store/UI.

@@ -140,6 +140,24 @@ describe('saveProviderKeyToOpenClaw', () => {
 
     logSpy.mockRestore();
   });
+
+  it('reloads the running Gateway auth snapshot once after the write batch', async () => {
+    const manager = {
+      getStatus: vi.fn(() => ({ state: 'running' as const })),
+      rpc: vi.fn(async (method: string) => {
+        if (method === 'secrets.reload') return { ok: true };
+        throw new Error(`Unexpected RPC method: ${method}`);
+      }),
+    };
+    const { registerOpenClawConfigCoordinator } = await import('@electron/gateway/config-delivery');
+    registerOpenClawConfigCoordinator(manager);
+    const { saveProviderKeyToOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    await saveProviderKeyToOpenClaw('openrouter', 'sk-test', 'main');
+
+    expect(manager.rpc).toHaveBeenCalledOnce();
+    expect(manager.rpc).toHaveBeenCalledWith('secrets.reload', {});
+  });
 });
 
 describe('removeProviderKeyFromOpenClaw', () => {
@@ -366,9 +384,54 @@ describe('sanitizeOpenClawConfig', () => {
     logSpy.mockRestore();
   });
 
+  it('sanitizes valid JSON5 instead of treating it as corrupt', async () => {
+    const openclawDir = join(testHome, '.openclaw');
+    await mkdir(openclawDir, { recursive: true });
+    const configPath = join(openclawDir, 'openclaw.json');
+    await writeFile(configPath, '{\n  // OpenClaw accepts comments\n  commands: { restart: false, },\n}\n', 'utf8');
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await sanitizeOpenClawConfig();
+
+    const result = JSON.parse(await readFile(configPath, 'utf8')) as Record<string, unknown>;
+    expect(result.commands).toEqual({ restart: false });
+    expect((result.tools as Record<string, unknown>).profile).toBe('full');
+    logSpy.mockRestore();
+  });
+
+  it('sanitizes the running Gateway snapshot without replacing it from the fallback file', async () => {
+    await writeOpenClawJson({ fallbackOnly: true });
+    const rpc = vi.fn(async (method: string) => {
+      if (method === 'config.get') {
+        return {
+          raw: JSON.stringify({ gatewayOnly: true, commands: { restart: false } }),
+          hash: 'gateway-hash',
+        };
+      }
+      if (method === 'config.set') return { ok: true };
+      throw new Error(`Unexpected RPC method: ${method}`);
+    });
+    const { registerOpenClawConfigCoordinator } = await import('@electron/gateway/config-delivery');
+    registerOpenClawConfigCoordinator({
+      getStatus: () => ({ state: 'running' }),
+      rpc,
+    } as never);
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    expect(rpc.mock.calls.map(([method]) => method)).toEqual(['config.get', 'config.get', 'config.set']);
+    const delivered = JSON.parse((rpc.mock.calls[2]?.[1] as { raw: string }).raw) as Record<string, unknown>;
+    expect(delivered.gatewayOnly).toBe(true);
+    expect(delivered).not.toHaveProperty('fallbackOnly');
+    expect(delivered.commands).toEqual({ restart: false });
+    expect(await readOpenClawJson()).toEqual({ fallbackOnly: true });
+  });
+
   it('properly sanitizes a genuinely empty {} config (fresh install)', async () => {
     // A fresh install with {} is a valid config — sanitize should proceed
-    // and enforce tools.profile, commands.restart, etc.
+    // and enforce the ClawX tool and skill defaults.
     await writeOpenClawJson({});
 
     const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
@@ -901,6 +964,43 @@ describe('syncProviderConfigToOpenClaw', () => {
     await rm(testUserData, { recursive: true, force: true });
   });
 
+  it('mutates the running Gateway snapshot without replacing it from the fallback file', async () => {
+    await writeOpenClawJson({ fallbackOnly: true });
+    const rpc = vi.fn(async (method: string) => {
+      if (method === 'config.get') {
+        return {
+          raw: JSON.stringify({
+            gatewayOnly: true,
+            commands: { restart: false },
+            models: { providers: {} },
+          }),
+          hash: 'gateway-hash',
+        };
+      }
+      if (method === 'config.set') return { ok: true };
+      throw new Error(`Unexpected RPC method: ${method}`);
+    });
+    const { registerOpenClawConfigCoordinator } = await import('@electron/gateway/config-delivery');
+    registerOpenClawConfigCoordinator({
+      getStatus: () => ({ state: 'running' }),
+      rpc,
+    } as never);
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await syncProviderConfigToOpenClaw('custom-example', 'model-a', {
+      baseUrl: 'https://example.com/v1',
+      api: 'openai-completions',
+    });
+
+    expect(rpc.mock.calls.map(([method]) => method)).toEqual(['config.get', 'config.set']);
+    const delivered = JSON.parse((rpc.mock.calls[1]?.[1] as { raw: string }).raw) as Record<string, unknown>;
+    expect(delivered.gatewayOnly).toBe(true);
+    expect(delivered).not.toHaveProperty('fallbackOnly');
+    expect(delivered.commands).toEqual({ restart: false });
+    expect(((delivered.models as { providers: Record<string, unknown> }).providers)['custom-example']).toBeDefined();
+    expect(await readOpenClawJson()).toEqual({ fallbackOnly: true });
+  });
+
   it('preserves existing custom-provider model metadata during provider sync', async () => {
     await writeOpenClawJson({
       models: {
@@ -1359,6 +1459,31 @@ describe('auth-backed provider discovery', () => {
     });
   });
 
+  it('reads provider config from the resolved OpenClaw config path', async () => {
+    const configuredPath = join(testHome, 'custom-state', 'configured-openclaw.json');
+    await mkdir(join(testHome, 'custom-state'), { recursive: true });
+    await writeFile(configuredPath, JSON.stringify({
+      agents: { defaults: { model: { primary: 'custom-resolved/model-a' } } },
+      models: { providers: { 'custom-resolved': { api: 'openai-completions' } } },
+    }), 'utf8');
+    const previousConfigPath = process.env.OPENCLAW_CONFIG_PATH;
+    process.env.OPENCLAW_CONFIG_PATH = configuredPath;
+
+    try {
+      const { getOpenClawProvidersConfig } = await import('@electron/utils/openclaw-auth');
+      const result = await getOpenClawProvidersConfig();
+
+      expect(result.defaultModel).toBe('custom-resolved/model-a');
+      expect(result.providers).toHaveProperty('custom-resolved');
+    } finally {
+      if (previousConfigPath === undefined) {
+        delete process.env.OPENCLAW_CONFIG_PATH;
+      } else {
+        process.env.OPENCLAW_CONFIG_PATH = previousConfigPath;
+      }
+    }
+  });
+
   it('removes all matching auth profiles for a deleted provider so it does not reappear', async () => {
     await writeOpenClawJson({
       agents: {
@@ -1480,6 +1605,37 @@ describe('auth-backed provider discovery', () => {
     expect(agents.defaults?.model?.primary).toBeUndefined();
     expect(agents.defaults?.model?.fallbacks).toEqual(['minimax-portal/MiniMax-M3']);
     expect(agents.list?.[0]?.model).toBeUndefined();
+  });
+
+  it('propagates a coordinator failure while removing a provider', async () => {
+    const runningConfig = {
+      models: {
+        providers: {
+          'custom-abc12345': {
+            baseUrl: 'https://api.example.com/v1',
+            api: 'openai-completions',
+          },
+        },
+      },
+      agents: { list: [{ id: 'main', name: 'Main', default: true }] },
+    };
+    const manager = {
+      getStatus: vi.fn(() => ({ state: 'running' as const })),
+      rpc: vi.fn(async (method: string) => {
+        if (method === 'config.get') {
+          return { raw: JSON.stringify(runningConfig), hash: 'hash-1' };
+        }
+        if (method === 'config.set') {
+          throw new Error('config.set unavailable');
+        }
+        throw new Error(`Unexpected RPC method: ${method}`);
+      }),
+    };
+    const { registerOpenClawConfigCoordinator } = await import('@electron/gateway/config-delivery');
+    registerOpenClawConfigCoordinator(manager);
+    const { removeProviderFromOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    await expect(removeProviderFromOpenClaw('custom-abc12345')).rejects.toThrow('config.set unavailable');
   });
 
   it('removes merged and legacy minimax plugin registrations when deleting the provider', async () => {
@@ -2070,6 +2226,37 @@ describe('syncOpenAiCompatibleImageRelay', () => {
     expect((auth.profiles['clawx-openai-image:default'] as Record<string, unknown>).key).toBe('sk-relay-test');
   });
 
+  it('preserves metadata for retained relay models while dropping deselected models', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          'clawx-openai-image': {
+            baseUrl: 'https://old-relay.example.com/v1',
+            api: 'openai-completions',
+            models: [
+              { id: 'gpt-image-2', name: 'GPT Image 2', contextWindow: 1234 },
+              { id: 'old-image', name: 'Old Image', contextWindow: 5678 },
+            ],
+          },
+        },
+      },
+    });
+    const { syncOpenAiCompatibleImageRelay } = await import('@electron/utils/openclaw-auth');
+
+    await syncOpenAiCompatibleImageRelay({
+      enabled: true,
+      baseUrl: 'https://relay.example.com',
+      imageModelIds: ['gpt-image-2'],
+    });
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const imageRelay = providers['clawx-openai-image'] as Record<string, unknown>;
+    expect(imageRelay.models).toEqual([
+      { id: 'gpt-image-2', name: 'GPT Image 2', contextWindow: 1234 },
+    ]);
+  });
+
   it('removes only the ClawX image provider when relay is disabled', async () => {
     await writeOpenClawJson({
       models: {
@@ -2080,7 +2267,15 @@ describe('syncOpenAiCompatibleImageRelay', () => {
       },
       agents: {
         defaults: {
-          imageGenerationModel: { primary: 'clawx-openai-image/gpt-image-2', timeoutMs: 180000 },
+          imageGenerationModel: {
+            primary: 'clawx-openai-image/gpt-image-2',
+            fallbacks: [
+              'clawx-openai-image/old-image',
+              'google/gemini-3.1-flash-image-preview',
+            ],
+            timeoutMs: 180000,
+            maxPixels: 4194304,
+          },
         },
       },
       plugins: {
@@ -2097,7 +2292,12 @@ describe('syncOpenAiCompatibleImageRelay', () => {
     expect(providers.openai).toEqual({ baseUrl: 'https://api.openai.com/v1', api: 'openai-responses', models: [] });
     expect(providers['clawx-openai-image']).toBeUndefined();
     const defaults = (result.agents as Record<string, unknown>).defaults as Record<string, unknown>;
-    expect(defaults.imageGenerationModel).toBeUndefined();
+    expect(defaults.imageGenerationModel).toEqual({
+      primary: 'google/gemini-3.1-flash-image-preview',
+      fallbacks: [],
+      timeoutMs: 180000,
+      maxPixels: 4194304,
+    });
     expect(result.plugins).toBeUndefined();
   });
 });
@@ -2317,6 +2517,34 @@ describe('batchSyncConfigFields', () => {
     const ssrfPolicy = (fetch.fetch as Record<string, unknown>).ssrfPolicy as Record<string, unknown>;
     expect(ssrfPolicy.allowRfc2544BenchmarkRange).toBe(true);
     expect(ssrfPolicy.allowIpv6UniqueLocalRange).toBe(true);
+  });
+
+  it('loads external inputs once when a Gateway hash conflict replays the mutator', async () => {
+    let setAttempts = 0;
+    const manager = {
+      getStatus: vi.fn(() => ({ state: 'running' as const })),
+      rpc: vi.fn(async (method: string) => {
+        if (method === 'config.get') {
+          return { raw: '{}', hash: `hash-${setAttempts + 1}` };
+        }
+        if (method === 'config.set') {
+          setAttempts += 1;
+          if (setAttempts === 1) {
+            throw new Error('config changed since last load; re-run config.get and retry');
+          }
+          return { ok: true };
+        }
+        throw new Error(`Unexpected RPC method: ${method}`);
+      }),
+    };
+    const { registerOpenClawConfigCoordinator } = await import('@electron/gateway/config-delivery');
+    registerOpenClawConfigCoordinator(manager);
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+
+    await batchSyncConfigFields('new-token');
+
+    expect(getSettingMock.mock.calls.filter(([key]) => key === 'gatewayPort')).toHaveLength(1);
+    expect(getSettingMock.mock.calls.filter(([key]) => key === 'memorySearchFtsMigrationVersion')).toHaveLength(1);
   });
 
   it('does not override explicit web_fetch SSRF policy opt-outs', async () => {

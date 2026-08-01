@@ -51,11 +51,6 @@ import { launchGatewayProcess } from './process-launcher';
 import { GatewayRestartController } from './restart-controller';
 import { GatewayRestartGovernor } from './restart-governor';
 import {
-  DEFAULT_GATEWAY_RELOAD_POLICY,
-  loadGatewayReloadPolicy,
-  type GatewayReloadPolicy,
-} from './reload-policy';
-import {
   classifyGatewayStderrMessage,
   GATEWAY_STARTUP_SLOW_STAGE_MS,
   GATEWAY_STARTUP_SLOW_TOTAL_MS,
@@ -195,16 +190,11 @@ export class GatewayManager extends EventEmitter {
   private readonly lifecycleController = new GatewayLifecycleController();
   private readonly restartController = new GatewayRestartController();
   private readonly restartGovernor = new GatewayRestartGovernor();
-  private reloadDebounceTimer: NodeJS.Timeout | null = null;
   private initialReadyHeartbeatRecoveryTimer: NodeJS.Timeout | null = null;
   private upgradeSnapshotCleanupAttempted = false;
-  private reloadPolicy: GatewayReloadPolicy = { ...DEFAULT_GATEWAY_RELOAD_POLICY };
-  private reloadPolicyLoadedAt = 0;
-  private reloadPolicyRefreshPromise: Promise<void> | null = null;
   private externalShutdownSupported: boolean | null = null;
   private reconnectAttemptsTotal = 0;
   private reconnectSuccessTotal = 0;
-  private static readonly RELOAD_POLICY_REFRESH_MS = 15_000;
   private static readonly HEARTBEAT_INTERVAL_MS = 60_000;
   private static readonly HEARTBEAT_TIMEOUT_MS = 30_000;
   private static readonly HEARTBEAT_MAX_MISSES = 4;
@@ -343,8 +333,6 @@ export class GatewayManager extends EventEmitter {
     logger.info(`Gateway start requested (port=${this.status.port})`);
     this.lastSpawnSummary = null;
     this.shouldReconnect = true;
-    await this.refreshReloadPolicy(true);
-
     // Lazily load device identity (async file I/O + key generation).
     // Must happen before connect() which uses the identity for the handshake.
     await this.initDeviceIdentity();
@@ -688,138 +676,6 @@ export class GatewayManager extends EventEmitter {
   }
 
   /**
-   * Ask the Gateway process to reload config in-place when possible.
-   * Falls back to restart on unsupported platforms or signaling failures.
-   */
-  async reload(): Promise<void> {
-    await this.refreshReloadPolicy();
-
-    if (this.reloadPolicy.mode === 'off' || this.reloadPolicy.mode === 'restart') {
-      logger.info(
-        `[gateway-refresh] mode=reload result=policy_forced_restart policy=${this.reloadPolicy.mode}`,
-      );
-      await this.restart();
-      return;
-    }
-
-    if (this.restartController.isRestartDeferred({
-      state: this.status.state,
-      startLock: this.startLock,
-    })) {
-      this.restartController.markDeferredRestart('reload', {
-        state: this.status.state,
-        startLock: this.startLock,
-      });
-      return;
-    }
-
-    const pidBefore = this.process?.pid;
-    logger.info(`[gateway-refresh] mode=reload requested pid=${pidBefore ?? 'n/a'} state=${this.status.state}`);
-
-    if (!this.process?.pid || this.status.state !== 'running') {
-      logger.warn('[gateway-refresh] mode=reload result=fallback_restart cause=not_running');
-      logger.warn('Gateway reload requested while not running; falling back to restart');
-      await this.restart();
-      return;
-    }
-
-    const connectedForMs = this.status.connectedAt
-      ? Date.now() - this.status.connectedAt
-      : Number.POSITIVE_INFINITY;
-
-    // Avoid signaling a process that just came up; it will already read latest config.
-    if (connectedForMs < 8000) {
-      logger.info(
-        `[gateway-refresh] mode=reload result=skipped_recent_connect connectedForMs=${connectedForMs} pid=${this.process.pid}`,
-      );
-      logger.info(`Gateway connected ${connectedForMs}ms ago, skipping reload signal`);
-      return;
-    }
-
-    if (process.platform === 'win32') {
-      // Windows does not support SIGUSR1 for in-process reload.
-      // Fall back to a full restart.  The connectedForMs < 8000 guard above
-      // already skips unnecessary restarts for recently-started processes.
-      logger.warn('[gateway-refresh] mode=reload result=fallback_restart cause=windows');
-      await this.restart();
-      return;
-    }
-
-    try {
-      process.kill(this.process.pid, 'SIGUSR1');
-      logger.info(`Sent SIGUSR1 to Gateway for config reload (pid=${this.process.pid})`);
-      // Some gateway builds do not handle SIGUSR1 as an in-process reload.
-      // If process state doesn't recover quickly, fall back to restart.
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      if (this.status.state !== 'running' || !this.process?.pid) {
-        logger.warn('[gateway-refresh] mode=reload result=fallback_restart cause=post_signal_unhealthy');
-        logger.warn('Gateway did not stay running after reload signal, falling back to restart');
-        await this.restart();
-      } else {
-        const pidAfter = this.process.pid;
-        logger.info(
-          `[gateway-refresh] mode=reload result=applied_in_place pidBefore=${pidBefore} pidAfter=${pidAfter}`,
-        );
-      }
-    } catch (error) {
-      logger.warn('[gateway-refresh] mode=reload result=fallback_restart cause=signal_error');
-      logger.warn('Gateway reload signal failed, falling back to restart:', error);
-      await this.restart();
-    }
-  }
-
-  /**
-   * Debounced reload — coalesces multiple rapid config-change events into one
-   * in-process reload when possible.
-   */
-  debouncedReload(delayMs?: number): void {
-    void this.refreshReloadPolicy();
-    const effectiveDelay = delayMs ?? this.reloadPolicy.debounceMs;
-    if (this.reloadPolicy.mode === 'off' || this.reloadPolicy.mode === 'restart') {
-      logger.debug(
-        `Gateway reload policy=${this.reloadPolicy.mode}; routing debouncedReload to debouncedRestart (${effectiveDelay}ms)`,
-      );
-      this.debouncedRestart(effectiveDelay);
-      return;
-    }
-
-    if (this.reloadDebounceTimer) {
-      clearTimeout(this.reloadDebounceTimer);
-    }
-    logger.debug(`Gateway reload debounced (will fire in ${effectiveDelay}ms)`);
-    this.reloadDebounceTimer = setTimeout(() => {
-      this.reloadDebounceTimer = null;
-      void this.reload().catch((err) => {
-        logger.warn('Debounced Gateway reload failed:', err);
-      });
-    }, effectiveDelay);
-  }
-
-  private async refreshReloadPolicy(force = false): Promise<void> {
-    const now = Date.now();
-    if (!force && now - this.reloadPolicyLoadedAt < GatewayManager.RELOAD_POLICY_REFRESH_MS) {
-      return;
-    }
-
-    if (this.reloadPolicyRefreshPromise) {
-      await this.reloadPolicyRefreshPromise;
-      return;
-    }
-
-    this.reloadPolicyRefreshPromise = (async () => {
-      const nextPolicy = await loadGatewayReloadPolicy();
-      this.reloadPolicy = nextPolicy;
-      this.reloadPolicyLoadedAt = Date.now();
-    })();
-
-    try {
-      await this.reloadPolicyRefreshPromise;
-    } finally {
-      this.reloadPolicyRefreshPromise = null;
-    }
-  }
-
-  /**
    * Clear all active timers
    */
   private clearAllTimers(): void {
@@ -829,10 +685,6 @@ export class GatewayManager extends EventEmitter {
     }
     this.connectionMonitor.clear();
     this.restartController.clearDebounceTimer();
-    if (this.reloadDebounceTimer) {
-      clearTimeout(this.reloadDebounceTimer);
-      this.reloadDebounceTimer = null;
-    }
     this.resetGatewayReadyFallback();
     this.clearInitialReadyHeartbeatRecoveryTimer();
   }

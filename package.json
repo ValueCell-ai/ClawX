@@ -93,6 +93,7 @@
         "@agentclientprotocol/sdk": "1.1.0",
         "electron-store": "^11.0.2",
         "electron-updater": "^6.8.3",
+        "json5": "2.2.3",
         "node-machine-id": "^1.1.12",
         "posthog-node": "^5.28.0",
         "tar": "^6.2.1",

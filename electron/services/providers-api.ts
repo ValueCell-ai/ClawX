@@ -216,8 +216,8 @@ async function deleteProvider(payload: ProviderPayload<'delete'>, gatewayManager
   const providerId = getProviderId(payload, 'delete');
   try {
     const existing = await providerService._getProviderInternal(providerId);
-    await providerService._deleteProviderInternal(providerId);
     await syncDeletedProviderToRuntime(existing, providerId, gatewayManager);
+    await providerService._deleteProviderInternal(providerId);
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
@@ -372,12 +372,12 @@ async function deleteAccount(
       ? 'openai'
       : undefined;
     if (apiKeyOnly) {
-      await providerService._deleteProviderApiKeyInternal(accountId);
       await syncDeletedProviderApiKeyToRuntime(
         existing ? providerAccountToConfig(existing) : null,
         accountId,
         runtimeProviderKey,
       );
+      await providerService._deleteProviderApiKeyInternal(accountId);
       return { success: true };
     }
     const currentDefaultAccountId = await providerService.getDefaultAccountId();
@@ -385,10 +385,9 @@ async function deleteAccount(
       ? selectReplacementDefaultAccount(await providerService.listAccounts(), accountId)
       : undefined;
 
-    await providerService.deleteAccount(accountId);
     if (replacementDefault) {
-      await providerService.setDefaultAccount(replacementDefault.id);
       await syncDefaultProviderToRuntime(replacementDefault.id);
+      await providerService.setDefaultAccount(replacementDefault.id);
     }
     await syncDeletedProviderToRuntime(
       existing ? providerAccountToConfig(existing) : null,
@@ -396,6 +395,7 @@ async function deleteAccount(
       gatewayManager,
       runtimeProviderKey,
     );
+    await providerService.deleteAccount(accountId);
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };

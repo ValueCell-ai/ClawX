@@ -223,6 +223,8 @@ ClawXには、Electron、OpenClaw Gateway、またはTelegramなどのチャネ�
 
 ClawXは、**デュアルプロセス + Host API 統一アクセス**構成を採用しています。Renderer は単一クライアント抽象を呼び出し、プロトコル選択とライフサイクルは Main が管理します：
 
+OpenClaw の設定配信も Electron Main が一元管理します。Gateway の実行中は `config.get` の正規スナップショットを基準にし、変更を `config.set` でコミットします。Gateway が停止中または起動中の場合は、同じコーディネーターが解決済みの JSON5 設定ファイルだけを更新し、Gateway を起動しません。そのため、通常の Provider、Agent、Channel、バインディング、Skill、モデル変更では Gateway プロセスを置き換えません。完全な再起動は、プロキシなどのプロセス起動環境の変更、ユーザーによる明示的な操作、ヘルスチェックやクラッシュ復旧に限定されます。認証プロファイルを SQLite に書き込んだ後は OpenClaw の `secrets.reload` を呼び出し、実行中の Agent がプロセス再起動なしで新しい認証情報を読み取れるようにします。
+
 Chat は Electron Main が所有する ACP stdio bridge を使用します。Renderer は型付き host event を受け取り、メモリ上の ACP timeline を描画します。Gateway は providers、models、skills、workspace、settings、diagnostics、media configuration などの非 Chat 機能を引き続き担当します。
 
 別の会話やページを開いても、未完了の ACP 応答はストリーミングを継続します。完了前に戻ると最新のメモリ内 timeline が復元され、ライブ応答の表示が続きます。完了後は通常の ACP 履歴リプレイが引き続き唯一の正となります。

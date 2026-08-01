@@ -101,4 +101,43 @@ describe('wechat login utility', () => {
     ) as string[];
     expect(accountIndex).toEqual(['bot-im-bot']);
   });
+
+  it('loads the route tag from the running coordinator snapshot', async () => {
+    const manager = {
+      getStatus: vi.fn(() => ({ state: 'running' as const })),
+      rpc: vi.fn(async (method: string) => {
+        if (method === 'config.get') {
+          return {
+            raw: JSON.stringify({
+              channels: {
+                'openclaw-weixin': {
+                  accounts: { 'bot-im-bot': { routeTag: 'route-live' } },
+                },
+              },
+            }),
+            hash: 'hash-1',
+          };
+        }
+        throw new Error(`Unexpected RPC method: ${method}`);
+      }),
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        qrcode: 'qr-token',
+        qrcode_img_content: 'https://example.com/qr.png',
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { registerOpenClawConfigCoordinator } = await import('@electron/gateway/config-delivery');
+    registerOpenClawConfigCoordinator(manager);
+    const { startWeChatLoginSession } = await import('@electron/utils/wechat-login');
+
+    await startWeChatLoginSession({ accountId: 'bot@im.bot' });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      { headers: { SKRouteTag: 'route-live' } },
+    );
+  });
 });

@@ -102,15 +102,22 @@ function createProvider(overrides: Partial<ProviderConfig> = {}): ProviderConfig
   };
 }
 
-function createGateway(state: 'running' | 'stopped' = 'running'): Pick<GatewayManager, 'debouncedReload' | 'debouncedRestart' | 'getStatus'> {
+function createGateway(state: 'running' | 'stopped' = 'running') {
   return {
     debouncedReload: vi.fn(),
     debouncedRestart: vi.fn(),
+    restart: vi.fn(),
     getStatus: vi.fn(() => ({ state } as ReturnType<GatewayManager['getStatus']>)),
   };
 }
 
-describe('provider-runtime-sync refresh strategy', () => {
+function expectNoGatewayLifecycleCalls(gateway: ReturnType<typeof createGateway>): void {
+  expect(gateway.debouncedReload).not.toHaveBeenCalled();
+  expect(gateway.debouncedRestart).not.toHaveBeenCalled();
+  expect(gateway.restart).not.toHaveBeenCalled();
+}
+
+describe('provider-runtime-sync config delivery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getProviderAccount.mockResolvedValue(null);
@@ -138,20 +145,25 @@ describe('provider-runtime-sync refresh strategy', () => {
     mocks.listAgentsSnapshot.mockResolvedValue({ agents: [] });
   });
 
-  it('uses debouncedReload after saving provider config', async () => {
+  it('does not schedule an independent reload or restart after saving provider config', async () => {
     const gateway = createGateway('running');
     await syncSavedProviderToRuntime(createProvider(), undefined, gateway as GatewayManager);
 
-    expect(gateway.debouncedReload).toHaveBeenCalledTimes(1);
-    expect(gateway.debouncedRestart).not.toHaveBeenCalled();
+    expectNoGatewayLifecycleCalls(gateway);
   });
 
-  it('uses debouncedRestart after deleting provider config', async () => {
+  it('propagates per-agent model registry sync failures after saving provider config', async () => {
+    mocks.listAgentsSnapshot.mockRejectedValueOnce(new Error('models.json sync unavailable'));
+
+    await expect(syncSavedProviderToRuntime(createProvider(), undefined))
+      .rejects.toThrow('models.json sync unavailable');
+  });
+
+  it('does not schedule an independent reload or restart after deleting provider config', async () => {
     const gateway = createGateway('running');
     await syncDeletedProviderToRuntime(createProvider(), 'moonshot', gateway as GatewayManager);
 
-    expect(gateway.debouncedRestart).toHaveBeenCalledTimes(1);
-    expect(gateway.debouncedReload).not.toHaveBeenCalled();
+    expectNoGatewayLifecycleCalls(gateway);
   });
 
   it('removes both runtime and stored account keys when deleting a custom provider', async () => {
@@ -167,7 +179,7 @@ describe('provider-runtime-sync refresh strategy', () => {
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('custom-moonshot');
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('moonshot-cn');
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledTimes(2);
-    expect(gateway.debouncedRestart).toHaveBeenCalledTimes(1);
+    expectNoGatewayLifecycleCalls(gateway);
   });
 
   it('also removes bare openai config when deleting Codex OAuth without an API key', async () => {
@@ -203,7 +215,7 @@ describe('provider-runtime-sync refresh strategy', () => {
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('openai');
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('openai-oauth-1');
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('openai');
-    expect(gateway.debouncedRestart).toHaveBeenCalledTimes(1);
+    expectNoGatewayLifecycleCalls(gateway);
   });
 
   it('only clears the api-key profile when deleting a provider api key', async () => {
@@ -218,20 +230,18 @@ describe('provider-runtime-sync refresh strategy', () => {
     expect(mocks.removeProviderFromOpenClaw).not.toHaveBeenCalled();
   });
 
-  it('uses debouncedReload after switching default provider when gateway is running', async () => {
+  it('does not schedule an independent reload or restart after switching the default provider', async () => {
     const gateway = createGateway('running');
     await syncDefaultProviderToRuntime('moonshot', gateway as GatewayManager);
 
-    expect(gateway.debouncedReload).toHaveBeenCalledTimes(1);
-    expect(gateway.debouncedRestart).not.toHaveBeenCalled();
+    expectNoGatewayLifecycleCalls(gateway);
   });
 
   it('skips refresh after switching default provider when gateway is stopped', async () => {
     const gateway = createGateway('stopped');
     await syncDefaultProviderToRuntime('moonshot', gateway as GatewayManager);
 
-    expect(gateway.debouncedReload).not.toHaveBeenCalled();
-    expect(gateway.debouncedRestart).not.toHaveBeenCalled();
+    expectNoGatewayLifecycleCalls(gateway);
   });
 
   it('uses gpt-5.6-sol as the browser OAuth default model for OpenAI', async () => {
@@ -364,7 +374,7 @@ describe('provider-runtime-sync refresh strategy', () => {
         api: 'openai-completions',
       }),
     );
-    expect(gateway.debouncedReload).toHaveBeenCalledTimes(1);
+    expectNoGatewayLifecycleCalls(gateway);
   });
 
   it('syncs Ollama as default provider with correct baseUrl and api protocol', async () => {
@@ -422,7 +432,7 @@ describe('provider-runtime-sync refresh strategy', () => {
     );
     // Should NOT call the non-override path
     expect(mocks.setOpenClawDefaultModel).not.toHaveBeenCalled();
-    expect(gateway.debouncedReload).toHaveBeenCalledTimes(1);
+    expectNoGatewayLifecycleCalls(gateway);
   });
 
   it('removes Ollama provider from runtime on delete', async () => {
@@ -439,6 +449,14 @@ describe('provider-runtime-sync refresh strategy', () => {
 
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('ollama-ollamafd');
     expect(mocks.removeProviderFromOpenClaw).toHaveBeenCalledWith('ollamafd');
-    expect(gateway.debouncedRestart).toHaveBeenCalledTimes(1);
+    expectNoGatewayLifecycleCalls(gateway);
+  });
+
+  it('does not schedule an independent reload or restart after updating provider config', async () => {
+    const gateway = createGateway('running');
+
+    await syncUpdatedProviderToRuntime(createProvider(), undefined, gateway as GatewayManager);
+
+    expectNoGatewayLifecycleCalls(gateway);
   });
 });

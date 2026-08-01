@@ -1,7 +1,7 @@
-import { readOpenClawConfig, writeOpenClawConfig } from './channel-config';
+import { mutateOpenClawConfig } from '../gateway/config-delivery';
+import type { OpenClawConfig } from './channel-config';
 import { resolveProxySettings, type ProxySettings } from './proxy';
 import { logger } from './logger';
-import { withConfigLock } from './config-mutex';
 
 interface SyncProxyOptions {
   /**
@@ -19,23 +19,26 @@ export async function syncProxyConfigToOpenClaw(
   settings: ProxySettings,
   options: SyncProxyOptions = {},
 ): Promise<void> {
-  return withConfigLock(async () => {
-    const config = await readOpenClawConfig();
+  const resolved = resolveProxySettings(settings);
+  const preserveExistingWhenDisabled = options.preserveExistingWhenDisabled !== false;
+  const nextProxy = settings.proxyEnabled
+    ? (resolved.allProxy || resolved.httpsProxy || resolved.httpProxy)
+    : '';
+  const syncState: { result: 'unchanged' | 'preserved' | 'updated' } = { result: 'unchanged' };
+
+  await mutateOpenClawConfig((snapshot) => {
+    syncState.result = 'unchanged';
+    const config = snapshot as OpenClawConfig;
     const telegramConfig = config.channels?.telegram;
 
     if (!telegramConfig) {
       return;
     }
 
-    const resolved = resolveProxySettings(settings);
-    const preserveExistingWhenDisabled = options.preserveExistingWhenDisabled !== false;
-    const nextProxy = settings.proxyEnabled
-      ? (resolved.allProxy || resolved.httpsProxy || resolved.httpProxy)
-      : '';
     const currentProxy = typeof telegramConfig.proxy === 'string' ? telegramConfig.proxy : '';
 
     if (!settings.proxyEnabled && preserveExistingWhenDisabled && currentProxy) {
-      logger.info('Skipped Telegram proxy sync because ClawX proxy is disabled and preserve mode is enabled');
+      syncState.result = 'preserved';
       return;
     }
 
@@ -57,7 +60,12 @@ export async function syncProxyConfigToOpenClaw(
       delete config.channels.telegram.proxy;
     }
 
-    await writeOpenClawConfig(config);
-    logger.info(`Synced Telegram proxy to OpenClaw config (${nextProxy || 'disabled'})`);
+    syncState.result = 'updated';
   });
+
+  if (syncState.result === 'preserved') {
+    logger.info('Skipped Telegram proxy sync because ClawX proxy is disabled and preserve mode is enabled');
+  } else if (syncState.result === 'updated') {
+    logger.info(`Synced Telegram proxy to OpenClaw config (${nextProxy || 'disabled'})`);
+  }
 }

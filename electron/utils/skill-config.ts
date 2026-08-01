@@ -1,21 +1,16 @@
 /**
  * Skill Config Utilities
- * Direct read/write access to skill configuration in ~/.openclaw/openclaw.json
- * This bypasses the Gateway RPC for faster and more reliable config updates.
- *
- * All file I/O uses async fs/promises to avoid blocking the main thread.
+ * Skill configuration reads and coordinated mutations for openclaw.json.
  */
-import { readFile, writeFile, access, mkdir, readdir, rm } from 'fs/promises';
+import { readFile, writeFile, mkdir, readdir, rm } from 'fs/promises';
 import { existsSync } from 'fs';
-import { constants } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { getOpenClawDir, getOpenClawResolvedDir, getResourcesDir } from './paths';
 import { logger } from './logger';
 import { cpAsyncSafe } from './plugin-install';
-import { withConfigLock } from './config-mutex';
+import { mutateOpenClawConfig, readOpenClawConfigSnapshot } from '../gateway/config-delivery';
 
-const OPENCLAW_CONFIG_PATH = join(homedir(), '.openclaw', 'openclaw.json');
 const BUNDLED_OPENCLAW_SKILL_ALLOWLIST = new Set(['skill-creator']);
 
 export interface SkillConfigUpdates {
@@ -60,52 +55,35 @@ interface PreinstalledMarker {
     installedAt: string;
 }
 
-async function fileExists(p: string): Promise<boolean> {
-    try { await access(p, constants.F_OK); return true; } catch { return false; }
-}
-
 /**
  * Read the current OpenClaw config
  */
 async function readConfig(): Promise<OpenClawConfig> {
-    if (!(await fileExists(OPENCLAW_CONFIG_PATH))) {
-        return {};
-    }
     try {
-        const raw = await readFile(OPENCLAW_CONFIG_PATH, 'utf-8');
-        return JSON.parse(raw);
+        return (await readOpenClawConfigSnapshot()).config as OpenClawConfig;
     } catch (err) {
         console.error('Failed to read openclaw config:', err);
         return {};
     }
 }
 
-/**
- * Write the OpenClaw config
- */
-async function writeConfig(config: OpenClawConfig): Promise<void> {
-    const json = JSON.stringify(config, null, 2);
-    await writeFile(OPENCLAW_CONFIG_PATH, json, 'utf-8');
-}
-
 async function setSkillsEnabled(skillKeys: string[], enabled: boolean): Promise<void> {
     if (skillKeys.length === 0) {
         return;
     }
-    return withConfigLock(async () => {
-        const config = await readConfig();
-        if (!config.skills) {
-            config.skills = {};
+    await mutateOpenClawConfig((config) => {
+        const skillConfig = config as OpenClawConfig;
+        if (!skillConfig.skills) {
+            skillConfig.skills = {};
         }
-        if (!config.skills.entries) {
-            config.skills.entries = {};
+        if (!skillConfig.skills.entries) {
+            skillConfig.skills.entries = {};
         }
         for (const skillKey of skillKeys) {
-            const entry = config.skills.entries[skillKey] || {};
+            const entry = skillConfig.skills.entries[skillKey] || {};
             entry.enabled = enabled;
-            config.skills.entries[skillKey] = entry;
+            skillConfig.skills.entries[skillKey] = entry;
         }
-        await writeConfig(config);
     });
 }
 
@@ -209,12 +187,10 @@ export async function updateSkillConfigs(
     updates: Array<{ skillKey: string } & SkillConfigUpdates>,
 ): Promise<{ success: boolean; error?: string }> {
     try {
-        return await withConfigLock(async () => {
-            const config = await readConfig();
-            await applySkillConfigUpdates(config, updates);
-            await writeConfig(config);
-            return { success: true };
+        await mutateOpenClawConfig(async (config) => {
+            await applySkillConfigUpdates(config as OpenClawConfig, updates);
         });
+        return { success: true };
     } catch (err) {
         console.error('Failed to update skill config:', err);
         return { success: false, error: String(err) };
@@ -227,25 +203,25 @@ export async function removeSkillConfig(skillKey: string): Promise<{ success: bo
 
 export async function removeSkillConfigs(skillKeys: string[]): Promise<{ success: boolean; removed: number; error?: string }> {
     try {
-        return await withConfigLock(async () => {
-            const config = await readConfig();
-            const existingEntries = config.skills?.entries || {};
-            const normalizedSkillKeys = skillKeys
-                .map((skillKey) => skillKey.trim())
-                .filter(Boolean);
-            const removed = normalizedSkillKeys.filter((skillKey) => Object.prototype.hasOwnProperty.call(existingEntries, skillKey)).length;
+        const normalizedSkillKeys = skillKeys
+            .map((skillKey) => skillKey.trim())
+            .filter(Boolean);
+        let removed = 0;
 
+        await mutateOpenClawConfig(async (config) => {
+            const skillConfig = config as OpenClawConfig;
+            const existingEntries = skillConfig.skills?.entries || {};
+            removed = normalizedSkillKeys.filter((skillKey) => Object.prototype.hasOwnProperty.call(existingEntries, skillKey)).length;
             if (removed === 0) {
-                return { success: true, removed: 0 };
+                return;
             }
 
             await applySkillConfigUpdates(
-                config,
+                skillConfig,
                 normalizedSkillKeys.map((skillKey) => ({ skillKey, remove: true })),
             );
-            await writeConfig(config);
-            return { success: true, removed };
         });
+        return { success: true, removed };
     } catch (err) {
         console.error('Failed to remove skill configs:', err);
         return { success: false, removed: 0, error: String(err) };
