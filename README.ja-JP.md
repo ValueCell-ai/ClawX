@@ -399,9 +399,11 @@ pnpm package:linux        # Linux向けにパッケージ化
 
 ### Electron パフォーマンス診断
 
-`pnpm run perf:chat` は隔離された合成 ACP ストリーミング負荷を実行し、Playwright の `test-results/` に `renderer-benchmark.json`、`renderer.cpuprofile`、`main.cpuprofile` を出力します。Renderer プロファイルは本番の store/render 経路を対象とし、合成 Main プロファイルは Main から Renderer への IPC fanout のみを測定して上流の OpenClaw/ACP サブプロセス経路を含みません。CPU プロファイルは Chrome DevTools で開けます。アーティファクトには生成されたテスト文字列だけが含まれ、製品テレメトリーには送信されません。測定値はハードウェアに依存するため、共通の絶対閾値ではなく同じマシン上の複数回の結果を比較してください。
+`pnpm run perf:chat` は隔離された合成 ACP 負荷を実行し、ストリーミング応答と、リッチな静的 Markdown 会話でのサイドバーおよびスクロール操作を測定します。Playwright の `test-results/` には、バージョン付きメトリクスと Renderer/Main CPU プロファイルが出力されます。Renderer プロファイルは本番の store/render 経路とフレームペーシングを対象とします。ストリーミング Main プロファイルは Main から Renderer への IPC fanout を測定し、操作時の Main プロファイルは Renderer 操作中に Main がアイドルのままかを確認します。どちらも上流の OpenClaw/ACP サブプロセスや GPU プロセスの経路は含みません。CPU プロファイルは Chrome DevTools で開けます。アーティファクトには生成されたテスト文字列だけが含まれ、製品テレメトリーには送信されません。測定値はハードウェアに依存するため、共通の絶対閾値ではなく同じマシン上の複数回の結果を比較してください。
 
 実際の Renderer を記録する場合は `CLAWX_REMOTE_DEBUGGING_PORT=9223 pnpm dev` で開発環境を起動し、Playwright または Chrome DevTools を `localhost:9223` に接続します。Electron Main を記録する場合は `pnpm run profile:main` を実行し、`chrome://inspect` で `localhost:9229` を設定して Electron Main target を選択します。WebSocket trace 自体を測定する場合を除き、`CLAWX_GATEWAY_WS_TRACE` は設定しないでください。
+
+ClawX は Chromium のハードウェアアクセラレーションを既定で有効なままにし、長い文書、スクロール、レイアウトアニメーションで GPU コンポジットとラスタライズを利用します。グラフィックスドライバーに問題があるマシンでは、Chromium 標準の `--disable-gpu` コマンドラインスイッチをトラブルシューティング用のフォールバックとして利用できます。
 
 ### 通信回帰チェック
 

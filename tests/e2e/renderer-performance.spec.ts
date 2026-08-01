@@ -17,8 +17,19 @@ const HISTORY_TURNS = 80;
 const STREAM_CHUNKS = 300;
 const STREAM_INTERVAL_MS = 2;
 const STREAM_SENTINEL = 'STREAM-PROFILE-COMPLETE';
+const INTERACTION_SECTIONS = 32;
+const INTERACTION_SCROLL_STEPS = 32;
 
 type PerformanceMetric = { name: string; value: number };
+
+type FramePacing = {
+  count: number;
+  p50Ms: number;
+  p95Ms: number;
+  maxMs: number;
+  over20Ms: number;
+  over34Ms: number;
+};
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -97,6 +108,58 @@ async function waitForPaint(page: Page): Promise<void> {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
   });
+}
+
+async function startFrameSampling(page: Page, durationMs: number): Promise<void> {
+  await page.evaluate((duration) => {
+    const perfWindow = window as typeof window & { __clawxPerfFrameSamples?: number[] };
+    const samples: number[] = [];
+    let previous = performance.now();
+    const deadline = previous + duration;
+    const sample = (now: number) => {
+      samples.push(now - previous);
+      previous = now;
+      if (now < deadline) requestAnimationFrame(sample);
+    };
+    perfWindow.__clawxPerfFrameSamples = samples;
+    requestAnimationFrame(sample);
+  }, durationMs);
+}
+
+async function readFramePacing(page: Page): Promise<FramePacing> {
+  const samples = await page.evaluate(() => (
+    (window as typeof window & { __clawxPerfFrameSamples?: number[] }).__clawxPerfFrameSamples ?? []
+  ));
+  const sorted = [...samples].sort((left, right) => left - right);
+  return {
+    count: samples.length,
+    p50Ms: sorted[Math.floor(sorted.length * 0.5)] ?? 0,
+    p95Ms: sorted[Math.floor(sorted.length * 0.95)] ?? 0,
+    maxMs: Math.max(0, ...samples),
+    over20Ms: samples.filter((duration) => duration > 20).length,
+    over34Ms: samples.filter((duration) => duration > 34).length,
+  };
+}
+
+function richStaticMarkdown(): string {
+  return Array.from({ length: INTERACTION_SECTIONS }, (_, index) => `
+## Rich Markdown section ${index + 1}
+
+This paragraph contains **bold text**, *emphasis*, ~~strikethrough~~, a [safe link](https://example.com), and CJK punctuation：中文、日本語、한국어。
+
+- Nested item ${index + 1}.1
+- Nested item ${index + 1}.2 with \`inline code\`
+
+| Column A | Column B | Column C |
+| --- | ---: | :---: |
+| row ${index + 1} | value ${index * 17} | $x_${index + 1}^2$ |
+
+\`\`\`javascript
+function section${index + 1}(value) {
+  return value * ${index + 1};
+}
+\`\`\`
+`).join('\n');
 }
 
 async function writeArtifact(testInfo: TestInfo, name: string, body: unknown): Promise<string> {
@@ -246,6 +309,129 @@ test('profiles a populated timeline during a growing Markdown stream', async ({ 
       expect(offset, `stream chunk ${index} should be present and ordered`).toBeGreaterThan(previousChunkOffset);
       previousChunkOffset = offset;
     }
+  } finally {
+    await closeElectronApp(app);
+  }
+});
+
+test('profiles sidebar animation and scrolling with rich static Markdown', async ({ launchElectronApp }, testInfo) => {
+  const app = await launchElectronApp({ skipSetup: true });
+
+  try {
+    const page = await openSyntheticChat(app);
+    const markdown = richStaticMarkdown();
+    await emitAcpSessionUpdates(app, {
+      sessionKey: SESSION_KEY,
+      generation: 1,
+      historical: true,
+      updates: [
+        {
+          sessionUpdate: 'user_message',
+          messageId: 'interaction-user',
+          content: [{ type: 'text', text: 'Render a comprehensive Markdown fixture.' }],
+        },
+        {
+          sessionUpdate: 'agent_message',
+          messageId: 'interaction-assistant',
+          content: [{ type: 'text', text: markdown }],
+        },
+      ],
+    });
+    const terminalSection = page.getByRole('heading', { name: `Rich Markdown section ${INTERACTION_SECTIONS}` });
+    await expect(terminalSection).toBeAttached({ timeout: 30_000 });
+    await expect(page.locator('.clawx-streamdown [data-streamdown="code-block-body"] pre').first()).toBeAttached({ timeout: 30_000 });
+    await waitForPaint(page);
+
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Performance.enable');
+    await cdp.send('Profiler.enable');
+    await cdp.send('Profiler.setSamplingInterval', { interval: 1_000 });
+    await startMainCpuProfile(app);
+    await cdp.send('Profiler.start');
+    const beforeMetrics = metricMap((await cdp.send('Performance.getMetrics')).metrics as PerformanceMetric[]);
+
+    const sidebar = page.getByTestId('sidebar');
+    await startFrameSampling(page, 500);
+    await page.getByTestId('sidebar-collapse-toggle').click();
+    await expect.poll(async () => (await sidebar.boundingBox())?.width ?? 0).toBe(68);
+    await page.waitForTimeout(550);
+    const sidebarCollapseFrames = await readFramePacing(page);
+
+    await startFrameSampling(page, 500);
+    await page.getByTestId('sidebar-collapse-toggle').click();
+    await expect.poll(async () => (await sidebar.boundingBox())?.width ?? 0).toBeGreaterThan(200);
+    await page.waitForTimeout(550);
+    const sidebarExpandFrames = await readFramePacing(page);
+    const scrollContainer = page.getByTestId('chat-scroll-container');
+    const scrollStart = await scrollContainer.evaluate((element) => {
+      element.scrollTop = 0;
+      return {
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        scrollTop: element.scrollTop,
+      };
+    });
+    expect(scrollStart.scrollHeight).toBeGreaterThan(scrollStart.clientHeight);
+    const scrollBox = await scrollContainer.boundingBox();
+    if (!scrollBox) throw new Error('Rich Markdown scroll container has no layout box');
+
+    await startFrameSampling(page, 1_600);
+    await page.mouse.move(scrollBox.x + scrollBox.width / 2, scrollBox.y + scrollBox.height / 2);
+    for (let index = 0; index < INTERACTION_SCROLL_STEPS; index += 1) {
+      await page.mouse.wheel(0, 180);
+      await page.waitForTimeout(30);
+    }
+    await page.waitForTimeout(650);
+    const scrollFrames = await readFramePacing(page);
+    const scrollEnd = await scrollContainer.evaluate((element) => element.scrollTop);
+
+    const rendererProfile = (await cdp.send('Profiler.stop')).profile;
+    const mainProfile = await stopMainCpuProfile(app);
+    const afterMetrics = metricMap((await cdp.send('Performance.getMetrics')).metrics as PerformanceMetric[]);
+    const gpu = await app.evaluate(async ({ app: electronApp }) => ({
+      hardwareAccelerationEnabled: electronApp.isHardwareAccelerationEnabled(),
+      gpuCompositing: electronApp.getGPUFeatureStatus().gpu_compositing,
+      rasterization: electronApp.getGPUFeatureStatus().rasterization,
+    }));
+    const dom = await page.evaluate(() => ({
+      nodes: document.getElementsByTagName('*').length,
+      markdownNodes: document.querySelectorAll('.clawx-streamdown *').length,
+    }));
+    await cdp.detach();
+
+    const benchmark = {
+      schemaVersion: 1,
+      workload: {
+        markdownCharacters: markdown.length,
+        markdownSections: INTERACTION_SECTIONS,
+        scrollSteps: INTERACTION_SCROLL_STEPS,
+      },
+      gpu,
+      dom,
+      sidebarCollapseFrames,
+      sidebarExpandFrames,
+      scrollFrames,
+      scrollDistance: scrollEnd - scrollStart.scrollTop,
+      renderer: {
+        taskDurationMs: metricDelta(beforeMetrics, afterMetrics, 'TaskDuration')! * 1_000,
+        scriptDurationMs: metricDelta(beforeMetrics, afterMetrics, 'ScriptDuration')! * 1_000,
+        layoutDurationMs: metricDelta(beforeMetrics, afterMetrics, 'LayoutDuration')! * 1_000,
+        recalcStyleDurationMs: metricDelta(beforeMetrics, afterMetrics, 'RecalcStyleDuration')! * 1_000,
+      },
+    };
+
+    await Promise.all([
+      writeArtifact(testInfo, 'renderer-interaction-benchmark.json', benchmark),
+      writeArtifact(testInfo, 'renderer-interaction.cpuprofile', rendererProfile),
+      writeArtifact(testInfo, 'main-interaction.cpuprofile', mainProfile),
+    ]);
+    console.log(`ClawX interaction performance: ${JSON.stringify(benchmark)}`);
+
+    expect(markdown.length).toBeGreaterThan(10_000);
+    expect(sidebarCollapseFrames.count).toBeGreaterThan(0);
+    expect(sidebarExpandFrames.count).toBeGreaterThan(0);
+    expect(scrollFrames.count).toBeGreaterThan(0);
+    expect(scrollEnd - scrollStart.scrollTop).toBeGreaterThan(1_000);
   } finally {
     await closeElectronApp(app);
   }

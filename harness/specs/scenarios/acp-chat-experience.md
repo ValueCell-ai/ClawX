@@ -12,6 +12,7 @@ ownedPaths:
   - electron/services/attachment-access.ts
   - electron/services/attachment-open-with.ts
   - electron/services/files-api.ts
+  - electron/main/index.ts
   - resources/scripts/attachment-open-with.ps1
   - src/lib/acp/**
   - src/lib/file-preview-client.ts
@@ -32,6 +33,8 @@ ownedPaths:
   - tests/e2e/chat-latex-rendering.spec.ts
   - tests/e2e/chat-assistant-markdown-plain.spec.ts
   - tests/e2e/chat-table-header-light.spec.ts
+  - tests/e2e/hardware-acceleration.spec.ts
+  - tests/e2e/renderer-performance.spec.ts
 requiredProfiles:
   - fast
   - comms
@@ -51,6 +54,7 @@ requiredRules:
   - office-preview-safety
   - ui-i18n-design-tokens
   - markdown-rendering-safety-and-performance
+  - electron-rendering-performance
   - comms-regression
   - docs-sync
 ---
@@ -59,4 +63,4 @@ ACP Chat covers session load, prompt, cancel, permission, replay, timeline reduc
 
 Main owns ACP transport, routing, transcript retrieval and timing extraction, workspace grants, and session/generation-scoped attachment authorization. Renderer owns the in-memory timeline, bounded compatibility and timing alignment, attachment presentation, and display grouping, including user-image thumbnails and user-selected source-path labels. ACP replay remains authoritative for historical turns and content; transcript-derived timing may only annotate an unambiguously matched ACP turn. Standard ACP content remains preferred over compatibility projections, and incidental tool paths never enter the attachment pipeline.
 
-The durable architecture, exceptions, access boundary, file-activity separation, Office preview behavior, Markdown rendering and performance policy, and validation anchors are documented in `harness/reference/acp-chat.md`, `harness/reference/acp-generated-media-and-diagnostics.md`, `harness/reference/acp-attachment-access-control.md`, `harness/reference/openclaw-file-activity.md`, `harness/reference/office-document-preview.md`, and `harness/reference/markdown-rendering.md`.
+The durable architecture, exceptions, access boundary, file-activity separation, Office preview behavior, Markdown rendering, Electron rendering performance policy, and validation anchors are documented in `harness/reference/acp-chat.md`, `harness/reference/acp-generated-media-and-diagnostics.md`, `harness/reference/acp-attachment-access-control.md`, `harness/reference/openclaw-file-activity.md`, `harness/reference/office-document-preview.md`, `harness/reference/markdown-rendering.md`, and `harness/reference/electron-rendering-performance.md`.

@@ -402,9 +402,11 @@ On headless Linux, run Electron tests under a display server such as `xvfb-run -
 
 ### Electron Performance Diagnostics
 
-`pnpm run perf:chat` runs an isolated synthetic ACP streaming workload and writes `renderer-benchmark.json`, `renderer.cpuprofile`, and `main.cpuprofile` under the Playwright `test-results/` directory. The Renderer profile covers the production store/render path; the synthetic Main profile measures Main-to-Renderer IPC fanout and does not include the upstream OpenClaw/ACP subprocess path. Open either CPU profile in Chrome DevTools; the artifacts contain generated fixture text only and are not product telemetry. Results are hardware-dependent, so compare repeated runs on the same machine instead of applying one cross-platform absolute threshold.
+`pnpm run perf:chat` runs isolated synthetic ACP workloads for streaming and for rich static Markdown sidebar/scroll interaction. It writes versioned metrics plus Renderer and Main CPU profiles under the Playwright `test-results/` directory. The Renderer profiles cover the production store/render path and frame pacing. The streaming Main profile measures Main-to-Renderer IPC fanout; the interaction Main profile shows whether Main remains idle while Renderer interactions run. Neither includes the upstream OpenClaw/ACP subprocess or GPU-process paths. Open a CPU profile in Chrome DevTools; the artifacts contain generated fixture text only and are not product telemetry. Results are hardware-dependent, so compare repeated runs on the same machine instead of applying one cross-platform absolute threshold.
 
 For a live Renderer recording, start development with `CLAWX_REMOTE_DEBUGGING_PORT=9223 pnpm dev` and attach Playwright or Chrome DevTools to `localhost:9223`. For a live Electron Main recording, run `pnpm run profile:main`, open `chrome://inspect`, configure `localhost:9229`, and select the Electron Main target. Leave `CLAWX_GATEWAY_WS_TRACE` unset unless WebSocket tracing itself is being measured.
+
+ClawX leaves Chromium hardware acceleration enabled by default so long documents, scrolling, and layout animations can use GPU compositing and rasterization. Chromium still honors the native `--disable-gpu` command-line switch as a troubleshooting fallback for a machine with a broken graphics driver.
 
 ### Communication Regression Checks
 
