@@ -27,12 +27,18 @@ ownedPaths:
   - tests/e2e/chat-acp-inline-timeline.spec.ts
   - tests/e2e/chat-acp-attachments.spec.ts
   - tests/e2e/chat-run-state-events.spec.ts
+  - tests/e2e/chat-streamdown-rendering.spec.ts
+  - tests/e2e/chat-code-block-wrap.spec.ts
+  - tests/e2e/chat-latex-rendering.spec.ts
+  - tests/e2e/chat-assistant-markdown-plain.spec.ts
+  - tests/e2e/chat-table-header-light.spec.ts
 requiredProfiles:
   - fast
   - comms
 conditionalProfiles:
   e2e:
     - ACP timeline presentation changes
+    - Chat Markdown rendering, syntax highlighting, or animation changes
     - send, cancel, permission, media, or history behavior changes
 requiredRules:
   - renderer-main-boundary
@@ -44,6 +50,7 @@ requiredRules:
   - tool-derived-file-safety
   - office-preview-safety
   - ui-i18n-design-tokens
+  - markdown-rendering-safety-and-performance
   - comms-regression
   - docs-sync
 ---
@@ -52,4 +59,4 @@ ACP Chat covers session load, prompt, cancel, permission, replay, timeline reduc
 
 Main owns ACP transport, routing, transcript retrieval and timing extraction, workspace grants, and session/generation-scoped attachment authorization. Renderer owns the in-memory timeline, bounded compatibility and timing alignment, attachment presentation, and display grouping, including user-image thumbnails and user-selected source-path labels. ACP replay remains authoritative for historical turns and content; transcript-derived timing may only annotate an unambiguously matched ACP turn. Standard ACP content remains preferred over compatibility projections, and incidental tool paths never enter the attachment pipeline.
 
-The durable architecture, exceptions, access boundary, file-activity separation, Office preview behavior, and validation anchors are documented in `harness/reference/acp-chat.md`, `harness/reference/acp-generated-media-and-diagnostics.md`, `harness/reference/acp-attachment-access-control.md`, `harness/reference/openclaw-file-activity.md`, and `harness/reference/office-document-preview.md`.
+The durable architecture, exceptions, access boundary, file-activity separation, Office preview behavior, Markdown rendering and performance policy, and validation anchors are documented in `harness/reference/acp-chat.md`, `harness/reference/acp-generated-media-and-diagnostics.md`, `harness/reference/acp-attachment-access-control.md`, `harness/reference/openclaw-file-activity.md`, `harness/reference/office-document-preview.md`, and `harness/reference/markdown-rendering.md`.

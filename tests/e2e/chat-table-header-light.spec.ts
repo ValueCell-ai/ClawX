@@ -84,7 +84,7 @@ async function emitAcpSessionUpdates(app: ElectronApplication, updates: AcpSessi
 const CLOUD_ARTIFACT_PATH = '/opt/cursor/artifacts/chat_table_header_light.png';
 
 test.describe('ClawX chat table header styling', () => {
-  test('renders markdown table headers with transparent background and bold text in light theme', async ({ launchElectronApp }, testInfo) => {
+  test('renders transparent light and muted dark Markdown table headers', async ({ launchElectronApp }, testInfo) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -156,16 +156,25 @@ test.describe('ClawX chat table header styling', () => {
         root.classList.add('light');
       });
 
-      const header = page.locator('.prose table thead th').first();
-      await expect(header).toBeVisible({ timeout: 30_000 });
+      const headerParent = page.locator('.prose table thead').first();
+      const headerCell = headerParent.locator('th').first();
+      await expect(headerCell).toBeVisible({ timeout: 30_000 });
 
-      const headerStyles = await header.evaluate((el) => {
-        const style = window.getComputedStyle(el);
-        return { backgroundColor: style.backgroundColor, fontWeight: style.fontWeight };
+      const lightHeaderStyles = await headerParent.evaluate((element) => {
+        const cell = element.querySelector('th');
+        if (!cell) throw new Error('Markdown table header cell is missing');
+        const parentStyle = window.getComputedStyle(element);
+        const cellStyle = window.getComputedStyle(cell);
+        return {
+          parentBackgroundColor: parentStyle.backgroundColor,
+          cellBackgroundColor: cellStyle.backgroundColor,
+          cellFontWeight: cellStyle.fontWeight,
+        };
       });
 
-      expect(headerStyles.backgroundColor).toBe('rgba(0, 0, 0, 0)');
-      expect(Number(headerStyles.fontWeight)).toBeGreaterThanOrEqual(700);
+      expect(lightHeaderStyles.parentBackgroundColor).toBe('rgba(0, 0, 0, 0)');
+      expect(lightHeaderStyles.cellBackgroundColor).toBe('rgba(0, 0, 0, 0)');
+      expect(Number(lightHeaderStyles.cellFontWeight)).toBeGreaterThanOrEqual(700);
 
       const tableEl = page.locator('.prose table').first();
       await tableEl.scrollIntoViewIfNeeded();
@@ -183,6 +192,29 @@ test.describe('ClawX chat table header styling', () => {
       } catch {
         // Cloud artifact directory is optional; ignore when unavailable (e.g. on CI runners).
       }
+
+      await page.evaluate(() => {
+        const root = document.documentElement;
+        root.classList.remove('light');
+        root.classList.add('dark');
+      });
+      const darkHeaderStyles = await headerParent.evaluate((element) => {
+        const cell = element.querySelector('th');
+        if (!cell) throw new Error('Markdown table header cell is missing');
+        const mutedProbe = document.createElement('div');
+        mutedProbe.className = 'bg-muted';
+        document.body.appendChild(mutedProbe);
+        const mutedBackgroundColor = window.getComputedStyle(mutedProbe).backgroundColor;
+        mutedProbe.remove();
+        return {
+          parentBackgroundColor: window.getComputedStyle(element).backgroundColor,
+          cellBackgroundColor: window.getComputedStyle(cell).backgroundColor,
+          mutedBackgroundColor,
+        };
+      });
+
+      expect(darkHeaderStyles.parentBackgroundColor).toBe(darkHeaderStyles.mutedBackgroundColor);
+      expect(darkHeaderStyles.cellBackgroundColor).toBe(darkHeaderStyles.mutedBackgroundColor);
     } finally {
       await closeElectronApp(app);
     }

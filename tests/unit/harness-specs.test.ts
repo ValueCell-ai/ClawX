@@ -149,6 +149,60 @@ describe('harness specs', () => {
     expect(workspaceScenario?.body).toContain('single mounted PPTX viewer');
   });
 
+  it('defines the Streamdown Markdown rendering harness contract', async () => {
+    const referencePath = 'harness/reference/markdown-rendering.md';
+    const focusedTests = [
+      'tests/unit/streamdown-config.test.tsx',
+      'tests/unit/markdown-preview.test.tsx',
+      'tests/unit/acp-chat-components.test.tsx',
+      'tests/e2e/markdown-file-preview.spec.ts',
+      'tests/e2e/chat-streamdown-rendering.spec.ts',
+    ];
+    const [task, rules, scenarios, markdownReference] = await Promise.all([
+      loadSpec('harness/specs/tasks/replace-markdown-renderer-with-streamdown.md'),
+      loadRuleSpecs(),
+      loadScenarioSpecs(),
+      readFile(referencePath, 'utf8'),
+    ]);
+    const markdownRule = rules.find(
+      (rule) => rule.data.id === 'markdown-rendering-safety-and-performance',
+    );
+    const scenarioById = new Map(scenarios.map((scenario) => [scenario.data.id, scenario]));
+    const requiredTests = task.data.requiredTests as string[];
+
+    expect(task.data).toMatchObject({
+      id: 'replace-markdown-renderer-with-streamdown',
+      scenario: 'acp-chat-experience',
+      taskType: 'runtime-bridge',
+      requiredProfiles: ['fast', 'e2e'],
+      docs: { required: true },
+    });
+    expect(task.data.requiredRules).toContain('markdown-rendering-safety-and-performance');
+    expect(task.body).toContain(referencePath);
+    expect(markdownRule?.data.appliesTo).toEqual(expect.arrayContaining([
+      'acp-chat-experience',
+      'chat-workspace-and-navigation',
+    ]));
+    expect(markdownRule?.body).toContain(referencePath);
+    expect(markdownReference).toContain('word-level');
+    expect(markdownReference).toContain('before/after');
+
+    const scenarioTests = new Map([
+      ['acp-chat-experience', 'tests/e2e/chat-streamdown-rendering.spec.ts'],
+      ['chat-workspace-and-navigation', 'tests/e2e/markdown-file-preview.spec.ts'],
+    ]);
+    for (const [scenarioId, testPath] of scenarioTests) {
+      const scenario = scenarioById.get(scenarioId);
+      expect(scenario?.data.requiredRules).toContain('markdown-rendering-safety-and-performance');
+      expect(scenario?.data.ownedPaths).toContain(testPath);
+      expect(scenario?.body).toContain(referencePath);
+    }
+    for (const testPath of focusedTests) {
+      expect(requiredTests.join('\n')).toContain(testPath);
+    }
+    expect(requiredTests).toContain('pnpm run perf:chat');
+  });
+
   it('keeps implemented design decisions in topic-based Harness references', async () => {
     const [
       browserReference,

@@ -542,6 +542,36 @@
   background: hsl(var(--muted));
 }
 
+.clawx-streamdown [data-streamdown='code-block'] {
+  @apply my-2 overflow-hidden rounded-lg border-0 bg-surface-input p-0;
+}
+
+.clawx-streamdown [data-streamdown='code-block-header'] {
+  @apply px-3;
+}
+
+.clawx-streamdown [data-streamdown='code-block-body'] pre {
+  @apply overflow-x-auto whitespace-pre-wrap break-words bg-transparent p-4;
+}
+
+.clawx-streamdown [data-streamdown='code-block-body'] code {
+  @apply bg-transparent font-mono text-sm;
+}
+
+.clawx-streamdown [data-streamdown='table-header'],
+.clawx-streamdown [data-streamdown='table-header-cell'] {
+  @apply bg-transparent font-bold;
+}
+
+.dark .clawx-streamdown [data-streamdown='table-header'],
+.dark .clawx-streamdown [data-streamdown='table-header-cell'] {
+  @apply bg-muted;
+}
+
+.clawx-markdown-preview [data-streamdown='code-block-body'] pre {
+  @apply overflow-x-auto whitespace-pre-wrap break-words;
+}
+
 /* Typing indicator animation */
 @keyframes bounce {
 

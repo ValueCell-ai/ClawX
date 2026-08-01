@@ -1,17 +1,61 @@
-import { memo, useCallback, useMemo, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import rehypeKatex from 'rehype-katex';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Check, Copy, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Streamdown, type Components } from 'streamdown';
 import { BrowserLink } from '@/components/common/BrowserLink';
+import {
+  streamdownAnimation,
+  streamdownControls,
+  streamdownLinkSafety,
+  streamdownPlugins,
+  streamdownRehypePlugins,
+} from '@/components/markdown/streamdown-config';
 import type { MessageSegmentItem, RenderPart } from '@/lib/acp/timeline-types';
 import { cn } from '@/lib/utils';
 import { AcpImagePart, isSafeAcpImageSource } from './AcpImagePart';
 import { AcpAttachmentPart } from './AcpAttachmentPart';
 
 type RenderTone = 'assistant' | 'user' | 'process';
+
+const chatRemend = { linkMode: 'text-only' } as const;
+
+function AcpMarkdownImage({ src, alt }: { src?: string; alt?: string }) {
+  const { t } = useTranslation('chat');
+  const imageSource = typeof src === 'string' ? src : '';
+  if (!imageSource || !isSafeAcpImageSource(imageSource)) return null;
+
+  return (
+    <img
+      src={imageSource}
+      alt={typeof alt === 'string' ? alt : t('acp.image')}
+      className="max-w-full rounded-lg"
+    />
+  );
+}
+
+const chatMarkdownComponents: Components = {
+  strong: ({ children }) => (
+    <strong className="font-semibold" data-streamdown="strong">
+      {children}
+    </strong>
+  ),
+  a: ({ href, children }) => href ? (
+    <BrowserLink href={href} className="break-all text-primary hover:underline">
+      {children}
+    </BrowserLink>
+  ) : <>{children}</>,
+  img: ({ src, alt }) => (
+    <AcpMarkdownImage
+      src={typeof src === 'string' ? src : undefined}
+      alt={typeof alt === 'string' ? alt : undefined}
+    />
+  ),
+  inlineCode: ({ children }) => (
+    <code className="break-all font-mono text-sm">
+      {children}
+    </code>
+  ),
+};
 
 function normalizeLatexDelimiters(input: string): string {
   if (!input || (input.indexOf('\\(') === -1 && input.indexOf('\\[') === -1)) return input;
@@ -27,63 +71,40 @@ function normalizeLatexDelimiters(input: string): string {
   return parts.join('');
 }
 
-function AcpMarkdownPart({ text }: { text: string }) {
-  const { t } = useTranslation('chat');
+function AcpMarkdownPart({ text, isAnimating = false }: { text: string; isAnimating?: boolean }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isAnimating) return;
+
+    for (const element of containerRef.current?.querySelectorAll<HTMLElement>('[data-sd-animate]') ?? []) {
+      element.removeAttribute('data-sd-animate');
+      element.style.removeProperty('--sd-animation');
+      element.style.removeProperty('--sd-duration');
+      element.style.removeProperty('--sd-easing');
+      element.style.removeProperty('--sd-delay');
+      if (!element.style.length) element.removeAttribute('style');
+    }
+  }, [isAnimating]);
 
   return (
-    <div className="prose prose-sm max-w-none break-words text-foreground dark:prose-invert">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false, output: 'html' }]]}
-        components={{
-          code({ className, children, ...props }) {
-            const match = /language-(\w+)/.exec(className || '');
-            const isInline = !match && !className && !String(children).includes('\n');
-            if (isInline) {
-              return (
-                <code className="font-mono text-sm break-all" {...props}>
-                  {children}
-                </code>
-              );
-            }
-            return (
-              <code className={cn('font-mono text-sm', className)} {...props}>
-                {children}
-              </code>
-            );
-          },
-          pre({ children, ...props }) {
-            return (
-              <pre
-                className="overflow-x-auto whitespace-pre-wrap break-words rounded-lg bg-black/5 p-4 dark:bg-white/10"
-                {...props}
-              >
-                {children}
-              </pre>
-            );
-          },
-          a({ href, children }) {
-            return href ? (
-              <BrowserLink href={href} className="break-all text-primary hover:underline">
-                {children}
-              </BrowserLink>
-            ) : <>{children}</>;
-          },
-          img({ src, alt }) {
-            const imageSource = typeof src === 'string' ? src : '';
-            if (!imageSource || !isSafeAcpImageSource(imageSource)) return null;
-            return (
-              <img
-                src={imageSource}
-                alt={typeof alt === 'string' ? alt : t('acp.image')}
-                className="max-w-full rounded-lg"
-              />
-            );
-          },
-        }}
+    <div ref={containerRef} className="contents">
+      <Streamdown
+        animated={isAnimating ? streamdownAnimation : false}
+        className="clawx-streamdown prose prose-sm max-w-none space-y-0 break-words text-foreground dark:prose-invert"
+        components={chatMarkdownComponents}
+        controls={streamdownControls}
+        isAnimating={isAnimating}
+        lineNumbers={false}
+        linkSafety={streamdownLinkSafety}
+        mode="streaming"
+        parseIncompleteMarkdown={isAnimating}
+        plugins={streamdownPlugins}
+        rehypePlugins={streamdownRehypePlugins}
+        remend={isAnimating ? chatRemend : undefined}
       >
         {normalizeLatexDelimiters(text)}
-      </ReactMarkdown>
+      </Streamdown>
     </div>
   );
 }
@@ -149,9 +170,11 @@ export function AcpAssistantHoverBar({ text }: { text: string }) {
 export const AcpRenderPart = memo(function AcpRenderPart({
   part,
   tone = 'assistant',
+  isAnimating = false,
 }: {
   part: RenderPart;
   tone?: RenderTone;
+  isAnimating?: boolean;
 }) {
   if (part.kind === 'markdown') {
     if (tone === 'user') {
@@ -161,7 +184,7 @@ export const AcpRenderPart = memo(function AcpRenderPart({
         </div>
       );
     }
-    return <AcpMarkdownPart text={part.text} />;
+    return <AcpMarkdownPart text={part.text} isAnimating={isAnimating} />;
   }
 
   if (part.kind === 'image') return <AcpImagePart part={part} />;

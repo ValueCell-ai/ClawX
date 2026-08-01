@@ -8,17 +8,9 @@ import type { AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activiti
 import { AcpAttachmentPart } from './AcpAttachmentPart';
 import type { AcpTurnTiming } from '@/lib/acp/turn-timings';
 
-export function AcpTimeline({
-  snapshot,
-  error,
-  errorKind = 'load',
-  onDismissError,
-  onPermissionSelect,
-  fileActivity,
-  workspaceRoot,
-  turnTimingsByUserMessageId = {},
-}: {
+type AcpTimelineProps = {
   snapshot: AcpTimelineSnapshot;
+  isStreaming?: boolean;
   error?: string | null;
   errorKind?: 'load' | 'prompt';
   onDismissError?: () => void;
@@ -26,8 +18,39 @@ export function AcpTimeline({
   fileActivity?: AcpFileActivityProjection;
   workspaceRoot?: string;
   turnTimingsByUserMessageId?: Record<string, AcpTurnTiming>;
-}) {
+};
+
+export function streamingMessageSegmentIds(
+  snapshot: AcpTimelineSnapshot,
+  isStreaming: boolean,
+): Set<string> {
+  if (!isStreaming) return new Set();
+
+  const terminalItemId = snapshot.itemOrder.at(-1);
+  const terminalItem = terminalItemId ? snapshot.itemsById[terminalItemId] : undefined;
+  if (
+    terminalItem?.kind !== 'message-segment'
+    || terminalItem.role !== 'assistant'
+    || snapshot.openMessageSegments[terminalItem.messageId] !== terminalItem.id
+    || terminalItem.parts.at(-1)?.kind !== 'markdown'
+  ) return new Set();
+
+  return new Set([terminalItem.id]);
+}
+
+export function AcpTimeline({
+  snapshot,
+  isStreaming = false,
+  error,
+  errorKind = 'load',
+  onDismissError,
+  onPermissionSelect,
+  fileActivity,
+  workspaceRoot,
+  turnTimingsByUserMessageId = {},
+}: AcpTimelineProps) {
   const groups = groupAcpTimelineItems(snapshot);
+  const streamingSegmentIds = streamingMessageSegmentIds(snapshot, isStreaming);
 
   return (
     <div data-testid="acp-chat-timeline" className="flex flex-col gap-4">
@@ -62,6 +85,7 @@ export function AcpTimeline({
           <div key={group.id} data-acp-group-id={group.id}>
             <AcpAssistantTurn
               group={group}
+              streamingSegmentIds={streamingSegmentIds}
               fileSummaries={fileActivity?.turnSummariesByTurnId[group.id]}
               workspaceRoot={workspaceRoot}
               timing={group.userMessageId ? turnTimingsByUserMessageId[group.userMessageId] : undefined}

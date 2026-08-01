@@ -511,6 +511,7 @@ export function Chat() {
                   ) : (
                     <AcpTimeline
                       snapshot={visibleAcpTimeline}
+                      isStreaming={acpSending || acpCancelling}
                       turnTimingsByUserMessageId={acpTurnTimings}
                       fileActivity={fileActivity}
                       workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey

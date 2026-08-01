@@ -8,6 +8,7 @@ import App from './App';
 import './i18n';
 import './styles/globals.css';
 import 'katex/dist/katex.min.css';
+import 'streamdown/styles.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
