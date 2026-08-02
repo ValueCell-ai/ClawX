@@ -1979,17 +1979,18 @@ function bridgeCronRuntimeEventToTimeline(event: ChatRuntimeEvent): void {
   // Lifecycle: update sending indicator
   if (event.type === 'run.started') {
     cronBridgeAdoptedSendingFor = state.activeSessionKey;
-    useAcpChatSessionStore.setState({ sending: true });
+    // Clear any stale error from a previous failed run so a new scheduled
+    // execution doesn't inherit a leftover failure banner.
+    useAcpChatSessionStore.setState({ sending: true, error: null });
     return;
   }
   if (event.type === 'run.ended') {
     cronBridgeAdoptedSendingFor = null;
     useAcpChatSessionStore.setState({
       sending: false,
-      // Surface terminal error so users see failure details in the UI
-      ...(event.status === 'error' && event.error
-        ? { error: event.error }
-        : {}),
+      // Surface terminal error so users see failure details in the UI;
+      // explicitly clear error on success to dismiss any prior failure banner.
+      error: (event.status === 'error' && event.error) ? event.error : null,
     });
     return;
   }
