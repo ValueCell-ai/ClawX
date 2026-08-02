@@ -986,6 +986,13 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     const generation = get().generation;
     invalidateTranscriptSupplement();
     resetImageGenerationCompatSession(input.sessionKey);
+    // Clear stale cron bridge adopted state when switching to a local session.
+    // If the cron run ends while this local session is active, the terminal
+    // event won't pass activeSession equivalence, so the flag would never be
+    // cleared and reopening the cron session would incorrectly mark it as sending.
+    if (cronBridgeAdoptedSendingFor && cronBridgeAdoptedSendingFor !== input.sessionKey) {
+      cronBridgeAdoptedSendingFor = null;
+    }
     set({
       activeSessionKey: input.sessionKey,
       workspaceRoot: input.workspaceRoot,
@@ -1912,8 +1919,11 @@ function runtimeEventToAcpNotification(
         } as SessionNotification['update'],
       };
     case 'command.output': {
-      // Use toolCallId if available; fall back to itemId/name as synthetic ID
-      const toolId = event.toolCallId ?? event.itemId ?? (event.name ? `cmd:${event.name}` : null);
+      // For bridged cron command events, prefer itemId over toolCallId so the
+      // synthetic envelope uses a cmd-prefixed id that the pre-load drain filter
+      // recognizes (it only retains cmd:/cmd- prefixed toolCallIds). Fall back to
+      // toolCallId or name-based synthetic id for non-cron paths.
+      const toolId = event.itemId ?? event.toolCallId ?? (event.name ? `cmd:${event.name}` : null);
       if (!toolId) return null;
       // When the command is terminal (phase='end', has exitCode, or explicit
       // completed/error/failed status), emit a status-only tool_call_update to
@@ -2020,7 +2030,7 @@ function bridgeCronRuntimeEventToTimeline(event: ChatRuntimeEvent): void {
   // avoids the reducer treating content on tool_call_update as a replacement
   // that discards previously streamed stdout.
   if (event.type === 'command.output' && event.output) {
-    const toolId = event.toolCallId ?? event.itemId ?? (event.name ? `cmd:${event.name}` : null);
+    const toolId = event.itemId ?? event.toolCallId ?? (event.name ? `cmd:${event.name}` : null);
     const isTerminal = event.phase === 'end'
       || event.exitCode != null
       || event.status === 'completed'
