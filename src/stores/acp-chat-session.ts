@@ -1123,10 +1123,16 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
               // Only retain events explicitly created by the cron bridge:
               // - message/thought chunks with cron-run- prefixed messageId
               // - command output with cmd: or cmd- prefixed toolCallId
+              // - patch/approval updates with their original toolCallId/itemId
+              //   or the 'approval' fallback id
+              const sessionUpdate = update?.sessionUpdate as string | undefined;
+              const isBridgedToolUpdate = sessionUpdate === 'tool_call_update'
+                && (toolCallId === 'approval' || toolCallId != null);
               return (
                 msgId?.startsWith('cron-run-')
                 || toolCallId?.startsWith('cmd:')
                 || toolCallId?.startsWith('cmd-')
+                || isBridgedToolUpdate
               );
             })
           : []),
@@ -2001,7 +2007,7 @@ function runtimeEventToAcpNotification(
       // Map approval phase/status into a tool card update so the timeline
       // shows the permission/approval state change inline.
       const statusText = [event.title, event.kind, event.message].filter(Boolean).join(' — ');
-      const acpStatus = event.status === 'approved' || event.phase === 'end'
+      const acpStatus = event.status === 'approved' || event.phase === 'end' || event.phase === 'resolved'
         ? 'completed'
         : event.status === 'denied' || event.status === 'error'
           ? 'failed'
