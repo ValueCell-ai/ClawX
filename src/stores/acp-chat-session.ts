@@ -93,6 +93,9 @@ const attachmentResolutionsInFlight = new Set<string>();
 // Scoped to the specific session to avoid leaking into unrelated sessions
 // when the user navigates away before run.ended.
 let cronBridgeAdoptedSendingFor: string | null = null;
+// Buffers a terminal cron error that arrived during loadSession so it survives
+// the load completion's `error: null` reset.
+let cronBridgePendingError: { sessionKey: string; error: string } | null = null;
 
 function deferInactiveImageUpdate(
   snapshot: LiveSessionSnapshot,
@@ -1175,6 +1178,15 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
         createEmptyAcpTimeline(input.sessionKey, generation),
         timeline,
       );
+      // Restore a terminal cron error that was buffered during the load window.
+      // The bridge's run.ended handler sets error in the store, but load
+      // completion resets it to null. Check the buffer and preserve the error.
+      const pendingCronError = cronBridgePendingError?.sessionKey === input.sessionKey
+        ? cronBridgePendingError.error
+        : null;
+      if (cronBridgePendingError?.sessionKey === input.sessionKey) {
+        cronBridgePendingError = null;
+      }
       set({
         loading: false,
         sending: (cronBridgeAdoptedSendingFor === input.sessionKey) || (currentResumedSnapshot?.sending ?? false),
@@ -1182,7 +1194,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
           currentResumedSnapshot?.pendingImageGenerationTaskIds
           ?? restorableBackgroundSnapshot?.pendingImageGenerationTaskIds
           ?? [],
-        error: null,
+        error: pendingCronError,
         generation,
         timeline,
         turnTimingsByUserMessageId:
@@ -1964,6 +1976,47 @@ function runtimeEventToAcpNotification(
         } as unknown as SessionNotification['update'],
       };
     }
+    case 'patch.completed': {
+      const toolId = event.toolCallId ?? event.itemId ?? (event.name ? `cmd:${event.name}` : null);
+      if (!toolId) return null;
+      const summary = [
+        event.summary,
+        event.added != null || event.modified != null || event.deleted != null
+          ? `+${event.added ?? 0} ~${event.modified ?? 0} -${event.deleted ?? 0}`
+          : null,
+      ].filter(Boolean).join('\n');
+      return {
+        ...base,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: toolId,
+          title: event.title ?? event.name ?? 'patch',
+          status: 'completed',
+          ...(summary ? { content: [{ type: 'content', content: { type: 'text', text: summary } }] } : {}),
+        } as unknown as SessionNotification['update'],
+      };
+    }
+    case 'approval.updated': {
+      const toolId = event.toolCallId ?? event.itemId ?? 'approval';
+      // Map approval phase/status into a tool card update so the timeline
+      // shows the permission/approval state change inline.
+      const statusText = [event.title, event.kind, event.message].filter(Boolean).join(' — ');
+      const acpStatus = event.status === 'approved' || event.phase === 'end'
+        ? 'completed'
+        : event.status === 'denied' || event.status === 'error'
+          ? 'failed'
+          : 'in_progress';
+      return {
+        ...base,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: toolId,
+          title: event.title ?? 'Approval',
+          status: acpStatus,
+          ...(statusText ? { content: [{ type: 'content', content: { type: 'text', text: statusText } }] } : {}),
+        } as unknown as SessionNotification['update'],
+      };
+    }
     default:
       return null;
   }
@@ -1996,11 +2049,17 @@ function bridgeCronRuntimeEventToTimeline(event: ChatRuntimeEvent): void {
   }
   if (event.type === 'run.ended') {
     cronBridgeAdoptedSendingFor = null;
+    const terminalError = (event.status === 'error' && event.error) ? event.error : null;
+    // If the session is still loading, the load completion will reset error to
+    // null. Buffer the terminal error so loadSession can restore it.
+    if (state.loading && terminalError) {
+      cronBridgePendingError = { sessionKey: state.activeSessionKey, error: terminalError };
+    }
     useAcpChatSessionStore.setState({
       sending: false,
       // Surface terminal error so users see failure details in the UI;
       // explicitly clear error on success to dismiss any prior failure banner.
-      error: (event.status === 'error' && event.error) ? event.error : null,
+      error: terminalError,
     });
     return;
   }
