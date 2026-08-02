@@ -44,7 +44,9 @@ import { buildCronHistoryAcpNotifications, fetchCronSessionHistory } from '@/lib
 import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
 import type { AcpTimelineSnapshot, MessageSegmentItem, PermissionItem, RenderPart } from '@/lib/acp/timeline-types';
-import { isCronSessionKey } from './chat/cron-session-utils';
+import type { ChatRuntimeEvent } from '@shared/chat-runtime-events';
+import type { SessionNotification } from '@agentclientprotocol/sdk';
+import { getCronSessionBaseKey, isCronSessionKey, sessionKeysAreEquivalent } from './chat/cron-session-utils';
 
 const EMPTY_SESSION_ID = '';
 const CANCEL_PERMISSION_OPTION_ID = '__cancelled__';
@@ -87,6 +89,10 @@ type LiveSessionSnapshot = {
 const liveSessionSnapshots = new Map<string, LiveSessionSnapshot>();
 let loadRequestSeq = 0;
 const attachmentResolutionsInFlight = new Set<string>();
+// Tracks the session key for which the cron bridge has adopted sending state.
+// Scoped to the specific session to avoid leaking into unrelated sessions
+// when the user navigates away before run.ended.
+let cronBridgeAdoptedSendingFor: string | null = null;
 
 function deferInactiveImageUpdate(
   snapshot: LiveSessionSnapshot,
@@ -1006,6 +1012,14 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     if (!liveSnapshot?.pendingImageGenerationTaskIds.length) {
       resetImageGenerationCompatSession(input.sessionKey);
     }
+    // Clear stale cron bridge adopted state when switching sessions —
+    // if the previous cron run ended while we were on a different session,
+    // the flag would never have been cleared by run.ended (which requires
+    // activeSession equivalence). Clear it unless we're reloading the same
+    // session that owns the adopted state.
+    if (cronBridgeAdoptedSendingFor && cronBridgeAdoptedSendingFor !== input.sessionKey) {
+      cronBridgeAdoptedSendingFor = null;
+    }
     set({
       activeSessionKey: input.sessionKey,
       workspaceRoot: input.workspaceRoot,
@@ -1084,8 +1098,34 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       const sessionUpdates = [
         ...(result.sessionUpdates ?? []),
         ...(pendingLoadUpdates.get(generation) ?? []),
+        // Also drain cron bridge events buffered under the pre-load generation.
+        // During load, bridged runtime events use the old generation since the
+        // result generation is not yet known. Only include events that were
+        // synthetically created by the cron bridge (identified by cron-run messageId
+        // prefix or cmd: toolCallId). We intentionally exclude generic tool_call*
+        // sessionUpdates without these markers to avoid replaying stale normal ACP
+        // tool events from the previous generation.
+        ...(generation !== state.generation
+          ? (pendingLoadUpdates.get(state.generation) ?? []).filter((e) => {
+              const update = e.notification?.update as Record<string, unknown> | undefined;
+              const msgId = update?.messageId as string | undefined;
+              const toolCallId = update?.toolCallId as string | undefined;
+              // Only retain events explicitly created by the cron bridge:
+              // - message/thought chunks with cron-run- prefixed messageId
+              // - command output with cmd: or cmd- prefixed toolCallId
+              return (
+                msgId?.startsWith('cron-run-')
+                || toolCallId?.startsWith('cmd:')
+                || toolCallId?.startsWith('cmd-')
+              );
+            })
+          : []),
       ].filter((event) => (
         event.sessionKey === input.sessionKey && event.generation === generation
+      ) || (
+        // Allow pre-load-generation cron bridge events through
+        event.sessionKey === input.sessionKey && event.generation === state.generation
+        && generation !== state.generation
       ));
       pendingLoadUpdates.clear();
       const currentResumedSnapshot = result.resumedActivePrompt
@@ -1104,13 +1144,25 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       let timeline = currentResumedSnapshot?.generation === generation
         ? currentResumedSnapshot.timeline
         : createEmptyAcpTimeline(input.sessionKey, generation);
-      for (const event of sessionUpdates) {
+      // Apply real ACP replay updates first (from Gateway load result)
+      const replayUpdates = (result.sessionUpdates ?? []).filter((event) =>
+        event.sessionKey === input.sessionKey && event.generation === generation,
+      );
+      for (const event of replayUpdates) {
         timeline = applyAcpSessionUpdate(timeline, event.notification, { historical: !!event.historical });
       }
+      // Apply cron history fallback only if the ACP replay is empty —
+      // check BEFORE applying synthetic bridge events so live chunks
+      // don't suppress the history.
       if (timeline.itemOrder.length === 0) {
         for (const notification of cronHistoryNotifications) {
           timeline = applyAcpSessionUpdate(timeline, notification, { historical: true });
         }
+      }
+      // Now apply any synthetic cron bridge events buffered during load
+      const bridgeUpdates = sessionUpdates.filter((e) => !replayUpdates.includes(e));
+      for (const event of bridgeUpdates) {
+        timeline = applyAcpSessionUpdate(timeline, event.notification, { historical: !!event.historical });
       }
       const pendingAttachments = newPendingAttachments(
         createEmptyAcpTimeline(input.sessionKey, generation),
@@ -1118,7 +1170,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       );
       set({
         loading: false,
-        sending: currentResumedSnapshot?.sending ?? false,
+        sending: (cronBridgeAdoptedSendingFor === input.sessionKey) || (currentResumedSnapshot?.sending ?? false),
         pendingImageGenerationTaskIds:
           currentResumedSnapshot?.pendingImageGenerationTaskIds
           ?? restorableBackgroundSnapshot?.pendingImageGenerationTaskIds
@@ -1766,6 +1818,240 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
   },
 }));
 
+// ---------------------------------------------------------------------------
+// Cron runtime event → ACP timeline bridging
+// ---------------------------------------------------------------------------
+
+/**
+/** Serialize tool result/error for display — handles objects/arrays gracefully. */
+function stringifyResult(value: unknown): string {
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+/**
+ * Converts a ChatRuntimeEvent into an ACP SessionNotification that the
+ * timeline reducer can apply. Returns null for events that have no content
+ * representation (lifecycle markers like run.started/run.ended).
+ */
+function runtimeEventToAcpNotification(
+  event: ChatRuntimeEvent,
+  sessionKey: string,
+): SessionNotification | null {
+  const base = { sessionId: sessionKey };
+
+  switch (event.type) {
+    case 'assistant.delta': {
+      // Only use `delta` (incremental). The `text` field is a full snapshot
+      // that would cause duplication if appended as a chunk alongside
+      // accumulated deltas. Transports that only send `text` without `delta`
+      // will be handled by the session reload on run.ended.
+      if (!event.delta) return null;
+      return {
+        ...base,
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: `cron-run-${event.runId}`,
+          content: { type: 'text', text: event.delta },
+        },
+      };
+    }
+    case 'thinking.delta': {
+      if (!event.delta) return null;
+      return {
+        ...base,
+        update: {
+          sessionUpdate: 'agent_thought_chunk',
+          messageId: `cron-run-${event.runId}`,
+          content: { type: 'text', text: event.delta },
+        },
+      };
+    }
+    case 'tool.started':
+      return {
+        ...base,
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: event.toolCallId,
+          title: event.name,
+          status: 'in_progress',
+          ...(event.args != null ? { rawInput: event.args } : {}),
+        } as SessionNotification['update'],
+      };
+    case 'tool.updated':
+      return {
+        ...base,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: event.toolCallId,
+          title: event.name,
+          status: 'in_progress',
+          ...(event.partialResult != null
+            ? { content: [{ type: 'content', content: { type: 'text', text: stringifyResult(event.partialResult) } }] }
+            : {}),
+        } as SessionNotification['update'],
+      };
+    case 'tool.completed':
+      return {
+        ...base,
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: event.toolCallId,
+          title: event.name,
+          status: event.isError ? 'failed' : 'completed',
+          ...(event.isError && event.result != null
+            ? { error: stringifyResult(event.result) }
+            : {}),
+          ...(event.result != null && !event.isError
+            ? { content: [{ type: 'content', content: { type: 'text', text: stringifyResult(event.result) } }] }
+            : {}),
+        } as SessionNotification['update'],
+      };
+    case 'command.output': {
+      // Use toolCallId if available; fall back to itemId/name as synthetic ID
+      const toolId = event.toolCallId ?? event.itemId ?? (event.name ? `cmd:${event.name}` : null);
+      if (!toolId) return null;
+      // When the command is terminal (phase='end', has exitCode, or explicit
+      // completed/error/failed status), emit a status-only tool_call_update to
+      // mark the card complete. If there's also terminal output, emit a content
+      // chunk first so it appends to existing stdout rather than replacing it.
+      const isTerminal = event.phase === 'end'
+        || event.exitCode != null
+        || event.status === 'completed'
+        || event.status === 'error'
+        || event.status === 'failed';
+      if (isTerminal) {
+        // Return null here — the bridge function will be called twice via the
+        // notification array pattern below. Instead, we handle terminal commands
+        // by returning a special array marker that the caller splits.
+        // Actually: since runtimeEventToAcpNotification returns a single
+        // notification, we emit a status-only update here. The terminal output
+        // (if any) should have already been streamed via earlier content chunks.
+        // Only include content if there's no prior streaming (i.e., this is the
+        // only event for this command).
+        return {
+          ...base,
+          update: {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: toolId,
+            title: event.title ?? event.name ?? toolId,
+            status: (event.status === 'error' || event.status === 'failed' || (event.exitCode != null && event.exitCode !== 0))
+              ? 'failed'
+              : 'completed',
+          } as unknown as SessionNotification['update'],
+        };
+      }
+      return {
+        ...base,
+        update: {
+          sessionUpdate: 'tool_call_content_chunk',
+          toolCallId: toolId,
+          content: { type: 'content', content: { type: 'text', text: event.output ?? '' } },
+        } as unknown as SessionNotification['update'],
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * When the active session is a cron base key and a runtime event arrives
+ * under the matching run-scoped key, bridge that event into the ACP timeline
+ * so the user sees real-time execution feedback.
+ */
+function bridgeCronRuntimeEventToTimeline(event: ChatRuntimeEvent): void {
+  const eventSessionKey = event.sessionKey;
+  const state = useAcpChatSessionStore.getState();
+  if (!eventSessionKey || !state.activeSessionKey) return;
+
+  // Only bridge cron run-scoped events to their base session
+  const baseKey = getCronSessionBaseKey(eventSessionKey);
+  if (!isCronSessionKey(baseKey)) return;
+  if (!sessionKeysAreEquivalent(eventSessionKey, state.activeSessionKey)) return;
+  // Don't double-apply if the event already matches exactly
+  if (eventSessionKey === state.activeSessionKey) return;
+
+  // Lifecycle: update sending indicator
+  if (event.type === 'run.started') {
+    cronBridgeAdoptedSendingFor = state.activeSessionKey;
+    useAcpChatSessionStore.setState({ sending: true });
+    return;
+  }
+  if (event.type === 'run.ended') {
+    cronBridgeAdoptedSendingFor = null;
+    useAcpChatSessionStore.setState({
+      sending: false,
+      // Surface terminal error so users see failure details in the UI
+      ...(event.status === 'error' && event.error
+        ? { error: event.error }
+        : {}),
+    });
+    return;
+  }
+
+  // Adopt mid-flight cron runs: if we receive a non-terminal event but
+  // sending is not yet true (e.g. user opened the session after run.started
+  // was already emitted), mark the run as active so the UI shows the
+  // streaming/thinking state.
+  if (!state.sending) {
+    cronBridgeAdoptedSendingFor = state.activeSessionKey;
+    useAcpChatSessionStore.setState({ sending: true });
+  }
+
+  const notification = runtimeEventToAcpNotification(event, state.activeSessionKey);
+  if (!notification) return;
+
+  // Re-read state to get the latest generation — during session load,
+  // generation may have been updated since our initial read above.
+  // applyUpdateEnvelope handles the loading case by buffering into
+  // pendingLoadUpdates keyed by generation, which loadSession drains.
+  const currentState = useAcpChatSessionStore.getState();
+  const sessionKey = currentState.activeSessionKey ?? state.activeSessionKey;
+  const gen = currentState.generation;
+
+  // For terminal command.output events that also carry output text, emit a
+  // content chunk first (append), then the status update (complete). This
+  // avoids the reducer treating content on tool_call_update as a replacement
+  // that discards previously streamed stdout.
+  if (event.type === 'command.output' && event.output) {
+    const toolId = event.toolCallId ?? event.itemId ?? (event.name ? `cmd:${event.name}` : null);
+    const isTerminal = event.phase === 'end'
+      || event.exitCode != null
+      || event.status === 'completed'
+      || event.status === 'error'
+      || event.status === 'failed';
+    if (isTerminal && toolId) {
+      // First: append the final output chunk
+      const chunkEnvelope: AcpSessionUpdateEnvelope = {
+        sessionKey,
+        generation: gen,
+        notification: {
+          sessionId: sessionKey,
+          update: {
+            sessionUpdate: 'tool_call_content_chunk',
+            toolCallId: toolId,
+            content: { type: 'content', content: { type: 'text', text: event.output } },
+          } as unknown as SessionNotification['update'],
+        },
+      };
+      currentState.applyUpdateEnvelope(chunkEnvelope);
+      // Then: emit the status-only completion (notification from above)
+    }
+  }
+
+  const envelope: AcpSessionUpdateEnvelope = {
+    sessionKey,
+    generation: gen,
+    notification,
+  };
+  currentState.applyUpdateEnvelope(envelope);
+}
+
 let acpChatSubscribed = false;
 
 export function ensureAcpChatSubscriptions(): void {
@@ -1792,5 +2078,9 @@ export function ensureAcpChatSubscriptions(): void {
       evidence
       && !deferInactiveImageGenerationCompletion(state.activeSessionKey, evidence)
     ) void state.projectImageGenerationCompletion(evidence);
+
+    // Bridge cron runtime events into the ACP timeline so scheduled task
+    // execution is visible in real-time when the user is viewing the cron session.
+    bridgeCronRuntimeEventToTimeline(event);
   });
 }
