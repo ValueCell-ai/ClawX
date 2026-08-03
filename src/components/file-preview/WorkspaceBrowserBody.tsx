@@ -775,7 +775,7 @@ export function WorkspaceBrowserBody({
 
 function WorkspaceTreeContainerRow<T>({ attrs, innerRef, children }: RowRendererProps<T>) {
   return (
-    <div {...attrs} ref={innerRef} onClick={undefined}>
+    <div {...attrs} ref={innerRef} onClick={undefined} className="!min-w-full">
       {children}
     </div>
   );
