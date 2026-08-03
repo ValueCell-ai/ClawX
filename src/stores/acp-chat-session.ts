@@ -607,6 +607,7 @@ async function resolveOpenClawMediaCandidate(
   if (!isCurrent()) return;
 
   let result: ResolveAttachmentResult;
+  const attachmentName = safeAttachmentName(candidate.name ?? candidate.uri);
   try {
     result = await hostApi.files.resolveAttachment({
       ref: {
@@ -615,10 +616,12 @@ async function resolveOpenClawMediaCandidate(
         uri: candidate.uri,
         ...(candidate.transcriptMessageId ? { transcriptMessageId: candidate.transcriptMessageId } : {}),
       },
-      name: safeAttachmentName(candidate.uri),
+      name: attachmentName,
+      ...(candidate.mimeType ? { mimeType: candidate.mimeType } : {}),
+      ...(candidate.size !== undefined ? { size: candidate.size } : {}),
     });
   } catch {
-    result = { ok: false, displayName: safeAttachmentName(candidate.uri), error: 'operationFailed' };
+    result = { ok: false, displayName: attachmentName, error: 'operationFailed' };
   }
 
   const evidenceHash = hashOpenClawMediaDiagnostic(candidate.evidenceId);
@@ -646,7 +649,9 @@ async function resolveOpenClawMediaCandidate(
     segmentIndex: 0,
     blockIndex: candidate.order,
     uri: candidate.uri,
-    name: safeAttachmentName(candidate.uri),
+    name: attachmentName,
+    ...(candidate.mimeType ? { mimeType: candidate.mimeType } : {}),
+    ...(candidate.size !== undefined ? { size: candidate.size } : {}),
     ...(candidate.transcriptMessageId ? { transcriptMessageId: candidate.transcriptMessageId } : {}),
     source: 'openclaw-media',
     evidenceId: candidate.evidenceId,

@@ -616,6 +616,69 @@ test.describe('ACP media attachments', () => {
     }
   });
 
+  test('renders canonical OpenClaw transcript media when assistant prose only names the path', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const prompt = 'Create the Markdown market report';
+    const reply = 'Markdown 文件在这里：';
+
+    try {
+      const fixture = await installAttachmentHostFixture(app, {
+        sessions: [
+          { key: MAIN_SESSION_KEY, title: 'Main session' },
+          { key: OTHER_SESSION_KEY, title: 'Other session' },
+        ],
+      });
+      const reportPath = await fixture.createWorkspaceFile('market-report.md', '# Market report\n');
+      await fixture.setSessionReplay(MAIN_SESSION_KEY, [
+        userUpdate('structured-media-user', prompt),
+        {
+          sessionUpdate: 'agent_message',
+          messageId: 'structured-media-reply',
+          content: [{ type: 'text', text: `${reply}\n${reportPath}` }],
+        },
+      ]);
+      const transcript = [
+        { role: 'user', id: 'structured-transcript-user', content: prompt },
+        {
+          role: 'assistant',
+          id: 'structured-transcript-assistant',
+          content: `${reply}\n${reportPath}`,
+          __openclaw: {
+            media: [{
+              path: reportPath,
+              fileName: 'market-report.md',
+              contentType: 'text/markdown',
+              sizeBytes: 16,
+            }],
+          },
+        },
+      ];
+      await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [[]]);
+
+      const page = await openChat(app);
+      await expect(page.getByText(reply)).toBeVisible({ timeout: 30_000 });
+      await fixture.waitForHistoryRequestCount(MAIN_SESSION_KEY, 1);
+      await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [transcript]);
+      await page.getByTestId(`sidebar-session-${OTHER_SESSION_KEY}`).click();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+
+      const attachment = page.getByRole('button', { name: 'Preview market-report.md', exact: true });
+      await expect(attachment).toBeEnabled();
+      await expect.poll(async () => (await fixture.getHostInvocations()).some((call) => (
+        call.module === 'files'
+        && call.action === 'resolveAttachment'
+        && call.payload?.name === 'market-report.md'
+        && call.payload?.mimeType === 'text/markdown'
+        && (call.payload?.ref as Record<string, unknown> | undefined)?.uri === reportPath
+        && (call.payload?.ref as Record<string, unknown> | undefined)?.transcriptMessageId
+          === 'structured-transcript-assistant'
+      ))).toBe(true);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('previews the reported live spreadsheet flow and restores one historical card', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 

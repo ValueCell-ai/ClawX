@@ -1,9 +1,9 @@
 ---
 id: acp-media-attachments
-title: Render ACP resources and bounded OpenClaw MEDIA attachments
+title: Render ACP resources and bounded OpenClaw media attachments
 scenario: gateway-backend-communication
 taskType: runtime-bridge
-intent: Render standard ACP resources and recover only explicit OpenClaw MEDIA attachments omitted by the distributed ACP adapter through a bounded transcript compatibility projection.
+intent: Render standard ACP resources and recover canonical persisted OpenClaw media facts or explicit MEDIA attachments omitted by the distributed ACP adapter through a bounded transcript compatibility projection.
 touchedAreas:
   - package.json
   - harness/specs/tasks/acp-media-attachments.md
@@ -23,6 +23,7 @@ touchedAreas:
   - harness/reference/acp-generated-media-and-diagnostics.md
   - harness/reference/openclaw-file-activity.md
   - shared/acp-chat/types.ts
+  - shared/chat/types.ts
   - shared/host-api/contract.ts
   - shared/file-preview/limits.ts
   - electron/services/acp-session-access-registry.ts
@@ -115,6 +116,7 @@ touchedAreas:
   - README.ja-JP.md
 expectedUserBehavior:
   - Standard ACP resource_link and URI-backed resource content renders as paperclip attachment cards.
+  - Canonical assistant `__openclaw.media` facts render as attachment cards even when visible prose only mentions the output path.
   - Explicit assistant OpenClaw MEDIA directives omitted by ACP are recovered for live completions and historical session loads without displaying the raw directive.
   - Completed turn durations use transcript timing for both live completion and historical reload so navigating between conversations does not change the displayed value.
   - MEDIA recovery remains aligned when the triggering ACP user turn contains structured resources, images, or no text.
@@ -158,6 +160,7 @@ requiredTests:
   - pnpm run harness:ci
 acceptance:
   - A standard ACP resource_link or URI-backed resource renders an actionable paperclip attachment card.
+  - A canonical persisted assistant `__openclaw.media` fact renders an actionable attachment card and carries its declared filename, content type, size, and transcript message identity into Main validation.
   - User image attachments render as thumbnails with the filename revealed by a hover overlay.
   - User non-image attachments render the filename followed by a muted, truncating source path and no MIME label.
   - The reported OpenClaw MEDIA directive for budget_sample.xlsx renders an attachment in ACP Chat even though OpenClaw ACP emits no resource block.
@@ -184,13 +187,13 @@ docs:
 
 ## Scope
 
-Standard ACP resource content is the preferred attachment source. The OpenClaw transcript path is a bounded compatibility exception for explicit assistant `MEDIA:` directives that the distributed ACP adapter omits; it is not a second Chat history source.
+Standard ACP resource content is the preferred attachment source. The OpenClaw transcript path is a bounded compatibility exception for canonical persisted assistant `__openclaw.media` facts and explicit assistant `MEDIA:` directives that the distributed ACP adapter omits; it is not a second Chat history source.
 
 ## Out Of Scope
 
 - Modifying OpenClaw or its distributed package.
 - Reconstructing ordinary messages, tools, plans, permissions, thoughts, or file activity from transcripts.
-- Extracting bare paths or inline paths from ordinary assistant prose.
+- Treating bare paths or inline paths from ordinary assistant prose as attachment evidence without a canonical persisted media fact.
 - Persisting a synthetic ACP attachment ledger or compatibility cache.
 
 ## Acceptance Traceability
@@ -198,7 +201,7 @@ Standard ACP resource content is the preferred attachment source. The OpenClaw t
 | Acceptance behavior | Test or durable rule |
 | --- | --- |
 | Standard ACP resources render actionable cards | `tests/unit/acp-reducer.test.ts`, `tests/unit/acp-chat-components.test.tsx`, `tests/e2e/chat-acp-attachments.spec.ts` |
-| Explicit OpenClaw `MEDIA:` recovery and hidden raw directives | `tests/unit/acp-media-attachments.test.ts`, `tests/unit/acp-chat-store.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts` |
+| Canonical persisted OpenClaw media facts, explicit `MEDIA:` recovery, and hidden raw directives | `tests/unit/acp-media-attachments.test.ts`, `tests/unit/acp-chat-store.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts` |
 | Stable completed-turn duration across live completion and session navigation | `tests/unit/acp-chat-store.test.ts`, `tests/unit/acp-turn-timings.test.ts`, `tests/e2e/chat-acp-inline-timeline.spec.ts` |
 | Explicit parser grammar rejects fenced, wrapped, inline, malformed, unknown-scheme, and overlong values | `tests/unit/acp-media-attachments.test.ts`, `acp-compatibility-content-safety` |
 | Transcript suffix alignment uses normalized user text and occurrence from the tail without guessing | `tests/unit/acp-media-attachments.test.ts`, `tests/unit/acp-chat-store.test.ts`, `acp-chat-state-and-history` |

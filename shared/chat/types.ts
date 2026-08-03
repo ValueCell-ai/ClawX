@@ -35,6 +35,19 @@ export interface RawMessage {
   stop_reason?: string;
   errorMessage?: string;
   error_message?: string;
+  /** Canonical OpenClaw-owned transcript metadata. */
+  __openclaw?: {
+    media?: Array<{
+      path?: string;
+      url?: string;
+      contentType?: string;
+      kind?: string;
+      fileName?: string;
+      sizeBytes?: number;
+      messageId?: string;
+      workspaceDir?: string;
+    }>;
+  };
   /** Local-only: file metadata for user-uploaded attachments (not sent to/from Gateway) */
   _attachedFiles?: AttachedFileMeta[];
 }
