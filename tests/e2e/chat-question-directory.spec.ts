@@ -148,6 +148,8 @@ test.describe('ClawX chat question directory', () => {
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await emitAcpSessionUpdates(app, messagesToAcpUpdates(seededHistory));
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
+      const scrollColumn = page.getByTestId('chat-scroll-column');
+      const scrollColumnBeforeOpen = await scrollColumn.boundingBox();
 
       const toggle = page.getByTestId('chat-question-directory-toggle');
       await expect(toggle).toBeEnabled();
@@ -155,6 +157,16 @@ test.describe('ClawX chat question directory', () => {
 
       const directory = page.getByTestId('chat-question-directory');
       await expect(directory).toBeVisible();
+      const scrollColumnAfterOpen = await scrollColumn.boundingBox();
+      const directoryBox = await directory.boundingBox();
+      expect(scrollColumnBeforeOpen).not.toBeNull();
+      expect(scrollColumnAfterOpen).not.toBeNull();
+      expect(directoryBox).not.toBeNull();
+      expect(Math.abs(scrollColumnAfterOpen!.width - scrollColumnBeforeOpen!.width)).toBeLessThan(1);
+      expect(directoryBox!.x).toBeGreaterThan(scrollColumnAfterOpen!.x);
+      expect(directoryBox!.x + directoryBox!.width).toBeLessThanOrEqual(
+        scrollColumnAfterOpen!.x + scrollColumnAfterOpen!.width + 1,
+      );
       await expect(directory).toContainText('Question directory');
       await expect(directory.getByTestId(/^chat-question-directory-item-/)).toHaveCount(4);
       await expect(directory).toContainText('First question: summarize the market opening.');

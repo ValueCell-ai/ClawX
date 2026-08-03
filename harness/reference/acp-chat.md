@@ -91,7 +91,7 @@ Available attachment cards contain a primary semantic action with keyboard activ
 - The primary Chat view does not render the legacy Execution Graph.
 - A recoverable initial `reply was never sent` load failure may leave an empty new-chat page usable; prompt failures remain visible.
 - The working indicator follows the same sending state as the Stop action and supports reduced motion.
-- The question directory is derived only from active user message segments. Duplicate text remains separate, titles use the first non-empty Markdown part, and textless entries use a localized fallback. Fewer than two questions disables navigation. Selection scrolls smoothly to the current-snapshot anchor; a missing anchor is a safe no-op. The UI caps the directory at 300 recent entries and reports the hidden count when older entries are omitted.
+- The question directory is derived only from active user message segments. Duplicate text remains separate, titles use the first non-empty Markdown part, and textless entries use a localized fallback. Fewer than two questions disables navigation. When open, the directory floats above the conversation without changing the chat column width. Selection scrolls smoothly to the current-snapshot anchor; a missing anchor is a safe no-op. The UI caps the directory at 300 recent entries and reports the hidden count when older entries are omitted.
 - Heartbeat-only desktop sessions are hidden only when the exact OpenClaw heartbeat sentinel is present and there is no real user content. A title such as `ClawX` or `main` is never sufficient. The guard applies to list, startup selection, refresh, and cached summary hydration without deleting OpenClaw history.
 
 ## Validation Anchors

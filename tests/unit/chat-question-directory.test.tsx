@@ -230,10 +230,17 @@ describe('Chat question directory', () => {
     const directory = screen.getByTestId('chat-question-directory');
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(directory).toHaveAttribute('id', 'chat-question-directory');
-    expect(directory).toHaveClass('max-h-[40vh]', 'overflow-hidden');
+    expect(directory).toHaveClass(
+      'absolute',
+      'right-0',
+      'top-0',
+      'z-30',
+      'max-h-[min(32rem,calc(100%-1rem))]',
+      'overflow-hidden',
+    );
     expect(within(directory).getByRole('navigation')).toHaveClass(
-      'max-h-[calc(40vh-5rem)]',
-      'lg:max-h-[calc(100vh-13rem)]',
+      'min-h-0',
+      'flex-1',
       'overflow-y-auto',
     );
     expect(within(directory).getAllByTestId(/^chat-question-directory-item-/)).toHaveLength(2);

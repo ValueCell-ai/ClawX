@@ -94,12 +94,12 @@ function QuestionDirectory({ items }: { items: QuestionDirectoryItem[] }) {
       id="chat-question-directory"
       data-testid="chat-question-directory"
       aria-label={t('questionDirectory.title')}
-      className="flex max-h-[40vh] w-full shrink-0 flex-col overflow-hidden rounded-2xl border border-black/10 bg-surface-input p-3 dark:border-white/10 lg:max-h-none lg:w-64 xl:w-72"
+      className="absolute right-0 top-0 z-30 flex max-h-[min(32rem,calc(100%-1rem))] w-[min(18rem,calc(100%-1rem))] flex-col overflow-hidden rounded-2xl border border-black/10 bg-surface-modal/95 p-3 shadow-xl shadow-black/10 backdrop-blur-xl dark:border-white/10 dark:shadow-black/30"
     >
       <h2 className="px-1 pb-2 text-sm font-medium text-foreground">{t('questionDirectory.title')}</h2>
       <nav
         ref={navRef}
-        className="min-h-0 max-h-[calc(40vh-5rem)] flex-1 space-y-1 overflow-y-auto lg:max-h-[calc(100vh-13rem)]"
+        className="min-h-0 flex-1 space-y-1 overflow-y-auto"
         aria-label={t('questionDirectory.title')}
       >
         {visibleItems.map((item) => (
@@ -479,7 +479,7 @@ export function Chat() {
         </div>
 
         <div className="relative min-h-0 flex-1 overflow-hidden px-4 py-4">
-          <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col gap-4 lg:flex-row lg:items-stretch">
+          <div className="relative mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col">
             <div data-testid="chat-scroll-column" className="relative min-h-0 min-w-0 flex-1">
               <div ref={scrollRef} className="h-full min-h-0 min-w-0 overflow-y-auto" data-testid="chat-scroll-container">
                 <div ref={contentRef} className="mx-auto max-w-4xl space-y-4">
