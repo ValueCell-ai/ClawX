@@ -696,12 +696,21 @@ async function runTranscriptSupplement(operation: TranscriptSupplementOperation)
   });
   if (!result || !isCurrent()) return;
 
-  if (!operation.liveUserMessageId && result.turnTimings.length > 0) {
-    useAcpChatSessionStore.setState((current) => (
-      isCurrentTranscriptSupplement(current, operation)
-        ? { turnTimingsByUserMessageId: alignHistoricalTurnTimings(current.timeline, result.turnTimings) }
-        : {}
-    ));
+  if (result.turnTimings.length > 0) {
+    useAcpChatSessionStore.setState((current) => {
+      if (!isCurrentTranscriptSupplement(current, operation)) return {};
+      const transcriptTimings = alignHistoricalTurnTimings(current.timeline, result.turnTimings);
+      if (!operation.liveUserMessageId) {
+        return { turnTimingsByUserMessageId: transcriptTimings };
+      }
+      if (!transcriptTimings[operation.liveUserMessageId]) return {};
+      return {
+        turnTimingsByUserMessageId: {
+          ...current.turnTimingsByUserMessageId,
+          ...transcriptTimings,
+        },
+      };
+    });
   }
 
   for (const start of result.imageGeneration.starts) {

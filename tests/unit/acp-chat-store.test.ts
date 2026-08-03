@@ -610,6 +610,48 @@ describe('ACP Chat store', () => {
     now.mockRestore();
   });
 
+  it('reconciles a completed live turn to the transcript duration used after navigation', async () => {
+    const prompt = createDeferred<{ success: boolean; generation: number }>();
+    hostApiMock.sendAcpPrompt.mockReturnValueOnce(prompt.promise);
+    hostApiMock.sessionTurnTimings.mockResolvedValue({
+      success: true,
+      timings: [{
+        normalizedUserText: 'Keep this duration stable',
+        userOccurrenceFromTail: 1,
+        durationMs: 2_400,
+      }],
+    });
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    const { useAcpChatSessionStore } = await importStore();
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+
+    const sending = useAcpChatSessionStore.getState().sendPrompt({
+      sessionKey: 'agent:pi:s1',
+      cwd: '/repo',
+      message: 'Keep this duration stable',
+      messageId: 'user-live',
+    });
+    await vi.waitFor(() => expect(hostApiMock.sendAcpPrompt).toHaveBeenCalledTimes(1));
+    now.mockReturnValue(4_600);
+    prompt.resolve({ success: true, generation: 1 });
+    await expect(sending).resolves.toBe(true);
+
+    await vi.waitFor(() => expect(
+      useAcpChatSessionStore.getState().turnTimingsByUserMessageId['user-live'],
+    ).toEqual({
+      source: 'transcript',
+      status: 'complete',
+      durationMs: 2_400,
+    }));
+    expect(hostApiMock.sessionTurnTimings).toHaveBeenCalledWith({
+      sessionKey: 'agent:pi:s1',
+      limit: 1000,
+    });
+    now.mockRestore();
+  });
+
   it('keeps an in-flight timeline updated while another session is active and restores it on return', async () => {
     const prompt = createDeferred<{ success: boolean; generation: number }>();
     hostApiMock.loadAcpSession

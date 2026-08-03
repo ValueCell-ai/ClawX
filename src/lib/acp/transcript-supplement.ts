@@ -74,9 +74,7 @@ export async function fetchOpenClawTranscriptSupplement(
 
   const [historyResult, timingResult] = await Promise.allSettled([
     hostApi.sessions.history({ sessionKey: input.sessionKey, limit: 1000 }),
-    input.liveUserMessageId
-      ? Promise.resolve(null)
-      : hostApi.sessions.turnTimings({ sessionKey: input.sessionKey, limit: 1000 }),
+    hostApi.sessions.turnTimings({ sessionKey: input.sessionKey, limit: 1000 }),
   ]);
   const response = historyResult.status === 'fulfilled' ? historyResult.value : null;
   const timingResponse = timingResult.status === 'fulfilled' ? timingResult.value : null;

@@ -219,6 +219,46 @@ async function installAcpPromptSuccessMock(app: ElectronApplication) {
   });
 }
 
+async function installAcpPromptTimingMock(
+  app: ElectronApplication,
+  timing: { normalizedUserText: string; durationMs: number },
+) {
+  await app.evaluate(async ({ app: _app }, transcriptTiming) => {
+    const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type IpcInvokeHandler = (event: unknown, request: {
+      id?: string;
+      module?: string;
+      action?: string;
+    }) => Promise<unknown>;
+    const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
+    const originalHostInvoke = handlers?.get('host:invoke');
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: {
+      id?: string;
+      module?: string;
+      action?: string;
+    }) => {
+      if (request?.module === 'chat' && request.action === 'sendAcpPrompt') {
+        return { id: request.id, ok: true, data: { success: true, generation: 1 } };
+      }
+      if (request?.module === 'sessions' && request.action === 'turnTimings') {
+        return {
+          id: request.id,
+          ok: true,
+          data: {
+            success: true,
+            timings: [{
+              ...transcriptTiming,
+              userOccurrenceFromTail: 1,
+            }],
+          },
+        };
+      }
+      return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
+    });
+  }, timing);
+}
+
 async function installAcpPromptFailureMock(app: ElectronApplication, error: string) {
   await app.evaluate(async ({ app: _app }, promptError) => {
     const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
@@ -367,6 +407,34 @@ test.describe('ClawX ACP inline timeline', () => {
 
       const page = await openChat(app);
       await expect(page.getByText('Historical turn measured')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('acp-turn-duration')).toHaveText('Took 6 sec');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('reconciles a completed live turn to transcript timing', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const prompt = 'Keep this live duration stable';
+
+    try {
+      await installAcpChatMocks(app);
+      await installAcpPromptTimingMock(app, {
+        normalizedUserText: prompt,
+        durationMs: 6_400,
+      });
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+
+      await page.getByTestId('chat-composer-input').fill(prompt);
+      await page.getByTestId('chat-composer-send').click();
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'timed-live-assistant',
+        content: { type: 'text', text: 'Live turn measured' },
+      }]);
+
+      await expect(page.getByText('Live turn measured')).toBeVisible();
       await expect(page.getByTestId('acp-turn-duration')).toHaveText('Took 6 sec');
     } finally {
       await closeElectronApp(app);

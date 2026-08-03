@@ -116,6 +116,7 @@ touchedAreas:
 expectedUserBehavior:
   - Standard ACP resource_link and URI-backed resource content renders as paperclip attachment cards.
   - Explicit assistant OpenClaw MEDIA directives omitted by ACP are recovered for live completions and historical session loads without displaying the raw directive.
+  - Completed turn durations use transcript timing for both live completion and historical reload so navigating between conversations does not change the displayed value.
   - MEDIA recovery remains aligned when the triggering ACP user turn contains structured resources, images, or no text.
   - Attachment rows render after assistant prose and preserve declaration order.
   - User image attachments render as thumbnails with a filename overlay on hover.
@@ -169,6 +170,7 @@ acceptance:
   - Arbitrary prose paths do not become attachments.
   - Existing local references outside the workspace can be previewed or opened after exact session/generation validation and per-operation Main re-resolution.
   - Live and historical paths deduplicate and reject stale session or generation results.
+  - A completed live turn is reconciled to the same transcript-derived duration used after session navigation.
   - Native ACP resources take precedence over transcript compatibility evidence.
   - Attachment access remains bound to Main-owned session, generation, target revalidation, and outgoing-record authority on every operation.
   - Attachment rows use semantic controls with safe accessible labels, keyboard activation, and disabled unavailable states.
@@ -197,6 +199,7 @@ Standard ACP resource content is the preferred attachment source. The OpenClaw t
 | --- | --- |
 | Standard ACP resources render actionable cards | `tests/unit/acp-reducer.test.ts`, `tests/unit/acp-chat-components.test.tsx`, `tests/e2e/chat-acp-attachments.spec.ts` |
 | Explicit OpenClaw `MEDIA:` recovery and hidden raw directives | `tests/unit/acp-media-attachments.test.ts`, `tests/unit/acp-chat-store.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts` |
+| Stable completed-turn duration across live completion and session navigation | `tests/unit/acp-chat-store.test.ts`, `tests/unit/acp-turn-timings.test.ts`, `tests/e2e/chat-acp-inline-timeline.spec.ts` |
 | Explicit parser grammar rejects fenced, wrapped, inline, malformed, unknown-scheme, and overlong values | `tests/unit/acp-media-attachments.test.ts`, `acp-compatibility-content-safety` |
 | Transcript suffix alignment uses normalized user text and occurrence from the tail without guessing | `tests/unit/acp-media-attachments.test.ts`, `tests/unit/acp-chat-store.test.ts`, `acp-chat-state-and-history` |
 | Attached and attachment-only user turns use binary-free structured prompt projection | `tests/unit/acp-media-attachments.test.ts`, `tests/unit/acp-reducer.test.ts`, `tests/unit/acp-chat-store.test.ts`, `tests/e2e/chat-acp-attachments.spec.ts`, `acp-chat-state-and-history` |
