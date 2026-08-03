@@ -1,10 +1,10 @@
 /**
  * Chat Toolbar
- * Session selector, new session, refresh, and the workspace browser
+ * Session selector, question directory, and the workspace browser
  * entry point.  Rendered in the Header when on the Chat page.
  */
 import { useMemo } from 'react';
-import { RefreshCw, Bot, FolderTree, ListTree } from 'lucide-react';
+import { Bot, FolderTree, ListTree } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useChatStore } from '@/stores/chat';
@@ -27,8 +27,6 @@ export function ChatToolbar({
   onToggleQuestionDirectory,
   workspaceAvailable = false,
 }: ChatToolbarProps = {}) {
-  const refresh = useChatStore((s) => s.refresh);
-  const loading = useChatStore((s) => s.loading);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
   const agents = useAgentsStore((s) => s.agents);
   const openBrowser = useArtifactPanel((s) => s.openBrowser);
@@ -95,24 +93,6 @@ export function ChatToolbar({
         </TooltipTrigger>
         <TooltipContent>
           <p>{t('questionDirectory.title')}</p>
-        </TooltipContent>
-      </Tooltip>
-      {/* Refresh */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
-            onClick={() => refresh()}
-            disabled={loading}
-            aria-label={t('toolbar.refresh')}
-          >
-            <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>{t('toolbar.refresh')}</p>
         </TooltipContent>
       </Tooltip>
     </div>
