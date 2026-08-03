@@ -121,6 +121,74 @@ describe('OpenClaw MEDIA transcript extraction', () => {
     expect(turn?.candidates.every((candidate) => candidate.transcriptMessageId === 'assistant-files')).toBe(true);
   });
 
+  it('reads canonical persisted OpenClaw media facts without parsing ordinary prose paths', () => {
+    const [turn] = extract(transcript(
+      { role: 'user', content: 'Create the report' },
+      {
+        role: 'assistant',
+        id: 'assistant-structured-files',
+        content: 'Markdown 文件在这里：\nC:\\Users\\Administrator\\.openclaw\\workspace\\report.md',
+        __openclaw: {
+          media: [
+            {
+              path: 'C:\\Users\\Administrator\\.openclaw\\workspace\\report.md',
+              fileName: 'market-report.md',
+              contentType: 'text/markdown',
+              sizeBytes: 2048,
+            },
+            {
+              url: 'https://example.test/report.pdf',
+              fileName: 'report.pdf',
+              contentType: 'application/pdf',
+            },
+          ],
+        },
+      },
+    ));
+
+    expect(turn?.candidates).toMatchObject([
+      {
+        uri: 'C:\\Users\\Administrator\\.openclaw\\workspace\\report.md',
+        name: 'market-report.md',
+        mimeType: 'text/markdown',
+        size: 2048,
+        order: 0,
+        transcriptMessageId: 'assistant-structured-files',
+      },
+      {
+        uri: 'https://example.test/report.pdf',
+        name: 'report.pdf',
+        mimeType: 'application/pdf',
+        order: 1,
+        transcriptMessageId: 'assistant-structured-files',
+      },
+    ]);
+  });
+
+  it('prefers canonical media facts over duplicate MEDIA directives', () => {
+    const [turn] = extract(transcript(
+      { role: 'user', content: 'Create the report' },
+      {
+        role: 'assistant',
+        id: 'assistant-deduped-file',
+        content: 'MEDIA:/workspace/project/report.md',
+        __openclaw: {
+          media: [{
+            path: '/workspace/project/report.md',
+            fileName: 'Structured report.md',
+            contentType: 'text/markdown',
+          }],
+        },
+      },
+    ));
+
+    expect(turn?.candidates).toMatchObject([{
+      uri: '/workspace/project/report.md',
+      name: 'Structured report.md',
+      mimeType: 'text/markdown',
+    }]);
+  });
+
   it('rejects fenced, wrapped, inline, unknown-scheme, malformed, and overlong references', () => {
     const tooLong = `/tmp/${'x'.repeat(4092)}`;
     const [turn] = extract(transcript(

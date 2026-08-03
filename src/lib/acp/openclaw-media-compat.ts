@@ -12,6 +12,9 @@ export type OpenClawMediaCandidate = {
   evidenceId: string;
   transcriptMessageId?: string;
   uri: string;
+  name?: string;
+  mimeType?: string;
+  size?: number;
   order: number;
 };
 
@@ -57,6 +60,20 @@ function textFromContent(content: unknown): string {
     })
     .filter(Boolean)
     .join('\n');
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function optionalSize(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
 function normalizeUserText(text: string): string {
@@ -106,6 +123,56 @@ function parseDirectiveReference(line: string, executionCwd: string): string | n
     return reference;
   }
   return executionCwd.trim() ? reference : null;
+}
+
+function parseStructuredReference(value: unknown, executionCwd: string): string | null {
+  const reference = optionalString(value);
+  if (!reference || reference.length > MAX_MEDIA_REFERENCE_LENGTH) return null;
+  if (/^https?:\/\//i.test(reference)) {
+    try {
+      const url = new URL(reference);
+      return url.protocol === 'http:' || url.protocol === 'https:' ? reference : null;
+    } catch {
+      return null;
+    }
+  }
+  if (/^file:\/\//i.test(reference)) return reference;
+  if (URI_SCHEME_RE.test(reference) && !WINDOWS_ABSOLUTE_RE.test(reference)) return null;
+  if (reference.startsWith('/') || reference.startsWith('~/') || WINDOWS_ABSOLUTE_RE.test(reference)) {
+    return reference;
+  }
+  return executionCwd.trim() ? reference : null;
+}
+
+type PersistedMediaFact = {
+  uri: string;
+  name?: string;
+  mimeType?: string;
+  size?: number;
+  index: number;
+};
+
+function persistedMediaFacts(message: RawMessage, executionCwd: string): PersistedMediaFact[] {
+  const metadata = recordValue((message as RawMessage & { __openclaw?: unknown }).__openclaw);
+  const media = metadata?.media;
+  if (!Array.isArray(media)) return [];
+
+  return media.flatMap((value, index) => {
+    const fact = recordValue(value);
+    if (!fact) return [];
+    const uri = parseStructuredReference(fact.path ?? fact.url, executionCwd);
+    if (!uri) return [];
+    const name = optionalString(fact.fileName);
+    const mimeType = optionalString(fact.contentType);
+    const size = optionalSize(fact.sizeBytes);
+    return [{
+      uri,
+      index,
+      ...(name ? { name } : {}),
+      ...(mimeType ? { mimeType } : {}),
+      ...(size !== undefined ? { size } : {}),
+    }];
+  });
 }
 
 function mediaReferences(text: string): Array<{ uri: string; line: number }> {
@@ -166,15 +233,30 @@ export function extractOpenClawMediaTurns(
     if (role !== 'assistant' || !current) continue;
 
     const text = textFromContent(message.content);
+    const messageIdentity = message.id
+      ? `id:${message.id}`
+      : message.timestamp != null
+        ? `timestamp:${message.timestamp}`
+        : `content:${stableHash(text)}`;
+    const structuredFacts = persistedMediaFacts(message, input.executionCwd);
+    const structuredUris = new Set(structuredFacts.map((fact) => fact.uri));
+    for (const fact of structuredFacts) {
+      if (input.suppressedUris.has(fact.uri)) continue;
+      const order = current.candidates.length;
+      current.candidates.push({
+        evidenceSeed: `${messageIdentity}:structured:${fact.index}:${fact.uri}`,
+        ...(message.id ? { transcriptMessageId: message.id } : {}),
+        uri: fact.uri,
+        order,
+        ...(fact.name ? { name: fact.name } : {}),
+        ...(fact.mimeType ? { mimeType: fact.mimeType } : {}),
+        ...(fact.size !== undefined ? { size: fact.size } : {}),
+      });
+    }
     for (const reference of mediaReferences(text)) {
       const uri = parseDirectiveReference(reference.uri, input.executionCwd);
-      if (!uri || input.suppressedUris.has(uri)) continue;
+      if (!uri || structuredUris.has(uri) || input.suppressedUris.has(uri)) continue;
       const order = current.candidates.length;
-      const messageIdentity = message.id
-        ? `id:${message.id}`
-        : message.timestamp != null
-          ? `timestamp:${message.timestamp}`
-          : `content:${stableHash(text)}`;
       current.candidates.push({
         evidenceSeed: `${messageIdentity}:${reference.line}:${uri}`,
         ...(message.id ? { transcriptMessageId: message.id } : {}),

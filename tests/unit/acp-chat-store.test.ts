@@ -3148,6 +3148,67 @@ describe('ACP Chat store', () => {
     expect(JSON.stringify(transcriptTraces)).not.toContain('MEDIA:');
   });
 
+  it('projects canonical persisted OpenClaw media metadata through Main attachment resolution', async () => {
+    const history = createDeferred<{ success: true; messages: Array<Record<string, unknown>> }>();
+    hostApiMock.sessionsHistory.mockReturnValueOnce(history.promise);
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      historical: true,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'user_message',
+          messageId: 'structured-user',
+          content: [{ type: 'text', text: 'Create report' }],
+        },
+      },
+    });
+    history.resolve({
+      success: true,
+      messages: [
+        { role: 'user', content: 'Create report' },
+        {
+          role: 'assistant',
+          id: 'structured-assistant',
+          content: 'Report ready at /repo/generated-report.md',
+          __openclaw: {
+            media: [{
+              path: '/repo/generated-report.md',
+              fileName: 'Generated report.md',
+              contentType: 'text/markdown',
+              sizeBytes: 512,
+            }],
+          },
+        },
+      ],
+    });
+
+    await vi.waitFor(() => {
+      expect(hostApiMock.resolveAttachment).toHaveBeenCalledWith({
+        ref: {
+          sessionKey: 'agent:pi:s1',
+          generation: 1,
+          uri: '/repo/generated-report.md',
+          transcriptMessageId: 'structured-assistant',
+        },
+        name: 'Generated report.md',
+        mimeType: 'text/markdown',
+        size: 512,
+      });
+    });
+    const attachments = Object.values(useAcpChatSessionStore.getState().timeline.itemsById)
+      .flatMap((item) => item.kind === 'message-segment' ? item.parts : [])
+      .filter((part) => part.kind === 'attachment' && part.source === 'openclaw-media');
+    expect(attachments).toHaveLength(1);
+  });
+
   it('recovers historical MEDIA when the ACP user turn contains a resource attachment', async () => {
     const history = createDeferred<{ success: true; messages: Array<Record<string, unknown>> }>();
     hostApiMock.sessionsHistory.mockReturnValueOnce(history.promise);
