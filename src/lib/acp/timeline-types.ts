@@ -11,6 +11,7 @@ export type AttachmentAccessTarget =
   | {
       kind: 'local';
       scope: 'workspace' | 'openclaw-media' | 'staging';
+      entryKind: 'file' | 'directory';
       ref: AttachmentFileRef;
     }
   | { kind: 'remote'; ref: AttachmentRemoteRef; url: string };

@@ -612,12 +612,16 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
         const fileName = basename(filePath);
         const sourceStat = await fsP.stat(filePath);
         if (sourceStat.isDirectory()) {
+          const canonicalPath = await fsP.realpath(filePath);
+          const canonicalStat = await fsP.stat(canonicalPath);
+          if (!canonicalStat.isDirectory()) throw new Error('Invalid directory attachment');
+          dependencies.stagedAttachments?.register(id, canonicalPath, filePath);
           results.push({
             id,
             fileName,
             mimeType: DIRECTORY_MIME_TYPE,
             fileSize: 0,
-            stagedPath: filePath,
+            stagedPath: canonicalPath,
             preview: null,
           });
           continue;

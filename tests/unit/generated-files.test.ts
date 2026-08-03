@@ -124,7 +124,8 @@ describe('generated-files utilities', () => {
 
   it('uses shared preview limits and routes remote or unsupported attachments to system open', () => {
     const ref = { sessionKey: 'agent:main:s1', generation: 1, uri: 'file:///workspace/file.txt' };
-    const local = { kind: 'local' as const, scope: 'workspace' as const, ref };
+    const local = { kind: 'local' as const, scope: 'workspace' as const, entryKind: 'file' as const, ref };
+    const directory = { ...local, entryKind: 'directory' as const };
     const remote = { kind: 'remote' as const, ref, url: 'https://example.com/file.txt' };
 
     expect(attachmentOpenMode({ ext: '.txt', mimeType: 'text/plain', size: 2 * 1024 * 1024, target: local })).toBe('preview');
@@ -137,6 +138,7 @@ describe('generated-files utilities', () => {
     expect(attachmentOpenMode({ ext: '.pptx', mimeType: 'application/octet-stream', size: 20 * 1024 * 1024, target: local })).toBe('preview');
     expect(attachmentOpenMode({ ext: '.pptx', mimeType: 'application/octet-stream', size: 20 * 1024 * 1024 + 1, target: local })).toBe('system');
     expect(attachmentOpenMode({ ext: '.zip', mimeType: 'application/zip', size: 100, target: local })).toBe('system');
+    expect(attachmentOpenMode({ ext: '.txt', mimeType: 'text/plain', size: 100, target: directory })).toBe('system');
     expect(attachmentOpenMode({ ext: '.txt', mimeType: 'text/plain', size: 100, target: remote })).toBe('system');
     expect(attachmentOpenMode({ ext: '.docx', mimeType: 'application/octet-stream', size: 100, target: remote })).toBe('system');
     expect(attachmentOpenMode({ ext: '.pptx', mimeType: 'application/octet-stream', size: 100, target: remote })).toBe('system');

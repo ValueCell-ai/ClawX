@@ -98,6 +98,7 @@ export function attachmentOpenMode(input: {
   target: AttachmentAccessTarget;
 }): AttachmentOpenMode {
   if (input.target.kind === 'remote') return 'system';
+  if (input.target.entryKind === 'directory') return 'system';
   const richKind = richFilePreviewKind(input);
   const target: FilePreviewLimitTarget | null = richKind
     ? { kind: 'rich', richKind }

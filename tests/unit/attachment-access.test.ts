@@ -243,6 +243,48 @@ describe('attachment access boundary', () => {
     })).resolves.toMatchObject({ ok: false, error: 'invalidReference' });
   });
 
+  it('resolves and system-opens directories while keeping file-only operations closed', async () => {
+    const directoryPath = join(workspaceRoot, 'invoices');
+    await mkdir(directoryPath);
+    const canonicalPath = await realpath(directoryPath);
+    stagedAttachments.register('stage-directory', canonicalPath, '/Users/test/Documents/invoices');
+    const directoryRef = ref(directoryPath, { stagingId: 'stage-directory' });
+    const access = getAccess();
+
+    await expect(access.resolveAttachment({
+      ref: directoryRef,
+      mimeType: 'text/plain',
+      size: 999,
+    })).resolves.toMatchObject({
+      ok: true,
+      displayName: 'invoices',
+      displayPath: '/Users/test/Documents/invoices',
+      mimeType: 'application/x-directory',
+      size: 0,
+      target: { kind: 'local', scope: 'staging', entryKind: 'directory', ref: directoryRef },
+    });
+    await expect(access.openAttachment(directoryRef)).resolves.toEqual({ ok: true });
+    expect(openPath).toHaveBeenCalledWith(canonicalPath);
+
+    await expect(access.readAttachmentText(directoryRef)).resolves.toEqual({ ok: false, error: 'notFile' });
+    await expect(access.readAttachmentBinary({ ref: directoryRef })).resolves.toEqual({
+      ok: false,
+      error: 'notFile',
+    });
+    await expect(access.listAttachmentOpenHandlers(directoryRef)).resolves.toEqual({
+      ok: false,
+      error: 'notFile',
+    });
+    await expect(access.openAttachmentWith({
+      ref: directoryRef,
+      handlerId: 'com.apple.Finder',
+    })).resolves.toEqual({ ok: false, error: 'notFile' });
+    await expect(access.revealAttachment(directoryRef)).resolves.toEqual({ ok: false, error: 'notFile' });
+    expect(listOpenHandlers).not.toHaveBeenCalled();
+    expect(openWithHandler).not.toHaveBeenCalled();
+    expect(showItemInFolder).not.toHaveBeenCalled();
+  });
+
   it('falls back to regular resolution when stagingId is unknown after restart', async () => {
     const stagingDir = join(stateDir, 'media', 'outbound', 'clawx-staging');
     const orphanedPath = join(stagingDir, 'orphaned-from-prev-run.txt');
@@ -320,7 +362,6 @@ describe('attachment access boundary', () => {
 
   it.each([
     ['missing file', () => join(workspaceRoot, 'missing.txt'), 'unavailable'],
-    ['directory', () => workspaceRoot, 'notFile'],
     ['traversal', () => `${workspaceRoot}/nested/../notes.txt`, 'invalidReference'],
     ['encoded traversal', () => `file://${workspaceRoot}/nested/%2e%2e/notes.txt`, 'invalidReference'],
     ['encoded NUL', () => `file://${workspaceRoot}/notes.txt%00`, 'invalidReference'],

@@ -6,7 +6,7 @@ Related scenarios: `acp-chat-experience`, `acp-file-activity`, `gateway-backend-
 
 Related rules: `attachment-access-safety`, `session-workspace-authority`, `tool-derived-file-safety`, `renderer-main-boundary`, `backend-communication-boundary`
 
-Related tasks: `acp-media-attachments`, `acp-attachment-open-with`, `unify-acp-file-cards`
+Related tasks: `acp-media-attachments`, `acp-attachment-open-with`, `fix-acp-directory-attachments`, `unify-acp-file-cards`
 
 ## Trust Boundaries And Ownership
 
@@ -28,11 +28,11 @@ Listing never grants a durable capability. Application-specific open freshly enu
 
 ## Local Resolution And Special Scopes
 
-An accepted absolute, home-relative, `file:`, or execution-cwd-relative reference may resolve to any existing regular local file, including a file outside the active workspace or managed OpenClaw directories. The target is canonicalized before use. The local `scope` returned to Renderer is classification metadata for existing UI behavior, not an authorization root:
+An accepted absolute, home-relative, `file:`, or execution-cwd-relative reference may resolve to any existing regular local file or directory, including a target outside the active workspace or managed OpenClaw directories. The target is canonicalized before use, and Main returns an explicit `entryKind`. Directories are a narrow system-open-only case: Main overrides untrusted MIME and size hints with `application/x-directory` and zero, and does not permit scoped reads, Preview, Open With, reveal-as-file, outgoing-media resolution, or directory-content enumeration. The local `scope` returned to Renderer is classification metadata for existing UI behavior, not an authorization root:
 
 - `workspace`: the canonical target is inside the active ACP workspace root. Relative references resolve from the registered execution cwd.
 - `openclaw-media`: the canonical target is outside the workspace. This legacy scope name does not imply containment under an OpenClaw media root.
-- `staging`: when a staging id is supplied, it must match the exact canonical file in the Main-owned staging record. The same file may also resolve from an explicit path without claiming staging identity.
+- `staging`: when a staging id is supplied, it must match the exact canonical file or selected directory in the Main-owned staging record. The same target may also resolve from an explicit path without claiming staging identity.
 - `remote`: a normalized HTTP or HTTPS URL without embedded credentials. Remote references remain session/generation scoped and are revalidated immediately before external open.
 
 Gateway outgoing media remains a record-bound special case, not a general local URL alias. Main validates the outgoing attachment id, requires the URL session key and managed record `sessionKey` to equal the active ACP session key, requires the record attachment id to match, and resolves the record's original file through a managed media root. If both transcript evidence and the record carry a message id, they must agree. The literal `global` session key follows exact equality and is never a wildcard.
@@ -46,9 +46,9 @@ Main applies syntax checks before ownership checks and authorization again befor
 - Accept `file:` URLs only with an empty authority or local `localhost` authority; reject remote authorities and credentials.
 - Accept only HTTP and HTTPS remote URLs, require a host, reject credentials, and use platform URL normalization for identity and open.
 - Resolve home-relative, absolute, Windows-drive, and execution-cwd-relative local references without treating a Renderer-provided path as an authorization root.
-- Require an existing regular file and canonicalize the target. Symlink targets and files outside the workspace are allowed after canonical resolution.
+- Require an existing regular file or directory and canonicalize the target. Symlink targets and targets outside the workspace are allowed after canonical resolution; all file-content and application-handler operations still require a regular file.
 
-Scoped reads open the canonical file without following a final symlink where the platform supports it, verify that the handle is a regular file, recheck the active generation, and read through that handle. Local system open re-resolves immediately before `shell.openPath`; remote open revalidates the normalized URL and active generation before `shell.openExternal`. A prior resolve, handler list, cache entry, or stable identity alone never authorizes a later side effect.
+Scoped reads reject directories, open the canonical file without following a final symlink where the platform supports it, verify that the handle is a regular file, recheck the active generation, and read through that handle. Local system open re-resolves the file or directory immediately before `shell.openPath`; remote open revalidates the normalized URL and active generation before `shell.openExternal`. A prior resolve, handler list, cache entry, or stable identity alone never authorizes a later side effect.
 
 ## Opaque Identity And Safe Labels
 
@@ -58,7 +58,7 @@ Display labels come from approved metadata or a decoded basename. Main reduces l
 
 ## Preview And Shared File Card
 
-The shared Renderer classifier in `src/lib/file-preview-capabilities.ts` decides whether a session-valid local attachment fits an existing inline viewer and its size cap. Supported text/code, HTML, CSV, image, PDF, spreadsheet, and supported Office targets use the right-side Preview panel. Unsupported, known binary, audio/video, archive, other office-document, or over-limit local targets use the system application only after a user click. HTTP and HTTPS targets open externally only after a user click.
+The shared Renderer classifier in `src/lib/file-preview-capabilities.ts` decides whether a session-valid local attachment fits an existing inline viewer and its size cap. Supported text/code, HTML, CSV, image, PDF, spreadsheet, and supported Office files use the right-side Preview panel. Unsupported, known binary, audio/video, archive, other office-document, over-limit file, and explicit directory targets use the system application only after a user click. HTTP and HTTPS targets open externally only after a user click.
 
 Every attachment preview carries an attachment-scoped file reference. Preview components and rich viewers use the attachment text or binary read operations and must not fall back to a naked path or general workspace read. Attachment previews omit trusted workspace-browser reveal or folder actions.
 
@@ -123,7 +123,7 @@ Main caches normalized list metadata, converted icons, and private list records 
 
 ## Failure And Privacy Semantics
 
-An invalid, stale, missing, unsafe, remote-for-local-operation, or non-file reference becomes an unavailable/error result. It cannot be previewed or opened, but it does not suppress assistant prose or independently valid attachments. A valid existing file does not become unavailable merely because it is outside the workspace. Read failures remain inside Preview; local or remote open failures use the localized non-blocking Chat error path.
+An invalid, stale, missing, unsafe, remote-for-local-operation, unsupported filesystem entry, or directory submitted to a file-only operation becomes an unavailable/error result. It cannot use that operation, but it does not suppress assistant prose or independently valid attachments. A valid existing file or system-open directory does not become unavailable merely because it is outside the workspace. Read failures remain inside Preview; local or remote open failures use the localized non-blocking Chat error path.
 
 Helper startup, timeout, output, parsing, schema, association, application metadata, and icon failures must not reject attachment-card rendering. Whole discovery failure becomes an empty application section with no toast, banner, or failure row. One invalid handler is omitted; one invalid icon affects only that row. Reveal remains available and primary preview remains unchanged. Only a failed action explicitly requested by selecting an application or reveal may surface a concise localized toast.
 

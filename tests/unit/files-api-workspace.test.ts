@@ -82,7 +82,7 @@ describe('workspace-scoped files api', () => {
     });
   }
 
-  it('registers every staged file id with Main-owned staging storage', async () => {
+  it('registers staged file and directory ids with Main-owned source storage', async () => {
     const { StagedAttachmentRegistry } = await import('../../electron/services/attachment-access');
     const { createFilesApi } = await import('../../electron/services/files-api');
     const stagedAttachments = new StagedAttachmentRegistry();
@@ -94,13 +94,24 @@ describe('workspace-scoped files api', () => {
       mimeType: 'text/plain',
     });
     const [pathResult] = await api.stagePaths({ filePaths: [join(workspaceRoot, 'hello.txt')] });
+    const directoryPath = join(workspaceRoot, 'projects', 'demo');
+    const [directoryResult] = await api.stagePaths({ filePaths: [directoryPath] });
 
     expect(stagedAttachments.get(result.id)).toBe(await realpath(result.stagedPath));
     expect(stagedAttachments.get(pathResult.id)).toBe(await realpath(pathResult.stagedPath));
+    expect(stagedAttachments.get(directoryResult.id)).toBe(await realpath(directoryPath));
     expect(stagedAttachments.getDisplayPath(result.id)).toBeNull();
     expect(stagedAttachments.getDisplayPath(pathResult.id)).toBe(join(workspaceRoot, 'hello.txt'));
+    expect(stagedAttachments.getDisplayPath(directoryResult.id)).toBe(directoryPath);
     expect(result.stagedPath).toContain(join('media', 'outbound', 'clawx-staging'));
     expect(pathResult.stagedPath).toContain(join('media', 'outbound', 'clawx-staging'));
+    expect(directoryResult).toMatchObject({
+      fileName: 'demo',
+      mimeType: 'application/x-directory',
+      fileSize: 0,
+      stagedPath: await realpath(directoryPath),
+      preview: null,
+    });
   });
 
   it.each(['buffer', 'path'])('rejects a %s stage when the pinned staging directory is replaced', async (kind) => {

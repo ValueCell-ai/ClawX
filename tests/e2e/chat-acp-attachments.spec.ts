@@ -89,6 +89,46 @@ async function openChat(app: ElectronApplication): Promise<Page> {
 }
 
 test.describe('ACP media attachments', () => {
+  test('keeps a user directory attachment available for system open', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      const fixture = await installAttachmentHostFixture(app, {
+        sessions: [{ key: MAIN_SESSION_KEY, title: 'Main session' }],
+      });
+      const directoryPath = await fixture.createWorkspaceDirectory('高铁发票');
+      await fixture.setSessionReplay(MAIN_SESSION_KEY, [{
+        sessionUpdate: 'user_message',
+        messageId: 'user-directory',
+        content: [
+          { type: 'text', text: 'Process these train invoices.' },
+          {
+            type: 'resource_link',
+            uri: directoryPath,
+            name: '高铁发票',
+            mimeType: 'application/x-directory',
+          },
+        ],
+      }]);
+      await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [[]]);
+
+      const page = await openChat(app);
+      const attachment = page.getByRole('button', { name: 'Open 高铁发票', exact: true });
+      await expect(attachment).toBeEnabled({ timeout: 30_000 });
+      await expect(page.getByText('Attachment unavailable')).toHaveCount(0);
+      await attachment.click();
+
+      await expect.poll(async () => (await fixture.getShellInvocations()).filter(
+        (call) => call.action === 'openPath',
+      ).map((call) => call.payload)).toEqual([{ path: directoryPath }]);
+      await expect(page.getByTestId('artifact-panel')).toHaveCount(0);
+      await expect(page.getByTestId('acp-attachment-open-with-trigger')).toHaveCount(0);
+      expect(await getRecordedLegacyIpcInvocations(app)).toEqual([]);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('opens a local HTML attachment in the right-side Preview tab', async ({ launchElectronApp }) => {
     // Electron's webview support is unstable on Linux.
     test.skip(process.platform !== 'win32' && process.platform !== 'darwin');

@@ -60,6 +60,7 @@ export type AttachmentHostFixture = {
   openClawMediaDir: string;
   outsideDir: string;
   createWorkspaceFile: (relativePath: string, data: string | Uint8Array) => Promise<string>;
+  createWorkspaceDirectory: (relativePath: string) => Promise<string>;
   createOpenClawMediaFile: (relativePath: string, data: string | Uint8Array) => Promise<string>;
   createOutsideFile: (relativePath: string, data: string | Uint8Array) => Promise<string>;
   registerStagedAttachment: (id: string, stagedPath: string, displayPath?: string) => Promise<void>;
@@ -953,6 +954,11 @@ export async function installAttachmentHostFixture(
     openClawMediaDir,
     outsideDir,
     createWorkspaceFile: async (path, data) => await writeFixtureFile(workspaceDir, path, data),
+    createWorkspaceDirectory: async (path) => {
+      const directoryPath = join(workspaceDir, path);
+      await mkdir(directoryPath, { recursive: true });
+      return realpath(directoryPath);
+    },
     createOpenClawMediaFile: async (path, data) => await writeFixtureFile(openClawMediaDir, path, data),
     createOutsideFile: async (path, data) => await writeFixtureFile(outsideDir, path, data),
     registerStagedAttachment: async (id, stagedPath, displayPath) => {

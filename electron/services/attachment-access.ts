@@ -48,6 +48,7 @@ const MAX_REFERENCE_LENGTH = 4096;
 const MAX_DISPLAY_NAME_LENGTH = 160;
 const MAX_OUTGOING_RECORD_BYTES = 64 * 1024;
 const SAFE_ATTACHMENT_ID = /^[A-Za-z0-9._-]+$/;
+const DIRECTORY_MIME_TYPE = 'application/x-directory';
 
 const EXT_MIME_MAP: Record<string, string> = {
   '.bmp': 'image/bmp',
@@ -106,6 +107,7 @@ type LocalScope = 'workspace' | 'openclaw-media' | 'staging';
 
 type ResolvedLocal = {
   kind: 'local';
+  entryKind: 'file' | 'directory';
   canonicalPath: string;
   scope: LocalScope;
   mimeType: string;
@@ -571,13 +573,21 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
         }
         if (!isSamePath(canonicalCandidate, stagedPath)) throw new AttachmentFailure('invalidReference');
         const stagedStat = await fs.stat(canonicalCandidate);
-        if (!stagedStat.isFile()) throw new AttachmentFailure('notFile');
+        const entryKind = stagedStat.isFile()
+          ? 'file'
+          : stagedStat.isDirectory()
+            ? 'directory'
+            : null;
+        if (!entryKind) throw new AttachmentFailure('notFile');
         return {
           kind: 'local',
+          entryKind,
           canonicalPath: canonicalCandidate,
           scope: 'staging',
-          mimeType: mimeTypeHint || mimeTypeForPath(canonicalCandidate),
-          size: stagedStat.size,
+          mimeType: entryKind === 'directory'
+            ? DIRECTORY_MIME_TYPE
+            : mimeTypeHint || mimeTypeForPath(canonicalCandidate),
+          size: entryKind === 'directory' ? 0 : stagedStat.size,
         };
       }
     }
@@ -589,7 +599,12 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
       throw new AttachmentFailure(attachmentFailure(error));
     }
     const targetStat = await fs.stat(canonicalCandidate);
-    if (!targetStat.isFile()) throw new AttachmentFailure('notFile');
+    const entryKind = targetStat.isFile()
+      ? 'file'
+      : targetStat.isDirectory()
+        ? 'directory'
+        : null;
+    if (!entryKind) throw new AttachmentFailure('notFile');
 
     const workspaceRoot = mediaOnly ? null : await frozenCanonicalDirectory(context.workspaceRoot, fs);
     const scope: LocalScope = workspaceRoot && isInside(canonicalCandidate, workspaceRoot)
@@ -598,10 +613,13 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
 
     return {
       kind: 'local',
+      entryKind,
       canonicalPath: canonicalCandidate,
       scope,
-      mimeType: mimeTypeHint || mimeTypeForPath(canonicalCandidate),
-      size: targetStat.size,
+      mimeType: entryKind === 'directory'
+        ? DIRECTORY_MIME_TYPE
+        : mimeTypeHint || mimeTypeForPath(canonicalCandidate),
+      size: entryKind === 'directory' ? 0 : targetStat.size,
     };
   };
 
@@ -624,6 +642,7 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
     if (!resolved) throw new AttachmentFailure('invalidReference');
     return {
       kind: 'local',
+      entryKind: 'file',
       canonicalPath: resolved.path,
       scope: 'openclaw-media',
       mimeType: resolved.mimeType,
@@ -687,7 +706,7 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
         ...(displayPath ? { displayPath } : {}),
         mimeType: target.mimeType,
         size: target.size,
-        target: { kind: 'local', scope: target.scope, ref },
+        target: { kind: 'local', scope: target.scope, entryKind: target.entryKind, ref },
       };
     } catch (error) {
       return { ok: false, displayName, error: attachmentFailure(error) };
@@ -699,6 +718,7 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
     try {
       const target = await resolveTarget(ref);
       if (target.kind !== 'local') throw new AttachmentFailure('invalidReference');
+      if (target.entryKind !== 'file') throw new AttachmentFailure('notFile');
       opened = await openRevalidatedLocal(target, await getFs());
       if (!dependencies.sessionAccessRegistry.get(ref.sessionKey, ref.generation)) {
         throw new AttachmentFailure('staleSession');
@@ -730,6 +750,7 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
     try {
       const target = await resolveTarget(payload?.ref);
       if (target.kind !== 'local') throw new AttachmentFailure('invalidReference');
+      if (target.entryKind !== 'file') throw new AttachmentFailure('notFile');
       opened = await openRevalidatedLocal(target, await getFs());
       if (!dependencies.sessionAccessRegistry.get(payload.ref.sessionKey, payload.ref.generation)) {
         throw new AttachmentFailure('staleSession');
@@ -801,9 +822,10 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
     }
   };
 
-  const requireCurrentLocalTarget = async (ref: AttachmentFileRef): Promise<ResolvedLocal> => {
+  const requireCurrentLocalFileTarget = async (ref: AttachmentFileRef): Promise<ResolvedLocal> => {
     const target = await resolveTarget(ref);
     if (target.kind !== 'local') throw new AttachmentFailure('invalidReference');
+    if (target.entryKind !== 'file') throw new AttachmentFailure('notFile');
     if (!dependencies.sessionAccessRegistry.get(ref.sessionKey, ref.generation)) {
       throw new AttachmentFailure('staleSession');
     }
@@ -814,7 +836,7 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
     ref: AttachmentFileRef,
   ): Promise<AttachmentOpenHandlersResult> => {
     try {
-      const target = await requireCurrentLocalTarget(ref);
+      const target = await requireCurrentLocalFileTarget(ref);
       if (dependencies.openWith.platform === 'linux') {
         return { ok: true, platform: 'linux', handlers: [] };
       }
@@ -841,7 +863,7 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
     payload: OpenAttachmentWithPayload,
   ): Promise<OpenAttachmentResult> => {
     try {
-      const target = await requireCurrentLocalTarget(payload?.ref);
+      const target = await requireCurrentLocalFileTarget(payload?.ref);
       if (typeof payload?.handlerId !== 'string'
         || !payload.handlerId.trim()
         || payload.handlerId.length > HANDLER_ID_MAX_LENGTH) {
@@ -850,7 +872,7 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
       await dependencies.openWith.open(
         target.canonicalPath,
         payload.handlerId,
-        async () => (await requireCurrentLocalTarget(payload.ref)).canonicalPath,
+        async () => (await requireCurrentLocalFileTarget(payload.ref)).canonicalPath,
       );
       return { ok: true };
     } catch (error) {
@@ -860,8 +882,8 @@ export function createAttachmentAccess(dependencies: AttachmentAccessDependencie
 
   const revealAttachment = async (ref: AttachmentFileRef): Promise<OpenAttachmentResult> => {
     try {
-      await requireCurrentLocalTarget(ref);
-      const revalidated = await requireCurrentLocalTarget(ref);
+      await requireCurrentLocalFileTarget(ref);
+      const revalidated = await requireCurrentLocalFileTarget(ref);
       shell.showItemInFolder(revalidated.canonicalPath);
       return { ok: true };
     } catch (error) {
