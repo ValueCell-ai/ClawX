@@ -431,16 +431,12 @@ describe('chat session catalog startup', () => {
 
     const { useChatStore } = await import('@/stores/chat');
     useChatStore.setState({
-      currentSessionKey: pendingKey,
-      sessions: [{
-        key: pendingKey,
-        displayName: pendingKey,
-        createdLocally: true,
-        workspacePath: '/Users/alex/workspace/ClawX',
-      }],
+      currentSessionKey: 'agent:main:main',
+      sessions: [],
       sessionLabels: {},
       sessionLastActivity: {},
     });
+    useChatStore.getState().selectAcpSession(pendingKey, '/Users/alex/workspace/ClawX');
 
     await useChatStore.getState().loadSessions();
 

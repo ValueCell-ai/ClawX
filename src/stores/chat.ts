@@ -61,6 +61,7 @@ const latestSessionEventTsByKey = new Map<string, number>();
 let successfulSessionListTsFloor: number | null = null;
 let localSessionCatalogRevision = 0;
 const pendingCatalogConfirmationSessionKeys = new Set<string>();
+const localDraftSessionKeys = new Set<string>();
 
 const SESSION_LOAD_MIN_INTERVAL_MS = 1_200;
 
@@ -583,11 +584,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
             const mergedSessions = dedupedSessions.map((session) => {
               const localSession = localSessionByKey.get(session.key);
               const workspacePath = session.workspacePath ?? localSession?.workspacePath;
-              if (!localSession?.createdLocally && workspacePath === session.workspacePath) return session;
+              const preserveLocalDraft = localSession?.createdLocally === true
+                && localDraftSessionKeys.has(session.key);
+              if (!preserveLocalDraft && workspacePath === session.workspacePath) return session;
               return {
                 ...session,
                 ...(workspacePath ? { workspacePath } : {}),
-                ...(localSession?.createdLocally ? { createdLocally: true } : {}),
+                ...(preserveLocalDraft ? { createdLocally: true } : {}),
               };
             });
 
@@ -1194,10 +1197,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   selectAcpSession: (key, workspacePath) => {
+    const { currentSessionKey, sessions } = get();
     if (
-      key === get().currentSessionKey
-      && (!workspacePath || get().sessions.find((session) => session.key === key)?.workspacePath === workspacePath)
+      key === currentSessionKey
+      && (!workspacePath || sessions.find((session) => session.key === key)?.workspacePath === workspacePath)
     ) return;
+    if (sessions.some((session) => session.key === currentSessionKey && session.createdLocally)) {
+      localDraftSessionKeys.delete(currentSessionKey);
+    }
+    if (!sessions.some((session) => session.key === key)) localDraftSessionKeys.add(key);
     markLocalSessionCatalogMutation();
     set((state) => buildSessionSwitchPatch(state, key, { createdLocally: true, workspacePath }));
   },
@@ -1207,10 +1215,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const prefix = getCanonicalPrefixFromSessionKey(currentSessionKey)
       ?? getCanonicalPrefixFromSessions(sessions)
       ?? DEFAULT_CANONICAL_PREFIX;
+    const sessionKey = `${prefix}:session-${Date.now()}`;
+    if (sessions.some((session) => session.key === currentSessionKey && session.createdLocally)) {
+      localDraftSessionKeys.delete(currentSessionKey);
+    }
+    localDraftSessionKeys.add(sessionKey);
     markLocalSessionCatalogMutation();
     set((state) => buildSessionSwitchPatch(
       state,
-      `${prefix}:session-${Date.now()}`,
+      sessionKey,
       { createdLocally: true },
     ));
   },
@@ -1218,6 +1231,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   acknowledgeAcpSessionCreated: (key, workspacePath, initialPrompt) => {
     const normalizedWorkspacePath = workspacePath?.trim();
     const initialLabel = key.endsWith(':main') ? '' : toSessionLabel(initialPrompt || '');
+    localDraftSessionKeys.delete(key);
     pendingCatalogConfirmationSessionKeys.add(key);
     markLocalSessionCatalogMutation();
     set((state) => {
@@ -1262,6 +1276,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     clearSessionLabelHydrationTracking(key);
+    localDraftSessionKeys.delete(key);
     useSessionAttentionStore.getState().removeSession(key);
     pendingCatalogConfirmationSessionKeys.delete(key);
 
@@ -1306,6 +1321,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const deletedSet = new Set(deletedKeys);
     for (const key of deletedKeys) {
       clearSessionLabelHydrationTracking(key);
+      localDraftSessionKeys.delete(key);
       useSessionAttentionStore.getState().removeSession(key);
       pendingCatalogConfirmationSessionKeys.delete(key);
     }
