@@ -1,12 +1,14 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
+import type { RawMessage } from '@shared/chat/types';
 import type { CronJob, CronJobDelivery, CronSchedule } from '@shared/types/cron';
 import type { GatewayManager } from '../gateway/manager';
 import { getOpenClawConfigDir } from '../utils/paths';
 import { resolveAgentIdFromChannel } from '../utils/agent-config';
 import { toOpenClawChannelType, toUiChannelType } from '../utils/channel-alias';
 import { resolveAccountIdFromSessionHistory } from '../utils/session-util';
+import { loadSessionTranscriptByKey } from './sessions-api';
 import { isRecord } from './payload-utils';
 
 interface GatewayCronJob {
@@ -60,6 +62,7 @@ interface CronSessionFallbackMessage {
 }
 
 type JsonRecord = Record<string, unknown>;
+const OPENCLAW_CRON_SUMMARY_TRUNCATION_MIN_CHARS = 2_000;
 
 function parseCronSessionKey(sessionKey: string): CronSessionKeyParts | null {
   if (!sessionKey.startsWith('agent:')) return null;
@@ -93,14 +96,83 @@ function formatDuration(durationMs: number | undefined): string | null {
   return `${Math.round(durationMs / 1000)}s`;
 }
 
-function buildCronRunMessage(entry: CronRunLogEntry, index: number): CronSessionFallbackMessage | null {
+function getMessageText(content: RawMessage['content']): string {
+  if (typeof content === 'string') return content.trim();
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((block) => {
+      if (!block || typeof block !== 'object') return '';
+      const value = block as { type?: unknown; text?: unknown };
+      return value.type === 'text' && typeof value.text === 'string' ? value.text : '';
+    })
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
+function getFinalAssistantReply(messages: RawMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== 'assistant') continue;
+    const text = getMessageText(message.content);
+    if (text) return text;
+  }
+  return '';
+}
+
+function isBoundedCronSummary(summary: string): boolean {
+  return summary.length >= OPENCLAW_CRON_SUMMARY_TRUNCATION_MIN_CHARS
+    && summary.endsWith('…');
+}
+
+function resolveCronRunSessionKey(
+  parsed: CronSessionKeyParts,
+  entry: CronRunLogEntry,
+): string | null {
+  const explicitSessionKey = typeof entry.sessionKey === 'string' ? entry.sessionKey.trim() : '';
+  if (explicitSessionKey && parseCronSessionKey(explicitSessionKey)?.runSessionId) {
+    return explicitSessionKey;
+  }
+  const sessionId = typeof entry.sessionId === 'string' ? entry.sessionId.trim() : '';
+  if (!sessionId) return null;
+  return `agent:${parsed.agentId}:cron:${parsed.jobId}:run:${sessionId}`;
+}
+
+async function loadFullCronRunReplies(
+  parsed: CronSessionKeyParts,
+  runs: CronRunLogEntry[],
+): Promise<Map<CronRunLogEntry, string>> {
+  const replies = new Map<CronRunLogEntry, string>();
+  await Promise.all(runs.map(async (entry) => {
+    const summary = typeof entry.summary === 'string' ? entry.summary.trim() : '';
+    if (!isBoundedCronSummary(summary)) return;
+
+    const runSessionKey = resolveCronRunSessionKey(parsed, entry);
+    if (!runSessionKey) return;
+    const transcript = await loadSessionTranscriptByKey(runSessionKey, 1_000);
+    if (!transcript?.length) return;
+
+    const fullReply = getFinalAssistantReply(transcript);
+    const summaryPrefix = summary.slice(0, -1);
+    if (fullReply.length > summaryPrefix.length && fullReply.startsWith(summaryPrefix)) {
+      replies.set(entry, fullReply);
+    }
+  }));
+  return replies;
+}
+
+function buildCronRunMessage(
+  entry: CronRunLogEntry,
+  index: number,
+  fullReply?: string,
+): CronSessionFallbackMessage | null {
   const timestamp = normalizeTimestampMs(entry.ts) ?? normalizeTimestampMs(entry.runAtMs);
   if (!timestamp) return null;
 
   const status = typeof entry.status === 'string' ? entry.status.toLowerCase() : '';
   const summary = typeof entry.summary === 'string' ? entry.summary.trim() : '';
   const error = typeof entry.error === 'string' ? entry.error.trim() : '';
-  let content = summary || error;
+  let content = fullReply?.trim() || summary || error;
   if (!content) {
     content = status === 'error' ? 'Scheduled task failed.' : 'Scheduled task completed.';
   }
@@ -195,6 +267,7 @@ function buildCronSessionFallbackMessages(params: {
   sessionKey: string;
   job?: Pick<GatewayCronJob, 'name' | 'payload' | 'state'>;
   runs: CronRunLogEntry[];
+  fullReplies?: Map<CronRunLogEntry, string>;
   sessionEntry?: { label?: string; updatedAt?: number };
   limit?: number;
 }): CronSessionFallbackMessage[] {
@@ -231,7 +304,7 @@ function buildCronSessionFallbackMessages(params: {
   }
 
   matchingRuns.forEach((entry, index) => {
-    const message = buildCronRunMessage(entry, index);
+    const message = buildCronRunMessage(entry, index, params.fullReplies?.get(entry));
     if (message) messages.push(message);
   });
 
@@ -583,11 +656,13 @@ export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManag
       ]);
       const jobs = (jobsResult as { jobs?: GatewayCronJob[] }).jobs ?? [];
       const job = jobs.find((item) => item.id === parsedSession.jobId);
+      const fullReplies = await loadFullCronRunReplies(parsedSession, runs);
       return {
         messages: buildCronSessionFallbackMessages({
           sessionKey,
           job,
           runs,
+          fullReplies,
           sessionEntry: sessionEntry ? {
             label: typeof sessionEntry.label === 'string' ? sessionEntry.label : undefined,
             updatedAt: normalizeTimestampMs(sessionEntry.updatedAt),

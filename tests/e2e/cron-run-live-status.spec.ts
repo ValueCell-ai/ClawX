@@ -169,6 +169,7 @@ test.describe('ClawX cron run live status', () => {
 
   test('shows cron run summaries when ACP replay is empty', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
+    const completeCronReply = `该喝水了！💧\n\n${'补充说明 '.repeat(500)}\n\n完整回复结尾`;
 
     try {
       const cronSession = {
@@ -198,7 +199,7 @@ test.describe('ClawX cron run live status', () => {
           [stableStringify(['cron', 'sessionHistory', { sessionKey: CRON_BASE_KEY, limit: 200 }])]: {
             messages: [
               { id: 'cron-prompt', role: 'user', content: '提醒我喝水', timestamp: Date.now() - 5000 },
-              { id: 'cron-result', role: 'assistant', content: '该喝水了！💧', timestamp: Date.now() },
+              { id: 'cron-result', role: 'assistant', content: completeCronReply, timestamp: Date.now() },
             ],
           },
           [stableStringify(['/api/gateway/status', 'GET'])]: {
@@ -231,6 +232,7 @@ test.describe('ClawX cron run live status', () => {
       ))).toBe(true);
       await expect(page.getByText('提醒我喝水')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByText('该喝水了！💧')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByText('完整回复结尾')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('acp-chat-empty-state')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);

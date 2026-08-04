@@ -473,7 +473,7 @@ async function loadSessionSummary(sessionKey: string, workspacePath: string | nu
   }
 }
 
-async function loadSessionTranscriptByKey(sessionKey: string, limit: number): Promise<RawMessage[] | null> {
+export async function loadSessionTranscriptByKey(sessionKey: string, limit: number): Promise<RawMessage[] | null> {
   const parsed = parseSessionKey(sessionKey);
   if (!parsed) return null;
 

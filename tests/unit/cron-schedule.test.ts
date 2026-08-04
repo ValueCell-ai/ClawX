@@ -1,6 +1,14 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCronApi } from '../../electron/services/cron-api';
 import type { GatewayManager } from '../../electron/gateway/manager';
+
+const sessionMocks = vi.hoisted(() => ({
+  loadSessionTranscriptByKey: vi.fn(),
+}));
+
+vi.mock('../../electron/services/sessions-api', () => ({
+  loadSessionTranscriptByKey: sessionMocks.loadSessionTranscriptByKey,
+}));
 
 type RpcParams = {
   schedule?: Record<string, unknown>;
@@ -70,6 +78,10 @@ describe('cron schedule normalization', () => {
 });
 
 describe('cron session history', () => {
+  beforeEach(() => {
+    sessionMocks.loadSessionTranscriptByKey.mockReset();
+  });
+
   it('reads SQLite-backed run summaries through cron.runs', async () => {
     const job = makeGatewayJob({ kind: 'cron', expr: '* * * * *' });
     const rpc = vi.fn(async (method: string) => {
@@ -109,5 +121,84 @@ describe('cron session history', () => {
         { role: 'assistant', content: expect.stringContaining('Time to drink water.') },
       ],
     });
+    expect(sessionMocks.loadSessionTranscriptByKey).not.toHaveBeenCalled();
+  });
+
+  it('restores a bounded run summary from the derived run transcript key', async () => {
+    const job = makeGatewayJob({ kind: 'cron', expr: '* * * * *' });
+    const summaryPrefix = 'A'.repeat(2000);
+    const fullReply = `${summaryPrefix}${'B'.repeat(500)}`;
+    const rpc = vi.fn(async (method: string) => {
+      if (method === 'cron.list') return { jobs: [job] };
+      if (method === 'cron.runs') {
+        return {
+          entries: [{
+            jobId: 'job-1',
+            status: 'ok',
+            summary: `${summaryPrefix}…`,
+            sessionId: 'run-session-1',
+            ts: 1_700_000_005_000,
+            runAtMs: 1_700_000_000_000,
+            durationMs: 5000,
+            provider: 'provider-a',
+            model: 'model-a',
+          }],
+        };
+      }
+      return {};
+    });
+    sessionMocks.loadSessionTranscriptByKey.mockResolvedValue([
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: [{ type: 'text', text: fullReply }], stopReason: 'stop' },
+    ]);
+    const api = createCronApi({ gatewayManager: { rpc } as unknown as GatewayManager });
+
+    const result = await api.sessionHistory({
+      sessionKey: 'agent:main:cron:job-1',
+      limit: 200,
+    });
+
+    expect(sessionMocks.loadSessionTranscriptByKey).toHaveBeenCalledWith(
+      'agent:main:cron:job-1:run:run-session-1',
+      1000,
+    );
+    expect(result.messages?.[1]).toMatchObject({
+      role: 'assistant',
+      content: `${fullReply}\n\nDuration: 5.0s | Model: provider-a/model-a`,
+    });
+  });
+
+  it('keeps the bounded summary when the transcript does not share its prefix', async () => {
+    const job = makeGatewayJob({ kind: 'cron', expr: '* * * * *' });
+    const summary = `${'A'.repeat(2000)}…`;
+    const runSessionKey = 'agent:main:cron:job-1:run:run-session-1';
+    const rpc = vi.fn(async (method: string) => {
+      if (method === 'cron.list') return { jobs: [job] };
+      if (method === 'cron.runs') {
+        return {
+          entries: [{
+            jobId: 'job-1',
+            status: 'ok',
+            summary,
+            sessionId: 'ignored-session-id',
+            sessionKey: runSessionKey,
+            ts: 1_700_000_005_000,
+          }],
+        };
+      }
+      return {};
+    });
+    sessionMocks.loadSessionTranscriptByKey.mockResolvedValue([
+      { role: 'assistant', content: `${'X'.repeat(2000)}more` },
+    ]);
+    const api = createCronApi({ gatewayManager: { rpc } as unknown as GatewayManager });
+
+    const result = await api.sessionHistory({
+      sessionKey: 'agent:main:cron:job-1',
+      limit: 200,
+    });
+
+    expect(sessionMocks.loadSessionTranscriptByKey).toHaveBeenCalledWith(runSessionKey, 1000);
+    expect(result.messages?.[1]).toMatchObject({ role: 'assistant', content: summary });
   });
 });
