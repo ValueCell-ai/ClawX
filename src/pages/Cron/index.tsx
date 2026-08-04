@@ -2,7 +2,16 @@
  * Cron Page
  * Manage scheduled tasks
  */
-import { useEffect, useState, useCallback, useMemo, useRef, type ReactNode, type SelectHTMLAttributes } from 'react';
+import {
+  useEffect,
+  useLayoutEffect,
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+  type ReactNode,
+  type SelectHTMLAttributes,
+} from 'react';
 import {
   Plus,
   Clock,
@@ -73,6 +82,10 @@ const schedulePresets: { key: string; value: string; type: ScheduleType }[] = [
 // affordance — the tokens are rendered as non-interactive spans.
 
 type SkillTokenRange = { start: number; end: number };
+
+// The message textarea grows with its content up to this height, after which it
+// scrolls internally and the highlight overlay is scroll-synced to match it.
+const CRON_MESSAGE_MAX_HEIGHT = 200;
 
 function getSkillPrefix(skillName: string): string {
   return `/${skillName}  `;
@@ -606,6 +619,7 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
+  const messageOverlayRef = useRef<HTMLDivElement>(null);
   const skillPickerRef = useRef<HTMLDivElement>(null);
   const [prevOpen, setPrevOpen] = useState(open);
 
@@ -700,16 +714,49 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
     };
   }, [skillPickerOpen]);
 
-  const moveMessageCaretTo = useCallback((position: number) => {
+  // The highlight overlay is absolutely positioned on top of the textarea and is
+  // the only visible copy of the text once a skill token exists, so it has to
+  // follow the textarea's scroll offset or edits below the fold become invisible.
+  const syncMessageOverlayScroll = useCallback(() => {
+    const textarea = messageRef.current;
+    const overlay = messageOverlayRef.current;
+    if (!textarea || !overlay) return;
+    overlay.scrollTop = textarea.scrollTop;
+    overlay.scrollLeft = textarea.scrollLeft;
+  }, []);
+
+  useLayoutEffect(() => {
     const textarea = messageRef.current;
     if (!textarea) return;
-    textarea.focus();
-    textarea.setSelectionRange(position, position);
-    requestAnimationFrame(() => {
-      messageRef.current?.focus();
-      messageRef.current?.setSelectionRange(position, position);
-    });
-  }, []);
+    const previousScrollTop = textarea.scrollTop;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, CRON_MESSAGE_MAX_HEIGHT)}px`;
+    textarea.scrollTop = previousScrollTop;
+    // On platforms with classic scrollbars the textarea's scrollbar gutter eats
+    // into its content width; the overlay has to lose the same width or the two
+    // copies of the text wrap at different columns.
+    const overlay = messageOverlayRef.current;
+    if (overlay) {
+      overlay.style.paddingRight = `${Math.max(0, textarea.offsetWidth - textarea.clientWidth)}px`;
+    }
+    syncMessageOverlayScroll();
+  }, [message, open, syncMessageOverlayScroll]);
+
+  const moveMessageCaretTo = useCallback(
+    (position: number) => {
+      const textarea = messageRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(position, position);
+      syncMessageOverlayScroll();
+      requestAnimationFrame(() => {
+        messageRef.current?.focus();
+        messageRef.current?.setSelectionRange(position, position);
+        syncMessageOverlayScroll();
+      });
+    },
+    [syncMessageOverlayScroll],
+  );
 
   const normalizeMessageSelection = useCallback(() => {
     if (skillTokenRanges.length === 0) return;
@@ -790,9 +837,10 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
         messageRef.current?.focus();
         const cursorPosition = selectionStart + leadingSpace.length + nextToken.length;
         messageRef.current?.setSelectionRange(cursorPosition, cursorPosition);
+        syncMessageOverlayScroll();
       });
     },
-    [message],
+    [message, syncMessageOverlayScroll],
   );
   const updateSchedule = useCallback(
     (patch: Partial<ScheduleFormState>) => setScheduleForm((prev) => ({ ...prev, ...patch })),
@@ -1026,6 +1074,8 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                   {skillTokenRanges.length > 0 && (
                     <div
                       aria-hidden="true"
+                      ref={messageOverlayRef}
+                      data-testid="cron-message-highlight"
                       className="pointer-events-none absolute inset-0 z-20 overflow-hidden whitespace-pre-wrap break-words font-mono text-meta md:text-sm leading-[18px] text-foreground"
                     >
                       {renderHighlightedCronMessage(message, skillTokenRanges)}
@@ -1040,9 +1090,11 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                     onKeyDown={handleMessageKeyDown}
                     onSelect={normalizeMessageSelection}
                     onClick={normalizeMessageSelection}
+                    onScroll={syncMessageOverlayScroll}
                     rows={3}
+                    style={{ maxHeight: CRON_MESSAGE_MAX_HEIGHT }}
                     className={cn(
-                      'relative min-h-[60px] w-full resize-none border-0 bg-transparent p-0 font-mono text-meta md:text-sm leading-[18px] text-foreground placeholder:text-foreground/40 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0',
+                      'relative min-h-[60px] w-full resize-none border-0 bg-transparent p-0 font-mono text-meta md:text-sm leading-[18px] text-foreground placeholder:text-foreground/40 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 [scrollbar-gutter:stable]',
                       skillTokenRanges.length > 0
                         ? 'z-0 text-transparent caret-foreground selection:bg-primary/20'
                         : 'z-10',
