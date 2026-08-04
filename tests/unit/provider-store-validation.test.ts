@@ -30,6 +30,7 @@ describe('useProviderStore - validateAccountApiKey()', () => {
     const result = await useProviderStore.getState().validateAccountApiKey('custom', '  sk-lm-test \n', {
       baseUrl: 'http://127.0.0.1:1234/v1',
       apiProtocol: 'openai-completions',
+      modelId: 'local-model',
     });
 
     expect(result).toEqual({ valid: true });
@@ -41,6 +42,7 @@ describe('useProviderStore - validateAccountApiKey()', () => {
       options: {
         baseUrl: 'http://127.0.0.1:1234/v1',
         apiProtocol: 'openai-completions',
+        modelId: 'local-model',
       },
     });
   });

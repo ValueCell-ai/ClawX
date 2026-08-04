@@ -169,6 +169,13 @@ test.describe('ClawX provider lifecycle', () => {
           if (body.apiKey !== 'sk-lm-test') {
             return respond(request.id, { valid: false, error: `unexpected key: ${String(body.apiKey)}` });
           }
+          const options = body.options as Record<string, unknown> | undefined;
+          if (options?.modelId !== 'local-model') {
+            return respond(request.id, {
+              valid: false,
+              error: `unexpected validation model: ${String(options?.modelId)}`,
+            });
+          }
           return respond(request.id, { valid: true });
         }
 
@@ -270,6 +277,13 @@ test.describe('ClawX provider lifecycle', () => {
 
         if (request.action === 'validateKey') {
           if (body.apiKey === 'sk-good') {
+            const options = body.options as Record<string, unknown> | undefined;
+            if (options?.modelId !== 'kimi-k2.6') {
+              return respond(request.id, {
+                valid: false,
+                error: `unexpected validation model: ${String(options?.modelId)}`,
+              });
+            }
             return respond(request.id, { valid: true });
           }
           return respond(request.id, { valid: false, error: 'Invalid API key' });

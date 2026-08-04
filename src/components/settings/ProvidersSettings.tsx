@@ -337,7 +337,7 @@ interface ProviderCardProps {
   onSaveEdits: (payload: { newApiKey?: string; updates?: Partial<ProviderConfig> }) => Promise<void>;
   onValidateKey: (
     key: string,
-    options?: { baseUrl?: string; apiProtocol?: ProviderAccount['apiProtocol'] }
+    options?: { baseUrl?: string; apiProtocol?: ProviderAccount['apiProtocol']; modelId?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
   devModeUnlocked: boolean;
 }
@@ -437,6 +437,7 @@ function ProviderCard({
         const result = await onValidateKey(normalizedNewKey, {
           baseUrl: baseUrl.trim() || undefined,
           apiProtocol: (account.vendorId === 'custom' || account.vendorId === 'ollama') ? apiProtocol : undefined,
+          modelId: modelId.trim() || undefined,
         });
         setValidating(false);
         if (!result.valid) {
@@ -933,7 +934,7 @@ interface AddProviderDialogProps {
   onValidateKey: (
     type: string,
     apiKey: string,
-    options?: { baseUrl?: string; apiProtocol?: ProviderAccount['apiProtocol'] }
+    options?: { baseUrl?: string; apiProtocol?: ProviderAccount['apiProtocol']; modelId?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
   devModeUnlocked: boolean;
 }
@@ -1243,6 +1244,7 @@ function AddProviderDialog({
         const result = await onValidateKey(selectedType, normalizedApiKey, {
           baseUrl: baseUrl.trim() || undefined,
           apiProtocol: (selectedType === 'custom' || selectedType === 'ollama') ? apiProtocol : undefined,
+          modelId: modelId.trim() || undefined,
         });
         if (!result.valid) {
           setValidationError(result.error || t('aiProviders.toast.invalidKey'));

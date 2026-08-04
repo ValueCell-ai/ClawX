@@ -388,6 +388,7 @@ export type ProviderDefaultAccountResult = { accountId: string | null };
 export type ProviderValidationOptions = {
   baseUrl?: string;
   apiProtocol?: string;
+  modelId?: string;
 };
 export type ProviderValidationPayload = {
   accountId?: string;

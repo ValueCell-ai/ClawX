@@ -38,7 +38,7 @@ interface ProviderState {
   validateAccountApiKey: (
     accountId: string,
     apiKey: string,
-    options?: { baseUrl?: string; apiProtocol?: ProviderAccount['apiProtocol'] }
+    options?: { baseUrl?: string; apiProtocol?: ProviderAccount['apiProtocol']; modelId?: string }
   ) => Promise<{ valid: boolean; error?: string }>;
   getAccountApiKey: (accountId: string) => Promise<string | null>;
 

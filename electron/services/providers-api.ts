@@ -34,6 +34,7 @@ type ProviderPayload<Action extends keyof HostApiContract['providers']> =
 type ValidationOptions = {
   baseUrl?: string;
   apiProtocol?: string;
+  modelId?: string;
 };
 
 function hasObjectChanges<T extends Record<string, unknown>>(
@@ -180,9 +181,11 @@ async function validateKey(payload: ProviderPayload<'validateKey'>): Promise<{ v
     const registryBaseUrl = getProviderConfig(providerType)?.baseUrl;
     const resolvedBaseUrl = options?.baseUrl || account?.baseUrl || legacyProvider?.baseUrl || registryBaseUrl;
     const resolvedProtocol = options?.apiProtocol || account?.apiProtocol || legacyProvider?.apiProtocol;
+    const resolvedModelId = options?.modelId || account?.model || legacyProvider?.model;
     return await validateApiKeyWithProvider(providerType, apiKey, {
       baseUrl: resolvedBaseUrl,
       apiProtocol: resolvedProtocol,
+      modelId: resolvedModelId,
     });
   } catch (error) {
     return { valid: false, error: String(error) };

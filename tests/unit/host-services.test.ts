@@ -452,12 +452,17 @@ describe('host services', () => {
     await expect(providersApi.validateKey({
       accountId: 'custom-local',
       apiKey: 'sk-test',
-      options: { baseUrl: 'http://live.example/v1', apiProtocol: 'openai-responses' },
+      options: {
+        baseUrl: 'http://live.example/v1',
+        apiProtocol: 'openai-responses',
+        modelId: 'live-model',
+      },
     })).resolves.toEqual({ valid: true });
 
     expect(validateApiKeyWithProviderMock).toHaveBeenCalledWith('custom', 'sk-test', {
       baseUrl: 'http://live.example/v1',
       apiProtocol: 'openai-responses',
+      modelId: 'live-model',
     });
   });
 

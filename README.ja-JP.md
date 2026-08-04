@@ -139,7 +139,7 @@ OpenAI-compatible ゲートウェイを **Custom プロバイダー** で使う�
 プロバイダーの編集や切り替え時、ClawX は `input: ["text", "image"]` など既存のモデル単位の能力メタデータを保持します。新しく選択した Custom プロバイダーのモデルには OpenClaw onboarding と同等の画像入力推論を適用し、不明なモデルはテキスト専用として扱います。
 Custom プロバイダーのモデル行には明示的な `contextWindow` も書き込まれ（モデルファミリーから推定、例：`gpt-5.x` → 272k）、旧バージョンで保存された行は起動時に自動補完されます。これにより OpenClaw は長いセッションを "Context overflow" エラーになる前に圧縮できます。compaction 未設定の場合は `agents.defaults.compaction.mode = "safeguard"` と `reserveTokensFloor = 50000` が既定値として設定されますが、ユーザーが自分で設定したモデル行や圧縮設定が変更されることはありません（`reserveTokensFloor` が未設定の場合のみ補完されることがあります）。
 Z.AI（CN / Global）は OpenClaw 組み込みの `zai` プロバイダー（`ZAI_API_KEY`）に対応し、既定モデルは `glm-5.2` です。Code Plan プリセットで Coding Plan エンドポイント（`…/api/coding/paas/v4`）へ切り替え、通常 API（`…/api/paas/v4`）も利用できます。CN と Global は同じ OpenClaw ランタイムキーを共有するため同時追加できません。
-互換ゲートウェイで `/models` が認証以外の理由で使えない場合、ClawX は API キー検証時に軽量な `/chat/completions` または `/responses` プローブへ自動フォールバックします。
+互換ゲートウェイで `/models` が認証以外の理由で使えない場合、ClawX は API キー検証時に設定済みモデルを使った軽量な `/chat/completions` または `/responses` プローブへ自動フォールバックします。
 
 ### 🌙 アダプティブテーマ
 ライトモード、ダークモード、またはシステム同期テーマ。ClawXはあなたの好みに自動的に適応します。

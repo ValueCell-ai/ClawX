@@ -139,7 +139,7 @@ For **Custom** providers used with OpenAI-compatible gateways, you can set a cus
 When you edit or switch providers, ClawX preserves existing per-model capability metadata such as `input: ["text", "image"]`. Newly selected Custom-provider models use OpenClaw onboarding-compatible image-input inference, with unknown models defaulting to text-only.
 Custom-provider model rows also receive an explicit `contextWindow` (inferred from the model family, e.g. `gpt-5.x` → 272k), and rows saved by older versions are backfilled on startup, so OpenClaw can compact long sessions before they fail with "Context overflow" errors. When you have no compaction config, ClawX seeds `agents.defaults.compaction.mode = "safeguard"` and `reserveTokensFloor = 50000`; rows or configs you authored yourself are never modified (except a missing `reserveTokensFloor` may be backfilled).
 Z.AI (CN / Global) maps to OpenClaw's built-in `zai` provider (`ZAI_API_KEY`). Default model is `glm-5.2`. Use the Code Plan preset for Coding Plan endpoints (`…/api/coding/paas/v4`) or the normal API endpoints (`…/api/paas/v4`); CN and Global are mutually exclusive because they share one OpenClaw runtime key.
-When a compatible gateway rejects `/models` for non-auth reasons, ClawX automatically falls back to a lightweight `/chat/completions` or `/responses` probe during API key validation.
+When a compatible gateway rejects `/models` for non-auth reasons, ClawX automatically falls back to a lightweight `/chat/completions` or `/responses` probe using the configured model during API key validation.
 
 ### 🌙 Adaptive Theming
 Light mode, dark mode, or system-synchronized themes. ClawX adapts to your preferences automatically.

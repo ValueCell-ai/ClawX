@@ -196,6 +196,7 @@ async function validateOpenAiCompatibleKey(
   apiKey: string,
   apiProtocol: 'openai-completions' | 'openai-responses',
   baseUrl?: string,
+  modelId?: string,
 ): Promise<ValidationResult> {
   const trimmedBaseUrl = baseUrl?.trim();
   if (!trimmedBaseUrl) {
@@ -203,6 +204,7 @@ async function validateOpenAiCompatibleKey(
   }
 
   const headers = { Authorization: `Bearer ${apiKey}` };
+  const probeModel = modelId?.trim() || 'validation-probe';
   const { modelsUrl, probeUrl } = resolveOpenAiProbeUrls(trimmedBaseUrl, apiProtocol);
   const modelsResult = await performProviderValidationRequest(providerType, modelsUrl, headers);
 
@@ -211,9 +213,9 @@ async function validateOpenAiCompatibleKey(
       `[clawx-validate] ${providerType} /models returned ${modelsResult.status}, falling back to ${apiProtocol} probe`,
     );
     if (apiProtocol === 'openai-responses') {
-      return await performResponsesProbe(providerType, probeUrl, headers);
+      return await performResponsesProbe(providerType, probeUrl, headers, probeModel);
     }
-    return await performChatCompletionsProbe(providerType, probeUrl, headers);
+    return await performChatCompletionsProbe(providerType, probeUrl, headers, probeModel);
   }
 
   return modelsResult;
@@ -223,6 +225,7 @@ async function performResponsesProbe(
   providerLabel: string,
   url: string,
   headers: Record<string, string>,
+  modelId: string,
 ): Promise<ValidationResult> {
   try {
     logValidationRequest(providerLabel, 'POST', url, headers);
@@ -230,7 +233,7 @@ async function performResponsesProbe(
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'validation-probe',
+        model: modelId,
         input: 'hi',
       }),
     });
@@ -249,6 +252,7 @@ async function performChatCompletionsProbe(
   providerLabel: string,
   url: string,
   headers: Record<string, string>,
+  modelId: string,
 ): Promise<ValidationResult> {
   try {
     logValidationRequest(providerLabel, 'POST', url, headers);
@@ -256,7 +260,7 @@ async function performChatCompletionsProbe(
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'validation-probe',
+        model: modelId,
         messages: [{ role: 'user', content: 'hi' }],
         max_tokens: 1,
       }),
@@ -353,7 +357,7 @@ async function validateOpenRouterKey(
 export async function validateApiKeyWithProvider(
   providerType: string,
   apiKey: string,
-  options?: { baseUrl?: string; apiProtocol?: string },
+  options?: { baseUrl?: string; apiProtocol?: string; modelId?: string },
 ): Promise<ValidationResult> {
   const profile = getValidationProfile(providerType, options);
   const resolvedBaseUrl = options?.baseUrl || getProviderConfig(providerType)?.baseUrl;
@@ -375,6 +379,7 @@ export async function validateApiKeyWithProvider(
           trimmedKey,
           'openai-completions',
           resolvedBaseUrl,
+          options?.modelId,
         );
       case 'openai-responses':
         return await validateOpenAiCompatibleKey(
@@ -382,6 +387,7 @@ export async function validateApiKeyWithProvider(
           trimmedKey,
           'openai-responses',
           resolvedBaseUrl,
+          options?.modelId,
         );
       case 'google-query-key':
         return await validateGoogleQueryKey(providerType, trimmedKey, resolvedBaseUrl);

@@ -69,6 +69,7 @@ describe('validateApiKeyWithProvider', () => {
     const result = await validateApiKeyWithProvider('custom', 'sk-response-test', {
       baseUrl: 'https://responses.example.com/v1',
       apiProtocol: 'openai-responses',
+      modelId: 'glm-5.2',
     });
 
     expect(result).toMatchObject({ valid: true });
@@ -86,6 +87,10 @@ describe('validateApiKeyWithProvider', () => {
       'https://responses.example.com/v1/responses',
       expect.objectContaining({
         method: 'POST',
+        body: JSON.stringify({
+          model: 'glm-5.2',
+          input: 'hi',
+        }),
       })
     );
   });
@@ -109,6 +114,7 @@ describe('validateApiKeyWithProvider', () => {
     const result = await validateApiKeyWithProvider('custom', 'sk-chat-test', {
       baseUrl: 'https://chat.example.com/v1',
       apiProtocol: 'openai-completions',
+      modelId: 'chat-model',
     });
 
     expect(result).toMatchObject({ valid: true });
@@ -117,6 +123,11 @@ describe('validateApiKeyWithProvider', () => {
       'https://chat.example.com/v1/chat/completions',
       expect.objectContaining({
         method: 'POST',
+        body: JSON.stringify({
+          model: 'chat-model',
+          messages: [{ role: 'user', content: 'hi' }],
+          max_tokens: 1,
+        }),
       })
     );
   });
