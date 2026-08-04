@@ -321,6 +321,124 @@ describe('WeCom plugin configuration', () => {
     expect(channels.discord.guilds?.['1438451181474287618'].channels?.['*']).not.toHaveProperty('allow');
     expect(channels.discord.accounts?.default.guilds?.['1438451181474287618'].channels?.['*']).not.toHaveProperty('allow');
   });
+
+  it('deletes a custom default account without recreating it as the literal default account', async () => {
+    await writeOpenClawJson({
+      channels: {
+        telegram: {
+          accounts: {
+            'agent-a': { botToken: 'telegram-token', enabled: false },
+          },
+          defaultAccount: 'agent-a',
+          enabled: false,
+          botToken: 'telegram-token',
+        },
+      },
+    });
+    const { deleteChannelAccountConfig } = await import('@electron/utils/channel-config');
+
+    await deleteChannelAccountConfig('telegram', 'agent-a');
+
+    const config = await readOpenClawJson();
+    expect((config.channels as Record<string, unknown>).telegram).toBeUndefined();
+  });
+
+  it('deletes an agent-owned custom default account without recreating it', async () => {
+    await writeOpenClawJson({
+      channels: {
+        telegram: {
+          accounts: {
+            'agent-a': { botToken: 'telegram-token', enabled: false },
+          },
+          defaultAccount: 'agent-a',
+          enabled: false,
+          botToken: 'telegram-token',
+        },
+      },
+    });
+    const { deleteAgentChannelAccounts } = await import('@electron/utils/channel-config');
+
+    await deleteAgentChannelAccounts('agent-a', new Set(['telegram:agent-a']));
+
+    const config = await readOpenClawJson();
+    expect((config.channels as Record<string, unknown>).telegram).toBeUndefined();
+  });
+
+  it('removes deleted plugin-backed account credentials from the plugin mirror', async () => {
+    await writeOpenClawJson({
+      channels: {
+        discord: {
+          accounts: {
+            'agent-a': { token: 'discord-token-a', enabled: true },
+            'agent-b': { token: 'discord-token-b', enabled: true },
+          },
+          defaultAccount: 'agent-a',
+          enabled: true,
+          token: 'discord-token-a',
+        },
+      },
+      plugins: {
+        allow: ['discord'],
+        entries: {
+          discord: {
+            enabled: true,
+            defaultAccount: 'agent-a',
+            accounts: {
+              'agent-a': { token: 'discord-token-a', enabled: true },
+              'agent-b': { token: 'discord-token-b', enabled: true },
+            },
+          },
+        },
+      },
+    });
+    const { deleteChannelAccountConfig } = await import('@electron/utils/channel-config');
+
+    await deleteChannelAccountConfig('discord', 'agent-a');
+
+    const config = await readOpenClawJson();
+    const channel = (config.channels as Record<string, Record<string, unknown>>).discord;
+    const plugin = ((config.plugins as { entries: Record<string, Record<string, unknown>> }).entries).discord;
+    expect(channel.defaultAccount).toBe('agent-b');
+    expect(channel.accounts).toEqual({
+      'agent-b': { token: 'discord-token-b', enabled: true },
+    });
+    expect(plugin.defaultAccount).toBe('agent-b');
+    expect(plugin.accounts).toEqual({
+      'agent-b': { token: 'discord-token-b', enabled: true },
+    });
+    expect(JSON.stringify(plugin)).not.toContain('discord-token-a');
+  });
+
+  it('removes plugin-only account credentials while preserving sibling accounts', async () => {
+    await writeOpenClawJson({
+      plugins: {
+        allow: ['discord'],
+        entries: {
+          discord: {
+            enabled: true,
+            defaultAccount: 'agent-a',
+            accounts: {
+              'agent-a': { token: 'discord-token-a', enabled: true },
+              'agent-b': { token: 'discord-token-b', enabled: true },
+            },
+          },
+        },
+      },
+    });
+    const { deleteChannelAccountConfig } = await import('@electron/utils/channel-config');
+
+    await deleteChannelAccountConfig('discord', 'agent-a');
+
+    const config = await readOpenClawJson();
+    const plugin = ((config.plugins as {
+      entries: Record<string, Record<string, unknown>>;
+    }).entries).discord;
+    expect(plugin.defaultAccount).toBe('agent-b');
+    expect(plugin.accounts).toEqual({
+      'agent-b': { token: 'discord-token-b', enabled: true },
+    });
+    expect(JSON.stringify(plugin)).not.toContain('discord-token-a');
+  });
 });
 
 describe('WeChat dangling plugin cleanup', () => {

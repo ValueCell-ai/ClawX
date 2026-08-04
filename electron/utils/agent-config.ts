@@ -62,6 +62,11 @@ interface BindingConfig extends Record<string, unknown> {
   match?: BindingMatch;
 }
 
+interface ChannelBindingConfig extends BindingConfig {
+  agentId: string;
+  match: BindingMatch & { channel: string };
+}
+
 interface ChannelSectionConfig extends Record<string, unknown> {
   accounts?: Record<string, Record<string, unknown>>;
   defaultAccount?: string;
@@ -217,7 +222,7 @@ function normalizeAgentsConfig(config: AgentConfigDocument): {
   };
 }
 
-function isChannelBinding(binding: unknown): binding is BindingConfig {
+function isChannelBinding(binding: unknown): binding is ChannelBindingConfig {
   if (!binding || typeof binding !== 'object') return false;
   const candidate = binding as BindingConfig;
   if (typeof candidate.agentId !== 'string' || !candidate.agentId) return false;
@@ -777,7 +782,9 @@ export async function deleteAgentConfig(agentId: string): Promise<{ snapshot: Ag
   await mutateOpenClawConfig(async (configSnapshot) => {
     const config = configSnapshot as AgentConfigDocument;
     const { agentsConfig, entries, defaultAgentId } = normalizeAgentsConfig(config);
-    const snapshotBeforeDeletion = await buildSnapshotFromConfig(config);
+    const bindingsBeforeDeletion = Array.isArray(config.bindings)
+      ? config.bindings.filter(isChannelBinding)
+      : [];
     const removedEntry = entries.find((entry) => entry.id === agentId);
     const nextEntries = entries.filter((entry) => entry.id !== agentId);
     if (!removedEntry || nextEntries.length === entries.length) {
@@ -801,14 +808,17 @@ export async function deleteAgentConfig(agentId: string): Promise<{ snapshot: Ag
 
     const normalizedAgentId = normalizeAgentIdForBinding(agentId);
     const legacyAccountId = resolveAccountIdForAgent(agentId);
+    const { channelToAgent, accountToAgent } = getChannelBindingMap(bindingsBeforeDeletion);
+    const boundChannelTypes = new Set(bindingsBeforeDeletion.map((binding) => binding.match.channel));
     const ownedLegacyAccounts = new Set(
-      Object.entries(snapshotBeforeDeletion.channelAccountOwners)
-        .filter(([channelAccountKey, owner]) => {
-          if (owner !== normalizedAgentId) return false;
-          const accountId = channelAccountKey.slice(channelAccountKey.indexOf(':') + 1);
-          return accountId === legacyAccountId;
+      [...boundChannelTypes]
+        .filter((channelType) => {
+          const accountOwner = accountToAgent.get(`${channelType}:${legacyAccountId}`);
+          const effectiveOwner = accountOwner
+            ?? (legacyAccountId === DEFAULT_ACCOUNT_ID ? channelToAgent.get(channelType) : undefined);
+          return effectiveOwner === normalizedAgentId;
         })
-      .map(([channelAccountKey]) => channelAccountKey),
+        .map((channelType) => `${channelType}:${legacyAccountId}`),
     );
 
     await deleteAgentChannelAccounts(agentId, ownedLegacyAccounts);

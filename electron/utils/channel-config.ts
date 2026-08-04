@@ -364,6 +364,51 @@ function ensurePluginRegistration(currentConfig: OpenClawConfig, pluginId: strin
     currentConfig.plugins.entries[pluginId].enabled = true;
 }
 
+function syncPluginChannelAccountMirror(currentConfig: OpenClawConfig, channelType: string): void {
+    if (!PLUGIN_CHANNELS.includes(channelType)) return;
+    const channelSection = currentConfig.channels?.[channelType];
+    if (!channelSection) {
+        removePluginRegistration(currentConfig, channelType);
+        return;
+    }
+    const pluginEntry = currentConfig.plugins?.entries?.[channelType];
+    if (!pluginEntry) return;
+    const accounts = getChannelAccountsMap(channelSection);
+    pluginEntry.enabled = channelSection.enabled;
+    pluginEntry.defaultAccount = channelSection.defaultAccount;
+    if (accounts && Object.keys(accounts).length > 0) {
+        pluginEntry.accounts = structuredClone(accounts);
+    } else {
+        delete pluginEntry.accounts;
+    }
+}
+
+function deletePluginChannelAccountMirror(
+    currentConfig: OpenClawConfig,
+    channelType: string,
+    accountId: string,
+): boolean {
+    if (!PLUGIN_CHANNELS.includes(channelType)) return false;
+    const pluginEntry = currentConfig.plugins?.entries?.[channelType];
+    if (!pluginEntry) return false;
+    const accounts = getChannelAccountsMap(pluginEntry);
+    if (!accounts?.[accountId]) return false;
+
+    delete accounts[accountId];
+    const remainingAccountIds = Object.keys(accounts).sort((a, b) => {
+        if (a === DEFAULT_ACCOUNT_ID) return -1;
+        if (b === DEFAULT_ACCOUNT_ID) return 1;
+        return a.localeCompare(b);
+    });
+    if (remainingAccountIds.length === 0) {
+        delete pluginEntry.accounts;
+        delete pluginEntry.defaultAccount;
+    } else if (pluginEntry.defaultAccount === accountId) {
+        pluginEntry.defaultAccount = remainingAccountIds[0];
+    }
+    return true;
+}
+
 function cleanupLegacyBuiltInChannelPluginRegistration(
     currentConfig: OpenClawConfig,
     channelType: string,
@@ -979,11 +1024,21 @@ export async function deleteChannelAccountConfig(channelType: string, accountId:
         deleteWeChatAccount = false;
         deletedAccount = false;
         const currentConfig = snapshot as OpenClawConfig;
+        const deletedPluginAccount = deletePluginChannelAccountMirror(
+            currentConfig,
+            resolvedChannelType,
+            accountId,
+        );
         const channelSection = currentConfig.channels?.[resolvedChannelType];
         if (!channelSection) {
             if (isWechatChannelType(resolvedChannelType)) {
                 removePluginRegistration(currentConfig, WECHAT_PLUGIN_ID);
                 deleteWeChatAccount = true;
+            }
+            if (deletedPluginAccount) {
+                deletedAccount = true;
+                syncBuiltinChannelsWithPluginAllowlist(currentConfig);
+                sanitizeChannelSectionsBeforeWrite(currentConfig);
             }
             return;
         }
@@ -992,9 +1047,18 @@ export async function deleteChannelAccountConfig(channelType: string, accountId:
         const targetsLegacyDefault = accountId === DEFAULT_ACCOUNT_ID
             && Object.keys(getLegacyChannelPayload(channelSection)).length > 0;
         if (!existingAccounts?.[accountId] && !targetsLegacyDefault) {
+            if (deletedPluginAccount) {
+                deletedAccount = true;
+                syncBuiltinChannelsWithPluginAllowlist(currentConfig);
+                sanitizeChannelSectionsBeforeWrite(currentConfig);
+            }
             return;
         }
-        migrateLegacyChannelConfigToAccounts(channelSection, DEFAULT_ACCOUNT_ID);
+        const currentDefaultAccountId = typeof channelSection.defaultAccount === 'string'
+            && channelSection.defaultAccount.trim()
+            ? channelSection.defaultAccount.trim()
+            : DEFAULT_ACCOUNT_ID;
+        migrateLegacyChannelConfigToAccounts(channelSection, currentDefaultAccountId);
         const accounts = getChannelAccountsMap(channelSection);
         if (!accounts?.[accountId]) return;
 
@@ -1032,6 +1096,7 @@ export async function deleteChannelAccountConfig(channelType: string, accountId:
             }
         }
 
+        syncPluginChannelAccountMirror(currentConfig, resolvedChannelType);
         syncBuiltinChannelsWithPluginAllowlist(currentConfig);
         sanitizeChannelSectionsBeforeWrite(currentConfig);
         if (isWechatChannelType(resolvedChannelType)) {
@@ -1269,36 +1334,26 @@ export async function deleteAgentChannelAccounts(agentId: string, ownedChannelAc
     await mutateOpenClawConfig((snapshot) => {
         modified = false;
         const currentConfig = snapshot as OpenClawConfig;
-        if (!currentConfig.channels) return;
-
-        const hasTargetAccount = Object.entries(currentConfig.channels).some(([channelType, section]) => {
-            if (ownedChannelAccounts && !ownedChannelAccounts.has(`${channelType}:${accountId}`)) return false;
-            const accounts = getChannelAccountsMap(section);
-            if (accounts?.[accountId]) return true;
-            return accountId === DEFAULT_ACCOUNT_ID
+        const channels = currentConfig.channels ?? {};
+        for (const channelType of Object.keys(channels)) {
+            if (ownedChannelAccounts && !ownedChannelAccounts.has(`${channelType}:${accountId}`)) continue;
+            const section = channels[channelType];
+            const existingAccounts = getChannelAccountsMap(section);
+            const targetsLegacyDefault = accountId === DEFAULT_ACCOUNT_ID
                 && Object.keys(getLegacyChannelPayload(section)).length > 0;
-        });
-        if (!hasTargetAccount) return;
+            if (!existingAccounts?.[accountId] && !targetsLegacyDefault) continue;
 
-        for (const channelType of Object.keys(currentConfig.channels)) {
-            const section = currentConfig.channels[channelType];
-            migrateLegacyChannelConfigToAccounts(section, DEFAULT_ACCOUNT_ID);
+            const currentDefaultAccountId = typeof section.defaultAccount === 'string'
+                && section.defaultAccount.trim()
+                ? section.defaultAccount.trim()
+                : DEFAULT_ACCOUNT_ID;
+            migrateLegacyChannelConfigToAccounts(section, currentDefaultAccountId);
             const accounts = getChannelAccountsMap(section);
-            if (!accounts?.[accountId] || (ownedChannelAccounts && !ownedChannelAccounts.has(`${channelType}:${accountId}`))) {
-                // Ensure top-level mirror is consistent.
-                const mirroredAccountId = typeof section.defaultAccount === 'string' && section.defaultAccount.trim() ? section.defaultAccount : DEFAULT_ACCOUNT_ID;
-                const defaultAccountData = accounts?.[mirroredAccountId] ?? accounts?.[DEFAULT_ACCOUNT_ID];
-                if (defaultAccountData) {
-                    for (const [key, value] of Object.entries(defaultAccountData)) {
-                        section[key] = value;
-                    }
-                }
-                continue;
-            }
+            if (!accounts?.[accountId]) continue;
 
             delete accounts[accountId];
             if (Object.keys(accounts).length === 0) {
-                delete currentConfig.channels[channelType];
+                delete channels[channelType];
             } else {
                 if (section.defaultAccount === accountId) {
                     const nextDefaultAccountId = Object.keys(accounts).sort((a, b) => {
@@ -1323,7 +1378,19 @@ export async function deleteAgentChannelAccounts(agentId: string, ownedChannelAc
                     }
                 }
             }
+            syncPluginChannelAccountMirror(currentConfig, channelType);
             modified = true;
+        }
+
+        const pluginChannelTypes = ownedChannelAccounts
+            ? [...ownedChannelAccounts]
+                .filter((channelAccountKey) => channelAccountKey.endsWith(`:${accountId}`))
+                .map((channelAccountKey) => channelAccountKey.slice(0, -accountId.length - 1))
+            : Object.keys(currentConfig.plugins?.entries ?? {});
+        for (const channelType of pluginChannelTypes) {
+            if (deletePluginChannelAccountMirror(currentConfig, channelType, accountId)) {
+                modified = true;
+            }
         }
 
         if (modified) {

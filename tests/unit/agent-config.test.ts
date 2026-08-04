@@ -437,6 +437,116 @@ describe('agent config lifecycle', () => {
     expect(feishu.accounts?.test2).toBeDefined();
   });
 
+  it('does not delete an account reassigned by a later binding', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [
+          { id: 'main', name: 'Main', default: true },
+          { id: 'test2', name: 'test2' },
+          { id: 'test3', name: 'test3' },
+        ],
+      },
+      channels: {
+        telegram: {
+          accounts: {
+            test2: { enabled: false, botToken: 'telegram-token' },
+          },
+        },
+      },
+      bindings: [
+        { agentId: 'test2', match: { channel: 'telegram', accountId: 'test2' } },
+        { agentId: 'test3', match: { channel: 'telegram', accountId: 'test2' } },
+      ],
+    });
+    const { deleteAgentConfig } = await import('@electron/utils/agent-config');
+
+    await deleteAgentConfig('test2');
+
+    const config = await readOpenClawJson();
+    const telegram = (config.channels as Record<string, unknown>).telegram as {
+      accounts?: Record<string, unknown>;
+    };
+    expect(telegram.accounts?.test2).toBeDefined();
+  });
+
+  it('deletes an owned account for a disabled channel with its agent', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [
+          { id: 'main', name: 'Main', default: true },
+          { id: 'test2', name: 'test2' },
+        ],
+      },
+      channels: {
+        telegram: {
+          enabled: false,
+          defaultAccount: 'test2',
+          accounts: {
+            test2: { enabled: false, botToken: 'telegram-token' },
+          },
+          botToken: 'telegram-token',
+        },
+      },
+      bindings: [
+        {
+          agentId: 'test2',
+          match: {
+            channel: 'telegram',
+            accountId: 'test2',
+          },
+        },
+      ],
+    });
+    const { deleteAgentConfig } = await import('@electron/utils/agent-config');
+
+    await deleteAgentConfig('test2');
+
+    const config = await readOpenClawJson();
+    expect((config.channels as Record<string, unknown>).telegram).toBeUndefined();
+  });
+
+  it('deletes owned plugin-only credentials while preserving sibling accounts', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [
+          { id: 'main', name: 'Main', default: true },
+          { id: 'test2', name: 'test2' },
+          { id: 'test3', name: 'test3' },
+        ],
+      },
+      bindings: [
+        { agentId: 'test2', match: { channel: 'discord', accountId: 'test2' } },
+        { agentId: 'test3', match: { channel: 'discord', accountId: 'test3' } },
+      ],
+      plugins: {
+        allow: ['discord'],
+        entries: {
+          discord: {
+            enabled: true,
+            defaultAccount: 'test2',
+            accounts: {
+              test2: { enabled: true, token: 'discord-token-2' },
+              test3: { enabled: true, token: 'discord-token-3' },
+            },
+          },
+        },
+      },
+    });
+    const { deleteAgentConfig } = await import('@electron/utils/agent-config');
+
+    await deleteAgentConfig('test2');
+
+    const config = await readOpenClawJson();
+    const discord = ((config.plugins as {
+      entries: Record<string, Record<string, unknown>>;
+    }).entries).discord;
+    expect(discord.defaultAccount).toBe('test3');
+    expect(discord.accounts).toEqual({
+      test3: { enabled: true, token: 'discord-token-3' },
+    });
+    expect(JSON.stringify(discord)).not.toContain('discord-token-2');
+  });
+
   it('allows the same agent to bind multiple different channels', async () => {
     await writeOpenClawJson({
       agents: {
