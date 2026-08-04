@@ -273,21 +273,18 @@ describe('ACP chat timeline components', () => {
     const earlierSegment = container.querySelector('[data-acp-item-id="msg-a:0"]');
     const activeSegment = container.querySelector('[data-acp-item-id="msg-a:1"]');
     const thought = screen.getByTestId('acp-thought-block');
-    const activeStreamdownRoot = activeSegment?.querySelector('.clawx-streamdown[style*="--streamdown-caret"]');
+    const activeStreamdownRoot = activeSegment?.querySelectorAll('.clawx-streamdown')[1];
     const activeParagraph = activeStreamdownRoot?.querySelector('p');
 
     expect(activeSegment?.querySelector('strong')).toHaveTextContent('streamed bold');
     expect(activeParagraph).toHaveTextContent('Stable paragraph.');
     expect(activeSegment?.querySelectorAll('[data-sd-animate]').length).toBeGreaterThan(0);
-    expect(activeSegment?.querySelectorAll('[style*="--streamdown-caret"]').length).toBe(1);
     expect(earlierSegment).toHaveTextContent('Earlier **literal assistant');
     expect(earlierSegment?.querySelector('strong')).not.toBeInTheDocument();
     expect(earlierSegment?.querySelector('[data-sd-animate]')).not.toBeInTheDocument();
-    expect(earlierSegment?.querySelector('[style*="--streamdown-caret"]')).not.toBeInTheDocument();
     expect(thought).toHaveTextContent('Private *literal thought');
     expect(thought.querySelector('em')).not.toBeInTheDocument();
     expect(thought.querySelector('[data-sd-animate]')).not.toBeInTheDocument();
-    expect(thought.querySelector('[style*="--streamdown-caret"]')).not.toBeInTheDocument();
     expect(activeStreamdownRoot).not.toHaveClass('space-y-0');
 
     rerender(<AcpTimeline snapshot={state} isStreaming={false} />);
@@ -299,7 +296,6 @@ describe('ACP chat timeline components', () => {
     expect(activeSegment?.querySelector('strong')).not.toBeInTheDocument();
     await waitFor(() => {
       expect(container.querySelector('[data-sd-animate]')).not.toBeInTheDocument();
-      expect(container.querySelector('[style*="--streamdown-caret"]')).not.toBeInTheDocument();
     });
   });
 

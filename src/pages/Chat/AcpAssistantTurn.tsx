@@ -158,7 +158,7 @@ export function AcpAssistantTurn({
           if (item.kind === 'message-segment') {
             if (item.role === 'user') return <AcpMessageSegment key={item.id} item={item} />;
             return (
-              <div key={item.id} data-acp-item-id={item.id} data-testid="acp-assistant-message" className="flex min-w-0 flex-col gap-2">
+              <div key={item.id} data-acp-item-id={item.id} data-testid="acp-assistant-message" className="flex min-w-0 flex-col gap-2 w-[calc(100%-3rem)]">
                 {item.parts.map((part, index) => (
                   <AcpRenderPart
                     key={`${part.kind}:${index}`}

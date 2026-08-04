@@ -79,7 +79,7 @@ async function resolveAcpPrompt(app: ElectronApplication) {
 }
 
 test.describe('ClawX streaming Markdown rendering', () => {
-  test('repairs and animates only the pending assistant response, then settles without a caret', async ({ launchElectronApp }) => {
+  test('repairs and animates only the pending assistant response, then clears animation markers', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -157,12 +157,11 @@ test.describe('ClawX streaming Markdown rendering', () => {
       const activeMessage = page.getByTestId('acp-assistant-message').filter({ hasText: 'Streaming' });
       const completedMessage = page.getByTestId('acp-assistant-message').filter({ hasText: 'Earlier completed answer.' });
       await expect(activeMessage.locator('strong')).toHaveText('bold', { timeout: 30_000 });
-      await expect(page.locator('.clawx-streamdown[style*="--streamdown-caret"]')).toHaveCount(1);
-      await expect(completedMessage.locator('[style*="--streamdown-caret"]')).toHaveCount(0);
 
       const firstWord = activeMessage.locator('[data-sd-animate]').filter({ hasText: /^Streaming$/ });
       await expect(firstWord).toHaveCount(1);
       await expect(firstWord).toHaveCSS('--sd-duration', '140ms');
+      await expect(completedMessage.locator('[data-sd-animate]')).toHaveCount(0);
 
       await emitAcpSessionUpdates(app, [{
         sessionUpdate: 'agent_message_chunk',
@@ -212,7 +211,6 @@ test.describe('ClawX streaming Markdown rendering', () => {
         },
       }]);
       await expect(activeMessage).toContainText('Final streamed text.');
-      await expect(page.locator('.clawx-streamdown[style*="--streamdown-caret"]')).toHaveCount(1);
       await expect(activeMessage.locator('.clawx-streamdown')).not.toHaveClass(/space-y-0/);
 
       const headingMargins = await activeMessage.getByRole('heading', { name: 'Spaced heading' }).evaluate((element) => {
@@ -257,7 +255,6 @@ test.describe('ClawX streaming Markdown rendering', () => {
 
       await resolveAcpPrompt(app);
       await expect(page.getByTestId('chat-composer-send')).toHaveAttribute('title', 'Send');
-      await expect(page.locator('.clawx-streamdown[style*="--streamdown-caret"]')).toHaveCount(0);
       await expect(activeMessage.locator('[data-sd-animate]')).toHaveCount(0);
       await expect(activeMessage).toContainText('Streaming bold words');
       await expect(activeMessage).toContainText('Final streamed text.');

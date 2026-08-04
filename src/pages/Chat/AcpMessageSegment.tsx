@@ -95,7 +95,6 @@ function AcpMarkdownPart({ text, isAnimating = false }: { text: string; isAnimat
     <div ref={containerRef} className="contents">
       <Streamdown
         animated={isAnimating ? streamdownAnimation : false}
-        caret="circle"
         className="clawx-markdown clawx-streamdown prose prose-sm max-w-none break-words text-foreground dark:prose-invert"
         components={chatMarkdownComponents}
         controls={streamdownControls}
