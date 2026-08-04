@@ -41,7 +41,7 @@ Streamdown does not expand the authority of generated content:
 - The shared rehype list retains Streamdown sanitization and hardening but omits raw-HTML parsing. Source HTML such as `<script>alert(1)</script>` remains visible text and does not create an element.
 - Links render through `BrowserLink`, which has no interactive anchor role or navigation. Streamdown link-safety UI is disabled because links are already inert.
 - ACP Markdown images continue through `isSafeAcpImageSource`; an unapproved source does not become an image request.
-- Streamdown controls and line numbers are disabled, avoiding new actions, untranslated labels, and an unrelated line-number behavior change.
+- Table, Mermaid, code download, and line-number controls are disabled. Fenced code alone exposes Streamdown's copy control with its label supplied through `react-i18next`; the control remains disabled while a response is streaming.
 
 Static preview keeps `remark-frontmatter` for YAML (`---`) and TOML (`+++`) frontmatter. Parsed frontmatter is omitted from visible output. There is no custom frontmatter splitter, metadata card, or metadata `<pre>`.
 
@@ -53,11 +53,11 @@ ACP Chat repairs incomplete Markdown while the response is active, but animation
 - It is the segment's final part.
 - Its part kind is Markdown.
 
-Earlier parts, completed segments, thoughts, user messages, and tool output never animate. The animation is word-level `fadeIn` with `duration: 140` and `stagger: 20`; character-level animation is forbidden. Previously completed words and blocks must remain stable as later chunks arrive, and the caret disappears when the send settles.
+Earlier parts, completed segments, thoughts, user messages, and tool output never animate. The animation is word-level `fadeIn` with `duration: 140` and `stagger: 0`; character-level animation is forbidden. Previously completed words and blocks must remain stable as later chunks arrive, and the caret disappears when the send settles.
 
 ## Presentation Contract
 
-Chat keeps the assistant-without-bubble layout, existing heading/list/blockquote/table spacing, transparent light table headers, muted dark table headers, and soft-wrapped fenced code. File preview keeps its preview-specific headings, inline code, and scoped soft wrapping. Styling uses existing ClawX surfaces, text colors, dark-mode variants, and other design tokens; Streamdown defaults must not leak broad global changes into unrelated prose.
+Chat keeps the assistant-without-bubble layout and ClawX's established prose rhythm. Scoped Streamdown selectors restore heading and horizontal-rule margins over Streamdown's root spacing utility, compact ordered, unordered, and task-list items, and remove table wrapper borders while retaining the cell grid. Fenced code preserves Shiki's source-row spans as block lines, soft-wraps long lines, uses a compact right-aligned language header with vertically centered actions, and exposes copy without download; file preview keeps its preview-specific headings and inline code. Styling uses existing ClawX surfaces, text colors, dark-mode variants, and other design tokens; Streamdown defaults must not leak broad global changes into unrelated prose.
 
 The supported math contract includes `$...$`, `$$...$$`, `\(...\)`, and `\[...\]`. CJK tests anchor punctuation exclusion from autolinks. Code tests wait for Shiki token output rather than assuming highlighting is synchronous.
 

@@ -288,7 +288,7 @@ describe('ACP chat timeline components', () => {
     expect(thought.querySelector('em')).not.toBeInTheDocument();
     expect(thought.querySelector('[data-sd-animate]')).not.toBeInTheDocument();
     expect(thought.querySelector('[style*="--streamdown-caret"]')).not.toBeInTheDocument();
-    expect(activeStreamdownRoot).toHaveClass('space-y-0');
+    expect(activeStreamdownRoot).not.toHaveClass('space-y-0');
 
     rerender(<AcpTimeline snapshot={state} isStreaming={false} />);
     const settledStreamdownRoot = activeSegment?.querySelectorAll('.clawx-streamdown')[1];
@@ -401,7 +401,7 @@ describe('ACP chat timeline components', () => {
     const codeBlocks = container.querySelectorAll('[data-streamdown="code-block"]');
     expect(codeBlocks).toHaveLength(2);
     expect(container.querySelector('[data-streamdown="mermaid-block"]')).not.toBeInTheDocument();
-    expect(codeBlocks[1]?.querySelector('svg')).not.toBeInTheDocument();
+    expect(codeBlocks[1]?.querySelector('[data-streamdown="code-block-body"] svg')).not.toBeInTheDocument();
     expect(container).toHaveTextContent('graph TD; A-->B;');
   });
 

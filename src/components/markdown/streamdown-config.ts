@@ -4,6 +4,7 @@ import { createMathPlugin } from '@streamdown/math';
 import {
   defaultRehypePlugins,
   type AnimateOptions,
+  type ControlsConfig,
   type LinkSafetyConfig,
   type PluginConfig,
 } from 'streamdown';
@@ -23,7 +24,11 @@ export const streamdownLinkSafety = {
   enabled: false,
 } as const satisfies LinkSafetyConfig;
 
-export const streamdownControls = false;
+export const streamdownControls = {
+  code: { copy: true, download: false },
+  mermaid: false,
+  table: false,
+} as const satisfies ControlsConfig;
 
 export const streamdownAnimation = {
   animation: 'fadeIn',

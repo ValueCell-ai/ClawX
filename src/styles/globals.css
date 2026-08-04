@@ -508,6 +508,45 @@
   margin: 0.6rem 0 0.35rem;
 }
 
+/* Streamdown's root `space-y-4` replaces both margins on sibling blocks. These
+ * scoped rules restore ClawX's prose rhythm while preserving edge resets. */
+.prose.clawx-markdown.clawx-streamdown > p {
+  margin: 0 0 0.75em;
+}
+
+.prose.clawx-streamdown > [data-streamdown='heading-1'] {
+  margin: 1rem 0 0.6rem;
+}
+
+.prose.clawx-streamdown > [data-streamdown='heading-2'] {
+  margin: 0.9rem 0 0.5rem;
+}
+
+.prose.clawx-streamdown > [data-streamdown='heading-3'] {
+  margin: 0.8rem 0 0.45rem;
+}
+
+.prose.clawx-streamdown > [data-streamdown='heading-4'] {
+  margin: 0.7rem 0 0.4rem;
+}
+
+.prose.clawx-streamdown > [data-streamdown='heading-5'],
+.prose.clawx-streamdown > [data-streamdown='heading-6'] {
+  margin: 0.6rem 0 0.35rem;
+}
+
+.prose.clawx-streamdown > [data-streamdown='horizontal-rule'] {
+  margin: 1rem 0;
+}
+
+.prose.clawx-markdown.clawx-streamdown > :first-child {
+  margin-top: 0;
+}
+
+.prose.clawx-markdown.clawx-streamdown > :last-child {
+  margin-bottom: 0;
+}
+
 .prose pre {
   margin-top: 0.5em;
   margin-bottom: 0.5em;
@@ -543,19 +582,73 @@
 }
 
 .clawx-streamdown [data-streamdown='code-block'] {
-  @apply my-2 overflow-hidden rounded-lg border-0 bg-surface-input p-0;
+  @apply relative my-2 gap-0 overflow-hidden rounded-lg border-0 bg-surface-input p-0;
 }
 
 .clawx-streamdown [data-streamdown='code-block-header'] {
-  @apply px-3;
+  @apply h-7 justify-end px-3 pr-10;
+}
+
+.clawx-streamdown [data-streamdown='code-block-header'] > span {
+  @apply ml-0;
+}
+
+.clawx-streamdown [data-streamdown='code-block'] > div:has(> [data-streamdown='code-block-actions']) {
+  @apply absolute right-0 top-0 mt-0 h-7 items-center pr-2;
+}
+
+.clawx-streamdown [data-streamdown='code-block-actions'] {
+  @apply border-0 bg-transparent p-0 shadow-none backdrop-blur-none;
+}
+
+.clawx-streamdown [data-streamdown='code-block-body'] {
+  @apply min-w-0 overflow-x-auto;
 }
 
 .clawx-streamdown [data-streamdown='code-block-body'] pre {
-  @apply overflow-x-auto whitespace-pre-wrap break-words bg-transparent p-4;
+  @apply max-w-full overflow-x-auto whitespace-pre-wrap bg-transparent;
+  overflow-wrap: break-word;
 }
 
 .clawx-streamdown [data-streamdown='code-block-body'] code {
-  @apply bg-transparent font-mono text-sm;
+  @apply whitespace-pre-wrap bg-transparent font-mono text-sm;
+  overflow-wrap: break-word;
+}
+
+.clawx-streamdown [data-streamdown='code-block-body'] code > span {
+  @apply block;
+}
+
+.prose.clawx-markdown.clawx-streamdown [data-streamdown='unordered-list'],
+.prose.clawx-markdown.clawx-streamdown [data-streamdown='ordered-list'] {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.clawx-streamdown [data-streamdown='list-item'] {
+  @apply my-0 py-0.5;
+}
+
+.clawx-streamdown [data-streamdown='list-item'] > p {
+  @apply my-0;
+}
+
+.clawx-streamdown [data-streamdown='table-wrapper'],
+.clawx-streamdown [data-streamdown='table-wrapper'] > div,
+.clawx-streamdown [data-streamdown='table'] {
+  @apply border-0;
+}
+
+.clawx-streamdown [data-streamdown='table-wrapper'] {
+  @apply p-0;
+}
+
+.clawx-streamdown [data-streamdown='table-wrapper'] > div {
+  @apply rounded-none;
+}
+
+.clawx-streamdown [data-streamdown='table'] {
+  @apply my-0;
 }
 
 .clawx-streamdown [data-streamdown='table-header'],
@@ -566,10 +659,6 @@
 .dark .clawx-streamdown [data-streamdown='table-header'],
 .dark .clawx-streamdown [data-streamdown='table-header-cell'] {
   @apply bg-muted;
-}
-
-.clawx-markdown-preview [data-streamdown='code-block-body'] pre {
-  @apply overflow-x-auto whitespace-pre-wrap break-words;
 }
 
 /* Typing indicator animation */

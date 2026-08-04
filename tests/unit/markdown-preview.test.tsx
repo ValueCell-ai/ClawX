@@ -2,12 +2,11 @@ import { render, screen, waitFor } from '@testing-library/react';
 import MarkdownPreview from '@/components/file-preview/MarkdownPreview';
 
 describe('MarkdownPreview', () => {
-  it('lets prose margins control vertical spacing', () => {
+  it('lets prose margins control vertical spacing without a root margin reset', () => {
     const { container } = render(<MarkdownPreview source="Preview body" />);
     const preview = container.querySelector('.clawx-markdown-preview');
 
-    expect(preview).toHaveClass('space-y-0');
-    expect(preview).not.toHaveClass('space-y-4');
+    expect(preview).not.toHaveClass('space-y-0');
   });
 
   it.each([
@@ -65,6 +64,8 @@ describe('MarkdownPreview', () => {
     await waitFor(() => {
       expect(codeBlock?.querySelector('span[style*="--sdm-c"]')).toBeInTheDocument();
     });
+    expect(codeBlock?.querySelector('[data-streamdown="code-block-copy-button"]')).toBeVisible();
+    expect(codeBlock?.querySelector('[data-streamdown="code-block-download-button"]')).not.toBeInTheDocument();
   });
 
   it('keeps Mermaid fences as ordinary code', async () => {
@@ -75,7 +76,7 @@ describe('MarkdownPreview', () => {
     const codeBlock = container.querySelector('[data-streamdown="code-block"]');
     expect(codeBlock).toBeInTheDocument();
     expect(codeBlock).toHaveTextContent('graph TD');
-    expect(container.querySelector('svg')).not.toBeInTheDocument();
+    expect(codeBlock?.querySelector('[data-streamdown="code-block-body"] svg')).not.toBeInTheDocument();
     expect(container.querySelector('[data-streamdown="mermaid"]')).not.toBeInTheDocument();
   });
 });

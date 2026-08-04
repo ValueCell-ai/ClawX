@@ -43,6 +43,9 @@
         "hide": "Hide",
         "clear": "Clear"
     },
+    "markdown": {
+        "copyCode": "Copy code"
+    },
     "status": {
         "running": "Running",
         "stopped": "Stopped",

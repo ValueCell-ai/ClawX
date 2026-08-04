@@ -41,7 +41,7 @@ expectedUserBehavior:
   - Assistant and process Markdown renders incrementally during ACP Chat streaming, while completed blocks remain stable and only the active final Markdown part receives subtle word animation and a circle caret.
   - Markdown files render in static mode with highlighted fenced code, KaTeX math, CJK-aware parsing, and omitted YAML or TOML frontmatter; Mermaid fences remain code.
   - User messages and tool output remain literal, raw HTML remains visible literal text, links remain inert, and unsafe Markdown image sources remain rejected.
-  - Existing Chat and preview layout, soft-wrapped code, table themes, and translated controls remain unchanged.
+  - Chat and preview preserve prose spacing and compact lists; tables show only the cell grid; fenced code preserves source lines and soft-wraps with a compact right-aligned language header and a vertically centered localized copy action.
 requiredProfiles:
   - fast
   - e2e
@@ -66,10 +66,10 @@ requiredTests:
 acceptance:
   - ACP assistant and process Markdown uses Streamdown streaming mode, Markdown file preview uses static mode, and user messages plus tool output stay outside Streamdown.
   - One module-scoped configuration enables code, math with single-dollar support, and CJK plugins without installing or configuring a Mermaid plugin.
-  - Raw HTML is rendered as literal text, links remain inert through BrowserLink, Markdown images retain isSafeAcpImageSource validation, and Streamdown controls and line numbers stay disabled.
+  - Raw HTML is rendered as literal text, links remain inert through BrowserLink, Markdown images retain isSafeAcpImageSource validation, only localized code copy is enabled, and table, Mermaid, code-download, and line-number controls stay disabled.
   - YAML and TOML frontmatter is parsed and omitted without the previous custom metadata card.
-  - Only the open assistant segment's final Markdown part animates, using word-level fadeIn with duration 140 and stagger 20 plus a circle caret; completed blocks do not restart animation.
-  - Focused unit and Electron E2E checks cover incomplete streaming Markdown, code, math, CJK punctuation, Mermaid-as-code, raw HTML, inert links, safe images, literal user and tool content, frontmatter omission, active-part animation, and retained visual contracts.
+  - Only the open assistant segment's final Markdown part animates, using word-level fadeIn with duration 140 and stagger 0 plus a circle caret; completed blocks do not restart animation.
+  - Focused unit and Electron E2E checks cover incomplete streaming Markdown, code highlighting, wrapping and copying, prose spacing, compact lists, cell-only table borders, math, CJK punctuation, Mermaid-as-code, raw HTML, inert links, safe images, literal user and tool content, frontmatter omission, active-part animation, and retained visual contracts.
   - Production source-map review confirms the expected Streamdown and Shiki cost, no direct @streamdown/mermaid dependency, and no unexpected eager Mermaid renderer chunk.
   - Three before and three after runs of the same 80-turn and 300-chunk workload retain metrics and CPU profiles; median Renderer TaskDuration and ScriptDuration each regress by no more than 10 percent, and median ScriptDuration or sampled Markdown and React CPU time improves by at least 10 percent.
   - ReactMarkdown and obsolete direct Markdown plugin dependencies are absent after both renderers migrate, KaTeX remains direct with exactly one stylesheet import, and multilingual README documentation matches the delivered behavior without claiming Mermaid support.

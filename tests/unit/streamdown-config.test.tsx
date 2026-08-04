@@ -48,8 +48,12 @@ describe('shared Streamdown configuration', () => {
     expect(container.querySelector('script')).not.toBeInTheDocument();
   });
 
-  it('disables controls and link safety', () => {
-    expect(streamdownControls).toBe(false);
+  it('enables only code copying and disables link safety', () => {
+    expect(streamdownControls).toEqual({
+      code: { copy: true, download: false },
+      mermaid: false,
+      table: false,
+    });
     expect(streamdownLinkSafety).toEqual({ enabled: false });
   });
 
@@ -57,7 +61,7 @@ describe('shared Streamdown configuration', () => {
     expect(streamdownAnimation).toEqual({
       animation: 'fadeIn',
       duration: 140,
-      stagger: 20,
+      stagger: 0,
       sep: 'word',
     });
   });

@@ -43,6 +43,9 @@
         "hide": "隐藏",
         "clear": "清空"
     },
+    "markdown": {
+        "copyCode": "复制代码"
+    },
     "status": {
         "running": "运行中",
         "stopped": "已停止",

@@ -72,7 +72,11 @@ function normalizeLatexDelimiters(input: string): string {
 }
 
 function AcpMarkdownPart({ text, isAnimating = false }: { text: string; isAnimating?: boolean }) {
+  const { t } = useTranslation('common');
   const containerRef = useRef<HTMLDivElement>(null);
+  const translations = useMemo(() => ({
+    copyCode: t('markdown.copyCode'),
+  }), [t]);
 
   useEffect(() => {
     if (isAnimating) return;
@@ -91,7 +95,8 @@ function AcpMarkdownPart({ text, isAnimating = false }: { text: string; isAnimat
     <div ref={containerRef} className="contents">
       <Streamdown
         animated={isAnimating ? streamdownAnimation : false}
-        className="clawx-streamdown prose prose-sm max-w-none space-y-0 break-words text-foreground dark:prose-invert"
+        caret="circle"
+        className="clawx-markdown clawx-streamdown prose prose-sm max-w-none break-words text-foreground dark:prose-invert"
         components={chatMarkdownComponents}
         controls={streamdownControls}
         isAnimating={isAnimating}
@@ -102,6 +107,7 @@ function AcpMarkdownPart({ text, isAnimating = false }: { text: string; isAnimat
         plugins={streamdownPlugins}
         rehypePlugins={streamdownRehypePlugins}
         remend={isAnimating ? chatRemend : undefined}
+        translations={translations}
       >
         {normalizeLatexDelimiters(text)}
       </Streamdown>

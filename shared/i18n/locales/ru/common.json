@@ -43,6 +43,9 @@
         "hide": "Скрыть",
         "clear": "Очистить"
     },
+    "markdown": {
+        "copyCode": "Копировать код"
+    },
     "status": {
         "running": "Запущен",
         "stopped": "Остановлен",

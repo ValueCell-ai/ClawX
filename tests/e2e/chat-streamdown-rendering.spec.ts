@@ -206,10 +206,54 @@ test.describe('ClawX streaming Markdown rendering', () => {
       await emitAcpSessionUpdates(app, [{
         sessionUpdate: 'agent_message_chunk',
         messageId: 'streamdown-assistant',
-        content: { type: 'text', text: '\n\nFinal streamed text.' },
+        content: {
+          type: 'text',
+          text: '\n\n## Spaced heading\n\n---\n\n- compact one\n- compact two\n\nFinal streamed text.',
+        },
       }]);
       await expect(activeMessage).toContainText('Final streamed text.');
       await expect(page.locator('.clawx-streamdown[style*="--streamdown-caret"]')).toHaveCount(1);
+      await expect(activeMessage.locator('.clawx-streamdown')).not.toHaveClass(/space-y-0/);
+
+      const headingMargins = await activeMessage.getByRole('heading', { name: 'Spaced heading' }).evaluate((element) => {
+        const style = window.getComputedStyle(element);
+        return [Number.parseFloat(style.marginTop), Number.parseFloat(style.marginBottom)];
+      });
+      expect(headingMargins[0]).toBeGreaterThan(0);
+      expect(headingMargins[1]).toBeGreaterThan(0);
+      const ruleMargins = await activeMessage.locator('hr').evaluate((element) => {
+        const style = window.getComputedStyle(element);
+        return [Number.parseFloat(style.marginTop), Number.parseFloat(style.marginBottom)];
+      });
+      expect(ruleMargins[0]).toBeGreaterThan(0);
+      expect(ruleMargins[1]).toBeGreaterThan(0);
+
+      const compactItems = activeMessage.locator('[data-streamdown="list-item"]').filter({ hasText: /compact/ });
+      const compactGap = await compactItems.evaluateAll((items) => {
+        const firstRect = items[0].getBoundingClientRect();
+        const secondRect = items[1].getBoundingClientRect();
+        return secondRect.top - firstRect.bottom;
+      });
+      expect(compactGap).toBeLessThanOrEqual(2);
+      const compactPadding = await compactItems.first().evaluate((element) => {
+        const style = window.getComputedStyle(element);
+        return [Number.parseFloat(style.paddingTop), Number.parseFloat(style.paddingBottom)];
+      });
+      expect(compactPadding).toEqual([2, 2]);
+
+      const codeBlock = activeMessage.locator('[data-streamdown="code-block"]');
+      const codeHeader = codeBlock.locator('[data-streamdown="code-block-header"]');
+      await expect(codeHeader).toHaveCSS('justify-content', 'flex-end');
+      expect(await codeHeader.evaluate((element) => element.getBoundingClientRect().height)).toBe(28);
+      const copyCode = codeBlock.getByTitle('Copy code');
+      await expect(copyCode).toBeDisabled();
+      expect(await codeHeader.evaluate((header, button) => {
+        const headerRect = header.getBoundingClientRect();
+        const buttonRect = (button as Element).getBoundingClientRect();
+        return Math.abs(
+          (headerRect.top + headerRect.height / 2) - (buttonRect.top + buttonRect.height / 2),
+        );
+      }, await copyCode.elementHandle())).toBeLessThanOrEqual(1);
 
       await resolveAcpPrompt(app);
       await expect(page.getByTestId('chat-composer-send')).toHaveAttribute('title', 'Send');
@@ -217,6 +261,10 @@ test.describe('ClawX streaming Markdown rendering', () => {
       await expect(activeMessage.locator('[data-sd-animate]')).toHaveCount(0);
       await expect(activeMessage).toContainText('Streaming bold words');
       await expect(activeMessage).toContainText('Final streamed text.');
+      await expect(copyCode).toBeEnabled();
+      await copyCode.click();
+      await expect.poll(() => page.evaluate(async () => (await navigator.clipboard.readText()).trim()))
+        .toBe('const answer = 42;');
     } finally {
       await closeElectronApp(app);
     }

@@ -43,6 +43,9 @@
         "hide": "非表示",
         "clear": "クリア"
     },
+    "markdown": {
+        "copyCode": "コードをコピー"
+    },
     "status": {
         "running": "実行中",
         "stopped": "停止",
