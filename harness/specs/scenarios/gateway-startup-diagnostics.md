@@ -7,7 +7,6 @@ ownedPaths:
   - electron/utils/openclaw-auth.ts
   - electron/utils/paths.ts
   - src/stores/gateway.ts
-  - src/pages/Dreams/**
 requiredProfiles:
   - fast
   - comms
@@ -20,7 +19,7 @@ requiredRules:
   - docs-sync
 ---
 
-Use this spec when ClawX shows the Gateway as starting/running but UI data does not refresh, Dreams cannot load, or Gateway RPC calls time out after a restart.
+Use this spec when ClawX shows the Gateway as starting/running but UI data does not refresh, memory-backed data cannot load, or Gateway RPC calls time out after a restart.
 
 ClawX should prefer OpenClaw-native signals over stderr string matching:
 
@@ -28,7 +27,7 @@ ClawX should prefer OpenClaw-native signals over stderr string matching:
 - `health` provides the Gateway health snapshot; use cached `probe:false` first.
 - `status` provides presence, health, stateVersion, uptime, and session defaults.
 - `channels.status` is the channel capability signal.
-- `doctor.memory.status` is the memory/dreams capability signal.
+- `doctor.memory.status` is the memory capability signal.
 - `gateway.ready`, `health`, and `presence` events should update ClawX's main-process capability cache.
 
 stderr is supporting evidence only. It should not be the primary source for deciding whether the Gateway is ready, blocked, or should be restarted.
@@ -58,7 +57,7 @@ Capability failures are not Gateway core failures:
 
 - `doctor.memory.status` timeout means memory capability degraded until `system-presence` also fails.
 - `channels.status` timeout means channel capability degraded until `system-presence` also fails.
-- dreams cron unavailable, missing memory files, stale session keys, or provider credential errors do not trigger Gateway restart by themselves.
+- memory-core cron unavailable, missing memory files, stale session keys, or provider credential errors do not trigger Gateway restart by themselves.
 
 ## Fast Triage
 
@@ -204,7 +203,7 @@ Symptoms:
 
 - `system-presence`, `health`, or `status` succeeds.
 - `doctor.memory.status`, `doctor.memory.dreamDiary`, or `channels.status` times out.
-- stderr may mention dreams cron unavailable, missing memory files, stale session keys, or credentials provider errors.
+- stderr may mention memory-core cron unavailable, missing memory files, stale session keys, or credentials provider errors.
 
 Expected behavior:
 
@@ -266,7 +265,7 @@ pnpm exec openclaw gateway call health --params '{"probe":false}' >/tmp/clawx-he
 pnpm exec openclaw gateway call status >/tmp/clawx-status.json
 ```
 
-7. Only after `system-presence` succeeds, verify feature-specific RPCs such as Dreams, memory doctor calls, or channel probes.
+7. Only after `system-presence` succeeds, verify feature-specific RPCs such as memory doctor calls or channel probes.
 
 ## Acceptance Criteria
 
@@ -274,8 +273,7 @@ pnpm exec openclaw gateway call status >/tmp/clawx-status.json
 - `configSyncMs` stays small relative to total startup time.
 - `system-presence` succeeds after startup settles.
 - `health` and `status` are captured in Gateway diagnostics when available.
-- Dreams page can refresh once the Gateway process is running and RPC-ready.
-- `doctor.memory.status` and `doctor.memory.dreamDiary` return when Dreams is enabled.
+- Memory doctor calls return when the memory capability is available.
 - `doctor.memory.*` and `channels.status` failures degrade their capability only and do not trigger Gateway restart.
 - Logs no longer repeat stale runtime cache or escaped managed-skill symlink warnings for entries ClawX can safely clean.
 
@@ -287,7 +285,6 @@ For fixes in this area, run:
 pnpm run typecheck
 pnpm run lint:check
 pnpm exec vitest run tests/unit/openclaw-auth.test.ts tests/unit/skills-symlink-cleanup.test.ts tests/unit/gateway-manager-heartbeat.test.ts tests/unit/gateway-ready-fallback.test.ts
-pnpm exec playwright test tests/e2e/openclaw-dreams.spec.ts
 pnpm run build:vite
 ```
 

@@ -15,6 +15,9 @@ test.describe('ClawX developer-mode gated UI', () => {
       window.location.hash = '#/dreams';
     });
     await expect(page.getByTestId('dreams-page')).toHaveCount(0);
+    await page.evaluate(() => {
+      window.location.hash = '#/';
+    });
     await expect(page.getByTestId('chat-composer-input')).toBeVisible();
 
     await page.getByTestId('sidebar-nav-models').click();
@@ -33,7 +36,8 @@ test.describe('ClawX developer-mode gated UI', () => {
     await expect(page.getByTestId('settings-developer-section')).toBeVisible();
     await expect(page.getByTestId('settings-developer-gateway-token')).toBeVisible();
     await expect(page.getByTestId('sidebar-open-dev-console')).toBeVisible();
-    await expect(page.getByTestId('sidebar-nav-dreams')).toBeVisible();
+    await expect(page.getByTestId('sidebar-nav-dreams')).toHaveCount(0);
+    await expect(page.getByTestId('sidebar-nav-image-generation')).toBeVisible();
 
     await page.getByTestId('sidebar-nav-models').click();
     await page.getByTestId('providers-add-button').click();

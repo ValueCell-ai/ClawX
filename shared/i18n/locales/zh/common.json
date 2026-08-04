@@ -12,7 +12,6 @@
         "models": "模型",
         "deleteSessionConfirm": "删除「{{label}}」？",
         "openClawPage": "OpenClaw 页面",
-        "openClawDreams": "梦境",
         "renameSession": "重命名",
         "deleteSession": "删除",
         "renameSessionPlaceholder": "会话标题",

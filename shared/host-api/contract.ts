@@ -135,7 +135,6 @@ export type SettingsSetPayload = { key: SettingsKey; value: SettingsValue };
 export type SettingsSetManyPayload = { patch: Partial<SettingsSnapshot> };
 export type SettingsResetResult = HostSuccess & { settings: SettingsSnapshot };
 
-export type GatewayControlUiPayload = { view?: 'dreams' };
 export type GatewayControlUiResult = HostSuccess & {
   url?: string;
   token?: string;
@@ -873,7 +872,7 @@ export type HostApiContract = {
     stop: () => HostSuccess;
     restart: () => HostSuccess;
     health: (payload?: GatewayHealthPayload) => GatewayHealth;
-    controlUi: (payload?: GatewayControlUiPayload) => GatewayControlUiResult;
+    controlUi: () => GatewayControlUiResult;
     rpc: (payload: GatewayRpcPayload) => unknown;
   };
   logs: {

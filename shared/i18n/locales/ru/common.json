@@ -12,7 +12,6 @@
         "models": "Модели",
         "deleteSessionConfirm": "Удалить \"{{label}}\"?",
         "openClawPage": "Страница OpenClaw",
-        "openClawDreams": "Dreams",
         "renameSession": "Переименовать",
         "deleteSession": "Удалить",
         "renameSessionPlaceholder": "Название сессии",

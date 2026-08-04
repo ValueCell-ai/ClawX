@@ -12,10 +12,6 @@ type HealthPayload = {
   probe?: unknown;
 };
 
-type ControlUiPayload = {
-  view?: unknown;
-};
-
 type RpcPayload = {
   method?: unknown;
   params?: unknown;
@@ -52,13 +48,11 @@ export function createGatewayApi(
       const body = isRecord(payload) ? payload as HealthPayload : {};
       return gatewayManager.checkHealth({ probe: body.probe === true });
     },
-    controlUi: async (payload) => {
-      const body = isRecord(payload) ? payload as ControlUiPayload : {};
+    controlUi: async () => {
       const status = gatewayManager.getStatus();
       const token = await getSetting('gatewayToken');
       const port = status.port || PORTS.OPENCLAW_GATEWAY;
-      const view = body.view === 'dreams' ? 'dreams' : undefined;
-      const url = buildOpenClawControlUiUrl(port, token, { view });
+      const url = buildOpenClawControlUiUrl(port, token);
       void approvePendingLocalDeviceRequests(gatewayManager).catch((error) => {
         logger.debug(`[gateway] Control UI device auto-approve skipped: ${String(error)}`);
       });

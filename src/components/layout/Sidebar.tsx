@@ -23,7 +23,6 @@ import {
   X,
   Cpu,
   ImagePlus,
-  Moon,
   ChevronRight,
   ChevronsUpDown,
   ChevronsDownUp,
@@ -202,9 +201,9 @@ export function Sidebar() {
   const navigate = useNavigate();
   const isOnChat = useLocation().pathname === '/';
 
-  const openControlUi = async (view?: 'dreams', label = 'OpenClaw Page') => {
+  const openControlUi = async (label = 'OpenClaw Page') => {
     try {
-      const result = await hostApi.gateway.controlUi(view);
+      const result = await hostApi.gateway.controlUi();
       if (result.success && result.url) {
         await window.electron.openExternal(result.url);
       } else {
@@ -216,7 +215,7 @@ export function Sidebar() {
   };
 
   const openDevConsole = async () => {
-    await openControlUi(undefined, 'OpenClaw Page');
+    await openControlUi('OpenClaw Page');
   };
 
   const { t, i18n } = useTranslation(['common', 'chat']);
@@ -464,12 +463,6 @@ export function Sidebar() {
             icon: <ImagePlus className="h-4 w-4" strokeWidth={2} />,
             label: t('common:sidebar.imageGeneration'),
             testId: 'sidebar-nav-image-generation',
-          },
-          {
-            to: '/dreams',
-            icon: <Moon className="h-4 w-4" strokeWidth={2} />,
-            label: t('common:sidebar.openClawDreams'),
-            testId: 'sidebar-nav-dreams',
           },
         ]
       : []),

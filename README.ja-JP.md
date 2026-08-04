@@ -93,8 +93,6 @@ ClawXは公式の**OpenClaw**コアを直接ベースに構築されています
 
 私たちはアップストリームのOpenClawプロジェクトとの厳密な整合性を維持することにコミットしており、公式リリースが提供する最新の機能、安定性の改善、エコシステムの互換性に常にアクセスできることを保証します。
 
-開発者モードを有効にすると、サイドバーにはネイティブの Dreams ページも表示され、ClawX 内で OpenClaw の記憶レビュー、夢日記、基本メンテナンス操作を扱えます。詳細な診断が必要な場合は、そのページから完全版の OpenClaw Dreams UI も開けます。
-
 ---
 
 ## 機能
@@ -305,7 +303,7 @@ ACP Chat は、runtime が画像生成メディアを信頼できる構造化メ
 - 単一起動保護は Electron のロックに加え、ローカルのプロセスロックファイルも併用し、デスクトップ IPC / セッションバスが不安定な環境でも重複起動を防ぎます。
 - ローリングアップグレード中に旧版/新版が混在すると、単一起動保護の挙動が非対称になる場合があります。安定運用のため、デスクトップクライアントは可能な限り同一バージョンへ揃えてください。
 - ただし OpenClaw Gateway の待受は常に**単一**であるべきです。`127.0.0.1:18789` を Listen しているプロセスは1つだけです。
-- Gateway の readiness は `system-presence`、`health`、`status` などの OpenClaw コア信号を基準にし、memory、Dreams、チャネルの失敗はグローバルな Gateway 障害ではなく capability degradation として表示します。
+- Gateway の readiness は `system-presence`、`health`、`status` などの OpenClaw コア信号を基準にし、memory またはチャネルの失敗はグローバルな Gateway 障害ではなく capability degradation として表示します。
 - Listen プロセスの確認例:
   - macOS/Linux: `lsof -nP -iTCP:18789 -sTCP:LISTEN`
   - Windows (PowerShell): `Get-NetTCPConnection -LocalPort 18789 -State Listen`

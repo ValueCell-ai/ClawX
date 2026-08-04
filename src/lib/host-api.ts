@@ -169,7 +169,7 @@ export const hostApi = {
     stop: () => invokeHost('gateway', 'stop'),
     restart: () => invokeHost('gateway', 'restart'),
     health: (probe = false) => invokeHost('gateway', 'health', { probe }),
-    controlUi: (view?: 'dreams') => invokeHost('gateway', 'controlUi', { view }),
+    controlUi: () => invokeHost('gateway', 'controlUi'),
     rpc: <T = unknown>(method: string, params?: unknown, timeoutMs?: number) => (
       invokeHost('gateway', 'rpc', { method, params, timeoutMs }) as Promise<T>
     ),

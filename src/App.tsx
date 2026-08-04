@@ -15,7 +15,6 @@ import { Agents } from './pages/Agents';
 import { Channels } from './pages/Channels';
 import { Skills } from './pages/Skills';
 import { Cron } from './pages/Cron';
-import { Dreams } from './pages/Dreams';
 import { ImageGenerationPage } from './pages/ImageGeneration';
 import { Settings } from './pages/Settings';
 import { Setup } from './pages/Setup';
@@ -211,7 +210,6 @@ function App() {
             <Route path="/skills" element={<Skills />} />
             <Route path="/cron" element={<Cron />} />
             <Route path="/image-generation" element={devModeUnlocked ? <ImageGenerationPage /> : <Navigate to="/" replace />} />
-            <Route path="/dreams" element={devModeUnlocked ? <Dreams /> : <Navigate to="/" replace />} />
             <Route path="/settings/*" element={<Settings />} />
             {extraRoutes.map((r) => (
               <Route key={r.path} path={r.path} element={<r.component />} />

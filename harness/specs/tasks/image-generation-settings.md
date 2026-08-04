@@ -36,7 +36,7 @@ touchedAreas:
   - README.zh-CN.md
   - README.ja-JP.md
 expectedUserBehavior:
-  - Models page no longer embeds Image Generation; developer mode shows a dedicated Image Generation sidebar page alongside Skills, Cron, and Dreams.
+  - Models page no longer embeds Image Generation; developer mode shows a dedicated Image Generation sidebar page alongside Skills and Cron.
   - Saving settings writes openclaw.json agents.defaults.imageGenerationModel from the explicit custom image endpoint form; default chat provider changes do not auto-sync image models.
   - The custom image endpoint is always the page's configuration target; no extra enable/disable switch is shown before Base URL/model/API key fields.
   - Saving the OpenAI-compatible image endpoint writes a ClawX-owned provider (`clawx-openai-image`) and auth profile, enables `request.allowPrivateNetwork` for trusted custom endpoints, and leaves `models.providers.openai` untouched so chat continues to use the regular OpenAI provider.
