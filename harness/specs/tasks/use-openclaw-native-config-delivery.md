@@ -11,6 +11,7 @@ touchedAreas:
   - harness/reference/openclaw-config-delivery.md
   - electron/gateway/config-delivery.ts
   - electron/gateway/manager.ts
+  - electron/gateway/ws-trace.ts
   - electron/main/index.ts
   - electron/main/ipc-handlers.ts
   - electron/services/agents-api.ts
@@ -23,6 +24,7 @@ touchedAreas:
   - electron/utils/plugin-install.ts
   - electron/utils/skill-config.ts
   - tests/unit/gateway-config-delivery.test.ts
+  - tests/unit/gateway-ws-trace.test.ts
   - tests/unit/agent-config.test.ts
   - tests/unit/channel-config.test.ts
   - tests/unit/host-services.test.ts
@@ -50,16 +52,22 @@ requiredRules:
   - docs-sync
 requiredTests:
   - tests/unit/gateway-config-delivery.test.ts
+  - tests/unit/gateway-ws-trace.test.ts
+  - tests/unit/agent-config.test.ts
+  - tests/unit/channel-config.test.ts
   - tests/unit/host-services.test.ts
   - tests/unit/provider-runtime-sync.test.ts
 acceptance:
   - Electron Main owns config delivery; Renderer does not add direct Gateway transport calls.
-  - A running Gateway mutation reads config.get, applies its mutator to that snapshot, and commits the changed raw config with config.set and the returned hash as baseHash.
+  - A running Gateway mutation prefers the runtime-shaped config.get `config` object as its baseline, applies its mutator, and commits the serialized result with config.set and the returned hash as baseHash; source-shaped `raw` is only a compatibility fallback.
   - Successful config.set delivery does not send SIGUSR1 and does not call GatewayManager.restart.
   - The coordinator serializes mutations and retries one base-hash conflict from a fresh config.get snapshot.
   - When Gateway is stopped or starting, the same coordinator performs the mutation against the resolved file path and does not start the Gateway.
   - A non-conflict RPC mutation failure does not perform an out-of-band file write; it fails the mutation without silently diverging live and persisted config.
   - Provider deletion, OAuth completion, Agent deletion, Channel save/delete/binding, skill config, image config, and hidden self-heal writes do not carry independent blanket restart policy.
+  - Deleting a custom default Channel account does not recreate its mirrored top-level credentials under a literal `default` account.
+  - Channel account deletion removes matching credentials from plugin-backed account mirrors, including Agent deletion paths.
+  - Gateway WebSocket traces redact serialized raw config-write payloads before logging them.
   - Proxy environment changes, manual restart, heartbeat recovery, process crash recovery, app update, and app shutdown/startup retain their lifecycle behavior.
   - No production helper outside the coordinator writes the active OpenClaw config file.
   - Coordinator file fallback uses the configured OpenClaw config path rather than a hardcoded home-directory path.
