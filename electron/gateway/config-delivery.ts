@@ -17,6 +17,7 @@ export type OpenClawConfigMutator = (
 type ConfigDeliveryGatewayManager = Pick<GatewayManager, 'getStatus' | 'rpc'>;
 
 interface ConfigSnapshot {
+  config?: unknown;
   raw?: unknown;
   hash?: unknown;
 }
@@ -53,6 +54,17 @@ function serializeConfig(config: OpenClawConfig): string {
   return `${JSON.stringify(config, null, 2)}\n`;
 }
 
+function parseRunningConfigSnapshot(snapshot: ConfigSnapshot | undefined): OpenClawConfig {
+  if (snapshot?.config && typeof snapshot.config === 'object' && !Array.isArray(snapshot.config)) {
+    return structuredClone(snapshot.config) as OpenClawConfig;
+  }
+  const raw = typeof snapshot?.raw === 'string' ? snapshot.raw : '';
+  if (!raw.trim()) {
+    throw new Error('Gateway config.get returned an incomplete config snapshot');
+  }
+  return parseConfig(raw);
+}
+
 function isBaseHashConflict(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /config changed since last load; re-run config\.get and retry/i.test(message);
@@ -64,13 +76,12 @@ async function mutateRunningConfig(
 ): Promise<boolean> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const snapshot = await manager.rpc<ConfigSnapshot>('config.get', {});
-    const raw = typeof snapshot?.raw === 'string' ? snapshot.raw : '';
     const hash = typeof snapshot?.hash === 'string' ? snapshot.hash.trim() : '';
-    if (!raw.trim() || !hash) {
+    if (!hash) {
       throw new Error('Gateway config.get returned an incomplete config snapshot');
     }
 
-    const config = parseConfig(raw);
+    const config = parseRunningConfigSnapshot(snapshot);
     if (!await applyMutator(config, mutator, true)) return false;
 
     try {
@@ -201,11 +212,7 @@ async function runRead(): Promise<OpenClawConfigSnapshot> {
   const manager = gatewayManager;
   if (manager?.getStatus().state === 'running') {
     const snapshot = await manager.rpc<ConfigSnapshot>('config.get', {});
-    const raw = typeof snapshot?.raw === 'string' ? snapshot.raw : '';
-    if (!raw.trim()) {
-      throw new Error('Gateway config.get returned an incomplete config snapshot');
-    }
-    return { config: parseConfig(raw), exists: true };
+    return { config: parseRunningConfigSnapshot(snapshot), exists: true };
   }
 
   const snapshot = await readFileConfig(resolveOpenClawConfigPath());

@@ -22,6 +22,20 @@ describe('gateway ws trace', () => {
     expect(JSON.stringify(redacted)).toContain('[redacted]');
   });
 
+  it('redacts serialized config write payloads', () => {
+    const redacted = redactGatewayFrameForTrace({
+      type: 'req',
+      method: 'config.set',
+      params: {
+        raw: JSON.stringify({ channels: { telegram: { botToken: 'new-secret-token' } } }),
+        baseHash: 'hash-1',
+      },
+    }) as { params: { raw: string; baseHash: string } };
+
+    expect(redacted.params).toEqual({ raw: '[redacted]', baseHash: 'hash-1' });
+    expect(JSON.stringify(redacted)).not.toContain('new-secret-token');
+  });
+
   it('summarizes request and event frames', () => {
     expect(summarizeGatewayFrameForTrace({ type: 'req', id: '1', method: 'sessions.list' }))
       .toEqual('req id=1 method=sessions.list');

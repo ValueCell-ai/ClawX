@@ -9,6 +9,7 @@ const SECRET_KEYS = new Set([
   'accesstoken',
   'refreshtoken',
 ]);
+const CONFIG_WRITE_METHODS = new Set(['config.set', 'config.patch', 'config.apply']);
 
 export function isGatewayWsTraceEnabled(): boolean {
   return process.env.CLAWX_GATEWAY_WS_TRACE === '1';
@@ -22,9 +23,17 @@ export function redactGatewayFrameForTrace(value: unknown): unknown {
     return value;
   }
 
+  const record = value as Record<string, unknown>;
+  const redactConfigRaw = typeof record.method === 'string' && CONFIG_WRITE_METHODS.has(record.method);
   const result: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, item] of Object.entries(record)) {
     const normalizedKey = key.toLowerCase();
+    if (redactConfigRaw && key === 'params' && item && typeof item === 'object' && !Array.isArray(item)) {
+      const params = redactGatewayFrameForTrace(item) as Record<string, unknown>;
+      if (Object.hasOwn(params, 'raw')) params.raw = '[redacted]';
+      result[key] = params;
+      continue;
+    }
     result[key] = SECRET_KEYS.has(normalizedKey)
       ? '[redacted]'
       : redactGatewayFrameForTrace(item);

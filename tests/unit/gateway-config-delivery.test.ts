@@ -396,6 +396,55 @@ describe('OpenClaw config delivery coordinator', () => {
     });
   });
 
+  it('uses the runtime-shaped config snapshot when OpenClaw also returns source-shaped raw', async () => {
+    const gatewayManager = createGatewayManager();
+    gatewayManager.rpc.mockImplementation(async (method: string) => {
+      if (method === 'config.get') {
+        return {
+          raw: '{ sourceOnly: true, bindingOwner: "main" }',
+          config: { runtimeOnly: true, bindingOwner: 'main' },
+          hash: 'hash-runtime-shape',
+        };
+      }
+      if (method === 'config.set') return { ok: true };
+      throw new Error(`Unexpected RPC method: ${method}`);
+    });
+    registerOpenClawConfigCoordinator(gatewayManager);
+
+    await mutateOpenClawConfig((config) => {
+      config.bindingOwner = 'coder';
+    });
+
+    expect(JSON.parse((gatewayManager.rpc.mock.calls[1][1] as { raw: string }).raw)).toEqual({
+      runtimeOnly: true,
+      bindingOwner: 'coder',
+    });
+  });
+
+  it('uses a runtime-shaped config snapshot when source-shaped raw is absent', async () => {
+    const gatewayManager = createGatewayManager();
+    gatewayManager.rpc.mockImplementation(async (method: string) => {
+      if (method === 'config.get') {
+        return {
+          config: { runtimeOnly: true, enabled: false },
+          hash: 'hash-runtime-only',
+        };
+      }
+      if (method === 'config.set') return { ok: true };
+      throw new Error(`Unexpected RPC method: ${method}`);
+    });
+    registerOpenClawConfigCoordinator(gatewayManager);
+
+    await mutateOpenClawConfig((config) => {
+      config.enabled = true;
+    });
+
+    expect(JSON.parse((gatewayManager.rpc.mock.calls[1][1] as { raw: string }).raw)).toEqual({
+      runtimeOnly: true,
+      enabled: true,
+    });
+  });
+
   it.each(['config.get', 'config.set'] as const)(
     'fails closed when running %s fails',
     async (failedMethod) => {
