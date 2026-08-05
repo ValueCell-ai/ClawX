@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({
   app: {
@@ -12,7 +12,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-describe('GatewayManager heartbeat recovery', () => {
+describe('GatewayManager heartbeat observability', () => {
   const originalPlatform = process.platform;
 
   beforeEach(() => {
@@ -28,7 +28,7 @@ describe('GatewayManager heartbeat recovery', () => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
   });
 
-  it('restarts after consecutive heartbeat misses reach threshold', async () => {
+  it('records consecutive heartbeat misses without terminating or restarting Gateway', async () => {
     const { GatewayManager } = await import('@electron/gateway/manager');
     const manager = new GatewayManager();
 
@@ -41,24 +41,26 @@ describe('GatewayManager heartbeat recovery', () => {
 
     (manager as unknown as { ws: typeof ws }).ws = ws;
     (manager as unknown as { shouldReconnect: boolean }).shouldReconnect = true;
-    (manager as unknown as { status: { state: string; port: number } }).status = {
+    (manager as unknown as { status: { state: string; port: number; gatewayReady: boolean } }).status = {
       state: 'running',
       port: 18789,
+      gatewayReady: true,
     };
     const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
 
     (manager as unknown as { startPing: () => void }).startPing();
-
     vi.advanceTimersByTime(300_000);
 
     expect(ws.ping).toHaveBeenCalledTimes(4);
     expect(ws.terminate).not.toHaveBeenCalled();
-    expect(restartSpy).toHaveBeenCalledTimes(1);
+    expect(restartSpy).not.toHaveBeenCalled();
+    expect(manager.getDiagnostics().consecutiveHeartbeatMisses).toBe(4);
+    expect(manager.getDiagnostics().lastHeartbeatTimeoutAt).toBe(Date.now());
 
     (manager as unknown as { connectionMonitor: { clear: () => void } }).connectionMonitor.clear();
   });
 
-  it('defers heartbeat restart while initial gateway.ready is still within grace', async () => {
+  it('does not schedule a delayed restart while initial gateway.ready is pending', async () => {
     const { GatewayManager } = await import('@electron/gateway/manager');
     const manager = new GatewayManager();
 
@@ -69,32 +71,27 @@ describe('GatewayManager heartbeat recovery', () => {
       on: vi.fn(),
     };
 
-    const connectedAt = Date.now();
     (manager as unknown as { ws: typeof ws }).ws = ws;
     (manager as unknown as { shouldReconnect: boolean }).shouldReconnect = true;
     (manager as unknown as { status: { state: string; port: number; connectedAt: number; gatewayReady: boolean } }).status = {
       state: 'running',
       port: 18789,
-      connectedAt,
+      connectedAt: Date.now(),
       gatewayReady: false,
     };
     const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
 
     (manager as unknown as { startPing: () => void }).startPing();
+    vi.advanceTimersByTime(600_000);
 
-    vi.advanceTimersByTime(120_000);
+    expect(manager.getDiagnostics().consecutiveHeartbeatMisses).toBe(4);
+    expect(ws.terminate).not.toHaveBeenCalled();
     expect(restartSpy).not.toHaveBeenCalled();
-
-    vi.advanceTimersByTime(179_999);
-    expect(restartSpy).not.toHaveBeenCalled();
-
-    vi.advanceTimersByTime(1);
-    expect(restartSpy).toHaveBeenCalledTimes(1);
 
     (manager as unknown as { connectionMonitor: { clear: () => void } }).connectionMonitor.clear();
   });
 
-  it('does not restart when heartbeat is recovered by incoming messages', async () => {
+  it('resets heartbeat diagnostics when responsiveness recovers through an incoming message', async () => {
     const { GatewayManager } = await import('@electron/gateway/manager');
     const manager = new GatewayManager();
 
@@ -114,50 +111,20 @@ describe('GatewayManager heartbeat recovery', () => {
     const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
 
     (manager as unknown as { startPing: () => void }).startPing();
+    vi.advanceTimersByTime(300_000);
+    expect(manager.getDiagnostics().consecutiveHeartbeatMisses).toBe(4);
 
-    vi.advanceTimersByTime(60_000); // ping #1
-    vi.advanceTimersByTime(60_000); // miss #1 + ping #2
     (manager as unknown as { handleMessage: (message: unknown) => void }).handleMessage('alive');
 
-    vi.advanceTimersByTime(60_000); // recovered, ping #3
-    vi.advanceTimersByTime(60_000); // miss #1 + ping #4
-    vi.advanceTimersByTime(60_000); // miss #2 + ping #5
-
+    expect(manager.getDiagnostics().consecutiveHeartbeatMisses).toBe(0);
+    expect(manager.getDiagnostics().lastAliveAt).toBe(Date.now());
     expect(ws.terminate).not.toHaveBeenCalled();
     expect(restartSpy).not.toHaveBeenCalled();
 
     (manager as unknown as { connectionMonitor: { clear: () => void } }).connectionMonitor.clear();
   });
 
-  it('skips heartbeat recovery when auto-reconnect is disabled', async () => {
-    const { GatewayManager } = await import('@electron/gateway/manager');
-    const manager = new GatewayManager();
-
-    const ws = {
-      readyState: 1,
-      ping: vi.fn(),
-      terminate: vi.fn(),
-      on: vi.fn(),
-    };
-
-    (manager as unknown as { ws: typeof ws }).ws = ws;
-    (manager as unknown as { shouldReconnect: boolean }).shouldReconnect = false;
-    (manager as unknown as { status: { state: string; port: number } }).status = {
-      state: 'running',
-      port: 18789,
-    };
-    const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
-
-    (manager as unknown as { startPing: () => void }).startPing();
-
-    vi.advanceTimersByTime(300_000);
-
-    expect(restartSpy).not.toHaveBeenCalled();
-
-    (manager as unknown as { connectionMonitor: { clear: () => void } }).connectionMonitor.clear();
-  });
-
-  it('restarts after consecutive heartbeat misses on windows', async () => {
+  it('keeps heartbeat misses observability-only on windows', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
 
     const { GatewayManager } = await import('@electron/gateway/manager');
@@ -179,11 +146,12 @@ describe('GatewayManager heartbeat recovery', () => {
     const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
 
     (manager as unknown as { startPing: () => void }).startPing();
-
     vi.advanceTimersByTime(300_000);
 
     expect(ws.ping).toHaveBeenCalledTimes(4);
-    expect(restartSpy).toHaveBeenCalledTimes(1);
+    expect(ws.terminate).not.toHaveBeenCalled();
+    expect(restartSpy).not.toHaveBeenCalled();
+    expect(manager.getDiagnostics().consecutiveHeartbeatMisses).toBe(4);
 
     (manager as unknown as { connectionMonitor: { clear: () => void } }).connectionMonitor.clear();
   });

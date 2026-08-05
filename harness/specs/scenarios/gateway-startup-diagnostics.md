@@ -12,6 +12,7 @@ requiredProfiles:
   - comms
 requiredRules:
   - gateway-readiness-policy
+  - gateway-heartbeat-safety
   - renderer-main-boundary
   - backend-communication-boundary
   - api-client-transport-policy
@@ -31,6 +32,8 @@ ClawX should prefer OpenClaw-native signals over stderr string matching:
 - `gateway.ready`, `health`, and `presence` events should update ClawX's main-process capability cache.
 
 stderr is supporting evidence only. It should not be the primary source for deciding whether the Gateway is ready, blocked, or should be restarted.
+
+WebSocket heartbeat misses likewise prove only that the Gateway control plane did not answer within the observation window. They update heartbeat diagnostics and may mark health unresponsive, but do not terminate the socket or restart the process. Process exit and socket close remain the authoritative automatic recovery signals, so long-running work is not killed solely because pong handling is delayed.
 
 ## Failure Shape
 
@@ -195,7 +198,7 @@ Expected behavior:
 
 - Do not mark Gateway fully ready from a pure timer fallback.
 - The fallback must probe `system-presence` before emitting ready.
-- Heartbeat recovery may defer restart during the initial grace window, but it should not loop restart while the Gateway is still performing startup work.
+- Heartbeat misses remain observable during startup work, but do not trigger process restart.
 
 ### Capability Degraded But Core Alive
 
@@ -275,6 +278,7 @@ pnpm exec openclaw gateway call status >/tmp/clawx-status.json
 - `health` and `status` are captured in Gateway diagnostics when available.
 - Memory doctor calls return when the memory capability is available.
 - `doctor.memory.*` and `channels.status` failures degrade their capability only and do not trigger Gateway restart.
+- Consecutive heartbeat misses update diagnostics and health state without terminating the socket or replacing the Gateway process.
 - Logs no longer repeat stale runtime cache or escaped managed-skill symlink warnings for entries ClawX can safely clean.
 
 ## Required Regression Coverage

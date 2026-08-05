@@ -51,6 +51,7 @@ requiredRules:
   - host-api-fallback-policy
   - host-events-fallback-policy
   - gateway-readiness-policy
+  - gateway-heartbeat-safety
   - channel-plugin-migration-guards
   - capability-owner-resolution
   - active-config-guards
@@ -94,3 +95,5 @@ Scheduled-task history is Main-owned backend data. Current OpenClaw versions mus
 The local HTML Preview privileged bridge is also Main-owned: Renderer may load a validated local HTML file or open that current file externally through the typed Host API. The guest is an implementation detail of the existing `preview` tab; there is no `web-browser` artifact tab or general address navigation. The durable guest contract is `harness/reference/web-browser.md`.
 
 Gateway session-catalog subscription, normalization, ordered list/event replay, attention transitions, and reconnect recovery are documented in `harness/reference/sidebar-session-attention.md`.
+
+Gateway WebSocket heartbeat misses are diagnostic availability signals only. They may mark health unresponsive, but must not terminate the socket or replace the Gateway process; authoritative process-exit and socket-close signals retain automatic lifecycle recovery ownership.

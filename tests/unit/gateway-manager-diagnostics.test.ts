@@ -215,7 +215,7 @@ describe('GatewayManager diagnostics', () => {
     expect(snapshot.core.rpcRouter).toBe('blocked');
   });
 
-  it('restarts windows gateway on heartbeat misses and marks health unresponsive', async () => {
+  it('marks windows gateway health unresponsive without restarting on heartbeat misses', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
 
     const { GatewayManager } = await import('@electron/gateway/manager');
@@ -241,14 +241,12 @@ describe('GatewayManager diagnostics', () => {
     (manager as unknown as { startPing: () => void }).startPing();
     vi.advanceTimersByTime(300_000);
 
-    expect(restartSpy).toHaveBeenCalledTimes(1);
+    expect(restartSpy).not.toHaveBeenCalled();
+    expect(manager.getDiagnostics().consecutiveHeartbeatMisses).toBe(4);
 
     const health = buildGatewayHealthSummary({
       status: { state: 'running', port: 18789 },
-      diagnostics: {
-        ...manager.getDiagnostics(),
-        consecutiveHeartbeatMisses: 4,
-      },
+      diagnostics: manager.getDiagnostics(),
     });
     expect(health.state).toBe('unresponsive');
     expect(health.reasons).toContain('gateway_unresponsive');
