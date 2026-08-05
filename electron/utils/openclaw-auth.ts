@@ -2888,6 +2888,7 @@ export async function updateSingleAgentModelProvider(
  * (`runOpenClawDoctorRepair`) runs `openclaw doctor --fix` as a fallback.
  */
 const SKILL_WORKSHOP_TOOL_DENY_ENTRY = 'skill_workshop';
+const WEB_SEARCH_TOOL_DENY_ENTRY = 'web_search';
 const SKILL_CREATOR_SKILL_KEY = 'skill-creator';
 
 function normalizeToolDenyList(value: unknown): string[] {
@@ -3088,6 +3089,24 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       toolsModified = true;
     }
 
+    // ClawX uses the managed browser and web_fetch for explicit navigation,
+    // but does not expose general-purpose internet search to agents.
+    const webSearchDenyResult = ensureToolDenyIncludes(
+      normalizeToolDenyList(toolsConfig.deny),
+      WEB_SEARCH_TOOL_DENY_ENTRY,
+    );
+    if (webSearchDenyResult.modified) {
+      toolsConfig.deny = webSearchDenyResult.deny;
+      toolsModified = true;
+      console.log('[sanitize] Added "web_search" to tools.deny for ClawX desktop');
+    } else if (
+      !Array.isArray(toolsConfig.deny)
+      || toolsConfig.deny.length !== webSearchDenyResult.deny.length
+    ) {
+      toolsConfig.deny = webSearchDenyResult.deny;
+      toolsModified = true;
+    }
+
     // ── tools.exec approvals (OpenClaw 3.28+) ──────────────────────
     // ClawX is a local desktop app where the user is the trusted operator.
     // Exec approval prompts add unnecessary friction in this context, so we
@@ -3149,6 +3168,22 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       gatewayTools.deny = gatewayDenyResult.deny;
       gatewayModified = true;
     }
+    const gatewayWebSearchDenyResult = ensureToolDenyIncludes(
+      normalizeToolDenyList(gatewayTools.deny),
+      WEB_SEARCH_TOOL_DENY_ENTRY,
+    );
+    if (gatewayWebSearchDenyResult.modified) {
+      gatewayTools.deny = gatewayWebSearchDenyResult.deny;
+      gatewayModified = true;
+      console.log('[sanitize] Added "web_search" to gateway.tools.deny for ClawX desktop');
+    } else if (
+      !Array.isArray(gatewayTools.deny)
+      || gatewayTools.deny.length !== gatewayWebSearchDenyResult.deny.length
+    ) {
+      gatewayTools.deny = gatewayWebSearchDenyResult.deny;
+      gatewayModified = true;
+    }
+
     if (gatewayModified) {
       gateway.tools = gatewayTools;
       config.gateway = gateway;

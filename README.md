@@ -188,8 +188,8 @@ When you launch ClawX for the first time, the **Setup Wizard** will guide you th
 
 The wizard preselects your system language when it is supported, and falls back to English otherwise.
 
-> Note for Moonshot (Kimi): ClawX keeps Kimi web search enabled by default.  
-> When Moonshot is configured, ClawX also syncs Kimi web search to the China endpoint (`https://api.moonshot.cn/v1`) in OpenClaw config.
+> Web search note: ClawX disables OpenClaw's general-purpose `web_search` tool at both the agent and Gateway policy layers.
+> This includes Moonshot (Kimi) search; managed browser automation and `web_fetch` remain available.
 
 ### Proxy Settings
 

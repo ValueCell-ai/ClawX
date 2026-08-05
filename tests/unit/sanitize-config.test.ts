@@ -49,7 +49,10 @@ function withClawXToolDefaults<T extends Record<string, unknown>>(config: T): T 
   tools.profile = 'full';
   tools.sessions = sessions;
   tools.exec = exec;
-  tools.deny = deny.includes('skill_workshop') ? deny : [...deny, 'skill_workshop'];
+  tools.deny = ['skill_workshop', 'web_search'].reduce<string[]>(
+    (result, entry) => result.includes(entry) ? result : [...result, entry],
+    deny,
+  );
 
   const gateway = (config.gateway && typeof config.gateway === 'object' && !Array.isArray(config.gateway))
     ? { ...(config.gateway as Record<string, unknown>) }
@@ -60,7 +63,10 @@ function withClawXToolDefaults<T extends Record<string, unknown>>(config: T): T 
   const gatewayDeny = Array.isArray(gatewayTools.deny)
     ? (gatewayTools.deny as unknown[]).filter((value): value is string => typeof value === 'string')
     : [];
-  gatewayTools.deny = gatewayDeny.includes('skill_workshop') ? gatewayDeny : [...gatewayDeny, 'skill_workshop'];
+  gatewayTools.deny = ['skill_workshop', 'web_search'].reduce<string[]>(
+    (result, entry) => result.includes(entry) ? result : [...result, entry],
+    gatewayDeny,
+  );
   gateway.tools = gatewayTools;
 
   const skills = (config.skills && typeof config.skills === 'object' && !Array.isArray(config.skills))
@@ -405,11 +411,16 @@ async function sanitizeConfig(
   const deny = Array.isArray(toolsConfig.deny)
     ? toolsConfig.deny.filter((value): value is string => typeof value === 'string')
     : [];
-  if (!deny.includes('skill_workshop')) {
-    toolsConfig.deny = [...deny, 'skill_workshop'];
-    toolsModified = true;
-  } else if (!Array.isArray(toolsConfig.deny) || toolsConfig.deny.length !== deny.length) {
-    toolsConfig.deny = deny;
+  const requiredDeny = ['skill_workshop', 'web_search'].reduce<string[]>(
+    (result, entry) => result.includes(entry) ? result : [...result, entry],
+    deny,
+  );
+  if (
+    !Array.isArray(toolsConfig.deny)
+    || toolsConfig.deny.length !== requiredDeny.length
+    || toolsConfig.deny.some((entry, index) => entry !== requiredDeny[index])
+  ) {
+    toolsConfig.deny = requiredDeny;
     toolsModified = true;
   }
 
@@ -451,8 +462,16 @@ async function sanitizeConfig(
   const gatewayDeny = Array.isArray(gatewayTools.deny)
     ? gatewayTools.deny.filter((value): value is string => typeof value === 'string')
     : [];
-  if (!gatewayDeny.includes('skill_workshop')) {
-    gatewayTools.deny = [...gatewayDeny, 'skill_workshop'];
+  const requiredGatewayDeny = ['skill_workshop', 'web_search'].reduce<string[]>(
+    (result, entry) => result.includes(entry) ? result : [...result, entry],
+    gatewayDeny,
+  );
+  if (
+    !Array.isArray(gatewayTools.deny)
+    || gatewayTools.deny.length !== requiredGatewayDeny.length
+    || gatewayTools.deny.some((entry, index) => entry !== requiredGatewayDeny[index])
+  ) {
+    gatewayTools.deny = requiredGatewayDeny;
     gateway.tools = gatewayTools;
     config.gateway = gateway;
     modified = true;
