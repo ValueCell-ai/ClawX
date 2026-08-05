@@ -101,7 +101,7 @@ export function AcpImagePart({ part, className }: { part: ImageRenderPart; class
     <figure
       data-testid="acp-image-part"
       className={cn(
-        'group/acp-image relative inline-flex max-w-full overflow-hidden rounded-xl border border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/10',
+        'group/acp-image relative inline-flex w-fit max-w-full overflow-hidden rounded-xl border border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/10',
         className,
       )}
     >
