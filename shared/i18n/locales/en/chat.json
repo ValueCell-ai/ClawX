@@ -14,7 +14,7 @@
     "scrollToLatest": "Back to bottom",
     "toolbar": {
         "refresh": "Refresh chat",
-        "currentAgent": "Talking to {{agent}}",
+        "currentAgent": "{{agent}}",
         "workspace": "Workspace"
     },
     "generatedFiles": {
@@ -227,7 +227,7 @@
         "thinking": "Thinking…",
         "gatewayConnected": "connected",
         "gatewayStarting": "starting",
-        "gatewayStatus": "gateway {{state}} | port: {{port}} | pid: {{pid}}",
+        "gatewayStatus": "gateway {{state}}",
         "retryFailedAttachments": "Retry failed attachments",
         "workspacePrefix": "{{workspace}}",
         "workspacePickerTitle": "Select workspace folder",

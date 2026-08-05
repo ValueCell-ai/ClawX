@@ -29,7 +29,7 @@ vi.mock('@/stores/chat', () => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => ({
-      'toolbar.currentAgent': 'Talking to Main',
+      'toolbar.currentAgent': 'Main',
       'toolbar.refresh': 'Refresh',
       'toolbar.workspace': 'Workspace',
       'questionDirectory.title': 'Question directory',
@@ -55,6 +55,6 @@ describe('ChatToolbar', () => {
     renderToolbar();
 
     expect(screen.queryByRole('button', { name: 'Refresh' })).not.toBeInTheDocument();
-    expect(screen.getByText('Talking to Main')).toBeInTheDocument();
+    expect(screen.getByText('Main')).toBeInTheDocument();
   });
 });

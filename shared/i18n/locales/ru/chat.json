@@ -14,7 +14,7 @@
     "scrollToLatest": "Вернуться вниз",
     "toolbar": {
         "refresh": "Обновить чат",
-        "currentAgent": "Общение с {{agent}}",
+        "currentAgent": "{{agent}}",
         "workspace": "Рабочая область"
     },
     "generatedFiles": {
@@ -227,7 +227,7 @@
         "thinking": "Думаю…",
         "gatewayConnected": "подключён",
         "gatewayStarting": "запуск",
-        "gatewayStatus": "шлюз {{state}} | порт: {{port}} | PID: {{pid}}",
+        "gatewayStatus": "шлюз {{state}}",
         "retryFailedAttachments": "Повторить неудавшиеся вложения",
         "workspacePrefix": "{{workspace}}",
         "workspacePickerTitle": "Выберите папку рабочей области",

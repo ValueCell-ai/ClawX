@@ -14,7 +14,7 @@
     "scrollToLatest": "最下部に戻る",
     "toolbar": {
         "refresh": "チャットを更新",
-        "currentAgent": "現在の会話相手: {{agent}}",
+        "currentAgent": "{{agent}}",
         "workspace": "ワークスペース"
     },
     "generatedFiles": {
@@ -227,7 +227,7 @@
         "thinking": "考え中…",
         "gatewayConnected": "接続済み",
         "gatewayStarting": "起動中",
-        "gatewayStatus": "ゲートウェイ {{state}} | ポート: {{port}} | PID: {{pid}}",
+        "gatewayStatus": "ゲートウェイ {{state}}",
         "retryFailedAttachments": "失敗した添付を再試行",
         "workspacePrefix": "{{workspace}}",
         "workspacePickerTitle": "ワークスペースフォルダーを選択",

@@ -14,7 +14,7 @@
     "scrollToLatest": "回到底部",
     "toolbar": {
         "refresh": "刷新聊天",
-        "currentAgent": "当前对话对象：{{agent}}",
+        "currentAgent": "{{agent}}",
         "workspace": "工作空间"
     },
     "generatedFiles": {
@@ -227,7 +227,7 @@
         "thinking": "思考中…",
         "gatewayConnected": "已连接",
         "gatewayStarting": "启动中",
-        "gatewayStatus": "网关{{state}} ｜ 端口：{{port}} ｜ 进程 ID：{{pid}}",
+        "gatewayStatus": "网关{{state}}",
         "retryFailedAttachments": "重试失败的附件",
         "workspacePrefix": "{{workspace}}",
         "workspacePickerTitle": "选择工作空间文件夹",

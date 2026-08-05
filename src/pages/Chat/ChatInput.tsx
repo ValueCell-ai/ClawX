@@ -1307,8 +1307,6 @@ export function ChatInput({
                     : gatewayStatus.state === 'running'
                       ? t('composer.gatewayStarting')
                       : gatewayStatus.state,
-                  port: gatewayStatus.port,
-                  pid: gatewayStatus.pid ?? '',
                 })}
               </span>
               {chatComposerStatusComponents.map((Component, index) => (
