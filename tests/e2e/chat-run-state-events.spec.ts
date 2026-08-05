@@ -5,6 +5,7 @@ const MAIN_SESSION_KEY = 'agent:main:main';
 const MAIN_WORKSPACE = '/workspace';
 const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
 const IMAGE_GENERATION_TASK_ID = '32aa3a12-a05b-4074-af4e-246cc4a9a303';
+const SECOND_IMAGE_GENERATION_TASK_ID = '1c939d2e-e7ea-480e-9dcf-4080df479fa3';
 const ONE_PIXEL_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 const ONE_PIXEL_PNG_DATA_URL = `data:image/png;base64,${ONE_PIXEL_PNG_BASE64}`;
 const ONE_PIXEL_SVG_BASE64 = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><rect width="16" height="16" fill="black"/></svg>').toString('base64');
@@ -278,12 +279,16 @@ test.describe('ClawX chat run state events', () => {
   test('projects OpenClaw image-generation structured media into ACP Chat previews', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     const generatedPath = '/tmp/openclaw-generated-sky.png';
+    const secondGeneratedPath = '/tmp/openclaw-generated-dog.png';
 
     try {
       await installAcpChatMocks(
         app,
         { success: true, generation: 1 },
-        generatedImageHostApiMocks(generatedPath, 'e2e-live-generated-image'),
+        {
+          ...generatedImageHostApiMocks(generatedPath, 'e2e-live-generated-image'),
+          ...generatedImageHostApiMocks(secondGeneratedPath, 'e2e-second-live-generated-image'),
+        },
       );
       const page = await openChat(app);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
@@ -336,6 +341,46 @@ test.describe('ClawX chat run state events', () => {
       await expect(image).toHaveAttribute('src', ONE_PIXEL_PNG_DATA_URL);
       await expect(page.getByTestId('chat-composer-image-generation-indicator')).toHaveCount(0);
       await expect(page.getByTestId('image-preview-unavailable')).toHaveCount(0);
+
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'second-image-tool',
+        status: 'completed',
+        content: [{
+          type: 'content',
+          content: {
+            type: 'text',
+            text: `Background task started for image generation (${SECOND_IMAGE_GENERATION_TASK_ID}).`,
+          },
+        }],
+        locations: [],
+      }]);
+      await expect(page.getByTestId('chat-composer-image-generation-indicator')).toBeVisible();
+      await expect(page.getByText('Here is the exact sky scene you requested.')).toBeVisible();
+
+      await page.getByTestId('sidebar-new-chat').click();
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await expect(page.getByTestId('chat-composer-image-generation-indicator')).toBeVisible();
+      await expect(page.getByText('Here is the exact sky scene you requested.')).toBeVisible();
+      await expect(timeline.getByRole('img', { name: 'Image' })).toHaveCount(1);
+
+      await emitGatewayChatMessage(app, {
+        message: {
+          runId: `image_generate:${SECOND_IMAGE_GENERATION_TASK_ID}:ok`,
+          sessionKey: MAIN_SESSION_KEY,
+          state: 'final',
+          message: {
+            role: 'assistant',
+            content: [{
+              type: 'text',
+              text: `Here is the dog image you requested.\n\nMEDIA:${secondGeneratedPath}`,
+            }],
+          },
+        },
+      });
+      await expect(page.getByText('Here is the dog image you requested.')).toBeVisible();
+      await expect(timeline.getByRole('img', { name: 'Image' })).toHaveCount(2);
+      await expect(page.getByTestId('chat-composer-image-generation-indicator')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
