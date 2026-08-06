@@ -1773,6 +1773,143 @@ describe('ACP Chat store', () => {
     expect(useAcpChatSessionStore.getState().pendingImageGenerationTaskIds).toEqual([]);
   });
 
+  it('keeps an earlier generated image while a later image task survives reload and navigation', async () => {
+    const firstTaskId = '32aa3a12-a05b-4074-af4e-246cc4a9a303';
+    const secondTaskId = '1c939d2e-e7ea-480e-9dcf-4080df479fa3';
+    const replayResult = (generation: number) => ({
+      success: true,
+      generation,
+      sessionUpdates: [{
+        sessionKey: 'agent:pi:s1',
+        generation,
+        historical: true,
+        notification: {
+          sessionId: 'agent:pi:s1',
+          update: {
+            sessionUpdate: 'user_message',
+            messageId: 'replayed-user',
+            content: [{ type: 'text', text: 'Generate an image' }],
+          },
+        },
+      }],
+    });
+    hostApiMock.loadAcpSession
+      .mockResolvedValueOnce({ success: true, generation: 1 })
+      .mockResolvedValueOnce(replayResult(2))
+      .mockResolvedValueOnce({ success: true, generation: 3 })
+      .mockResolvedValueOnce(replayResult(4));
+    hostApiMock.mediaThumbnails.mockResolvedValueOnce({
+      '/tmp/cat.png': { preview: 'data:image/png;base64,cat123', fileSize: 67 },
+    });
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+
+    const recordStart = (taskId: string, toolCallId: string) => hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId,
+          status: 'completed',
+          content: [{
+            type: 'content',
+            content: {
+              type: 'text',
+              text: `Background task started for image generation (${taskId}).`,
+            },
+          }],
+        },
+      },
+    });
+    recordStart(firstTaskId, 'image-tool-cat');
+    hostEventsMock.gatewayChatMessageListener?.({
+      message: {
+        sessionKey: 'agent:pi:s1',
+        runId: `image_generate:${firstTaskId}:ok`,
+        message: {
+          role: 'toolresult',
+          toolName: 'message',
+          details: { mediaUrls: ['/tmp/cat.png'] },
+        },
+      },
+    });
+    await vi.waitFor(() => expect(
+      useAcpChatSessionStore.getState().timeline.itemOrder.filter(
+        (id) => id.startsWith('compat:image-generation:'),
+      ),
+    ).toHaveLength(1));
+    const catImageItemId = useAcpChatSessionStore.getState().timeline.itemOrder.find(
+      (id) => id.startsWith('compat:image-generation:'),
+    )!;
+
+    recordStart(secondTaskId, 'image-tool-dog');
+    hostEventsMock.permissionListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      requestId: 'stale-permission',
+      request: {
+        sessionId: 'agent:pi:s1',
+        toolCall: { toolCallId: 'permission-tool', title: 'Old permission', status: 'pending' },
+        options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }],
+      },
+    });
+    expect(useAcpChatSessionStore.getState().pendingImageGenerationTaskIds).toEqual([secondTaskId]);
+
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+    expect(useAcpChatSessionStore.getState().timeline.itemOrder).toContain(catImageItemId);
+    expect(useAcpChatSessionStore.getState().timeline.itemOrder).toContain('replayed-user:0');
+    expect(useAcpChatSessionStore.getState().timeline.itemOrder).not.toContain('permission:stale-permission');
+
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s2', workspaceRoot: '/repo-2', cwd: '/repo-2',
+    });
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+    expect(useAcpChatSessionStore.getState().timeline.itemOrder).toContain(catImageItemId);
+    expect(useAcpChatSessionStore.getState().pendingImageGenerationTaskIds).toEqual([secondTaskId]);
+
+    const reload = createDeferred<ReturnType<typeof replayResult>>();
+    hostApiMock.loadAcpSession.mockReturnValueOnce(reload.promise);
+    hostApiMock.mediaThumbnails.mockResolvedValueOnce({
+      '/tmp/dog.png': { preview: 'data:image/png;base64,dog123', fileSize: 68 },
+    });
+    const reloadPromise = useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+    await vi.waitFor(() => expect(useAcpChatSessionStore.getState().loading).toBe(true));
+    const attachmentCallCount = hostApiMock.resolveAttachment.mock.calls.length;
+    hostEventsMock.gatewayChatMessageListener?.({
+      message: {
+        sessionKey: 'agent:pi:s1',
+        runId: `image_generate:${secondTaskId}:ok`,
+        message: {
+          role: 'toolresult',
+          toolName: 'message',
+          details: { mediaUrls: ['/tmp/dog.png'] },
+        },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(hostApiMock.resolveAttachment).toHaveBeenCalledTimes(attachmentCallCount);
+
+    reload.resolve(replayResult(5));
+    await expect(reloadPromise).resolves.toBe(true);
+    await vi.waitFor(() => expect(
+      useAcpChatSessionStore.getState().timeline.itemOrder.filter(
+        (id) => id.startsWith('compat:image-generation:'),
+      ),
+    ).toHaveLength(2));
+    expect(useAcpChatSessionStore.getState().pendingImageGenerationTaskIds).toEqual([]);
+  });
+
   it('records image-generation start detection trace entries', async () => {
     const taskId = '0d2ee919-2dfd-4b72-9da3-d87e6ee56747';
     const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();

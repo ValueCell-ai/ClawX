@@ -16,6 +16,7 @@ touchedAreas:
   - src/stores/acp-chat-session.ts
   - src/pages/Chat/index.tsx
   - src/pages/Chat/ChatInput.tsx
+  - src/pages/Chat/AcpImagePart.tsx
   - tests/unit/acp-image-generation-compat.test.ts
   - tests/unit/acp-reducer.test.ts
   - tests/unit/acp-chat-store.test.ts
@@ -64,6 +65,8 @@ acceptance:
   - Duplicate completion records do not create duplicate assistant image replies.
   - Live background image generation shows its dedicated generating label until its success or failure completion is projected, without changing the existing sending/thinking behavior.
   - Switching conversations preserves each live image-generation pending state and restores its indicator on return.
+  - Previously rendered generated images remain visible while a later image-generation task is pending, including across session reloads and navigation.
+  - Completion evidence received during a session reload is projected after the new load generation is active instead of being overwritten or dropped as stale.
   - Completion evidence received while the image conversation is inactive is deferred to that conversation, and a second prompt cannot be sent until the image task settles.
   - Stale preview resolution does not append to a different active session or generation.
 docs:

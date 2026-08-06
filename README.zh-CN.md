@@ -189,8 +189,8 @@ pnpm dev
 
 如果系统语言在支持列表中，向导会默认选中该语言；否则回退到英文。
 
-> Moonshot（Kimi）说明：ClawX 默认保持开启 Kimi 的 web search。  
-> 当配置 Moonshot 后，ClawX 也会将 OpenClaw 配置中的 Kimi web search 同步到中国区端点（`https://api.moonshot.cn/v1`）。
+> Web search 说明：ClawX 会在 Agent 和 Gateway 两层策略中禁用 OpenClaw 的通用 `web_search` 工具。
+> 这也包括 Moonshot（Kimi）搜索；受管浏览器自动化和 `web_fetch` 仍然可用。
 
 ### 代理设置
 
