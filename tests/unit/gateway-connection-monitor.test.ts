@@ -18,7 +18,7 @@ describe('GatewayConnectionMonitor heartbeat', () => {
     vi.setSystemTime(new Date('2026-03-19T00:00:00.000Z'));
   });
 
-  it('terminates only after consecutive heartbeat misses reach threshold', () => {
+  it('invokes the timeout callback only after consecutive heartbeat misses reach threshold', () => {
     const monitor = new GatewayConnectionMonitor();
     const sendPing = vi.fn();
     const onHeartbeatTimeout = vi.fn();

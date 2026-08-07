@@ -98,4 +98,4 @@ The local HTML Preview privileged bridge is also Main-owned: Renderer may load a
 
 Gateway session-catalog subscription, normalization, ordered list/event replay, attention transitions, and reconnect recovery are documented in `harness/reference/sidebar-session-attention.md`.
 
-Gateway WebSocket heartbeat misses are diagnostic availability signals only. They may mark health unresponsive, but must not terminate the socket or replace the Gateway process; authoritative process-exit and socket-close signals retain automatic lifecycle recovery ownership.
+Gateway WebSocket heartbeat misses are diagnostic availability signals for the first nine consecutive misses and must not interrupt long-running work during that window. A pong or any incoming Gateway message resets the sequence. On the tenth consecutive miss, Main may request the guarded Gateway restart path when auto-recovery is enabled and lifecycle state is still running; the heartbeat callback must not directly terminate the socket or process. Authoritative process-exit and socket-close signals retain their existing automatic lifecycle paths.

@@ -44,4 +44,4 @@ docs:
   required: true
 ---
 
-Use this task spec for the first-stage heartbeat safety change. It deliberately does not add active-work tracking or a new automatic hard-restart policy.
+Historical first-stage heartbeat safety task. Its observability-only recovery policy is superseded by `restore-gateway-heartbeat-recovery-after-ten-misses`, which keeps the first nine misses diagnostic-only and permits guarded recovery on the tenth consecutive miss.

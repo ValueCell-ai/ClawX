@@ -196,7 +196,7 @@ export class GatewayManager extends EventEmitter {
   private reconnectSuccessTotal = 0;
   private static readonly HEARTBEAT_INTERVAL_MS = 60_000;
   private static readonly HEARTBEAT_TIMEOUT_MS = 30_000;
-  private static readonly HEARTBEAT_MAX_MISSES = 4;
+  private static readonly HEARTBEAT_MAX_MISSES = 10;
   public static readonly RESTART_COOLDOWN_MS = 5_000;
   private static readonly GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS = [1_500, 3_000, 5_000, 8_000, 12_000, 30_000] as const;
   private lastRestartAt = 0;
@@ -1135,7 +1135,7 @@ export class GatewayManager extends EventEmitter {
   }
 
   /**
-   * Observe Gateway control-plane responsiveness without owning process recovery.
+   * Observe Gateway control-plane responsiveness and recover after a sustained outage.
    */
   private startPing(): void {
     this.connectionMonitor.startPing({
@@ -1150,11 +1150,19 @@ export class GatewayManager extends EventEmitter {
       onHeartbeatTimeout: ({ consecutiveMisses, timeoutMs }) => {
         this.recordHeartbeatTimeout(consecutiveMisses);
         const pid = this.process?.pid ?? 'unknown';
+        const shouldAttemptRecovery = this.shouldReconnect && this.status.state === 'running';
         logger.warn(
           `Gateway heartbeat: ${consecutiveMisses} consecutive pong misses ` +
-            `(timeout=${timeoutMs}ms, pid=${pid}, state=${this.status.state}, autoReconnect=${this.shouldReconnect}). ` +
-            'No restart requested; relying on process exit and socket close recovery.',
+            `(timeout=${timeoutMs}ms, pid=${pid}, state=${this.status.state}, autoReconnect=${this.shouldReconnect}).`,
         );
+        if (!shouldAttemptRecovery) {
+          logger.warn('Gateway heartbeat recovery skipped (lifecycle is not in auto-recoverable running state)');
+          return;
+        }
+        logger.warn('Gateway heartbeat recovery: restarting persistently unresponsive gateway process');
+        void this.restart().catch((error) => {
+          logger.warn('Gateway heartbeat recovery failed:', error);
+        });
       },
     });
   }
