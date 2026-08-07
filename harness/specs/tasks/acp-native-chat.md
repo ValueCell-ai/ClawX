@@ -43,6 +43,7 @@ touchedAreas:
   - README.ja-JP.md
 expectedUserBehavior:
   - Opening a Chat session loads history through ACP session/load replay.
+  - The ACP child receives the authoritative ClawX Gateway token through its private process environment, so history replay does not depend on a separately resolved config token.
   - Sending a Chat prompt uses ACP session/prompt, shows an optimistic user segment, and coalesces it with the ACP user echo.
   - Thinking, tool calls, permission requests, plans, generated files, and generated images appear as inline timeline blocks in ACP event order.
   - Renderer does not call Gateway HTTP or WebSocket endpoints directly.
@@ -72,6 +73,7 @@ requiredTests:
   - pnpm run comms:compare
 acceptance:
   - Main starts and reuses openclaw acp through a spawn-safe CLI spec and @agentclientprotocol/sdk ClientSideConnection.
+  - Main passes the Electron-store Gateway token to the local ACP child with `OPENCLAW_GATEWAY_TOKEN`, without placing the token in CLI arguments or Renderer state.
   - Main forwards ACP SessionNotification envelopes and permission request envelopes without translating text, thinking, tools, or media into legacy Chat events.
   - Renderer reduces ACP notifications into an in-memory ordered timeline.
   - No ClawX ACP replay ledger, Chat history cache, or reduced timeline persistence is introduced.

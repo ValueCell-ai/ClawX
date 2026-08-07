@@ -32,8 +32,16 @@ const loggerMock = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
+const storeMock = vi.hoisted(() => ({
+  getSetting: vi.fn(),
+}));
+
 vi.mock('@electron/utils/logger', () => ({
   logger: loggerMock,
+}));
+
+vi.mock('@electron/utils/store', () => ({
+  getSetting: storeMock.getSetting,
 }));
 
 vi.mock('@agentclientprotocol/sdk', () => ({
@@ -143,6 +151,7 @@ describe('AcpChatService', () => {
     vi.clearAllMocks();
     acpSdkMock.state.connectionForSpawn = undefined;
     childProcessMock.state.child = undefined;
+    storeMock.getSetting.mockResolvedValue('clawx-test-gateway-token');
   });
 
   it('forks the embedded OpenClaw entry for ACP instead of spawning a public CLI wrapper', async () => {
@@ -166,6 +175,26 @@ describe('AcpChatService', () => {
           OPENCLAW_NO_RESPAWN: '1',
           OPENCLAW_EMBEDDED_IN: 'ClawX',
           OPENCLAW_EXEC_SHELL_SNAPSHOT: '0',
+        }),
+      }),
+    );
+  });
+
+  it('passes the authoritative ClawX Gateway token to the ACP child environment', async () => {
+    const { service } = await createSpawnedService();
+
+    await expect(service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' })).resolves.toEqual({
+      success: true,
+      generation: 1,
+    });
+
+    expect(storeMock.getSetting).toHaveBeenCalledWith('gatewayToken');
+    expect(childProcessMock.fork).toHaveBeenCalledWith(
+      expect.stringContaining('openclaw.mjs'),
+      ['acp'],
+      expect.objectContaining({
+        env: expect.objectContaining({
+          OPENCLAW_GATEWAY_TOKEN: 'clawx-test-gateway-token',
         }),
       }),
     );

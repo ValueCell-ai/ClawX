@@ -228,7 +228,7 @@ ClawXは、**デュアルプロセス + Host API 統一アクセス**構成を�
 
 OpenClaw の設定配信も Electron Main が一元管理します。Gateway の実行中は `config.get` の正規スナップショットを基準にし、変更を `config.set` でコミットします。Gateway が停止中または起動中の場合は、同じコーディネーターが解決済みの JSON5 設定ファイルだけを更新し、Gateway を起動しません。そのため、通常の Provider、Agent、Channel、バインディング、Skill、モデル変更では Gateway プロセスを置き換えません。完全な再起動は、プロキシなどのプロセス起動環境の変更とユーザーによる明示的な操作に限定されます。確認済みのプロセス終了と WebSocket 切断では、既存の自動再接続経路が引き続き使用されます。WebSocket のハートビート欠落は診断とヘルス状態だけを更新し、Gateway プロセスを置き換えないため、pong 処理の遅延によって長時間実行中の処理が中断されることはありません。認証プロファイルを SQLite に書き込んだ後は OpenClaw の `secrets.reload` を呼び出し、実行中の Agent がプロセス再起動なしで新しい認証情報を読み取れるようにします。
 
-Chat は Electron Main が所有する ACP stdio bridge を使用します。Renderer は型付き host event を受け取り、メモリ上の ACP timeline を描画します。Gateway は providers、models、skills、workspace、settings、diagnostics、media configuration などの非 Chat 機能を引き続き担当します。
+Chat は Electron Main が所有する ACP stdio bridge を使用します。Main は同じアプリ管理 Gateway token をプライベートなプロセス環境経由でこのローカル子プロセスへ渡すため、runtime 設定の再読み込み後も ACP 履歴リプレイは認証された状態を維持します。Renderer は型付き host event を受け取り、メモリ上の ACP timeline を描画します。Gateway は providers、models、skills、workspace、settings、diagnostics、media configuration などの非 Chat 機能を引き続き担当します。
 
 別の会話やページを開いても、未完了の ACP 応答はストリーミングを継続します。完了前に戻ると最新のメモリ内 timeline が復元され、ライブ応答の表示が続きます。完了後は通常の ACP 履歴リプレイが引き続き唯一の正となります。
 

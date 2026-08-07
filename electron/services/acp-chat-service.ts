@@ -31,6 +31,7 @@ import { logger } from '../utils/logger';
 import { recordAcpTrace } from './acp-trace';
 import { AcpSessionAccessRegistry, type AcpSessionAccessContext } from './acp-session-access-registry';
 import { expandPath } from '../utils/paths';
+import { getSetting } from '../utils/store';
 
 type AcpConnection = Pick<ClientSideConnection, 'initialize' | 'newSession' | 'loadSession' | 'prompt' | 'cancel'>;
 type MainWindowLike = {
@@ -494,7 +495,7 @@ export class AcpChatService {
   }
 
   private async initializeConnectionOnce(attempt: number): Promise<AcpConnection> {
-    if (!this.connection) this.connection = this.spawnConnection();
+    if (!this.connection) this.connection = await this.spawnConnection();
     const connection = this.connection;
     const child = this.child;
 
@@ -549,9 +550,15 @@ export class AcpChatService {
     });
   }
 
-  private spawnConnection(): ClientSideConnection {
+  private async spawnConnection(): Promise<ClientSideConnection> {
+    const gatewayToken = await getSetting('gatewayToken');
     const spec = getOpenClawEmbeddedForkSpec(['acp']);
-    const forked = fork(spec.modulePath, spec.args, spec.options);
+    const forked = fork(spec.modulePath, spec.args, {
+      ...spec.options,
+      // ACP is a local Gateway client, so it must use the token that started
+      // this ClawX-owned Gateway instead of relying on config-file fallback.
+      env: { ...spec.options.env, OPENCLAW_GATEWAY_TOKEN: gatewayToken },
+    });
     if (!forked.stdin || !forked.stdout || !forked.stderr) {
       forked.kill();
       throw new Error('ACP process did not expose stdio pipes');
