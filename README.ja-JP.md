@@ -86,7 +86,7 @@ AIエージェントの構築にコマンドラインの習得は不要である
 - **🚀 自動起動設定**：**設定 → 一般** で **システム起動時に自動起動** を有効にできます。
 - **🔔 更新通知**：起動時に新しいバージョンを確認し、ダウンロードまたはインストールするかを選択できます。
 
-> 機能の詳細は [docs/en-US/features.md](docs/en-US/features.md) を参照してください。
+> 機能の詳細は [docs/ja-JP/features.md](docs/ja-JP/features.md) を参照してください。
 
 ### 主なユースケース
 
@@ -142,7 +142,7 @@ ClawXには、Electron、OpenClaw Gateway、Telegramなどのチャネルがロ�
 
 **設定 → Gateway → プロキシ**を開き、既定のプロキシ、バイパスルール、開発者モードでのHTTP・HTTPS・`ALL_PROXY` / SOCKSの上書きを設定します。ローカル設定の例は `http://127.0.0.1:7890` です。
 
-> プロキシのフォールバック動作、Telegramとの同期、**OpenClaw Doctor**については [docs/en-US/proxy-settings.md](docs/en-US/proxy-settings.md) を参照してください。
+> プロキシのフォールバック動作、Telegramとの同期、**OpenClaw Doctor**については [docs/ja-JP/proxy-settings.md](docs/ja-JP/proxy-settings.md) を参照してください。
 
 ## アーキテクチャ
 
@@ -153,7 +153,7 @@ ClawXは **Host API統一レイヤーを備えたデュアルプロセスアー�
 - **ACP Chat**：Chatは [ACP（Agent Client Protocol）](https://agentclientprotocol.com) をMainが所有するstdio bridge経由で使用し、設定リロード後の認証済み履歴リプレイ、ページ移動中のストリーミング、Mainが検証したメディア・添付ファイル・ファイルアクティビティに対応します。
 - **設計原則**：フロントエンドの単一入口、Mainによるトランスポート管理、再接続・タイムアウト・バックオフによるグレースフルリカバリ、安全なストレージ、CORSセーフな境界を採用しています。
 
-> プロセス図、設定の調整、ACPファイルアクティビティのセマンティクス、Gatewayのトラブルシューティングについては [docs/en-US/architecture.md](docs/en-US/architecture.md) を参照してください。
+> プロセス図、設定の調整、ACPファイルアクティビティのセマンティクス、Gatewayのトラブルシューティングについては [docs/ja-JP/architecture.md](docs/ja-JP/architecture.md) を参照してください。
 
 ## 開発
 
@@ -161,7 +161,7 @@ ClawXは **Host API統一レイヤーを備えたデュアルプロセスアー�
 
 - **Node.js**：対応するメジャー系列の22.22.3以上、24.15.0以上、または25.9.0以上（Node 24 LTS推奨）
 - **パッケージマネージャー**：pnpm 9以上（npmも対応）
-- **Linux（Ubuntu/Debian）**：Electronの実行前に必要なシステムライブラリをインストールしてください。詳細は [docs/en-US/development.md](docs/en-US/development.md) を参照してください。
+- **Linux（Ubuntu/Debian）**：Electronの実行前に必要なシステムライブラリをインストールしてください。詳細は [docs/ja-JP/development.md](docs/ja-JP/development.md) を参照してください。
 
 ### よく使うコマンド
 
@@ -176,7 +176,7 @@ pnpm build           # 本番ビルドを実行
 pnpm package         # 現在のプラットフォーム向けにパッケージ化（:mac / :win / :linux）
 ```
 
-> プロジェクト構成、完全なコマンド一覧、E2Eの並列実行ポリシー、パフォーマンス診断、通信回帰チェック、技術スタックについては [docs/en-US/development.md](docs/en-US/development.md) を参照してください。
+> プロジェクト構成、完全なコマンド一覧、E2Eの並列実行ポリシー、パフォーマンス診断、通信回帰チェック、技術スタックについては [docs/ja-JP/development.md](docs/ja-JP/development.md) を参照してください。
 
 ## コントリビューション
 
