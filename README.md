@@ -10,7 +10,6 @@
 </p>
 
 <p align="center">
-  <a href="#features">Features</a> •
   <a href="#why-clawx">Why ClawX</a> •
   <a href="#getting-started">Getting Started</a> •
   <a href="#architecture">Architecture</a> •
@@ -37,118 +36,64 @@
 
 ## Overview
 
-**ClawX** bridges the gap between powerful AI agents and everyday users. Built on top of [OpenClaw](https://github.com/OpenClaw), it transforms command-line AI orchestration into an accessible, beautiful desktop experience—no terminal required.
+**ClawX** bridges the gap between powerful AI agents and everyday users. Built on top of [OpenClaw](https://github.com/OpenClaw), it transforms command-line AI orchestration into an accessible, beautiful desktop experience - no terminal required.
 
 Whether you're automating workflows, managing AI-powered channels, or scheduling intelligent tasks, ClawX provides the interface you need to harness AI agents effectively.
 
-ClawX comes pre-configured with best-practice model providers and natively supports Windows as well as multi-language settings. Of course, you can also fine-tune advanced configurations via **Settings → Advanced → Developer Mode**.
+ClawX comes pre-configured with best-practice model providers and natively supports Windows as well as multi-language settings. You can also fine-tune advanced configurations via **Settings -> Advanced -> Developer Mode**.
 
 <p align="center"><strong style="font-size:1.1em; text-decoration: underline;">For a full enterprise edition, dedicated service support, or tailored deployment guidance for your business scenario, contact us at <a href="mailto:public@valuecell.ai">public@valuecell.ai</a>.</strong></p>
 
----
-## Screenshot
+## Screenshots
 
-<p align="center">
-  <img src="resources/screenshot/en/chat.png" style="width: 100%; height: auto;">
-</p>
-
-<p align="center">
-  <img src="resources/screenshot/en/cron.png" style="width: 100%; height: auto;">
-</p>
-
-<p align="center">
-  <img src="resources/screenshot/en/skills.png" style="width: 100%; height: auto;">
-</p>
-
-<p align="center">
-  <img src="resources/screenshot/en/channels.png" style="width: 100%; height: auto;">
-</p>
-
-<p align="center">
-  <img src="resources/screenshot/en/models.png" style="width: 100%; height: auto;">
-</p>
-
-<p align="center">
-  <img src="resources/screenshot/en/settings.png" style="width: 100%; height: auto;">
-</p>
-
----
+<table>
+  <tr>
+    <td align="center"><img src="resources/screenshot/en/chat.png" alt="Chat"><br><em>Chat</em></td>
+    <td align="center"><img src="resources/screenshot/en/cron.png" alt="Cron"><br><em>Scheduled tasks</em></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="resources/screenshot/en/skills.png" alt="Skills"><br><em>Skills</em></td>
+    <td align="center"><img src="resources/screenshot/en/channels.png" alt="Channels"><br><em>Channels</em></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="resources/screenshot/en/models.png" alt="Models"><br><em>Models</em></td>
+    <td align="center"><img src="resources/screenshot/en/settings.png" alt="Settings"><br><em>Settings</em></td>
+  </tr>
+</table>
 
 ## Why ClawX
 
-Building AI agents shouldn't require mastering the command line. ClawX was designed with a simple philosophy: **powerful technology deserves an interface that respects your time.**
+Building AI agents shouldn't require mastering the command line. ClawX was designed with a simple philosophy: **powerful technology deserves an interface that respects your time.** ClawX is built directly upon the official **OpenClaw** core. Instead of requiring a separate installation, we embed the runtime within the application for a seamless, battery-included experience. We stay closely aligned with upstream OpenClaw so you can benefit from the latest official capabilities, stability improvements, and ecosystem compatibility.
 
 | Challenge | ClawX Solution |
 |-----------|----------------|
-| Complex CLI setup | One-click installation with guided setup wizard |
+| Complex CLI setup | One-click installation with a guided setup wizard |
 | Configuration files | Visual settings with real-time validation |
-| Process management | Automatic gateway lifecycle management |
+| Process management | Automatic Gateway lifecycle management |
 | App updates | Startup update checks with a prompt before downloading or installing |
 | Multiple AI providers | Unified provider configuration panel |
-| Skill/plugin installation | Local-first skill management with optional extension-provided marketplace |
+| Skill/plugin installation | Local-first skill management with an optional extension-provided marketplace |
 
-### OpenClaw Inside
+### Features
 
-ClawX is built directly upon the official **OpenClaw** core. Instead of requiring a separate installation, we embed the runtime within the application to provide a seamless "battery-included" experience.
+- **🎯 Zero Configuration Barrier**: Complete setup through an intuitive graphical interface - no terminal commands, YAML files, or environment-variable hunting.
+- **💬 Intelligent Chat Interface**: Multi-session context and history, streaming Markdown with syntax highlighting, CJK-aware parsing, tables, KaTeX math, direct `@agent` routing, inline `/skill` cards, workspace-first sessions, and read-only previews for Markdown, `.docx`, `.pptx`, and local HTML.
+- **📡 Multi-Channel Management**: Configure and monitor independent AI channels with multiple accounts, per-account agent binding, default-account switching, and the bundled official Tencent personal WeChat channel plugin.
+- **⏰ Cron-Based Automation**: Define recurring or one-time schedules, insert skills into scheduled prompts, and deliver results to external channels.
+- **🧩 Extensible Skill System**: Manage skills locally without depending on the Gateway, discover skills from multiple OpenClaw sources, and use bundled document-processing skills for `pdf`, `xlsx`, `docx`, and `pptx`.
+- **🔐 Secure Provider Integration**: Connect OpenAI, Anthropic, Z.AI / GLM, and other providers with credentials stored in the native system keychain; supports OAuth, custom providers, image-generation endpoints, and compatibility fallbacks.
+- **🌙 Adaptive Theming**: Choose light mode, dark mode, or system-synchronized themes.
+- **🚀 Startup Launch Control**: Enable **Launch at system startup** in **Settings -> General**.
+- **🔔 Update Prompts**: Check for new versions at startup and choose whether to download or install them.
 
-We are committed to maintaining strict alignment with the upstream OpenClaw project, ensuring that you always have access to the latest capabilities, stability improvements, and ecosystem compatibility provided by the official releases.
+> For full feature details, see [docs/en-US/features.md](docs/en-US/features.md).
 
----
+### Typical Use Cases
 
-## Features
-
-### 🎯 Zero Configuration Barrier
-Complete the entire setup—from installation to your first AI interaction—through an intuitive graphical interface. No terminal commands, no YAML files, no environment variable hunting.
-
-### 💬 Intelligent Chat Interface
-Communicate with AI agents through a modern chat experience. Support for multiple conversation contexts, message history, assistant replies rendered as streaming Markdown with syntax-highlighted fenced code, CJK-aware parsing, GitHub-flavored tables, and KaTeX-powered LaTeX math (`$inline$`, `$$block$$`, `\(inline\)`, and `\[block\]`) while user input remains literal text, and direct `@agent` routing in the main composer for multi-agent setups. Fenced code preserves source line breaks, soft-wraps long lines, and provides a localized copy action after streaming completes.
-Skills you insert from the composer appear as `/skill-name` chips; click a chip to open the preview sidebar and read that skill's `SKILL.md`.
-When you target another agent with `@agent`, ClawX switches into that agent's own conversation context directly instead of relaying through the default agent. Agent workspaces stay separate by default, and stronger isolation depends on OpenClaw sandbox settings.
-The session sidebar is workspace-first: the default workspace stays at the top, other workspaces sort naturally, and each workspace can collapse or load more sessions. A row shows a spinner while the AI is replying, a blue dot when an unseen reply finishes, and its relative activity time after the conversation is opened; hovering still reveals row actions. Imported workspaces can be renamed from their sidebar header; the custom name is reflected in the chat composer while hovering the header still reveals the filesystem path. When available, a new chat inherits the selected conversation's workspace while remaining editable until first send. Editable new or unbound chats expose the composer workspace chip as a small menu that lists recent and known-session workspaces, returns to the default workspace, or chooses another folder. If a saved workspace folder was moved or deleted, Chat pauses session creation and prompts you to choose an existing folder instead of repeatedly retrying the missing path. Unavailable non-default groups are marked in the sidebar and can be removed after confirmation; this permanently deletes every session in that group. A session row is removed and navigation changes only after permanent deletion succeeds; failed deletions leave the conversation and confirmation open for retry. Synthetic OpenClaw UUID-date fallback titles are treated as missing only when they match the session ID, then replaced with the conversation's first user prompt instead of being persisted as the session name.
-Each agent can also override its own `provider/model` runtime setting; agents without overrides continue inheriting the global default model.
-
-The Workspace and Preview tabs in Chat's right panel provide read-only previews for Markdown, `.docx`, and `.pptx` files. Markdown file previews use the same syntax-highlighted, soft-wrapped, copyable fenced code, CJK-aware parsing, and KaTeX math support in static rendering mode. The Preview header can expand the selected file to the full ClawX viewport; use the same control or Escape to return to the panel. Legacy `.doc` and `.ppt` files continue to open through the operating system instead of inline. DOCX pagination may differ from Microsoft Word, and PPTX previews do not support animations, transitions, or media playback. Office files larger than 20 MB are not previewed inline.
-
-### Local HTML Preview
-The Chat right panel has Workspace, Preview, and Changes tabs; it no longer includes a general Web Browser, Home page, or address bar. Authorized local `.html` and `.htm` attachments, file activities, and Workspace files open in Preview by default. Their file actions let you choose the built-in Preview or a system application, and the Preview header can open the current HTML file in the system browser.
-
-All links are non-clickable. Links rendered by ClawX appear as ordinary text, and links inside HTML Preview have their styling and pointer interaction removed. HTML Preview also blocks forms, script navigation, redirects, hash navigation, popups, downloads, network requests, and device permissions. It can render self-contained local HTML but cannot leave the selected document.
-
-### 📡 Multi-Channel Management
-Configure and monitor multiple AI channels simultaneously. Each channel operates independently, allowing you to run specialized agents for different tasks.
-Each channel now supports multiple accounts, per-account agent binding, and switching the channel default account directly from the Channels page.
-For custom channel account IDs, ClawX enforces OpenClaw-compatible canonical IDs (`[a-z0-9_-]`, lowercase, max 64 chars, must start with a letter/number) to prevent routing mismatches.
-ClawX now also bundles Tencent's official personal WeChat channel plugin, so you can link WeChat directly from the Channels page with an in-app QR flow.
-
-### ⏰ Cron-Based Automation
-Schedule AI tasks to run automatically. Define triggers, set intervals, and let your AI agents work around the clock without manual intervention.
-The Cron page now lets you configure external delivery directly in the task form with separate sender-account and recipient-target selectors. For supported channels, recipient targets are discovered automatically from channel directories or known session history, so you no longer need to edit `jobs.json` by hand. The task message field also supports inserting skills with the same inline `/skill` token syntax as the main chat composer (scoped to the selected agent), so scheduled prompts can trigger skills directly. The schedule picker is split into **Recurring** and **Once** tabs: Recurring offers Hourly, Daily, Weekdays, Weekly, and Custom (raw cron) frequencies with inline time/weekday controls, while Once runs the task a single time at a chosen date (with weekday shown) and time. One-time tasks must be scheduled for a future moment and are automatically removed by the runtime once they finish.
-
-
-### 🧩 Extensible Skill System
-Extend your AI agents with pre-built skills. The integrated Skills page is local-first: it scans managed/workspace skill directories, lets you enable or disable skills without depending on the Gateway, and can optionally expose an extension-provided marketplace in enterprise builds.
-ClawX also pre-bundles full document-processing skills (`pdf`, `xlsx`, `docx`, `pptx`), deploys them automatically to the managed skills directory (default `~/.openclaw/skills`) on startup, and enables them by default on first install.
-The Skills page can display skills discovered from multiple OpenClaw sources (managed dir, workspace, and extra skill dirs), and now shows each skill's actual location so you can open the real folder directly. For bundled OpenClaw skills, community builds now ship and expose only `skill-creator`; non-allowlisted bundled skills are physically trimmed in both dev and packaged startup, and any stale `openclaw.json` entries left behind for those removed bundled skills are pruned.
-
-### 🔐 Secure Provider Integration
-Connect to multiple AI providers (OpenAI, Anthropic, Z.AI / GLM, and more) with credentials stored securely in your system's native keychain. OpenAI supports both API key and browser OAuth (Codex subscription) sign-in.
-In developer mode, the dedicated Image Generation page supports an independent OpenAI-compatible image-generation endpoint (Base URL, API key, and model name such as `gpt-image-2`) so image generation can use a dedicated `/v1/images/generations` service while chat continues using the normal OpenAI provider.
-For **Custom** providers used with OpenAI-compatible gateways, you can set a custom `User-Agent` in **Settings → AI Providers → Edit Provider** for compatibility-sensitive endpoints.
-When you edit or switch providers, ClawX preserves existing per-model capability metadata such as `input: ["text", "image"]`. Newly selected Custom-provider models use OpenClaw onboarding-compatible image-input inference, with unknown models defaulting to text-only.
-Custom-provider model rows also receive an explicit `contextWindow` (inferred from the model family, e.g. `gpt-5.x` → 272k), and rows saved by older versions are backfilled on startup, so OpenClaw can compact long sessions before they fail with "Context overflow" errors. When you have no compaction config, ClawX seeds `agents.defaults.compaction.mode = "safeguard"` and `reserveTokensFloor = 50000`; rows or configs you authored yourself are never modified (except a missing `reserveTokensFloor` may be backfilled).
-Z.AI (CN / Global) maps to OpenClaw's built-in `zai` provider (`ZAI_API_KEY`). Default model is `glm-5.2`. Use the Code Plan preset for Coding Plan endpoints (`…/api/coding/paas/v4`) or the normal API endpoints (`…/api/paas/v4`); CN and Global are mutually exclusive because they share one OpenClaw runtime key.
-When a compatible gateway rejects `/models` for non-auth reasons, ClawX automatically falls back to a lightweight `/chat/completions` or `/responses` probe using the configured model during API key validation.
-
-### 🌙 Adaptive Theming
-Light mode, dark mode, or system-synchronized themes. ClawX adapts to your preferences automatically.
-
-### 🚀 Startup Launch Control
-In **Settings → General**, you can enable **Launch at system startup** so ClawX starts automatically after login.
-
-### 🔔 Update Prompts
-ClawX can automatically check for new versions on startup. When an update is available, it shows an in-app prompt; downloading and installing only happen after you choose the action.
-
----
+- **🤖 Personal AI Assistant**: Configure a general-purpose AI agent to answer questions, draft emails, summarize documents, and help with everyday tasks from a clean desktop interface.
+- **📊 Automated Monitoring**: Schedule agents to monitor news feeds, track prices, or watch for specific events, with results delivered to your preferred notification channel.
+- **💻 Developer Productivity**: Integrate AI into your development workflow for code review, documentation generation, and repetitive coding tasks.
+- **🔄 Workflow Automation**: Chain multiple skills into visual automation pipelines that process data, transform content, and trigger actions.
 
 ## Getting Started
 
@@ -177,294 +122,65 @@ pnpm run init
 # Start in development mode
 pnpm dev
 ```
+
 ### First Launch
 
 When you launch ClawX for the first time, the **Setup Wizard** will guide you through:
 
-1. **Language & Region** – Configure your preferred locale
-2. **AI Provider** – Add providers with API keys or OAuth (for providers that support browser/device login)
-3. **Skill Bundles** – Select pre-configured skills for common use cases
-4. **Verification** – Test your configuration before entering the main interface
+1. **Language & Region** - Configure your preferred locale
+2. **AI Provider** - Add providers with API keys or OAuth for providers that support browser or device login
+3. **Skill Bundles** - Select pre-configured skills for common use cases
+4. **Verification** - Test your configuration before entering the main interface
 
 The wizard preselects your system language when it is supported, and falls back to English otherwise.
 
-> Web search note: ClawX disables OpenClaw's general-purpose `web_search` tool at both the agent and Gateway policy layers.
-> This includes Moonshot (Kimi) search; managed browser automation and `web_fetch` remain available.
+> Web search note: ClawX disables OpenClaw's general-purpose `web_search` tool at both the agent and Gateway policy layers. This includes Moonshot (Kimi) search; managed browser automation and `web_fetch` remain available.
 
 ### Proxy Settings
 
-ClawX includes built-in proxy settings for environments where Electron, the OpenClaw Gateway, or channels such as Telegram need to reach the internet through a local proxy client.
+ClawX includes built-in proxy settings for Electron, the OpenClaw Gateway, and channels such as Telegram that need to reach the internet through a local proxy client.
 
-Open **Settings → Gateway → Proxy** and configure:
+Open **Settings -> Gateway -> Proxy** to configure the default proxy, bypass rules, and optional developer-mode overrides for HTTP, HTTPS, and `ALL_PROXY` / SOCKS. A local example is `http://127.0.0.1:7890`.
 
-- **Proxy Server**: the default proxy for all requests
-- **Bypass Rules**: hosts that should connect directly, separated by semicolons, commas, or new lines
-- In **Developer Mode**, you can optionally override:
-  - **HTTP Proxy**
-  - **HTTPS Proxy**
-  - **ALL_PROXY / SOCKS**
-
-Recommended local examples:
-
-```text
-Proxy Server: http://127.0.0.1:7890
-```
-Notes:
-
-- A bare `host:port` value is treated as HTTP.
-- If advanced proxy fields are left empty, ClawX falls back to `Proxy Server`.
-- Saving proxy settings reapplies Electron networking immediately and restarts the Gateway automatically.
-- ClawX also syncs the proxy to OpenClaw's Telegram channel config when Telegram is enabled.
-- Gateway restarts preserve an existing Telegram channel proxy if ClawX proxy is currently disabled.
-- To explicitly clear Telegram channel proxy from OpenClaw config, save proxy settings with proxy disabled.
-- In **Settings → Advanced → Developer**, you can run **OpenClaw Doctor** to execute `openclaw doctor --json` and inspect the diagnostic output without leaving the app.
-- On packaged Windows builds, the bundled `openclaw` CLI/TUI runs via the shipped `node.exe` entrypoint to keep terminal input behavior stable.
-
----
+> For proxy fallback behavior, Telegram synchronization, and **OpenClaw Doctor**, see [docs/en-US/proxy-settings.md](docs/en-US/proxy-settings.md).
 
 ## Architecture
 
-ClawX employs a **dual-process architecture** with a unified host API layer. The renderer talks to a single client abstraction, while Electron Main owns protocol selection and process lifecycle:
+ClawX uses a **dual-process architecture with a unified Host API layer**: the React renderer calls one client abstraction, while Electron Main owns protocol selection, Gateway lifecycle, and the ACP Chat stdio bridge.
 
-Electron Main also owns OpenClaw configuration delivery. While the Gateway is running, ClawX reads the authoritative `config.get` snapshot and commits changes with `config.set`; while it is stopped or starting, the same coordinator updates the resolved JSON5 config file without starting the Gateway. Ordinary provider, agent, channel, binding, skill, and model changes therefore do not replace the Gateway process. Full restarts remain for process-launch environment changes such as proxy settings and explicit user actions. Confirmed process exits and WebSocket closes retain their existing automatic reconnect paths. WebSocket heartbeat misses update diagnostics and health state but do not replace the Gateway process, so delayed pong handling cannot interrupt long-running work. Auth-profile SQLite updates use OpenClaw's `secrets.reload` RPC so running agents see new credentials without a process restart.
+- **Process model**: Electron Main owns the window, Gateway supervision, system integration, and updates; the OpenClaw Gateway provides AI orchestration, channel, and skill capabilities; the renderer does not access local endpoints directly.
+- **Configuration delivery**: Runtime changes use the authoritative `config.set` snapshot, so ordinary provider, agent, skill, and model changes do not replace the Gateway process; credentials are hot-reloaded through `secrets.reload`.
+- **ACP Chat**: Chat uses [ACP (Agent Client Protocol)](https://agentclientprotocol.com) through a Main-owned stdio bridge, supporting authenticated history replay after config reloads, streaming across navigation, and Main-validated media, attachments, and file activity.
+- **Design principles**: One frontend entry point, Main-owned transport, graceful recovery with reconnect/timeout/backoff, secure storage, and CORS-safe boundaries.
 
-Chat uses an ACP stdio bridge owned by Electron Main. Main passes the same app-managed Gateway token to this local child through its private environment, so ACP history replay remains authenticated when the runtime config reloads. Renderer receives typed host events and renders an in-memory ACP timeline. Gateway remains responsible for non-Chat capabilities such as providers, models, skills, workspace, settings, diagnostics, and media configuration.
-
-An unfinished ACP response keeps streaming when you open another conversation or page. Returning before it finishes restores the latest in-memory timeline and continues the live response; once it finishes, normal ACP history replay remains the source of truth.
-
-ACP assistant turns show whole-turn duration. Live timing follows the client-observed prompt lifecycle and survives in-app navigation; historical timing is derived in Electron Main from bounded OpenClaw transcript timestamps and only annotates a turn already restored by ACP replay.
-
-ACP Chat renders standard ACP resources as attachments. User-selected images appear as thumbnails with a filename hover overlay, while other available attachment cards show the filename and a muted, truncating source path. When the current OpenClaw ACP adapter omits assistant media, canonical persisted OpenClaw media facts and explicit assistant `MEDIA:` directives can also be recovered as attachment cards without displaying transcript-only metadata. Existing local file references, including paths outside the active workspace, are revalidated in Electron Main for the exact session and generation before every preview or open. Previewable local attachments produced by the AI, including `.docx` and `.pptx` files within the 20 MB inline-preview limit, keep their primary read-only in-app preview action and provide a secondary menu for opening with compatible applications or revealing the file in Finder, File Explorer, or the system file manager. For local HTML attachments, that menu starts with an action that opens the file in the right-side Preview tab. The same Office limitations apply here: `.doc` and `.ppt` remain system-open formats, DOCX pagination may differ from Microsoft Word, and PPTX animations, transitions, and media playback are unsupported. Compatible-application discovery is available only on macOS and Windows and silently degrades to reveal-only behavior on Linux or when discovery fails. Other local files, including Office files larger than 20 MB, open in the system application after a user click. User-selected folder attachments also remain available after send and open in the system file manager; ClawX does not read or preview their contents. Remote HTTP and HTTPS attachments open externally after a user click. Bare or inline prose paths without canonical media facts are not treated as attachments.
-
-ACP Chat can also display generated image previews when image-generation media is delivered by the runtime as trusted structured media. Trusted OpenClaw internal-UI deliveries and task-correlated final replies preserve the original user-facing completion text, including text-only failure explanations, rather than replacing it with a generic image caption. During historical OpenClaw replay, assistant image `MEDIA:` markers are promoted to the inline image experience only when they follow a recorded image-generation task start for that session. ClawX loads previews through host media handling in Electron Main, not arbitrary Renderer filesystem access. Standard ACP image and resource content remains the preferred path and renders directly.
-
-### ACP File Activity Semantics
-
-- File activity is projected from successful, completed OpenClaw `write`, `edit`, and `apply_patch` calls. Tool recognition follows the official OpenClaw Chat UI; filtering to completed calls is specific to ClawX.
-- Created and modified activity rows use the same file-card shell and **Open with** menu as previewable assistant attachments while retaining their status and optional `+/-` summary. For HTML files, the first menu item opens the file in the right-side Preview tab. Deleted rows keep only the **Changes** action. Every application-list, selected-application, and reveal request is independently revalidated in Electron Main from the workspace root and relative path; tool-derived paths never become attachments or expose canonical native paths to Renderer.
-- A `write` is shown as the tool declares it: a creation with an all-added diff, even if the path may already exist.
-- **Changes** is a chronological, session-level record of tool-declared activity. It is not Git output or a verified diff against a source baseline.
-- For each file, Changes renders at most one diff editor per assistant turn. Sequential fragments are composed when safe; independent fragments share one concatenated editor without claiming a complete-file baseline.
-- Side effects made by shell commands, scripts, users, or IDEs are not detected.
-- A full ACP replay can restore recorded file activity. If replay is incomplete, ClawX does not infer missing activity through fallback behavior.
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                        ClawX Desktop App                         │
-│                                                                  │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │              Electron Main Process                         │  │
-│  │  • Window & application lifecycle management               │  │
-│  │  • Gateway process supervision                             │  │
-│  │  • System integration (tray, notifications, keychain)      │  │
-│  │  • Auto-update orchestration                               │  │
-│  └────────────────────────────────────────────────────────────┘  │
-│                              │                                   │
-│                              │ IPC (authoritative control plane) │
-│                              ▼                                   │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │              React Renderer Process                        │  │
-│  │  • Modern component-based UI (React 19)                    │  │
-│  │  • State management with Zustand                           │  │
-│  │  • Unified host-api/api-client calls                       │  │
-│  │  • Markdown assistant replies, literal user input           │  │
-│  └────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────┬───────────────────────────────────┘
-                               │
-                               │ Typed IPC requests
-                               ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                Main Host Services & Gateway Manager              │
-│                                                                  │
-│  • host:invoke typed service dispatcher                          │
-│  • Settings, files, sessions, skills, providers, diagnostics     │
-│  • Main-owned Gateway WebSocket and process supervision          │
-└──────────────────────────────┬───────────────────────────────────┘
-                               │
-                               │ Main-owned WebSocket
-                               ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                     OpenClaw Gateway                             │
-│                                                                  │
-│  • AI agent runtime and orchestration                            │
-│  • Message channel management                                    │
-│  • Skill/plugin execution environment                            │
-│  • Provider abstraction layer                                    │
-└──────────────────────────────────────────────────────────────────┘
-```
-### Design Principles
-
-- **Process Isolation**: The AI runtime operates in a separate process, ensuring UI responsiveness even during heavy computation
-- **Single Entry for Frontend Calls**: Renderer requests go through host-api/api-client; protocol details are hidden behind a stable interface
-- **Main-Process Transport Ownership**: Electron Main owns the ACP Chat stdio bridge and Gateway transports; the renderer talks to Main over typed IPC
-- **Extension IPC Contributions**: Main-process extensions contribute host-api actions through the typed IPC registry instead of HTTP routes
-- **Graceful Recovery**: Built-in reconnect, timeout, and backoff logic handles transient failures automatically
-- **Secure Storage**: API keys and sensitive data leverage the operating system's native secure storage mechanisms
-- **CORS-Safe by Design**: The renderer does not call local Gateway or Host API HTTP endpoints directly
-
-### Process Model & Gateway Troubleshooting
-
-- ClawX is an Electron app, so **one app instance normally appears as multiple OS processes** (main/renderer/zygote/utility). This is expected.
-- Single-instance protection uses Electron's lock plus a local process-file lock fallback, preventing duplicate app launch in environments where desktop IPC/session bus is unstable.
-- During rolling upgrades, mixed old/new app versions can still have asymmetric protection behavior. For best reliability, upgrade all desktop clients to the same version.
-- The OpenClaw Gateway listener should still be **single-owner**: only one process should listen on `127.0.0.1:18789`.
-- Gateway readiness is based on OpenClaw core signals such as `system-presence`, `health`, and `status`; memory or channel failures are shown as capability degradation instead of global Gateway failure.
-- To verify the active listener:
-  - macOS/Linux: `lsof -nP -iTCP:18789 -sTCP:LISTEN`
-  - Windows (PowerShell): `Get-NetTCPConnection -LocalPort 18789 -State Listen`
-- Clicking the window close button (`X`) hides ClawX to tray; it does **not** fully quit the app. Use tray menu **Quit ClawX** for complete shutdown.
-
----
-
-## Use Cases
-
-### 🤖 Personal AI Assistant
-Configure a general-purpose AI agent that can answer questions, draft emails, summarize documents, and help with everyday tasks—all from a clean desktop interface.
-
-### 📊 Automated Monitoring
-Set up scheduled agents to monitor news feeds, track prices, or watch for specific events. Results are delivered to your preferred notification channel.
-
-### 💻 Developer Productivity
-Integrate AI into your development workflow. Use agents to review code, generate documentation, or automate repetitive coding tasks.
-
-### 🔄 Workflow Automation
-Chain multiple skills together to create sophisticated automation pipelines. Process data, transform content, and trigger actions—all orchestrated visually.
-
----
+> For the process diagram, configuration coordination, ACP file activity semantics, and Gateway troubleshooting, see [docs/en-US/architecture.md](docs/en-US/architecture.md).
 
 ## Development
 
 ### Prerequisites
 
 - **Node.js**: 22.22.3+, 24.15.0+, or 25.9.0+ within the corresponding supported major line (Node 24 LTS recommended)
-- **Package Manager**: pnpm 9+ (recommended) or npm
-- **Linux (Ubuntu/Debian)**: Install required system libraries before running Electron:
-  ```bash
-  sudo apt-get install -y libnss3 libgtk-3-0 libxss1 libxtst6 libatspi2.0-0 libnotify4 xdg-utils
-  ```
-  On Ubuntu 24.04+, some packages use a `t64` suffix; run the above command and `apt` will automatically select the correct variant.
+- **Package Manager**: pnpm 9+ (npm is also supported)
+- **Linux (Ubuntu/Debian)**: Install required system libraries before running Electron; see [docs/en-US/development.md](docs/en-US/development.md)
 
-### Project Structure
-
-```ClawX/
-├── electron/                 # Electron Main Process
-│   ├── services/            # Typed host APIs, provider, secrets and runtime services
-│   │   ├── providers/       # Provider/account model sync logic
-│   │   └── secrets/         # OS keychain and secret storage
-│   ├── shared/              # Shared provider schemas/constants
-│   │   └── providers/
-│   ├── main/                # App entry, windows, IPC registration
-│   ├── gateway/             # OpenClaw Gateway process manager
-│   ├── preload/             # Secure IPC bridge
-│   └── utils/               # Utilities (storage, auth, paths)
-├── src/                      # React Renderer Process
-│   ├── lib/                 # Unified frontend API + error model
-│   ├── stores/              # Zustand stores (settings/chat/gateway)
-│   ├── components/          # Reusable UI components
-│   ├── pages/               # Setup/Dashboard/Chat/Channels/Skills/Cron/Settings
-│   ├── i18n/                # Localization resources
-│   └── types/               # TypeScript type definitions
-├── tests/
-│   ├── e2e/                 # Playwright Electron end-to-end smoke tests
-│   └── unit/                # Vitest unit/integration-like tests
-├── resources/                # Static assets (icons/images)
-└── scripts/                  # Build and utility scripts
-```
-### Available Commands
+### Common Commands
 
 ```bash
-# Development
-pnpm run init             # Install dependencies + download bundled binaries (uv, agent-browser)
-pnpm dev                  # Start with hot reload (auto-prepares bundled skills if missing)
-
-# Quality
-pnpm lint                 # Run ESLint
-pnpm typecheck            # TypeScript validation
-
-# Testing
-pnpm test                 # Run unit tests
-pnpm run test:e2e         # Run Electron E2E smoke tests with Playwright
-pnpm run test:e2e:headed  # Run Electron E2E tests with a visible window
-pnpm run perf:chat        # Capture synthetic Chat Renderer/Main CPU profiles
-pnpm run profile:main     # Launch the built app with Main inspector on port 9229
-pnpm run comms:replay     # Compute communication replay metrics
-pnpm run comms:baseline   # Refresh communication baseline snapshot
-pnpm run comms:compare    # Compare replay metrics against baseline thresholds
-
-# Build & Package
-pnpm run build:vite       # Build frontend only
-pnpm build                # Full production build (with packaging assets)
-pnpm package              # Package for current platform (includes bundled preinstalled skills)
-pnpm package:mac          # Package for macOS
-pnpm package:win          # Package for Windows
-pnpm package:linux        # Package for Linux
+pnpm run init        # Install dependencies and download bundled runtimes
+pnpm dev             # Start in development mode with hot reload
+pnpm lint            # Run ESLint
+pnpm typecheck       # TypeScript validation
+pnpm test            # Run unit tests
+pnpm run test:e2e    # Run Electron E2E smoke tests
+pnpm build           # Full production build
+pnpm package         # Package for the current platform (:mac / :win / :linux)
 ```
 
-On headless Linux, run Electron tests under a display server such as `xvfb-run -a pnpm run test:e2e`.
-
-Electron E2E functional specs use two Playwright workers by default both locally and in CI; set `CLAWX_E2E_WORKERS=<positive integer>` to tune the ordinary parallel lane for the machine. Tests that touch OS-global state use the one-worker `exclusive` project, and host performance profiles run alone afterward. New E2E tests are parallel by default; apply `E2E_EXCLUSIVE_TAG` from `tests/e2e/parallel-policy.ts` when a test uses the real clipboard or another machine-global resource.
-
-For a focused ordinary spec that does not need the exclusive prerequisite, run `pnpm exec playwright test <spec> --project=parallel --no-deps`.
-
-### Electron Performance Diagnostics
-
-`pnpm run perf:chat` runs isolated synthetic ACP workloads for streaming and for rich static Markdown sidebar/scroll interaction. It writes versioned metrics plus Renderer and Main CPU profiles under the Playwright `test-results/` directory. The Renderer profiles cover the production store/render path and frame pacing. The streaming Main profile measures Main-to-Renderer IPC fanout; the interaction Main profile shows whether Main remains idle while Renderer interactions run. Neither includes the upstream OpenClaw/ACP subprocess or GPU-process paths. Open a CPU profile in Chrome DevTools; the artifacts contain generated fixture text only and are not product telemetry. Results are hardware-dependent, so compare repeated runs on the same machine instead of applying one cross-platform absolute threshold.
-
-For a live Renderer recording, start development with `CLAWX_REMOTE_DEBUGGING_PORT=9223 pnpm dev` and attach Playwright or Chrome DevTools to `localhost:9223`. For a live Electron Main recording, run `pnpm run profile:main`, open `chrome://inspect`, configure `localhost:9229`, and select the Electron Main target. Leave `CLAWX_GATEWAY_WS_TRACE` unset unless WebSocket tracing itself is being measured.
-
-ClawX leaves Chromium hardware acceleration enabled by default so long documents, scrolling, and layout animations can use GPU compositing and rasterization. Chromium still honors the native `--disable-gpu` command-line switch as a troubleshooting fallback for a machine with a broken graphics driver.
-
-### Communication Regression Checks
-
-When a PR changes communication paths (gateway events, ACP Chat bridge send/receive flow, channel delivery, or transport fallback), run:
-
-```bash
-pnpm run comms:replay
-pnpm run comms:compare
-```
-
-`comms-regression` in CI enforces required scenarios and threshold checks.
-
-### Electron E2E Tests
-
-The Playwright Electron suite launches the packaged renderer and main process
-from `dist/` and `dist-electron/`, so it does not require manually running
-`pnpm dev` first.
-
-`pnpm run test:e2e` automatically:
-
-- builds the renderer and Electron bundles with `pnpm run build:vite`
-- starts Electron in an isolated E2E mode with a temporary `HOME`
-- uses a temporary ClawX `userData` directory
-- runs ordinary spec files concurrently while fencing OS-global and performance tests
-- skips heavy startup side effects such as gateway auto-start, bundled skill
-  installation, tray creation, and CLI auto-install
-
-The first two baseline specs cover:
-
-- first-launch setup wizard visibility on a fresh profile
-- skipping setup and navigating to the Models page inside the Electron app
-
-Add future Electron flows under `tests/e2e/` and reuse the shared fixture in
-`tests/e2e/fixtures/electron.ts`. Keep tests parallel-safe by avoiding fixed writable paths, ports, native keychains, and other external shared state; use `E2E_EXCLUSIVE_TAG` when isolation is not possible.
-### Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| Runtime | Electron 40+ |
-| UI Framework | React 19 + TypeScript |
-| Styling | Tailwind CSS + shadcn/ui |
-| State | Zustand |
-| Build | Vite + electron-builder |
-| Testing | Vitest + Playwright |
-| Animation | Framer Motion |
-| Icons | Lucide React |
-
----
+> For the project structure, complete command list, E2E parallel policy, performance diagnostics, communication regression checks, and tech stack, see [docs/en-US/development.md](docs/en-US/development.md).
 
 ## Contributing
 
-We welcome contributions from the community! Whether it's bug fixes, new features, documentation improvements, or translations—every contribution helps make ClawX better.
+We welcome contributions from the community! Whether it's bug fixes, new features, documentation improvements, or translations, every contribution helps make ClawX better.
 
 ### How to Contribute
 
@@ -481,19 +197,15 @@ We welcome contributions from the community! Whether it's bug fixes, new feature
 - Update documentation as needed
 - Keep commits atomic and descriptive
 
----
-
 ## Acknowledgments
 
 ClawX is built on the shoulders of excellent open-source projects:
 
-- [OpenClaw](https://github.com/OpenClaw) – The AI agent runtime
-- [Electron](https://www.electronjs.org/) – Cross-platform desktop framework
-- [React](https://react.dev/) – UI component library
-- [shadcn/ui](https://ui.shadcn.com/) – Beautifully designed components
-- [Zustand](https://github.com/pmndrs/zustand) – Lightweight state management
-
----
+- [OpenClaw](https://github.com/OpenClaw) - The AI agent runtime
+- [Electron](https://www.electronjs.org/) - Cross-platform desktop framework
+- [React](https://react.dev/) - UI component library
+- [shadcn/ui](https://ui.shadcn.com/) - Beautifully designed components
+- [Zustand](https://github.com/pmndrs/zustand) - Lightweight state management
 
 ## Community
 
@@ -503,17 +215,13 @@ Join our community to connect with other users, get support, and share your expe
 | :---: | :---: | :---: |
 | <img src="src/assets/community/wecom-qr.png" width="150" alt="WeChat QR Code" /> | <img src="src/assets/community/feishu-qr.png" width="150" alt="Feishu QR Code" /> | <img src="src/assets/community/20260212-185822.png" width="150" alt="Discord QR Code" /> |
 
-### ClawX Partner Program 🚀
+### ClawX Partner Program
 
 We're launching the ClawX Partner Program and looking for partners who can help introduce ClawX to more clients, especially those with custom AI agent or automation needs.
 
-Partners help connect us with potential users and projects, while the ClawX team provides full technical support, customization, and integration.
-
-If you work with clients interested in AI tools or automation, we'd love to collaborate.
+Partners help connect us with potential users and projects, while the ClawX team provides full technical support, customization, and integration. If you work with clients interested in AI tools or automation, we'd love to collaborate.
 
 DM us or email [public@valuecell.ai](mailto:public@valuecell.ai) to learn more.
-
----
 
 ## Star History
 
@@ -521,13 +229,11 @@ DM us or email [public@valuecell.ai](mailto:public@valuecell.ai) to learn more.
   <img src="https://api.star-history.com/svg?repos=ValueCell-ai/ClawX&type=Date" alt="Star History Chart" />
 </p>
 
----
-
 ## License
 
 ClawX is released under the [MIT License](LICENSE). You're free to use, modify, and distribute this software.
 
----
+<hr>
 
 <p align="center">
   <sub>Built with ❤️ by the ValueCell Team</sub>

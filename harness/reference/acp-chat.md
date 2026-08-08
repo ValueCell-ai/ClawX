@@ -21,6 +21,12 @@ session/update -> Main routing envelope -> Renderer reducer -> timeline -> React
 
 Gateway remains responsible for non-Chat capabilities. Renderer Chat does not call ordinary Gateway `chat.history` or `chat.send`, and Main has no Chat-history polling, coalescing, or backpressure specialization. Generic Gateway RPC requests retain Main-owned validation and timeout handling before direct `GatewayManager.rpc` dispatch. Restricted Gateway host-event evidence may supplement asynchronous image-generation completion, but it is not a source for ordinary Chat messages or tool history.
 
+## ACP Semantic Authority
+
+For every Chat semantic and context exposed by ACP, ACP is the preferred authority, not only for `session/load` history. This includes session identity and routing where applicable, workspace and execution `cwd`, prompt and timeline state, and standard resource or attachment semantics. When ACP provides the value or event, Main and Renderer must use it rather than substitute Gateway snapshots, transcript inference, local configuration, or a parallel projection.
+
+An ACP bypass is allowed only when upstream has no equivalent capability. The exception must be narrow, bounded, session- and generation-scoped, and documented with its rationale, source of truth, limits, reconciliation behavior, and removal condition in a Harness reference or rule. It must never become a second semantic authority.
+
 ## Identity And Race Protection
 
 Renderer-visible session identity is the OpenClaw Gateway session key. Main may hold a different ACP session id returned by `newSession`; it rewrites downstream routing to the matching Gateway session key. Loads on the shared ACP connection are serialized. A routing envelope carries the session key and the Main-owned generation token for the matching load or live prompt. Renderer uses a separate local request sequence to reject stale load completions; preparing a local-only session must not advance the ACP generation. Renderer ignores updates, permission requests, and asynchronous hydration results whose session or generation matches neither the selected session nor a retained live prompt. Generation is an in-memory race token rather than a durable sequence; Main may restore the previous value when a load fails, so code must compare it together with session and current-operation state rather than assume global monotonicity.

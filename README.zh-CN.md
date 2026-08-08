@@ -10,7 +10,6 @@
 </p>
 
 <p align="center">
-  <a href="#功能特性">功能特性</a> •
   <a href="#为什么选择-clawx">为什么选择 ClawX</a> •
   <a href="#快速上手">快速上手</a> •
   <a href="#系统架构">系统架构</a> •
@@ -45,39 +44,25 @@ ClawX 预置了最佳实践的模型供应商配置，原生支持 Windows 平�
 
 <p align="center"><strong style="font-size:1.1em; text-decoration: underline;">如需完整的企业版、专属服务支持或面向您业务场景的定制化落地辅导，请联系 <a href="mailto:public@valuecell.ai">public@valuecell.ai</a>。</strong></p>
 
----
-
 ## 截图预览
 
-<p align="center">
-  <img src="resources/screenshot/zh/chat.png" style="width: 100%; height: auto;">
-</p>
-
-<p align="center">
-  <img src="resources/screenshot/zh/cron.png" style="width: 100%; height: auto;">
-</p>
-
-<p align="center">
-  <img src="resources/screenshot/zh/skills.png" style="width: 100%; height: auto;">
-</p>
-
-<p align="center">
-  <img src="resources/screenshot/zh/channels.png" style="width: 100%; height: auto;">
-</p>
-
-<p align="center">
-  <img src="resources/screenshot/zh/models.png" style="width: 100%; height: auto;">
-</p>
-
-<p align="center">
-  <img src="resources/screenshot/zh/settings.png" style="width: 100%; height: auto;">
-</p>
-
----
-
+<table>
+  <tr>
+    <td align="center"><img src="resources/screenshot/zh/chat.png" alt="Chat"><br><em>聊天界面</em></td>
+    <td align="center"><img src="resources/screenshot/zh/cron.png" alt="Cron"><br><em>定时任务</em></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="resources/screenshot/zh/skills.png" alt="Skills"><br><em>技能管理</em></td>
+    <td align="center"><img src="resources/screenshot/zh/channels.png" alt="Channels"><br><em>频道管理</em></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="resources/screenshot/zh/models.png" alt="Models"><br><em>模型配置</em></td>
+    <td align="center"><img src="resources/screenshot/zh/settings.png" alt="Settings"><br><em>设置</em></td>
+  </tr>
+</table>
 ## 为什么选择 ClawX
 
-构建 AI 智能体不应该需要精通命令行。ClawX 的设计理念很简单：**强大的技术值得拥有一个尊重用户时间的界面。**
+构建 AI 智能体不应该需要精通命令行。ClawX 的设计理念很简单：**强大的技术值得拥有一个尊重用户时间的界面**。ClawX 直接基于官方 OpenClaw 核心构建。无需单独安装，我们将运行时嵌入应用内部，提供开箱即用的无缝体验，并致力于与上游 OpenClaw 项目保持严格同步，确保你始终可以使用官方发布的最新功能、稳定性改进和生态兼容性。
 
 | 痛点 | ClawX 解决方案 |
 |------|----------------|
@@ -88,68 +73,26 @@ ClawX 预置了最佳实践的模型供应商配置，原生支持 Windows 平�
 | 多 AI 供应商切换 | 统一的供应商配置面板 |
 | 技能/插件安装复杂 | 内置技能市场与管理界面 |
 
-### 内置 OpenClaw 核心
+### 功能特性
 
-ClawX 直接基于官方 **OpenClaw** 核心构建。无需单独安装，我们将运行时嵌入应用内部，提供开箱即用的无缝体验。
+- **🎯 零配置门槛**：从安装到第一次 AI 对话，全程指引式图形界面，无需终端命令、YAML 配置或环境变量。
+- **💬 智能聊天界面**：多会话上下文与历史记录，流式 Markdown 渲染（语法高亮、CJK 排版、表格、KaTeX 公式）、`@agent` 直接路由与 `/技能` 内联卡片，工作空间优先的会话侧边栏，以及 Markdown、`.docx`、`.pptx` 和本地 HTML 的只读预览。
+- **📡 多频道管理**：同时配置和监控多个 AI 频道，每个频道独立运行并支持多账号；内置腾讯官方个人微信渠道插件。
+- **⏰ 定时任务自动化**：可视化定义触发器与时间间隔，让 AI 智能体 7×24 小时自动运行；支持周期（每小时/每天/工作日/每周/自定义 cron）与单次执行，并可将结果自动投递到外部频道。
+- **🧩 可扩展技能系统**：本地优先的技能管理，扫描托管与 workspace 技能目录，无需依赖 Gateway 即可启用或停用技能；预装文档处理技能（`pdf`、`xlsx`、`docx`、`pptx`）。
+- **🔐 安全的供应商集成**：支持 OpenAI、Anthropic、Z.AI / GLM 等供应商，凭证经系统原生密钥链安全存储；提供自定义 Provider、OAuth 登录、图像生成端点与兼容网关的降级探测。
+- **🌙 自适应主题**：支持浅色、深色与跟随系统主题。
+- **🚀 开机启动控制**：在 设置 → 通用 中开启开机自动启动。
+- **🔔 更新提示**：启动时自动检查新版本，由你决定是否下载或安装更新。
 
-我们致力于与上游 OpenClaw 项目保持严格同步，确保你始终可以使用官方发布的最新功能、稳定性改进和生态兼容性。
+> 对于功能细节的完整说明，请参阅 [docs/zh-CN/features.md](docs/zh-CN/features.md)。
 
----
+### 典型使用场景
 
-## 功能特性
-
-### 🎯 零配置门槛
-从安装到第一次 AI 对话，全程通过直观的图形界面完成。无需终端命令，无需 YAML 文件，无需到处寻找环境变量。
-
-### 💬 智能聊天界面
-通过现代化的聊天体验与 AI 智能体交互。支持多会话上下文、消息历史记录，并以流式 Markdown 渲染智能体回复，支持带语法高亮的围栏代码块、面向中日韩文本的解析、GitHub 风格表格，以及由 KaTeX 渲染的 LaTeX 数学公式（`$行内$`、`$$块级$$`、`\(行内\)` 和 `\[块级\]`）；用户输入则始终按原始文本显示。同时支持在多 Agent 场景下通过主输入框中的 `@agent` 直接路由到目标智能体。围栏代码会保留源码换行、自动软换行，并在流式输出结束后提供本地化的复制操作。
-从输入框插入的技能会以 `/技能名` 卡片形式显示；点击卡片可在右侧预览栏打开并阅读该技能的 `SKILL.md`。
-当你使用 `@agent` 选择其他智能体时，ClawX 会直接切换到该智能体自己的对话上下文，而不是经过默认智能体转发。各 Agent 工作区默认彼此分离，但更强的运行时隔离仍取决于 OpenClaw 的 sandbox 配置。
-会话侧边栏现在以工作空间优先组织：默认工作空间固定在最上方，其它工作空间按自然顺序排列，每个工作空间都可折叠或继续加载更多会话。AI 回复期间，会话行显示加载指示器；未查看的回复完成后显示蓝点；打开会话后恢复显示相对活跃时间，悬停时仍会露出操作按钮。导入的工作空间可从侧边栏标题处重命名，新名称会同步显示在对话输入框下方，同时悬浮标题仍可查看文件系统路径。如果当前所选会话存在有效工作空间，新对话会继承该工作空间，并在首次发送前保持可编辑。对于可编辑的新对话或未绑定对话，输入框的工作空间卡片会打开一个小菜单，列出最近使用及现有会话中的工作空间，并可切回默认工作空间或选择其它目录。如果保存的工作空间文件夹已被移动或删除，Chat 会暂停创建会话并提示选择现有文件夹，而不会持续重试失效路径。不可用的非默认工作空间会在侧边栏显示标记，并可在确认后删除；该操作会永久删除分组中的全部会话。只有永久删除成功后，会话行才会移除且页面才会跳转；删除失败时会保留会话与确认框，方便重试。OpenClaw 生成的 UUID 加日期兜底标题只有在与该会话 ID 匹配时才会被视为缺失标题，随后改用会话的首条用户消息展示，而不会被持久化为会话名称。
-每个 Agent 还可以单独覆盖自己的 `provider/model` 运行时设置；未覆盖的 Agent 会继续继承全局默认模型。
-
-Chat 右侧面板的工作空间和预览选项卡支持以只读方式预览 Markdown、`.docx` 和 `.pptx` 文件。Markdown 文件预览以静态渲染模式提供相同的围栏代码语法高亮、软换行与复制操作、面向中日韩文本的解析和 KaTeX 数学公式支持。预览栏顶部可将当前文件展开至 ClawX 的整个可视区域；再次点击该按钮或按 Esc 即可返回侧栏。旧版 `.doc` 和 `.ppt` 文件不会在应用内预览，而是继续通过操作系统打开。DOCX 的分页效果可能与 Microsoft Word 不同；PPTX 预览不支持动画、切换效果或媒体播放。超过 20 MB 的 Office 文件不会在应用内预览。
-
-### 本地 HTML 预览
-Chat 右侧面板只包含工作空间、预览和变更，不再提供通用网页浏览器、主页或地址栏。已授权的本地 `.html` 和 `.htm` 附件、文件活动及工作空间文件默认在预览中打开。文件操作可以选择 ClawX 内置预览或系统应用，预览标题栏也可将当前 HTML 文件交给系统浏览器打开。
-
-所有链接都不可点击。ClawX 渲染的链接显示为普通文本，HTML 预览中的链接也会移除链接样式和指针交互。HTML 预览同时阻止表单、脚本跳转、重定向、页内跳转、弹窗、下载、网络请求和设备权限；它可以显示自包含的本地 HTML，但无法离开当前选中的文档。
-
-### 📡 多频道管理
-同时配置和监控多个 AI 频道。每个频道独立运行，允许你为不同任务运行专门的智能体。
-现在每个频道支持多个账号，并可在 Channels 页面直接完成账号绑定到 Agent 与默认账号切换。
-对于自定义频道账号 ID，ClawX 现在会强制校验 OpenClaw 兼容的规范格式（`[a-z0-9_-]`、小写、最长 64 位、且必须以字母或数字开头），避免路由匹配异常。
-ClawX 现在还内置了腾讯官方个人微信渠道插件，可直接在 Channels 页面通过内置二维码流程完成微信连接。
-
-### ⏰ 定时任务自动化
-调度 AI 任务自动执行。定义触发器、设置时间间隔，让 AI 智能体 7×24 小时不间断工作。
-现在定时任务页面已经可以直接配置外部投递，统一拆成“发送账号”和“接收目标”两个下拉选择。对于已支持的通道，接收目标会从通道目录能力或已知会话历史中自动发现，不需要再手动修改 `jobs.json`。任务的消息输入框也支持像主对话框那样以内联 `/skill` 令牌的方式插入技能（按所选智能体范围加载），让定时提示词可以直接触发技能。调度选择器现在分为**周期**和**单次**两个选项卡：周期支持每小时、每天、工作日、每周、自定义（原始 cron）等频率，并内置时间/星期选择；单次则在所选日期（显示星期）和时间执行一次。单次任务必须设置为未来时间，并会在执行完成后由运行时自动清除。
-
-
-### 🧩 可扩展技能系统
-通过预构建的技能扩展 AI 智能体的能力。集成的 Skills 页面采用“本地优先”方式：会扫描托管目录与 workspace 技能目录，并且无需依赖 Gateway 即可启用或停用技能；在企业扩展接管时，也可以显示扩展提供的 marketplace。
-ClawX 还会内置预装完整的文档处理技能（`pdf`、`xlsx`、`docx`、`pptx`），在启动时自动部署到托管技能目录（默认 `~/.openclaw/skills`），并在首次安装时默认启用。
-Skills 页面可展示来自多个 OpenClaw 来源的技能（托管目录、workspace、额外技能目录），并显示每个技能的实际路径，便于直接打开真实安装位置。对于 OpenClaw 自带的 bundled skills，社区版现在在打包产物里只保留并展示 `skill-creator`；开发模式和打包版启动时都会直接清理其它 bundled skill，同时把这些已删除 bundled skill 在 `openclaw.json` 中残留的旧配置一并移除。
-
-### 🔐 安全的供应商集成
-连接多个 AI 供应商（OpenAI、Anthropic、Z.AI / GLM 等），凭证安全存储在系统原生密钥链中。OpenAI 同时支持 API Key 与浏览器 OAuth（Codex 订阅）登录。
-在开发者模式下，独立的“图像生成”页面支持配置 OpenAI 兼容生图端点（Base URL、API Key 和模型名，例如 `gpt-image-2`），生图请求会走专用的 `/v1/images/generations` 服务，聊天仍继续使用正常的 OpenAI Provider。
-如果你通过 **自定义（Custom）Provider** 对接 OpenAI-compatible 网关，可以在 **设置 → AI Providers → 编辑 Provider** 中配置自定义 `User-Agent`，以提高兼容性。
-编辑或切换 Provider 时，ClawX 会保留已有的模型级能力元数据，例如 `input: ["text", "image"]`。新选择的自定义 Provider 模型会使用与 OpenClaw onboarding 一致的图片输入能力推断；未知模型默认按纯文本模型处理。
-自定义 Provider 的模型行还会写入显式的 `contextWindow`（按模型系列推断，例如 `gpt-5.x` → 272k），旧版本保存的模型行会在启动时自动回填，使 OpenClaw 能在长会话超限前主动压缩上下文，避免出现 "Context overflow" 报错。当你没有配置 compaction 时，ClawX 会默认写入 `agents.defaults.compaction.mode = "safeguard"` 和 `reserveTokensFloor = 50000`；你手动配置过的模型行或压缩配置永远不会被修改（仅可能回填缺失的 `reserveTokensFloor`）。
-Z.AI（国内站 / 国际站）会映射到 OpenClaw 内置的 `zai` 供应商（`ZAI_API_KEY`），默认模型为 `glm-5.2`。可通过 Code Plan 预设切换到编码套餐端点（`…/api/coding/paas/v4`），或使用普通 API 端点（`…/api/paas/v4`）；国内站与国际站互斥，因为它们共享同一个 OpenClaw 运行时 key。
-如果兼容网关的 `/models` 因非鉴权原因不可用，ClawX 会在校验 API Key 时使用已配置的模型，自动降级为轻量的 `/chat/completions` 或 `/responses` 探测。
-
-### 🌙 自适应主题
-支持浅色模式、深色模式或跟随系统主题。ClawX 自动适应你的偏好设置。
-
-### 🚀 开机启动控制
-在 **设置 → 通用** 中，你可以开启 **开机自动启动**，让 ClawX 在系统登录后自动启动。
-
-### 🔔 更新提示
-ClawX 可以在启动时自动检查新版本。发现更新后会显示应用内提示；只有在你选择操作后，才会下载或安装更新。
-
----
+- **🤖 个人 AI 助手**：配置一个通用 AI 智能体，可以回答问题、撰写邮件、总结文档并协助处理日常任务——全部通过简洁的桌面界面完成。
+- **📊 自动化监控**：设置定时智能体来监控新闻动态、追踪价格变动或监听特定事件，结果将推送到你偏好的通知渠道。
+- **💻 开发者效率工具**：将 AI 融入你的开发工作流，使用智能体进行代码审查、生成文档或自动化重复性编码任务。
+- **🔄 工作流自动化**：将多个技能串联起来，创建复杂的自动化流水线——处理数据、转换内容、触发操作，全部通过可视化方式编排。
 
 ## 快速上手
 
@@ -165,7 +108,7 @@ ClawX 可以在启动时自动检查新版本。发现更新后会显示应用�
 
 从 [Releases](https://github.com/ValueCell-ai/ClawX/releases) 页面下载适用于你平台的最新版本。
 
-#### 从源码构建
+#### 从源码开始
 
 ```bash
 # 克隆仓库
@@ -187,8 +130,6 @@ pnpm dev
 3. **技能包** – 选择适用于常见场景的预配置技能
 4. **验证** – 在进入主界面前测试你的配置
 
-如果系统语言在支持列表中，向导会默认选中该语言；否则回退到英文。
-
 > Web search 说明：ClawX 会在 Agent 和 Gateway 两层策略中禁用 OpenClaw 的通用 `web_search` 工具。
 > 这也包括 Moonshot（Kimi）搜索；受管浏览器自动化和 `web_fetch` 仍然可用。
 
@@ -198,247 +139,45 @@ ClawX 内置了代理设置，适用于需要通过本地代理客户端访问�
 
 打开 **设置 → 网关 → 代理**，配置以下内容：
 
-- **代理服务器**：所有请求默认使用的代理
+- **代理服务器**：所有请求默认使用的代理，填写例如 `http://127.0.0.1:7890`
 - **绕过规则**：需要直连的主机，使用分号、逗号或换行分隔
-- 在 **开发者模式** 下，还可以单独覆盖：
-  - **HTTP 代理**
-  - **HTTPS 代理**
-  - **ALL_PROXY / SOCKS**
+- 在 **开发者模式** 下，还可以单独覆盖：HTTP 代理、HTTPS 代理、ALL_PROXY / SOCKS
 
-本地代理的常见填写示例：
-
-```text
-代理服务器: http://127.0.0.1:7890
-```
-说明：
-
-- 只填写 `host:port` 时，会按 HTTP 代理处理。
-- 高级代理项留空时，会自动回退到“代理服务器”。
-- 保存代理设置后，Electron 网络层会立即重新应用代理，并自动重启 Gateway。
-- 如果启用了 Telegram，ClawX 还会把代理同步到 OpenClaw 的 Telegram 频道配置中。
-- 当 ClawX 代理处于关闭状态时，Gateway 的常规重启会保留已有的 Telegram 频道代理配置。
-- 如果你要明确清空 OpenClaw 中的 Telegram 代理，请在关闭代理后点一次“保存代理设置”。
-- 在 **设置 → 高级 → 开发者** 中，可以直接运行 **OpenClaw Doctor**，执行 `openclaw doctor --json` 并在应用内查看诊断输出。
-- 在 Windows 打包版本中，内置的 `openclaw` CLI/TUI 会通过随包分发的 `node.exe` 入口运行，以保证终端输入行为稳定。
-
----
+> 开发者模式覆盖项、Telegram 代理同步与 **OpenClaw Doctor** 等详细行为说明，请参阅 [docs/zh-CN/proxy-settings.md](docs/zh-CN/proxy-settings.md)。
 
 ## 系统架构
 
-ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用统一客户端抽象，协议选择与进程生命周期由 Electron 主进程统一管理：
+ClawX 采用 **双进程 + Host API 统一接入架构**：React 渲染进程只通过统一的 host-api/api-client 抽象与后端交互，协议选择、Gateway 生命周期与 ACP Chat stdio bridge 全部由 Electron 主进程统一管理。
 
-OpenClaw 配置交付也统一由 Electron Main 管理。Gateway 运行时，ClawX 以 `config.get` 返回的权威快照为基线，并通过 `config.set` 提交修改；Gateway 停止或启动中时，同一个协调器只更新解析后的 JSON5 配置文件，不会因此启动 Gateway。因此，普通的 Provider、Agent、Channel、绑定、Skill 和模型修改不会替换 Gateway 进程。完整重启仅保留给代理等进程启动环境变化和用户显式操作。已确认的进程退出与 WebSocket 关闭继续使用现有的自动重连路径。WebSocket 心跳缺失只更新诊断和健康状态，不会替换 Gateway 进程，因此延迟处理 pong 不会中断长时间运行的任务。认证配置写入 SQLite 后，ClawX 会调用 OpenClaw 的 `secrets.reload`，让运行中的 Agent 无需重启即可读取新凭据。
+- **进程模型**：Electron 主进程负责窗口、网关进程监控、系统集成与自动更新；OpenClaw Gateway 作为独立运行时进程提供 AI 编排、频道和技能能力；渲染层不直接访问本地端点。
+- **配置交付**：Gateway 运行时以 `config.set` 权威快照更新配置，普通 Provider/Agent/Skill 修改不会替换 Gateway 进程，只有进程环境变化或用户显式操作才会完整重启；凭据通过 `secrets.reload` 热更新。
+- **ACP Chat**：Chat UI 基于 ACP ([Agent Client Protocol](https://agentclientprotocol.com)) 与 OpenClaw 交互，从而在高速迭代的 OpenClaw 前找到相对稳定的聊天协议面。ACP 走 Main 持有的 stdio bridge，支持配置热重载后的历史回放认证、跨页面持续流式输出，以及由 Main 验证和加载的媒体/附件/文件活动（Changes）展示。
+- **设计原则**：前端调用单一入口、Main 掌控传输策略、优雅恢复（重连/超时/退避）、安全存储与 CORS 安全。
 
-Chat 使用由 Electron Main 持有的 ACP stdio bridge。Main 通过私有进程环境把同一份应用管理的 Gateway token 传给本地子进程，因此运行时配置重载后 ACP 历史回放仍能完成认证。Renderer 接收类型化 host events，并渲染内存中的 ACP timeline。Gateway 仍负责 providers、models、skills、workspace、settings、diagnostics 和 media configuration 等非 Chat 能力。
-
-打开其它会话或页面时，尚未完成的 ACP 回复仍会继续流式接收。若在回复完成前返回，ClawX 会恢复最新的内存 timeline 并继续显示实时输出；回复完成后，普通 ACP 历史回放仍是唯一事实来源。
-
-ACP assistant 回合会显示整轮耗时。Live 计时跟随客户端观测到的 prompt 生命周期，并在应用内导航后保持连续；历史耗时由 Electron Main 根据有界的 OpenClaw transcript 时间戳计算，而且只能标注 ACP 回放已经恢复出的回合。
-
-ACP Chat 会将标准 ACP resource 渲染为附件。用户选择的图片会显示为缩略图，并在悬停蒙层中显示文件名；其它可用的附件卡片会显示文件名，以及灰色、可截断的来源路径。当前 OpenClaw ACP adapter 遗漏 assistant 媒体时，OpenClaw 持久化的规范媒体事实和显式 assistant `MEDIA:` 指令也可恢复为附件卡片，且不会显示仅用于 transcript 的元数据。现有本地文件引用（包括当前 workspace 外的路径）在每次预览或打开前，都会由 Electron Main 按精确的 session 和 generation 重新验证。AI 生成且可预览的本地附件（包括不超过 20 MB 的 `.docx` 和 `.pptx` 文件）会保留主要的只读应用内预览操作，并提供次级菜单，可通过兼容应用打开，或在 Finder、文件资源管理器或系统文件管理器中显示。对于本地 HTML 附件，该菜单第一项会在右侧预览中打开文件。Office 预览在此处也有相同限制：`.doc` 和 `.ppt` 仍通过系统应用打开，DOCX 的分页效果可能与 Microsoft Word 不同，PPTX 的动画、切换效果和媒体播放不受支持。兼容应用发现仅在 macOS 和 Windows 上可用；在 Linux 上或发现失败时，会静默降级为仅显示文件位置。其它本地文件（包括超过 20 MB 的 Office 文件）会在用户点击后通过系统应用打开。用户选择的文件夹附件在发送后也会保持可用，点击后交给系统文件管理器打开；ClawX 不会读取或预览其中内容。远程 HTTP 和 HTTPS 附件会在用户点击后从外部打开。没有规范媒体事实佐证的普通文本裸路径或行内路径不会被当作附件。
-
-ACP Chat 也可在 runtime 以可信结构化媒体投递图像生成结果时显示生成图片预览。对于可信的 OpenClaw internal-UI 投递和与生图任务关联的最终回复，ClawX 会保留原始的用户可见完成文案，包括只有文本的失败说明，而不会统一替换成通用图片文案。历史 OpenClaw 回放中，assistant 的图片 `MEDIA:` 标记只有在同一会话已记录图像生成任务启动后才会进入内联图片体验。ClawX 通过 Electron Main 的主机媒体处理加载预览，而不是让 Renderer 任意访问文件系统。标准 ACP 图片和 resource 内容仍是首选路径，并会直接渲染。
-
-### ACP 文件活动语义
-
-- 文件活动由成功且已完成的 OpenClaw `write`、`edit` 和 `apply_patch` 调用投影而来。工具识别方式与 OpenClaw 官方 Chat UI 保持一致；仅接收已完成调用的筛选规则是 ClawX 特有的。
-- 已创建和已修改的活动行与可预览的 assistant 附件共用同一种文件卡片外壳和**打开方式**菜单，同时保留状态文字及可用的 `+/-` 统计。对于 HTML 文件，菜单第一项会在右侧**预览**中打开文件；已删除的活动行只保留 **Changes** 操作。应用列表、指定应用打开和显示文件位置都会由 Electron Main 根据 workspace 根目录与相对路径分别重新验证；工具路径不会因此变成附件，Renderer 也不会获得规范化系统路径。
-- `write` 按工具声明的语义显示：视为创建，并展示为全部新增的差异，即使该路径可能已经存在。
-- **Changes** 是按时间顺序记录工具声明活动的会话级记录，不是 Git 输出，也不是相对于已验证源码基线的差异。
-- 对每个文件，Changes 在每轮助手回复中最多展示一个 diff 编辑器。可安全串联的片段会合并，独立片段会拼接到同一个编辑器中，但不会被描述为基于完整文件基线的差异。
-- Shell 命令、脚本、用户或 IDE 产生的副作用不会被检测。
-- 完整的 ACP 回放可以恢复已记录的文件活动；如果回放不完整，ClawX 不会通过回退推断来补造缺失活动。
-
-```
-┌───────────────────────────────────────────────────────────────────┐
-│                        ClawX 桌面应用                              │
-│                                                                   │
-│  ┌─────────────────────────────────────────────────────────────┐  │
-│  │              Electron 主进程                                 │  │
-│  │  • 窗口与应用生命周期管理                                       │  │
-│  │  • 网关进程监控                                               │  │
-│  │  • 系统集成（托盘、通知、密钥链）                                │  │
-│  │  • 自动更新编排                                               │  │
-│  └─────────────────────────────────────────────────────────────┘  │
-│                              │                                    │
-│                              │ IPC (权威控制面)                     │
-│                              ▼                                    │
-│  ┌─────────────────────────────────────────────────────────────┐  │
-│  │              React 渲染进程                                  │  │
-│  │  • 现代组件化 UI（React 19）                                  │  │
-│  │  • Zustand 状态管理                                          │  │
-│  │  • 统一 host-api/api-client 调用                             │  │
-│  │  • 回复使用 Markdown，用户输入按原文显示                         │  │
-│  └────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────┬───────────────────────────────────┘
-                               │
-                               │ 类型化 IPC 请求
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                  主进程 Host Services 与 Gateway Manager          │
-│                                                                 │
-│  • host:invoke 类型化服务分发                                      │
-│  • 设置、文件、会话、技能、供应商、诊断服务                           │
-│  • 主进程持有 Gateway WebSocket 并负责进程监控                       │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-                               │ 主进程持有 WebSocket
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     OpenClaw 网关                                │
-│                                                                 │
-│  • AI 智能体运行时与编排                                           │
-│  • 消息频道管理                                                   │
-│  • 技能/插件执行环境                                               │
-│  • 供应商抽象层                                                   │
-└─────────────────────────────────────────────────────────────────┘
-```
-### 设计原则
-
-- **进程隔离**：AI 运行时在独立进程中运行，确保即使在高负载计算期间 UI 也能保持响应
-- **前端调用单一入口**：渲染层统一走 host-api/api-client，不感知底层协议细节
-- **主进程掌控传输策略**：ACP Chat stdio bridge 与 Gateway 传输都由 Electron Main 持有，渲染进程通过类型化 IPC 调用 Main
-- **扩展 IPC 贡献点**：主进程扩展通过类型化 IPC 注册表贡献 host-api action，而不是挂载 HTTP route
-- **优雅恢复**：内置重连、超时、退避逻辑，自动处理瞬时故障
-- **安全存储**：API 密钥和敏感数据利用操作系统原生的安全存储机制
-- **CORS 安全**：渲染进程不直接请求本地 Gateway 或 Host API HTTP 端点
-
-### 进程模型与 Gateway 排障
-
-- ClawX 基于 Electron，**单个应用实例出现多个系统进程是正常现象**（main/renderer/zygote/utility）。
-- 单实例保护同时使用 Electron 自带锁与本地进程文件锁回退机制，可在桌面会话总线异常时避免重复启动。
-- 滚动升级期间若新旧版本混跑，单实例保护仍可能出现不对称行为。为保证稳定性，建议桌面客户端尽量统一升级到同一版本。
-- 但 OpenClaw Gateway 监听应始终保持**单实例**：`127.0.0.1:18789` 只能有一个监听者。
-- Gateway readiness 以 OpenClaw 的 `system-presence`、`health`、`status` 等核心信号为准；memory 或频道失败会显示为能力降级，而不是全局 Gateway 故障。
-- 可用以下命令确认监听进程：
-  - macOS/Linux：`lsof -nP -iTCP:18789 -sTCP:LISTEN`
-  - Windows（PowerShell）：`Get-NetTCPConnection -LocalPort 18789 -State Listen`
-- 点击窗口关闭按钮（`X`）默认只是最小化到托盘，并不会完全退出应用。请在托盘菜单中选择 **Quit ClawX** 执行完整退出。
-
----
-
-## 使用场景
-
-### 🤖 个人 AI 助手
-配置一个通用 AI 智能体，可以回答问题、撰写邮件、总结文档并协助处理日常任务——全部通过简洁的桌面界面完成。
-
-### 📊 自动化监控
-设置定时智能体来监控新闻动态、追踪价格变动或监听特定事件。结果将推送到你偏好的通知渠道。
-
-### 💻 开发者效率工具
-将 AI 融入你的开发工作流。使用智能体进行代码审查、生成文档或自动化重复性编码任务。
-
-### 🔄 工作流自动化
-将多个技能串联起来，创建复杂的自动化流水线。处理数据、转换内容、触发操作——全部通过可视化方式编排。
-
----
+> 完整架构说明（进程图、配置协调、ACP 文件活动语义与 Gateway 排障）请参阅 [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md)。
 
 ## 开发指南
 
 ### 前置要求
 
-- **Node.js**：对应主版本范围内的 22.22.3+、24.15.0+ 或 25.9.0+（推荐 Node 24 LTS）
-- **包管理器**：pnpm 9+（推荐）或 npm
-- **Linux（Ubuntu/Debian）**：运行 Electron 前，请先安装所需系统库：
-  ```bash
-  sudo apt-get install -y libnss3 libgtk-3-0 libxss1 libxtst6 libatspi2.0-0 libnotify4 xdg-utils
-  ```
-  在 Ubuntu 24.04+ 上，部分软件包使用 `t64` 后缀，运行上述命令后 `apt` 会自动选择正确版本。
+- **Node.js**：22.22.3+ / 24.15.0+（推荐） / 25.9.0+
+- **包管理器**：pnpm 9+
+- **Linux（Ubuntu/Debian）**：运行 Electron 前需先安装系统库，见 [docs/zh-CN/development.md](docs/zh-CN/development.md)
 
-### 项目结构
-
-```ClawX/
-├── electron/                 # Electron 主进程
-│   ├── services/            # 类型化 Host API、Provider、Secrets 与运行时服务
-│   │   ├── providers/       # Provider/account 模型同步逻辑
-│   │   └── secrets/         # 系统钥匙串与密钥存储
-│   ├── shared/              # 共享 Provider schema/常量
-│   │   └── providers/
-│   ├── main/                # 应用入口、窗口、IPC 注册
-│   ├── gateway/             # OpenClaw 网关进程管理
-│   ├── preload/             # 安全 IPC 桥接
-│   └── utils/               # 工具模块（存储、认证、路径）
-├── src/                      # React 渲染进程
-│   ├── lib/                 # 前端统一 API 与错误模型
-│   ├── stores/              # Zustand 状态仓库（settings/chat/gateway）
-│   ├── components/          # 可复用 UI 组件
-│   ├── pages/               # Setup/Dashboard/Chat/Channels/Skills/Cron/Settings
-│   ├── i18n/                # 国际化资源
-│   └── types/               # TypeScript 类型定义
-├── tests/
-│   ├── e2e/                 # Playwright Electron 端到端冒烟测试
-│   └── unit/                # Vitest 单元/集成型测试
-├── resources/                # 静态资源（图标、图片）
-└── scripts/                  # 构建与工具脚本
-```
 ### 常用命令
 
 ```bash
-# 开发
-pnpm run init             # 安装依赖并下载捆绑二进制（uv、agent-browser）
-pnpm dev                  # 以热重载模式启动（若缺失会自动准备预装技能包）
-
-# 代码质量
-pnpm lint                 # 运行 ESLint 检查
-pnpm typecheck            # TypeScript 类型检查
-
-# 测试
-pnpm test                 # 运行单元测试
-pnpm run test:e2e         # 运行 Electron E2E 冒烟测试
-pnpm run test:e2e:headed  # 以可见窗口运行 Electron E2E 测试
-pnpm run perf:chat        # 采集合成 Chat 场景的 Renderer/Main CPU Profile
-pnpm run profile:main     # 启动构建产物并在 9229 端口调试 Main
-pnpm run comms:replay     # 计算通信回放指标
-pnpm run comms:baseline   # 刷新通信基线快照
-pnpm run comms:compare    # 将回放指标与基线阈值对比
-
-# 构建与打包
-pnpm run build:vite       # 仅构建前端
-pnpm build                # 完整生产构建（含打包资源）
-pnpm package              # 为当前平台打包（包含预装技能资源）
-pnpm package:mac          # 为 macOS 打包
-pnpm package:win          # 为 Windows 打包
-pnpm package:linux        # 为 Linux 打包
+pnpm run init        # 初始化开发环境（安装依赖并下载捆绑运行时）
+pnpm dev             # 以热重载模式启动
+pnpm lint            # ESLint 检查
+pnpm typecheck       # TypeScript 类型检查
+pnpm test            # 单元测试
+pnpm run test:e2e    # Electron E2E 冒烟测试
+pnpm build           # 完整生产构建
+pnpm package         # 为当前平台打包（可用 :mac / :win / :linux 后缀）
 ```
 
-在无头 Linux 环境下，Electron 测试需要显示服务；可使用 `xvfb-run -a pnpm run test:e2e`。
-
-Electron E2E 功能测试在本地和 CI 中默认使用两个 Playwright worker；可通过 `CLAWX_E2E_WORKERS=<正整数>` 按机器能力调整普通并行通道。访问操作系统全局状态的测试进入单 worker 的 `exclusive` project，主机性能采样则在功能测试结束后独占运行。新增 E2E 测试默认并行；若测试使用真实剪贴板或其他机器级共享资源，请应用 `tests/e2e/parallel-policy.ts` 中的 `E2E_EXCLUSIVE_TAG`。
-
-如果只需运行一个不依赖独占前置阶段的普通 spec，可使用 `pnpm exec playwright test <spec> --project=parallel --no-deps`。
-
-### Electron 性能诊断
-
-`pnpm run perf:chat` 会运行隔离的合成 ACP 负载，分别覆盖流式响应，以及富 Markdown 静态会话中的侧栏和滚动交互，并在 Playwright 的 `test-results/` 目录输出版本化指标与 Renderer/Main CPU Profile。Renderer Profile 覆盖生产 store/render 路径和帧节奏；流式 Main Profile 测量 Main 到 Renderer 的 IPC fanout，交互 Main Profile 用于确认 Renderer 交互期间 Main 是否保持空闲。两者都不包含上游 OpenClaw/ACP 子进程或 GPU 进程路径。CPU Profile 可直接用 Chrome DevTools 打开；其中只包含生成的测试文本，不会上报为产品遥测。性能数据依赖硬件，应在同一机器上多次运行后对比，不应使用统一的跨平台绝对阈值。
-
-录制真实 Renderer 时，使用 `CLAWX_REMOTE_DEBUGGING_PORT=9223 pnpm dev` 启动开发环境，再让 Playwright 或 Chrome DevTools 连接 `localhost:9223`。录制真实 Electron Main 时，运行 `pnpm run profile:main`，在 `chrome://inspect` 中配置 `localhost:9229` 并选择 Electron Main target。除非正在测量 WebSocket trace 本身，否则不要设置 `CLAWX_GATEWAY_WS_TRACE`。
-
-ClawX 默认保留 Chromium 硬件加速，使长文档、滚动和布局动画能够使用 GPU 合成与光栅化。若某台机器的显卡驱动存在问题，仍可使用 Chromium 原生的 `--disable-gpu` 命令行参数作为排障回退。
-
-### 通信回归检查
-
-当 PR 涉及通信链路（Gateway 事件、ACP Chat bridge 收发流程、Channel 投递、传输回退）时，建议执行：
-
-```bash
-pnpm run comms:replay
-pnpm run comms:compare
-```
-
-CI 中的 `comms-regression` 会校验必选场景与阈值。
-### 技术栈
-
-| 层级 | 技术 |
-|------|------|
-| 运行时 | Electron 40+ |
-| UI 框架 | React 19 + TypeScript |
-| 样式 | Tailwind CSS + shadcn/ui |
-| 状态管理 | Zustand |
-| 构建工具 | Vite + electron-builder |
-| 测试 | Vitest + Playwright |
-| 动画 | Framer Motion |
-| 图标 | Lucide React |
-
----
+> 项目结构、技术栈、完整命令列表、E2E 并行策略、性能诊断与通信回归检查等细节，请参阅 [docs/zh-CN/development.md](docs/zh-CN/development.md)。
 
 ## 参与贡献
 
@@ -447,10 +186,8 @@ CI 中的 `comms-regression` 会校验必选场景与阈值。
 ### 如何贡献
 
 1. **Fork** 本仓库
-2. **创建** 功能分支（`git checkout -b feature/amazing-feature`）
-3. **提交** 清晰描述的变更
-4. **推送** 到你的分支
-5. **创建** Pull Request
+2. **创建** 功能分支（`git checkout -b feature/amazing-feature`），进行开发
+3. **提交** 清晰描述的变更，**推送** 到你的分支，并**创建** Pull Request
 
 ### 贡献规范
 
@@ -459,7 +196,6 @@ CI 中的 `comms-regression` 会校验必选场景与阈值。
 - 按需更新文档
 - 保持提交原子化且描述清晰
 
----
 
 ## 致谢
 
@@ -471,7 +207,6 @@ ClawX 构建于以下优秀的开源项目之上：
 - [shadcn/ui](https://ui.shadcn.com/) – 精美设计的组件库
 - [Zustand](https://github.com/pmndrs/zustand) – 轻量级状态管理
 
----
 
 ## 社区
 
@@ -485,13 +220,10 @@ ClawX 构建于以下优秀的开源项目之上：
 
 我们正在启动 ClawX 合作伙伴计划，寻找能够帮助我们将 ClawX 介绍给更多客户的合作伙伴，尤其是那些有定制化 AI 智能体或自动化需求的客户。
 
-合作伙伴负责帮助我们连接潜在用户和项目，ClawX 团队则提供完整的技术支持、定制开发与集成服务。
-
-如果你服务的客户对 AI 工具或自动化方案感兴趣，欢迎与我们合作。
+合作伙伴负责帮助我们连接潜在用户和项目，ClawX 团队则提供完整的技术支持、定制开发与集成服务。如果你服务的客户对 AI 工具或自动化方案感兴趣，欢迎与我们合作。
 
 欢迎私信我们，或发送邮件至 [public@valuecell.ai](mailto:public@valuecell.ai) 了解更多。
 
----
 
 ## Stars 历史
 
@@ -499,13 +231,13 @@ ClawX 构建于以下优秀的开源项目之上：
   <img src="https://api.star-history.com/svg?repos=ValueCell-ai/ClawX&type=Date" alt="Stars 历史图表" />
 </p>
 
----
 
 ## 许可证
 
 ClawX 基于 [MIT 许可证](LICENSE) 发布。你可以自由地使用、修改和分发本软件。
 
----
+<hr>
+
 
 <p align="center">
   <sub>由 ValueCell 团队用 ❤️ 打造</sub>
