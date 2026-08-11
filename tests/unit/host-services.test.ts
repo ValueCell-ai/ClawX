@@ -820,7 +820,7 @@ describe('host services', () => {
     expect(migrateLegacyChannelWideBindingMock).not.toHaveBeenCalled();
   });
 
-  it('installs plugin, saves config, and ensures scoped binding without scheduling lifecycle work', async () => {
+  it('installs plugin, saves config, ensures scoped binding, and restarts a running Gateway', async () => {
     listAgentsSnapshotMock.mockResolvedValue({
       agents: [{ id: 'main', name: 'Main' }],
       defaultAgentId: 'main',
@@ -834,6 +834,7 @@ describe('host services', () => {
       getStatus: vi.fn(() => ({ state: 'running', port: 18789 })),
       debouncedRestart: vi.fn(),
       debouncedReload: vi.fn(),
+      restart: vi.fn().mockResolvedValue(undefined),
     };
     const { createChannelsApi } = await import('@electron/services/channels-api');
 
@@ -852,6 +853,29 @@ describe('host services', () => {
     expect(ensureScopedChannelBindingMock).toHaveBeenCalledWith('feishu', 'default');
     expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
+    expect(gatewayManager.restart).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps bundled Telegram on the native config reload path', async () => {
+    getChannelFormValuesMock.mockResolvedValue({ botToken: 'old-token', allowedUsers: '1' });
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state: 'running', port: 18789 })),
+      restart: vi.fn(),
+    };
+    const { createChannelsApi } = await import('@electron/services/channels-api');
+
+    await expect(createChannelsApi({ gatewayManager: gatewayManager as never }).saveConfig({
+      channelType: 'telegram',
+      accountId: 'default',
+      config: { botToken: 'new-token', allowedUsers: '1' },
+    })).resolves.toEqual({ success: true });
+
+    expect(saveChannelConfigMock).toHaveBeenCalledWith(
+      'telegram',
+      { botToken: 'new-token', allowedUsers: '1' },
+      'default',
+    );
+    expect(gatewayManager.restart).not.toHaveBeenCalled();
   });
 
   it('deletes agents by awaiting config commit then removing workspace without restarting', async () => {
@@ -1004,7 +1028,7 @@ describe('host services', () => {
     expect(gatewayManager.restart).not.toHaveBeenCalled();
   });
 
-  it('handles channel default, binding delete, enable, delete, login, and no-change without lifecycle work', async () => {
+  it('handles channel actions and restarts a running Gateway for a no-change plugin save', async () => {
     getChannelFormValuesMock.mockResolvedValue({ appId: 'same', appSecret: 'same-secret' });
     listAgentsSnapshotMock.mockResolvedValue({
       agents: [{ id: 'main', name: 'Main' }],
@@ -1042,7 +1066,7 @@ describe('host services', () => {
     expect(deleteChannelConfigMock).toHaveBeenCalledWith('feishu');
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
     expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
-    expect(gatewayManager.restart).not.toHaveBeenCalled();
+    expect(gatewayManager.restart).toHaveBeenCalledTimes(1);
   });
 
   it('does not register OAuth success restart listeners', () => {
@@ -1052,7 +1076,7 @@ describe('host services', () => {
     expect(source).not.toContain('debouncedRestart(8000)');
   });
 
-  it('persists successful WeChat login without scheduling lifecycle work', async () => {
+  it('persists successful WeChat login and restarts a running Gateway', async () => {
     startWeChatLoginSessionMock.mockResolvedValue({
       qrcodeUrl: 'https://example.com/qr',
       sessionKey: 'session-1',
@@ -1085,10 +1109,10 @@ describe('host services', () => {
 
     await vi.waitFor(() => {
       expect(saveChannelConfigMock).toHaveBeenCalledWith('wechat', { enabled: true }, 'wx-account');
+      expect(gatewayManager.restart).toHaveBeenCalledTimes(1);
     });
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
     expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
-    expect(gatewayManager.restart).not.toHaveBeenCalled();
   });
 
   it('returns diagnostics snapshot with channel view and log tails', async () => {

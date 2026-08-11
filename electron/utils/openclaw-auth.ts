@@ -534,20 +534,10 @@ const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] 
 const VALID_COMPACTION_MODES = new Set(['default', 'safeguard']);
 /** Matches OpenClaw's 200k+ context-window recommendation (see computeContextAwareReserveTokensFloor). */
 const DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR = 50_000;
-const BUILTIN_CHANNEL_IDS = new Set([
-  'discord',
-  'telegram',
-  'whatsapp',
-  'slack',
-  'signal',
-  'imessage',
-  'matrix',
-  'line',
-  'msteams',
-  'googlechat',
-  'mattermost',
-  'qqbot',
-]);
+// OpenClaw 2026.7.1 bundles these channel extensions. Discord, WhatsApp,
+// QQBot, and the remaining catalog channels are external plugins and their
+// explicit allowlist registrations must be preserved.
+const BUILTIN_CHANNEL_IDS = new Set(['telegram', 'imessage']);
 const OPTIONAL_PROVIDER_LIKE_BUNDLED_PLUGIN_IDS = new Set([
   'alibaba',
   'deepgram',
@@ -2946,8 +2936,27 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     }
 
     // ── plugins section ──────────────────────────────────────────────
+    // OpenClaw 2026.7.1 moved these formerly bundled channels to external
+    // plugins. Recover old channel-only configs before plugin sanitization.
+    let plugins = config.plugins;
+    if (!plugins && isPlainRecord(config.channels)) {
+      const channels = config.channels as Record<string, unknown>;
+      const externalChannelIds = ['discord', 'whatsapp', 'qqbot'].filter((channelId) => {
+        const section = channels[channelId];
+        return isPlainRecord(section) && section.enabled !== false && Object.keys(section).length > 0;
+      });
+      if (externalChannelIds.length > 0) {
+        plugins = {
+          enabled: true,
+          allow: externalChannelIds,
+          entries: Object.fromEntries(externalChannelIds.map((channelId) => [channelId, { enabled: true }])),
+        };
+        config.plugins = plugins;
+        modified = true;
+      }
+    }
+
     // Remove absolute paths in plugins that no longer exist or are bundled (preventing hardlink validation errors)
-    const plugins = config.plugins;
     if (plugins) {
       if (Array.isArray(plugins)) {
         const validPlugins: unknown[] = [];
@@ -3417,18 +3426,47 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         modified = true;
       }
 
-      // ── qqbot built-in channel cleanup ──────────────────────────
-      // OpenClaw 3.31 moved qqbot from a third-party plugin to a built-in
-      // channel.  Clean up legacy plugin entries (both bare "qqbot" and
-      // manifest-declared "openclaw-qqbot") from plugins.entries.
-      // plugins.allow is left untouched — having openclaw-qqbot there is harmless.
-      // The channel config under channels.qqbot is preserved and works
-      // identically with the built-in channel.
-      const QQBOT_PLUGIN_IDS = ['qqbot', 'openclaw-qqbot'] as const;
-      for (const qqbotId of QQBOT_PLUGIN_IDS) {
-        if (pEntries?.[qqbotId]) {
-          delete pEntries[qqbotId];
-          console.log(`[sanitize] Removed built-in channel plugin from plugins.entries: ${qqbotId}`);
+      // ── external channel plugin registration cleanup ────────────
+      // Channel account configuration belongs under channels.<id>. OpenClaw's
+      // PluginEntryConfig rejects ClawX's legacy accounts/defaultAccount mirror.
+      for (const pluginId of ['discord', 'whatsapp', 'qqbot'] as const) {
+        const pluginEntry = pEntries[pluginId];
+        if (!pluginEntry) continue;
+        if ('accounts' in pluginEntry) {
+          delete pluginEntry.accounts;
+          modified = true;
+        }
+        if ('defaultAccount' in pluginEntry) {
+          delete pluginEntry.defaultAccount;
+          modified = true;
+        }
+      }
+
+      // QQBot is an external @openclaw/qqbot plugin in OpenClaw 2026.7.1.
+      // Migrate the legacy manifest id and keep one canonical active entry.
+      const legacyQQBotId = 'openclaw-qqbot';
+      const legacyQQBotAllowIndex = allowArr.indexOf(legacyQQBotId);
+      if (legacyQQBotAllowIndex !== -1) {
+        allowArr.splice(legacyQQBotAllowIndex, 1);
+        modified = true;
+      }
+      if (pEntries[legacyQQBotId]) {
+        delete pEntries[legacyQQBotId];
+        modified = true;
+      }
+      const qqbotChannel = (config.channels as Record<string, Record<string, unknown>> | undefined)?.qqbot;
+      const isQQBotConfigured = Boolean(
+        qqbotChannel
+        && qqbotChannel.enabled !== false
+        && Object.keys(qqbotChannel).length > 0
+      );
+      if (isQQBotConfigured) {
+        if (!allowArr.includes('qqbot')) {
+          allowArr.push('qqbot');
+          modified = true;
+        }
+        if (!pEntries.qqbot || pEntries.qqbot.enabled !== true) {
+          pEntries.qqbot = { ...(pEntries.qqbot || {}), enabled: true };
           modified = true;
         }
       }
@@ -3509,12 +3547,6 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
             configuredBuiltIns.add(channelId);
           }
         }
-      }
-
-      if (pEntries.whatsapp) {
-        delete pEntries.whatsapp;
-        console.log('[sanitize] Removed legacy plugins.entries.whatsapp for built-in channel');
-        modified = true;
       }
 
       // Discover all bundled extension IDs so we can clean stale bundled

@@ -6,22 +6,18 @@
 /**
  * Supported channel types
  */
-export type ChannelType =
-  | 'whatsapp'
-  | 'wechat'
-  | 'dingtalk'
-  | 'telegram'
-  | 'discord'
-  | 'signal'
-  | 'feishu'
-  | 'wecom'
-  | 'imessage'
-  | 'matrix'
-  | 'line'
-  | 'msteams'
-  | 'googlechat'
-  | 'mattermost'
-  | 'qqbot';
+export const SUPPORTED_CHANNEL_TYPES = [
+  'telegram',
+  'discord',
+  'whatsapp',
+  'wechat',
+  'dingtalk',
+  'feishu',
+  'wecom',
+  'qqbot',
+] as const;
+
+export type ChannelType = (typeof SUPPORTED_CHANNEL_TYPES)[number];
 
 /**
  * Channel connection status
@@ -86,15 +82,8 @@ export const CHANNEL_ICONS: Record<ChannelType, string> = {
   dingtalk: '💬',
   telegram: '✈️',
   discord: '🎮',
-  signal: '🔒',
   feishu: '🐦',
   wecom: '💼',
-  imessage: '💬',
-  matrix: '🔗',
-  line: '🟢',
-  msteams: '👔',
-  googlechat: '💭',
-  mattermost: '💠',
   qqbot: '🐧',
 };
 
@@ -107,15 +96,8 @@ export const CHANNEL_NAMES: Record<ChannelType, string> = {
   dingtalk: 'DingTalk',
   telegram: 'Telegram',
   discord: 'Discord',
-  signal: 'Signal',
   feishu: 'Feishu / Lark',
   wecom: 'WeCom',
-  imessage: 'iMessage',
-  matrix: 'Matrix',
-  line: 'LINE',
-  msteams: 'Microsoft Teams',
-  googlechat: 'Google Chat',
-  mattermost: 'Mattermost',
   qqbot: 'QQ Bot',
 };
 
@@ -319,28 +301,6 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     ],
     isPlugin: true,
   },
-  signal: {
-    id: 'signal',
-    name: 'Signal',
-    icon: '🔒',
-    description: 'channels:meta.signal.description',
-    connectionType: 'token',
-    docsUrl: 'channels:meta.signal.docsUrl',
-    configFields: [
-      {
-        key: 'phoneNumber',
-        label: 'channels:meta.signal.fields.phoneNumber.label',
-        type: 'text',
-        placeholder: 'channels:meta.signal.fields.phoneNumber.placeholder',
-        required: true,
-      },
-    ],
-    instructions: [
-      'channels:meta.signal.instructions.0',
-      'channels:meta.signal.instructions.1',
-      'channels:meta.signal.instructions.2',
-    ],
-  },
   feishu: {
     id: 'feishu',
     name: 'Feishu / Lark',
@@ -374,195 +334,15 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
     ],
     isPlugin: true,
   },
-  imessage: {
-    id: 'imessage',
-    name: 'iMessage',
-    icon: '💬',
-    description: 'channels:meta.imessage.description',
-    connectionType: 'token',
-    docsUrl: 'channels:meta.imessage.docsUrl',
-    configFields: [
-      {
-        key: 'serverUrl',
-        label: 'channels:meta.imessage.fields.serverUrl.label',
-        type: 'text',
-        placeholder: 'channels:meta.imessage.fields.serverUrl.placeholder',
-        required: true,
-      },
-      {
-        key: 'password',
-        label: 'channels:meta.imessage.fields.password.label',
-        type: 'password',
-        placeholder: 'channels:meta.imessage.fields.password.placeholder',
-        required: true,
-      },
-    ],
-    instructions: [
-      'channels:meta.imessage.instructions.0',
-      'channels:meta.imessage.instructions.1',
-      'channels:meta.imessage.instructions.2',
-    ],
-  },
-  matrix: {
-    id: 'matrix',
-    name: 'Matrix',
-    icon: '🔗',
-    description: 'channels:meta.matrix.description',
-    connectionType: 'token',
-    docsUrl: 'channels:meta.matrix.docsUrl',
-    configFields: [
-      {
-        key: 'homeserver',
-        label: 'channels:meta.matrix.fields.homeserver.label',
-        type: 'text',
-        placeholder: 'channels:meta.matrix.fields.homeserver.placeholder',
-        required: true,
-      },
-      {
-        key: 'accessToken',
-        label: 'channels:meta.matrix.fields.accessToken.label',
-        type: 'password',
-        placeholder: 'channels:meta.matrix.fields.accessToken.placeholder',
-        required: true,
-      },
-    ],
-    instructions: [
-      'channels:meta.matrix.instructions.0',
-      'channels:meta.matrix.instructions.1',
-      'channels:meta.matrix.instructions.2',
-    ],
-    isPlugin: true,
-  },
-  line: {
-    id: 'line',
-    name: 'LINE',
-    icon: '🟢',
-    description: 'channels:meta.line.description',
-    connectionType: 'token',
-    docsUrl: 'channels:meta.line.docsUrl',
-    configFields: [
-      {
-        key: 'channelAccessToken',
-        label: 'channels:meta.line.fields.channelAccessToken.label',
-        type: 'password',
-        placeholder: 'channels:meta.line.fields.channelAccessToken.placeholder',
-        required: true,
-        envVar: 'LINE_CHANNEL_ACCESS_TOKEN',
-      },
-      {
-        key: 'channelSecret',
-        label: 'channels:meta.line.fields.channelSecret.label',
-        type: 'password',
-        placeholder: 'channels:meta.line.fields.channelSecret.placeholder',
-        required: true,
-        envVar: 'LINE_CHANNEL_SECRET',
-      },
-    ],
-    instructions: [
-      'channels:meta.line.instructions.0',
-      'channels:meta.line.instructions.1',
-      'channels:meta.line.instructions.2',
-    ],
-    isPlugin: true,
-  },
-  msteams: {
-    id: 'msteams',
-    name: 'Microsoft Teams',
-    icon: '👔',
-    description: 'channels:meta.msteams.description',
-    connectionType: 'token',
-    docsUrl: 'channels:meta.msteams.docsUrl',
-    configFields: [
-      {
-        key: 'appId',
-        label: 'channels:meta.msteams.fields.appId.label',
-        type: 'text',
-        placeholder: 'channels:meta.msteams.fields.appId.placeholder',
-        required: true,
-        envVar: 'MSTEAMS_APP_ID',
-      },
-      {
-        key: 'appPassword',
-        label: 'channels:meta.msteams.fields.appPassword.label',
-        type: 'password',
-        placeholder: 'channels:meta.msteams.fields.appPassword.placeholder',
-        required: true,
-        envVar: 'MSTEAMS_APP_PASSWORD',
-      },
-    ],
-    instructions: [
-      'channels:meta.msteams.instructions.0',
-      'channels:meta.msteams.instructions.1',
-      'channels:meta.msteams.instructions.2',
-      'channels:meta.msteams.instructions.3',
-    ],
-    isPlugin: true,
-  },
-  googlechat: {
-    id: 'googlechat',
-    name: 'Google Chat',
-    icon: '💭',
-    description: 'channels:meta.googlechat.description',
-    connectionType: 'webhook',
-    docsUrl: 'channels:meta.googlechat.docsUrl',
-    configFields: [
-      {
-        key: 'serviceAccountKey',
-        label: 'channels:meta.googlechat.fields.serviceAccountKey.label',
-        type: 'text',
-        placeholder: 'channels:meta.googlechat.fields.serviceAccountKey.placeholder',
-        required: true,
-      },
-    ],
-    instructions: [
-      'channels:meta.googlechat.instructions.0',
-      'channels:meta.googlechat.instructions.1',
-      'channels:meta.googlechat.instructions.2',
-      'channels:meta.googlechat.instructions.3',
-    ],
-  },
-  mattermost: {
-    id: 'mattermost',
-    name: 'Mattermost',
-    icon: '💠',
-    description: 'channels:meta.mattermost.description',
-    connectionType: 'token',
-    docsUrl: 'channels:meta.mattermost.docsUrl',
-    configFields: [
-      {
-        key: 'serverUrl',
-        label: 'channels:meta.mattermost.fields.serverUrl.label',
-        type: 'text',
-        placeholder: 'channels:meta.mattermost.fields.serverUrl.placeholder',
-        required: true,
-      },
-      {
-        key: 'botToken',
-        label: 'channels:meta.mattermost.fields.botToken.label',
-        type: 'password',
-        placeholder: 'channels:meta.mattermost.fields.botToken.placeholder',
-        required: true,
-      },
-    ],
-    instructions: [
-      'channels:meta.mattermost.instructions.0',
-      'channels:meta.mattermost.instructions.1',
-      'channels:meta.mattermost.instructions.2',
-    ],
-    isPlugin: true,
-  },
 };
 
 /**
- * Get primary supported channels (non-plugin, commonly used)
+ * Get the channel integrations supported by ClawX.
  */
 export function getPrimaryChannels(): ChannelType[] {
-  return ['telegram', 'discord', 'whatsapp', 'wechat', 'dingtalk', 'feishu', 'wecom', 'qqbot'];
+  return [...SUPPORTED_CHANNEL_TYPES];
 }
 
-/**
- * Get all available channels including plugins
- */
-export function getAllChannels(): ChannelType[] {
-  return Object.keys(CHANNEL_META) as ChannelType[];
+export function isSupportedChannelType(channelType: string): channelType is ChannelType {
+  return (SUPPORTED_CHANNEL_TYPES as readonly string[]).includes(channelType);
 }

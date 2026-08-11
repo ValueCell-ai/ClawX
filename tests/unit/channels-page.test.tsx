@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Channels } from '@/pages/Channels/index';
+import { CHANNEL_META, SUPPORTED_CHANNEL_TYPES } from '@shared/types/channel';
 
 const hostApiCallMock = vi.fn();
 const subscribeHostEventMock = vi.fn();
@@ -127,6 +128,63 @@ describe('Channels page status refresh', () => {
 
       throw new Error(`Unexpected host API path: ${path}`);
     });
+  });
+
+  it('defines exactly the eight ClawX-supported channel integrations', () => {
+    expect(Object.keys(CHANNEL_META).sort()).toEqual([...SUPPORTED_CHANNEL_TYPES].sort());
+  });
+
+  it('filters runtime channel groups that ClawX does not support', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+    const unsupportedChannelTypes = [
+      'signal',
+      'imessage',
+      'matrix',
+      'line',
+      'msteams',
+      'googlechat',
+      'mattermost',
+    ];
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') {
+        return {
+          success: true,
+          channels: [
+            {
+              channelType: 'feishu',
+              defaultAccountId: 'default',
+              status: 'connected',
+              accounts: [],
+            },
+            ...unsupportedChannelTypes.map((channelType) => ({
+              channelType,
+              defaultAccountId: 'default',
+              status: 'connected',
+              accounts: [{
+                accountId: 'default',
+                name: `unsupported-${channelType}`,
+                configured: true,
+                status: 'connected',
+                isDefault: true,
+              }],
+            })),
+          ],
+        };
+      }
+      if (path === 'agents.list') return { success: true, agents: [] };
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<Channels />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Feishu / Lark')).toBeInTheDocument();
+      expect(screen.getByText('Telegram')).toBeInTheDocument();
+    });
+    for (const channelType of unsupportedChannelTypes) {
+      expect(screen.queryByText(channelType, { exact: true })).not.toBeInTheDocument();
+      expect(screen.queryByText(`unsupported-${channelType}`)).not.toBeInTheDocument();
+    }
   });
 
   it('blocks saving when custom account ID is non-canonical', async () => {

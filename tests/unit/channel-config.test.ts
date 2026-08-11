@@ -201,14 +201,13 @@ describe('WeCom plugin configuration', () => {
 
     const config = await readOpenClawJson();
     const channels = config.channels as Record<string, { enabled?: boolean; defaultAccount?: string; accounts?: Record<string, { enabled?: boolean }> }>;
-    const plugins = config.plugins as { allow: string[]; entries: Record<string, { enabled?: boolean; defaultAccount?: string; accounts?: Record<string, { enabled?: boolean }> }> };
+    const plugins = config.plugins as { allow: string[]; entries: Record<string, Record<string, unknown>> };
 
     expect(channels.whatsapp.enabled).toBe(true);
     expect(channels.whatsapp.defaultAccount).toBe('default');
     expect(channels.whatsapp.accounts?.default?.enabled).toBe(true);
     expect(plugins.allow).toContain('whatsapp');
-    expect(plugins.entries.whatsapp.enabled).toBe(true);
-    expect(plugins.entries.whatsapp.accounts?.default?.enabled).toBe(true);
+    expect(plugins.entries.whatsapp).toEqual({ enabled: true });
   });
 
   it('keeps whatsapp plugin registration when saving plugin-backed config', async () => {
@@ -244,12 +243,15 @@ describe('WeCom plugin configuration', () => {
 
     const config = await readOpenClawJson();
     const channels = config.channels as Record<string, { accounts?: Record<string, unknown> }>;
-    const plugins = config.plugins as { entries?: Record<string, { accounts?: Record<string, unknown> }> };
+    const plugins = config.plugins as { allow?: string[]; entries?: Record<string, Record<string, unknown>> };
 
+    expect(channels.discord.accounts?.default).toBeDefined();
     expect(channels.qqbot.accounts?.default).toBeDefined();
-    expect(plugins.entries?.discord?.accounts?.default).toBeDefined();
-    expect(plugins.entries?.qqbot?.accounts?.default).toBeDefined();
-    expect(plugins.entries?.whatsapp?.accounts?.default).toBeDefined();
+    expect(channels.whatsapp.accounts?.default).toBeDefined();
+    expect(plugins.allow).toEqual(expect.arrayContaining(['discord', 'qqbot', 'whatsapp']));
+    expect(plugins.entries?.discord).toEqual({ enabled: true });
+    expect(plugins.entries?.qqbot).toEqual({ enabled: true });
+    expect(plugins.entries?.whatsapp).toEqual({ enabled: true });
   });
 
   it('saves discord guild channel allowlist without schema-invalid allow flags', async () => {
@@ -364,7 +366,7 @@ describe('WeCom plugin configuration', () => {
     expect((config.channels as Record<string, unknown>).telegram).toBeUndefined();
   });
 
-  it('removes deleted plugin-backed account credentials from the plugin mirror', async () => {
+  it('removes legacy plugin account mirrors when deleting a channel account', async () => {
     await writeOpenClawJson({
       channels: {
         discord: {
@@ -402,14 +404,12 @@ describe('WeCom plugin configuration', () => {
     expect(channel.accounts).toEqual({
       'agent-b': { token: 'discord-token-b', enabled: true },
     });
-    expect(plugin.defaultAccount).toBe('agent-b');
-    expect(plugin.accounts).toEqual({
-      'agent-b': { token: 'discord-token-b', enabled: true },
-    });
+    expect(plugin).toEqual({ enabled: true });
     expect(JSON.stringify(plugin)).not.toContain('discord-token-a');
+    expect(JSON.stringify(plugin)).not.toContain('discord-token-b');
   });
 
-  it('removes plugin-only account credentials while preserving sibling accounts', async () => {
+  it('removes a legacy plugin-only registration without canonical channel config', async () => {
     await writeOpenClawJson({
       plugins: {
         allow: ['discord'],
@@ -430,14 +430,7 @@ describe('WeCom plugin configuration', () => {
     await deleteChannelAccountConfig('discord', 'agent-a');
 
     const config = await readOpenClawJson();
-    const plugin = ((config.plugins as {
-      entries: Record<string, Record<string, unknown>>;
-    }).entries).discord;
-    expect(plugin.defaultAccount).toBe('agent-b');
-    expect(plugin.accounts).toEqual({
-      'agent-b': { token: 'discord-token-b', enabled: true },
-    });
-    expect(JSON.stringify(plugin)).not.toContain('discord-token-a');
+    expect(config.plugins).toBeUndefined();
   });
 });
 

@@ -965,6 +965,36 @@ function emitChannelEvent(
   }
 }
 
+const CHANNEL_PLUGIN_INSTALLERS: Record<
+  string,
+  () => MaybePromise<{ installed: boolean; warning?: string }>
+> = {
+  dingtalk: ensureDingTalkPluginInstalled,
+  wecom: ensureWeComPluginInstalled,
+  discord: ensureDiscordPluginInstalled,
+  qqbot: ensureQQBotPluginInstalled,
+  whatsapp: ensureWhatsAppPluginInstalled,
+  feishu: ensureFeishuPluginInstalled,
+  [OPENCLAW_WECHAT_CHANNEL_TYPE]: ensureWeChatPluginInstalled,
+};
+
+function isPluginBackedChannel(storedChannelType: string): boolean {
+  return Object.hasOwn(CHANNEL_PLUGIN_INSTALLERS, storedChannelType);
+}
+
+function shouldRestartRunningGateway(ctx: ChannelsApiContext, storedChannelType: string): boolean {
+  return isPluginBackedChannel(storedChannelType)
+    && ctx.gatewayManager.getStatus().state === 'running';
+}
+
+async function restartGatewayForPluginChannel(
+  ctx: ChannelsApiContext,
+  storedChannelType: string,
+): Promise<void> {
+  logger.info(`[channels.saveConfig] restarting Gateway to activate plugin channel=${storedChannelType}`);
+  await ctx.gatewayManager.restart();
+}
+
 async function awaitWeChatQrLogin(
   ctx: ChannelsApiContext,
   sessionKey: string,
@@ -991,8 +1021,12 @@ async function awaitWeChatQrLogin(
       baseUrl: result.baseUrl,
       userId: result.userId,
     });
+    const restartGateway = shouldRestartRunningGateway(ctx, OPENCLAW_WECHAT_CHANNEL_TYPE);
     await saveChannelConfig(UI_WECHAT_CHANNEL_TYPE, { enabled: true }, normalizedAccountId);
     await ensureScopedChannelBinding(UI_WECHAT_CHANNEL_TYPE, normalizedAccountId);
+    if (restartGateway) {
+      await restartGatewayForPluginChannel(ctx, OPENCLAW_WECHAT_CHANNEL_TYPE);
+    }
 
     if (activeQrLogins.get(loginKey) !== sessionKey) return;
     emitChannelEvent(ctx, UI_WECHAT_CHANNEL_TYPE, 'success', {
@@ -1010,16 +1044,7 @@ async function awaitWeChatQrLogin(
 }
 
 async function ensureChannelPluginInstalled(storedChannelType: string): Promise<void> {
-  const installers: Record<string, () => MaybePromise<{ installed: boolean; warning?: string }>> = {
-    dingtalk: ensureDingTalkPluginInstalled,
-    wecom: ensureWeComPluginInstalled,
-    discord: ensureDiscordPluginInstalled,
-    qqbot: ensureQQBotPluginInstalled,
-    whatsapp: ensureWhatsAppPluginInstalled,
-    feishu: ensureFeishuPluginInstalled,
-    [OPENCLAW_WECHAT_CHANNEL_TYPE]: ensureWeChatPluginInstalled,
-  };
-  const install = installers[storedChannelType];
+  const install = CHANNEL_PLUGIN_INSTALLERS[storedChannelType];
   if (!install) return;
   const result = await install();
   if (!result.installed) {
@@ -1101,14 +1126,21 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       const accountId = optionalString(payload, 'accountId');
       await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
       const storedChannelType = resolveStoredChannelType(channelType);
+      const restartGateway = shouldRestartRunningGateway(ctx, storedChannelType);
       await ensureChannelPluginInstalled(storedChannelType);
       const existingValues = await getChannelFormValues(channelType, accountId);
       if (isSameConfigValues(existingValues, config)) {
         await ensureScopedChannelBinding(channelType, accountId);
+        if (restartGateway) {
+          await restartGatewayForPluginChannel(ctx, storedChannelType);
+        }
         return { success: true, noChange: true };
       }
       await saveChannelConfig(channelType, config, accountId);
       await ensureScopedChannelBinding(channelType, accountId);
+      if (restartGateway) {
+        await restartGatewayForPluginChannel(ctx, storedChannelType);
+      }
       return { success: true };
     },
     setEnabled: async (payload) => {
