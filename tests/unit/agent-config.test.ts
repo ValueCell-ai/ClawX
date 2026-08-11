@@ -505,7 +505,7 @@ describe('agent config lifecycle', () => {
     expect((config.channels as Record<string, unknown>).telegram).toBeUndefined();
   });
 
-  it('deletes owned plugin-only credentials while preserving sibling accounts', async () => {
+  it('migrates legacy plugin-only credentials while deleting the owned account', async () => {
     await writeOpenClawJson({
       agents: {
         list: [
@@ -537,14 +537,20 @@ describe('agent config lifecycle', () => {
     await deleteAgentConfig('test2');
 
     const config = await readOpenClawJson();
-    const discord = ((config.plugins as {
-      entries: Record<string, Record<string, unknown>>;
-    }).entries).discord;
-    expect(discord.defaultAccount).toBe('test3');
-    expect(discord.accounts).toEqual({
+    const discordChannel = (config.channels as {
+      discord: Record<string, unknown>;
+    }).discord;
+    expect(discordChannel.defaultAccount).toBe('test3');
+    expect(discordChannel.accounts).toEqual({
       test3: { enabled: true, token: 'discord-token-3' },
     });
-    expect(JSON.stringify(discord)).not.toContain('discord-token-2');
+    expect(discordChannel.token).toBe('discord-token-3');
+
+    const discordPlugin = ((config.plugins as {
+      entries: Record<string, Record<string, unknown>>;
+    }).entries).discord;
+    expect(discordPlugin).toEqual({ enabled: true });
+    expect(JSON.stringify(config)).not.toContain('discord-token-2');
   });
 
   it('allows the same agent to bind multiple different channels', async () => {

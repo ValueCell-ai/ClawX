@@ -22,6 +22,7 @@ touchedAreas:
   - src/components/channels/ChannelConfigModal.tsx
   - src/pages/Channels/index.tsx
   - tests/unit/channel-config.test.ts
+  - tests/unit/agent-config.test.ts
   - tests/unit/host-services.test.ts
   - tests/unit/openclaw-auth.test.ts
   - tests/unit/channels-page.test.tsx
@@ -46,6 +47,7 @@ requiredRules:
   - comms-regression
   - docs-sync
 requiredTests:
+  - tests/unit/agent-config.test.ts
   - tests/unit/host-services.test.ts
   - tests/unit/channels-page.test.tsx
   - tests/e2e/channels-plugin-save.spec.ts

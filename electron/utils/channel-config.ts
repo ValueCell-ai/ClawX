@@ -1274,6 +1274,41 @@ export async function deleteAgentChannelAccounts(agentId: string, ownedChannelAc
         modified = false;
         const currentConfig = snapshot as OpenClawConfig;
         const channels = currentConfig.channels ?? {};
+
+        // Older ClawX releases could leave the only copy of Discord, QQBot,
+        // or WhatsApp account credentials under plugins.entries.<id>. Migrate
+        // that invalid legacy shape into channels.<id> before deleting the
+        // owned account, so sibling accounts survive while PluginEntryConfig
+        // is normalized back to activation metadata only.
+        const legacyPluginChannelTypes = ownedChannelAccounts
+            ? [...ownedChannelAccounts]
+                .filter((channelAccountKey) => channelAccountKey.endsWith(`:${accountId}`))
+                .map((channelAccountKey) => channelAccountKey.slice(0, -accountId.length - 1))
+            : PLUGIN_CHANNELS;
+        for (const channelType of legacyPluginChannelTypes) {
+            if (!PLUGIN_CHANNELS.includes(channelType)) continue;
+            const pluginEntry = currentConfig.plugins?.entries?.[channelType];
+            const pluginAccounts = pluginEntry ? getChannelAccountsMap(pluginEntry) : undefined;
+            if (!pluginEntry || !pluginAccounts?.[accountId]) continue;
+
+            const section = channels[channelType] ?? {
+                enabled: pluginEntry.enabled !== false,
+            };
+            const channelAccounts = ensureChannelAccountsMap(section);
+            for (const [legacyAccountId, legacyAccountConfig] of Object.entries(pluginAccounts)) {
+                if (!channelAccounts[legacyAccountId]) {
+                    channelAccounts[legacyAccountId] = structuredClone(legacyAccountConfig);
+                }
+            }
+            if (typeof section.defaultAccount !== 'string' || !section.defaultAccount.trim()) {
+                section.defaultAccount = typeof pluginEntry.defaultAccount === 'string'
+                    ? pluginEntry.defaultAccount
+                    : DEFAULT_ACCOUNT_ID;
+            }
+            channels[channelType] = section;
+            currentConfig.channels = channels;
+        }
+
         for (const channelType of Object.keys(channels)) {
             if (ownedChannelAccounts && !ownedChannelAccounts.has(`${channelType}:${accountId}`)) continue;
             const section = channels[channelType];
