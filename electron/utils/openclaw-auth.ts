@@ -3429,9 +3429,58 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       // ── external channel plugin registration cleanup ────────────
       // Channel account configuration belongs under channels.<id>. OpenClaw's
       // PluginEntryConfig rejects ClawX's legacy accounts/defaultAccount mirror.
+      // Migrate first: some older configs have no channels.<id> copy, and
+      // deleting the plugin account map directly would lose their credentials.
       for (const pluginId of ['discord', 'whatsapp', 'qqbot'] as const) {
         const pluginEntry = pEntries[pluginId];
         if (!pluginEntry) continue;
+
+        const legacyAccounts = isPlainRecord(pluginEntry.accounts)
+          ? pluginEntry.accounts as Record<string, Record<string, unknown>>
+          : null;
+        if (legacyAccounts && Object.keys(legacyAccounts).length > 0) {
+          const channels = isPlainRecord(config.channels)
+            ? config.channels as Record<string, Record<string, unknown>>
+            : {};
+          const existingSection = isPlainRecord(channels[pluginId])
+            ? channels[pluginId]
+            : {};
+          const channelAccounts = isPlainRecord(existingSection.accounts)
+            ? existingSection.accounts as Record<string, Record<string, unknown>>
+            : {};
+          let migratedAccount = false;
+
+          for (const [accountId, accountConfig] of Object.entries(legacyAccounts)) {
+            if (!isPlainRecord(accountConfig) || channelAccounts[accountId]) continue;
+            channelAccounts[accountId] = structuredClone(accountConfig);
+            migratedAccount = true;
+          }
+
+          if (migratedAccount) {
+            existingSection.accounts = channelAccounts;
+            if (existingSection.enabled === undefined) {
+              existingSection.enabled = pluginEntry.enabled !== false;
+            }
+            if (typeof existingSection.defaultAccount !== 'string' || !existingSection.defaultAccount.trim()) {
+              const legacyDefaultAccount = typeof pluginEntry.defaultAccount === 'string'
+                && channelAccounts[pluginEntry.defaultAccount]
+                ? pluginEntry.defaultAccount
+                : Object.keys(channelAccounts).sort((a, b) => {
+                  if (a === 'default') return -1;
+                  if (b === 'default') return 1;
+                  return a.localeCompare(b);
+                })[0];
+              if (legacyDefaultAccount) {
+                existingSection.defaultAccount = legacyDefaultAccount;
+              }
+            }
+            channels[pluginId] = existingSection;
+            config.channels = channels;
+            modified = true;
+            console.log(`[sanitize] Migrated legacy plugins.entries.${pluginId}.accounts to channels.${pluginId}.accounts`);
+          }
+        }
+
         if ('accounts' in pluginEntry) {
           delete pluginEntry.accounts;
           modified = true;
