@@ -449,19 +449,23 @@ export function Channels() {
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
+    const target = deleteTarget;
+
+    // Close the dialog and update the list before waiting for OpenClaw's
+    // coordinated config delivery. Main still owns the durable mutation; on
+    // failure, reload the file-backed view to restore the actual state.
+    setDeleteTarget(null);
+    setChannelGroups((prev) => removeDeletedTarget(prev, target));
+
     try {
-      await hostApi.channels.deleteConfig(deleteTarget.channelType, deleteTarget.accountId);
-      setChannelGroups((prev) => removeDeletedTarget(prev, deleteTarget));
-      toast.success(deleteTarget.accountId ? t('toast.accountDeleted') : t('toast.channelDeleted'));
-      // Channel reload is debounced in main process; pull again shortly to
-      // converge with runtime state without flashing deleted rows back in.
+      await hostApi.channels.deleteConfig(target.channelType, target.accountId);
+      toast.success(target.accountId ? t('toast.accountDeleted') : t('toast.channelDeleted'));
       window.setTimeout(() => {
         void fetchPageData();
       }, 1200);
     } catch (deleteError) {
       toast.error(t('toast.configFailed', { error: String(deleteError) }));
-    } finally {
-      setDeleteTarget(null);
+      void fetchPageData({ configOnly: true });
     }
   };
 
