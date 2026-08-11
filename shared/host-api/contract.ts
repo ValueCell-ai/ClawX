@@ -243,6 +243,8 @@ export type ChannelSaveConfigPayload = ChannelTypePayload & {
 };
 export type ChannelSaveConfigResult = HostSuccess & {
   noChange?: boolean;
+  /** Configuration is committed; a guarded Gateway restart is continuing asynchronously. */
+  activationPending?: boolean;
   warning?: string;
 };
 export type ChannelConfiguredResult = HostSuccess & { channels?: Array<string | JsonRecord> };

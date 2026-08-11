@@ -18,7 +18,6 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
-import { useChannelsStore } from '@/stores/channels';
 
 import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
@@ -81,7 +80,6 @@ export function ChannelConfigModal({
   onChannelSaved,
 }: ChannelConfigModalProps) {
   const { t } = useTranslation('channels');
-  const { fetchChannels } = useChannelsStore();
   const [selectedType, setSelectedType] = useState<ChannelType | null>(initialSelectedType);
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [channelName, setChannelName] = useState('');
@@ -192,9 +190,8 @@ export function ChannelConfigModal({
   }, [selectedType, loadingConfig, showChannelName]);
 
   const finishSave = useCallback(async (channelType: ChannelType) => {
-    await fetchChannels();
     await onChannelSaved?.(channelType);
-  }, [fetchChannels, onChannelSaved]);
+  }, [onChannelSaved]);
 
   const finishSaveRef = useRef(finishSave);
   const onCloseRef = useRef(onClose);
@@ -408,7 +405,6 @@ export function ChannelConfigModal({
 
       toast.success(t('toast.channelSaved', { name: meta.name }));
       toast.success(t('toast.channelConnecting', { name: meta.name }));
-      await new Promise((resolve) => setTimeout(resolve, 800));
       onClose();
     } catch (error) {
       toast.error(t('toast.configFailed', { error: String(error) }));

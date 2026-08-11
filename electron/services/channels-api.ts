@@ -987,12 +987,16 @@ function shouldRestartRunningGateway(ctx: ChannelsApiContext, storedChannelType:
     && ctx.gatewayManager.getStatus().state === 'running';
 }
 
-async function restartGatewayForPluginChannel(
+function scheduleGatewayRestartForPluginChannel(
   ctx: ChannelsApiContext,
   storedChannelType: string,
-): Promise<void> {
-  logger.info(`[channels.saveConfig] restarting Gateway to activate plugin channel=${storedChannelType}`);
-  await ctx.gatewayManager.restart();
+): void {
+  logger.info(`[channels.saveConfig] scheduling Gateway restart to activate plugin channel=${storedChannelType}`);
+  // The config and scoped binding are already committed. Let the host request
+  // return while the guarded lifecycle path performs stop/start/readiness.
+  // GatewayManager owns error logging, status propagation, and restart
+  // coalescing, so the Channels page can show the normal connecting state.
+  ctx.gatewayManager.debouncedRestart(0);
 }
 
 async function awaitWeChatQrLogin(
@@ -1025,7 +1029,7 @@ async function awaitWeChatQrLogin(
     await saveChannelConfig(UI_WECHAT_CHANNEL_TYPE, { enabled: true }, normalizedAccountId);
     await ensureScopedChannelBinding(UI_WECHAT_CHANNEL_TYPE, normalizedAccountId);
     if (restartGateway) {
-      await restartGatewayForPluginChannel(ctx, OPENCLAW_WECHAT_CHANNEL_TYPE);
+      scheduleGatewayRestartForPluginChannel(ctx, OPENCLAW_WECHAT_CHANNEL_TYPE);
     }
 
     if (activeQrLogins.get(loginKey) !== sessionKey) return;
@@ -1127,21 +1131,23 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
       const storedChannelType = resolveStoredChannelType(channelType);
       const restartGateway = shouldRestartRunningGateway(ctx, storedChannelType);
-      await ensureChannelPluginInstalled(storedChannelType);
-      const existingValues = await getChannelFormValues(channelType, accountId);
+      const [, existingValues] = await Promise.all([
+        ensureChannelPluginInstalled(storedChannelType),
+        getChannelFormValues(channelType, accountId),
+      ]);
       if (isSameConfigValues(existingValues, config)) {
         await ensureScopedChannelBinding(channelType, accountId);
         if (restartGateway) {
-          await restartGatewayForPluginChannel(ctx, storedChannelType);
+          scheduleGatewayRestartForPluginChannel(ctx, storedChannelType);
         }
-        return { success: true, noChange: true };
+        return { success: true, noChange: true, ...(restartGateway ? { activationPending: true } : {}) };
       }
       await saveChannelConfig(channelType, config, accountId);
       await ensureScopedChannelBinding(channelType, accountId);
       if (restartGateway) {
-        await restartGatewayForPluginChannel(ctx, storedChannelType);
+        scheduleGatewayRestartForPluginChannel(ctx, storedChannelType);
       }
-      return { success: true };
+      return { success: true, ...(restartGateway ? { activationPending: true } : {}) };
     },
     setEnabled: async (payload) => {
       const channelType = requireString(payload, 'channelType');

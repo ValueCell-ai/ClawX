@@ -269,6 +269,46 @@ describe('Channels page status refresh', () => {
     expect(saveCalls).toHaveLength(0);
   });
 
+  it('uses a config-only refresh immediately after a channel save', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') {
+        return { success: true, channels: [] };
+      }
+      if (path === 'agents.list') return { success: true, agents: [] };
+      if (path === 'channels.validateCredentials') {
+        return { success: true, valid: true, warnings: [] };
+      }
+      if (path === 'channels.saveConfig') {
+        return { success: true, activationPending: true };
+      }
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<Channels />);
+    await screen.findByRole('button', { name: /QQ Bot/ });
+    hostApiCallMock.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: /QQ Bot/ }));
+    fireEvent.change(document.getElementById('appId') as HTMLInputElement, {
+      target: { value: 'qq-app-id' },
+    });
+    fireEvent.change(document.getElementById('clientSecret') as HTMLInputElement, {
+      target: { value: 'qq-client-secret' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'dialog.saveAndConnect' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('dialog.configureTitle')).not.toBeInTheDocument();
+    });
+    const postSaveAccountCalls = hostApiCallMock.mock.calls.filter(
+      ([path]) => path === 'channels.accounts',
+    );
+    expect(postSaveAccountCalls).toEqual([
+      ['channels.accounts', expect.objectContaining({ mode: 'config', probe: false })],
+    ]);
+  });
+
   it('refetches channel accounts when gateway channel-status events arrive', async () => {
     let channelStatusHandler: (() => void) | undefined;
     subscribeHostEventMock.mockImplementation((eventName: string, handler: () => void) => {

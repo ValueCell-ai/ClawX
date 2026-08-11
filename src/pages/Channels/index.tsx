@@ -851,7 +851,10 @@ export function Channels() {
             setInitialConfigValuesForModal(undefined);
           }}
           onChannelSaved={async () => {
-            await fetchPageData({ probe: true });
+            // The host may still be restarting Gateway for plugin activation.
+            // Read the committed file-backed view immediately and let the
+            // existing convergence loop refresh runtime status asynchronously.
+            await fetchPageData({ configOnly: true });
             scheduleConvergenceRefresh();
             setShowConfigModal(false);
             setSelectedChannelType(null);

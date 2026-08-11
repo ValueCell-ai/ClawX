@@ -820,7 +820,7 @@ describe('host services', () => {
     expect(migrateLegacyChannelWideBindingMock).not.toHaveBeenCalled();
   });
 
-  it('installs plugin, saves config, ensures scoped binding, and restarts a running Gateway', async () => {
+  it('commits a plugin channel save and schedules activation without awaiting Gateway readiness', async () => {
     listAgentsSnapshotMock.mockResolvedValue({
       agents: [{ id: 'main', name: 'Main' }],
       defaultAgentId: 'main',
@@ -842,7 +842,7 @@ describe('host services', () => {
       channelType: 'feishu',
       accountId: 'default',
       config: { appId: 'cli_new', appSecret: 'new-secret' },
-    })).resolves.toEqual({ success: true });
+    })).resolves.toEqual({ success: true, activationPending: true });
 
     expect(ensureFeishuPluginInstalledMock).toHaveBeenCalledTimes(1);
     expect(saveChannelConfigMock).toHaveBeenCalledWith(
@@ -851,9 +851,11 @@ describe('host services', () => {
       'default',
     );
     expect(ensureScopedChannelBindingMock).toHaveBeenCalledWith('feishu', 'default');
-    expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
+    expect(gatewayManager.debouncedRestart).toHaveBeenCalledWith(0);
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
-    expect(gatewayManager.restart).toHaveBeenCalledTimes(1);
+    expect(gatewayManager.restart).not.toHaveBeenCalled();
+    expect(ensureScopedChannelBindingMock.mock.invocationCallOrder[0])
+      .toBeLessThan(gatewayManager.debouncedRestart.mock.invocationCallOrder[0]);
   });
 
   it('keeps bundled Telegram on the native config reload path', async () => {
@@ -1057,7 +1059,7 @@ describe('host services', () => {
       channelType: 'feishu',
       accountId: 'default',
       config: { appId: 'same', appSecret: 'same-secret' },
-    })).resolves.toEqual({ success: true, noChange: true });
+    })).resolves.toEqual({ success: true, noChange: true, activationPending: true });
 
     expect(setChannelDefaultAccountMock).toHaveBeenCalledWith('feishu', 'default');
     expect(clearChannelBindingMock).toHaveBeenCalledWith('feishu', 'default');
@@ -1065,8 +1067,8 @@ describe('host services', () => {
     expect(deleteChannelAccountConfigMock).toHaveBeenCalledWith('feishu', 'default');
     expect(deleteChannelConfigMock).toHaveBeenCalledWith('feishu');
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
-    expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
-    expect(gatewayManager.restart).toHaveBeenCalledTimes(1);
+    expect(gatewayManager.debouncedRestart).toHaveBeenCalledWith(0);
+    expect(gatewayManager.restart).not.toHaveBeenCalled();
   });
 
   it('does not register OAuth success restart listeners', () => {
@@ -1109,10 +1111,10 @@ describe('host services', () => {
 
     await vi.waitFor(() => {
       expect(saveChannelConfigMock).toHaveBeenCalledWith('wechat', { enabled: true }, 'wx-account');
-      expect(gatewayManager.restart).toHaveBeenCalledTimes(1);
+      expect(gatewayManager.debouncedRestart).toHaveBeenCalledWith(0);
     });
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
-    expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
+    expect(gatewayManager.restart).not.toHaveBeenCalled();
   });
 
   it('returns diagnostics snapshot with channel view and log tails', async () => {

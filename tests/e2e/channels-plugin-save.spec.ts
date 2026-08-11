@@ -39,7 +39,7 @@ test.describe('Plugin-backed channel save', () => {
         if (request?.module === 'channels' && request.action === 'saveConfig') {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (globalThis as any).__clawxPluginChannelSavePayload = request.payload;
-          return respond(request.id, { success: true });
+          return respond(request.id, { success: true, activationPending: true });
         }
         return originalHostInvoke?.(event, request) ?? respond(request?.id, {});
       });
@@ -66,5 +66,6 @@ test.describe('Plugin-backed channel save', () => {
         clientSecret: 'qq-client-secret',
       },
     });
+    await expect(page.getByText(/Configure QQ Bot|dialog\.configureTitle/i)).not.toBeVisible();
   });
 });
