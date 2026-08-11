@@ -108,7 +108,7 @@ describe('provider metadata', () => {
 
   it('keeps builtin provider sources in sync', () => {
     expect(BUILTIN_PROVIDER_TYPES).toEqual(
-      expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'ark', 'moonshot', 'siliconflow', 'minimax-portal', 'minimax-portal-cn', 'zai', 'zai-global', 'modelstudio', 'ollama'])
+      expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'orcarouter', 'ark', 'moonshot', 'siliconflow', 'minimax-portal', 'minimax-portal-cn', 'zai', 'zai-global', 'modelstudio', 'ollama'])
     );
   });
 
@@ -191,6 +191,31 @@ describe('provider metadata', () => {
       expect(shouldShowProviderModelId(provider, false)).toBe(true);
       expect(shouldShowProviderModelId(provider, true)).toBe(true);
     }
+  });
+
+  it('exposes an OrcaRouter provider mirroring OpenRouter (named compatible provider)', () => {
+    const orcarouter = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'orcarouter');
+
+    expect(orcarouter).toMatchObject({
+      name: 'OrcaRouter',
+      placeholder: 'sk-orca-...',
+      requiresApiKey: true,
+      showModelId: true,
+      defaultModelId: 'openai/gpt-5.5',
+      modelIdPlaceholder: 'openai/gpt-5.5',
+      docsUrl: 'https://www.orcarouter.ai',
+    });
+    expect(getProviderEnvVar('orcarouter')).toBe('ORCAROUTER_API_KEY');
+    expect(getProviderConfig('orcarouter')).toEqual(
+      expect.objectContaining({
+        baseUrl: 'https://api.orcarouter.ai/v1',
+        api: 'openai-completions',
+        apiKeyEnv: 'ORCAROUTER_API_KEY',
+      })
+    );
+    expect(getProviderDocsUrl(orcarouter, 'en')).toBe('https://www.orcarouter.ai');
+    expect(resolveProviderModelForSave(orcarouter, 'z-ai/glm-5.2', false)).toBe('z-ai/glm-5.2');
+    expect(resolveProviderModelForSave(orcarouter, '   ', false)).toBe('openai/gpt-5.5');
   });
 
   it('shows OAuth-capable provider model overrides regardless of dev mode and preserves defaults', () => {

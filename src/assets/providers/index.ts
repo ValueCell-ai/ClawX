@@ -2,6 +2,7 @@ import anthropic from './anthropic.svg';
 import openai from './openai.svg';
 import google from './google.svg';
 import openrouter from './openrouter.svg';
+import orcarouter from './orcarouter.svg';
 import ark from './ark.svg';
 import moonshot from './moonshot.svg';
 import siliconflow from './siliconflow.svg';
@@ -17,6 +18,7 @@ export const providerIcons: Record<string, string> = {
     openai,
     google,
     openrouter,
+    orcarouter,
     ark,
     moonshot,
     'moonshot-global': moonshot,
