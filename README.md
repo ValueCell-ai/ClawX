@@ -135,6 +135,8 @@ When you launch ClawX for the first time, the **Setup Wizard** will guide you th
 The wizard preselects your system language when it is supported, and falls back to English otherwise.
 
 > Web search note: ClawX disables OpenClaw's general-purpose `web_search` tool at both the agent and Gateway policy layers. This includes Moonshot (Kimi) search; managed browser automation and `web_fetch` remain available.
+>
+> Internal tool note: ClawX also disables `gateway`, `nodes`, `create_goal`, `get_goal`, and `update_goal` for agents at both policy layers. Application-owned Gateway RPCs remain available, as do messaging, session orchestration, and agent discovery tools.
 
 ### Proxy Settings
 

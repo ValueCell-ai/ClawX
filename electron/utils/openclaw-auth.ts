@@ -2879,6 +2879,13 @@ export async function updateSingleAgentModelProvider(
  */
 const SKILL_WORKSHOP_TOOL_DENY_ENTRY = 'skill_workshop';
 const WEB_SEARCH_TOOL_DENY_ENTRY = 'web_search';
+const CONTROL_PLANE_TOOL_DENY_ENTRIES = [
+  'gateway',
+  'nodes',
+  'create_goal',
+  'get_goal',
+  'update_goal',
+] as const;
 const SKILL_CREATOR_SKILL_KEY = 'skill-creator';
 
 function normalizeToolDenyList(value: unknown): string[] {
@@ -2895,6 +2902,20 @@ function ensureToolDenyIncludes(
     return { deny, modified: false };
   }
   return { deny: [...deny, entry], modified: true };
+}
+
+function ensureToolDenyIncludesAll(
+  deny: string[],
+  entries: readonly string[],
+): { deny: string[]; modified: boolean } {
+  let current = deny;
+  let modified = false;
+  for (const entry of entries) {
+    const result = ensureToolDenyIncludes(current, entry);
+    current = result.deny;
+    modified ||= result.modified;
+  }
+  return { deny: current, modified };
 }
 
 export async function sanitizeOpenClawConfig(): Promise<void> {
@@ -3116,6 +3137,22 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       toolsModified = true;
     }
 
+    const controlPlaneToolDenyResult = ensureToolDenyIncludesAll(
+      normalizeToolDenyList(toolsConfig.deny),
+      CONTROL_PLANE_TOOL_DENY_ENTRIES,
+    );
+    if (controlPlaneToolDenyResult.modified) {
+      toolsConfig.deny = controlPlaneToolDenyResult.deny;
+      toolsModified = true;
+      console.log('[sanitize] Added control-plane tools to tools.deny for ClawX desktop');
+    } else if (
+      !Array.isArray(toolsConfig.deny)
+      || toolsConfig.deny.length !== controlPlaneToolDenyResult.deny.length
+    ) {
+      toolsConfig.deny = controlPlaneToolDenyResult.deny;
+      toolsModified = true;
+    }
+
     // ── tools.exec approvals (OpenClaw 3.28+) ──────────────────────
     // ClawX is a local desktop app where the user is the trusted operator.
     // Exec approval prompts add unnecessary friction in this context, so we
@@ -3190,6 +3227,22 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       || gatewayTools.deny.length !== gatewayWebSearchDenyResult.deny.length
     ) {
       gatewayTools.deny = gatewayWebSearchDenyResult.deny;
+      gatewayModified = true;
+    }
+
+    const gatewayControlPlaneToolDenyResult = ensureToolDenyIncludesAll(
+      normalizeToolDenyList(gatewayTools.deny),
+      CONTROL_PLANE_TOOL_DENY_ENTRIES,
+    );
+    if (gatewayControlPlaneToolDenyResult.modified) {
+      gatewayTools.deny = gatewayControlPlaneToolDenyResult.deny;
+      gatewayModified = true;
+      console.log('[sanitize] Added control-plane tools to gateway.tools.deny for ClawX desktop');
+    } else if (
+      !Array.isArray(gatewayTools.deny)
+      || gatewayTools.deny.length !== gatewayControlPlaneToolDenyResult.deny.length
+    ) {
+      gatewayTools.deny = gatewayControlPlaneToolDenyResult.deny;
       gatewayModified = true;
     }
 

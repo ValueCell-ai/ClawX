@@ -135,6 +135,8 @@ ClawXを初めて起動すると、**セットアップウィザード**が次�
 サポートされている場合、ウィザードはシステム言語を初期選択し、対応していない場合は英語にフォールバックします。
 
 > Web検索について：ClawXはAgentとGatewayの両方のポリシーレイヤーで、OpenClawの汎用 `web_search` ツールを無効にします。Moonshot（Kimi）検索も対象です。管理対象のブラウザ自動化と `web_fetch` は引き続き利用できます。
+>
+> 内部ツールについて：ClawXは両方のポリシーレイヤーで、Agentに対して `gateway`、`nodes`、`create_goal`、`get_goal`、`update_goal` も無効にします。ClawXアプリケーション自身のGateway RPCに加え、メッセージング、セッションオーケストレーション、Agent検出ツールは引き続き利用できます。
 
 ### プロキシ設定
 

@@ -16,6 +16,16 @@ import { tmpdir } from 'os';
 let tempDir: string;
 let configPath: string;
 
+const CLAWX_DESKTOP_TOOL_DENY = [
+  'skill_workshop',
+  'web_search',
+  'gateway',
+  'nodes',
+  'create_goal',
+  'get_goal',
+  'update_goal',
+];
+
 async function writeConfig(data: unknown): Promise<void> {
   await writeFile(configPath, JSON.stringify(data, null, 2), 'utf-8');
 }
@@ -49,7 +59,7 @@ function withClawXToolDefaults<T extends Record<string, unknown>>(config: T): T 
   tools.profile = 'full';
   tools.sessions = sessions;
   tools.exec = exec;
-  tools.deny = ['skill_workshop', 'web_search'].reduce<string[]>(
+  tools.deny = CLAWX_DESKTOP_TOOL_DENY.reduce<string[]>(
     (result, entry) => result.includes(entry) ? result : [...result, entry],
     deny,
   );
@@ -63,7 +73,7 @@ function withClawXToolDefaults<T extends Record<string, unknown>>(config: T): T 
   const gatewayDeny = Array.isArray(gatewayTools.deny)
     ? (gatewayTools.deny as unknown[]).filter((value): value is string => typeof value === 'string')
     : [];
-  gatewayTools.deny = ['skill_workshop', 'web_search'].reduce<string[]>(
+  gatewayTools.deny = CLAWX_DESKTOP_TOOL_DENY.reduce<string[]>(
     (result, entry) => result.includes(entry) ? result : [...result, entry],
     gatewayDeny,
   );
@@ -411,7 +421,7 @@ async function sanitizeConfig(
   const deny = Array.isArray(toolsConfig.deny)
     ? toolsConfig.deny.filter((value): value is string => typeof value === 'string')
     : [];
-  const requiredDeny = ['skill_workshop', 'web_search'].reduce<string[]>(
+  const requiredDeny = CLAWX_DESKTOP_TOOL_DENY.reduce<string[]>(
     (result, entry) => result.includes(entry) ? result : [...result, entry],
     deny,
   );
@@ -462,7 +472,7 @@ async function sanitizeConfig(
   const gatewayDeny = Array.isArray(gatewayTools.deny)
     ? gatewayTools.deny.filter((value): value is string => typeof value === 'string')
     : [];
-  const requiredGatewayDeny = ['skill_workshop', 'web_search'].reduce<string[]>(
+  const requiredGatewayDeny = CLAWX_DESKTOP_TOOL_DENY.reduce<string[]>(
     (result, entry) => result.includes(entry) ? result : [...result, entry],
     gatewayDeny,
   );

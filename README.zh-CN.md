@@ -132,6 +132,8 @@ pnpm dev
 
 > Web search 说明：ClawX 会在 Agent 和 Gateway 两层策略中禁用 OpenClaw 的通用 `web_search` 工具。
 > 这也包括 Moonshot（Kimi）搜索；受管浏览器自动化和 `web_fetch` 仍然可用。
+>
+> 内部工具说明：ClawX 还会在两层策略中对 Agent 禁用 `gateway`、`nodes`、`create_goal`、`get_goal` 和 `update_goal`。ClawX 应用自身的 Gateway RPC 不受影响，消息、会话编排和 Agent 发现工具仍然可用。
 
 ### 代理设置
 
