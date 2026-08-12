@@ -131,6 +131,21 @@ describe('HTML preview host', () => {
     });
   });
 
+  it('loads the selected local HTML when the guest becomes DOM-ready', async () => {
+    useArtifactPanel.setState({
+      open: true,
+      tab: 'preview',
+      focusedFile: htmlFile(),
+      htmlPreviewAnchor: makeAnchor(),
+    });
+    render(<WebBrowserHost />);
+
+    fireEvent(webview(), new Event('dom-ready'));
+    await waitFor(() => {
+      expect(navigate).toHaveBeenCalledWith('file:///workspace/site%20one.html');
+    });
+  });
+
   it('keeps the guest mounted but inert when Preview is hidden', () => {
     useArtifactPanel.setState({
       open: true,

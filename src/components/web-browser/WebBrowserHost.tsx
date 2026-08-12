@@ -135,6 +135,12 @@ export function WebBrowserHost(): React.ReactElement | null {
       setLoading(node.isLoading());
       void navigateToPreview();
     };
+    const onDomReady = () => {
+      // did-attach can be missed when React mounts during guest initialization.
+      // dom-ready confirms Main has registered the guest and is safe to navigate.
+      attachedWebviewRef.current = node;
+      void navigateToPreview();
+    };
     const onDidStartLoading = () => setLoading(true);
     const onDidStopLoading = () => setLoading(false);
     const onDidFailLoad = (event: DidFailLoadEvent) => {
@@ -149,12 +155,14 @@ export function WebBrowserHost(): React.ReactElement | null {
     };
 
     node.addEventListener('did-attach', onDidAttach);
+    node.addEventListener('dom-ready', onDomReady);
     node.addEventListener('did-start-loading', onDidStartLoading);
     node.addEventListener('did-stop-loading', onDidStopLoading);
     node.addEventListener('did-fail-load', onDidFailLoad);
     node.addEventListener('render-process-gone', onRenderProcessGone);
     removeListenersRef.current = () => {
       node.removeEventListener('did-attach', onDidAttach);
+      node.removeEventListener('dom-ready', onDomReady);
       node.removeEventListener('did-start-loading', onDidStartLoading);
       node.removeEventListener('did-stop-loading', onDidStopLoading);
       node.removeEventListener('did-fail-load', onDidFailLoad);
