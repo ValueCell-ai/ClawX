@@ -196,7 +196,7 @@ export class GatewayManager extends EventEmitter {
   private reconnectSuccessTotal = 0;
   private static readonly HEARTBEAT_INTERVAL_MS = 60_000;
   private static readonly HEARTBEAT_TIMEOUT_MS = 30_000;
-  private static readonly HEARTBEAT_MAX_MISSES = 10;
+  private static readonly HEARTBEAT_MAX_MISSES = 4;
   public static readonly RESTART_COOLDOWN_MS = 5_000;
   private static readonly GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS = [1_500, 3_000, 5_000, 8_000, 12_000, 30_000] as const;
   private lastRestartAt = 0;
