@@ -20,6 +20,7 @@ import {
   updateAgentModelProvider,
   updateSingleAgentModelProvider,
   getProviderApiKeyFromOpenClaw,
+  extractFallbackModelIds,
 } from '../../utils/openclaw-auth';
 import {
   piAiModelsJsonModelEntry,
@@ -328,12 +329,16 @@ async function syncRuntimeProviderConfig(
   context: RuntimeProviderSyncContext,
 ): Promise<void> {
   const modelId = normalizeRuntimeModelId(context.runtimeProviderKey, config.model);
+  const fallbackModelIds = extractFallbackModelIds(
+    context.runtimeProviderKey,
+    config.fallbackModels ?? [],
+  );
   await syncProviderConfigToOpenClaw(context.runtimeProviderKey, modelId, {
     baseUrl: normalizeProviderBaseUrl(config, config.baseUrl || context.meta?.baseUrl, context.api),
     api: context.api,
     apiKeyEnv: context.meta?.apiKeyEnv,
     headers: config.headers ?? context.meta?.headers,
-  });
+  }, fallbackModelIds);
 }
 
 async function syncCustomProviderAgentModel(
