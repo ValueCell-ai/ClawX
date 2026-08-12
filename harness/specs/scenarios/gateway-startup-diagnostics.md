@@ -33,7 +33,7 @@ ClawX should prefer OpenClaw-native signals over stderr string matching:
 
 stderr is supporting evidence only. It should not be the primary source for deciding whether the Gateway is ready, blocked, or should be restarted.
 
-WebSocket heartbeat misses show that the Gateway control plane did not answer within the observation window. The first nine consecutive misses remain diagnostic-only so transient pong delays do not interrupt long-running work. A pong or any incoming message resets the sequence. A tenth consecutive miss marks persistent unresponsiveness and may request the guarded Gateway restart path when auto-recovery is enabled and lifecycle state is still running. Process exit and socket close retain their existing automatic recovery paths.
+WebSocket heartbeat misses show that the Gateway control plane did not answer within the observation window. The first three consecutive misses remain diagnostic-only so transient pong delays do not interrupt long-running work. A pong or any incoming message resets the sequence. A fourth consecutive miss marks persistent unresponsiveness and may request the guarded Gateway restart path when auto-recovery is enabled and lifecycle state is still running. Process exit and socket close retain their existing automatic recovery paths.
 
 ## Failure Shape
 
@@ -278,7 +278,7 @@ pnpm exec openclaw gateway call status >/tmp/clawx-status.json
 - `health` and `status` are captured in Gateway diagnostics when available.
 - Memory doctor calls return when the memory capability is available.
 - `doctor.memory.*` and `channels.status` failures degrade their capability only and do not trigger Gateway restart.
-- The first nine consecutive heartbeat misses do not replace the Gateway process; the tenth records unresponsive diagnostics and requests one guarded restart when lifecycle auto-recovery is allowed.
+- The first three consecutive heartbeat misses do not replace the Gateway process; the fourth records unresponsive diagnostics and requests one guarded restart when lifecycle auto-recovery is allowed.
 - Logs no longer repeat stale runtime cache or escaped managed-skill symlink warnings for entries ClawX can safely clean.
 
 ## Required Regression Coverage

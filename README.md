@@ -151,7 +151,7 @@ Open **Settings -> Gateway -> Proxy** to configure the default proxy, bypass rul
 ClawX uses a **dual-process architecture with a unified Host API layer**: the React renderer calls one client abstraction, while Electron Main owns protocol selection, Gateway lifecycle, and the ACP Chat stdio bridge.
 
 - **Process model**: Electron Main owns the window, Gateway supervision, system integration, and updates; the OpenClaw Gateway provides AI orchestration, channel, and skill capabilities; the renderer does not access local endpoints directly.
-- **Configuration delivery**: Main uses `config.get`/`config.set` while the Gateway is running and updates the resolved JSON5 config while it is stopped or starting; ordinary provider, agent, skill, and model changes do not replace the process, credentials are hot-reloaded through `secrets.reload`, and guarded recovery starts after ten consecutive heartbeat misses.
+- **Configuration delivery**: Main uses `config.get`/`config.set` while the Gateway is running and updates the resolved JSON5 config while it is stopped or starting; ordinary provider, agent, skill, and model changes do not replace the process, credentials are hot-reloaded through `secrets.reload`, and guarded recovery starts after four consecutive heartbeat misses.
 - **ACP Chat**: Chat uses [ACP (Agent Client Protocol)](https://agentclientprotocol.com) through a Main-owned stdio bridge, supporting authenticated history replay after config reloads, streaming across navigation, and Main-validated media, attachments, and file activity.
 - **Design principles**: One frontend entry point, Main-owned transport, graceful recovery with reconnect/timeout/backoff, secure storage, and CORS-safe boundaries.
 
