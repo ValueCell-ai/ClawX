@@ -1,11 +1,14 @@
 // @vitest-environment node
 import { createHash } from 'node:crypto';
+import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
 const root = path.resolve(import.meta.dirname, '../..');
+const execFileAsync = promisify(execFile);
 
 function assertValidUnifiedDiffHunks(patch: string): void {
   const lines = patch.split('\n');
@@ -53,19 +56,19 @@ describe('OpenClaw restart recovery patch', () => {
   it('registers the pinned runtime patch through the pnpm workspace', async () => {
     const workspace = await readFile(path.join(root, 'pnpm-workspace.yaml'), 'utf8');
     const lockfile = await readFile(path.join(root, 'pnpm-lock.yaml'), 'utf8');
-    const patch = await readFile(path.join(root, 'patches/openclaw@2026.7.1.patch'));
+    const patch = await readFile(path.join(root, 'patches/openclaw@2026.7.1-2.patch'));
     const patchHash = createHash('sha256').update(patch).digest('hex');
 
     expect(workspace).toContain(
-      'openclaw@2026.7.1: patches/openclaw@2026.7.1.patch',
+      'openclaw@2026.7.1-2: patches/openclaw@2026.7.1-2.patch',
     );
     expect(lockfile).toContain(`hash: ${patchHash}`);
-    expect(lockfile).toContain('path: patches/openclaw@2026.7.1.patch');
+    expect(lockfile).toContain('path: patches/openclaw@2026.7.1-2.patch');
   });
 
   it('carries trusted recovery lineage through Gateway events into ACP', async () => {
     const patch = await readFile(
-      path.join(root, 'patches/openclaw@2026.7.1.patch'),
+      path.join(root, 'patches/openclaw@2026.7.1-2.patch'),
       'utf8',
     );
 
@@ -79,6 +82,12 @@ describe('OpenClaw restart recovery patch', () => {
     expect(patch).toContain('const waitedRunId = pending.idempotencyKey');
     expect(patch).toContain('status: "failed"');
     expect(patch).toContain('getAgentRunContext(requestRunId)?.resumedFromRunId');
+    expect(patch).toContain('runId: params.runId');
+    expect(patch).toContain('runId: options?.runId');
+    expect(patch).toContain('execute: async (toolCallId, args, signal, onUpdate)');
+    expect(patch).toContain('runId: defaults?.runId');
+    expect(patch).toContain('runId: Type.Optional(Type.Union([Type.String(), Type.Null()]))');
+    expect(patch).toContain('toolCallId: params.toolCallId');
     expect(patch).toContain('restart recovery must use a distinct run id');
     expect(patch).toContain('entry.restartRecoveryDeliverySourceRunId = sourceRunId');
     expect(patch).not.toContain('!entry.restartRecoveryDeliverySourceRunId && sourceRunId');
@@ -94,7 +103,7 @@ describe('OpenClaw restart recovery patch', () => {
 
   it('preserves recovered tool boundaries in live delivery and transcript replay', async () => {
     const patch = await readFile(
-      path.join(root, 'patches/openclaw@2026.7.1.patch'),
+      path.join(root, 'patches/openclaw@2026.7.1-2.patch'),
       'utf8',
     );
 
@@ -111,7 +120,7 @@ describe('OpenClaw restart recovery patch', () => {
 
   it('executes the pinned transcript fallback as ordered native ACP updates', async () => {
     const bundle = await readFile(
-      path.join(root, 'node_modules/openclaw/dist/acp-cli-xUhiZnXW.js'),
+      path.join(root, 'node_modules/openclaw/dist/acp-cli-BXc5GttU.js'),
       'utf8',
     );
     const start = bundle.indexOf('function extractToolResultReplay(message)');
@@ -179,5 +188,53 @@ describe('OpenClaw restart recovery patch', () => {
         locations: undefined,
       },
     ]);
+  });
+
+  it('passes execution identity through the pinned approval request builder', async () => {
+    const bundle = await readFile(
+      path.join(root, 'node_modules/openclaw/dist/bash-tools-DHyGpWCr.js'),
+      'utf8',
+    );
+    const start = bundle.indexOf('function buildExecApprovalRequestToolParams(params)');
+    const end = bundle.indexOf('\nfunction parseDecision', start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+
+    const context = {
+      DEFAULT_APPROVAL_TIMEOUT_MS: 60_000,
+      buildExecApprovalRequestToolParams: undefined as ((params: Record<string, unknown>) => Record<string, unknown>) | undefined,
+    };
+    runInNewContext(
+      `${bundle.slice(start, end)}\nglobalThis.buildExecApprovalRequestToolParams = buildExecApprovalRequestToolParams;`,
+      context,
+    );
+
+    expect(context.buildExecApprovalRequestToolParams?.({
+      id: 'approval-1',
+      sessionId: 'session-1',
+      runId: 'recovery-run',
+      toolCallId: 'tool-1',
+    })).toMatchObject({
+      id: 'approval-1',
+      sessionId: 'session-1',
+      runId: 'recovery-run',
+      toolCallId: 'tool-1',
+      timeoutMs: 60_000,
+      twoPhase: true,
+    });
+  });
+
+  it('keeps all patched runtime chunks syntactically valid', async () => {
+    for (const file of [
+      'agent-tools-BD8WL7ny.js',
+      'bash-tools-DHyGpWCr.js',
+      'exec-approval-DRfKKxhu.js',
+      'schema-BuOFpc7K.js',
+    ]) {
+      await expect(execFileAsync(process.execPath, [
+        '--check',
+        path.join(root, 'node_modules/openclaw/dist', file),
+      ])).resolves.toMatchObject({ stderr: '' });
+    }
   });
 });

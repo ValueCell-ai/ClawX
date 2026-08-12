@@ -196,7 +196,7 @@ export class GatewayManager extends EventEmitter {
   private reconnectSuccessTotal = 0;
   private static readonly HEARTBEAT_INTERVAL_MS = 60_000;
   private static readonly HEARTBEAT_TIMEOUT_MS = 30_000;
-  private static readonly HEARTBEAT_MAX_MISSES = 10;
+  private static readonly HEARTBEAT_MAX_MISSES = 4;
   public static readonly RESTART_COOLDOWN_MS = 5_000;
   private static readonly GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS = [1_500, 3_000, 5_000, 8_000, 12_000, 30_000] as const;
   private lastRestartAt = 0;
@@ -411,11 +411,27 @@ export class GatewayManager extends EventEmitter {
           tSpawned = Date.now();
         },
         waitForReady: async (port) => {
+          const recoveringOwnedProcess = tSpawned === 0
+            && this.process?.pid != null
+            && this.ownsProcess;
           await waitForGatewayReady({
             port,
             getProcessExitCode: () => this.processExitCode,
+            // A code-1012 in-process reload normally returns within seconds.
+            // Do not hold the lifecycle lock for the general 2400-attempt cold
+            // startup budget when the owned process is alive but no longer serves WS.
+            ...(recoveringOwnedProcess ? { retries: 50 } : {}),
           });
           tReady = Date.now();
+        },
+        terminateStaleOwnedProcess: async () => {
+          const shouldReconnect = this.shouldReconnect;
+          this.shouldReconnect = false;
+          try {
+            await this.forceTerminateOwnedProcessForQuit();
+          } finally {
+            this.shouldReconnect = shouldReconnect;
+          }
         },
         onConnectedToManagedGateway: () => {
           this.startHealthCheck();
@@ -735,6 +751,10 @@ export class GatewayManager extends EventEmitter {
         logger.info('Gateway ready fallback RPC router probe succeeded');
         this.resetGatewayReadyFallback();
         this.setStatus({ gatewayReady: true });
+        // A fast Gateway can emit gateway.ready before the WebSocket client is
+        // attached. A successful router probe is equivalent readiness, so it
+        // must also complete the one-time migration snapshot lifecycle.
+        void this.cleanupOpenClawUpgradeSnapshot();
       }
     } catch (error) {
       this.capabilityMonitor.recordCoreProbe({

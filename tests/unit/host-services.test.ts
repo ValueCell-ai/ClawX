@@ -820,7 +820,7 @@ describe('host services', () => {
     expect(migrateLegacyChannelWideBindingMock).not.toHaveBeenCalled();
   });
 
-  it('commits a plugin channel save and schedules activation without awaiting Gateway readiness', async () => {
+  it('commits a changed plugin channel save without racing the native config reload', async () => {
     listAgentsSnapshotMock.mockResolvedValue({
       agents: [{ id: 'main', name: 'Main' }],
       defaultAgentId: 'main',
@@ -851,11 +851,9 @@ describe('host services', () => {
       'default',
     );
     expect(ensureScopedChannelBindingMock).toHaveBeenCalledWith('feishu', 'default');
-    expect(gatewayManager.debouncedRestart).toHaveBeenCalledWith(0);
+    expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
     expect(gatewayManager.restart).not.toHaveBeenCalled();
-    expect(ensureScopedChannelBindingMock.mock.invocationCallOrder[0])
-      .toBeLessThan(gatewayManager.debouncedRestart.mock.invocationCallOrder[0]);
   });
 
   it('keeps bundled Telegram on the native config reload path', async () => {

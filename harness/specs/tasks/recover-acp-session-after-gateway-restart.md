@@ -19,7 +19,7 @@ touchedAreas:
   - harness/specs/tasks/recover-acp-session-after-gateway-restart.md
   - pnpm-workspace.yaml
   - pnpm-lock.yaml
-  - patches/openclaw@2026.7.1.patch
+  - patches/openclaw@2026.7.1-2.patch
   - tests/unit/openclaw-restart-recovery-patch.test.ts
   - tests/e2e/chat-acp-inline-timeline.spec.ts
 expectedUserBehavior:
@@ -70,7 +70,7 @@ The broken flow therefore had two related symptoms:
 
 ## Fix
 
-`patches/openclaw@2026.7.1.patch` is the ClawX-local backport applied to the pinned `openclaw@2026.7.1` runtime. It restores one explicit recovery chain from the interrupted run through live ACP delivery and persisted replay:
+`patches/openclaw@2026.7.1-2.patch` is the ClawX-local backport applied to the pinned `openclaw@2026.7.1-2` runtime. It restores one explicit recovery chain from the interrupted run through live ACP delivery and persisted replay:
 
 - Persist the active lifecycle run id before a restart and allow only trusted `main_session_restart_recovery` provenance to pass it into a distinct replacement run as `internalRestartRecoverySourceRunId`.
 - Project that source id as `resumedFromRunId` on Chat, agent, tool, and approval events. ACP adopts a replacement run only when this value exactly matches its pending prompt; it never infers lineage from a shared session key.
@@ -80,8 +80,8 @@ The broken flow therefore had two related symptoms:
 
 ClawX Renderer remains unchanged. It continues to reduce standard ACP updates into one in-memory timeline; the repair is in OpenClaw's recovery lineage, Gateway event projection, ACP prompt reconciliation, and ACP replay fallback.
 
-The same source-level fixes will be submitted to the OpenClaw upstream repository as a pull request. This local generated-dist patch is a temporary compatibility measure: after the upstream PR is merged and ClawX upgrades to an OpenClaw release containing the fixes, `patches/openclaw@2026.7.1.patch` should be removed rather than carried forward to a newer generated bundle.
+The same source-level fixes will be submitted to the OpenClaw upstream repository as a pull request. This local generated-dist patch is a temporary compatibility measure: after the upstream PR is merged and ClawX upgrades to an OpenClaw release containing the fixes, `patches/openclaw@2026.7.1-2.patch` should be removed rather than carried forward to a newer generated bundle.
 
 ## Scope
 
-The dependency patch backports current OpenClaw run-lineage, recovered tool delivery, and native ACP transcript replay behavior to the pinned `openclaw@2026.7.1` runtime. It patches generated runtime chunks and declarations, so every OpenClaw version change must regenerate and review the patch rather than carrying it forward by filename.
+The dependency patch backports current OpenClaw run-lineage, recovered tool delivery, and native ACP transcript replay behavior to the pinned `openclaw@2026.7.1-2` runtime. It patches generated runtime chunks and declarations, so every OpenClaw version change must regenerate and review the patch rather than carrying it forward by filename.

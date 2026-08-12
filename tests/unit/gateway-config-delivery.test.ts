@@ -445,6 +445,32 @@ describe('OpenClaw config delivery coordinator', () => {
     });
   });
 
+  it('accepts a config.set commit whose response is lost to a native restart', async () => {
+    const gatewayManager = createGatewayManager();
+    gatewayManager.rpc.mockImplementation(async (method: string, params: unknown) => {
+      if (method === 'config.get') {
+        return { raw: '{ channels: {} }', hash: 'hash-1' };
+      }
+      if (method === 'config.set') {
+        const raw = (params as { raw: string }).raw;
+        await writeFile(configPath, raw, 'utf8');
+        gatewayManager.getStatus.mockReturnValue({ state: 'stopped' });
+        throw new Error('Gateway stopped');
+      }
+      throw new Error(`Unexpected RPC method: ${method}`);
+    });
+    registerOpenClawConfigCoordinator(gatewayManager);
+
+    await expect(mutateOpenClawConfig((config) => {
+      (config.channels as Record<string, unknown>).feishu = { enabled: true };
+    })).resolves.toBe(true);
+
+    expect(JSON.parse(await readFile(configPath, 'utf8'))).toEqual({
+      channels: { feishu: { enabled: true } },
+    });
+    expect(gatewayManager.restart).not.toHaveBeenCalled();
+  });
+
   it.each(['config.get', 'config.set'] as const)(
     'fails closed when running %s fails',
     async (failedMethod) => {

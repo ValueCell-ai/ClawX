@@ -2,9 +2,11 @@
 import { chmod, mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   ensureOpenClaw2026_7_1UpgradeSnapshot,
+  quarantineLegacyUpdateCheckState,
   removeOpenClaw2026_7_1UpgradeSnapshot,
 } from '@electron/utils/openclaw-upgrade-snapshot';
 
@@ -62,6 +64,57 @@ describe('OpenClaw 2026.7.1 upgrade snapshot', () => {
     expect(second.status).toBe('exists');
     await expect(readFile(join(second.snapshotDir, 'config', 'openclaw.json'), 'utf8'))
       .resolves.toBe('{"version":"old"}\n');
+  });
+
+  it('quarantines legacy update-check JSON when SQLite is already authoritative', async () => {
+    const stateDir = await createTempStateDir();
+    const sourcePath = join(stateDir, 'update-check.json');
+    const sqliteDir = join(stateDir, 'state');
+    const sqlitePath = join(sqliteDir, 'openclaw.sqlite');
+    await mkdir(sqliteDir, { recursive: true });
+    await writeFile(sourcePath, '{"lastCheckedAt":"legacy"}\n');
+
+    const db = new DatabaseSync(sqlitePath);
+    db.exec(`
+      CREATE TABLE update_check_state (
+        state_key TEXT PRIMARY KEY,
+        last_checked_at TEXT
+      );
+      INSERT INTO update_check_state (state_key, last_checked_at)
+      VALUES ('default', 'canonical');
+    `);
+    db.close();
+
+    const result = await quarantineLegacyUpdateCheckState({ stateDir });
+    expect(result.status).toBe('quarantined');
+    expect(result.backupPath).toContain('clawx-openclaw-2026.7.1-legacy-update-check.json');
+    await expect(stat(sourcePath)).rejects.toThrow();
+    await expect(readFile(result.backupPath!, 'utf8')).resolves.toBe('{"lastCheckedAt":"legacy"}\n');
+    expect((await stat(result.backupPath!)).mode & 0o777).toBe(0o600);
+  });
+
+  it('leaves legacy update-check JSON for upstream import when SQLite has no canonical row', async () => {
+    const stateDir = await createTempStateDir();
+    const sourcePath = join(stateDir, 'update-check.json');
+    const sqliteDir = join(stateDir, 'state');
+    const sqlitePath = join(sqliteDir, 'openclaw.sqlite');
+    await mkdir(sqliteDir, { recursive: true });
+    await writeFile(sourcePath, '{"lastCheckedAt":"legacy"}\n');
+
+    const db = new DatabaseSync(sqlitePath);
+    db.exec(`
+      CREATE TABLE update_check_state (
+        state_key TEXT PRIMARY KEY,
+        last_checked_at TEXT
+      );
+    `);
+    db.close();
+
+    await expect(quarantineLegacyUpdateCheckState({ stateDir })).resolves.toMatchObject({
+      status: 'deferred',
+      sourcePath,
+    });
+    await expect(readFile(sourcePath, 'utf8')).resolves.toBe('{"lastCheckedAt":"legacy"}\n');
   });
 
   it('removes the snapshot directory after successful cleanup', async () => {

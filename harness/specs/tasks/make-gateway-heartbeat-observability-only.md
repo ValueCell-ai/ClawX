@@ -44,4 +44,4 @@ docs:
   required: true
 ---
 
-Historical first-stage heartbeat safety task. Its observability-only recovery policy is superseded by `restore-gateway-heartbeat-recovery-after-ten-misses`, which keeps the first nine misses diagnostic-only and permits guarded recovery on the tenth consecutive miss.
+Historical first-stage heartbeat safety task. Its observability-only recovery policy is superseded by `restore-gateway-heartbeat-recovery-after-four-misses`, which keeps the first three misses diagnostic-only and permits guarded recovery on the fourth consecutive miss.

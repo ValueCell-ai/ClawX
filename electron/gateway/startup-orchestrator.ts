@@ -23,6 +23,7 @@ type StartupHooks = {
   waitForPortFree: (port: number) => Promise<void>;
   startProcess: () => Promise<void>;
   waitForReady: (port: number) => Promise<void>;
+  terminateStaleOwnedProcess: () => Promise<void>;
   onConnectedToManagedGateway: () => void;
   runDoctorRepair: () => Promise<boolean>;
   onDoctorRepairSuccess: () => void;
@@ -75,7 +76,13 @@ export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<vo
       // become ready and reconnect to it.
       if (hooks.hasOwnedProcess()) {
         logger.info('Owned Gateway process still alive (likely in-process restart); waiting for it to become ready');
-        await hooks.waitForReady(hooks.port);
+        try {
+          await hooks.waitForReady(hooks.port);
+        } catch (error) {
+          logger.warn('Owned Gateway process did not recover after an in-process restart; terminating the stale process');
+          await hooks.terminateStaleOwnedProcess();
+          throw new Error('Gateway process exited before becoming ready after an in-process restart', { cause: error });
+        }
         hooks.assertLifecycle('start/wait-ready-owned');
         await connectWithStartupRetry(hooks, hooks.port);
         hooks.assertLifecycle('start/connect-owned');

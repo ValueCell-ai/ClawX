@@ -1144,9 +1144,11 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       }
       await saveChannelConfig(channelType, config, accountId);
       await ensureScopedChannelBinding(channelType, accountId);
-      if (restartGateway) {
-        scheduleGatewayRestartForPluginChannel(ctx, storedChannelType);
-      }
+      // A changed running config is delivered through config.set, whose native
+      // reload activates the plugin. Scheduling another full restart here races
+      // that code-1012 reload and can trip OpenClaw's restart-loop breaker.
+      // Keep the explicit restart above only for no-change retries, where no
+      // config.set reload occurs but a newly copied plugin may still need discovery.
       return { success: true, ...(restartGateway ? { activationPending: true } : {}) };
     },
     setEnabled: async (payload) => {

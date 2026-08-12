@@ -13,7 +13,7 @@ type BuildGatewayHealthSummaryOptions = {
 };
 
 const CHANNEL_STATUS_FAILURE_WINDOW_MS = 2 * 60_000;
-const HEARTBEAT_MISS_THRESHOLD = 10;
+const HEARTBEAT_MISS_THRESHOLD = 4;
 
 export function buildGatewayHealthSummary(
   options: BuildGatewayHealthSummaryOptions,

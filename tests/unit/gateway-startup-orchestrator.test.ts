@@ -34,6 +34,7 @@ function createMockHooks(overrides: Partial<Parameters<typeof runGatewayStartupS
     waitForPortFree: vi.fn().mockResolvedValue(undefined),
     startProcess: vi.fn().mockResolvedValue(undefined),
     waitForReady: vi.fn().mockResolvedValue(undefined),
+    terminateStaleOwnedProcess: vi.fn().mockResolvedValue(undefined),
     onConnectedToManagedGateway: vi.fn(),
     runDoctorRepair: vi.fn().mockResolvedValue(false),
     onDoctorRepairSuccess: vi.fn(),
@@ -213,9 +214,10 @@ describe('runGatewayStartupSequence', () => {
 
     await runGatewayStartupSequence(hooks);
 
-    // First attempt: owned-process path → waitForReady throws → retry
-    // Second attempt: not owned → normal start path → succeeds
+    // First attempt: owned-process path → waitForReady throws → stale process
+    // is terminated and retried. Second attempt starts a fresh process.
     expect(hasOwnedProcessCalls).toBe(2);
+    expect(hooks.terminateStaleOwnedProcess).toHaveBeenCalledTimes(1);
     expect(hooks.startProcess).toHaveBeenCalledTimes(1);
     expect(hooks.onConnectedToManagedGateway).toHaveBeenCalledTimes(1);
     expect(hooks.delay).toHaveBeenCalledWith(1000);

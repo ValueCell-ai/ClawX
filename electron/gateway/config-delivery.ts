@@ -92,6 +92,15 @@ async function mutateRunningConfig(
       return true;
     } catch (error) {
       if (attempt === 0 && isBaseHashConflict(error)) continue;
+
+      // config.set may durably replace the file and then close the socket with
+      // code 1012 before its RPC response reaches ClawX. If the manager has
+      // already left running state, verify that exact commit instead of
+      // reporting a false save failure or replaying the mutation out of band.
+      if (manager.getStatus().state !== 'running') {
+        const persisted = await readFileConfig(resolveOpenClawConfigPath());
+        if (isDeepStrictEqual(persisted.config, config)) return true;
+      }
       throw error;
     }
   }

@@ -7,4 +7,4 @@ ignoredBuiltDependencies:
   - esbuild
 
 patchedDependencies:
-  openclaw@2026.7.1: patches/openclaw@2026.7.1.patch
+  openclaw@2026.7.1-2: patches/openclaw@2026.7.1-2.patch
