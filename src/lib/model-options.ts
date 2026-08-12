@@ -21,6 +21,11 @@ export function resolveRuntimeProviderKey(account: ProviderAccount): string {
   }
 
   if (account.vendorId === 'custom' || account.vendorId === 'ollama') {
+    // If id equals vendorId (e.g. built-in "ollama" seeded from openclaw.json),
+    // return it directly to prevent generating "ollama-ollama".
+    if (account.id === account.vendorId) {
+      return account.vendorId;
+    }
     const prefix = `${account.vendorId}-`;
     if (account.id.startsWith(prefix)) {
       const tail = account.id.slice(prefix.length);

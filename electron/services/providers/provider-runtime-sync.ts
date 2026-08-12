@@ -20,6 +20,7 @@ import {
   updateAgentModelProvider,
   updateSingleAgentModelProvider,
   getProviderApiKeyFromOpenClaw,
+  extractFallbackModelIds,
 } from '../../utils/openclaw-auth';
 import {
   piAiModelsJsonModelEntry,
@@ -83,6 +84,12 @@ function shouldUseExplicitDefaultOverride(config: ProviderConfig, runtimeProvide
 
 export function getOpenClawProviderKey(type: string, providerId: string): string {
   if (isUnregisteredProviderType(type)) {
+    // If the providerId equals the type (e.g. built-in "ollama" seeded from openclaw.json
+    // with key "ollama"), return it directly. Without this guard,
+    // getOpenClawProviderKey("ollama", "ollama") produces "ollama-ollama".
+    if (providerId === type) {
+      return type;
+    }
     // If the providerId is already a runtime key (e.g. re-seeded from openclaw.json
     // as "custom-XXXXXXXX"), return it directly to avoid double-hashing.
     const prefix = `${type}-`;
@@ -299,12 +306,16 @@ async function syncRuntimeProviderConfig(
   context: RuntimeProviderSyncContext,
 ): Promise<void> {
   const modelId = normalizeRuntimeModelId(context.runtimeProviderKey, config.model);
+  const fallbackModelIds = extractFallbackModelIds(
+    context.runtimeProviderKey,
+    config.fallbackModels ?? [],
+  );
   await syncProviderConfigToOpenClaw(context.runtimeProviderKey, modelId, {
     baseUrl: normalizeProviderBaseUrl(config, config.baseUrl || context.meta?.baseUrl, context.api),
     api: context.api,
     apiKeyEnv: context.meta?.apiKeyEnv,
     headers: config.headers ?? context.meta?.headers,
-  });
+  }, fallbackModelIds);
 }
 
 async function syncCustomProviderAgentModel(

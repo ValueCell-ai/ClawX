@@ -1625,7 +1625,7 @@ function extractModelId(provider: string, modelRef: string): string {
   return modelRef.startsWith(`${provider}/`) ? modelRef.slice(provider.length + 1) : modelRef;
 }
 
-function extractFallbackModelIds(provider: string, fallbackModels: string[]): string[] {
+export function extractFallbackModelIds(provider: string, fallbackModels: string[]): string[] {
   return fallbackModels
     .filter((fallback) => fallback.startsWith(`${provider}/`))
     .map((fallback) => fallback.slice(provider.length + 1));
@@ -2077,7 +2077,8 @@ function ensureMoonshotKimiWebSearchCnBaseUrl(config: Record<string, unknown>, p
 export async function syncProviderConfigToOpenClaw(
   provider: string,
   modelId: string | undefined,
-  override: RuntimeProviderConfigOverride
+  override: RuntimeProviderConfigOverride,
+  fallbackModelIds: string[] = []
 ): Promise<void> {
   await mutateOpenClawConfig((config) => {
     ensureMoonshotKimiWebSearchCnBaseUrl(config, provider);
@@ -2089,7 +2090,7 @@ export async function syncProviderConfigToOpenClaw(
         api: override.api,
         apiKeyEnv: override.apiKeyEnv,
         headers: override.headers,
-        modelIds: modelId ? [modelId] : [],
+        modelIds: modelId ? [modelId, ...fallbackModelIds] : [...fallbackModelIds],
         mergeExistingModels: true,
         inferRuntimeModelInputs: true,
       });

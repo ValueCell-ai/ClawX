@@ -36,6 +36,11 @@ describe('provider-keys', () => {
     expect(getOpenClawProviderKeyForType('custom', 'my-local')).toBe('custom-mylocal');
   });
 
+  it('returns the type directly when providerId equals the type (seeded built-in)', () => {
+    expect(getOpenClawProviderKeyForType('ollama', 'ollama')).toBe('ollama');
+    expect(getOpenClawProviderKeyForType('custom', 'custom')).toBe('custom');
+  });
+
   it('does not treat legacy openai-codex as an OAuth plugin provider key', () => {
     expect(isOpenClawOAuthPluginProviderKey('openai-codex')).toBe(false);
   });

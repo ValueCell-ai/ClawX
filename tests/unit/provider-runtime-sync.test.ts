@@ -65,6 +65,12 @@ vi.mock('@electron/utils/openclaw-auth', () => ({
   updateAgentModelProvider: mocks.updateAgentModelProvider,
   updateSingleAgentModelProvider: mocks.updateSingleAgentModelProvider,
   getProviderApiKeyFromOpenClaw: mocks.getProviderApiKeyFromOpenClaw,
+  // Pure helper — mirror the real implementation rather than stubbing it, so
+  // the fallback-id plumbing is exercised as it behaves in production.
+  extractFallbackModelIds: (provider: string, fallbackModels: string[]): string[] =>
+    fallbackModels
+      .filter((fallback) => fallback.startsWith(`${provider}/`))
+      .map((fallback) => fallback.slice(provider.length + 1)),
 }));
 
 vi.mock('@electron/utils/agent-config', () => ({
@@ -299,6 +305,7 @@ describe('provider-runtime-sync config delivery', () => {
         api: 'openai-responses',
         baseUrl: 'https://api.openai.com/v1',
       }),
+      expect.any(Array),
     );
     expect(mocks.setOpenClawDefaultModel).toHaveBeenCalledWith(
       'openai',
@@ -373,6 +380,7 @@ describe('provider-runtime-sync config delivery', () => {
         baseUrl: 'http://localhost:11434/v1',
         api: 'openai-completions',
       }),
+      expect.any(Array),
     );
     expectNoGatewayLifecycleCalls(gateway);
   });
