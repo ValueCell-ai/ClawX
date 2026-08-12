@@ -6,7 +6,7 @@ Related scenario: `acp-chat-experience`
 
 Related rules: `acp-chat-state-and-history`, `attachment-access-safety`, `renderer-main-boundary`
 
-Related tasks: `acp-native-chat`, `acp-media-attachments`, `filter-openclaw-heartbeat-session`
+Related tasks: `acp-native-chat`, `acp-media-attachments`, `filter-openclaw-heartbeat-session`, `recover-acp-session-after-gateway-restart`
 
 ## Ownership
 
@@ -33,11 +33,13 @@ Renderer-visible session identity is the OpenClaw Gateway session key. Main may 
 
 While `session/prompt` is pending, Main retains a bounded session-id routing context and Renderer retains that prompt's reduced timeline and original client-observed turn start in memory. This lets another page or conversation be viewed without dropping the original stream or resetting elapsed time. Returning to the live conversation reactivates its existing ACP context and restores the memory snapshot without calling `session/load`; updates received during the handoff are still generation-filtered. Prompt settlement releases both live contexts, after which returning uses ordinary ACP replay plus bounded timing metadata. This is live operation state, not a second history ledger, and it is never persisted.
 
+When guarded Gateway recovery interrupts an accepted main-session run, patched OpenClaw starts a distinct recovery run and marks its Chat and agent events with the interrupted run id as `resumedFromRunId`. The reconnecting ACP bridge keeps the original prompt pending for a bounded 60-second total recovery window, adopts only that explicitly linked recovery run, resets per-run text and tool state, and rebinds cancellation to the new run id. The initial disconnect check still occurs after 5 seconds: prompts whose send was never acknowledged reject then, while acknowledged prompts receive the remaining 55 seconds for Gateway startup backoff and recovery dispatch. ACP also subscribes to session tool events after reconnect, and Gateway mirrors visible recovery tools to that exact session subscription with lineage intact, so recovered tool cards preserve the surrounding text boundaries. Renderer does not reload the session or use Gateway runtime identity for this flow; normal ACP generation, session, and workspace guards remain authoritative.
+
 `messageId` and `toolCallId` are opaque identities within one loaded timeline. They are not durable UI identities across loads. Timeline sequence values and DOM anchors are also local to the active snapshot.
 
 ## History Authority
 
-ACP `session/load` replay is the primary source of Chat history. ClawX does not persist an ACP ledger, reduced timeline, replay cache, or reconstructed tool history. Full structured replay can restore tools and file activity; transcript-only fallback must not invent them.
+ACP `session/load` replay is the primary source of Chat history. ClawX does not persist an ACP ledger, reduced timeline, replay cache, or reconstructed tool history. Full structured replay restores recorded tools and file activity. When that ledger is unavailable, OpenClaw's ACP adapter maps persisted transcript `toolCall` and `toolResult` records to native ACP tool updates in transcript order, preserving assistant text segments on either side; this is upstream ACP replay, not a ClawX transcript supplement or inference path.
 
 OpenClaw emits replay through ordinary `session/update` notifications and completes the replay before `session/load` returns. Main collects those raw notifications for the active load generation and returns them with the load result instead of forwarding them incrementally. Renderer temporarily groups generation-matching host events that arrive during the IPC result handoff, then runs the normal reducer over the combined batch and publishes the resulting timeline in one state update. This is an in-flight transaction buffer only, not a history cache; after load, each live update continues through the normal host-event route and is applied immediately without a Renderer batching timer. Permission requests are accepted only after the current loaded session starts a prompt, preventing load-time or handoff requests from creating invisible waiters.
 

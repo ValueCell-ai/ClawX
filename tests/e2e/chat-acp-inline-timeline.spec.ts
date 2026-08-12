@@ -845,6 +845,11 @@ test.describe('ClawX ACP inline timeline', () => {
           content: [{ type: 'text', text: 'Replay the tool call' }],
         },
         {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'history-assistant-before',
+          content: { type: 'text', text: 'Before the historical tool' },
+        },
+        {
           sessionUpdate: 'tool_call',
           toolCallId: 'history-tool',
           title: 'Historical tool',
@@ -853,9 +858,9 @@ test.describe('ClawX ACP inline timeline', () => {
           locations: [],
         },
         {
-          sessionUpdate: 'agent_message',
-          messageId: 'history-assistant',
-          content: [{ type: 'text', text: 'Historical answer' }],
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'history-assistant-after',
+          content: { type: 'text', text: 'After the historical tool' },
         },
       ]);
 
@@ -868,7 +873,14 @@ test.describe('ClawX ACP inline timeline', () => {
       await page.getByTestId('acp-tool-toggle').click();
       await expect(card).toHaveAttribute('data-expanded', 'true');
       await expect(card).toContainText('historical output');
-      await expect(page.getByTestId('acp-assistant-turn')).toContainText('Historical answer');
+      const turn = page.getByTestId('acp-assistant-turn');
+      await expect(turn).toContainText('Before the historical tool');
+      await expect(turn).toContainText('After the historical tool');
+      const orderedParts = turn.locator('[data-testid="acp-assistant-message"], [data-testid="acp-tool-call-card"]');
+      await expect(orderedParts).toHaveCount(3);
+      await expect(orderedParts.nth(0)).toContainText('Before the historical tool');
+      await expect(orderedParts.nth(1)).toContainText('Historical tool');
+      await expect(orderedParts.nth(2)).toContainText('After the historical tool');
     } finally {
       await closeElectronApp(app);
     }

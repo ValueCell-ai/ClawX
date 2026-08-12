@@ -6,7 +6,7 @@ ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用
 
 OpenClaw 配置交付也统一由 Electron Main 管理。Gateway 运行时，ClawX 以 `config.get` 返回的权威快照为基线，并通过 `config.set` 提交修改；Gateway 停止或启动中时，同一个协调器只更新解析后的 JSON5 配置文件，不会因此启动 Gateway。因此，普通的 Provider、Agent、Channel、绑定、Skill 和模型修改不会替换 Gateway 进程。完整重启仅保留给代理等进程启动环境变化和用户显式操作。已确认的进程退出与 WebSocket 关闭继续使用现有的自动重连路径。连续前 9 次 WebSocket 心跳无响应只更新诊断，不会因短暂的 pong 延迟中断长时间运行的任务；收到 pong 或任意消息会重置计数，连续第 10 次无响应时，只有在生命周期处于可自动恢复的 running 状态时，才会请求受保护的 Gateway 自动恢复。认证配置写入 SQLite 后，ClawX 会调用 OpenClaw 的 `secrets.reload`，让运行中的 Agent 无需重启即可读取新凭据。
 
-Chat 使用由 Electron Main 持有的 ACP stdio bridge。Main 通过私有进程环境把同一份应用管理的 Gateway token 传给本地子进程，因此运行时配置重载后 ACP 历史回放仍能完成认证。Renderer 接收类型化 host events，并渲染内存中的 ACP timeline。Gateway 仍负责 providers、models、skills、workspace、settings、diagnostics 和 media configuration 等非 Chat 能力。
+Chat 使用由 Electron Main 持有的 ACP stdio bridge。Main 通过私有进程环境把同一份应用管理的 Gateway token 传给本地子进程，因此运行时配置重载后 ACP 历史回放仍能完成认证。如果受保护的 Gateway 恢复中断了已接收的主会话 run，补丁后的 OpenClaw 运行时会启动独立的恢复 run，并显式携带被中断 run id 作为 lineage。Chat 和 agent events 会保留该 lineage；重连后的 ACP bridge 据此将 pending prompt 接续到新 run，重置该 run 的流式游标，并订阅会话级 tool events。Renderer 不感知 Gateway 运行实例身份，仍通过类型化 host events 渲染同一个内存 ACP timeline。Gateway 继续负责 providers、models、skills、workspace、settings、diagnostics 和 media configuration 等非 Chat 能力。
 
 ### ACP 语义权威
 
@@ -16,7 +16,7 @@ Chat 使用由 Electron Main 持有的 ACP stdio bridge。Main 通过私有进�
 
 ### ACP 历史权威与有界 transcript 补充
 
-ACP `session/load` 回放是 Chat 历史的首要事实来源。ClawX 不会持久化第二套 ACP ledger、精简 timeline、回放缓存或重建的工具历史。OpenClaw 的部分能力目前还没有完全对应的 ACP 实现；例如，assistant 媒体可能不会出现在 ACP 中，Gateway 处理也可能从可见的实时回复中移除 assistant `MEDIA:` 指令。因此，ClawX 只保留有界、带标记、仅存于内存的兼容性补充路径：
+ACP `session/load` 回放是 Chat 历史的首要事实来源。ClawX 不会持久化第二套 ACP ledger、精简 timeline、回放缓存或重建的工具历史。当 OpenClaw 的结构化 ACP event ledger 不可用时，其 ACP adapter 会按 transcript 顺序把持久化的 `toolCall` 和 `toolResult` 记录重建为原生工具更新，并保留 text-tool-text 边界；ClawX 本身不会推断这些记录。OpenClaw 的部分能力目前还没有完全对应的 ACP 实现；例如，assistant 媒体可能不会出现在 ACP 中，Gateway 处理也可能从可见的实时回复中移除 assistant `MEDIA:` 指令。因此，ClawX 只保留有界、带标记、仅存于内存的兼容性补充路径：
 
 - 只有在同一 session 中存在已确认的 `image_generate` 上下文，且完成证据可信或来自获准 transcript 证据时，才可以恢复异步图像生成结果。
 - 普通附件可以从持久化的 assistant `__openclaw.media` 规范事实或明确的行首 assistant `MEDIA:` 指令中恢复。这只恢复附件引用和声明的元数据，不恢复周围的 assistant 消息。
