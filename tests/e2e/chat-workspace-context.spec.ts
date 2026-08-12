@@ -316,8 +316,26 @@ test.describe('ClawX chat workspace context', () => {
       }
 
       const workspaceSelector = page.getByTestId('chat-workspace-selector');
+      const composerInput = page.getByTestId('chat-composer-input');
       await expect(workspaceSelector).toHaveText(SESSION_WORKSPACE_LABEL, { timeout: 30_000 });
       await expect(workspaceSelector).toHaveAttribute('aria-disabled', 'true');
+      await expect(composerInput).toBeEnabled();
+
+      await composerInput.evaluate((element) => {
+        const input = element as HTMLTextAreaElement;
+        const state = { showedGatewayDisconnected: false };
+        const observe = () => {
+          if (input.placeholder === 'Gateway not connected...') {
+            state.showedGatewayDisconnected = true;
+          }
+        };
+        const observer = new MutationObserver(observe);
+        observer.observe(input, { attributes: true, attributeFilter: ['placeholder'] });
+        observe();
+        (globalThis as unknown as {
+          __newChatComposerPlaceholderObservation?: { observer: MutationObserver; state: typeof state };
+        }).__newChatComposerPlaceholderObservation = { observer, state };
+      });
 
       await page.getByTestId('sidebar-new-chat').click();
 
@@ -333,6 +351,18 @@ test.describe('ClawX chat workspace context', () => {
       await expect(workspaceSelector).toHaveText(SESSION_WORKSPACE_LABEL);
       await expect(workspaceSelector).toHaveAttribute('title', SESSION_WORKSPACE);
       await expect(workspaceSelector).not.toHaveAttribute('aria-disabled', 'true');
+      await expect(composerInput).toBeEnabled();
+      const showedGatewayDisconnected = await composerInput.evaluate(() => {
+        const observation = (globalThis as unknown as {
+          __newChatComposerPlaceholderObservation?: {
+            observer: MutationObserver;
+            state: { showedGatewayDisconnected: boolean };
+          };
+        }).__newChatComposerPlaceholderObservation;
+        observation?.observer.disconnect();
+        return observation?.state.showedGatewayDisconnected ?? false;
+      });
+      expect(showedGatewayDisconnected).toBe(false);
     } finally {
       await closeElectronApp(app);
     }

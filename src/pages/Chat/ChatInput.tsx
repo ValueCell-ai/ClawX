@@ -289,6 +289,7 @@ export function ChatInput({
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
   const isGatewayUsable = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
   const inputDisabled = disabled;
+  const gatewayUnavailable = !isGatewayUsable;
   const workspaceSelectorDisabled = workspaceReadOnly || inputDisabled || sending || !onSelectWorkspace;
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
   const openArtifactPreview = useArtifactPanel((s) => s.openPreview);
@@ -977,7 +978,7 @@ export function ChatInput({
                 isComposingRef.current = false;
               }}
               onPaste={handlePaste}
-              placeholder={inputDisabled ? t('composer.gatewayDisconnectedPlaceholder') : ''}
+              placeholder={inputDisabled && gatewayUnavailable ? t('composer.gatewayDisconnectedPlaceholder') : ''}
               disabled={inputDisabled}
               data-testid="chat-composer-input"
               className={cn(
