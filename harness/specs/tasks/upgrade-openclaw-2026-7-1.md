@@ -29,6 +29,7 @@ touchedAreas:
   - tests/e2e/cron-run-live-status.spec.ts
   - tests/unit/gateway-startup-recovery.test.ts
   - tests/unit/gateway-startup-orchestrator.test.ts
+  - tests/unit/gateway-ready-fallback.test.ts
   - tests/unit/openclaw-cli.test.ts
   - tests/unit/openclaw-bundle-config.test.ts
   - tests/unit/openclaw-upgrade-snapshot.test.ts
@@ -39,11 +40,13 @@ touchedAreas:
   - README.zh-CN.md
   - README.ja-JP.md
   - README.ru-RU.md
+  - harness/reference/openclaw-config-delivery.md
   - harness/specs/scenarios/gateway-backend-communication.md
   - harness/specs/rules/acp-chat-state-and-history.md
   - harness/specs/tasks/upgrade-openclaw-2026-7-1.md
+  - harness/specs/tasks/upgrade-openclaw-2026-7-1-2.md
 expectedUserBehavior:
-  - Existing OpenClaw 2026.6.10 configuration, authentication, sessions, and channel credentials remain usable after upgrade, with a one-time pre-migration snapshot of migration-critical config/auth/SQLite state that is removed after Gateway startup succeeds.
+  - Existing ClawX-managed OpenClaw 2026.6.10 configuration, authentication, sessions, selected provider models, and channel credentials remain usable after upgrade, with a one-time pre-migration snapshot of migration-critical config/auth/SQLite state that is removed after Gateway startup succeeds.
   - ClawX reconciles old managed channel-plugin install records with its current mirrored extensions, removes records for unconfigured mirrors, and links declared `openclaw` peers to the bundled runtime before OpenClaw's post-core payload smoke check.
   - ClawX starts and communicates with the bundled OpenClaw 2026.7.1 Gateway, including migration and control-plane safe-mode startup states.
   - ClawX registers the compatibility-patched WeCom mirror as a local-path install with static channel metadata so OpenClaw startup migration does not replace it with the raw mismatched npm package.
@@ -79,6 +82,7 @@ acceptance:
   - Configured mirrored plugins that declare an `openclaw` peer have a runtime link to the current bundled OpenClaw package before migration validation; stale install records for unconfigured mirrors are removed so missing directories cannot block startup.
   - Gateway recovery performs at most one doctor repair per startup flow and does not retry fatal runtime, EX_CONFIG, invalid migration, or active migration-lease failures indefinitely.
   - Electron Main reads current cron history through Gateway `cron.runs`, retains legacy JSONL as a compatibility fallback, and supplements only empty cron ACP replay in memory without replacing non-empty replay.
+  - ClawX-managed selected models remain explicit in provider configuration, but upgrade preflight treats manual catalog-only model references separately: OpenClaw's unconfigured `models list --all` catalog changes from 140 entries in 2026.6.10 to 86 in 2026.7.1, removing the built-in Venice, Fireworks, Tencent TokenHub, and Z.AI catalog groups plus several older Moonshot entries.
   - ACP 1.1 type checks, targeted runtime tests, communication regression checks, and harness validation pass.
 docs:
   required: true

@@ -36,7 +36,10 @@ import { prependPathEntry } from '../utils/env-path';
 import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, resolvePluginNpmPackagePath } from '../utils/plugin-install';
 import { safeRmSync } from '../utils/safe-fs';
 import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
-import { ensureOpenClaw2026_7_1UpgradeSnapshot } from '../utils/openclaw-upgrade-snapshot';
+import {
+  ensureOpenClaw2026_7_1UpgradeSnapshot,
+  quarantineLegacyUpdateCheckState,
+} from '../utils/openclaw-upgrade-snapshot';
 import { stripSystemdSupervisorEnv } from './config-sync-env';
 import { cleanupAgentsSymlinkedSkills, cleanupStalePluginRuntimeDeps } from './skills-symlink-cleanup';
 import {
@@ -648,6 +651,19 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
       // OpenClaw also maintains migration-specific backups. Keep startup
       // available if the additional ClawX safety snapshot cannot be written.
       logger.warn('[upgrade] Failed to create OpenClaw 2026.7.1 pre-migration snapshot:', error);
+    }
+  });
+
+  await measureAsync(timingsMs, 'legacyUpdateCheckCleanupMs', async () => {
+    try {
+      const cleanup = await quarantineLegacyUpdateCheckState();
+      if (cleanup.status === 'quarantined') {
+        logger.info(
+          `[upgrade] Quarantined conflicting legacy update-check state: ${cleanup.sourcePath} → ${cleanup.backupPath}`,
+        );
+      }
+    } catch (error) {
+      logger.warn('[upgrade] Failed to quarantine legacy update-check state:', error);
     }
   });
 

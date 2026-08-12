@@ -1,5 +1,6 @@
 import { chmod, copyFile, lstat, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { resolveOpenClawConfigPath, resolveOpenClawStateDir } from './paths';
 
 const UPGRADE_ID = 'openclaw-2026.7.1';
@@ -21,6 +22,12 @@ export type OpenClawUpgradeSnapshotResult = {
 export type OpenClawUpgradeSnapshotCleanupResult = {
   status: 'removed' | 'missing';
   snapshotDir: string;
+};
+
+export type LegacyUpdateCheckCleanupResult = {
+  status: 'quarantined' | 'missing' | 'deferred';
+  sourcePath: string;
+  backupPath?: string;
 };
 
 type SnapshotOptions = {
@@ -55,6 +62,44 @@ async function copyFileIfPresent(source: string, destination: string, copied: st
   await copyFile(source, destination);
   await chmod(destination, SNAPSHOT_FILE_MODE);
   copied.push(destination);
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveAvailableBackupPath(basePath: string): Promise<string> {
+  if (!await pathExists(basePath)) return basePath;
+
+  const timestamp = Date.now();
+  for (let suffix = 0; suffix < 100; suffix += 1) {
+    const candidate = `${basePath}.${timestamp}${suffix === 0 ? '' : `-${suffix}`}`;
+    if (!await pathExists(candidate)) return candidate;
+  }
+  throw new Error(`Could not allocate backup path for ${basePath}`);
+}
+
+function hasCanonicalUpdateCheckState(sqlitePath: string): boolean {
+  let db: DatabaseSync | undefined;
+  try {
+    db = new DatabaseSync(sqlitePath, { readOnly: true });
+    const row = db.prepare(`
+      SELECT 1 AS present
+        FROM update_check_state
+       WHERE state_key = ?
+       LIMIT 1
+    `).get('default') as { present?: number } | undefined;
+    return row?.present === 1;
+  } catch {
+    return false;
+  } finally {
+    db?.close();
+  }
 }
 
 async function copyTree(
@@ -159,6 +204,46 @@ export async function ensureOpenClaw2026_7_1UpgradeSnapshot(
     await rm(tempDir, { recursive: true, force: true });
     throw error;
   }
+}
+
+/**
+ * OpenClaw 2026.7.1 refuses Gateway readiness when the legacy update-check JSON
+ * differs from an existing canonical SQLite row. The JSON contains updater
+ * bookkeeping only, and upstream would archive it when both copies match. Once
+ * SQLite has the canonical row, move the legacy file out of the active state
+ * root so a harmless mismatch cannot trap startup or an ineffective doctor
+ * retry loop. If SQLite has no row yet, leave the JSON for upstream to import.
+ */
+export async function quarantineLegacyUpdateCheckState(
+  options: Pick<SnapshotOptions, 'stateDir'> = {},
+): Promise<LegacyUpdateCheckCleanupResult> {
+  const stateDir = resolve(options.stateDir ?? resolveOpenClawStateDir());
+  const sourcePath = join(stateDir, 'update-check.json');
+  let sourceInfo;
+  try {
+    sourceInfo = await lstat(sourcePath);
+  } catch {
+    return { status: 'missing', sourcePath };
+  }
+  if (!sourceInfo.isFile() && !sourceInfo.isSymbolicLink()) {
+    return { status: 'deferred', sourcePath };
+  }
+
+  const sqlitePath = join(stateDir, 'state', 'openclaw.sqlite');
+  if (!hasCanonicalUpdateCheckState(sqlitePath)) {
+    return { status: 'deferred', sourcePath };
+  }
+
+  const backupDir = join(stateDir, 'backups');
+  await mkdir(backupDir, { recursive: true, mode: SNAPSHOT_DIR_MODE });
+  const backupPath = await resolveAvailableBackupPath(
+    join(backupDir, `clawx-${UPGRADE_ID}-legacy-update-check.json`),
+  );
+  await rename(sourcePath, backupPath);
+  if (sourceInfo.isFile()) {
+    await chmod(backupPath, SNAPSHOT_FILE_MODE);
+  }
+  return { status: 'quarantined', sourcePath, backupPath };
 }
 
 /**

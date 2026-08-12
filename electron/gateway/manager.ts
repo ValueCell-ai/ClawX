@@ -735,6 +735,10 @@ export class GatewayManager extends EventEmitter {
         logger.info('Gateway ready fallback RPC router probe succeeded');
         this.resetGatewayReadyFallback();
         this.setStatus({ gatewayReady: true });
+        // A fast Gateway can emit gateway.ready before the WebSocket client is
+        // attached. A successful router probe is equivalent readiness, so it
+        // must also complete the one-time migration snapshot lifecycle.
+        void this.cleanupOpenClawUpgradeSnapshot();
       }
     } catch (error) {
       this.capabilityMonitor.recordCoreProbe({
