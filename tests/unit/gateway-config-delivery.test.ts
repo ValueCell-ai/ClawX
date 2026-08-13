@@ -471,6 +471,52 @@ describe('OpenClaw config delivery coordinator', () => {
     expect(gatewayManager.restart).not.toHaveBeenCalled();
   });
 
+  it('accepts a config.set commit after RPC timeout when the snapshot was persisted', async () => {
+    const gatewayManager = createGatewayManager();
+    gatewayManager.rpc.mockImplementation(async (method: string, params: unknown) => {
+      if (method === 'config.get') {
+        return { raw: '{ channels: {} }', hash: 'hash-1' };
+      }
+      if (method === 'config.set') {
+        const raw = (params as { raw: string }).raw;
+        await writeFile(configPath, raw, 'utf8');
+        throw new Error('RPC timeout: config.set');
+      }
+      throw new Error(`Unexpected RPC method: ${method}`);
+    });
+    gatewayManager.getStatus.mockReturnValue({ state: 'running' });
+    registerOpenClawConfigCoordinator(gatewayManager);
+
+    await expect(mutateOpenClawConfig((config) => {
+      (config.channels as Record<string, unknown>).feishu = { enabled: true };
+    })).resolves.toBe(true);
+
+    expect(JSON.parse(await readFile(configPath, 'utf8'))).toEqual({
+      channels: { feishu: { enabled: true } },
+    });
+  });
+
+  it('accepts a config.set commit after a 1012 service restart when the snapshot was persisted', async () => {
+    const gatewayManager = createGatewayManager();
+    gatewayManager.rpc.mockImplementation(async (method: string, params: unknown) => {
+      if (method === 'config.get') {
+        return { raw: '{ channels: {} }', hash: 'hash-1' };
+      }
+      if (method === 'config.set') {
+        const raw = (params as { raw: string }).raw;
+        await writeFile(configPath, raw, 'utf8');
+        throw new Error('Gateway service restart');
+      }
+      throw new Error(`Unexpected RPC method: ${method}`);
+    });
+    gatewayManager.getStatus.mockReturnValue({ state: 'running' });
+    registerOpenClawConfigCoordinator(gatewayManager);
+
+    await expect(mutateOpenClawConfig((config) => {
+      (config.channels as Record<string, unknown>).feishu = { enabled: true };
+    })).resolves.toBe(true);
+  });
+
   it.each(['config.get', 'config.set'] as const)(
     'fails closed when running %s fails',
     async (failedMethod) => {

@@ -70,6 +70,20 @@ function isBaseHashConflict(error: unknown): boolean {
   return /config changed since last load; re-run config\.get and retry/i.test(message);
 }
 
+function isConfigSetResponseLost(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('RPC timeout: config.set')
+    || message.includes('Gateway stopped')
+    || message.includes('Gateway not connected')
+    || message.includes('Gateway service restart')
+    || message.includes('Failed to send RPC request:');
+}
+
+async function acceptPersistedConfigSetCommitIfMatched(config: OpenClawConfig): Promise<boolean> {
+  const persisted = await readFileConfig(resolveOpenClawConfigPath());
+  return isDeepStrictEqual(persisted.config, config);
+}
+
 async function mutateRunningConfig(
   manager: ConfigDeliveryGatewayManager,
   mutator: OpenClawConfigMutator,
@@ -94,12 +108,11 @@ async function mutateRunningConfig(
       if (attempt === 0 && isBaseHashConflict(error)) continue;
 
       // config.set may durably replace the file and then close the socket with
-      // code 1012 before its RPC response reaches ClawX. If the manager has
-      // already left running state, verify that exact commit instead of
-      // reporting a false save failure or replaying the mutation out of band.
-      if (manager.getStatus().state !== 'running') {
-        const persisted = await readFileConfig(resolveOpenClawConfigPath());
-        if (isDeepStrictEqual(persisted.config, config)) return true;
+      // code 1012 before its RPC response reaches ClawX. Reconnect can restore
+      // running state before the RPC timeout fires, so verify the persisted
+      // snapshot whenever the response was lost instead of only while stopped.
+      if (manager.getStatus().state !== 'running' || isConfigSetResponseLost(error)) {
+        if (await acceptPersistedConfigSetCommitIfMatched(config)) return true;
       }
       throw error;
     }

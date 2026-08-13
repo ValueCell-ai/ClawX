@@ -1074,6 +1074,11 @@ export class GatewayManager extends EventEmitter {
         this.connectionMonitor.clear();
         this.recordSocketClose(closeCode);
         this.diagnostics.consecutiveHeartbeatMisses = 0;
+        if (closeCode === 1012) {
+          for (const id of [...this.pendingRequests.keys()]) {
+            rejectPendingGatewayRequest(this.pendingRequests, id, new Error('Gateway service restart'));
+          }
+        }
         if (this.status.state === 'running') {
           this.setStatus({ state: 'stopped' });
           // On Windows, skip reconnect from WS close.  The Gateway is a local
