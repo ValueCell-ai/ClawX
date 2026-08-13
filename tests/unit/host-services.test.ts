@@ -342,7 +342,7 @@ describe('host services', () => {
     providerServiceMock.createAccount.mockImplementation(async (account: unknown) => account);
     providerServiceMock.setDefaultAccount.mockResolvedValue(undefined);
     validateApiKeyWithProviderMock.mockResolvedValue({ valid: true });
-    ensureFeishuPluginInstalledMock.mockResolvedValue({ installed: true });
+    ensureFeishuPluginInstalledMock.mockResolvedValue({ installed: true, peerLinkOk: true });
     ensureWeChatPluginInstalledMock.mockResolvedValue({ installed: true });
     ensureClawXContextMock.mockResolvedValue(undefined);
     rmSync(logDir, { recursive: true, force: true });
@@ -854,6 +854,39 @@ describe('host services', () => {
     expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
     expect(gatewayManager.restart).not.toHaveBeenCalled();
+  });
+
+  it('schedules Gateway restart when plugin peer link repair fails on changed save', async () => {
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'main', name: 'Main' }],
+      defaultAgentId: 'main',
+      defaultModelRef: null,
+      configuredChannelTypes: ['feishu'],
+      channelOwners: {},
+      channelAccountOwners: {},
+    });
+    getChannelFormValuesMock.mockResolvedValue({ appId: 'old', appSecret: 'old-secret' });
+    ensureFeishuPluginInstalledMock.mockResolvedValue({ installed: true, peerLinkOk: false });
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state: 'running', port: 18789 })),
+      debouncedRestart: vi.fn(),
+      debouncedReload: vi.fn(),
+      restart: vi.fn().mockResolvedValue(undefined),
+    };
+    const { createChannelsApi } = await import('@electron/services/channels-api');
+
+    await expect(createChannelsApi({ gatewayManager: gatewayManager as never }).saveConfig({
+      channelType: 'feishu',
+      accountId: 'default',
+      config: { appId: 'cli_new', appSecret: 'new-secret' },
+    })).resolves.toEqual({ success: true, activationPending: true });
+
+    expect(saveChannelConfigMock).toHaveBeenCalledWith(
+      'feishu',
+      { appId: 'cli_new', appSecret: 'new-secret' },
+      'default',
+    );
+    expect(gatewayManager.debouncedRestart).toHaveBeenCalledWith(0);
   });
 
   it('keeps bundled Telegram on the native config reload path', async () => {

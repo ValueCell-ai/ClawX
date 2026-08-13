@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -14,6 +15,7 @@ const {
   mockWriteFileSync,
   mockReaddirSync,
   mockRealpathSync,
+  mockReadlinkSync,
   mockLoggerWarn,
   mockLoggerInfo,
   mockUpsertPluginInstallRecordsIntoSqlite,
@@ -36,6 +38,7 @@ const {
   mockWriteFileSync: vi.fn(),
   mockReaddirSync: vi.fn(),
   mockRealpathSync: vi.fn(),
+  mockReadlinkSync: vi.fn(),
   mockLoggerWarn: vi.fn(),
   mockLoggerInfo: vi.fn(),
   mockUpsertPluginInstallRecordsIntoSqlite: vi.fn(() => true),
@@ -70,6 +73,7 @@ vi.mock('node:fs', async () => {
     writeFileSync: mockWriteFileSync,
     readdirSync: mockReaddirSync,
     realpathSync: mockRealpathSync,
+    readlinkSync: mockReadlinkSync,
   };
   return {
     ...mocked,
@@ -329,13 +333,41 @@ describe('plugin installer diagnostics', () => {
     const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');
     const result = await ensurePluginInstalled('whatsapp', [sourceDir], 'WhatsApp');
 
-    expect(result.installed).toBe(true);
+    expect(result).toEqual({ installed: true, peerLinkOk: true });
     expect(mockUpsertPluginInstallRecordsIntoSqlite).toHaveBeenCalledWith({
       whatsapp: expect.objectContaining({
         installPath: targetDir,
         resolvedName: '@openclaw/whatsapp',
       }),
     });
+  });
+
+  it('reports a failed OpenClaw peer link repair for an installed mirror', async () => {
+    const targetDir = '/home/test/.openclaw/extensions/qqbot';
+
+    mockExistsSync.mockImplementation((input: string) => {
+      const value = String(input);
+      return value === `${targetDir}/openclaw.plugin.json`
+        || value === `${targetDir}/package.json`;
+    });
+    mockReadFileSync.mockImplementation((input: string) => {
+      if (String(input) === `${targetDir}/package.json`) {
+        return JSON.stringify({
+          name: '@openclaw/qqbot',
+          version: '2026.7.1',
+          peerDependencies: { openclaw: '>=2026.7.1' },
+        });
+      }
+      return '{}';
+    });
+
+    const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');
+    const result = await ensurePluginInstalled('qqbot', ['/bundle/qqbot'], 'QQBot');
+
+    expect(result).toEqual({ installed: true, peerLinkOk: false });
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
+      expect.stringContaining('runtime package missing'),
+    );
   });
 
   it('removes WeCom updater metadata for the patched legacy-compatible plugin id', async () => {
@@ -450,10 +482,17 @@ describe('plugin installer diagnostics', () => {
       return '{}';
     });
     mockLstatSync.mockImplementation((input: string) => {
-      if (String(input) === nodeModulesDir) {
+      const value = String(input);
+      if (value === nodeModulesDir) {
         return {
           isDirectory: () => true,
           isSymbolicLink: () => false,
+        };
+      }
+      if (linked && value.endsWith(`${path.sep}openclaw`)) {
+        return {
+          isDirectory: () => false,
+          isSymbolicLink: () => true,
         };
       }
       const error = new Error('missing') as NodeJS.ErrnoException;
@@ -463,9 +502,15 @@ describe('plugin installer diagnostics', () => {
     mockSymlinkSync.mockImplementation(() => {
       linked = true;
     });
-    mockRealpathSync.mockImplementation((input: string) => (
-      linked && String(input) === linkPath ? openclawDir : String(input)
+    mockReadlinkSync.mockImplementation((input: string) => (
+      linked && String(input).endsWith(`${path.sep}openclaw`) ? openclawDir : ''
     ));
+    mockRealpathSync.mockImplementation((input: string) => {
+      if (linked && String(input).endsWith(`${path.sep}openclaw`)) {
+        return `${openclawDir}-realpath-divergence`;
+      }
+      return String(input);
+    });
 
     const { repairPluginOpenClawPeerLink } = await import('@electron/utils/plugin-install');
     expect(repairPluginOpenClawPeerLink(targetDir, openclawDir)).toBe(true);

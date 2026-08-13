@@ -34,6 +34,7 @@ import {
   ensureWeChatPluginInstalled,
   ensureWeComPluginInstalled,
   ensureWhatsAppPluginInstalled,
+  type PluginInstallResult,
 } from '../utils/plugin-install';
 import {
   computeChannelRuntimeStatus,
@@ -967,7 +968,7 @@ function emitChannelEvent(
 
 const CHANNEL_PLUGIN_INSTALLERS: Record<
   string,
-  () => MaybePromise<{ installed: boolean; warning?: string }>
+  () => MaybePromise<PluginInstallResult>
 > = {
   dingtalk: ensureDingTalkPluginInstalled,
   wecom: ensureWeComPluginInstalled,
@@ -990,8 +991,11 @@ function shouldRestartRunningGateway(ctx: ChannelsApiContext, storedChannelType:
 function scheduleGatewayRestartForPluginChannel(
   ctx: ChannelsApiContext,
   storedChannelType: string,
+  reason: 'noChange' | 'peerLinkRepairFailed' = 'noChange',
 ): void {
-  logger.info(`[channels.saveConfig] scheduling Gateway restart to activate plugin channel=${storedChannelType}`);
+  logger.info(
+    `[channels.saveConfig] scheduling Gateway restart to activate plugin channel=${storedChannelType} reason=${reason}`,
+  );
   // The config and scoped binding are already committed. Let the host request
   // return while the guarded lifecycle path performs stop/start/readiness.
   // GatewayManager owns error logging, status propagation, and restart
@@ -1047,13 +1051,14 @@ async function awaitWeChatQrLogin(
   }
 }
 
-async function ensureChannelPluginInstalled(storedChannelType: string): Promise<void> {
+async function ensureChannelPluginInstalled(storedChannelType: string): Promise<{ peerLinkOk: boolean }> {
   const install = CHANNEL_PLUGIN_INSTALLERS[storedChannelType];
-  if (!install) return;
+  if (!install) return { peerLinkOk: true };
   const result = await install();
   if (!result.installed) {
     throw new Error(result.warning || `${toUiChannelType(storedChannelType)} plugin install failed`);
   }
+  return { peerLinkOk: result.peerLinkOk !== false };
 }
 
 export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceRegistry['channels'] {
@@ -1131,24 +1136,29 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
       const storedChannelType = resolveStoredChannelType(channelType);
       const restartGateway = shouldRestartRunningGateway(ctx, storedChannelType);
-      const [, existingValues] = await Promise.all([
+      const [installResult, existingValues] = await Promise.all([
         ensureChannelPluginInstalled(storedChannelType),
         getChannelFormValues(channelType, accountId),
       ]);
       if (isSameConfigValues(existingValues, config)) {
         await ensureScopedChannelBinding(channelType, accountId);
         if (restartGateway) {
-          scheduleGatewayRestartForPluginChannel(ctx, storedChannelType);
+          scheduleGatewayRestartForPluginChannel(ctx, storedChannelType, 'noChange');
         }
         return { success: true, noChange: true, ...(restartGateway ? { activationPending: true } : {}) };
       }
       await saveChannelConfig(channelType, config, accountId);
       await ensureScopedChannelBinding(channelType, accountId);
+      if (restartGateway && !installResult.peerLinkOk) {
+        scheduleGatewayRestartForPluginChannel(ctx, storedChannelType, 'peerLinkRepairFailed');
+        return { success: true, activationPending: true };
+      }
       // A changed running config is delivered through config.set, whose native
       // reload activates the plugin. Scheduling another full restart here races
       // that code-1012 reload and can trip OpenClaw's restart-loop breaker.
       // Keep the explicit restart above only for no-change retries, where no
-      // config.set reload occurs but a newly copied plugin may still need discovery.
+      // config.set reload occurs but a newly copied plugin may still need discovery,
+      // and when OpenClaw peer link repair failed after plugin install.
       return { success: true, ...(restartGateway ? { activationPending: true } : {}) };
     },
     setEnabled: async (payload) => {

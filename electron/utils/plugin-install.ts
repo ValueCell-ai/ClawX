@@ -7,7 +7,7 @@
  */
 import { app } from 'electron';
 import path from 'node:path';
-import { existsSync, cpSync, copyFileSync, statSync, lstatSync, mkdirSync, readFileSync, writeFileSync, readdirSync, realpathSync, symlinkSync, unlinkSync } from 'node:fs';
+import { existsSync, cpSync, copyFileSync, statSync, lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync, readdirSync, realpathSync, symlinkSync, unlinkSync } from 'node:fs';
 import { readdir, stat, copyFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -417,6 +417,34 @@ function canonicalComparablePath(filePath: string): string {
   return process.platform === 'win32' ? withoutLongPathPrefix.toLowerCase() : withoutLongPathPrefix;
 }
 
+function resolveSymlinkTarget(linkPath: string, target: string): string {
+  return path.isAbsolute(target) ? target : path.resolve(path.dirname(linkPath), target);
+}
+
+function openClawPeerLinkPointsTo(linkPath: string, openclawDir: string): boolean {
+  try {
+    const stat = lstatSync(fsPath(linkPath));
+    if (stat.isSymbolicLink()) {
+      const target = readlinkSync(fsPath(linkPath));
+      const resolvedTarget = resolveSymlinkTarget(linkPath, target);
+      return canonicalComparablePath(resolvedTarget) === canonicalComparablePath(openclawDir);
+    }
+    if (stat.isDirectory()) {
+      try {
+        const packageJson = JSON.parse(readFileSync(fsPath(join(linkPath, 'package.json')), 'utf-8')) as { name?: unknown };
+        if (packageJson.name === 'openclaw') {
+          return canonicalComparablePath(linkPath) === canonicalComparablePath(openclawDir);
+        }
+      } catch {
+        return false;
+      }
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 /**
  * Materialized mirrors live outside the bundled OpenClaw package tree, so
  * Node's normal package lookup cannot resolve their declared `openclaw` peer.
@@ -458,12 +486,8 @@ export function repairPluginOpenClawPeerLink(
       return false;
     }
 
-    try {
-      if (canonicalComparablePath(linkPath) === canonicalComparablePath(openclawDir)) {
-        return true;
-      }
-    } catch {
-      // Fall through to lstat/creation for a missing or broken link.
+    if (openClawPeerLinkPointsTo(linkPath, openclawDir)) {
+      return true;
     }
 
     let existing: ReturnType<typeof lstatSync> | null = null;
@@ -495,8 +519,9 @@ export function repairPluginOpenClawPeerLink(
       }
     }
 
-    symlinkSync(openclawDir, fsPath(linkPath), 'junction');
-    if (canonicalComparablePath(linkPath) !== canonicalComparablePath(openclawDir)) {
+    const junctionTarget = path.resolve(openclawDir);
+    symlinkSync(fsPath(junctionTarget), fsPath(linkPath), 'junction');
+    if (!openClawPeerLinkPointsTo(linkPath, openclawDir)) {
       logger.warn(`[plugin] OpenClaw peer link audit failed after creating ${linkPath}`);
       return false;
     }
@@ -723,28 +748,37 @@ export function copyPluginFromNodeModules(npmPkgPath: string, targetDir: string,
 
 // ── Core install / upgrade logic ─────────────────────────────────────────────
 
+export type PluginInstallResult = {
+  installed: boolean;
+  warning?: string;
+  peerLinkOk?: boolean;
+};
+
 export async function ensurePluginInstalled(
   pluginDirName: string,
   candidateSources: string[],
   pluginLabel: string,
-): Promise<{ installed: boolean; warning?: string }> {
+): Promise<PluginInstallResult> {
   const targetDir = join(homedir(), '.openclaw', 'extensions', pluginDirName);
   const targetManifest = join(targetDir, 'openclaw.plugin.json');
   const targetPkgJson = join(targetDir, 'package.json');
 
   const sourceDir = candidateSources.find((dir) => existsSync(fsPath(join(dir, 'openclaw.plugin.json'))));
 
+  async function finalizeInstalledMirror(): Promise<{ installed: true; peerLinkOk: boolean }> {
+    await syncTrustedOfficialPluginInstallRecord(pluginDirName, targetDir);
+    return { installed: true, peerLinkOk: repairPluginOpenClawPeerLink(targetDir) };
+  }
+
   // If already installed, check whether an upgrade is available
   if (existsSync(fsPath(targetManifest))) {
     if (!sourceDir) {
-      await syncTrustedOfficialPluginInstallRecord(pluginDirName, targetDir);
-      return { installed: true }; // no bundled source to compare, keep existing
+      return await finalizeInstalledMirror(); // no bundled source to compare, keep existing
     }
     const installedVersion = readPluginVersion(targetPkgJson);
     const sourceVersion = readPluginVersion(join(sourceDir, 'package.json'));
     if (!sourceVersion || !installedVersion || sourceVersion === installedVersion) {
-      await syncTrustedOfficialPluginInstallRecord(pluginDirName, targetDir);
-      return { installed: true }; // same version or unable to compare
+      return await finalizeInstalledMirror(); // same version or unable to compare
     }
     // Version differs — fall through to overwrite install
     logger.info(
@@ -767,9 +801,9 @@ export async function ensurePluginInstalled(
           return { installed: false, warning: `Failed to install ${pluginLabel} plugin mirror (manifest missing).` };
         }
         fixupPluginManifest(targetDir);
-        await syncTrustedOfficialPluginInstallRecord(pluginDirName, targetDir);
+        const installed = await finalizeInstalledMirror();
         logger.info(`Installed ${pluginLabel} plugin from bundled mirror: ${sourceDir}`);
-        return { installed: true };
+        return installed;
       } catch (error) {
         const diagnostic = toErrorDiagnostic(error);
         attempts.push({ attempt, ...diagnostic });
@@ -816,8 +850,7 @@ export async function ensurePluginInstalled(
             copyPluginFromNodeModules(npmPkgPath, targetDir, npmName);
             fixupPluginManifest(targetDir);
             if (existsSync(fsPath(join(targetDir, 'openclaw.plugin.json')))) {
-              await syncTrustedOfficialPluginInstallRecord(pluginDirName, targetDir);
-              return { installed: true };
+              return await finalizeInstalledMirror();
             }
           } catch (err) {
             logger.warn(
@@ -834,8 +867,7 @@ export async function ensurePluginInstalled(
             );
           }
         } else if (existsSync(fsPath(targetManifest))) {
-          await syncTrustedOfficialPluginInstallRecord(pluginDirName, targetDir);
-          return { installed: true }; // same version, already installed
+          return await finalizeInstalledMirror(); // same version, already installed
         }
       }
     }
@@ -870,15 +902,15 @@ export function buildCandidateSources(pluginDirName: string): string[] {
 
 // ── Per-channel plugin helpers ───────────────────────────────────────────────
 
-export function ensureDingTalkPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
+export function ensureDingTalkPluginInstalled(): Promise<PluginInstallResult> {
   return ensurePluginInstalled('dingtalk', buildCandidateSources('dingtalk'), 'DingTalk');
 }
 
-export function ensureWeComPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
+export function ensureWeComPluginInstalled(): Promise<PluginInstallResult> {
   return ensurePluginInstalled('wecom', buildCandidateSources('wecom'), 'WeCom');
 }
 
-export function ensureFeishuPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
+export function ensureFeishuPluginInstalled(): Promise<PluginInstallResult> {
   return ensurePluginInstalled(
     'feishu-openclaw-plugin',
     buildCandidateSources('feishu-openclaw-plugin'),
@@ -886,25 +918,23 @@ export function ensureFeishuPluginInstalled(): Promise<{ installed: boolean; war
   );
 }
 
-
-
-export function ensureWeChatPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
+export function ensureWeChatPluginInstalled(): Promise<PluginInstallResult> {
   return ensurePluginInstalled('openclaw-weixin', buildCandidateSources('openclaw-weixin'), 'WeChat');
 }
 
-export function ensureDiscordPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
+export function ensureDiscordPluginInstalled(): Promise<PluginInstallResult> {
   return ensurePluginInstalled('discord', buildCandidateSources('discord'), 'Discord');
 }
 
-export function ensureQQBotPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
+export function ensureQQBotPluginInstalled(): Promise<PluginInstallResult> {
   return ensurePluginInstalled('qqbot', buildCandidateSources('qqbot'), 'QQBot');
 }
 
-export function ensureWhatsAppPluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
+export function ensureWhatsAppPluginInstalled(): Promise<PluginInstallResult> {
   return ensurePluginInstalled('whatsapp', buildCandidateSources('whatsapp'), 'WhatsApp');
 }
 
-export function ensureClawXOpenAiImagePluginInstalled(): Promise<{ installed: boolean; warning?: string }> {
+export function ensureClawXOpenAiImagePluginInstalled(): Promise<PluginInstallResult> {
   return ensurePluginInstalled(
     'clawx-openai-image',
     buildCandidateSources('clawx-openai-image'),
