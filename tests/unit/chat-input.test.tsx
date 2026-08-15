@@ -2,8 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ChatInput } from '@/pages/Chat/ChatInput';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { useRealtimeTalkStore } from '@/stores/realtime-talk';
+import { realtimeTalkController } from '@/lib/talk/realtime-talk-controller';
 const hostApiFetchMock = vi.hoisted(() => vi.fn());
 const hostApiDialogOpenMock = vi.hoisted(() => vi.fn());
+const hostApiTalkCatalogMock = vi.hoisted(() => vi.fn());
 const toastErrorMock = vi.hoisted(() => vi.fn());
 const { agentsState, chatState, gatewayState, providersState, artifactPanelMocks } = vi.hoisted(() => ({
   agentsState: {
@@ -13,6 +16,8 @@ const { agentsState, chatState, gatewayState, providersState, artifactPanelMocks
   },
   chatState: {
     currentAgentId: 'main',
+    currentSessionKey: 'agent:main:session-1',
+    sessions: [{ key: 'agent:main:session-1' }],
   },
   gatewayState: {
     status: { state: 'running', port: 18789 },
@@ -70,6 +75,9 @@ vi.mock('@/lib/host-api', () => ({
     },
     dialog: {
       open: hostApiDialogOpenMock,
+    },
+    talk: {
+      catalog: hostApiTalkCatalogMock,
     },
   },
 }));
@@ -138,12 +146,31 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Preview SKILL.md';
     case 'composer.skillPreviewNotFound':
       return 'Skill not found';
+    case 'talk.start':
+      return 'Start Talk';
+    case 'talk.stop':
+      return 'Stop Talk';
+    case 'talk.status.connecting':
+      return 'Connecting Talk';
+    case 'talk.status.listening':
+      return 'Listening';
+    case 'talk.consultRefresh.failed':
+      return 'Could not refresh the consult reply.';
+    case 'talk.consultRefresh.retry':
+      return 'Retry refresh';
+    case 'talk.consultRefresh.retrying':
+      return 'Retrying refresh...';
+    case 'talk.unavailable':
+      return 'Talk unavailable';
+    case 'talk.unavailable.configuration':
+      return 'Configure Talk in Settings';
     default:
       return key;
   }
 }
 
 vi.mock('react-i18next', () => ({
+  initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({
     t: translate,
   }),
@@ -224,6 +251,9 @@ describe('ChatInput agent targeting', () => {
     agentsState.defaultModelRef = null;
     agentsState.updateAgentModel.mockReset();
     chatState.currentAgentId = 'main';
+    chatState.currentSessionKey = 'agent:main:session-1';
+    chatState.sessions = [{ key: 'agent:main:session-1' }];
+    useRealtimeTalkStore.getState().reset();
     gatewayState.status = { state: 'running', port: 18789 };
     providersState.accounts = [];
     providersState.statuses = [];
@@ -232,6 +262,13 @@ describe('ChatInput agent targeting', () => {
     providersState.refreshProviderSnapshot.mockReset();
     vi.mocked(hostApiFetchMock).mockReset();
     vi.mocked(hostApiDialogOpenMock).mockReset();
+    hostApiTalkCatalogMock.mockReset();
+    hostApiTalkCatalogMock.mockResolvedValue({
+      modes: ['realtime'],
+      transports: ['gateway-relay'],
+      brains: ['agent-consult'],
+      realtime: { ready: true, providers: [] },
+    });
     toastErrorMock.mockReset();
     artifactPanelMocks.openPreview.mockReset();
   });
@@ -250,6 +287,139 @@ describe('ChatInput agent targeting', () => {
     expect(indicator).toHaveAttribute('aria-live', 'polite');
     expect(screen.getByTestId('chat-composer-dot-pulse')).toBeInTheDocument();
     expect(screen.queryByTestId('chat-composer-zoomies')).not.toBeInTheDocument();
+  });
+
+  it('locks composer controls while Talk is connecting and restores the exact local draft after cleanup', () => {
+    const { rerender } = renderChatInput();
+    const input = screen.getByTestId('chat-composer-input');
+    fireEvent.change(input, { target: { value: 'Keep this draft exactly' } });
+
+    useRealtimeTalkStore.getState().reserve('agent:main:session-1');
+    useRealtimeTalkStore.getState().setInputLevel(0.4);
+    rerender(
+      <TooltipProvider>
+        <ChatInput onSend={vi.fn()} />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByTestId('chat-composer-input')).toBeDisabled();
+    expect(screen.getByTitle('Attach files')).toBeDisabled();
+    expect(screen.getByTestId('chat-composer-send')).toBeDisabled();
+    expect(screen.getByTestId('chat-composer-talk')).toHaveAttribute('aria-label', 'Stop Talk');
+    expect(screen.getByTestId('chat-talk-status')).toHaveTextContent('Connecting Talk');
+    expect(screen.getByTestId('chat-talk-input-level')).toHaveAttribute('aria-valuenow', '0.4');
+
+    useRealtimeTalkStore.getState().finish('cancelled');
+    rerender(
+      <TooltipProvider>
+        <ChatInput onSend={vi.fn()} />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByTestId('chat-composer-input')).toHaveValue('Keep this draft exactly');
+    expect(screen.getByTestId('chat-composer-input')).not.toBeDisabled();
+    expect(screen.getByTestId('chat-composer-talk')).toHaveAttribute('aria-label', 'Start Talk');
+  });
+
+  it('shows a recoverable consult refresh error and retries without unlocking Talk', async () => {
+    const retry = vi.spyOn(realtimeTalkController, 'retryConsultRefresh').mockResolvedValue(true);
+    useRealtimeTalkStore.getState().begin('relay-1', 'agent:main:session-1');
+    useRealtimeTalkStore.getState().setConsultRefreshFailure('ACP session refresh failed');
+    renderChatInput();
+
+    expect(screen.getByTestId('chat-talk-consult-refresh-error')).toHaveTextContent('Could not refresh the consult reply.');
+    const retryButton = screen.getByTestId('chat-talk-consult-refresh-retry');
+    expect(retryButton).toHaveTextContent('Retry refresh');
+    expect(screen.getByTestId('chat-composer-input')).toBeDisabled();
+
+    fireEvent.click(retryButton);
+
+    await waitFor(() => expect(retry).toHaveBeenCalledOnce());
+    retry.mockRestore();
+  });
+
+  it('preserves attachment drafts and blocks attachment mutations while Talk is active', async () => {
+    vi.mocked(hostApiFetchMock).mockRejectedValueOnce(new Error('staging failed'));
+    const { container, rerender } = renderChatInput();
+    const attachment = new File(['attachment'], 'draft.txt', { type: 'text/plain' });
+    Object.defineProperty(attachment, 'path', { value: '/tmp/draft.txt' });
+
+    fireEvent.drop(container.firstElementChild as Element, {
+      dataTransfer: {
+        items: [{
+          kind: 'file',
+          getAsFile: () => attachment,
+          webkitGetAsEntry: () => ({ isDirectory: false, isFile: true }),
+        }],
+        files: [attachment],
+      },
+    });
+    await screen.findByText('draft.txt');
+    await screen.findByText('Retry failed attachments');
+
+    useRealtimeTalkStore.getState().reserve('agent:main:session-1');
+    rerender(
+      <TooltipProvider>
+        <ChatInput onSend={vi.fn()} />
+      </TooltipProvider>,
+    );
+
+    const retry = screen.getByText('Retry failed attachments').closest('button');
+    expect(retry).toBeDisabled();
+    expect(screen.getByTestId('chat-attachment-remove')).toBeDisabled();
+    expect(screen.getByTitle('Attach files')).toBeDisabled();
+
+    fireEvent.click(retry!);
+    fireEvent.drop(container.firstElementChild as Element, {
+      dataTransfer: {
+        items: [{
+          kind: 'file',
+          getAsFile: () => attachment,
+          webkitGetAsEntry: () => ({ isDirectory: false, isFile: true }),
+        }],
+        files: [attachment],
+      },
+    });
+
+    expect(hostApiFetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('draft.txt')).toBeInTheDocument();
+    expect(hostApiDialogOpenMock).not.toHaveBeenCalled();
+  });
+
+  it('routes catalog configuration failures to the Talk Settings entry point', async () => {
+    const onConfigureTalk = vi.fn();
+    hostApiTalkCatalogMock.mockResolvedValue({
+      modes: ['realtime'],
+      transports: ['gateway-relay'],
+      brains: ['agent-consult'],
+      realtime: { ready: false, reason: 'not configured', providers: [] },
+    });
+    render(
+      <TooltipProvider>
+        <ChatInput onSend={vi.fn()} onConfigureTalk={onConfigureTalk} />
+      </TooltipProvider>,
+    );
+
+    const talkButton = await screen.findByTestId('chat-composer-talk');
+    await waitFor(() => expect(talkButton).toBeEnabled());
+    fireEvent.click(talkButton);
+
+    expect(onConfigureTalk).toHaveBeenCalledOnce();
+  });
+
+  it('does not start Talk while the composer is disabled by ACP lifecycle state', async () => {
+    const start = vi.spyOn(realtimeTalkController, 'start').mockResolvedValue(false);
+    render(
+      <TooltipProvider>
+        <ChatInput onSend={vi.fn()} disabled />
+      </TooltipProvider>,
+    );
+
+    const talkButton = screen.getByTestId('chat-composer-talk');
+    expect(talkButton).toBeDisabled();
+    fireEvent.click(talkButton);
+    expect(start).not.toHaveBeenCalled();
+    start.mockRestore();
   });
 
   it('shows an image-generation indicator without locking the composer for background work', () => {

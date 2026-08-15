@@ -11,6 +11,19 @@ import type { CronJob, CronJobCreateInput, CronJobUpdateInput } from '../types/c
 import type { GatewayHealth, GatewayStatus } from '../types/gateway';
 import type { MarketplaceSkill, QuickAccessSkill, Skill } from '../types/skill';
 import type { WebBrowserNavigatePayload } from '../web-browser';
+import type {
+  TalkAcknowledgeMarkPayload,
+  TalkAgentConsultResult,
+  TalkAppendAudioPayload,
+  TalkCatalog,
+  TalkOperationResult,
+  TalkRelayIdPayload,
+  TalkRelaySession,
+  TalkRealtimeSettingsPayload,
+  TalkStartAgentConsultPayload,
+  TalkStartRelayPayload,
+  TalkSubmitToolResultPayload,
+} from '../talk/types';
 
 export type JsonRecord = Record<string, unknown>;
 export type HostSuccess = { success: boolean; error?: string };
@@ -864,6 +877,17 @@ export type HostApiContract = {
     health: (payload?: GatewayHealthPayload) => GatewayHealth;
     controlUi: () => GatewayControlUiResult;
     rpc: (payload: GatewayRpcPayload) => unknown;
+  };
+  talk: {
+    catalog: () => TalkCatalog;
+    updateRealtimeSettings: (payload: TalkRealtimeSettingsPayload) => TalkOperationResult;
+    startRelay: (payload: TalkStartRelayPayload) => TalkRelaySession;
+    appendAudio: (payload: TalkAppendAudioPayload) => TalkOperationResult;
+    cancelOutput: (payload: TalkRelayIdPayload) => TalkOperationResult;
+    submitToolResult: (payload: TalkSubmitToolResultPayload) => TalkOperationResult;
+    acknowledgeMark: (payload: TalkAcknowledgeMarkPayload) => TalkOperationResult;
+    stopRelay: (payload: TalkRelayIdPayload) => TalkOperationResult;
+    startAgentConsult: (payload: TalkStartAgentConsultPayload) => TalkAgentConsultResult;
   };
   logs: {
     recent: (payload?: LogRecentPayload) => LogContentResult;

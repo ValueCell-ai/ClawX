@@ -45,6 +45,7 @@ import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
 import type { AcpTimelineSnapshot, MessageSegmentItem, PermissionItem, RenderPart } from '@/lib/acp/timeline-types';
 import { isCronSessionKey } from './chat/cron-session-utils';
+import { stopActiveRealtimeTalk, useRealtimeTalkStore } from './realtime-talk';
 
 const EMPTY_SESSION_ID = '';
 const CANCEL_PERMISSION_OPTION_ID = '__cancelled__';
@@ -132,6 +133,13 @@ type ImageGenerationProjectionOptions = {
 };
 
 type PermissionOutcome = AcpChatRespondPermissionPayload['outcome'];
+type AcpChatLoadOptions = {
+  // Only the Talk consult controller may retain its live relay during ACP replay.
+  preserveRealtimeTalk?: true;
+  // Forces Main to obtain the logical Gateway session transcript through a fresh ACP session.
+  forceDurableReplay?: true;
+};
+type AcpChatLoadInput = AcpChatLoadPayload & AcpChatLoadOptions;
 
 export type AcpChatSessionState = {
   activeSessionKey: string | null;
@@ -146,7 +154,8 @@ export type AcpChatSessionState = {
   timeline: AcpTimelineSnapshot;
   turnTimingsByUserMessageId: Record<string, AcpTurnTiming>;
   prepareLocalSession: (input: AcpChatLoadPayload) => void;
-  loadSession: (input: AcpChatLoadPayload) => Promise<boolean>;
+  loadSession: (input: AcpChatLoadInput) => Promise<boolean>;
+  reloadActiveSession: (options?: AcpChatLoadOptions) => Promise<boolean>;
   sendPrompt: (input: AcpChatPromptPayload) => Promise<boolean>;
   cancel: () => Promise<void>;
   respondPermission: (requestId: string, optionId: string) => Promise<void>;
@@ -1016,6 +1025,8 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
   turnTimingsByUserMessageId: {},
 
   prepareLocalSession(input) {
+    void stopActiveRealtimeTalk();
+    useRealtimeTalkStore.getState().reset();
     captureLiveSession(get());
     loadRequestSeq += 1;
     pendingLoadUpdates.clear();
@@ -1038,6 +1049,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
   },
 
   async loadSession(input) {
+    const { preserveRealtimeTalk, ...hostInput } = input;
     captureLiveSession(get());
     const requestId = loadRequestSeq + 1;
     loadRequestSeq = requestId;
@@ -1061,9 +1073,13 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       timeline: liveSnapshot?.timeline ?? createEmptyAcpTimeline(input.sessionKey, generation),
       turnTimingsByUserMessageId: liveSnapshot?.turnTimingsByUserMessageId ?? {},
     });
+    if (!preserveRealtimeTalk) {
+      await stopActiveRealtimeTalk();
+      useRealtimeTalkStore.getState().reset();
+    }
 
     try {
-      let result = await hostApi.chat.loadAcpSession(input);
+      let result = await hostApi.chat.loadAcpSession(hostInput);
       let state = get();
       if (
         loadRequestSeq !== requestId
@@ -1071,23 +1087,25 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
         || state.workspaceRoot !== input.workspaceRoot
         || state.cwd !== input.cwd
       ) return false;
-      if (!result.success) {
-        pendingLoadUpdates.clear();
-        set({
-          activeSessionKey: null,
-          workspaceRoot: null,
-          cwd: null,
-          loading: false,
-          error: failedOperationMessage(result, 'ACP session load failed'),
-        });
-        return false;
-      }
+        if (!result.success) {
+          pendingLoadUpdates.clear();
+          set(preserveRealtimeTalk
+            ? { loading: false, error: failedOperationMessage(result, 'ACP session load failed') }
+            : {
+              activeSessionKey: null,
+              workspaceRoot: null,
+              cwd: null,
+              loading: false,
+              error: failedOperationMessage(result, 'ACP session load failed'),
+            });
+          return false;
+        }
 
       const resumedSnapshot = result.resumedActivePrompt
         ? liveSessionSnapshots.get(input.sessionKey)
         : undefined;
       if (result.resumedActivePrompt && resumedSnapshot?.generation !== result.generation) {
-        result = await hostApi.chat.loadAcpSession(input);
+          result = await hostApi.chat.loadAcpSession(hostInput);
         state = get();
         if (
           loadRequestSeq !== requestId
@@ -1099,7 +1117,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
           pendingLoadUpdates.clear();
           set({
             loading: false,
-            sending: false,
+            ...(preserveRealtimeTalk ? {} : { sending: false }),
             error: failedOperationMessage(result, 'ACP session load failed'),
           });
           return false;
@@ -1199,7 +1217,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
         const evidence = extractImageGenerationCompletionFromAcpEnvelope(event);
         if (evidence) void get().projectImageGenerationCompletion(evidence);
       }
-      if (!input.createIfMissing) {
+      if (!input.createIfMissing && !input.forceDurableReplay) {
         startHistoricalTranscriptSupplement(input.sessionKey, generation);
       }
       return true;
@@ -1210,17 +1228,31 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
           && state.activeSessionKey === input.sessionKey
           && state.workspaceRoot === input.workspaceRoot
           && state.cwd === input.cwd
-          ? {
-            activeSessionKey: null,
-            workspaceRoot: null,
-            cwd: null,
-            loading: false,
-            error: errorMessage(error, 'ACP session load failed'),
-          }
+          ? (preserveRealtimeTalk
+            ? { loading: false, error: errorMessage(error, 'ACP session load failed') }
+            : {
+              activeSessionKey: null,
+              workspaceRoot: null,
+              cwd: null,
+              loading: false,
+              error: errorMessage(error, 'ACP session load failed'),
+            })
           : {}
       ));
       return false;
     }
+  },
+
+  async reloadActiveSession(options) {
+    const { activeSessionKey, workspaceRoot, cwd } = get();
+    if (!activeSessionKey || !workspaceRoot || !cwd) return false;
+    return await get().loadSession({
+      sessionKey: activeSessionKey,
+      workspaceRoot,
+      cwd,
+      ...options,
+      ...(options?.preserveRealtimeTalk ? { forceDurableReplay: true } : {}),
+    });
   },
 
   async sendPrompt(input) {
@@ -1228,6 +1260,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     const sessionKey = input.sessionKey;
     const generation = startState.generation;
     if (startState.activeSessionKey !== sessionKey) return false;
+    if (useRealtimeTalkStore.getState().isActive) return false;
 
     const messageId = input.messageId ?? createOptimisticMessageId();
     const payload = { ...input, messageId };

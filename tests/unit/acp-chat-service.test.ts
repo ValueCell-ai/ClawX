@@ -254,6 +254,50 @@ describe('AcpChatService', () => {
     expect(connection.loadSession).not.toHaveBeenCalled();
   });
 
+  it('uses an ephemeral ACP session for durable replay and routes its transcript to the logical Gateway session', async () => {
+    const connection = createConnection();
+    const { service, send } = await createService(connection);
+    connection.newSession.mockImplementationOnce(async () => {
+      await service.client.sessionUpdate({
+        sessionId: 'acp-durable-replay',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'consult-answer',
+          content: { type: 'text', text: 'Durable consult answer' },
+        },
+      } as never);
+      return { sessionId: 'acp-durable-replay' };
+    });
+
+    await expect(service.loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', forceDurableReplay: true,
+    })).resolves.toEqual({
+      success: true,
+      generation: 1,
+      sessionUpdates: [{
+        sessionKey: 'agent:pi:s1',
+        generation: 1,
+        historical: true,
+        notification: {
+          sessionId: 'agent:pi:s1',
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            messageId: 'consult-answer',
+            content: { type: 'text', text: 'Durable consult answer' },
+          },
+        },
+      }],
+    });
+
+    expect(connection.newSession).toHaveBeenCalledWith({
+      cwd: '/repo',
+      mcpServers: [],
+      _meta: { sessionKey: 'agent:pi:s1', prefixCwd: true },
+    });
+    expect(connection.loadSession).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalledWith(HOST_EVENT_CHANNELS.chat.acpSessionUpdate, expect.anything());
+  });
+
   it('routes fresh-session prompts through the ACP session id returned by session/new', async () => {
     const { service, connection } = await createService();
 

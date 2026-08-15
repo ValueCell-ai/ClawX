@@ -157,6 +157,25 @@
     "proxySaved": "Proxy settings saved",
     "proxySaveFailed": "Failed to save proxy settings"
   },
+  "talk": {
+    "title": "Talk",
+    "description": "Configure realtime Talk through the OpenClaw Gateway Relay.",
+    "refresh": "Refresh Talk availability",
+    "provider": "Realtime provider",
+    "model": "Realtime model",
+    "speakerVoice": "Speaker voice",
+    "voiceUnavailable": "No speaker voices are available for this provider.",
+    "readiness": {
+      "ready": "Talk is ready",
+      "unavailable": "Talk is unavailable"
+    },
+    "developerGuidance": "Configure provider credentials in OpenClaw Developer settings",
+    "save": "Save Talk settings",
+    "saving": "Saving Talk settings...",
+    "saved": "Talk settings saved",
+    "loadFailed": "Could not load Talk settings",
+    "saveFailed": "Could not save Talk settings"
+  },
   "updates": {
     "title": "Updates",
     "description": "Keep ClawX up to date",

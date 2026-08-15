@@ -59,6 +59,7 @@ requiredRules:
   - provider-model-metadata-preservation
   - provider-model-selection-authority
   - sidebar-session-attention-authority
+  - realtime-talk-openclaw-authority
   - web-browser-security-and-lifecycle
   - e2e-parallel-isolation
   - comms-regression
@@ -98,5 +99,7 @@ Scheduled-task history is Main-owned backend data. Current OpenClaw versions mus
 The local HTML Preview privileged bridge is also Main-owned: Renderer may load a validated local HTML file or open that current file externally through the typed Host API. The guest is an implementation detail of the existing `preview` tab; there is no `web-browser` artifact tab or general address navigation. The durable guest contract is `harness/reference/web-browser.md`.
 
 Gateway session-catalog subscription, normalization, ordered list/event replay, attention transitions, and reconnect recovery are documented in `harness/reference/sidebar-session-attention.md`. Electron test-process isolation and global-resource scheduling are documented in `harness/reference/e2e-parallelism.md`.
+
+Realtime Talk uses one Main-owned OpenClaw Gateway Relay and typed Talk host events. Renderer direct-provider audio and text are transient, while OpenClaw/ACP remains the durable authority for Agent consult history; its full boundary is `harness/reference/realtime-talk.md`.
 
 Gateway WebSocket heartbeat misses are diagnostic availability signals for the first three consecutive misses and must not interrupt long-running work during that window. A pong or any incoming Gateway message resets the sequence. On the fourth consecutive miss, Main may request the guarded Gateway restart path when auto-recovery is enabled and lifecycle state is still running; the heartbeat callback must not directly terminate the socket or process. Authoritative process-exit and socket-close signals retain their existing automatic lifecycle paths.

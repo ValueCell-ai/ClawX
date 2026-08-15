@@ -6,10 +6,15 @@ test.describe('ClawX developer-mode gated UI', () => {
 
     await page.getByTestId('sidebar-nav-settings').click();
     await expect(page.getByTestId('settings-page')).toBeVisible();
-    await expect(page.getByTestId('settings-developer-section')).toHaveCount(0);
+    await expect(page.getByTestId('settings-developer-section')).toBeVisible();
+    await expect(page.getByTestId('settings-developer-locked-guidance')).toBeVisible();
     await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'unchecked');
     await expect(page.getByTestId('sidebar-open-dev-console')).toHaveCount(0);
     await expect(page.getByTestId('sidebar-nav-dreams')).toHaveCount(0);
+
+    await page.evaluate(() => window.location.assign('#/settings?section=developer'));
+    await expect(page.getByTestId('settings-developer-section')).toBeFocused();
+    await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'unchecked');
 
     await page.evaluate(() => {
       window.location.hash = '#/dreams';
@@ -34,6 +39,7 @@ test.describe('ClawX developer-mode gated UI', () => {
     await page.getByTestId('settings-dev-mode-switch').click();
     await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'checked');
     await expect(page.getByTestId('settings-developer-section')).toBeVisible();
+    await expect(page.getByTestId('settings-developer-locked-guidance')).toHaveCount(0);
     await expect(page.getByTestId('settings-developer-gateway-token')).toBeVisible();
     await expect(page.getByTestId('sidebar-open-dev-console')).toBeVisible();
     await expect(page.getByTestId('sidebar-nav-dreams')).toHaveCount(0);

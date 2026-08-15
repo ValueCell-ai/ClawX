@@ -240,6 +240,39 @@
         "skillPreviewTooltip": "预览 SKILL.md",
         "skillPreviewNotFound": "找不到该技能。请打开技能列表以刷新。"
     },
+    "talk": {
+        "start": "开始语音对话",
+        "stop": "停止语音对话",
+        "inputLevel": "麦克风输入音量",
+        "status": {
+            "idle": "语音对话已就绪",
+            "connecting": "正在连接语音对话",
+            "listening": "正在聆听",
+            "thinking": "正在思考",
+            "speaking": "正在讲话",
+            "disconnected": "语音对话已断开",
+            "error": "语音对话出错"
+        },
+        "unavailable": {
+            "gateway": "语音对话需要已连接的网关",
+            "sending": "发送消息时无法使用语音对话",
+            "session": "请选择聊天会话后再开始语音对话",
+            "configuration": "语音对话不可用：{{reason}}",
+            "loading": "正在检查语音对话可用性",
+            "default": "语音对话不可用"
+        },
+        "consultRefresh": {
+            "failed": "无法刷新咨询回复。",
+            "retry": "重试刷新",
+            "retrying": "正在重试刷新..."
+        },
+        "transcript": {
+            "label": "实时语音转写",
+            "microphone": "麦克风",
+            "voiceInput": "语音输入",
+            "voiceResponse": "语音回答"
+        }
+    },
     "sessionList": {
         "title": "会话列表",
         "collapseAll": "一键折叠",

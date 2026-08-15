@@ -404,7 +404,7 @@ describe('host services', () => {
     expect(setSettingMock).toHaveBeenCalledWith('recentWorkspacePaths', ['/Users/alex/workspace/ClawX']);
   });
 
-  it('routes validated generic gateway rpc directly to the manager', async () => {
+  it('routes validated non-Talk gateway rpc directly to the manager and blocks Talk methods', async () => {
     const gatewayManager = {
       rpc: vi.fn(async () => ({ ok: true })),
     };
@@ -425,6 +425,9 @@ describe('host services', () => {
     await expect(gatewayApi.rpc({ method: '   ' })).rejects.toThrow('Invalid gateway RPC method');
     await expect(gatewayApi.rpc({ method: 'status', timeoutMs: 0 })).rejects.toThrow(
       'Invalid gateway RPC timeout',
+    );
+    await expect(gatewayApi.rpc({ method: ' talk.session.create ' })).rejects.toThrow(
+      'Talk Gateway RPCs must use the typed Talk API',
     );
     expect(gatewayManager.rpc).toHaveBeenCalledTimes(1);
   });
@@ -1276,6 +1279,40 @@ describe('host services', () => {
       'cancelAcpSession',
       'respondAcpPermission',
     ]);
+  });
+
+  it('registers the typed Talk service with Main-owned relay ownership and no legacy direct IPC channel', () => {
+    const source = readFileSync(join(process.cwd(), 'electron/main/ipc-handlers.ts'), 'utf8');
+    const mainSource = readFileSync(join(process.cwd(), 'electron/main/index.ts'), 'utf8');
+    const registerIpcHandlersSource = source.slice(
+      source.indexOf('export function registerIpcHandlers('),
+      source.indexOf('function registerTypedHostHandlers('),
+    );
+
+    expect(source).toContain('const talkRelayOwnership = createTalkRelayOwnership();');
+    expect(source).toContain('talk: createTalkApi(gatewayManager, talkRelayOwnership)');
+    expect(source).not.toMatch(/ipcMain\.handle\(\s*['"]talk:/);
+    expect(mainSource).toContain('forwardActiveTalkEvent(talkRelayOwnership, data');
+    const returnIndex = registerIpcHandlersSource.indexOf('return talkRelayOwnership;');
+    expect(returnIndex).toBeGreaterThan(-1);
+    [
+      'registerGatewayHandlers(gatewayManager);',
+      'registerOpenClawHandlers();',
+      'registerProviderHandlers(gatewayManager);',
+      'registerShellHandlers();',
+      'registerDialogHandlers();',
+      'registerAppHandlers();',
+      'registerSettingsHandlers(gatewayManager);',
+      'registerUsageHandlers();',
+      'registerCronHandlers(gatewayManager);',
+      'registerWindowHandlers(mainWindow);',
+      'registerWhatsAppHandlers(mainWindow);',
+      'registerFilePreviewHandlers();',
+    ].forEach((registration) => {
+      const registrationIndex = registerIpcHandlersSource.indexOf(registration);
+      expect(registrationIndex).toBeGreaterThan(-1);
+      expect(registrationIndex).toBeLessThan(returnIndex);
+    });
   });
 
   it('loads session summaries and transcript history through the typed sessions service', async () => {

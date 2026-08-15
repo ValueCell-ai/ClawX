@@ -4,6 +4,7 @@ title: E2E Parallel Isolation
 type: ai-coding-rule
 appliesTo:
   - gateway-backend-communication
+  - realtime-talk
 requiredProfiles:
   - fast
   - e2e

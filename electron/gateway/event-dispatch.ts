@@ -6,6 +6,7 @@ import type {
   GatewayChatMessageEvent,
   GatewayRuntimePayload,
 } from '@shared/host-events/contract';
+import type { TalkRelayEvent } from '@shared/talk/types';
 
 type GatewayEventEmitter = {
   emit: (event: string, payload: unknown) => boolean;
@@ -43,6 +44,9 @@ export function dispatchProtocolEvent(
     case 'presence':
       emitter.emit('gateway:presence', payload as GatewayRuntimePayload);
       break;
+    case 'talk.event':
+      emitter.emit('talk:event', payload as TalkRelayEvent);
+      break;
     default:
       emitter.emit('notification', { method: event, params: payload });
   }
@@ -57,6 +61,8 @@ export function dispatchJsonRpcNotification(
     if (normalized) {
       emitter.emit('chat:runtime-event', normalized);
     }
+  } else if (notification.method === 'talk.event') {
+    emitter.emit('talk:event', notification.params as TalkRelayEvent);
   } else {
     emitter.emit('notification', notification);
   }
