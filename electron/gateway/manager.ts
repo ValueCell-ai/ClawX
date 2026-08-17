@@ -79,6 +79,12 @@ import type {
   GatewayRuntimePayload,
 } from '@shared/host-events/contract';
 import type { ChatRuntimeEvent } from '@shared/chat-runtime-events';
+import {
+  GATEWAY_HEARTBEAT_INTERVAL_MS,
+  GATEWAY_HEARTBEAT_MAX_MISSES,
+  GATEWAY_HEARTBEAT_TIMEOUT_MS,
+  GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS,
+} from './recovery-budget';
 
 export interface GatewayStatus {
   state: GatewayLifecycleState;
@@ -194,11 +200,7 @@ export class GatewayManager extends EventEmitter {
   private externalShutdownSupported: boolean | null = null;
   private reconnectAttemptsTotal = 0;
   private reconnectSuccessTotal = 0;
-  private static readonly HEARTBEAT_INTERVAL_MS = 60_000;
-  private static readonly HEARTBEAT_TIMEOUT_MS = 30_000;
-  private static readonly HEARTBEAT_MAX_MISSES = 4;
   public static readonly RESTART_COOLDOWN_MS = 5_000;
-  private static readonly GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS = [1_500, 3_000, 5_000, 8_000, 12_000, 30_000] as const;
   private lastRestartAt = 0;
   /** Set by scheduleReconnect() before calling start() to signal auto-reconnect. */
   private isAutoReconnectStart = false;
@@ -714,7 +716,7 @@ export class GatewayManager extends EventEmitter {
   }
 
   private getNextGatewayReadyFallbackDelayMs(): number {
-    const delays = GatewayManager.GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS;
+    const delays = GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS;
     const index = Math.min(this.gatewayReadyFallbackAttempt, delays.length - 1);
     const delayMs = delays[index]!;
     this.gatewayReadyFallbackAttempt += 1;
@@ -1164,9 +1166,9 @@ export class GatewayManager extends EventEmitter {
    */
   private startPing(): void {
     this.connectionMonitor.startPing({
-      intervalMs: GatewayManager.HEARTBEAT_INTERVAL_MS,
-      timeoutMs: GatewayManager.HEARTBEAT_TIMEOUT_MS,
-      maxConsecutiveMisses: GatewayManager.HEARTBEAT_MAX_MISSES,
+      intervalMs: GATEWAY_HEARTBEAT_INTERVAL_MS,
+      timeoutMs: GATEWAY_HEARTBEAT_TIMEOUT_MS,
+      maxConsecutiveMisses: GATEWAY_HEARTBEAT_MAX_MISSES,
       sendPing: () => {
         if (this.ws?.readyState === WebSocket.OPEN) {
           this.ws.ping();

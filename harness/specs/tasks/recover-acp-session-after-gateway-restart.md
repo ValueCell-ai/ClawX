@@ -23,7 +23,7 @@ touchedAreas:
   - tests/unit/openclaw-restart-recovery-patch.test.ts
   - tests/e2e/chat-acp-inline-timeline.spec.ts
 expectedUserBehavior:
-  - An accepted ACP prompt stays pending for up to 60 seconds while the Gateway reconnects and OpenClaw starts restart recovery; a send that was never acknowledged retains the 5-second disconnect deadline.
+  - An accepted ACP prompt stays pending for the bounded ClawX managed-restart budget while the Gateway reconnects and OpenClaw starts restart recovery; a send that was never acknowledged retains the 5-second disconnect deadline.
   - Events from the explicitly linked recovery run continue the original in-memory turn and settle its original prompt.
   - Recovered text, tool activity, approvals, cancellation, and terminal state use the new run id without a Renderer session reload; tool calls keep text segments on either side distinct.
   - After ClawX restarts, ACP `session/load` restores persisted transcript tool calls and results as native tool updates in their original order between assistant text segments.
@@ -51,7 +51,7 @@ acceptance:
   - Reconnect reconciliation waits for the exact session-message subscription request to settle, so recovery dispatch cannot race ahead of tool-event registration.
   - OpenClaw's ACP transcript fallback maps persisted assistant `toolCall` blocks and `toolResult` messages to `tool_call` and `tool_call_update` rather than flattening adjacent assistant text.
   - String-valued and structured transcript tool results retain visible output in the replayed tool card.
-  - The initial 5-second disconnect check extends only acknowledged prompts to a bounded 60-second total recovery window; unacknowledged prompts still reject after 5 seconds.
+  - The initial 5-second disconnect check extends only acknowledged prompts to the bounded ClawX managed-restart budget; unacknowledged prompts still reject after 5 seconds.
   - Renderer remains unchanged and ACP replay remains the source of truth for persisted Chat history.
 docs:
   required: true
@@ -74,7 +74,7 @@ The broken flow therefore had two related symptoms:
 
 - Persist the active lifecycle run id before a restart and allow only trusted `main_session_restart_recovery` provenance to pass it into a distinct replacement run as `internalRestartRecoverySourceRunId`.
 - Project that source id as `resumedFromRunId` on Chat, agent, tool, and approval events. ACP adopts a replacement run only when this value exactly matches its pending prompt; it never infers lineage from a shared session key.
-- Keep an acknowledged prompt pending for a bounded 60-second total recovery window while retaining the original 5-second deadline for a send that was never acknowledged. Adoption clears the stale disconnect deadline, resets per-run text, thought, and tool state, rebinds cancellation, and lets the replacement terminal event settle the original prompt.
+- Keep an acknowledged prompt pending for the bounded ClawX managed-restart budget while retaining the original 5-second deadline for a send that was never acknowledged. Adoption clears the stale disconnect deadline, resets per-run text, thought, and tool state, rebinds cancellation, and lets the replacement terminal event settle the original prompt.
 - Re-register the exact `sessions.messages.subscribe` subscription before reconnect reconciliation can dispatch recovery work. Gateway mirrors visible recovery tool events to that exact subscriber, includes `resumedFromRunId`, and deduplicates clients that already receive the run-scoped event.
 - When a complete structured ACP ledger is unavailable, map persisted assistant `toolCall` blocks and `toolResult` messages to native `tool_call` and `tool_call_update` updates in transcript order. Both structured and string-valued results retain visible output, and a text-tool-text sequence reloads as two distinct assistant text segments around the tool card.
 

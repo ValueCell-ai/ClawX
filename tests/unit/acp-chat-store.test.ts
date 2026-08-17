@@ -837,6 +837,53 @@ describe('ACP Chat store', () => {
     });
   });
 
+  it('waits for ACP replay when a live prompt has no renderer snapshot', async () => {
+    hostApiMock.loadAcpSession
+      .mockResolvedValueOnce({ success: true, generation: 1, resumedActivePrompt: true })
+      .mockResolvedValueOnce({ success: true, generation: 1, resumedActivePrompt: true })
+      .mockResolvedValueOnce({
+        success: true,
+        generation: 2,
+        sessionUpdates: [{
+          sessionKey: 'agent:pi:s1',
+          generation: 2,
+          historical: true,
+          notification: {
+            sessionId: 'agent:pi:s1',
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              messageId: 'msg-assistant',
+              content: { type: 'text', text: 'replayed after settlement' },
+            },
+          },
+        }],
+      });
+    const { useAcpChatSessionStore } = await importStore();
+
+    const loading = useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true,
+    });
+    await Promise.resolve();
+    expect(hostApiMock.loadAcpSession).toHaveBeenCalledTimes(1);
+
+    await expect(loading).resolves.toBe(true);
+    expect(hostApiMock.loadAcpSession).toHaveBeenCalledTimes(3);
+    expect(hostApiMock.loadAcpSession.mock.calls).toEqual([
+      [{ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true }],
+      [{ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: false }],
+      [{ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: false }],
+    ]);
+    expect(useAcpChatSessionStore.getState()).toMatchObject({
+      loading: false,
+      sending: false,
+      error: null,
+      generation: 2,
+    });
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['msg-assistant:0']).toMatchObject({
+      parts: [{ kind: 'markdown', text: 'replayed after settlement' }],
+    });
+  });
+
   it('keeps a resolved permission non-actionable when its live session is restored', async () => {
     const prompt = createDeferred<{ success: boolean; generation: number }>();
     const permission = createDeferred<{ success: boolean; generation: number }>();

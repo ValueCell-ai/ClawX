@@ -109,8 +109,16 @@ export async function createMenu(language?: string): Promise<void> {
     {
       label: labels.view.label,
       submenu: [
-        { role: 'reload', label: labels.view.reload },
-        { role: 'forceReload', label: labels.view.forceReload },
+        {
+          id: 'reload',
+          label: labels.view.reload,
+          click: () => getMenuTargetWindow()?.webContents.reload(),
+        },
+        {
+          id: 'force-reload',
+          label: labels.view.forceReload,
+          click: () => getMenuTargetWindow()?.webContents.reloadIgnoringCache(),
+        },
         { role: 'toggleDevTools', label: labels.view.toggleDevTools },
         { type: 'separator' },
         { role: 'resetZoom', label: labels.view.resetZoom },

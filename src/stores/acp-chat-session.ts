@@ -1083,11 +1083,14 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
         return false;
       }
 
-      const resumedSnapshot = result.resumedActivePrompt
+      let resumedSnapshot = result.resumedActivePrompt
         ? liveSessionSnapshots.get(input.sessionKey)
         : undefined;
-      if (result.resumedActivePrompt && resumedSnapshot?.generation !== result.generation) {
-        result = await hostApi.chat.loadAcpSession(input);
+      while (result.resumedActivePrompt && resumedSnapshot?.generation !== result.generation) {
+        // A renderer-only reload has no live timeline to reactivate. Wait until Main can
+        // provide authoritative ACP replay instead of repeating once and reporting failure.
+        pendingLoadUpdates.clear();
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
         state = get();
         if (
           loadRequestSeq !== requestId
@@ -1095,7 +1098,15 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
           || state.workspaceRoot !== input.workspaceRoot
           || state.cwd !== input.cwd
         ) return false;
-        if (!result.success || result.resumedActivePrompt) {
+        result = await hostApi.chat.loadAcpSession({ ...input, createIfMissing: false });
+        state = get();
+        if (
+          loadRequestSeq !== requestId
+          || state.activeSessionKey !== input.sessionKey
+          || state.workspaceRoot !== input.workspaceRoot
+          || state.cwd !== input.cwd
+        ) return false;
+        if (!result.success) {
           pendingLoadUpdates.clear();
           set({
             loading: false,
@@ -1104,6 +1115,9 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
           });
           return false;
         }
+        resumedSnapshot = result.resumedActivePrompt
+          ? liveSessionSnapshots.get(input.sessionKey)
+          : undefined;
       }
 
       const generation = result.generation ?? state.generation;
