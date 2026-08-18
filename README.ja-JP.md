@@ -228,7 +228,7 @@ ClawXをより多くのお客様、特にカスタムAIエージェントや自�
 ## Star History
 
 <p align="center">
-  <img src="https://api.star-history.com/svg?repos=ValueCell-ai/ClawX&type=Date" alt="Star History Chart" />
+  <img src="https://star-history.dera.page/svg?repos=ValueCell-ai/ClawX&type=Date" alt="Star History Chart" />
 </p>
 
 ## ライセンス

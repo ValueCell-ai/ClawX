@@ -228,7 +228,7 @@ ClawX построен на основе следующих отличных п�
 ## История звёзд
 
 <p align="center">
-  <img src="https://api.star-history.com/svg?repos=ValueCell-ai/ClawX&type=Date" alt="Star History Chart" />
+  <img src="https://star-history.dera.page/svg?repos=ValueCell-ai/ClawX&type=Date" alt="Star History Chart" />
 </p>
 
 ## Лицензия
