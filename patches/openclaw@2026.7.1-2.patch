@@ -51,11 +51,12 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..62797972ce78076c545d712809d99f4a
  		if (role === "assistant" && typedBlock.type === "thinking" && typeof typedBlock.thinking === "string" && typedBlock.thinking) replayChunks.push({
  			sessionUpdate: "agent_thought_chunk",
  			text: typedBlock.thinking
-@@ -1849,6 +1882,7 @@ const ACP_AGENT_INFO = {
+@@ -1849,6 +1882,8 @@ const ACP_AGENT_INFO = {
  const MAX_PROMPT_BYTES = 2 * 1024 * 1024;
  const ACP_LOAD_SESSION_REPLAY_LIMIT = 1e6;
  const ACP_GATEWAY_DISCONNECT_GRACE_MS = 5e3;
-+const ACP_GATEWAY_ACCEPTED_PROMPT_RECOVERY_GRACE_MS = 6e4;
++// ClawX passes a policy-derived value covering heartbeat detection and managed Gateway startup.
++const ACP_GATEWAY_ACCEPTED_PROMPT_RECOVERY_GRACE_MS = Number.parseInt(process.env.OPENCLAW_ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS ?? "", 10) || 6e5;
  function normalizedChatSendAckStatus(status) {
  	return typeof status === "string" ? status.trim().toLowerCase() : "";
  }

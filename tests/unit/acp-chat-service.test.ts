@@ -195,6 +195,7 @@ describe('AcpChatService', () => {
       expect.objectContaining({
         env: expect.objectContaining({
           OPENCLAW_GATEWAY_TOKEN: 'clawx-test-gateway-token',
+          OPENCLAW_ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS: '600000',
         }),
       }),
     );

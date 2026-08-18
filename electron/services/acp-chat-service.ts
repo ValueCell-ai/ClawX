@@ -32,6 +32,10 @@ import { recordAcpTrace } from './acp-trace';
 import { AcpSessionAccessRegistry, type AcpSessionAccessContext } from './acp-session-access-registry';
 import { expandPath } from '../utils/paths';
 import { getSetting } from '../utils/store';
+import {
+  ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS,
+  OPENCLAW_ACP_RECOVERY_GRACE_ENV,
+} from '../gateway/recovery-budget';
 
 type AcpConnection = Pick<ClientSideConnection, 'initialize' | 'newSession' | 'loadSession' | 'prompt' | 'cancel'>;
 type MainWindowLike = {
@@ -566,7 +570,11 @@ export class AcpChatService {
       ...spec.options,
       // ACP is a local Gateway client, so it must use the token that started
       // this ClawX-owned Gateway instead of relying on config-file fallback.
-      env: { ...spec.options.env, OPENCLAW_GATEWAY_TOKEN: gatewayToken },
+      env: {
+        ...spec.options.env,
+        OPENCLAW_GATEWAY_TOKEN: gatewayToken,
+        [OPENCLAW_ACP_RECOVERY_GRACE_ENV]: String(ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS),
+      },
     });
     if (!forked.stdin || !forked.stdout || !forked.stderr) {
       forked.kill();

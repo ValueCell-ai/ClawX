@@ -14,6 +14,35 @@ async function readNativeMenuLabels(app: ElectronApplication) {
 }
 
 test.describe('ClawX main navigation without setup flow', () => {
+  test('keeps reload menu commands without application accelerators', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      const reloadItems = await app.evaluate(({ Menu }) => {
+        const menu = Menu.getApplicationMenu();
+        const findById = (items: Electron.MenuItem[], id: string): Electron.MenuItem | undefined => {
+          for (const item of items) {
+            if (item.id === id) return item;
+            const child = item.submenu ? findById(item.submenu.items, id) : undefined;
+            if (child) return child;
+          }
+          return undefined;
+        };
+        return ['reload', 'force-reload'].map((id) => {
+          const item = menu ? findById(menu.items, id) : undefined;
+          return { id: item?.id, label: item?.label, accelerator: item?.accelerator };
+        });
+      });
+
+      expect(reloadItems).toEqual([
+        { id: 'reload', label: expect.any(String), accelerator: null },
+        { id: 'force-reload', label: expect.any(String), accelerator: null },
+      ]);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('navigates between core pages with setup bypassed', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 

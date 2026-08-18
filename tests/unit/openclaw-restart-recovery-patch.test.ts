@@ -77,7 +77,10 @@ describe('OpenClaw restart recovery patch', () => {
     expect(patch).toContain('resumedFromRunId');
     expect(patch).toContain('pending.sendAccepted = true');
     expect(patch).toContain('pending.disconnectContext = void 0');
-    expect(patch).toContain('ACP_GATEWAY_ACCEPTED_PROMPT_RECOVERY_GRACE_MS = 6e4');
+    expect(patch).toContain('OPENCLAW_ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS');
+    expect(patch).toContain('ACP_GATEWAY_ACCEPTED_PROMPT_RECOVERY_GRACE_MS = Number.parseInt(process.env.OPENCLAW_ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS ?? "", 10) || 6e5');
+    expect(patch).not.toContain('ACP_GATEWAY_ACCEPTED_PROMPT_RECOVERY_GRACE_MS = Math.max');
+    expect(patch).not.toContain('ACP_GATEWAY_ACCEPTED_PROMPT_RECOVERY_GRACE_MS = 6e4');
     expect(patch).toContain('deadline === "accepted-recovery"');
     expect(patch).toContain('const waitedRunId = pending.idempotencyKey');
     expect(patch).toContain('status: "failed"');
