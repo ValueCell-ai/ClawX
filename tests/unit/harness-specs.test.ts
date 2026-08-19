@@ -135,7 +135,7 @@ describe('harness specs', () => {
       'matching final tool result',
       'no synthetic ACP history',
       'does not tear down the relay before provider output playback completes',
-      'aggregates fragmented and cumulative direct transcript updates',
+      'a non-final transcript is appended as a delta',
       'explicit localized retry',
     ]) expect(reference).toContain(requirement);
 
@@ -183,7 +183,7 @@ describe('harness specs', () => {
       'does not tear down the relay before provider output playback completes',
     ));
     expect((task.data.acceptance as string[]).join('\n')).toEqual(expect.stringContaining(
-      'aggregates fragmented and cumulative direct transcript updates',
+      'The direct transcript appends declared deltas and replaces the current role segment',
     ));
     expect((task.data.acceptance as string[]).join('\n')).toEqual(expect.stringContaining(
       'explicit localized retry',

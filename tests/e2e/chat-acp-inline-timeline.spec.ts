@@ -1810,10 +1810,11 @@ test.describe('ClawX ACP inline timeline', () => {
           });
         }
       });
-      await expect(page.getByText('Durable consult prompt')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByText('Durable consult answer')).toBeVisible();
       await expect.poll(() => getConsultAcpLoadCount(app)).toBe(loadsBeforeProviderMark + 1);
       await expect.poll(() => getConsultAcpDurableReplayFlags(app)).toEqual([false, true]);
+      // Active Talk renders its transient transcript in place of the ACP timeline.
+      await expect(page.getByText('Durable consult prompt')).toHaveCount(0);
+      await expect(page.getByText('Durable consult answer')).toHaveCount(0);
       await expect(page.getByTestId('live-talk-transcript')).toHaveCount(0);
       await expect(page.getByTestId('chat-composer-input')).toBeDisabled();
       await expect(page.getByTestId('sidebar-talk')).toHaveAttribute('aria-pressed', 'true');

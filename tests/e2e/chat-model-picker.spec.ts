@@ -282,6 +282,7 @@ test.describe('ClawX chat model picker', () => {
         || request.path === 'gateway:config.patch'
       )).toBe(false);
 
+      await page.getByTestId('sidebar-nav-settings').click();
       await page.getByTestId('settings-dev-mode-switch').click();
       await page.evaluate(() => window.location.assign('#/settings?section=talk'));
       await expect(page.getByTestId('talk-settings')).toBeVisible();

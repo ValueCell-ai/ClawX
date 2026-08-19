@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const { catalogMock, configPathMock, openPathMock, updateRealtimeSettingsMock } = vi.hoisted(() => ({
   catalogMock: vi.fn(),
@@ -28,6 +29,14 @@ vi.mock('react-i18next', () => ({
 }));
 
 import { TalkSettings } from '@/components/settings/TalkSettings';
+
+function renderTalkSettings() {
+  return render(
+    <TooltipProvider>
+      <TalkSettings />
+    </TooltipProvider>,
+  );
+}
 
 const catalog = {
   realtime: {
@@ -60,7 +69,7 @@ describe('TalkSettings', () => {
   });
 
   it('shows all catalog providers and refreshes after saving a configured selection', async () => {
-    render(<TalkSettings />);
+    renderTalkSettings();
 
     await waitFor(() => expect(screen.getByTestId('talk-settings-provider')).toHaveValue('openai'));
     expect(screen.getByTestId('talk-settings-provider')).toContainHTML('OpenAI');
@@ -93,7 +102,7 @@ describe('TalkSettings', () => {
         }],
       },
     });
-    render(<TalkSettings />);
+    renderTalkSettings();
 
     await waitFor(() => expect(screen.getByTestId('talk-settings-model')).toHaveValue('bundled-realtime'));
     fireEvent.click(screen.getByTestId('talk-settings-save'));
@@ -105,7 +114,7 @@ describe('TalkSettings', () => {
   });
 
   it('opens the resolved OpenClaw config path', async () => {
-    render(<TalkSettings />);
+    renderTalkSettings();
 
     await waitFor(() => expect(screen.getByTestId('talk-settings-open-config')).toBeEnabled());
     fireEvent.click(screen.getByTestId('talk-settings-open-config'));

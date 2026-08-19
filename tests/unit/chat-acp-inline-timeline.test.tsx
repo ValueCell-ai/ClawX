@@ -50,10 +50,10 @@ const { acpState, agentsState, artifactPanelState, chatState, gatewayState, stic
 }));
 
 const talkState = vi.hoisted(() => ({
-  status: 'listening',
-  isActive: true,
-  sessionKey: 'agent:main:main' as string | null,
-  transcripts: [{ role: 'assistant' as const, text: 'Direct Talk response', final: true }],
+  status: 'idle',
+  isActive: false,
+  sessionKey: null as string | null,
+  transcripts: [] as Array<{ role: 'assistant'; text: string; final: boolean }>,
 }));
 
 const ensureAcpChatSubscriptions = vi.hoisted(() => vi.fn());
@@ -263,10 +263,10 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     gatewayState.status = { state: 'running', gatewayReady: true, port: 18789 };
     stickState.isAtBottom = true;
     stickState.scrollToBottom.mockReset();
-    talkState.status = 'listening';
-    talkState.isActive = true;
-    talkState.sessionKey = 'agent:main:main';
-    talkState.transcripts = [{ role: 'assistant', text: 'Direct Talk response', final: true }];
+    talkState.status = 'idle';
+    talkState.isActive = false;
+    talkState.sessionKey = null;
+    talkState.transcripts = [];
   });
 
   it('renders ACP process blocks in timeline order', async () => {
@@ -300,23 +300,24 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     });
   });
 
-  it('keeps direct Talk transcripts outside the ACP item sequence', async () => {
+  it('shows direct Talk transcripts instead of the ACP timeline while Talk is active', async () => {
+    talkState.status = 'listening';
+    talkState.isActive = true;
+    talkState.sessionKey = 'agent:main:main';
+    talkState.transcripts = [{ role: 'assistant', text: 'Direct Talk response', final: true }];
     const { Chat } = await import('@/pages/Chat/index');
     const { container } = render(<Chat />);
 
     expect(screen.getByText('Direct Talk response')).toBeInTheDocument();
-    expect(Array.from(container.querySelectorAll('[data-acp-item-id]')).map((node) => node.getAttribute('data-acp-item-id'))).toEqual([
-      'msg-user:0',
-      'thought:assistant-run',
-      'tool:read-file',
-      'permission:approve-edit',
-      'plan:current',
-      'msg-assistant:0',
-    ]);
+    expect(screen.queryByTestId('acp-chat-timeline')).not.toBeInTheDocument();
+    expect(container.querySelectorAll('[data-acp-item-id]')).toHaveLength(0);
   });
 
   it('hides transient Talk state immediately when it belongs to a different session', async () => {
+    talkState.status = 'listening';
+    talkState.isActive = true;
     talkState.sessionKey = 'agent:main:other';
+    talkState.transcripts = [{ role: 'assistant', text: 'Direct Talk response', final: true }];
     const { Chat } = await import('@/pages/Chat/index');
 
     render(<Chat />);
@@ -327,6 +328,9 @@ describe('ACP Chat page inline timeline lifecycle', () => {
   it('brings a newly received live Talk area into view without scrolling the ACP timeline', async () => {
     const scrollIntoView = vi.fn();
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView });
+    talkState.status = 'listening';
+    talkState.isActive = true;
+    talkState.sessionKey = 'agent:main:main';
     talkState.transcripts = [];
     const { Chat } = await import('@/pages/Chat/index');
     const { rerender } = render(<Chat />);

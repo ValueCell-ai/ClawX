@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dedupeTurnAttachments } from '@/lib/acp/attachments';
 import type { AttachmentRenderPart, RenderPart } from '@/lib/acp/timeline-types';
 
@@ -164,6 +164,13 @@ describe('ACP Chat store', () => {
     hostEventsMock.onAcpPermissionRequest.mockClear();
     hostEventsMock.onGatewayChatMessage.mockClear();
     hostEventsMock.onChatRuntimeEvent.mockClear();
+  });
+
+  afterEach(async () => {
+    const { useAcpChatSessionStore } = await importStore();
+    useAcpChatSessionStore.getState().prepareLocalSession({
+      sessionKey: '', workspaceRoot: '', cwd: '',
+    });
   });
 
   it('does not send an ACP prompt while a realtime Talk relay is active', async () => {
@@ -977,8 +984,7 @@ describe('ACP Chat store', () => {
     const loading = useAcpChatSessionStore.getState().loadSession({
       sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true,
     });
-    await Promise.resolve();
-    expect(hostApiMock.loadAcpSession).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(hostApiMock.loadAcpSession).toHaveBeenCalledTimes(1));
 
     await expect(loading).resolves.toBe(true);
     expect(hostApiMock.loadAcpSession).toHaveBeenCalledTimes(3);
