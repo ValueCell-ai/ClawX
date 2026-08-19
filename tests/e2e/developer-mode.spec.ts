@@ -6,10 +6,17 @@ test.describe('ClawX developer-mode gated UI', () => {
 
     await page.getByTestId('sidebar-nav-settings').click();
     await expect(page.getByTestId('settings-page')).toBeVisible();
-    await expect(page.getByTestId('settings-developer-section')).toHaveCount(0);
+    await expect(page.getByTestId('settings-developer-section')).toBeVisible();
+    await expect(page.getByTestId('settings-developer-locked-guidance')).toBeVisible();
     await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'unchecked');
     await expect(page.getByTestId('sidebar-open-dev-console')).toHaveCount(0);
     await expect(page.getByTestId('sidebar-nav-dreams')).toHaveCount(0);
+    await expect(page.getByTestId('sidebar-talk')).toHaveCount(0);
+    await expect(page.getByTestId('talk-settings')).toHaveCount(0);
+
+    await page.evaluate(() => window.location.assign('#/settings?section=developer'));
+    await expect(page.getByTestId('settings-developer-section')).toBeFocused();
+    await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'unchecked');
 
     await page.evaluate(() => {
       window.location.hash = '#/dreams';
@@ -34,10 +41,14 @@ test.describe('ClawX developer-mode gated UI', () => {
     await page.getByTestId('settings-dev-mode-switch').click();
     await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'checked');
     await expect(page.getByTestId('settings-developer-section')).toBeVisible();
+    await expect(page.getByTestId('settings-developer-locked-guidance')).toHaveCount(0);
     await expect(page.getByTestId('settings-developer-gateway-token')).toBeVisible();
     await expect(page.getByTestId('sidebar-open-dev-console')).toBeVisible();
     await expect(page.getByTestId('sidebar-nav-dreams')).toHaveCount(0);
     await expect(page.getByTestId('sidebar-nav-image-generation')).toBeVisible();
+    await expect(page.getByTestId('sidebar-talk')).toBeVisible();
+    await expect(page.getByTestId('sidebar-talk')).toBeDisabled();
+    await expect(page.getByTestId('talk-settings')).toBeVisible();
 
     await page.getByTestId('sidebar-nav-models').click();
     await page.getByTestId('providers-add-button').click();

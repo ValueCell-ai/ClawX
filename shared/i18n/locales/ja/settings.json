@@ -157,6 +157,28 @@
     "proxySaved": "プロキシ設定を保存しました",
     "proxySaveFailed": "プロキシ設定の保存に失敗しました"
   },
+  "talk": {
+    "title": "Talk",
+    "description": "OpenClaw Gateway Relay 経由でリアルタイム Talk を設定します。",
+    "refresh": "Talk の利用可否を更新",
+    "provider": "リアルタイムプロバイダー",
+    "model": "リアルタイムモデル",
+    "unavailable": "利用不可",
+    "providerHelp": "OpenClaw に登録されているすべてのリアルタイムプロバイダーを表示します。",
+    "providerUnavailable": "{{providers}} は OpenClaw で未設定のため無効です。",
+    "modelHelp": "モデルは選択したプロバイダーから提供されます。リストを有効にするにはプロバイダーを設定して選択してください。",
+    "openConfig": "OpenClaw 設定を開く",
+    "openConfigFailed": "OpenClaw 設定を開けませんでした",
+    "readiness": {
+      "ready": "Talk の準備ができました",
+      "unavailable": "Talk は利用できません"
+    },
+    "save": "Talk 設定を保存",
+    "saving": "Talk 設定を保存中...",
+    "saved": "Talk 設定を保存しました",
+    "loadFailed": "Talk 設定を読み込めませんでした",
+    "saveFailed": "Talk 設定を保存できませんでした"
+  },
   "updates": {
     "title": "アップデート",
     "description": "ClawX を最新に保つ",

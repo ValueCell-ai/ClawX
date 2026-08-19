@@ -79,6 +79,7 @@ import type {
   GatewayRuntimePayload,
 } from '@shared/host-events/contract';
 import type { ChatRuntimeEvent } from '@shared/chat-runtime-events';
+import type { TalkRelayEvent } from '@shared/talk/types';
 import {
   GATEWAY_HEARTBEAT_INTERVAL_MS,
   GATEWAY_HEARTBEAT_MAX_MISSES,
@@ -168,6 +169,7 @@ export interface GatewayManagerEvents {
   'channel:status': (data: GatewayChannelStatusEvent) => void;
   'chat:message': (data: GatewayChatMessageEvent) => void;
   'chat:runtime-event': (data: ChatRuntimeEvent) => void;
+  'talk:event': (data: TalkRelayEvent) => void;
 }
 
 /**

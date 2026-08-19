@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  isGatewayBackendCommunicationTask,
   isPluginLifecycleTask,
   loadRuleSpecs,
   loadScenarioSpecs,
@@ -13,6 +14,8 @@ import {
 } from '../../harness/src/specs.mjs';
 import {
   scanBackendCommunicationBoundary,
+  scanRealtimeTalkAuthorityText,
+  selectRealtimeTalkAuthorityFiles,
   touchesCommunicationPath,
   validateGatewayTaskSpec,
   validatePluginLifecycleTaskSpec,
@@ -30,6 +33,250 @@ async function readMarkdownTree(directory: string): Promise<Array<{ file: string
 }
 
 describe('harness specs', () => {
+  it('defines the realtime Talk authority, locale, and documentation contract', async () => {
+    const expectedRules = [
+      'renderer-main-boundary',
+      'backend-communication-boundary',
+      'api-client-transport-policy',
+      'host-api-fallback-policy',
+      'host-events-fallback-policy',
+      'gateway-readiness-policy',
+      'gateway-heartbeat-safety',
+      'openclaw-config-delivery',
+      'channel-plugin-migration-guards',
+      'capability-owner-resolution',
+      'active-config-guards',
+      'provider-default-invariant',
+      'provider-model-metadata-preservation',
+      'provider-model-selection-authority',
+      'sidebar-session-attention-authority',
+      'web-browser-security-and-lifecycle',
+      'acp-chat-state-and-history',
+      'ui-i18n-design-tokens',
+      'realtime-talk-openclaw-authority',
+      'e2e-parallel-isolation',
+      'comms-regression',
+      'docs-sync',
+    ];
+    const [task, rules, scenarios, reference, chatSource, transcriptSource, settingsSource, talkStoreSource, readmes, locales] = await Promise.all([
+      loadSpec('harness/specs/tasks/add-realtime-talk.md'),
+      loadRuleSpecs(),
+      loadScenarioSpecs(),
+      readFile('harness/reference/realtime-talk.md', 'utf8'),
+      readFile('src/pages/Chat/ChatInput.tsx', 'utf8'),
+      readFile('src/pages/Chat/LiveTalkTranscript.tsx', 'utf8'),
+      readFile('src/components/settings/TalkSettings.tsx', 'utf8'),
+      readFile('src/stores/realtime-talk.ts', 'utf8'),
+      Promise.all(['README.md', 'README.zh-CN.md', 'README.ja-JP.md'].map((file) => readFile(file, 'utf8'))),
+      Promise.all(['en', 'zh', 'ja', 'ru'].flatMap((locale) => [
+        readFile(`shared/i18n/locales/${locale}/chat.json`, 'utf8'),
+        readFile(`shared/i18n/locales/${locale}/settings.json`, 'utf8'),
+      ])),
+    ]);
+    const scenarioById = new Map(scenarios.map((scenario) => [scenario.data.id, scenario]));
+    const ruleIds = new Set(rules.map((rule) => rule.data.id));
+    const talkRule = rules.find((rule) => rule.data.id === 'realtime-talk-openclaw-authority');
+    const staticTalkKeys = (source: string) => [...source.matchAll(/t\('((?:talk\.)[^']+)'/g)]
+      .map((match) => match[1]);
+    const chatTalkKeys = staticTalkKeys(`${chatSource}\n${transcriptSource}`);
+    const settingsTalkKeys = staticTalkKeys(settingsSource);
+    const statuses = [...(talkStoreSource.match(/export type RealtimeTalkStatus = ([^;]+);/)?.[1] ?? '')
+      .matchAll(/'([^']+)'/g)].map((match) => match[1]);
+    const keyShape = (value: unknown): unknown => (
+      value && typeof value === 'object'
+        ? Object.fromEntries(Object.entries(value as Record<string, unknown>)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, nested]) => [key, keyShape(nested)]))
+        : typeof value
+    );
+
+    expect(task.data).toMatchObject({
+      id: 'add-realtime-talk',
+      scenario: 'gateway-backend-communication',
+      scenarios: ['realtime-talk'],
+      taskType: 'runtime-bridge',
+      requiredProfiles: ['fast', 'comms', 'e2e'],
+      requiredRules: expectedRules,
+      docs: { required: true },
+    });
+    expect(isGatewayBackendCommunicationTask(task)).toBe(true);
+    expect([...task.data.requiredRules as string[]].filter((ruleId) => !ruleIds.has(ruleId))).toEqual([]);
+    expect(task.data.requiredRules).toEqual(expect.arrayContaining(
+      scenarioById.get('gateway-backend-communication')?.data.requiredRules as string[],
+    ));
+    expect(task.data.requiredRules).toEqual(expect.arrayContaining(
+      scenarioById.get('realtime-talk')?.data.requiredRules as string[],
+    ));
+    expect(scenarioById.get('gateway-backend-communication')?.data.requiredRules)
+      .toContain('realtime-talk-openclaw-authority');
+    expect(scenarioById.get('acp-chat-experience')?.data.requiredRules)
+      .toContain('realtime-talk-openclaw-authority');
+    expect(talkRule?.data.appliesTo).toEqual(expect.arrayContaining([
+      'realtime-talk',
+      'gateway-backend-communication',
+      'acp-chat-experience',
+    ]));
+    expect(rules.find((rule) => rule.data.id === 'e2e-parallel-isolation')?.data.appliesTo)
+      .toContain('realtime-talk');
+    for (const anchor of [
+      'Gateway Relay',
+      'one global relay',
+      'Main owns',
+      'Renderer',
+      'transient',
+      'OpenClaw',
+      'ACP',
+      'no ClawX transcript persistence',
+      'config',
+      'secrets',
+      'VAD',
+    ]) expect(reference).toContain(anchor);
+    for (const requirement of [
+      'matching final tool result',
+      'no synthetic ACP history',
+      'does not tear down the relay before provider output playback completes',
+      'a non-final transcript is appended as a delta',
+      'explicit localized retry',
+    ]) expect(reference).toContain(requirement);
+
+    expect(chatTalkKeys).not.toEqual([]);
+    expect(settingsTalkKeys).not.toEqual([]);
+    expect(statuses).not.toEqual([]);
+    expect(chatSource).toContain('`talk.status.${talkStatus}`');
+    const [englishChat, englishSettings] = locales.map((locale) => JSON.parse(locale) as { talk: unknown });
+    for (let index = 0; index < locales.length; index += 2) {
+      const chat = JSON.parse(locales[index]) as Record<string, unknown>;
+      const settings = JSON.parse(locales[index + 1]) as Record<string, unknown>;
+      for (const key of chatTalkKeys) expect(key.split('.').reduce<unknown>((value, part) => (
+        value && typeof value === 'object' ? (value as Record<string, unknown>)[part] : undefined
+      ), chat), `${key} must resolve without rendering its raw key`).toEqual(expect.any(String));
+      for (const key of settingsTalkKeys) expect(key.split('.').reduce<unknown>((value, part) => (
+        value && typeof value === 'object' ? (value as Record<string, unknown>)[part] : undefined
+      ), settings), `${key} must resolve without rendering its raw key`).toEqual(expect.any(String));
+      for (const status of statuses) expect((chat.talk as Record<string, unknown>).status)
+        .toHaveProperty(status, expect.any(String));
+      expect(keyShape(chat.talk)).toEqual(keyShape(englishChat.talk));
+      expect(keyShape(settings.talk)).toEqual(keyShape(englishSettings.talk));
+    }
+    expect((JSON.parse(locales[0]) as { talk: { unavailable: { configuration: string } } }).talk.unavailable.configuration)
+      .toContain('{{reason}}');
+    for (const locale of locales.filter((_, index) => index % 2 === 0).slice(1)) {
+      expect((JSON.parse(locale) as { talk: { unavailable: { configuration: string } } }).talk.unavailable.configuration)
+        .toContain('{{reason}}');
+    }
+    for (const readme of readmes) {
+      expect(readme).toContain('Talk');
+      expect(readme).toContain('Gateway Relay');
+      expect(readme).toContain('ACP');
+      expect(readme).toContain('macOS');
+    }
+    expect(readmes[0]).toContain('readiness');
+    expect((task.data.requiredTests as string[])).toEqual(expect.arrayContaining([
+      'pnpm harness validate --spec harness/specs/tasks/add-realtime-talk.md --since bd1aac8e',
+      'pnpm harness run --spec harness/specs/tasks/add-realtime-talk.md --since bd1aac8e --dry-run',
+    ]));
+    expect((task.data.acceptance as string[]).join('\n')).toContain('readiness is displayed and checked');
+    expect((task.data.acceptance as string[]).join('\n')).toEqual(expect.stringContaining(
+      'matching final tool result',
+    ));
+    expect((task.data.acceptance as string[]).join('\n')).toEqual(expect.stringContaining(
+      'does not tear down the relay before provider output playback completes',
+    ));
+    expect((task.data.acceptance as string[]).join('\n')).toEqual(expect.stringContaining(
+      'The direct transcript appends declared deltas and replaces the current role segment',
+    ));
+    expect((task.data.acceptance as string[]).join('\n')).toEqual(expect.stringContaining(
+      'explicit localized retry',
+    ));
+    for (const path of [
+      'electron/gateway/config-delivery.ts',
+      'src/stores/acp-chat-session.ts',
+      'tests/unit/acp-chat-store.test.ts',
+      'tests/unit/gateway-config-delivery.test.ts',
+      'tests/e2e/developer-mode.spec.ts',
+      'tests/unit/harness-specs.test.ts',
+      'README.md',
+      'shared/i18n/locales/**/chat.json',
+    ]) {
+      expect(task.data.touchedAreas).toContain(path);
+      expect(scenarioById.get('realtime-talk')?.data.ownedPaths).toContain(path);
+    }
+    expect(task.data.touchedAreas).toEqual(expect.arrayContaining([
+      'docs/plans/2026-08-16-realtime-talk.md',
+      'docs/specs/2026-08-16-realtime-talk-design.md',
+    ]));
+    expect(scenarioById.get('realtime-talk')?.body)
+      .toContain('does not require E2E_EXCLUSIVE_TAG because its audio/media mocks are local');
+  });
+
+  it('rejects direct renderer Talk transports, persistence, and synthetic ACP projections', () => {
+    const failures = scanRealtimeTalkAuthorityText('src/lib/talk/unsafe.ts', `
+      window.electron.ipcRenderer.invoke('talk:start');
+      fetch('http://127.0.0.1:18789/talk');
+      new WebSocket('ws://127.0.0.1:18789');
+      new WebSocket('wss://provider.example/realtime');
+      new RTCPeerConnection();
+      localStorage.setItem('talk-transcript', text);
+      appendFile('talk.jsonl', text);
+      appendSyntheticAssistantMessage(talkTranscript);
+    `);
+
+    expect(failures).toEqual(expect.arrayContaining([
+      'src/lib/talk/unsafe.ts: Talk renderer must not call window.electron.ipcRenderer.invoke directly',
+      'src/lib/talk/unsafe.ts: Talk renderer must not fetch Gateway HTTP directly',
+      'src/lib/talk/unsafe.ts: Talk renderer must not open Gateway or provider WebSocket connections directly',
+      'src/lib/talk/unsafe.ts: Talk renderer must not create WebRTC connections',
+      'src/lib/talk/unsafe.ts: Talk transcripts must not use browser persistence',
+      'src/lib/talk/unsafe.ts: Talk transcripts must not write local files',
+      'src/lib/talk/unsafe.ts: Talk must not project direct transcripts into ACP history',
+    ]));
+    expect(scanRealtimeTalkAuthorityText('src/lib/talk/allowed.ts', `
+      hostApi.talk.startRelay({ sessionKey });
+      hostEvents.onTalkEvent(handleEvent);
+      useRealtimeTalkStore.getState().appendTranscript(entry);
+    `)).toEqual([]);
+  });
+
+  it('selects every Talk authority path category without scanning unrelated files', () => {
+    const selected = selectRealtimeTalkAuthorityFiles([
+      'shared/talk/types.ts',
+      'src/lib/talk/audio.ts',
+      'src/lib/host-api.ts',
+      'src/lib/host-events.ts',
+      'src/stores/realtime-talk.ts',
+      'src/stores/acp-chat-session.ts',
+      'src/pages/Chat/TalkPanel.tsx',
+      'src/components/settings/TalkSettings.tsx',
+      'src/pages/Settings/index.tsx',
+      'src/pages/Agents/index.tsx',
+      'src/components/settings/ProviderSettings.tsx',
+      'shared/acp-chat/types.ts',
+      'electron/services/talk-api.ts',
+    ]);
+
+    expect(selected).toEqual([
+      'shared/talk/types.ts',
+      'src/lib/talk/audio.ts',
+      'src/lib/host-api.ts',
+      'src/lib/host-events.ts',
+      'src/stores/realtime-talk.ts',
+      'src/stores/acp-chat-session.ts',
+      'src/pages/Chat/TalkPanel.tsx',
+      'src/components/settings/TalkSettings.tsx',
+      'src/pages/Settings/index.tsx',
+    ].sort());
+
+    for (const file of selected) {
+      expect(scanRealtimeTalkAuthorityText(file, `
+        new WebSocket('wss://provider.example/realtime');
+        localStorage.setItem('talk-transcript', text);
+      `)).toEqual(expect.arrayContaining([
+        `${file}: Talk renderer must not open Gateway or provider WebSocket connections directly`,
+        `${file}: Talk transcripts must not use browser persistence`,
+      ]));
+    }
+  });
+
   it('defines the sidebar session attention harness contract', async () => {
     const expectedRules = [
       'renderer-main-boundary',
@@ -272,9 +519,15 @@ describe('harness specs', () => {
       expect(scenarioById.get(scenarioId)?.data.requiredRules).toContain('office-preview-safety');
     }
 
+    const legacyTalkTaskPaths = [
+      'docs/plans/2026-08-16-realtime-talk.md',
+      'docs/specs/2026-08-16-realtime-talk-design.md',
+    ];
     for (const { file, content } of harnessMarkdown) {
-      expect(content, `${file} must not depend on deleted design or plan documents`)
-        .not.toMatch(/docs\/(?:specs|plans)\//);
+      const designOrPlanPaths = [...content.matchAll(/docs\/(?:specs|plans)\/[^\s)]+/g)].map((match) => match[0]);
+      expect(designOrPlanPaths, `${file} must not depend on deleted design or plan documents`).toEqual(
+        file === 'harness/specs/tasks/add-realtime-talk.md' ? legacyTalkTaskPaths : [],
+      );
     }
     await expect(access('docs/specs')).rejects.toThrow();
   });

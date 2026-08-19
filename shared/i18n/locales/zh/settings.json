@@ -157,6 +157,28 @@
     "proxySaved": "代理设置已保存",
     "proxySaveFailed": "保存代理设置失败"
   },
+  "talk": {
+    "title": "语音对话",
+    "description": "通过 OpenClaw 网关中继配置实时语音对话。",
+    "refresh": "刷新语音对话可用性",
+    "provider": "实时提供商",
+    "model": "实时模型",
+    "unavailable": "不可用",
+    "providerHelp": "此处列出 OpenClaw 已注册的全部实时提供商。",
+    "providerUnavailable": "{{providers}} 已置灰，因为尚未在 OpenClaw 中配置。",
+    "modelHelp": "模型由所选提供商提供。请先配置并选择一个提供商以启用列表。",
+    "openConfig": "打开 OpenClaw 配置",
+    "openConfigFailed": "无法打开 OpenClaw 配置",
+    "readiness": {
+      "ready": "语音对话已就绪",
+      "unavailable": "语音对话不可用"
+    },
+    "save": "保存语音对话设置",
+    "saving": "正在保存语音对话设置...",
+    "saved": "语音对话设置已保存",
+    "loadFailed": "无法加载语音对话设置",
+    "saveFailed": "无法保存语音对话设置"
+  },
   "updates": {
     "title": "更新",
     "description": "保持 ClawX 最新",

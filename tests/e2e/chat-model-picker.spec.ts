@@ -28,6 +28,26 @@ test.describe('ClawX chat model picker', () => {
         });
 
         const workspacePath = '/tmp/clawx-model-picker-workspace';
+        const talkCatalog = {
+          realtime: {
+            ready: false,
+            reason: 'Configure a realtime provider',
+            activeProvider: 'openai',
+            providers: [{
+              id: 'openai',
+              label: 'OpenAI',
+              configured: true,
+              models: ['gpt-realtime', 'gpt-realtime-mini'],
+              voices: ['alloy', 'verse'],
+            }, {
+              id: 'google',
+              label: 'Google',
+              configured: true,
+              models: ['gemini-realtime'],
+              voices: ['puck'],
+            }],
+          },
+        };
         const agentsSnapshot = () => ({
           success: true,
           agents: [{
@@ -97,6 +117,12 @@ test.describe('ClawX chat model picker', () => {
           }
           if (request?.module === 'chat' && request.action === 'loadAcpSession') {
             return makeResponse(request.id, { success: true, generation: 1 });
+          }
+          if (request?.module === 'talk' && request.action === 'catalog') {
+            return makeResponse(request.id, talkCatalog);
+          }
+          if (request?.module === 'talk' && request.action === 'updateRealtimeSettings') {
+            return makeResponse(request.id, { ok: true });
           }
           if (request?.module === 'gateway' && request.action === 'rpc') {
             const method = typeof body?.method === 'string' ? body.method : '';
@@ -255,6 +281,37 @@ test.describe('ClawX chat model picker', () => {
         || request.path === 'gateway:start'
         || request.path === 'gateway:config.patch'
       )).toBe(false);
+
+      await page.getByTestId('sidebar-nav-settings').click();
+      await page.getByTestId('settings-dev-mode-switch').click();
+      await page.evaluate(() => window.location.assign('#/settings?section=talk'));
+      await expect(page.getByTestId('talk-settings')).toBeVisible();
+      await expect(page.getByTestId('talk-settings-readiness')).toContainText('Talk is unavailable');
+      await expect(page.getByTestId('talk-settings-unavailable-reason')).toHaveText('Configure a realtime provider');
+      await page.getByTestId('talk-settings-provider').selectOption('google');
+      await expect(page.getByTestId('talk-settings-model')).toHaveValue('gemini-realtime');
+      await page.getByTestId('talk-settings-save').click();
+
+      await expect.poll(async () => app.evaluate(() => (
+        (globalThis as typeof globalThis & {
+          __chatModelPickerRequests?: Array<{ path: string; body: unknown }>;
+        }).__chatModelPickerRequests?.some((request) => (
+          request.path === 'talk:updateRealtimeSettings'
+          && JSON.stringify(request.body) === JSON.stringify({
+            provider: 'google',
+            model: 'gemini-realtime',
+          })
+        )) ?? false
+      ))).toBe(true);
+      expect(await app.evaluate(() => (
+        (globalThis as typeof globalThis & {
+          __chatModelPickerRequests?: Array<{ path: string }>;
+        }).__chatModelPickerRequests?.filter((request) => request.path === 'talk:catalog').length ?? 0
+      ))).toBeGreaterThanOrEqual(2);
+
+      await expect(page.getByTestId('settings-developer-section')).toBeVisible();
+      await page.evaluate(() => window.location.assign('#/settings?section=developer'));
+      await expect(page.locator('#developer')).toBeFocused();
     } finally {
       await closeElectronApp(app);
     }

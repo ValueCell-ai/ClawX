@@ -339,6 +339,34 @@ describe('OpenClaw config delivery coordinator', () => {
     expect(JSON.parse((gatewayManager.rpc.mock.calls[3][1] as { raw: string }).raw)).toEqual({ value: 5 });
   });
 
+  it('runs transaction-serialized before-apply validation before each pure mutator replay', async () => {
+    const gatewayManager = createGatewayManager();
+    gatewayManager.rpc
+      .mockResolvedValueOnce({ raw: '{ value: 1 }', hash: 'hash-1' })
+      .mockRejectedValueOnce(new Error('config changed since last load; re-run config.get and retry'))
+      .mockResolvedValueOnce({ raw: '{ value: 4 }', hash: 'hash-2' })
+      .mockResolvedValueOnce({ ok: true });
+    registerOpenClawConfigCoordinator(gatewayManager);
+    const events: string[] = [];
+
+    await mutateOpenClawConfig((config) => {
+      events.push(`mutate:${String(config.value)}`);
+      config.value = Number(config.value) + 1;
+    }, {
+      beforeApply: async () => {
+        events.push('validate');
+      },
+    });
+
+    expect(events).toEqual(['validate', 'mutate:1', 'validate', 'mutate:4']);
+    expect(gatewayManager.rpc.mock.calls.map(([method]) => method)).toEqual([
+      'config.get',
+      'config.set',
+      'config.get',
+      'config.set',
+    ]);
+  });
+
   it('does not commit a no-op mutation', async () => {
     const gatewayManager = createGatewayManager();
     gatewayManager.rpc.mockResolvedValueOnce({ raw: '{ value: 1 }', hash: 'hash-1' });

@@ -215,7 +215,11 @@ export class AcpChatService {
     this.permissionsEnabled = false;
     this.trace('session/load:start', {
       sessionKey: payload.sessionKey,
-      details: { createIfMissing: !!payload.createIfMissing, cwdPresent: Boolean(payload.cwd) },
+      details: {
+        createIfMissing: !!payload.createIfMissing,
+        forceDurableReplay: !!payload.forceDurableReplay,
+        cwdPresent: Boolean(payload.cwd),
+      },
     });
 
     let previousSessionKey = this.activeSessionKey;
@@ -284,7 +288,8 @@ export class AcpChatService {
 
       this.generation = nextGeneration;
       this.activeSessionKey = payload.sessionKey;
-      this.activeAcpSessionId = payload.createIfMissing ? null : payload.sessionKey;
+      const createFreshAcpSession = !!payload.createIfMissing || !!payload.forceDurableReplay;
+      this.activeAcpSessionId = createFreshAcpSession ? null : payload.sessionKey;
       this.loadedSessionKey = null;
       this.loadedAcpSessionId = null;
       this.historicalSessionKey = payload.createIfMissing ? null : payload.sessionKey;
@@ -301,7 +306,7 @@ export class AcpChatService {
       }
 
       let acpSessionId = payload.sessionKey;
-      if (payload.createIfMissing) {
+      if (createFreshAcpSession) {
         const created = await connection.newSession({
           cwd: preparedAccessGrant.executionCwd,
           mcpServers: [],
@@ -323,7 +328,11 @@ export class AcpChatService {
       this.trace('session/load:success', {
         sessionKey: payload.sessionKey,
         generation: nextGeneration,
-        details: { createIfMissing: !!payload.createIfMissing, acpSessionId },
+        details: {
+          createIfMissing: !!payload.createIfMissing,
+          forceDurableReplay: !!payload.forceDurableReplay,
+          acpSessionId,
+        },
       });
       if (this.activeLoadBatch === loadBatch) this.activeLoadBatch = null;
       return ok(

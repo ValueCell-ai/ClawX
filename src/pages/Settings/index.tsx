@@ -3,6 +3,7 @@
  * Application configuration
  */
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Sun, Moon, Monitor, RefreshCw, ExternalLink, Copy, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -15,6 +16,7 @@ import { useSettingsStore } from '@/stores/settings';
 import { useGatewayStore } from '@/stores/gateway';
 import { useUpdateStore } from '@/stores/update';
 import { UpdateSettings } from '@/components/settings/UpdateSettings';
+import { TalkSettings } from '@/components/settings/TalkSettings';
 import { toUserMessage } from '@/lib/error-message';
 import {
   clearUiTelemetry,
@@ -36,6 +38,7 @@ type ControlUiInfo = {
 
 export function Settings() {
   const { t, i18n } = useTranslation('settings');
+  const location = useLocation();
   const {
     theme,
     setTheme,
@@ -209,6 +212,14 @@ export function Settings() {
       cancelled = true;
     };
   }, [devModeUnlocked, showCliTools]);
+
+  useEffect(() => {
+    const section = new URLSearchParams(location.search).get('section');
+    if (section !== 'talk' && section !== 'developer') return;
+    const target = document.getElementById(section);
+    target?.scrollIntoView({ block: 'start' });
+    target?.focus({ preventScroll: true });
+  }, [location.search]);
 
   const handleCopyCliCommand = async () => {
     if (!openclawCliCommand) return;
@@ -613,18 +624,6 @@ export function Settings() {
 
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="text-sm font-medium text-foreground">{t('advanced.devMode')}</Label>
-                  <p className="text-meta text-muted-foreground mt-1">{t('advanced.devModeDesc')}</p>
-                </div>
-                <Switch
-                  checked={devModeUnlocked}
-                  onCheckedChange={setDevModeUnlocked}
-                  data-testid="settings-dev-mode-switch"
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
                   <Label className="text-sm font-medium text-foreground">{t('advanced.telemetry')}</Label>
                   <p className="text-meta text-muted-foreground mt-1">{t('advanced.telemetryDesc')}</p>
                 </div>
@@ -634,16 +633,34 @@ export function Settings() {
           </div>
 
           {/* Developer */}
-          {devModeUnlocked && (
-            <>
-              <Separator className="bg-black/5 dark:bg-white/5" />
-              <div data-testid="settings-developer-section">
-                <h2
-                  data-testid="settings-developer-title"
-                  className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight"
-                >
-                  {t('developer.title')}
-                </h2>
+          <section id="developer" tabIndex={-1} data-testid="settings-developer-section" className="space-y-6 scroll-mt-6">
+            <h2
+              data-testid="settings-developer-title"
+              className="text-3xl font-serif text-foreground font-normal tracking-tight"
+            >
+              {t('developer.title')}
+            </h2>
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-sm font-medium text-foreground">{t('advanced.devMode')}</Label>
+                <p className="text-meta text-muted-foreground mt-1">{t('advanced.devModeDesc')}</p>
+              </div>
+              <Switch
+                checked={devModeUnlocked}
+                onCheckedChange={setDevModeUnlocked}
+                data-testid="settings-dev-mode-switch"
+              />
+            </div>
+            {!devModeUnlocked && (
+              <p className="text-meta text-muted-foreground" data-testid="settings-developer-locked-guidance">
+                {t('advanced.devModeDesc')}
+              </p>
+            )}
+            {devModeUnlocked && (
+              <>
+                <TalkSettings />
+                <Separator className="bg-black/5 dark:bg-white/5" />
+                <div data-testid="settings-developer-advanced">
                 <div className="space-y-8">
                   {/* Gateway Proxy */}
                   <div className="space-y-4" data-testid="settings-proxy-section">
@@ -1030,8 +1047,9 @@ export function Settings() {
                   </div>
                 </div>
               </div>
-            </>
-          )}
+              </>
+            )}
+          </section>
 
           <Separator className="bg-black/5 dark:bg-white/5" />
 

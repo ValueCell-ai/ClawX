@@ -240,6 +240,39 @@
         "skillPreviewTooltip": "Preview SKILL.md",
         "skillPreviewNotFound": "Could not find this skill. Open the skill picker to refresh the list."
     },
+    "talk": {
+        "start": "Start Talk",
+        "stop": "Stop Talk",
+        "inputLevel": "Microphone input level",
+        "status": {
+            "idle": "Talk is ready",
+            "connecting": "Connecting Talk",
+            "listening": "Listening",
+            "thinking": "Thinking",
+            "speaking": "Speaking",
+            "disconnected": "Talk disconnected",
+            "error": "Talk error"
+        },
+        "unavailable": {
+            "gateway": "Talk requires a connected Gateway",
+            "sending": "Talk is unavailable while a message is sending",
+            "session": "Create a new chat before starting Talk",
+            "configuration": "Talk is unavailable: {{reason}}",
+            "loading": "Checking Talk availability",
+            "default": "Talk is unavailable"
+        },
+        "consultRefresh": {
+            "failed": "Could not refresh the consult reply.",
+            "retry": "Retry refresh",
+            "retrying": "Retrying refresh..."
+        },
+        "transcript": {
+            "label": "Live Talk transcript",
+            "microphone": "Microphone",
+            "voiceInput": "Voice input",
+            "voiceResponse": "Voice response"
+        }
+    },
     "sessionList": {
         "title": "Sessions",
         "collapseAll": "Collapse all",

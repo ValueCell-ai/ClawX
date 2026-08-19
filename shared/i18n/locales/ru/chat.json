@@ -240,6 +240,39 @@
         "skillPreviewTooltip": "Предпросмотр SKILL.md",
         "skillPreviewNotFound": "Skill не найден. Откройте список Skill, чтобы обновить его."
     },
+    "talk": {
+        "start": "Начать Talk",
+        "stop": "Остановить Talk",
+        "inputLevel": "Уровень входного сигнала микрофона",
+        "status": {
+            "idle": "Talk готов",
+            "connecting": "Подключение Talk",
+            "listening": "Слушаю",
+            "thinking": "Думаю",
+            "speaking": "Говорю",
+            "disconnected": "Talk отключён",
+            "error": "Ошибка Talk"
+        },
+        "unavailable": {
+            "gateway": "Для Talk требуется подключённый шлюз",
+            "sending": "Talk недоступен во время отправки сообщения",
+            "session": "Создайте новый чат перед запуском Talk",
+            "configuration": "Talk недоступен: {{reason}}",
+            "loading": "Проверка доступности Talk",
+            "default": "Talk недоступен"
+        },
+        "consultRefresh": {
+            "failed": "Не удалось обновить ответ консультации.",
+            "retry": "Повторить обновление",
+            "retrying": "Повторное обновление..."
+        },
+        "transcript": {
+            "label": "Расшифровка Talk в реальном времени",
+            "microphone": "Микрофон",
+            "voiceInput": "Голосовой ввод",
+            "voiceResponse": "Голосовой ответ"
+        }
+    },
     "sessionList": {
         "title": "Список сессий",
         "collapseAll": "Свернуть все",

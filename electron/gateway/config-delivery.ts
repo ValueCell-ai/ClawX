@@ -13,6 +13,11 @@ export type OpenClawConfig = Record<string, unknown>;
 export type OpenClawConfigMutator = (
   config: OpenClawConfig,
 ) => void | Promise<void>;
+/** Runs inside the serialized transaction before each pure mutator application. */
+export type OpenClawConfigBeforeApply = () => void | Promise<void>;
+export type OpenClawConfigMutationOptions = {
+  beforeApply?: OpenClawConfigBeforeApply;
+};
 
 type ConfigDeliveryGatewayManager = Pick<GatewayManager, 'getStatus' | 'rpc'>;
 
@@ -87,6 +92,7 @@ async function acceptPersistedConfigSetCommitIfMatched(config: OpenClawConfig): 
 async function mutateRunningConfig(
   manager: ConfigDeliveryGatewayManager,
   mutator: OpenClawConfigMutator,
+  options: OpenClawConfigMutationOptions,
 ): Promise<boolean> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const snapshot = await manager.rpc<ConfigSnapshot>('config.get', {});
@@ -96,6 +102,7 @@ async function mutateRunningConfig(
     }
 
     const config = parseRunningConfigSnapshot(snapshot);
+    await options.beforeApply?.();
     if (!await applyMutator(config, mutator, true)) return false;
 
     try {
@@ -177,15 +184,17 @@ async function removeTemporaryFile(temporaryPath: string): Promise<void> {
 async function mutateFileConfig(
   manager: ConfigDeliveryGatewayManager | undefined,
   mutator: OpenClawConfigMutator,
+  options: OpenClawConfigMutationOptions,
 ): Promise<boolean> {
   return await withConfigLock(async () => {
     const configPath = resolveOpenClawConfigPath();
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const snapshot = await readFileConfig(configPath);
+      await options.beforeApply?.();
       const changed = await applyMutator(snapshot.config, mutator, snapshot.raw !== undefined);
 
       if (manager?.getStatus().state === 'running') {
-        return await mutateRunningConfig(manager, mutator);
+        return await mutateRunningConfig(manager, mutator, options);
       }
       if (!changed) return false;
 
@@ -199,12 +208,12 @@ async function mutateFileConfig(
 
       try {
         if (manager?.getStatus().state === 'running') {
-          return await mutateRunningConfig(manager, mutator);
+          return await mutateRunningConfig(manager, mutator, options);
         }
 
         const currentRaw = await readFileRaw(configPath);
         if (manager?.getStatus().state === 'running') {
-          return await mutateRunningConfig(manager, mutator);
+          return await mutateRunningConfig(manager, mutator, options);
         }
         if (currentRaw !== snapshot.raw) {
           if (attempt === 0) continue;
@@ -222,12 +231,15 @@ async function mutateFileConfig(
   });
 }
 
-async function runMutation(mutator: OpenClawConfigMutator): Promise<boolean> {
+async function runMutation(
+  mutator: OpenClawConfigMutator,
+  options: OpenClawConfigMutationOptions,
+): Promise<boolean> {
   const manager = gatewayManager;
   if (manager?.getStatus().state === 'running') {
-    return await mutateRunningConfig(manager, mutator);
+    return await mutateRunningConfig(manager, mutator, options);
   }
-  return await mutateFileConfig(manager, mutator);
+  return await mutateFileConfig(manager, mutator, options);
 }
 
 async function runRead(): Promise<OpenClawConfigSnapshot> {
@@ -256,6 +268,7 @@ export function registerOpenClawConfigCoordinator(
 
 export function mutateOpenClawConfig(
   mutator: OpenClawConfigMutator,
+  options: OpenClawConfigMutationOptions = {},
 ): Promise<boolean> {
   const context = activeMutation.getStore();
   if (context?.active) {
@@ -263,8 +276,8 @@ export function mutateOpenClawConfig(
   }
 
   const transaction = transactionTail.then(
-    () => runMutation(mutator),
-    () => runMutation(mutator),
+    () => runMutation(mutator, options),
+    () => runMutation(mutator, options),
   );
   transactionTail = transaction.then(
     () => undefined,

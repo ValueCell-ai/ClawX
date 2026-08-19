@@ -88,6 +88,16 @@ Building AI agents shouldn't require mastering the command line. ClawX was desig
 
 > For full feature details, see [docs/en-US/features.md](docs/en-US/features.md).
 
+### Realtime Talk
+
+Chat can start a realtime Talk session when the OpenClaw catalog reports a configured, ready realtime provider. Talk uses **Gateway Relay only**: Electron Main owns Gateway protocol and RPC routing, while the renderer has no direct Gateway or provider connection. Only one relay is active globally.
+
+Direct-provider audio and transcript bubbles are transient and clear when Talk stops, the session changes, a normal Chat reload occurs, or the app restarts. An Agent consult instead uses the selected OpenClaw session; after its provider-reported output boundary and queued playback finish, its durable result appears through normal **ACP** history replay without ending the active relay, and only the transient direct bubbles are cleared. ClawX does not create a separate Talk transcript store or synthetic ACP entries.
+
+Enable **Developer Mode** to show the Talk action at the end of the sidebar and **Settings -> Talk**. Talk checks catalog readiness before it starts. Settings lists every realtime provider and model declared by the Gateway catalog, disables unconfigured providers, and saves the selected provider/model through the OpenClaw configuration transaction. Provider credentials and provider-specific options such as speaker voice remain Gateway-owned in the OpenClaw config file, which Settings can open directly.
+
+Manual macOS validation still requires a configured realtime provider and microphone permission. Direct provider response, Agent consult response, barge-in, stop, and Gateway reconnect must be checked in that configured environment; automated coverage does not validate those provider-dependent cases.
+
 ### Typical Use Cases
 
 - **🤖 Personal AI Assistant**: Configure a general-purpose AI agent to answer questions, draft emails, summarize documents, and help with everyday tasks from a clean desktop interface.
