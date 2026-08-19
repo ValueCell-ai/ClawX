@@ -100,6 +100,22 @@ ACP Chat can also display generated image previews when image-generation media i
 - **Secure Storage**: API keys and sensitive data use the operating system's native secure storage mechanisms.
 - **CORS-Safe by Design**: The renderer does not call local Gateway or Host API HTTP endpoints directly.
 
+### Gateway Liveness Recovery
+
+Gateway liveness is decided in Electron Main. WebSocket pong frames are useful transport evidence. On ordinary transport loss, Main first follows its existing Gateway WebSocket reconnect path. ClawX uses a three-minute no-liveness deadline, then verifies the core RPC router with `system-presence` before replacing a process it owns.
+
+| Design point | Handling | Purpose |
+| --- | --- | --- |
+| Treat pong, any incoming Gateway frame, and every successful RPC as liveness* | Refresh `lastAliveAt` and cancel a stale deadline callback | Large AI operations, such as skill or tool calls, can delay pongs while the connection is serving real traffic; avoid treating that delay as a dead Gateway |
+| Use one three-minute silence deadline | Before 180 seconds, record missed pongs only; do not alter the socket or process | Bound automatic recovery while preventing pong-only restarts |
+| Verify the control plane at the deadline | Call `system-presence` RPC once with a 5-second timeout to confirm Gateway state from the control plane rather than a pure WebSocket signal; success resumes normal monitoring | Distinguish a silent event stream from a Gateway that cannot serve a core read RPC |
+| Restart only an unavailable ClawX-owned process | A failed deadline probe requests the guarded Gateway restart path | Recover a genuinely unresponsive local child process |
+| Never automatically stop an external Gateway | Prefer replacing/reconnecting only ClawX's WebSocket and report unavailable diagnostics | Avoid issuing shutdown to a process ClawX does not own |
+| Keep authoritative lifecycle paths separate | Preserve existing WebSocket-close reconnect, code-1012 reload recovery, process-exit recovery, and manual restart | Prevent duplicate or competing stop/start operations |
+| Do not track active workloads in this path | Apply the same deadline regardless of chat, tool, or cron activity | Keep liveness recovery focused on false restart prevention and process ownership |
+
+> * This liveness-evidence design was inspired by [LobsterAI](https://github.com/netease-youdao/lobsterai).
+
 ### Process Model and Gateway Troubleshooting
 
 - ClawX is an Electron app, so **one app instance normally appears as multiple OS processes** (main/renderer/zygote/utility). This is expected.

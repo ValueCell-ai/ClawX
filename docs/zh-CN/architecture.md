@@ -97,6 +97,22 @@ ACP Chat 也可在 runtime 以可信结构化媒体投递图像生成结果时�
 - **安全存储**：API 密钥和敏感数据利用操作系统原生的安全存储机制
 - **CORS 安全**：渲染进程不直接请求本地 Gateway 或 Host API HTTP 端点
 
+### Gateway 存活恢复
+
+Gateway 的存活状态由 Electron 主进程判断。WebSocket pong 是有价值的传输层证据。普通传输丢失时，主进程优先沿既有 Gateway WebSocket 重连路径恢复连接。ClawX 在三分钟没有可信存活信号后，先通过 `system-presence` 验证核心 RPC 路由，再决定是否替换其自身拥有的进程。
+
+| 设计点 | 处置 | 目的 |
+| --- | --- | --- |
+| 将 pong、任意入站 Gateway 帧和成功 RPC 视为存活信号* | 刷新 `lastAliveAt` 并取消过期的 deadline 回调 | 当连接仍在承载真实流量时，大型 AI 操作（如 Skill 调用、工具调用）可能导致 pong 延迟；避免把这种延迟误判为 Gateway 已死亡 |
+| 使用单一三分钟静默 deadline | 180 秒前只记录 heartbeat miss，不修改 socket 或进程 | 在限制自动恢复时间的同时避免仅因 pong 缺失而重启 |
+| 在 deadline 到期时验证控制面 | 以 5 秒超时调用一次 `system-presence` RPC，从控制面而非纯 WebSocket 确认 Gateway 状态；成功则恢复正常监控 | 区分事件流暂时安静与无法提供核心读 RPC 的 Gateway |
+| 只重启不可用的 ClawX 自管进程 | deadline probe 失败后请求受保护的 Gateway 重启路径 | 恢复真正无响应的本地子进程 |
+| 绝不自动停止外部 Gateway | 优先仅替换或重连 ClawX 的 WebSocket，并报告不可用诊断 | 避免向 ClawX 不拥有的进程发出 shutdown |
+| 保持权威生命周期路径独立 | 保留现有 WebSocket close 重连、code 1012 reload 恢复、进程退出恢复和手动重启 | 防止重复或竞争性的 stop/start 操作 |
+| 不在此路径追踪活跃工作负载 | 无论 chat、tool 或 cron 是否活跃，均使用相同 deadline | 让存活恢复聚焦于防止虚假重启和进程所有权 |
+
+> * 此存活信号设计参考了 [LobsterAI](https://github.com/netease-youdao/lobsterai)。
+
 ### 进程模型与 Gateway 排障
 
 - ClawX 基于 Electron，**单个应用实例出现多个系统进程是正常现象**（main/renderer/zygote/utility）。

@@ -204,6 +204,7 @@ pnpm package         # 为当前平台打包（可用 :mac / :win / :linux 后�
 ClawX 构建于以下优秀的开源项目之上：
 
 - [OpenClaw](https://github.com/OpenClaw) – AI 智能体运行时
+- [LobsterAI](https://github.com/netease-youdao/lobsterai) – Gateway 存活信号与恢复设计的灵感来源
 - [Electron](https://www.electronjs.org/) – 跨平台桌面框架
 - [React](https://react.dev/) – UI 组件库
 - [shadcn/ui](https://ui.shadcn.com/) – 精美设计的组件库

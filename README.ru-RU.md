@@ -204,6 +204,7 @@ pnpm package         # Упаковать для текущей платформ
 ClawX построен на основе следующих отличных проектов с открытым исходным кодом:
 
 - [OpenClaw](https://github.com/OpenClaw) - Среда выполнения AI-агентов
+- [LobsterAI](https://github.com/netease-youdao/lobsterai) - Источник идей для сигналов доступности и восстановления Gateway
 - [Electron](https://www.electronjs.org/) - Кроссплатформенный десктоп-фреймворк
 - [React](https://react.dev/) - Библиотека UI-компонентов
 - [shadcn/ui](https://ui.shadcn.com/) - Красиво спроектированные компоненты

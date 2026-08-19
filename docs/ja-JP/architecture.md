@@ -100,6 +100,22 @@ ACP Chatは、ランタイムが画像生成メディアを信頼できる構造
 - **セキュアストレージ**：APIキーや機密データにはOSのネイティブな安全な保存機構を使用します。
 - **CORSセーフ設計**：RendererはローカルGatewayやHost API HTTPエンドポイントを直接呼び出しません。
 
+### Gatewayの存活復旧
+
+Gatewayの存活判定はElectron Mainが行います。WebSocket pongは有用なトランスポート証拠です。通常のトランスポート喪失時は、Mainが既存のGateway WebSocket再接続パスを優先して接続を復旧します。ClawXは3分間の信頼できる存活信号なしの期限を設け、その後に`system-presence`でコアRPCルーターを検証してから、自身が所有するプロセスを置き換えるか判断します。
+
+| 設計点 | 処理 | 目的 |
+| --- | --- | --- |
+| pong、任意の受信Gatewayフレーム、成功したRPCを存活信号として扱う* | `lastAliveAt`を更新し、古いdeadlineコールバックを取り消す | 接続が実際のトラフィックを処理している際、大規模なAI操作（Skillやツール呼び出しなど）がpongを遅延させることがあるため、その遅延をGateway停止と誤判定しない |
+| 単一の3分間静止deadlineを使う | 180秒まではheartbeat missを記録するだけで、socketやプロセスを変更しない | 自動復旧を制限しつつ、pongだけによる再起動を防ぐ |
+| deadline時にコントロールプレーンを検証する | 5秒タイムアウトで`system-presence` RPCを1回呼び出し、純粋なWebSocket信号ではなくコントロールプレーンからGateway状態を確認する。成功時は通常監視へ戻る | 静かなイベントストリームとコア読取RPCを処理できないGatewayを区別する |
+| 利用不能なClawX所有プロセスだけを再起動する | deadline probe失敗時に保護されたGateway再起動パスを要求する | 真に応答しないローカル子プロセスを復旧する |
+| 外部Gatewayを自動停止しない | ClawXのWebSocketだけを優先して置き換えまたは再接続し、利用不能診断を報告する | ClawXが所有しないプロセスにshutdownを発行しない |
+| 権威的なライフサイクルパスを分離する | 既存のWebSocket close再接続、code 1012 reload復旧、プロセス終了復旧、手動再起動を維持する | 重複または競合するstop/start操作を防ぐ |
+| この経路でアクティブな作業負荷を追跡しない | chat、tool、cronの実行中かどうかにかかわらず同じdeadlineを適用する | 存活復旧を虚偽の再起動防止とプロセス所有権に集中させる |
+
+> * この存活信号の設計は [LobsterAI](https://github.com/netease-youdao/lobsterai) を参考にしています。
+
 ### プロセスモデルとGatewayのトラブルシューティング
 
 - ClawXはElectronアプリのため、**1つのアプリインスタンスでも複数のOSプロセスが表示される**（main/renderer/zygote/utility）のは正常です。

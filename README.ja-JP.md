@@ -204,6 +204,7 @@ pnpm package         # 現在のプラットフォーム向けにパッケージ
 ClawXは次の優れたオープンソースプロジェクトの上に構築されています。
 
 - [OpenClaw](https://github.com/OpenClaw) - AIエージェントランタイム
+- [LobsterAI](https://github.com/netease-youdao/lobsterai) - Gatewayの存活信号と復旧設計の着想元
 - [Electron](https://www.electronjs.org/) - クロスプラットフォームデスクトップフレームワーク
 - [React](https://react.dev/) - UIコンポーネントライブラリ
 - [shadcn/ui](https://ui.shadcn.com/) - 美しく設計されたコンポーネント

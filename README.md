@@ -204,6 +204,7 @@ We welcome contributions from the community! Whether it's bug fixes, new feature
 ClawX is built on the shoulders of excellent open-source projects:
 
 - [OpenClaw](https://github.com/OpenClaw) - The AI agent runtime
+- [LobsterAI](https://github.com/netease-youdao/lobsterai) - Inspiration for Gateway liveness evidence and recovery design
 - [Electron](https://www.electronjs.org/) - Cross-platform desktop framework
 - [React](https://react.dev/) - UI component library
 - [shadcn/ui](https://ui.shadcn.com/) - Beautifully designed components
