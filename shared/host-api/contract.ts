@@ -826,6 +826,7 @@ export type HostApiContract = {
   };
   openclaw: {
     status: () => OpenClawStatusResult;
+    getConfigPath: () => string;
     getSkillsDir: () => string;
     getCliCommand: () => OpenClawCliCommandResult;
   };

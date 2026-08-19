@@ -632,10 +632,6 @@ export function Settings() {
             </div>
           </div>
 
-          <Separator className="bg-black/5 dark:bg-white/5" />
-
-          <TalkSettings />
-
           {/* Developer */}
           <section id="developer" tabIndex={-1} data-testid="settings-developer-section" className="space-y-6 scroll-mt-6">
             <h2
@@ -662,6 +658,7 @@ export function Settings() {
             )}
             {devModeUnlocked && (
               <>
+                <TalkSettings />
                 <Separator className="bg-black/5 dark:bg-white/5" />
                 <div data-testid="settings-developer-advanced">
                 <div className="space-y-8">

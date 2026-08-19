@@ -22,6 +22,7 @@ touchedAreas:
   - shared/host-api/contract.ts
   - shared/host-events/contract.ts
   - electron/services/talk-api.ts
+  - electron/services/openclaw-api.ts
   - electron/main/ipc-handlers.ts
   - electron/gateway/event-dispatch.ts
   - electron/gateway/config-delivery.ts
@@ -34,6 +35,7 @@ touchedAreas:
   - src/stores/acp-chat-session.ts
   - src/pages/Chat/**
   - src/components/settings/TalkSettings.tsx
+  - src/components/layout/Sidebar.tsx
   - src/pages/Settings/index.tsx
   - shared/i18n/locales/**/chat.json
   - shared/i18n/locales/**/settings.json
@@ -74,6 +76,7 @@ expectedUserBehavior:
   - Assistant preamble, progress, and final-result segments share one bubble for the current user turn, without using message-text similarity or elapsed-time guesses to infer identity, duplication, or turn ownership.
   - Talk locks ordinary text composition while active and restores the user's draft on every terminal path.
   - Settings exposes only catalog-driven realtime provider, model, speaker voice, and readiness controls.
+  - Developer mode gates the Sidebar Talk action and Talk settings section; Talk settings show all catalog providers, disable unconfigured providers, and open the resolved OpenClaw config for advanced provider fields.
 requiredProfiles:
   - fast
   - comms
@@ -126,6 +129,8 @@ acceptance:
   - Consult ACP replay does not tear down the relay before provider output playback completes; an unclaimed/no-audio mark never triggers replay.
   - The direct transcript appends declared deltas and replaces the current role segment with its declared final only in transient display state, never synthetic ACP history.
   - Interrupted user finals and assistant segment boundaries are tracked by event state rather than message-text similarity or elapsed-time heuristics; multiple assistant response segments remain in one bubble until a new user turn.
+  - Developer mode gates the Sidebar Talk action and Talk settings section. Disabling developer mode stops any active Talk relay so no hidden active session remains.
+  - Talk settings list every realtime provider and model declared by the Gateway catalog, disable unconfigured providers with localized guidance, save only provider/model, and open the resolved OpenClaw config file for provider-specific fields.
   - A consumed boundary never retries automatically after failure; preserved-replay failure keeps Talk active with an explicit localized retry action and permits no concurrent refresh.
   - New text is localized in en, zh, ja, and ru; the UI has an Electron E2E interaction test.
   - README English, Simplified Chinese, and Japanese documentation describe the feature and its history semantics.

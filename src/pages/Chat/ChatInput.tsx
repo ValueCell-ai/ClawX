@@ -7,7 +7,7 @@
  * references in the ACP session/prompt request.
  */
 import { useState, useRef, useEffect, useCallback, useMemo, type CSSProperties } from 'react';
-import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Search, ChevronDown, Check, Mic } from 'lucide-react';
+import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Search, ChevronDown, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -31,9 +31,6 @@ import { fetchQuickAccessSkills } from '@/lib/quick-access-skills';
 import { DEFAULT_WORKSPACE_CWD, isDefaultWorkspacePath, normalizeWorkspacePath } from '@/lib/workspace-context';
 import { realtimeTalkController } from '@/lib/talk/realtime-talk-controller';
 import logoSvg from '@/assets/logo.svg';
-import { DEFAULT_SESSION_KEY } from '@shared/chat/types';
-import { isOpenClawHeartbeatOnlySession } from '@/stores/chat/session-key-utils';
-import type { TalkCatalog } from '@shared/talk/types';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -65,7 +62,6 @@ interface ChatInputProps {
   workspaceReadOnly?: boolean;
   onSelectWorkspace?: (path: string) => void;
   talkActive?: boolean;
-  onConfigureTalk?: () => void;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -216,7 +212,6 @@ export function ChatInput({
   workspaceReadOnly = false,
   onSelectWorkspace,
   talkActive,
-  onConfigureTalk,
 }: ChatInputProps) {
   const { t } = useTranslation('chat');
   const [input, setInput] = useState('');
@@ -234,7 +229,6 @@ export function ChatInput({
   const [switchingModelRef, setSwitchingModelRef] = useState<string | null>(null);
   const [optimisticModelRef, setOptimisticModelRef] = useState<string | null>(null);
   const [providerSnapshotReady, setProviderSnapshotReady] = useState(false);
-  const [talkCatalog, setTalkCatalog] = useState<TalkCatalog | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const skillPickerRef = useRef<HTMLDivElement>(null);
@@ -252,8 +246,6 @@ export function ChatInput({
   const providerError = useProviderStore((s) => s.error);
   const refreshProviderSnapshot = useProviderStore((s) => s.refreshProviderSnapshot);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
-  const currentSessionKey = useChatStore((s) => s.currentSessionKey);
-  const sessions = useChatStore((s) => s.sessions);
   const talkStatus = useRealtimeTalkStore((s) => s.status);
   const talkInputLevel = useRealtimeTalkStore((s) => s.inputLevel);
   const storeTalkActive = useRealtimeTalkStore((s) => s.isActive);
@@ -320,38 +312,6 @@ export function ChatInput({
   const workspaceSelectorDisabled = workspaceReadOnly || inputDisabled || sending || !onSelectWorkspace;
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
   const openArtifactPreview = useArtifactPanel((s) => s.openPreview);
-  const selectedTalkSession = useMemo(
-    () => sessions.find((session) => session.key === currentSessionKey) ?? null,
-    [currentSessionKey, sessions],
-  );
-  const talkSessionAllowed = !!currentSessionKey
-    && currentSessionKey !== DEFAULT_SESSION_KEY
-    && !!selectedTalkSession
-    && !isOpenClawHeartbeatOnlySession(selectedTalkSession);
-  const talkReady = talkCatalog?.realtime.ready === true;
-  const talkConfigurationUnavailable = talkCatalog?.realtime.ready === false;
-  const talkConfigurationReason = talkCatalog?.realtime.ready === false
-    ? talkCatalog.realtime.reason
-    : undefined;
-  const talkStartBlocked = disabled || !isGatewayUsable || sending || !talkSessionAllowed || !talkReady || storeTalkActive;
-
-  useEffect(() => {
-    if (!isGatewayUsable) {
-      setTalkCatalog(null);
-      return;
-    }
-    let cancelled = false;
-    void realtimeTalkController.catalog()
-      .then((catalog) => {
-        if (!cancelled) setTalkCatalog(catalog);
-      })
-      .catch(() => {
-        if (!cancelled) setTalkCatalog({ modes: [], transports: [], brains: [], realtime: { ready: false, providers: [] } });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isGatewayUsable]);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -810,34 +770,9 @@ export function ChatInput({
     onStop?.();
   }, [canStop, onStop]);
 
-  const handleTalk = useCallback(() => {
-    if (talkIsActive) {
-      void realtimeTalkController.stop();
-      return;
-    }
-    if (talkConfigurationUnavailable) {
-      onConfigureTalk?.();
-      return;
-    }
-    if (talkStartBlocked || !currentSessionKey) return;
-    void realtimeTalkController.start({ sessionKey: currentSessionKey });
-  }, [currentSessionKey, onConfigureTalk, talkConfigurationUnavailable, talkIsActive, talkStartBlocked]);
-
   const handleRetryConsultRefresh = useCallback(() => {
     void realtimeTalkController.retryConsultRefresh();
   }, []);
-
-  const talkUnavailableReason = !isGatewayUsable
-    ? t('talk.unavailable.gateway')
-    : sending
-      ? t('talk.unavailable.sending')
-      : !talkSessionAllowed
-        ? t('talk.unavailable.session')
-        : talkConfigurationUnavailable
-          ? t('talk.unavailable.configuration', { reason: talkConfigurationReason })
-          : !talkReady
-            ? t('talk.unavailable.loading')
-            : t('talk.unavailable.default');
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -1312,44 +1247,6 @@ export function ChatInput({
                 )}
               </div>
             )}
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex shrink-0">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    data-testid="chat-composer-talk"
-                    className={cn(
-                      'relative h-8 w-8 rounded-lg text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
-                      talkIsActive && 'bg-black/5 text-foreground dark:bg-white/10',
-                    )}
-                    disabled={!talkIsActive && talkStartBlocked && !talkConfigurationUnavailable}
-                    aria-label={talkIsActive ? t('talk.stop') : t('talk.start')}
-                    aria-pressed={talkIsActive}
-                    onClick={handleTalk}
-                  >
-                    <Mic className="h-3.5 w-3.5" />
-                    {talkIsActive && (
-                      <span
-                        data-testid="chat-talk-input-level"
-                        role="meter"
-                        aria-label={t('talk.inputLevel')}
-                        aria-valuemin={0}
-                        aria-valuemax={1}
-                        aria-valuenow={talkInputLevel}
-                        className="absolute bottom-1 h-0.5 rounded-full bg-primary"
-                        style={{ width: `${Math.max(8, talkInputLevel * 100)}%` }}
-                      />
-                    )}
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{talkIsActive ? t('talk.stop') : talkStartBlocked ? talkUnavailableReason : t('talk.start')}</p>
-              </TooltipContent>
-            </Tooltip>
 
             {/* Send Button — pushed to the right */}
             <Button

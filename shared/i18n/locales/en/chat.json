@@ -256,7 +256,7 @@
         "unavailable": {
             "gateway": "Talk requires a connected Gateway",
             "sending": "Talk is unavailable while a message is sending",
-            "session": "Select a chat session to start Talk",
+            "session": "Create a new chat before starting Talk",
             "configuration": "Talk is unavailable: {{reason}}",
             "loading": "Checking Talk availability",
             "default": "Talk is unavailable"

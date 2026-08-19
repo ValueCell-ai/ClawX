@@ -128,6 +128,7 @@ export const hostApi = {
   },
   openclaw: {
     status: () => invokeHost('openclaw', 'status'),
+    getConfigPath: () => invokeHost('openclaw', 'getConfigPath'),
     getSkillsDir: () => invokeHost('openclaw', 'getSkillsDir'),
     getCliCommand: () => invokeHost('openclaw', 'getCliCommand'),
   },

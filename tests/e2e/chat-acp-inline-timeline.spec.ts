@@ -1580,10 +1580,12 @@ test.describe('ClawX ACP inline timeline', () => {
 
       const page = await openChat(app);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('sidebar-nav-settings').click();
+      await page.getByTestId('settings-dev-mode-switch').click();
       await page.getByTestId(`sidebar-session-${TALK_SESSION_KEY}`).click();
-      await expect(page.getByTestId('chat-composer-talk')).toBeEnabled();
+      await expect(page.getByTestId('sidebar-talk')).toBeEnabled();
       await page.getByTestId('chat-composer-input').fill('Preserve this draft');
-      await page.getByTestId('chat-composer-talk').click();
+      await page.getByTestId('sidebar-talk').click();
       await expect(page.getByTestId('chat-composer-input')).toBeDisabled();
 
       await app.evaluate(async ({ app: _app }) => {
@@ -1644,12 +1646,12 @@ test.describe('ClawX ACP inline timeline', () => {
         call.module === 'talk' && call.action === 'startAgentConsult'
       ))).toBe(false);
 
-      await page.getByTestId('chat-composer-talk').click();
+      await page.getByTestId('sidebar-talk').click();
       await expect(page.getByTestId('chat-composer-input')).toBeEnabled();
       await expect(page.getByTestId('chat-composer-input')).toHaveValue('Preserve this draft');
       await expect(page.getByTestId('live-talk-transcript')).toHaveCount(0);
 
-      await page.getByTestId('chat-composer-talk').click();
+      await page.getByTestId('sidebar-talk').click();
       await expect(page.getByTestId('chat-composer-input')).toBeDisabled();
       await app.evaluate(async ({ app: _app }) => {
         const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
@@ -1762,9 +1764,11 @@ test.describe('ClawX ACP inline timeline', () => {
       });
 
       const page = await openChat(app);
+      await page.getByTestId('sidebar-nav-settings').click();
+      await page.getByTestId('settings-dev-mode-switch').click();
       await page.getByTestId(`sidebar-session-${TALK_SESSION_KEY}`).click();
-      await expect(page.getByTestId('chat-composer-talk')).toBeEnabled();
-      await page.getByTestId('chat-composer-talk').click();
+      await expect(page.getByTestId('sidebar-talk')).toBeEnabled();
+      await page.getByTestId('sidebar-talk').click();
       await expect(page.getByTestId('chat-composer-input')).toBeDisabled();
 
       await app.evaluate(async ({ app: _app }) => {
@@ -1812,7 +1816,7 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect.poll(() => getConsultAcpDurableReplayFlags(app)).toEqual([false, true]);
       await expect(page.getByTestId('live-talk-transcript')).toHaveCount(0);
       await expect(page.getByTestId('chat-composer-input')).toBeDisabled();
-      await expect(page.getByTestId('chat-composer-talk')).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.getByTestId('sidebar-talk')).toHaveAttribute('aria-pressed', 'true');
       expect((await getRecordedHostInvocations(app)).some((call) => (
         call.module === 'talk' && call.action === 'stopRelay'
       ))).toBe(false);

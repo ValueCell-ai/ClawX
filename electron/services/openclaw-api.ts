@@ -1,11 +1,12 @@
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import { getOpenClawCliCommand } from '../utils/openclaw-cli';
-import { ensureDir, getOpenClawSkillsDir, getOpenClawStatus } from '../utils/paths';
+import { ensureDir, getOpenClawSkillsDir, getOpenClawStatus, resolveOpenClawConfigPath } from '../utils/paths';
 import { existsSync } from 'node:fs';
 
 export function createOpenClawApi(): CompleteHostServiceRegistry['openclaw'] {
   return {
     status: () => getOpenClawStatus(),
+    getConfigPath: () => resolveOpenClawConfigPath(),
     getSkillsDir: () => {
       const dir = getOpenClawSkillsDir();
       ensureDir(dir);

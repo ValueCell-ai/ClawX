@@ -256,7 +256,7 @@
         "unavailable": {
             "gateway": "Talk には接続済みの Gateway が必要です",
             "sending": "メッセージ送信中は Talk を利用できません",
-            "session": "Talk を開始するチャットセッションを選択してください",
+            "session": "Talk を開始する前に新しいチャットを作成してください",
             "configuration": "Talk は利用できません: {{reason}}",
             "loading": "Talk の利用可否を確認中",
             "default": "Talk は利用できません"

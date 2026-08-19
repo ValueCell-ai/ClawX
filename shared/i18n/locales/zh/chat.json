@@ -256,7 +256,7 @@
         "unavailable": {
             "gateway": "语音对话需要已连接的网关",
             "sending": "发送消息时无法使用语音对话",
-            "session": "请选择聊天会话后再开始语音对话",
+            "session": "请先新建对话后再开始语音对话",
             "configuration": "语音对话不可用：{{reason}}",
             "loading": "正在检查语音对话可用性",
             "default": "语音对话不可用"

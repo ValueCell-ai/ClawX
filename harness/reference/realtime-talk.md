@@ -30,7 +30,7 @@ Completed consult-result correlation requires the active call's successful tool-
 
 ## Configuration
 
-Talk provider credentials remain Gateway-owned and never enter Renderer state or basic Settings. Main reads and writes `talk.realtime` through the existing catalog and OpenClaw config transaction. The settings surface is limited to a catalog-configured provider, model, speaker voice, and readiness; it excludes secrets, transports, VAD, recording, video, and dictation controls.
+Talk provider credentials remain Gateway-owned and never enter Renderer state or basic Settings. Developer mode gates the Sidebar Talk action and Talk settings section. The settings surface displays every realtime provider and model declared by the Gateway catalog, disabling providers that OpenClaw reports as unconfigured, then writes the selected provider/model through the OpenClaw config transaction. Provider-specific fields, including speaker voice, stay in the resolved OpenClaw config file, which Settings can open through a typed Main-owned path route. The surface excludes secrets, transports, VAD, recording, video, and dictation controls.
 
 ## Validation Anchors
 

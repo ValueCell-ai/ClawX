@@ -11,6 +11,8 @@ test.describe('ClawX developer-mode gated UI', () => {
     await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'unchecked');
     await expect(page.getByTestId('sidebar-open-dev-console')).toHaveCount(0);
     await expect(page.getByTestId('sidebar-nav-dreams')).toHaveCount(0);
+    await expect(page.getByTestId('sidebar-talk')).toHaveCount(0);
+    await expect(page.getByTestId('talk-settings')).toHaveCount(0);
 
     await page.evaluate(() => window.location.assign('#/settings?section=developer'));
     await expect(page.getByTestId('settings-developer-section')).toBeFocused();
@@ -44,6 +46,9 @@ test.describe('ClawX developer-mode gated UI', () => {
     await expect(page.getByTestId('sidebar-open-dev-console')).toBeVisible();
     await expect(page.getByTestId('sidebar-nav-dreams')).toHaveCount(0);
     await expect(page.getByTestId('sidebar-nav-image-generation')).toBeVisible();
+    await expect(page.getByTestId('sidebar-talk')).toBeVisible();
+    await expect(page.getByTestId('sidebar-talk')).toBeDisabled();
+    await expect(page.getByTestId('talk-settings')).toBeVisible();
 
     await page.getByTestId('sidebar-nav-models').click();
     await page.getByTestId('providers-add-button').click();

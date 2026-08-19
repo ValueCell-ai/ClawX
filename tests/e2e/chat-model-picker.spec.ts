@@ -282,13 +282,13 @@ test.describe('ClawX chat model picker', () => {
         || request.path === 'gateway:config.patch'
       )).toBe(false);
 
+      await page.getByTestId('settings-dev-mode-switch').click();
       await page.evaluate(() => window.location.assign('#/settings?section=talk'));
       await expect(page.getByTestId('talk-settings')).toBeVisible();
       await expect(page.getByTestId('talk-settings-readiness')).toContainText('Talk is unavailable');
       await expect(page.getByTestId('talk-settings-unavailable-reason')).toHaveText('Configure a realtime provider');
       await page.getByTestId('talk-settings-provider').selectOption('google');
       await expect(page.getByTestId('talk-settings-model')).toHaveValue('gemini-realtime');
-      await expect(page.getByTestId('talk-settings-voice')).toHaveValue('puck');
       await page.getByTestId('talk-settings-save').click();
 
       await expect.poll(async () => app.evaluate(() => (
@@ -299,7 +299,6 @@ test.describe('ClawX chat model picker', () => {
           && JSON.stringify(request.body) === JSON.stringify({
             provider: 'google',
             model: 'gemini-realtime',
-            speakerVoice: 'puck',
           })
         )) ?? false
       ))).toBe(true);
@@ -309,7 +308,6 @@ test.describe('ClawX chat model picker', () => {
         }).__chatModelPickerRequests?.filter((request) => request.path === 'talk:catalog').length ?? 0
       ))).toBeGreaterThanOrEqual(2);
 
-      await page.getByTestId('settings-dev-mode-switch').click();
       await expect(page.getByTestId('settings-developer-section')).toBeVisible();
       await page.evaluate(() => window.location.assign('#/settings?section=developer'));
       await expect(page.locator('#developer')).toBeFocused();

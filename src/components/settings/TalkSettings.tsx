@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { CircleHelp, ExternalLink, Loader2, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { hostApi, type TalkCatalog } from '@/lib/host-api';
 import { toUserMessage } from '@/lib/error-message';
 
-type Selection = { provider: string; model: string; speakerVoice?: string };
+type Selection = { provider: string; model: string };
 
 function modelChoices(provider: TalkCatalog['realtime']['providers'][number] | undefined): string[] {
   if (!provider) return [];
@@ -24,20 +25,16 @@ function selectionFromCatalog(catalog: TalkCatalog, current?: Selection): Select
   const model = models.includes(current?.model ?? '')
     ? current!.model
     : models[0] ?? '';
-  const speakerVoice = provider?.voices?.includes(current?.speakerVoice ?? '')
-    ? current!.speakerVoice
-    : provider?.voices?.[0];
   return {
     provider: provider?.id ?? '',
     model,
-    ...(speakerVoice ? { speakerVoice } : {}),
   };
 }
 
 export function TalkSettings() {
   const { t } = useTranslation('settings');
   const [catalog, setCatalog] = useState<TalkCatalog | null>(null);
-  const [selection, setSelection] = useState<Selection>({ provider: '', model: '', speakerVoice: '' });
+  const [selection, setSelection] = useState<Selection>({ provider: '', model: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -60,18 +57,30 @@ export function TalkSettings() {
   }, []);
 
   const provider = catalog?.realtime.providers.find((candidate) => candidate.id === selection.provider);
-  const configuredProviders = catalog?.realtime.providers.filter((candidate) => candidate.configured) ?? [];
+  const providers = catalog?.realtime.providers ?? [];
   const models = modelChoices(provider);
-  const voiceChoices = provider?.voices ?? [];
-  const canSave = Boolean(selection.provider && selection.model && (!voiceChoices.length || selection.speakerVoice));
+  const unavailableProviderLabels = providers
+    .filter((candidate) => !candidate.configured)
+    .map((candidate) => candidate.label)
+    .join(', ');
+  const canSave = Boolean(provider?.configured && selection.model);
 
   const handleProviderChange = (providerId: string) => {
-    const nextProvider = configuredProviders.find((candidate) => candidate.id === providerId);
+    const nextProvider = providers.find((candidate) => candidate.id === providerId);
+    if (!nextProvider?.configured) return;
     setSelection({
       provider: providerId,
       model: modelChoices(nextProvider)[0] ?? '',
-      ...(nextProvider?.voices?.length ? { speakerVoice: nextProvider.voices[0] } : {}),
     });
+  };
+
+  const handleOpenConfig = async () => {
+    try {
+      const error = await hostApi.shell.openPath(await hostApi.openclaw.getConfigPath());
+      if (error) throw new Error(error);
+    } catch (error) {
+      toast.error(`${t('talk.openConfigFailed')}: ${toUserMessage(error)}`);
+    }
   };
 
   const handleSave = async () => {
@@ -124,59 +133,85 @@ export function TalkSettings() {
             </p>
           ) : null}
 
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="talk-provider">{t('talk.provider')}</Label>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="talk-provider">{t('talk.provider')}</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label={t('talk.providerHelp')}
+                    >
+                      <CircleHelp className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="max-w-64">{unavailableProviderLabels
+                      ? t('talk.providerUnavailable', { providers: unavailableProviderLabels })
+                      : t('talk.providerHelp')}
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <Select
                 id="talk-provider"
                 value={selection.provider}
                 onChange={(event) => handleProviderChange(event.target.value)}
-                disabled={configuredProviders.length === 0 || saving}
+                disabled={providers.length === 0 || saving}
                 data-testid="talk-settings-provider"
               >
-                {configuredProviders.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.label}</option>)}
+                {providers.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id} disabled={!candidate.configured}>
+                    {candidate.label}{candidate.configured ? '' : ` (${t('talk.unavailable')})`}
+                  </option>
+                ))}
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="talk-model">{t('talk.model')}</Label>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="talk-model">{t('talk.model')}</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label={t('talk.modelHelp')}
+                    >
+                      <CircleHelp className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="max-w-64">{t('talk.modelHelp')}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <Select
                 id="talk-model"
                 value={selection.model}
                 onChange={(event) => setSelection((current) => ({ ...current, model: event.target.value }))}
-                disabled={!models.length || saving}
+                disabled={!provider?.configured || !models.length || saving}
                 data-testid="talk-settings-model"
               >
                 {models.map((model) => <option key={model} value={model}>{model}</option>)}
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="talk-speaker-voice">{t('talk.speakerVoice')}</Label>
-              {voiceChoices.length ? (
-                <Select
-                  id="talk-speaker-voice"
-                  value={selection.speakerVoice ?? ''}
-                  onChange={(event) => setSelection((current) => ({ ...current, speakerVoice: event.target.value }))}
-                  disabled={saving}
-                  data-testid="talk-settings-voice"
-                >
-                  {voiceChoices.map((voice) => <option key={voice} value={voice}>{voice}</option>)}
-                </Select>
-              ) : (
-                <p className="text-meta text-muted-foreground" data-testid="talk-settings-voice-unavailable">
-                  {t('talk.voiceUnavailable')}
-                </p>
-              )}
-            </div>
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-black/5 dark:border-white/5 pt-4">
-            <a
-              href="#/settings?section=developer"
-              className="text-tiny text-muted-foreground underline underline-offset-4 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
-              data-testid="talk-settings-developer-link"
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="rounded-full"
+              onClick={() => void handleOpenConfig()}
+              disabled={saving}
+              data-testid="talk-settings-open-config"
             >
-              {t('talk.developerGuidance')}
-            </a>
+              <ExternalLink className="mr-2 h-3.5 w-3.5" />
+              {t('talk.openConfig')}
+            </Button>
             <Button
               type="button"
               className="rounded-full"

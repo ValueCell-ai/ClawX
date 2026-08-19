@@ -674,7 +674,6 @@ export function Chat() {
           workspaceReadOnly={effectiveWorkspace.readOnly}
           onSelectWorkspace={setChatWorkspacePath}
           talkActive={liveTalkTranscriptVisible}
-          onConfigureTalk={() => window.location.assign('#/settings?section=talk')}
         />
       </div>
 

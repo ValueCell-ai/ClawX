@@ -1,13 +1,21 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { catalogMock, updateRealtimeSettingsMock } = vi.hoisted(() => ({
+const { catalogMock, configPathMock, openPathMock, updateRealtimeSettingsMock } = vi.hoisted(() => ({
   catalogMock: vi.fn(),
+  configPathMock: vi.fn(),
+  openPathMock: vi.fn(),
   updateRealtimeSettingsMock: vi.fn(),
 }));
 
 vi.mock('@/lib/host-api', () => ({
   hostApi: {
+    openclaw: {
+      getConfigPath: (...args: unknown[]) => configPathMock(...args),
+    },
+    shell: {
+      openPath: (...args: unknown[]) => openPathMock(...args),
+    },
     talk: {
       catalog: (...args: unknown[]) => catalogMock(...args),
       updateRealtimeSettings: (...args: unknown[]) => updateRealtimeSettingsMock(...args),
@@ -46,33 +54,33 @@ describe('TalkSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     catalogMock.mockResolvedValue(catalog);
+    configPathMock.mockResolvedValue('/tmp/openclaw.json');
+    openPathMock.mockResolvedValue('');
     updateRealtimeSettingsMock.mockResolvedValue({ ok: true });
   });
 
-  it('uses only configured catalog options and refreshes after saving a selection', async () => {
+  it('shows all catalog providers and refreshes after saving a configured selection', async () => {
     render(<TalkSettings />);
 
     await waitFor(() => expect(screen.getByTestId('talk-settings-provider')).toHaveValue('openai'));
     expect(screen.getByTestId('talk-settings-provider')).toContainHTML('OpenAI');
-    expect(screen.getByTestId('talk-settings-provider')).not.toContainHTML('Unavailable');
+    expect(screen.getByTestId('talk-settings-provider')).toContainHTML('Unavailable');
+    expect(screen.getByRole('option', { name: /Unavailable/ })).toBeDisabled();
     expect(screen.getByTestId('talk-settings-model')).toContainHTML('gpt-realtime-mini');
-    expect(screen.getByTestId('talk-settings-voice')).toContainHTML('verse');
     expect(screen.getByTestId('talk-settings-unavailable-reason')).toHaveTextContent('Configure a realtime provider');
     expect(screen.queryByText(/api key|transport|vad/i)).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByTestId('talk-settings-model'), { target: { value: 'gpt-realtime-mini' } });
-    fireEvent.change(screen.getByTestId('talk-settings-voice'), { target: { value: 'verse' } });
     fireEvent.click(screen.getByTestId('talk-settings-save'));
 
     await waitFor(() => expect(updateRealtimeSettingsMock).toHaveBeenCalledWith({
       provider: 'openai',
       model: 'gpt-realtime-mini',
-      speakerVoice: 'verse',
     }));
     await waitFor(() => expect(catalogMock).toHaveBeenCalledTimes(2));
   });
 
-  it('uses defaultModel without rendering an empty voice selector when the catalog has no voice choices', async () => {
+  it('uses defaultModel when the catalog does not declare a model list', async () => {
     catalogMock.mockResolvedValue({
       realtime: {
         ready: true,
@@ -88,8 +96,6 @@ describe('TalkSettings', () => {
     render(<TalkSettings />);
 
     await waitFor(() => expect(screen.getByTestId('talk-settings-model')).toHaveValue('bundled-realtime'));
-    expect(screen.queryByTestId('talk-settings-voice')).not.toBeInTheDocument();
-    expect(screen.getByTestId('talk-settings-voice-unavailable')).toHaveTextContent('talk.voiceUnavailable');
     fireEvent.click(screen.getByTestId('talk-settings-save'));
 
     await waitFor(() => expect(updateRealtimeSettingsMock).toHaveBeenCalledWith({
@@ -98,12 +104,11 @@ describe('TalkSettings', () => {
     }));
   });
 
-  it('links developer guidance to the Developer settings anchor', async () => {
+  it('opens the resolved OpenClaw config path', async () => {
     render(<TalkSettings />);
 
-    await waitFor(() => expect(screen.getByTestId('talk-settings-developer-link')).toHaveAttribute(
-      'href',
-      '#/settings?section=developer',
-    ));
+    await waitFor(() => expect(screen.getByTestId('talk-settings-open-config')).toBeEnabled());
+    fireEvent.click(screen.getByTestId('talk-settings-open-config'));
+    await waitFor(() => expect(openPathMock).toHaveBeenCalledWith('/tmp/openclaw.json'));
   });
 });

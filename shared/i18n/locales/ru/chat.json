@@ -256,7 +256,7 @@
         "unavailable": {
             "gateway": "Для Talk требуется подключённый шлюз",
             "sending": "Talk недоступен во время отправки сообщения",
-            "session": "Выберите сеанс чата, чтобы начать Talk",
+            "session": "Создайте новый чат перед запуском Talk",
             "configuration": "Talk недоступен: {{reason}}",
             "loading": "Проверка доступности Talk",
             "default": "Talk недоступен"
