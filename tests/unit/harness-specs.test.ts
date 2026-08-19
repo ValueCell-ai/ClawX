@@ -30,6 +30,72 @@ async function readMarkdownTree(directory: string): Promise<Array<{ file: string
 }
 
 describe('harness specs', () => {
+  it('defines the three-minute Gateway liveness recovery contract', async () => {
+    const [task, heartbeatRule, communicationScenario, diagnosticsScenario, fourMissTask, observabilityTask] = await Promise.all([
+      loadSpec('harness/specs/tasks/three-minute-gateway-liveness-recovery.md'),
+      loadSpec('harness/specs/rules/gateway-heartbeat-safety.md'),
+      loadSpec('harness/specs/scenarios/gateway-backend-communication.md'),
+      loadSpec('harness/specs/scenarios/gateway-startup-diagnostics.md'),
+      loadSpec('harness/specs/tasks/restore-gateway-heartbeat-recovery-after-four-misses.md'),
+      loadSpec('harness/specs/tasks/make-gateway-heartbeat-observability-only.md'),
+    ]);
+
+    expect(task.data).toMatchObject({
+      id: 'three-minute-gateway-liveness-recovery',
+      scenario: 'gateway-backend-communication',
+      taskType: 'runtime-bridge',
+      requiredProfiles: ['fast', 'comms', 'e2e'],
+      docs: { required: true },
+    });
+    expect(task.data.requiredRules).toEqual([
+      'gateway-heartbeat-safety',
+      'gateway-readiness-policy',
+      'backend-communication-boundary',
+      'comms-regression',
+      'e2e-parallel-isolation',
+      'docs-sync',
+    ]);
+    expect(task.data.requiredTests).toEqual(expect.arrayContaining([
+      'electron/gateway/recovery-controller.test.ts',
+      'tests/e2e/gateway-lifecycle.spec.ts',
+      'tests/e2e/channels-health-diagnostics.spec.ts',
+      'tests/unit/harness-specs.test.ts',
+      'tests/unit/harness-git.test.ts',
+    ]));
+
+    for (const criterion of [
+      '180 seconds',
+      '5000ms',
+      'exactly one system-presence probe per silence generation',
+      'successful deadline system-presence probe',
+      'owned Gateway',
+      'external Gateway',
+      'Code 1012',
+      'No chat, tool, cron, or workload tracking',
+    ]) {
+      expect(task.data.acceptance.join('\n')).toContain(criterion);
+    }
+
+    for (const spec of [heartbeatRule, communicationScenario, diagnosticsScenario]) {
+      expect(spec.body).toContain('180 seconds');
+      expect(spec.body).toContain('system-presence');
+      expect(spec.body).toContain('externally managed');
+      expect(spec.body).not.toContain('four consecutive');
+    }
+    expect(communicationScenario.body).toContain('Renderer code must not own transport selection');
+    expect(diagnosticsScenario.body).toContain('lastDeadlineProbeResult');
+    for (const archivedTask of [fourMissTask, observabilityTask]) {
+      expect(archivedTask.data).toMatchObject({
+        title: expect.stringMatching(/^Historical:/),
+        intent: expect.stringContaining('must not guide current Gateway lifecycle behavior'),
+        expectedUserBehavior: ['This historical task does not define current user behavior.'],
+        acceptance: ['Do not implement this historical task; use three-minute-gateway-liveness-recovery for the current liveness policy.'],
+        docs: { required: false },
+      });
+      expect(archivedTask.body).toContain('Historical task superseded by `three-minute-gateway-liveness-recovery`');
+    }
+  });
+
   it('defines the sidebar session attention harness contract', async () => {
     const expectedRules = [
       'renderer-main-boundary',

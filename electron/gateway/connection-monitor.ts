@@ -1,29 +1,38 @@
 import { logger } from '../utils/logger';
+import { GATEWAY_LIVENESS_DEADLINE_MS } from './recovery-budget';
 
 type HealthResult = { ok: boolean; error?: string };
 type HeartbeatAliveReason = 'pong' | 'message';
 
 type PingOptions = {
   sendPing: () => void;
-  onHeartbeatTimeout: (context: { consecutiveMisses: number; timeoutMs: number }) => void;
+  onLivenessDeadline?: () => void;
+  onHeartbeatMiss?: (context: { consecutiveMisses: number; timeoutMs: number }) => void;
   intervalMs?: number;
   timeoutMs?: number;
   maxConsecutiveMisses?: number;
+  silenceDeadlineMs?: number;
 };
 
 export class GatewayConnectionMonitor {
   private pingInterval: NodeJS.Timeout | null = null;
   private healthCheckInterval: NodeJS.Timeout | null = null;
+  private livenessDeadlineTimer: NodeJS.Timeout | null = null;
   private lastPingAt = 0;
   private waitingForAlive = false;
   private consecutiveMisses = 0;
-  private timeoutTriggered = false;
+  private onLivenessDeadline: (() => void) | null = null;
+  private silenceDeadlineMs = GATEWAY_LIVENESS_DEADLINE_MS;
 
   startPing(options: PingOptions): void {
     const intervalMs = options.intervalMs ?? 30000;
     const timeoutMs = options.timeoutMs ?? 10000;
     const maxConsecutiveMisses = Math.max(1, options.maxConsecutiveMisses ?? 3);
+    this.clearLivenessDeadline();
     this.resetHeartbeatState();
+    this.onLivenessDeadline = options.onLivenessDeadline ?? null;
+    this.silenceDeadlineMs = options.silenceDeadlineMs ?? GATEWAY_LIVENESS_DEADLINE_MS;
+    this.scheduleLivenessDeadline();
 
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
@@ -38,14 +47,10 @@ export class GatewayConnectionMonitor {
         logger.warn(
           `Gateway heartbeat missed (${this.consecutiveMisses}/${maxConsecutiveMisses}, timeout=${timeoutMs}ms)`,
         );
-        if (this.consecutiveMisses >= maxConsecutiveMisses && !this.timeoutTriggered) {
-          this.timeoutTriggered = true;
-          options.onHeartbeatTimeout({
-            consecutiveMisses: this.consecutiveMisses,
-            timeoutMs,
-          });
-          return;
-        }
+        options.onHeartbeatMiss?.({
+          consecutiveMisses: this.consecutiveMisses,
+          timeoutMs,
+        });
       }
 
       options.sendPing();
@@ -61,7 +66,8 @@ export class GatewayConnectionMonitor {
     }
     this.waitingForAlive = false;
     this.consecutiveMisses = 0;
-    this.timeoutTriggered = false;
+    this.clearLivenessDeadline();
+    this.scheduleLivenessDeadline();
   }
 
   // Backward-compatible alias for old callers.
@@ -112,6 +118,8 @@ export class GatewayConnectionMonitor {
       clearInterval(this.healthCheckInterval);
       this.healthCheckInterval = null;
     }
+    this.clearLivenessDeadline();
+    this.onLivenessDeadline = null;
     this.resetHeartbeatState();
   }
 
@@ -119,6 +127,22 @@ export class GatewayConnectionMonitor {
     this.lastPingAt = 0;
     this.waitingForAlive = false;
     this.consecutiveMisses = 0;
-    this.timeoutTriggered = false;
+  }
+
+  private scheduleLivenessDeadline(): void {
+    if (!this.onLivenessDeadline) {
+      return;
+    }
+    this.livenessDeadlineTimer = setTimeout(() => {
+      this.livenessDeadlineTimer = null;
+      this.onLivenessDeadline?.();
+    }, this.silenceDeadlineMs);
+  }
+
+  private clearLivenessDeadline(): void {
+    if (this.livenessDeadlineTimer) {
+      clearTimeout(this.livenessDeadlineTimer);
+      this.livenessDeadlineTimer = null;
+    }
   }
 }

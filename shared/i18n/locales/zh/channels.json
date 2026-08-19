@@ -108,11 +108,19 @@
         "reasons": {
             "gateway_degraded": "网关心跳近期不稳定。",
             "gateway_unresponsive": "网关控制面看起来已经无响应。",
+            "gateway_verifying": "ClawX 正在验证网关响应。",
+            "external_gateway_unavailable": "外部管理的网关当前不可用。",
             "channels_status_timeout": "频道运行时状态探测超时。",
             "rpc_timeout": "最近的网关 RPC 调用发生超时。",
             "gateway_not_running": "网关当前未运行。",
             "gateway_error": "网关当前处于错误状态。",
             "runtime_error": "频道运行时返回了错误。"
+        },
+        "recovery": {
+            "verifying": "ClawX 正在验证网关响应。",
+            "restart-pending": "ClawX 正在等待重启其网关。",
+            "restart-executing": "ClawX 正在重启其网关。",
+            "external-unavailable": "外部管理的网关当前不可用。ClawX 正在重连；如有需要，请使用“重启网关”。"
         },
         "restartGateway": "重启网关",
         "copyDiagnostics": "复制诊断快照",

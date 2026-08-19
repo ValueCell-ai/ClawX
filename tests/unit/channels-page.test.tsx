@@ -973,4 +973,66 @@ describe('Channels page status refresh', () => {
 
     expect(diagnosticsFetchCount).toBe(2);
   });
+
+  it.each([
+    { recoveryState: 'verifying', healthState: 'degraded', reason: 'gateway_verifying' },
+    { recoveryState: 'restart-executing', healthState: 'unresponsive', reason: 'gateway_unresponsive' },
+    { recoveryState: 'external-unavailable', healthState: 'degraded', reason: 'external_gateway_unavailable' },
+  ])('explains $recoveryState recovery through the existing diagnostics panel', async ({
+    recoveryState,
+    healthState,
+    reason,
+  }) => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+    const recovery = {
+      state: recoveryState,
+      lastAliveAt: 100,
+      deadlineAt: 280,
+      externallyManaged: recoveryState === 'external-unavailable',
+    };
+
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') {
+        return {
+          success: true,
+          gatewayHealth: {
+            state: healthState,
+            reasons: [reason],
+            consecutiveHeartbeatMisses: 1,
+            recovery,
+          },
+          channels: [],
+        };
+      }
+      if (path === 'agents.list') return { success: true, agents: [] };
+      if (path === 'diagnostics.gatewaySnapshot') {
+        return {
+          capturedAt: 123,
+          platform: 'darwin',
+          gateway: {
+            state: healthState,
+            reasons: [reason],
+            consecutiveHeartbeatMisses: 1,
+            recovery,
+          },
+          channels: [],
+          clawxLogTail: 'clawx',
+          gatewayLogTail: 'gateway',
+          gatewayErrLogTail: '',
+        };
+      }
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<Channels />);
+
+    expect(await screen.findByTestId('channels-health-banner')).toBeInTheDocument();
+    expect(screen.getByText(`health.reasons.${reason}`)).toBeInTheDocument();
+    expect(screen.getByTestId('channels-recovery-status')).toHaveTextContent(`health.recovery.${recoveryState}`);
+
+    fireEvent.click(screen.getByTestId('channels-toggle-diagnostics'));
+    await waitFor(() => {
+      expect(screen.getByTestId('channels-diagnostics')).toHaveTextContent(`"state": "${recoveryState}"`);
+    });
+  });
 });

@@ -125,7 +125,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
     await expect(page.getByTestId('main-layout')).toBeVisible();
   });
 
-  test('shows gateway restart progress in the sidebar instead of page-level warnings', async ({ electronApp, page }) => {
+  test('uses the existing sidebar restart indicator for owned recovery instead of page-level warnings', async ({ electronApp, page }) => {
     await installIpcMocks(electronApp, {
       gatewayStatus: { state: 'running', port: 18789, pid: 100, connectedAt: 1, gatewayReady: true },
       hostApi: {
@@ -150,7 +150,55 @@ test.describe('ClawX gateway lifecycle resilience', () => {
           data: {
             status: 200,
             ok: true,
-            json: { success: true, channels: [] },
+            json: {
+              success: true,
+              gatewayHealth: {
+                state: 'unresponsive',
+                reasons: ['gateway_unresponsive'],
+                consecutiveHeartbeatMisses: 1,
+                recovery: {
+                  state: 'restart-executing',
+                  lastAliveAt: 100,
+                  deadlineAt: 280,
+                  lastDeadlineProbeAt: 281,
+                  lastDeadlineProbeResult: 'failed',
+                  lastDeadlineProbeError: 'deadline-probe-timeout',
+                  escalationReason: 'deadline-probe-timeout',
+                  externallyManaged: false,
+                },
+              },
+              channels: [],
+            },
+          },
+        },
+        [stableStringify(['/api/diagnostics/gateway-snapshot', 'GET'])]: {
+          ok: true,
+          data: {
+            status: 200,
+            ok: true,
+            json: {
+              capturedAt: 123,
+              platform: 'darwin',
+              gateway: {
+                state: 'unresponsive',
+                reasons: ['gateway_unresponsive'],
+                consecutiveHeartbeatMisses: 1,
+                recovery: {
+                  state: 'restart-executing',
+                  lastAliveAt: 100,
+                  deadlineAt: 280,
+                  lastDeadlineProbeAt: 281,
+                  lastDeadlineProbeResult: 'failed',
+                  lastDeadlineProbeError: 'deadline-probe-timeout',
+                  escalationReason: 'deadline-probe-timeout',
+                  externallyManaged: false,
+                },
+              },
+              channels: [],
+              clawxLogTail: 'clawx-log',
+              gatewayLogTail: 'gateway-log',
+              gatewayErrLogTail: '',
+            },
           },
         },
         [stableStringify(['/api/cron/jobs', 'GET'])]: {
@@ -168,6 +216,13 @@ test.describe('ClawX gateway lifecycle resilience', () => {
     });
 
     await completeSetup(page);
+
+    await page.getByTestId('sidebar-nav-channels').click();
+    await expect(page.getByTestId('channels-health-banner')).toBeVisible();
+    await expect(page.getByTestId('channels-recovery-status')).toContainText(/ClawX is restarting its Gateway/i);
+    await expect(page.getByText('Gateway control plane appears unresponsive.')).toBeVisible();
+    await page.getByTestId('channels-toggle-diagnostics').click();
+    await expect(page.getByTestId('channels-diagnostics')).toContainText('"state": "restart-executing"');
 
     await electronApp.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0];

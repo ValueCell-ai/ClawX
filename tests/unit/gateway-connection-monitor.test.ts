@@ -18,53 +18,75 @@ describe('GatewayConnectionMonitor heartbeat', () => {
     vi.setSystemTime(new Date('2026-03-19T00:00:00.000Z'));
   });
 
-  it('invokes the timeout callback only after consecutive heartbeat misses reach threshold', () => {
+  it('keeps missed pongs diagnostic and notifies liveness only at the silence deadline', () => {
     const monitor = new GatewayConnectionMonitor();
     const sendPing = vi.fn();
-    const onHeartbeatTimeout = vi.fn();
+    const onLivenessDeadline = vi.fn();
 
     monitor.startPing({
       sendPing,
-      onHeartbeatTimeout,
+      onLivenessDeadline,
       intervalMs: 100,
       timeoutMs: 50,
-      maxConsecutiveMisses: 3,
+      silenceDeadlineMs: 500,
     });
 
     vi.advanceTimersByTime(100); // send ping #1
     vi.advanceTimersByTime(100); // miss #1, send ping #2
     vi.advanceTimersByTime(100); // miss #2, send ping #3
-    expect(onHeartbeatTimeout).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(100); // miss #3, send ping #4
+    expect(monitor.getConsecutiveMisses()).toBe(3);
+    expect(onLivenessDeadline).not.toHaveBeenCalled();
 
-    vi.advanceTimersByTime(100); // miss #3 -> timeout callback
-    expect(onHeartbeatTimeout).toHaveBeenCalledTimes(1);
-    expect(onHeartbeatTimeout).toHaveBeenCalledWith({ consecutiveMisses: 3, timeoutMs: 50 });
-    expect(sendPing).toHaveBeenCalledTimes(3);
+    vi.advanceTimersByTime(100);
+    expect(onLivenessDeadline).toHaveBeenCalledTimes(1);
+    expect(sendPing).toHaveBeenCalledTimes(5);
+    monitor.clear();
   });
 
-  it('resets miss counter when alive signal is received', () => {
+  it('reports each missed pong as diagnostic evidence without escalating', () => {
+    const monitor = new GatewayConnectionMonitor();
+    const onHeartbeatMiss = vi.fn();
+    const onLivenessDeadline = vi.fn();
+
+    monitor.startPing({
+      sendPing: vi.fn(),
+      onHeartbeatMiss,
+      onLivenessDeadline,
+      intervalMs: 100,
+      timeoutMs: 50,
+      silenceDeadlineMs: 500,
+    });
+
+    vi.advanceTimersByTime(1_000);
+
+    expect(onHeartbeatMiss).toHaveBeenCalledTimes(9);
+    expect(onLivenessDeadline).toHaveBeenCalledTimes(1);
+    monitor.clear();
+  });
+
+  it.each(['pong', 'message'] as const)('resets the silence deadline after a %s signal', (reason) => {
     const monitor = new GatewayConnectionMonitor();
     const sendPing = vi.fn();
-    const onHeartbeatTimeout = vi.fn();
+    const onLivenessDeadline = vi.fn();
 
     monitor.startPing({
       sendPing,
-      onHeartbeatTimeout,
+      onLivenessDeadline,
       intervalMs: 100,
       timeoutMs: 50,
-      maxConsecutiveMisses: 2,
+      silenceDeadlineMs: 500,
     });
 
-    vi.advanceTimersByTime(100); // send ping #1
-    vi.advanceTimersByTime(100); // miss #1, send ping #2
-    expect(monitor.getConsecutiveMisses()).toBe(1);
-
-    monitor.markAlive('pong');
+    vi.advanceTimersByTime(250);
+    monitor.markAlive(reason);
     expect(monitor.getConsecutiveMisses()).toBe(0);
 
-    vi.advanceTimersByTime(100); // send ping #3
-    vi.advanceTimersByTime(100); // miss #1 again (reset confirmed)
-    expect(monitor.getConsecutiveMisses()).toBe(1);
-    expect(onHeartbeatTimeout).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(499);
+    expect(onLivenessDeadline).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(onLivenessDeadline).toHaveBeenCalledTimes(1);
+    monitor.clear();
   });
 });

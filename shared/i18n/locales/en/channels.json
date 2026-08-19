@@ -108,11 +108,19 @@
         "reasons": {
             "gateway_degraded": "Gateway heartbeat recently degraded.",
             "gateway_unresponsive": "Gateway control plane appears unresponsive.",
+            "gateway_verifying": "ClawX is verifying Gateway responsiveness.",
+            "external_gateway_unavailable": "An externally managed Gateway is unavailable.",
             "channels_status_timeout": "Channel runtime status probe timed out.",
             "rpc_timeout": "Recent Gateway RPC calls timed out.",
             "gateway_not_running": "Gateway is not running.",
             "gateway_error": "Gateway is in an error state.",
             "runtime_error": "Channel runtime reported an error."
+        },
+        "recovery": {
+            "verifying": "ClawX is verifying Gateway responsiveness.",
+            "restart-pending": "ClawX is waiting to restart its Gateway.",
+            "restart-executing": "ClawX is restarting its Gateway.",
+            "external-unavailable": "An externally managed Gateway is unavailable. ClawX is reconnecting; use Restart Gateway if needed."
         },
         "restartGateway": "Restart Gateway",
         "copyDiagnostics": "Copy Diagnostics",

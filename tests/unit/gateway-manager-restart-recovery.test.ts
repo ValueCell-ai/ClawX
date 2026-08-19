@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({
   app: {
@@ -27,6 +27,13 @@ describe('GatewayManager restart recovery', () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-04-08T00:00:00.000Z'));
+  });
+
+  afterEach(() => {
+    vi.doUnmock('@electron/gateway/ws-client');
+    vi.doUnmock('@electron/gateway/process-launcher');
+    vi.doUnmock('@electron/gateway/config-sync');
+    vi.useRealTimers();
   });
 
   it('re-enables auto-reconnect when start() fails during restart', async () => {
@@ -120,5 +127,86 @@ describe('GatewayManager restart recovery', () => {
     // scheduleReconnect should NOT have been called by the catch block
     // (it may be called from other paths, but not the restart-recovery catch)
     expect(scheduleReconnectSpy).not.toHaveBeenCalled();
+  });
+
+  it('cancels deadline recovery on a code-1012 socket reload without restarting the owned process', async () => {
+    let onCloseAfterHandshake: ((code: number) => void) | undefined;
+    const ws = {
+      readyState: 1,
+      ping: vi.fn(),
+      terminate: vi.fn(),
+      on: vi.fn(),
+    };
+    vi.doMock('@electron/gateway/ws-client', () => ({
+      connectGatewaySocket: vi.fn(async (options: {
+        onHandshakeComplete: (socket: typeof ws) => void;
+        onCloseAfterHandshake: (code: number) => void;
+      }) => {
+        onCloseAfterHandshake = options.onCloseAfterHandshake;
+        options.onHandshakeComplete(ws);
+        return ws;
+      }),
+      waitForGatewayReady: vi.fn(),
+    }));
+
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const internals = manager as unknown as {
+      ownsProcess: boolean;
+      connect: (port: number) => Promise<void>;
+      scheduleReconnect: () => void;
+      connectionMonitor: { clear: () => void };
+    };
+    internals.ownsProcess = true;
+    const reconnectSpy = vi.spyOn(internals, 'scheduleReconnect');
+    const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
+    const rpcSpy = vi.spyOn(manager, 'rpc').mockResolvedValue({});
+
+    await internals.connect(18789);
+    onCloseAfterHandshake?.(1012);
+    await vi.advanceTimersByTimeAsync(180_000);
+
+    expect(reconnectSpy).toHaveBeenCalledTimes(1);
+    expect(rpcSpy).not.toHaveBeenCalled();
+    expect(restartSpy).not.toHaveBeenCalled();
+    internals.connectionMonitor.clear();
+  });
+
+  it('cancels deadline recovery when an owned process exits', async () => {
+    let onExit: ((child: unknown, code: number | null) => void) | undefined;
+    const child = { pid: 42 };
+    vi.doMock('@electron/gateway/config-sync', () => ({
+      prepareGatewayLaunchContext: vi.fn(async () => ({})),
+    }));
+    vi.doMock('@electron/gateway/process-launcher', () => ({
+      launchGatewayProcess: vi.fn(async (options: {
+        onExit: (exitedChild: unknown, code: number | null) => void;
+      }) => {
+        onExit = options.onExit;
+        return { child, lastSpawnSummary: 'test' };
+      }),
+    }));
+
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const internals = manager as unknown as {
+      status: { state: string; port: number };
+      startProcess: () => Promise<void>;
+      recoveryController: { start: () => void };
+      scheduleReconnect: () => void;
+    };
+    internals.status = { state: 'running', port: 18789 };
+    internals.recoveryController.start();
+    const reconnectSpy = vi.spyOn(internals, 'scheduleReconnect');
+    const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
+    const rpcSpy = vi.spyOn(manager, 'rpc').mockResolvedValue({});
+
+    await internals.startProcess();
+    onExit?.(child, 1);
+    await vi.advanceTimersByTimeAsync(180_000);
+
+    expect(reconnectSpy).toHaveBeenCalledTimes(1);
+    expect(rpcSpy).not.toHaveBeenCalled();
+    expect(restartSpy).not.toHaveBeenCalled();
   });
 });

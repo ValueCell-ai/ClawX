@@ -5,7 +5,13 @@ import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useGatewayStore } from '@/stores/gateway';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { hostApi, type ChannelAccountsResult, type ChannelGroupItem, type GatewayHealthSummary } from '@/lib/host-api';
+import {
+  hostApi,
+  type ChannelAccountsResult,
+  type ChannelGroupItem,
+  type DiagnosticsGatewaySnapshotResult,
+  type GatewayHealthSummary,
+} from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
 import { ChannelConfigModal } from '@/components/channels/ChannelConfigModal';
 import { isGatewayStopped } from '@/lib/gateway-status';
@@ -31,15 +37,7 @@ import feishuIcon from '@/assets/channels/feishu.svg';
 import wecomIcon from '@/assets/channels/wecom.svg';
 import qqIcon from '@/assets/channels/qq.svg';
 
-interface GatewayDiagnosticSnapshot {
-  capturedAt: number;
-  platform: string;
-  gateway: GatewayHealthSummary & Record<string, unknown>;
-  channels: ChannelGroupItem[];
-  clawxLogTail: string;
-  gatewayLogTail: string;
-  gatewayErrLogTail: string;
-}
+type GatewayDiagnosticSnapshot = DiagnosticsGatewaySnapshotResult;
 
 function isGatewayDiagnosticSnapshot(value: unknown): value is GatewayDiagnosticSnapshot {
   if (!value || typeof value !== 'object') {
@@ -421,6 +419,13 @@ export function Channels() {
     return t(`health.reasons.${primaryReason}`);
   }, [displayedGatewayHealth.reasons, t]);
 
+  const recoveryExplanation = useMemo(() => {
+    const recoveryState = displayedGatewayHealth.recovery?.state;
+    return recoveryState && recoveryState !== 'healthy'
+      ? t(`health.recovery.${recoveryState}`)
+      : '';
+  }, [displayedGatewayHealth.recovery?.state, t]);
+
   const diagnosticsText = useMemo(
     () => (diagnosticsSnapshot ? JSON.stringify(diagnosticsSnapshot, null, 2) : ''),
     [diagnosticsSnapshot],
@@ -546,6 +551,11 @@ export function Channels() {
                       {t(`health.state.${displayedGatewayHealth.state}`)}
                     </p>
                     {healthReasonLabel && <p className="mt-1 text-sm text-foreground/75">{healthReasonLabel}</p>}
+                    {recoveryExplanation && (
+                      <p data-testid="channels-recovery-status" className="mt-1 text-sm text-foreground/75">
+                        {recoveryExplanation}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">

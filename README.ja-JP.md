@@ -151,7 +151,7 @@ ClawXには、Electron、OpenClaw Gateway、Telegramなどのチャネルがロ�
 ClawXは **Host API統一レイヤーを備えたデュアルプロセスアーキテクチャ**を採用しています。React Rendererは単一のクライアント抽象を呼び出し、Electron Mainがプロトコル選択、Gatewayのライフサイクル、ACP Chatのstdio bridgeを管理します。
 
 - **プロセスモデル**：Electron Mainがウィンドウ、Gateway監視、システム統合、更新を管理します。OpenClaw GatewayはAIオーケストレーション、チャネル、スキル機能を提供し、Rendererはローカルエンドポイントへ直接アクセスしません。
-- **設定の配信**：Gateway実行中は `config.get` / `config.set` を使い、停止中または起動中は解決済みJSON5設定を更新します。通常のプロバイダー、Agent、スキル、モデル変更ではプロセスを置き換えず、認証情報は `secrets.reload` でホットリロードされます。ハートビートが4回連続で失敗した場合は、ライフサイクルで保護された復旧を要求します。
+- **設定の配信**：Gateway実行中は `config.get` / `config.set` を使い、停止中または起動中は解決済みJSON5設定を更新します。通常のプロバイダー、Agent、スキル、モデル変更ではプロセスを置き換えず、認証情報は `secrets.reload` でホットリロードされます。検証済みのGatewayアクティビティが3分間ない場合、ClawXはコアRPCを検証し、自身が所有する利用不能なGatewayプロセスだけを再起動します。外部管理のGatewayは手動で復旧します。
 - **ACP Chat**：Chat UIは [ACP（Agent Client Protocol）](https://agentclientprotocol.com) を介してOpenClawとやり取りし、頻繁に反復されるOpenClawの前に比較的安定したチャットプロトコル面を確保します。ACPはMainが所有するstdio bridge経由で動作し、設定リロード後の認証済み履歴リプレイ、ページ移動中のストリーミング、Mainが検証したメディア・添付ファイル・ファイルアクティビティに対応します。保護されたGateway再起動によって受理済みターンが中断された場合、パッチ済みOpenClawランタイムは復旧runを元のACP promptへ明示的に関連付け、後続のテキストとツールアクティビティを同じメモリ内ターンで継続します。その後の履歴リプレイでも、永続化されたツール境界をネイティブACP updateとして復元します。
 - **設計原則**：フロントエンドの単一入口、Mainによるトランスポート管理、再接続・タイムアウト・バックオフによるグレースフルリカバリ、安全なストレージ、CORSセーフな境界を採用しています。
 

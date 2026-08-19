@@ -108,11 +108,19 @@
         "reasons": {
             "gateway_degraded": "Сердцебиение шлюза недавно деградировало.",
             "gateway_unresponsive": "Управляющая плоскость шлюза не отвечает.",
+            "gateway_verifying": "ClawX проверяет доступность шлюза.",
+            "external_gateway_unavailable": "Внешне управляемый шлюз недоступен.",
             "channels_status_timeout": "Истёк таймаут проверки статуса канала.",
             "rpc_timeout": "Недавние RPC-вызовы шлюза завершились по таймауту.",
             "gateway_not_running": "Шлюз не запущен.",
             "gateway_error": "Шлюз находится в состоянии ошибки.",
             "runtime_error": "Среда выполнения канала сообщила об ошибке."
+        },
+        "recovery": {
+            "verifying": "ClawX проверяет доступность шлюза.",
+            "restart-pending": "ClawX ожидает перезапуска своего шлюза.",
+            "restart-executing": "ClawX перезапускает свой шлюз.",
+            "external-unavailable": "Внешне управляемый шлюз недоступен. ClawX переподключается; при необходимости используйте «Перезапустить шлюз»."
         },
         "restartGateway": "Перезапустить шлюз",
         "copyDiagnostics": "Скопировать диагностику",

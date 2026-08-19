@@ -13,14 +13,12 @@ type BuildGatewayHealthSummaryOptions = {
 };
 
 const CHANNEL_STATUS_FAILURE_WINDOW_MS = 2 * 60_000;
-const HEARTBEAT_MISS_THRESHOLD = 4;
 
 export function buildGatewayHealthSummary(
   options: BuildGatewayHealthSummaryOptions,
 ): GatewayHealthSummary {
   const now = options.now ?? Date.now();
   const reasons = new Set<string>();
-  const heartbeatThreshold = HEARTBEAT_MISS_THRESHOLD;
 
   const channelStatusFailureIsRecent =
     typeof options.lastChannelsStatusFailureAt === 'number'
@@ -42,13 +40,23 @@ export function buildGatewayHealthSummary(
       lastRpcFailureMethod: options.diagnostics.lastRpcFailureMethod,
       lastChannelsStatusOkAt: options.lastChannelsStatusOkAt,
       lastChannelsStatusFailureAt: options.lastChannelsStatusFailureAt,
+      recovery: options.diagnostics.recovery,
     };
   }
 
-  if (options.diagnostics.consecutiveHeartbeatMisses >= heartbeatThreshold) {
-    reasons.add('gateway_unresponsive');
-  } else if (options.diagnostics.consecutiveHeartbeatMisses > 0) {
+  if (options.diagnostics.consecutiveHeartbeatMisses > 0) {
     reasons.add('gateway_degraded');
+  }
+
+  if (options.diagnostics.recovery?.state === 'verifying') {
+    reasons.add('gateway_verifying');
+  }
+  if (options.diagnostics.recovery?.state === 'restart-pending'
+    || options.diagnostics.recovery?.state === 'restart-executing') {
+    reasons.add('gateway_unresponsive');
+  }
+  if (options.diagnostics.recovery?.state === 'external-unavailable') {
+    reasons.add('external_gateway_unavailable');
   }
 
   if (options.diagnostics.consecutiveRpcFailures > 0) {
@@ -73,5 +81,6 @@ export function buildGatewayHealthSummary(
     lastRpcFailureMethod: options.diagnostics.lastRpcFailureMethod,
     lastChannelsStatusOkAt: options.lastChannelsStatusOkAt,
     lastChannelsStatusFailureAt: options.lastChannelsStatusFailureAt,
+    recovery: options.diagnostics.recovery,
   };
 }

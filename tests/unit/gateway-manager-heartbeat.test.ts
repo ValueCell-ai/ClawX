@@ -13,165 +13,261 @@ vi.mock('electron', () => ({
 }));
 
 describe('GatewayManager heartbeat recovery', () => {
-  const originalPlatform = process.platform;
-
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-19T00:00:00.000Z'));
-    Object.defineProperty(process, 'platform', { value: originalPlatform });
   });
 
   afterEach(() => {
+    vi.doUnmock('@electron/gateway/ws-client');
     vi.useRealTimers();
-    Object.defineProperty(process, 'platform', { value: originalPlatform });
   });
 
-  it('restarts only after four consecutive heartbeat misses', async () => {
-    const { GatewayManager } = await import('@electron/gateway/manager');
-    const manager = new GatewayManager();
-
-    const ws = {
-      readyState: 1, // WebSocket.OPEN
-      ping: vi.fn(),
-      terminate: vi.fn(),
-      on: vi.fn(),
-    };
-
-    (manager as unknown as { ws: typeof ws }).ws = ws;
-    (manager as unknown as { shouldReconnect: boolean }).shouldReconnect = true;
-    (manager as unknown as { status: { state: string; port: number; gatewayReady: boolean } }).status = {
-      state: 'running',
-      port: 18789,
-      gatewayReady: true,
-    };
-    const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
-
-    (manager as unknown as { startPing: () => void }).startPing();
-    vi.advanceTimersByTime(299_999);
-
-    expect(ws.ping).toHaveBeenCalledTimes(4);
-    expect(
-      (manager as unknown as { connectionMonitor: { getConsecutiveMisses: () => number } })
-        .connectionMonitor.getConsecutiveMisses(),
-    ).toBe(3);
-    expect(restartSpy).not.toHaveBeenCalled();
-    expect(manager.getDiagnostics().consecutiveHeartbeatMisses).toBe(0);
-
-    vi.advanceTimersByTime(1);
-
-    expect(ws.terminate).not.toHaveBeenCalled();
-    expect(restartSpy).toHaveBeenCalledTimes(1);
-    expect(manager.getDiagnostics().consecutiveHeartbeatMisses).toBe(4);
-    expect(manager.getDiagnostics().lastHeartbeatTimeoutAt).toBe(Date.now());
-
-    vi.advanceTimersByTime(180_000);
-    expect(restartSpy).toHaveBeenCalledTimes(1);
-
-    (manager as unknown as { connectionMonitor: { clear: () => void } }).connectionMonitor.clear();
-  });
-
-  it('does not restart after four misses when auto-reconnect is disabled', async () => {
-    const { GatewayManager } = await import('@electron/gateway/manager');
-    const manager = new GatewayManager();
-
+  function createRunningManager(manager: object, ownsProcess = true) {
     const ws = {
       readyState: 1,
       ping: vi.fn(),
       terminate: vi.fn(),
       on: vi.fn(),
     };
-
-    (manager as unknown as { ws: typeof ws }).ws = ws;
-    (manager as unknown as { shouldReconnect: boolean }).shouldReconnect = false;
-    (manager as unknown as { status: { state: string; port: number } }).status = {
-      state: 'running',
-      port: 18789,
+    const internals = manager as {
+      ws: typeof ws;
+      ownsProcess: boolean;
+      shouldReconnect: boolean;
+      status: { state: string; port: number; gatewayReady: boolean };
+      startPing: () => void;
+      connectionMonitor: { clear: () => void };
     };
-    const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
+    internals.ws = ws;
+    internals.ownsProcess = ownsProcess;
+    internals.shouldReconnect = true;
+    internals.status = { state: 'running', port: 18789, gatewayReady: true };
+    internals.startPing();
+    return { ws, internals };
+  }
 
-    (manager as unknown as { startPing: () => void }).startPing();
-    vi.advanceTimersByTime(300_000);
-
-    expect(manager.getDiagnostics().consecutiveHeartbeatMisses).toBe(4);
-    expect(ws.terminate).not.toHaveBeenCalled();
-    expect(restartSpy).not.toHaveBeenCalled();
-
-    (manager as unknown as { connectionMonitor: { clear: () => void } }).connectionMonitor.clear();
-  });
-
-  it('requires four new consecutive misses after responsiveness recovers', async () => {
+  it('keeps missed pongs diagnostic-only before the liveness deadline', async () => {
     const { GatewayManager } = await import('@electron/gateway/manager');
     const manager = new GatewayManager();
-
-    const ws = {
-      readyState: 1, // WebSocket.OPEN
-      ping: vi.fn(),
-      terminate: vi.fn(),
-      on: vi.fn(),
-    };
-
-    (manager as unknown as { ws: typeof ws }).ws = ws;
-    (manager as unknown as { shouldReconnect: boolean }).shouldReconnect = true;
-    (manager as unknown as { status: { state: string; port: number } }).status = {
-      state: 'running',
-      port: 18789,
-    };
+    const { ws, internals } = createRunningManager(manager);
     const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
+    const rpcSpy = vi.spyOn(manager, 'rpc').mockResolvedValue({});
 
-    (manager as unknown as { startPing: () => void }).startPing();
-    vi.advanceTimersByTime(240_000);
-    expect(
-      (manager as unknown as { connectionMonitor: { getConsecutiveMisses: () => number } })
-        .connectionMonitor.getConsecutiveMisses(),
-    ).toBe(3);
+    await vi.advanceTimersByTimeAsync(179_999);
 
-    (manager as unknown as { handleMessage: (message: unknown) => void }).handleMessage('alive');
-
-    expect(manager.getDiagnostics().consecutiveHeartbeatMisses).toBe(0);
-    expect(manager.getDiagnostics().lastAliveAt).toBe(Date.now());
-
-    vi.advanceTimersByTime(240_000);
+    expect(ws.ping).toHaveBeenCalledTimes(2);
+    expect(manager.getDiagnostics().consecutiveHeartbeatMisses).toBe(1);
+    expect(rpcSpy).not.toHaveBeenCalled();
     expect(restartSpy).not.toHaveBeenCalled();
-
-    vi.advanceTimersByTime(60_000);
-    expect(ws.terminate).not.toHaveBeenCalled();
-    expect(restartSpy).toHaveBeenCalledTimes(1);
-    expect(manager.getDiagnostics().consecutiveHeartbeatMisses).toBe(4);
-
-    (manager as unknown as { connectionMonitor: { clear: () => void } }).connectionMonitor.clear();
+    internals.connectionMonitor.clear();
   });
 
-  it('restarts after four consecutive heartbeat misses on windows', async () => {
-    Object.defineProperty(process, 'platform', { value: 'win32' });
-
+  it('resets the deadline after an incoming Gateway frame', async () => {
     const { GatewayManager } = await import('@electron/gateway/manager');
     const manager = new GatewayManager();
+    const { internals } = createRunningManager(manager);
+    const rpcSpy = vi.spyOn(manager, 'rpc').mockResolvedValue({});
 
+    await vi.advanceTimersByTimeAsync(120_000);
+    (manager as unknown as { handleMessage: (message: unknown) => void }).handleMessage({ type: 'unknown' });
+
+    await vi.advanceTimersByTimeAsync(179_999);
+    expect(rpcSpy).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(rpcSpy).toHaveBeenCalledWith('system-presence', {}, 5_000);
+    internals.connectionMonitor.clear();
+  });
+
+  it('does not restart an owned Gateway when the deadline probe succeeds', async () => {
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const { internals } = createRunningManager(manager);
+    const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
+    const rpcSpy = vi.spyOn(manager, 'rpc').mockResolvedValue({});
+
+    await vi.advanceTimersByTimeAsync(180_000);
+
+    expect(rpcSpy).toHaveBeenCalledWith('system-presence', {}, 5_000);
+    expect(restartSpy).not.toHaveBeenCalled();
+    expect(manager.getDiagnostics().recovery).toMatchObject({
+      state: 'healthy',
+      lastDeadlineProbeResult: 'succeeded',
+    });
+    internals.connectionMonitor.clear();
+  });
+
+  it('records a succeeded deadline probe when the real RPC response marks the Gateway alive', async () => {
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
     const ws = {
       readyState: 1,
       ping: vi.fn(),
       terminate: vi.fn(),
       on: vi.fn(),
+      send: vi.fn((request: string) => {
+        const { id } = JSON.parse(request) as { id: string };
+        queueMicrotask(() => {
+          (manager as unknown as { handleMessage: (message: unknown) => void }).handleMessage({
+            type: 'res',
+            id,
+            ok: true,
+            payload: {},
+          });
+        });
+      }),
     };
+    const internals = manager as unknown as {
+      ws: typeof ws;
+      ownsProcess: boolean;
+      shouldReconnect: boolean;
+      status: { state: string; port: number; gatewayReady: boolean };
+      startPing: () => void;
+      connectionMonitor: { clear: () => void };
+    };
+    internals.ws = ws;
+    internals.ownsProcess = true;
+    internals.shouldReconnect = true;
+    internals.status = { state: 'running', port: 18789, gatewayReady: true };
+    internals.startPing();
 
-    (manager as unknown as { ws: typeof ws }).ws = ws;
-    (manager as unknown as { shouldReconnect: boolean }).shouldReconnect = true;
-    (manager as unknown as { status: { state: string; port: number } }).status = {
-      state: 'running',
-      port: 18789,
-    };
+    await vi.advanceTimersByTimeAsync(180_000);
+
+    expect(ws.send).toHaveBeenCalledTimes(1);
+    expect(manager.getDiagnostics().recovery).toMatchObject({
+      state: 'healthy',
+      lastDeadlineProbeResult: 'succeeded',
+    });
+    internals.connectionMonitor.clear();
+  });
+
+  it('restarts an owned Gateway exactly once after a failed deadline probe', async () => {
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const { internals } = createRunningManager(manager);
     const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
+    vi.spyOn(manager, 'rpc').mockRejectedValue(new Error('RPC timeout: system-presence'));
 
-    (manager as unknown as { startPing: () => void }).startPing();
-    vi.advanceTimersByTime(300_000);
+    await vi.advanceTimersByTimeAsync(180_000);
 
-    expect(ws.ping).toHaveBeenCalledTimes(4);
-    expect(ws.terminate).not.toHaveBeenCalled();
     expect(restartSpy).toHaveBeenCalledTimes(1);
-    expect(manager.getDiagnostics().consecutiveHeartbeatMisses).toBe(4);
+    expect(manager.getDiagnostics().recovery).toMatchObject({
+      state: 'restart-executing',
+      lastDeadlineProbeResult: 'failed',
+      escalationReason: 'deadline-probe-timeout',
+      externallyManaged: false,
+    });
+    internals.connectionMonitor.clear();
+  });
 
-    (manager as unknown as { connectionMonitor: { clear: () => void } }).connectionMonitor.clear();
+  it('keeps a failed owned-process escalation pending through restart cooldown', async () => {
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const { internals } = createRunningManager(manager);
+    const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
+    vi.spyOn(manager, 'rpc').mockRejectedValue(new Error('RPC timeout: system-presence'));
+    await vi.advanceTimersByTimeAsync(179_000);
+    (internals as unknown as {
+      restartGovernor: { recordExecuted: (now: number) => void };
+    }).restartGovernor.recordExecuted(Date.now());
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(restartSpy).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1_499);
+    expect(restartSpy).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(restartSpy).toHaveBeenCalledTimes(1);
+    internals.connectionMonitor.clear();
+  });
+
+  it('uses guarded transport reconnect without stopping or restarting an external Gateway', async () => {
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager();
+    const { ws, internals } = createRunningManager(manager, false);
+    const restartSpy = vi.spyOn(manager, 'restart').mockResolvedValue();
+    const stopSpy = vi.spyOn(manager, 'stop').mockResolvedValue();
+    const reconnectSpy = vi.spyOn(
+      internals as unknown as { scheduleReconnect: () => void },
+      'scheduleReconnect',
+    );
+    vi.spyOn(manager, 'rpc').mockRejectedValue(new Error('RPC timeout: system-presence'));
+
+    await vi.advanceTimersByTimeAsync(180_000);
+
+    expect(ws.terminate).toHaveBeenCalledTimes(1);
+    expect(reconnectSpy).toHaveBeenCalledWith('transport');
+    expect(restartSpy).not.toHaveBeenCalled();
+    expect(stopSpy).not.toHaveBeenCalled();
+    expect(manager.getDiagnostics().recovery).toMatchObject({
+      state: 'external-unavailable',
+      externallyManaged: true,
+      escalationReason: 'deadline-probe-timeout',
+    });
+    internals.connectionMonitor.clear();
+  });
+
+  it('ignores a synchronously closed superseded external socket before scheduling transport-only reconnect', async () => {
+    let closeFirstSocket: ((code: number) => void) | undefined;
+    const firstSocket = {
+      readyState: 1,
+      ping: vi.fn(),
+      on: vi.fn(),
+      terminate: vi.fn(() => closeFirstSocket?.(1006)),
+    };
+    const replacementSocket = {
+      readyState: 1,
+      ping: vi.fn(),
+      on: vi.fn(),
+      terminate: vi.fn(),
+    };
+    let connectionAttempts = 0;
+    vi.doMock('@electron/gateway/ws-client', () => ({
+      connectGatewaySocket: vi.fn(async (options: {
+        onHandshakeComplete: (socket: typeof firstSocket) => void;
+        onCloseAfterHandshake: (code: number) => void;
+      }) => {
+        connectionAttempts += 1;
+        if (connectionAttempts === 1) {
+          closeFirstSocket = options.onCloseAfterHandshake;
+          options.onHandshakeComplete(firstSocket);
+          return firstSocket;
+        }
+        options.onHandshakeComplete(replacementSocket);
+        return replacementSocket;
+      }),
+      waitForGatewayReady: vi.fn(),
+    }));
+
+    const { GatewayManager } = await import('@electron/gateway/manager');
+    const manager = new GatewayManager({ baseDelay: 1, maxDelay: 1 });
+    const internals = manager as unknown as {
+      ownsProcess: boolean;
+      shouldReconnect: boolean;
+      connect: (port: number) => Promise<void>;
+      connectionMonitor: { clear: () => void };
+    };
+    internals.ownsProcess = false;
+    internals.shouldReconnect = true;
+    const startSpy = vi.spyOn(manager, 'start').mockResolvedValue();
+    vi.spyOn(manager, 'rpc').mockRejectedValue(new Error('RPC timeout: system-presence'));
+
+    await internals.connect(18789);
+    await vi.advanceTimersByTimeAsync(180_000);
+
+    expect(firstSocket.terminate).toHaveBeenCalledTimes(1);
+    expect(manager.getDiagnostics().recovery).toMatchObject({
+      state: 'external-unavailable',
+      escalationReason: 'deadline-probe-timeout',
+    });
+    expect(startSpy).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(connectionAttempts).toBe(2);
+    expect(startSpy).not.toHaveBeenCalled();
+    internals.connectionMonitor.clear();
   });
 });

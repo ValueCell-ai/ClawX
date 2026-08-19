@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { DiagnosticsGatewaySnapshotResult } from '@shared/host-api/contract';
 
 const {
   applyProxySettingsMock,
@@ -1183,16 +1184,39 @@ describe('host services', () => {
         },
         channelDefaultAccountId: { feishu: 'default' },
       }),
-      getStatus: vi.fn(() => ({ state: 'running', port: 18789 })),
+      getStatus: vi.fn(() => ({
+        state: 'running',
+        port: 18789,
+        pid: 123,
+        error: 'previous connection failure',
+        connectedAt: 456,
+        version: '2026.8.19',
+        reconnectAttempts: 2,
+        gatewayReady: false,
+      })),
       getDiagnostics: vi.fn(() => ({
         consecutiveHeartbeatMisses: 0,
         consecutiveRpcFailures: 0,
+        recovery: {
+          state: 'verifying',
+          lastAliveAt: 100,
+          deadlineAt: 280,
+          lastDeadlineProbeAt: 281,
+          lastDeadlineProbeResult: 'failed',
+          lastDeadlineProbeError: 'deadline-probe-timeout',
+          escalationReason: 'deadline-probe-timeout',
+          externallyManaged: false,
+          internalProbeDetails: 'must-not-cross-the-host-boundary',
+        },
       })),
       getCapabilitySnapshot: vi.fn(() => ({ rpc: true })),
     };
     const { createDiagnosticsApi } = await import('@electron/services/diagnostics-api');
 
     const snapshot = await createDiagnosticsApi({ gatewayManager: gatewayManager as never }).gatewaySnapshot();
+    const typedGateway: DiagnosticsGatewaySnapshotResult['gateway'] = snapshot.gateway;
+
+    expect(typedGateway.port).toBe(18789);
 
     expect(snapshot).toMatchObject({
       platform: process.platform,
@@ -1204,10 +1228,28 @@ describe('host services', () => {
       ],
       clawxLogTail: 'clawx-log-tail',
       gateway: expect.objectContaining({
-        state: 'healthy',
+        state: 'degraded',
+        port: 18789,
+        pid: 123,
+        error: 'previous connection failure',
+        connectedAt: 456,
+        version: '2026.8.19',
+        reconnectAttempts: 2,
+        gatewayReady: false,
         capabilities: { rpc: true },
+        recovery: {
+          state: 'verifying',
+          lastAliveAt: 100,
+          deadlineAt: 280,
+          lastDeadlineProbeAt: 281,
+          lastDeadlineProbeResult: 'failed',
+          lastDeadlineProbeError: 'deadline-probe-timeout',
+          escalationReason: 'deadline-probe-timeout',
+          externallyManaged: false,
+        },
       }),
     });
+    expect(JSON.stringify(snapshot)).not.toContain('must-not-cross-the-host-boundary');
     expect(snapshot.gatewayLogTail).toContain('gateway-one');
     expect(snapshot.gatewayErrLogTail).toBe('');
   });

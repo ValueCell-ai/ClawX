@@ -171,6 +171,24 @@ export type GatewayHealthSummary = {
   lastRpcFailureMethod?: string;
   lastChannelsStatusOkAt?: number;
   lastChannelsStatusFailureAt?: number;
+  recovery?: GatewayRecoverySnapshot;
+};
+
+export type GatewayRecoveryState =
+  | 'healthy'
+  | 'verifying'
+  | 'restart-pending'
+  | 'restart-executing'
+  | 'external-unavailable';
+export type GatewayRecoverySnapshot = {
+  state: GatewayRecoveryState;
+  lastAliveAt?: number;
+  deadlineAt?: number;
+  lastDeadlineProbeAt?: number;
+  lastDeadlineProbeResult?: 'succeeded' | 'failed';
+  lastDeadlineProbeError?: string;
+  escalationReason?: string;
+  externallyManaged: boolean;
 };
 
 export type ChannelRuntimeStatus = 'connected' | 'connecting' | 'degraded' | 'disconnected' | 'error';
@@ -280,7 +298,18 @@ export type AcpTraceSnapshot = {
   size: number;
   entries: AcpTraceEntry[];
 };
-export type DiagnosticsGatewaySnapshotResult = JsonRecord;
+export type DiagnosticsGatewaySnapshotGateway = Omit<GatewayStatus, 'state'>
+  & GatewayHealthSummary
+  & { capabilities?: unknown };
+export type DiagnosticsGatewaySnapshotResult = {
+  capturedAt: number;
+  platform: string;
+  gateway: DiagnosticsGatewaySnapshotGateway;
+  channels: ChannelGroupItem[];
+  clawxLogTail: string;
+  gatewayLogTail: string;
+  gatewayErrLogTail: string;
+};
 
 export type ProviderType =
   | 'anthropic'

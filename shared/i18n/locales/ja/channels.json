@@ -108,11 +108,19 @@
         "reasons": {
             "gateway_degraded": "ゲートウェイのハートビートに劣化が見られます。",
             "gateway_unresponsive": "ゲートウェイの制御プレーンが無応答です。",
+            "gateway_verifying": "ClawX がゲートウェイの応答を確認しています。",
+            "external_gateway_unavailable": "外部管理のゲートウェイを利用できません。",
             "channels_status_timeout": "チャンネル状態の問い合わせがタイムアウトしました。",
             "rpc_timeout": "最近のゲートウェイ RPC がタイムアウトしました。",
             "gateway_not_running": "ゲートウェイは起動していません。",
             "gateway_error": "ゲートウェイはエラー状態です。",
             "runtime_error": "チャンネルランタイムがエラーを返しました。"
+        },
+        "recovery": {
+            "verifying": "ClawX がゲートウェイの応答を確認しています。",
+            "restart-pending": "ClawX はゲートウェイの再起動を待機しています。",
+            "restart-executing": "ClawX はゲートウェイを再起動しています。",
+            "external-unavailable": "外部管理のゲートウェイを利用できません。ClawX は再接続中です。必要に応じて「ゲートウェイを再起動」を使用してください。"
         },
         "restartGateway": "ゲートウェイを再起動",
         "copyDiagnostics": "診断をコピー",

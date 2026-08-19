@@ -33,7 +33,9 @@ ClawX should prefer OpenClaw-native signals over stderr string matching:
 
 stderr is supporting evidence only. It should not be the primary source for deciding whether the Gateway is ready, blocked, or should be restarted.
 
-WebSocket heartbeat misses show that the Gateway control plane did not answer within the observation window. The first three consecutive misses remain diagnostic-only so transient pong delays do not interrupt long-running work. A pong or any incoming message resets the sequence. A fourth consecutive miss marks persistent unresponsiveness and may request the guarded Gateway restart path when auto-recovery is enabled and lifecycle state is still running. Process exit and socket close retain their existing automatic recovery paths.
+WebSocket heartbeat misses show that the Gateway control plane did not answer within the observation window, but are diagnostic-only and never directly restart a process. A pong, any incoming Gateway frame, or a successful Gateway RPC is trusted liveness evidence and resets the 180 seconds deadline. At that deadline, Main runs one 5000ms `system-presence` probe. A successful probe records liveness and cancels recovery; a failed probe may request guarded restart only for a ClawX-owned Gateway. For an externally managed Gateway, ClawX may reconnect its own transport and report `external-unavailable`, but never automatically stop, shut down, or restart it. This liveness path has no workload tracking. Process exit, ordinary socket close, code 1012, and manual restart retain their existing independent lifecycle paths.
+
+Liveness diagnostics are sanitized and include `state`, `lastAliveAt`, `deadlineAt`, `lastDeadlineProbeAt`, `lastDeadlineProbeResult`, `lastDeadlineProbeError`, `escalationReason`, and `externallyManaged`. Do not record RPC payloads, credentials, tokens, or raw transport errors.
 
 ## Failure Shape
 
@@ -198,7 +200,7 @@ Expected behavior:
 
 - Do not mark Gateway fully ready from a pure timer fallback.
 - The fallback must probe `system-presence` before emitting ready.
-- Heartbeat misses remain observable during startup work; only ten uninterrupted misses may request guarded process recovery.
+- Heartbeat misses remain observable during startup work, but only the 180 seconds no-liveness deadline followed by a failed `system-presence` probe may request guarded process recovery for a ClawX-owned Gateway.
 
 ### Capability Degraded But Core Alive
 
@@ -215,16 +217,15 @@ Expected behavior:
 - Do not restart Gateway automatically.
 - Let the user retry the capability probe or fix provider/channel credentials.
 
-### Restart Deferral By Active Work
+### Deadline Recovery Is Workload-Independent
 
 Symptoms:
 
-- Logs mention restart deferral because operations, embedded runs, or task runs are still active.
-- A restart takes minutes even though the process is otherwise alive.
+- Long-running chat, tool, cron, embedded, or task work is active while Gateway liveness is being evaluated.
 
 Expected handling:
 
-- Explain to users that restart cost is dominated by active Gateway work, not by ClawX UI rendering.
+- The liveness deadline does not inspect or defer for active workloads. A trusted frame or successful RPC resets it; otherwise one deadline probe decides the ownership-scoped recovery path.
 - Avoid triggering full Gateway restart for feature toggles when a narrower config reload or plugin RPC is available.
 
 ## Remediation Order
@@ -278,7 +279,7 @@ pnpm exec openclaw gateway call status >/tmp/clawx-status.json
 - `health` and `status` are captured in Gateway diagnostics when available.
 - Memory doctor calls return when the memory capability is available.
 - `doctor.memory.*` and `channels.status` failures degrade their capability only and do not trigger Gateway restart.
-- The first three consecutive heartbeat misses do not replace the Gateway process; the fourth records unresponsive diagnostics and requests one guarded restart when lifecycle auto-recovery is allowed.
+- Missed pongs remain diagnostic-only. Only 180 seconds without trusted liveness followed by a failed 5000ms `system-presence` probe can request one guarded restart for a ClawX-owned Gateway; externally managed Gateways are never stopped or restarted automatically.
 - Logs no longer repeat stale runtime cache or escaped managed-skill symlink warnings for entries ClawX can safely clean.
 
 ## Required Regression Coverage
