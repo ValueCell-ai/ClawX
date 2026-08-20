@@ -231,7 +231,7 @@ ClawX 构建于以下优秀的开源项目之上：
 ## Stars 历史
 
 <p align="center">
-  <img src="https://api.star-history.com/svg?repos=ValueCell-ai/ClawX&type=Date" alt="Stars 历史图表" />
+  <img src="https://star-history.dera.page/svg?repos=ValueCell-ai/ClawX&type=Date" alt="Stars 历史图表" />
 </p>
 
 

@@ -229,7 +229,7 @@ DM us or email [public@valuecell.ai](mailto:public@valuecell.ai) to learn more.
 ## Star History
 
 <p align="center">
-  <img src="https://api.star-history.com/svg?repos=ValueCell-ai/ClawX&type=Date" alt="Star History Chart" />
+  <img src="https://star-history.dera.page/svg?repos=ValueCell-ai/ClawX&type=Date" alt="Star History Chart" />
 </p>
 
 ## License
