@@ -28,6 +28,8 @@ import { rendererExtensionRegistry } from '@/extensions/registry';
 import { collectDroppedFiles } from '@/lib/collect-dropped-files';
 import { fetchQuickAccessSkills } from '@/lib/quick-access-skills';
 import { DEFAULT_WORKSPACE_CWD, isDefaultWorkspacePath, normalizeWorkspacePath } from '@/lib/workspace-context';
+import type { SessionContextUsage } from '@/lib/acp/session-usage';
+import { ContextWindowUsage } from './ContextWindowUsage';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -58,6 +60,7 @@ interface ChatInputProps {
   workspaceOptions?: ChatWorkspaceOption[];
   workspaceReadOnly?: boolean;
   onSelectWorkspace?: (path: string) => void;
+  contextUsage?: SessionContextUsage | null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -207,6 +210,7 @@ export function ChatInput({
   workspaceOptions = [],
   workspaceReadOnly = false,
   onSelectWorkspace,
+  contextUsage = null,
 }: ChatInputProps) {
   const { t } = useTranslation('chat');
   const [input, setInput] = useState('');
@@ -1185,6 +1189,10 @@ export function ChatInput({
                   </div>
                 )}
               </div>
+            )}
+
+            {contextUsage && (
+              <ContextWindowUsage usage={contextUsage} variant="inline" />
             )}
 
             {/* Send Button — pushed to the right */}

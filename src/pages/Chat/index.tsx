@@ -26,6 +26,7 @@ import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
 import { getAcpUserMessageAnchorId } from '@/lib/acp/timeline-anchors';
 import type { MessageSegmentItem, RenderPart } from '@/lib/acp/timeline-types';
 import { createEmptyAcpTimeline } from '@/lib/acp/reducer';
+import { parseSessionContextUsage } from '@/lib/acp/session-usage';
 import { projectOpenClawFileActivities, type AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 import { hostApi } from '@/lib/host-api';
 import { getSessionDisplayTitle } from '@shared/chat/session-title';
@@ -266,6 +267,10 @@ export function Chat() {
     : acpTimeline.sessionId === currentSessionKey
       ? acpTimeline
       : emptyCurrentTimeline;
+  const contextUsage = useMemo(
+    () => parseSessionContextUsage(visibleAcpTimeline.metadata.usage),
+    [visibleAcpTimeline.metadata.usage],
+  );
   const acpTurnTimings = useAcpChatSessionStore((s) => s.turnTimingsByUserMessageId);
   const acpLoading = useAcpChatSessionStore((s) => s.loading);
   const acpSending = useAcpChatSessionStore((s) => s.sending);
@@ -624,6 +629,7 @@ export function Chat() {
           workspaceOptions={workspaceOptions}
           workspaceReadOnly={effectiveWorkspace.readOnly}
           onSelectWorkspace={setChatWorkspacePath}
+          contextUsage={contextUsage}
         />
       </div>
 

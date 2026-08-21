@@ -1,4 +1,5 @@
 import type { PlanEntry, SessionConfigOption, ToolCallLocation, ToolKind } from '@agentclientprotocol/sdk';
+import type { SessionContextUsage } from '@/lib/acp/session-usage';
 import type {
   AttachmentAccessError,
   AttachmentFileRef,
@@ -111,7 +112,7 @@ export type AcpSessionMetadata = {
   currentModeId?: string;
   availableCommands?: unknown[];
   configOptions?: SessionConfigOption[];
-  usage?: unknown;
+  usage?: SessionContextUsage;
   title?: string | null;
   updatedAt?: string | null;
 };

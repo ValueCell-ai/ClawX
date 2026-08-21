@@ -11,6 +11,7 @@ import type {
 import { contentBlockToRenderPart, contentBlocksToRenderParts, toolContentToRenderPart, toolContentToRenderParts } from './content-blocks';
 import { dedupeTimelineAttachments } from './attachments';
 import { openClawPromptTextBlocks } from './openclaw-prompt-compat';
+import { parseSessionContextUsage } from './session-usage';
 import type { AcpTimelineSnapshot, AttachmentRenderPart, MessageSegmentItem, RenderPart, TimelineItem, ToolCallItem } from './timeline-types';
 
 type UpdateRecord = Record<string, unknown> & {
@@ -529,9 +530,9 @@ function updateSessionInfoMetadata(state: AcpTimelineSnapshot, update: UpdateRec
   };
 }
 
-function usageMetadata(update: UpdateRecord): unknown {
+function usageMetadata(update: UpdateRecord) {
   const { sessionUpdate: _sessionUpdate, ...usage } = update;
-  return usage;
+  return parseSessionContextUsage(usage) ?? undefined;
 }
 
 export function applyAcpSessionUpdate(
