@@ -532,10 +532,8 @@ async function discoverAgentIds(): Promise<string[]> {
 
 const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
 const VALID_COMPACTION_MODES = new Set(['default', 'safeguard']);
-/** Previous ClawX default, used only to recognize and migrate configs seeded by older releases. */
-const LEGACY_COMPACTION_RESERVE_TOKENS_FLOOR = 50_000;
-/** Leaves enough headroom for compaction and tool-loop recovery on 200k+ context windows. */
-const DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR = 80_000;
+/** Matches OpenClaw's 200k+ context-window recommendation (see computeContextAwareReserveTokensFloor). */
+const DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR = 50_000;
 // OpenClaw 2026.7.1 bundles these channel extensions. Discord, WhatsApp,
 // QQBot, and the remaining catalog channels are external plugins and their
 // explicit allowlist registrations must be preserved.
@@ -874,12 +872,11 @@ function ensureCompactionSafeguardDefault(config: Record<string, unknown>): bool
 }
 
 /**
- * Upgrade ClawX's previous safeguard defaults and fill missing compaction
- * safety fields. Explicit values are preserved: the old 50k floor is only
- * recognized as ClawX-managed when it has the exact legacy safeguard shape,
- * and an explicit midTurnPrecheck.enabled value is never overwritten.
+ * Backfill missing compaction safety fields without changing explicit values.
+ * This enables the tool-loop guard on upgrade while preserving every existing
+ * reserveTokensFloor and midTurnPrecheck.enabled choice.
  */
-function upgradeCompactionSafetyDefaults(config: Record<string, unknown>): boolean {
+function backfillCompactionSafetyDefaults(config: Record<string, unknown>): boolean {
   const agents = (config.agents && typeof config.agents === 'object'
     ? config.agents as Record<string, unknown>
     : null);
@@ -896,10 +893,7 @@ function upgradeCompactionSafetyDefaults(config: Record<string, unknown>): boole
   if (!compaction) return false;
 
   let changed = false;
-  const hasLegacyClawXDefaults = compaction.mode === 'safeguard'
-    && compaction.reserveTokensFloor === LEGACY_COMPACTION_RESERVE_TOKENS_FLOOR
-    && compaction.midTurnPrecheck === undefined;
-  if (compaction.reserveTokensFloor === undefined || hasLegacyClawXDefaults) {
+  if (compaction.reserveTokensFloor === undefined) {
     compaction.reserveTokensFloor = DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR;
     changed = true;
   }
@@ -2718,9 +2712,9 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     if (ensureCompactionSafeguardDefault(config)) {
       modified = true;
       compactionLog = `[batch-sync] Seeded agents.defaults.compaction.mode=safeguard reserveTokensFloor=${DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR} midTurnPrecheck.enabled=true`;
-    } else if (upgradeCompactionSafetyDefaults(config)) {
+    } else if (backfillCompactionSafetyDefaults(config)) {
       modified = true;
-      compactionLog = `[batch-sync] Upgraded agents.defaults.compaction safety defaults (reserveTokensFloor=${DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR}, midTurnPrecheck.enabled=true)`;
+      compactionLog = '[batch-sync] Backfilled missing agents.defaults.compaction safety defaults';
     }
 
     // ── Memory search default ──

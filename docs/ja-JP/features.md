@@ -64,7 +64,7 @@ OpenAI互換ゲートウェイで **Custom** プロバイダーを使う場合�
 
 プロバイダーを編集または切り替える際、ClawXは `input: ["text", "image"]` など既存のモデル単位の能力メタデータを保持します。新しく選択したCustomプロバイダーのモデルにはOpenClaw onboarding互換の画像入力推論を適用し、不明なモデルはテキスト専用として扱います。
 
-Customプロバイダーのモデル行には、モデルファミリーから推定した明示的な `contextWindow`（例：`gpt-5.x` → 272k）も付与されます。旧バージョンで保存された行は起動時に補完されるため、OpenClawは長いセッションが「Context overflow」エラーになる前に圧縮できます。圧縮設定がない場合、ClawXは `agents.defaults.compaction.mode = "safeguard"`、`reserveTokensFloor = 80000`、`midTurnPrecheck.enabled = true` を初期設定します。アップグレード時には、旧ClawXが管理していた50000トークンのsafeguardデフォルトを新しい値へ移行し、不足している安全設定を補完します。それ以外の明示的な `reserveTokensFloor` 値と `midTurnPrecheck.enabled` の選択は維持されます。
+Customプロバイダーのモデル行には、モデルファミリーから推定した明示的な `contextWindow`（例：`gpt-5.x` → 272k）も付与されます。旧バージョンで保存された行は起動時に補完されるため、OpenClawは長いセッションが「Context overflow」エラーになる前に圧縮できます。圧縮設定がない場合、ClawXは `agents.defaults.compaction.mode = "safeguard"`、`reserveTokensFloor = 50000`、`midTurnPrecheck.enabled = true` を初期設定します。アップグレード時は不足している安全設定のみを補完し、明示的な `reserveTokensFloor` 値と `midTurnPrecheck.enabled` の選択はすべて維持されます。
 
 Z.AI（CN / Global）はOpenClaw組み込みの `zai` プロバイダー（`ZAI_API_KEY`）に対応し、既定モデルは `glm-5.2` です。Code PlanプリセットではCoding Planエンドポイント（`.../api/coding/paas/v4`）を、通常のAPIでは（`.../api/paas/v4`）を使います。CNとGlobalは同じOpenClawランタイムキーを共有するため相互排他的です。
 

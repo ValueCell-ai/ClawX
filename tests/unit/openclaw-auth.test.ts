@@ -2719,12 +2719,12 @@ describe('batchSyncConfigFields', () => {
     const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
     expect(defaults.compaction).toEqual({
       mode: 'safeguard',
-      reserveTokensFloor: 80_000,
+      reserveTokensFloor: 50_000,
       midTurnPrecheck: { enabled: true },
     });
   });
 
-  it('upgrades the compaction safeguard default from older ClawX releases', async () => {
+  it('enables mid-turn precheck without changing the existing reserve floor', async () => {
     await writeOpenClawJson({
       gateway: { auth: { mode: 'token', token: 'old' } },
       agents: {
@@ -2741,7 +2741,7 @@ describe('batchSyncConfigFields', () => {
     const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
     expect(defaults.compaction).toEqual({
       mode: 'safeguard',
-      reserveTokensFloor: 80_000,
+      reserveTokensFloor: 50_000,
       midTurnPrecheck: { enabled: true },
     });
   });
@@ -2763,7 +2763,7 @@ describe('batchSyncConfigFields', () => {
     const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
     expect(defaults.compaction).toEqual({
       mode: 'safeguard',
-      reserveTokensFloor: 80_000,
+      reserveTokensFloor: 50_000,
       midTurnPrecheck: { enabled: true },
     });
   });
