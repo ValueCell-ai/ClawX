@@ -247,7 +247,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..62797972ce78076c545d712809d99f4a
  		if (this.pendingPrompts.size === 0) {
  			if (this.disconnectGeneration === observedDisconnectGeneration) this.clearDisconnectTimer();
  			return;
-@@ -2685,32 +2758,35 @@ var AcpGatewayAgent = class {
+@@ -2685,32 +2758,36 @@ var AcpGatewayAgent = class {
  		for (const [sessionId, pending] of pendingEntries) {
  			if (this.pendingPrompts.get(sessionId) !== pending) continue;
  			if (pending.disconnectContext?.generation !== observedDisconnectGeneration) continue;
@@ -270,6 +270,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..62797972ce78076c545d712809d99f4a
  			result = await this.gateway.request("agent.wait", {
 -				runId: pending.idempotencyKey,
 +				runId: waitedRunId,
++				sessionKey: pending.sessionKey,
  				timeoutMs: 0
  			}, { timeoutMs: null });
  		} catch (err) {
@@ -293,7 +294,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..62797972ce78076c545d712809d99f4a
  		if (!currentPending) return false;
  		if (result?.status === "ok") {
  			await this.finishPrompt(sessionId, currentPending, "end_turn");
-@@ -2720,15 +2796,14 @@ var AcpGatewayAgent = class {
+@@ -2720,15 +2797,14 @@ var AcpGatewayAgent = class {
  			this.finishPrompt(sessionId, currentPending, "end_turn");
  			return false;
  		}
@@ -312,7 +313,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..62797972ce78076c545d712809d99f4a
  		}
  		return true;
  	}
-@@ -2890,13 +2965,13 @@ var AcpGatewayAgent = class {
+@@ -2890,13 +2966,13 @@ var AcpGatewayAgent = class {
  			const replayChunks = extractReplayChunks(message);
  			for (const chunk of replayChunks) await this.sessionUpdates.emit({
  				sessionId,
@@ -329,10 +330,29 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..62797972ce78076c545d712809d99f4a
  		}
  	}
 diff --git a/dist/agent-D6kiZtPt.js b/dist/agent-D6kiZtPt.js
-index af55bc0d0faa6c4abdcb72e6f905cc3774784508..c9438a1fad0004d7e8a812e17e3af69b52844371 100644
+index af55bc0d0faa6c4abdcb72e6f905cc3774784508..a8679f6dfba5ace7ea54d5322f9ad5b478daecff 100644
 --- a/dist/agent-D6kiZtPt.js
 +++ b/dist/agent-D6kiZtPt.js
-@@ -941,6 +941,15 @@ const agentHandlers = {
+@@ -893,0 +893,18 @@ function yieldAfterAgentAcceptedAck() {
++function resolvePersistedAgentWaitSnapshot(runId, sessionKey) {
++	if (!sessionKey) return;
++	try {
++		const entry = loadSessionEntry(sessionKey).entry;
++		if (normalizeOptionalString(entry?.lifecycleRunId) !== runId) return;
++		const status = entry?.status;
++		if (status !== "done" && status !== "failed" && status !== "timeout" && status !== "killed") return;
++		return {
++			runId,
++			status: status === "done" ? "ok" : "error",
++			startedAt: entry?.startedAt,
++			endedAt: entry?.endedAt,
++			...status === "done" ? {} : { error: `Agent run ended with session status ${status} during Gateway restart recovery` }
++		};
++	} catch {
++		return;
++	}
++}
+@@ -941,6 +959,15 @@ const agentHandlers = {
  		let resolvedGroupSpace = normalizedSpawned.groupSpace;
  		let spawnedByValue;
  		const inputProvenance = normalizeInputProvenance(request.inputProvenance);
@@ -348,7 +368,7 @@ index af55bc0d0faa6c4abdcb72e6f905cc3774784508..c9438a1fad0004d7e8a812e17e3af69b
  		const preserveUserFacingSessionModelState = canUseInternalRuntimeHandoff && shouldPreserveUserFacingSessionStateForInputProvenance(inputProvenance);
  		const sessionEffects = requestedInternalSessionEffects ? "internal" : request.sessionEffects;
  		const suppressVisibleSessionEffects = sessionEffects === "internal";
-@@ -2192,7 +2201,8 @@ const agentHandlers = {
+@@ -2192,7 +2219,8 @@ const agentHandlers = {
  					lifecycleGeneration
  				} : {
  					sessionKey: resolvedSessionKey,
@@ -358,6 +378,12 @@ index af55bc0d0faa6c4abdcb72e6f905cc3774784508..c9438a1fad0004d7e8a812e17e3af69b
  				});
  			}
  			const resolvedThreadId = explicitThreadId ?? deliveryPlan.resolvedThreadId;
+@@ -2505,0 +2533,5 @@ const agentHandlers = {
++		const persistedSnapshot = resolvePersistedAgentWaitSnapshot(runId, normalizeOptionalString(p.sessionKey));
++		if (persistedSnapshot) {
++			respond(true, persistedSnapshot);
++			return;
++		}
 diff --git a/dist/agent-events-CRggPZCM.js b/dist/agent-events-CRggPZCM.js
 index d219ef4933d12a485f9f29bc056fd8d39594d0a1..9f6c72ec51940362d08467068aff26a377d15f7b 100644
 --- a/dist/agent-events-CRggPZCM.js
@@ -469,25 +495,26 @@ diff --git a/dist/main-session-restart-recovery-Ce8fihTV.js b/dist/main-session-
 index ba698afb03ca7043d475948afcbb18643719a011..5c976a1d0f5fc9b85e76f65684eaba2c2b42d887 100644
 --- a/dist/main-session-restart-recovery-Ce8fihTV.js
 +++ b/dist/main-session-restart-recovery-Ce8fihTV.js
-@@ -211,6 +211,8 @@ async function markStartupOrphanedMainSessionsForRecovery(params) {
+@@ -211,6 +211,9 @@ async function markStartupOrphanedMainSessionsForRecovery(params) {
  						entry,
  						sessionKey
  					})) continue;
 +					const sourceRunId = normalizeOptionalString(entry.lifecycleRunId);
 +					if (sourceRunId) entry.restartRecoveryDeliverySourceRunId = sourceRunId;
++					entry.restartRecoveryRuns = void 0;
  					entry.abortedLastRun = true;
  					entry.updatedAt = Date.now();
  					replacements.push({
-@@ -350,6 +352,8 @@ function resolveRestartRecoveryDeliveryContext(params) {
+@@ -350,6 +353,8 @@ function resolveRestartRecoveryDeliveryContext(params) {
  }
  async function resumeMainSession(params) {
  	const sanitizedPendingText = typeof params.pendingFinalDeliveryText === "string" ? sanitizePendingFinalDeliveryText(params.pendingFinalDeliveryText) : "";
 +	const sourceRunIds = [...new Set((params.entry.restartRecoveryRuns ?? []).map((run) => typeof run.runId === "string" ? run.runId.trim() : "").filter(Boolean))];
-+	const sourceRunId = normalizeOptionalString(params.entry.restartRecoveryDeliverySourceRunId) ?? (sourceRunIds.length === 1 ? sourceRunIds[0] : void 0);
++	const sourceRunId = sourceRunIds.length === 1 ? sourceRunIds[0] : sourceRunIds.length === 0 ? normalizeOptionalString(params.entry.restartRecoveryDeliverySourceRunId) : void 0;
  	const deliveryContext = resolveRestartRecoveryDeliveryContext({
  		cfg: params.cfg,
  		entry: params.entry,
-@@ -359,9 +363,15 @@ async function resumeMainSession(params) {
+@@ -359,9 +364,15 @@ async function resumeMainSession(params) {
  		const agentParams = {
  			message: buildResumeMessage(sanitizedPendingText),
  			sessionKey: params.sessionKey,
@@ -524,11 +551,15 @@ index 50b16b4a3f159b698c6485e079e1c38ea41fda78..03ee242b547c3b841cc6a5819a4d0349
  	execApprovalFollowupExpectedSessionId: Type.Optional(NonEmptyString),
  	internalEvents: Type.Optional(Type.Array(AgentInternalEventSchema)),
  	inputProvenance: Type.Optional(InputProvenanceSchema),
-@@ -2910,0 +2913,3 @@ const ExecApprovalRequestParamsSchema = Type.Object({
+@@ -318 +320,2 @@ const AgentWaitParamsSchema = Type.Object({
+-	runId: NonEmptyString,
++	runId: NonEmptyString,
++	sessionKey: Type.Optional(NonEmptyString),
+@@ -2910,0 +2914,3 @@ const ExecApprovalRequestParamsSchema = Type.Object({
 +	sessionId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 +	runId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
 +	toolCallId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-@@ -3304,6 +3309,7 @@ const ChatInjectParamsSchema = Type.Object({
+@@ -3304,6 +3310,7 @@ const ChatInjectParamsSchema = Type.Object({
  /** Shared event fields preserve stream ordering and route events to the right session. */
  const ChatEventBaseSchema = {
  	runId: NonEmptyString,
@@ -564,7 +595,14 @@ index ff8cd2829dc9f64d7fc8ec2bf77bb5f05947459d..f2f08299de269d42714b491343006250
      execApprovalFollowupExpectedSessionId: import("typebox").TOptional<import("typebox").TString>;
      internalEvents: import("typebox").TOptional<import("typebox").TArray<import("typebox").TObject<{
        type: import("typebox").TLiteral<"task_completion">;
-@@ -7573,6 +7576,9 @@ declare const ExecApprovalRequestParamsSchema: Type.TObject<{
+@@ -3123,5 +3125,6 @@ declare const ProtocolSchemas: {
+   AgentWaitParams: import("typebox").TObject<{
+     runId: import("typebox").TString;
++    sessionKey: import("typebox").TOptional<import("typebox").TString>;
+     timeoutMs: import("typebox").TOptional<import("typebox").TInteger>;
+   }>;
+   WakeParams: import("typebox").TObject<{
+@@ -7573,6 +7577,9 @@ declare const ExecApprovalRequestParamsSchema: Type.TObject<{
    agentId: Type.TOptional<Type.TUnion<[Type.TString, Type.TNull]>>;
    resolvedPath: Type.TOptional<Type.TUnion<[Type.TString, Type.TNull]>>;
    sessionKey: Type.TOptional<Type.TUnion<[Type.TString, Type.TNull]>>;
@@ -574,7 +612,7 @@ index ff8cd2829dc9f64d7fc8ec2bf77bb5f05947459d..f2f08299de269d42714b491343006250
    turnSourceChannel: Type.TOptional<Type.TUnion<[Type.TString, Type.TNull]>>;
    turnSourceTo: Type.TOptional<Type.TUnion<[Type.TString, Type.TNull]>>;
    turnSourceAccountId: Type.TOptional<Type.TUnion<[Type.TString, Type.TNull]>>;
-@@ -7867,6 +7873,7 @@ declare const ChatEventSchema: Type.TUnion<[Type.TObject<{
+@@ -7867,6 +7874,7 @@ declare const ChatEventSchema: Type.TUnion<[Type.TObject<{
    replace: Type.TOptional<Type.TBoolean>;
    usage: Type.TOptional<Type.TUnknown>;
    runId: Type.TString;
@@ -582,7 +620,7 @@ index ff8cd2829dc9f64d7fc8ec2bf77bb5f05947459d..f2f08299de269d42714b491343006250
    sessionKey: Type.TString;
    agentId: Type.TOptional<Type.TString>;
    spawnedBy: Type.TOptional<Type.TString>;
-@@ -7877,6 +7884,7 @@ declare const ChatEventSchema: Type.TUnion<[Type.TObject<{
+@@ -7877,6 +7885,7 @@ declare const ChatEventSchema: Type.TUnion<[Type.TObject<{
    usage: Type.TOptional<Type.TUnknown>;
    stopReason: Type.TOptional<Type.TString>;
    runId: Type.TString;
@@ -590,7 +628,7 @@ index ff8cd2829dc9f64d7fc8ec2bf77bb5f05947459d..f2f08299de269d42714b491343006250
    sessionKey: Type.TString;
    agentId: Type.TOptional<Type.TString>;
    spawnedBy: Type.TOptional<Type.TString>;
-@@ -7887,6 +7895,7 @@ declare const ChatEventSchema: Type.TUnion<[Type.TObject<{
+@@ -7887,6 +7896,7 @@ declare const ChatEventSchema: Type.TUnion<[Type.TObject<{
    errorMessage: Type.TOptional<Type.TString>;
    stopReason: Type.TOptional<Type.TString>;
    runId: Type.TString;
@@ -598,7 +636,7 @@ index ff8cd2829dc9f64d7fc8ec2bf77bb5f05947459d..f2f08299de269d42714b491343006250
    sessionKey: Type.TString;
    agentId: Type.TOptional<Type.TString>;
    spawnedBy: Type.TOptional<Type.TString>;
-@@ -7899,6 +7908,7 @@ declare const ChatEventSchema: Type.TUnion<[Type.TObject<{
+@@ -7899,6 +7909,7 @@ declare const ChatEventSchema: Type.TUnion<[Type.TObject<{
    usage: Type.TOptional<Type.TUnknown>;
    stopReason: Type.TOptional<Type.TString>;
    runId: Type.TString;
@@ -680,7 +718,7 @@ index db68c120f69a4f2bc4121f3b75a456319fd227ed..21a1198bc7273b8aeeb8c91466a8cf85
 +	const phase = resolveLifecyclePhase(params.event);
 +	return {
 +		...patch,
-+		...phase === "start" ? { lifecycleRunId: runId } : patch.status && patch.status !== "running" ? { lifecycleRunId: void 0 } : {}
++		...phase === "start" ? { lifecycleRunId: runId } : {}
 +	};
  }
  function deriveGatewaySessionLifecycleProjectionPatch(params) {
@@ -713,3 +751,28 @@ index 15b9c3b2aea87e1f1782e8669de218d30afd9a00..e62c2a2061b639ba7291d9c19e6e8603
  	"totalTokensFresh",
  	"estimatedCostUsd",
  	"cacheRead",
+diff --git a/dist/index-D5wkwzkn.d.ts b/dist/index-D5wkwzkn.d.ts
+index 378186e1f1f85ac0aecb0e719d5bb8d3733ec5cf..a027228373199774db02781935044e008411dc72 100644
+--- a/dist/index-D5wkwzkn.d.ts
++++ b/dist/index-D5wkwzkn.d.ts
+@@ -167,6 +167,7 @@ declare const validateAgentIdentityParams: ProtocolValidator<{
+ }>;
+ declare const validateAgentWaitParams: ProtocolValidator<{
+   timeoutMs?: number | undefined;
++  sessionKey?: string | undefined;
+   runId: string;
+ }>;
+ declare const validateWakeParams: ProtocolValidator<{
+diff --git a/dist/types-DVCyjomt.d.ts b/dist/types-DVCyjomt.d.ts
+index 45cc75291a992f2a61cc4cbd503d78cebb3c53e1..9ce0a1bcb989f99a96a73b2f184f355ee532f73d 100644
+--- a/dist/types-DVCyjomt.d.ts
++++ b/dist/types-DVCyjomt.d.ts
+@@ -197,6 +197,8 @@ type SessionEntry = {
+   inheritedToolAllow?: string[]; /** Plugin id that created this session through api.runtime.subagent. */
+   pluginOwnerId?: string;
+   systemSent?: boolean;
++  lifecycleRunId?: string;
++  restartRecoveryDeliverySourceRunId?: string;
+   abortedLastRun?: boolean; /** Interrupted run generations whose late lifecycle events must be ignored. */
+   restartRecoveryRuns?: RestartRecoveryRun[]; /** Durable guard state for automatic subagent orphan recovery. */
+   subagentRecovery?: SubagentRecoveryState; /** Quota cascade protection and state-aware failover status. */

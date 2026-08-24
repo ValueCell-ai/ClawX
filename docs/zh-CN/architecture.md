@@ -6,7 +6,7 @@ ClawX 采用 **双进程 + Host API 统一接入架构**。渲染进程只调用
 
 OpenClaw 配置交付也统一由 Electron Main 管理。Gateway 运行时，ClawX 以 `config.get` 返回的权威快照为基线，并通过 `config.set` 提交修改；Gateway 停止或启动中时，同一个协调器只更新解析后的 JSON5 配置文件，不会因此启动 Gateway。因此，普通的 Provider、Agent、Channel、绑定、Skill 和模型修改不会替换 Gateway 进程。完整重启仅保留给代理等进程启动环境变化和用户显式操作。已确认的进程退出与 WebSocket 关闭继续使用现有的自动重连路径。连续前 3 次 WebSocket 心跳无响应只更新诊断，不会因短暂的 pong 延迟中断长时间运行的任务；收到 pong 或任意消息会重置计数，连续第 4 次无响应时，只有在生命周期处于可自动恢复的 running 状态时，才会请求受保护的 Gateway 自动恢复。认证配置写入 SQLite 后，ClawX 会调用 OpenClaw 的 `secrets.reload`，让运行中的 Agent 无需重启即可读取新凭据。
 
-Chat 使用由 Electron Main 持有的 ACP stdio bridge。Main 通过私有进程环境把同一份应用管理的 Gateway token 传给本地子进程，因此运行时配置重载后 ACP 历史回放仍能完成认证。如果受保护的 Gateway 恢复中断了已接收的主会话 run，补丁后的 OpenClaw 运行时会启动独立的恢复 run，并显式携带被中断 run id 作为 lineage。Chat 和 agent events 会保留该 lineage；重连后的 ACP bridge 据此将 pending prompt 接续到新 run，重置该 run 的流式游标，并订阅会话级 tool events。Renderer 不感知 Gateway 运行实例身份，仍通过类型化 host events 渲染同一个内存 ACP timeline。Gateway 继续负责 providers、models、skills、workspace、settings、diagnostics 和 media configuration 等非 Chat 能力。
+Chat 使用由 Electron Main 持有的 ACP stdio bridge。Main 通过私有进程环境把同一份应用管理的 Gateway token 传给本地子进程，因此运行时配置重载后 ACP 历史回放仍能完成认证。如果受保护的 Gateway 恢复中断了已接收的主会话 run，补丁后的 OpenClaw 运行时会启动独立的恢复 run，并显式携带直接被中断的 run id 作为 lineage。Chat 和 agent events 会保留该 lineage；重连后的 ACP bridge 据此逐次将 pending prompt 接续到新 run，重置该 run 的流式游标，并订阅会话级 tool events。如果之后的重启在答复持久化后丢失了进程内终态通知，ACP 会把当前 run id 和 session key 传给 `agent.wait`；Gateway 仅在持久化 lifecycle owner 与该 run 匹配时结算。Renderer 不感知 Gateway 运行实例身份，仍通过类型化 host events 渲染同一个内存 ACP timeline。Gateway 继续负责 providers、models、skills、workspace、settings、diagnostics 和 media configuration 等非 Chat 能力。
 
 ### ACP 语义权威
 
