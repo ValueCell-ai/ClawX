@@ -8,6 +8,7 @@ touchedAreas:
   - docs/plans/2026-08-24-model-aware-compaction-recovery.md
   - harness/specs/tasks/model-aware-compaction-reserve-and-recovery.md
   - harness/specs/rules/gateway-heartbeat-safety.md
+  - electron/shared/providers/model-capabilities.ts
   - electron/utils/openclaw-auth.ts
   - electron/utils/agent-config.ts
   - electron/gateway/manager.ts
@@ -22,7 +23,11 @@ touchedAreas:
   - shared/i18n/locales/zh/settings.json
   - shared/i18n/locales/ja/settings.json
   - shared/i18n/locales/ru/settings.json
+  - tests/unit/agent-config.test.ts
+  - tests/unit/compaction-activity.test.ts
+  - tests/unit/host-api-facade.test.ts
   - tests/unit/openclaw-auth.test.ts
+  - tests/unit/openclaw-compaction.test.ts
   - electron/gateway/recovery-controller.test.ts
   - tests/unit/gateway-manager-heartbeat.test.ts
   - tests/e2e/developer-mode.spec.ts
