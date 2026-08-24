@@ -238,7 +238,8 @@
         "folderDropUnsupported": "このフォルダを添付できませんでした。もう一度ドラッグするか、メッセージにフォルダパスを貼り付けてください。",
         "folderAttachment": "フォルダ",
         "skillPreviewTooltip": "SKILL.md をプレビュー",
-        "skillPreviewNotFound": "この Skill が見つかりません。Skill ピッカーを開いて一覧を更新してください。"
+        "skillPreviewNotFound": "この Skill が見つかりません。Skill ピッカーを開いて一覧を更新してください。",
+        "contextUsage": "コンテキスト使用量 {{percentage}}: {{used}} / {{total}} トークン"
     },
     "sessionList": {
         "title": "セッション一覧",

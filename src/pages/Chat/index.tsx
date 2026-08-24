@@ -256,12 +256,13 @@ export function Chat() {
   );
 
   const acpTimeline = useAcpChatSessionStore((s) => s.timeline);
+  const acpActiveSessionKey = useAcpChatSessionStore((s) => s.activeSessionKey);
   const renderedAcpTimeline = useDeferredValue(acpTimeline);
   const emptyCurrentTimeline = useMemo(
     () => createEmptyAcpTimeline(currentSessionKey ?? '', 0),
     [currentSessionKey],
   );
-  const visibleAcpTimeline = renderedAcpTimeline.sessionId === currentSessionKey
+  const visibleAcpTimeline = acpActiveSessionKey === currentSessionKey
     ? renderedAcpTimeline
     : acpTimeline.sessionId === currentSessionKey
       ? acpTimeline
@@ -274,7 +275,6 @@ export function Chat() {
   );
   const acpCancelling = useAcpChatSessionStore((s) => s.cancelling);
   const acpError = useAcpChatSessionStore((s) => s.error);
-  const acpActiveSessionKey = useAcpChatSessionStore((s) => s.activeSessionKey);
   const acpWorkspaceRoot = useAcpChatSessionStore((s) => s.workspaceRoot);
   const acpCwd = useAcpChatSessionStore((s) => s.cwd);
   const prepareLocalAcpSession = useAcpChatSessionStore((s) => s.prepareLocalSession);
@@ -447,6 +447,7 @@ export function Chat() {
   }, [t, visibleAcpTimeline]);
   const questionDirectoryVisible = questionDirectoryOpenSessionKey === currentSessionKey
     && questionDirectoryItems.length > 1;
+  const composerContextUsage = visibleAcpTimeline.metadata.usage;
 
   return (
     <div
@@ -624,6 +625,7 @@ export function Chat() {
           workspaceOptions={workspaceOptions}
           workspaceReadOnly={effectiveWorkspace.readOnly}
           onSelectWorkspace={setChatWorkspacePath}
+          contextUsage={composerContextUsage}
         />
       </div>
 

@@ -58,11 +58,76 @@ interface ChatInputProps {
   workspaceOptions?: ChatWorkspaceOption[];
   workspaceReadOnly?: boolean;
   onSelectWorkspace?: (path: string) => void;
+  contextUsage?: unknown;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
 
 const DIRECTORY_MIME_TYPE = 'application/x-directory';
+
+type ContextUsage = {
+  used: number;
+  size: number;
+  percent: number;
+};
+
+function getContextUsage(value: unknown): ContextUsage | null {
+  if (!value || typeof value !== 'object') return null;
+  const { used, size } = value as Record<string, unknown>;
+  if (
+    typeof used !== 'number'
+    || typeof size !== 'number'
+    || !Number.isFinite(used)
+    || !Number.isFinite(size)
+    || used < 0
+    || size <= 0
+  ) return null;
+
+  return {
+    used,
+    size,
+    percent: Math.min(100, Math.max(0, (used / size) * 100)),
+  };
+}
+
+function ContextUsageRing({ usage, label }: { usage: ContextUsage; label: string }) {
+  const radius = 7;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference * (1 - usage.percent / 100);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          data-testid="chat-composer-context-usage"
+          data-percent={Math.round(usage.percent)}
+          aria-label={label}
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-primary transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10"
+        >
+          <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden="true">
+            <circle cx="10" cy="10" r={radius} fill="none" stroke="currentColor" strokeWidth="2" className="text-black/10 dark:text-white/15" />
+            <circle
+              cx="10"
+              cy="10"
+              r={radius}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={strokeDashoffset}
+              transform="rotate(-90 10 10)"
+            />
+          </svg>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="text-xs">
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -207,8 +272,9 @@ export function ChatInput({
   workspaceOptions = [],
   workspaceReadOnly = false,
   onSelectWorkspace,
+  contextUsage,
 }: ChatInputProps) {
-  const { t } = useTranslation('chat');
+  const { t, i18n } = useTranslation('chat');
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [targetAgentId, setTargetAgentId] = useState<string | null>(null);
@@ -293,6 +359,14 @@ export function ChatInput({
   const workspaceSelectorDisabled = workspaceReadOnly || inputDisabled || sending || !onSelectWorkspace;
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
   const openArtifactPreview = useArtifactPanel((s) => s.openPreview);
+  const activeContextUsage = getContextUsage(contextUsage);
+  const contextUsageLabel = activeContextUsage
+    ? t('composer.contextUsage', {
+      percentage: new Intl.NumberFormat(i18n.resolvedLanguage, { style: 'percent', maximumFractionDigits: 0 }).format(activeContextUsage.percent / 100),
+      used: new Intl.NumberFormat(i18n.resolvedLanguage).format(activeContextUsage.used),
+      total: new Intl.NumberFormat(i18n.resolvedLanguage).format(activeContextUsage.size),
+    })
+    : null;
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -1185,6 +1259,10 @@ export function ChatInput({
                   </div>
                 )}
               </div>
+            )}
+
+            {activeContextUsage && contextUsageLabel && (
+              <ContextUsageRing usage={activeContextUsage} label={contextUsageLabel} />
             )}
 
             {/* Send Button — pushed to the right */}

@@ -350,6 +350,16 @@ describe('OpenClaw restart recovery patch', () => {
     expect(patch).toContain('subscriptionReady.then(() => this.reconcilePendingPrompts');
   });
 
+  it('retries the final ACP usage snapshot when a new session reports zero tokens', async () => {
+    const patch = await readFile(
+      path.join(root, 'patches/openclaw@2026.7.1-2.patch'),
+      'utf8',
+    );
+
+    expect(patch).toContain('!sessionSnapshot.usage || sessionSnapshot.usage.used === 0');
+    expect(patch).toContain('setTimeout(resolve, 1e3)');
+  });
+
   it('executes the pinned transcript fallback as ordered native ACP updates', async () => {
     const bundle = await readFile(
       path.join(root, 'node_modules/openclaw/dist/acp-cli-BXc5GttU.js'),

@@ -138,6 +138,8 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Preview SKILL.md';
     case 'composer.skillPreviewNotFound':
       return 'Skill not found';
+    case 'composer.contextUsage':
+      return `${String(vars?.percentage ?? '')} context used: ${String(vars?.used ?? '')} / ${String(vars?.total ?? '')} tokens`;
     default:
       return key;
   }
@@ -146,13 +148,14 @@ function translate(key: string, vars?: Record<string, unknown>): string {
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: translate,
+    i18n: { resolvedLanguage: 'en-US' },
   }),
 }));
 
-function renderChatInput(onSend = vi.fn()) {
+function renderChatInput(onSend = vi.fn(), contextUsage?: unknown) {
   return render(
-    <TooltipProvider>
-      <ChatInput onSend={onSend} />
+    <TooltipProvider delayDuration={0}>
+      <ChatInput onSend={onSend} contextUsage={contextUsage} />
     </TooltipProvider>,
   );
 }
@@ -234,6 +237,31 @@ describe('ChatInput agent targeting', () => {
     vi.mocked(hostApiDialogOpenMock).mockReset();
     toastErrorMock.mockReset();
     artifactPanelMocks.openPreview.mockReset();
+  });
+
+  it('shows active ACP context usage in an accessible tooltip', async () => {
+    renderChatInput(vi.fn(), { used: 25_000, size: 100_000 });
+
+    const ring = screen.getByTestId('chat-composer-context-usage');
+    expect(ring).toHaveAttribute('aria-label', '25% context used: 25,000 / 100,000 tokens');
+
+    fireEvent.focus(ring);
+
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('25% context used: 25,000 / 100,000 tokens');
+  });
+
+  it('hides malformed context usage and clamps valid overages to 100%', () => {
+    const { rerender } = renderChatInput(vi.fn(), { used: Number.NaN, size: 100_000 });
+
+    expect(screen.queryByTestId('chat-composer-context-usage')).not.toBeInTheDocument();
+
+    rerender(
+      <TooltipProvider delayDuration={0}>
+        <ChatInput onSend={vi.fn()} contextUsage={{ used: 150_000, size: 100_000 }} />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByTestId('chat-composer-context-usage')).toHaveAttribute('data-percent', '100');
   });
 
   it('renders a dot pulse and visible thinking label while a message is sending', () => {

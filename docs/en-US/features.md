@@ -12,6 +12,8 @@ Communicate with AI agents through a modern chat experience. ClawX supports mult
 
 Skills inserted from the composer appear as `/skill-name` cards. Click a card to open the preview sidebar and read that skill's `SKILL.md`.
 
+When an active OpenClaw ACP session reports context usage, the composer shows a compact ring. Hover or focus it to see the localized percentage and used/total token counts. The ring uses only the active ACP `usage_update` metadata and stays hidden when that metadata is missing or invalid.
+
 When you target another agent with `@agent`, ClawX switches directly to that agent's own conversation context instead of relaying through the default agent. Agent workspaces stay separate by default, while stronger runtime isolation depends on OpenClaw sandbox settings.
 
 The session sidebar is workspace-first: the default workspace stays at the top, other workspaces sort naturally, and each workspace can collapse or load more sessions. A session row shows a spinner while the AI is replying, a blue dot when an unseen reply finishes, and its relative activity time after the conversation is opened; hovering still reveals row actions. Imported workspaces can be renamed from their sidebar header. The custom name is reflected in the chat composer, while hovering the header still reveals the filesystem path.

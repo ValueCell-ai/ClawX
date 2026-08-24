@@ -1,5 +1,5 @@
 diff --git a/dist/acp-cli-BXc5GttU.js b/dist/acp-cli-BXc5GttU.js
-index 6c7de7d60ac87a733632c36a744ada0e4e48d077..62797972ce78076c545d712809d99f4a13f8e0ee 100644
+index 6c7de7d60ac87a733632c36a744ada0e4e48d077..2867ad41582181cc5d6ce4452b94e8dc2defb298 100644
 --- a/dist/acp-cli-BXc5GttU.js
 +++ b/dist/acp-cli-BXc5GttU.js
 @@ -1622,8 +1622,32 @@ function buildSessionUsageSnapshot(row) {
@@ -156,7 +156,14 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..62797972ce78076c545d712809d99f4a
 -		const newText = fullText.slice(sentSoFar);
 +		const newText = resolveAcpTextDelta(pending.sentText ?? "", fullText);
 +		if (!newText) return;
-@@ -2619,18 +2659,55 @@ var AcpGatewayAgent = class {
+@@ -2603 +2642,5 @@ var AcpGatewayAgent = class {
+-			const sessionSnapshot = await this.getSessionSnapshot(pending.sessionKey);
++			let sessionSnapshot = await this.getSessionSnapshot(pending.sessionKey);
++			if (!sessionSnapshot.usage || sessionSnapshot.usage.used === 0) {
++				await new Promise((resolve) => setTimeout(resolve, 1e3));
++				sessionSnapshot = await this.getSessionSnapshot(pending.sessionKey);
++			}
+@@ -2619,18 +2663,55 @@ var AcpGatewayAgent = class {
  			this.settlingPromptKeys.delete(promptKey);
  		}
  	}
@@ -213,7 +220,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..62797972ce78076c545d712809d99f4a
  	findUniquePendingBySessionKey(sessionKey) {
  		let match;
  		for (const pending of this.pendingPrompts.values()) {
-@@ -2652,12 +2729,12 @@ var AcpGatewayAgent = class {
+@@ -2652,12 +2733,12 @@ var AcpGatewayAgent = class {
  		clearTimeout(this.disconnectTimer);
  		this.disconnectTimer = null;
  	}
@@ -229,7 +236,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..62797972ce78076c545d712809d99f4a
  		this.disconnectTimer.unref?.();
  	}
  	rejectPendingPrompt(pending, error) {
-@@ -2668,14 +2745,10 @@ var AcpGatewayAgent = class {
+@@ -2668,14 +2749,10 @@ var AcpGatewayAgent = class {
  		if (this.pendingPrompts.size === 0) this.clearDisconnectTimer();
  		pending.reject(error);
  	}
@@ -247,7 +254,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..62797972ce78076c545d712809d99f4a
  		if (this.pendingPrompts.size === 0) {
  			if (this.disconnectGeneration === observedDisconnectGeneration) this.clearDisconnectTimer();
  			return;
-@@ -2685,32 +2758,36 @@ var AcpGatewayAgent = class {
+@@ -2685,32 +2762,36 @@ var AcpGatewayAgent = class {
  		for (const [sessionId, pending] of pendingEntries) {
  			if (this.pendingPrompts.get(sessionId) !== pending) continue;
  			if (pending.disconnectContext?.generation !== observedDisconnectGeneration) continue;
@@ -294,7 +301,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..62797972ce78076c545d712809d99f4a
  		if (!currentPending) return false;
  		if (result?.status === "ok") {
  			await this.finishPrompt(sessionId, currentPending, "end_turn");
-@@ -2720,15 +2797,14 @@ var AcpGatewayAgent = class {
+@@ -2720,15 +2801,14 @@ var AcpGatewayAgent = class {
  			this.finishPrompt(sessionId, currentPending, "end_turn");
  			return false;
  		}
@@ -313,7 +320,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..62797972ce78076c545d712809d99f4a
  		}
  		return true;
  	}
-@@ -2890,13 +2966,13 @@ var AcpGatewayAgent = class {
+@@ -2890,13 +2970,13 @@ var AcpGatewayAgent = class {
  			const replayChunks = extractReplayChunks(message);
  			for (const chunk of replayChunks) await this.sessionUpdates.emit({
  				sessionId,

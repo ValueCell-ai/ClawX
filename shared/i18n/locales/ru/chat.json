@@ -238,7 +238,8 @@
         "folderDropUnsupported": "Не удалось прикрепить эту папку. Перетащите её снова или вставьте путь к папке в сообщение.",
         "folderAttachment": "Папка",
         "skillPreviewTooltip": "Предпросмотр SKILL.md",
-        "skillPreviewNotFound": "Skill не найден. Откройте список Skill, чтобы обновить его."
+        "skillPreviewNotFound": "Skill не найден. Откройте список Skill, чтобы обновить его.",
+        "contextUsage": "Использовано контекста: {{percentage}} ({{used}} / {{total}} токенов)"
     },
     "sessionList": {
         "title": "Список сессий",
