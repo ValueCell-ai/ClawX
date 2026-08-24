@@ -11,6 +11,7 @@
 ## Global Constraints
 
 - `agents.defaults.compaction.reserveTokensFloor` must be `Math.floor(contextWindow * 0.25)` for a known selected model.
+- `agents.defaults.compaction.recentTurnsPreserve` and `keepRecentTokens` must be overwritten with `0` during ClawX configuration sync.
 - A previous floor in the local OpenClaw config must not prevent the ClawX-managed value from updating.
 - Do not select a separate summarization model.
 - Developer-only UI must use `react-i18next` with `en`, `zh`, `ja`, and `ru` locale coverage.
@@ -95,3 +96,47 @@
 - [ ] **Step 2: Validate** the task spec with `pnpm harness validate --spec harness/specs/tasks/model-aware-compaction-reserve-and-recovery.md` (blocked by unrelated branch diff outside this task's touched areas).
 - [x] **Step 3: Run** focused tests, `pnpm run typecheck`, `pnpm run comms:replay`, and `pnpm run comms:compare`.
 - [ ] **Step 4: Commit** the task.
+
+### Task 5: Bound Verbatim Recent Turns
+
+> Superseded by Task 6 after consecutive-overflow testing showed that the retained transcript tail, rather than only the recent-turn summary suffix, still prevented context progress.
+
+**Files:**
+- Modify: `electron/utils/openclaw-auth.ts`
+- Modify: `tests/unit/openclaw-auth.test.ts`
+- Modify: `harness/specs/tasks/model-aware-compaction-reserve-and-recovery.md`
+- Modify: `docs/plans/2026-08-24-model-aware-compaction-recovery.md`
+- Modify: `docs/en-US/features.md`
+- Modify: `docs/zh-CN/features.md`
+- Modify: `docs/ja-JP/features.md`
+- Modify: `docs/ru-RU/features.md`
+
+**Interfaces:**
+- Consumes: any existing `agents.defaults.compaction.recentTurnsPreserve` value during startup configuration sync.
+- Produces: the ClawX-managed value `recentTurnsPreserve: 1` for seeded and existing compaction configurations.
+
+- [x] **Step 1: Write failing tests** for seeding `recentTurnsPreserve: 1`, backfilling it when absent, and overwriting an explicit conflicting value while preserving unrelated settings.
+- [x] **Step 2: Run** `pnpm exec vitest run tests/unit/openclaw-auth.test.ts` and verify the assertions fail because the field is absent or retains the local value.
+- [x] **Step 3: Implement** the minimum seed and synchronization changes in `openclaw-auth.ts`.
+- [x] **Step 4: Re-run** the focused test, typecheck, lint, and harness validation; validation remains blocked by unrelated branch files outside this task's touched areas.
+- [x] **Step 5: Repeat** the fixed 272k-context Electron/provider compaction reproduction and compare the verbatim suffix size, compaction duration, and failure markers.
+
+### Task 6: Remove Completed-Turn Tail Replay
+
+**Files:**
+- Modify: `patches/openclaw@2026.7.1-2.patch`
+- Modify: `pnpm-lock.yaml`
+- Modify: `electron/utils/openclaw-auth.ts`
+- Modify: `tests/unit/openclaw-auth.test.ts`
+- Create: `tests/unit/openclaw-compaction-tail-patch.test.ts`
+- Create: `harness/specs/rules/compaction-context-progress.md`
+
+**Interfaces:**
+- Consumes: `keepRecentTokens: 0` and `recentTurnsPreserve: 0` from ClawX-managed OpenClaw configuration.
+- Produces: a summary containing every completed turn and a hardened compaction boundary that replays no completed pre-compaction message.
+
+- [x] **Step 1: Reproduce** consecutive overflow recovery where an atomic retained user message leaves the post-compaction prompt over budget.
+- [x] **Step 2: Write failing tests** for zero-valued schema validation, full completed-turn summary input, automatic boundary hardening, and ClawX config delivery.
+- [x] **Step 3: Patch** the pinned OpenClaw dist with `pnpm patch` and `pnpm patch-commit`.
+- [x] **Step 4: Re-run** focused unit tests and validate the patched dependency hash.
+- [x] **Step 5: Repeat** the real Electron/provider consecutive-compaction reproduction.

@@ -20,7 +20,7 @@ function getConfiguredContextWindow(config: Record<string, unknown>, modelRef: s
   const provider = providers && isRecord(providers[providerKey]) ? providers[providerKey] : undefined;
   const rows = provider && Array.isArray(provider.models) ? provider.models : [];
   const row = rows.find((candidate) => isRecord(candidate) && candidate.id === modelId);
-  const configuredContextWindow = row && (row.contextWindow ?? row.contextTokens);
+  const configuredContextWindow = row && (row.contextTokens ?? row.contextWindow);
   if (typeof configuredContextWindow === 'number' && Number.isFinite(configuredContextWindow) && configuredContextWindow > 0) {
     return Math.floor(configuredContextWindow);
   }

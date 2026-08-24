@@ -26,6 +26,34 @@ describe('applyModelAwareCompactionReserveTokensFloor', () => {
     });
   });
 
+  it('prefers the effective context token limit over the native context window', () => {
+    const config: Record<string, unknown> = {
+      models: {
+        providers: {
+          openai: {
+            models: [{
+              id: 'gpt-5.6-sol',
+              contextWindow: 1_050_000,
+              contextTokens: 272_000,
+            }],
+          },
+        },
+      },
+      agents: {
+        defaults: {
+          compaction: { mode: 'safeguard', reserveTokensFloor: 50_000 },
+        },
+      },
+    };
+
+    expect(applyModelAwareCompactionReserveTokensFloor(config, 'openai/gpt-5.6-sol')).toBe(true);
+    expect(config.agents).toEqual({
+      defaults: {
+        compaction: { mode: 'safeguard', reserveTokensFloor: 68_000 },
+      },
+    });
+  });
+
   it('does not replace an existing floor when the model context window is unknown', () => {
     const config: Record<string, unknown> = {
       agents: {

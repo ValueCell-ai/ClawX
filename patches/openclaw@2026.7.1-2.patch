@@ -783,3 +783,46 @@ index 45cc75291a992f2a61cc4cbd503d78cebb3c53e1..9ce0a1bcb989f99a96a73b2f184f355e
    abortedLastRun?: boolean; /** Interrupted run generations whose late lifecycle events must be ignored. */
    restartRecoveryRuns?: RestartRecoveryRun[]; /** Durable guard state for automatic subagent orphan recovery. */
    subagentRecovery?: SubagentRecoveryState; /** Quota cascade protection and state-aware failover status. */
+diff --git a/dist/compact-DLB4d8IL.js b/dist/compact-DLB4d8IL.js
+index 49e5e8693f0115ab2742976b9f8991a77f33029a..4d7636a02dc7511df9dc8b9895951555352bc192 100644
+--- a/dist/compact-DLB4d8IL.js
++++ b/dist/compact-DLB4d8IL.js
+@@ -1156 +1156,2 @@ async function compactEmbeddedAgentSessionDirectOnce(params) {
+-					if (params.trigger === "manual") try {
++					const configuredKeepRecentTokens = params.config?.agents?.defaults?.compaction?.keepRecentTokens;
++					if (params.trigger === "manual" || configuredKeepRecentTokens === 0) try {
+@@ -1159 +1160 @@ async function compactEmbeddedAgentSessionDirectOnce(params) {
+-							preserveRecentTail: typeof params.config?.agents?.defaults?.compaction?.keepRecentTokens === "number"
++							preserveRecentTail: typeof configuredKeepRecentTokens === "number" && configuredKeepRecentTokens > 0
+@@ -1168 +1169 @@ async function compactEmbeddedAgentSessionDirectOnce(params) {
+-						log.warn("[compaction] failed to harden manual compaction boundary", { errorMessage: formatErrorMessage(err) });
++						log.warn("[compaction] failed to harden compaction boundary", { errorMessage: formatErrorMessage(err) });
+diff --git a/dist/proxy-BzhBz8iM.js b/dist/proxy-BzhBz8iM.js
+index ca8bf1ba5cd9a24001c19da6c2412693344a8e2c..f33da4f8746b74dfe835957e81db06358bd682d5 100644
+--- a/dist/proxy-BzhBz8iM.js
++++ b/dist/proxy-BzhBz8iM.js
+@@ -2441 +2441,6 @@ function prepareCompaction(pathEntries, settings) {
+-	const cutPoint = findCutPoint(pathEntries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
++	const dropsCompletedTail = settings.keepRecentTokens === 0;
++	const cutPoint = dropsCompletedTail ? {
++		firstKeptEntryIndex: boundaryEnd - 1,
++		turnStartIndex: -1,
++		isSplitTurn: false
++	} : findCutPoint(pathEntries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
+@@ -2445 +2450 @@ function prepareCompaction(pathEntries, settings) {
+-	const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
++	const historyEnd = dropsCompletedTail ? boundaryEnd : cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
+diff --git a/dist/zod-schema-O9ml_nmo.js b/dist/zod-schema-O9ml_nmo.js
+index e7e2a95a50dc2a27881cc0e76afc8f31db5683b5..a87dc281b977859157b0cd99896870ad10b11c7f 100644
+--- a/dist/zod-schema-O9ml_nmo.js
++++ b/dist/zod-schema-O9ml_nmo.js
+@@ -205 +205 @@ const AgentDefaultsSchema = object({
+-		keepRecentTokens: number().int().positive().optional(),
++		keepRecentTokens: number().int().nonnegative().optional(),
+diff --git a/dist/agent-settings-axYuScuh.js b/dist/agent-settings-axYuScuh.js
+index dec9ef8893043c3c020329c677cc0ee785f7b222..cd75039f263ddae8d333a3504db1424c9c7fd4f8 100644
+--- a/dist/agent-settings-axYuScuh.js
++++ b/dist/agent-settings-axYuScuh.js
+@@ -27 +27 @@ function applyAgentCompactionSettingsFromConfig(params) {
+-	const configuredKeepRecentTokens = toPositiveInt(compactionCfg?.keepRecentTokens);
++	const configuredKeepRecentTokens = toNonNegativeInt(compactionCfg?.keepRecentTokens);

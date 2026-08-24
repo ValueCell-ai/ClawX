@@ -533,6 +533,9 @@ async function discoverAgentIds(): Promise<string[]> {
 
 const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
 const VALID_COMPACTION_MODES = new Set(['default', 'safeguard']);
+const CLAWX_COMPACTION_IDENTIFIER_INSTRUCTIONS = 'Preserve only identifiers referenced by unresolved asks, active constraints, modified files, or pending next steps.';
+const CLAWX_COMPACTION_KEEP_RECENT_TOKENS = 0;
+const CLAWX_COMPACTION_RECENT_TURNS_PRESERVE = 0;
 /** Fallback for configurations whose selected model has no known context window. */
 const DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR = 50_000;
 // OpenClaw 2026.7.1 bundles these channel extensions. Discord, WhatsApp,
@@ -865,6 +868,11 @@ function ensureCompactionSafeguardDefault(config: Record<string, unknown>): bool
 
   defaults.compaction = {
     mode: 'safeguard',
+    qualityGuard: { enabled: false },
+    keepRecentTokens: CLAWX_COMPACTION_KEEP_RECENT_TOKENS,
+    recentTurnsPreserve: CLAWX_COMPACTION_RECENT_TURNS_PRESERVE,
+    identifierPolicy: 'custom',
+    identifierInstructions: CLAWX_COMPACTION_IDENTIFIER_INSTRUCTIONS,
     reserveTokensFloor: DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR,
     midTurnPrecheck: { enabled: true },
   };
@@ -874,11 +882,10 @@ function ensureCompactionSafeguardDefault(config: Record<string, unknown>): bool
 }
 
 /**
- * Backfill missing compaction safety fields without changing explicit values.
- * This enables the tool-loop guard on upgrade while preserving every existing
- * reserveTokensFloor and midTurnPrecheck.enabled choice.
+ * Enforce ClawX's compaction quality policy and backfill missing safety fields.
+ * Explicit reserveTokensFloor and midTurnPrecheck.enabled choices are preserved.
  */
-function backfillCompactionSafetyDefaults(config: Record<string, unknown>): boolean {
+function syncCompactionSafetyDefaults(config: Record<string, unknown>): boolean {
   const agents = (config.agents && typeof config.agents === 'object'
     ? config.agents as Record<string, unknown>
     : null);
@@ -895,6 +902,31 @@ function backfillCompactionSafetyDefaults(config: Record<string, unknown>): bool
   if (!compaction) return false;
 
   let changed = false;
+  if (
+    !isPlainRecord(compaction.qualityGuard)
+    || compaction.qualityGuard.enabled !== false
+    || Object.keys(compaction.qualityGuard).some((key) => key !== 'enabled')
+  ) {
+    compaction.qualityGuard = { enabled: false };
+    changed = true;
+  }
+  if (compaction.recentTurnsPreserve !== CLAWX_COMPACTION_RECENT_TURNS_PRESERVE) {
+    compaction.recentTurnsPreserve = CLAWX_COMPACTION_RECENT_TURNS_PRESERVE;
+    changed = true;
+  }
+  if (compaction.keepRecentTokens !== CLAWX_COMPACTION_KEEP_RECENT_TOKENS) {
+    compaction.keepRecentTokens = CLAWX_COMPACTION_KEEP_RECENT_TOKENS;
+    changed = true;
+  }
+  if (compaction.identifierPolicy !== 'custom') {
+    compaction.identifierPolicy = 'custom';
+    changed = true;
+  }
+  if (compaction.identifierInstructions !== CLAWX_COMPACTION_IDENTIFIER_INSTRUCTIONS) {
+    compaction.identifierInstructions = CLAWX_COMPACTION_IDENTIFIER_INSTRUCTIONS;
+    changed = true;
+  }
+
   if (compaction.reserveTokensFloor === undefined) {
     compaction.reserveTokensFloor = DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR;
     changed = true;
@@ -2729,10 +2761,10 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     // ── Compaction safeguard default ──
     if (ensureCompactionSafeguardDefault(config)) {
       modified = true;
-      compactionLog = `[batch-sync] Seeded agents.defaults.compaction.mode=safeguard reserveTokensFloor=${DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR} midTurnPrecheck.enabled=true`;
-    } else if (backfillCompactionSafetyDefaults(config)) {
+      compactionLog = `[batch-sync] Seeded agents.defaults.compaction.mode=safeguard qualityGuard.enabled=false keepRecentTokens=${CLAWX_COMPACTION_KEEP_RECENT_TOKENS} recentTurnsPreserve=${CLAWX_COMPACTION_RECENT_TURNS_PRESERVE} identifierPolicy=custom reserveTokensFloor=${DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR} midTurnPrecheck.enabled=true`;
+    } else if (syncCompactionSafetyDefaults(config)) {
       modified = true;
-      compactionLog = '[batch-sync] Backfilled missing agents.defaults.compaction safety defaults';
+      compactionLog = '[batch-sync] Synchronized ClawX-managed agents.defaults.compaction settings';
     }
     if (applyModelAwareCompactionReserveTokensFloor(config, getDefaultModelRef(config))) {
       modified = true;
