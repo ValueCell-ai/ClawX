@@ -1213,7 +1213,10 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
         const evidence = extractImageGenerationCompletionFromAcpEnvelope(event);
         if (evidence) void get().projectImageGenerationCompletion(evidence);
       }
-      if (!input.createIfMissing) {
+      // A reactivated prompt already carries its original live timing. The transcript is
+      // necessarily incomplete until that prompt settles, so treating it as historical
+      // timing here would replace the running timer with a prematurely completed duration.
+      if (!input.createIfMissing && !currentResumedSnapshot) {
         startHistoricalTranscriptSupplement(input.sessionKey, generation);
       }
       return true;

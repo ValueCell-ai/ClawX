@@ -351,6 +351,62 @@ async function resolveDeferredAcpPrompt(app: ElectronApplication) {
   });
 }
 
+async function installAcpReactivationWithPartialTimingMock(
+  app: ElectronApplication,
+  prompt: string,
+) {
+  await app.evaluate(async ({ app: _app }, payload) => {
+    const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type HostInvokeRequest = {
+      id?: string;
+      module?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+    };
+    type IpcInvokeHandler = (event: unknown, request: HostInvokeRequest) => Promise<unknown>;
+    const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
+    const originalHostInvoke = handlers?.get('host:invoke');
+    let mainSessionLoadCount = 0;
+
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: HostInvokeRequest) => {
+      if (
+        request.module === 'chat'
+        && request.action === 'loadAcpSession'
+        && request.payload?.sessionKey === payload.sessionKey
+      ) {
+        mainSessionLoadCount += 1;
+        return {
+          id: request.id,
+          ok: true,
+          data: {
+            success: true,
+            generation: 1,
+            ...(mainSessionLoadCount > 1 ? { resumedActivePrompt: true } : {}),
+          },
+        };
+      }
+      if (request.module === 'sessions' && request.action === 'turnTimings') {
+        return {
+          id: request.id,
+          ok: true,
+          data: {
+            success: true,
+            timings: mainSessionLoadCount > 1
+              ? [{
+                normalizedUserText: payload.prompt,
+                userOccurrenceFromTail: 1,
+                durationMs: 5_000,
+              }]
+              : [],
+          },
+        };
+      }
+      return originalHostInvoke?.(event, request) ?? { id: request.id, ok: true, data: {} };
+    });
+  }, { sessionKey: MAIN_SESSION_KEY, prompt });
+}
+
 async function emitAcpSessionUpdates(
   app: ElectronApplication,
   updates: AcpSessionUpdate[],
@@ -655,6 +711,75 @@ test.describe('ClawX ACP inline timeline', () => {
       await page.waitForTimeout(1_100);
       await expect(duration).toHaveText(completedDuration ?? '');
     } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('keeps elapsed duration running after switching conversations and returning', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const prompt = 'Keep timing across conversations';
+    const otherSessionKey = 'agent:main:session-duration-other';
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [
+                { key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE },
+                { key: otherSessionKey, displayName: 'other', workspacePath: MAIN_WORKSPACE },
+              ],
+            },
+          },
+        },
+        hostApi: {
+          ...baseHostApiMocks(),
+          [stableStringify(['chat', 'loadAcpSession', {
+            sessionKey: otherSessionKey,
+            workspaceRoot: MAIN_WORKSPACE,
+            cwd: MAIN_WORKSPACE,
+          }])]: { success: true, generation: 2 },
+        },
+        recordHostInvocations: true,
+      });
+      await installAcpPromptDeferredMock(app);
+      await installAcpReactivationWithPartialTimingMock(app, prompt);
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+
+      await page.getByTestId('chat-composer-input').fill(prompt);
+      await page.getByTestId('chat-composer-send').click();
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'conversation-switch-stream',
+        content: { type: 'text', text: 'Before switch. ' },
+      }]);
+      const duration = page.getByTestId('acp-turn-duration');
+      await expect(duration).toContainText('elapsed');
+      const beforeSwitchSeconds = Number.parseFloat((await duration.textContent()) ?? '0');
+
+      await page.getByTestId(`sidebar-session-${otherSessionKey}`).click();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      await page.waitForTimeout(1_100);
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'conversation-switch-stream',
+        content: { type: 'text', text: 'While away.' },
+      }]);
+
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await expect(page.getByTestId('acp-assistant-message')).toContainText('Before switch. While away.');
+      await expect(duration).toContainText('elapsed');
+      const afterReturnSeconds = Number.parseFloat((await duration.textContent()) ?? '0');
+      expect(afterReturnSeconds).toBeGreaterThan(beforeSwitchSeconds);
+
+      await page.waitForTimeout(1_100);
+      await expect(duration).toContainText('elapsed');
+      expect(Number.parseFloat((await duration.textContent()) ?? '0')).toBeGreaterThan(afterReturnSeconds);
+    } finally {
+      await resolveDeferredAcpPrompt(app);
       await closeElectronApp(app);
     }
   });

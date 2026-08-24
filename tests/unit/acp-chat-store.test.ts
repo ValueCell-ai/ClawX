@@ -696,7 +696,7 @@ describe('ACP Chat store', () => {
     now.mockRestore();
   });
 
-  it('keeps an in-flight timeline updated while another session is active and restores it on return', async () => {
+  it('keeps an in-flight timeline and running timing while another session is active', async () => {
     const prompt = createDeferred<{ success: boolean; generation: number }>();
     hostApiMock.loadAcpSession
       .mockResolvedValueOnce({ success: true, generation: 1 })
@@ -709,6 +709,7 @@ describe('ACP Chat store', () => {
     await useAcpChatSessionStore.getState().loadSession({
       sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
     });
+    expect(hostApiMock.sessionTurnTimings).toHaveBeenCalledTimes(1);
     const sendPrompt = useAcpChatSessionStore.getState().sendPrompt({
       sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'keep streaming', messageId: 'msg-user',
     });
@@ -728,9 +729,18 @@ describe('ACP Chat store', () => {
       },
     });
 
+    hostApiMock.sessionTurnTimings.mockResolvedValue({
+      success: true,
+      timings: [{
+        normalizedUserText: 'keep streaming',
+        userOccurrenceFromTail: 1,
+        durationMs: 5_000,
+      }],
+    });
     await useAcpChatSessionStore.getState().loadSession({
       sessionKey: 'agent:pi:s2', workspaceRoot: '/repo', cwd: '/repo',
     });
+    expect(hostApiMock.sessionTurnTimings).toHaveBeenCalledTimes(2);
     hostEventsMock.updateListener?.({
       sessionKey: 'agent:pi:s1',
       generation: 1,
@@ -752,6 +762,10 @@ describe('ACP Chat store', () => {
       generation: 1,
       sending: true,
     });
+    expect(useAcpChatSessionStore.getState().turnTimingsByUserMessageId['msg-user'])
+      .toEqual(timingBeforeNavigation);
+    await Promise.resolve();
+    expect(hostApiMock.sessionTurnTimings).toHaveBeenCalledTimes(2);
     expect(useAcpChatSessionStore.getState().turnTimingsByUserMessageId['msg-user'])
       .toEqual(timingBeforeNavigation);
     expect(useAcpChatSessionStore.getState().timeline.itemsById['msg-assistant:0']).toMatchObject({
