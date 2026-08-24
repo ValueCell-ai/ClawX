@@ -8,6 +8,7 @@ import { expandPath, getOpenClawConfigDir } from './paths';
 import * as logger from './logger';
 import { toUiChannelType } from './channel-alias';
 import { ensureClawXIdentityFile } from './openclaw-workspace';
+import { applyModelAwareCompactionReserveTokensFloor } from './openclaw-compaction';
 
 const MAIN_AGENT_ID = 'main';
 const MAIN_AGENT_NAME = 'Main Agent';
@@ -766,6 +767,10 @@ export async function updateAgentModel(agentId: string, modelRef: string | null)
       ...agentsConfig,
       list: entries,
     };
+    applyModelAwareCompactionReserveTokensFloor(
+      config,
+      resolveModelRef(nextEntry.model) ?? resolveModelRef(agentsConfig.defaults?.model),
+    );
 
     snapshot = await buildSnapshotFromConfig(config);
   });

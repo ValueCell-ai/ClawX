@@ -37,6 +37,9 @@ export type OpenClawStatusResult = {
   version?: string;
 };
 export type OpenClawCliCommandResult = HostSuccess & { command?: string };
+export type OpenClawCompactionReserveResult = {
+  reserveTokensFloor?: number;
+};
 
 export type ShellPathPayload = { path: string };
 export type ShellOpenExternalPayload = { url: string };
@@ -844,6 +847,7 @@ export type HostApiContract = {
     status: () => OpenClawStatusResult;
     getSkillsDir: () => string;
     getCliCommand: () => OpenClawCliCommandResult;
+    getCompactionReserve: () => OpenClawCompactionReserveResult;
   };
   shell: {
     openExternal: (payload: ShellOpenExternalPayload) => void;

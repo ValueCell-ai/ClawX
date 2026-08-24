@@ -185,6 +185,34 @@ describe('agent config lifecycle', () => {
     });
   });
 
+  it('updates the global compaction reserve floor for the selected model', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          openai: {
+            models: [{ id: 'gpt-5.6-luna', contextWindow: 272_000 }],
+          },
+        },
+      },
+      agents: {
+        defaults: {
+          compaction: { mode: 'safeguard', reserveTokensFloor: 50_000 },
+        },
+        list: [
+          { id: 'main', name: 'Main', default: true },
+          { id: 'coder', name: 'Coder' },
+        ],
+      },
+    });
+
+    const { updateAgentModel } = await import('@electron/utils/agent-config');
+    await updateAgentModel('coder', 'openai/gpt-5.6-luna');
+
+    const config = await readOpenClawJson();
+    const defaults = (config.agents as { defaults: { compaction: unknown } }).defaults;
+    expect(defaults.compaction).toEqual({ mode: 'safeguard', reserveTokensFloor: 68_000 });
+  });
+
   it('mutates the running coordinator snapshot instead of replacing it from the local file', async () => {
     await writeOpenClawJson({ localOnly: true });
     let runningConfig: Record<string, unknown> = {

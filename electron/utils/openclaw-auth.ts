@@ -45,6 +45,7 @@ import {
   normalizeOpenClawApiProtocol,
 } from '../shared/providers/types';
 import { inferCustomModelContextWindow, inferCustomModelInputModalities } from '../shared/providers/model-capabilities';
+import { applyModelAwareCompactionReserveTokensFloor } from './openclaw-compaction';
 import {
   CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
@@ -532,7 +533,7 @@ async function discoverAgentIds(): Promise<string[]> {
 
 const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
 const VALID_COMPACTION_MODES = new Set(['default', 'safeguard']);
-/** Matches OpenClaw's 200k+ context-window recommendation (see computeContextAwareReserveTokensFloor). */
+/** Fallback for configurations whose selected model has no known context window. */
 const DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR = 50_000;
 // OpenClaw 2026.7.1 bundles these channel extensions. Discord, WhatsApp,
 // QQBot, and the remaining catalog channels are external plugins and their
@@ -850,7 +851,8 @@ function normalizeAgentsDefaultsCompactionMode(config: Record<string, unknown>):
 /**
  * Seed `agents.defaults.compaction.mode = "safeguard"` when the user has no
  * compaction config at all, so long sessions are compacted before they hit the
- * provider's context limit. Never touches an existing compaction object.
+ * provider's context limit. The model-aware reserve floor is applied separately
+ * once the selected model's context window is known.
  */
 function ensureCompactionSafeguardDefault(config: Record<string, unknown>): boolean {
   const agents = (config.agents && typeof config.agents === 'object'
@@ -914,6 +916,22 @@ function backfillCompactionSafetyDefaults(config: Record<string, unknown>): bool
   agents.defaults = defaults;
   config.agents = agents;
   return true;
+}
+
+function getDefaultModelRef(config: Record<string, unknown>): string | undefined {
+  const agents = config.agents;
+  const defaults = agents && typeof agents === 'object'
+    ? (agents as Record<string, unknown>).defaults
+    : undefined;
+  const model = defaults && typeof defaults === 'object'
+    ? (defaults as Record<string, unknown>).model
+    : undefined;
+  if (typeof model === 'string' && model.trim()) return model.trim();
+  if (model && typeof model === 'object') {
+    const primary = (model as Record<string, unknown>).primary;
+    if (typeof primary === 'string' && primary.trim()) return primary.trim();
+  }
+  return undefined;
 }
 
 /**
@@ -2715,6 +2733,10 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     } else if (backfillCompactionSafetyDefaults(config)) {
       modified = true;
       compactionLog = '[batch-sync] Backfilled missing agents.defaults.compaction safety defaults';
+    }
+    if (applyModelAwareCompactionReserveTokensFloor(config, getDefaultModelRef(config))) {
+      modified = true;
+      compactionLog = '[batch-sync] Applied agents.defaults.compaction.reserveTokensFloor from the active model context window';
     }
 
     // ── Memory search default ──

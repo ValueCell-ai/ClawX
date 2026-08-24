@@ -15,6 +15,7 @@ import type {
   FileReadBinaryOptions,
   ImageGenerationSettingsPayload,
   MediaThumbnailEntry,
+  OpenClawCompactionReserveResult,
   OpenClawDoctorMode,
   OpenClawDoctorResult,
   OpenAttachmentWithPayload,
@@ -82,6 +83,7 @@ export type {
   LogContentResult,
   LogDirResult,
   OpenClawCliCommandResult,
+  OpenClawCompactionReserveResult,
   OpenClawDoctorResult,
   OpenClawStatusResult,
   OpenAttachmentResult,
@@ -118,6 +120,9 @@ export const hostApi = {
     status: () => invokeHost('openclaw', 'status'),
     getSkillsDir: () => invokeHost('openclaw', 'getSkillsDir'),
     getCliCommand: () => invokeHost('openclaw', 'getCliCommand'),
+    getCompactionReserve: () => (
+      invokeHost('openclaw', 'getCompactionReserve') as Promise<OpenClawCompactionReserveResult>
+    ),
   },
   shell: {
     openExternal: (url: string) => invokeHost('shell', 'openExternal', { url } satisfies ShellOpenExternalPayload),

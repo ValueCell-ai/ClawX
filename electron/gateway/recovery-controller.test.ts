@@ -110,6 +110,51 @@ describe('GatewayRecoveryController', () => {
     controller.stop();
   });
 
+  it('defers owned-process escalation during compaction and resumes it when compaction ends', async () => {
+    let compactionActive = true;
+    const {
+      controller,
+      requestOwnedProcessEscalation,
+    } = createController({
+      isCompactionActive: () => compactionActive,
+      requestDeadlineProbe: vi.fn().mockRejectedValue(new Error('system-presence timed out')),
+    });
+
+    controller.start();
+    await vi.advanceTimersByTimeAsync(GATEWAY_LIVENESS_DEADLINE_MS);
+
+    expect(requestOwnedProcessEscalation).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().state).toBe('restart-pending');
+
+    compactionActive = false;
+    controller.resumeDeferredEscalation();
+
+    expect(requestOwnedProcessEscalation).toHaveBeenCalledWith('deadline-probe-timeout');
+    expect(controller.getSnapshot().state).toBe('restart-executing');
+    controller.stop();
+  });
+
+  it('cancels a deferred escalation when trusted liveness returns during compaction', async () => {
+    let compactionActive = true;
+    const {
+      controller,
+      requestOwnedProcessEscalation,
+    } = createController({
+      isCompactionActive: () => compactionActive,
+      requestDeadlineProbe: vi.fn().mockRejectedValue(new Error('system-presence timed out')),
+    });
+
+    controller.start();
+    await vi.advanceTimersByTimeAsync(GATEWAY_LIVENESS_DEADLINE_MS);
+    controller.recordAlive();
+    compactionActive = false;
+    controller.resumeDeferredEscalation();
+
+    expect(requestOwnedProcessEscalation).not.toHaveBeenCalled();
+    expect(controller.getSnapshot().state).toBe('healthy');
+    controller.stop();
+  });
+
   it('categorizes token-bearing probe errors without exposing them in diagnostics or callbacks', async () => {
     const secret = 'sk-live-very-secret-token-value';
     const {

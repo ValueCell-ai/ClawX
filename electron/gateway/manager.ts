@@ -46,6 +46,7 @@ import {
   warmupManagedPythonReadiness,
 } from './supervisor';
 import { GatewayConnectionMonitor } from './connection-monitor';
+import { GatewayCompactionActivity } from './compaction-activity';
 import { GatewayLifecycleController, LifecycleSupersededError } from './lifecycle-controller';
 import { launchGatewayProcess } from './process-launcher';
 import { GatewayRestartController } from './restart-controller';
@@ -204,6 +205,7 @@ export class GatewayManager extends EventEmitter {
   private readonly restartController = new GatewayRestartController();
   private readonly restartGovernor = new GatewayRestartGovernor();
   private readonly recoveryController: GatewayRecoveryController;
+  private readonly compactionActivity: GatewayCompactionActivity;
   private deadlineEscalationTimer: NodeJS.Timeout | null = null;
   private deadlineEscalationPending = false;
   private deadlineProbeInFlight = false;
@@ -226,8 +228,12 @@ export class GatewayManager extends EventEmitter {
 
   constructor(config?: Partial<ReconnectConfig>) {
     super();
+    this.compactionActivity = new GatewayCompactionActivity((active) => {
+      if (!active) this.recoveryController.resumeDeferredEscalation();
+    });
     this.recoveryController = new GatewayRecoveryController({
       isExternallyManaged: () => !this.ownsProcess,
+      isCompactionActive: () => this.compactionActivity.isActive(),
       requestDeadlineProbe: async () => await this.probeRecoveryDeadline(),
       requestOwnedProcessEscalation: (reason) => this.requestOwnedProcessRecovery(reason),
       requestExternalTransportReconnect: (reason) => this.requestExternalTransportReconnect(reason),
@@ -988,6 +994,7 @@ export class GatewayManager extends EventEmitter {
       getCurrentState: () => this.status.state,
       getShouldReconnect: () => this.shouldReconnect,
       onStderrLine: (line) => {
+        this.compactionActivity.recordStderrLine(line);
         recordGatewayStartupStderrLine(this.recentStartupStderrLines, line);
         const traceStage = this.startupTraceCollector.record(line);
         const classified = classifyGatewayStderrMessage(line);
@@ -1031,6 +1038,7 @@ export class GatewayManager extends EventEmitter {
         this.processExitCode = code;
         this.ownsProcess = false;
         this.connectionMonitor.clear();
+        this.compactionActivity.reset();
         this.cancelDeadlineRecovery();
         if (this.process === exitedChild) {
           this.process = null;

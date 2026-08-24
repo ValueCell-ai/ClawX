@@ -3,6 +3,9 @@ export const GATEWAY_HEARTBEAT_TIMEOUT_MS = 30_000;
 export const GATEWAY_HEARTBEAT_MAX_MISSES = 4;
 export const GATEWAY_LIVENESS_DEADLINE_MS = 180_000;
 export const GATEWAY_CONTROL_PROBE_TIMEOUT_MS = 5_000;
+// OpenClaw emits compaction lifecycle diagnostics. A missing end diagnostic
+// must not suppress a real Gateway recovery indefinitely.
+export const GATEWAY_COMPACTION_RECOVERY_GRACE_MS = 5 * 60_000;
 export const GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS = [1_500, 3_000, 5_000, 8_000, 12_000, 30_000] as const;
 
 const MANAGED_GATEWAY_BOOTSTRAP_ALLOWANCE_MS = GATEWAY_LIVENESS_DEADLINE_MS;

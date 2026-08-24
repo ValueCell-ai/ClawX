@@ -2710,7 +2710,10 @@ describe('batchSyncConfigFields', () => {
   });
 
   it('seeds compaction safeguard default when compaction is unset', async () => {
-    await writeOpenClawJson({ gateway: { auth: { mode: 'token', token: 'old' } } });
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      agents: { defaults: { model: { primary: 'openai/gpt-5.6-luna' } } },
+    });
 
     const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
     await batchSyncConfigFields('new-token');
@@ -2719,7 +2722,7 @@ describe('batchSyncConfigFields', () => {
     const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
     expect(defaults.compaction).toEqual({
       mode: 'safeguard',
-      reserveTokensFloor: 50_000,
+      reserveTokensFloor: 68_000,
       midTurnPrecheck: { enabled: true },
     });
   });
@@ -2751,6 +2754,7 @@ describe('batchSyncConfigFields', () => {
       gateway: { auth: { mode: 'token', token: 'old' } },
       agents: {
         defaults: {
+          model: { primary: 'openai/gpt-5.6-luna' },
           compaction: { mode: 'safeguard' },
         },
       },
@@ -2763,7 +2767,7 @@ describe('batchSyncConfigFields', () => {
     const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
     expect(defaults.compaction).toEqual({
       mode: 'safeguard',
-      reserveTokensFloor: 50_000,
+      reserveTokensFloor: 68_000,
       midTurnPrecheck: { enabled: true },
     });
   });
@@ -2778,6 +2782,7 @@ describe('batchSyncConfigFields', () => {
             reserveTokensFloor: 30000,
             midTurnPrecheck: { enabled: false },
           },
+          model: { primary: 'openai/gpt-5.6-luna' },
         },
       },
     });
@@ -2789,7 +2794,7 @@ describe('batchSyncConfigFields', () => {
     const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
     expect(defaults.compaction).toEqual({
       mode: 'default',
-      reserveTokensFloor: 30000,
+      reserveTokensFloor: 68_000,
       midTurnPrecheck: { enabled: false },
     });
   });

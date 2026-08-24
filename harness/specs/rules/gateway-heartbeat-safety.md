@@ -13,7 +13,7 @@ requiredTests:
 
 WebSocket heartbeat misses are diagnostic availability evidence only. A missed pong must never directly terminate a socket, kill a process, or request `GatewayManager.restart`, regardless of how many pongs are missed.
 
-Trusted liveness evidence is a pong, any incoming Gateway frame, or a successful Gateway RPC. Each signal resets the 180 seconds no-liveness deadline and cancels stale verification work. No chat, tool, cron, or workload tracking changes that deadline.
+Trusted liveness evidence is a pong, any incoming Gateway frame, or a successful Gateway RPC. Each signal resets the 180 seconds no-liveness deadline and cancels stale verification work. No chat, tool, cron, or workload tracking changes that deadline. An observed OpenClaw `[compaction-diag] start` may defer only owned-process escalation after a failed verification; it must not postpone the deadline or probe, and the deferral must end on `[compaction-diag] end` or a bounded timeout.
 
 Only after 180 seconds without trusted liveness may Main run one `system-presence` core-RPC verification with a 5000ms timeout for that silence generation. A successful probe records liveness and cancels recovery without reconnecting or restarting.
 

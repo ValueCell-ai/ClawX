@@ -20,6 +20,7 @@ export interface GatewayRecoverySnapshot {
 
 export interface GatewayRecoveryControllerOptions {
   isExternallyManaged: () => boolean;
+  isCompactionActive?: () => boolean;
   requestDeadlineProbe: () => Promise<void>;
   requestOwnedProcessEscalation: (reason: string) => void | Promise<void>;
   requestExternalTransportReconnect: (reason: string) => void | Promise<void>;
@@ -47,6 +48,7 @@ export class GatewayRecoveryController {
   private lastDeadlineProbeResult: 'succeeded' | 'failed' | undefined;
   private lastDeadlineProbeError: string | undefined;
   private escalationReason: string | undefined;
+  private deferredEscalationReason: string | undefined;
 
   constructor(private readonly options: GatewayRecoveryControllerOptions) {}
 
@@ -58,6 +60,7 @@ export class GatewayRecoveryController {
     this.cancelDeadline();
     this.generation += 1;
     this.state = 'healthy';
+    this.deferredEscalationReason = undefined;
     this.lastAliveAt = aliveAt;
     this.deadlineAt = aliveAt + GATEWAY_LIVENESS_DEADLINE_MS;
     this.escalationReason = undefined;
@@ -70,6 +73,15 @@ export class GatewayRecoveryController {
     this.state = 'healthy';
     this.deadlineAt = undefined;
     this.escalationReason = undefined;
+    this.deferredEscalationReason = undefined;
+  }
+
+  resumeDeferredEscalation(): void {
+    const reason = this.deferredEscalationReason;
+    if (!reason || this.options.isCompactionActive?.()) return;
+    this.deferredEscalationReason = undefined;
+    this.state = 'restart-executing';
+    this.requestCallback(this.options.requestOwnedProcessEscalation(reason));
   }
 
   getSnapshot(): GatewayRecoverySnapshot {
@@ -135,6 +147,10 @@ export class GatewayRecoveryController {
     }
 
     this.state = 'restart-pending';
+    if (this.options.isCompactionActive?.()) {
+      this.deferredEscalationReason = reason;
+      return;
+    }
     this.state = 'restart-executing';
     this.requestCallback(this.options.requestOwnedProcessEscalation(reason));
   }

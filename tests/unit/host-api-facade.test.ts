@@ -35,6 +35,23 @@ describe('hostApi facade', () => {
     await expect(hostApi.settings.getAll()).rejects.toThrow('disk failed');
   });
 
+  it('reads the applied compaction reserve through the typed OpenClaw route', async () => {
+    hostInvoke.mockResolvedValueOnce({
+      id: 'req',
+      ok: true,
+      data: { reserveTokensFloor: 68_000 },
+    });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await expect(hostApi.openclaw.getCompactionReserve()).resolves.toEqual({
+      reserveTokensFloor: 68_000,
+    });
+    expect(hostInvoke).toHaveBeenCalledWith(expect.objectContaining({
+      module: 'openclaw',
+      action: 'getCompactionReserve',
+    }));
+  });
+
   it('calls settings.setMany and reset through hostInvoke', async () => {
     hostInvoke
       .mockResolvedValueOnce({ id: 'req-1', ok: true, data: { success: true } })

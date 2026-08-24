@@ -162,13 +162,26 @@ export function inferCustomModelContextWindow(
   modelId: string,
   context: ModelCapabilityContext = {},
 ): number {
+  return inferKnownModelContextWindow(modelId, context)
+    ?? Math.min(DEFAULT_CUSTOM_MODEL_CONTEXT_WINDOW, resolveContextWindowCeiling(context));
+}
+
+/**
+ * Returns a vendor-backed context window without inventing a fallback for an
+ * unknown model. Config migrations use this to avoid replacing a known value
+ * with a guess.
+ */
+export function inferKnownModelContextWindow(
+  modelId: string,
+  context: ModelCapabilityContext = {},
+): number | undefined {
   const ceiling = resolveContextWindowCeiling(context);
 
   for (const rule of CONTEXT_WINDOW_RULES) {
     if (matchesModelId(rule.pattern, modelId)) return Math.min(rule.contextWindow, ceiling);
   }
 
-  return Math.min(DEFAULT_CUSTOM_MODEL_CONTEXT_WINDOW, ceiling);
+  return undefined;
 }
 
 const VISION_MODEL_PATTERNS: RegExp[] = [

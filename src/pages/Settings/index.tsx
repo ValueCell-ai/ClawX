@@ -25,7 +25,11 @@ import {
 } from '@/lib/telemetry';
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_LANGUAGES } from '@/i18n';
-import { hostApi, type OpenClawDoctorResult } from '@/lib/host-api';
+import {
+  hostApi,
+  type OpenClawCompactionReserveResult,
+  type OpenClawDoctorResult,
+} from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
 import { cn } from '@/lib/utils';
 type ControlUiInfo = {
@@ -86,6 +90,7 @@ export function Settings() {
   const [logContent, setLogContent] = useState('');
   const [doctorRunningMode, setDoctorRunningMode] = useState<'diagnose' | 'fix' | null>(null);
   const [doctorResult, setDoctorResult] = useState<OpenClawDoctorResult | null>(null);
+  const [compactionReserve, setCompactionReserve] = useState<OpenClawCompactionReserveResult | null>(null);
 
   const handleShowLogs = async () => {
     try {
@@ -209,6 +214,24 @@ export function Settings() {
       cancelled = true;
     };
   }, [devModeUnlocked, showCliTools]);
+
+  useEffect(() => {
+    if (!devModeUnlocked) {
+      setCompactionReserve(null);
+      return;
+    }
+    let cancelled = false;
+    void hostApi.openclaw.getCompactionReserve()
+      .then((result) => {
+        if (!cancelled) setCompactionReserve(result);
+      })
+      .catch(() => {
+        if (!cancelled) setCompactionReserve(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [devModeUnlocked]);
 
   const handleCopyCliCommand = async () => {
     if (!openclawCliCommand) return;
@@ -781,6 +804,17 @@ export function Settings() {
                         {t('common:actions.copy')}
                       </Button>
                     </div>
+                  </div>
+
+                  <div className="space-y-2" data-testid="settings-developer-compaction-reserve">
+                    <Label className="text-sm font-medium text-foreground/80">{t('developer.compactionReserve')}</Label>
+                    <p className="text-meta text-muted-foreground">{t('developer.compactionReserveDesc')}</p>
+                    <Input
+                      readOnly
+                      value={compactionReserve?.reserveTokensFloor?.toLocaleString() || ''}
+                      placeholder={t('developer.compactionReserveUnavailable')}
+                      className="font-mono text-meta h-10 rounded-xl bg-surface-input border-transparent"
+                    />
                   </div>
 
                   {showCliTools && (
