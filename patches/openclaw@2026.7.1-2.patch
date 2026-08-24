@@ -2,8 +2,15 @@ diff --git a/dist/acp-cli-BXc5GttU.js b/dist/acp-cli-BXc5GttU.js
 index 6c7de7d60ac87a733632c36a744ada0e4e48d077..62797972ce78076c545d712809d99f4a13f8e0ee 100644
 --- a/dist/acp-cli-BXc5GttU.js
 +++ b/dist/acp-cli-BXc5GttU.js
-@@ -1622,8 +1622,25 @@ function buildSessionUsageSnapshot(row) {
+@@ -1622,8 +1622,32 @@ function buildSessionUsageSnapshot(row) {
  }
++function resolveAcpTextDelta(previousText, nextText) {
++	if (!nextText || nextText === previousText) return "";
++	if (!previousText) return nextText;
++	if (nextText.startsWith(previousText)) return nextText.slice(previousText.length);
++	if (previousText.startsWith(nextText)) return "";
++	return nextText;
++}
  //#endregion
  //#region src/acp/translator.replay.ts
 +function extractToolResultReplay(message) {
@@ -137,6 +144,18 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..62797972ce78076c545d712809d99f4a
  		if (!pending) return;
  		if (messageData && (state === "delta" || state === "final")) {
  			await this.handleDeltaEvent(pending.sessionId, messageData);
+@@ -2555,3 +2602,2 @@ var AcpGatewayAgent = class {
+-		const sentThoughtSoFar = pending.sentThoughtLength ?? 0;
+-		if (fullThought && fullThought.length > sentThoughtSoFar) {
+-			const newThought = fullThought.slice(sentThoughtSoFar);
++		const newThought = resolveAcpTextDelta(pending.sentThought ?? "", fullThought);
++		if (newThought) {
+@@ -2576,3 +2622,2 @@ var AcpGatewayAgent = class {
+-		const sentSoFar = pending.sentTextLength ?? 0;
+-		if (!fullText || fullText.length <= sentSoFar) return;
+-		const newText = fullText.slice(sentSoFar);
++		const newText = resolveAcpTextDelta(pending.sentText ?? "", fullText);
++		if (!newText) return;
 @@ -2619,18 +2659,55 @@ var AcpGatewayAgent = class {
  			this.settlingPromptKeys.delete(promptKey);
  		}

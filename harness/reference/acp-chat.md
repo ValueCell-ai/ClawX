@@ -67,7 +67,9 @@ type MessageSegmentItem = {
 };
 ```
 
-The reducer preserves first-seen ACP order and patches existing items in place. Interleaving a process block with assistant text closes the current segment; later text for that message creates another segment. Replay and live updates use the same reducer path. Optimistic user segments are allowed and are coalesced with the ACP user echo.
+The reducer preserves first-seen ACP order and patches existing items in place. Interleaving a process block with assistant text closes the current segment; later text for that message creates another segment. Gateway assistant updates may be complete snapshots or non-prefix chunks. The OpenClaw ACP bridge emits only the unseen suffix of a strict extension, ignores an identical or stale prefix, and emits a non-prefix update in full so a shorter trailing fragment is not dropped and a new segment is not sliced by stale character count. Replay and live updates use the same reducer path. Optimistic user segments are allowed and are coalesced with the ACP user echo.
+
+This prefix comparison is a compatibility heuristic in the patched `openclaw@2026.7.1-2` ACP adapter, not a formally correct stream algorithm. Gateway protocol v4 already defines `message` as the cumulative assistant snapshot, `deltaText` as the incremental operation, and `replace=true` as a full-content replacement. The pinned ACP adapter does not consume those fields and its append-only update path has no stable live message identity for an in-place replacement. Text alone cannot distinguish a snapshot from an independent chunk that happens to repeat, extend, or shorten earlier text, so the heuristic can misclassify valid output. Treat it only as a loss-avoidance workaround until the adapter consumes `deltaText` and `replace` and exposes explicit replacement semantics.
 
 UI-only state such as card expansion, scroll position, selected artifact, composer draft, copy feedback, and lightbox state stays outside the reducer.
 
