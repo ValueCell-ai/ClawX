@@ -85,7 +85,7 @@ export const DEFAULT_CUSTOM_MODEL_CONTEXT_WINDOW = 200_000;
  * Ceiling for locally hosted runtimes (Ollama and friends). A local `qwen3`
  * tag is a quantised small model, not the hosted flagship of the same name, so
  * family rules must not hand it a frontier-sized window. Kept at 128K because
- * ClawX seeds `compaction.reserveTokensFloor = 50000` — dropping the ceiling
+ * ClawX seeds `compaction.reserveTokensFloor = 80000` — dropping the ceiling
  * near or below that floor leaves the runner no usable budget.
  */
 export const LOCAL_MODEL_CONTEXT_WINDOW = 131_072;

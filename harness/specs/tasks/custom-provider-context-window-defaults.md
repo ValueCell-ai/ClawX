@@ -3,14 +3,19 @@ id: custom-provider-context-window-defaults
 title: Explicit contextWindow defaults and compaction safeguard for custom providers
 scenario: gateway-backend-communication
 taskType: runtime-bridge
-intent: Give custom-provider model rows an explicit contextWindow (inferred by model family) and seed agents.defaults.compaction.mode=safeguard with reserveTokensFloor=50000 so OpenClaw can compact long sessions before they fail with "Context overflow: prompt too large for the model".
+intent: Give custom-provider model rows an explicit contextWindow (inferred by model family), seed agents.defaults.compaction.mode=safeguard with reserveTokensFloor=80000 and midTurnPrecheck.enabled=true, and migrate the prior ClawX compaction defaults so OpenClaw can recover before long or tool-heavy sessions exceed the context window.
 touchedAreas:
   - harness/specs/tasks/custom-provider-context-window-defaults.md
+  - harness/specs/rules/active-config-guards.md
   - harness/specs/rules/provider-model-metadata-preservation.md
   - electron/shared/providers/model-capabilities.ts
   - electron/utils/openclaw-auth.ts
   - tests/unit/provider-model-capabilities.test.ts
   - tests/unit/openclaw-auth.test.ts
+  - docs/en-US/features.md
+  - docs/zh-CN/features.md
+  - docs/ja-JP/features.md
+  - docs/ru-RU/features.md
   - README.md
   - README.zh-CN.md
   - README.ja-JP.md
@@ -18,7 +23,8 @@ expectedUserBehavior:
   - Saving or updating a custom provider writes model rows that include an inferred contextWindow, so OpenClaw's preemptive compaction and context-window guard are active for custom models.
   - Existing custom provider model rows that already carry contextWindow or contextTokens are never modified.
   - On app start, custom-provider model rows missing both contextWindow and contextTokens are backfilled with an inferred contextWindow, and agents.defaults.compaction is seeded to safeguard mode when the user has no compaction config.
-  - Long sessions on custom providers are compacted before overflowing instead of surfacing "Context overflow" errors.
+  - Existing installs using ClawX's previous safeguard defaults are upgraded from reserveTokensFloor=50000 to 80000 and receive midTurnPrecheck.enabled=true; explicit non-default values remain unchanged.
+  - Long and tool-heavy sessions on custom providers are compacted before overflowing instead of surfacing "Context overflow" errors.
 requiredProfiles:
   - fast
   - comms
@@ -33,7 +39,8 @@ requiredTests:
 acceptance:
   - New custom-provider model rows written by explicit provider sync include an inferred contextWindow matching the model-family table in model-capabilities.
   - The startup batch sync backfills contextWindow only on models.providers.custom-* rows lacking both contextWindow and contextTokens; registry and non-custom providers are never touched.
-  - agents.defaults.compaction is seeded to { mode: "safeguard", reserveTokensFloor: 50000 } only when no compaction config exists; explicit compaction config is preserved verbatim except missing reserveTokensFloor may be backfilled.
+  - agents.defaults.compaction is seeded to { mode: "safeguard", reserveTokensFloor: 80000, midTurnPrecheck: { enabled: true } } only when no compaction config exists.
+  - The previous ClawX-managed safeguard default (reserveTokensFloor=50000 with no midTurnPrecheck setting) is migrated to the new values on upgrade; missing fields may be backfilled, while explicit reserveTokensFloor values other than the previous default and explicit midTurnPrecheck.enabled values are preserved.
   - Renderer transport boundaries remain unchanged.
   - Focused tests, harness validation, communication replay, and communication compare pass.
 docs:
@@ -58,9 +65,12 @@ for the model. Try /reset (or /new) ...". Users also had no
   rows during the startup batch config sync.
 - Seed `agents.defaults.compaction.mode = "safeguard"` when the user has no
   compaction config.
-- Seed `agents.defaults.compaction.reserveTokensFloor = 50000` alongside
-  safeguard mode (and backfill when an existing compaction config lacks a floor)
-  so auto-compaction has enough buffer for 200k+ context models.
+- Seed `agents.defaults.compaction.reserveTokensFloor = 80000` and
+  `midTurnPrecheck.enabled = true` alongside safeguard mode so auto-compaction
+  has enough buffer for 200k+ context models and can recover from context
+  pressure introduced by tool results.
+- Migrate the previous ClawX-managed 50000-token safeguard default on upgrade,
+  backfill missing fields, and preserve explicit user overrides.
 - Add regression tests and translated documentation.
 
 ## Out Of Scope
