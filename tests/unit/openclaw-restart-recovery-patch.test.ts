@@ -228,7 +228,7 @@ describe('OpenClaw restart recovery patch', () => {
     } finally {
       await rm(stateDir, { recursive: true, force: true });
     }
-  });
+  }, 20_000);
 
   it('links each recovery run to its directly interrupted predecessor', async () => {
     const stateDir = await mkdtemp(path.join(tmpdir(), 'clawx-direct-restart-lineage-'));

@@ -7,6 +7,7 @@ import { getOpenClawConfigDir } from '../utils/paths';
 import { buildGatewayHealthSummary } from '../utils/gateway-health';
 import { buildChannelAccountsView, getChannelStatusDiagnostics } from './channels-api';
 import { getAcpTraceSnapshot, recordRendererAcpTrace } from './acp-trace';
+import { exportIssueReport } from './issue-report-api';
 
 const DEFAULT_TAIL_LINES = 200;
 
@@ -101,5 +102,6 @@ export function createDiagnosticsApi(ctx: DiagnosticsApiContext): CompleteHostSe
     },
     acpTrace: async () => getAcpTraceSnapshot(),
     recordAcpTrace: async (payload) => recordRendererAcpTrace(payload),
+    exportIssueReport: async (payload) => exportIssueReport(payload),
   };
 }

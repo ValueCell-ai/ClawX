@@ -50,6 +50,7 @@ requiredRules:
   - api-client-transport-policy
   - host-api-fallback-policy
   - host-events-fallback-policy
+  - issue-report-export-safety
   - gateway-readiness-policy
   - gateway-heartbeat-safety
   - channel-plugin-migration-guards

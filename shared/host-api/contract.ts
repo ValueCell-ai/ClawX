@@ -313,6 +313,12 @@ export type DiagnosticsGatewaySnapshotResult = {
   gatewayLogTail: string;
   gatewayErrLogTail: string;
 };
+export type IssueReportExportPayload = { sessionKeys: string[] };
+export type IssueReportExportResult = HostSuccess & {
+  path?: string;
+  includedFiles?: string[];
+  skippedSessionKeys?: string[];
+};
 
 export type ProviderType =
   | 'anthropic'
@@ -935,6 +941,7 @@ export type HostApiContract = {
     gatewaySnapshot: () => DiagnosticsGatewaySnapshotResult;
     acpTrace: () => AcpTraceSnapshot;
     recordAcpTrace: (payload: AcpTraceRecordPayload) => HostSuccess;
+    exportIssueReport: (payload: IssueReportExportPayload) => IssueReportExportResult;
   };
   providers: {
     list: () => ProviderWithKeyInfo[];

@@ -14,6 +14,7 @@ import type {
   FilePreviewTreeOptions,
   FileReadBinaryOptions,
   ImageGenerationSettingsPayload,
+  IssueReportExportPayload,
   MediaThumbnailEntry,
   OpenClawCompactionReserveResult,
   OpenClawDoctorMode,
@@ -79,6 +80,7 @@ export type {
   GatewayRecoveryState,
   ImageGenerationProvidersResult,
   ImageGenerationSettingsResult,
+  IssueReportExportResult,
   LocalSkillsResult,
   LogContentResult,
   LogDirResult,
@@ -244,6 +246,9 @@ export const hostApi = {
     gatewaySnapshot: () => invokeHost('diagnostics', 'gatewaySnapshot'),
     acpTrace: () => invokeHost('diagnostics', 'acpTrace'),
     recordAcpTrace: (input: AcpTraceRecordPayload) => invokeHost('diagnostics', 'recordAcpTrace', input),
+    exportIssueReport: (input: IssueReportExportPayload) => (
+      invokeHost('diagnostics', 'exportIssueReport', input)
+    ),
   },
   providers: {
     list: () => invokeHost('providers', 'list'),

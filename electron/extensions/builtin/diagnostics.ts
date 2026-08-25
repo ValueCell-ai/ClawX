@@ -21,6 +21,9 @@ class DiagnosticsExtension implements HostApiProviderExtension {
       recordAcpTrace: (payload) => diagnostics.recordAcpTrace(
         payload as Parameters<typeof diagnostics.recordAcpTrace>[0],
       ),
+      exportIssueReport: (payload) => diagnostics.exportIssueReport(
+        payload as Parameters<typeof diagnostics.exportIssueReport>[0],
+      ),
     };
     return [{
       module: 'diagnostics',

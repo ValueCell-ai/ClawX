@@ -261,6 +261,48 @@
     "installMessage": "\"openclaw\" コマンドをインストールしますか？",
     "installDetail": "~/.local/bin/openclaw が作成されます。グローバルに実行するには ~/.local/bin が PATH に含まれていることを確認してください。"
   },
+  "support": {
+    "title": "サポート"
+  },
+  "issueReport": {
+    "actionTitle": "問題調査レポートをエクスポート",
+    "actionDescription": "トラブルシューティングとサポート用の診断 ZIP をデスクトップに作成します。",
+    "open": "会話を選択",
+    "dialogTitle": "問題調査レポートをエクスポート",
+    "dialogDescription": "含まれる内容を確認し、1つ以上の会話を選択してください。ZIP はデスクトップに保存されます。",
+    "contentsTitle": "ZIP に含まれる内容",
+    "contents": {
+      "transcripts": {
+        "title": "会話トランスクリプト",
+        "description": "選択した各会話の完全な JSONL ファイル。"
+      },
+      "config": {
+        "title": "OpenClaw 設定",
+        "description": "認証情報を除去した openclaw.json のコピー。"
+      },
+      "logs": {
+        "title": "診断ログ",
+        "description": "利用可能な ClawX と OpenClaw のログ。"
+      },
+      "manifest": {
+        "title": "マニフェスト",
+        "description": "含まれるファイルと取得できなかったファイルの一覧。"
+      }
+    },
+    "sessionsTitle": "会話を選択",
+    "selectAll": "すべて選択（{{count}}）",
+    "selectedCount": "{{count}} 件の会話を選択中",
+    "noSessions": "エクスポートできる会話がありません。",
+    "export": "ZIP を作成（{{count}}）",
+    "exporting": "ZIP を作成中...",
+    "exportSucceeded": "問題調査レポートをエクスポートしました",
+    "skippedSessions": "ローカル記録を利用できない {{count}} 件の会話をスキップし、残りの選択した会話をエクスポートしました。",
+    "exportFailed": "問題調査レポートをエクスポートできませんでした",
+    "completeTitle": "問題調査レポートの準備ができました",
+    "completeDescription": "ZIP は以下のパスに保存されました。",
+    "showInFolder": "フォルダーに表示",
+    "revealFailed": "問題調査レポートをフォルダーに表示できませんでした"
+  },
   "about": {
     "title": "バージョン情報",
     "appName": "ClawX",

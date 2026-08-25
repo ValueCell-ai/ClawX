@@ -261,6 +261,49 @@
     "installMessage": "Install the \"openclaw\" command?",
     "installDetail": "This will create ~/.local/bin/openclaw. Ensure ~/.local/bin is on your PATH if you want to run it globally."
   },
+  "support": {
+    "title": "Support"
+  },
+  "issueReport": {
+    "actionTitle": "Export issue report",
+    "actionDescription": "Create a diagnostic ZIP on your desktop for troubleshooting and support.",
+    "open": "Choose conversations",
+    "dialogTitle": "Export issue report",
+    "dialogDescription": "Review what will be included, then choose one or more conversations. The ZIP will be saved to your desktop.",
+    "contentsTitle": "Included in the ZIP",
+    "contents": {
+      "transcripts": {
+        "title": "Conversation transcripts",
+        "description": "The complete JSONL file for every selected conversation."
+      },
+      "config": {
+        "title": "OpenClaw configuration",
+        "description": "A copy of openclaw.json with credential values removed."
+      },
+      "logs": {
+        "title": "Diagnostic logs",
+        "description": "Available ClawX and OpenClaw logs."
+      },
+      "manifest": {
+        "title": "Manifest",
+        "description": "A list of included and unavailable files."
+      }
+    },
+    "sessionsTitle": "Choose conversations",
+    "selectAll": "Select all ({{count}})",
+    "selectedCount": "{{count}} conversation(s) selected",
+    "noSessions": "No conversations are available to export.",
+
+    "export": "Create ZIP ({{count}})",
+    "exporting": "Creating ZIP...",
+    "exportSucceeded": "Issue report exported",
+    "skippedSessions": "{{count}} unavailable conversation(s) could not be included. The remaining selected conversations were exported.",
+    "exportFailed": "Failed to export issue report",
+    "completeTitle": "Issue report ready",
+    "completeDescription": "The ZIP was saved to the path below.",
+    "showInFolder": "Show in Folder",
+    "revealFailed": "Failed to show the issue report in its folder"
+  },
   "about": {
     "title": "About",
     "appName": "ClawX",

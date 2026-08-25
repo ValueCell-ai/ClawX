@@ -261,6 +261,48 @@
     "installMessage": "Установить команду \"openclaw\"?",
     "installDetail": "Это создаст ~/.local/bin/openclaw. Убедитесь, что ~/.local/bin в PATH, если хотите запускать глобально."
   },
+  "support": {
+    "title": "Поддержка"
+  },
+  "issueReport": {
+    "actionTitle": "Экспорт отчёта о проблеме",
+    "actionDescription": "Создать диагностический ZIP на рабочем столе для устранения неполадок и поддержки.",
+    "open": "Выбрать разговоры",
+    "dialogTitle": "Экспорт отчёта о проблеме",
+    "dialogDescription": "Проверьте состав архива и выберите один или несколько разговоров. ZIP будет сохранён на рабочем столе.",
+    "contentsTitle": "Содержимое ZIP",
+    "contents": {
+      "transcripts": {
+        "title": "История разговоров",
+        "description": "Полный JSONL-файл каждого выбранного разговора."
+      },
+      "config": {
+        "title": "Конфигурация OpenClaw",
+        "description": "Копия openclaw.json с удалёнными учётными данными."
+      },
+      "logs": {
+        "title": "Диагностические журналы",
+        "description": "Доступные журналы ClawX и OpenClaw."
+      },
+      "manifest": {
+        "title": "Манифест",
+        "description": "Список включённых и недоступных файлов."
+      }
+    },
+    "sessionsTitle": "Выберите разговоры",
+    "selectAll": "Выбрать все ({{count}})",
+    "selectedCount": "Выбрано разговоров: {{count}}",
+    "noSessions": "Нет разговоров для экспорта.",
+    "export": "Создать ZIP ({{count}})",
+    "exporting": "Создание ZIP...",
+    "exportSucceeded": "Отчёт о проблеме экспортирован",
+    "skippedSessions": "Недоступные разговоры пропущены: {{count}}. Остальные выбранные разговоры экспортированы.",
+    "exportFailed": "Не удалось экспортировать отчёт о проблеме",
+    "completeTitle": "Отчёт о проблеме готов",
+    "completeDescription": "ZIP сохранён по указанному ниже пути.",
+    "showInFolder": "Показать в папке",
+    "revealFailed": "Не удалось показать отчёт о проблеме в папке"
+  },
   "about": {
     "title": "О приложении",
     "appName": "ClawX",
