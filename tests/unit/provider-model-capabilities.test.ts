@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CHATGPT_OAUTH_CONTEXT_WINDOW,
   DEFAULT_CUSTOM_MODEL_CONTEXT_WINDOW,
+  clampModelContextWindow,
   LOCAL_MODEL_CONTEXT_WINDOW,
   inferCustomModelContextWindow,
   inferCustomModelInputModalities,
@@ -118,6 +119,13 @@ describe('inferCustomModelContextWindow', () => {
   });
 
   describe('ChatGPT subscription transport', () => {
+    it('clamps an explicit native context window to the subscription limit', () => {
+      expect(clampModelContextWindow(1_050_000, {
+        providerKey: 'openai',
+        apiProtocol: 'openai-chatgpt-responses',
+      })).toBe(CHATGPT_OAUTH_CONTEXT_WINDOW);
+    });
+
     it.each([
       'openai-chatgpt-responses',
       'openai-codex-responses',

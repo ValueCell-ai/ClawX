@@ -5,6 +5,8 @@ export interface AgentSummary {
   modelDisplay: string;
   modelRef?: string | null;
   overrideModelRef?: string | null;
+  /** Effective token limit after provider transport ceilings are applied. */
+  contextWindow?: number;
   inheritedModel: boolean;
   workspace: string;
   agentDir: string;

@@ -21,10 +21,11 @@ touchedAreas:
   - tests/unit/chat-input.test.tsx
   - tests/e2e/chat-acp-inline-timeline.spec.ts
 expectedUserBehavior:
-  - When ACP supplies finite positive usage_update used and size values for the active session, the composer shows a context-usage ring.
-  - Hovering or focusing the ring exposes the percentage and used-token/total-token counts.
+  - When ACP supplies finite positive usage_update used and size values for the active session, the composer shows a compact context-usage meter with a ring and visible localized percentage.
+  - When the selected model changes, the meter replaces a stale ACP total with the effective context window returned in the updated agent snapshot.
+  - Hovering or focusing the meter exposes the percentage and used-token/total-token counts.
   - Missing, malformed, or non-positive usage data renders no indicator.
-  - The indicator is derived only from the active ACP timeline metadata and does not use a Gateway snapshot or direct Renderer transport.
+  - Used-token data remains derived from the active ACP timeline metadata; model-limit corrections arrive through the existing typed agent snapshot and never through direct Renderer transport.
 requiredProfiles:
   - fast
 requiredRules:
@@ -38,8 +39,8 @@ requiredTests:
   - pnpm run build:vite
   - pnpm exec playwright test tests/e2e/chat-acp-inline-timeline.spec.ts --grep "context usage"
 acceptance:
-  - The ring displays a bounded 0-100 percentage based on used divided by size.
-  - The accessible hover/focus label includes the formatted percentage plus used and total token counts.
+  - The meter displays a bounded 0-100 percentage based on ACP usage, substituting the active model's effective context limit only when the existing usage belongs to the previously selected model, both visually and through progressbar semantics.
+  - The accessible hover/focus label includes the formatted percentage plus used and total token counts and updates after model selection.
   - Existing composer behavior remains unchanged when usage metadata is absent.
   - No new Renderer-to-Gateway communication path is added.
 docs:

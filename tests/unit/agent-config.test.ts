@@ -206,11 +206,54 @@ describe('agent config lifecycle', () => {
     });
 
     const { updateAgentModel } = await import('@electron/utils/agent-config');
-    await updateAgentModel('coder', 'openai/gpt-5.6-luna');
+    const snapshot = await updateAgentModel('coder', 'openai/gpt-5.6-luna');
 
     const config = await readOpenClawJson();
     const defaults = (config.agents as { defaults: { compaction: unknown } }).defaults;
     expect(defaults.compaction).toEqual({ mode: 'safeguard', reserveTokensFloor: 68_000 });
+    expect(snapshot.agents.find((agent) => agent.id === 'coder')?.contextWindow).toBe(272_000);
+  });
+
+  it('updates the effective context limit and reserve floor when returning to a subscription model', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          deepseek: {
+            models: [{ id: 'deepseek-chat', contextWindow: 400_000 }],
+          },
+          openai: {
+            api: 'openai-chatgpt-responses',
+            models: [{ id: 'gpt-5.6-sol', contextWindow: 1_050_000 }],
+          },
+        },
+      },
+      agents: {
+        defaults: {
+          model: { primary: 'openai/gpt-5.6-sol' },
+          compaction: { mode: 'safeguard', reserveTokensFloor: 68_000 },
+        },
+        list: [
+          { id: 'main', name: 'Main', default: true },
+          { id: 'coder', name: 'Coder' },
+        ],
+      },
+    });
+
+    const { updateAgentModel } = await import('@electron/utils/agent-config');
+    let snapshot = await updateAgentModel('coder', 'deepseek/deepseek-chat');
+    let config = await readOpenClawJson();
+    expect(snapshot.agents.find((agent) => agent.id === 'coder')?.contextWindow).toBe(400_000);
+    expect((config.agents as { defaults: { compaction: { reserveTokensFloor: number } } })
+      .defaults.compaction.reserveTokensFloor).toBe(100_000);
+
+    snapshot = await updateAgentModel('coder', null);
+    config = await readOpenClawJson();
+    expect(snapshot.agents.find((agent) => agent.id === 'coder')).toMatchObject({
+      modelRef: 'openai/gpt-5.6-sol',
+      contextWindow: 272_000,
+    });
+    expect((config.agents as { defaults: { compaction: { reserveTokensFloor: number } } })
+      .defaults.compaction.reserveTokensFloor).toBe(68_000);
   });
 
   it('mutates the running coordinator snapshot instead of replacing it from the local file', async () => {

@@ -158,6 +158,14 @@ function resolveContextWindowCeiling(context: ModelCapabilityContext): number {
   return ceilings.length > 0 ? Math.min(...ceilings) : Number.POSITIVE_INFINITY;
 }
 
+/** Apply transport-specific limits to a configured or catalog context window. */
+export function clampModelContextWindow(
+  contextWindow: number,
+  context: ModelCapabilityContext = {},
+): number {
+  return Math.min(Math.floor(contextWindow), resolveContextWindowCeiling(context));
+}
+
 export function inferCustomModelContextWindow(
   modelId: string,
   context: ModelCapabilityContext = {},

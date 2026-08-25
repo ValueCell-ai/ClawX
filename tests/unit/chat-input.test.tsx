@@ -167,7 +167,10 @@ function configureAgentAndModelPickers() {
       id: 'main',
       name: 'Main',
       isDefault: true,
-      modelDisplay: 'MiniMax',
+      modelDisplay: 'gpt-a',
+      modelRef: 'custom-aaaaaaaa/gpt-a',
+      overrideModelRef: null,
+      contextWindow: 400_000,
       inheritedModel: true,
       workspace: '~/.openclaw/workspace',
       agentDir: '~/.openclaw/agents/main/agent',
@@ -242,12 +245,59 @@ describe('ChatInput agent targeting', () => {
   it('shows active ACP context usage in an accessible tooltip', async () => {
     renderChatInput(vi.fn(), { used: 25_000, size: 100_000 });
 
-    const ring = screen.getByTestId('chat-composer-context-usage');
-    expect(ring).toHaveAttribute('aria-label', '25% context used: 25,000 / 100,000 tokens');
+    const indicator = screen.getByRole('progressbar', { name: '25% context used: 25,000 / 100,000 tokens' });
+    expect(indicator).toHaveAttribute('data-testid', 'chat-composer-context-usage');
+    expect(indicator).toHaveAttribute('aria-valuenow', '25');
+    expect(indicator).toHaveTextContent('25%');
 
-    fireEvent.focus(ring);
+    fireEvent.focus(indicator);
 
     expect(await screen.findByRole('tooltip')).toHaveTextContent('25% context used: 25,000 / 100,000 tokens');
+  });
+
+  it('recomputes the context total and percentage after switching models', async () => {
+    configureAgentAndModelPickers();
+    agentsState.updateAgentModel.mockImplementation(async (agentId: string, modelRef: string | null) => {
+      agentsState.agents = agentsState.agents.map((agent) => agent.id === agentId
+        ? {
+            ...agent,
+            modelRef: modelRef || agentsState.defaultModelRef,
+            overrideModelRef: modelRef,
+            contextWindow: 272_000,
+            inheritedModel: !modelRef,
+          }
+        : agent);
+    });
+    const contextUsage = { used: 68_000, size: 400_000 };
+    const { rerender } = renderChatInput(vi.fn(), contextUsage);
+
+    expect(screen.getByRole('progressbar', {
+      name: '17% context used: 68,000 / 400,000 tokens',
+    })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('chat-model-picker-button'));
+    fireEvent.click(screen.getByRole('button', { name: 'gpt-b (Beta)' }));
+    await waitFor(() => {
+      expect(agentsState.updateAgentModel).toHaveBeenCalledWith('main', 'custom-bbbbbbbb/gpt-b');
+    });
+    rerender(
+      <TooltipProvider delayDuration={0}>
+        <ChatInput onSend={vi.fn()} contextUsage={contextUsage} />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole('progressbar', {
+      name: '25% context used: 68,000 / 272,000 tokens',
+    })).toBeInTheDocument();
+
+    rerender(
+      <TooltipProvider delayDuration={0}>
+        <ChatInput onSend={vi.fn()} contextUsage={{ used: 68_000, size: 260_000 }} />
+      </TooltipProvider>,
+    );
+    expect(screen.getByRole('progressbar', {
+      name: '26% context used: 68,000 / 260,000 tokens',
+    })).toBeInTheDocument();
   });
 
   it('hides malformed context usage and clamps valid overages to 100%', () => {

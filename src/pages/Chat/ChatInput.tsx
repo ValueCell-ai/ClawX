@@ -73,18 +73,23 @@ type ContextUsage = {
   percent: number;
 };
 
-function getContextUsage(value: unknown): ContextUsage | null {
+function getContextUsage(value: unknown, modelContextWindow?: number): ContextUsage | null {
   if (!value || typeof value !== 'object') return null;
-  const { used, size } = value as Record<string, unknown>;
+  const { used, size: reportedSize } = value as Record<string, unknown>;
   if (
     typeof used !== 'number'
-    || typeof size !== 'number'
+    || typeof reportedSize !== 'number'
     || !Number.isFinite(used)
-    || !Number.isFinite(size)
+    || !Number.isFinite(reportedSize)
     || used < 0
-    || size <= 0
+    || reportedSize <= 0
   ) return null;
 
+  const size = typeof modelContextWindow === 'number'
+    && Number.isFinite(modelContextWindow)
+    && modelContextWindow > 0
+    ? Math.floor(modelContextWindow)
+    : reportedSize;
   return {
     used,
     size,
@@ -92,22 +97,36 @@ function getContextUsage(value: unknown): ContextUsage | null {
   };
 }
 
-function ContextUsageRing({ usage, label }: { usage: ContextUsage; label: string }) {
+function ContextUsageIndicator({
+  usage,
+  label,
+  percentageLabel,
+}: {
+  usage: ContextUsage;
+  label: string;
+  percentageLabel: string;
+}) {
   const radius = 7;
   const circumference = 2 * Math.PI * radius;
+  const roundedPercent = Math.round(usage.percent);
   const strokeDashoffset = circumference * (1 - usage.percent / 100);
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button
-          type="button"
+        <span
+          role="progressbar"
+          tabIndex={0}
           data-testid="chat-composer-context-usage"
-          data-percent={Math.round(usage.percent)}
+          data-percent={roundedPercent}
           aria-label={label}
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-primary transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/10"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={roundedPercent}
+          aria-valuetext={label}
+          className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-1.5 text-muted-foreground transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 dark:hover:bg-white/5"
         >
-          <svg viewBox="0 0 20 20" className="h-4 w-4" aria-hidden="true">
+          <svg viewBox="0 0 20 20" className="h-4 w-4 text-primary" aria-hidden="true">
             <circle cx="10" cy="10" r={radius} fill="none" stroke="currentColor" strokeWidth="2" className="text-black/10 dark:text-white/15" />
             <circle
               cx="10"
@@ -122,7 +141,10 @@ function ContextUsageRing({ usage, label }: { usage: ContextUsage; label: string
               transform="rotate(-90 10 10)"
             />
           </svg>
-        </button>
+          <span aria-hidden="true" className="text-2xs font-medium tabular-nums">
+            {percentageLabel}
+          </span>
+        </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="text-xs">
         {label}
@@ -304,6 +326,7 @@ export function ChatInput({
   const skillPickerRef = useRef<HTMLDivElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const workspaceMenuRef = useRef<HTMLDivElement>(null);
+  const contextUsageSourceRef = useRef<{ value: unknown; modelRef: string | null } | undefined>(undefined);
   const isComposingRef = useRef(false);
   const gatewayStatus = useGatewayStore((s) => s.status);
   const agents = useAgentsStore((s) => s.agents);
@@ -368,10 +391,19 @@ export function ChatInput({
   const workspaceSelectorDisabled = workspaceReadOnly || inputDisabled || sending || !onSelectWorkspace;
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
   const openArtifactPreview = useArtifactPanel((s) => s.openPreview);
-  const activeContextUsage = getContextUsage(contextUsage);
-  const contextUsageLabel = activeContextUsage
+  if (!contextUsageSourceRef.current || contextUsageSourceRef.current.value !== contextUsage) {
+    contextUsageSourceRef.current = { value: contextUsage, modelRef: effectiveModelRef };
+  }
+  const contextWindowOverride = contextUsageSourceRef.current.modelRef === effectiveModelRef
+    ? undefined
+    : currentAgent?.contextWindow;
+  const activeContextUsage = getContextUsage(contextUsage, contextWindowOverride);
+  const contextUsagePercentage = activeContextUsage
+    ? new Intl.NumberFormat(i18n.resolvedLanguage, { style: 'percent', maximumFractionDigits: 0 }).format(activeContextUsage.percent / 100)
+    : null;
+  const contextUsageLabel = activeContextUsage && contextUsagePercentage
     ? t('composer.contextUsage', {
-      percentage: new Intl.NumberFormat(i18n.resolvedLanguage, { style: 'percent', maximumFractionDigits: 0 }).format(activeContextUsage.percent / 100),
+      percentage: contextUsagePercentage,
       used: new Intl.NumberFormat(i18n.resolvedLanguage).format(activeContextUsage.used),
       total: new Intl.NumberFormat(i18n.resolvedLanguage).format(activeContextUsage.size),
     })
@@ -1270,8 +1302,12 @@ export function ChatInput({
               </div>
             )}
 
-            {activeContextUsage && contextUsageLabel && (
-              <ContextUsageRing usage={activeContextUsage} label={contextUsageLabel} />
+            {activeContextUsage && contextUsageLabel && contextUsagePercentage && (
+              <ContextUsageIndicator
+                usage={activeContextUsage}
+                label={contextUsageLabel}
+                percentageLabel={contextUsagePercentage}
+              />
             )}
 
             {/* Send Button — pushed to the right */}

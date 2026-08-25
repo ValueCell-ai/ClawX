@@ -483,10 +483,12 @@ test.describe('ClawX ACP inline timeline', () => {
         size: 100_000,
       }]);
 
-      const ring = page.getByTestId('chat-composer-context-usage');
-      await expect(ring).toBeVisible({ timeout: 30_000 });
-      await expect(ring).toHaveAttribute('aria-label', '25% context used: 25,000 / 100,000 tokens');
-      await ring.focus();
+      const indicator = page.getByRole('progressbar', { name: '25% context used: 25,000 / 100,000 tokens' });
+      await expect(indicator).toBeVisible({ timeout: 30_000 });
+      await expect(indicator).toHaveAttribute('data-testid', 'chat-composer-context-usage');
+      await expect(indicator).toHaveAttribute('aria-valuenow', '25');
+      await expect(indicator).toContainText('25%');
+      await indicator.focus();
       await expect(page.getByRole('tooltip')).toHaveText('25% context used: 25,000 / 100,000 tokens');
     } finally {
       await closeElectronApp(app);

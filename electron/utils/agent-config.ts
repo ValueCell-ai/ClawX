@@ -8,7 +8,10 @@ import { expandPath, getOpenClawConfigDir } from './paths';
 import * as logger from './logger';
 import { toUiChannelType } from './channel-alias';
 import { ensureClawXIdentityFile } from './openclaw-workspace';
-import { applyModelAwareCompactionReserveTokensFloor } from './openclaw-compaction';
+import {
+  applyModelAwareCompactionReserveTokensFloor,
+  resolveModelContextWindow,
+} from './openclaw-compaction';
 
 const MAIN_AGENT_ID = 'main';
 const MAIN_AGENT_NAME = 'Main Agent';
@@ -91,6 +94,7 @@ export interface AgentSummary {
   modelDisplay: string;
   modelRef: string | null;
   overrideModelRef: string | null;
+  contextWindow?: number;
   inheritedModel: boolean;
   workspace: string;
   agentDir: string;
@@ -514,6 +518,7 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument, preloadedCha
   const defaultModelRef = resolveModelRef(defaultModelConfig);
   const agents: AgentSummary[] = entries.map((entry) => {
     const explicitModelRef = resolveModelRef(entry.model);
+    const effectiveModelRef = explicitModelRef || defaultModelRef || null;
     const modelLabel = formatModelLabel(entry.model) || defaultModelLabel || 'Not configured';
     const inheritedModel = !explicitModelRef && Boolean(defaultModelLabel);
     const entryIdNorm = normalizeAgentIdForBinding(entry.id);
@@ -523,8 +528,9 @@ async function buildSnapshotFromConfig(config: AgentConfigDocument, preloadedCha
       name: entry.name || (entry.id === MAIN_AGENT_ID ? MAIN_AGENT_NAME : entry.id),
       isDefault: entry.id === defaultAgentId,
       modelDisplay: modelLabel,
-      modelRef: explicitModelRef || defaultModelRef || null,
+      modelRef: effectiveModelRef,
       overrideModelRef: explicitModelRef,
+      contextWindow: resolveModelContextWindow(config, effectiveModelRef),
       inheritedModel,
       workspace: entry.workspace || (entry.id === MAIN_AGENT_ID ? getDefaultWorkspacePath(config) : `~/.openclaw/workspace-${entry.id}`),
       agentDir: entry.agentDir || getDefaultAgentDirPath(entry.id),

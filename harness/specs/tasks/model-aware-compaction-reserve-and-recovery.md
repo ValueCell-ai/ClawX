@@ -13,11 +13,15 @@ touchedAreas:
   - docs/ja-JP/features.md
   - docs/ru-RU/features.md
   - harness/specs/tasks/model-aware-compaction-reserve-and-recovery.md
+  - harness/specs/tasks/show-acp-context-usage.md
+  - harness/specs/scenarios/acp-chat-experience.md
   - harness/specs/rules/gateway-heartbeat-safety.md
   - harness/specs/rules/compaction-context-progress.md
   - electron/shared/providers/model-capabilities.ts
   - electron/utils/openclaw-auth.ts
   - electron/utils/agent-config.ts
+  - shared/types/agent.ts
+  - src/pages/Chat/ChatInput.tsx
   - electron/gateway/manager.ts
   - electron/gateway/recovery-controller.ts
   - electron/gateway/recovery-budget.ts
@@ -31,19 +35,24 @@ touchedAreas:
   - shared/i18n/locales/ja/settings.json
   - shared/i18n/locales/ru/settings.json
   - tests/unit/agent-config.test.ts
+  - tests/unit/chat-input.test.tsx
   - tests/unit/compaction-activity.test.ts
   - tests/unit/host-api-facade.test.ts
   - tests/unit/openclaw-auth.test.ts
   - tests/unit/openclaw-compaction.test.ts
   - tests/unit/openclaw-compaction-tail-patch.test.ts
+  - tests/unit/provider-model-capabilities.test.ts
   - electron/gateway/recovery-controller.test.ts
   - tests/unit/gateway-manager-heartbeat.test.ts
   - tests/e2e/developer-mode.spec.ts
+  - tests/e2e/chat-acp-inline-timeline.spec.ts
   - README.md
   - README.zh-CN.md
   - README.ja-JP.md
 expectedUserBehavior:
-  - Selecting a model writes agents.defaults.compaction.reserveTokensFloor as 25% of that model's context window, rounded down, regardless of a previous local floor value.
+  - Selecting a model writes agents.defaults.compaction.reserveTokensFloor as 25% of that model's effective context window, rounded down, regardless of a previous local floor value.
+  - The chat context meter immediately uses the newly selected model's effective context window instead of retaining the previous model's ACP-reported limit.
+  - Transport ceilings, including the 272k ChatGPT subscription limit, apply even when a configured model row advertises a larger native context window.
   - Startup configuration sync corrects stale local reserveTokensFloor values using the active default model when its context window is known.
   - Startup configuration sync overwrites agents.defaults.compaction.recentTurnsPreserve and keepRecentTokens with 0 so completed turns are summarized instead of replayed verbatim after compaction.
   - Developer Mode displays the currently applied compaction reserve-token floor and its model-aware 25% policy.
@@ -62,12 +71,18 @@ requiredRules:
   - docs-sync
 requiredTests:
   - tests/unit/openclaw-auth.test.ts
+  - tests/unit/openclaw-compaction.test.ts
   - tests/unit/openclaw-compaction-tail-patch.test.ts
+  - tests/unit/provider-model-capabilities.test.ts
+  - tests/unit/agent-config.test.ts
+  - tests/unit/chat-input.test.tsx
   - electron/gateway/recovery-controller.test.ts
   - tests/unit/gateway-manager-heartbeat.test.ts
   - tests/e2e/developer-mode.spec.ts
+  - tests/e2e/chat-acp-inline-timeline.spec.ts
 acceptance:
-  - The applied reserveTokensFloor is floor(contextWindow * 0.25) for the selected model and never preserves an older local floor value.
+  - The applied reserveTokensFloor is floor(effectiveContextWindow * 0.25) for the selected model and never preserves an older local floor value.
+  - Agent snapshots expose that same effective context window, and the composer recomputes its displayed total and percentage after a model switch even before ACP emits another usage update.
   - The applied recentTurnsPreserve and keepRecentTokens are always 0, including when the local OpenClaw config contains other explicit values.
   - A zero retained-history budget summarizes every completed turn before the persisted compaction boundary is hardened to the compaction entry.
   - Rebuilding context from a zero-tail compaction checkpoint does not replay any completed pre-compaction message verbatim.
