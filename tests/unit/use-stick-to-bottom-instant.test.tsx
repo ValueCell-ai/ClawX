@@ -62,7 +62,7 @@ describe('useStickToBottomInstant', () => {
     expect(mockStopScroll).not.toHaveBeenCalled();
   });
 
-  it('calls stopScroll when the user scrolls up away from the bottom during an active run', async () => {
+  it('calls stopScroll on a small upward movement during an active run', async () => {
     const { useStickToBottomInstant } = await import('@/hooks/use-stick-to-bottom-instant');
 
     let scrollElement: HTMLDivElement | null = null;
@@ -72,18 +72,20 @@ describe('useStickToBottomInstant', () => {
       scrollElement = document.createElement('div');
       Object.defineProperty(scrollElement, 'scrollHeight', { value: 2000, configurable: true });
       Object.defineProperty(scrollElement, 'clientHeight', { value: 400, configurable: true });
-      scrollElement.scrollTop = 1500;
+      scrollElement.scrollTop = 1580;
       result.current.scrollRef(scrollElement);
     });
 
     act(() => {
-      scrollElement!.scrollTop = 1500;
+      scrollElement!.scrollTop = 1580;
       scrollElement!.dispatchEvent(new Event('scroll'));
     });
     expect(mockStopScroll).not.toHaveBeenCalled();
 
     act(() => {
-      scrollElement!.scrollTop = 1000;
+      // Moving only 20px leaves the viewport within the library's 70px
+      // "near bottom" zone, but it must still pause active pinning.
+      scrollElement!.scrollTop = 1560;
       scrollElement!.dispatchEvent(new Event('scroll'));
     });
 

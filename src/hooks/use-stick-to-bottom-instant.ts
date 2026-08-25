@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useStickToBottom } from "use-stick-to-bottom";
 
-const ESCAPE_FROM_LOCK_OFFSET_PX = 70;
+const AT_BOTTOM_OFFSET_PX = 2;
 
 /**
  * A wrapper around useStickToBottom that ensures the initial scroll
@@ -24,17 +24,18 @@ export function useStickToBottomInstant(resetKey?: string, active = false) {
     resize: "instant",
   });
 
-  const { scrollRef, contentRef, escapedFromLock, stopScroll } = result;
+  const { scrollRef, contentRef, scrollToBottom, state, stopScroll } = result;
   const scrollEscapeCleanupRef = useRef<(() => void) | null>(null);
+  const manuallyPausedRef = useRef(false);
 
-  // Keep the latest "should we pin?" inputs available inside the ResizeObserver
-  // callback without re-creating the observer on every render.
+  // Keep the latest "should we pin?" input available inside the ResizeObserver
+  // callback without re-creating the observer on every render. The library's
+  // mutable state is read directly because it records an escape synchronously;
+  // its rendered `escapedFromLock` value can lag behind a streaming resize.
   const activeRef = useRef(active);
-  const escapedRef = useRef(escapedFromLock);
   useLayoutEffect(() => {
     activeRef.current = active;
-    escapedRef.current = escapedFromLock;
-  }, [active, escapedFromLock]);
+  }, [active]);
 
   // Instantly glue the scrollbar to the bottom. The library only animates on
   // *positive* resizes and ignores *negative* ones; this covers both so the
@@ -43,9 +44,9 @@ export function useStickToBottomInstant(resetKey?: string, active = false) {
   const pinToBottom = useCallback(() => {
     const scrollElement = scrollRef.current;
     if (!scrollElement) return;
-    if (!activeRef.current || escapedRef.current) return;
+    if (!activeRef.current || manuallyPausedRef.current || state.escapedFromLock) return;
     scrollElement.scrollTop = scrollElement.scrollHeight;
-  }, [scrollRef]);
+  }, [scrollRef, state]);
 
   // Combine the library's content ref with our own ResizeObserver so we can
   // react to every layout change (the library's observer only scrolls on
@@ -82,19 +83,29 @@ export function useStickToBottomInstant(resetKey?: string, active = false) {
       if (!element) return;
 
       let lastScrollTop = element.scrollTop;
+      let lastScrollHeight = element.scrollHeight;
       const handleScroll = () => {
-        // Only relevant while a run is actively pinning to the bottom.
-        if (!activeRef.current) return;
-
         const scrollTop = element.scrollTop;
-        const distanceFromBottom = element.scrollHeight - element.clientHeight - scrollTop;
-        // Match the library's escape semantics: upward manual scroll only.
-        // Calling stopScroll while scrolling *down* (e.g. scroll-to-latest smooth
-        // animation) would cancel the animation before it reaches the bottom.
-        if (distanceFromBottom > ESCAPE_FROM_LOCK_OFFSET_PX && scrollTop < lastScrollTop) {
+        const scrollHeight = element.scrollHeight;
+        const distanceFromBottom = scrollHeight - element.clientHeight - scrollTop;
+
+        if (distanceFromBottom <= AT_BOTTOM_OFFSET_PX) {
+          manuallyPausedRef.current = false;
+        } else if (
+          activeRef.current
+          && scrollTop < lastScrollTop
+          && scrollHeight >= lastScrollHeight
+        ) {
+          // Pause immediately on even a small upward movement. Waiting until the
+          // user is far from the bottom lets the next streaming resize pull the
+          // viewport back down before the user can escape. Ignore height shrink,
+          // which can lower scrollTop without any user interaction.
+          manuallyPausedRef.current = true;
           stopScroll();
         }
+
         lastScrollTop = scrollTop;
+        lastScrollHeight = scrollHeight;
       };
       element.addEventListener("scroll", handleScroll, { passive: true });
       scrollEscapeCleanupRef.current = () => element.removeEventListener("scroll", handleScroll);
@@ -115,9 +126,15 @@ export function useStickToBottomInstant(resetKey?: string, active = false) {
   useEffect(() => {
     if (resetKey !== lastKeyRef.current) {
       hasInitializedRef.current = false;
+      manuallyPausedRef.current = false;
       lastKeyRef.current = resetKey;
     }
   }, [resetKey]);
+
+  const resumeAndScrollToBottom = useCallback<typeof scrollToBottom>((options) => {
+    manuallyPausedRef.current = false;
+    return scrollToBottom(options);
+  }, [scrollToBottom]);
 
   // Scroll to bottom instantly on mount or when key changes
   useEffect(() => {
@@ -146,5 +163,10 @@ export function useStickToBottomInstant(resetKey?: string, active = false) {
     return () => cancelAnimationFrame(frame1);
   }, [scrollRef, resetKey]);
 
-  return { ...result, scrollRef: combinedScrollRef, contentRef: combinedContentRef };
+  return {
+    ...result,
+    scrollRef: combinedScrollRef,
+    contentRef: combinedContentRef,
+    scrollToBottom: resumeAndScrollToBottom,
+  };
 }

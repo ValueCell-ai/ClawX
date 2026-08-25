@@ -203,25 +203,29 @@ test.describe('ClawX chat scroll pin-to-bottom during runs', () => {
       await emitDelta({ sessionUpdate: 'agent_message', messageId: 'streaming-assistant', content: [{ type: 'text', text: streamingText(14) }] });
       await expectPinnedToBottom();
 
-      // Manual scroll-up while the run is live: pinning must yield to the user
-      // and surface the "scroll to latest" affordance.
-      await scrollContainer.evaluate((el) => {
+      // Even a small manual scroll-up while the run is live must pause pinning.
+      // This starts inside the library's "near bottom" zone, where a streaming
+      // resize used to pull the viewport straight back to the latest output.
+      const readingPosition = await scrollContainer.evaluate((el) => {
         const element = el as HTMLElement;
-        element.scrollTop = 0;
+        element.scrollTop = element.scrollHeight - element.clientHeight - 24;
         element.dispatchEvent(new Event('scroll', { bubbles: true }));
+        return element.scrollTop;
       });
-
-      const jumpButton = page.getByTestId('chat-scroll-to-latest');
-      await expect(jumpButton).toBeVisible();
 
       // Further growth must NOT yank the user back down while they've escaped.
       await emitDelta({ sessionUpdate: 'agent_message', messageId: 'streaming-assistant', content: [{ type: 'text', text: streamingText(20) }] });
+      const jumpButton = page.getByTestId('chat-scroll-to-latest');
       await expect(jumpButton).toBeVisible();
-      const distanceFromBottom = await scrollContainer.evaluate((el) => {
+      const scrollState = await scrollContainer.evaluate((el) => {
         const element = el as HTMLElement;
-        return Math.round(element.scrollHeight - element.clientHeight - element.scrollTop);
+        return {
+          top: element.scrollTop,
+          distanceFromBottom: Math.round(element.scrollHeight - element.clientHeight - element.scrollTop),
+        };
       });
-      expect(distanceFromBottom).toBeGreaterThan(8);
+      expect(Math.abs(scrollState.top - readingPosition)).toBeLessThanOrEqual(2);
+      expect(scrollState.distanceFromBottom).toBeGreaterThan(8);
 
       // Clicking the affordance returns to the bottom.
       await jumpButton.click();
