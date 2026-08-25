@@ -127,4 +127,34 @@ describe('OpenClaw no-retained-tail compaction patch', () => {
     );
     expect(source).toContain('configuredKeepRecentTokens > 0');
   });
+
+  it('continues already-capped mid-turn tool progress without compaction or retry exhaustion', async () => {
+    const selectionSource = await readFile(path.join(dist, 'selection-JInn13lc.js'), 'utf8');
+    const embeddedAgentSource = await readFile(
+      path.join(dist, 'embedded-agent-DGUuxGR2.js'),
+      'utf8',
+    );
+    const handlerStart = selectionSource.indexOf('const handleMidTurnPrecheckRequest = (request) =>');
+    const handlerEnd = selectionSource.indexOf('let skipPromptSubmission = false', handlerStart);
+    const handlerSource = selectionSource.slice(handlerStart, handlerEnd);
+
+    expect(handlerStart).toBeGreaterThanOrEqual(0);
+    expect(handlerEnd).toBeGreaterThan(handlerStart);
+    expect(handlerSource).toContain(
+      'truncationResult.reason === "no oversized or aggregate tool results"',
+    );
+    expect(handlerSource).toContain('route: "truncate_tool_results_only"');
+    expect(handlerSource).toContain('handled: true');
+    expect(handlerSource).toContain('truncatedCount: 0');
+    expect(handlerSource).toContain('truncateSkippedReason=${truncationResult.reason}');
+    expect(embeddedAgentSource).toContain(
+      'const isProgressContinuation = retryingFromTranscript && preflightRecovery.route === "truncate_tool_results_only" && preflightRecovery.truncatedCount === 0',
+    );
+    expect(embeddedAgentSource).toContain(
+      'if (isProgressContinuation) runLoopIterations = Math.max(0, runLoopIterations - 1)',
+    );
+    expect(embeddedAgentSource.indexOf('const retryingFromTranscript =')).toBeLessThan(
+      embeddedAgentSource.indexOf('const isProgressContinuation ='),
+    );
+  });
 });

@@ -826,3 +826,24 @@ index dec9ef8893043c3c020329c677cc0ee785f7b222..cd75039f263ddae8d333a3504db1424c
 @@ -27 +27 @@ function applyAgentCompactionSettingsFromConfig(params) {
 -	const configuredKeepRecentTokens = toPositiveInt(compactionCfg?.keepRecentTokens);
 +	const configuredKeepRecentTokens = toNonNegativeInt(compactionCfg?.keepRecentTokens);
+diff --git a/dist/embedded-agent-DGUuxGR2.js b/dist/embedded-agent-DGUuxGR2.js
+index dc3b1af0a26e6e0a961bfde5d86f29eeca4a87e4..e344bd4de89568354e19b770d6b417ba07f3a3bb 100644
+--- a/dist/embedded-agent-DGUuxGR2.js
++++ b/dist/embedded-agent-DGUuxGR2.js
+@@ -3336,0 +3337,2 @@ async function runEmbeddedAgentInternal(paramsInput) {
++						const isProgressContinuation = retryingFromTranscript && preflightRecovery.route === "truncate_tool_results_only" && preflightRecovery.truncatedCount === 0 && (attempt.toolMetas?.some((tool) => tool.isError !== true) ?? false);
++						if (isProgressContinuation) runLoopIterations = Math.max(0, runLoopIterations - 1);
+diff --git a/dist/selection-JInn13lc.js b/dist/selection-JInn13lc.js
+index 41d3492a4965c62292eaa74a4d0b746b6bc4e4b2..5136814767367aca59467853620d11b712f9a1c0 100644
+--- a/dist/selection-JInn13lc.js
++++ b/dist/selection-JInn13lc.js
+@@ -13599,0 +13600,9 @@ async function runEmbeddedAttempt(params) {
++					} else if (truncationResult.reason === "no oversized or aggregate tool results") {
++						preflightRecovery = {
++							route: "truncate_tool_results_only",
++							source: "mid-turn",
++							...buildPreflightRecoveryBudgetSnapshot(request),
++							handled: true,
++							truncatedCount: 0
++						};
++						logMidTurnPrecheck(request.route, `handled=true truncatedCount=0 truncateSkippedReason=${truncationResult.reason}`);

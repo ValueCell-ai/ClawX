@@ -21,6 +21,13 @@ message crosses a token-retention threshold.
 summary. The active turn remains outside completed history and is not silently
 dropped or rewritten by this policy.
 
+Mid-turn prompt-pressure estimation may inspect a larger live tool-result view
+than the already-capped persisted transcript. When persisted recovery reports
+exactly `no oversized or aggregate tool results`, continue from that transcript
+without manufacturing a context overflow or compaction. Refund the run retry
+only when a non-error tool result proves that the active turn made progress;
+empty sessions and truncation errors keep the normal compaction fallback.
+
 Do not harden a boundary unless the removed completed messages were included in
 the summary input. A checkpoint may record the hardened boundary, but deleting
 checkpoint metadata alone does not change reconstructed model context.
