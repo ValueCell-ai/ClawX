@@ -246,4 +246,33 @@ test.describe('ClawX sidebar session attention', () => {
       await closeElectronApp(app);
     }
   });
+
+  test('keeps unsent composer text independent for each conversation', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installSessionAttentionMocks(app);
+      const page = await reloadStableWindow(app);
+      const composer = page.getByTestId('chat-composer-input');
+      const controlRow = page.getByTestId(`sidebar-session-${CONTROL_SESSION_KEY}`);
+      const targetRow = page.getByTestId(`sidebar-session-${TARGET_SESSION_KEY}`);
+
+      await expect(controlRow).toHaveAttribute('aria-current', 'page');
+      await expect(composer).toBeEnabled({ timeout: 30_000 });
+      await composer.fill('Unsent control draft');
+
+      await targetRow.click();
+      await expect(targetRow).toHaveAttribute('aria-current', 'page');
+      await expect(composer).toHaveValue('');
+      await composer.fill('Unsent target draft');
+
+      await controlRow.click();
+      await expect(composer).toHaveValue('Unsent control draft');
+
+      await targetRow.click();
+      await expect(composer).toHaveValue('Unsent target draft');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
 });

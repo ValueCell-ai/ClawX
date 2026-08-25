@@ -32,6 +32,7 @@ import {
   getSessionLabelHydrationVersion,
   isSessionLabelHydrationVersionCurrent,
 } from './chat/session-label-hydration';
+import { useComposerDraftStore } from './composer-drafts';
 import { useSessionAttentionStore, type SessionAttentionTransition } from './session-attention';
 import {
   DEFAULT_CANONICAL_PREFIX,
@@ -680,6 +681,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 if (eventRemovedSessionKeys.size > 0) {
                   for (const removedKey of eventRemovedSessionKeys) {
                     clearSessionLabelHydrationTracking(removedKey);
+                    useComposerDraftStore.getState().clearDraft(removedKey);
                     if (!uncertainty.keys.has(removedKey)) {
                       attentionTransitions.push({ type: 'delete', sessionKey: removedKey });
                     }
@@ -1039,6 +1041,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 if (eventRemovedSessionKeys.size > 0) {
                   for (const removedKey of eventRemovedSessionKeys) {
                     clearSessionLabelHydrationTracking(removedKey);
+                    useComposerDraftStore.getState().clearDraft(removedKey);
                     if (!uncertainty.keys.has(removedKey)) {
                       attentionTransitions.push({ type: 'delete', sessionKey: removedKey });
                     }
@@ -1167,6 +1170,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (affectedRow) useSessionAttentionStore.getState().reconcileSessionRows([affectedRow]);
       for (const removedKey of removedSessionKeys) {
         clearSessionLabelHydrationTracking(removedKey);
+        useComposerDraftStore.getState().clearDraft(removedKey);
         useSessionAttentionStore.getState().removeSession(removedKey);
       }
       set((state) => {
@@ -1191,7 +1195,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   switchSession: (key) => {
-    if (key === get().currentSessionKey) return;
+    const { currentSessionKey, sessions } = get();
+    if (key === currentSessionKey) return;
+    if (sessions.some((session) => session.key === currentSessionKey && session.createdLocally)) {
+      useComposerDraftStore.getState().clearDraft(currentSessionKey);
+    }
     markLocalSessionCatalogMutation();
     set((state) => buildSessionSwitchPatch(state, key));
   },
@@ -1204,6 +1212,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     ) return;
     if (sessions.some((session) => session.key === currentSessionKey && session.createdLocally)) {
       localDraftSessionKeys.delete(currentSessionKey);
+      useComposerDraftStore.getState().clearDraft(currentSessionKey);
     }
     if (!sessions.some((session) => session.key === key)) localDraftSessionKeys.add(key);
     markLocalSessionCatalogMutation();
@@ -1218,6 +1227,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const sessionKey = `${prefix}:session-${Date.now()}`;
     if (sessions.some((session) => session.key === currentSessionKey && session.createdLocally)) {
       localDraftSessionKeys.delete(currentSessionKey);
+      useComposerDraftStore.getState().clearDraft(currentSessionKey);
     }
     localDraftSessionKeys.add(sessionKey);
     markLocalSessionCatalogMutation();
@@ -1277,6 +1287,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     clearSessionLabelHydrationTracking(key);
     localDraftSessionKeys.delete(key);
+    useComposerDraftStore.getState().clearDraft(key);
     useSessionAttentionStore.getState().removeSession(key);
     pendingCatalogConfirmationSessionKeys.delete(key);
 
@@ -1322,6 +1333,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     for (const key of deletedKeys) {
       clearSessionLabelHydrationTracking(key);
       localDraftSessionKeys.delete(key);
+      useComposerDraftStore.getState().clearDraft(key);
       useSessionAttentionStore.getState().removeSession(key);
       pendingCatalogConfirmationSessionKeys.delete(key);
     }

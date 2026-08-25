@@ -6,7 +6,7 @@
  * Files are staged through the typed Host API and included as local media
  * references in the ACP session/prompt request.
  */
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, type SetStateAction } from 'react';
 import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Search, ChevronDown, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -50,6 +50,8 @@ export interface ChatWorkspaceOption {
 interface ChatInputProps {
   onSend: (text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => void;
   onStop?: () => void;
+  draft?: string;
+  onDraftChange?: (update: SetStateAction<string>) => void;
   disabled?: boolean;
   sending?: boolean;
   imageGenerating?: boolean;
@@ -264,6 +266,8 @@ function readFileAsBase64(file: globalThis.File): Promise<string> {
 export function ChatInput({
   onSend,
   onStop,
+  draft,
+  onDraftChange,
   disabled = false,
   sending = false,
   imageGenerating = false,
@@ -275,7 +279,12 @@ export function ChatInput({
   contextUsage,
 }: ChatInputProps) {
   const { t, i18n } = useTranslation('chat');
-  const [input, setInput] = useState('');
+  const [uncontrolledInput, setUncontrolledInput] = useState('');
+  const input = onDraftChange ? (draft ?? '') : uncontrolledInput;
+  const setInput = useCallback((update: SetStateAction<string>) => {
+    if (onDraftChange) onDraftChange(update);
+    else setUncontrolledInput(update);
+  }, [onDraftChange]);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [targetAgentId, setTargetAgentId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -490,7 +499,7 @@ export function ChatInput({
     setSkillQuery('');
     setQuickSkills([]);
     setSkillsError(null);
-  }, [currentAgentId]);
+  }, [currentAgentId, setInput]);
 
   useEffect(() => {
     if (!selectedSkill) return;
@@ -502,7 +511,7 @@ export function ChatInput({
 
   const handleInputChange = useCallback((value: string) => {
     setInput(value);
-  }, []);
+  }, [setInput]);
 
   const moveCaretTo = useCallback((position: number) => {
     textareaRef.current?.focus();
@@ -807,7 +816,7 @@ export function ChatInput({
     setPickerOpen(false);
     setSkillPickerOpen(false);
     setWorkspaceMenuOpen(false);
-  }, [input, attachments, canSend, onSend, targetAgentId]);
+  }, [input, attachments, canSend, onSend, setInput, targetAgentId]);
 
   const handleStop = useCallback(() => {
     if (!canStop) return;
@@ -884,7 +893,7 @@ export function ChatInput({
         handleSend();
       }
     },
-    [handleSend, input, moveCaretTo, selectedSkill, skillTokenRanges],
+    [handleSend, input, moveCaretTo, selectedSkill, setInput, skillTokenRanges],
   );
 
   // Handle paste (Ctrl/Cmd+V with files)

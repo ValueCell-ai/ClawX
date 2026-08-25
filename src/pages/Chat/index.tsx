@@ -2,7 +2,7 @@
  * Chat Page
  * ACP-native runtime rendering through the ordered inline timeline.
  */
-import { Suspense, lazy, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
 import { AlertTriangle, ArrowDownToLine, FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { useAgentsStore } from '@/stores/agents';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { useChatStore } from '@/stores/chat';
+import { useComposerDraftStore } from '@/stores/composer-drafts';
 import { useSessionAttentionStore } from '@/stores/session-attention';
 import { useSettingsStore } from '@/stores/settings';
 import { ensureAcpChatSubscriptions, useAcpChatSessionStore } from '@/stores/acp-chat-session';
@@ -182,6 +183,8 @@ export function Chat() {
   const sessions = useChatStore((s) => s.sessions);
   const sessionLabels = useChatStore((s) => s.sessionLabels);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
+  const composerDraft = useComposerDraftStore((s) => s.drafts[currentSessionKey] ?? '');
+  const setComposerDraft = useComposerDraftStore((s) => s.setDraft);
   const loadSessions = useChatStore((s) => s.loadSessions);
   const selectAcpSession = useChatStore((s) => s.selectAcpSession);
   const acknowledgeAcpSessionCreated = useChatStore((s) => s.acknowledgeAcpSessionCreated);
@@ -448,6 +451,9 @@ export function Chat() {
   const questionDirectoryVisible = questionDirectoryOpenSessionKey === currentSessionKey
     && questionDirectoryItems.length > 1;
   const composerContextUsage = visibleAcpTimeline.metadata.usage;
+  const handleComposerDraftChange = useCallback((update: SetStateAction<string>) => {
+    setComposerDraft(currentSessionKey, update);
+  }, [currentSessionKey, setComposerDraft]);
 
   return (
     <div
@@ -546,6 +552,8 @@ export function Chat() {
         </div>
 
         <ChatInput
+          draft={composerDraft}
+          onDraftChange={handleComposerDraftChange}
           onSend={(text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => {
             if (!currentSessionKey || !cwd || !workspaceContextAvailable) return;
             const targetAgent = targetAgentId
