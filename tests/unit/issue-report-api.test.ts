@@ -190,4 +190,23 @@ describe('issue report export', () => {
     expect(redactDiagnosticText('Bearer secret token=another maxTokens=123 {"apiKey":"json-secret"}'))
       .toBe('Bearer [REDACTED] token=[REDACTED] maxTokens=123 {"apiKey":"[REDACTED]"}');
   });
+
+  it('redacts quoted credentials with whitespace and complete authorization values', () => {
+    const redacted = redactDiagnosticText([
+      'password="hunter two" status=failed',
+      "client_secret='secret with spaces' operation=login",
+      'Authorization: Basic dXNlcjpwYXNz',
+      'Proxy-Authorization=Bearer proxy-secret',
+    ].join('\n'));
+
+    expect(redacted).toBe([
+      'password=[REDACTED] status=failed',
+      'client_secret=[REDACTED] operation=login',
+      'Authorization: [REDACTED]',
+      'Proxy-Authorization=[REDACTED]',
+    ].join('\n'));
+    expect(redacted).not.toContain('hunter two');
+    expect(redacted).not.toContain('dXNlcjpwYXNz');
+    expect(redacted).not.toContain('proxy-secret');
+  });
 });

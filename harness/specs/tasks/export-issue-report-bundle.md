@@ -8,6 +8,8 @@ touchedAreas:
   - harness/specs/tasks/export-issue-report-bundle.md
   - harness/specs/rules/issue-report-export-safety.md
   - harness/specs/scenarios/gateway-backend-communication.md
+  - package.json
+  - pnpm-lock.yaml
   - shared/host-api/contract.ts
   - electron/services/diagnostics-api.ts
   - electron/services/issue-report-api.ts

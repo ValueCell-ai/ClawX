@@ -68,10 +68,13 @@ export function redactDiagnosticText(content: string): string {
       /("(?:[a-z0-9_-]*api[_-]?key|token|[a-z0-9_-]*(?:access|refresh|auth|bearer|bot|gateway)token|[a-z0-9_-]*secret|[a-z0-9_-]*(?:password|passwd|passphrase|credential|credentials|authorization|cookie|private[_-]?key))"\s*:\s*)"(?:\\.|[^"\\])*"/gi,
       `$1"${REDACTED}"`,
     )
+    // Authorization schemes carry the credential after the scheme. Redact the
+    // complete header value rather than leaving Basic/Digest payloads behind.
+    .replace(/(\b(?:proxy[-_])?authorization\s*[=:]\s*)[^\r\n]+/gi, `$1${REDACTED}`)
     .replace(/(\bBearer\s+)[^\s"',;]+/gi, `$1${REDACTED}`)
     .replace(/(https?:\/\/)[^\s/@:]+:[^\s/@]+@/gi, `$1${REDACTED}@`)
     .replace(
-      /((?:api[_-]?key|token|access[_-]?token|refresh[_-]?token|auth[_-]?token|bot[_-]?token|gateway[_-]?token|secret|password|passwd|authorization|cookie|private[_-]?key)\s*[=:]\s*)(["']?)[^\s,"';}]+\2/gi,
+      /((?:[a-z0-9_.-]*api[_-]?key|token|(?:access|refresh|auth|bearer|bot|gateway)[_-]?token|[a-z0-9_.-]*(?:secret|password|passwd|passphrase|credential|credentials|cookie|private[_-]?key))\s*[=:]\s*)(?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'|[^\s,;}\]\r\n]+)/gi,
       `$1${REDACTED}`,
     );
 }
