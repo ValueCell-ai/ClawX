@@ -228,10 +228,11 @@ describe('hostApi facade', () => {
     }));
   });
 
-  it('routes ACP diagnostics trace calls through hostInvoke', async () => {
+  it('routes ACP trace and issue-report diagnostics through hostInvoke', async () => {
     hostInvoke
       .mockResolvedValueOnce({ id: 'req-1', ok: true, data: { capturedAt: 123, maxSize: 500, size: 0, entries: [] } })
-      .mockResolvedValueOnce({ id: 'req-2', ok: true, data: { success: true } });
+      .mockResolvedValueOnce({ id: 'req-2', ok: true, data: { success: true } })
+      .mockResolvedValueOnce({ id: 'req-3', ok: true, data: { success: true, path: '/tmp/report.zip' } });
     const { hostApi } = await import('@/lib/host-api');
     const payload = {
       event: 'image-generation:projection-rejected',
@@ -247,6 +248,9 @@ describe('hostApi facade', () => {
       entries: [],
     });
     await expect(hostApi.diagnostics.recordAcpTrace(payload)).resolves.toEqual({ success: true });
+    await expect(hostApi.diagnostics.exportIssueReport({
+      sessionKeys: ['agent:main:session-1', 'agent:research:session-2'],
+    })).resolves.toEqual({ success: true, path: '/tmp/report.zip' });
 
     expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
       module: 'diagnostics',
@@ -256,6 +260,11 @@ describe('hostApi facade', () => {
       module: 'diagnostics',
       action: 'recordAcpTrace',
       payload,
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      module: 'diagnostics',
+      action: 'exportIssueReport',
+      payload: { sessionKeys: ['agent:main:session-1', 'agent:research:session-2'] },
     }));
   });
 

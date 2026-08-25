@@ -15,6 +15,7 @@ import { useSettingsStore } from '@/stores/settings';
 import { useGatewayStore } from '@/stores/gateway';
 import { useUpdateStore } from '@/stores/update';
 import { UpdateSettings } from '@/components/settings/UpdateSettings';
+import { IssueReportExport } from '@/components/settings/IssueReportExport';
 import { toUserMessage } from '@/lib/error-message';
 import {
   clearUiTelemetry,
@@ -654,6 +655,16 @@ export function Settings() {
                 <Switch checked={telemetryEnabled} onCheckedChange={setTelemetryEnabled} />
               </div>
             </div>
+          </div>
+
+          <Separator className="bg-black/5 dark:bg-white/5" />
+
+          {/* Support */}
+          <div data-testid="settings-support-section">
+            <h2 className="mb-6 font-serif text-3xl font-normal tracking-tight text-foreground">
+              {t('support.title')}
+            </h2>
+            <IssueReportExport />
           </div>
 
           {/* Developer */}

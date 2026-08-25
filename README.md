@@ -78,6 +78,7 @@ Building AI agents shouldn't require mastering the command line. ClawX was desig
 
 - **🎯 Zero Configuration Barrier**: Complete setup through an intuitive graphical interface - no terminal commands, YAML files, or environment-variable hunting.
 - **💬 Intelligent Chat Interface**: Multi-session context and history, streaming Markdown with syntax highlighting, CJK-aware parsing, tables, KaTeX math, direct `@agent` routing, inline `/skill` cards, workspace-first sessions, and read-only previews for Markdown, `.docx`, `.pptx`, and local HTML.
+- **🧰 Issue Report Export**: Open Settings > Support to review the bundle contents, select one or more conversations (or select all), and create a ZIP on the desktop with their JSONL transcripts, sanitized OpenClaw configuration, and available diagnostic logs; ClawX shows the saved path when complete.
 - **📡 Multi-Channel Management**: Configure and monitor independent AI channels with multiple accounts, per-account agent binding, default-account switching, and the bundled official Tencent personal WeChat channel plugin.
 - **⏰ Cron-Based Automation**: Define recurring or one-time schedules, insert skills into scheduled prompts, and deliver results to external channels.
 - **🧩 Extensible Skill System**: Manage skills locally without depending on the Gateway, discover skills from multiple OpenClaw sources, and use bundled document-processing skills for `pdf`, `xlsx`, `docx`, and `pptx`.

@@ -261,6 +261,48 @@
     "installMessage": "安装 \"openclaw\" 命令？",
     "installDetail": "这将创建 ~/.local/bin/openclaw。确保 ~/.local/bin 在您的 PATH 中。"
   },
+  "support": {
+    "title": "支持"
+  },
+  "issueReport": {
+    "actionTitle": "导出问题现场",
+    "actionDescription": "在桌面创建用于问题排查和支持的诊断 ZIP。",
+    "open": "选择会话",
+    "dialogTitle": "导出问题现场",
+    "dialogDescription": "查看将要导出的内容，然后选择一个或多个会话。ZIP 将保存到桌面。",
+    "contentsTitle": "ZIP 将包含",
+    "contents": {
+      "transcripts": {
+        "title": "会话记录",
+        "description": "每个已选会话的完整 JSONL 文件。"
+      },
+      "config": {
+        "title": "OpenClaw 配置",
+        "description": "已移除凭证值的 openclaw.json 副本。"
+      },
+      "logs": {
+        "title": "诊断日志",
+        "description": "可用的 ClawX 和 OpenClaw 日志。"
+      },
+      "manifest": {
+        "title": "清单",
+        "description": "记录已包含和缺失的文件。"
+      }
+    },
+    "sessionsTitle": "选择会话",
+    "selectAll": "全选（{{count}}）",
+    "selectedCount": "已选择 {{count}} 个会话",
+    "noSessions": "暂无可导出的会话。",
+    "export": "创建 ZIP（{{count}}）",
+    "exporting": "正在创建 ZIP...",
+    "exportSucceeded": "问题现场已导出",
+    "skippedSessions": "有 {{count}} 个会话的本地记录不可用，已跳过并导出其余选中会话。",
+    "exportFailed": "问题现场导出失败",
+    "completeTitle": "问题现场已就绪",
+    "completeDescription": "ZIP 已保存到以下路径。",
+    "showInFolder": "在文件夹中显示",
+    "revealFailed": "无法在文件夹中显示问题现场 ZIP"
+  },
   "about": {
     "title": "关于",
     "appName": "ClawX",
