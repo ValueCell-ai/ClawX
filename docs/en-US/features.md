@@ -8,7 +8,7 @@ Complete the entire setup from installation to your first AI conversation throug
 
 ### Intelligent Chat Interface
 
-Communicate with AI agents through a modern chat experience. ClawX supports multiple conversation contexts and message history, with assistant replies rendered as streaming Markdown with syntax-highlighted fenced code, CJK-aware parsing, GitHub-flavored tables, and KaTeX-powered LaTeX math (`$inline$`, `$$block$$`, `\(inline\)`, and `\[block\]`). User input remains literal text. The main composer also supports direct `@agent` routing for multi-agent setups. Fenced code preserves source line breaks, soft-wraps long lines, and provides a localized copy action after streaming completes.
+Communicate with AI agents through a modern chat experience. ClawX supports multiple conversation contexts and message history, with assistant replies rendered as streaming Markdown with syntax-highlighted fenced code, CJK-aware parsing, GitHub-flavored tables, and KaTeX-powered LaTeX math (`$inline$`, `$$block$$`, `\(inline\)`, and `\[block\]`). User input remains literal text. The main composer also supports direct `@agent` routing for multi-agent setups. Fenced code preserves source line breaks, soft-wraps long lines, and provides a localized copy action after streaming completes. Once a turn settles, ClawX compares the streamed reply with the transcript OpenClaw persisted and completes the message in place, so a stream chunk dropped in transit no longer leaves a truncated answer that only a reload can fix.
 
 Skills inserted from the composer appear as `/skill-name` cards. Click a card to open the preview sidebar and read that skill's `SKILL.md`.
 

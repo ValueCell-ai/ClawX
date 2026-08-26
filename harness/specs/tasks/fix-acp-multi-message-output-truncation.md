@@ -36,7 +36,7 @@ acceptance:
   - The content-prefix rule is documented as a heuristic compatibility workaround rather than a formally correct classifier for snapshots, chunks, and replacements.
   - A durable follow-up consumes Gateway protocol v4 `deltaText` and `replace` operations under the matching run and defines explicit ACP replacement behavior.
   - Transcript replay remains authoritative and unchanged.
-  - Renderer receives ordinary ACP updates and adds no transcript fallback for missing ordinary assistant prose.
+  - Renderer receives ordinary ACP updates and adds no transcript fallback for missing ordinary assistant prose. Superseded by `repair-truncated-acp-assistant-text`, which allows a bounded end-of-turn reconciliation because a correct bridge cannot detect chunks dropped downstream of it.
 docs:
   required: true
 ---

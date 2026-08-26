@@ -6,6 +6,7 @@ import { hostApi } from '../host-api';
 import {
   alignOpenClawMediaTurns,
   extractOpenClawMediaTurns,
+  projectOpenClawAssistantText,
   selectOpenClawTranscriptTurn,
   type OpenClawMediaTurnSupplement,
 } from './openclaw-media-compat';
@@ -24,6 +25,8 @@ export type TranscriptSupplementResult = {
   media: OpenClawMediaTurnSupplement[];
   transcriptMediaTurnCount: number;
   turnTimings: SessionTurnTimingCandidate[];
+  /** Live turn only: persisted assistant texts used to reconcile a lossy delta stream. */
+  assistantTexts: string[];
 };
 
 type TranscriptSupplementInput = {
@@ -105,17 +108,23 @@ export async function fetchOpenClawTranscriptSupplement(
   }
   const messages = response?.success && Array.isArray(response.messages) ? response.messages : [];
   const snapshot = typeof input.snapshot === 'function' ? input.snapshot() : input.snapshot;
-  const imageMessages = input.liveUserMessageId
+  const scopedMessages = input.liveUserMessageId
     ? selectOpenClawTranscriptTurn(messages, snapshot, input.liveUserMessageId)
     : messages;
-  const extractedImages = extractImageGenerationTranscriptSupplement(imageMessages, input.sessionKey);
+  const extractedImages = extractImageGenerationTranscriptSupplement(scopedMessages, input.sessionKey);
   const imageGeneration: CoordinatedImageGenerationSupplement = {
     starts: extractedImages.starts,
     completions: extractedImages.completions.map((completion) => {
-      const messageId = transcriptMessageId(completion, imageMessages, input.sessionKey);
+      const messageId = transcriptMessageId(completion, scopedMessages, input.sessionKey);
       return { ...completion, ...(messageId ? { transcriptMessageId: messageId } : {}) };
     }),
   };
+  const assistantTexts = input.liveUserMessageId
+    ? scopedMessages
+      .filter((message) => typeof message.role === 'string' && message.role.toLowerCase() === 'assistant')
+      .map((message) => projectOpenClawAssistantText(message, input.executionCwd))
+      .filter((text) => text.trim().length > 0)
+    : [];
   const suppressedUris = new Set(
     imageGeneration.completions.flatMap((completion) => completion.candidates.map((candidate) => candidate.key)),
   );
@@ -133,6 +142,9 @@ export async function fetchOpenClawTranscriptSupplement(
     candidateCount: transcriptMediaTurns.reduce((count, turn) => count + turn.candidates.length, 0),
     matchedCount: media.length,
     rejectedCount: Math.max(0, transcriptMediaTurnCount - media.length),
+    transcriptMessageCount: messages.length,
+    scopedMessageCount: scopedMessages.length,
+    assistantTextCount: assistantTexts.length,
   });
   if (transcriptMediaTurnCount > media.length) {
     recordTrace(input, 'openclaw-media:turn-rejected', {
@@ -149,5 +161,5 @@ export async function fetchOpenClawTranscriptSupplement(
     });
   }
 
-  return { imageGeneration, media, transcriptMediaTurnCount, turnTimings };
+  return { imageGeneration, media, transcriptMediaTurnCount, turnTimings, assistantTexts };
 }

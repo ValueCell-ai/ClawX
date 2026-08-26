@@ -200,6 +200,29 @@ function mediaReferences(text: string): Array<{ uri: string; line: number }> {
   return references;
 }
 
+/**
+ * OpenClaw ACP removes assistant `MEDIA:` directive lines from the visible reply while the
+ * transcript keeps them, so text comparisons against the transcript must apply the same
+ * projection or every media reply would look like a mismatch.
+ */
+export function stripOpenClawMediaDirectiveLines(text: string, executionCwd: string): string {
+  const directiveLines = new Set(
+    mediaReferences(text)
+      .filter((reference) => parseDirectiveReference(reference.uri, executionCwd) !== null)
+      .map((reference) => reference.line),
+  );
+  if (directiveLines.size === 0) return text;
+  return text
+    .split(/\r?\n/)
+    .filter((_line, index) => !directiveLines.has(index))
+    .join('\n');
+}
+
+/** Transcript assistant text as OpenClaw ACP would have projected it into the visible reply. */
+export function projectOpenClawAssistantText(message: RawMessage, executionCwd: string): string {
+  return stripOpenClawMediaDirectiveLines(textFromContent(message.content), executionCwd).trimEnd();
+}
+
 function assignOccurrencesFromTail<T extends { normalizedUserText: string }>(turns: T[]): Array<T & { userOccurrenceFromTail: number }> {
   const occurrences = new Map<string, number>();
   const result = new Array<T & { userOccurrenceFromTail: number }>(turns.length);

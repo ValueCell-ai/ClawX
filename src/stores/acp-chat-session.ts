@@ -36,6 +36,10 @@ import {
   createEmptyAcpTimeline,
   upsertSyntheticTurnAttachments,
 } from '@/lib/acp/reducer';
+import {
+  repairAssistantTurnText,
+  type AssistantTextRepairOutcome,
+} from '@/lib/acp/assistant-text-repair';
 import { hashOpenClawMediaDiagnostic, type OpenClawMediaCandidate } from '@/lib/acp/openclaw-media-compat';
 import { openClawResourceLinkPromptText } from '@/lib/acp/openclaw-prompt-compat';
 import { fetchOpenClawTranscriptSupplement } from '@/lib/acp/transcript-supplement';
@@ -744,6 +748,29 @@ async function runTranscriptSupplement(operation: TranscriptSupplementOperation)
         },
       };
     });
+  }
+
+  const liveUserMessageId = operation.liveUserMessageId;
+  if (liveUserMessageId && result.assistantTexts.length > 0) {
+    const outcomes: AssistantTextRepairOutcome[] = [];
+    useAcpChatSessionStore.setState((current) => {
+      if (!isCurrentTranscriptSupplement(current, operation)) return {};
+      const repair = repairAssistantTurnText(current.timeline, {
+        liveUserMessageId,
+        transcriptTexts: result.assistantTexts,
+      });
+      outcomes.push(repair.outcome);
+      return repair.snapshot === current.timeline ? {} : { timeline: repair.snapshot };
+    });
+    const outcome = outcomes[0];
+    if (outcome) {
+      recordProjectionTrace({
+        event: `assistant-text-repair:${outcome.status}`,
+        sessionKey: operation.sessionKey,
+        generation: operation.generation,
+        details: { source: 'assistant-text-repair', attempt, ...outcome },
+      });
+    }
   }
 
   for (const start of result.imageGeneration.starts) {

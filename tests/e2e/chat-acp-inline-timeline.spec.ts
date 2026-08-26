@@ -267,6 +267,76 @@ async function installAcpPromptTimingMock(
   }, timing);
 }
 
+/**
+ * Streams `streamedText` from Main and resolves the prompt, while the persisted transcript holds
+ * `transcriptTexts`. Emitting from inside the prompt handler keeps the delta ahead of the prompt
+ * result, matching the real ordering the reconciliation has to run against.
+ */
+async function installAcpTruncatedStreamMock(
+  app: ElectronApplication,
+  transcript: { promptText: string; streamedText: string; transcriptTexts: string[] },
+) {
+  await app.evaluate(async ({ app: _app }, payload) => {
+    const { BrowserWindow, ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type IpcInvokeHandler = (event: unknown, request: {
+      id?: string;
+      module?: string;
+      action?: string;
+    }) => Promise<unknown>;
+    const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
+    const originalHostInvoke = handlers?.get('host:invoke');
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: {
+      id?: string;
+      module?: string;
+      action?: string;
+    }) => {
+      if (request?.module === 'chat' && request.action === 'sendAcpPrompt') {
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('chat:acp-session-update', {
+            sessionKey: payload.sessionKey,
+            generation: 1,
+            notification: {
+              sessionId: payload.sessionKey,
+              update: {
+                sessionUpdate: 'agent_message_chunk',
+                messageId: 'truncated-live-assistant',
+                content: { type: 'text', text: payload.streamedText },
+              },
+            },
+          });
+        }
+        return { id: request.id, ok: true, data: { success: true, generation: 1 } };
+      }
+      if (request?.module === 'sessions' && request.action === 'history') {
+        return {
+          id: request.id,
+          ok: true,
+          data: {
+            success: true,
+            messages: [
+              { role: 'user', content: [{ type: 'text', text: payload.promptText }] },
+              ...payload.transcriptTexts.map((text) => ({
+                role: 'assistant',
+                content: [{ type: 'text', text }],
+              })),
+            ],
+          },
+        };
+      }
+      if (request?.module === 'diagnostics' && request.action === 'recordAcpTrace') {
+        const event = (request as { payload?: { event?: string } }).payload?.event ?? '';
+        if (event.startsWith('assistant-text-repair:')) {
+          const scope = globalThis as unknown as { __assistantTextRepairEvents?: string[] };
+          scope.__assistantTextRepairEvents = [...(scope.__assistantTextRepairEvents ?? []), event];
+        }
+        return { id: request.id, ok: true, data: { success: true } };
+      }
+      return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
+    });
+  }, { sessionKey: MAIN_SESSION_KEY, ...transcript });
+}
+
 async function installAcpPromptFailureMock(app: ElectronApplication, error: string) {
   await app.evaluate(async ({ app: _app }, promptError) => {
     const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
@@ -555,6 +625,36 @@ test.describe('ClawX ACP inline timeline', () => {
 
       await expect(page.getByText('Live turn measured')).toBeVisible();
       await expect(page.getByTestId('acp-turn-duration')).toHaveText('Took 6 sec');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('repairs a truncated assistant reply from the persisted transcript', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const prompt = 'How is the data service priced?';
+    const streamedText = 'It is sold as an enterprise subscription and quoted';
+    const completeText = 'It is sold as an enterprise subscription and quoted per commodity, region, and seat.';
+
+    try {
+      await installAcpChatMocks(app);
+      await installAcpTruncatedStreamMock(app, {
+        promptText: prompt,
+        streamedText,
+        transcriptTexts: [completeText],
+      });
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+
+      await page.getByTestId('chat-composer-input').fill(prompt);
+      await page.getByTestId('chat-composer-send').click();
+
+      await expect(page.getByTestId('acp-assistant-message')).toContainText(completeText, { timeout: 30_000 });
+      const repairEvents = await app.evaluate(() => (
+        (globalThis as unknown as { __assistantTextRepairEvents?: string[] }).__assistantTextRepairEvents ?? []
+      ));
+      // The complete reply must come from the reconciliation, not from the truncated stream.
+      expect(repairEvents).toContain('assistant-text-repair:repaired');
     } finally {
       await closeElectronApp(app);
     }
