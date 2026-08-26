@@ -92,6 +92,31 @@ describe('getSessionDisplayTitle', () => {
   it('falls back safely when session labels are unavailable', () => {
     expect(getSessionDisplayTitle(session)).toBe('Generated title')
   })
+
+  it('removes cwd metadata from automatic display titles', () => {
+    expect(getSessionDisplayTitle({
+      key: session.key,
+      derivedTitle: '[Working directory: ~/.openclaw/workspace]\n\nExplain this repository',
+    })).toBe('Explain this repository')
+  })
+
+  it('skips a cwd envelope truncated before the prompt', () => {
+    expect(getSessionDisplayTitle({
+      key: session.key,
+      derivedTitle: '[Working directory: ~/.openclaw/workspace]…',
+      displayName: 'ClawX',
+    })).toBe('ClawX')
+  })
+
+  it('preserves an explicit label that resembles a cwd envelope', () => {
+    const explicitTitle = '[Working directory: ~/.openclaw/workspace]…'
+    expect(getSessionDisplayTitle({
+      key: session.key,
+      label: explicitTitle,
+      derivedTitle: 'Generated title',
+    })).toBe(explicitTitle)
+    expect(getSessionDisplayTitle(session, { [session.key]: explicitTitle })).toBe(explicitTitle)
+  })
 })
 
 describe('isAcpWorkingDirectoryTruncatedTitle', () => {

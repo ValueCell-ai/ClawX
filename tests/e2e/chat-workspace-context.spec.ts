@@ -554,6 +554,34 @@ test.describe('ClawX chat workspace context', () => {
     }
   });
 
+  test('canonical main session replaces a truncated cwd title with the first user prompt', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const truncatedCwdTitle = `[Working directory: ${DEFAULT_WORKSPACE}]…`;
+
+    try {
+      await installWorkspaceMocks(app, {
+        sessionKey: DEFAULT_SESSION_KEY,
+        sessionDerivedTitle: truncatedCwdTitle,
+        sessionSummaryFirstUserText: `[Working directory: ${DEFAULT_WORKSPACE}]\n\n给我写一个脚本`,
+        sessionRowWorkspacePath: DEFAULT_WORKSPACE,
+        sessionSummaryWorkspacePath: DEFAULT_WORKSPACE,
+      });
+
+      const page = await getStableWindow(app);
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
+      }
+
+      const defaultGroup = page.getByTestId(workspaceSessionGroupTestId(DEFAULT_WORKSPACE));
+      await expect(defaultGroup).toContainText('给我写一个脚本', { timeout: 30_000 });
+      await expect(defaultGroup).not.toContainText('[Working directory:');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('new unbound chat stays hidden until it has content and prefers the selected conversation workspace over the global workspace', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 

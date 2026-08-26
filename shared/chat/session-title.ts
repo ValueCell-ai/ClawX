@@ -33,14 +33,21 @@ export function getSessionDisplayTitle(
   session: SessionTitleSource,
   sessionLabels: Record<string, string> = {},
 ): string {
-  const candidates = [
-    sessionLabels[session.key],
-    session.label,
-    session.derivedTitle,
-    session.displayName,
-  ]
-  return candidates.find((candidate) => (
+  const explicitTitle = [sessionLabels[session.key], session.label].find((candidate) => (
     candidate?.trim()
     && !isOpenClawSessionIdFallbackTitle(candidate, session.sessionId)
-  ))?.trim() ?? session.key
+  ))?.trim()
+  if (explicitTitle) return explicitTitle
+
+  for (const candidate of [session.derivedTitle, session.displayName]) {
+    if (!candidate?.trim()
+      || isAcpWorkingDirectoryTruncatedTitle(candidate)
+      || isOpenClawSessionIdFallbackTitle(candidate, session.sessionId)) {
+      continue
+    }
+    const automaticTitle = stripAcpWorkingDirectoryPrefix(candidate).trim()
+    if (automaticTitle) return automaticTitle
+  }
+
+  return session.key
 }

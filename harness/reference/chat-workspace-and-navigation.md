@@ -6,7 +6,7 @@ Related scenario: `chat-workspace-and-navigation`
 
 Related rules: `session-workspace-authority`, `sidebar-session-attention-authority`, `ui-i18n-design-tokens`, `office-preview-safety`, `web-browser-security-and-lifecycle`
 
-Related tasks: `chat-workspace-context`, `sidebar-session-attention`, `office-document-preview`, `web-browser`
+Related tasks: `chat-workspace-context`, `fix-default-main-cwd-title`, `sidebar-session-attention`, `office-document-preview`, `web-browser`
 
 ## Workspace Authority
 
@@ -24,7 +24,7 @@ ClawX persists global and recent workspace selections plus custom display labels
 
 First send initializes the ACP session with the selected cwd and then marks the local session as created/bound. A fresh session generated at cold start to replace hidden heartbeat history is marked as the same kind of local placeholder; it cannot appear as a normal empty session or bypass first-send creation. Gateway event and canonical-list reconciliation preserve the local `createdLocally` marker until acknowledgement, even when OpenClaw already reports the same key with the ACP bridge display name. The acknowledgement atomically restores a raced-away placeholder when necessary, clears the marker, and seeds a missing automatic sidebar title from the raw first prompt. The newly visible row therefore never falls back to the bridge client identity while transcript title hydration catches up. Existing explicit or cached labels win. ACP keeps `_meta.prefixCwd: true`; disabling cwd injection would break OpenClaw context. Automatic titles instead normalize away one leading `[Working directory: ...]` envelope and subsequent whitespace.
 
-Normalization applies to automatic sources such as Gateway-derived title and Main transcript summary. It never changes an explicit user label, never removes a non-leading marker, and treats the exact truncated envelope form as a missing title so a better summary can replace it. OpenClaw's synthetic `<first 8 session UUID characters> (YYYY-MM-DD)` fallback is also treated as missing only when it matches the row's full session id; Main's transcript summary then supplies the first user prompt. Opening and closing rename mode without changing the value must not persist any displayed fallback as an explicit label.
+Normalization applies to automatic sources such as Gateway-derived title and Main transcript summary. It never changes an explicit user label, never removes a non-leading marker, and treats the exact truncated envelope form as a missing title so a better summary can replace it. This summary repair also applies to the canonical `agent:main:main` conversation after its default workspace is known; workspace hydration must not suppress title hydration. OpenClaw's synthetic `<first 8 session UUID characters> (YYYY-MM-DD)` fallback is also treated as missing only when it matches the row's full session id; Main's transcript summary then supplies the first user prompt. Opening and closing rename mode without changing the value must not persist any displayed fallback as an explicit label.
 
 ## Sidebar Navigation
 

@@ -74,22 +74,30 @@ export function getSessionLabelHydrationCandidate(
   const displayName = normalizeLabelValue(session.displayName);
   const isLocalOrGhostDefaultMainSession = isDefaultMainSession
     && (session.createdLocally || (typeof session.updatedAt !== 'number' && (!displayName || displayName === session.key)));
-  if (isLocalOrGhostDefaultMainSession) return null;
-  if (isDefaultMainSession && (hasWorkspacePath || !options.includeWorkspacePath)) return null;
 
   const sidebarLabel = normalizeLabelValue(sessionLabels[session.key]);
   const hasSidebarLabel = sidebarLabel != null
     && !isOpenClawSessionIdFallbackTitle(sidebarLabel, session.sessionId);
-  const explicitLabel = isOpenClawSessionIdFallbackTitle(session.label || '', session.sessionId)
-    ? null
-    : normalizeLabelValue(session.label);
-  const derivedTitle = isAcpWorkingDirectoryTruncatedTitle(session.derivedTitle || '')
-    || isOpenClawSessionIdFallbackTitle(session.derivedTitle || '', session.sessionId)
-    ? null
-    : normalizeLabelValue(session.derivedTitle);
+  const hasSyntheticExplicitLabel = isOpenClawSessionIdFallbackTitle(
+    session.label || '',
+    session.sessionId,
+  );
+  const explicitLabel = hasSyntheticExplicitLabel ? null : normalizeLabelValue(session.label);
+  const hasSyntheticDerivedTitle = isAcpWorkingDirectoryTruncatedTitle(session.derivedTitle || '')
+    || isOpenClawSessionIdFallbackTitle(session.derivedTitle || '', session.sessionId);
+  const derivedTitle = hasSyntheticDerivedTitle ? null : normalizeLabelValue(session.derivedTitle);
   const backendLabel = explicitLabel ?? derivedTitle;
   const needsWorkspacePath = options.includeWorkspacePath === true && !hasWorkspacePath;
   const needsLabel = !hasSidebarLabel && !backendLabel;
+  const needsSyntheticTitleRepair = needsLabel
+    && (hasSyntheticExplicitLabel || hasSyntheticDerivedTitle);
+
+  if (isLocalOrGhostDefaultMainSession) return null;
+  if (
+    isDefaultMainSession
+    && (hasWorkspacePath || !options.includeWorkspacePath)
+    && !needsSyntheticTitleRepair
+  ) return null;
   if (!needsWorkspacePath && !needsLabel) return null;
 
   if (backendLabel) {

@@ -123,6 +123,22 @@ describe('chat store session label summary hydration', () => {
 
     expect(getSessionLabelHydrationCandidate(
       {
+        key: 'agent:main:main',
+        displayName: 'ClawX',
+        derivedTitle: '[Working directory: ~/.openclaw/workspace]…',
+        workspacePath: '~/.openclaw/workspace',
+        updatedAt: 1001,
+      },
+      {},
+      {},
+      { includeWorkspacePath: true },
+    )).toEqual({
+      sessionKey: 'agent:main:main',
+      version: '0|1001|[Working directory: ~/.openclaw/workspace]…',
+    });
+
+    expect(getSessionLabelHydrationCandidate(
+      {
         key: 'agent:research:main',
         displayName: 'ACP',
         workspacePath: '/research-workspace',
@@ -313,6 +329,72 @@ describe('chat store session label summary hydration', () => {
     expect(hostApiFetchMock).toHaveBeenCalledWith('/api/sessions/summaries', {
       method: 'POST',
       body: JSON.stringify({ sessionKeys: [sessionKey, 'agent:main:main'] }),
+    });
+  });
+
+  it('hydrates a cwd-only truncated title for the canonical main session with a known workspace', async () => {
+    const sessionKey = 'agent:main:main';
+    const workspacePath = '~/.openclaw/workspace';
+    gatewayRpcMock.mockImplementation(async (method: string) => {
+      if (method === 'sessions.list') {
+        return {
+          sessions: [{
+            key: sessionKey,
+            displayName: 'ClawX',
+            derivedTitle: '[Working directory: ~/.openclaw/workspace]…',
+            workspacePath,
+            updatedAt: 1_787_722_940_140,
+          }],
+        };
+      }
+
+      throw new Error(`Unexpected gateway RPC: ${method}`);
+    });
+    hostApiFetchMock.mockImplementation(async (path: string) => {
+      if (path === '/api/sessions/summaries') {
+        return {
+          success: true,
+          summaries: [{
+            sessionKey,
+            firstUserText: '[Working directory: ~/.openclaw/workspace]\n\n给我写一个脚本',
+            lastTimestamp: 1_787_722_940_140,
+            workspacePath,
+          }],
+        };
+      }
+      return { success: true, summaries: [] };
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: sessionKey,
+      currentAgentId: 'main',
+      sessions: [],
+      messages: [],
+      sessionLabels: {},
+      sessionLastActivity: {},
+      sending: false,
+      activeRunId: null,
+      streamingText: '',
+      streamingMessage: null,
+      streamingTools: [],
+      pendingFinal: false,
+      lastUserMessageAt: null,
+      pendingToolImages: [],
+      error: null,
+      loading: false,
+      thinkingLevel: null,
+      runError: null,
+    });
+
+    await useChatStore.getState().loadSessions();
+
+    await vi.waitFor(() => {
+      expect(useChatStore.getState().sessionLabels[sessionKey]).toBe('给我写一个脚本');
+    });
+    expect(hostApiFetchMock).toHaveBeenCalledWith('/api/sessions/summaries', {
+      method: 'POST',
+      body: JSON.stringify({ sessionKeys: [sessionKey] }),
     });
   });
 
