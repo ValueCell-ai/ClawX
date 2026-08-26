@@ -619,4 +619,57 @@ test.describe('ClawX chat file changes', () => {
       await closeElectronApp(app);
     }
   });
+
+  test('keeps tool cards and file activity aligned with assistant prose in a wide transcript', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    try {
+      await installFileActivityMocks(app, {
+        liveByPrompt: {
+          'Create aligned file': [
+            ...writeSequence('write-align', 'src/aligned.ts', 'one\ntwo\n'),
+            {
+              sessionUpdate: 'agent_message_chunk',
+              messageId: 'align-assistant',
+              content: {
+                type: 'text',
+                text: [
+                  '## Result',
+                  '',
+                  '| File | Status |',
+                  '| --- | --- |',
+                  '| src/aligned.ts | created |',
+                  '',
+                  'The write finished successfully.',
+                ].join('\n'),
+              },
+            },
+          ],
+        },
+      });
+      const page = await openChat(app);
+      await page.setViewportSize({ width: 1600, height: 900 });
+      await sendPrompt(page, 'Create aligned file');
+
+      const turn = page.getByTestId('acp-assistant-turn');
+      const message = turn.getByTestId('acp-assistant-message');
+      const files = turn.getByTestId('acp-turn-file-activity');
+      await expect(message).toContainText('The write finished successfully.', { timeout: 30_000 });
+      await expect(files).toBeVisible();
+      await expectVisibleToolCallCards(page, 1);
+      const tool = turn.getByTestId('acp-tool-call-card');
+
+      await expect.poll(async () => {
+        const boxes = await Promise.all([
+          message.boundingBox(),
+          tool.boundingBox(),
+          files.boundingBox(),
+        ]);
+        if (boxes.some((box) => !box)) return false;
+        const widths = boxes.map((box) => box!.width);
+        return Math.min(...widths) > 600 && Math.max(...widths) - Math.min(...widths) <= 2;
+      }).toBe(true);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
 });

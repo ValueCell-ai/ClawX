@@ -83,7 +83,7 @@ export function AcpToolCallCard({ item, grouped = false }: { item: ToolCallItem;
     <div
       data-testid="acp-tool-call-card"
       data-expanded={expanded ? 'true' : 'false'}
-      className={cn('rounded-lg px-0', grouped ? 'py-0' : 'py-0.5')}
+      className={cn('w-full min-w-0 rounded-lg px-0', grouped ? 'py-0' : 'py-0.5')}
     >
       <div className="flex min-w-0 items-center justify-between gap-3">
         {hasDetails ? (

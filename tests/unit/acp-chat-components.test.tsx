@@ -674,6 +674,65 @@ describe('ACP chat timeline components', () => {
     });
   });
 
+  it('keeps assistant prose, tool cards, and file activity on the same turn width', () => {
+    const state = snapshot({
+      itemOrder: ['tool:write-file', 'msg-a:0'],
+      itemsById: {
+        'tool:write-file': toolCallItem({
+          id: 'tool:write-file',
+          toolCallId: 'write-file',
+          title: 'write: report',
+          input: { path: 'report.md', content: '# Report' },
+        }),
+        'msg-a:0': {
+          kind: 'message-segment',
+          id: 'msg-a:0',
+          role: 'assistant',
+          messageId: 'msg-a',
+          segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Here is the result.' }],
+        },
+      },
+    });
+    const turnId = 'assistant-turn:tool:write-file';
+    const activity = {
+      turnId,
+      toolCallId: 'write-file',
+      toolName: 'write' as const,
+      relativePath: 'report.md',
+      action: 'created' as const,
+      fragments: [{ oldText: '', newText: '# Report', sequence: 0 }],
+      sequence: 0,
+    };
+    const projection: AcpFileActivityProjection = {
+      activities: [activity],
+      turnSummariesByTurnId: {
+        [turnId]: [{
+          turnId,
+          relativePath: 'report.md',
+          action: 'created',
+          activities: [activity],
+          added: 1,
+          removed: 0,
+        }],
+      },
+      fileGroups: [{ relativePath: 'report.md', activities: [activity] }],
+      uniqueFileCount: 1,
+    };
+
+    render(<AcpTimeline snapshot={state} fileActivity={projection} workspaceRoot="/workspace" />);
+
+    const message = screen.getByTestId('acp-assistant-message');
+    const toolWrap = screen.getByTestId('acp-tool-call-card').parentElement;
+    const files = screen.getByTestId('acp-turn-file-activity');
+
+    expect(message.className).toContain('w-full');
+    expect(message.className).not.toContain('calc(100%-3rem)');
+    expect(toolWrap?.className).toContain('w-full');
+    expect(files.className).toContain('w-full');
+    expect(files.parentElement?.className).toContain('w-full');
+  });
+
   it('routes deleted path-only activity to Changes without rendering counts', () => {
     const state = snapshot({
       itemOrder: ['tool:delete-file'],

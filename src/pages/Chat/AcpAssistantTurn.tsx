@@ -13,6 +13,10 @@ import { AcpTurnFileActivity } from './AcpTurnFileActivity';
 import { AcpAttachmentPart } from './AcpAttachmentPart';
 import type { AcpTurnTiming } from '@/lib/acp/turn-timings';
 import type { TimelineItem, ToolCallItem } from '@/lib/acp/timeline-types';
+import { cn } from '@/lib/utils';
+
+/** Keep prose, tools, and file cards on the same column in a wide transcript. */
+const assistantTurnBlockClassName = 'w-full min-w-0';
 
 type TurnRenderItem =
   | TimelineItem
@@ -146,7 +150,7 @@ export function AcpAssistantTurn({
         {renderItems.map((item) => {
           if (item.kind === 'tool-call-group') {
             return (
-              <div key={item.id} className="w-full">
+              <div key={item.id} className={assistantTurnBlockClassName}>
                 <AcpToolCallsGroup
                   items={item.items}
                   collapsedByDefault={isToolGroupSettled(item.items, timing, group.items)}
@@ -158,7 +162,7 @@ export function AcpAssistantTurn({
           if (item.kind === 'message-segment') {
             if (item.role === 'user') return <AcpMessageSegment key={item.id} item={item} />;
             return (
-              <div key={item.id} data-acp-item-id={item.id} data-testid="acp-assistant-message" className="flex min-w-0 flex-col gap-2 w-[calc(100%-3rem)]">
+              <div key={item.id} data-acp-item-id={item.id} data-testid="acp-assistant-message" className={cn('flex flex-col gap-2', assistantTurnBlockClassName)}>
                 {item.parts.map((part, index) => (
                   <AcpRenderPart
                     key={`${part.kind}:${index}`}
@@ -177,7 +181,7 @@ export function AcpAssistantTurn({
 
           if (item.kind === 'tool-call') {
             return (
-              <div key={item.id} data-acp-item-id={item.id} className="-my-1 w-full">
+              <div key={item.id} data-acp-item-id={item.id} className={cn('-my-1', assistantTurnBlockClassName)}>
                 <AcpToolCallCard item={item} />
               </div>
             );
@@ -185,7 +189,7 @@ export function AcpAssistantTurn({
 
           if (item.kind === 'permission') {
             return (
-              <div key={item.id} data-acp-item-id={item.id} className="w-full">
+              <div key={item.id} data-acp-item-id={item.id} className={assistantTurnBlockClassName}>
                 <AcpPermissionCard item={item} onSelect={onPermissionSelect} />
               </div>
             );
@@ -193,7 +197,7 @@ export function AcpAssistantTurn({
 
           if (item.kind === 'thought') {
             return (
-              <div key={item.id} data-acp-item-id={item.id} className="w-full">
+              <div key={item.id} data-acp-item-id={item.id} className={assistantTurnBlockClassName}>
                 <AcpThoughtBlock item={item} />
               </div>
             );
@@ -201,7 +205,7 @@ export function AcpAssistantTurn({
 
           if (item.kind === 'plan') {
             return (
-              <div key={item.id} data-acp-item-id={item.id} className="w-full">
+              <div key={item.id} data-acp-item-id={item.id} className={assistantTurnBlockClassName}>
                 <AcpPlanItem item={item} />
               </div>
             );
@@ -214,10 +218,14 @@ export function AcpAssistantTurn({
           <AcpAttachmentPart key={attachment.attachmentId} part={attachment} />
         ))}
 
-        {workspaceRoot && <AcpTurnFileActivity summaries={fileSummaries} workspaceRoot={workspaceRoot} />}
+        {workspaceRoot && (
+          <div className={assistantTurnBlockClassName}>
+            <AcpTurnFileActivity summaries={fileSummaries} workspaceRoot={workspaceRoot} />
+          </div>
+        )}
 
         {(timing || clipboardText.trim().length > 0) && (
-          <div className="flex w-full items-center">
+          <div className={cn('flex items-center', assistantTurnBlockClassName)}>
             {timing && <AcpTurnDuration timing={timing} />}
             {clipboardText.trim().length > 0 && (
               <div className="ml-auto min-w-0 flex-1">
