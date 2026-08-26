@@ -12,7 +12,7 @@ Communicate with AI agents through a modern chat experience. ClawX supports mult
 
 Skills inserted from the composer appear as `/skill-name` cards. Click a card to open the preview sidebar and read that skill's `SKILL.md`.
 
-When an active OpenClaw ACP session reports context usage, the composer shows a compact meter with a ring and a visible localized percentage. Hover or focus it to see the used/total token counts. Used and total tokens normally come from the active ACP `usage_update`; after a model switch, the effective context window in the updated agent snapshot replaces that stale total until ACP reports fresh usage, so the limit and percentage update immediately. The meter stays hidden when usage metadata is missing or invalid.
+When an active OpenClaw ACP session reports context usage, the composer footer shows a compact meter with a ring and a visible localized percentage immediately to the left of the gateway connection status. Hover or focus it to see the used/total token counts. Used and total tokens normally come from the active ACP `usage_update`; after a model switch, the effective context window in the updated agent snapshot replaces that stale total until ACP reports fresh usage, so the limit and percentage update immediately. The meter stays hidden when usage metadata is missing or invalid.
 
 When you target another agent with `@agent`, ClawX switches directly to that agent's own conversation context instead of relaying through the default agent. Agent workspaces stay separate by default, while stronger runtime isolation depends on OpenClaw sandbox settings.
 

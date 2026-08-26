@@ -488,6 +488,13 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(indicator).toHaveAttribute('data-testid', 'chat-composer-context-usage');
       await expect(indicator).toHaveAttribute('aria-valuenow', '25');
       await expect(indicator).toContainText('25%');
+      await expect(page.getByTestId('chat-composer-footer').getByTestId('chat-composer-context-usage')).toBeVisible();
+      await expect(page.getByTestId('chat-composer-box').getByTestId('chat-composer-context-usage')).toHaveCount(0);
+      const indicatorBox = await indicator.boundingBox();
+      const gatewayBox = await page.getByTestId('chat-composer-gateway-status').boundingBox();
+      expect(indicatorBox).toBeTruthy();
+      expect(gatewayBox).toBeTruthy();
+      expect(indicatorBox!.x).toBeLessThan(gatewayBox!.x);
       await indicator.focus();
       await expect(page.getByRole('tooltip')).toHaveText('25% context used: 25,000 / 100,000 tokens');
     } finally {
