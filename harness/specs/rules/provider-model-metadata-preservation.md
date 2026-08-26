@@ -21,5 +21,6 @@ Custom-provider model rows (`models.providers.custom-*`) must carry an explicit
 `contextWindow`: new rows receive a deterministic model-family default, and
 existing rows missing both `contextWindow` and `contextTokens` may be
 backfilled with that default. Rows that already declare either field are
-user-owned and must never be modified, and non-`custom-` provider entries are
-never backfilled.
+user-owned and must never be modified, except the startup sync may replace an
+exact legacy `272000` default with `362000` when the model family is larger.
+Non-`custom-` provider entries are never backfilled.

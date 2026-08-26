@@ -44,7 +44,13 @@ import {
   assertValidApiProtocol,
   normalizeOpenClawApiProtocol,
 } from '../shared/providers/types';
-import { inferCustomModelContextWindow, inferCustomModelInputModalities } from '../shared/providers/model-capabilities';
+import {
+  CHATGPT_OAUTH_CONTEXT_WINDOW,
+  inferCustomModelContextWindow,
+  inferCustomModelInputModalities,
+  isSubscriptionApiProtocol,
+  LEGACY_CHATGPT_OAUTH_CONTEXT_WINDOW,
+} from '../shared/providers/model-capabilities';
 import { applyModelAwareCompactionReserveTokensFloor } from './openclaw-compaction';
 import {
   CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
@@ -950,20 +956,26 @@ function syncCompactionSafetyDefaults(config: Record<string, unknown>): boolean 
   return true;
 }
 
-function getDefaultModelRef(config: Record<string, unknown>): string | undefined {
-  const agents = config.agents;
-  const defaults = agents && typeof agents === 'object'
-    ? (agents as Record<string, unknown>).defaults
-    : undefined;
-  const model = defaults && typeof defaults === 'object'
-    ? (defaults as Record<string, unknown>).model
-    : undefined;
+function readModelPrimary(model: unknown): string | undefined {
   if (typeof model === 'string' && model.trim()) return model.trim();
-  if (model && typeof model === 'object') {
-    const primary = (model as Record<string, unknown>).primary;
-    if (typeof primary === 'string' && primary.trim()) return primary.trim();
+  if (isPlainRecord(model) && typeof model.primary === 'string' && model.primary.trim()) {
+    return model.primary.trim();
   }
   return undefined;
+}
+
+function getDefaultModelRef(config: Record<string, unknown>): string | undefined {
+  const agents = isPlainRecord(config.agents) ? config.agents : undefined;
+  if (!agents) return undefined;
+
+  const list = Array.isArray(agents.list) ? agents.list : [];
+  const defaultAgent = list.find((entry) => isPlainRecord(entry) && entry.default === true)
+    ?? list.find((entry) => isPlainRecord(entry) && entry.id === 'main');
+  const agentModelRef = isPlainRecord(defaultAgent) ? readModelPrimary(defaultAgent.model) : undefined;
+  if (agentModelRef) return agentModelRef;
+
+  const defaults = isPlainRecord(agents.defaults) ? agents.defaults : undefined;
+  return readModelPrimary(defaults?.model);
 }
 
 /**
@@ -996,6 +1008,58 @@ function backfillCustomProviderModelContextWindows(config: Record<string, unknow
   }
 
   return backfilled;
+}
+
+/**
+ * Rewrite stale 272k default windows (and oversized ChatGPT subscription
+ * windows) to the current 362k ceiling. Older ClawX builds wrote 272k onto
+ * custom `gpt-5.x` rows; leaving those values keeps the meter and compaction
+ * budget at 272k. Do not replace 272k with a published 1M-class family window.
+ */
+function syncSubscriptionProviderModelContextWindows(config: Record<string, unknown>): string[] {
+  const models = (config.models || {}) as Record<string, unknown>;
+  const providers = (models.providers || {}) as Record<string, unknown>;
+  const updated: string[] = [];
+
+  for (const [providerKey, entry] of Object.entries(providers)) {
+    if (!isPlainRecord(entry)) continue;
+    const apiProtocol = typeof entry.api === 'string'
+      ? normalizeOpenClawApiProtocol(entry.api)
+      : undefined;
+    const subscription = isSubscriptionApiProtocol(apiProtocol);
+    const rows = Array.isArray(entry.models) ? entry.models : [];
+    for (const row of rows) {
+      if (!isPlainRecord(row) || typeof row.id !== 'string' || !row.id) continue;
+      const inferred = inferCustomModelContextWindow(row.id, {
+        providerKey,
+        apiProtocol,
+      });
+      const current = typeof row.contextTokens === 'number'
+        ? row.contextTokens
+        : typeof row.contextWindow === 'number'
+          ? row.contextWindow
+          : undefined;
+      const staleLegacyCap = current === LEGACY_CHATGPT_OAUTH_CONTEXT_WINDOW
+        && inferred > current;
+      const exceedsCeiling = subscription
+        && typeof current === 'number'
+        && current > CHATGPT_OAUTH_CONTEXT_WINDOW;
+      const missing = subscription && current === undefined;
+      if (!staleLegacyCap && !exceedsCeiling && !missing) continue;
+
+      const next = staleLegacyCap
+        ? CHATGPT_OAUTH_CONTEXT_WINDOW
+        : inferred;
+      if (typeof row.contextTokens === 'number') {
+        row.contextTokens = next;
+      } else {
+        row.contextWindow = next;
+      }
+      updated.push(`${providerKey}/${row.id}`);
+    }
+  }
+
+  return updated;
 }
 
 // ── Exported Functions (all async) ───────────────────────────────
@@ -2668,6 +2732,7 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
   let compactionLog: string | undefined;
   let memorySearchDefaultResult: 'migrated' | 'seeded' | 'unchanged' = 'unchanged';
   let backfilledContextWindows: string[] = [];
+  let syncedSubscriptionContextWindows: string[] = [];
 
   const changed = await mutateOpenClawConfig((config) => {
     let modified = true;
@@ -2675,6 +2740,7 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     compactionLog = undefined;
     memorySearchDefaultResult = 'unchanged';
     backfilledContextWindows = [];
+    syncedSubscriptionContextWindows = [];
 
     // ── Gateway token + controlUi ──
     const gateway = (
@@ -2766,6 +2832,10 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
       modified = true;
       compactionLog = '[batch-sync] Synchronized ClawX-managed agents.defaults.compaction settings';
     }
+    syncedSubscriptionContextWindows = syncSubscriptionProviderModelContextWindows(config);
+    if (syncedSubscriptionContextWindows.length > 0) {
+      modified = true;
+    }
     if (applyModelAwareCompactionReserveTokensFloor(config, getDefaultModelRef(config))) {
       modified = true;
       compactionLog = '[batch-sync] Applied agents.defaults.compaction.reserveTokensFloor from the active model context window';
@@ -2811,6 +2881,9 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
       `[batch-sync] ${memorySearchDefaultResult === 'migrated' ? 'Migrated' : 'Seeded'} `
       + 'agents.defaults.memorySearch to FTS-only mode',
     );
+  }
+  if (syncedSubscriptionContextWindows.length > 0) {
+    console.log(`[batch-sync] Synced ChatGPT subscription contextWindow: ${syncedSubscriptionContextWindows.join(', ')}`);
   }
   if (backfilledContextWindows.length > 0) {
     console.log(`[batch-sync] Backfilled contextWindow for custom provider models: ${backfilledContextWindows.join(', ')}`);

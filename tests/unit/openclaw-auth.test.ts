@@ -2932,4 +2932,100 @@ describe('batchSyncConfigFields', () => {
     // Non custom-* providers own their metadata — never backfilled.
     expect(moonshot[0].contextWindow).toBeUndefined();
   });
+
+  it('lifts stale ChatGPT subscription context windows to the 362k ceiling', async () => {
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      models: {
+        providers: {
+          openai: {
+            api: 'openai-chatgpt-responses',
+            models: [
+              { id: 'gpt-5.6-sol', name: 'gpt-5.6-sol', contextWindow: 272000 },
+              { id: 'gpt-5.6-luna', name: 'gpt-5.6-luna', contextWindow: 272000 },
+              { id: 'gpt-4o', name: 'gpt-4o', contextWindow: 128000 },
+            ],
+          },
+          'custom-enterpri': {
+            api: 'openai-chatgpt-responses',
+            models: [{ id: 'gpt-5.6-sol', name: 'gpt-5.6-sol', contextWindow: 1050000 }],
+          },
+        },
+      },
+      agents: {
+        defaults: {
+          model: { primary: 'openai/gpt-5.6-sol' },
+          compaction: { mode: 'safeguard', reserveTokensFloor: 68000 },
+        },
+      },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const providers = (config.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const openai = (providers.openai as Record<string, unknown>).models as Array<Record<string, unknown>>;
+    const custom = (providers['custom-enterpri'] as Record<string, unknown>).models as Array<Record<string, unknown>>;
+    const defaults = (config.agents as Record<string, unknown>).defaults as Record<string, unknown>;
+
+    expect(openai[0]).toEqual(expect.objectContaining({ id: 'gpt-5.6-sol', contextWindow: 362000 }));
+    expect(openai[1]).toEqual(expect.objectContaining({ id: 'gpt-5.6-luna', contextWindow: 272000 }));
+    expect(openai[2]).toEqual(expect.objectContaining({ id: 'gpt-4o', contextWindow: 128000 }));
+    expect(custom[0]).toEqual(expect.objectContaining({ id: 'gpt-5.6-sol', contextWindow: 362000 }));
+    expect(defaults.compaction).toEqual(expect.objectContaining({ reserveTokensFloor: 90500 }));
+  });
+
+  it('lifts stale 272k custom-provider defaults to 362k and follows the default agent model', async () => {
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      models: {
+        providers: {
+          'custom-customb4': {
+            api: 'openai-completions',
+            models: [
+              { id: 'gpt-5.6-sol', name: 'gpt-5.6-sol', contextWindow: 272000 },
+              { id: 'gpt-5.5', name: 'gpt-5.5', contextWindow: 272000 },
+            ],
+          },
+          'custom-customc0': {
+            api: 'openai-completions',
+            models: [
+              { id: 'deepseek-v4-flash-0731', name: 'deepseek-v4-flash-0731', contextWindow: 1000000 },
+            ],
+          },
+        },
+      },
+      agents: {
+        defaults: {
+          model: { primary: 'custom-customc0/deepseek-v4-flash-0731' },
+          compaction: { mode: 'safeguard', reserveTokensFloor: 250000 },
+        },
+        list: [
+          {
+            id: 'main',
+            default: true,
+            model: { primary: 'custom-customb4/gpt-5.6-sol' },
+          },
+        ],
+      },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const providers = (config.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const custom = (providers['custom-customb4'] as Record<string, unknown>).models as Array<Record<string, unknown>>;
+    const deepseek = (providers['custom-customc0'] as Record<string, unknown>).models as Array<Record<string, unknown>>;
+    const defaults = (config.agents as Record<string, unknown>).defaults as Record<string, unknown>;
+
+    expect(custom[0]).toEqual(expect.objectContaining({ id: 'gpt-5.6-sol', contextWindow: 362000 }));
+    expect(custom[1]).toEqual(expect.objectContaining({ id: 'gpt-5.5', contextWindow: 362000 }));
+    expect(deepseek[0]).toEqual(expect.objectContaining({
+      id: 'deepseek-v4-flash-0731',
+      contextWindow: 1000000,
+    }));
+    expect(defaults.compaction).toEqual(expect.objectContaining({ reserveTokensFloor: 90500 }));
+  });
 });

@@ -7,6 +7,8 @@ import {
   LOCAL_MODEL_CONTEXT_WINDOW,
   inferCustomModelContextWindow,
   inferCustomModelInputModalities,
+  LEGACY_CHATGPT_OAUTH_CONTEXT_WINDOW,
+  resolveEffectiveModelContextWindow,
 } from '@electron/shared/providers/model-capabilities';
 
 describe('inferCustomModelInputModalities', () => {
@@ -119,10 +121,34 @@ describe('inferCustomModelContextWindow', () => {
   });
 
   describe('ChatGPT subscription transport', () => {
+    it('uses a 362k ceiling so the 25% reserve triggers compaction near 270k', () => {
+      expect(CHATGPT_OAUTH_CONTEXT_WINDOW).toBe(362_000);
+      expect(LEGACY_CHATGPT_OAUTH_CONTEXT_WINDOW).toBe(272_000);
+      expect(Math.floor(CHATGPT_OAUTH_CONTEXT_WINDOW * 0.25)).toBe(90_500);
+    });
+
     it('clamps an explicit native context window to the subscription limit', () => {
       expect(clampModelContextWindow(1_050_000, {
         providerKey: 'openai',
         apiProtocol: 'openai-chatgpt-responses',
+      })).toBe(CHATGPT_OAUTH_CONTEXT_WINDOW);
+    });
+
+    it('lifts a stale 272k ChatGPT cap when the family window is larger', () => {
+      expect(resolveEffectiveModelContextWindow('gpt-5.6-sol', 272_000, {
+        providerKey: 'openai',
+        apiProtocol: 'openai-chatgpt-responses',
+      })).toBe(CHATGPT_OAUTH_CONTEXT_WINDOW);
+      expect(resolveEffectiveModelContextWindow('gpt-5.6-luna', 272_000, {
+        providerKey: 'openai',
+        apiProtocol: 'openai-chatgpt-responses',
+      })).toBe(272_000);
+    });
+
+    it('lifts a stale 272k custom-provider default to 362k instead of the family 1.05M', () => {
+      expect(resolveEffectiveModelContextWindow('gpt-5.6-sol', 272_000, {
+        providerKey: 'custom-customb4',
+        apiProtocol: 'openai-completions',
       })).toBe(CHATGPT_OAUTH_CONTEXT_WINDOW);
     });
 

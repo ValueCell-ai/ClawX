@@ -95,14 +95,18 @@ export const LOCAL_MODEL_CONTEXT_WINDOW = 131_072;
  *
  * OAuth against a ChatGPT plan does not get the API-tier window: the backend
  * enforces a far smaller per-session budget than `gpt-5.6-sol`'s published
- * 1.05M. OpenClaw's own Codex catalog hard-codes 272,000 for every model on
- * this transport, so we mirror that figure rather than inventing our own.
+ * 1.05M. OpenClaw's Codex catalog still advertises 272,000, but ClawX uses
+ * 362,000 so the model-aware 25% reserve triggers compaction near 270k —
+ * close to that historical budget — instead of ~204k.
  *
  * This matters because ClawX writes OAuth rows into `models.providers.openai`
  * while OpenClaw's cap lives on its separate `codex` provider — nothing else
  * would clamp the value we write.
  */
-export const CHATGPT_OAUTH_CONTEXT_WINDOW = 272_000;
+export const CHATGPT_OAUTH_CONTEXT_WINDOW = 362_000;
+
+/** Previous ChatGPT OAuth ceiling written by older ClawX builds. */
+export const LEGACY_CHATGPT_OAUTH_CONTEXT_WINDOW = 272_000;
 
 /** Runtime provider keys are suffixed per instance, e.g. `ollama-a1b2c3`. */
 const LOCAL_PROVIDER_KEY_PATTERN = /^ollama(?:-|$)/;
@@ -142,7 +146,7 @@ function isLocalProviderKey(providerKey: string | undefined): boolean {
   return providerKey != null && LOCAL_PROVIDER_KEY_PATTERN.test(providerKey.trim().toLowerCase());
 }
 
-function isSubscriptionApiProtocol(apiProtocol: string | undefined): boolean {
+export function isSubscriptionApiProtocol(apiProtocol: string | undefined): boolean {
   return apiProtocol != null && SUBSCRIPTION_API_PROTOCOLS.has(apiProtocol.trim().toLowerCase());
 }
 
@@ -164,6 +168,30 @@ export function clampModelContextWindow(
   context: ModelCapabilityContext = {},
 ): number {
   return Math.min(Math.floor(contextWindow), resolveContextWindowCeiling(context));
+}
+
+/**
+ * Resolve a stored or inferred context window, lifting the legacy 272k default
+ * cap to 362k when the model family is larger. Do not jump all the way to a
+ * published 1M-class window: 362k is what makes the 25% reserve compact near 270k.
+ */
+export function resolveEffectiveModelContextWindow(
+  modelId: string,
+  configured: number | undefined,
+  context: ModelCapabilityContext = {},
+): number | undefined {
+  if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
+    const clamped = clampModelContextWindow(configured, context);
+    if (configured === LEGACY_CHATGPT_OAUTH_CONTEXT_WINDOW) {
+      const inferred = inferKnownModelContextWindow(modelId, context);
+      if (inferred !== undefined && inferred > clamped) {
+        return Math.min(inferred, CHATGPT_OAUTH_CONTEXT_WINDOW);
+      }
+    }
+    return clamped;
+  }
+
+  return inferKnownModelContextWindow(modelId, context);
 }
 
 export function inferCustomModelContextWindow(

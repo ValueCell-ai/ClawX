@@ -250,10 +250,10 @@ describe('agent config lifecycle', () => {
     config = await readOpenClawJson();
     expect(snapshot.agents.find((agent) => agent.id === 'coder')).toMatchObject({
       modelRef: 'openai/gpt-5.6-sol',
-      contextWindow: 272_000,
+      contextWindow: 362_000,
     });
     expect((config.agents as { defaults: { compaction: { reserveTokensFloor: number } } })
-      .defaults.compaction.reserveTokensFloor).toBe(68_000);
+      .defaults.compaction.reserveTokensFloor).toBe(90_500);
   });
 
   it('mutates the running coordinator snapshot instead of replacing it from the local file', async () => {

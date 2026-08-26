@@ -21,7 +21,7 @@ touchedAreas:
   - README.ja-JP.md
 expectedUserBehavior:
   - Saving or updating a custom provider writes model rows that include an inferred contextWindow, so OpenClaw's preemptive compaction and context-window guard are active for custom models.
-  - Existing custom provider model rows that already carry contextWindow or contextTokens are never modified.
+  - Existing custom provider model rows that already carry contextWindow or contextTokens are never modified, except an exact legacy 272000 default may be lifted to 362000.
   - On app start, custom-provider model rows missing both contextWindow and contextTokens are backfilled with an inferred contextWindow, and agents.defaults.compaction is seeded to safeguard mode when the user has no compaction config.
   - Existing installs keep their reserveTokensFloor value and receive midTurnPrecheck.enabled=true when that option is missing; explicit midTurnPrecheck.enabled values remain unchanged.
   - Long and tool-heavy sessions on custom providers are compacted before overflowing instead of surfacing "Context overflow" errors.
@@ -38,7 +38,7 @@ requiredTests:
   - tests/unit/openclaw-auth.test.ts
 acceptance:
   - New custom-provider model rows written by explicit provider sync include an inferred contextWindow matching the model-family table in model-capabilities.
-  - The startup batch sync backfills contextWindow only on models.providers.custom-* rows lacking both contextWindow and contextTokens; registry and non-custom providers are never touched.
+  - The startup batch sync backfills contextWindow only on models.providers.custom-* rows lacking both contextWindow and contextTokens, and may lift an exact legacy 272000 default to 362000; other existing values and registry/non-custom providers are never touched.
   - agents.defaults.compaction is seeded to { mode: "safeguard", reserveTokensFloor: 50000, midTurnPrecheck: { enabled: true } } only when no compaction config exists.
   - Existing reserveTokensFloor values, including the previous ClawX default of 50000, are unchanged on upgrade; a missing reserveTokensFloor may still be backfilled to 50000 as before.
   - A missing midTurnPrecheck setting or enabled field is backfilled to enabled=true, while an explicit enabled value is preserved.

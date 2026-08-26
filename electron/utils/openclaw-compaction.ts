@@ -1,6 +1,5 @@
 import {
-  clampModelContextWindow,
-  inferKnownModelContextWindow,
+  resolveEffectiveModelContextWindow,
   type ModelCapabilityContext,
 } from '../shared/providers/model-capabilities';
 
@@ -31,11 +30,11 @@ export function resolveModelContextWindow(
     apiProtocol: typeof provider?.api === 'string' ? provider.api : undefined,
   };
   const configuredContextWindow = row && (row.contextTokens ?? row.contextWindow);
-  if (typeof configuredContextWindow === 'number' && Number.isFinite(configuredContextWindow) && configuredContextWindow > 0) {
-    return clampModelContextWindow(configuredContextWindow, context);
-  }
-
-  return inferKnownModelContextWindow(modelId, context);
+  return resolveEffectiveModelContextWindow(
+    modelId,
+    typeof configuredContextWindow === 'number' ? configuredContextWindow : undefined,
+    context,
+  );
 }
 
 /**

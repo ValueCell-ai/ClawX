@@ -52,7 +52,7 @@ touchedAreas:
 expectedUserBehavior:
   - Selecting a model writes agents.defaults.compaction.reserveTokensFloor as 25% of that model's effective context window, rounded down, regardless of a previous local floor value.
   - The chat context meter immediately uses the newly selected model's effective context window instead of retaining the previous model's ACP-reported limit.
-  - Transport ceilings, including the 272k ChatGPT subscription limit, apply even when a configured model row advertises a larger native context window.
+  - Transport ceilings, including the 362k ChatGPT subscription limit, apply even when a configured model row advertises a larger native context window. Startup sync lifts stale 272k ChatGPT caps (and unclamped native windows) to that ceiling so compaction starts near 270k.
   - Startup configuration sync corrects stale local reserveTokensFloor values using the active default model when its context window is known.
   - Startup configuration sync overwrites agents.defaults.compaction.recentTurnsPreserve and keepRecentTokens with 0 so completed turns are summarized instead of replayed verbatim after compaction.
   - Developer Mode displays the currently applied compaction reserve-token floor and its model-aware 25% policy.
@@ -97,7 +97,7 @@ docs:
 
 ## Background
 
-OpenClaw's global compaction reserve defaults are too small for a 272k-token
-model behind a slow provider. The resulting compaction can exceed the fixed
-timeout. ClawX also owns the Gateway liveness restart policy, which must not
-abort an observed compaction before OpenClaw can finish it.
+OpenClaw's global compaction reserve defaults are too small for a 362k-token
+ChatGPT subscription model behind a slow provider. The resulting compaction can
+exceed the fixed timeout. ClawX also owns the Gateway liveness restart policy,
+which must not abort an observed compaction before OpenClaw can finish it.

@@ -34,14 +34,14 @@ describe('applyModelAwareCompactionReserveTokensFloor', () => {
             models: [{
               id: 'gpt-5.6-sol',
               contextWindow: 1_050_000,
-              contextTokens: 272_000,
+              contextTokens: 200_000,
             }],
           },
         },
       },
       agents: {
         defaults: {
-          compaction: { mode: 'safeguard', reserveTokensFloor: 50_000 },
+          compaction: { mode: 'safeguard', reserveTokensFloor: 80_000 },
         },
       },
     };
@@ -49,7 +49,7 @@ describe('applyModelAwareCompactionReserveTokensFloor', () => {
     expect(applyModelAwareCompactionReserveTokensFloor(config, 'openai/gpt-5.6-sol')).toBe(true);
     expect(config.agents).toEqual({
       defaults: {
-        compaction: { mode: 'safeguard', reserveTokensFloor: 68_000 },
+        compaction: { mode: 'safeguard', reserveTokensFloor: 50_000 },
       },
     });
   });
@@ -74,7 +74,57 @@ describe('applyModelAwareCompactionReserveTokensFloor', () => {
     expect(applyModelAwareCompactionReserveTokensFloor(config, 'openai/gpt-5.6-sol')).toBe(true);
     expect(config.agents).toEqual({
       defaults: {
-        compaction: { mode: 'safeguard', reserveTokensFloor: 68_000 },
+        compaction: { mode: 'safeguard', reserveTokensFloor: 90_500 },
+      },
+    });
+  });
+
+  it('lifts a stale 272k custom-provider default to 362k instead of the family window', () => {
+    const config: Record<string, unknown> = {
+      models: {
+        providers: {
+          'custom-customb4': {
+            api: 'openai-completions',
+            models: [{ id: 'gpt-5.6-sol', contextWindow: 272_000 }],
+          },
+        },
+      },
+      agents: {
+        defaults: {
+          compaction: { mode: 'safeguard', reserveTokensFloor: 250_000 },
+        },
+      },
+    };
+
+    expect(applyModelAwareCompactionReserveTokensFloor(config, 'custom-customb4/gpt-5.6-sol')).toBe(true);
+    expect(config.agents).toEqual({
+      defaults: {
+        compaction: { mode: 'safeguard', reserveTokensFloor: 90_500 },
+      },
+    });
+  });
+
+  it('lifts the legacy 272k ChatGPT cap to the current 362k ceiling', () => {
+    const config: Record<string, unknown> = {
+      models: {
+        providers: {
+          openai: {
+            api: 'openai-chatgpt-responses',
+            models: [{ id: 'gpt-5.6-sol', contextWindow: 272_000 }],
+          },
+        },
+      },
+      agents: {
+        defaults: {
+          compaction: { mode: 'safeguard', reserveTokensFloor: 68_000 },
+        },
+      },
+    };
+
+    expect(applyModelAwareCompactionReserveTokensFloor(config, 'openai/gpt-5.6-sol')).toBe(true);
+    expect(config.agents).toEqual({
+      defaults: {
+        compaction: { mode: 'safeguard', reserveTokensFloor: 90_500 },
       },
     });
   });
