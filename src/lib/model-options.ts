@@ -3,6 +3,8 @@ import type { ProviderAccount, ProviderVendorInfo, ProviderWithKeyInfo } from '@
 export interface ConfiguredModelOption {
   modelRef: string;
   label: string;
+  modelId: string;
+  providerName: string;
   runtimeProviderKey: string;
   accountId: string;
 }
@@ -184,9 +186,12 @@ export function buildConfiguredModelOptions(
     for (const modelId of modelIds) {
       const modelRef = `${runtimeProviderKey}/${modelId}`;
       if (deduped.has(modelRef)) continue;
+      const providerName = formatProviderDisplayName(account, vendorMap);
       deduped.set(modelRef, {
         modelRef,
         label: formatConfiguredModelLabel(modelId, account, vendorMap),
+        modelId,
+        providerName,
         runtimeProviderKey,
         accountId: account.id,
       });

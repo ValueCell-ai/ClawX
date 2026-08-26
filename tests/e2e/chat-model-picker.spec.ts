@@ -227,18 +227,22 @@ test.describe('ClawX chat model picker', () => {
         win?.webContents.send('gateway:status-changed', { state: 'running', port: 18789, pid: 12345, gatewayReady: true });
       });
 
-      await expect(page.getByTestId('chat-model-picker-button')).toContainText('model-alpha (Alpha)');
+      await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/model-alpha/);
+      await expect(page.getByTestId('chat-model-picker-button')).not.toContainText('Alpha');
       await page.getByTestId('chat-model-picker-button').click();
       await expect(page.getByTestId('chat-model-picker-menu')).toBeVisible();
-      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('provider/model-beta (Beta)');
-      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('gpt-5.6 (OpenAI)');
-      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('gpt-5.5 (OpenAI)');
-      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('openai/gpt-5.6 (OpenAI)');
-      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('kimi-k2.7 (Moonshot)');
-      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('kimi-k2.6 (Moonshot)');
-      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('moonshot/kimi-k2.7 (Moonshot)');
-      await page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'provider/model-beta (Beta)' }).click();
-      await expect(page.getByTestId('chat-model-picker-button')).toContainText('provider/model-beta (Beta)');
+      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('provider/model-beta');
+      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('Beta');
+      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('provider/model-beta (Beta)');
+      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('gpt-5.6');
+      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('gpt-5.5');
+      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('openai/gpt-5.6');
+      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('kimi-k2.7');
+      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('kimi-k2.6');
+      await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('moonshot/kimi-k2.7');
+      await page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'provider/model-beta Beta' }).click();
+      await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/provider\/model-beta/);
+      await expect(page.getByTestId('chat-model-picker-button')).not.toContainText('Beta');
 
       const requests = await app.evaluate(() => (
         (globalThis as typeof globalThis & { __chatModelPickerRequests?: Array<{ path: string; method: string; body: unknown }> }).__chatModelPickerRequests ?? []

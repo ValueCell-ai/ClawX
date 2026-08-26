@@ -276,7 +276,7 @@ describe('ChatInput agent targeting', () => {
     })).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('chat-model-picker-button'));
-    fireEvent.click(screen.getByRole('button', { name: 'gpt-b (Beta)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'gpt-b Beta' }));
     await waitFor(() => {
       expect(agentsState.updateAgentModel).toHaveBeenCalledWith('main', 'custom-bbbbbbbb/gpt-b');
     });
@@ -740,6 +740,24 @@ describe('ChatInput agent targeting', () => {
     expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText('Search skills')).toBeInTheDocument();
     expect(await screen.findByText('No matching skills found')).toBeInTheDocument();
+  });
+
+  it('shows only the model id on the composer and a muted provider name in the menu', () => {
+    configureAgentAndModelPickers();
+
+    renderChatInput();
+
+    const pickerButton = screen.getByTestId('chat-model-picker-button');
+    expect(pickerButton).toHaveTextContent('gpt-a');
+    expect(pickerButton).not.toHaveTextContent('Alpha');
+    expect(pickerButton).not.toHaveTextContent('(');
+
+    fireEvent.click(pickerButton);
+    const option = screen.getByRole('button', { name: 'gpt-b Beta' });
+    expect(option).toHaveTextContent('gpt-b');
+    expect(option).toHaveTextContent('Beta');
+    expect(option).not.toHaveTextContent('(');
+    expect(option.querySelector('.text-muted-foreground')).toHaveTextContent('Beta');
   });
 
   it('closes an open model picker when opening the agent picker', () => {

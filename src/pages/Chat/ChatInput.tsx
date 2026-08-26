@@ -363,7 +363,7 @@ export function ChatInput({
   const effectiveModelRef = optimisticModelRef || configuredModelRef;
   const currentModelLabel = useMemo(() => {
     const matchedOption = modelOptions.find((option) => option.modelRef === effectiveModelRef);
-    return matchedOption?.label || formatModelRefLabel(effectiveModelRef);
+    return matchedOption?.modelId || formatModelRefLabel(effectiveModelRef);
   }, [effectiveModelRef, modelOptions]);
   const mentionableAgents = useMemo(
     () => (agents ?? []).filter((agent) => agent.id !== currentAgentId),
@@ -1293,7 +1293,15 @@ export function ChatInput({
                           )}
                           data-testid={`chat-model-picker-option-${option.label}`}
                         >
-                          <span className="truncate">{option.label}</span>
+                          <span className="min-w-0 truncate">
+                            <span>{option.modelId}</span>
+                            {option.providerName ? (
+                              <>
+                                {' '}
+                                <span className="font-normal text-muted-foreground">{option.providerName}</span>
+                              </>
+                            ) : null}
+                          </span>
                           {option.modelRef === effectiveModelRef && (
                             <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                           )}
