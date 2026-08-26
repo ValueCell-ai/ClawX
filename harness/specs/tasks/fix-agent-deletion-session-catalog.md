@@ -20,6 +20,7 @@ touchedAreas:
   - src/stores/chat.ts
   - src/pages/Agents/index.tsx
   - tests/unit/chat-session-management.test.ts
+  - tests/unit/chat-load-sessions-startup.test.ts
   - tests/unit/agents-store.test.ts
   - tests/unit/host-services.test.ts
   - tests/unit/i18n-locale-parity.test.ts
@@ -29,6 +30,8 @@ expectedUserBehavior:
   - After Main confirms deletion, every renderer session whose canonical key belongs to that agent disappears immediately without waiting for a Gateway restart or another sessions.list request.
   - If the deleted agent owns the selected conversation, Chat selects a safe surviving conversation, preferring the main agent, or creates a main-agent local placeholder when no safe conversation remains.
   - Renderer-only labels, activity, composer drafts, pending catalog state, label hydration state, and persisted attention for removed sessions are cleared.
+  - The deleted Agent ID remains an in-memory session-catalog tombstone so delayed `sessions.changed` events, buffered events, and stale `sessions.list` rows cannot recreate orphan conversations.
+  - An authoritative Agent snapshot containing a recreated Agent ID clears its tombstone so new conversations for that Agent can appear normally.
   - A later attempt to remove an already-absent conversation is idempotent when the agent sessions directory or the session index entry is already gone.
   - Permission, malformed JSON, unsafe paths, and other genuine deletion failures remain failures.
 requiredProfiles:
@@ -46,7 +49,7 @@ requiredRules:
   - docs-sync
 requiredTests:
   - pnpm harness validate --spec harness/specs/tasks/fix-agent-deletion-session-catalog.md
-  - pnpm exec vitest run tests/unit/chat-session-management.test.ts tests/unit/agents-store.test.ts tests/unit/host-services.test.ts tests/unit/i18n-locale-parity.test.ts
+  - pnpm exec vitest run tests/unit/chat-session-management.test.ts tests/unit/chat-load-sessions-startup.test.ts tests/unit/gateway-events.test.ts tests/unit/agents-store.test.ts tests/unit/host-services.test.ts tests/unit/i18n-locale-parity.test.ts
   - pnpm exec playwright test tests/e2e/agent-deletion.spec.ts
   - pnpm run typecheck
   - pnpm run build:vite
@@ -57,6 +60,7 @@ acceptance:
   - Renderer forgets an agent's sessions only after the host agent deletion succeeds; a failed deletion preserves the existing chat catalog.
   - Session ownership is matched by the exact canonical prefix `agent:<agentId>:` so similarly named agents are not affected.
   - Selection repair never creates a placeholder for the agent that was just deleted.
+  - Session rows and events matching a deleted Agent tombstone are rejected across live, buffered, fallback, and list-publication paths until an authoritative Agent snapshot contains that ID again.
   - Already-absent sessions are treated as successfully deleted only for ENOENT session-index reads or a missing session-index entry; malformed JSON, access failures, and out-of-scope transcript paths are not hidden.
   - User-facing copy is complete in English, Chinese, Japanese, and Russian.
   - The flow does not restore the removed Gateway restart and does not add direct Renderer IPC or Gateway HTTP calls.

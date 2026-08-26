@@ -113,6 +113,57 @@ describe('chat session catalog startup', () => {
     });
   });
 
+  it('rejects stale list rows and buffered events for a deleted agent until recreation', async () => {
+    const deletedKey = 'agent:test1:session-delayed';
+    const catalog = deferredCatalog();
+    gatewayRpcMock
+      .mockReturnValueOnce(catalog.promise)
+      .mockResolvedValue({
+        ts: 3,
+        sessions: [
+          { key: 'agent:main:main', derivedTitle: 'Main conversation' },
+          { key: deletedKey, derivedTitle: 'Stale deleted-agent row' },
+        ],
+      });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: deletedKey,
+      currentAgentId: 'test1',
+      sessions: [{ key: deletedKey }],
+      sessionLabels: { [deletedKey]: 'Deleted conversation' },
+      sessionLastActivity: { [deletedKey]: 1 },
+    });
+
+    const loadPromise = useChatStore.getState().loadSessions({ force: true });
+    await vi.waitFor(() => expect(gatewayRpcMock).toHaveBeenCalledTimes(1));
+    useChatStore.getState().handleSessionsChanged({
+      sessionKey: deletedKey,
+      session: { key: deletedKey, derivedTitle: 'Buffered deleted-agent event' },
+      ts: 2,
+    });
+    useChatStore.getState().removeAgentSessions('test1');
+    catalog.resolve({
+      ts: 1,
+      sessions: [
+        { key: 'agent:main:main', derivedTitle: 'Main conversation' },
+        { key: deletedKey, derivedTitle: 'Stale deleted-agent row' },
+      ],
+    });
+    await loadPromise;
+
+    expect(gatewayRpcMock).toHaveBeenCalledTimes(2);
+    expect(useChatStore.getState().sessions.some((session) => session.key === deletedKey)).toBe(false);
+
+    useChatStore.getState().reconcileAgentSessionTombstones(['test1']);
+    await useChatStore.getState().loadSessions({ force: true });
+
+    expect(useChatStore.getState().sessions).toContainEqual(expect.objectContaining({
+      key: deletedKey,
+      derivedTitle: 'Stale deleted-agent row',
+    }));
+  });
+
   it('hydrates workspace identity and title activity from session summaries', async () => {
     gatewayRpcMock.mockResolvedValue({
       ts: 1,

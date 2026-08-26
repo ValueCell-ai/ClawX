@@ -34,6 +34,13 @@ function applySnapshot(snapshot: AgentsSnapshot | undefined) {
   } : {};
 }
 
+function reconcileChatAgentSnapshot(snapshot: AgentsSnapshot | undefined): void {
+  if (!snapshot) return;
+  useChatStore.getState().reconcileAgentSessionTombstones(
+    (snapshot.agents ?? []).map((agent) => agent.id),
+  );
+}
+
 export const useAgentsStore = create<AgentsState>((set) => ({
   agents: [],
   defaultAgentId: 'main',
@@ -52,6 +59,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
         ...applySnapshot(snapshot),
         loading: false,
       });
+      reconcileChatAgentSnapshot(snapshot);
     } catch (error) {
       set({ loading: false, error: String(error) });
     }
@@ -65,6 +73,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
         inheritWorkspace: options?.inheritWorkspace,
       });
       set(applySnapshot(snapshot));
+      reconcileChatAgentSnapshot(snapshot);
     } catch (error) {
       set({ error: String(error) });
       throw error;
@@ -76,6 +85,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
     try {
       const snapshot = await hostApi.agents.update(agentId, { name });
       set(applySnapshot(snapshot));
+      reconcileChatAgentSnapshot(snapshot);
     } catch (error) {
       set({ error: String(error) });
       throw error;
@@ -87,6 +97,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
     try {
       const snapshot = await hostApi.agents.updateModel(agentId, modelRef);
       set(applySnapshot(snapshot));
+      reconcileChatAgentSnapshot(snapshot);
     } catch (error) {
       set({ error: String(error) });
       throw error;
@@ -98,6 +109,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
     try {
       const snapshot = await hostApi.agents.delete(agentId);
       set(applySnapshot(snapshot));
+      reconcileChatAgentSnapshot(snapshot);
       useChatStore.getState().removeAgentSessions(agentId);
     } catch (error) {
       set({ error: String(error) });
@@ -110,6 +122,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
     try {
       const snapshot = await hostApi.agents.assignChannel(agentId, channelType);
       set(applySnapshot(snapshot));
+      reconcileChatAgentSnapshot(snapshot);
     } catch (error) {
       set({ error: String(error) });
       throw error;
@@ -121,6 +134,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
     try {
       const snapshot = await hostApi.agents.removeChannel(agentId, channelType);
       set(applySnapshot(snapshot));
+      reconcileChatAgentSnapshot(snapshot);
     } catch (error) {
       set({ error: String(error) });
       throw error;

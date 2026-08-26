@@ -116,6 +116,22 @@ test.describe('Agent deletion session reconciliation', () => {
       await expect(page.getByText('Deleted agent chat')).toHaveCount(0);
       await expect(page.getByText('Main conversation')).toBeVisible();
 
+      await app.evaluate(async ({ app: _app }, sessionKey) => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.send('gateway:notification', {
+            method: 'sessions.changed',
+            params: {
+              sessionKey,
+              ts: 200,
+              session: { key: sessionKey, derivedTitle: 'Delayed deleted-agent event' },
+            },
+          });
+        }
+      }, DELETED_AGENT_CHAT_KEY);
+      await page.waitForTimeout(200);
+      await expect(page.getByText('Delayed deleted-agent event')).toHaveCount(0);
+
       await expect.poll(async () => {
         const invocations = await getRecordedHostInvocations(app);
         return invocations.some((entry) => (

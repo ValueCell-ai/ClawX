@@ -264,6 +264,24 @@ describe('chat session management', () => {
     });
     expect(useComposerDraftStore.getState().drafts[deletedChat]).toBeUndefined();
     expect(useSessionAttentionStore.getState().bySessionKey[deletedChat]).toBeUndefined();
+
+    useChatStore.getState().handleSessionsChanged({
+      sessionKey: deletedChat,
+      session: { key: deletedChat, derivedTitle: 'Delayed deleted-agent event' },
+      ts: 10,
+    });
+    expect(useChatStore.getState().sessions.some((session) => session.key === deletedChat)).toBe(false);
+
+    useChatStore.getState().reconcileAgentSessionTombstones(['test1']);
+    useChatStore.getState().handleSessionsChanged({
+      sessionKey: deletedChat,
+      session: { key: deletedChat, derivedTitle: 'Recreated agent conversation' },
+      ts: 11,
+    });
+    expect(useChatStore.getState().sessions).toContainEqual(expect.objectContaining({
+      key: deletedChat,
+      derivedTitle: 'Recreated agent conversation',
+    }));
   });
 
   it('creates a main-agent placeholder when deleting an agent leaves no sessions', async () => {

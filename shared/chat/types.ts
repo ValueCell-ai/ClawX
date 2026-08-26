@@ -147,6 +147,7 @@ export interface ChatState {
   deleteSession: (key: string) => Promise<DeleteSessionResult>;
   deleteSessions: (keys: string[]) => Promise<DeleteSessionsResult>;
   removeAgentSessions: (agentId: string) => void;
+  reconcileAgentSessionTombstones: (agentIds: string[]) => void;
   renameSession: (key: string, label: string) => Promise<void>;
 }
 
