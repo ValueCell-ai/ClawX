@@ -733,6 +733,37 @@ describe('ACP chat timeline components', () => {
     expect(files.parentElement?.className).toContain('w-full');
   });
 
+  it('does not mount an empty file-activity wrapper when the turn has no file summaries', () => {
+    const state = snapshot({
+      itemOrder: ['user-a:0', 'assistant-a:0'],
+      itemsById: {
+        'user-a:0': {
+          kind: 'message-segment', id: 'user-a:0', role: 'user', messageId: 'user-a', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Hello' }],
+        },
+        'assistant-a:0': {
+          kind: 'message-segment', id: 'assistant-a:0', role: 'assistant', messageId: 'assistant-a', segmentIndex: 0,
+          parts: [{ kind: 'markdown', text: 'Hi there.' }],
+        },
+      },
+    });
+
+    render(
+      <AcpTimeline
+        snapshot={state}
+        workspaceRoot="/workspace"
+        turnTimingsByUserMessageId={{
+          'user-a': { source: 'transcript', status: 'complete', durationMs: 1_200 },
+        }}
+      />,
+    );
+
+    const message = screen.getByTestId('acp-assistant-message');
+    const duration = screen.getByTestId('acp-turn-duration');
+    expect(screen.queryByTestId('acp-turn-file-activity')).not.toBeInTheDocument();
+    expect(message.nextElementSibling).toBe(duration.parentElement);
+  });
+
   it('routes deleted path-only activity to Changes without rendering counts', () => {
     const state = snapshot({
       itemOrder: ['tool:delete-file'],

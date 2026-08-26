@@ -218,7 +218,7 @@ export function AcpAssistantTurn({
           <AcpAttachmentPart key={attachment.attachmentId} part={attachment} />
         ))}
 
-        {workspaceRoot && (
+        {workspaceRoot && fileSummaries.length > 0 && (
           <div className={assistantTurnBlockClassName}>
             <AcpTurnFileActivity summaries={fileSummaries} workspaceRoot={workspaceRoot} />
           </div>
