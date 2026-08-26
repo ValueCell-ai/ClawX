@@ -1450,6 +1450,10 @@ test.describe('ClawX ACP inline timeline', () => {
         return requests.some((request) => request.action === 'sendAcpPrompt');
       }).toBe(true);
 
+      const reviewerSessionRow = page.getByTestId(`sidebar-session-${REVIEWER_SESSION_KEY}`);
+      await expect(reviewerSessionRow).toContainText('Hello reviewer');
+      await expect(reviewerSessionRow).not.toContainText('ACP');
+
       const requests = await getTargetAgentRequests(app);
       expect(requests.filter((request) => request.action === 'loadAcpSession')).toEqual([{
         action: 'loadAcpSession',

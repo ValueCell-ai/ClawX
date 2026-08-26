@@ -57,8 +57,8 @@ describe('chat session management', () => {
     expect(useChatStore.getState().sessions).toContainEqual(expect.objectContaining({ key: persistedKey }));
   });
 
-  it('keeps workspace identity when selecting and acknowledging an ACP session', async () => {
-    const key = 'agent:research:session-new';
+  it('uses the first prompt to title a newly created non-default Agent main session', async () => {
+    const key = 'agent:research:main';
     const { useChatStore } = await import('@/stores/chat');
     useChatStore.setState({
       currentSessionKey: 'agent:main:main',

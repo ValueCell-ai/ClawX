@@ -42,8 +42,9 @@ export function getSessionActivityMs(
 function getCanonicalWorkspacePathForGrouping(
   session: ChatSession,
   globalWorkspace?: string | null,
+  defaultWorkspace?: string | null,
 ): string {
-  const workspacePath = getSessionWorkspaceForGrouping(session, globalWorkspace);
+  const workspacePath = getSessionWorkspaceForGrouping(session, globalWorkspace, defaultWorkspace);
   return isDefaultWorkspacePath(workspacePath) ? DEFAULT_WORKSPACE_CWD : workspacePath;
 }
 
@@ -68,15 +69,16 @@ export function groupSessionsByWorkspace<TSession extends ChatSession>(
   globalWorkspace?: string | null,
   workspaceLabels: Record<string, string> = {},
   knownWorkspacePaths: readonly string[] = [],
+  defaultWorkspace?: string | null,
 ): Array<WorkspaceSessionGroup<TSession>> {
   const groupByWorkspace = new Map<string, WorkspaceSessionGroup<TSession>>();
   const allWorkspacePaths = [
     ...knownWorkspacePaths,
-    ...sessions.map((session) => getCanonicalWorkspacePathForGrouping(session, globalWorkspace)),
+    ...sessions.map((session) => getCanonicalWorkspacePathForGrouping(session, globalWorkspace, defaultWorkspace)),
   ];
 
   for (const session of sessions) {
-    const workspacePath = getCanonicalWorkspacePathForGrouping(session, globalWorkspace);
+    const workspacePath = getCanonicalWorkspacePathForGrouping(session, globalWorkspace, defaultWorkspace);
     let group = groupByWorkspace.get(workspacePath);
     if (!group) {
       group = {

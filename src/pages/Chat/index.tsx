@@ -209,12 +209,22 @@ export function Chat() {
     () => sessions.find((session) => session.key === currentSessionKey) ?? null,
     [currentSessionKey, sessions],
   );
+  const currentAgent = useMemo(
+    () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
+    [agents, currentAgentId],
+  );
   const currentSessionTitle = currentSession
     ? getSessionDisplayTitle(currentSession, sessionLabels)
     : currentSessionKey;
   const effectiveWorkspace = useMemo(
-    () => resolveEffectiveWorkspace({ session: currentSession, globalWorkspace: chatWorkspacePath }),
-    [chatWorkspacePath, currentSession],
+    () => resolveEffectiveWorkspace({
+      session: currentSession,
+      globalWorkspace: chatWorkspacePath,
+      defaultWorkspace: currentSessionKey === DEFAULT_SESSION_KEY
+        ? currentAgent?.workspace
+        : undefined,
+    }),
+    [chatWorkspacePath, currentAgent?.workspace, currentSession, currentSessionKey],
   );
   const cwd = effectiveWorkspace.cwd;
   const allWorkspacePaths = useMemo(() => {
@@ -253,11 +263,6 @@ export function Chat() {
       ),
     }));
   }, [allWorkspacePaths, t, workspaceLabels]);
-  const currentAgent = useMemo(
-    () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
-    [agents, currentAgentId],
-  );
-
   const acpTimeline = useAcpChatSessionStore((s) => s.timeline);
   const acpActiveSessionKey = useAcpChatSessionStore((s) => s.activeSessionKey);
   const renderedAcpTimeline = useDeferredValue(acpTimeline);

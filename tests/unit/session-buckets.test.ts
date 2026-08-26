@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { groupSessionsByWorkspace } from '@/components/layout/session-buckets';
+import { DEFAULT_WORKSPACE_CWD } from '@/lib/workspace-context';
 
 describe('workspace session grouping', () => {
   it('groups by workspace and sorts sessions by activity inside each workspace', () => {
@@ -18,6 +19,26 @@ describe('workspace session grouping', () => {
     expect(groups.map((group) => group.workspacePath)).toEqual(['/repo/a', '/repo/b']);
     expect(groups[0].sessions.map((entry) => entry.session.key)).toEqual(['agent:main:session-a', 'agent:main:session-c']);
     expect(groups[0].sessions.map((entry) => entry.activityMs)).toEqual([nowMs - 60_000, nowMs - 10 * 24 * 60 * 60 * 1000]);
+  });
+
+  it('keeps the canonical default session out of a stale non-default ACP workspace', () => {
+    const groups = groupSessionsByWorkspace(
+      [
+        { key: 'agent:main:main', label: 'AAB', workspacePath: '/repo/code2', updatedAt: 20 },
+        { key: 'agent:code2:main', label: 'Code 2', workspacePath: '/repo/code2', updatedAt: 10 },
+      ],
+      {},
+      '默认工作空间',
+      '/repo/code2',
+    );
+
+    expect(groups.map((group) => ({
+      workspacePath: group.workspacePath,
+      sessionKeys: group.sessions.map(({ session }) => session.key),
+    }))).toEqual([
+      { workspacePath: DEFAULT_WORKSPACE_CWD, sessionKeys: ['agent:main:main'] },
+      { workspacePath: '/repo/code2', sessionKeys: ['agent:code2:main'] },
+    ]);
   });
 
   it('puts the default workspace first even when another workspace has newer activity', () => {

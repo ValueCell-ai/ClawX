@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   createAgentMock,
   deleteAgentMock,
+  listAgentsMock,
   reconcileAgentSessionTombstonesMock,
   removeAgentSessionsMock,
 } = vi.hoisted(() => ({
   createAgentMock: vi.fn(),
   deleteAgentMock: vi.fn(),
+  listAgentsMock: vi.fn(),
   reconcileAgentSessionTombstonesMock: vi.fn(),
   removeAgentSessionsMock: vi.fn(),
 }));
@@ -17,6 +19,7 @@ vi.mock('@/lib/host-api', () => ({
     agents: {
       create: createAgentMock,
       delete: deleteAgentMock,
+      list: listAgentsMock,
     },
   },
 }));
@@ -64,6 +67,73 @@ describe('agents store deletion', () => {
     expect(reconcileAgentSessionTombstonesMock).toHaveBeenCalledWith(['main']);
     expect(removeAgentSessionsMock).toHaveBeenCalledWith('test1');
     expect(useAgentsStore.getState().agents).toEqual(survivingSnapshot.agents);
+  });
+
+  it('ignores an older list snapshot that resolves after a confirmed deletion', async () => {
+    let resolveList!: (snapshot: typeof survivingSnapshot & { agents: Array<{ id: string; name: string }> }) => void;
+    listAgentsMock.mockReturnValue(new Promise((resolve) => {
+      resolveList = resolve;
+    }));
+    deleteAgentMock.mockResolvedValue(survivingSnapshot);
+
+    const pendingFetch = useAgentsStore.getState().fetchAgents();
+    await useAgentsStore.getState().deleteAgent('test1');
+    resolveList({
+      ...survivingSnapshot,
+      agents: [
+        ...survivingSnapshot.agents,
+        { id: 'test1', name: 'Stale Agent' },
+      ],
+    });
+    await pendingFetch;
+
+    expect(useAgentsStore.getState().agents).toEqual(survivingSnapshot.agents);
+    expect(useAgentsStore.getState().loading).toBe(false);
+    expect(reconcileAgentSessionTombstonesMock).toHaveBeenCalledTimes(1);
+    expect(reconcileAgentSessionTombstonesMock).toHaveBeenCalledWith(['main']);
+  });
+
+  it('keeps the newest list snapshot when overlapping refreshes resolve out of order', async () => {
+    let resolveOlderList!: (snapshot: typeof survivingSnapshot) => void;
+    let resolveNewerList!: (snapshot: typeof survivingSnapshot) => void;
+    listAgentsMock
+      .mockReturnValueOnce(new Promise((resolve) => {
+        resolveOlderList = resolve;
+      }))
+      .mockReturnValueOnce(new Promise((resolve) => {
+        resolveNewerList = resolve;
+      }));
+    const newerSnapshot = {
+      ...survivingSnapshot,
+      agents: [{ id: 'main', name: 'Newest Main Agent' }],
+    };
+
+    const olderFetch = useAgentsStore.getState().fetchAgents();
+    const newerFetch = useAgentsStore.getState().fetchAgents();
+    resolveNewerList(newerSnapshot);
+    await newerFetch;
+    resolveOlderList(survivingSnapshot);
+    await olderFetch;
+
+    expect(useAgentsStore.getState().agents).toEqual(newerSnapshot.agents);
+    expect(reconcileAgentSessionTombstonesMock).toHaveBeenCalledTimes(1);
+    expect(reconcileAgentSessionTombstonesMock).toHaveBeenCalledWith(['main']);
+  });
+
+  it('ignores an older list failure that rejects after a confirmed deletion', async () => {
+    let rejectList!: (error: Error) => void;
+    listAgentsMock.mockReturnValue(new Promise((_resolve, reject) => {
+      rejectList = reject;
+    }));
+    deleteAgentMock.mockResolvedValue(survivingSnapshot);
+
+    const pendingFetch = useAgentsStore.getState().fetchAgents();
+    await useAgentsStore.getState().deleteAgent('test1');
+    rejectList(new Error('stale list failure'));
+    await pendingFetch;
+
+    expect(useAgentsStore.getState().error).toBeNull();
+    expect(useAgentsStore.getState().loading).toBe(false);
   });
 
   it('clears a deleted-agent tombstone when an authoritative create snapshot restores its id', async () => {

@@ -1,3 +1,4 @@
+import { DEFAULT_SESSION_KEY } from '@shared/chat/types';
 import { DEFAULT_WORKSPACE_CWD } from '@shared/workspace';
 
 export { DEFAULT_WORKSPACE_CWD };
@@ -135,6 +136,10 @@ export function resolveEffectiveWorkspace(input: {
   defaultWorkspace?: string;
 }): WorkspaceResolution {
   const defaultWorkspace = normalizeWorkspacePath(input.defaultWorkspace) ?? DEFAULT_WORKSPACE_CWD;
+  if (input.session?.key === DEFAULT_SESSION_KEY && input.defaultWorkspace) {
+    return { cwd: defaultWorkspace, source: 'default', readOnly: true };
+  }
+
   const sessionWorkspace = normalizeWorkspacePath(input.session?.workspacePath);
   if (sessionWorkspace) {
     return { cwd: sessionWorkspace, source: 'session', readOnly: true };
@@ -155,7 +160,12 @@ export function resolveEffectiveWorkspace(input: {
 export function getSessionWorkspaceForGrouping(
   session: WorkspaceSessionLike,
   globalWorkspace?: string | null,
+  defaultWorkspace?: string | null,
 ): string {
+  if (session.key === DEFAULT_SESSION_KEY) {
+    return normalizeWorkspacePath(defaultWorkspace) ?? DEFAULT_WORKSPACE_CWD;
+  }
+
   const sessionWorkspace = normalizeWorkspacePath(session.workspacePath);
   if (sessionWorkspace) return sessionWorkspace;
 

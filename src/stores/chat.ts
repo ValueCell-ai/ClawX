@@ -186,7 +186,7 @@ function applySessionBackendLabels(set: ChatSet, sessions: ChatSession[]): void 
     let nextLabels = state.sessionLabels;
 
     for (const session of sessions) {
-      if (session.key.endsWith(':main')) continue;
+      if (session.key === DEFAULT_SESSION_KEY) continue;
 
       if (hasExplicitSessionLabel(session)) {
         const label = toSessionLabel(session.label || '');
@@ -1257,7 +1257,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   acknowledgeAcpSessionCreated: (key, workspacePath, initialPrompt) => {
     const normalizedWorkspacePath = workspacePath?.trim();
-    const initialLabel = key.endsWith(':main') ? '' : toSessionLabel(initialPrompt || '');
+    const initialLabel = key === DEFAULT_SESSION_KEY ? '' : toSessionLabel(initialPrompt || '');
     localDraftSessionKeys.delete(key);
     pendingCatalogConfirmationSessionKeys.add(key);
     markLocalSessionCatalogMutation();

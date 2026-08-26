@@ -372,6 +372,11 @@ export function Sidebar() {
     () => Object.fromEntries((agents ?? []).map((agent) => [agent.id, agent.name])),
     [agents],
   );
+  const defaultAgentWorkspace = useMemo(
+    () => agents.find((agent) => agent.isDefault)?.workspace
+      ?? agents.find((agent) => agent.id === 'main')?.workspace,
+    [agents],
+  );
   const sidebarSessions = useMemo(
     () => sessions.filter((session) => shouldIncludeSessionInSidebarList(session)),
     [sessions],
@@ -387,6 +392,7 @@ export function Sidebar() {
       chatWorkspacePath,
       ...sessions.map((session) => session.workspacePath).filter((path): path is string => !!path),
     ],
+    defaultAgentWorkspace,
   );
   const workspaceAvailability = useWorkspaceAvailability(
     workspaceSessionGroups.map((group) => group.workspacePath),

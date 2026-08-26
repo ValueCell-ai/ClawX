@@ -407,7 +407,7 @@ describe('ACP Chat page', () => {
     expect(acpState.cancel).toHaveBeenCalledTimes(1);
   });
 
-  it('loads from the effective workspace without waiting for agents', async () => {
+  it('loads immediately, then corrects the default session workspace after agents resolve', async () => {
     const deferred = deferredPromise();
     agentsState.agents = [];
     agentsState.loading = false;
@@ -427,8 +427,14 @@ describe('ACP Chat page', () => {
     deferred.resolve();
     rerender(<Chat />);
 
-    expect(acpState.loadSession).toHaveBeenCalledTimes(1);
-    expect(acpState.loadSession).not.toHaveBeenCalledWith({ sessionKey: 'agent:main:main', cwd: '/' });
+    await waitFor(() => {
+      expect(acpState.loadSession).toHaveBeenCalledWith({
+        sessionKey: 'agent:main:main',
+        workspaceRoot: '/resolved-workspace',
+        cwd: '/resolved-workspace',
+      });
+    });
+    expect(acpState.loadSession).toHaveBeenCalledTimes(2);
   });
 
   it('discovers sessions once before loading the default ACP session when ACP has no active session', async () => {
@@ -1062,6 +1068,12 @@ describe('ACP Chat page', () => {
 
   it('projects only completed file tools after Main resolves the canonical workspace context', async () => {
     artifactPanelState.open = true;
+    agentsState.agents = [{
+      id: 'main',
+      name: 'Main',
+      workspace: '~/.openclaw/workspace',
+      mainSessionKey: 'agent:main:main',
+    }];
     settingsState.chatWorkspacePath = '~/.openclaw/workspace';
     chatState.sessions = [{ key: 'agent:main:main' }];
     acpState.cwd = '~/.openclaw/workspace';

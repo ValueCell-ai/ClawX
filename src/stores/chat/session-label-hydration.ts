@@ -2,7 +2,7 @@ import {
   isAcpWorkingDirectoryTruncatedTitle,
   isOpenClawSessionIdFallbackTitle,
 } from '@shared/chat/session-title';
-import type { ChatSession } from './types';
+import { DEFAULT_SESSION_KEY, type ChatSession } from './types';
 
 export const LABEL_FETCH_CONCURRENCY = 5;
 export const LABEL_FETCH_RETRY_DELAYS_MS = [2_000, 5_000, 10_000] as const;
@@ -70,12 +70,12 @@ export function getSessionLabelHydrationCandidate(
 ): { sessionKey: string; version: string } | null {
   const version = getSessionLabelHydrationVersion(session, sessionLastActivity);
   const hasWorkspacePath = normalizeLabelValue(session.workspacePath) != null;
-  const isMainSession = session.key.endsWith(':main');
+  const isDefaultMainSession = session.key === DEFAULT_SESSION_KEY;
   const displayName = normalizeLabelValue(session.displayName);
-  const isLocalOrGhostMainSession = isMainSession
+  const isLocalOrGhostDefaultMainSession = isDefaultMainSession
     && (session.createdLocally || (typeof session.updatedAt !== 'number' && (!displayName || displayName === session.key)));
-  if (isLocalOrGhostMainSession) return null;
-  if (isMainSession && (hasWorkspacePath || !options.includeWorkspacePath)) return null;
+  if (isLocalOrGhostDefaultMainSession) return null;
+  if (isDefaultMainSession && (hasWorkspacePath || !options.includeWorkspacePath)) return null;
 
   const sidebarLabel = normalizeLabelValue(sessionLabels[session.key]);
   const hasSidebarLabel = sidebarLabel != null

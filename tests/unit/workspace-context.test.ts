@@ -27,6 +27,24 @@ describe('workspace context helpers', () => {
     expect(normalizeWorkspacePath('/repo/project/')).toBe('/repo/project');
   });
 
+  it('pins the canonical default session when stale ACP metadata reports another workspace', () => {
+    expect(resolveEffectiveWorkspace({
+      session: {
+        key: 'agent:main:main',
+        workspacePath: '/repo/code2',
+        createdLocally: true,
+      },
+      globalWorkspace: '/repo/code2',
+      defaultWorkspace: DEFAULT_WORKSPACE_CWD,
+    })).toEqual({ cwd: DEFAULT_WORKSPACE_CWD, source: 'default', readOnly: true });
+
+    expect(getSessionWorkspaceForGrouping({
+      key: 'agent:main:main',
+      workspacePath: '/repo/code2',
+      createdLocally: true,
+    }, '/repo/code2')).toBe(DEFAULT_WORKSPACE_CWD);
+  });
+
   it('uses OpenClaw session cwd before global workspace', () => {
     expect(resolveEffectiveWorkspace({
       session: { workspacePath: '/repo/from-openclaw' },
