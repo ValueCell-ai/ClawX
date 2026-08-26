@@ -1376,6 +1376,25 @@ describe('host services', () => {
       });
   });
 
+  it('treats already-absent sessions as idempotent deletes without hiding corrupt indexes', async () => {
+    const { createSessionsApi } = await import('@electron/services/sessions-api');
+    const sessionsApi = createSessionsApi();
+    const missingAgentKey = 'agent:deleted-agent:session-123';
+
+    await expect(sessionsApi.delete({ id: missingAgentKey })).resolves.toEqual({ success: true });
+
+    const sessionsDir = join(testOpenClawConfigDir, 'agents', 'main', 'sessions');
+    mkdirSync(sessionsDir, { recursive: true });
+    writeFileSync(join(sessionsDir, 'sessions.json'), '{}');
+    await expect(sessionsApi.delete({ id: 'agent:main:missing-entry' })).resolves.toEqual({ success: true });
+
+    writeFileSync(join(sessionsDir, 'sessions.json'), '{invalid json');
+    await expect(sessionsApi.delete({ id: 'agent:main:corrupt-entry' })).resolves.toMatchObject({
+      success: false,
+      error: expect.stringContaining('Could not read sessions.json'),
+    });
+  });
+
   it('delegates all attachment-scoped file operations from the files service', async () => {
     const attachmentAccess = {
       resolveAttachment: vi.fn().mockResolvedValue({ ok: false, error: 'unavailable', displayName: 'file' }),

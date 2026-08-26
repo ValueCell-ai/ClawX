@@ -187,7 +187,7 @@ export function Agents() {
         open={!!agentToDelete}
         title={t('deleteDialog.title')}
         message={agentToDelete ? t('deleteDialog.message', { name: agentToDelete.name }) : ''}
-        confirmLabel={t('common:actions.delete')}
+        confirmLabel={t('deleteDialog.confirm')}
         cancelLabel={t('common:actions.cancel')}
         variant="destructive"
         onConfirm={async () => {
@@ -236,6 +236,7 @@ function AgentCard({
 
   return (
     <div
+      data-testid={`agent-card-${agent.id}`}
       className={cn(
         'group flex items-start gap-4 p-4 rounded-2xl transition-all text-left border relative overflow-hidden bg-transparent border-transparent hover:bg-black/5 dark:hover:bg-white/5',
         agent.isDefault && 'bg-black/[0.04] dark:bg-white/[0.06]',
@@ -261,6 +262,7 @@ function AgentCard({
           <div className="flex items-center gap-1 shrink-0">
             {!agent.isDefault && (
               <Button
+                data-testid={`agent-delete-${agent.id}`}
                 variant="ghost"
                 size="icon"
                 className="opacity-0 group-hover:opacity-100 h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all"

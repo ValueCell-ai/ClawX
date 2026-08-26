@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { hostApi } from '@/lib/host-api';
+import { useChatStore } from '@/stores/chat';
 import type { ChannelType } from '@/types/channel';
 import type { AgentSummary, AgentsSnapshot } from '@/types/agent';
 
@@ -97,6 +98,7 @@ export const useAgentsStore = create<AgentsState>((set) => ({
     try {
       const snapshot = await hostApi.agents.delete(agentId);
       set(applySnapshot(snapshot));
+      useChatStore.getState().removeAgentSessions(agentId);
     } catch (error) {
       set({ error: String(error) });
       throw error;

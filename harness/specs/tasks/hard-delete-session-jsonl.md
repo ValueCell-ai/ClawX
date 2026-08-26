@@ -29,7 +29,7 @@ requiredTests:
 acceptance:
   - Renderer continues to use src/lib/host-api.ts and src/lib/api-client.ts; no new direct ipcRenderer or Gateway HTTP calls.
   - Typed host session deletion and the legacy session:delete IPC handler unlink the same set of files for a given session id, sharing electron/utils/session-files.ts so the disk contract cannot drift.
-  - The handler tolerates ENOENT (file already gone) and still updates sessions.json so the sidebar stops listing the entry.
+  - The handler tolerates ENOENT (file or the deleted Agent's session index already gone) and a missing session-index entry as idempotent success, while still updating sessions.json when that index exists so the sidebar stops listing the entry.
   - Renderer delete-session paths clear catalog labels, activity, selection, and persisted attention for deleted keys.
   - agentId from the sessionKey is validated against /^[A-Za-z0-9][A-Za-z0-9_-]*$/ in both surfaces and any sessionFile resolved to a path outside the agent sessions/ directory is refused (defence-in-depth against a corrupt sessions.json).
   - Absolute-path detection accepts POSIX paths, Windows backslash paths (C:\...) and Windows forward-slash paths (C:/...) so the sweep works on every supported OS.
@@ -55,6 +55,8 @@ share the same disk contract via `electron/utils/session-files.ts`, which centra
     Windows `C:/...`) using `path.isAbsolute` + `path.win32.isAbsolute`,
   - a defence-in-depth scope check that refuses any `sessionFile` whose
     resolved directory escapes the agent's `sessions/` folder,
+  - idempotent success when a deleted Agent has already removed the session
+    index or when the requested entry is no longer present,
   - the sibling sweep (`.jsonl`, `.deleted.jsonl`, `.jsonl.reset.*`,
     `.trajectory.jsonl`, `.trajectory-path.json`) with ENOENT tolerance, and
   - the trajectory pointer-follow that handles OpenClaw's

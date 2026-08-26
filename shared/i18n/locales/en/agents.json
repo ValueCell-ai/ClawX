@@ -21,8 +21,9 @@
         "inheritWorkspaceDescription": "Copy SOUL.md, AGENTS.md, etc. from the main agent"
     },
     "deleteDialog": {
-        "title": "Delete Agent",
-        "message": "Delete \"{{name}}\" from ClawX? This permanently deletes the agent and its ClawX-managed workspace, runtime, and session files from disk."
+        "title": "Permanently delete Agent?",
+        "message": "Permanently delete \"{{name}}\", its ClawX-managed workspace, and all associated chat history? This action cannot be undone.",
+        "confirm": "Permanently delete"
     },
     "settingsDialog": {
         "title": "{{name}} Settings",

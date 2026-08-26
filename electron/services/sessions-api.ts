@@ -535,6 +535,10 @@ async function deleteSession(sessionKey: string): Promise<{ success: boolean; er
     const raw = await fsP.readFile(sessionsJsonPath, 'utf8');
     sessionsJson = JSON.parse(raw) as Record<string, unknown>;
   } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
+      logger.info(`[session:delete] Session index already absent for "${sessionKey}"`);
+      return { success: true };
+    }
     logger.warn(`[session:delete] Could not read sessions.json: ${String(error)}`);
     return { success: false, error: `Could not read sessions.json: ${String(error)}` };
   }
@@ -542,8 +546,8 @@ async function deleteSession(sessionKey: string): Promise<{ success: boolean; er
   const resolution = resolveSessionTranscriptPath(sessionsJson, sessionsDir, sessionKey);
   if (!resolution.ok) {
     if (resolution.failure.kind === 'not-found') {
-      logger.warn(`[session:delete] Cannot resolve file for "${sessionKey}". Raw value: ${JSON.stringify(sessionsJson[sessionKey])}`);
-      return { success: false, error: `Cannot resolve file for session: ${sessionKey}` };
+      logger.info(`[session:delete] Session entry already absent for "${sessionKey}"`);
+      return { success: true };
     }
     logger.warn(`[session:delete] Refusing to delete out-of-scope path for "${sessionKey}": ${resolution.failure.resolvedPath}`);
     return {

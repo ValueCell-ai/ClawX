@@ -1363,6 +1363,58 @@ export const useChatStore = create<ChatState>((set, get) => ({
     return { deletedKeys, failedKeys };
   },
 
+  removeAgentSessions: (agentId) => {
+    const normalizedAgentId = agentId.trim();
+    if (!normalizedAgentId) return;
+    const sessionPrefix = `agent:${normalizedAgentId}:`;
+    const belongsToDeletedAgent = (sessionKey: string): boolean => sessionKey.startsWith(sessionPrefix);
+    const state = get();
+    const composerDrafts = useComposerDraftStore.getState().drafts;
+    const attentionKeys = Object.keys(useSessionAttentionStore.getState().bySessionKey);
+    const removedKeys = new Set([
+      ...state.sessions.map((session) => session.key),
+      ...Object.keys(state.sessionLabels),
+      ...Object.keys(state.sessionLastActivity),
+      ...Object.keys(composerDrafts),
+      ...attentionKeys,
+      ...localDraftSessionKeys,
+      ...pendingCatalogConfirmationSessionKeys,
+      state.currentSessionKey,
+    ].filter(belongsToDeletedAgent));
+
+    for (const key of removedKeys) {
+      clearSessionLabelHydrationTracking(key);
+      localDraftSessionKeys.delete(key);
+      pendingCatalogConfirmationSessionKeys.delete(key);
+      useComposerDraftStore.getState().clearDraft(key);
+      useSessionAttentionStore.getState().removeSession(key);
+    }
+
+    markLocalSessionCatalogMutation();
+    set((current) => {
+      const remaining = current.sessions.filter((session) => !belongsToDeletedAgent(session.key));
+      const currentWasRemoved = belongsToDeletedAgent(current.currentSessionKey);
+      const selection = currentWasRemoved
+        ? repairMissingCurrentSelection(DEFAULT_SESSION_KEY, remaining)
+        : {
+            sessions: remaining,
+            currentSessionKey: current.currentSessionKey,
+            currentAgentId: current.currentAgentId,
+          };
+      return {
+        sessions: selection.sessions,
+        sessionLabels: Object.fromEntries(
+          Object.entries(current.sessionLabels).filter(([key]) => !belongsToDeletedAgent(key)),
+        ),
+        sessionLastActivity: Object.fromEntries(
+          Object.entries(current.sessionLastActivity).filter(([key]) => !belongsToDeletedAgent(key)),
+        ),
+        currentSessionKey: selection.currentSessionKey,
+        currentAgentId: selection.currentAgentId,
+      };
+    });
+  },
+
   renameSession: async (key, label) => {
     const normalized = label.trim();
     if (!normalized) throw new Error('Session label cannot be empty');
