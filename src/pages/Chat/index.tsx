@@ -24,6 +24,7 @@ import {
   resolveEffectiveWorkspace,
 } from '@/lib/workspace-context';
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
+import { useWorkspaceAvailability } from '@/hooks/use-workspace-availability';
 import { getAcpUserMessageAnchorId } from '@/lib/acp/timeline-anchors';
 import type { MessageSegmentItem, RenderPart } from '@/lib/acp/timeline-types';
 import { createEmptyAcpTimeline } from '@/lib/acp/reducer';
@@ -193,6 +194,7 @@ export function Chat() {
   const recentWorkspacePaths = useSettingsStore((s) => s.recentWorkspacePaths ?? []);
   const workspaceLabels = useSettingsStore((s) => s.workspaceLabels);
   const setChatWorkspacePath = useSettingsStore((s) => s.setChatWorkspacePath);
+  const removeWorkspace = useSettingsStore((s) => s.removeWorkspace);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
   const agents = useAgentsStore((s) => s.agents);
   const [sessionDiscoveryAttempted, setSessionDiscoveryAttempted] = useState(false);
@@ -246,6 +248,38 @@ export function Chat() {
     }
     return paths;
   }, [chatWorkspacePath, recentWorkspacePaths, sessions]);
+  const unreferencedRecentWorkspacePaths = useMemo(() => {
+    if (agents.length === 0) return [];
+    const referencedPaths = new Set(
+      [
+        chatWorkspacePath,
+        ...agents.map((agent) => agent.workspace),
+        ...sessions.map((session) => session.workspacePath).filter((path): path is string => !!path),
+      ]
+        .map((path) => normalizeWorkspacePath(path))
+        .filter((path): path is string => Boolean(path)),
+    );
+    return recentWorkspacePaths.filter((path) => {
+      const normalized = normalizeWorkspacePath(path);
+      return Boolean(
+        normalized
+        && !isDefaultWorkspacePath(normalized)
+        && !referencedPaths.has(normalized),
+      );
+    });
+  }, [agents, chatWorkspacePath, recentWorkspacePaths, sessions]);
+  const unreferencedWorkspaceAvailability = useWorkspaceAvailability(unreferencedRecentWorkspacePaths);
+
+  useEffect(() => {
+    const unavailablePaths = unreferencedRecentWorkspacePaths.filter(
+      (path) => unreferencedWorkspaceAvailability[path] === 'unavailable',
+    );
+    if (unavailablePaths.length === 0) return;
+    void removeWorkspace(unavailablePaths[0]!, unavailablePaths.slice(1)).catch((error) => {
+      console.warn('[chat] Failed to prune unavailable recent workspaces:', error);
+    });
+  }, [removeWorkspace, unreferencedRecentWorkspacePaths, unreferencedWorkspaceAvailability]);
+
   const workspaceLabel = getWorkspaceDisplayLabel(
     cwd,
     t('workspace.defaultLabel'),

@@ -48,7 +48,11 @@ const baseSnapshot = {
   channelOwners: {},
   channelAccountOwners: {},
 };
-const deletedSnapshot = { ...baseSnapshot, agents: [mainAgent] };
+const deletedSnapshot = {
+  ...baseSnapshot,
+  agents: [mainAgent],
+  removedWorkspacePath: deletedAgent.workspace,
+};
 
 test.describe('Agent deletion session reconciliation', () => {
   test('warns about chat history and removes deleted-agent conversations immediately', async ({ launchElectronApp }) => {
@@ -79,6 +83,16 @@ test.describe('Agent deletion session reconciliation', () => {
           },
         },
         hostApi: {
+          [stableStringify(['settings', 'getAll', null])]: {
+            language: 'en',
+            setupComplete: true,
+            chatWorkspacePath: deletedAgent.workspace,
+            recentWorkspacePaths: [deletedAgent.workspace, mainAgent.workspace],
+            workspaceLabels: {
+              [deletedAgent.workspace]: 'Deleted agent workspace',
+              [mainAgent.workspace]: 'Main workspace',
+            },
+          },
           [stableStringify(['agents', 'list', null])]: baseSnapshot,
           [stableStringify(['agents', 'delete', { id: 'test1' }])]: deletedSnapshot,
           [stableStringify(['channels', 'accounts', null])]: { success: true, channels: [] },
@@ -131,6 +145,32 @@ test.describe('Agent deletion session reconciliation', () => {
       }, DELETED_AGENT_CHAT_KEY);
       await page.waitForTimeout(200);
       await expect(page.getByText('Delayed deleted-agent event')).toHaveCount(0);
+
+      await expect.poll(async () => {
+        const invocations = await getRecordedHostInvocations(app);
+        return invocations.some((entry) => (
+          entry.module === 'settings'
+          && entry.action === 'setMany'
+          && entry.payload?.patch?.chatWorkspacePath === '~/.openclaw/workspace'
+          && JSON.stringify(entry.payload.patch.recentWorkspacePaths) === JSON.stringify([
+            '~/.openclaw/workspace',
+            mainAgent.workspace,
+          ])
+          && JSON.stringify(entry.payload.patch.workspaceLabels) === JSON.stringify({
+            [mainAgent.workspace]: 'Main workspace',
+          })
+        ));
+      }).toBe(true);
+
+      await page.getByTestId('sidebar-new-chat').click();
+      const workspaceSelector = page.getByTestId('chat-workspace-selector');
+      await expect(workspaceSelector).not.toHaveAttribute('aria-disabled', 'true');
+      await workspaceSelector.click();
+      const workspaceMenu = page.getByTestId('chat-workspace-menu');
+      await expect(workspaceMenu).toBeVisible();
+      await expect(workspaceMenu.getByTestId(
+        `chat-workspace-option-${encodeURIComponent(deletedAgent.workspace)}`,
+      )).toHaveCount(0);
 
       await expect.poll(async () => {
         const invocations = await getRecordedHostInvocations(app);

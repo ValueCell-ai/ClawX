@@ -370,24 +370,28 @@ function getManagedWorkspaceDirectory(agent: AgentListEntry): string | null {
   return normalizedConfigured === normalizedManaged ? configuredWorkspace : null;
 }
 
-export async function removeAgentWorkspaceDirectory(agent: { id: string; workspace?: string }): Promise<void> {
+export async function removeAgentWorkspaceDirectory(
+  agent: { id: string; workspace?: string },
+): Promise<string | null> {
   const workspaceDir = getManagedWorkspaceDirectory(agent as AgentListEntry);
   if (!workspaceDir) {
     logger.warn('Skipping agent workspace deletion for unmanaged path', {
       agentId: agent.id,
       workspace: agent.workspace,
     });
-    return;
+    return null;
   }
 
   try {
     await rm(workspaceDir, { recursive: true, force: true });
+    return workspaceDir;
   } catch (error) {
     logger.warn('Failed to remove agent workspace directory', {
       agentId: agent.id,
       workspaceDir,
       error: String(error),
     });
+    return null;
   }
 }
 

@@ -271,6 +271,10 @@ export type ChannelSaveConfigResult = HostSuccess & {
 export type ChannelConfiguredResult = HostSuccess & { channels?: Array<string | JsonRecord> };
 
 export type AgentSnapshotResult = AgentsSnapshot & OptionalHostSuccess;
+export type AgentDeleteResult = AgentSnapshotResult & {
+  /** Resolved path, present only when Main successfully removed a ClawX-managed workspace directory. */
+  removedWorkspacePath?: string;
+};
 export type AgentCreatePayload = { name: string; inheritWorkspace?: boolean };
 export type AgentUpdatePayload = { id: string; name: string };
 export type AgentUpdateModelPayload = { id: string; modelRef: string | null };
@@ -933,7 +937,7 @@ export type HostApiContract = {
     create: (payload: AgentCreatePayload) => AgentSnapshotResult;
     update: (payload: AgentUpdatePayload) => AgentSnapshotResult;
     updateModel: (payload: AgentUpdateModelPayload) => AgentSnapshotResult;
-    delete: (payload: AgentIdPayload) => AgentSnapshotResult;
+    delete: (payload: AgentIdPayload) => AgentDeleteResult;
     assignChannel: (payload: AgentChannelPayload) => AgentSnapshotResult;
     removeChannel: (payload: AgentChannelPayload) => AgentSnapshotResult;
   };

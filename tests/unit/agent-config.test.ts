@@ -408,9 +408,12 @@ describe('agent config lifecycle', () => {
     await writeFile(join(test2WorkspaceDir, 'AGENTS.md'), '# test2', 'utf8');
 
     const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
-    const { deleteAgentConfig } = await import('@electron/utils/agent-config');
+    const {
+      deleteAgentConfig,
+      removeAgentWorkspaceDirectory,
+    } = await import('@electron/utils/agent-config');
 
-    const { snapshot } = await deleteAgentConfig('test2');
+    const { snapshot, removedEntry } = await deleteAgentConfig('test2');
 
     expect(snapshot.agents.map((agent) => agent.id)).toEqual(['main', 'test3']);
     expect(snapshot.channelOwners.feishu).toBe('main');
@@ -423,8 +426,12 @@ describe('agent config lifecycle', () => {
     expect(config.bindings).toEqual([]);
     await expect(access(test2RuntimeDir)).rejects.toThrow();
     // The service removes the workspace after `deleteAgentConfig` commits, so the
-    // utility leaves it in place for the caller.
+    // config mutation leaves it in place for the caller.
     await expect(access(test2WorkspaceDir)).resolves.toBeUndefined();
+
+    await expect(removeAgentWorkspaceDirectory(removedEntry))
+      .resolves.toBe(test2WorkspaceDir);
+    await expect(access(test2WorkspaceDir)).rejects.toThrow();
 
     infoSpy.mockRestore();
   });
@@ -458,9 +465,13 @@ describe('agent config lifecycle', () => {
 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
-    const { deleteAgentConfig } = await import('@electron/utils/agent-config');
+    const {
+      deleteAgentConfig,
+      removeAgentWorkspaceDirectory,
+    } = await import('@electron/utils/agent-config');
 
-    await deleteAgentConfig('test2');
+    const { removedEntry } = await deleteAgentConfig('test2');
+    await expect(removeAgentWorkspaceDirectory(removedEntry)).resolves.toBeNull();
 
     await expect(access(customWorkspaceDir)).resolves.toBeUndefined();
 

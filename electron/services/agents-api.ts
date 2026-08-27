@@ -59,10 +59,15 @@ export function createAgentsApi(_ctx: AgentsApiContext): CompleteHostServiceRegi
     delete: async (payload) => {
       const agentId = requireString(payload, 'id');
       const { snapshot, removedEntry } = await deleteAgentConfig(agentId);
-      await removeAgentWorkspaceDirectory(removedEntry).catch((err) => {
+      const removedWorkspacePath = await removeAgentWorkspaceDirectory(removedEntry).catch((err) => {
         console.warn('[agents] Failed to remove workspace after agent deletion:', err);
+        return null;
       });
-      return { success: true, ...snapshot };
+      return {
+        success: true,
+        ...snapshot,
+        ...(removedWorkspacePath ? { removedWorkspacePath } : {}),
+      };
     },
     assignChannel: async (payload) => {
       const agentId = requireString(payload, 'id');

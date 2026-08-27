@@ -43,6 +43,34 @@ describe('settings workspace cleanup', () => {
     });
   });
 
+  it('removes configured and resolved aliases in one persisted update', async () => {
+    useSettingsStore.setState({
+      chatWorkspacePath: '/Users/test/.openclaw/workspace-agent',
+      recentWorkspacePaths: [
+        '~/.openclaw/workspace-agent',
+        '/Users/test/.openclaw/workspace-agent',
+        '/kept',
+      ],
+      workspaceLabels: {
+        '~/.openclaw/workspace-agent': 'Configured path',
+        '/Users/test/.openclaw/workspace-agent': 'Resolved path',
+        '/kept': 'Kept project',
+      },
+    });
+
+    await useSettingsStore.getState().removeWorkspace(
+      '/Users/test/.openclaw/workspace-agent',
+      ['~/.openclaw/workspace-agent'],
+    );
+
+    expect(useSettingsStore.getState()).toMatchObject({
+      chatWorkspacePath: DEFAULT_WORKSPACE_CWD,
+      recentWorkspacePaths: [DEFAULT_WORKSPACE_CWD, '/kept'],
+      workspaceLabels: { '/kept': 'Kept project' },
+    });
+    expect(settingsSetMany).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the global workspace when removing a different recent path', async () => {
     useSettingsStore.setState({ chatWorkspacePath: '/kept' });
 

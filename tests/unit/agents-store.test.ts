@@ -6,12 +6,14 @@ const {
   listAgentsMock,
   reconcileAgentSessionTombstonesMock,
   removeAgentSessionsMock,
+  removeWorkspaceMock,
 } = vi.hoisted(() => ({
   createAgentMock: vi.fn(),
   deleteAgentMock: vi.fn(),
   listAgentsMock: vi.fn(),
   reconcileAgentSessionTombstonesMock: vi.fn(),
   removeAgentSessionsMock: vi.fn(),
+  removeWorkspaceMock: vi.fn(),
 }));
 
 vi.mock('@/lib/host-api', () => ({
@@ -33,6 +35,12 @@ vi.mock('@/stores/chat', () => ({
   },
 }));
 
+vi.mock('@/stores/settings', () => ({
+  useSettingsStore: {
+    getState: () => ({ removeWorkspace: removeWorkspaceMock }),
+  },
+}));
+
 import { useAgentsStore } from '@/stores/agents';
 
 const survivingSnapshot = {
@@ -47,10 +55,11 @@ const survivingSnapshot = {
 describe('agents store deletion', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    removeWorkspaceMock.mockResolvedValue(undefined);
     useAgentsStore.setState({
       agents: [
-        { id: 'main', name: 'Main Agent' },
-        { id: 'test1', name: 'Test Agent' },
+        { id: 'main', name: 'Main Agent', workspace: '/tmp/main-workspace' },
+        { id: 'test1', name: 'Test Agent', workspace: '/tmp/test1-workspace' },
       ] as never,
       defaultAgentId: 'main',
       loading: false,
@@ -59,13 +68,20 @@ describe('agents store deletion', () => {
   });
 
   it('forgets renderer sessions only after Main confirms agent deletion', async () => {
-    deleteAgentMock.mockResolvedValue(survivingSnapshot);
+    deleteAgentMock.mockResolvedValue({
+      ...survivingSnapshot,
+      removedWorkspacePath: '~/.openclaw/workspace-test1',
+    });
 
     await useAgentsStore.getState().deleteAgent('test1');
 
     expect(deleteAgentMock).toHaveBeenCalledWith('test1');
     expect(reconcileAgentSessionTombstonesMock).toHaveBeenCalledWith(['main']);
     expect(removeAgentSessionsMock).toHaveBeenCalledWith('test1');
+    expect(removeWorkspaceMock).toHaveBeenCalledWith(
+      '~/.openclaw/workspace-test1',
+      ['/tmp/test1-workspace'],
+    );
     expect(useAgentsStore.getState().agents).toEqual(survivingSnapshot.agents);
   });
 
@@ -151,12 +167,34 @@ describe('agents store deletion', () => {
     expect(reconcileAgentSessionTombstonesMock).toHaveBeenCalledWith(['main', 'test1']);
   });
 
+  it('keeps unmanaged workspace metadata when Main does not report removing it', async () => {
+    deleteAgentMock.mockResolvedValue(survivingSnapshot);
+
+    await useAgentsStore.getState().deleteAgent('test1');
+
+    expect(removeWorkspaceMock).not.toHaveBeenCalled();
+  });
+
+  it('does not turn workspace-metadata persistence failure into an agent deletion failure', async () => {
+    deleteAgentMock.mockResolvedValue({
+      ...survivingSnapshot,
+      removedWorkspacePath: '~/.openclaw/workspace-test1',
+    });
+    removeWorkspaceMock.mockRejectedValue(new Error('settings unavailable'));
+
+    await expect(useAgentsStore.getState().deleteAgent('test1')).resolves.toBeUndefined();
+
+    expect(removeAgentSessionsMock).toHaveBeenCalledWith('test1');
+    expect(useAgentsStore.getState().error).toBeNull();
+  });
+
   it('preserves renderer sessions when Main rejects agent deletion', async () => {
     deleteAgentMock.mockRejectedValue(new Error('delete failed'));
 
     await expect(useAgentsStore.getState().deleteAgent('test1')).rejects.toThrow('delete failed');
 
     expect(removeAgentSessionsMock).not.toHaveBeenCalled();
+    expect(removeWorkspaceMock).not.toHaveBeenCalled();
     expect(reconcileAgentSessionTombstonesMock).not.toHaveBeenCalled();
     expect(useAgentsStore.getState().agents.map((agent) => agent.id)).toEqual(['main', 'test1']);
   });
