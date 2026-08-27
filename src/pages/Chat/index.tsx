@@ -558,6 +558,7 @@ export function Chat() {
 
         <ChatInput
           draft={composerDraft}
+          draftKey={currentSessionKey}
           onDraftChange={handleComposerDraftChange}
           onSend={(text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => {
             if (!currentSessionKey || !cwd || !workspaceContextAvailable) return;

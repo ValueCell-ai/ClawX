@@ -247,7 +247,7 @@ test.describe('ClawX sidebar session attention', () => {
     }
   });
 
-  test('keeps unsent composer text independent for each conversation', async ({ launchElectronApp }) => {
+  test('keeps unsent composer text and caret position independent for each conversation', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -259,7 +259,10 @@ test.describe('ClawX sidebar session attention', () => {
 
       await expect(controlRow).toHaveAttribute('aria-current', 'page');
       await expect(composer).toBeEnabled({ timeout: 30_000 });
-      await composer.fill('Unsent control draft');
+      const controlDraft = 'Unsent control draft';
+      await composer.fill(controlDraft);
+      await expect.poll(() => composer.evaluate((element: HTMLTextAreaElement) => element.selectionStart))
+        .toBe(controlDraft.length);
 
       await targetRow.click();
       await expect(targetRow).toHaveAttribute('aria-current', 'page');
@@ -267,7 +270,10 @@ test.describe('ClawX sidebar session attention', () => {
       await composer.fill('Unsent target draft');
 
       await controlRow.click();
-      await expect(composer).toHaveValue('Unsent control draft');
+      await expect(composer).toHaveValue(controlDraft);
+      await expect(composer).toBeFocused();
+      await expect.poll(() => composer.evaluate((element: HTMLTextAreaElement) => element.selectionStart))
+        .toBe(controlDraft.length);
 
       await targetRow.click();
       await expect(composer).toHaveValue('Unsent target draft');

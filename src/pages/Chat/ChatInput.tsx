@@ -6,7 +6,7 @@
  * Files are staged through the typed Host API and included as local media
  * references in the ACP session/prompt request.
  */
-import { useState, useRef, useEffect, useCallback, useMemo, type SetStateAction } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, type SetStateAction } from 'react';
 import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Search, ChevronDown, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -51,6 +51,7 @@ interface ChatInputProps {
   onSend: (text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => void;
   onStop?: () => void;
   draft?: string;
+  draftKey?: string;
   onDraftChange?: (update: SetStateAction<string>) => void;
   disabled?: boolean;
   sending?: boolean;
@@ -289,6 +290,7 @@ export function ChatInput({
   onSend,
   onStop,
   draft,
+  draftKey,
   onDraftChange,
   disabled = false,
   sending = false,
@@ -322,6 +324,11 @@ export function ChatInput({
   const [optimisticModelRef, setOptimisticModelRef] = useState<string | null>(null);
   const [providerSnapshotReady, setProviderSnapshotReady] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const draftSelectionsRef = useRef(new Map<string, {
+    start: number;
+    end: number;
+    direction: 'forward' | 'backward' | 'none';
+  }>());
   const pickerRef = useRef<HTMLDivElement>(null);
   const skillPickerRef = useRef<HTMLDivElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
@@ -463,12 +470,30 @@ export function ChatInput({
     }
   }, [input]);
 
-  // Focus textarea on mount (avoids Windows focus loss after session delete + native dialog)
-  useEffect(() => {
-    if (!inputDisabled && textareaRef.current) {
-      textareaRef.current.focus();
-    }
-  }, [inputDisabled]);
+  const rememberDraftSelection = useCallback((textarea = textareaRef.current) => {
+    if (!draftKey || !textarea) return;
+    draftSelectionsRef.current.set(draftKey, {
+      start: textarea.selectionStart ?? 0,
+      end: textarea.selectionEnd ?? 0,
+      direction: textarea.selectionDirection ?? 'none',
+    });
+  }, [draftKey]);
+
+  // Focus the composer when it becomes available. When changing conversations,
+  // restore that conversation's last selection instead of leaving the controlled
+  // textarea at the position produced while React swapped its value.
+  useLayoutEffect(() => {
+    if (inputDisabled || !textareaRef.current) return;
+    const textarea = textareaRef.current;
+    textarea.focus();
+    if (!draftKey) return;
+
+    const savedSelection = draftSelectionsRef.current.get(draftKey);
+    const fallbackPosition = textarea.value.length;
+    const start = Math.min(savedSelection?.start ?? fallbackPosition, fallbackPosition);
+    const end = Math.max(start, Math.min(savedSelection?.end ?? start, fallbackPosition));
+    textarea.setSelectionRange(start, end, savedSelection?.direction ?? 'none');
+  }, [draftKey, inputDisabled]);
 
   useEffect(() => {
     if (!targetAgentId) return;
@@ -546,26 +571,29 @@ export function ChatInput({
   }, [setInput]);
 
   const moveCaretTo = useCallback((position: number) => {
-    textareaRef.current?.focus();
-    textareaRef.current?.setSelectionRange(position, position);
-    requestAnimationFrame(() => {
+    const move = () => {
       textareaRef.current?.focus();
       textareaRef.current?.setSelectionRange(position, position);
-    });
-  }, []);
+      rememberDraftSelection();
+    };
+    move();
+    requestAnimationFrame(move);
+  }, [rememberDraftSelection]);
 
-  const normalizeSelectionAroundSkill = useCallback(() => {
-    if (skillTokenRanges.length === 0) return;
+  const handleComposerSelection = useCallback(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
     const selectionStart = textarea.selectionStart ?? 0;
     const selectionEnd = textarea.selectionEnd ?? 0;
-    if (selectionStart !== selectionEnd) return;
-    const tokenRange = skillTokenRanges.find((range) => selectionStart > range.start && selectionStart < range.end);
-    if (tokenRange) {
-      moveCaretTo(tokenRange.end);
+    if (selectionStart === selectionEnd) {
+      const tokenRange = skillTokenRanges.find((range) => selectionStart > range.start && selectionStart < range.end);
+      if (tokenRange) {
+        moveCaretTo(tokenRange.end);
+        return;
+      }
     }
-  }, [moveCaretTo, skillTokenRanges]);
+    rememberDraftSelection(textarea);
+  }, [moveCaretTo, rememberDraftSelection, skillTokenRanges]);
 
   const loadQuickSkills = useCallback(async (): Promise<QuickAccessSkill[]> => {
     if (!currentAgent) {
@@ -1085,10 +1113,14 @@ export function ChatInput({
             <Textarea
               ref={textareaRef}
               value={input}
-              onChange={(e) => handleInputChange(e.target.value)}
+              onChange={(e) => {
+                handleInputChange(e.target.value);
+                rememberDraftSelection(e.currentTarget);
+              }}
               onKeyDown={handleKeyDown}
-              onSelect={normalizeSelectionAroundSkill}
-              onClick={normalizeSelectionAroundSkill}
+              onSelect={handleComposerSelection}
+              onClick={handleComposerSelection}
+              onBlur={(e) => rememberDraftSelection(e.currentTarget)}
               onCompositionStart={() => {
                 isComposingRef.current = true;
               }}
