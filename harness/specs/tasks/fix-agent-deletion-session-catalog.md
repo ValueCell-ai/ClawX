@@ -12,15 +12,21 @@ touchedAreas:
   - harness/specs/scenarios/gateway-backend-communication.md
   - harness/specs/scenarios/chat-workspace-and-navigation.md
   - harness/specs/rules/acp-chat-state-and-history.md
+  - harness/specs/rules/session-workspace-authority.md
+  - harness/reference/chat-workspace-and-navigation.md
   - harness/specs/tasks/hard-delete-session-jsonl.md
   - shared/chat/types.ts
+  - shared/host-api/contract.ts
   - shared/i18n/locales/en/agents.json
   - shared/i18n/locales/zh/agents.json
   - shared/i18n/locales/ja/agents.json
   - shared/i18n/locales/ru/agents.json
   - electron/services/sessions-api.ts
+  - electron/services/agents-api.ts
+  - electron/utils/agent-config.ts
   - src/stores/agents.ts
   - src/stores/chat.ts
+  - src/stores/settings.ts
   - src/stores/chat/session-label-hydration.ts
   - src/lib/workspace-context.ts
   - src/components/layout/Sidebar.tsx
@@ -34,7 +40,9 @@ touchedAreas:
   - tests/unit/chat-acp-page.test.tsx
   - tests/unit/chat-load-sessions-startup.test.ts
   - tests/unit/agents-store.test.ts
+  - tests/unit/agent-config.test.ts
   - tests/unit/host-services.test.ts
+  - tests/unit/settings-store.test.ts
   - tests/unit/i18n-locale-parity.test.ts
   - tests/e2e/agent-deletion.spec.ts
   - tests/e2e/chat-acp-inline-timeline.spec.ts
@@ -45,6 +53,9 @@ expectedUserBehavior:
   - If the deleted agent owns the selected conversation, Chat selects a safe surviving conversation, preferring the main agent, or creates a main-agent local placeholder when no safe conversation remains.
   - Renderer-only labels, activity, composer drafts, pending catalog state, label hydration state, and persisted attention for removed sessions are cleared.
   - The deleted Agent ID remains an in-memory session-catalog tombstone so delayed `sessions.changed` events, buffered events, and stale `sessions.list` rows cannot recreate orphan conversations.
+  - When Main confirms that it removed the Agent's ClawX-managed workspace directory, Renderer also removes that path from the persisted recent-workspace menu and custom workspace labels, resetting the global new-chat workspace when it targeted the removed path.
+  - On Chat startup, unavailable recent workspaces that are no longer referenced by the current selection, an Agent, or a conversation are pruned, so metadata left by deletions from older ClawX versions does not remain in the new-chat menu.
+  - Unmanaged workspace paths that still exist, are selected, or remain referenced by an Agent or conversation stay available in the recent-workspace menu.
   - An authoritative Agent snapshot containing a recreated Agent ID clears its tombstone so new conversations for that Agent can appear normally.
   - An Agent-list request that began before a confirmed mutation cannot publish or reconcile afterward, so a stale pre-deletion snapshot cannot clear the deleted Agent tombstone.
   - The first conversation in a newly created non-default Agent uses its first prompt as the sidebar title instead of exposing the synthetic `ACP` transport display name, including after transcript-summary hydration on reload.
@@ -66,7 +77,7 @@ requiredRules:
   - docs-sync
 requiredTests:
   - pnpm harness validate --spec harness/specs/tasks/fix-agent-deletion-session-catalog.md
-  - pnpm exec vitest run tests/unit/chat-session-management.test.ts tests/unit/chat-store-session-label-fetch.test.ts tests/unit/chat-load-sessions-startup.test.ts tests/unit/workspace-context.test.ts tests/unit/session-buckets.test.ts tests/unit/gateway-events.test.ts tests/unit/agents-store.test.ts tests/unit/host-services.test.ts tests/unit/i18n-locale-parity.test.ts
+  - pnpm exec vitest run tests/unit/chat-session-management.test.ts tests/unit/chat-store-session-label-fetch.test.ts tests/unit/chat-load-sessions-startup.test.ts tests/unit/workspace-context.test.ts tests/unit/session-buckets.test.ts tests/unit/gateway-events.test.ts tests/unit/agents-store.test.ts tests/unit/agent-config.test.ts tests/unit/host-services.test.ts tests/unit/settings-store.test.ts tests/unit/i18n-locale-parity.test.ts
   - pnpm exec playwright test tests/e2e/agent-deletion.spec.ts tests/e2e/chat-acp-inline-timeline.spec.ts tests/e2e/chat-workspace-context.spec.ts
   - pnpm run typecheck
   - pnpm run build:vite
@@ -78,6 +89,8 @@ acceptance:
   - Session ownership is matched by the exact canonical prefix `agent:<agentId>:` so similarly named agents are not affected.
   - Selection repair never creates a placeholder for the agent that was just deleted.
   - Session rows and events matching a deleted Agent tombstone are rejected across live, buffered, fallback, and list-publication paths until an authoritative Agent snapshot contains that ID again.
+  - The typed Agent-delete result identifies a workspace only after Main successfully removes a managed workspace; Renderer uses that authoritative signal to forget matching recent-workspace and label metadata without turning a later settings-persistence failure into a false Agent-deletion failure.
+  - Chat verifies unreferenced historical recent-workspace entries through the Main-owned workspace resolver and removes only confirmed unavailable paths; current, Agent-owned, session-owned, and canonical default paths are excluded.
   - Confirmed Agent mutations advance the authoritative snapshot generation; list responses and errors from an older generation are ignored without changing Agent state, tombstones, loading, or errors.
   - Non-default `agent:<id>:main` sessions receive the same bounded, sanitized first-prompt title and summary hydration as other conversations, while `agent:main:main` retains its special default-main behavior.
   - Workspace resolution and sidebar grouping pin `agent:main:main` to the canonical default workspace rather than trusting stale ACP cwd metadata from another Agent.

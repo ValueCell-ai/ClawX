@@ -497,6 +497,46 @@ test.describe('ClawX chat workspace context', () => {
     }
   });
 
+  test('prunes an unavailable recent workspace that is no longer referenced', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installWorkspaceMocks(app, {
+        chatWorkspacePath: DEFAULT_WORKSPACE,
+        recentWorkspacePaths: [GLOBAL_WORKSPACE, DEFAULT_WORKSPACE],
+        workspaceLabels: { [GLOBAL_WORKSPACE]: 'Deleted workspace' },
+        unavailableWorkspacePath: GLOBAL_WORKSPACE,
+      });
+
+      const page = await getStableWindow(app);
+      try {
+        await page.reload();
+      } catch (error) {
+        if (!String(error).includes('ERR_FILE_NOT_FOUND')) throw error;
+      }
+
+      await expect.poll(async () => {
+        const invocations = await getRecordedHostInvocations(app);
+        return invocations.some((entry) => (
+          entry.module === 'settings'
+          && entry.action === 'setMany'
+          && JSON.stringify(entry.payload?.patch?.recentWorkspacePaths) === JSON.stringify([DEFAULT_WORKSPACE])
+          && JSON.stringify(entry.payload.patch.workspaceLabels) === JSON.stringify({})
+        ));
+      }).toBe(true);
+
+      await page.getByTestId('sidebar-new-chat').click();
+      const workspaceSelector = page.getByTestId('chat-workspace-selector');
+      await expect(workspaceSelector).not.toHaveAttribute('aria-disabled', 'true');
+      await workspaceSelector.click();
+      await expect(page.getByTestId(
+        `chat-workspace-option-${encodeURIComponent(GLOBAL_WORKSPACE)}`,
+      )).toHaveCount(0);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('UUID-date fallback title is replaced by the first user prompt', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     const fallbackTitle = '72e4b28b (2026-07-22)';

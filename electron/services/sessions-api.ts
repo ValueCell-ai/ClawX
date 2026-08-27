@@ -128,11 +128,16 @@ function normalizeTurnUserText(message: TranscriptMessage): string {
     .trim();
 }
 
-function isInternalInterSessionUser(message: TranscriptMessage): boolean {
+function isInternalTranscriptUser(message: TranscriptMessage): boolean {
   const provenance = (message as TranscriptMessage & { provenance?: unknown }).provenance;
   if (provenance && typeof provenance === 'object' && !Array.isArray(provenance)) {
     const kind = (provenance as Record<string, unknown>).kind;
-    if (typeof kind === 'string' && kind.toLowerCase() === 'inter_session') return true;
+    if (
+      typeof kind === 'string'
+      && (kind.toLowerCase() === 'inter_session' || kind.toLowerCase() === 'internal_system')
+    ) {
+      return true;
+    }
   }
   return /^\[Inter-session message\]\s/.test(extractMessageText(message.content));
 }
@@ -148,7 +153,10 @@ function extractTranscriptTurnTimings(records: TranscriptMessageRecord[]): Sessi
   for (const record of records) {
     const role = typeof record.message.role === 'string' ? record.message.role.toLowerCase() : '';
     if (role === 'user') {
-      if (isInternalInterSessionUser(record.message)) continue;
+      // OpenClaw persists restart-recovery control instructions as role=user with
+      // internal_system provenance. They continue the interrupted visible turn and
+      // must not truncate its timing at the last pre-restart tool result.
+      if (isInternalTranscriptUser(record.message)) continue;
       current = {
         normalizedUserText: normalizeTurnUserText(record.message),
         startedAt: transcriptRecordTimestamp(record),

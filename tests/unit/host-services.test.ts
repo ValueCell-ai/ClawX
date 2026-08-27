@@ -923,7 +923,7 @@ describe('host services', () => {
     };
     const removedEntry = { id: 'code', workspace: '/tmp/code-workspace' };
     deleteAgentConfigMock.mockResolvedValue({ snapshot, removedEntry });
-    removeAgentWorkspaceDirectoryMock.mockResolvedValue(undefined);
+    removeAgentWorkspaceDirectoryMock.mockResolvedValue('/tmp/code-workspace');
     const gatewayManager = {
       getStatus: vi.fn(() => ({ state: 'stopped' })),
       restart: vi.fn().mockResolvedValue(undefined),
@@ -931,7 +931,11 @@ describe('host services', () => {
     const { createAgentsApi } = await import('@electron/services/agents-api');
 
     await expect(createAgentsApi({ gatewayManager: gatewayManager as never }).delete({ id: 'code' }))
-      .resolves.toEqual({ success: true, ...snapshot });
+      .resolves.toEqual({
+        success: true,
+        ...snapshot,
+        removedWorkspacePath: '/tmp/code-workspace',
+      });
 
     expect(deleteAgentConfigMock).toHaveBeenCalledWith('code');
     expect(gatewayManager.restart).not.toHaveBeenCalled();

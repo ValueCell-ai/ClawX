@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { hostApi } from '@/lib/host-api';
 import { useChatStore } from '@/stores/chat';
+import { useSettingsStore } from '@/stores/settings';
 import type { ChannelType } from '@/types/channel';
 import type { AgentSummary, AgentsSnapshot } from '@/types/agent';
 
@@ -59,7 +60,7 @@ function commitMutationSnapshot(
   reconcileChatAgentSnapshot(snapshot);
 }
 
-export const useAgentsStore = create<AgentsState>((set) => ({
+export const useAgentsStore = create<AgentsState>((set, get) => ({
   agents: [],
   defaultAgentId: 'main',
   defaultModelRef: null,
@@ -131,10 +132,21 @@ export const useAgentsStore = create<AgentsState>((set) => ({
 
   deleteAgent: async (agentId: string) => {
     set({ error: null });
+    const configuredWorkspacePath = get().agents.find((agent) => agent.id === agentId)?.workspace;
     try {
       const snapshot = await hostApi.agents.delete(agentId);
       commitMutationSnapshot(set, snapshot);
       useChatStore.getState().removeAgentSessions(agentId);
+      if (snapshot.removedWorkspacePath) {
+        void useSettingsStore.getState().removeWorkspace(
+          snapshot.removedWorkspacePath,
+          configuredWorkspacePath ? [configuredWorkspacePath] : [],
+        ).catch((error) => {
+          // Agent deletion already succeeded; a settings persistence failure must not
+          // report the destructive operation as failed or restore stale UI metadata.
+          console.warn('[agents] Failed to persist removed workspace cleanup:', error);
+        });
+      }
     } catch (error) {
       set({ error: String(error) });
       throw error;
