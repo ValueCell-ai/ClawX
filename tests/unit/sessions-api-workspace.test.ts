@@ -176,6 +176,59 @@ describe('sessions API workspace summaries', () => {
     });
   });
 
+  it('keeps restart-recovered assistant output in the original visible turn timing', async () => {
+    seedTranscriptRecords('agent:main:session-restart-timing', [
+      {
+        type: 'message',
+        timestamp: '2026-08-27T08:52:13.539Z',
+        message: { role: 'user', content: 'Explain SolidWorks file versioning' },
+      },
+      {
+        type: 'message',
+        timestamp: '2026-08-27T08:52:23.876Z',
+        message: { role: 'assistant', content: [{ type: 'toolCall', id: 'tool-1' }] },
+      },
+      {
+        type: 'message',
+        timestamp: '2026-08-27T08:52:23.960Z',
+        message: { role: 'toolResult', content: 'missing memory file', toolCallId: 'tool-1' },
+      },
+      {
+        type: 'message',
+        timestamp: '2026-08-27T08:55:42.364Z',
+        message: {
+          role: 'user',
+          content: '[System] Continue the interrupted response after Gateway restart.',
+          provenance: {
+            kind: 'internal_system',
+            sourceSessionKey: 'agent:main:session-restart-timing',
+            sourceTool: 'main_session_restart_recovery',
+          },
+        },
+      },
+      {
+        type: 'message',
+        timestamp: '2026-08-27T08:56:54.103Z',
+        message: { role: 'assistant', content: 'Recovered final answer' },
+      },
+    ]);
+    const { createSessionsApi } = await import('@electron/services/sessions-api');
+
+    const result = await createSessionsApi().turnTimings({
+      sessionKey: 'agent:main:session-restart-timing',
+      limit: 1000,
+    });
+
+    expect(result).toEqual({
+      success: true,
+      timings: [{
+        normalizedUserText: 'Explain SolidWorks file versioning',
+        userOccurrenceFromTail: 1,
+        durationMs: 280_564,
+      }],
+    });
+  });
+
   it('falls back to message timestamps and omits negative or orphan turn timings', async () => {
     seedTranscriptRecords('agent:main:session-timing-fallback', [
       {

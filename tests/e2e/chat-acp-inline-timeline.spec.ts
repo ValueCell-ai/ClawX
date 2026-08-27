@@ -532,6 +532,36 @@ test.describe('ClawX ACP inline timeline', () => {
     }
   });
 
+  test('renders the full restart-recovered historical duration', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installAcpChatMocks(app);
+      await installAcpLoadReplayMock(app, [
+        {
+          sessionUpdate: 'user_message_chunk',
+          messageId: 'restart-timed-user',
+          content: { type: 'text', text: 'Continue this turn across a Gateway restart' },
+        },
+        {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'restart-timed-assistant',
+          content: { type: 'text', text: 'Recovered turn completed' },
+        },
+      ], [{
+        normalizedUserText: 'Continue this turn across a Gateway restart',
+        userOccurrenceFromTail: 1,
+        durationMs: 280_564,
+      }]);
+
+      const page = await openChat(app);
+      await expect(page.getByText('Recovered turn completed')).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByTestId('acp-turn-duration')).toHaveText('Took 280 sec');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('reconciles a completed live turn to transcript timing', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     const prompt = 'Keep this live duration stable';

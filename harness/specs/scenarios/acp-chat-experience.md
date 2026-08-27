@@ -7,6 +7,7 @@ ownedPaths:
   - shared/host-api/contract.ts
   - shared/file-preview/**
   - electron/services/acp-chat-service.ts
+  - electron/services/sessions-api.ts
   - electron/services/acp-session-access-registry.ts
   - electron/services/acp-trace.ts
   - electron/services/attachment-access.ts
@@ -23,6 +24,7 @@ ownedPaths:
   - src/pages/Chat/**
   - tests/unit/acp-*.test.ts
   - tests/unit/acp-*.test.tsx
+  - tests/unit/sessions-api-workspace.test.ts
   - tests/unit/attachment-open-with.test.ts
   - tests/unit/attachment-open-with-native.test.ts
   - tests/e2e/chat-acp-inline-timeline.spec.ts
@@ -61,6 +63,6 @@ requiredRules:
 
 ACP Chat covers session load, prompt, cancel, permission, replay, timeline reduction, assistant-turn presentation and whole-turn duration, standard ACP attachments, bounded generated-media and OpenClaw MEDIA compatibility, and Chat-specific diagnostics. The active ACP timeline may also expose finite positive `usage_update` metadata as a compact composer-footer context-usage meter with a ring and visible localized percentage immediately to the left of the gateway connection status, not inside the input box; its progressbar semantics and hover/focus label report the bounded percentage and used/total token counts, while missing or malformed values stay hidden. When the active model changes, the used count remains ACP-owned but the meter immediately adopts the effective context window from the typed agent snapshot so an old usage update cannot leave the previous model's limit visible. The user-visible attachment flow includes attachment-scoped preview, system open, selected-application open, reveal actions, and a first-position built-in Preview action for eligible local HTML, with platform discovery limited to macOS and Windows. Authorized local DOCX/PPTX attachments within the Office limit use scoped Preview; remote, legacy, and over-limit Office attachments retain scoped system/external-open behavior. User-selected directories remain system-open-only targets: Main may open the directory after session-scoped revalidation, but directory contents are not read, enumerated, previewed, or exposed to Open With.
 
-Main owns ACP transport, routing, transcript retrieval and timing extraction, workspace grants, and session/generation-scoped attachment authorization. Renderer owns the in-memory timeline, bounded compatibility and timing alignment, attachment presentation, and display grouping, including user-image thumbnails and user-selected source-path labels. ACP replay remains authoritative for historical turns and content; transcript-derived timing may only annotate an unambiguously matched ACP turn. Standard ACP content remains preferred over compatibility projections, and incidental tool paths never enter the attachment pipeline.
+Main owns ACP transport, routing, transcript retrieval and timing extraction, workspace grants, and session/generation-scoped attachment authorization. Timing extraction treats trusted internal inter-session and restart-recovery user records as control metadata, not visible turn boundaries. Renderer owns the in-memory timeline, bounded compatibility and timing alignment, attachment presentation, and display grouping, including user-image thumbnails and user-selected source-path labels. ACP replay remains authoritative for historical turns and content; transcript-derived timing may only annotate an unambiguously matched ACP turn. Standard ACP content remains preferred over compatibility projections, and incidental tool paths never enter the attachment pipeline.
 
 The durable architecture, exceptions, access boundary, file-activity separation, Office preview behavior, Markdown rendering, Electron rendering performance policy, and validation anchors are documented in `harness/reference/acp-chat.md`, `harness/reference/acp-generated-media-and-diagnostics.md`, `harness/reference/acp-attachment-access-control.md`, `harness/reference/openclaw-file-activity.md`, `harness/reference/office-document-preview.md`, `harness/reference/markdown-rendering.md`, and `harness/reference/electron-rendering-performance.md`.
