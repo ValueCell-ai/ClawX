@@ -260,9 +260,11 @@ test.describe('ClawX sidebar session attention', () => {
       await expect(controlRow).toHaveAttribute('aria-current', 'page');
       await expect(composer).toBeEnabled({ timeout: 30_000 });
       const controlDraft = 'Unsent control draft';
+      const controlCaretPosition = controlDraft.length - 1;
       await composer.fill(controlDraft);
+      await composer.press('ArrowLeft');
       await expect.poll(() => composer.evaluate((element: HTMLTextAreaElement) => element.selectionStart))
-        .toBe(controlDraft.length);
+        .toBe(controlCaretPosition);
 
       await targetRow.click();
       await expect(targetRow).toHaveAttribute('aria-current', 'page');
@@ -273,7 +275,7 @@ test.describe('ClawX sidebar session attention', () => {
       await expect(composer).toHaveValue(controlDraft);
       await expect(composer).toBeFocused();
       await expect.poll(() => composer.evaluate((element: HTMLTextAreaElement) => element.selectionStart))
-        .toBe(controlDraft.length);
+        .toBe(controlCaretPosition);
 
       await targetRow.click();
       await expect(composer).toHaveValue('Unsent target draft');
