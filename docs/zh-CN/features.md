@@ -41,8 +41,6 @@ Skills 页面可展示来自多个 OpenClaw 来源的技能（托管目录、wor
 在开发者模式下，独立的“图像生成”页面支持配置 OpenAI 兼容生图端点（Base URL、API Key 和模型名，例如 `gpt-image-2`），生图请求会走专用的 `/v1/images/generations` 服务，聊天仍继续使用正常的 OpenAI Provider。
 如果你通过 **自定义（Custom）Provider** 对接 OpenAI-compatible 网关，可以在 **设置 → AI Providers → 编辑 Provider** 中配置自定义 `User-Agent`，以提高兼容性。
 编辑或切换 Provider 时，ClawX 会保留已有的模型级能力元数据，例如 `input: ["text", "image"]`。新选择的自定义 Provider 模型会使用与 OpenClaw onboarding 一致的图片输入能力推断；未知模型默认按纯文本模型处理。
-未配置请求超时的自定义 Provider 会自动写入 `timeoutSeconds = 45`，旧版本保存的条目也会在启动时修复。这样，无响应的 OpenAI-compatible 请求会在触发整个 Gateway 的存活恢复之前失败；用户显式设置的 `timeoutSeconds` 保持不变。
-
 ClawX 会保留 Provider 模型行中显式设置的 `contextWindow` 或 `contextTokens`，但不会根据模型名称推断缺失的上下文上限。上下文压缩预留仅在存在显式有效上限时按其 25% 计算；未设置时，`reserveTokensFloor` 使用保守的 50000 token 默认值。当你没有配置 compaction 时，ClawX 还会默认写入 `agents.defaults.compaction.mode = "safeguard"`、`keepRecentTokens = 0`、`recentTurnsPreserve = 0` 和 `midTurnPrecheck.enabled = true`。启动同步始终会将这两个历史保留值设为 `0`，使所有已完成回合进入摘要，而不是在压缩后逐字重放；显式设置的 `midTurnPrecheck.enabled` 仍沿用现有策略。
 Z.AI（国内站 / 国际站）会映射到 OpenClaw 内置的 `zai` 供应商（`ZAI_API_KEY`），默认模型为 `glm-5.2`。可通过 Code Plan 预设切换到编码套餐端点（`…/api/coding/paas/v4`），或使用普通 API 端点（`…/api/paas/v4`）；国内站与国际站互斥，因为它们共享同一个 OpenClaw 运行时 key。
 如果兼容网关的 `/models` 因非鉴权原因不可用，ClawX 会在校验 API Key 时使用已配置的模型，自动降级为轻量的 `/chat/completions` 或 `/responses` 探测。

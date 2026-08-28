@@ -1220,7 +1220,7 @@ describe('syncProviderConfigToOpenClaw', () => {
     const entry = providers['custom-example'] as Record<string, unknown>;
     const models = entry.models as Array<Record<string, unknown>>;
 
-    expect(entry.timeoutSeconds).toBe(45);
+    expect(entry.timeoutSeconds).toBeUndefined();
     expect(models).toEqual([
       expect.objectContaining({
         id: 'gpt-5.5',
@@ -2117,10 +2117,10 @@ describe('anthropic-messages maxTokens', () => {
     expect(models[0]?.maxTokens).toBe(MINIMAX_M27_MAX_TOKENS);
   });
 
-  it('adds a bounded timeout to custom providers in agent models.json', async () => {
+  it('does not add a request timeout to custom providers in agent models.json', async () => {
     await writeOpenClawJson({ agents: { list: [{ id: 'main', name: 'Main' }] } });
 
-    const { updateAgentModelProvider, CUSTOM_PROVIDER_REQUEST_TIMEOUT_SECONDS } = await import('@electron/utils/openclaw-auth');
+    const { updateAgentModelProvider } = await import('@electron/utils/openclaw-auth');
 
     await updateAgentModelProvider('custom-example', {
       baseUrl: 'https://example.com/v1',
@@ -2132,7 +2132,7 @@ describe('anthropic-messages maxTokens', () => {
     const modelsPath = join(testHome, '.openclaw', 'agents', 'main', 'agent', 'models.json');
     const first = JSON.parse(await readFile(modelsPath, 'utf8')) as Record<string, unknown>;
     const firstEntry = (first.providers as Record<string, Record<string, unknown>>)['custom-example'];
-    expect(firstEntry.timeoutSeconds).toBe(CUSTOM_PROVIDER_REQUEST_TIMEOUT_SECONDS);
+    expect(firstEntry.timeoutSeconds).toBeUndefined();
     expect((firstEntry.models as Array<Record<string, unknown>>)[0]?.contextWindow).toBeUndefined();
 
     firstEntry.timeoutSeconds = 90;
@@ -3062,7 +3062,7 @@ describe('batchSyncConfigFields', () => {
     const moonshotEntry = providers.moonshot as Record<string, unknown>;
     const moonshot = moonshotEntry.models as Array<Record<string, unknown>>;
 
-    expect(customEntry.timeoutSeconds).toBe(45);
+    expect(customEntry.timeoutSeconds).toBeUndefined();
     expect(explicitCustom.timeoutSeconds).toBe(0);
     expect(imageEntry.timeoutSeconds).toBeUndefined();
     expect(moonshotEntry.timeoutSeconds).toBeUndefined();

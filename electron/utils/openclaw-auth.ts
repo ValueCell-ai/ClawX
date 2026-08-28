@@ -63,12 +63,6 @@ import {
 
 const AUTH_STORE_VERSION = 1;
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
-/**
- * Per-attempt timeout for ClawX-owned custom provider requests. The bundled
- * OpenAI-compatible SDK retries at most twice by default, so three silent
- * attempts remain below the 180-second Gateway liveness deadline.
- */
-export const CUSTOM_PROVIDER_REQUEST_TIMEOUT_SECONDS = 45;
 const LEGACY_MINIMAX_OAUTH_PLUGIN_ID = 'minimax-portal-auth';
 const MERGED_MINIMAX_PLUGIN_ID = 'minimax';
 
@@ -971,36 +965,6 @@ function getDefaultModelRef(config: Record<string, unknown>): string | undefined
     if (typeof primary === 'string' && primary.trim()) return primary.trim();
   }
   return undefined;
-}
-
-function applyCustomProviderRequestTimeout(
-  providerKey: string,
-  entry: Record<string, unknown>,
-): boolean {
-  if (!providerKey.startsWith('custom-') || entry.timeoutSeconds !== undefined) {
-    return false;
-  }
-  entry.timeoutSeconds = CUSTOM_PROVIDER_REQUEST_TIMEOUT_SECONDS;
-  return true;
-}
-
-/**
- * Backfill the bounded provider request timeout on custom providers written by
- * older ClawX versions. Explicit values are user-owned, including zero.
- */
-function backfillCustomProviderRequestTimeouts(config: Record<string, unknown>): string[] {
-  const models = (config.models || {}) as Record<string, unknown>;
-  const providers = (models.providers || {}) as Record<string, unknown>;
-  const backfilled: string[] = [];
-
-  for (const [providerKey, entry] of Object.entries(providers)) {
-    if (!isPlainRecord(entry)) continue;
-    if (applyCustomProviderRequestTimeout(providerKey, entry)) {
-      backfilled.push(providerKey);
-    }
-  }
-
-  return backfilled;
 }
 
 // ── Exported Functions (all async) ───────────────────────────────
@@ -2022,7 +1986,6 @@ function upsertOpenClawProviderEntry(
       delete nextProvider.request;
     }
   }
-  applyCustomProviderRequestTimeout(provider, nextProvider);
   applyPinnedAgentRuntime(provider, nextProvider);
 
   providers[provider] = nextProvider;
@@ -2667,14 +2630,12 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
   let pinnedProviderRuntimes: string[] = [];
   let compactionLog: string | undefined;
   let memorySearchDefaultResult: 'migrated' | 'seeded' | 'unchanged' = 'unchanged';
-  let backfilledProviderTimeouts: string[] = [];
 
   const changed = await mutateOpenClawConfig((config) => {
     let modified = true;
     pinnedProviderRuntimes = [];
     compactionLog = undefined;
     memorySearchDefaultResult = 'unchanged';
-    backfilledProviderTimeouts = [];
 
     // ── Gateway token + controlUi ──
     const gateway = (
@@ -2790,12 +2751,6 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
       modified = true;
     }
 
-    // ── Custom provider safety defaults ──
-    backfilledProviderTimeouts = backfillCustomProviderRequestTimeouts(config);
-    if (backfilledProviderTimeouts.length > 0) {
-      modified = true;
-    }
-
     if (modified) {
       normalizeAgentsDefaultsCompactionMode(config);
     }
@@ -2811,9 +2766,6 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
       `[batch-sync] ${memorySearchDefaultResult === 'migrated' ? 'Migrated' : 'Seeded'} `
       + 'agents.defaults.memorySearch to FTS-only mode',
     );
-  }
-  if (backfilledProviderTimeouts.length > 0) {
-    console.log(`[batch-sync] Backfilled timeoutSeconds=${CUSTOM_PROVIDER_REQUEST_TIMEOUT_SECONDS} for custom providers: ${backfilledProviderTimeouts.join(', ')}`);
   }
   if (changed) {
     console.log('Synced gateway token, browser config, web_fetch SSRF policy, and session idle to openclaw.json');
@@ -2887,7 +2839,6 @@ async function updateModelsJsonProviderEntriesForAgents(
     if (entry.apiKey !== undefined) existing.apiKey = entry.apiKey;
     if (entry.timeoutSeconds !== undefined) existing.timeoutSeconds = entry.timeoutSeconds;
     if (entry.authHeader !== undefined) existing.authHeader = entry.authHeader;
-    applyCustomProviderRequestTimeout(providerType, existing);
     ensureAnthropicMessagesProviderDefaults(existing, providerType);
 
     providers[providerType] = existing;

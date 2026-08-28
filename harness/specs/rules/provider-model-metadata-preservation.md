@@ -23,7 +23,6 @@ rows missing both fields remain unset. Rows that already declare either field
 are user-owned and must never be modified. Compaction applies transport ceilings
 to explicit values and otherwise uses the 50000-token reserve fallback.
 
-Provider-level request settings are also preserved on rewrite. For ClawX-owned
-`models.providers.custom-*` entries only, a missing `timeoutSeconds` receives
-the bounded default defined by `custom-provider-request-timeout`; any explicit
-finite non-negative value remains user-owned.
+Provider-level request settings are also preserved on rewrite. ClawX must not
+inject a default `timeoutSeconds` into provider entries; absent values remain
+absent and explicit values remain user-owned.

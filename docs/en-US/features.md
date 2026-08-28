@@ -66,8 +66,6 @@ For **Custom** providers used with OpenAI-compatible gateways, you can set a cus
 
 When you edit or switch providers, ClawX preserves existing per-model capability metadata such as `input: ["text", "image"]`. Newly selected Custom-provider models use OpenClaw onboarding-compatible image-input inference, with unknown models defaulting to text-only.
 
-Custom-provider entries without a request timeout receive `timeoutSeconds = 45`, including startup repair for entries saved by older versions. This bounds silent OpenAI-compatible requests before whole-Gateway liveness recovery; an explicit `timeoutSeconds` value remains unchanged.
-
 ClawX preserves explicit `contextWindow` or `contextTokens` metadata on provider model rows but does not infer a missing context limit from the model name. Compaction reserves use 25% of an explicit effective context limit; without one, `reserveTokensFloor` is set to the conservative 50000-token fallback. When no compaction configuration exists, ClawX also seeds `agents.defaults.compaction.mode = "safeguard"`, `keepRecentTokens = 0`, `recentTurnsPreserve = 0`, and `midTurnPrecheck.enabled = true`. Startup sync always applies both zero-valued history settings so every completed turn is summarized instead of being replayed verbatim after compaction, while explicit `midTurnPrecheck.enabled` choices retain their existing behavior.
 
 Z.AI (CN / Global) maps to OpenClaw's built-in `zai` provider (`ZAI_API_KEY`). The default model is `glm-5.2`. Use the Code Plan preset for Coding Plan endpoints (`.../api/coding/paas/v4`) or the normal API endpoints (`.../api/paas/v4`). CN and Global are mutually exclusive because they share one OpenClaw runtime key.
