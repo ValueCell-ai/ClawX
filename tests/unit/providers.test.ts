@@ -133,6 +133,7 @@ describe('provider metadata', () => {
     const siliconflow = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'siliconflow');
     const ark = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'ark');
     const custom = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'custom');
+    const ollama = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'ollama');
 
     expect(anthropic).toMatchObject({
       docsUrl: 'https://platform.claude.com/docs/en/api/overview',
@@ -147,6 +148,12 @@ describe('provider metadata', () => {
     );
     expect(getProviderDocsUrl(custom, 'zh-CN')).toBe(
       'https://icnnp7d0dymg.feishu.cn/wiki/BmiLwGBcEiloZDkdYnGc8RWnn6d#IWQCdfe5fobGU3xf3UGcgbLynGh'
+    );
+    expect(getProviderDocsUrl(ollama, 'en')).toBe(
+      'https://icnnp7d0dymg.feishu.cn/wiki/FuPewJKmii7Gpmkx2W7cI3uxnRf'
+    );
+    expect(getProviderDocsUrl(ollama, 'zh-CN')).toBe(
+      'https://icnnp7d0dymg.feishu.cn/wiki/FuPewJKmii7Gpmkx2W7cI3uxnRf'
     );
   });
 
