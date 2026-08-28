@@ -44,7 +44,7 @@ import { buildCronHistoryAcpNotifications, fetchCronSessionHistory } from '@/lib
 import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
 import type { AcpTimelineSnapshot, MessageSegmentItem, PermissionItem, RenderPart } from '@/lib/acp/timeline-types';
-import { isCronSessionKey } from './chat/cron-session-utils';
+import { isCronSessionKey, sessionKeysAreEquivalent } from './chat/cron-session-utils';
 
 const EMPTY_SESSION_ID = '';
 const CANCEL_PERMISSION_OPTION_ID = '__cancelled__';
@@ -1408,7 +1408,10 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
 
   recordImageGenerationStart(event) {
     const state = get();
-    if (event.sessionKey !== state.activeSessionKey || event.generation !== state.generation) return;
+    if (
+      !sessionKeysAreEquivalent(event.sessionKey, state.activeSessionKey) ||
+      event.generation !== state.generation
+    ) return;
 
     const start = extractImageGenerationStartFromAcpEnvelope(event);
     if (!start) return;
@@ -1753,7 +1756,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
   applyUpdateEnvelope(event) {
     const state = get();
     if (state.loading) {
-      if (event.sessionKey === state.activeSessionKey) {
+      if (sessionKeysAreEquivalent(event.sessionKey, state.activeSessionKey)) {
         const updates = pendingLoadUpdates.get(event.generation) ?? [];
         pendingLoadUpdates.set(event.generation, [...updates, event]);
       } else {
@@ -1771,7 +1774,10 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       }
       return;
     }
-    if (event.sessionKey !== state.activeSessionKey || event.generation !== state.generation) {
+    if (
+      !sessionKeysAreEquivalent(event.sessionKey, state.activeSessionKey) ||
+      event.generation !== state.generation
+    ) {
       const liveSnapshot = liveSessionSnapshots.get(event.sessionKey);
       if (liveSnapshot?.generation === event.generation) {
         liveSessionSnapshots.set(event.sessionKey, deferInactiveImageUpdate({
@@ -1802,7 +1808,10 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
 
   applyPermissionRequest(event) {
     const state = get();
-    if (event.sessionKey !== state.activeSessionKey || event.generation !== state.generation) {
+    if (
+      !sessionKeysAreEquivalent(event.sessionKey, state.activeSessionKey) ||
+      event.generation !== state.generation
+    ) {
       const liveSnapshot = liveSessionSnapshots.get(event.sessionKey);
       if (liveSnapshot?.generation === event.generation) {
         liveSessionSnapshots.set(event.sessionKey, {
