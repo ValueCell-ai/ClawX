@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { applyModelAwareCompactionReserveTokensFloor } from '@electron/utils/openclaw-compaction';
+import {
+  applyModelAwareCompactionReserveTokensFloor,
+  resolveModelContextWindow,
+} from '@electron/utils/openclaw-compaction';
 
 describe('applyModelAwareCompactionReserveTokensFloor', () => {
   it('overwrites an existing floor with 25% of the selected model context window', () => {
@@ -79,7 +82,32 @@ describe('applyModelAwareCompactionReserveTokensFloor', () => {
     });
   });
 
-  it('does not replace an existing floor when the model context window is unknown', () => {
+  it('uses 50000 without inferring a context window from a known model name', () => {
+    const config: Record<string, unknown> = {
+      models: {
+        providers: {
+          deepseek: {
+            models: [{ id: 'deepseek-v4-pro', name: 'deepseek-v4-pro' }],
+          },
+        },
+      },
+      agents: {
+        defaults: {
+          compaction: { mode: 'safeguard', reserveTokensFloor: 250_000 },
+        },
+      },
+    };
+
+    expect(resolveModelContextWindow(config, 'deepseek/deepseek-v4-pro')).toBeUndefined();
+    expect(applyModelAwareCompactionReserveTokensFloor(config, 'deepseek/deepseek-v4-pro')).toBe(true);
+    expect(config.agents).toEqual({
+      defaults: {
+        compaction: { mode: 'safeguard', reserveTokensFloor: 50_000 },
+      },
+    });
+  });
+
+  it('keeps the 50000 fallback unchanged when the model context window is unknown', () => {
     const config: Record<string, unknown> = {
       agents: {
         defaults: {

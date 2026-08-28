@@ -17,9 +17,13 @@ explicitly owns that field.
 New model IDs may receive deterministic capability defaults, but metadata from a
 different model ID must never be copied onto them.
 
-Custom-provider model rows (`models.providers.custom-*`) must carry an explicit
-`contextWindow`: new rows receive a deterministic model-family default, and
-existing rows missing both `contextWindow` and `contextTokens` may be
-backfilled with that default. Rows that already declare either field are
-user-owned and must never be modified, and non-`custom-` provider entries are
-never backfilled.
+Custom-provider model rows (`models.providers.custom-*`) must not receive an
+inferred `contextWindow` or `contextTokens` from their model names. Existing
+rows missing both fields remain unset. Rows that already declare either field
+are user-owned and must never be modified. Compaction applies transport ceilings
+to explicit values and otherwise uses the 50000-token reserve fallback.
+
+Provider-level request settings are also preserved on rewrite. For ClawX-owned
+`models.providers.custom-*` entries only, a missing `timeoutSeconds` receives
+the bounded default defined by `custom-provider-request-timeout`; any explicit
+finite non-negative value remains user-owned.

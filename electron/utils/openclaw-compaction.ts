@@ -1,10 +1,10 @@
 import {
   clampModelContextWindow,
-  inferKnownModelContextWindow,
   type ModelCapabilityContext,
 } from '../shared/providers/model-capabilities';
 
 export const COMPACTION_RESERVE_TOKENS_FLOOR_RATIO = 0.25;
+export const DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR = 50_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -30,26 +30,38 @@ export function resolveModelContextWindow(
     providerKey,
     apiProtocol: typeof provider?.api === 'string' ? provider.api : undefined,
   };
-  const configuredContextWindow = row && (row.contextTokens ?? row.contextWindow);
+  const configuredContextTokens = row?.contextTokens;
+  const configuredNativeWindow = row?.contextWindow;
+  const configuredContextWindow = (
+    typeof configuredContextTokens === 'number'
+    && Number.isFinite(configuredContextTokens)
+    && configuredContextTokens > 0
+  )
+    ? configuredContextTokens
+    : configuredNativeWindow;
   if (typeof configuredContextWindow === 'number' && Number.isFinite(configuredContextWindow) && configuredContextWindow > 0) {
     return clampModelContextWindow(configuredContextWindow, context);
   }
 
-  return inferKnownModelContextWindow(modelId, context);
+  // Compaction budgeting must follow the metadata OpenClaw actually receives.
+  // Model-name inference can disagree with OpenClaw's own fallback and leave no
+  // usable prompt budget, so missing metadata intentionally remains unknown.
+  return undefined;
 }
 
 /**
- * OpenCode reserves one quarter of the active model's context window. Keep
- * OpenClaw's global compaction floor in sync whenever ClawX knows that window.
+ * Reserve one quarter of an explicitly configured context window. When the
+ * selected model has no explicit context metadata, use the conservative 50k
+ * fallback instead of guessing a window from its name.
  */
 export function applyModelAwareCompactionReserveTokensFloor(
   config: Record<string, unknown>,
   modelRef: string | null | undefined,
 ): boolean {
   const contextWindow = resolveModelContextWindow(config, modelRef);
-  if (contextWindow === undefined) return false;
-
-  const reserveTokensFloor = Math.floor(contextWindow * COMPACTION_RESERVE_TOKENS_FLOOR_RATIO);
+  const reserveTokensFloor = contextWindow === undefined
+    ? DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR
+    : Math.floor(contextWindow * COMPACTION_RESERVE_TOKENS_FLOOR_RATIO);
   const agents = isRecord(config.agents) ? config.agents : {};
   const defaults = isRecord(agents.defaults) ? agents.defaults : {};
   const compaction = isRecord(defaults.compaction) ? defaults.compaction : {};

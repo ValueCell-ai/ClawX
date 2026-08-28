@@ -66,7 +66,9 @@ OpenAI互換ゲートウェイで **Custom** プロバイダーを使う場合�
 
 プロバイダーを編集または切り替える際、ClawXは `input: ["text", "image"]` など既存のモデル単位の能力メタデータを保持します。新しく選択したCustomプロバイダーのモデルにはOpenClaw onboarding互換の画像入力推論を適用し、不明なモデルはテキスト専用として扱います。
 
-Customプロバイダーのモデル行には、モデルファミリーから推定した明示的な `contextWindow`（例：`gpt-5.x` → 272k）も付与されます。旧バージョンで保存された行は起動時に補完されるため、OpenClawは長いセッションが「Context overflow」エラーになる前に圧縮できます。圧縮設定がない場合、ClawXは `agents.defaults.compaction.mode = "safeguard"`、`reserveTokensFloor = 50000`、`keepRecentTokens = 0`、`recentTurnsPreserve = 0`、`midTurnPrecheck.enabled = true` を初期設定します。起動時の同期ではこの2つの履歴保持値を常に `0` に設定し、完了済みターンを圧縮後に逐語的に再生するのではなく、すべて要約へ含めます。明示的な `reserveTokensFloor` 値と `midTurnPrecheck.enabled` の選択には従来の動作を維持します。
+リクエストタイムアウトが未設定のCustomプロバイダーには `timeoutSeconds = 45` が自動設定され、旧バージョンで保存されたエントリも起動時に修復されます。これにより、応答しないOpenAI互換リクエストはGateway全体の生存性回復が始まる前に失敗します。明示的に設定された `timeoutSeconds` は変更されません。
+
+ClawXはプロバイダーのモデル行に明示された `contextWindow` または `contextTokens` を保持しますが、モデル名から不足しているコンテキスト上限を推定しません。コンパクション予約は明示された有効な上限がある場合のみその25%を使用し、未設定の場合は `reserveTokensFloor` に保守的な既定値50000トークンを設定します。圧縮設定がない場合、ClawXはさらに `agents.defaults.compaction.mode = "safeguard"`、`keepRecentTokens = 0`、`recentTurnsPreserve = 0`、`midTurnPrecheck.enabled = true` を初期設定します。起動時の同期ではこの2つの履歴保持値を常に `0` に設定し、完了済みターンを圧縮後に逐語的に再生するのではなく、すべて要約へ含めます。明示的な `midTurnPrecheck.enabled` の選択は維持されます。
 
 Z.AI（CN / Global）はOpenClaw組み込みの `zai` プロバイダー（`ZAI_API_KEY`）に対応し、既定モデルは `glm-5.2` です。Code PlanプリセットではCoding Planエンドポイント（`.../api/coding/paas/v4`）を、通常のAPIでは（`.../api/paas/v4`）を使います。CNとGlobalは同じOpenClawランタイムキーを共有するため相互排他的です。
 

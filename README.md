@@ -40,7 +40,7 @@
 
 Whether you're automating workflows, managing AI-powered channels, or scheduling intelligent tasks, ClawX provides the interface you need to harness AI agents effectively.
 
-ClawX comes pre-configured with best-practice model providers and natively supports Windows as well as multi-language settings. Compaction reserves automatically follow the selected model's context window, and completed turns continue through the summary instead of being replayed verbatim after compaction. Developer Mode shows the applied reserve value. You can also fine-tune advanced configurations via **Settings -> Advanced -> Developer Mode**.
+ClawX comes pre-configured with best-practice model providers and natively supports Windows as well as multi-language settings. Compaction reserves use 25% of an explicitly configured model context window, or a conservative 50000-token fallback when that metadata is absent; completed turns continue through the summary instead of being replayed verbatim after compaction. Developer Mode shows the applied reserve value. You can also fine-tune advanced configurations via **Settings -> Advanced -> Developer Mode**.
 
 <p align="center"><strong style="font-size:1.1em; text-decoration: underline;">For a full enterprise edition, dedicated service support, or tailored deployment guidance for your business scenario, contact us at <a href="mailto:public@valuecell.ai">public@valuecell.ai</a>.</strong></p>
 
@@ -83,7 +83,7 @@ Building AI agents shouldn't require mastering the command line. ClawX was desig
 - **📡 Multi-Channel Management**: Configure and monitor independent AI channels with multiple accounts, per-account agent binding, default-account switching, and the bundled official Tencent personal WeChat channel plugin.
 - **⏰ Cron-Based Automation**: Define recurring or one-time schedules, insert skills into scheduled prompts, and deliver results to external channels.
 - **🧩 Extensible Skill System**: Manage skills locally without depending on the Gateway, discover skills from multiple OpenClaw sources, and use bundled document-processing skills for `pdf`, `xlsx`, `docx`, and `pptx`.
-- **🔐 Secure Provider Integration**: Connect OpenAI, Anthropic, Z.AI / GLM, and other providers with credentials stored in the native system keychain; supports OAuth, custom providers, image-generation endpoints, and compatibility fallbacks.
+- **🔐 Secure Provider Integration**: Connect OpenAI, Anthropic, Z.AI / GLM, and other providers with credentials stored in the native system keychain; supports OAuth, custom providers, image-generation endpoints, and compatibility fallbacks. Missing custom-provider request timeouts default to 45 seconds per attempt so silent endpoints fail before whole-Gateway recovery.
 - **🌙 Adaptive Theming**: Choose light mode, dark mode, or system-synchronized themes.
 - **🚀 Startup Launch Control**: Enable **Launch at system startup** in **Settings -> General**.
 - **🔔 Update Prompts**: Check for new versions at startup and choose whether to download or install them.

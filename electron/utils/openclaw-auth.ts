@@ -44,8 +44,11 @@ import {
   assertValidApiProtocol,
   normalizeOpenClawApiProtocol,
 } from '../shared/providers/types';
-import { inferCustomModelContextWindow, inferCustomModelInputModalities } from '../shared/providers/model-capabilities';
-import { applyModelAwareCompactionReserveTokensFloor } from './openclaw-compaction';
+import { inferCustomModelInputModalities } from '../shared/providers/model-capabilities';
+import {
+  applyModelAwareCompactionReserveTokensFloor,
+  DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR,
+} from './openclaw-compaction';
 import {
   CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
@@ -60,6 +63,12 @@ import {
 
 const AUTH_STORE_VERSION = 1;
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
+/**
+ * Per-attempt timeout for ClawX-owned custom provider requests. The bundled
+ * OpenAI-compatible SDK retries at most twice by default, so three silent
+ * attempts remain below the 180-second Gateway liveness deadline.
+ */
+export const CUSTOM_PROVIDER_REQUEST_TIMEOUT_SECONDS = 45;
 const LEGACY_MINIMAX_OAUTH_PLUGIN_ID = 'minimax-portal-auth';
 const MERGED_MINIMAX_PLUGIN_ID = 'minimax';
 
@@ -536,8 +545,6 @@ const VALID_COMPACTION_MODES = new Set(['default', 'safeguard']);
 const CLAWX_COMPACTION_IDENTIFIER_INSTRUCTIONS = 'Preserve only identifiers referenced by unresolved asks, active constraints, modified files, or pending next steps.';
 const CLAWX_COMPACTION_KEEP_RECENT_TOKENS = 0;
 const CLAWX_COMPACTION_RECENT_TURNS_PRESERVE = 0;
-/** Fallback for configurations whose selected model has no known context window. */
-const DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR = 50_000;
 // OpenClaw 2026.7.1 bundles these channel extensions. Discord, WhatsApp,
 // QQBot, and the remaining catalog channels are external plugins and their
 // explicit allowlist registrations must be preserved.
@@ -854,8 +861,8 @@ function normalizeAgentsDefaultsCompactionMode(config: Record<string, unknown>):
 /**
  * Seed `agents.defaults.compaction.mode = "safeguard"` when the user has no
  * compaction config at all, so long sessions are compacted before they hit the
- * provider's context limit. The model-aware reserve floor is applied separately
- * once the selected model's context window is known.
+ * provider's context limit. The reserve floor is applied separately from
+ * explicit model context metadata or the conservative 50000-token fallback.
  */
 function ensureCompactionSafeguardDefault(config: Record<string, unknown>): boolean {
   const agents = (config.agents && typeof config.agents === 'object'
@@ -966,32 +973,30 @@ function getDefaultModelRef(config: Record<string, unknown>): string | undefined
   return undefined;
 }
 
+function applyCustomProviderRequestTimeout(
+  providerKey: string,
+  entry: Record<string, unknown>,
+): boolean {
+  if (!providerKey.startsWith('custom-') || entry.timeoutSeconds !== undefined) {
+    return false;
+  }
+  entry.timeoutSeconds = CUSTOM_PROVIDER_REQUEST_TIMEOUT_SECONDS;
+  return true;
+}
+
 /**
- * Self-heal helper: walk `models.providers.custom-*` entries and fill in an
- * inferred `contextWindow` on model rows that have neither `contextWindow`
- * nor `contextTokens`. Rows written by older ClawX versions only carried
- * `{ id, name, input }`, which disables OpenClaw's preemptive compaction and
- * context-window guard for custom providers.
- *
- * Deliberately scoped to `custom-` keys: registry providers own their
- * metadata, and small local models (ollama) must not inherit a large window.
+ * Backfill the bounded provider request timeout on custom providers written by
+ * older ClawX versions. Explicit values are user-owned, including zero.
  */
-function backfillCustomProviderModelContextWindows(config: Record<string, unknown>): string[] {
+function backfillCustomProviderRequestTimeouts(config: Record<string, unknown>): string[] {
   const models = (config.models || {}) as Record<string, unknown>;
   const providers = (models.providers || {}) as Record<string, unknown>;
   const backfilled: string[] = [];
 
   for (const [providerKey, entry] of Object.entries(providers)) {
-    if (!providerKey.startsWith('custom-') || !isPlainRecord(entry)) continue;
-    const rows = Array.isArray(entry.models) ? entry.models : [];
-    for (const row of rows) {
-      if (!isPlainRecord(row) || typeof row.id !== 'string' || !row.id) continue;
-      if (typeof row.contextWindow === 'number' || typeof row.contextTokens === 'number') continue;
-      row.contextWindow = inferCustomModelContextWindow(row.id, {
-        providerKey,
-        apiProtocol: typeof entry.api === 'string' ? entry.api : undefined,
-      });
-      backfilled.push(`${providerKey}/${row.id}`);
+    if (!isPlainRecord(entry)) continue;
+    if (applyCustomProviderRequestTimeout(providerKey, entry)) {
+      backfilled.push(providerKey);
     }
   }
 
@@ -1657,6 +1662,7 @@ export async function setOpenClawDefaultModel(
     if (!gateway.mode) gateway.mode = 'local';
     config.gateway = gateway;
 
+    applyModelAwareCompactionReserveTokensFloor(config, getDefaultModelRef(config));
     normalizeAgentsDefaultsCompactionMode(config);
     console.log(`Set OpenClaw default model to "${model}" for provider "${provider}"`);
   });
@@ -1979,15 +1985,7 @@ function upsertOpenClawProviderEntry(
     id,
     name: id,
     ...(options.inferRuntimeModelInputs
-      ? {
-        input: inferCustomModelInputModalities(id),
-        // Without an explicit contextWindow OpenClaw cannot budget compaction
-        // for custom providers and long sessions die with context overflow.
-        contextWindow: inferCustomModelContextWindow(id, {
-          providerKey: provider,
-          apiProtocol: options.api,
-        }),
-      }
+      ? { input: inferCustomModelInputModalities(id) }
       : {}),
   }));
   let mergedModels = mergeProviderModels(registryModels, existingModels, runtimeModels);
@@ -2024,6 +2022,7 @@ function upsertOpenClawProviderEntry(
       delete nextProvider.request;
     }
   }
+  applyCustomProviderRequestTimeout(provider, nextProvider);
   applyPinnedAgentRuntime(provider, nextProvider);
 
   providers[provider] = nextProvider;
@@ -2386,6 +2385,7 @@ export async function setOpenClawDefaultModelWithOverride(
       ensureOAuthPluginEnabled(config, provider);
     }
 
+    applyModelAwareCompactionReserveTokensFloor(config, getDefaultModelRef(config));
     normalizeAgentsDefaultsCompactionMode(config);
     console.log(
       `Set OpenClaw default model to "${model}" for provider "${provider}" (runtime override)`
@@ -2667,14 +2667,14 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
   let pinnedProviderRuntimes: string[] = [];
   let compactionLog: string | undefined;
   let memorySearchDefaultResult: 'migrated' | 'seeded' | 'unchanged' = 'unchanged';
-  let backfilledContextWindows: string[] = [];
+  let backfilledProviderTimeouts: string[] = [];
 
   const changed = await mutateOpenClawConfig((config) => {
     let modified = true;
     pinnedProviderRuntimes = [];
     compactionLog = undefined;
     memorySearchDefaultResult = 'unchanged';
-    backfilledContextWindows = [];
+    backfilledProviderTimeouts = [];
 
     // ── Gateway token + controlUi ──
     const gateway = (
@@ -2768,7 +2768,7 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     }
     if (applyModelAwareCompactionReserveTokensFloor(config, getDefaultModelRef(config))) {
       modified = true;
-      compactionLog = '[batch-sync] Applied agents.defaults.compaction.reserveTokensFloor from the active model context window';
+      compactionLog = '[batch-sync] Applied agents.defaults.compaction.reserveTokensFloor from explicit model context metadata or the 50000-token fallback';
     }
 
     // ── Memory search default ──
@@ -2790,9 +2790,9 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
       modified = true;
     }
 
-    // ── Custom provider contextWindow backfill ──
-    backfilledContextWindows = backfillCustomProviderModelContextWindows(config);
-    if (backfilledContextWindows.length > 0) {
+    // ── Custom provider safety defaults ──
+    backfilledProviderTimeouts = backfillCustomProviderRequestTimeouts(config);
+    if (backfilledProviderTimeouts.length > 0) {
       modified = true;
     }
 
@@ -2812,8 +2812,8 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
       + 'agents.defaults.memorySearch to FTS-only mode',
     );
   }
-  if (backfilledContextWindows.length > 0) {
-    console.log(`[batch-sync] Backfilled contextWindow for custom provider models: ${backfilledContextWindows.join(', ')}`);
+  if (backfilledProviderTimeouts.length > 0) {
+    console.log(`[batch-sync] Backfilled timeoutSeconds=${CUSTOM_PROVIDER_REQUEST_TIMEOUT_SECONDS} for custom providers: ${backfilledProviderTimeouts.join(', ')}`);
   }
   if (changed) {
     console.log('Synced gateway token, browser config, web_fetch SSRF policy, and session idle to openclaw.json');
@@ -2840,6 +2840,7 @@ type AgentModelProviderEntry = {
     [key: string]: unknown;
   }>;
   apiKey?: string;
+  timeoutSeconds?: number;
   /** When true, pi-ai sends Authorization: Bearer instead of x-api-key */
   authHeader?: boolean;
 };
@@ -2874,18 +2875,6 @@ async function updateModelsJsonProviderEntriesForAgents(
     const mergedModels = (entry.models ?? []).map((m) => {
       const prev = existingModels.find((e) => e.id === m.id);
       const base = prev ? { ...prev, id: m.id, name: m.name } : { ...m };
-      // Custom-provider rows need an explicit contextWindow so the embedded
-      // runner can budget compaction (see backfillCustomProviderModelContextWindows).
-      if (
-        providerType.startsWith('custom-')
-        && typeof base.contextWindow !== 'number'
-        && typeof base.contextTokens !== 'number'
-      ) {
-        base.contextWindow = inferCustomModelContextWindow(m.id, {
-          providerKey: providerType,
-          apiProtocol: entry.api,
-        });
-      }
       return {
         ...base,
         cost: normalizePiAiModelCost((base as { cost?: unknown }).cost),
@@ -2896,7 +2885,9 @@ async function updateModelsJsonProviderEntriesForAgents(
     if (entry.api !== undefined) existing.api = entry.api;
     if (mergedModels.length > 0) existing.models = mergedModels;
     if (entry.apiKey !== undefined) existing.apiKey = entry.apiKey;
+    if (entry.timeoutSeconds !== undefined) existing.timeoutSeconds = entry.timeoutSeconds;
     if (entry.authHeader !== undefined) existing.authHeader = entry.authHeader;
+    applyCustomProviderRequestTimeout(providerType, existing);
     ensureAnthropicMessagesProviderDefaults(existing, providerType);
 
     providers[providerType] = existing;

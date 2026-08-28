@@ -1206,7 +1206,7 @@ describe('syncProviderConfigToOpenClaw', () => {
     ]);
   });
 
-  it('writes an inferred contextWindow for new custom-provider model rows', async () => {
+  it('does not infer contextWindow for new custom-provider model rows', async () => {
     await writeOpenClawJson({ models: { providers: {} } });
 
     const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
@@ -1220,12 +1220,41 @@ describe('syncProviderConfigToOpenClaw', () => {
     const entry = providers['custom-example'] as Record<string, unknown>;
     const models = entry.models as Array<Record<string, unknown>>;
 
+    expect(entry.timeoutSeconds).toBe(45);
     expect(models).toEqual([
       expect.objectContaining({
         id: 'gpt-5.5',
-        contextWindow: 1000000,
+        input: ['text', 'image'],
       }),
     ]);
+    expect(models[0]?.contextWindow).toBeUndefined();
+  });
+
+  it('preserves an explicit custom-provider request timeout on re-sync', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          'custom-example': {
+            baseUrl: 'https://example.com/v1',
+            api: 'openai-completions',
+            timeoutSeconds: 90,
+            models: [{ id: 'gpt-5.5', name: 'gpt-5.5' }],
+          },
+        },
+      },
+    });
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await syncProviderConfigToOpenClaw('custom-example', 'gpt-5.5', {
+      baseUrl: 'https://example.com/v1',
+      api: 'openai-completions',
+    });
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const entry = providers['custom-example'] as Record<string, unknown>;
+
+    expect(entry.timeoutSeconds).toBe(90);
   });
 
   it('does not overwrite an existing contextWindow on re-sync', async () => {
@@ -1454,7 +1483,10 @@ describe('setOpenClawDefaultModelWithOverride model metadata', () => {
     expect(newModel).toEqual(expect.objectContaining({
       input: ['text', 'image'],
     }));
+    expect(newModel).not.toHaveProperty('contextWindow');
     expect(newModel).not.toHaveProperty('customField');
+    const defaults = (result.agents as Record<string, unknown>).defaults as Record<string, unknown>;
+    expect((defaults.compaction as Record<string, unknown>).reserveTokensFloor).toBe(50_000);
   });
 
   it('preserves model input metadata after switching to another provider and back', async () => {
@@ -2083,6 +2115,38 @@ describe('anthropic-messages maxTokens', () => {
 
     expect(entry.maxTokens).toBe(MINIMAX_M27_MAX_TOKENS);
     expect(models[0]?.maxTokens).toBe(MINIMAX_M27_MAX_TOKENS);
+  });
+
+  it('adds a bounded timeout to custom providers in agent models.json', async () => {
+    await writeOpenClawJson({ agents: { list: [{ id: 'main', name: 'Main' }] } });
+
+    const { updateAgentModelProvider, CUSTOM_PROVIDER_REQUEST_TIMEOUT_SECONDS } = await import('@electron/utils/openclaw-auth');
+
+    await updateAgentModelProvider('custom-example', {
+      baseUrl: 'https://example.com/v1',
+      api: 'openai-completions',
+      apiKey: 'custom-key',
+      models: [{ id: 'model-a', name: 'model-a' }],
+    });
+
+    const modelsPath = join(testHome, '.openclaw', 'agents', 'main', 'agent', 'models.json');
+    const first = JSON.parse(await readFile(modelsPath, 'utf8')) as Record<string, unknown>;
+    const firstEntry = (first.providers as Record<string, Record<string, unknown>>)['custom-example'];
+    expect(firstEntry.timeoutSeconds).toBe(CUSTOM_PROVIDER_REQUEST_TIMEOUT_SECONDS);
+    expect((firstEntry.models as Array<Record<string, unknown>>)[0]?.contextWindow).toBeUndefined();
+
+    firstEntry.timeoutSeconds = 90;
+    await writeFile(modelsPath, JSON.stringify(first, null, 2), 'utf8');
+    await updateAgentModelProvider('custom-example', {
+      baseUrl: 'https://example.com/v1',
+      api: 'openai-completions',
+      apiKey: 'custom-key',
+      models: [{ id: 'model-a', name: 'model-a' }],
+    });
+
+    const second = JSON.parse(await readFile(modelsPath, 'utf8')) as Record<string, unknown>;
+    const secondEntry = (second.providers as Record<string, Record<string, unknown>>)['custom-example'];
+    expect(secondEntry.timeoutSeconds).toBe(90);
   });
 
   it('adds maxTokens to agent models.json for anthropic-messages providers', async () => {
@@ -2728,12 +2792,70 @@ describe('batchSyncConfigFields', () => {
       recentTurnsPreserve: 0,
       identifierPolicy: 'custom',
       identifierInstructions: COMPACTION_IDENTIFIER_INSTRUCTIONS,
-      reserveTokensFloor: 68_000,
+      reserveTokensFloor: 50_000,
       midTurnPrecheck: { enabled: true },
     });
   });
 
-  it('enables mid-turn precheck without changing the existing reserve floor', async () => {
+  it('uses 25% of an explicitly configured model context window', async () => {
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      models: {
+        providers: {
+          openai: {
+            models: [{ id: 'gpt-5.6-luna', contextWindow: 272_000 }],
+          },
+        },
+      },
+      agents: {
+        defaults: {
+          model: { primary: 'openai/gpt-5.6-luna' },
+          compaction: { mode: 'safeguard', reserveTokensFloor: 50_000 },
+        },
+      },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
+    const compaction = defaults.compaction as Record<string, unknown>;
+    expect(compaction.reserveTokensFloor).toBe(68_000);
+  });
+
+  it('resets a stale inferred reserve floor when the model row has no explicit context', async () => {
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      models: {
+        providers: {
+          deepseek: {
+            models: [{ id: 'deepseek-v4-pro', name: 'deepseek-v4-pro' }],
+          },
+        },
+      },
+      agents: {
+        defaults: {
+          model: { primary: 'deepseek/deepseek-v4-pro' },
+          compaction: { mode: 'safeguard', reserveTokensFloor: 250_000 },
+        },
+      },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
+    const compaction = defaults.compaction as Record<string, unknown>;
+    const providers = (config.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const deepseekModels = (providers.deepseek as Record<string, unknown>).models as Array<Record<string, unknown>>;
+
+    expect(compaction.reserveTokensFloor).toBe(50_000);
+    expect(deepseekModels[0]?.contextWindow).toBeUndefined();
+  });
+
+  it('enables mid-turn precheck while retaining an already-correct fallback floor', async () => {
     await writeOpenClawJson({
       gateway: { auth: { mode: 'token', token: 'old' } },
       agents: {
@@ -2783,7 +2905,7 @@ describe('batchSyncConfigFields', () => {
       recentTurnsPreserve: 0,
       identifierPolicy: 'custom',
       identifierInstructions: COMPACTION_IDENTIFIER_INSTRUCTIONS,
-      reserveTokensFloor: 68_000,
+      reserveTokensFloor: 50_000,
       midTurnPrecheck: { enabled: true },
     });
   });
@@ -2820,7 +2942,7 @@ describe('batchSyncConfigFields', () => {
       recentTurnsPreserve: 0,
       identifierPolicy: 'custom',
       identifierInstructions: COMPACTION_IDENTIFIER_INSTRUCTIONS,
-      reserveTokensFloor: 68_000,
+      reserveTokensFloor: 50_000,
       midTurnPrecheck: { enabled: false },
     });
   });
@@ -2895,7 +3017,7 @@ describe('batchSyncConfigFields', () => {
     expect(setSettingMock).not.toHaveBeenCalled();
   });
 
-  it('backfills contextWindow on custom provider model rows that lack one', async () => {
+  it('does not infer missing contextWindow on custom provider model rows', async () => {
     await writeOpenClawJson({
       gateway: { auth: { mode: 'token', token: 'old' } },
       models: {
@@ -2907,6 +3029,17 @@ describe('batchSyncConfigFields', () => {
               { id: 'gpt-5.5', name: 'gpt-5.5', input: ['text', 'image'] },
               { id: 'private-x', name: 'private-x', input: ['text'], contextTokens: 32000 },
             ],
+          },
+          'custom-explicit': {
+            baseUrl: 'https://example.net/v1',
+            api: 'openai-completions',
+            timeoutSeconds: 0,
+            models: [{ id: 'private-y', name: 'private-y' }],
+          },
+          'clawx-openai-image': {
+            baseUrl: 'https://images.example.com/v1',
+            api: 'openai-completions',
+            models: [{ id: 'gpt-image-2', name: 'gpt-image-2' }],
           },
           moonshot: {
             baseUrl: 'https://api.moonshot.cn/v1',
@@ -2922,10 +3055,19 @@ describe('batchSyncConfigFields', () => {
 
     const config = await readOpenClawJson();
     const providers = (config.models as Record<string, unknown>).providers as Record<string, unknown>;
-    const custom = (providers['custom-enterpri'] as Record<string, unknown>).models as Array<Record<string, unknown>>;
-    const moonshot = (providers.moonshot as Record<string, unknown>).models as Array<Record<string, unknown>>;
+    const customEntry = providers['custom-enterpri'] as Record<string, unknown>;
+    const custom = customEntry.models as Array<Record<string, unknown>>;
+    const explicitCustom = providers['custom-explicit'] as Record<string, unknown>;
+    const imageEntry = providers['clawx-openai-image'] as Record<string, unknown>;
+    const moonshotEntry = providers.moonshot as Record<string, unknown>;
+    const moonshot = moonshotEntry.models as Array<Record<string, unknown>>;
 
-    expect(custom[0]).toEqual(expect.objectContaining({ id: 'gpt-5.5', contextWindow: 1000000 }));
+    expect(customEntry.timeoutSeconds).toBe(45);
+    expect(explicitCustom.timeoutSeconds).toBe(0);
+    expect(imageEntry.timeoutSeconds).toBeUndefined();
+    expect(moonshotEntry.timeoutSeconds).toBeUndefined();
+    expect(custom[0]).toEqual(expect.objectContaining({ id: 'gpt-5.5' }));
+    expect(custom[0].contextWindow).toBeUndefined();
     // Rows with explicit contextTokens are user-owned — leave untouched.
     expect(custom[1].contextWindow).toBeUndefined();
     expect(custom[1].contextTokens).toBe(32000);
