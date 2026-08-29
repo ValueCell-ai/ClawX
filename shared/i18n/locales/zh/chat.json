@@ -47,6 +47,15 @@
     "acp": {
         "thought": "思考",
         "tool": "工具",
+        "toolName": {
+            "updatePlan": "更新计划",
+            "webFetch": "读取网页",
+            "browser": "操作浏览器",
+            "execCommand": "执行命令",
+            "read": "读取",
+            "spawnSubagent": "派出子智能体",
+            "memorySearch": "查询记忆"
+        },
         "expandTool": "展开工具结果",
         "collapseTool": "折叠工具结果",
         "expandToolGroup": "展开工具调用",

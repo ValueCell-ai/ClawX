@@ -674,7 +674,7 @@ test.describe('ClawX ACP inline timeline', () => {
         {
           sessionUpdate: 'tool_call',
           toolCallId: 'read-package',
-          title: 'Read package.json',
+          title: 'read: path: package.json',
           status: 'completed',
           content: [{ type: 'content', content: { type: 'text', text: 'Loaded package metadata' } }],
           locations: [],
@@ -682,9 +682,13 @@ test.describe('ClawX ACP inline timeline', () => {
       ]);
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('acp-tool-call-card')).toBeVisible();
-      await expect(page.getByTestId('acp-tool-call-card')).toContainText('Read package.json');
-      await expect(page.getByTestId('acp-tool-call-card')).toContainText('Loaded package metadata');
+      const card = page.getByTestId('acp-tool-call-card');
+      await expect(card).toBeVisible();
+      await expect(card).toContainText('Read: path: package.json');
+      await expect(card).toContainText('Loaded package metadata');
+      const toolLabel = card.getByText('Tool', { exact: true });
+      expect(await toolLabel.evaluate((element) => element.previousElementSibling?.classList.contains('lucide-wrench'))).toBe(true);
+      expect(await toolLabel.evaluate((element) => element.nextElementSibling?.getAttribute('data-testid'))).toBe('acp-tool-icon-scan-text');
     } finally {
       await closeElectronApp(app);
     }
@@ -1106,15 +1110,15 @@ test.describe('ClawX ACP inline timeline', () => {
         {
           sessionUpdate: 'tool_call',
           toolCallId: 'history-tool-1',
-          title: 'web_search',
+          title: 'update_plan: plan: [{"step":"Check weather"}]',
           status: 'completed',
-          content: [{ type: 'content', content: { type: 'text', text: 'search results' } }],
+          content: [{ type: 'content', content: { type: 'text', text: 'plan updated' } }],
           locations: [],
         },
         {
           sessionUpdate: 'tool_call',
           toolCallId: 'history-tool-2',
-          title: 'web_fetch',
+          title: 'web_fetch: url: https://example.com/weather',
           status: 'completed',
           content: [{ type: 'content', content: { type: 'text', text: 'fetch results' } }],
           locations: [],
@@ -1122,9 +1126,41 @@ test.describe('ClawX ACP inline timeline', () => {
         {
           sessionUpdate: 'tool_call',
           toolCallId: 'history-tool-3',
-          title: 'browser',
+          title: 'browser: action: navigate',
           status: 'failed',
           content: [{ type: 'content', content: { type: 'text', text: 'browser failed' } }],
+          locations: [],
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-4',
+          title: 'exec: command: pwd',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: '/workspace' } }],
+          locations: [],
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-5',
+          title: 'read: path: weather.txt',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'file contents' } }],
+          locations: [],
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-6',
+          title: 'sessions_spawn: runtime: subagent, task: Check weather',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'subagent started' } }],
+          locations: [],
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-7',
+          title: 'memory_search: query: weather history',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'memory results' } }],
           locations: [],
         },
         {
@@ -1144,10 +1180,25 @@ test.describe('ClawX ACP inline timeline', () => {
       const group = page.getByTestId('acp-tool-calls-group');
       await expect(group).toBeVisible();
       await expect(group).toHaveAttribute('data-collapsed', 'true');
+      await expect(group.locator('svg').first()).not.toHaveClass(/group-hover:translate-x-0\.5/);
       await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(0);
 
       await expandAcpToolCallsGroup(page);
-      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(3);
+      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(7);
+      await expect(page.getByText('Update plan: plan: [{"step":"Check weather"}]', { exact: true })).toBeVisible();
+      await expect(page.getByText('Read web page: url: https://example.com/weather', { exact: true })).toBeVisible();
+      await expect(page.getByText('Control browser: action: navigate', { exact: true })).toBeVisible();
+      await expect(page.getByText('Run command: command: pwd', { exact: true })).toBeVisible();
+      await expect(page.getByText('Read: path: weather.txt', { exact: true })).toBeVisible();
+      await expect(page.getByText('Spawn subagent: runtime: subagent, task: Check weather', { exact: true })).toBeVisible();
+      await expect(page.getByText('Search memory: query: weather history', { exact: true })).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-list-checks')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-globe')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-square-mouse-pointer')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-monitor-play')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-scan-text')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-bot')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-database')).toBeVisible();
       await expect(page.getByTestId('acp-assistant-turn')).toContainText('Hangzhou is cloudy today.');
     } finally {
       await closeElectronApp(app);

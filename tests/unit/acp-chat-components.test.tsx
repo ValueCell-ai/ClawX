@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AcpToolCallCard } from '@/pages/Chat/AcpToolCallCard';
+import { AcpToolCallsGroup } from '@/pages/Chat/AcpToolCallsGroup';
 import { AcpAttachmentPart } from '@/pages/Chat/AcpAttachmentPart';
 import { AcpTimeline, streamingMessageSegmentIds } from '@/pages/Chat/AcpTimeline';
 import { AcpTurnFileActivity } from '@/pages/Chat/AcpTurnFileActivity';
@@ -54,6 +55,13 @@ vi.mock('react-i18next', () => ({
       const labels: Record<string, string> = {
         'acp.thought': 'Thought',
         'acp.tool': 'Tool',
+        'acp.toolName.updatePlan': 'Update plan',
+        'acp.toolName.webFetch': 'Read web page',
+        'acp.toolName.browser': 'Control browser',
+        'acp.toolName.execCommand': 'Run command',
+        'acp.toolName.read': 'Read',
+        'acp.toolName.spawnSubagent': 'Spawn subagent',
+        'acp.toolName.memorySearch': 'Search memory',
         'acp.expandTool': 'Expand tool result',
         'acp.collapseTool': 'Collapse tool result',
         'acp.expandToolGroup': 'Expand tool calls',
@@ -1202,6 +1210,53 @@ describe('ACP chat timeline components', () => {
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent('Read file');
     expect(screen.queryByTestId('acp-tool-toggle')).not.toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['update_plan: plan: [{"step":"Review"}]', undefined, 'Update plan: plan: [{"step":"Review"}]', 'list-checks'],
+    ['web_fetch: url: https://example.com', undefined, 'Read web page: url: https://example.com', 'globe'],
+    ['browser: action: click', undefined, 'Control browser: action: click', 'square-mouse-pointer'],
+    ['exec: command: ls -la', undefined, 'Run command: command: ls -la', 'monitor-play'],
+    ['read: path: package.json', undefined, 'Read: path: package.json', 'scan-text'],
+    ['sessions_spawn: runtime: subagent, task: Review', undefined, 'Spawn subagent: runtime: subagent, task: Review', 'bot'],
+    ['memory_search: query: release plan', undefined, 'Search memory: query: release plan', 'database'],
+  ])('renders %s with its localized label and icon', (title, input, label, icon) => {
+    render(<AcpToolCallCard item={toolCallItem({ title, input, status: 'running', outputParts: [] })} />);
+
+    expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent(label);
+    expect(screen.getByTestId(`acp-tool-icon-${icon}`)).toBeInTheDocument();
+  });
+
+  it('keeps the wrench before the tool label and places the specialized icon after it for a single tool call', () => {
+    render(<AcpToolCallCard item={toolCallItem({
+      title: 'read: path: package.json',
+      status: 'running',
+      outputParts: [],
+    })} />);
+
+    const toolLabel = screen.getByText('Tool');
+    expect(toolLabel.previousElementSibling).toHaveClass('lucide-wrench');
+    expect(toolLabel.nextElementSibling).toHaveAttribute('data-testid', 'acp-tool-icon-scan-text');
+  });
+
+  it('does not shift the collapsed tool group arrow on hover', () => {
+    render(<AcpToolCallsGroup items={[
+      toolCallItem({ id: 'tool:one', toolCallId: 'one', historical: true }),
+      toolCallItem({ id: 'tool:two', toolCallId: 'two', historical: true }),
+    ]} />);
+
+    expect(screen.getByTestId('acp-tool-calls-group').querySelector('svg')).not.toHaveClass('group-hover:translate-x-0.5');
+  });
+
+  it.each([
+    ['exec: command:', undefined],
+    ['sessions_spawn: runtime: acp', undefined],
+  ])('keeps %s unchanged when it does not meet the special-case input condition', (title, input) => {
+    render(<AcpToolCallCard item={toolCallItem({ title, input, status: 'running', outputParts: [] })} />);
+
+    expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent(title);
+    expect(screen.queryByTestId('acp-tool-icon-monitor-play')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('acp-tool-icon-bot')).not.toBeInTheDocument();
   });
 
   it('starts auto-collapse when details are added to a completed no-detail tool call', () => {

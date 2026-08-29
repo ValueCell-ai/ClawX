@@ -47,6 +47,15 @@
     "acp": {
         "thought": "Thought",
         "tool": "Tool",
+        "toolName": {
+            "updatePlan": "Update plan",
+            "webFetch": "Read web page",
+            "browser": "Control browser",
+            "execCommand": "Run command",
+            "read": "Read",
+            "spawnSubagent": "Spawn subagent",
+            "memorySearch": "Search memory"
+        },
         "expandTool": "Expand tool result",
         "collapseTool": "Collapse tool result",
         "expandToolGroup": "Expand tool calls",

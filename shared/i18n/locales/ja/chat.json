@@ -47,6 +47,15 @@
     "acp": {
         "thought": "思考",
         "tool": "ツール",
+        "toolName": {
+            "updatePlan": "計画を更新",
+            "webFetch": "Webページを読む",
+            "browser": "ブラウザーを操作",
+            "execCommand": "コマンドを実行",
+            "read": "読み取り",
+            "spawnSubagent": "サブエージェントを起動",
+            "memorySearch": "メモリを検索"
+        },
         "expandTool": "ツール結果を展開",
         "collapseTool": "ツール結果を折りたたむ",
         "expandToolGroup": "ツール呼び出しを展開",
