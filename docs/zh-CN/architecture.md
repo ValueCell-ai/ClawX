@@ -18,6 +18,14 @@ Chat 使用由 Electron Main 持有的 ACP stdio bridge。Main 通过私有进�
 
 ACP `session/load` 回放是 Chat 历史的首要事实来源。ClawX 不会持久化第二套 ACP ledger、精简 timeline、回放缓存或重建的工具历史。当 OpenClaw 的结构化 ACP event ledger 不可用时，其 ACP adapter 会按 transcript 顺序把持久化的 `toolCall` 和 `toolResult` 记录重建为原生工具更新，并保留 text-tool-text 边界；ClawX 本身不会推断这些记录。OpenClaw 的部分能力目前还没有完全对应的 ACP 实现；例如，assistant 媒体可能不会出现在 ACP 中，Gateway 处理也可能从可见的实时回复中移除 assistant `MEDIA:` 指令。因此，ClawX 只保留有界、带标记、仅存于内存的兼容性补充路径：
 
+#### 已结算回合的 replay hydration
+
+ACP prompt 运行期间，`session/update` 通知会继续即时更新可见 timeline。Renderer 会等待类型化的 `session/prompt` 调用完成，并且只在其成功返回后，立即对同一 session 发起一次 `session/load`；两个操作之间没有固定 sleep。只有 session、generation、workspace 和 Renderer load request 仍然有效时，才会开始 hydration。Main 会在共享 ACP connection 上串行执行 load，分配下一代路由 generation，在上游 `session/load` 完成前收集其 replay notifications，并随 load 结果一起返回原始 batch。
+
+该 load 进行期间，Renderer 会保留已经结算的 live timeline，不会暴露空白 loading 状态；IPC 结果交接窗口中提前到达的新 generation events 也会被缓冲。成功且非空的 batch 会先按返回的 session 和 generation 过滤，再从空 ACP timeline 开始通过普通 reducer 归约，最后把完整 timeline 与 generation 在一次状态提交中原子替换。Pending attachments 会按新 generation 重新解析，live turn timing 会映射到 replay 中的 user-message identity，replay 图片证据也会接管旧 generation 中尚未完成的投影。失败、抛错、过期或已被 supersede 的 hydration 不会替换 live 内容。成功但为空或标记为 resumed-active-prompt 的结果会保留可见 items，但仍采用 Main 已经提交的 generation，避免后续 events 因 generation 不匹配而被丢弃。
+
+`session/prompt` 成功完成就是此流程的因果结算屏障。无条件延迟只会增加回复结算耗时、让 sending 状态维持更久，并扩大 navigation 或其它 load 使本次 hydration 过期的窗口，却不能证明上游持久化已经完成。如果未来确认某个上游实现在 replay 可用前就返回 prompt success，正确的补救应是在相同 identity guards 下，针对空 replay 或缺失当前回合做有界、条件式重试，而不是加入固定延迟。下文的 1500 ms 重试只属于有界 transcript 兼容补充，不是 ACP replay hydration 的一部分。
+
 - 只有在同一 session 中存在已确认的 `image_generate` 上下文，且完成证据可信或来自获准 transcript 证据时，才可以恢复异步图像生成结果。
 - 普通附件可以从持久化的 assistant `__openclaw.media` 规范事实或明确的行首 assistant `MEDIA:` 指令中恢复。这只恢复附件引用和声明的元数据，不恢复周围的 assistant 消息。
 - 由于 ACP 回放不提供原始事件时间戳，Main 可以从有界的 transcript JSONL 记录中补充仅包含元数据的整轮耗时，但只能标注已经由 ACP 回放恢复出的回合。

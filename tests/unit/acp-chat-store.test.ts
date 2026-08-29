@@ -696,6 +696,253 @@ describe('ACP Chat store', () => {
     now.mockRestore();
   });
 
+  it('hydrates a settled live timeline atomically from ACP replay', async () => {
+    const prompt = createDeferred<{ success: boolean; generation: number }>();
+    const liveAttachmentResolution = createDeferred<Record<string, unknown>>();
+    const settledReplay = createDeferred<{
+      success: boolean;
+      generation: number;
+      sessionUpdates: Array<Record<string, unknown>>;
+    }>();
+    hostApiMock.loadAcpSession
+      .mockResolvedValueOnce({ success: true, generation: 1 })
+      .mockReturnValueOnce(settledReplay.promise);
+    hostApiMock.sendAcpPrompt.mockReturnValueOnce(prompt.promise);
+    hostApiMock.resolveAttachment.mockReturnValueOnce(liveAttachmentResolution.promise);
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+
+    const sending = useAcpChatSessionStore.getState().sendPrompt({
+      sessionKey: 'agent:pi:s1',
+      cwd: '/repo',
+      message: 'How much does it cost?',
+      messageId: 'user-live',
+    });
+    await vi.waitFor(() => expect(hostApiMock.sendAcpPrompt).toHaveBeenCalledTimes(1));
+    await expect(useAcpChatSessionStore.getState().sendPrompt({
+      sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'Do not overlap', messageId: 'user-overlap',
+    })).resolves.toBe(false);
+    expect(hostApiMock.sendAcpPrompt).toHaveBeenCalledTimes(1);
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'assistant-message',
+          content: { type: 'text', text: 'It is subscription based' },
+        },
+      },
+    });
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'assistant-message',
+          content: { type: 'resource_link', uri: 'file:///repo/pricing.txt', name: 'pricing.txt' },
+        },
+      },
+    });
+
+    prompt.resolve({ success: true, generation: 1 });
+    await vi.waitFor(() => expect(hostApiMock.loadAcpSession).toHaveBeenCalledTimes(2));
+    expect(useAcpChatSessionStore.getState()).toMatchObject({
+      generation: 1,
+      sending: true,
+      loading: false,
+    });
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['assistant-message:0'].parts[0]).toEqual({
+      kind: 'markdown', text: 'It is subscription based',
+    });
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 2,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'handoff-message',
+          content: { type: 'text', text: 'This arrived during the IPC handoff.' },
+        },
+      },
+    });
+
+    settledReplay.resolve({
+      success: true,
+      generation: 2,
+      sessionUpdates: [
+        {
+          sessionKey: 'agent:pi:s1',
+          generation: 2,
+          historical: true,
+          notification: {
+            sessionId: 'agent:pi:s1',
+            update: {
+              sessionUpdate: 'user_message_chunk',
+              messageId: 'replayed-user',
+              content: { type: 'text', text: 'How much does it cost?' },
+            },
+          },
+        },
+        {
+          sessionKey: 'agent:pi:s1',
+          generation: 2,
+          historical: true,
+          notification: {
+            sessionId: 'agent:pi:s1',
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              messageId: 'assistant-message',
+              content: { type: 'text', text: 'It is subscription based, quoted per seat.' },
+            },
+          },
+        },
+        {
+          sessionKey: 'agent:pi:s1',
+          generation: 2,
+          historical: true,
+          notification: {
+            sessionId: 'agent:pi:s1',
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              messageId: 'assistant-message',
+              content: { type: 'resource_link', uri: 'file:///repo/pricing.txt', name: 'pricing.txt' },
+            },
+          },
+        },
+      ],
+    });
+
+    await expect(sending).resolves.toBe(true);
+    expect(useAcpChatSessionStore.getState()).toMatchObject({
+      generation: 2,
+      sending: false,
+      loading: false,
+    });
+    expect(useAcpChatSessionStore.getState().timeline).toMatchObject({
+      loadGeneration: 2,
+      itemOrder: ['replayed-user:0', 'assistant-message:0', 'handoff-message:0'],
+    });
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['assistant-message:0'].parts[0]).toEqual({
+      kind: 'markdown', text: 'It is subscription based, quoted per seat.',
+    });
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['handoff-message:0']).toMatchObject({
+      parts: [{ kind: 'markdown', text: 'This arrived during the IPC handoff.' }],
+    });
+    expect(useAcpChatSessionStore.getState().turnTimingsByUserMessageId).toMatchObject({
+      'replayed-user': { source: 'live', status: 'complete' },
+    });
+    expect(useAcpChatSessionStore.getState().turnTimingsByUserMessageId['user-live']).toBeUndefined();
+    await vi.waitFor(() => expect(hostApiMock.resolveAttachment).toHaveBeenCalledTimes(2));
+    expect(hostApiMock.resolveAttachment.mock.calls[1][0]).toMatchObject({
+      ref: { sessionKey: 'agent:pi:s1', generation: 2, uri: 'file:///repo/pricing.txt' },
+    });
+    liveAttachmentResolution.resolve({ ok: false, error: 'superseded' });
+  });
+
+  it('keeps the settled live timeline when ACP replay hydration throws', async () => {
+    const prompt = createDeferred<{ success: boolean; generation: number }>();
+    hostApiMock.loadAcpSession
+      .mockResolvedValueOnce({ success: true, generation: 1 })
+      .mockRejectedValueOnce(new Error('settled replay failed'));
+    hostApiMock.sendAcpPrompt.mockReturnValueOnce(prompt.promise);
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+
+    const sending = useAcpChatSessionStore.getState().sendPrompt({
+      sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'Keep the live reply', messageId: 'user-live',
+    });
+    await vi.waitFor(() => expect(hostApiMock.sendAcpPrompt).toHaveBeenCalledTimes(1));
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'streamed-message',
+          content: { type: 'text', text: 'Complete live reply' },
+        },
+      },
+    });
+
+    prompt.resolve({ success: true, generation: 1 });
+    await expect(sending).resolves.toBe(true);
+
+    expect(useAcpChatSessionStore.getState()).toMatchObject({
+      generation: 1,
+      sending: false,
+      error: null,
+    });
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['streamed-message:0']).toMatchObject({
+      parts: [{ kind: 'markdown', text: 'Complete live reply' }],
+    });
+  });
+
+  it('keeps settled live content but adopts routing generation when ACP replay is empty', async () => {
+    const prompt = createDeferred<{ success: boolean; generation: number }>();
+    hostApiMock.loadAcpSession
+      .mockResolvedValueOnce({ success: true, generation: 1 })
+      .mockResolvedValueOnce({ success: true, generation: 2, sessionUpdates: [] });
+    hostApiMock.sendAcpPrompt.mockReturnValueOnce(prompt.promise);
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo',
+    });
+
+    const sending = useAcpChatSessionStore.getState().sendPrompt({
+      sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'Keep empty replay out', messageId: 'user-live',
+    });
+    await vi.waitFor(() => expect(hostApiMock.sendAcpPrompt).toHaveBeenCalledTimes(1));
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'streamed-message',
+          content: { type: 'text', text: 'Keep this settled reply' },
+        },
+      },
+    });
+
+    prompt.resolve({ success: true, generation: 1 });
+    await expect(sending).resolves.toBe(true);
+
+    expect(useAcpChatSessionStore.getState()).toMatchObject({ generation: 2, sending: false });
+    expect(useAcpChatSessionStore.getState().timeline).toMatchObject({ loadGeneration: 2 });
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['streamed-message:0']).toMatchObject({
+      parts: [{ kind: 'markdown', text: 'Keep this settled reply' }],
+    });
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 2,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'next-message',
+          content: { type: 'text', text: 'Generation two remains live' },
+        },
+      },
+    });
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['next-message:0']).toMatchObject({
+      parts: [{ kind: 'markdown', text: 'Generation two remains live' }],
+    });
+  });
+
   it('keeps an in-flight timeline and running timing while another session is active', async () => {
     const prompt = createDeferred<{ success: boolean; generation: number }>();
     hostApiMock.loadAcpSession

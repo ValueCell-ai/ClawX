@@ -283,6 +283,80 @@ async function installAcpPromptFailureMock(app: ElectronApplication, error: stri
   }, error);
 }
 
+async function installSettledAcpHydrationMock(
+  app: ElectronApplication,
+  input: { prompt: string; streamedText: string; replayedText: string },
+) {
+  await app.evaluate(async ({ app: _app }, payload) => {
+    const { BrowserWindow, ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type HostInvokeRequest = {
+      id?: string;
+      module?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+    };
+    type IpcInvokeHandler = (event: unknown, request: HostInvokeRequest) => Promise<unknown>;
+    const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
+    const originalHostInvoke = handlers?.get('host:invoke');
+    let loadCount = 0;
+    const envelope = (generation: number, update: Record<string, unknown>) => ({
+      sessionKey: payload.sessionKey,
+      generation,
+      historical: true,
+      notification: { sessionId: payload.sessionKey, update },
+    });
+
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: HostInvokeRequest) => {
+      if (request.module === 'chat' && request.action === 'loadAcpSession') {
+        loadCount += 1;
+        if (loadCount === 1) {
+          return { id: request.id, ok: true, data: { success: true, generation: 1 } };
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        return {
+          id: request.id,
+          ok: true,
+          data: {
+            success: true,
+            generation: 2,
+            sessionUpdates: [
+              envelope(2, {
+                sessionUpdate: 'user_message_chunk',
+                messageId: 'hydrated-user',
+                content: { type: 'text', text: payload.prompt },
+              }),
+              envelope(2, {
+                sessionUpdate: 'agent_message_chunk',
+                messageId: 'hydrated-assistant',
+                content: { type: 'text', text: payload.replayedText },
+              }),
+            ],
+          },
+        };
+      }
+      if (request.module === 'chat' && request.action === 'sendAcpPrompt') {
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('chat:acp-session-update', {
+            sessionKey: payload.sessionKey,
+            generation: 1,
+            notification: {
+              sessionId: payload.sessionKey,
+              update: {
+                sessionUpdate: 'agent_message_chunk',
+                messageId: 'live-assistant',
+                content: { type: 'text', text: payload.streamedText },
+              },
+            },
+          });
+        }
+        return { id: request.id, ok: true, data: { success: true, generation: 1 } };
+      }
+      return originalHostInvoke?.(event, request) ?? { id: request.id, ok: true, data: {} };
+    });
+  }, { sessionKey: MAIN_SESSION_KEY, ...input });
+}
+
 async function installTargetAgentRequestRecorder(app: ElectronApplication) {
   await app.evaluate(async ({ app: _app }, targetSessionKey) => {
     const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
@@ -980,6 +1054,31 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-assistant-turn')).toContainText('Source: report.txt');
       await expect(page.getByTestId('acp-assistant-turn')).toContainText('Result: valid');
       await expect(page.getByTestId('acp-assistant-turn')).toContainText('Package: report.zip');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('hydrates a settled assistant reply atomically from ACP replay', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const prompt = 'How is the data service priced?';
+    const streamedText = 'It is sold as an enterprise subscription and quoted';
+    const replayedText = 'It is sold as an enterprise subscription and quoted per commodity, region, and seat.';
+
+    try {
+      await installAcpChatMocks(app);
+      await installSettledAcpHydrationMock(app, { prompt, streamedText, replayedText });
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+
+      await page.getByTestId('chat-composer-input').fill(prompt);
+      await page.getByTestId('chat-composer-send').click();
+
+      await expect(page.getByTestId('acp-assistant-turn')).toContainText(streamedText, { timeout: 30_000 });
+      await expect(page.getByTestId('acp-chat-empty-state')).toHaveCount(0);
+      await expect(page.getByTestId('acp-assistant-turn')).toContainText(replayedText, { timeout: 30_000 });
+      await expect(page.getByTestId('acp-assistant-turn')).not.toContainText(`${streamedText}${replayedText}`);
+      await expect(page.getByTestId('acp-chat-empty-state')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
