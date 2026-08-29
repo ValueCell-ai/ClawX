@@ -21,6 +21,8 @@ const GENERATED_IMAGE_IDENTITY = 'e2e-transcript-generated-image';
 const DEFAULT_WORKSPACE_SEGMENT = '~%2F.openclaw%2Fworkspace';
 
 type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
+type AcpSessionCatalog = Array<{ key: string; displayName: string; workspacePath: string }>;
+type AcpSessionReplayResponses = Record<string, AcpSessionUpdate[][]>;
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -65,6 +67,11 @@ function baseHostApiMocks(loadResult: Record<string, unknown> = { success: true,
 async function installAcpChatMocks(
   app: ElectronApplication,
   loadResult: Record<string, unknown> = { success: true, generation: 1 },
+  sessionCatalog: AcpSessionCatalog = [{
+    key: MAIN_SESSION_KEY,
+    displayName: 'main',
+    workspacePath: MAIN_WORKSPACE,
+  }],
 ) {
   await installIpcMocks(app, {
     gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
@@ -72,7 +79,7 @@ async function installAcpChatMocks(
       [stableStringify(['sessions.list', {}])]: {
         success: true,
         result: {
-          sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE }],
+          sessions: sessionCatalog,
         },
       },
     },
@@ -126,6 +133,63 @@ async function installAcpLoadReplayMock(
       return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
     });
   }, { sessionKey: MAIN_SESSION_KEY, updates, timings });
+}
+
+async function installAcpLoadReplayBySessionMock(
+  app: ElectronApplication,
+  updatesBySessionKey: AcpSessionReplayResponses,
+) {
+  await app.evaluate(async ({ app: _app }, payload) => {
+    const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type HostInvokeRequest = {
+      id?: string;
+      module?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+      args?: unknown[];
+    };
+    type IpcInvokeHandler = (event: unknown, request: HostInvokeRequest) => Promise<unknown>;
+    const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
+    const originalHostInvoke = handlers?.get('host:invoke');
+    const globals = globalThis as unknown as {
+      __acpLoadSessionKeys?: string[];
+      __acpLoadReplayResponseIndexes?: Record<string, number>;
+    };
+    globals.__acpLoadSessionKeys = [];
+    globals.__acpLoadReplayResponseIndexes = {};
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: HostInvokeRequest) => {
+      if (request?.module === 'chat' && request.action === 'loadAcpSession') {
+        const requestPayload = request.payload ?? (Array.isArray(request.args) ? request.args[0] : undefined);
+        const sessionKey = requestPayload && typeof requestPayload === 'object'
+          ? String((requestPayload as Record<string, unknown>).sessionKey ?? '')
+          : '';
+        globals.__acpLoadSessionKeys?.push(sessionKey);
+        const responseIndex = globals.__acpLoadReplayResponseIndexes?.[sessionKey] ?? 0;
+        if (globals.__acpLoadReplayResponseIndexes) {
+          globals.__acpLoadReplayResponseIndexes[sessionKey] = responseIndex + 1;
+        }
+        return {
+          id: request.id,
+          ok: true,
+          data: {
+            success: true,
+            generation: 1,
+            sessionUpdates: (payload.updatesBySessionKey[sessionKey]?.[responseIndex] ?? []).map((update) => ({
+              sessionKey,
+              generation: 1,
+              historical: true,
+              notification: {
+                sessionId: sessionKey,
+                update,
+              },
+            })),
+          },
+        };
+      }
+      return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
+    });
+  }, { updatesBySessionKey });
 }
 
 async function installAcpLoadRecorderMock(app: ElectronApplication) {
@@ -497,6 +561,213 @@ test.describe('ClawX ACP inline timeline', () => {
       expect(indicatorBox!.x).toBeLessThan(gatewayBox!.x);
       await indicator.focus();
       await expect(page.getByRole('tooltip')).toHaveText('25% context used: 25,000 / 100,000 tokens');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('plan indicator renders a live running session plan', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installAcpChatMocks(app);
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'tool_call',
+        toolCallId: 'live-session-plan',
+        title: 'update_plan: plan current work',
+        status: 'in_progress',
+        rawInput: {
+          plan: [
+            { step: 'Inspect the current implementation', status: 'completed' },
+            { step: 'Exercise the live plan indicator', status: 'in_progress' },
+            { step: 'Verify the replay path', status: 'pending' },
+          ],
+        },
+        content: [],
+        locations: [],
+      }]);
+
+      const toggle = page.getByTestId('acp-session-plan-toggle');
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+      await expect(toggle).toHaveText('1 / 3');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.getByTestId('acp-session-plan-panel')).toHaveCount(0);
+      await expect(toggle.locator('..').getByRole('button')).toHaveCount(1);
+      const composerBox = await page.getByTestId('chat-composer-box').boundingBox();
+      const toggleBox = await toggle.boundingBox();
+      expect(composerBox).toBeTruthy();
+      expect(toggleBox).toBeTruthy();
+      expect(toggleBox!.x + toggleBox!.width).toBeGreaterThan(composerBox!.x + composerBox!.width - 100);
+      expect(toggleBox!.y).toBeLessThan(composerBox!.y);
+
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      const panel = page.getByTestId('acp-session-plan-panel');
+      const steps = panel.getByTestId('acp-session-plan-step');
+      await expect(steps).toHaveCount(3);
+      await expect(steps.nth(0)).toHaveText('Inspect the current implementation');
+      await expect(steps.nth(1)).toHaveText('Exercise the live plan indicator');
+      await expect(steps.nth(2)).toHaveText('Verify the replay path');
+      await expect(steps.nth(1).locator('.lucide-circle-ellipsis')).toBeVisible();
+      await expect(steps.nth(1).locator('.lucide-circle-ellipsis')).not.toHaveClass(/animate-spin/);
+      await expect(steps.nth(1)).not.toHaveText(/Running|Pending|Completed/);
+      await expect(toggle.locator('..').getByRole('button')).toHaveCount(1);
+      await expect(panel.locator('button, a, input, select, textarea, [contenteditable="true"]')).toHaveCount(0);
+      await expect(page.getByTestId('acp-tool-input-pre')).toContainText('Exercise the live plan indicator');
+      const panelBox = await panel.boundingBox();
+      const expandedComposerBox = await page.getByTestId('chat-composer-box').boundingBox();
+      expect(panelBox).toBeTruthy();
+      expect(expandedComposerBox).toBeTruthy();
+      expect(panelBox!.y + panelBox!.height).toBeLessThan(expandedComposerBox!.y);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('session plan replay isolates session A through an A-to-B-to-A switch', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const sessionBKey = 'agent:main:session-plan-b';
+
+    try {
+      await installAcpChatMocks(app, undefined, [
+        { key: MAIN_SESSION_KEY, displayName: 'session A', workspacePath: MAIN_WORKSPACE },
+        { key: sessionBKey, displayName: 'session B', workspacePath: MAIN_WORKSPACE },
+      ]);
+      await installAcpLoadReplayBySessionMock(app, {
+        [MAIN_SESSION_KEY]: [
+          [{
+            sessionUpdate: 'tool_call',
+            toolCallId: 'session-a-plan',
+            title: 'update_plan: session A',
+            status: 'in_progress',
+            rawInput: {
+              plan: [
+                { step: 'Keep session A isolated', status: 'completed' },
+                { step: 'Restore session A from replay', status: 'in_progress' },
+              ],
+            },
+            content: [],
+            locations: [],
+          }],
+          [{
+            sessionUpdate: 'tool_call',
+            toolCallId: 'session-a-plan-return',
+            title: 'update_plan: fresh session A',
+            status: 'in_progress',
+            rawInput: {
+              plan: [
+                { step: 'Load fresh session A replay', status: 'completed' },
+                { step: 'Render structured session A response', status: 'in_progress' },
+              ],
+            },
+            content: [],
+            locations: [],
+          }],
+        ],
+        [sessionBKey]: [[{
+          sessionUpdate: 'tool_call',
+          toolCallId: 'session-b-plan',
+          title: 'update_plan: session B',
+          status: 'in_progress',
+          rawInput: {
+            plan: [{ step: 'Keep session B separate', status: 'in_progress' }],
+          },
+          content: [],
+          locations: [],
+        }]],
+      });
+
+      const page = await openChat(app);
+      const toggle = page.getByTestId('acp-session-plan-toggle');
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+      await expect(toggle).toHaveText('1 / 2');
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([MAIN_SESSION_KEY]);
+
+      await page.getByTestId(`sidebar-session-${sessionBKey}`).click();
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+      await expect(toggle).toHaveText('0 / 1');
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([MAIN_SESSION_KEY, sessionBKey]);
+      await toggle.click();
+      await expect(page.getByTestId('acp-session-plan-panel')).toContainText('Keep session B separate');
+
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+      await expect(toggle).toHaveText('1 / 2');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.getByTestId('acp-session-plan-panel')).toHaveCount(0);
+      await toggle.click();
+      const returnedPanel = page.getByTestId('acp-session-plan-panel');
+      const returnedSteps = returnedPanel.getByTestId('acp-session-plan-step');
+      await expect(returnedSteps).toHaveCount(2);
+      await expect(returnedSteps.nth(0)).toHaveText('Load fresh session A replay');
+      await expect(returnedSteps.nth(1)).toHaveText('Render structured session A response');
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([MAIN_SESSION_KEY, sessionBKey, MAIN_SESSION_KEY]);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('session plan replay restores a collapsed plan after renderer reload', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installAcpChatMocks(app);
+      await installAcpLoadReplayBySessionMock(app, {
+        [MAIN_SESSION_KEY]: [
+          [{
+            sessionUpdate: 'tool_call',
+            toolCallId: 'reload-session-plan',
+            title: 'update_plan: reload session plan',
+            status: 'in_progress',
+            rawInput: {
+              plan: [
+                { step: 'Load plan history again', status: 'completed' },
+                { step: 'Restore collapsed state', status: 'in_progress' },
+              ],
+            },
+            content: [],
+            locations: [],
+          }],
+          [{
+            sessionUpdate: 'tool_call',
+            toolCallId: 'reload-session-plan-fresh',
+            title: 'update_plan: fresh renderer reload',
+            status: 'in_progress',
+            rawInput: {
+              plan: [
+                { step: 'Load a fresh plan after renderer reload', status: 'pending' },
+                { step: 'Consume new structured replay data', status: 'pending' },
+              ],
+            },
+            content: [],
+            locations: [],
+          }],
+        ],
+      });
+
+      const page = await openChat(app);
+      const toggle = page.getByTestId('acp-session-plan-toggle');
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([MAIN_SESSION_KEY]);
+      await toggle.click();
+      await expect(page.getByTestId('acp-session-plan-panel')).toBeVisible();
+
+      await page.reload();
+      await expect(page.getByTestId('main-layout')).toBeVisible({ timeout: 30_000 });
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+      await expect(toggle).toHaveText('0 / 2');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.getByTestId('acp-session-plan-panel')).toHaveCount(0);
+      await toggle.click();
+      const reloadedPanel = page.getByTestId('acp-session-plan-panel');
+      const reloadedSteps = reloadedPanel.getByTestId('acp-session-plan-step');
+      await expect(reloadedSteps).toHaveCount(2);
+      await expect(reloadedSteps.nth(0)).toHaveText('Load a fresh plan after renderer reload');
+      await expect(reloadedSteps.nth(1)).toHaveText('Consume new structured replay data');
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([MAIN_SESSION_KEY, MAIN_SESSION_KEY]);
     } finally {
       await closeElectronApp(app);
     }

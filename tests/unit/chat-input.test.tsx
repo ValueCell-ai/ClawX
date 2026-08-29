@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ChatInput } from '@/pages/Chat/ChatInput';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
 const hostApiFetchMock = vi.hoisted(() => vi.fn());
 const hostApiDialogOpenMock = vi.hoisted(() => vi.fn());
 const toastErrorMock = vi.hoisted(() => vi.fn());
@@ -328,6 +329,35 @@ describe('ChatInput agent targeting', () => {
     expect(indicator).toHaveAttribute('aria-live', 'polite');
     expect(screen.getByTestId('chat-composer-dot-pulse')).toBeInTheDocument();
     expect(screen.queryByTestId('chat-composer-zoomies')).not.toBeInTheDocument();
+  });
+
+  it('renders the current ACP plan above the composer and right-aligned', () => {
+    const currentPlan: AcpCurrentPlan = {
+      completedCount: 1,
+      totalCount: 2,
+      steps: [
+        { step: 'Inspect the timeline', status: 'completed' },
+        { step: 'Render the composer plan', status: 'in_progress' },
+      ],
+    };
+
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          draftKey="agent:main:plan"
+          currentPlan={currentPlan}
+          sending
+        />
+      </TooltipProvider>,
+    );
+
+    const plan = screen.getByTestId('acp-session-plan-toggle');
+    const working = screen.getByTestId('chat-composer-working-indicator');
+    const composer = screen.getByTestId('chat-composer-box');
+    expect(composer).not.toContainElement(plan);
+    expect(plan.compareDocumentPosition(working) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(plan.parentElement?.parentElement).toHaveClass('text-right');
   });
 
   it('shows an image-generation indicator without locking the composer for background work', () => {

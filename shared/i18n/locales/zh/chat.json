@@ -66,6 +66,12 @@
         "running": "进行中",
         "pending": "待处理",
         "completed": "已完成",
+        "sessionPlan": {
+            "progress": "{{completed}} / {{total}}",
+            "expand": "展开计划",
+            "collapse": "折叠计划",
+            "tasks": "计划任务"
+        },
         "failed": "失败",
         "cancelled": "已取消",
         "loadFailed": "会话加载失败",

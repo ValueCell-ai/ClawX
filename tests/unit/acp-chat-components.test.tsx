@@ -1212,6 +1212,22 @@ describe('ACP chat timeline components', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
+  it('lets a historical update_plan expand its structured plan input when it has no output', () => {
+    render(<AcpToolCallCard item={toolCallItem({
+      title: 'update_plan: plan: [{"step":"A long task title that is truncated in the card header"}]',
+      input: { plan: [{ step: 'A long task title that is truncated in the card header', status: 'in_progress' }] },
+      historical: true,
+      status: 'completed',
+      outputParts: [],
+    })} />);
+
+    const card = screen.getByTestId('acp-tool-call-card');
+    expect(card).toHaveAttribute('data-expanded', 'false');
+    fireEvent.click(screen.getByTestId('acp-tool-toggle'));
+    expect(card).toHaveAttribute('data-expanded', 'true');
+    expect(screen.getByTestId('acp-tool-input-pre')).toHaveTextContent('A long task title that is truncated in the card header');
+  });
+
   it.each([
     ['update_plan: plan: [{"step":"Review"}]', undefined, 'Update plan: plan: [{"step":"Review"}]', 'list-checks'],
     ['web_fetch: url: https://example.com', undefined, 'Read web page: url: https://example.com', 'globe'],

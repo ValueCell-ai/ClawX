@@ -66,6 +66,12 @@
         "running": "Running",
         "pending": "Pending",
         "completed": "Completed",
+        "sessionPlan": {
+            "progress": "{{completed}} / {{total}}",
+            "expand": "Expand plan",
+            "collapse": "Collapse plan",
+            "tasks": "Plan tasks"
+        },
         "failed": "Failed",
         "cancelled": "Cancelled",
         "loadFailed": "Failed to load session",

@@ -85,7 +85,10 @@ export function AcpToolCallCard({ item, grouped = false }: { item: ToolCallItem;
   const title = presentation
     ? `${t(presentation.labelKey)}${separator === -1 ? '' : item.title.slice(separator)}`
     : item.title;
-  const hasDetails = Boolean(item.error) || item.outputParts.length > 0;
+  const planInput = toolName === 'update_plan' && Array.isArray(input?.plan)
+    ? JSON.stringify({ plan: input.plan }, null, 2)
+    : null;
+  const hasDetails = Boolean(item.error) || item.outputParts.length > 0 || planInput !== null;
   const isFinished = item.status === 'completed' || item.status === 'failed';
   const shouldStartExpanded = !hasDetails || !(item.historical && isFinished);
   const [expansionState, setExpansionState] = useState<ExpansionState>(() => ({
@@ -181,6 +184,15 @@ export function AcpToolCallCard({ item, grouped = false }: { item: ToolCallItem;
               <div className="mt-3 rounded-xl border border-red-500/20 bg-surface-input px-3 py-2 text-sm text-red-700 dark:text-red-400">
                 {item.error}
               </div>
+            )}
+
+            {planInput && (
+              <pre
+                data-testid="acp-tool-input-pre"
+                className="mt-3 max-h-96 overflow-auto whitespace-pre rounded-xl border border-black/10 bg-surface-input px-3 py-2 font-mono text-xs leading-relaxed text-foreground dark:border-white/10"
+              >
+                {planInput}
+              </pre>
             )}
 
             {item.outputParts.length > 0 && (

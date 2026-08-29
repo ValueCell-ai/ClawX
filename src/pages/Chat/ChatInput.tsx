@@ -28,6 +28,8 @@ import { rendererExtensionRegistry } from '@/extensions/registry';
 import { collectDroppedFiles } from '@/lib/collect-dropped-files';
 import { fetchQuickAccessSkills } from '@/lib/quick-access-skills';
 import { DEFAULT_WORKSPACE_CWD, isDefaultWorkspacePath, normalizeWorkspacePath } from '@/lib/workspace-context';
+import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
+import { AcpSessionPlan } from './AcpSessionPlan';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -62,6 +64,7 @@ interface ChatInputProps {
   workspaceReadOnly?: boolean;
   onSelectWorkspace?: (path: string) => void;
   contextUsage?: unknown;
+  currentPlan?: AcpCurrentPlan | null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -301,6 +304,7 @@ export function ChatInput({
   workspaceReadOnly = false,
   onSelectWorkspace,
   contextUsage,
+  currentPlan,
 }: ChatInputProps) {
   const { t, i18n } = useTranslation('chat');
   const [uncontrolledInput, setUncontrolledInput] = useState('');
@@ -1020,6 +1024,10 @@ export function ChatInput({
       onDrop={handleDrop}
     >
       <div className="w-full">
+        <div className="text-right">
+          <AcpSessionPlan plan={currentPlan} sessionKey={draftKey ?? ''} />
+        </div>
+
         {sending && (
           <div
             data-testid="chat-composer-working-indicator"

@@ -26,6 +26,7 @@ import {
 import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
 import { useWorkspaceAvailability } from '@/hooks/use-workspace-availability';
 import { getAcpUserMessageAnchorId } from '@/lib/acp/timeline-anchors';
+import { getCurrentAcpPlan } from '@/lib/acp/current-plan';
 import type { MessageSegmentItem, RenderPart } from '@/lib/acp/timeline-types';
 import { createEmptyAcpTimeline } from '@/lib/acp/reducer';
 import { projectOpenClawFileActivities, type AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
@@ -490,6 +491,12 @@ export function Chat() {
   const questionDirectoryVisible = questionDirectoryOpenSessionKey === currentSessionKey
     && questionDirectoryItems.length > 1;
   const composerContextUsage = visibleAcpTimeline.metadata.usage;
+  const currentPlan = useMemo(
+    () => visibleAcpTimeline.sessionId === currentSessionKey
+      ? getCurrentAcpPlan(visibleAcpTimeline)
+      : null,
+    [currentSessionKey, visibleAcpTimeline],
+  );
   const handleComposerDraftChange = useCallback((update: SetStateAction<string>) => {
     setComposerDraft(currentSessionKey, update);
   }, [currentSessionKey, setComposerDraft]);
@@ -674,6 +681,7 @@ export function Chat() {
           workspaceReadOnly={effectiveWorkspace.readOnly}
           onSelectWorkspace={setChatWorkspacePath}
           contextUsage={composerContextUsage}
+          currentPlan={currentPlan}
         />
       </div>
 

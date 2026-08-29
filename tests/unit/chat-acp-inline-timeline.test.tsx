@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AcpTimelineSnapshot } from '@/lib/acp/timeline-types';
+import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
 
 const { acpState, agentsState, artifactPanelState, chatState, gatewayState, stickState } = vi.hoisted(() => ({
   acpState: {
@@ -51,6 +52,15 @@ const { acpState, agentsState, artifactPanelState, chatState, gatewayState, stic
 
 const ensureAcpChatSubscriptions = vi.hoisted(() => vi.fn());
 const resolveWorkspaceContext = vi.hoisted(() => vi.fn());
+const deferredAcpTimeline = vi.hoisted(() => ({ value: null as AcpTimelineSnapshot | null }));
+
+vi.mock('react', async (importOriginal) => {
+  const react = await importOriginal<typeof import('react')>();
+  return {
+    ...react,
+    useDeferredValue: <T,>(value: T) => deferredAcpTimeline.value ?? value,
+  };
+});
 
 vi.mock('@/lib/host-api', () => ({
   hostApi: {
@@ -124,8 +134,17 @@ vi.mock('@/pages/Chat/ChatToolbar', () => ({
 }));
 
 vi.mock('@/pages/Chat/ChatInput', () => ({
-  ChatInput: ({ disabled, sending }: { disabled?: boolean; sending?: boolean }) => (
-    <div data-testid="mock-chat-input" data-disabled={disabled ? 'true' : 'false'} data-sending={sending ? 'true' : 'false'} />
+  ChatInput: ({ disabled, sending, currentPlan }: {
+    disabled?: boolean;
+    sending?: boolean;
+    currentPlan?: AcpCurrentPlan | null;
+  }) => (
+    <div
+      data-testid="mock-chat-input"
+      data-disabled={disabled ? 'true' : 'false'}
+      data-sending={sending ? 'true' : 'false'}
+      data-current-plan={currentPlan ? `${currentPlan.completedCount}/${currentPlan.totalCount}:${currentPlan.steps.map((step) => step.step).join('|')}` : ''}
+    />
   ),
 }));
 
@@ -210,6 +229,30 @@ function timelineWithProcessBlocks(): AcpTimelineSnapshot {
   };
 }
 
+function timelineWithCurrentPlan(): AcpTimelineSnapshot {
+  return {
+    ...emptyTimeline(),
+    itemOrder: ['tool:update-plan'],
+    itemsById: {
+      'tool:update-plan': {
+        kind: 'tool-call',
+        id: 'tool:update-plan',
+        toolCallId: 'update-plan',
+        title: 'update_plan: current steps',
+        status: 'running',
+        input: {
+          plan: [
+            { step: 'Inspect the current timeline', status: 'completed' },
+            { step: 'Render the plan in the composer', status: 'in_progress' },
+          ],
+        },
+        outputParts: [],
+        locations: [],
+      },
+    },
+  };
+}
+
 describe('ACP Chat page inline timeline lifecycle', () => {
   beforeEach(() => {
     ensureAcpChatSubscriptions.mockReset();
@@ -223,6 +266,7 @@ describe('ACP Chat page inline timeline lifecycle', () => {
       executionCwd: input.executionCwd,
     }));
     acpState.timeline = timelineWithProcessBlocks();
+    deferredAcpTimeline.value = null;
     acpState.loading = false;
     acpState.sending = false;
     acpState.cancelling = false;
@@ -307,6 +351,37 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent('Read file');
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent('Running');
     expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-sending', 'true');
+  });
+
+  it('passes only the visible session structured update_plan to the composer', async () => {
+    acpState.timeline = timelineWithCurrentPlan();
+    const { Chat } = await import('@/pages/Chat/index');
+    const { rerender } = render(<Chat />);
+
+    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute(
+      'data-current-plan',
+      '1/2:Inspect the current timeline|Render the plan in the composer',
+    );
+
+    acpState.activeSessionKey = 'agent:other:main';
+    acpState.timeline = { ...timelineWithCurrentPlan(), sessionId: 'agent:other:main' };
+    rerender(<Chat />);
+
+    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-current-plan', '');
+  });
+
+  it('withholds a deferred prior-session plan after the active session changes', async () => {
+    const previousSessionKey = 'agent:previous:main';
+    const currentSessionKey = 'agent:other:main';
+    deferredAcpTimeline.value = { ...timelineWithCurrentPlan(), sessionId: previousSessionKey };
+    acpState.timeline = { ...timelineWithCurrentPlan(), sessionId: currentSessionKey };
+    acpState.activeSessionKey = currentSessionKey;
+    chatState.currentSessionKey = currentSessionKey;
+
+    const { Chat } = await import('@/pages/Chat/index');
+    render(<Chat />);
+
+    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-current-plan', '');
   });
 
   it('renders ACP load errors as inline timeline errors', async () => {

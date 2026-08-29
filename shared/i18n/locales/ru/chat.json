@@ -66,6 +66,12 @@
         "running": "Выполняется",
         "pending": "Ожидает",
         "completed": "Завершено",
+        "sessionPlan": {
+            "progress": "{{completed}} / {{total}}",
+            "expand": "Развернуть план",
+            "collapse": "Свернуть план",
+            "tasks": "Задачи плана"
+        },
         "failed": "Ошибка",
         "cancelled": "Отменено",
         "loadFailed": "Не удалось загрузить сеанс",
