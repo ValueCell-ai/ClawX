@@ -13,8 +13,6 @@ touchedAreas:
   - harness/specs/scenarios/realtime-talk.md
   - harness/specs/tasks/add-realtime-talk.md
   - harness/specs/tasks/image-generation-settings.md
-  - docs/plans/2026-08-30-model-management-consolidation.md
-  - docs/plans/2026-08-30-model-tabs-polish.md
   - src/App.tsx
   - src/components/layout/Sidebar.tsx
   - src/components/settings/ImageGenerationSettings.tsx

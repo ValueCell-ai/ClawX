@@ -11,7 +11,6 @@ touchedAreas:
   - harness/specs/rules/sidebar-session-attention-authority.md
   - harness/reference/acp-chat.md
   - harness/reference/chat-workspace-and-navigation.md
-  - docs/plans/2026-08-31-subagent-session-and-announce-replay.md
   - patches/openclaw@2026.7.1-2.patch
   - pnpm-lock.yaml
   - shared/i18n/locales/en/chat.json

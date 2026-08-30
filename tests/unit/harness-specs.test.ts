@@ -1,6 +1,5 @@
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
-
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -596,9 +595,16 @@ describe('harness specs', () => {
         file === 'harness/specs/tasks/add-realtime-talk.md' ? legacyTalkTaskPaths : [],
       );
     }
-    expect((await readdir('docs/specs')).sort()).toEqual([
-      '2026-08-29-acp-session-plan-design.md',
-    ]);
+    const exists = async (p: string) => {
+      try {
+        await stat(p);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    expect(await exists('docs/plans')).toBe(false);
+    expect(await exists('docs/specs')).toBe(false);
   });
 
   it('defines the ACP media attachment harness contract', async () => {

@@ -61,6 +61,12 @@ The pinned adapter retains one passive Main-owned `sessions.messages` subscripti
 
 There are exactly two approved transcript-derived content supplements. ClawX may recover asynchronous image-generation completions with proven `image_generate` context, and it may recover explicit line-leading assistant `MEDIA:` attachment directives omitted by OpenClaw ACP. Both are bounded, marked, memory-only projections. Separately, Main may extract metadata-only whole-turn timing because ACP replay omits original timestamps. Renderer can attach that timing only to an unambiguously matched ACP turn; it cannot reconstruct ordinary assistant text, thoughts, tool cards, plans, permissions, file activity, or missing turns. See `harness/reference/acp-generated-media-and-diagnostics.md#bounded-transcript-exceptions` for the content compatibility grammar and timing boundary.
 
+### Composer Plan Projection
+
+The composer plan indicator is a read-only Renderer projection of the active ACP timeline. It considers only non-failed `update_plan` tool calls and validates their structured `ToolCallItem.input.plan` as a non-empty ordered list of non-empty steps with `pending`, `in_progress`, or `completed` status and at most one in-progress entry. It selects the newest valid candidate, falling back to an earlier valid one if a newer call fails or is malformed. Tool output, assistant prose, and an unstructured tool title never reconstruct plan entries.
+
+The plan recomputes whenever the active visible timeline changes and has no persistence, global cache, transport, Main API, or mutation control. Switching sessions, reloading, and restarting restore it only when ACP replay supplies the validated structured input; otherwise it is hidden. The composer renders the projection above its normal controls as a keyboard-accessible, initially collapsed status pill with completed and total counts. Expanding reveals source-order task detail in a bounded in-flow panel; expansion is transient component state and resets when the component mounts for another session.
+
 ## Timeline Model
 
 The Renderer keeps an in-memory `AcpTimelineSnapshot` with ordered item ids, item records, open message segments, tool and permission state, and ACP metadata. The exact TypeScript types in `src/lib/acp/` are authoritative; the stable conceptual item kinds are:
