@@ -1652,14 +1652,22 @@ test.describe('ClawX ACP inline timeline', () => {
         {
           sessionUpdate: 'tool_call',
           toolCallId: 'history-tool-6',
-          title: 'sessions_spawn: runtime: subagent, task: Check weather',
+          title: 'write: path: weather.md',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'weather report saved' } }],
+          locations: [],
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-7',
+          title: 'sessions_spawn: task: Check weather',
           status: 'completed',
           content: [{ type: 'content', content: { type: 'text', text: 'subagent started' } }],
           locations: [],
         },
         {
           sessionUpdate: 'tool_call',
-          toolCallId: 'history-tool-7',
+          toolCallId: 'history-tool-8',
           title: 'memory_search: query: weather history',
           status: 'completed',
           content: [{ type: 'content', content: { type: 'text', text: 'memory results' } }],
@@ -1686,19 +1694,21 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(0);
 
       await expandAcpToolCallsGroup(page);
-      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(7);
+      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(8);
       await expect(page.getByText('Update plan: plan: [{"step":"Check weather"}]', { exact: true })).toBeVisible();
       await expect(page.getByText('Read web page: url: https://example.com/weather', { exact: true })).toBeVisible();
       await expect(page.getByText('Control browser: action: navigate', { exact: true })).toBeVisible();
       await expect(page.getByText('Run command: command: pwd', { exact: true })).toBeVisible();
       await expect(page.getByText('Read: path: weather.txt', { exact: true })).toBeVisible();
-      await expect(page.getByText('Spawn subagent: runtime: subagent, task: Check weather', { exact: true })).toBeVisible();
+      await expect(page.getByText('Write: path: weather.md', { exact: true })).toBeVisible();
+      await expect(page.getByText('Spawn subagent: task: Check weather', { exact: true })).toBeVisible();
       await expect(page.getByText('Search memory: query: weather history', { exact: true })).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-list-checks')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-globe')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-square-mouse-pointer')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-monitor-play')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-scan-text')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-save')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-bot')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-database')).toBeVisible();
       await expect(page.getByTestId('acp-assistant-turn')).toContainText('Hangzhou is cloudy today.');

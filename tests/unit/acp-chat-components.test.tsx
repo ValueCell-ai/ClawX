@@ -60,6 +60,7 @@ vi.mock('react-i18next', () => ({
         'acp.toolName.browser': 'Control browser',
         'acp.toolName.execCommand': 'Run command',
         'acp.toolName.read': 'Read',
+        'acp.toolName.write': 'Write',
         'acp.toolName.spawnSubagent': 'Spawn subagent',
         'acp.toolName.memorySearch': 'Search memory',
         'acp.expandTool': 'Expand tool result',
@@ -1345,7 +1346,8 @@ describe('ACP chat timeline components', () => {
     ['browser: action: click', undefined, 'Control browser: action: click', 'square-mouse-pointer'],
     ['exec: command: ls -la', undefined, 'Run command: command: ls -la', 'monitor-play'],
     ['read: path: package.json', undefined, 'Read: path: package.json', 'scan-text'],
-    ['sessions_spawn: runtime: subagent, task: Review', undefined, 'Spawn subagent: runtime: subagent, task: Review', 'bot'],
+    ['write: path: report.md', undefined, 'Write: path: report.md', 'save'],
+    ['sessions_spawn: task: Review', undefined, 'Spawn subagent: task: Review', 'bot'],
     ['memory_search: query: release plan', undefined, 'Search memory: query: release plan', 'database'],
   ])('renders %s with its localized label and icon', (title, input, label, icon) => {
     render(<AcpToolCallCard item={toolCallItem({ title, input, status: 'running', outputParts: [] })} />);
@@ -1377,13 +1379,11 @@ describe('ACP chat timeline components', () => {
 
   it.each([
     ['exec: command:', undefined],
-    ['sessions_spawn: runtime: acp', undefined],
   ])('keeps %s unchanged when it does not meet the special-case input condition', (title, input) => {
     render(<AcpToolCallCard item={toolCallItem({ title, input, status: 'running', outputParts: [] })} />);
 
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent(title);
     expect(screen.queryByTestId('acp-tool-icon-monitor-play')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('acp-tool-icon-bot')).not.toBeInTheDocument();
   });
 
   it('starts auto-collapse when details are added to a completed no-detail tool call', () => {

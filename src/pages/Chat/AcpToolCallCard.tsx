@@ -11,6 +11,7 @@ import {
   Loader2,
   MonitorPlay,
   ScanText,
+  Save,
   SquareMousePointer,
   Wrench,
   XCircle,
@@ -28,6 +29,7 @@ const TOOL_PRESENTATIONS = {
   browser: { icon: SquareMousePointer, iconName: 'square-mouse-pointer', labelKey: 'acp.toolName.browser' },
   exec: { icon: MonitorPlay, iconName: 'monitor-play', labelKey: 'acp.toolName.execCommand' },
   read: { icon: ScanText, iconName: 'scan-text', labelKey: 'acp.toolName.read' },
+  write: { icon: Save, iconName: 'save', labelKey: 'acp.toolName.write' },
   sessions_spawn: { icon: Bot, iconName: 'bot', labelKey: 'acp.toolName.spawnSubagent' },
   memory_search: { icon: Database, iconName: 'database', labelKey: 'acp.toolName.memorySearch' },
 } as const;
@@ -76,11 +78,7 @@ export function AcpToolCallCard({ item, grouped = false }: { item: ToolCallItem;
     ? ((typeof input?.command === 'string' && input.command.trim()) || /^command:\s*\S/.test(titleArguments)
       ? TOOL_PRESENTATIONS.exec
       : undefined)
-    : toolName === 'sessions_spawn'
-      ? (input?.runtime === 'subagent' || /(?:^|,\s*)runtime:\s*subagent(?:\s*,|$)/.test(titleArguments)
-        ? TOOL_PRESENTATIONS.sessions_spawn
-        : undefined)
-      : TOOL_PRESENTATIONS[toolName as keyof typeof TOOL_PRESENTATIONS];
+    : TOOL_PRESENTATIONS[toolName as keyof typeof TOOL_PRESENTATIONS];
   const ToolIcon = presentation?.icon;
   const title = presentation
     ? `${t(presentation.labelKey)}${separator === -1 ? '' : item.title.slice(separator)}`

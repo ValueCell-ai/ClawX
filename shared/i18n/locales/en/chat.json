@@ -53,6 +53,7 @@
             "browser": "Control browser",
             "execCommand": "Run command",
             "read": "Read",
+            "write": "Write",
             "spawnSubagent": "Spawn subagent",
             "memorySearch": "Search memory"
         },

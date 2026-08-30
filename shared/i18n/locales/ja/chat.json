@@ -53,6 +53,7 @@
             "browser": "ブラウザーを操作",
             "execCommand": "コマンドを実行",
             "read": "読み取り",
+            "write": "書き込み",
             "spawnSubagent": "サブエージェントを起動",
             "memorySearch": "メモリを検索"
         },

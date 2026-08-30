@@ -53,6 +53,7 @@
             "browser": "操作浏览器",
             "execCommand": "执行命令",
             "read": "读取",
+            "write": "写入",
             "spawnSubagent": "派出子智能体",
             "memorySearch": "查询记忆"
         },
