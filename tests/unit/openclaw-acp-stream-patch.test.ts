@@ -16,6 +16,12 @@ type DeltaHandler = (this: {
   sessionUpdates: { emit: (value: unknown) => Promise<void> };
 }, sessionId: string, messageData: Record<string, unknown>) => Promise<void>;
 
+type ChatHandler = (this: {
+  findPendingBySessionKey: () => Record<string, unknown> | undefined;
+  handleDeltaEvent: (sessionId: string, messageData: Record<string, unknown>) => Promise<void>;
+  finishPrompt: (sessionId: string, pending: Record<string, unknown>, stopReason: string) => Promise<void>;
+}, event: { payload: Record<string, unknown> }) => Promise<void>;
+
 function extractDeltaHandler(bundle: string): DeltaHandler {
   const methodStart = bundle.indexOf('async handleDeltaEvent(sessionId, messageData)');
   const methodEnd = bundle.indexOf('\n\tasync finishPrompt', methodStart);
@@ -38,7 +44,74 @@ function extractDeltaHandler(bundle: string): DeltaHandler {
   return context.handleDeltaEvent;
 }
 
+function extractChatHandler(bundle: string): ChatHandler {
+  const methodStart = bundle.indexOf('async handleChatEvent(evt)');
+  const methodEnd = bundle.indexOf('\n\tasync handleDeltaEvent', methodStart);
+  if (methodStart < 0 || methodEnd <= methodStart) {
+    throw new Error('OpenClaw ACP handleChatEvent method was not found');
+  }
+
+  const methodSource = bundle
+    .slice(methodStart, methodEnd)
+    .replace('async handleChatEvent', 'async function handleChatEvent');
+  const context = { handleChatEvent: undefined as ChatHandler | undefined };
+  runInNewContext(`globalThis.handleChatEvent = ${methodSource};`, context);
+  if (!context.handleChatEvent) throw new Error('OpenClaw ACP chat handler could not be loaded');
+  return context.handleChatEvent;
+}
+
 describe('OpenClaw ACP assistant stream patch', () => {
+  it('records buffered text carried by an aborted terminal before settling', async () => {
+    const bundle = await readFile(bundlePath, 'utf8');
+    const handleChatEvent = extractChatHandler(bundle);
+    const handleDeltaEvent = extractDeltaHandler(bundle);
+    const streamedText = 'already streamed';
+    const missingSuffix = ' plus terminal suffix';
+    const pending = {
+      sessionId: 'snapshot-session',
+      sessionKey: 'agent:main:snapshot-session',
+      idempotencyKey: 'snapshot-run',
+      sentText: streamedText,
+      sentTextLength: streamedText.length,
+    };
+    const calls: string[] = [];
+    const receiver = {
+      pendingPrompts: new Map<string, Record<string, unknown>>([
+        [pending.sessionId, pending],
+      ]),
+      sessionUpdates: {
+        emit: async (value: unknown) => {
+          const update = (value as { update?: { content?: { text?: string } } }).update;
+          calls.push(`text:${update?.content?.text ?? ''}`);
+        },
+      },
+      findPendingBySessionKey: () => pending,
+      handleDeltaEvent: async (_sessionId: string, messageData: Record<string, unknown>) => {
+        await handleDeltaEvent.call(receiver, pending.sessionId, messageData);
+      },
+      finishPrompt: async (_sessionId: string, _pending: Record<string, unknown>, stopReason: string) => {
+        calls.push(`finish:${stopReason}`);
+      },
+    };
+
+    await handleChatEvent.call(receiver, {
+      payload: {
+        sessionKey: pending.sessionKey,
+        runId: pending.idempotencyKey,
+        state: 'aborted',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: `${streamedText}${missingSuffix}` }],
+        },
+      },
+    });
+
+    expect(calls).toEqual([
+      `text:${missingSuffix}`,
+      'finish:cancelled',
+    ]);
+  });
+
   it('emits a shorter non-prefix tail through the bundled delta handler', async () => {
     const bundle = await readFile(bundlePath, 'utf8');
     const handleDeltaEvent = extractDeltaHandler(bundle);

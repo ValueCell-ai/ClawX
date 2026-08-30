@@ -1,5 +1,5 @@
 diff --git a/dist/acp-cli-BXc5GttU.js b/dist/acp-cli-BXc5GttU.js
-index 6c7de7d60ac87a733632c36a744ada0e4e48d077..228824f081d3866f862e3175a414e0b19da8741b 100644
+index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6135b50ff 100644
 --- a/dist/acp-cli-BXc5GttU.js
 +++ b/dist/acp-cli-BXc5GttU.js
 @@ -1620,10 +1620,44 @@ function buildSessionUsageSnapshot(row) {
@@ -337,15 +337,18 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..228824f081d3866f862e3175a414e0b1
  		if (!pending) return;
  		const relay = {
  			approvalId: approvalEvent.approvalId,
-@@ -2526,7 +2714,7 @@ var AcpGatewayAgent = class {
+@@ -2526,9 +2714,9 @@ var AcpGatewayAgent = class {
  		const runId = payload.runId;
  		const messageData = payload.message;
  		if (!sessionKey || !state) return;
 -		const pending = this.findPendingBySessionKey(sessionKey, runId);
 +		const pending = this.findPendingBySessionKey(sessionKey, runId, payload.resumedFromRunId);
  		if (!pending) return;
- 		if (messageData && (state === "delta" || state === "final")) {
+-		if (messageData && (state === "delta" || state === "final")) {
++		if (messageData && (state === "delta" || state === "final" || state === "aborted")) {
  			await this.handleDeltaEvent(pending.sessionId, messageData);
+ 			if (state === "delta") return;
+ 		}
 @@ -2551,9 +2739,8 @@ var AcpGatewayAgent = class {
  		const pending = this.pendingPrompts.get(sessionId);
  		if (!pending) return;
