@@ -5,7 +5,7 @@ scenario: gateway-backend-communication
 scenarios:
   - realtime-talk
 taskType: runtime-bridge
-intent: Add a Main-owned OpenClaw Gateway Relay Talk transport, transient Renderer audio and direct-transcript UI, OpenClaw-backed Agent consult handling, and basic Talk settings without adding a ClawX-owned durable transcript source.
+intent: Add a Main-owned OpenClaw Gateway Relay Talk transport, transient Renderer audio and direct-transcript UI, OpenClaw-backed Agent consult handling, and developer-gated Models Realtime Talk configuration without adding a ClawX-owned durable transcript source.
 touchedAreas:
   - harness/specs/tasks/add-realtime-talk.md
   - harness/specs/scenarios/acp-chat-experience.md
@@ -36,8 +36,9 @@ touchedAreas:
   - src/pages/Chat/**
   - src/components/settings/TalkSettings.tsx
   - src/components/layout/Sidebar.tsx
-  - src/pages/Settings/index.tsx
+  - src/pages/Models/index.tsx
   - shared/i18n/locales/**/chat.json
+  - shared/i18n/locales/**/dashboard.json
   - shared/i18n/locales/**/settings.json
   - tests/unit/talk-*.test.ts
   - tests/unit/talk-*.test.tsx
@@ -75,8 +76,8 @@ expectedUserBehavior:
   - The live direct transcript appends non-final provider deltas and treats each final as the authoritative replacement for its current role segment; an interrupted user segment remains pending until its final arrives.
   - Assistant preamble, progress, and final-result segments share one bubble for the current user turn, without using message-text similarity or elapsed-time guesses to infer identity, duplication, or turn ownership.
   - Talk locks ordinary text composition while active and restores the user's draft on every terminal path.
-  - Settings exposes only catalog-driven realtime provider, model, speaker voice, and readiness controls.
-  - Developer mode gates the Sidebar Talk action and Talk settings section; Talk settings show all catalog providers, disable unconfigured providers, and open the resolved OpenClaw config for advanced provider fields.
+  - The developer-gated Models Realtime Talk tab configures only catalog-driven realtime provider/model selection and displays readiness state.
+  - Developer mode gates the Sidebar Talk action and Models Realtime Talk tab; the tab shows all catalog providers, disables unconfigured providers, and opens the resolved OpenClaw config file for speaker voice and other provider-specific fields.
 requiredProfiles:
   - fast
   - comms
@@ -130,13 +131,13 @@ acceptance:
   - Consult ACP replay does not tear down the relay before provider output playback completes; an unclaimed/no-audio mark never triggers replay.
   - The direct transcript appends declared deltas and replaces the current role segment with its declared final only in transient display state, never synthetic ACP history.
   - Interrupted user finals and assistant segment boundaries are tracked by event state rather than message-text similarity or elapsed-time heuristics; multiple assistant response segments remain in one bubble until a new user turn.
-  - Developer mode gates the Sidebar Talk action and Talk settings section. Disabling developer mode stops any active Talk relay so no hidden active session remains.
-  - Talk settings list every realtime provider and model declared by the Gateway catalog, disable unconfigured providers with localized guidance, save only provider/model, and open the resolved OpenClaw config file for provider-specific fields.
+  - Developer mode gates the Sidebar Talk action and Models Realtime Talk tab. Disabling developer mode stops any active Talk relay so no hidden active session remains.
+  - The Models Realtime Talk tab lists every realtime provider and model declared by the Gateway catalog, disables unconfigured providers with localized guidance, saves only provider/model, and opens the resolved OpenClaw config file for speaker voice and other provider-specific fields.
   - A consumed boundary never retries automatically after failure; preserved-replay failure keeps Talk active with an explicit localized retry action and permits no concurrent refresh.
   - New text is localized in en, zh, ja, and ru; the UI has an Electron E2E interaction test.
   - README English, Simplified Chinese, and Japanese documentation describe the feature and its history semantics.
   - The Talk scenario, authority rule, and reference define Gateway Relay-only transport, Main-owned configuration, and no ClawX-owned durable Talk history.
-  - Talk readiness is displayed and checked before start; configured providers expose provider, model, and speaker voice selection only.
+  - Talk readiness is displayed and checked before start; the tab configures provider/model only, while speaker voice and other provider-specific fields remain in the resolved OpenClaw config file.
   - Release validation records configured-provider macOS microphone permission, direct response, Agent consult, barge-in, stop, and Gateway reconnect results without claiming unperformed manual checks passed.
 docs:
   required: true

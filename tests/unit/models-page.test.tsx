@@ -1,4 +1,5 @@
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Models } from '@/pages/Models/index';
 
@@ -36,7 +37,15 @@ vi.mock('@/lib/telemetry', () => ({
 }));
 
 vi.mock('@/components/settings/ProvidersSettings', () => ({
-  ProvidersSettings: () => null,
+  ProvidersSettings: () => <div data-testid="providers-settings-panel" />,
+}));
+
+vi.mock('@/components/settings/ImageGenerationSettings', () => ({
+  ImageGenerationSettings: () => <div data-testid="image-generation-settings-panel" />,
+}));
+
+vi.mock('@/components/settings/TalkSettings', () => ({
+  TalkSettings: () => <div data-testid="talk-settings-panel" />,
 }));
 
 vi.mock('@/components/common/FeedbackState', () => ({
@@ -67,10 +76,19 @@ function createUsageEntry(totalTokens: number) {
   };
 }
 
+function renderModels(initialEntry = '/models') {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <Models />
+    </MemoryRouter>,
+  );
+}
+
 describe('Models page auto refresh', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    settingsState.devModeUnlocked = false;
     gatewayState.status = { state: 'running', port: 18789, connectedAt: 1, pid: 1234 };
     Object.defineProperty(document, 'visibilityState', {
       configurable: true,
@@ -84,7 +102,7 @@ describe('Models page auto refresh', () => {
   });
 
   it('refreshes token usage while the page stays open', async () => {
-    render(<Models />);
+    renderModels();
 
     await act(async () => {
       await Promise.resolve();
@@ -97,5 +115,61 @@ describe('Models page auto refresh', () => {
     });
 
     expect(hostApiFetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses a single chat panel when developer mode is locked and gates image and realtime Talk settings', async () => {
+    const { unmount } = renderModels();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByTestId('models-management-tabs')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('models-tab-chat')).not.toBeInTheDocument();
+    expect(screen.getByTestId('providers-settings-panel')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Token Usage History' })).toBeInTheDocument();
+    expect(screen.queryByTestId('models-tab-image-generation')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('models-tab-realtime-talk')).not.toBeInTheDocument();
+
+    unmount();
+    settingsState.devModeUnlocked = true;
+    renderModels();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    fireEvent.mouseDown(screen.getByTestId('models-tab-image-generation'), { button: 0 });
+    expect(screen.getByTestId('image-generation-settings-panel')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Token Usage History' })).not.toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByTestId('models-tab-realtime-talk'), { button: 0 });
+    expect(screen.getByTestId('talk-settings-panel')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Token Usage History' })).not.toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByTestId('models-tab-chat'), { button: 0 });
+    expect(screen.getByRole('heading', { name: 'Token Usage History' })).toBeInTheDocument();
+  });
+
+  it('opens only an allowed Models tab from the tab query parameter', async () => {
+    settingsState.devModeUnlocked = true;
+    const { unmount } = renderModels('/models?tab=realtime-talk');
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('models-tab-realtime-talk')).toHaveAttribute('data-state', 'active');
+    expect(screen.getByTestId('talk-settings-panel')).toBeInTheDocument();
+
+    unmount();
+    renderModels('/models?tab=unsupported');
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('models-tab-chat')).toHaveAttribute('data-state', 'active');
+    expect(screen.getByTestId('providers-settings-panel')).toBeInTheDocument();
   });
 });

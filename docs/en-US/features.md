@@ -60,7 +60,7 @@ The Skills page can display skills discovered from multiple OpenClaw sources, in
 
 Connect to multiple AI providers, including OpenAI, Anthropic, and Z.AI / GLM, with credentials stored securely in the native system keychain. OpenAI supports both API keys and browser OAuth for Codex subscriptions.
 
-In Developer Mode, the dedicated Image Generation page supports an independent OpenAI-compatible image-generation endpoint with a Base URL, API key, and model name such as `gpt-image-2`. Image generation can therefore use a dedicated `/v1/images/generations` service while chat continues using the normal OpenAI provider.
+In Developer Mode, the Image Generation tab on the Models page supports an independent OpenAI-compatible image-generation endpoint with a Base URL, API key, and model name such as `gpt-image-2`. Image generation can therefore use a dedicated `/v1/images/generations` service while chat continues using the normal OpenAI provider.
 
 For **Custom** providers used with OpenAI-compatible gateways, you can set a custom `User-Agent` in **Settings -> AI Providers -> Edit Provider** for compatibility-sensitive endpoints.
 

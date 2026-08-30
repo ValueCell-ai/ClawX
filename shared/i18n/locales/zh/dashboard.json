@@ -11,7 +11,12 @@
     "gatewayNotRunning": "网关未运行",
     "models": {
         "title": "模型",
-        "subtitle": "管理您的 AI 提供商并监控 Token 用量"
+        "subtitle": "管理您的 AI 提供商并监控 Token 用量",
+        "tabs": {
+            "chat": "对话模型",
+            "imageGeneration": "图像生成",
+            "realtimeTalk": "实时语音"
+        }
     },
     "quickActions": {
         "title": "快捷操作",

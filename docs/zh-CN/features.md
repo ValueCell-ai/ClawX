@@ -38,7 +38,7 @@ Skills 页面可展示来自多个 OpenClaw 来源的技能（托管目录、wor
 
 ### 🔐 安全的供应商集成
 连接多个 AI 供应商（OpenAI、Anthropic、Z.AI / GLM 等），凭证安全存储在系统原生密钥链中。OpenAI 同时支持 API Key 与浏览器 OAuth（Codex 订阅）登录。
-在开发者模式下，独立的“图像生成”页面支持配置 OpenAI 兼容生图端点（Base URL、API Key 和模型名，例如 `gpt-image-2`），生图请求会走专用的 `/v1/images/generations` 服务，聊天仍继续使用正常的 OpenAI Provider。
+在开发者模式下，请前往**模型 → 图像生成**标签页配置 OpenAI 兼容生图端点（Base URL、API Key 和模型名，例如 `gpt-image-2`）。生图请求会走专用的 `/v1/images/generations` 服务，聊天仍继续使用正常的 OpenAI Provider。
 如果你通过 **自定义（Custom）Provider** 对接 OpenAI-compatible 网关，可以在 **设置 → AI Providers → 编辑 Provider** 中配置自定义 `User-Agent`，以提高兼容性。
 编辑或切换 Provider 时，ClawX 会保留已有的模型级能力元数据，例如 `input: ["text", "image"]`。新选择的自定义 Provider 模型会使用与 OpenClaw onboarding 一致的图片输入能力推断；未知模型默认按纯文本模型处理。
 ClawX 会保留 Provider 模型行中显式设置的 `contextWindow` 或 `contextTokens`，但不会根据模型名称推断缺失的上下文上限。上下文压缩预留仅在存在显式有效上限时按其 25% 计算；未设置时，`reserveTokensFloor` 使用保守的 50000 token 默认值。当你没有配置 compaction 时，ClawX 还会默认写入 `agents.defaults.compaction.mode = "safeguard"`、`keepRecentTokens = 0`、`recentTurnsPreserve = 0` 和 `midTurnPrecheck.enabled = true`。启动同步始终会将这两个历史保留值设为 `0`，使所有已完成回合进入摘要，而不是在压缩后逐字重放；显式设置的 `midTurnPrecheck.enabled` 仍沿用现有策略。

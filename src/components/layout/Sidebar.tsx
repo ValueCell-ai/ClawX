@@ -22,7 +22,6 @@ import {
   Check,
   X,
   Cpu,
-  ImagePlus,
   ChevronRight,
   ChevronsUpDown,
   ChevronsDownUp,
@@ -235,12 +234,12 @@ export function Sidebar() {
     try {
       const catalog = await realtimeTalkController.catalog();
       if (catalog.realtime.ready !== true) {
-        navigate('/settings?section=talk');
+        navigate('/models?tab=realtime-talk');
         return;
       }
       await realtimeTalkController.start({ sessionKey: currentSessionKey });
     } catch {
-      navigate('/settings?section=talk');
+      navigate('/models?tab=realtime-talk');
     }
   }, [currentSessionKey, navigate, sessions, talkActive]);
 
@@ -488,16 +487,6 @@ export function Sidebar() {
       label: t('sidebar.cronTasks'),
       testId: 'sidebar-nav-cron',
     },
-    ...(devModeUnlocked
-      ? [
-          {
-            to: '/image-generation',
-            icon: <ImagePlus className="h-4 w-4" strokeWidth={2} />,
-            label: t('common:sidebar.imageGeneration'),
-            testId: 'sidebar-nav-image-generation',
-          },
-        ]
-      : []),
   ];
 
   const navItems = [

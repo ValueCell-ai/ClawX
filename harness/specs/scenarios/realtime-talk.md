@@ -21,8 +21,9 @@ ownedPaths:
   - src/pages/Chat/LiveTalkTranscript.tsx
   - src/pages/Chat/index.tsx
   - src/components/settings/TalkSettings.tsx
-  - src/pages/Settings/index.tsx
+  - src/pages/Models/index.tsx
   - shared/i18n/locales/**/chat.json
+  - shared/i18n/locales/**/dashboard.json
   - shared/i18n/locales/**/settings.json
   - tests/unit/talk-*.test.ts
   - tests/unit/talk-*.test.tsx

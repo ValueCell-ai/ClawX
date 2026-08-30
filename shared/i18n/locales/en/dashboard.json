@@ -11,7 +11,12 @@
     "gatewayNotRunning": "Gateway not running",
     "models": {
         "title": "Models",
-        "subtitle": "Manage your AI providers and monitor token usage."
+        "subtitle": "Manage your AI providers and monitor token usage.",
+        "tabs": {
+            "chat": "Chat models",
+            "imageGeneration": "Image generation",
+            "realtimeTalk": "Realtime Talk"
+        }
     },
     "quickActions": {
         "title": "Quick Actions",

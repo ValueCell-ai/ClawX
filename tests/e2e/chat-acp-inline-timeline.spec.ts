@@ -599,6 +599,50 @@ async function openChat(app: ElectronApplication) {
 }
 
 test.describe('ClawX ACP inline timeline', () => {
+  test('routes unavailable sidebar Talk to realtime Models configuration', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [
+                { key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE },
+                { key: TALK_SESSION_KEY, displayName: 'Talk', workspacePath: MAIN_WORKSPACE },
+              ],
+            },
+          },
+        },
+        hostApi: {
+          ...baseHostApiMocks(),
+          [stableStringify(['chat', 'loadAcpSession', {
+            sessionKey: TALK_SESSION_KEY, workspaceRoot: MAIN_WORKSPACE, cwd: MAIN_WORKSPACE,
+          }])]: { success: true, generation: 1 },
+          [stableStringify(['talk', 'catalog', null])]: {
+            realtime: { ready: false, reason: 'Configure a realtime provider', providers: [] },
+          },
+        },
+      });
+      const page = await openChat(app);
+
+      await expect(page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`)).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('sidebar-nav-settings').click();
+      await page.getByTestId('settings-dev-mode-switch').click();
+      await page.getByTestId(`sidebar-session-${TALK_SESSION_KEY}`).click();
+      await expect(page.getByTestId('sidebar-talk')).toBeEnabled();
+      await page.getByTestId('sidebar-talk').click();
+
+      await expect(page.getByTestId('models-page')).toBeVisible();
+      await expect(page.getByTestId('models-tab-realtime-talk')).toHaveAttribute('data-state', 'active');
+      await expect(page.getByTestId('talk-settings')).toBeVisible();
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('does not use legacy history on startup or current-session clicks', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 

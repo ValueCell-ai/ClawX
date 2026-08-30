@@ -17,7 +17,6 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useUpdateStore } from '@/stores/update';
 import { UpdateSettings } from '@/components/settings/UpdateSettings';
 import { IssueReportExport } from '@/components/settings/IssueReportExport';
-import { TalkSettings } from '@/components/settings/TalkSettings';
 import { toUserMessage } from '@/lib/error-message';
 import {
   clearUiTelemetry,
@@ -239,7 +238,7 @@ export function Settings() {
 
   useEffect(() => {
     const section = new URLSearchParams(location.search).get('section');
-    if (section !== 'talk' && section !== 'developer') return;
+    if (section !== 'developer') return;
     const target = document.getElementById(section);
     target?.scrollIntoView({ block: 'start' });
     target?.focus({ preventScroll: true });
@@ -692,8 +691,6 @@ export function Settings() {
             )}
             {devModeUnlocked && (
               <>
-                <TalkSettings />
-                <Separator className="bg-black/5 dark:bg-white/5" />
                 <div data-testid="settings-developer-advanced">
                 <div className="space-y-8">
                   {/* Gateway Proxy */}

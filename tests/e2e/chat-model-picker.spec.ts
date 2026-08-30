@@ -288,7 +288,8 @@ test.describe('ClawX chat model picker', () => {
 
       await page.getByTestId('sidebar-nav-settings').click();
       await page.getByTestId('settings-dev-mode-switch').click();
-      await page.evaluate(() => window.location.assign('#/settings?section=talk'));
+      await page.getByTestId('sidebar-nav-models').click();
+      await page.getByTestId('models-tab-realtime-talk').click();
       await expect(page.getByTestId('talk-settings')).toBeVisible();
       await expect(page.getByTestId('talk-settings-readiness')).toContainText('Talk is unavailable');
       await expect(page.getByTestId('talk-settings-unavailable-reason')).toHaveText('Configure a realtime provider');
@@ -313,9 +314,7 @@ test.describe('ClawX chat model picker', () => {
         }).__chatModelPickerRequests?.filter((request) => request.path === 'talk:catalog').length ?? 0
       ))).toBeGreaterThanOrEqual(2);
 
-      await expect(page.getByTestId('settings-developer-section')).toBeVisible();
-      await page.evaluate(() => window.location.assign('#/settings?section=developer'));
-      await expect(page.locator('#developer')).toBeFocused();
+      await expect(page.getByTestId('settings-developer-section')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }

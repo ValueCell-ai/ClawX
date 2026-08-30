@@ -20,7 +20,7 @@ import {
 import { cn } from '@/lib/utils';
 
 const inputClasses =
-  'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
+  'h-10 rounded-lg font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const labelClasses = 'text-sm text-foreground/80 font-bold';
 
 function extractTestOutputPath(result: unknown): string | null {
@@ -217,9 +217,16 @@ export function ImageGenerationSettings() {
           <Loader2 className="h-6 w-6 animate-spin" />
         </div>
       ) : (
-        <div className="space-y-8 rounded-3xl border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02] p-6 md:p-8">
+        <div
+          data-testid="image-generation-settings-surface"
+          className="space-y-5 rounded-2xl p-1 dark:border-white/10 md:p-1"
+        >
           <div
-            className="space-y-4 rounded-2xl border border-black/10 dark:border-white/10 p-5"
+            data-testid="image-generation-endpoint-card"
+            className="rounded-xl border border-black/10 bg-surface-modal p-4 shadow-sm dark:border-white/10"
+          >
+          <div
+            className="space-y-4"
             data-testid="image-generation-openai-relay"
           >
             <div>
@@ -312,7 +319,12 @@ export function ImageGenerationSettings() {
                 </div>
             </div>
           </div>
+          </div>
 
+          <div
+            data-testid="image-generation-runtime-card"
+            className="space-y-5 rounded-xl border border-black/10 bg-surface-modal p-4 shadow-sm dark:border-white/10"
+          >
           <div className="space-y-2 max-w-xs">
             <Label htmlFor="image-gen-timeout" className={labelClasses}>
               {t('imageGeneration.timeout')}
@@ -377,8 +389,12 @@ export function ImageGenerationSettings() {
               </table>
             </div>
           </div>
+          </div>
 
-          <div className="flex flex-wrap items-end gap-4 pt-2 border-t border-black/10 dark:border-white/10">
+          <div
+            data-testid="image-generation-actions-card"
+            className="flex flex-wrap items-end gap-4 rounded-xl border border-black/10 bg-surface-modal p-4 shadow-sm dark:border-white/10"
+          >
             <div className="space-y-2 min-w-[200px]">
               <Label htmlFor="image-gen-test-agent" className={labelClasses}>
                 {t('imageGeneration.testAgent')}
