@@ -60,6 +60,7 @@ requiredRules:
   - provider-model-metadata-preservation
   - provider-model-selection-authority
   - sidebar-session-attention-authority
+  - realtime-talk-openclaw-authority
   - web-browser-security-and-lifecycle
   - e2e-parallel-isolation
   - comms-regression
@@ -99,5 +100,7 @@ Scheduled-task history is Main-owned backend data. Current OpenClaw versions mus
 The local HTML Preview privileged bridge is also Main-owned: Renderer may load a validated local HTML file or open that current file externally through the typed Host API. The guest is an implementation detail of the existing `preview` tab; there is no `web-browser` artifact tab or general address navigation. The durable guest contract is `harness/reference/web-browser.md`.
 
 Gateway session-catalog subscription, normalization, ordered list/event replay, attention transitions, and reconnect recovery are documented in `harness/reference/sidebar-session-attention.md`. The first prompt sent to a newly created non-default Agent must title its `agent:<id>:main` conversation; synthetic transport display names such as `ACP` must not replace that label, and transcript-summary hydration must restore it after reload. Deleting an Agent is also a session-catalog lifecycle boundary: after Main confirms the destructive config/filesystem operation, Renderer must immediately forget every canonical `agent:<deletedId>:` row, retain an in-memory tombstone that blocks stale list rows and delayed events, and repair selection without waiting for a Gateway restart. An authoritative Agent snapshot containing the same ID clears the tombstone to support recreation, but an Agent-list request that predates a confirmed mutation must not publish or reconcile afterward. An already-absent session index or entry is an idempotent conversation-delete success, while malformed indexes and unsafe transcript paths remain failures. Electron test-process isolation and global-resource scheduling are documented in `harness/reference/e2e-parallelism.md`.
+
+Realtime Talk uses one Main-owned OpenClaw Gateway Relay and typed Talk host events. Renderer direct-provider audio and text are transient, while OpenClaw/ACP remains the durable authority for Agent consult history; its full boundary is `harness/reference/realtime-talk.md`.
 
 Gateway WebSocket heartbeat misses are diagnostic availability signals only and must never directly interrupt the socket or process. A pong, any incoming Gateway frame, or a successful Gateway RPC is trusted liveness evidence and resets the 180 seconds silence deadline. After one uninterrupted deadline, Main runs exactly one 5000ms `system-presence` verification. A successful probe records liveness and cancels recovery. A failed probe may request guarded restart only for a ClawX-owned process; for an externally managed Gateway, Main may reconnect its own transport and expose unavailable diagnostics but never stop, shut down, or restart the Gateway automatically. This path does not track chat, tool, cron, or other workloads. Process exit, ordinary socket close, code 1012, and explicit user restart retain their separate lifecycle behavior.

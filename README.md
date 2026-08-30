@@ -83,12 +83,22 @@ Building AI agents shouldn't require mastering the command line. ClawX was desig
 - **📡 Multi-Channel Management**: Configure and monitor independent AI channels with multiple accounts, per-account agent binding, default-account switching, and the bundled official Tencent personal WeChat channel plugin.
 - **⏰ Cron-Based Automation**: Define recurring or one-time schedules, insert skills into scheduled prompts, and deliver results to external channels.
 - **🧩 Extensible Skill System**: Manage skills locally without depending on the Gateway, discover skills from multiple OpenClaw sources, and use bundled document-processing skills for `pdf`, `xlsx`, `docx`, and `pptx`.
-- **🔐 Secure Provider Integration**: Connect OpenAI, Anthropic, Z.AI / GLM, and other providers with credentials stored in the native system keychain; supports OAuth, custom providers, image-generation endpoints, and compatibility fallbacks.
+- **🔐 Secure Provider Integration**: Connect OpenAI, Anthropic, Z.AI / GLM, and other providers with credentials stored in the native system keychain; supports OAuth, custom providers, and compatibility fallbacks. In Developer Mode, configure image-generation endpoints in **Models -> Image Generation**.
 - **🌙 Adaptive Theming**: Choose light mode, dark mode, or system-synchronized themes.
 - **🚀 Startup Launch Control**: Enable **Launch at system startup** in **Settings -> General**.
 - **🔔 Update Prompts**: Check for new versions at startup and choose whether to download or install them.
 
 > For full feature details, see [docs/en-US/features.md](docs/en-US/features.md).
+
+### Realtime Talk
+
+Chat can start a realtime Talk session when the OpenClaw catalog reports a configured, ready realtime provider. Talk uses **Gateway Relay only**: Electron Main owns Gateway protocol and RPC routing, while the renderer has no direct Gateway or provider connection. Only one relay is active globally.
+
+Direct-provider audio and transcript bubbles are transient and clear when Talk stops, the session changes, a normal Chat reload occurs, or the app restarts. An Agent consult instead uses the selected OpenClaw session; after its provider-reported output boundary and queued playback finish, its durable result appears through normal **ACP** history replay without ending the active relay, and only the transient direct bubbles are cleared. ClawX does not create a separate Talk transcript store or synthetic ACP entries.
+
+Enable **Developer Mode** to show the Talk action at the end of the sidebar and the **Models -> Realtime Talk** configuration tab. Talk checks catalog readiness before it starts. The Realtime Talk tab lists every realtime provider and model declared by the Gateway catalog, disables unconfigured providers, and saves the selected provider/model through the OpenClaw configuration transaction. Provider credentials and provider-specific options such as speaker voice remain Gateway-owned in the OpenClaw config file, which the tab can open directly.
+
+Manual macOS validation still requires a configured realtime provider and microphone permission. Direct provider response, Agent consult response, barge-in, stop, and Gateway reconnect must be checked in that configured environment; automated coverage does not validate those provider-dependent cases.
 
 ### Typical Use Cases
 

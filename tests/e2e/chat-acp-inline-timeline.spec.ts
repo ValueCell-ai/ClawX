@@ -10,6 +10,7 @@ import {
 import { expandAcpToolCallsGroup } from './fixtures/acp-timeline';
 
 const MAIN_SESSION_KEY = 'agent:main:main';
+const TALK_SESSION_KEY = 'agent:main:talk-e2e';
 const MAIN_WORKSPACE = '/workspace';
 const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
 const REVIEWER_SESSION_KEY = 'agent:reviewer:main';
@@ -21,6 +22,8 @@ const GENERATED_IMAGE_IDENTITY = 'e2e-transcript-generated-image';
 const DEFAULT_WORKSPACE_SEGMENT = '~%2F.openclaw%2Fworkspace';
 
 type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
+type AcpSessionCatalog = Array<{ key: string; displayName: string; workspacePath: string }>;
+type AcpSessionReplayResponses = Record<string, AcpSessionUpdate[][]>;
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -65,6 +68,11 @@ function baseHostApiMocks(loadResult: Record<string, unknown> = { success: true,
 async function installAcpChatMocks(
   app: ElectronApplication,
   loadResult: Record<string, unknown> = { success: true, generation: 1 },
+  sessionCatalog: AcpSessionCatalog = [{
+    key: MAIN_SESSION_KEY,
+    displayName: 'main',
+    workspacePath: MAIN_WORKSPACE,
+  }],
 ) {
   await installIpcMocks(app, {
     gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
@@ -72,7 +80,7 @@ async function installAcpChatMocks(
       [stableStringify(['sessions.list', {}])]: {
         success: true,
         result: {
-          sessions: [{ key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE }],
+          sessions: sessionCatalog,
         },
       },
     },
@@ -126,6 +134,150 @@ async function installAcpLoadReplayMock(
       return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
     });
   }, { sessionKey: MAIN_SESSION_KEY, updates, timings });
+}
+
+async function installAcpLoadReplayBySessionMock(
+  app: ElectronApplication,
+  updatesBySessionKey: AcpSessionReplayResponses,
+) {
+  await app.evaluate(async ({ app: _app }, payload) => {
+    const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type HostInvokeRequest = {
+      id?: string;
+      module?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+      args?: unknown[];
+    };
+    type IpcInvokeHandler = (event: unknown, request: HostInvokeRequest) => Promise<unknown>;
+    const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
+    const originalHostInvoke = handlers?.get('host:invoke');
+    const globals = globalThis as unknown as {
+      __acpLoadSessionKeys?: string[];
+      __acpLoadReplayResponseIndexes?: Record<string, number>;
+    };
+    globals.__acpLoadSessionKeys = [];
+    globals.__acpLoadReplayResponseIndexes = {};
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: HostInvokeRequest) => {
+      if (request?.module === 'chat' && request.action === 'loadAcpSession') {
+        const requestPayload = request.payload ?? (Array.isArray(request.args) ? request.args[0] : undefined);
+        const sessionKey = requestPayload && typeof requestPayload === 'object'
+          ? String((requestPayload as Record<string, unknown>).sessionKey ?? '')
+          : '';
+        globals.__acpLoadSessionKeys?.push(sessionKey);
+        const responseIndex = globals.__acpLoadReplayResponseIndexes?.[sessionKey] ?? 0;
+        if (globals.__acpLoadReplayResponseIndexes) {
+          globals.__acpLoadReplayResponseIndexes[sessionKey] = responseIndex + 1;
+        }
+        return {
+          id: request.id,
+          ok: true,
+          data: {
+            success: true,
+            generation: 1,
+            sessionUpdates: (payload.updatesBySessionKey[sessionKey]?.[responseIndex] ?? []).map((update) => ({
+              sessionKey,
+              generation: 1,
+              historical: true,
+              notification: {
+                sessionId: sessionKey,
+                update,
+              },
+            })),
+          },
+        };
+      }
+      return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
+    });
+  }, { updatesBySessionKey });
+}
+
+async function installConsultReplayLoadMock(app: ElectronApplication) {
+  await app.evaluate(async ({ app: _app }, payload) => {
+    const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type HostInvokeRequest = {
+      id?: string;
+      module?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+      args?: unknown[];
+    };
+    type IpcInvokeHandler = (event: unknown, request: HostInvokeRequest) => Promise<unknown>;
+    const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
+    const originalHostInvoke = handlers?.get('host:invoke');
+    let consultSessionLoads = 0;
+    const globals = globalThis as unknown as {
+      __consultAcpLoadCount?: number;
+      __consultAcpDurableReplayFlags?: boolean[];
+    };
+    globals.__consultAcpLoadCount = 0;
+    globals.__consultAcpDurableReplayFlags = [];
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: HostInvokeRequest) => {
+      const requestPayload = request.payload ?? (Array.isArray(request.args) ? request.args[0] : undefined);
+      if (
+        request?.module === 'chat'
+        && request.action === 'loadAcpSession'
+        && requestPayload?.sessionKey === payload.sessionKey
+      ) {
+        consultSessionLoads += 1;
+        globals.__consultAcpLoadCount = consultSessionLoads;
+        globals.__consultAcpDurableReplayFlags?.push(requestPayload?.forceDurableReplay === true);
+        return {
+          id: request.id,
+          ok: true,
+          data: consultSessionLoads === 1
+            ? { success: true, generation: 1 }
+            : {
+              success: true,
+              generation: 2,
+              sessionUpdates: [
+                {
+                  sessionKey: payload.sessionKey,
+                  generation: 2,
+                  historical: true,
+                  notification: {
+                    sessionId: payload.sessionKey,
+                    update: {
+                      sessionUpdate: 'user_message',
+                      messageId: 'consult-user',
+                      content: [{ type: 'text', text: 'Durable consult prompt' }],
+                    },
+                  },
+                },
+                {
+                  sessionKey: payload.sessionKey,
+                  generation: 2,
+                  historical: true,
+                  notification: {
+                    sessionId: payload.sessionKey,
+                    update: {
+                      sessionUpdate: 'agent_message',
+                      messageId: 'consult-assistant',
+                      content: [{ type: 'text', text: 'Durable consult answer' }],
+                    },
+                  },
+                },
+              ],
+            },
+        };
+      }
+      return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
+    });
+  }, { sessionKey: TALK_SESSION_KEY });
+}
+
+async function getConsultAcpLoadCount(app: ElectronApplication) {
+  return await app.evaluate(async ({ app: _app }) => (
+    (globalThis as unknown as { __consultAcpLoadCount?: number }).__consultAcpLoadCount ?? 0
+  ));
+}
+
+async function getConsultAcpDurableReplayFlags(app: ElectronApplication) {
+  return await app.evaluate(async ({ app: _app }) => (
+    (globalThis as unknown as { __consultAcpDurableReplayFlags?: boolean[] }).__consultAcpDurableReplayFlags ?? []
+  ));
 }
 
 async function installAcpLoadRecorderMock(app: ElectronApplication) {
@@ -521,6 +673,50 @@ async function openChat(app: ElectronApplication) {
 }
 
 test.describe('ClawX ACP inline timeline', () => {
+  test('routes unavailable sidebar Talk to realtime Models configuration', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [
+                { key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE },
+                { key: TALK_SESSION_KEY, displayName: 'Talk', workspacePath: MAIN_WORKSPACE },
+              ],
+            },
+          },
+        },
+        hostApi: {
+          ...baseHostApiMocks(),
+          [stableStringify(['chat', 'loadAcpSession', {
+            sessionKey: TALK_SESSION_KEY, workspaceRoot: MAIN_WORKSPACE, cwd: MAIN_WORKSPACE,
+          }])]: { success: true, generation: 1 },
+          [stableStringify(['talk', 'catalog', null])]: {
+            realtime: { ready: false, reason: 'Configure a realtime provider', providers: [] },
+          },
+        },
+      });
+      const page = await openChat(app);
+
+      await expect(page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`)).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('sidebar-nav-settings').click();
+      await page.getByTestId('settings-dev-mode-switch').click();
+      await page.getByTestId(`sidebar-session-${TALK_SESSION_KEY}`).click();
+      await expect(page.getByTestId('sidebar-talk')).toBeEnabled();
+      await page.getByTestId('sidebar-talk').click();
+
+      await expect(page.getByTestId('models-page')).toBeVisible();
+      await expect(page.getByTestId('models-tab-realtime-talk')).toHaveAttribute('data-state', 'active');
+      await expect(page.getByTestId('talk-settings')).toBeVisible();
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('does not use legacy history on startup or current-session clicks', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
@@ -571,6 +767,213 @@ test.describe('ClawX ACP inline timeline', () => {
       expect(indicatorBox!.x).toBeLessThan(gatewayBox!.x);
       await indicator.focus();
       await expect(page.getByRole('tooltip')).toHaveText('25% context used: 25,000 / 100,000 tokens');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('plan indicator renders a live running session plan', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installAcpChatMocks(app);
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'tool_call',
+        toolCallId: 'live-session-plan',
+        title: 'update_plan: plan current work',
+        status: 'in_progress',
+        rawInput: {
+          plan: [
+            { step: 'Inspect the current implementation', status: 'completed' },
+            { step: 'Exercise the live plan indicator', status: 'in_progress' },
+            { step: 'Verify the replay path', status: 'pending' },
+          ],
+        },
+        content: [],
+        locations: [],
+      }]);
+
+      const toggle = page.getByTestId('acp-session-plan-toggle');
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+      await expect(toggle).toHaveText('1 / 3');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.getByTestId('acp-session-plan-panel')).toHaveCount(0);
+      await expect(toggle.locator('..').getByRole('button')).toHaveCount(1);
+      const composerBox = await page.getByTestId('chat-composer-box').boundingBox();
+      const toggleBox = await toggle.boundingBox();
+      expect(composerBox).toBeTruthy();
+      expect(toggleBox).toBeTruthy();
+      expect(toggleBox!.x + toggleBox!.width).toBeGreaterThan(composerBox!.x + composerBox!.width - 100);
+      expect(toggleBox!.y).toBeLessThan(composerBox!.y);
+
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      const panel = page.getByTestId('acp-session-plan-panel');
+      const steps = panel.getByTestId('acp-session-plan-step');
+      await expect(steps).toHaveCount(3);
+      await expect(steps.nth(0)).toHaveText('Inspect the current implementation');
+      await expect(steps.nth(1)).toHaveText('Exercise the live plan indicator');
+      await expect(steps.nth(2)).toHaveText('Verify the replay path');
+      await expect(steps.nth(1).locator('.lucide-circle-ellipsis')).toBeVisible();
+      await expect(steps.nth(1).locator('.lucide-circle-ellipsis')).not.toHaveClass(/animate-spin/);
+      await expect(steps.nth(1)).not.toHaveText(/Running|Pending|Completed/);
+      await expect(toggle.locator('..').getByRole('button')).toHaveCount(1);
+      await expect(panel.locator('button, a, input, select, textarea, [contenteditable="true"]')).toHaveCount(0);
+      await expect(page.getByTestId('acp-tool-input-pre')).toContainText('Exercise the live plan indicator');
+      const panelBox = await panel.boundingBox();
+      const expandedComposerBox = await page.getByTestId('chat-composer-box').boundingBox();
+      expect(panelBox).toBeTruthy();
+      expect(expandedComposerBox).toBeTruthy();
+      expect(panelBox!.y + panelBox!.height).toBeLessThan(expandedComposerBox!.y);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('session plan replay isolates session A through an A-to-B-to-A switch', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const sessionBKey = 'agent:main:session-plan-b';
+
+    try {
+      await installAcpChatMocks(app, undefined, [
+        { key: MAIN_SESSION_KEY, displayName: 'session A', workspacePath: MAIN_WORKSPACE },
+        { key: sessionBKey, displayName: 'session B', workspacePath: MAIN_WORKSPACE },
+      ]);
+      await installAcpLoadReplayBySessionMock(app, {
+        [MAIN_SESSION_KEY]: [
+          [{
+            sessionUpdate: 'tool_call',
+            toolCallId: 'session-a-plan',
+            title: 'update_plan: session A',
+            status: 'in_progress',
+            rawInput: {
+              plan: [
+                { step: 'Keep session A isolated', status: 'completed' },
+                { step: 'Restore session A from replay', status: 'in_progress' },
+              ],
+            },
+            content: [],
+            locations: [],
+          }],
+          [{
+            sessionUpdate: 'tool_call',
+            toolCallId: 'session-a-plan-return',
+            title: 'update_plan: fresh session A',
+            status: 'in_progress',
+            rawInput: {
+              plan: [
+                { step: 'Load fresh session A replay', status: 'completed' },
+                { step: 'Render structured session A response', status: 'in_progress' },
+              ],
+            },
+            content: [],
+            locations: [],
+          }],
+        ],
+        [sessionBKey]: [[{
+          sessionUpdate: 'tool_call',
+          toolCallId: 'session-b-plan',
+          title: 'update_plan: session B',
+          status: 'in_progress',
+          rawInput: {
+            plan: [{ step: 'Keep session B separate', status: 'in_progress' }],
+          },
+          content: [],
+          locations: [],
+        }]],
+      });
+
+      const page = await openChat(app);
+      const toggle = page.getByTestId('acp-session-plan-toggle');
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+      await expect(toggle).toHaveText('1 / 2');
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([MAIN_SESSION_KEY]);
+
+      await page.getByTestId(`sidebar-session-${sessionBKey}`).click();
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+      await expect(toggle).toHaveText('0 / 1');
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([MAIN_SESSION_KEY, sessionBKey]);
+      await toggle.click();
+      await expect(page.getByTestId('acp-session-plan-panel')).toContainText('Keep session B separate');
+
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+      await expect(toggle).toHaveText('1 / 2');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.getByTestId('acp-session-plan-panel')).toHaveCount(0);
+      await toggle.click();
+      const returnedPanel = page.getByTestId('acp-session-plan-panel');
+      const returnedSteps = returnedPanel.getByTestId('acp-session-plan-step');
+      await expect(returnedSteps).toHaveCount(2);
+      await expect(returnedSteps.nth(0)).toHaveText('Load fresh session A replay');
+      await expect(returnedSteps.nth(1)).toHaveText('Render structured session A response');
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([MAIN_SESSION_KEY, sessionBKey, MAIN_SESSION_KEY]);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('session plan replay restores a collapsed plan after renderer reload', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installAcpChatMocks(app);
+      await installAcpLoadReplayBySessionMock(app, {
+        [MAIN_SESSION_KEY]: [
+          [{
+            sessionUpdate: 'tool_call',
+            toolCallId: 'reload-session-plan',
+            title: 'update_plan: reload session plan',
+            status: 'in_progress',
+            rawInput: {
+              plan: [
+                { step: 'Load plan history again', status: 'completed' },
+                { step: 'Restore collapsed state', status: 'in_progress' },
+              ],
+            },
+            content: [],
+            locations: [],
+          }],
+          [{
+            sessionUpdate: 'tool_call',
+            toolCallId: 'reload-session-plan-fresh',
+            title: 'update_plan: fresh renderer reload',
+            status: 'in_progress',
+            rawInput: {
+              plan: [
+                { step: 'Load a fresh plan after renderer reload', status: 'pending' },
+                { step: 'Consume new structured replay data', status: 'pending' },
+              ],
+            },
+            content: [],
+            locations: [],
+          }],
+        ],
+      });
+
+      const page = await openChat(app);
+      const toggle = page.getByTestId('acp-session-plan-toggle');
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([MAIN_SESSION_KEY]);
+      await toggle.click();
+      await expect(page.getByTestId('acp-session-plan-panel')).toBeVisible();
+
+      await page.reload();
+      await expect(page.getByTestId('main-layout')).toBeVisible({ timeout: 30_000 });
+      await expect(toggle).toBeVisible({ timeout: 30_000 });
+      await expect(toggle).toHaveText('0 / 2');
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.getByTestId('acp-session-plan-panel')).toHaveCount(0);
+      await toggle.click();
+      const reloadedPanel = page.getByTestId('acp-session-plan-panel');
+      const reloadedSteps = reloadedPanel.getByTestId('acp-session-plan-step');
+      await expect(reloadedSteps).toHaveCount(2);
+      await expect(reloadedSteps.nth(0)).toHaveText('Load a fresh plan after renderer reload');
+      await expect(reloadedSteps.nth(1)).toHaveText('Consume new structured replay data');
+      expect(await getRecordedAcpLoadSessionKeys(app)).toEqual([MAIN_SESSION_KEY, MAIN_SESSION_KEY]);
     } finally {
       await closeElectronApp(app);
     }
@@ -748,7 +1151,7 @@ test.describe('ClawX ACP inline timeline', () => {
         {
           sessionUpdate: 'tool_call',
           toolCallId: 'read-package',
-          title: 'Read package.json',
+          title: 'read: path: package.json',
           status: 'completed',
           content: [{ type: 'content', content: { type: 'text', text: 'Loaded package metadata' } }],
           locations: [],
@@ -756,9 +1159,13 @@ test.describe('ClawX ACP inline timeline', () => {
       ]);
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('acp-tool-call-card')).toBeVisible();
-      await expect(page.getByTestId('acp-tool-call-card')).toContainText('Read package.json');
-      await expect(page.getByTestId('acp-tool-call-card')).toContainText('Loaded package metadata');
+      const card = page.getByTestId('acp-tool-call-card');
+      await expect(card).toBeVisible();
+      await expect(card).toContainText('Read: path: package.json');
+      await expect(card).toContainText('Loaded package metadata');
+      const toolLabel = card.getByText('Tool', { exact: true });
+      expect(await toolLabel.evaluate((element) => element.previousElementSibling?.classList.contains('lucide-wrench'))).toBe(true);
+      expect(await toolLabel.evaluate((element) => element.nextElementSibling?.getAttribute('data-testid'))).toBe('acp-tool-icon-scan-text');
     } finally {
       await closeElectronApp(app);
     }
@@ -1205,15 +1612,15 @@ test.describe('ClawX ACP inline timeline', () => {
         {
           sessionUpdate: 'tool_call',
           toolCallId: 'history-tool-1',
-          title: 'web_search',
+          title: 'update_plan: plan: [{"step":"Check weather"}]',
           status: 'completed',
-          content: [{ type: 'content', content: { type: 'text', text: 'search results' } }],
+          content: [{ type: 'content', content: { type: 'text', text: 'plan updated' } }],
           locations: [],
         },
         {
           sessionUpdate: 'tool_call',
           toolCallId: 'history-tool-2',
-          title: 'web_fetch',
+          title: 'web_fetch: url: https://example.com/weather',
           status: 'completed',
           content: [{ type: 'content', content: { type: 'text', text: 'fetch results' } }],
           locations: [],
@@ -1221,9 +1628,41 @@ test.describe('ClawX ACP inline timeline', () => {
         {
           sessionUpdate: 'tool_call',
           toolCallId: 'history-tool-3',
-          title: 'browser',
+          title: 'browser: action: navigate',
           status: 'failed',
           content: [{ type: 'content', content: { type: 'text', text: 'browser failed' } }],
+          locations: [],
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-4',
+          title: 'exec: command: pwd',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: '/workspace' } }],
+          locations: [],
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-5',
+          title: 'read: path: weather.txt',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'file contents' } }],
+          locations: [],
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-6',
+          title: 'sessions_spawn: runtime: subagent, task: Check weather',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'subagent started' } }],
+          locations: [],
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-7',
+          title: 'memory_search: query: weather history',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'memory results' } }],
           locations: [],
         },
         {
@@ -1243,10 +1682,25 @@ test.describe('ClawX ACP inline timeline', () => {
       const group = page.getByTestId('acp-tool-calls-group');
       await expect(group).toBeVisible();
       await expect(group).toHaveAttribute('data-collapsed', 'true');
+      await expect(group.locator('svg').first()).not.toHaveClass(/group-hover:translate-x-0\.5/);
       await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(0);
 
       await expandAcpToolCallsGroup(page);
-      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(3);
+      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(7);
+      await expect(page.getByText('Update plan: plan: [{"step":"Check weather"}]', { exact: true })).toBeVisible();
+      await expect(page.getByText('Read web page: url: https://example.com/weather', { exact: true })).toBeVisible();
+      await expect(page.getByText('Control browser: action: navigate', { exact: true })).toBeVisible();
+      await expect(page.getByText('Run command: command: pwd', { exact: true })).toBeVisible();
+      await expect(page.getByText('Read: path: weather.txt', { exact: true })).toBeVisible();
+      await expect(page.getByText('Spawn subagent: runtime: subagent, task: Check weather', { exact: true })).toBeVisible();
+      await expect(page.getByText('Search memory: query: weather history', { exact: true })).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-list-checks')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-globe')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-square-mouse-pointer')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-monitor-play')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-scan-text')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-bot')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-database')).toBeVisible();
       await expect(page.getByTestId('acp-assistant-turn')).toContainText('Hangzhou is cloudy today.');
     } finally {
       await closeElectronApp(app);
@@ -1727,6 +2181,331 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId(defaultWorkspaceSessionGroupTestId())).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('sidebar-session-agent:main:heartbeat')).toHaveCount(0);
       await expect(page.getByTestId('sidebar-session-agent:main:session-1710000000000')).toBeVisible();
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('renders typed Talk events as transient direct bubbles without microphone hardware', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [
+                { key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE },
+                { key: TALK_SESSION_KEY, displayName: 'Talk', workspacePath: MAIN_WORKSPACE },
+              ],
+            },
+          },
+        },
+        hostApi: {
+          ...baseHostApiMocks(),
+          [stableStringify(['chat', 'loadAcpSession', {
+            sessionKey: TALK_SESSION_KEY, workspaceRoot: MAIN_WORKSPACE, cwd: MAIN_WORKSPACE,
+          }])]: { success: true, generation: 1 },
+          [stableStringify(['talk', 'catalog', null])]: {
+            modes: ['realtime'],
+            transports: ['gateway-relay'],
+            brains: ['agent-consult'],
+            realtime: { ready: true, providers: [] },
+          },
+          [stableStringify(['talk', 'startRelay', { sessionKey: TALK_SESSION_KEY }])]: {
+            relaySessionId: 'relay-e2e',
+            provider: 'mock',
+            transport: 'gateway-relay',
+            audio: {
+              inputEncoding: 'pcm16',
+              inputSampleRateHz: 24_000,
+              outputEncoding: 'pcm16',
+              outputSampleRateHz: 24_000,
+            },
+          },
+          [stableStringify(['talk', 'stopRelay', { relaySessionId: 'relay-e2e' }])]: { ok: true },
+        },
+        recordHostInvocations: true,
+      });
+      const initialPage = await getStableWindow(app);
+      await initialPage.addInitScript(() => {
+        class FakeAudioContext {
+          sampleRate = 24_000;
+          audioWorklet = { addModule: async () => undefined };
+          destination = {};
+          createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+          createGain() { return { gain: { value: 0 }, connect() {}, disconnect() {} }; }
+          async close() {}
+        }
+        class FakeAudioWorkletNode {
+          port = { onmessage: null as ((event: MessageEvent<Float32Array>) => void) | null };
+          constructor(_context: AudioContext, _name: string) {}
+          connect() {}
+          disconnect() {}
+        }
+        Object.defineProperty(window, 'AudioContext', { value: FakeAudioContext, configurable: true });
+        Object.defineProperty(window, 'AudioWorkletNode', { value: FakeAudioWorkletNode, configurable: true });
+        Object.defineProperty(navigator, 'mediaDevices', {
+          value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) },
+          configurable: true,
+        });
+      });
+
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('sidebar-nav-settings').click();
+      await page.getByTestId('settings-dev-mode-switch').click();
+      await page.getByTestId(`sidebar-session-${TALK_SESSION_KEY}`).click();
+      await expect(page.getByTestId('sidebar-talk')).toBeEnabled();
+      await page.getByTestId('chat-composer-input').fill('Preserve this draft');
+      await page.getByTestId('sidebar-talk').click();
+      await expect(page.getByTestId('chat-composer-input')).toBeDisabled();
+
+      await app.evaluate(async ({ app: _app }) => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) {
+          for (const event of [
+            { role: 'user', text: '帮我看看前', final: false },
+            { role: 'assistant', text: '帮你查一下', final: false },
+            { role: 'user', text: '部落有什么剑。', final: false },
+            { role: 'assistant', text: '项目里的文件情况。', final: false },
+            { role: 'user', text: '帮我看看前部落有什么剑。', final: true },
+            { role: 'assistant', text: '好的，我来帮你查一下项目里的文件情况。', final: true },
+            { role: 'assistant', text: '我来看看', final: false },
+            { role: 'assistant', text: '我来看看进度，然后告诉你现在的情况。', final: true },
+            { role: 'assistant', text: '目录里大致', final: false },
+            { role: 'assistant', text: '目录里大致有这些文件和目录。', final: true },
+          ] as const) {
+            window.webContents.send('talk:event', {
+              relaySessionId: 'relay-e2e', type: 'transcript', ...event,
+            });
+          }
+        }
+      });
+      await expect(page.getByTestId('live-talk-user-message')).toHaveCount(1);
+      await expect(page.getByTestId('live-talk-user-message')).toContainText('帮我看看前部落有什么剑。');
+      await expect(page.getByTestId('live-talk-assistant-message')).toHaveCount(1);
+      await expect(page.getByTestId('live-talk-assistant-message')).toContainText(
+        '好的，我来帮你查一下项目里的文件情况。我来看看进度，然后告诉你现在的情况。目录里大致有这些文件和目录。',
+      );
+      await expect(page.getByTestId('acp-chat-timeline')).toHaveCount(0);
+
+      await app.evaluate(async ({ app: _app }) => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'transcript', role: 'user', text: 'Second request', final: false,
+          });
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'transcript', role: 'assistant', text: 'Second answer', final: true,
+          });
+        }
+      });
+      await expect(page.getByTestId('live-talk-user-message')).toHaveCount(2);
+      await expect(page.getByTestId('live-talk-user-message').last()).toContainText('Second request');
+      await expect(page.getByTestId('live-talk-assistant-message')).toHaveCount(2);
+      await expect(page.getByTestId('live-talk-assistant-message').last()).toContainText('Second answer');
+
+      await app.evaluate(async ({ app: _app }) => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'toolCall', callId: 'unknown-tool', name: 'untrusted_tool', args: {},
+          });
+        }
+      });
+      await page.waitForTimeout(50);
+      expect((await getRecordedHostInvocations(app)).some((call) => (
+        call.module === 'talk' && call.action === 'startAgentConsult'
+      ))).toBe(false);
+
+      await page.getByTestId('sidebar-talk').click();
+      await expect(page.getByTestId('chat-composer-input')).toBeEnabled();
+      await expect(page.getByTestId('chat-composer-input')).toHaveValue('Preserve this draft');
+      await expect(page.getByTestId('live-talk-transcript')).toHaveCount(0);
+
+      await page.getByTestId('sidebar-talk').click();
+      await expect(page.getByTestId('chat-composer-input')).toBeDisabled();
+      await app.evaluate(async ({ app: _app }) => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'transcript', role: 'assistant', text: 'Direct assistant after restart', final: true,
+          });
+        }
+      });
+      await expect(page.getByTestId('live-talk-assistant-message')).toContainText('Direct assistant after restart');
+
+      await page.reload();
+      await expect(page.getByTestId('live-talk-transcript')).toHaveCount(0);
+      await expect.poll(async () => (await getRecordedHostInvocations(app)).some((call) => (
+        call.module === 'talk' && call.action === 'stopRelay'
+      ))).toBe(true);
+      expect((await getRecordedHostInvocations(app)).some((call) => (
+        call.module === 'talk' && call.action === 'startRelay'
+      ))).toBe(true);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('replays durable consult history only after the provider output mark while Talk stays active', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [
+                { key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE },
+                { key: TALK_SESSION_KEY, displayName: 'Talk', workspacePath: MAIN_WORKSPACE },
+              ],
+            },
+          },
+        },
+        hostApi: {
+          ...baseHostApiMocks(),
+          [stableStringify(['talk', 'catalog', null])]: {
+            modes: ['realtime'],
+            transports: ['gateway-relay'],
+            brains: ['agent-consult'],
+            realtime: { ready: true, providers: [] },
+          },
+          [stableStringify(['talk', 'startRelay', { sessionKey: TALK_SESSION_KEY }])]: {
+            relaySessionId: 'relay-e2e',
+            provider: 'mock',
+            transport: 'gateway-relay',
+            audio: {
+              inputEncoding: 'pcm16',
+              inputSampleRateHz: 24_000,
+              outputEncoding: 'pcm16',
+              outputSampleRateHz: 24_000,
+            },
+          },
+          [stableStringify(['talk', 'startAgentConsult', {
+            relaySessionId: 'relay-e2e', sessionKey: TALK_SESSION_KEY, callId: 'consult-1', args: { prompt: 'Review this' },
+          }])]: { runId: 'consult-run', text: 'Consult completion' },
+          [stableStringify(['talk', 'submitToolResult', {
+            relaySessionId: 'relay-e2e', callId: 'consult-1', result: 'Consult completion',
+          }])]: { ok: true },
+          [stableStringify(['talk', 'acknowledgeMark', {
+            relaySessionId: 'relay-e2e', markName: 'consult-output-complete',
+          }])]: { ok: true },
+          [stableStringify(['talk', 'stopRelay', { relaySessionId: 'relay-e2e' }])]: { ok: true },
+        },
+        recordHostInvocations: true,
+      });
+      await installConsultReplayLoadMock(app);
+      const initialPage = await getStableWindow(app);
+      await initialPage.addInitScript(() => {
+        class FakeAudioContext {
+          sampleRate = 24_000;
+          currentTime = 0;
+          audioWorklet = { addModule: async () => undefined };
+          destination = {};
+          createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+          createGain() { return { gain: { value: 0 }, connect() {}, disconnect() {} }; }
+          createBuffer(_channels: number, length: number, sampleRate: number) {
+            return { duration: length / sampleRate, copyToChannel() {} };
+          }
+          createBufferSource() {
+            return {
+              buffer: null,
+              onended: null as (() => void) | null,
+              connect() {},
+              start() { queueMicrotask(() => this.onended?.()); },
+              stop() { this.onended?.(); },
+            };
+          }
+          async close() {}
+        }
+        class FakeAudioWorkletNode {
+          port = { onmessage: null as ((event: MessageEvent<Float32Array>) => void) | null };
+          constructor(_context: AudioContext, _name: string) {}
+          connect() {}
+          disconnect() {}
+        }
+        Object.defineProperty(window, 'AudioContext', { value: FakeAudioContext, configurable: true });
+        Object.defineProperty(window, 'AudioWorkletNode', { value: FakeAudioWorkletNode, configurable: true });
+        Object.defineProperty(navigator, 'mediaDevices', {
+          value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) },
+          configurable: true,
+        });
+      });
+
+      const page = await openChat(app);
+      await page.getByTestId('sidebar-nav-settings').click();
+      await page.getByTestId('settings-dev-mode-switch').click();
+      await page.getByTestId(`sidebar-session-${TALK_SESSION_KEY}`).click();
+      await expect(page.getByTestId('sidebar-talk')).toBeEnabled();
+      await page.getByTestId('sidebar-talk').click();
+      await expect(page.getByTestId('chat-composer-input')).toBeDisabled();
+
+      await app.evaluate(async ({ app: _app }) => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'transcript', role: 'assistant', text: 'Transient direct reply', final: true,
+          });
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'toolCall', callId: 'consult-1', name: 'openclaw_agent_consult', args: { prompt: 'Review this' },
+          });
+        }
+      });
+      await expect(page.getByTestId('live-talk-assistant-message')).toContainText('Transient direct reply');
+      await expect.poll(async () => (await getRecordedHostInvocations(app)).some((call) => (
+        call.module === 'talk' && call.action === 'submitToolResult'
+      ))).toBe(true);
+
+      await app.evaluate(async ({ app: _app }) => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'toolResult', callId: 'consult-1', final: true,
+          });
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'audio', audioBase64: 'AAD/fw==',
+          });
+        }
+      });
+      const loadsBeforeProviderMark = await getConsultAcpLoadCount(app);
+      expect(loadsBeforeProviderMark).toBe(1);
+      await expect(page.getByText('Durable consult answer')).toHaveCount(0);
+
+      await app.evaluate(async ({ app: _app }) => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'mark', markName: 'consult-output-complete',
+          });
+        }
+      });
+      await expect.poll(() => getConsultAcpLoadCount(app)).toBe(loadsBeforeProviderMark + 1);
+      await expect.poll(() => getConsultAcpDurableReplayFlags(app)).toEqual([false, true]);
+      // Active Talk renders its transient transcript in place of the ACP timeline.
+      await expect(page.getByText('Durable consult prompt')).toHaveCount(0);
+      await expect(page.getByText('Durable consult answer')).toHaveCount(0);
+      await expect(page.getByTestId('live-talk-transcript')).toHaveCount(0);
+      await expect(page.getByTestId('chat-composer-input')).toBeDisabled();
+      await expect(page.getByTestId('sidebar-talk')).toHaveAttribute('aria-pressed', 'true');
+      expect((await getRecordedHostInvocations(app)).some((call) => (
+        call.module === 'talk' && call.action === 'stopRelay'
+      ))).toBe(false);
+
+      await app.evaluate(async ({ app: _app }) => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'transcript', role: 'assistant', text: 'Talk remains usable', final: true,
+          });
+        }
+      });
+      await expect(page.getByTestId('live-talk-assistant-message')).toContainText('Talk remains usable');
     } finally {
       await closeElectronApp(app);
     }

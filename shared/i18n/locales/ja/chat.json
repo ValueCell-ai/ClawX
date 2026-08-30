@@ -47,6 +47,15 @@
     "acp": {
         "thought": "思考",
         "tool": "ツール",
+        "toolName": {
+            "updatePlan": "計画を更新",
+            "webFetch": "Webページを読む",
+            "browser": "ブラウザーを操作",
+            "execCommand": "コマンドを実行",
+            "read": "読み取り",
+            "spawnSubagent": "サブエージェントを起動",
+            "memorySearch": "メモリを検索"
+        },
         "expandTool": "ツール結果を展開",
         "collapseTool": "ツール結果を折りたたむ",
         "expandToolGroup": "ツール呼び出しを展開",
@@ -57,6 +66,12 @@
         "running": "実行中",
         "pending": "保留中",
         "completed": "完了",
+        "sessionPlan": {
+            "progress": "{{completed}} / {{total}}",
+            "expand": "計画を展開",
+            "collapse": "計画を折りたたむ",
+            "tasks": "計画のタスク"
+        },
         "failed": "失敗",
         "cancelled": "キャンセル済み",
         "loadFailed": "セッションの読み込みに失敗しました",
@@ -248,6 +263,39 @@
         "skillPreviewTooltip": "SKILL.md をプレビュー",
         "skillPreviewNotFound": "この Skill が見つかりません。Skill ピッカーを開いて一覧を更新してください。",
         "contextUsage": "コンテキスト使用量 {{percentage}}: {{used}} / {{total}} トークン"
+    },
+    "talk": {
+        "start": "Talk を開始",
+        "stop": "Talk を停止",
+        "inputLevel": "マイク入力レベル",
+        "status": {
+            "idle": "Talk の準備ができました",
+            "connecting": "Talk に接続中",
+            "listening": "聞いています",
+            "thinking": "考えています",
+            "speaking": "話しています",
+            "disconnected": "Talk が切断されました",
+            "error": "Talk エラー"
+        },
+        "unavailable": {
+            "gateway": "Talk には接続済みの Gateway が必要です",
+            "sending": "メッセージ送信中は Talk を利用できません",
+            "session": "Talk を開始する前に新しいチャットを作成してください",
+            "configuration": "Talk は利用できません: {{reason}}",
+            "loading": "Talk の利用可否を確認中",
+            "default": "Talk は利用できません"
+        },
+        "consultRefresh": {
+            "failed": "相談の返信を更新できませんでした。",
+            "retry": "更新を再試行",
+            "retrying": "更新を再試行中..."
+        },
+        "transcript": {
+            "label": "ライブ Talk の文字起こし",
+            "microphone": "マイク",
+            "voiceInput": "音声入力",
+            "voiceResponse": "音声応答"
+        }
     },
     "sessionList": {
         "title": "セッション一覧",

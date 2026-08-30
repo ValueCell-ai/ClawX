@@ -498,6 +498,65 @@ describe('hostApi facade', () => {
     }));
   });
 
+  it('routes Talk actions through the typed host facade', async () => {
+    hostInvoke.mockResolvedValue({ id: 'req', ok: true, data: { ok: true } });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await hostApi.talk.catalog();
+    await hostApi.talk.updateRealtimeSettings({
+      provider: 'openai',
+      model: 'gpt-realtime',
+      speakerVoice: 'alloy',
+    });
+    await hostApi.talk.startRelay({ sessionKey: 'agent:main:session-1' });
+    await hostApi.talk.appendAudio({ relaySessionId: 'relay-1', audioBase64: 'AQI=' });
+    await hostApi.talk.cancelOutput({ relaySessionId: 'relay-1' });
+    await hostApi.talk.submitToolResult({ relaySessionId: 'relay-1', callId: 'call-1', result: { ok: true } });
+    await hostApi.talk.acknowledgeMark({ relaySessionId: 'relay-1', markName: 'mark-1' });
+    await hostApi.talk.stopRelay({ relaySessionId: 'relay-1' });
+    await expect(hostApi.talk.startAgentConsult({
+      relaySessionId: 'relay-1',
+      sessionKey: 'agent:main:session-1',
+      callId: 'call-1',
+      args: {},
+    })).resolves.toEqual({ ok: true });
+
+    expect(hostInvoke.mock.calls.map(([request]) => request)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ module: 'talk', action: 'catalog' }),
+      expect.objectContaining({
+        module: 'talk',
+        action: 'updateRealtimeSettings',
+        payload: { provider: 'openai', model: 'gpt-realtime', speakerVoice: 'alloy' },
+      }),
+      expect.objectContaining({ module: 'talk', action: 'startRelay', payload: { sessionKey: 'agent:main:session-1' } }),
+      expect.objectContaining({ module: 'talk', action: 'appendAudio', payload: { relaySessionId: 'relay-1', audioBase64: 'AQI=' } }),
+      expect.objectContaining({ module: 'talk', action: 'cancelOutput' }),
+      expect.objectContaining({ module: 'talk', action: 'submitToolResult' }),
+      expect.objectContaining({ module: 'talk', action: 'acknowledgeMark' }),
+      expect.objectContaining({ module: 'talk', action: 'stopRelay' }),
+      expect.objectContaining({ module: 'talk', action: 'startAgentConsult' }),
+    ]));
+  });
+
+  it('keeps generic gateway RPC requests on the gateway facade for Main-side method validation', async () => {
+    hostInvoke
+      .mockResolvedValueOnce({ id: 'non-talk', ok: true, data: { ok: true } })
+      .mockResolvedValueOnce({
+        id: 'talk', ok: false, error: { code: 'VALIDATION', message: 'Talk Gateway RPCs must use the typed Talk API' },
+      });
+    const { hostApi } = await import('@/lib/host-api');
+
+    await expect(hostApi.gateway.rpc('sessions.list', { limit: 10 }, 500)).resolves.toEqual({ ok: true });
+    await expect(hostApi.gateway.rpc('talk.session.create', {})).rejects.toThrow('Talk Gateway RPCs must use the typed Talk API');
+
+    expect(hostInvoke).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      module: 'gateway', action: 'rpc', payload: { method: 'sessions.list', params: { limit: 10 }, timeoutMs: 500 },
+    }));
+    expect(hostInvoke).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      module: 'gateway', action: 'rpc', payload: { method: 'talk.session.create', params: {}, timeoutMs: undefined },
+    }));
+  });
+
   it('calls sessions.summaries through hostInvoke', async () => {
     hostInvoke.mockResolvedValueOnce({ id: 'req', ok: true, data: { success: true, summaries: [] } });
     const { hostApi } = await import('@/lib/host-api');

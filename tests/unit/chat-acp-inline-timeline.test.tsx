@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AcpTimelineSnapshot } from '@/lib/acp/timeline-types';
+import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
 
 const { acpState, agentsState, artifactPanelState, chatState, gatewayState, stickState } = vi.hoisted(() => ({
   acpState: {
@@ -49,8 +50,24 @@ const { acpState, agentsState, artifactPanelState, chatState, gatewayState, stic
   },
 }));
 
+const talkState = vi.hoisted(() => ({
+  status: 'idle',
+  isActive: false,
+  sessionKey: null as string | null,
+  transcripts: [] as Array<{ role: 'assistant'; text: string; final: boolean }>,
+}));
+
 const ensureAcpChatSubscriptions = vi.hoisted(() => vi.fn());
 const resolveWorkspaceContext = vi.hoisted(() => vi.fn());
+const deferredAcpTimeline = vi.hoisted(() => ({ value: null as AcpTimelineSnapshot | null }));
+
+vi.mock('react', async (importOriginal) => {
+  const react = await importOriginal<typeof import('react')>();
+  return {
+    ...react,
+    useDeferredValue: <T,>(value: T) => deferredAcpTimeline.value ?? value,
+  };
+});
 
 vi.mock('@/lib/host-api', () => ({
   hostApi: {
@@ -65,6 +82,17 @@ vi.mock('@/stores/acp-chat-session', () => ({
 
 vi.mock('@/stores/gateway', () => ({
   useGatewayStore: (selector: (state: typeof gatewayState) => unknown) => selector(gatewayState),
+}));
+
+vi.mock('@/stores/realtime-talk', () => ({
+  useRealtimeTalkStore: (selector: (state: typeof talkState) => unknown) => selector(talkState),
+}));
+
+vi.mock('@/lib/talk/realtime-talk-controller', () => ({
+  realtimeTalkController: {
+    handleSessionChange: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn().mockResolvedValue(undefined),
+  },
 }));
 
 vi.mock('@/stores/agents', () => ({
@@ -115,17 +143,22 @@ vi.mock('@/hooks/use-stick-to-bottom-instant', () => ({
   })),
 }));
 
-vi.mock('@/hooks/use-min-loading', () => ({
-  useMinLoading: () => false,
-}));
-
 vi.mock('@/pages/Chat/ChatToolbar', () => ({
   ChatToolbar: () => null,
 }));
 
 vi.mock('@/pages/Chat/ChatInput', () => ({
-  ChatInput: ({ disabled, sending }: { disabled?: boolean; sending?: boolean }) => (
-    <div data-testid="mock-chat-input" data-disabled={disabled ? 'true' : 'false'} data-sending={sending ? 'true' : 'false'} />
+  ChatInput: ({ disabled, sending, currentPlan }: {
+    disabled?: boolean;
+    sending?: boolean;
+    currentPlan?: AcpCurrentPlan | null;
+  }) => (
+    <div
+      data-testid="mock-chat-input"
+      data-disabled={disabled ? 'true' : 'false'}
+      data-sending={sending ? 'true' : 'false'}
+      data-current-plan={currentPlan ? `${currentPlan.completedCount}/${currentPlan.totalCount}:${currentPlan.steps.map((step) => step.step).join('|')}` : ''}
+    />
   ),
 }));
 
@@ -210,6 +243,30 @@ function timelineWithProcessBlocks(): AcpTimelineSnapshot {
   };
 }
 
+function timelineWithCurrentPlan(): AcpTimelineSnapshot {
+  return {
+    ...emptyTimeline(),
+    itemOrder: ['tool:update-plan'],
+    itemsById: {
+      'tool:update-plan': {
+        kind: 'tool-call',
+        id: 'tool:update-plan',
+        toolCallId: 'update-plan',
+        title: 'update_plan: current steps',
+        status: 'running',
+        input: {
+          plan: [
+            { step: 'Inspect the current timeline', status: 'completed' },
+            { step: 'Render the plan in the composer', status: 'in_progress' },
+          ],
+        },
+        outputParts: [],
+        locations: [],
+      },
+    },
+  };
+}
+
 describe('ACP Chat page inline timeline lifecycle', () => {
   beforeEach(() => {
     ensureAcpChatSubscriptions.mockReset();
@@ -223,6 +280,7 @@ describe('ACP Chat page inline timeline lifecycle', () => {
       executionCwd: input.executionCwd,
     }));
     acpState.timeline = timelineWithProcessBlocks();
+    deferredAcpTimeline.value = null;
     acpState.loading = false;
     acpState.sending = false;
     acpState.cancelling = false;
@@ -249,6 +307,10 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     gatewayState.status = { state: 'running', gatewayReady: true, port: 18789 };
     stickState.isAtBottom = true;
     stickState.scrollToBottom.mockReset();
+    talkState.status = 'idle';
+    talkState.isActive = false;
+    talkState.sessionKey = null;
+    talkState.transcripts = [];
   });
 
   it('renders ACP process blocks in timeline order', async () => {
@@ -282,6 +344,49 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     });
   });
 
+  it('shows direct Talk transcripts instead of the ACP timeline while Talk is active', async () => {
+    talkState.status = 'listening';
+    talkState.isActive = true;
+    talkState.sessionKey = 'agent:main:main';
+    talkState.transcripts = [{ role: 'assistant', text: 'Direct Talk response', final: true }];
+    const { Chat } = await import('@/pages/Chat/index');
+    const { container } = render(<Chat />);
+
+    expect(screen.getByText('Direct Talk response')).toBeInTheDocument();
+    expect(screen.queryByTestId('acp-chat-timeline')).not.toBeInTheDocument();
+    expect(container.querySelectorAll('[data-acp-item-id]')).toHaveLength(0);
+  });
+
+  it('hides transient Talk state immediately when it belongs to a different session', async () => {
+    talkState.status = 'listening';
+    talkState.isActive = true;
+    talkState.sessionKey = 'agent:main:other';
+    talkState.transcripts = [{ role: 'assistant', text: 'Direct Talk response', final: true }];
+    const { Chat } = await import('@/pages/Chat/index');
+
+    render(<Chat />);
+
+    expect(screen.queryByText('Direct Talk response')).not.toBeInTheDocument();
+  });
+
+  it('brings a newly received live Talk area into view without scrolling the ACP timeline', async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView });
+    talkState.status = 'listening';
+    talkState.isActive = true;
+    talkState.sessionKey = 'agent:main:main';
+    talkState.transcripts = [];
+    const { Chat } = await import('@/pages/Chat/index');
+    const { rerender } = render(<Chat />);
+
+    talkState.transcripts = [{ role: 'assistant', text: 'Newest direct Talk response', final: true }];
+    rerender(<Chat />);
+
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+    expect(stickState.scrollToBottom).not.toHaveBeenCalled();
+    expect(screen.getByText('Newest direct Talk response')).toBeInTheDocument();
+  });
+
   it('keeps ACP tool status in the inline timeline while the composer is busy', async () => {
     acpState.sending = true;
     acpState.timeline = {
@@ -307,6 +412,37 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent('Read file');
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent('Running');
     expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-sending', 'true');
+  });
+
+  it('passes only the visible session structured update_plan to the composer', async () => {
+    acpState.timeline = timelineWithCurrentPlan();
+    const { Chat } = await import('@/pages/Chat/index');
+    const { rerender } = render(<Chat />);
+
+    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute(
+      'data-current-plan',
+      '1/2:Inspect the current timeline|Render the plan in the composer',
+    );
+
+    acpState.activeSessionKey = 'agent:other:main';
+    acpState.timeline = { ...timelineWithCurrentPlan(), sessionId: 'agent:other:main' };
+    rerender(<Chat />);
+
+    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-current-plan', '');
+  });
+
+  it('withholds a deferred prior-session plan after the active session changes', async () => {
+    const previousSessionKey = 'agent:previous:main';
+    const currentSessionKey = 'agent:other:main';
+    deferredAcpTimeline.value = { ...timelineWithCurrentPlan(), sessionId: previousSessionKey };
+    acpState.timeline = { ...timelineWithCurrentPlan(), sessionId: currentSessionKey };
+    acpState.activeSessionKey = currentSessionKey;
+    chatState.currentSessionKey = currentSessionKey;
+
+    const { Chat } = await import('@/pages/Chat/index');
+    render(<Chat />);
+
+    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-current-plan', '');
   });
 
   it('renders ACP load errors as inline timeline errors', async () => {

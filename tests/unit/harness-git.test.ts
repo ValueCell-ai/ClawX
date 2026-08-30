@@ -37,4 +37,23 @@ describe('harness git changed files', () => {
       await rm(repo, { recursive: true, force: true });
     }
   });
+
+  it('does not treat untracked implementation plans as task changes', async () => {
+    const repo = await mkdtemp(path.join(tmpdir(), 'clawx-harness-git-'));
+
+    try {
+      await mkdir(path.join(repo, 'docs', 'plans'), { recursive: true });
+      await writeFile(path.join(repo, 'tracked.txt'), 'tracked\n');
+      await writeFile(path.join(repo, 'docs', 'plans', 'user-plan.md'), '# User plan\n');
+      await git(repo, ['init']);
+      await git(repo, ['config', 'user.email', 'test@example.com']);
+      await git(repo, ['config', 'user.name', 'Test']);
+      await git(repo, ['add', 'tracked.txt']);
+      await git(repo, ['commit', '-m', 'init']);
+
+      expect(await getChangedFiles('HEAD', repo)).not.toContain('docs/plans/user-plan.md');
+    } finally {
+      await rm(repo, { recursive: true, force: true });
+    }
+  });
 });

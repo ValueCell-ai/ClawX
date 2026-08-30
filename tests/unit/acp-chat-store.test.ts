@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dedupeTurnAttachments } from '@/lib/acp/attachments';
 import type { AttachmentRenderPart, RenderPart } from '@/lib/acp/timeline-types';
 
@@ -164,6 +164,127 @@ describe('ACP Chat store', () => {
     hostEventsMock.onAcpPermissionRequest.mockClear();
     hostEventsMock.onGatewayChatMessage.mockClear();
     hostEventsMock.onChatRuntimeEvent.mockClear();
+  });
+
+  afterEach(async () => {
+    const { useAcpChatSessionStore } = await importStore();
+    useAcpChatSessionStore.getState().prepareLocalSession({
+      sessionKey: '', workspaceRoot: '', cwd: '',
+    });
+  });
+
+  it('does not send an ACP prompt while a realtime Talk relay is active', async () => {
+    const { useAcpChatSessionStore } = await importStore();
+    const { useRealtimeTalkStore } = await import('@/stores/realtime-talk');
+    useAcpChatSessionStore.getState().prepareLocalSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo-a', cwd: '/repo-a',
+    });
+    useRealtimeTalkStore.getState().begin('relay-1', 'agent:pi:s1');
+
+    await expect(useAcpChatSessionStore.getState().sendPrompt({
+      sessionKey: 'agent:pi:s1', cwd: '/repo-a', message: 'blocked',
+    })).resolves.toBe(false);
+    expect(hostApiMock.sendAcpPrompt).not.toHaveBeenCalled();
+  });
+
+  it('does not send an ACP prompt while realtime Talk is connecting', async () => {
+    const { useAcpChatSessionStore } = await importStore();
+    const { useRealtimeTalkStore } = await import('@/stores/realtime-talk');
+    useAcpChatSessionStore.getState().prepareLocalSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo-a', cwd: '/repo-a',
+    });
+    expect(useRealtimeTalkStore.getState().reserve('agent:pi:s1')).toBe(true);
+
+    await expect(useAcpChatSessionStore.getState().sendPrompt({
+      sessionKey: 'agent:pi:s1', cwd: '/repo-a', message: 'blocked while connecting',
+    })).resolves.toBe(false);
+    expect(hostApiMock.sendAcpPrompt).not.toHaveBeenCalled();
+  });
+
+  it('stops the active realtime Talk controller before reloading ACP state', async () => {
+    const { useAcpChatSessionStore } = await importStore();
+    const { registerRealtimeTalkCleanup, useRealtimeTalkStore } = await import('@/stores/realtime-talk');
+    const stopRelay = vi.fn().mockResolvedValue(undefined);
+    const unregister = registerRealtimeTalkCleanup(stopRelay);
+    useRealtimeTalkStore.getState().begin('relay-1', 'agent:pi:s1');
+
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo-a', cwd: '/repo-a',
+    });
+
+    expect(stopRelay).toHaveBeenCalledOnce();
+    expect(useRealtimeTalkStore.getState().isActive).toBe(false);
+    unregister();
+  });
+
+  it('keeps public reloadActiveSession as a Talk-stopping reload path', async () => {
+    const { useAcpChatSessionStore } = await importStore();
+    const { registerRealtimeTalkCleanup, useRealtimeTalkStore } = await import('@/stores/realtime-talk');
+    const stopRelay = vi.fn().mockResolvedValue(undefined);
+    const unregister = registerRealtimeTalkCleanup(stopRelay);
+    useAcpChatSessionStore.getState().prepareLocalSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo-a', cwd: '/repo-a',
+    });
+    useRealtimeTalkStore.getState().begin('relay-1', 'agent:pi:s1');
+    stopRelay.mockClear();
+
+    await useAcpChatSessionStore.getState().reloadActiveSession();
+
+    expect(stopRelay).toHaveBeenCalledOnce();
+    expect(useRealtimeTalkStore.getState().isActive).toBe(false);
+    unregister();
+  });
+
+  it('keeps an active Talk relay while requesting an authoritative durable consult replay', async () => {
+    hostApiMock.loadAcpSession
+      .mockResolvedValueOnce({ success: true, generation: 1 })
+      .mockResolvedValueOnce({
+        success: true,
+        generation: 2,
+        sessionUpdates: [{
+          sessionKey: 'agent:pi:s1',
+          generation: 2,
+          historical: true,
+          notification: {
+            sessionId: 'agent:pi:s1',
+            update: {
+              sessionUpdate: 'agent_message_chunk',
+              messageId: 'consult-history',
+              content: { type: 'text', text: 'Durable consult answer' },
+            },
+          },
+        }],
+      });
+    const { useAcpChatSessionStore } = await importStore();
+    const { registerRealtimeTalkCleanup, useRealtimeTalkStore } = await import('@/stores/realtime-talk');
+    const stopRelay = vi.fn().mockResolvedValue(undefined);
+    const unregister = registerRealtimeTalkCleanup(stopRelay);
+
+    await useAcpChatSessionStore.getState().loadSession({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo-a', cwd: '/repo-a',
+    });
+    stopRelay.mockClear();
+    hostApiMock.sessionsHistory.mockClear();
+    useRealtimeTalkStore.getState().begin('relay-1', 'agent:pi:s1');
+
+    await expect(useAcpChatSessionStore.getState().reloadActiveSession({
+      preserveRealtimeTalk: true,
+    })).resolves.toBe(true);
+
+    expect(stopRelay).not.toHaveBeenCalled();
+    expect(hostApiMock.loadAcpSession).toHaveBeenLastCalledWith({
+      sessionKey: 'agent:pi:s1', workspaceRoot: '/repo-a', cwd: '/repo-a', forceDurableReplay: true,
+    });
+    expect(hostApiMock.sessionsHistory).not.toHaveBeenCalled();
+    expect(useRealtimeTalkStore.getState()).toMatchObject({
+      isActive: true,
+      relaySessionId: 'relay-1',
+      sessionKey: 'agent:pi:s1',
+    });
+    expect(useAcpChatSessionStore.getState().timeline.itemsById['consult-history:0']).toMatchObject({
+      parts: [{ kind: 'markdown', text: 'Durable consult answer' }],
+    });
+    unregister();
   });
 
   it('projects cron history when ACP replay is empty', async () => {
@@ -1124,8 +1245,7 @@ describe('ACP Chat store', () => {
     const loading = useAcpChatSessionStore.getState().loadSession({
       sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo', createIfMissing: true,
     });
-    await Promise.resolve();
-    expect(hostApiMock.loadAcpSession).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(hostApiMock.loadAcpSession).toHaveBeenCalledTimes(1));
 
     await expect(loading).resolves.toBe(true);
     expect(hostApiMock.loadAcpSession).toHaveBeenCalledTimes(3);

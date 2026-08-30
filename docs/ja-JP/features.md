@@ -62,7 +62,7 @@ Skillsページでは、管理ディレクトリ、workspace、追加スキル�
 
 OpenAI、Anthropic、Z.AI / GLMなど複数のAIプロバイダーに接続でき、認証情報はOSのネイティブキーチェーンに安全に保存されます。OpenAIはAPIキーとブラウザOAuth（Codexサブスクリプション）の両方に対応しています。
 
-開発者モードの専用Image Generationページでは、Base URL、APIキー、`gpt-image-2`などのモデル名を指定して、独立したOpenAI互換の画像生成エンドポイントを設定できます。画像生成は専用の`/v1/images/generations`サービスを使い、チャットは通常のOpenAIプロバイダーを使い続けられます。
+開発者モードでは **Models → Image Generation** タブを開き、Base URL、APIキー、`gpt-image-2`などのモデル名を指定して、独立したOpenAI互換の画像生成エンドポイントを設定できます。画像生成は専用の`/v1/images/generations`サービスを使い、チャットは通常のOpenAIプロバイダーを使い続けられます。
 
 OpenAI互換ゲートウェイで **Custom** プロバイダーを使う場合、互換性が必要なエンドポイント向けに **設定 → AI Providers → Providerを編集** からカスタム `User-Agent` を設定できます。
 

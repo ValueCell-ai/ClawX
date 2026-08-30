@@ -47,6 +47,15 @@
     "acp": {
         "thought": "思考",
         "tool": "工具",
+        "toolName": {
+            "updatePlan": "更新计划",
+            "webFetch": "读取网页",
+            "browser": "操作浏览器",
+            "execCommand": "执行命令",
+            "read": "读取",
+            "spawnSubagent": "派出子智能体",
+            "memorySearch": "查询记忆"
+        },
         "expandTool": "展开工具结果",
         "collapseTool": "折叠工具结果",
         "expandToolGroup": "展开工具调用",
@@ -57,6 +66,12 @@
         "running": "进行中",
         "pending": "待处理",
         "completed": "已完成",
+        "sessionPlan": {
+            "progress": "{{completed}} / {{total}}",
+            "expand": "展开计划",
+            "collapse": "折叠计划",
+            "tasks": "计划任务"
+        },
         "failed": "失败",
         "cancelled": "已取消",
         "loadFailed": "会话加载失败",
@@ -248,6 +263,39 @@
         "skillPreviewTooltip": "预览 SKILL.md",
         "skillPreviewNotFound": "找不到该技能。请打开技能列表以刷新。",
         "contextUsage": "已使用 {{percentage}} 上下文：{{used}} / {{total}} 个 token"
+    },
+    "talk": {
+        "start": "开始语音对话",
+        "stop": "停止语音对话",
+        "inputLevel": "麦克风输入音量",
+        "status": {
+            "idle": "语音对话已就绪",
+            "connecting": "正在连接语音对话",
+            "listening": "正在聆听",
+            "thinking": "正在思考",
+            "speaking": "正在讲话",
+            "disconnected": "语音对话已断开",
+            "error": "语音对话出错"
+        },
+        "unavailable": {
+            "gateway": "语音对话需要已连接的网关",
+            "sending": "发送消息时无法使用语音对话",
+            "session": "请先新建对话后再开始语音对话",
+            "configuration": "语音对话不可用：{{reason}}",
+            "loading": "正在检查语音对话可用性",
+            "default": "语音对话不可用"
+        },
+        "consultRefresh": {
+            "failed": "无法刷新咨询回复。",
+            "retry": "重试刷新",
+            "retrying": "正在重试刷新..."
+        },
+        "transcript": {
+            "label": "实时语音转写",
+            "microphone": "麦克风",
+            "voiceInput": "语音输入",
+            "voiceResponse": "语音回答"
+        }
     },
     "sessionList": {
         "title": "会话列表",

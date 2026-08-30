@@ -15,6 +15,8 @@ export type AcpChatLoadPayload = AcpSessionKeyPayload & {
   workspaceRoot: string;
   cwd: string;
   createIfMissing?: boolean;
+  /** ClawX-internal: obtain an authoritative Gateway transcript through a fresh ACP session. */
+  forceDurableReplay?: true;
 };
 
 export type AcpPromptMediaItem = {

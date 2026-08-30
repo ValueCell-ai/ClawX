@@ -47,6 +47,15 @@
     "acp": {
         "thought": "Размышление",
         "tool": "Инструмент",
+        "toolName": {
+            "updatePlan": "Обновить план",
+            "webFetch": "Прочитать веб-страницу",
+            "browser": "Управлять браузером",
+            "execCommand": "Выполнить команду",
+            "read": "Прочитать",
+            "spawnSubagent": "Запустить субагента",
+            "memorySearch": "Поиск в памяти"
+        },
         "expandTool": "Развернуть результат инструмента",
         "collapseTool": "Свернуть результат инструмента",
         "expandToolGroup": "Развернуть вызовы инструментов",
@@ -57,6 +66,12 @@
         "running": "Выполняется",
         "pending": "Ожидает",
         "completed": "Завершено",
+        "sessionPlan": {
+            "progress": "{{completed}} / {{total}}",
+            "expand": "Развернуть план",
+            "collapse": "Свернуть план",
+            "tasks": "Задачи плана"
+        },
         "failed": "Ошибка",
         "cancelled": "Отменено",
         "loadFailed": "Не удалось загрузить сеанс",
@@ -248,6 +263,39 @@
         "skillPreviewTooltip": "Предпросмотр SKILL.md",
         "skillPreviewNotFound": "Skill не найден. Откройте список Skill, чтобы обновить его.",
         "contextUsage": "Использовано контекста: {{percentage}} ({{used}} / {{total}} токенов)"
+    },
+    "talk": {
+        "start": "Начать Talk",
+        "stop": "Остановить Talk",
+        "inputLevel": "Уровень входного сигнала микрофона",
+        "status": {
+            "idle": "Talk готов",
+            "connecting": "Подключение Talk",
+            "listening": "Слушаю",
+            "thinking": "Думаю",
+            "speaking": "Говорю",
+            "disconnected": "Talk отключён",
+            "error": "Ошибка Talk"
+        },
+        "unavailable": {
+            "gateway": "Для Talk требуется подключённый шлюз",
+            "sending": "Talk недоступен во время отправки сообщения",
+            "session": "Создайте новый чат перед запуском Talk",
+            "configuration": "Talk недоступен: {{reason}}",
+            "loading": "Проверка доступности Talk",
+            "default": "Talk недоступен"
+        },
+        "consultRefresh": {
+            "failed": "Не удалось обновить ответ консультации.",
+            "retry": "Повторить обновление",
+            "retrying": "Повторное обновление..."
+        },
+        "transcript": {
+            "label": "Расшифровка Talk в реальном времени",
+            "microphone": "Микрофон",
+            "voiceInput": "Голосовой ввод",
+            "voiceResponse": "Голосовой ответ"
+        }
     },
     "sessionList": {
         "title": "Список сессий",

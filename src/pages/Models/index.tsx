@@ -1,5 +1,6 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useGatewayStore } from '@/stores/gateway';
@@ -7,7 +8,10 @@ import { useSettingsStore } from '@/stores/settings';
 import { hostApi } from '@/lib/host-api';
 import { trackUiEvent } from '@/lib/telemetry';
 import { ProvidersSettings } from '@/components/settings/ProvidersSettings';
+import { ImageGenerationSettings } from '@/components/settings/ImageGenerationSettings';
+import { TalkSettings } from '@/components/settings/TalkSettings';
 import { FeedbackState } from '@/components/common/FeedbackState';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   filterUsageHistoryByWindow,
   groupUsageHistory,
@@ -24,6 +28,15 @@ const USAGE_AUTO_REFRESH_INTERVAL_MS = 15_000;
 
 const HIDDEN_USAGE_MARKERS = ['gateway-injected', 'delivery-mirror'];
 
+type ModelsManagementTab = 'chat' | 'image-generation' | 'realtime-talk';
+
+function getModelsManagementTab(tab: string | null, devModeUnlocked: boolean): ModelsManagementTab {
+  if (tab === 'image-generation' || tab === 'realtime-talk') {
+    return devModeUnlocked ? tab : 'chat';
+  }
+  return tab === 'chat' ? tab : 'chat';
+}
+
 function isHiddenUsageSource(source?: string): boolean {
   if (!source) return false;
   const normalizedSource = source.trim().toLowerCase();
@@ -32,8 +45,11 @@ function isHiddenUsageSource(source?: string): boolean {
 
 export function Models() {
   const { t } = useTranslation(['dashboard', 'settings']);
+  const [searchParams, setSearchParams] = useSearchParams();
   const gatewayStatus = useGatewayStore((state) => state.status);
   const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
+  const requestedManagementTab = getModelsManagementTab(searchParams.get('tab'), devModeUnlocked);
+  const [selectedManagementTab, setSelectedManagementTab] = useState(requestedManagementTab);
   const isGatewayRunning = gatewayStatus.state === 'running';
   const usageFetchMaxAttempts =
     window.electron.platform === 'win32' ? WINDOWS_USAGE_FETCH_MAX_ATTEMPTS : DEFAULT_USAGE_FETCH_MAX_ATTEMPTS;
@@ -101,6 +117,10 @@ export function Models() {
   useEffect(() => {
     trackUiEvent('models.page_viewed');
   }, []);
+
+  useEffect(() => {
+    setSelectedManagementTab(requestedManagementTab);
+  }, [requestedManagementTab]);
 
   useEffect(() => {
     if (!isGatewayRunning) {
@@ -285,11 +305,50 @@ export function Models() {
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2 space-y-12">
-          {/* AI Providers Section */}
-          <ProvidersSettings />
+          {devModeUnlocked ? (
+            <Tabs
+              value={selectedManagementTab}
+              onValueChange={(value) => {
+                const nextTab = getModelsManagementTab(value, devModeUnlocked);
+                setSelectedManagementTab(nextTab);
+                const nextSearchParams = new URLSearchParams(searchParams);
+                if (nextTab === 'chat') {
+                  nextSearchParams.delete('tab');
+                } else {
+                  nextSearchParams.set('tab', nextTab);
+                }
+                setSearchParams(nextSearchParams);
+              }}
+              data-testid="models-management-tabs"
+            >
+              <TabsList>
+                <TabsTrigger value="chat" data-testid="models-tab-chat">
+                  {t('dashboard:models.tabs.chat')}
+                </TabsTrigger>
+                <TabsTrigger value="image-generation" data-testid="models-tab-image-generation">
+                  {t('dashboard:models.tabs.imageGeneration')}
+                </TabsTrigger>
+                <TabsTrigger value="realtime-talk" data-testid="models-tab-realtime-talk">
+                  {t('dashboard:models.tabs.realtimeTalk')}
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="chat" className="mt-8">
+                <ProvidersSettings />
+              </TabsContent>
+              <TabsContent value="image-generation" className="mt-8">
+                <ImageGenerationSettings />
+              </TabsContent>
+              <TabsContent value="realtime-talk" className="mt-8">
+                <TalkSettings />
+              </TabsContent>
+            </Tabs>
+          ) : (
+            <>
+              <ProvidersSettings />
+            </>
+          )}
 
-          {/* Token Usage History Section */}
-          <div>
+          {(!devModeUnlocked || selectedManagementTab === 'chat') && <div>
             <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight">
               {t('dashboard:recentTokenHistory.title', 'Token Usage History')}
             </h2>
@@ -530,7 +589,7 @@ export function Models() {
                 </div>
               )}
             </div>
-          </div>
+          </div>}
         </div>
       </div>
       {devModeUnlocked && selectedUsageEntry && (

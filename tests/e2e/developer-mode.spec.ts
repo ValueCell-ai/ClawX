@@ -6,10 +6,18 @@ test.describe('ClawX developer-mode gated UI', () => {
 
     await page.getByTestId('sidebar-nav-settings').click();
     await expect(page.getByTestId('settings-page')).toBeVisible();
-    await expect(page.getByTestId('settings-developer-section')).toHaveCount(0);
+    await expect(page.getByTestId('settings-developer-section')).toBeVisible();
+    await expect(page.getByTestId('settings-developer-locked-guidance')).toBeVisible();
     await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'unchecked');
     await expect(page.getByTestId('sidebar-open-dev-console')).toHaveCount(0);
     await expect(page.getByTestId('sidebar-nav-dreams')).toHaveCount(0);
+    await expect(page.getByTestId('sidebar-nav-image-generation')).toHaveCount(0);
+    await expect(page.getByTestId('sidebar-talk')).toHaveCount(0);
+    await expect(page.getByTestId('talk-settings')).toHaveCount(0);
+
+    await page.evaluate(() => window.location.assign('#/settings?section=developer'));
+    await expect(page.getByTestId('settings-developer-section')).toBeFocused();
+    await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'unchecked');
 
     await page.evaluate(() => {
       window.location.hash = '#/dreams';
@@ -21,6 +29,10 @@ test.describe('ClawX developer-mode gated UI', () => {
     await expect(page.getByTestId('chat-composer-input')).toBeVisible();
 
     await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('models-management-tabs')).toHaveCount(0);
+    await expect(page.getByTestId('models-tab-image-generation')).toHaveCount(0);
+    await expect(page.getByTestId('models-tab-realtime-talk')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Recent Token Usage' })).toBeVisible();
     await page.getByTestId('providers-add-button').click();
     await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
     await page.getByTestId('add-provider-type-siliconflow').click();
@@ -34,15 +46,29 @@ test.describe('ClawX developer-mode gated UI', () => {
     await page.getByTestId('settings-dev-mode-switch').click();
     await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'checked');
     await expect(page.getByTestId('settings-developer-section')).toBeVisible();
+    await expect(page.getByTestId('settings-developer-locked-guidance')).toHaveCount(0);
     await expect(page.getByTestId('settings-developer-gateway-token')).toBeVisible();
     const compactionReserve = page.getByTestId('settings-developer-compaction-reserve');
     await expect(compactionReserve).toBeVisible();
     await expect(compactionReserve).toContainText('50,000 tokens when none is set');
     await expect(page.getByTestId('sidebar-open-dev-console')).toBeVisible();
     await expect(page.getByTestId('sidebar-nav-dreams')).toHaveCount(0);
-    await expect(page.getByTestId('sidebar-nav-image-generation')).toBeVisible();
+    await expect(page.getByTestId('sidebar-nav-image-generation')).toHaveCount(0);
+    await expect(page.getByTestId('sidebar-talk')).toBeVisible();
+    await expect(page.getByTestId('sidebar-talk')).toBeDisabled();
+    await expect(page.getByTestId('talk-settings')).toHaveCount(0);
 
     await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('models-tab-image-generation')).toBeVisible();
+    await expect(page.getByTestId('models-tab-realtime-talk')).toBeVisible();
+    await page.getByTestId('models-tab-image-generation').click();
+    await expect(page.getByTestId('image-generation-settings')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Recent Token Usage' })).toHaveCount(0);
+    await page.getByTestId('models-tab-realtime-talk').click();
+    await expect(page.getByTestId('talk-settings')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Recent Token Usage' })).toHaveCount(0);
+    await page.getByTestId('models-tab-chat').click();
+    await expect(page.getByRole('heading', { name: 'Recent Token Usage' })).toBeVisible();
     await page.getByTestId('providers-add-button').click();
     await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
     await page.getByTestId('add-provider-type-siliconflow').click();
