@@ -362,6 +362,22 @@ describe('OpenClaw restart recovery patch', () => {
     expect(patch).toContain('setTimeout(resolve, 1e3)');
   });
 
+  it('keeps a complete ACP ledger authoritative during session load', async () => {
+    const bundle = await readFile(
+      path.join(root, 'node_modules/openclaw/dist/acp-cli-BXc5GttU.js'),
+      'utf8',
+    );
+
+    expect(bundle).toContain(
+      'ledgerReplay.complete ? Promise.resolve([]) : this.getSessionTranscript',
+    );
+    expect(bundle).toContain(
+      'if (ledgerReplay.complete) await this.replayLedgerSession(session.sessionId, ledgerReplay);',
+    );
+    expect(bundle).not.toContain('selectReplaySourceForIntegrity');
+    expect(bundle).not.toContain('session transcript integrity fallback');
+  });
+
   it('executes the pinned transcript fallback as ordered native ACP updates', async () => {
     const bundle = await readFile(
       path.join(root, 'node_modules/openclaw/dist/acp-cli-BXc5GttU.js'),

@@ -58,9 +58,10 @@ acceptance:
   - The patched OpenClaw ACP adapter emits a standard session_info_update whose _meta contains openclaw.ai/compaction version 1 metadata for live and replayed compactions because the pinned ACP SDK does not yet accept the draft compaction_update discriminator.
   - Every metadata payload has a non-empty compactionId, a valid status, and a source; optional runId, willRetry, and timestamp fields are typed and omitted when unavailable.
   - One live occurrence reuses its compactionId from in_progress through its terminal update, while every later occurrence receives another compactionId even when the runId is unchanged.
-  - AgentSession threshold compaction, owning context-engine preflight or overflow recovery, and the actual /compact command publish structured agent compaction lifecycle events consumed by ACP.
+  - AgentSession threshold compaction and the actual /compact command publish their existing structured agent compaction lifecycle events consumed by ACP.
+  - Explicit context-engine overflow, preflight, and timeout recovery compaction calls publish structured start and terminal agent events unconditionally, regardless of the context engine ownsCompaction flag.
   - Direct sessions.compact operations publish their start and terminal state through the session.operation lifecycle consumed by ACP.
-  - Transcript fallback replay maps each persisted type compaction entry present in the bounded sessions.get response to one completed marker keyed by that entry's durable id and preserves response order when the ACP event ledger is unavailable; it does not claim to load unbounded transcript history.
+  - Transcript fallback replay maps each persisted type compaction entry present in the bounded sessions.get response to one completed marker keyed by that entry's durable id and preserves response order when the ACP event ledger is unavailable or incomplete; it does not claim to load unbounded transcript history.
   - Renderer accepts only version 1 compaction metadata with a non-empty ID, valid status, and valid source, and ignores malformed or unrelated metadata without changing the timeline.
   - Renderer closes open message segments before inserting a new compaction item and updates the exact compaction item in place for later metadata carrying the same ID.
   - Terminal state mapping is completed for successful work, cancelled for an aborted operation, and failed for an incomplete non-aborted operation.

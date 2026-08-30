@@ -24,9 +24,13 @@ function addedLinesForFile(patch: string, file: string): string {
 
 describe('OpenClaw ACP compaction lifecycle patch', () => {
   let patch: string;
+  let installedEmbedded: string;
 
   beforeAll(async () => {
-    patch = await readFile(patchPath, 'utf8');
+    [patch, installedEmbedded] = await Promise.all([
+      readFile(patchPath, 'utf8'),
+      readFile(path.join(root, 'node_modules/openclaw/dist/embedded-agent-DGUuxGR2.js'), 'utf8'),
+    ]);
   });
 
   it('projects structured live lifecycle events into recorded ACP metadata', () => {
@@ -90,10 +94,54 @@ describe('OpenClaw ACP compaction lifecycle patch', () => {
   it('protects owning-engine and direct session-operation terminals', () => {
     const embedded = addedLinesForFile(patch, 'dist/embedded-agent-DGUuxGR2.js');
     const sessions = addedLinesForFile(patch, 'dist/sessions-UcKjjh_n.js');
+    const directStart = embedded.indexOf(
+      'const emitDirectCompactionStart = async (source) => {',
+    );
+    const directEnd = embedded.indexOf(
+      '\n\t\t\t\tconst emitDirectCompactionEnd = async',
+      directStart,
+    );
+    const beforeHookStart = installedEmbedded.indexOf(
+      'const runOwnsCompactionBeforeHook = async (reason) => {',
+    );
+    const beforeHookEnd = installedEmbedded.indexOf(
+      '\n\t\t\t\tconst runOwnsCompactionAfterHook = async',
+      beforeHookStart,
+    );
+    const afterHookStart = beforeHookEnd;
+    const afterHookEnd = installedEmbedded.indexOf(
+      '\n\t\t\t\tlet authRetryPending',
+      afterHookStart,
+    );
 
-    expect(embedded).toContain('contextEngine.info.ownsCompaction !== true');
+    expect(directStart).toBeGreaterThanOrEqual(0);
+    expect(directEnd).toBeGreaterThan(directStart);
+    expect(beforeHookStart).toBeGreaterThanOrEqual(0);
+    expect(beforeHookEnd).toBeGreaterThan(beforeHookStart);
+    expect(afterHookEnd).toBeGreaterThan(afterHookStart);
+    const emitDirectCompactionStart = embedded.slice(directStart, directEnd);
+    const runOwnsCompactionBeforeHook = installedEmbedded.slice(
+      beforeHookStart,
+      beforeHookEnd,
+    );
+    const runOwnsCompactionAfterHook = installedEmbedded.slice(
+      afterHookStart,
+      afterHookEnd,
+    );
+
+    expect(runOwnsCompactionBeforeHook).toContain(
+      'contextEngine.info.ownsCompaction !== true',
+    );
+    expect(runOwnsCompactionAfterHook).toContain(
+      'contextEngine.info.ownsCompaction !== true',
+    );
+    expect(emitDirectCompactionStart).not.toContain('ownsCompaction');
     expect(embedded).toContain('timeoutCompactionId = await emitDirectCompactionStart("preflight")');
     expect(embedded).toContain('directCompactionId = await emitDirectCompactionStart(directCompactionSource)');
+    expect(embedded).toContain(
+      'const aborted = params.abortSignal?.aborted === true || compactResult?.reason === "aborted";',
+    );
+    expect(embedded.match(/reason: compactErr\?\.name === "AbortError" \? "aborted" : String\(compactErr\)/g)).toHaveLength(2);
     expect(embedded).toContain('} finally {\n\t\t\t\t\t\t\t\tawait emitDirectCompactionEnd(timeoutCompactionId');
     expect(embedded).toContain('} finally {\n\t\t\t\t\t\t\t\tawait emitDirectCompactionEnd(directCompactionId');
     expect(embedded).not.toMatch(/completed: false,\s*willRetry:/);
