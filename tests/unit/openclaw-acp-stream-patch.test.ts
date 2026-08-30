@@ -47,6 +47,23 @@ type FinalStreamReconciler = (
   cleanedText: string,
 ) => void;
 
+type PostLedgerTranscriptSelector = (
+  transcript: Array<{ timestamp?: unknown; content?: unknown }>,
+  ledgerReplay: { events: Array<{ at?: unknown }> },
+) => Array<{ timestamp?: unknown; content?: unknown }>;
+
+type AmbientChatHandler = (this: {
+  ambientChatRuns: Map<string, Record<string, unknown>>;
+  sessionUpdates: { emit: (value: unknown) => Promise<void> };
+  getSessionSnapshot: (sessionKey: string) => Promise<Record<string, unknown>>;
+  sendSessionSnapshotUpdate: (
+    session: Record<string, unknown>,
+    snapshot: Record<string, unknown>,
+    options: Record<string, unknown>,
+  ) => Promise<void>;
+  log: (message: string) => void;
+}, session: Record<string, unknown>, runId: string, state: string, messageData?: Record<string, unknown>) => Promise<void>;
+
 function extractDeltaHandler(bundle: string): DeltaHandler {
   const methodStart = bundle.indexOf('async handleDeltaEvent(sessionId, messageData)');
   const methodEnd = bundle.indexOf('\n\tasync finishPrompt', methodStart);
@@ -111,7 +128,186 @@ function extractFinalStreamReconciler(bundle: string): FinalStreamReconciler {
   return context.reconcileFinalStream;
 }
 
+function extractPostLedgerTranscriptSelector(bundle: string): PostLedgerTranscriptSelector {
+  const start = bundle.indexOf('function selectPostLedgerTranscript(');
+  const end = bundle.indexOf('\nconst ACP_COMPACTION_SOURCES', start);
+  if (start < 0 || end <= start) {
+    throw new Error('OpenClaw post-ledger transcript selector was not found');
+  }
+  const context = {
+    selectPostLedgerTranscript: undefined as PostLedgerTranscriptSelector | undefined,
+  };
+  runInNewContext(
+    `${bundle.slice(start, end)}\nglobalThis.selectPostLedgerTranscript = selectPostLedgerTranscript;`,
+    context,
+  );
+  if (!context.selectPostLedgerTranscript) {
+    throw new Error('OpenClaw post-ledger transcript selector could not be loaded');
+  }
+  return context.selectPostLedgerTranscript;
+}
+
+function extractAmbientChatHandler(bundle: string): AmbientChatHandler {
+  const methodStart = bundle.indexOf('async handleAmbientChatEvent(session, runId, state, messageData)');
+  const methodEnd = bundle.indexOf('\n\tasync handleChatEvent', methodStart);
+  if (methodStart < 0 || methodEnd <= methodStart) {
+    throw new Error('OpenClaw ambient announcement handler was not found');
+  }
+  const helperStart = bundle.indexOf('function resolveAcpTextDelta(previousText, nextText)');
+  const helperEnd = bundle.indexOf('\n//#endregion', helperStart);
+  const methodSource = bundle
+    .slice(methodStart, methodEnd)
+    .replace('async handleAmbientChatEvent', 'async function handleAmbientChatEvent');
+  const context = {
+    handleAmbientChatEvent: undefined as AmbientChatHandler | undefined,
+  };
+  runInNewContext(
+    `${bundle.slice(helperStart, helperEnd)}\nglobalThis.handleAmbientChatEvent = ${methodSource};`,
+    context,
+  );
+  if (!context.handleAmbientChatEvent) {
+    throw new Error('OpenClaw ambient announcement handler could not be loaded');
+  }
+  return context.handleAmbientChatEvent;
+}
+
 describe('OpenClaw ACP assistant stream patch', () => {
+  it('selects only finite transcript records strictly newer than a complete ledger', async () => {
+    const bundle = await readFile(bundlePath, 'utf8');
+    const selectPostLedgerTranscript = extractPostLedgerTranscriptSelector(bundle);
+    const before = { timestamp: 99, content: 'before' };
+    const boundary = { timestamp: 200, content: 'boundary' };
+    const missingTimestamp = { content: 'unknown' };
+    const after = { timestamp: 201, content: 'announcement' };
+
+    expect(selectPostLedgerTranscript(
+      [
+        before,
+        boundary,
+        missingTimestamp,
+        { timestamp: '2026-08-31T00:00:00.000Z', content: 'string timestamp' },
+        { timestamp: Number.POSITIVE_INFINITY, content: 'infinite timestamp' },
+        after,
+      ],
+      { events: [{ at: 100 }, { at: 200 }, { at: Number.NaN }] },
+    )).toEqual([after]);
+    expect(selectPostLedgerTranscript([
+      before,
+      missingTimestamp,
+      { timestamp: '2026-08-31T00:00:00.000Z', content: 'string timestamp' },
+      { timestamp: Number.POSITIVE_INFINITY, content: 'infinite timestamp' },
+      after,
+    ], { events: [] })).toEqual([before, after]);
+
+    const loadStart = bundle.indexOf('async loadSession(params)');
+    const loadEnd = bundle.indexOf('\n\tasync listSessions', loadStart);
+    const loadSource = bundle.slice(loadStart, loadEnd);
+    expect(loadSource).not.toContain('ledgerReplay.complete ? Promise.resolve([])');
+    expect(loadSource).toContain('selectPostLedgerTranscript(transcript, ledgerReplay)');
+    expect(loadSource.indexOf('replayLedgerSession')).toBeLessThan(
+      loadSource.indexOf('selectPostLedgerTranscript'),
+    );
+  });
+
+  it('streams no-pending announce runs for the loaded session and checkpoints their terminal', async () => {
+    const bundle = await readFile(bundlePath, 'utf8');
+    const handleAmbientChatEvent = extractAmbientChatHandler(bundle);
+    const calls: Array<Record<string, unknown>> = [];
+    const session = {
+      sessionId: 'parent-session',
+      sessionKey: 'agent:main:session-1',
+      ledgerSessionId: 'ledger-session',
+    };
+    const receiver = {
+      ambientChatRuns: new Map<string, Record<string, unknown>>(),
+      sessionUpdates: {
+        emit: async (value: unknown) => calls.push(value as Record<string, unknown>),
+      },
+      getSessionSnapshot: async () => ({ metadata: { title: 'Parent' } }),
+      sendSessionSnapshotUpdate: async (
+        routedSession: Record<string, unknown>,
+        _snapshot: Record<string, unknown>,
+        options: Record<string, unknown>,
+      ) => calls.push({ checkpoint: true, routedSession, options }),
+      log: () => undefined,
+    };
+    const runId = 'announce:v1:agent:main:subagent:child:run';
+
+    await handleAmbientChatEvent.call(receiver, session, runId, 'delta', {
+      content: [{ type: 'text', text: 'Two tasks complete' }],
+    });
+    await handleAmbientChatEvent.call(receiver, session, runId, 'delta', {
+      content: [{ type: 'text', text: 'Two tasks complete; one remains' }],
+    });
+    await handleAmbientChatEvent.call(receiver, session, runId, 'final', {
+      content: [{ type: 'text', text: 'Two tasks complete; one remains' }],
+    });
+    await handleAmbientChatEvent.call(receiver, session, runId, 'final', {
+      content: [{ type: 'text', text: 'duplicate terminal' }],
+    });
+
+    expect(calls.slice(0, 2).map((call) => (
+      call.update as { content?: { text?: string } }
+    ).content?.text)).toEqual(['Two tasks complete', '; one remains']);
+    expect(calls.slice(0, 2)).toEqual([
+      expect.objectContaining({
+        sessionId: session.sessionId,
+        sessionKey: session.sessionKey,
+        ledgerSessionId: session.ledgerSessionId,
+        runId,
+        record: true,
+      }),
+      expect.objectContaining({
+        sessionId: session.sessionId,
+        sessionKey: session.sessionKey,
+        ledgerSessionId: session.ledgerSessionId,
+        runId,
+        record: true,
+      }),
+    ]);
+    expect(calls[2]).toEqual(expect.objectContaining({
+      checkpoint: true,
+      options: { includeControls: false, record: true, runId },
+    }));
+
+    const loadStart = bundle.indexOf('async loadSession(params)');
+    const loadEnd = bundle.indexOf('\n\tasync listSessions', loadStart);
+    expect(bundle.slice(loadStart, loadEnd)).toContain('activateAmbientSession(session)');
+    for (const [startMarker, endMarker] of [
+      ['async newSession(params)', '\n\tasync loadSession'],
+      ['async resumeSession(params)', '\n\tasync closeSession'],
+    ]) {
+      const start = bundle.indexOf(startMarker);
+      const end = bundle.indexOf(endMarker, start);
+      expect(bundle.slice(start, end)).toContain('activateAmbientSession(session)');
+    }
+    const closeStart = bundle.indexOf('async closeSession(params)');
+    const closeEnd = bundle.indexOf('\n\tasync authenticate', closeStart);
+    expect(bundle.slice(closeStart, closeEnd)).toContain('deactivateAmbientSession(session.sessionId)');
+    const shutdownStart = bundle.indexOf('async shutdown()');
+    const shutdownEnd = bundle.indexOf('\n\tsupportsClientReadTextFile', shutdownStart);
+    expect(bundle.slice(shutdownStart, shutdownEnd)).toContain('deactivateAmbientSession()');
+    const promptStart = bundle.indexOf('async prompt(params)');
+    const promptEnd = bundle.indexOf('\n\tasync cancel', promptStart);
+    expect(bundle.slice(promptStart, promptEnd)).toContain('acquireSessionMessageSubscription(session.sessionKey)');
+    const chatStart = bundle.indexOf('async handleChatEvent(evt)');
+    const chatEnd = bundle.indexOf('\n\tasync handleDeltaEvent', chatStart);
+    const chatSource = bundle.slice(chatStart, chatEnd);
+    expect(chatSource).toContain('handleAmbientChatEvent');
+    expect(chatSource).toContain('runId.startsWith("announce:v1:")');
+    expect(chatSource).toContain('ambientSession.sessionKey !== sessionKey');
+
+    for (let index = 0; index < 105; index += 1) {
+      await handleAmbientChatEvent.call(
+        receiver,
+        session,
+        `announce:v1:bounded:${index}`,
+        'final',
+      );
+    }
+    expect(receiver.ambientChatRuns.size).toBeLessThanOrEqual(100);
+  });
+
   it('reconciles the final assistant snapshot against text actually emitted to Gateway', async () => {
     const bundle = await readFile(path.join(root, 'node_modules/openclaw/dist/selection-JInn13lc.js'), 'utf8');
     const reconcileFinalStream = extractFinalStreamReconciler(bundle);

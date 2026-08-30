@@ -1,5 +1,5 @@
 diff --git a/dist/acp-cli-BXc5GttU.js b/dist/acp-cli-BXc5GttU.js
-index 6c7de7d..cec13ea 100644
+index 6c7de7d..e97f3e4 100644
 --- a/dist/acp-cli-BXc5GttU.js
 +++ b/dist/acp-cli-BXc5GttU.js
 @@ -1622,6 +1622,40 @@ function buildSessionUsageSnapshot(row) {
@@ -62,8 +62,18 @@ index 6c7de7d..cec13ea 100644
 +			continue;
 +		}
  		if (role === "assistant" && typedBlock.type === "thinking" && typeof typedBlock.thinking === "string" && typedBlock.thinking) replayChunks.push({
-@@ -1650,2 +1700,34 @@ function extractReplayChunks(message) {
+@@ -1650,2 +1700,44 @@ function extractReplayChunks(message) {
  }
++function selectPostLedgerTranscript(transcript, ledgerReplay) { /* ledgerReplay.complete ? Promise.resolve([]) : this.getSessionTranscript was replaced so complete ledgers can append a bounded timestamp tail. */
++	let maxLedgerAt;
++	for (const event of ledgerReplay.events) {
++		const at = event?.at;
++		if (typeof at !== "number" || !Number.isFinite(at)) continue;
++		maxLedgerAt = maxLedgerAt === void 0 ? at : Math.max(maxLedgerAt, at);
++	}
++	const ledgerHighWaterAt = maxLedgerAt ?? Number.NEGATIVE_INFINITY;
++	return transcript.filter((message) => typeof message?.timestamp === "number" && Number.isFinite(message.timestamp) && message.timestamp > ledgerHighWaterAt);
++}
 +const ACP_COMPACTION_SOURCES = /* @__PURE__ */ new Set([
 +	"threshold",
 +	"overflow",
@@ -97,16 +107,28 @@ index 6c7de7d..cec13ea 100644
 +	};
 +}
  //#endregion
-@@ -1851,2 +1933,4 @@ const ACP_LOAD_SESSION_REPLAY_LIMIT = 1e6;
+@@ -1851,2 +1943,4 @@ const ACP_LOAD_SESSION_REPLAY_LIMIT = 1e6;
  const ACP_GATEWAY_DISCONNECT_GRACE_MS = 5e3;
 +// ClawX passes a policy-derived value covering heartbeat detection and managed Gateway startup.
 +const ACP_GATEWAY_ACCEPTED_PROMPT_RECOVERY_GRACE_MS = Number.parseInt(process.env.OPENCLAW_ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS ?? "", 10) || 6e5;
  function normalizedChatSendAckStatus(status) {
-@@ -1916,2 +2000,3 @@ var AcpGatewayAgent = class {
+@@ -1916,2 +2010,5 @@ var AcpGatewayAgent = class {
  		this.pendingPrompts = /* @__PURE__ */ new Map();
 +		this.sessionMessageSubscriptions = /* @__PURE__ */ new Map();
++		this.ambientSession = void 0;
++		this.ambientChatRuns = /* @__PURE__ */ new Map();
  		this.settlingPromptKeys = /* @__PURE__ */ new Set();
-@@ -1959,3 +2044,62 @@ var AcpGatewayAgent = class {
+@@ -1943,4 +2040,5 @@ var AcpGatewayAgent = class {
+-	shutdown() {
+-		this.sessionUpdates.stop();
++	async shutdown() {
++		this.activeDisconnectContext = null;
++		this.clearDisconnectTimer();
++		await this.deactivateAmbientSession();
++		this.sessionUpdates.stop();
+-		this.activeDisconnectContext = null;
+-		this.clearDisconnectTimer();
+@@ -1959,3 +2057,85 @@ var AcpGatewayAgent = class {
  	}
 -	handleGatewayReconnect() {
 +	async ensureSessionMessageSubscription(sessionKey, entry) {
@@ -168,9 +190,32 @@ index 6c7de7d..cec13ea 100644
 +			this.log(`session message unsubscribe failed for ${sessionKey}: ${String(err)}`);
 +		});
 +	}
++	async activateAmbientSession(session) {
++		const nextSession = {
++			sessionId: session.sessionId,
++			sessionKey: session.sessionKey,
++			...session.ledgerSessionId ? { ledgerSessionId: session.ledgerSessionId } : {}
++		};
++		const currentSession = this.ambientSession;
++		if (currentSession?.sessionId === nextSession.sessionId && currentSession.sessionKey === nextSession.sessionKey) {
++			this.ambientSession = nextSession;
++			return;
++		}
++		await this.acquireSessionMessageSubscription(nextSession.sessionKey);
++		this.ambientSession = nextSession;
++		this.ambientChatRuns.clear();
++		if (currentSession) await this.releaseSessionMessageSubscription(currentSession.sessionKey);
++	}
++	async deactivateAmbientSession(sessionId) {
++		const currentSession = this.ambientSession;
++		if (!currentSession || sessionId && currentSession.sessionId !== sessionId) return;
++		this.ambientSession = void 0;
++		this.ambientChatRuns.clear();
++		await this.releaseSessionMessageSubscription(currentSession.sessionKey);
++	}
 +	async handleGatewayReconnect() {
  		this.log("gateway reconnected");
-@@ -1963,4 +2107,18 @@ var AcpGatewayAgent = class {
+@@ -1963,4 +2143,18 @@ var AcpGatewayAgent = class {
  		this.activeDisconnectContext = null;
 -		if (!disconnectContext) return;
 -		this.reconcilePendingPrompts(disconnectContext.generation, false);
@@ -191,47 +236,69 @@ index 6c7de7d..cec13ea 100644
 +		}));
 +		if (disconnectContext) await this.reconcilePendingPrompts(disconnectContext.generation, false);
  	}
-@@ -1983,2 +2141,6 @@ var AcpGatewayAgent = class {
+@@ -1983,2 +2177,6 @@ var AcpGatewayAgent = class {
  		}
 +		if (evt.event === "session.operation") {
 +			await this.handleSessionOperationEvent(evt);
 +			return;
 +		}
  		if (evt.event === "exec.approval.requested") {
-@@ -1987,3 +2149,3 @@ var AcpGatewayAgent = class {
+@@ -1987,3 +2185,3 @@ var AcpGatewayAgent = class {
  		}
 -		if (evt.event === "agent") await this.handleAgentEvent(evt);
 +		if (evt.event === "agent" || evt.event === "session.tool") await this.handleAgentEvent(evt);
  	}
-@@ -2212,3 +2374,3 @@ var AcpGatewayAgent = class {
+@@ -2040 +2238,2 @@ var AcpGatewayAgent = class {
+-		await this.sessionUpdates.sendAvailableCommands(session, { record: true });
++		await this.sessionUpdates.sendAvailableCommands(session, { record: true });
++		await this.activateAmbientSession(session);
+@@ -2078 +2277 @@ var AcpGatewayAgent = class {
+-		const [sessionSnapshot, transcript] = await Promise.all([this.getSessionSnapshot(session.sessionKey), ledgerReplay.complete ? Promise.resolve([]) : this.getSessionTranscript(session.sessionKey).catch((err) => {
++		const [sessionSnapshot, transcript] = await Promise.all([this.getSessionSnapshot(session.sessionKey), this.getSessionTranscript(session.sessionKey).catch((err) => {
+@@ -2082,2 +2281,4 @@ var AcpGatewayAgent = class {
+-		if (ledgerReplay.complete) await this.replayLedgerSession(session.sessionId, ledgerReplay);
+-		else await this.replaySessionTranscript(session.sessionId, transcript);
++		if (ledgerReplay.complete) await this.replayLedgerSession(session.sessionId, ledgerReplay);
++		if (ledgerReplay.complete) await this.replaySessionTranscript(session.sessionId, selectPostLedgerTranscript(transcript, ledgerReplay));
++		else await this.replaySessionTranscript(session.sessionId, transcript);
++		await this.activateAmbientSession(session);
+@@ -2150 +2351,2 @@ var AcpGatewayAgent = class {
+-		await this.sessionUpdates.sendAvailableCommands(session, { record: false });
++		await this.sessionUpdates.sendAvailableCommands(session, { record: false });
++		await this.activateAmbientSession(session);
+@@ -2160 +2362,2 @@ var AcpGatewayAgent = class {
+-		await this.cancelSessionWork(session);
++		await this.cancelSessionWork(session);
++		await this.deactivateAmbientSession(session.sessionId);
+@@ -2212,3 +2415,3 @@ var AcpGatewayAgent = class {
  		if (!session) throw new Error(`Session ${params.sessionId} not found`);
 -		if (session.abortController) this.sessionStore.cancelActiveRun(params.sessionId);
 +		if (session.abortController) await this.cancelSessionWork(session);
  		const meta = parseSessionMeta(params["_meta"]);
-@@ -2229,3 +2391,2 @@ var AcpGatewayAgent = class {
+@@ -2229,3 +2432,2 @@ var AcpGatewayAgent = class {
  		const runId = randomUUID();
 -		this.sessionStore.setActiveRun(params.sessionId, runId, abortController);
  		const requestParams = {
-@@ -2239,2 +2400,4 @@ var AcpGatewayAgent = class {
+@@ -2239,2 +2441,4 @@ var AcpGatewayAgent = class {
  		};
 +		await this.acquireSessionMessageSubscription(session.sessionKey);
 +		this.sessionStore.setActiveRun(params.sessionId, runId, abortController);
  		return new Promise((resolve, reject) => {
-@@ -2243,2 +2406,3 @@ var AcpGatewayAgent = class {
+@@ -2243,2 +2447,3 @@ var AcpGatewayAgent = class {
  				sessionKey: session.sessionKey,
 +				subscriptionSessionKey: session.sessionKey,
  				...session.ledgerSessionId ? { ledgerSessionId: session.ledgerSessionId } : {},
-@@ -2301,3 +2465,4 @@ var AcpGatewayAgent = class {
+@@ -2301,3 +2506,4 @@ var AcpGatewayAgent = class {
  				const promptKey = this.pendingPromptKey(params.sessionId, runId);
 -				if (isGatewayCloseError(err) && (this.getPendingPrompt(params.sessionId, runId) || this.settlingPromptKeys.has(promptKey))) return;
 +				const pending = this.pendingPrompts.get(params.sessionId);
 +				if (isGatewayCloseError(err) && (this.getPendingPrompt(params.sessionId, runId) || pending?.resumedRunIds?.has(runId) || this.settlingPromptKeys.has(promptKey))) return;
  				this.clearApprovalRelaysForPrompt(params.sessionId, runId, { denyActive: true });
-@@ -2305,2 +2470,3 @@ var AcpGatewayAgent = class {
+@@ -2305,2 +2511,3 @@ var AcpGatewayAgent = class {
  				this.sessionStore.clearActiveRun(params.sessionId);
 +				void this.releaseSessionMessageSubscription(session.sessionKey);
  				if (this.pendingPrompts.size === 0) this.clearDisconnectTimer();
-@@ -2338,2 +2504,8 @@ var AcpGatewayAgent = class {
+@@ -2338,2 +2545,8 @@ var AcpGatewayAgent = class {
  		if (!stream || !data || !sessionKey) return;
 +		const pending = this.findPendingBySessionKey(sessionKey, runId, payload.resumedFromRunId);
 +		if (stream === "compaction") {
@@ -240,11 +307,11 @@ index 6c7de7d..cec13ea 100644
 +			return;
 +		}
  		if (stream === "approval") {
-@@ -2351,3 +2523,2 @@ var AcpGatewayAgent = class {
+@@ -2351,3 +2564,2 @@ var AcpGatewayAgent = class {
  		if (!toolCallId) return;
 -		const pending = this.findPendingBySessionKey(sessionKey, runId);
  		if (!pending) return;
-@@ -2425,2 +2596,24 @@ var AcpGatewayAgent = class {
+@@ -2425,2 +2637,24 @@ var AcpGatewayAgent = class {
  	}
 +	async handleSessionOperationEvent(evt) {
 +		const payload = evt.payload;
@@ -269,25 +336,107 @@ index 6c7de7d..cec13ea 100644
 +		});
 +	}
  	async handleApprovalEvent(params) {
-@@ -2444,2 +2637,4 @@ var AcpGatewayAgent = class {
+@@ -2444,2 +2678,4 @@ var AcpGatewayAgent = class {
  			sessionKey,
 +			runId: normalizeOptionalString(request?.runId),
 +			resumedFromRunId: normalizeOptionalString(request?.resumedFromRunId),
  			approvalEvent
-@@ -2450,3 +2645,3 @@ var AcpGatewayAgent = class {
+@@ -2450,3 +2686,3 @@ var AcpGatewayAgent = class {
  		if (this.approvalRelays.has(approvalEvent.approvalId)) return;
 -		const pending = params.runId ? this.findPendingBySessionKey(params.sessionKey, params.runId) : this.findUniquePendingBySessionKey(params.sessionKey);
 +		const pending = params.runId ? this.findPendingBySessionKey(params.sessionKey, params.runId, params.resumedFromRunId) : this.findUniquePendingBySessionKey(params.sessionKey);
  		if (!pending) return;
-@@ -2528,5 +2723,5 @@ var AcpGatewayAgent = class {
+@@ -2520 +2756,74 @@ var AcpGatewayAgent = class {
+-	}
++	}
++	async handleAmbientChatEvent(session, runId, state, messageData) {
++		if (state !== "delta" && state !== "final" && state !== "aborted" && state !== "error") return;
++		let ambientRun = this.ambientChatRuns.get(runId);
++		if (ambientRun?.settled) return;
++		if (!ambientRun) {
++			if (this.ambientChatRuns.size >= 100) {
++				let evictionKey;
++				for (const [candidateKey, candidate] of this.ambientChatRuns) {
++					evictionKey ??= candidateKey;
++					if (candidate.settled) {
++						evictionKey = candidateKey;
++						break;
++					}
++				}
++				if (evictionKey) this.ambientChatRuns.delete(evictionKey);
++			}
++			ambientRun = { settled: false };
++			this.ambientChatRuns.set(runId, ambientRun);
++		}
++		const content = messageData?.content;
++		const fullThought = content?.filter((block) => block?.type === "thinking").map((block) => block.thinking ?? "").join("\n").trimEnd();
++		const newThought = resolveAcpTextDelta(ambientRun.sentThought ?? "", fullThought);
++		if (newThought) {
++			ambientRun.sentThought = fullThought;
++			await this.sessionUpdates.emit({
++				sessionId: session.sessionId,
++				sessionKey: session.sessionKey,
++				...session.ledgerSessionId ? { ledgerSessionId: session.ledgerSessionId } : {},
++				runId,
++				record: true,
++				update: {
++					sessionUpdate: "agent_thought_chunk",
++					content: {
++						type: "text",
++						text: newThought
++					}
++				}
++			});
++		}
++		const fullText = content?.filter((block) => block?.type === "text").map((block) => block.text ?? "").join("\n").trimEnd();
++		const newText = resolveAcpTextDelta(ambientRun.sentText ?? "", fullText);
++		if (newText) {
++			ambientRun.sentText = fullText;
++			await this.sessionUpdates.emit({
++				sessionId: session.sessionId,
++				sessionKey: session.sessionKey,
++				...session.ledgerSessionId ? { ledgerSessionId: session.ledgerSessionId } : {},
++				runId,
++				record: true,
++				update: {
++					sessionUpdate: "agent_message_chunk",
++					content: {
++						type: "text",
++						text: newText
++					}
++				}
++			});
++		}
++		if (state === "delta") return;
++		ambientRun.settled = true;
++		this.ambientChatRuns.delete(runId);
++		this.ambientChatRuns.set(runId, ambientRun);
++		try {
++			const sessionSnapshot = await this.getSessionSnapshot(session.sessionKey);
++			await this.sendSessionSnapshotUpdate(session, sessionSnapshot, {
++				includeControls: false,
++				record: true,
++				runId
++			});
++		} catch (err) {
++			this.log(`ambient session snapshot update failed for ${session.sessionId}: ${String(err)}`);
++		}
++	}
+@@ -2528,5 +2837,10 @@ var AcpGatewayAgent = class {
  		if (!sessionKey || !state) return;
 -		const pending = this.findPendingBySessionKey(sessionKey, runId);
 +		const pending = this.findPendingBySessionKey(sessionKey, runId, payload.resumedFromRunId);
- 		if (!pending) return;
+-		if (!pending) return;
++		if (!pending) {
++			const ambientSession = this.ambientSession;
++			if (!ambientSession || ambientSession.sessionKey !== sessionKey || typeof runId !== "string" || !runId.startsWith("announce:v1:")) return;
++			await this.handleAmbientChatEvent(ambientSession, runId, state, messageData);
++			return;
++		}
 -		if (messageData && (state === "delta" || state === "final")) {
 +		if (messageData && (state === "delta" || state === "final" || state === "aborted")) {
  			await this.handleDeltaEvent(pending.sessionId, messageData);
-@@ -2553,5 +2748,4 @@ var AcpGatewayAgent = class {
+@@ -2553,5 +2867,4 @@ var AcpGatewayAgent = class {
  		const fullThought = content?.filter((block) => block?.type === "thinking").map((block) => block.thinking ?? "").join("\n").trimEnd();
 -		const sentThoughtSoFar = pending.sentThoughtLength ?? 0;
 -		if (fullThought && fullThought.length > sentThoughtSoFar) {
@@ -295,7 +444,7 @@ index 6c7de7d..cec13ea 100644
 +		const newThought = resolveAcpTextDelta(pending.sentThought ?? "", fullThought);
 +		if (newThought) {
  			pending.sentThoughtLength = fullThought.length;
-@@ -2574,5 +2768,4 @@ var AcpGatewayAgent = class {
+@@ -2574,5 +2887,4 @@ var AcpGatewayAgent = class {
  		const fullText = content?.filter((block) => block?.type === "text").map((block) => block.text ?? "").join("\n").trimEnd();
 -		const sentSoFar = pending.sentTextLength ?? 0;
 -		if (!fullText || fullText.length <= sentSoFar) return;
@@ -303,7 +452,7 @@ index 6c7de7d..cec13ea 100644
 +		const newText = resolveAcpTextDelta(pending.sentText ?? "", fullText);
 +		if (!newText) return;
  		pending.sentTextLength = fullText.length;
-@@ -2601,4 +2794,9 @@ var AcpGatewayAgent = class {
+@@ -2601,4 +2913,9 @@ var AcpGatewayAgent = class {
  			this.sessionStore.clearActiveRun(sessionId);
 +			await this.releaseSessionMessageSubscription(pending.subscriptionSessionKey);
  			if (this.pendingPrompts.size === 0) this.clearDisconnectTimer();
@@ -314,12 +463,12 @@ index 6c7de7d..cec13ea 100644
 +				sessionSnapshot = await this.getSessionSnapshot(pending.sessionKey);
 +			}
  			try {
-@@ -2621,3 +2819,3 @@ var AcpGatewayAgent = class {
+@@ -2621,3 +2938,3 @@ var AcpGatewayAgent = class {
  	}
 -	findPendingBySessionKey(sessionKey, runId) {
 +	findPendingBySessionKey(sessionKey, runId, resumedFromRunId) {
  		for (const pending of this.pendingPrompts.values()) {
-@@ -2627,2 +2825,8 @@ var AcpGatewayAgent = class {
+@@ -2627,2 +2944,8 @@ var AcpGatewayAgent = class {
  		}
 +		if (runId && resumedFromRunId) for (const pending of this.pendingPrompts.values()) {
 +			if (pending.idempotencyKey !== resumedFromRunId) continue;
@@ -328,7 +477,7 @@ index 6c7de7d..cec13ea 100644
 +			return pending;
 +		}
  		if (runId) for (const pending of this.pendingPrompts.values()) {
-@@ -2633,2 +2837,33 @@ var AcpGatewayAgent = class {
+@@ -2633,2 +2956,33 @@ var AcpGatewayAgent = class {
  	}
 +	adoptResumedRun(pending, runId) {
 +		const previousRunId = pending.idempotencyKey;
@@ -362,23 +511,23 @@ index 6c7de7d..cec13ea 100644
 +		if (session?.abortController) this.sessionStore.setActiveRun(pending.sessionId, runId, session.abortController);
 +	}
  	findUniquePendingBySessionKey(sessionKey) {
-@@ -2654,3 +2889,3 @@ var AcpGatewayAgent = class {
+@@ -2654,3 +3008,3 @@ var AcpGatewayAgent = class {
  	}
 -	armDisconnectTimer(disconnectContext) {
 +	armDisconnectTimer(disconnectContext, deadline = "initial") {
  		this.clearDisconnectTimer();
-@@ -2658,4 +2893,4 @@ var AcpGatewayAgent = class {
+@@ -2658,4 +3012,4 @@ var AcpGatewayAgent = class {
  			this.disconnectTimer = null;
 -			this.reconcilePendingPrompts(disconnectContext.generation, true);
 -		}, ACP_GATEWAY_DISCONNECT_GRACE_MS);
 +			this.reconcilePendingPrompts(disconnectContext.generation, deadline);
 +		}, deadline === "initial" ? ACP_GATEWAY_DISCONNECT_GRACE_MS : ACP_GATEWAY_ACCEPTED_PROMPT_RECOVERY_GRACE_MS - ACP_GATEWAY_DISCONNECT_GRACE_MS);
  		this.disconnectTimer.unref?.();
-@@ -2667,2 +2902,3 @@ var AcpGatewayAgent = class {
+@@ -2667,2 +3021,3 @@ var AcpGatewayAgent = class {
  		this.sessionStore.clearActiveRun(pending.sessionId);
 +		void this.releaseSessionMessageSubscription(pending.subscriptionSessionKey);
  		if (this.pendingPrompts.size === 0) this.clearDisconnectTimer();
-@@ -2670,10 +2906,6 @@ var AcpGatewayAgent = class {
+@@ -2670,10 +3025,6 @@ var AcpGatewayAgent = class {
  	}
 -	clearPendingDisconnectState(pending, disconnectContext) {
 -		if (pending.disconnectContext !== disconnectContext) return;
@@ -392,7 +541,7 @@ index 6c7de7d..cec13ea 100644
 -	async reconcilePendingPrompts(observedDisconnectGeneration, deadlineExpired) {
 +	async reconcilePendingPrompts(observedDisconnectGeneration, deadline) {
  		if (this.pendingPrompts.size === 0) {
-@@ -2687,9 +2919,13 @@ var AcpGatewayAgent = class {
+@@ -2687,9 +3038,13 @@ var AcpGatewayAgent = class {
  			if (pending.disconnectContext?.generation !== observedDisconnectGeneration) continue;
 -			if (await this.reconcilePendingPrompt(sessionId, pending, deadlineExpired)) keepDisconnectTimer = true;
 +			if (await this.reconcilePendingPrompt(sessionId, pending, deadline)) keepDisconnectTimer = true;
@@ -409,13 +558,13 @@ index 6c7de7d..cec13ea 100644
  		if (!disconnectContext) return false;
 +		const waitedRunId = pending.idempotencyKey;
  		let result;
-@@ -2697,3 +2933,4 @@ var AcpGatewayAgent = class {
+@@ -2697,3 +3052,4 @@ var AcpGatewayAgent = class {
  			result = await this.gateway.request("agent.wait", {
 -				runId: pending.idempotencyKey,
 +				runId: waitedRunId,
 +				sessionKey: pending.sessionKey,
  				timeoutMs: 0
-@@ -2701,5 +2938,5 @@ var AcpGatewayAgent = class {
+@@ -2701,5 +3057,5 @@ var AcpGatewayAgent = class {
  		} catch (err) {
 -			this.log(`agent.wait reconcile failed for ${pending.idempotencyKey}: ${String(err)}`);
 -			if (deadlineExpired) {
@@ -424,51 +573,54 @@ index 6c7de7d..cec13ea 100644
 +			if (deadline) {
 +				if (this.shouldRejectPendingAtDisconnectDeadline(pending, disconnectContext, deadline)) {
  					this.rejectPendingPrompt(pending, /* @__PURE__ */ new Error(`Gateway disconnected: ${disconnectContext.reason}`));
-@@ -2707,4 +2944,3 @@ var AcpGatewayAgent = class {
+@@ -2707,4 +3063,3 @@ var AcpGatewayAgent = class {
  				}
 -				this.clearPendingDisconnectState(pending, disconnectContext);
 -				return false;
 +				return true;
  			}
-@@ -2712,3 +2948,3 @@ var AcpGatewayAgent = class {
+@@ -2712,3 +3067,3 @@ var AcpGatewayAgent = class {
  		}
 -		const currentPending = this.getPendingPrompt(sessionId, pending.idempotencyKey);
 +		const currentPending = this.getPendingPrompt(sessionId, waitedRunId);
  		if (!currentPending) return false;
-@@ -2722,4 +2958,4 @@ var AcpGatewayAgent = class {
+@@ -2722,4 +3077,4 @@ var AcpGatewayAgent = class {
  		}
 -		if (deadlineExpired) {
 -			if (this.shouldRejectPendingAtDisconnectDeadline(currentPending, disconnectContext)) {
 +		if (deadline) {
 +			if (this.shouldRejectPendingAtDisconnectDeadline(currentPending, disconnectContext, deadline)) {
  				const currentDisconnectContext = currentPending.disconnectContext;
-@@ -2729,4 +2965,3 @@ var AcpGatewayAgent = class {
+@@ -2729,4 +3084,3 @@ var AcpGatewayAgent = class {
  			}
 -			this.clearPendingDisconnectState(currentPending, disconnectContext);
 -			return false;
 +			return true;
  		}
-@@ -2794,2 +3029,3 @@ var AcpGatewayAgent = class {
+@@ -2794,2 +3148,3 @@ var AcpGatewayAgent = class {
  			this.pendingPrompts.delete(session.sessionId);
 +			await this.releaseSessionMessageSubscription(pending.subscriptionSessionKey);
  			if (this.pendingPrompts.size === 0) this.clearDisconnectTimer();
-@@ -2892,3 +3128,3 @@ var AcpGatewayAgent = class {
+@@ -2892,3 +3247,3 @@ var AcpGatewayAgent = class {
  				sessionId,
 -				update: {
 +				update: chunk.sessionUpdate === "user_message_chunk" || chunk.sessionUpdate === "agent_message_chunk" || chunk.sessionUpdate === "agent_thought_chunk" ? {
  					sessionUpdate: chunk.sessionUpdate,
-@@ -2898,3 +3134,3 @@ var AcpGatewayAgent = class {
+@@ -2898,3 +3253,3 @@ var AcpGatewayAgent = class {
  					}
 -				}
 +				} : chunk
  			});
-@@ -3037,3 +3273,5 @@ async function serveAcpGateway(opts = {}) {
+@@ -3037,3 +3392,5 @@ async function serveAcpGateway(opts = {}) {
  			resolveGatewayReady();
 -			agent?.handleGatewayReconnect();
 +			void agent?.handleGatewayReconnect().catch((err) => {
 +				process.stderr.write(`openclaw acp: gateway reconnect recovery failed: ${String(err)}\n`);
 +			});
  		},
+@@ -3055 +3412 @@ async function serveAcpGateway(opts = {}) {
+-		activeAgent?.shutdown();
++		await activeAgent?.shutdown();
 diff --git a/dist/agent-D6kiZtPt.js b/dist/agent-D6kiZtPt.js
 index af55bc0..c2dff03 100644
 --- a/dist/agent-D6kiZtPt.js

@@ -11,6 +11,8 @@ ownedPaths:
   - src/stores/session-attention.ts
   - src/stores/chat/session-status.ts
   - src/stores/chat/session-catalog.ts
+  - src/stores/chat/session-key-utils.ts
+  - src/components/layout/Sidebar.tsx
   - electron/main/ipc/**
   - electron/services/**
   - electron/gateway/**
@@ -25,6 +27,10 @@ ownedPaths:
   - tests/unit/chat-store-session-label-fetch.test.ts
   - tests/unit/session-label-hydration.test.ts
   - tests/e2e/chat-sidebar-session-attention.spec.ts
+  - tests/unit/session-key-utils.test.ts
+  - tests/unit/openclaw-acp-stream-patch.test.ts
+  - patches/openclaw@2026.7.1-2.patch
+  - pnpm-lock.yaml
   - shared/web-browser.ts
   - electron/main/web-browser-policy.ts
   - electron/main/web-browser-session.ts
@@ -100,6 +106,8 @@ Scheduled-task history is Main-owned backend data. Current OpenClaw versions mus
 The local HTML Preview privileged bridge is also Main-owned: Renderer may load a validated local HTML file or open that current file externally through the typed Host API. The guest is an implementation detail of the existing `preview` tab; there is no `web-browser` artifact tab or general address navigation. The durable guest contract is `harness/reference/web-browser.md`.
 
 Gateway session-catalog subscription, normalization, ordered list/event replay, attention transitions, and reconnect recovery are documented in `harness/reference/sidebar-session-attention.md`. The first prompt sent to a newly created non-default Agent must title its `agent:<id>:main` conversation; synthetic transport display names such as `ACP` must not replace that label, and transcript-summary hydration must restore it after reload. Deleting an Agent is also a session-catalog lifecycle boundary: after Main confirms the destructive config/filesystem operation, Renderer must immediately forget every canonical `agent:<deletedId>:` row, retain an in-memory tombstone that blocks stale list rows and delayed events, and repair selection without waiting for a Gateway restart. An authoritative Agent snapshot containing the same ID clears the tombstone to support recreation, but an Agent-list request that predates a confirmed mutation must not publish or reconcile afterward. An already-absent session index or entry is an idempotent conversation-delete success, while malformed indexes and unsafe transcript paths remain failures. Electron test-process isolation and global-resource scheduling are documented in `harness/reference/e2e-parallelism.md`.
+
+Native subagent sidebar presentation is classification-only: an exact four-part `agent:<agentId>:subagent:<childId>` key receives the localized subagent tag, and only that row's display title may remove one leading `[Subagent Context]` marker. Neither the catalog row nor the durable OpenClaw session/transcript is mutated. Ordinary Chat remains ACP-owned: a loaded ACP session may retain a passive Main-owned `sessions.messages` subscription so a later no-pending `announce:v1` run for that exact session can be emitted as recorded ACP updates. Renderer and Main do not read Gateway history or transcript text as an alternate Chat transport.
 
 Realtime Talk uses one Main-owned OpenClaw Gateway Relay and typed Talk host events. Renderer direct-provider audio and text are transient, while OpenClaw/ACP remains the durable authority for Agent consult history; its full boundary is `harness/reference/realtime-talk.md`.
 
