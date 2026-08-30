@@ -1413,10 +1413,19 @@ index ff8cd2829dc9f64d7fc8ec2bf77bb5f05947459d..be6988b3dc2df2bc81f255d758156585
    agentId: Type.TOptional<Type.TString>;
    spawnedBy: Type.TOptional<Type.TString>;
 diff --git a/dist/selection-JInn13lc.js b/dist/selection-JInn13lc.js
-index 41d3492a4965c62292eaa74a4d0b746b6bc4e4b2..66caa3e83cb1fcbf54129d1addedd1ffc5c5e8bc 100644
+index 41d3492a4965c62292eaa74a4d0b746b6bc4e4b2..cd6fd28d4fcfc6d3240f78692aecdf3f25a41354 100644
 --- a/dist/selection-JInn13lc.js
 +++ b/dist/selection-JInn13lc.js
-@@ -3761,10 +3761,16 @@ function normalizeCompactionReason(reason) {
+@@ -3544,0 +3545 @@ function handleMessageUpdate(ctx, evt) {
++			ctx.state.lastEmittedAssistantCleaned = cleanedText;
+@@ -3651,0 +3653 @@ function handleMessageEnd(ctx, evt) {
++		ctx.state.lastEmittedAssistantCleaned = void 0;
+@@ -3654 +3656 @@ function handleMessageEnd(ctx, evt) {
+-	const previousStreamedText = ctx.state.lastStreamedAssistantCleaned ?? "";
++	const previousStreamedText = ctx.state.lastEmittedAssistantCleaned ?? "";
+@@ -3668,0 +3671 @@ function handleMessageEnd(ctx, evt) {
++		ctx.state.lastEmittedAssistantCleaned = cleanedText;
+@@ -3761,10 +3764,16 @@ function normalizeCompactionReason(reason) {
  function compactionLogKind(reason) {
  	return reason === "manual" ? "manual compaction" : "auto-compaction";
  }
@@ -1433,7 +1442,7 @@ index 41d3492a4965c62292eaa74a4d0b746b6bc4e4b2..66caa3e83cb1fcbf54129d1addedd1ff
  	ctx.state.compactionInFlight = true;
  	ctx.state.livenessState = "paused";
  	ctx.ensureCompactionPromise();
-@@ -3776,12 +3782,30 @@ function handleCompactionStart(ctx, evt) {
+@@ -3776,12 +3785,30 @@ function handleCompactionStart(ctx, evt) {
  	});
  	emitAgentEvent({
  		runId: ctx.params.runId,
@@ -1466,7 +1475,7 @@ index 41d3492a4965c62292eaa74a4d0b746b6bc4e4b2..66caa3e83cb1fcbf54129d1addedd1ff
  	});
  	const hookRunner = getGlobalHookRunner();
  	if (hookRunner?.hasHooks("before_compaction")) hookRunner.runBeforeCompaction({
-@@ -3796,10 +3820,17 @@ function handleCompactionStart(ctx, evt) {
+@@ -3796,10 +3823,17 @@ function handleCompactionStart(ctx, evt) {
  function handleCompactionEnd(ctx, evt) {
  	const reason = normalizeCompactionReason(evt.reason);
  	const kind = compactionLogKind(reason);
@@ -1484,7 +1493,7 @@ index 41d3492a4965c62292eaa74a4d0b746b6bc4e4b2..66caa3e83cb1fcbf54129d1addedd1ff
  	if (hasResult && !wasAborted) {
  		ctx.incrementCompactionCount();
  		const tokensAfter = typeof evt.result === "object" && evt.result ? evt.result.tokensAfter : void 0;
-@@ -3843,19 +3874,31 @@ function handleCompactionEnd(ctx, evt) {
+@@ -3843,19 +3877,31 @@ function handleCompactionEnd(ctx, evt) {
  	});
  	emitAgentEvent({
  		runId: ctx.params.runId,
@@ -1518,7 +1527,11 @@ index 41d3492a4965c62292eaa74a4d0b746b6bc4e4b2..66caa3e83cb1fcbf54129d1addedd1ff
  		}
  	});
  	if (!willRetry) {
-@@ -7426,9 +7469,11 @@ function toMidTurnPrecheckRequest(result) {
+@@ -4332,0 +4379 @@ function subscribeEmbeddedAgentSession(params) {
++		lastEmittedAssistantCleaned: void 0,
+@@ -4516,0 +4564 @@ function subscribeEmbeddedAgentSession(params) {
++		state.lastEmittedAssistantCleaned = void 0;
+@@ -7426,9 +7474,11 @@ function toMidTurnPrecheckRequest(result) {
  	return {
  		route: result.route,
  		estimatedPromptTokens: result.estimatedPromptTokens,
@@ -1530,7 +1543,7 @@ index 41d3492a4965c62292eaa74a4d0b746b6bc4e4b2..66caa3e83cb1fcbf54129d1addedd1ff
  		effectiveReserveTokens: result.effectiveReserveTokens
  	};
  }
-@@ -11169,8 +11214,10 @@ function wrapStreamFnWithMessageTransform(streamFn, transform) {
+@@ -11169,8 +11219,10 @@ function wrapStreamFnWithMessageTransform(streamFn, transform) {
  function buildPreflightRecoveryBudgetSnapshot(snapshot) {
  	return {
  		estimatedPromptTokens: snapshot.estimatedPromptTokens,
@@ -1542,7 +1555,7 @@ index 41d3492a4965c62292eaa74a4d0b746b6bc4e4b2..66caa3e83cb1fcbf54129d1addedd1ff
  	};
  }
  const aggregateToolResultPressureWarnings = /* @__PURE__ */ new Set();
-@@ -13581,6 +13628,7 @@ async function runEmbeddedAttempt(params) {
+@@ -13581,6 +13633,7 @@ async function runEmbeddedAttempt(params) {
  						sessionManager: activeSessionManager,
  						contextWindowTokens: contextTokenBudget,
  						maxCharsOverride: toolResultMaxChars,
@@ -1550,7 +1563,7 @@ index 41d3492a4965c62292eaa74a4d0b746b6bc4e4b2..66caa3e83cb1fcbf54129d1addedd1ff
  						sessionFile: params.sessionFile,
  						sessionId: params.sessionId,
  						sessionKey: params.sessionKey,
-@@ -13596,6 +13644,15 @@ async function runEmbeddedAttempt(params) {
+@@ -13596,6 +13649,15 @@ async function runEmbeddedAttempt(params) {
  						};
  						const sessionContext = activeSessionManager.buildSessionContext();
  						activeSession.agent.state.messages = sessionContext.messages;
@@ -1566,7 +1579,7 @@ index 41d3492a4965c62292eaa74a4d0b746b6bc4e4b2..66caa3e83cb1fcbf54129d1addedd1ff
  						logMidTurnPrecheck(request.route, `handled=true truncatedCount=${truncationResult.truncatedCount}`);
  					} else {
  						preflightRecovery = {
-@@ -14188,6 +14245,7 @@ async function runEmbeddedAttempt(params) {
+@@ -14188,6 +14250,7 @@ async function runEmbeddedAttempt(params) {
  							sessionManager: activeSessionManager,
  							contextWindowTokens: contextTokenBudget,
  							maxCharsOverride: toolResultMaxChars,

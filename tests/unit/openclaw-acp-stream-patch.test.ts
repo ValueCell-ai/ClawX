@@ -38,6 +38,15 @@ type GatewayTerminalEmitter = (
   jobState: string,
 ) => void;
 
+type FinalStreamReconciler = (
+  ctx: {
+    state: Record<string, unknown>;
+    params: { silentExpected: boolean };
+    emitAssistantStreamData: (data: Record<string, unknown>) => void;
+  },
+  cleanedText: string,
+) => void;
+
 function extractDeltaHandler(bundle: string): DeltaHandler {
   const methodStart = bundle.indexOf('async handleDeltaEvent(sessionId, messageData)');
   const methodEnd = bundle.indexOf('\n\tasync finishPrompt', methodStart);
@@ -76,7 +85,56 @@ function extractChatHandler(bundle: string): ChatHandler {
   return context.handleChatEvent;
 }
 
+function extractFinalStreamReconciler(bundle: string): FinalStreamReconciler {
+  const reconcileStart = bundle.indexOf('\tconst previousStreamedText = ');
+  const reconcileEnd = bundle.indexOf('\n\tconst finalAssistantText = ', reconcileStart);
+  if (reconcileStart < 0 || reconcileEnd <= reconcileStart) {
+    throw new Error('OpenClaw final assistant stream reconciliation was not found');
+  }
+
+  const context = {
+    buildAssistantStreamData: (data: Record<string, unknown>) => data,
+    suppressDeterministicApprovalOutput: false,
+    suppressMessageToolOnlySourceReplyOutput: false,
+    hasMedia: false,
+    mediaUrls: [] as string[],
+    assistantPhase: undefined,
+    reconcileFinalStream: undefined as FinalStreamReconciler | undefined,
+  };
+  runInNewContext(
+    `globalThis.reconcileFinalStream = function (ctx, cleanedText) {\n${bundle.slice(reconcileStart, reconcileEnd)}\n};`,
+    context,
+  );
+  if (!context.reconcileFinalStream) {
+    throw new Error('OpenClaw final assistant stream reconciliation could not be loaded');
+  }
+  return context.reconcileFinalStream;
+}
+
 describe('OpenClaw ACP assistant stream patch', () => {
+  it('reconciles the final assistant snapshot against text actually emitted to Gateway', async () => {
+    const bundle = await readFile(path.join(root, 'node_modules/openclaw/dist/selection-JInn13lc.js'), 'utf8');
+    const reconcileFinalStream = extractFinalStreamReconciler(bundle);
+    const emitted: Record<string, unknown>[] = [];
+    const state = {
+      emittedAssistantUpdate: true,
+      lastStreamedAssistantCleaned: 'complete response',
+      lastEmittedAssistantCleaned: 'complete',
+    };
+
+    reconcileFinalStream({
+      state,
+      params: { silentExpected: false },
+      emitAssistantStreamData: (data) => emitted.push(data),
+    }, 'complete response');
+
+    expect(emitted).toEqual([expect.objectContaining({
+      text: 'complete response',
+      delta: ' response',
+    })]);
+    expect(state.lastEmittedAssistantCleaned).toBe('complete response');
+  });
+
   it('retains buffered assistant text through retry grace and clears it when retry starts', async () => {
     const bundle = await readFile(gatewayBundlePath, 'utf8');
     const preflightStart = bundle.indexOf('const restartsAfterLifecycleError =');

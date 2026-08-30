@@ -36,6 +36,7 @@ touchedAreas:
 expectedUserBehavior:
   - Automatic overflow, preflight, and timeout recovery compactions appear live and settle in place even when the original embedded AgentSession has already ended.
   - A shorter non-prefix final assistant chunk is emitted and recorded instead of being discarded by a stale character-count comparison.
+  - A final assistant snapshot is reconciled against text actually emitted to Gateway, so parser-observed but undelivered text cannot suppress its missing suffix.
   - Gateway preserves the assistant buffer through lifecycle-error retry grace until terminal Chat projection flushes it, unless a real retry start first clears the prior attempt.
   - Buffered assistant text carried by an aborted terminal is recorded before the prompt settles as cancelled.
   - Reopening a conversation with a complete ACP event ledger replays that ledger without comparing or substituting transcript prose.
@@ -63,6 +64,7 @@ acceptance:
   - The direct lifecycle reuses one compactionId for start and terminal events, maps aborted work to cancelled, successful work to completed, and incomplete non-aborted work to failed.
   - Incomplete non-aborted direct, command, and session-operation compactions keep source separate from a stable reasonCode and bounded failureReason for recorded ACP projection.
   - Assistant snapshot extensions emit only their unseen suffix, identical or stale prefixes emit nothing, and shorter non-prefix chunks emit in full through the ordinary recorded ACP update path.
+  - Embedded assistant finalization tracks parser-observed and successfully emitted text separately; message-end reconciliation emits any suffix absent from the latter before lifecycle terminal delivery.
   - Gateway does not clear buffered assistant text when lifecycle-error retry grace starts; terminal Chat projection flushes it before cleanup, while a subsequent lifecycle start clears the prior attempt before the retry emits text.
   - An aborted Chat terminal carrying buffered assistant text runs that text through the same recorded delta path before prompt cancellation; error-terminal prose is not projected as an ordinary assistant message.
   - Complete ledger replay does not fetch the bounded transcript, run a cross-source selector, strip injected prompt envelopes, or replace ledger events with transcript-derived events.
@@ -123,3 +125,16 @@ characters after the second user event (`complete=1`, `next_seq=117`). The
 session still reports `abortedLastRun=true`, so this exercises the delayed
 aborted terminal path rather than bypassing it; terminal projection now flushes
 the throttled tail before cleanup.
+
+For `agent:main:session-1788102558415`, successful run
+`5ac30cc6-7ba9-4d3c-8511-1e748f078f59` persisted a `2665`-character durable
+assistant message, while complete replay session
+`f1b08d07-92c6-4fd0-b2f6-7e4ee22ffa44` contains exactly its first `2046`
+characters. Both prefixes have SHA-256
+`c0b429a175924972c93f5bfcbe544fe4d3807f7bd742f50d45b7121b2f46ff9d`,
+leaving one contiguous `619`-character terminal suffix absent. The selection
+layer previously used one field for both the latest parsed stream snapshot and
+the latest snapshot emitted to Gateway. If parsing advanced that field without
+delivery, message-end finalization compared the durable final text to the
+parser state and emitted nothing. The repair records successful stream
+emission separately and uses that value for final snapshot reconciliation.
