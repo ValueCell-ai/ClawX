@@ -53,6 +53,7 @@ conditionalProfiles:
 requiredRules:
   - renderer-main-boundary
   - acp-chat-state-and-history
+  - realtime-talk-openclaw-authority
   - acp-compatibility-content-safety
   - attachment-access-safety
   - diagnostics-trace-safety
@@ -71,3 +72,5 @@ ACP Chat covers session load, prompt, cancel, permission, replay, timeline reduc
 Main owns ACP transport, routing, transcript retrieval and timing extraction, workspace grants, and session/generation-scoped attachment authorization. Timing extraction treats trusted internal inter-session and restart-recovery user records as control metadata, not visible turn boundaries. Renderer owns the in-memory timeline, bounded compatibility and timing alignment, attachment presentation, and display grouping, including user-image thumbnails and user-selected source-path labels. The composer plan indicator is a Renderer-only projection of replayed structured `update_plan` `ToolCallItem.input` values in the active timeline. ACP replay remains authoritative for historical turns and content; transcript-derived timing may only annotate an unambiguously matched ACP turn. Standard ACP content remains preferred over compatibility projections, and incidental tool paths never enter the attachment pipeline.
 
 The durable architecture, exceptions, access boundary, file-activity separation, Office preview behavior, Markdown rendering, Electron rendering performance policy, and validation anchors are documented in `harness/reference/acp-chat.md`, `harness/reference/acp-generated-media-and-diagnostics.md`, `harness/reference/acp-attachment-access-control.md`, `harness/reference/openclaw-file-activity.md`, `harness/reference/office-document-preview.md`, `harness/reference/markdown-rendering.md`, and `harness/reference/electron-rendering-performance.md`.
+
+Realtime Talk direct-provider content is not ACP timeline content and remains transient. Agent consult history is OpenClaw-owned and reaches the timeline only through ACP replay, as specified in `harness/reference/realtime-talk.md`.

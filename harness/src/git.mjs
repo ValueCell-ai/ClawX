@@ -18,6 +18,9 @@ export async function getChangedFiles(since = 'origin/main', cwd = ROOT) {
   for (const line of await gitLines(['diff', '--name-only', `${since}...HEAD`], cwd)) files.add(line);
   for (const line of await gitLines(['diff', '--cached', '--name-only'], cwd)) files.add(line);
   for (const line of await gitLines(['diff', '--name-only'], cwd)) files.add(line);
-  for (const line of await gitLines(['ls-files', '--others', '--exclude-standard'], cwd)) files.add(line);
+  // User-authored plans are non-executable workspace notes, not task implementation changes.
+  for (const line of await gitLines(['ls-files', '--others', '--exclude-standard'], cwd)) {
+    if (!line.startsWith('docs/plans/')) files.add(line);
+  }
   return [...files].sort();
 }

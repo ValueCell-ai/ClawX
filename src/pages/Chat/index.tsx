@@ -2,7 +2,10 @@
  * Chat Page
  * ACP-native runtime rendering through the ordered inline timeline.
  */
-import { Suspense, lazy, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
+import {
+  Suspense, lazy, useCallback, useDeferredValue, useEffect,
+  useLayoutEffect, useMemo, useRef, useState, type SetStateAction,
+} from 'react';
 import { AlertTriangle, ArrowDownToLine, FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -36,6 +39,10 @@ import { ChatInput, type ChatWorkspaceOption, type FileAttachment } from './Chat
 import { ChatToolbar } from './ChatToolbar';
 import { AcpTimeline } from './AcpTimeline';
 import { AcpErrorBanner } from './AcpErrorBanner';
+import { LiveTalkTranscript } from './LiveTalkTranscript';
+import { LIVE_TALK_TRANSCRIPT_MOCK } from './live-talk-transcript-mock';
+import { useRealtimeTalkStore } from '@/stores/realtime-talk';
+import { realtimeTalkController } from '@/lib/talk/realtime-talk-controller';
 
 const ArtifactPanelLazy = lazy(() =>
   import('@/components/file-preview/ArtifactPanel').then((m) => ({ default: m.ArtifactPanel })),
@@ -326,12 +333,27 @@ export function Chat() {
   const cancelAcp = useAcpChatSessionStore((s) => s.cancel);
   const respondAcpPermission = useAcpChatSessionStore((s) => s.respondPermission);
   const clearAcpError = useAcpChatSessionStore((s) => s.clearError);
+  const talkActive = useRealtimeTalkStore((s) => s.isActive);
+  const talkSessionKey = useRealtimeTalkStore((s) => s.sessionKey);
+  const talkTranscripts = useRealtimeTalkStore((s) => s.transcripts);
+  const talkMatchesCurrentSession = talkSessionKey === currentSessionKey;
+  const visibleTalkActive = talkActive && talkMatchesCurrentSession;
+  const liveTalkMockEnabled = import.meta.env.DEV
+    && new URLSearchParams(window.location.search).get('liveTalkMock') === '1';
+  const liveTalkTranscriptVisible = visibleTalkActive || liveTalkMockEnabled;
+  const visibleTalkTranscripts = liveTalkMockEnabled
+    ? LIVE_TALK_TRANSCRIPT_MOCK
+    : talkMatchesCurrentSession
+      ? talkTranscripts
+      : [];
 
   const panelOpen = useArtifactPanel((s) => s.open);
   const panelWidthPct = useArtifactPanel((s) => s.widthPct);
   const closeArtifactPanel = useArtifactPanel((s) => s.close);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
   const acpLoadInFlightKeyRef = useRef<string | null>(null);
+  const liveTalkAreaRef = useRef<HTMLDivElement | null>(null);
+  const liveTranscriptCountRef = useRef(visibleTalkTranscripts.length);
   const { contentRef, scrollRef, scrollToBottom, isAtBottom } = useStickToBottomInstant(
     currentSessionKey,
     acpSending || acpCancelling,
@@ -341,6 +363,28 @@ export function Chat() {
     setVisibleSession(currentSessionKey);
     return () => setVisibleSession(null);
   }, [currentSessionKey, setVisibleSession]);
+
+  useLayoutEffect(() => {
+    const previousCount = liveTranscriptCountRef.current;
+    liveTranscriptCountRef.current = visibleTalkTranscripts.length;
+    if (visibleTalkTranscripts.length <= previousCount) return;
+    liveTalkAreaRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [visibleTalkTranscripts.length]);
+
+  useEffect(() => {
+    void realtimeTalkController.handleSessionChange(currentSessionKey ?? '');
+  }, [currentSessionKey]);
+
+  useEffect(() => {
+    const stopTalk = () => {
+      void realtimeTalkController.stop();
+    };
+    window.addEventListener('pagehide', stopTalk);
+    return () => {
+      window.removeEventListener('pagehide', stopTalk);
+      stopTalk();
+    };
+  }, []);
 
   useEffect(() => {
     void fetchAgents().catch(() => undefined);
@@ -513,7 +557,7 @@ export function Chat() {
       )}
       style={{ height: isMac ? 'calc(100vh - 1px)' : 'calc(100vh - 2.5rem)' }}
     >
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className={cn(
           'relative flex shrink-0 items-center px-4 py-2',
           isWindows ? 'gap-4' : 'justify-end',
@@ -547,33 +591,41 @@ export function Chat() {
             <div data-testid="chat-scroll-column" className="relative min-h-0 min-w-0 flex-1">
               <div ref={scrollRef} className="h-full min-h-0 min-w-0 overflow-y-auto" data-testid="chat-scroll-container">
                 <div ref={contentRef} className="mx-auto max-w-4xl space-y-4">
-                  {workspaceUnavailable && (
-                    <WorkspaceUnavailableBanner
-                      path={cwd}
-                      readOnly={effectiveWorkspace.readOnly}
-                      onChooseWorkspace={effectiveWorkspace.readOnly ? undefined : () => void chooseReplacementWorkspace()}
-                    />
-                  )}
-                  {visibleAcpError && <AcpErrorBanner message={visibleAcpError} onDismiss={clearAcpError} />}
-                  {acpLoading ? (
-                    <div className="flex min-h-[40vh] items-center justify-center" data-testid="acp-chat-loading">
-                      <LoadingSpinner size="md" />
+                  {liveTalkTranscriptVisible ? (
+                    <div ref={liveTalkAreaRef}>
+                      <LiveTalkTranscript transcripts={visibleTalkTranscripts} />
                     </div>
-                  ) : visibleAcpTimeline.itemOrder.length === 0 ? (
-                    <AcpEmptyState />
                   ) : (
-                    <AcpTimeline
-                      snapshot={visibleAcpTimeline}
-                      isStreaming={acpSending || acpCancelling}
-                      turnTimingsByUserMessageId={acpTurnTimings}
-                      fileActivity={fileActivity}
-                      workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey
-                        ? resolvedWorkspaceContext.workspaceRoot
-                        : undefined}
-                      onPermissionSelect={(requestId, optionId) => {
-                        void respondAcpPermission(requestId, optionId);
-                      }}
-                    />
+                    <>
+                      {workspaceUnavailable && (
+                        <WorkspaceUnavailableBanner
+                          path={cwd}
+                          readOnly={effectiveWorkspace.readOnly}
+                          onChooseWorkspace={effectiveWorkspace.readOnly ? undefined : () => void chooseReplacementWorkspace()}
+                        />
+                      )}
+                      {visibleAcpError && <AcpErrorBanner message={visibleAcpError} onDismiss={clearAcpError} />}
+                      {acpLoading ? (
+                        <div className="flex min-h-[40vh] items-center justify-center" data-testid="acp-chat-loading">
+                          <LoadingSpinner size="md" />
+                        </div>
+                      ) : visibleAcpTimeline.itemOrder.length === 0 ? (
+                        <AcpEmptyState />
+                      ) : (
+                        <AcpTimeline
+                          snapshot={visibleAcpTimeline}
+                          isStreaming={acpSending || acpCancelling}
+                          turnTimingsByUserMessageId={acpTurnTimings}
+                          fileActivity={fileActivity}
+                          workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey
+                            ? resolvedWorkspaceContext.workspaceRoot
+                            : undefined}
+                          onPermissionSelect={(requestId, optionId) => {
+                            void respondAcpPermission(requestId, optionId);
+                          }}
+                        />
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -593,7 +645,7 @@ export function Chat() {
               )}
             </div>
 
-            {questionDirectoryVisible && <QuestionDirectory items={questionDirectoryItems} />}
+            {!liveTalkTranscriptVisible && questionDirectoryVisible && <QuestionDirectory items={questionDirectoryItems} />}
           </div>
         </div>
 
@@ -682,6 +734,7 @@ export function Chat() {
           onSelectWorkspace={setChatWorkspacePath}
           contextUsage={composerContextUsage}
           currentPlan={currentPlan}
+          talkActive={liveTalkTranscriptVisible}
         />
       </div>
 

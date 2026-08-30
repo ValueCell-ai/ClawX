@@ -6,7 +6,10 @@
  * Files are staged through the typed Host API and included as local media
  * references in the ACP session/prompt request.
  */
-import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, type SetStateAction } from 'react';
+import {
+  useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo,
+  type CSSProperties, type SetStateAction,
+} from 'react';
 import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Search, ChevronDown, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -16,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
+import { useRealtimeTalkStore } from '@/stores/realtime-talk';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { buildPreviewTarget } from '@/components/file-preview/build-preview-target';
 import { useProviderStore } from '@/stores/providers';
@@ -30,6 +34,8 @@ import { fetchQuickAccessSkills } from '@/lib/quick-access-skills';
 import { DEFAULT_WORKSPACE_CWD, isDefaultWorkspacePath, normalizeWorkspacePath } from '@/lib/workspace-context';
 import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
 import { AcpSessionPlan } from './AcpSessionPlan';
+import { realtimeTalkController } from '@/lib/talk/realtime-talk-controller';
+import logoSvg from '@/assets/logo.svg';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -65,6 +71,7 @@ interface ChatInputProps {
   onSelectWorkspace?: (path: string) => void;
   contextUsage?: unknown;
   currentPlan?: AcpCurrentPlan | null;
+  talkActive?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -305,6 +312,7 @@ export function ChatInput({
   onSelectWorkspace,
   contextUsage,
   currentPlan,
+  talkActive,
 }: ChatInputProps) {
   const { t, i18n } = useTranslation('chat');
   const [uncontrolledInput, setUncontrolledInput] = useState('');
@@ -350,6 +358,11 @@ export function ChatInput({
   const providerError = useProviderStore((s) => s.error);
   const refreshProviderSnapshot = useProviderStore((s) => s.refreshProviderSnapshot);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
+  const talkStatus = useRealtimeTalkStore((s) => s.status);
+  const talkInputLevel = useRealtimeTalkStore((s) => s.inputLevel);
+  const storeTalkActive = useRealtimeTalkStore((s) => s.isActive);
+  const talkConsultRefreshError = useRealtimeTalkStore((s) => s.consultRefreshError);
+  const talkConsultRefreshRetrying = useRealtimeTalkStore((s) => s.consultRefreshRetrying);
   const currentAgent = useMemo(
     () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
     [agents, currentAgentId],
@@ -397,7 +410,16 @@ export function ChatInput({
   const showModelPicker = modelOptions.length > 1;
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
   const isGatewayUsable = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
-  const inputDisabled = disabled;
+  const talkIsActive = talkActive ?? storeTalkActive;
+  const talkListeningRingStyle = {
+    '--talk-ring-scale': `${1.12 + talkInputLevel * 0.36}`,
+    '--talk-ring-opacity': `${0.28 + talkInputLevel * 0.52}`,
+    '--talk-ring-min-opacity': `${(0.28 + talkInputLevel * 0.52) * 0.45}`,
+    '--talk-ring-shadow': `${10 + talkInputLevel * 30}px`,
+    '--talk-ring-duration': `${1800 - talkInputLevel * 900}ms`,
+  } as CSSProperties;
+  const inputDisabled = disabled || talkIsActive;
+  const attachmentsLocked = inputDisabled;
   const gatewayUnavailable = !isGatewayUsable;
   const workspaceSelectorDisabled = workspaceReadOnly || inputDisabled || sending || !onSelectWorkspace;
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
@@ -458,6 +480,14 @@ export function ChatInput({
       setWorkspaceMenuOpen(false);
     }
   }, [workspaceSelectorDisabled]);
+
+  useEffect(() => {
+    if (!inputDisabled) return;
+    setPickerOpen(false);
+    setSkillPickerOpen(false);
+    setModelPickerOpen(false);
+    setWorkspaceMenuOpen(false);
+  }, [inputDisabled]);
 
   useEffect(() => {
     if (!providerSnapshotReady || providerError || !currentAgent || switchingModelRef || optimisticModelRef) return;
@@ -718,7 +748,7 @@ export function ChatInput({
   // ── File staging via native dialog / Electron drag-drop paths ──
 
   const stagePathFiles = useCallback(async (filePaths: string[]) => {
-    if (filePaths.length === 0) return;
+    if (attachmentsLocked || filePaths.length === 0) return;
 
     const tempIds: string[] = [];
     for (const filePath of filePaths) {
@@ -771,9 +801,10 @@ export function ChatInput({
           : a,
       ));
     }
-  }, []);
+  }, [attachmentsLocked]);
 
   const pickFiles = useCallback(async () => {
+    if (attachmentsLocked) return;
     try {
       const result = await hostApi.dialog.open({
         properties: ['openFile', 'multiSelections'],
@@ -783,11 +814,12 @@ export function ChatInput({
     } catch (err) {
       console.error('[pickFiles] Failed to open file dialog:', err);
     }
-  }, [stagePathFiles]);
+  }, [attachmentsLocked, stagePathFiles]);
 
   // ── Stage browser File objects (paste / drag-drop) ─────────────
 
   const stageBufferFiles = useCallback(async (files: globalThis.File[]) => {
+    if (attachmentsLocked) return;
     for (const file of files) {
       const tempId = crypto.randomUUID();
       setAttachments(prev => [...prev, {
@@ -822,13 +854,14 @@ export function ChatInput({
         ));
       }
     }
-  }, []);
+  }, [attachmentsLocked]);
 
   // ── Attachment management ──────────────────────────────────────
 
   const removeAttachment = useCallback((id: string) => {
+    if (attachmentsLocked) return;
     setAttachments(prev => prev.filter(a => a.id !== id));
-  }, []);
+  }, [attachmentsLocked]);
 
   const allReady = attachments.length === 0 || attachments.every(a => a.status === 'ready');
   const hasFailedAttachments = attachments.some((a) => a.status === 'error');
@@ -886,6 +919,10 @@ export function ChatInput({
     if (!canStop) return;
     onStop?.();
   }, [canStop, onStop]);
+
+  const handleRetryConsultRefresh = useCallback(() => {
+    void realtimeTalkController.retryConsultRefresh();
+  }, []);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -974,11 +1011,12 @@ export function ChatInput({
         }
       }
       if (pastedFiles.length > 0) {
+        if (attachmentsLocked) return;
         e.preventDefault();
         stageBufferFiles(pastedFiles);
       }
     },
-    [stageBufferFiles],
+    [attachmentsLocked, stageBufferFiles],
   );
 
   // Handle drag & drop
@@ -987,8 +1025,9 @@ export function ChatInput({
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (attachmentsLocked) return;
     setDragOver(true);
-  }, []);
+  }, [attachmentsLocked]);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -1001,6 +1040,7 @@ export function ChatInput({
       e.preventDefault();
       e.stopPropagation();
       setDragOver(false);
+      if (attachmentsLocked) return;
       if (!e.dataTransfer) return;
 
       const { pathFiles, bufferFiles } = collectDroppedFiles(e.dataTransfer);
@@ -1011,18 +1051,37 @@ export function ChatInput({
       if (pathFiles.length > 0) void stagePathFiles(pathFiles);
       if (bufferFiles.length > 0) void stageBufferFiles(bufferFiles);
     },
-    [stageBufferFiles, stagePathFiles, t],
+    [attachmentsLocked, stageBufferFiles, stagePathFiles, t],
   );
 
   return (
     <div
       className={cn(
-        "shrink-0 p-4 pb-6 w-full mx-auto max-w-3xl"
+        'relative mx-auto w-full max-w-3xl shrink-0 p-4 pb-6',
       )}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {talkIsActive && (
+        <div
+          data-testid="chat-talk-listening-indicator"
+          role="meter"
+          aria-label={t(`talk.status.${talkStatus}`)}
+          aria-valuemin={0}
+          aria-valuemax={1}
+          aria-valuenow={talkInputLevel}
+          className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2"
+        >
+          <div className="relative grid h-20 w-20 place-items-center">
+            <span className="clawx-talk-listening-ring absolute -inset-1 rounded-full" style={talkListeningRingStyle} />
+            <span className="clawx-talk-listening-ring absolute -inset-4 rounded-full" style={talkListeningRingStyle} />
+            <div className="relative grid h-16 w-16 place-items-center rounded-full border border-border bg-surface-modal p-2 shadow-lg shadow-black/10 dark:shadow-black/30">
+              <img src={logoSvg} alt="" className="h-full w-full object-contain" />
+            </div>
+          </div>
+        </div>
+      )}
       <div className="w-full">
         <div className="text-right">
           <AcpSessionPlan plan={currentPlan} sessionKey={draftKey ?? ''} />
@@ -1078,6 +1137,7 @@ export function ChatInput({
                 key={att.id}
                 attachment={att}
                 onRemove={() => removeAttachment(att.id)}
+                disabled={attachmentsLocked}
               />
             ))}
           </div>
@@ -1093,6 +1153,7 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={() => setTargetAgentId(null)}
+                disabled={inputDisabled}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1 text-meta font-medium text-foreground transition-colors hover:bg-primary/10"
                 title={t('composer.clearTarget')}
               >
@@ -1149,6 +1210,9 @@ export function ChatInput({
 
           {/* Action Row — icons on their own line */}
           <div className="mt-1.5 flex items-center gap-1">
+             <div data-testid="chat-talk-status" role="status" aria-live="polite" className="sr-only">
+               {t(`talk.status.${talkStatus}`)}
+             </div>
             {/* Attach Button */}
             <Button
               variant="ghost"
@@ -1374,6 +1438,26 @@ export function ChatInput({
               )}
             </Button>
           </div>
+          {talkIsActive && talkConsultRefreshError && (
+            <div
+              data-testid="chat-talk-consult-refresh-error"
+              role="alert"
+              className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-surface-input px-2.5 py-1.5 text-tiny text-amber-700 dark:text-amber-400"
+            >
+              <span>{t('talk.consultRefresh.failed')}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                data-testid="chat-talk-consult-refresh-retry"
+                className="h-auto shrink-0 px-1.5 py-0.5 text-tiny text-amber-700 hover:bg-black/5 hover:text-amber-700 dark:text-amber-400 dark:hover:bg-white/10 dark:hover:text-amber-400"
+                disabled={talkConsultRefreshRetrying}
+                onClick={handleRetryConsultRefresh}
+              >
+                {talkConsultRefreshRetrying ? t('talk.consultRefresh.retrying') : t('talk.consultRefresh.retry')}
+              </Button>
+            </div>
+          )}
         </div>
         <div
           data-testid="chat-composer-footer"
@@ -1501,9 +1585,11 @@ export function ChatInput({
                 size="sm"
                 className="h-auto shrink-0 p-0 text-tiny"
                 onClick={() => {
+                  if (attachmentsLocked) return;
                   setAttachments((prev) => prev.filter((att) => att.status !== 'error'));
                   void pickFiles();
                 }}
+                disabled={attachmentsLocked}
               >
                 {t('composer.retryFailedAttachments')}
               </Button>
@@ -1520,9 +1606,11 @@ export function ChatInput({
 function AttachmentPreview({
   attachment,
   onRemove,
+  disabled,
 }: {
   attachment: FileAttachment;
   onRemove: () => void;
+  disabled: boolean;
 }) {
   const { t } = useTranslation('chat');
   const isImage = attachment.mimeType.startsWith('image/') && attachment.preview;
@@ -1571,7 +1659,10 @@ function AttachmentPreview({
 
       {/* Remove button */}
       <button
+        type="button"
+        data-testid="chat-attachment-remove"
         onClick={onRemove}
+        disabled={disabled}
         className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
       >
         <X className="h-3 w-3" />

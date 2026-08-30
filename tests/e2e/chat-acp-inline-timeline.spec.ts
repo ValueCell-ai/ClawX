@@ -10,6 +10,7 @@ import {
 import { expandAcpToolCallsGroup } from './fixtures/acp-timeline';
 
 const MAIN_SESSION_KEY = 'agent:main:main';
+const TALK_SESSION_KEY = 'agent:main:talk-e2e';
 const MAIN_WORKSPACE = '/workspace';
 const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
 const REVIEWER_SESSION_KEY = 'agent:reviewer:main';
@@ -190,6 +191,93 @@ async function installAcpLoadReplayBySessionMock(
       return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
     });
   }, { updatesBySessionKey });
+}
+
+async function installConsultReplayLoadMock(app: ElectronApplication) {
+  await app.evaluate(async ({ app: _app }, payload) => {
+    const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type HostInvokeRequest = {
+      id?: string;
+      module?: string;
+      action?: string;
+      payload?: Record<string, unknown>;
+      args?: unknown[];
+    };
+    type IpcInvokeHandler = (event: unknown, request: HostInvokeRequest) => Promise<unknown>;
+    const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
+    const originalHostInvoke = handlers?.get('host:invoke');
+    let consultSessionLoads = 0;
+    const globals = globalThis as unknown as {
+      __consultAcpLoadCount?: number;
+      __consultAcpDurableReplayFlags?: boolean[];
+    };
+    globals.__consultAcpLoadCount = 0;
+    globals.__consultAcpDurableReplayFlags = [];
+    ipcMain.removeHandler('host:invoke');
+    ipcMain.handle('host:invoke', async (event: unknown, request: HostInvokeRequest) => {
+      const requestPayload = request.payload ?? (Array.isArray(request.args) ? request.args[0] : undefined);
+      if (
+        request?.module === 'chat'
+        && request.action === 'loadAcpSession'
+        && requestPayload?.sessionKey === payload.sessionKey
+      ) {
+        consultSessionLoads += 1;
+        globals.__consultAcpLoadCount = consultSessionLoads;
+        globals.__consultAcpDurableReplayFlags?.push(requestPayload?.forceDurableReplay === true);
+        return {
+          id: request.id,
+          ok: true,
+          data: consultSessionLoads === 1
+            ? { success: true, generation: 1 }
+            : {
+              success: true,
+              generation: 2,
+              sessionUpdates: [
+                {
+                  sessionKey: payload.sessionKey,
+                  generation: 2,
+                  historical: true,
+                  notification: {
+                    sessionId: payload.sessionKey,
+                    update: {
+                      sessionUpdate: 'user_message',
+                      messageId: 'consult-user',
+                      content: [{ type: 'text', text: 'Durable consult prompt' }],
+                    },
+                  },
+                },
+                {
+                  sessionKey: payload.sessionKey,
+                  generation: 2,
+                  historical: true,
+                  notification: {
+                    sessionId: payload.sessionKey,
+                    update: {
+                      sessionUpdate: 'agent_message',
+                      messageId: 'consult-assistant',
+                      content: [{ type: 'text', text: 'Durable consult answer' }],
+                    },
+                  },
+                },
+              ],
+            },
+        };
+      }
+      return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
+    });
+  }, { sessionKey: TALK_SESSION_KEY });
+}
+
+async function getConsultAcpLoadCount(app: ElectronApplication) {
+  return await app.evaluate(async ({ app: _app }) => (
+    (globalThis as unknown as { __consultAcpLoadCount?: number }).__consultAcpLoadCount ?? 0
+  ));
+}
+
+async function getConsultAcpDurableReplayFlags(app: ElectronApplication) {
+  return await app.evaluate(async ({ app: _app }) => (
+    (globalThis as unknown as { __consultAcpDurableReplayFlags?: boolean[] }).__consultAcpDurableReplayFlags ?? []
+  ));
 }
 
 async function installAcpLoadRecorderMock(app: ElectronApplication) {
@@ -1950,6 +2038,331 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId(defaultWorkspaceSessionGroupTestId())).toBeVisible({ timeout: 30_000 });
       await expect(page.getByTestId('sidebar-session-agent:main:heartbeat')).toHaveCount(0);
       await expect(page.getByTestId('sidebar-session-agent:main:session-1710000000000')).toBeVisible();
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('renders typed Talk events as transient direct bubbles without microphone hardware', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [
+                { key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE },
+                { key: TALK_SESSION_KEY, displayName: 'Talk', workspacePath: MAIN_WORKSPACE },
+              ],
+            },
+          },
+        },
+        hostApi: {
+          ...baseHostApiMocks(),
+          [stableStringify(['chat', 'loadAcpSession', {
+            sessionKey: TALK_SESSION_KEY, workspaceRoot: MAIN_WORKSPACE, cwd: MAIN_WORKSPACE,
+          }])]: { success: true, generation: 1 },
+          [stableStringify(['talk', 'catalog', null])]: {
+            modes: ['realtime'],
+            transports: ['gateway-relay'],
+            brains: ['agent-consult'],
+            realtime: { ready: true, providers: [] },
+          },
+          [stableStringify(['talk', 'startRelay', { sessionKey: TALK_SESSION_KEY }])]: {
+            relaySessionId: 'relay-e2e',
+            provider: 'mock',
+            transport: 'gateway-relay',
+            audio: {
+              inputEncoding: 'pcm16',
+              inputSampleRateHz: 24_000,
+              outputEncoding: 'pcm16',
+              outputSampleRateHz: 24_000,
+            },
+          },
+          [stableStringify(['talk', 'stopRelay', { relaySessionId: 'relay-e2e' }])]: { ok: true },
+        },
+        recordHostInvocations: true,
+      });
+      const initialPage = await getStableWindow(app);
+      await initialPage.addInitScript(() => {
+        class FakeAudioContext {
+          sampleRate = 24_000;
+          audioWorklet = { addModule: async () => undefined };
+          destination = {};
+          createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+          createGain() { return { gain: { value: 0 }, connect() {}, disconnect() {} }; }
+          async close() {}
+        }
+        class FakeAudioWorkletNode {
+          port = { onmessage: null as ((event: MessageEvent<Float32Array>) => void) | null };
+          constructor(_context: AudioContext, _name: string) {}
+          connect() {}
+          disconnect() {}
+        }
+        Object.defineProperty(window, 'AudioContext', { value: FakeAudioContext, configurable: true });
+        Object.defineProperty(window, 'AudioWorkletNode', { value: FakeAudioWorkletNode, configurable: true });
+        Object.defineProperty(navigator, 'mediaDevices', {
+          value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) },
+          configurable: true,
+        });
+      });
+
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('sidebar-nav-settings').click();
+      await page.getByTestId('settings-dev-mode-switch').click();
+      await page.getByTestId(`sidebar-session-${TALK_SESSION_KEY}`).click();
+      await expect(page.getByTestId('sidebar-talk')).toBeEnabled();
+      await page.getByTestId('chat-composer-input').fill('Preserve this draft');
+      await page.getByTestId('sidebar-talk').click();
+      await expect(page.getByTestId('chat-composer-input')).toBeDisabled();
+
+      await app.evaluate(async ({ app: _app }) => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) {
+          for (const event of [
+            { role: 'user', text: '帮我看看前', final: false },
+            { role: 'assistant', text: '帮你查一下', final: false },
+            { role: 'user', text: '部落有什么剑。', final: false },
+            { role: 'assistant', text: '项目里的文件情况。', final: false },
+            { role: 'user', text: '帮我看看前部落有什么剑。', final: true },
+            { role: 'assistant', text: '好的，我来帮你查一下项目里的文件情况。', final: true },
+            { role: 'assistant', text: '我来看看', final: false },
+            { role: 'assistant', text: '我来看看进度，然后告诉你现在的情况。', final: true },
+            { role: 'assistant', text: '目录里大致', final: false },
+            { role: 'assistant', text: '目录里大致有这些文件和目录。', final: true },
+          ] as const) {
+            window.webContents.send('talk:event', {
+              relaySessionId: 'relay-e2e', type: 'transcript', ...event,
+            });
+          }
+        }
+      });
+      await expect(page.getByTestId('live-talk-user-message')).toHaveCount(1);
+      await expect(page.getByTestId('live-talk-user-message')).toContainText('帮我看看前部落有什么剑。');
+      await expect(page.getByTestId('live-talk-assistant-message')).toHaveCount(1);
+      await expect(page.getByTestId('live-talk-assistant-message')).toContainText(
+        '好的，我来帮你查一下项目里的文件情况。我来看看进度，然后告诉你现在的情况。目录里大致有这些文件和目录。',
+      );
+      await expect(page.getByTestId('acp-chat-timeline')).toHaveCount(0);
+
+      await app.evaluate(async ({ app: _app }) => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'transcript', role: 'user', text: 'Second request', final: false,
+          });
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'transcript', role: 'assistant', text: 'Second answer', final: true,
+          });
+        }
+      });
+      await expect(page.getByTestId('live-talk-user-message')).toHaveCount(2);
+      await expect(page.getByTestId('live-talk-user-message').last()).toContainText('Second request');
+      await expect(page.getByTestId('live-talk-assistant-message')).toHaveCount(2);
+      await expect(page.getByTestId('live-talk-assistant-message').last()).toContainText('Second answer');
+
+      await app.evaluate(async ({ app: _app }) => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'toolCall', callId: 'unknown-tool', name: 'untrusted_tool', args: {},
+          });
+        }
+      });
+      await page.waitForTimeout(50);
+      expect((await getRecordedHostInvocations(app)).some((call) => (
+        call.module === 'talk' && call.action === 'startAgentConsult'
+      ))).toBe(false);
+
+      await page.getByTestId('sidebar-talk').click();
+      await expect(page.getByTestId('chat-composer-input')).toBeEnabled();
+      await expect(page.getByTestId('chat-composer-input')).toHaveValue('Preserve this draft');
+      await expect(page.getByTestId('live-talk-transcript')).toHaveCount(0);
+
+      await page.getByTestId('sidebar-talk').click();
+      await expect(page.getByTestId('chat-composer-input')).toBeDisabled();
+      await app.evaluate(async ({ app: _app }) => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'transcript', role: 'assistant', text: 'Direct assistant after restart', final: true,
+          });
+        }
+      });
+      await expect(page.getByTestId('live-talk-assistant-message')).toContainText('Direct assistant after restart');
+
+      await page.reload();
+      await expect(page.getByTestId('live-talk-transcript')).toHaveCount(0);
+      await expect.poll(async () => (await getRecordedHostInvocations(app)).some((call) => (
+        call.module === 'talk' && call.action === 'stopRelay'
+      ))).toBe(true);
+      expect((await getRecordedHostInvocations(app)).some((call) => (
+        call.module === 'talk' && call.action === 'startRelay'
+      ))).toBe(true);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('replays durable consult history only after the provider output mark while Talk stays active', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installIpcMocks(app, {
+        gatewayStatus: { state: 'running', gatewayReady: true, port: 18789, pid: 12345 },
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: {
+            success: true,
+            result: {
+              sessions: [
+                { key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE },
+                { key: TALK_SESSION_KEY, displayName: 'Talk', workspacePath: MAIN_WORKSPACE },
+              ],
+            },
+          },
+        },
+        hostApi: {
+          ...baseHostApiMocks(),
+          [stableStringify(['talk', 'catalog', null])]: {
+            modes: ['realtime'],
+            transports: ['gateway-relay'],
+            brains: ['agent-consult'],
+            realtime: { ready: true, providers: [] },
+          },
+          [stableStringify(['talk', 'startRelay', { sessionKey: TALK_SESSION_KEY }])]: {
+            relaySessionId: 'relay-e2e',
+            provider: 'mock',
+            transport: 'gateway-relay',
+            audio: {
+              inputEncoding: 'pcm16',
+              inputSampleRateHz: 24_000,
+              outputEncoding: 'pcm16',
+              outputSampleRateHz: 24_000,
+            },
+          },
+          [stableStringify(['talk', 'startAgentConsult', {
+            relaySessionId: 'relay-e2e', sessionKey: TALK_SESSION_KEY, callId: 'consult-1', args: { prompt: 'Review this' },
+          }])]: { runId: 'consult-run', text: 'Consult completion' },
+          [stableStringify(['talk', 'submitToolResult', {
+            relaySessionId: 'relay-e2e', callId: 'consult-1', result: 'Consult completion',
+          }])]: { ok: true },
+          [stableStringify(['talk', 'acknowledgeMark', {
+            relaySessionId: 'relay-e2e', markName: 'consult-output-complete',
+          }])]: { ok: true },
+          [stableStringify(['talk', 'stopRelay', { relaySessionId: 'relay-e2e' }])]: { ok: true },
+        },
+        recordHostInvocations: true,
+      });
+      await installConsultReplayLoadMock(app);
+      const initialPage = await getStableWindow(app);
+      await initialPage.addInitScript(() => {
+        class FakeAudioContext {
+          sampleRate = 24_000;
+          currentTime = 0;
+          audioWorklet = { addModule: async () => undefined };
+          destination = {};
+          createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+          createGain() { return { gain: { value: 0 }, connect() {}, disconnect() {} }; }
+          createBuffer(_channels: number, length: number, sampleRate: number) {
+            return { duration: length / sampleRate, copyToChannel() {} };
+          }
+          createBufferSource() {
+            return {
+              buffer: null,
+              onended: null as (() => void) | null,
+              connect() {},
+              start() { queueMicrotask(() => this.onended?.()); },
+              stop() { this.onended?.(); },
+            };
+          }
+          async close() {}
+        }
+        class FakeAudioWorkletNode {
+          port = { onmessage: null as ((event: MessageEvent<Float32Array>) => void) | null };
+          constructor(_context: AudioContext, _name: string) {}
+          connect() {}
+          disconnect() {}
+        }
+        Object.defineProperty(window, 'AudioContext', { value: FakeAudioContext, configurable: true });
+        Object.defineProperty(window, 'AudioWorkletNode', { value: FakeAudioWorkletNode, configurable: true });
+        Object.defineProperty(navigator, 'mediaDevices', {
+          value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) },
+          configurable: true,
+        });
+      });
+
+      const page = await openChat(app);
+      await page.getByTestId('sidebar-nav-settings').click();
+      await page.getByTestId('settings-dev-mode-switch').click();
+      await page.getByTestId(`sidebar-session-${TALK_SESSION_KEY}`).click();
+      await expect(page.getByTestId('sidebar-talk')).toBeEnabled();
+      await page.getByTestId('sidebar-talk').click();
+      await expect(page.getByTestId('chat-composer-input')).toBeDisabled();
+
+      await app.evaluate(async ({ app: _app }) => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'transcript', role: 'assistant', text: 'Transient direct reply', final: true,
+          });
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'toolCall', callId: 'consult-1', name: 'openclaw_agent_consult', args: { prompt: 'Review this' },
+          });
+        }
+      });
+      await expect(page.getByTestId('live-talk-assistant-message')).toContainText('Transient direct reply');
+      await expect.poll(async () => (await getRecordedHostInvocations(app)).some((call) => (
+        call.module === 'talk' && call.action === 'submitToolResult'
+      ))).toBe(true);
+
+      await app.evaluate(async ({ app: _app }) => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'toolResult', callId: 'consult-1', final: true,
+          });
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'audio', audioBase64: 'AAD/fw==',
+          });
+        }
+      });
+      const loadsBeforeProviderMark = await getConsultAcpLoadCount(app);
+      expect(loadsBeforeProviderMark).toBe(1);
+      await expect(page.getByText('Durable consult answer')).toHaveCount(0);
+
+      await app.evaluate(async ({ app: _app }) => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'mark', markName: 'consult-output-complete',
+          });
+        }
+      });
+      await expect.poll(() => getConsultAcpLoadCount(app)).toBe(loadsBeforeProviderMark + 1);
+      await expect.poll(() => getConsultAcpDurableReplayFlags(app)).toEqual([false, true]);
+      // Active Talk renders its transient transcript in place of the ACP timeline.
+      await expect(page.getByText('Durable consult prompt')).toHaveCount(0);
+      await expect(page.getByText('Durable consult answer')).toHaveCount(0);
+      await expect(page.getByTestId('live-talk-transcript')).toHaveCount(0);
+      await expect(page.getByTestId('chat-composer-input')).toBeDisabled();
+      await expect(page.getByTestId('sidebar-talk')).toHaveAttribute('aria-pressed', 'true');
+      expect((await getRecordedHostInvocations(app)).some((call) => (
+        call.module === 'talk' && call.action === 'stopRelay'
+      ))).toBe(false);
+
+      await app.evaluate(async ({ app: _app }) => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) {
+          window.webContents.send('talk:event', {
+            relaySessionId: 'relay-e2e', type: 'transcript', role: 'assistant', text: 'Talk remains usable', final: true,
+          });
+        }
+      });
+      await expect(page.getByTestId('live-talk-assistant-message')).toContainText('Talk remains usable');
     } finally {
       await closeElectronApp(app);
     }

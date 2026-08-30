@@ -71,10 +71,6 @@ vi.mock('@/hooks/use-stick-to-bottom-instant', () => ({
   }),
 }));
 
-vi.mock('@/hooks/use-min-loading', () => ({
-  useMinLoading: (value: boolean) => value,
-}));
-
 vi.mock('@/pages/Chat/ChatInput', () => ({
   ChatInput: () => <div data-testid="chat-input" />,
 }));

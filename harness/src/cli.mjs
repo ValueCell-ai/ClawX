@@ -14,6 +14,7 @@ import {
 } from './specs.mjs';
 import {
   scanBackendCommunicationBoundary,
+  scanRealtimeTalkAuthority,
   touchesCommunicationPath,
   validateGatewayTaskSpec,
   validatePluginLifecycleTaskSpec,
@@ -152,6 +153,18 @@ async function run(specPath, options = {}) {
     exitCode: boundaryFailures.length === 0 ? 0 : 1,
     durationMs: 0,
   });
+
+  if (toArray(validation.spec.data.requiredRules).includes('realtime-talk-openclaw-authority')) {
+    const talkAuthorityFailures = await scanRealtimeTalkAuthority(scanFiles);
+    failures.push(...talkAuthorityFailures);
+    steps.push({
+      profile: 'rules',
+      name: 'Realtime Talk authority scan',
+      status: talkAuthorityFailures.length === 0 ? 'pass' : 'fail',
+      exitCode: talkAuthorityFailures.length === 0 ? 0 : 1,
+      durationMs: 0,
+    });
+  }
 
   const selectedSteps = selectSteps(profiles);
   if (failures.length === 0) {
