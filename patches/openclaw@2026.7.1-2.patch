@@ -1575,7 +1575,7 @@ index 41d3492a4965c62292eaa74a4d0b746b6bc4e4b2..66caa3e83cb1fcbf54129d1addedd1ff
  							sessionId: params.sessionId,
  							sessionKey: params.sessionKey,
 diff --git a/dist/server-chat-wgxNCdC3.js b/dist/server-chat-wgxNCdC3.js
-index e03fecec0657ddd63833fd4804efba1d21d2f361..6fa31407a9c30d42cc9d907e2f1d862edf5bba12 100644
+index e03fecec0657ddd63833fd4804efba1d21d2f361..59d43fec4929e114af04e458f22f827515fa8048 100644
 --- a/dist/server-chat-wgxNCdC3.js
 +++ b/dist/server-chat-wgxNCdC3.js
 @@ -544,14 +544,21 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
@@ -1603,9 +1603,11 @@ index e03fecec0657ddd63833fd4804efba1d21d2f361..6fa31407a9c30d42cc9d907e2f1d862e
  	};
  	const emitChatTerminal = (sessionKey, clientRunId, sourceRunId, seq, jobState, error, stopReason, errorKind, opts) => {
  		const { text, shouldSuppressSilent } = resolveBufferedChatTextState(clientRunId, sourceRunId, { suppressLeadFragments: false });
-@@ -721,15 +728,18 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
+@@ -721,15 +728,20 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
  		}
++		const restartsAfterLifecycleError = lifecyclePhase === "start" && pendingTerminalLifecycleErrors.has(evt.runId);
  		if (lifecyclePhase !== null && lifecyclePhase !== "error") clearPendingTerminalLifecycleError(evt.runId);
++		if (restartsAfterLifecycleError) clearBufferedChatState(clientRunId);
  		const spawnedBy = sessionKey ? resolveSpawnedBy(sessionKey) : null;
 +		const resumedFromRunId = runContext?.resumedFromRunId;
  		const agentPayload = sessionKey ? {
@@ -1624,7 +1626,7 @@ index e03fecec0657ddd63833fd4804efba1d21d2f361..6fa31407a9c30d42cc9d907e2f1d862e
  		};
  		const hasSessionMessageSubscribers = sessionKey ? sessionMessageSubscribers.get(resolveSessionDeliveryKey(sessionKey, sessionAgentId)).size > 0 : false;
  		const last = agentRunSeq.get(evt.runId) ?? 0;
-@@ -799,7 +809,10 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
+@@ -799,7 +811,10 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
  				dropIfSlow: true
  			});
  			if (isControlUiVisible && sessionKey && !suppressHeartbeatToolEvents) {
@@ -1636,6 +1638,8 @@ index e03fecec0657ddd63833fd4804efba1d21d2f361..6fa31407a9c30d42cc9d907e2f1d862e
  				if (sessionSubscribers.size > 0) broadcastToConnIds("session.tool", {
  					...agentPayload,
  					...buildSessionEventSnapshot(sessionKey, void 0, sessionAgentId)
+@@ -849 +863,0 @@
+-			clearBufferedChatState(clientRunId);
 diff --git a/dist/server-request-context-CyBqotZW.js b/dist/server-request-context-CyBqotZW.js
 index 0698d00a84156154b61748732013b030fb0b13d9..149da6cf56744eb93f2050824f437779314690ab 100644
 --- a/dist/server-request-context-CyBqotZW.js

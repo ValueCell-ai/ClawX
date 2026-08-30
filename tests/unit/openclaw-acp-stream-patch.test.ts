@@ -9,6 +9,8 @@ import { describe, expect, it } from 'vitest';
 const root = path.resolve(import.meta.dirname, '../..');
 const bundlePath = process.env.CLAWX_OPENCLAW_ACP_BUNDLE_PATH
   ?? path.join(root, 'node_modules/openclaw/dist/acp-cli-BXc5GttU.js');
+const gatewayBundlePath = process.env.CLAWX_OPENCLAW_GATEWAY_CHAT_BUNDLE_PATH
+  ?? path.join(root, 'node_modules/openclaw/dist/server-chat-wgxNCdC3.js');
 const execFileAsync = promisify(execFile);
 
 type DeltaHandler = (this: {
@@ -21,6 +23,20 @@ type ChatHandler = (this: {
   handleDeltaEvent: (sessionId: string, messageData: Record<string, unknown>) => Promise<void>;
   finishPrompt: (sessionId: string, pending: Record<string, unknown>, stopReason: string) => Promise<void>;
 }, event: { payload: Record<string, unknown> }) => Promise<void>;
+
+type GatewayRetryPreflight = (
+  lifecyclePhase: string,
+  evt: { runId: string },
+  clientRunId: string,
+) => void;
+
+type GatewayTerminalEmitter = (
+  sessionKey: string,
+  clientRunId: string,
+  sourceRunId: string,
+  seq: number,
+  jobState: string,
+) => void;
 
 function extractDeltaHandler(bundle: string): DeltaHandler {
   const methodStart = bundle.indexOf('async handleDeltaEvent(sessionId, messageData)');
@@ -61,6 +77,76 @@ function extractChatHandler(bundle: string): ChatHandler {
 }
 
 describe('OpenClaw ACP assistant stream patch', () => {
+  it('retains buffered assistant text through retry grace and clears it when retry starts', async () => {
+    const bundle = await readFile(gatewayBundlePath, 'utf8');
+    const preflightStart = bundle.indexOf('const restartsAfterLifecycleError =');
+    const preflightEnd = bundle.indexOf('\n\t\tconst spawnedBy', preflightStart);
+    const branchStart = bundle.indexOf('if (lifecyclePhase === "error")');
+    const branchEnd = bundle.indexOf('\n\t\tif (lifecyclePhase === "end")', branchStart);
+
+    expect(preflightStart).toBeGreaterThanOrEqual(0);
+    expect(preflightEnd).toBeGreaterThan(preflightStart);
+    expect(branchStart).toBeGreaterThanOrEqual(0);
+    expect(branchEnd).toBeGreaterThan(branchStart);
+    const pendingTerminalLifecycleErrors = new Map([['source-run', {}]]);
+    const calls: string[] = [];
+    const context = {
+      pendingTerminalLifecycleErrors,
+      clearPendingTerminalLifecycleError: (runId: string) => {
+        calls.push(`clear-pending:${runId}`);
+        pendingTerminalLifecycleErrors.delete(runId);
+      },
+      clearBufferedChatState: (runId: string) => calls.push(`clear-buffer:${runId}`),
+      runRetryPreflight: undefined as GatewayRetryPreflight | undefined,
+    };
+    runInNewContext(
+      `globalThis.runRetryPreflight = function (lifecyclePhase, evt, clientRunId) {\n${bundle.slice(preflightStart, preflightEnd)}\n};`,
+      context,
+    );
+
+    context.runRetryPreflight?.('error', { runId: 'source-run' }, 'client-run');
+    expect(calls).toEqual([]);
+
+    context.runRetryPreflight?.('start', { runId: 'source-run' }, 'client-run');
+    expect(calls).toEqual([
+      'clear-pending:source-run',
+      'clear-buffer:client-run',
+    ]);
+    expect(bundle.slice(branchStart, branchEnd)).not.toContain('clearBufferedChatState(clientRunId);');
+  });
+
+  it('flushes retained Gateway text before clearing and sending an aborted terminal', async () => {
+    const bundle = await readFile(gatewayBundlePath, 'utf8');
+    const declaration = 'const emitChatTerminal = ';
+    const emitterStart = bundle.indexOf(declaration);
+    const emitterEnd = bundle.indexOf('\n\tconst sendAgentPayload', emitterStart);
+    expect(emitterStart).toBeGreaterThanOrEqual(0);
+    expect(emitterEnd).toBeGreaterThan(emitterStart);
+
+    const calls: string[] = [];
+    const context = {
+      resolveBufferedChatTextState: () => ({
+        text: 'complete buffered response',
+        shouldSuppressSilent: false,
+      }),
+      flushBufferedChatDeltaIfNeeded: () => calls.push('flush'),
+      chatRunState: { clearRun: () => calls.push('clear') },
+      resolveSpawnedBy: () => null,
+      sendChatPayload: (_sessionKey: string, payload: unknown) => calls.push(`send:${JSON.stringify(payload)}`),
+      emitChatTerminal: undefined as GatewayTerminalEmitter | undefined,
+    };
+    const emitterSource = bundle
+      .slice(emitterStart + declaration.length, emitterEnd)
+      .replace(/;\s*$/, '');
+    runInNewContext(`globalThis.emitChatTerminal = ${emitterSource};`, context);
+
+    context.emitChatTerminal?.('session-key', 'client-run', 'source-run', 7, 'aborted');
+
+    expect(calls.slice(0, 2)).toEqual(['flush', 'clear']);
+    expect(calls[2]).toContain('"state":"aborted"');
+    expect(calls[2]).toContain('"text":"complete buffered response"');
+  });
+
   it('records buffered text carried by an aborted terminal before settling', async () => {
     const bundle = await readFile(bundlePath, 'utf8');
     const handleChatEvent = extractChatHandler(bundle);
