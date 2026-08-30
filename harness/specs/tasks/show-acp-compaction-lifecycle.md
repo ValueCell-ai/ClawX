@@ -33,6 +33,7 @@ touchedAreas:
 expectedUserBehavior:
   - Each persisted OpenClaw transcript compaction boundary included in the bounded ACP transcript response renders in its original replay position as a localized completed compaction marker.
   - A live compaction marker first shows in progress, then updates in place to completed, failed, or cancelled; successful compaction that will retry the interrupted model call says that work is continuing.
+  - A failed live marker shows its bounded producer-provided reason with a localized label when one is available.
   - Multiple compactions in one conversation remain separate ordered markers, including multiple occurrences during one run.
   - Compaction summaries and other compacted conversation content are never displayed by the marker.
 requiredProfiles:
@@ -56,7 +57,7 @@ requiredTests:
   - pnpm exec playwright test tests/e2e/chat-acp-process-timeline.spec.ts --grep "compaction"
 acceptance:
   - The patched OpenClaw ACP adapter emits a standard session_info_update whose _meta contains openclaw.ai/compaction version 1 metadata for live and replayed compactions because the pinned ACP SDK does not yet accept the draft compaction_update discriminator.
-  - Every metadata payload has a non-empty compactionId, a valid status, and a source; optional runId, willRetry, and timestamp fields are typed and omitted when unavailable.
+  - Every metadata payload has a non-empty compactionId, a valid status, and a source; optional runId, willRetry, timestamp, reasonCode, and reason fields are typed and omitted when unavailable, and source never doubles as the failure reason.
   - One live occurrence reuses its compactionId from in_progress through its terminal update, while every later occurrence receives another compactionId even when the runId is unchanged.
   - AgentSession threshold compaction and the actual /compact command publish their existing structured agent compaction lifecycle events consumed by ACP.
   - Explicit context-engine overflow, preflight, and timeout recovery compaction calls publish structured start and terminal agent events unconditionally, regardless of the context engine ownsCompaction flag.
@@ -82,10 +83,12 @@ Until the pinned ACP SDK supports the draft Session Compaction RFD update, OpenC
     "openclaw.ai/compaction": {
       "version": 1,
       "compactionId": "cmp-unique-occurrence",
-      "status": "in_progress",
-      "source": "threshold",
+      "status": "failed",
+      "source": "preflight",
       "runId": "optional-run-id",
-      "timestamp": "2026-08-30T00:00:00.000Z"
+      "timestamp": "2026-08-30T00:00:00.000Z",
+      "reasonCode": "optional-stable-failure-code",
+      "reason": "optional bounded failure explanation"
     }
   }
 }
@@ -93,7 +96,8 @@ Until the pinned ACP SDK supports the draft Session Compaction RFD update, OpenC
 
 `status` is one of `in_progress`, `completed`, `failed`, or `cancelled`.
 `source` is one of `threshold`, `overflow`, `preflight`, `manual`, or
-`transcript`. The metadata is a compatibility extension, not a parallel
+`transcript`. `reasonCode` and `reason` are emitted only when terminal work
+fails; `reason` is trimmed and limited to 500 characters. The metadata is a compatibility extension, not a parallel
 transport. Remove its producer and Renderer validator, and consume the native
 Session Compaction RFD update instead, once the pinned ACP SDK accepts that
 update and the distributed OpenClaw adapter emits it for the same live and

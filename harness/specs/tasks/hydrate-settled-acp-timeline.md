@@ -42,6 +42,7 @@ acceptance:
   - Session changes, newer loads, newer prompts, failed replay, resumed-active-prompt responses, and empty replay batches cannot overwrite the settled live timeline.
   - A successful empty or resumed replay adopts Main's committed routing generation without replacing visible live items.
   - Existing attachment resolution, image-generation compatibility projections, and transcript-derived timing remain best-effort supplements after ACP replay is committed.
+  - Typed compaction failure codes and bounded reasons in authoritative replay survive the atomic timeline replacement without transcript inference.
 docs:
   required: true
 ---

@@ -33,12 +33,22 @@ export function AcpCompactionStatus({ item }: { item: CompactionItem }) {
       data-testid="acp-compaction-status"
       role={item.historical === true ? undefined : 'status'}
       className={cn(
-        'flex w-full min-w-0 items-center gap-2 rounded-lg bg-surface-input px-3 py-2 text-xs font-medium',
+        'flex w-full min-w-0 items-start gap-2 rounded-lg bg-surface-input px-3 py-2 text-xs font-medium',
         compactionStatusClasses(item.status),
       )}
     >
       <CompactionStatusIcon status={item.status} />
-      <span>{t(compactionLabelKey(item))}</span>
+      <span className="min-w-0">
+        <span className="block">{t(compactionLabelKey(item))}</span>
+        {item.status === 'failed' && item.reason ? (
+          <span
+            data-testid="acp-compaction-failure-reason"
+            className="mt-0.5 block break-words font-normal text-muted-foreground"
+          >
+            {t('acp.compaction.reason', { reason: item.reason })}
+          </span>
+        ) : null}
+      </span>
     </div>
   );
 }

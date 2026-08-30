@@ -35,8 +35,10 @@ type Role = MessageSegmentItem['role'];
 
 const COMPACTION_STATUSES: CompactionStatus[] = ['in_progress', 'completed', 'failed', 'cancelled'];
 const COMPACTION_SOURCES: CompactionSource[] = ['threshold', 'overflow', 'preflight', 'manual', 'transcript'];
+const COMPACTION_REASON_CODE_MAX_CHARS = 100;
+const COMPACTION_REASON_MAX_CHARS = 500;
 
-type CompactionMetadata = Pick<CompactionItem, 'compactionId' | 'status' | 'source' | 'runId' | 'willRetry' | 'timestamp'>;
+type CompactionMetadata = Pick<CompactionItem, 'compactionId' | 'status' | 'source' | 'runId' | 'willRetry' | 'timestamp' | 'reasonCode' | 'reason'>;
 
 export function createEmptyAcpTimeline(sessionId: string, loadGeneration: number): AcpTimelineSnapshot {
   return {
@@ -551,6 +553,10 @@ function compactionMetadata(update: UpdateRecord): CompactionMetadata | undefine
   if (propertyExists(compaction, 'runId') && typeof compaction.runId !== 'string') return undefined;
   if (propertyExists(compaction, 'willRetry') && typeof compaction.willRetry !== 'boolean') return undefined;
   if (propertyExists(compaction, 'timestamp') && typeof compaction.timestamp !== 'string') return undefined;
+  if (propertyExists(compaction, 'reasonCode') && typeof compaction.reasonCode !== 'string') return undefined;
+  if (propertyExists(compaction, 'reason') && typeof compaction.reason !== 'string') return undefined;
+  if (typeof compaction.reasonCode === 'string' && compaction.reasonCode.length > COMPACTION_REASON_CODE_MAX_CHARS) return undefined;
+  if (typeof compaction.reason === 'string' && compaction.reason.length > COMPACTION_REASON_MAX_CHARS) return undefined;
 
   return {
     compactionId,
@@ -559,6 +565,8 @@ function compactionMetadata(update: UpdateRecord): CompactionMetadata | undefine
     ...(typeof compaction.runId === 'string' ? { runId: compaction.runId } : {}),
     ...(typeof compaction.willRetry === 'boolean' ? { willRetry: compaction.willRetry } : {}),
     ...(typeof compaction.timestamp === 'string' ? { timestamp: compaction.timestamp } : {}),
+    ...(typeof compaction.reasonCode === 'string' ? { reasonCode: compaction.reasonCode } : {}),
+    ...(typeof compaction.reason === 'string' ? { reason: compaction.reason } : {}),
   };
 }
 
@@ -598,6 +606,12 @@ function updateSessionInfoMetadata(
     ...(previous?.timestamp !== undefined
       ? { timestamp: previous.timestamp }
       : compaction.timestamp !== undefined ? { timestamp: compaction.timestamp } : {}),
+    ...(compaction.reasonCode !== undefined
+      ? { reasonCode: compaction.reasonCode }
+      : previous?.reasonCode !== undefined ? { reasonCode: previous.reasonCode } : {}),
+    ...(compaction.reason !== undefined
+      ? { reason: compaction.reason }
+      : previous?.reason !== undefined ? { reason: previous.reason } : {}),
     historical: !!previous?.historical || !!options.historical,
   });
 }

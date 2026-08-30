@@ -118,6 +118,8 @@ export type CompactionItem = {
   runId?: string;
   willRetry?: boolean;
   timestamp?: string;
+  reasonCode?: string;
+  reason?: string;
   historical?: boolean;
 };
 

@@ -28,6 +28,15 @@ without manufacturing a context overflow or compaction. Refund the run retry
 only when a non-error tool result proves that the active turn made progress;
 empty sessions and truncation errors keep the normal compaction fallback.
 
+When measured prompt overflow is caused by aggregate tool-result pressure, use
+the overflow deficit and the existing route buffer to derive one aggregate
+character target. Mid-turn, pre-prompt, no-real-conversation, and
+post-compaction recovery must reuse that target, prefer older tool results, and
+retain a bounded representation of protected trailing results without breaking
+tool-call/result pairing. A `no real conversation messages` result cannot reset
+token state while transcript or rendered-prompt pressure still proves a real
+overflow; stale-counter reset remains only for pressure that is not so proven.
+
 Do not harden a boundary unless the removed completed messages were included in
 the summary input. A checkpoint may record the hardened boundary, but deleting
 checkpoint metadata alone does not change reconstructed model context.

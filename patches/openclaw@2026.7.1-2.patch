@@ -1,5 +1,5 @@
 diff --git a/dist/acp-cli-BXc5GttU.js b/dist/acp-cli-BXc5GttU.js
-index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6135b50ff 100644
+index 6c7de7d60ac87a733632c36a744ada0e4e48d077..cec13ead1637a3ddfb7fdfb71291b1afb934326b 100644
 --- a/dist/acp-cli-BXc5GttU.js
 +++ b/dist/acp-cli-BXc5GttU.js
 @@ -1620,10 +1620,44 @@ function buildSessionUsageSnapshot(row) {
@@ -70,7 +70,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  		if (role === "assistant" && typedBlock.type === "thinking" && typeof typedBlock.thinking === "string" && typedBlock.thinking) replayChunks.push({
  			sessionUpdate: "agent_thought_chunk",
  			text: typedBlock.thinking
-@@ -1648,6 +1698,31 @@ function extractReplayChunks(message) {
+@@ -1648,6 +1698,38 @@ function extractReplayChunks(message) {
  	}
  	return replayChunks;
  }
@@ -80,29 +80,36 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
 +	"preflight",
 +	"manual"
 +]);
++const MAX_ACP_COMPACTION_REASON_CODE_CHARS = 100;
++const MAX_ACP_COMPACTION_REASON_CHARS = 500;
 +function buildAcpCompactionUpdate(data, runId) {
 +	const phase = data.phase;
 +	const compactionId = normalizeOptionalString(data.compactionId);
 +	const source = normalizeOptionalString(data.source) ?? normalizeOptionalString(data.reason);
 +	if ((phase !== "start" && phase !== "end") || !compactionId || !source || !ACP_COMPACTION_SOURCES.has(source)) return;
 +	const timestamp = normalizeOptionalString(data.timestamp) ?? timestampMsToIsoString(data.ts);
++	const status = phase === "start" ? "in_progress" : data.aborted === true ? "cancelled" : data.completed === true ? "completed" : "failed";
++	const reasonCode = status === "failed" ? normalizeOptionalString(data.reasonCode)?.slice(0, MAX_ACP_COMPACTION_REASON_CODE_CHARS) : void 0;
++	const reason = status === "failed" ? normalizeOptionalString(data.failureReason)?.slice(0, MAX_ACP_COMPACTION_REASON_CHARS) : void 0;
 +	return {
 +		sessionUpdate: "session_info_update",
 +		_meta: { "openclaw.ai/compaction": {
 +			version: 1,
 +			compactionId,
-+			status: phase === "start" ? "in_progress" : data.aborted === true ? "cancelled" : data.completed === true ? "completed" : "failed",
++			status,
 +			source,
 +			...normalizeOptionalString(runId) ? { runId: normalizeOptionalString(runId) } : {},
 +			...typeof data.willRetry === "boolean" ? { willRetry: data.willRetry } : {},
-+			...timestamp ? { timestamp } : {}
++			...timestamp ? { timestamp } : {},
++			...reasonCode ? { reasonCode } : {},
++			...reason ? { reason } : {}
 +		} }
 +	};
 +}
  //#endregion
  //#region src/acp/translator.session-list.ts
  /** Cursor and pagination helpers for ACP session/list requests. */
-@@ -1849,6 +1924,8 @@ const ACP_AGENT_INFO = {
+@@ -1849,6 +1931,8 @@ const ACP_AGENT_INFO = {
  const MAX_PROMPT_BYTES = 2 * 1024 * 1024;
  const ACP_LOAD_SESSION_REPLAY_LIMIT = 1e6;
  const ACP_GATEWAY_DISCONNECT_GRACE_MS = 5e3;
@@ -111,7 +118,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  function normalizedChatSendAckStatus(status) {
  	return typeof status === "string" ? status.trim().toLowerCase() : "";
  }
-@@ -1914,6 +1991,7 @@ var AcpGatewayAgent = class {
+@@ -1914,6 +1998,7 @@ var AcpGatewayAgent = class {
  	}
  	constructor(connection, gateway, opts = {}) {
  		this.pendingPrompts = /* @__PURE__ */ new Map();
@@ -119,7 +126,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  		this.settlingPromptKeys = /* @__PURE__ */ new Set();
  		this.approvalRelays = /* @__PURE__ */ new Map();
  		this.clientCapabilities = normalizeClientCapabilities(void 0);
-@@ -1957,12 +2035,85 @@ var AcpGatewayAgent = class {
+@@ -1957,12 +2042,85 @@ var AcpGatewayAgent = class {
  	getClientInfo() {
  		return this.clientInfo;
  	}
@@ -208,7 +215,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  	}
  	handleGatewayDisconnect(reason) {
  		this.log(`gateway disconnected: ${reason}`);
-@@ -1981,11 +2132,15 @@ var AcpGatewayAgent = class {
+@@ -1981,11 +2139,15 @@ var AcpGatewayAgent = class {
  			await this.handleChatEvent(evt);
  			return;
  		}
@@ -225,7 +232,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  	}
  	async initialize(params) {
  		this.clientCapabilities = normalizeClientCapabilities(params.clientCapabilities);
-@@ -2210,7 +2365,7 @@ var AcpGatewayAgent = class {
+@@ -2210,7 +2372,7 @@ var AcpGatewayAgent = class {
  	async prompt(params) {
  		const session = this.sessionStore.getSession(params.sessionId);
  		if (!session) throw new Error(`Session ${params.sessionId} not found`);
@@ -234,7 +241,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  		const meta = parseSessionMeta(params["_meta"]);
  		const userText = extractTextFromPrompt(params.prompt, MAX_PROMPT_BYTES);
  		const attachments = extractAttachmentsFromPrompt(params.prompt);
-@@ -2227,7 +2382,6 @@ var AcpGatewayAgent = class {
+@@ -2227,7 +2389,6 @@ var AcpGatewayAgent = class {
  		if (Buffer.byteLength(message, "utf-8") > MAX_PROMPT_BYTES) throw new Error(`Prompt exceeds maximum allowed size of ${MAX_PROMPT_BYTES} bytes`);
  		const abortController = new AbortController();
  		const runId = randomUUID();
@@ -242,7 +249,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  		const requestParams = {
  			sessionKey: session.sessionKey,
  			message,
-@@ -2237,10 +2391,13 @@ var AcpGatewayAgent = class {
+@@ -2237,10 +2398,13 @@ var AcpGatewayAgent = class {
  			deliver: readBool(params["_meta"], ["deliver"]),
  			timeoutMs: readNonNegativeInteger(params["_meta"], ["timeoutMs"])
  		};
@@ -256,7 +263,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  				...session.ledgerSessionId ? { ledgerSessionId: session.ledgerSessionId } : {},
  				idempotencyKey: runId,
  				disconnectContext: this.activeDisconnectContext ?? void 0,
-@@ -2299,10 +2456,12 @@ var AcpGatewayAgent = class {
+@@ -2299,10 +2463,12 @@ var AcpGatewayAgent = class {
  			};
  			sendWithProvenanceFallback().catch((err) => {
  				const promptKey = this.pendingPromptKey(params.sessionId, runId);
@@ -270,7 +277,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  				if (this.pendingPrompts.size === 0) this.clearDisconnectTimer();
  				reject(err instanceof Error ? err : new Error(String(err)));
  			});
-@@ -2336,6 +2495,12 @@ var AcpGatewayAgent = class {
+@@ -2336,6 +2502,12 @@ var AcpGatewayAgent = class {
  		const data = payload.data;
  		const sessionKey = payload.sessionKey;
  		if (!stream || !data || !sessionKey) return;
@@ -283,7 +290,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  		if (stream === "approval") {
  			await this.handleApprovalEvent({
  				sessionKey,
-@@ -2349,7 +2514,6 @@ var AcpGatewayAgent = class {
+@@ -2349,7 +2521,6 @@ var AcpGatewayAgent = class {
  		const name = data.name;
  		const toolCallId = data.toolCallId;
  		if (!toolCallId) return;
@@ -291,7 +298,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  		if (!pending) return;
  		if (phase === "start") {
  			if (!pending.toolCalls) pending.toolCalls = /* @__PURE__ */ new Map();
-@@ -2423,6 +2587,28 @@ var AcpGatewayAgent = class {
+@@ -2423,6 +2594,28 @@ var AcpGatewayAgent = class {
  			});
  		}
  	}
@@ -320,7 +327,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  	async handleApprovalEvent(params) {
  		const approvalEvent = parseGatewayExecApprovalEventData(params.data);
  		if (!approvalEvent) return;
-@@ -2442,13 +2628,15 @@ var AcpGatewayAgent = class {
+@@ -2442,13 +2635,15 @@ var AcpGatewayAgent = class {
  		if (!sessionKey) return;
  		this.startApprovalRelay({
  			sessionKey,
@@ -337,7 +344,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  		if (!pending) return;
  		const relay = {
  			approvalId: approvalEvent.approvalId,
-@@ -2526,9 +2714,9 @@ var AcpGatewayAgent = class {
+@@ -2526,9 +2721,9 @@ var AcpGatewayAgent = class {
  		const runId = payload.runId;
  		const messageData = payload.message;
  		if (!sessionKey || !state) return;
@@ -349,7 +356,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  			await this.handleDeltaEvent(pending.sessionId, messageData);
  			if (state === "delta") return;
  		}
-@@ -2551,9 +2739,8 @@ var AcpGatewayAgent = class {
+@@ -2551,9 +2746,8 @@ var AcpGatewayAgent = class {
  		const pending = this.pendingPrompts.get(sessionId);
  		if (!pending) return;
  		const fullThought = content?.filter((block) => block?.type === "thinking").map((block) => block.thinking ?? "").join("\n").trimEnd();
@@ -361,7 +368,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  			pending.sentThoughtLength = fullThought.length;
  			pending.sentThought = fullThought;
  			await this.sessionUpdates.emit({
-@@ -2572,9 +2759,8 @@ var AcpGatewayAgent = class {
+@@ -2572,9 +2766,8 @@ var AcpGatewayAgent = class {
  			});
  		}
  		const fullText = content?.filter((block) => block?.type === "text").map((block) => block.text ?? "").join("\n").trimEnd();
@@ -373,7 +380,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  		pending.sentTextLength = fullText.length;
  		pending.sentText = fullText;
  		await this.sessionUpdates.emit({
-@@ -2599,8 +2785,13 @@ var AcpGatewayAgent = class {
+@@ -2599,8 +2792,13 @@ var AcpGatewayAgent = class {
  			this.clearApprovalRelaysForPrompt(sessionId, pending.idempotencyKey, { denyActive: true });
  			this.pendingPrompts.delete(sessionId);
  			this.sessionStore.clearActiveRun(sessionId);
@@ -388,7 +395,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  			try {
  				await this.sendSessionSnapshotUpdate({
  					sessionId,
-@@ -2619,18 +2810,55 @@ var AcpGatewayAgent = class {
+@@ -2619,18 +2817,55 @@ var AcpGatewayAgent = class {
  			this.settlingPromptKeys.delete(promptKey);
  		}
  	}
@@ -445,7 +452,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  	findUniquePendingBySessionKey(sessionKey) {
  		let match;
  		for (const pending of this.pendingPrompts.values()) {
-@@ -2652,12 +2880,12 @@ var AcpGatewayAgent = class {
+@@ -2652,12 +2887,12 @@ var AcpGatewayAgent = class {
  		clearTimeout(this.disconnectTimer);
  		this.disconnectTimer = null;
  	}
@@ -461,7 +468,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  		this.disconnectTimer.unref?.();
  	}
  	rejectPendingPrompt(pending, error) {
-@@ -2665,17 +2893,14 @@ var AcpGatewayAgent = class {
+@@ -2665,17 +2900,14 @@ var AcpGatewayAgent = class {
  		this.clearApprovalRelaysForPrompt(pending.sessionId, pending.idempotencyKey, { denyActive: true });
  		this.pendingPrompts.delete(pending.sessionId);
  		this.sessionStore.clearActiveRun(pending.sessionId);
@@ -483,7 +490,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  		if (this.pendingPrompts.size === 0) {
  			if (this.disconnectGeneration === observedDisconnectGeneration) this.clearDisconnectTimer();
  			return;
-@@ -2685,32 +2910,36 @@ var AcpGatewayAgent = class {
+@@ -2685,32 +2917,36 @@ var AcpGatewayAgent = class {
  		for (const [sessionId, pending] of pendingEntries) {
  			if (this.pendingPrompts.get(sessionId) !== pending) continue;
  			if (pending.disconnectContext?.generation !== observedDisconnectGeneration) continue;
@@ -530,7 +537,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  		if (!currentPending) return false;
  		if (result?.status === "ok") {
  			await this.finishPrompt(sessionId, currentPending, "end_turn");
-@@ -2720,15 +2949,14 @@ var AcpGatewayAgent = class {
+@@ -2720,15 +2956,14 @@ var AcpGatewayAgent = class {
  			this.finishPrompt(sessionId, currentPending, "end_turn");
  			return false;
  		}
@@ -549,7 +556,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  		}
  		return true;
  	}
-@@ -2792,6 +3020,7 @@ var AcpGatewayAgent = class {
+@@ -2792,6 +3027,7 @@ var AcpGatewayAgent = class {
  		if (pending) {
  			this.clearApprovalRelaysForPrompt(session.sessionId, pending.idempotencyKey, { denyActive: true });
  			this.pendingPrompts.delete(session.sessionId);
@@ -557,7 +564,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  			if (this.pendingPrompts.size === 0) this.clearDisconnectTimer();
  			pending.resolve({ stopReason: "cancelled" });
  		}
-@@ -2890,13 +3119,13 @@ var AcpGatewayAgent = class {
+@@ -2890,13 +3126,13 @@ var AcpGatewayAgent = class {
  			const replayChunks = extractReplayChunks(message);
  			for (const chunk of replayChunks) await this.sessionUpdates.emit({
  				sessionId,
@@ -573,7 +580,7 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..3fb8c969b8e840ebf662bbedda51abc6
  			});
  		}
  	}
-@@ -3035,7 +3264,9 @@ async function serveAcpGateway(opts = {}) {
+@@ -3035,7 +3271,9 @@ async function serveAcpGateway(opts = {}) {
  		},
  		onHelloOk: () => {
  			resolveGatewayReady();
@@ -689,6 +696,18 @@ index d219ef4933d12a485f9f29bc056fd8d39594d0a1..9f6c72ec51940362d08467068aff26a3
  		seq: nextSeq,
  		ts: Date.now()
  	};
+diff --git a/dist/agent-harness-runtime-DUhcXa_t.d.ts b/dist/agent-harness-runtime-DUhcXa_t.d.ts
+index 0d34d4b1c5adcc667f0447b77dae78087dd9f54d..a9e0d760e826f992bf7e080455bfe7effa13db15 100644
+--- a/dist/agent-harness-runtime-DUhcXa_t.d.ts
++++ b/dist/agent-harness-runtime-DUhcXa_t.d.ts
+@@ -1042,6 +1042,7 @@ type PreemptiveCompactionDecision = {
+   promptBudgetBeforeReserve: number;
+   overflowTokens: number;
+   toolResultReducibleChars: number;
++  toolResultAggregateTargetChars?: number;
+   effectiveReserveTokens: number;
+ };
+ /** Token pressure reported by the rendered provider-boundary prompt when available. */
 diff --git a/dist/agent-settings-axYuScuh.js b/dist/agent-settings-axYuScuh.js
 index dec9ef8893043c3c020329c677cc0ee785f7b222..cd75039f263ddae8d333a3504db1424c9c7fd4f8 100644
 --- a/dist/agent-settings-axYuScuh.js
@@ -714,6 +733,40 @@ index c16af06126dfcd8070fa0eb203799aba7a16bd95..75fe92b0994ced97fc8f7014a76dacb0
  		sessionId: options?.sessionId,
  		sessionStore: options?.config?.session?.store,
  		mainKey: options?.config?.session?.mainKey,
+diff --git a/dist/attempt.tool-run-context-CuQsIXnb.js b/dist/attempt.tool-run-context-CuQsIXnb.js
+index 37b39a3880eb30f526ac6500b7cde95cdd6bc514..bc82ef7871cad146b6c04f84d0c2bd8c5f66ed04 100644
+--- a/dist/attempt.tool-run-context-CuQsIXnb.js
++++ b/dist/attempt.tool-run-context-CuQsIXnb.js
+@@ -234,13 +234,20 @@ function shouldPreemptivelyCompactBeforePrompt(params) {
+ 	const effectiveReserveTokens = Math.min(requestedReserveTokens, Math.max(0, contextTokenBudget - minPromptBudget));
+ 	const promptBudgetBeforeReserve = Math.max(1, contextTokenBudget - effectiveReserveTokens);
+ 	const overflowTokens = Math.max(0, estimatedPromptTokens - promptBudgetBeforeReserve);
+-	const toolResultPotential = estimateToolResultReductionPotential({
++	const defaultToolResultPotential = estimateToolResultReductionPotential({
+ 		messages: messagesForPressure,
+ 		contextWindowTokens: params.contextTokenBudget,
+ 		maxCharsOverride: params.toolResultMaxChars
+ 	});
+ 	const overflowChars = overflowTokens * ESTIMATED_CHARS_PER_TOKEN;
+ 	const truncateOnlyThresholdChars = Math.max(overflowChars + TRUNCATION_ROUTE_BUFFER_TOKENS * ESTIMATED_CHARS_PER_TOKEN, Math.ceil(overflowChars * 1.5));
++	const toolResultAggregateTargetChars = overflowTokens > 0 && defaultToolResultPotential.totalToolResultChars > 0 ? Math.max(1, Math.min(defaultToolResultPotential.aggregateBudgetChars, defaultToolResultPotential.totalToolResultChars - truncateOnlyThresholdChars)) : void 0;
++	const toolResultPotential = toolResultAggregateTargetChars === void 0 ? defaultToolResultPotential : estimateToolResultReductionPotential({
++		messages: messagesForPressure,
++		contextWindowTokens: params.contextTokenBudget,
++		maxCharsOverride: params.toolResultMaxChars,
++		aggregateMaxCharsOverride: toolResultAggregateTargetChars
++	});
+ 	const toolResultReducibleChars = toolResultPotential.maxReducibleChars;
+ 	let route = "fits";
+ 	if (overflowTokens > 0) if (toolResultReducibleChars <= 0) route = "compact_only";
+@@ -254,6 +261,7 @@ function shouldPreemptivelyCompactBeforePrompt(params) {
+ 		promptBudgetBeforeReserve,
+ 		overflowTokens,
+ 		toolResultReducibleChars,
++		...toolResultAggregateTargetChars !== void 0 ? { toolResultAggregateTargetChars } : {},
+ 		effectiveReserveTokens
+ 	};
+ }
 diff --git a/dist/bash-tools-DHyGpWCr.js b/dist/bash-tools-DHyGpWCr.js
 index def4eecc41bf57190eac84a5df1dcf1d7c70664b..2ebd66504a8af50afb7f4d488bf6684b2a66935d 100644
 --- a/dist/bash-tools-DHyGpWCr.js
@@ -785,7 +838,7 @@ index def4eecc41bf57190eac84a5df1dcf1d7c70664b..2ebd66504a8af50afb7f4d488bf6684b
  						sessionStore: defaults?.sessionStore,
  						bashElevated: elevatedDefaults,
 diff --git a/dist/commands-handlers.runtime-CunY89Nu.js b/dist/commands-handlers.runtime-CunY89Nu.js
-index aab709c0caff66619f6c9106917379a9c97aab33..f00cf1541cbc7175b364db18367db334e1e50c3b 100644
+index aab709c0caff66619f6c9106917379a9c97aab33..98aea8fd2cbe16f2e5e5c22020c8ee72ed767552 100644
 --- a/dist/commands-handlers.runtime-CunY89Nu.js
 +++ b/dist/commands-handlers.runtime-CunY89Nu.js
 @@ -26,6 +26,7 @@ import { r as logVerbose } from "./globals-0FRK183t.js";
@@ -826,7 +879,7 @@ index aab709c0caff66619f6c9106917379a9c97aab33..f00cf1541cbc7175b364db18367db334
  		sessionId,
  		sessionKey: params.sessionKey,
  		allowGatewaySubagentBinding: true,
-@@ -1490,7 +1511,28 @@ const handleCompactCommand = async (params) => {
+@@ -1490,7 +1511,34 @@ const handleCompactCommand = async (params) => {
  		customInstructions,
  		trigger: "manual",
  		ownerNumbers: params.command.ownerList.length > 0 ? params.command.ownerList : void 0
@@ -837,6 +890,8 @@ index aab709c0caff66619f6c9106917379a9c97aab33..f00cf1541cbc7175b364db18367db334
 +		throw error;
 +	} finally {
 +		const aborted = params.opts?.abortSignal?.aborted === true || compactError?.name === "AbortError" || result?.reason === "aborted";
++		const completed = result?.ok === true && result.compacted === true && !aborted;
++		const failureReason = !completed && !aborted ? compactError ? formatErrorMessage(compactError) : normalizeOptionalString(result?.reason) : void 0;
 +		emitAgentEvent({
 +			runId,
 +			sessionKey: params.sessionKey,
@@ -848,8 +903,12 @@ index aab709c0caff66619f6c9106917379a9c97aab33..f00cf1541cbc7175b364db18367db334
 +				reason: "manual",
 +				timestamp: new Date().toISOString(),
 +				aborted,
-+				completed: result?.ok === true && result.compacted === true && !aborted,
-+				willRetry: false
++				completed,
++				willRetry: false,
++				...failureReason ? {
++					reasonCode: classifyCompactionReason(failureReason),
++					failureReason
++				} : {}
 +			}
 +		});
 +	}
@@ -884,7 +943,7 @@ index 49e5e8693f0115ab2742976b9f8991a77f33029a..4d7636a02dc7511df9dc8b9895951555
  					const tokensAfter = estimateTokensAfterCompaction({
  						messagesAfter: session.messages,
 diff --git a/dist/embedded-agent-DGUuxGR2.js b/dist/embedded-agent-DGUuxGR2.js
-index dc3b1af0a26e6e0a961bfde5d86f29eeca4a87e4..1996383c86d0c5e5d70eccb880845e76a8e50b88 100644
+index dc3b1af0a26e6e0a961bfde5d86f29eeca4a87e4..4b016a8762061faf6fc4f6bdcdad4c01961b43cc 100644
 --- a/dist/embedded-agent-DGUuxGR2.js
 +++ b/dist/embedded-agent-DGUuxGR2.js
 @@ -17,7 +17,7 @@ import { o as resolveSafeTimeoutDelayMs } from "./timeouts-DdTImbzl.js";
@@ -896,7 +955,16 @@ index dc3b1af0a26e6e0a961bfde5d86f29eeca4a87e4..1996383c86d0c5e5d70eccb880845e76
  import { t as getGlobalHookRunner } from "./hook-runner-global-BmIrGlLG.js";
  import { a as getReplyPayloadMetadata, i as copyReplyPayloadMetadata, t as FAST_MODE_AUTO_PROGRESS_KIND } from "./reply-payload-BK_jICQ3.js";
  import { o as resolveContextEngine, s as resolveContextEngineOwnerPluginId } from "./registry-CAWC0LBH.js";
-@@ -2915,6 +2915,51 @@ async function runEmbeddedAgentInternal(paramsInput) {
+@@ -91,7 +91,7 @@ import { m as resolveContextEngineCapabilities, r as forgetPromptBuildDrainCache
+ import "./sandbox-info-DMlJwv6b.js";
+ import { t as ensureSelectedAgentHarnessPlugin } from "./runtime-plugin-BLmQLMt1.js";
+ import { t as ensureRuntimePluginsLoaded } from "./runtime-plugins-ICju_gEw.js";
+-import { t as DEFERRED_CONTEXT_ENGINE_COMPACTION_REASON } from "./compact-reasons-ByJlIe1a.js";
++import { n as classifyCompactionReason, t as DEFERRED_CONTEXT_ENGINE_COMPACTION_REASON } from "./compact-reasons-ByJlIe1a.js";
+ import { n as createAgentHarnessTaskRuntimeScope } from "./agent-harness-task-runtime-scope-AnHXK_PY.js";
+ import { t as resolveExternalCliAuthOverlayScopeFromSelection } from "./external-cli-auth-selection-CpZ9SFi_.js";
+ import { n as shouldSwitchToLiveModel, t as clearLiveModelSwitchPending } from "./live-model-switch-DQnYRJVV.js";
+@@ -2915,6 +2915,56 @@ async function runEmbeddedAgentInternal(paramsInput) {
  					if (successor.sessionFile && successor.sessionFile !== activeSessionFile) activeSessionFile = successor.sessionFile;
  					return successor.sessionId && successor.sessionId !== previousSessionId ? previousSessionId : void 0;
  				};
@@ -934,6 +1002,7 @@ index dc3b1af0a26e6e0a961bfde5d86f29eeca4a87e4..1996383c86d0c5e5d70eccb880845e76
 +					if (!compactionId) return;
 +					const aborted = params.abortSignal?.aborted === true || compactResult?.reason === "aborted";
 +					const completed = compactResult.ok === true && compactResult.compacted === true && !aborted;
++					const failureReason = !completed && !aborted ? normalizeOptionalString(compactResult?.reason) : void 0;
 +					await publishDirectCompactionEvent({
 +						phase: "end",
 +						compactionId,
@@ -942,13 +1011,17 @@ index dc3b1af0a26e6e0a961bfde5d86f29eeca4a87e4..1996383c86d0c5e5d70eccb880845e76
 +						timestamp: new Date().toISOString(),
 +						aborted,
 +						completed,
-+						willRetry: completed
++						willRetry: completed,
++						...failureReason ? {
++							reasonCode: classifyCompactionReason(failureReason),
++							failureReason
++						} : {}
 +					});
 +				};
  				const onCompactionHookMessages = async (payload) => {
  					const messages = payload.messages.filter((message) => message.trim().length > 0);
  					if (messages.length === 0) return;
-@@ -3333,6 +3378,8 @@ async function runEmbeddedAgentInternal(paramsInput) {
+@@ -3333,6 +3383,8 @@ async function runEmbeddedAgentInternal(paramsInput) {
  					const canRestartForLiveSwitch = !hasOutboundDeliveryEvidence(attempt) && !attempt.didSendDeterministicApprovalPrompt && !attempt.lastToolError && (attempt.toolMetas?.length ?? 0) === 0 && (attempt.assistantTexts?.length ?? 0) === 0;
  					if (preflightRecovery?.handled) {
  						const retryingFromTranscript = preflightRecovery.source === "mid-turn";
@@ -957,7 +1030,7 @@ index dc3b1af0a26e6e0a961bfde5d86f29eeca4a87e4..1996383c86d0c5e5d70eccb880845e76
  						log$1.info(`[context-overflow-precheck] early recovery route=${preflightRecovery.route} completed for ${provider}/${modelId}; ` + (retryingFromTranscript ? "retrying from current transcript" : "retrying prompt"));
  						if (retryingFromTranscript) continueFromCurrentTranscript();
  						continue;
-@@ -3368,7 +3415,9 @@ async function runEmbeddedAgentInternal(paramsInput) {
+@@ -3368,7 +3420,9 @@ async function runEmbeddedAgentInternal(paramsInput) {
  							log$1.warn(`[timeout-compaction] LLM timed out with high prompt token usage (${Math.round(tokenUsedRatio * 100)}%); attempting compaction before retry (attempt ${timeoutCompactionAttempts}/${MAX_TIMEOUT_COMPACTION_ATTEMPTS}) diagId=${timeoutDiagId}`);
  							let timeoutCompactResult;
  							await runOwnsCompactionBeforeHook("timeout recovery");
@@ -967,7 +1040,7 @@ index dc3b1af0a26e6e0a961bfde5d86f29eeca4a87e4..1996383c86d0c5e5d70eccb880845e76
  								const timeoutCompactionRuntimeContext = {
  									...buildEmbeddedCompactionRuntimeContext({
  										sessionKey: params.sessionKey,
-@@ -3426,16 +3475,18 @@ async function runEmbeddedAgentInternal(paramsInput) {
+@@ -3426,16 +3480,18 @@ async function runEmbeddedAgentInternal(paramsInput) {
  									runtimeContext: timeoutCompactionRuntimeContext,
  									runtimeSettings: buildEmbeddedContextEngineRuntimeSettings({ tokenBudget: ctxInfo.tokens })
  								}, resolveCompactionTimeoutMs(params.config), params.abortSignal);
@@ -989,7 +1062,7 @@ index dc3b1af0a26e6e0a961bfde5d86f29eeca4a87e4..1996383c86d0c5e5d70eccb880845e76
  							if (timeoutCompactResult.compacted) {
  								autoCompactionCount += 1;
  								if (typeof timeoutCompactResult.result?.tokensAfter === "number" && Number.isFinite(timeoutCompactResult.result.tokensAfter) && timeoutCompactResult.result.tokensAfter >= 0) lastCompactionTokensAfter = Math.floor(timeoutCompactResult.result.tokensAfter);
-@@ -3489,7 +3540,10 @@ async function runEmbeddedAgentInternal(paramsInput) {
+@@ -3489,7 +3545,10 @@ async function runEmbeddedAgentInternal(paramsInput) {
  							let compactResult;
  							let previousSessionId;
  							await runOwnsCompactionBeforeHook("overflow recovery");
@@ -1000,7 +1073,7 @@ index dc3b1af0a26e6e0a961bfde5d86f29eeca4a87e4..1996383c86d0c5e5d70eccb880845e76
  								const overflowCompactionRuntimeContext = {
  									...buildEmbeddedCompactionRuntimeContext({
  										sessionKey: params.sessionKey,
-@@ -3566,15 +3620,17 @@ async function runEmbeddedAgentInternal(paramsInput) {
+@@ -3566,26 +3625,54 @@ async function runEmbeddedAgentInternal(paramsInput) {
  										agentId: sessionAgentId
  									});
  								}
@@ -1018,8 +1091,81 @@ index dc3b1af0a26e6e0a961bfde5d86f29eeca4a87e4..1996383c86d0c5e5d70eccb880845e76
  							}
 -							await runOwnsCompactionAfterHook("overflow recovery", compactResult, previousSessionId);
  							if (preflightRecovery && isNoRealConversationCompactionNoop(compactResult)) {
- 								lastCompactionTokensAfter = void 0;
- 								lastContextBudgetStatus = void 0;
+-								lastCompactionTokensAfter = void 0;
+-								lastContextBudgetStatus = void 0;
+-								await resetNoRealConversationTokenSnapshot({
+-									config: params.config,
+-									sessionKey: params.sessionKey,
+-									agentId: sessionAgentId
+-								});
+-								log$1.info(`[context-overflow-precheck] stale token state had no real conversation messages for ${provider}/${modelId}; resetting the context snapshot and retrying prompt`);
+-								if (preflightRecovery.source === "mid-turn") continueFromCurrentTranscript();
+-								continue;
++								const pressureProvesRealOverflow = preflightRecovery.overflowTokens > 0 && typeof preflightRecovery.pressureSource === "string" && preflightRecovery.pressureSource.length > 0;
++								if (preflightRecovery.toolResultAggregateTargetChars !== void 0) {
++									toolResultTruncationAttempted = true;
++									const truncationResult = await truncateOversizedToolResultsInSession({
++										sessionFile: activeSessionFile,
++										contextWindowTokens: ctxInfo.tokens,
++										maxCharsOverride: resolveLiveToolResultMaxChars({
++											contextWindowTokens: ctxInfo.tokens,
++											cfg: params.config,
++											agentId: sessionAgentId
++										}),
++										aggregateMaxCharsOverride: preflightRecovery.toolResultAggregateTargetChars,
++										sessionId: activeSessionId,
++										sessionKey: params.sessionKey,
++										agentId: sessionAgentId,
++										config: params.config,
++										protectTrailingToolResults: true
++									});
++									if (truncationResult.truncated) {
++										log$1.info(`[context-overflow-precheck] no-real-conversation compaction left tool-result pressure; truncated ${truncationResult.truncatedCount} tool result(s) and retrying prompt`);
++										if (preflightRecovery.source === "mid-turn") continueFromCurrentTranscript();
++										continue;
++									}
++									log$1.warn(`[context-overflow-precheck] pressure-derived tool-result truncation did not help after no-real-conversation compaction: ${truncationResult.reason ?? "unknown"}`);
++								} else if (!pressureProvesRealOverflow) {
++									lastCompactionTokensAfter = void 0;
++									lastContextBudgetStatus = void 0;
++									await resetNoRealConversationTokenSnapshot({
++										config: params.config,
++										sessionKey: params.sessionKey,
++										agentId: sessionAgentId
++									});
++									log$1.info(`[context-overflow-precheck] stale token state had no real conversation messages for ${provider}/${modelId}; resetting the context snapshot and retrying prompt`);
++									if (preflightRecovery.source === "mid-turn") continueFromCurrentTranscript();
++									continue;
++								} else log$1.warn(`[context-overflow-precheck] no-real-conversation compaction did not reduce measured prompt pressure; preserving the context snapshot`);
+ 							}
+ 							if (compactResult.compacted) {
+ 								adoptCompactionTranscript(compactResult);
+@@ -3599,6 +3686,7 @@ async function runEmbeddedAgentInternal(paramsInput) {
+ 											cfg: params.config,
+ 											agentId: sessionAgentId
+ 										}),
++										aggregateMaxCharsOverride: preflightRecovery.toolResultAggregateTargetChars,
+ 										sessionId: activeSessionId,
+ 										sessionKey: params.sessionKey,
+ 										agentId: sessionAgentId,
+@@ -3630,7 +3718,8 @@ async function runEmbeddedAgentInternal(paramsInput) {
+ 							if (attempt.messagesSnapshot ? sessionLikelyHasOversizedToolResults({
+ 								messages: attempt.messagesSnapshot,
+ 								contextWindowTokens,
+-								maxCharsOverride: toolResultMaxChars
++								maxCharsOverride: toolResultMaxChars,
++								aggregateMaxCharsOverride: preflightRecovery?.toolResultAggregateTargetChars
+ 							}) : false) {
+ 								toolResultTruncationAttempted = true;
+ 								log$1.warn(`[context-overflow-recovery] Attempting tool result truncation for ${provider}/${modelId} (contextWindow=${contextWindowTokens} tokens)`);
+@@ -3638,6 +3727,7 @@ async function runEmbeddedAgentInternal(paramsInput) {
+ 									sessionFile: activeSessionFile,
+ 									contextWindowTokens,
+ 									maxCharsOverride: toolResultMaxChars,
++									aggregateMaxCharsOverride: preflightRecovery?.toolResultAggregateTargetChars,
+ 									sessionId: activeSessionId,
+ 									sessionKey: params.sessionKey,
+ 									agentId: sessionAgentId,
 diff --git a/dist/exec-approval-DRfKKxhu.js b/dist/exec-approval-DRfKKxhu.js
 index f76d64d4041f579301e4ffacc38a20a7887567ef..eb4243089d8329eab00d9af9b106b46ef260df8c 100644
 --- a/dist/exec-approval-DRfKKxhu.js
@@ -1267,7 +1413,7 @@ index ff8cd2829dc9f64d7fc8ec2bf77bb5f05947459d..be6988b3dc2df2bc81f255d758156585
    agentId: Type.TOptional<Type.TString>;
    spawnedBy: Type.TOptional<Type.TString>;
 diff --git a/dist/selection-JInn13lc.js b/dist/selection-JInn13lc.js
-index 41d3492a4965c62292eaa74a4d0b746b6bc4e4b2..3bf39c10b4d30e2530c5bf421cce0747b6a887f2 100644
+index 41d3492a4965c62292eaa74a4d0b746b6bc4e4b2..66caa3e83cb1fcbf54129d1addedd1ffc5c5e8bc 100644
 --- a/dist/selection-JInn13lc.js
 +++ b/dist/selection-JInn13lc.js
 @@ -3761,10 +3761,16 @@ function normalizeCompactionReason(reason) {
@@ -1372,7 +1518,39 @@ index 41d3492a4965c62292eaa74a4d0b746b6bc4e4b2..3bf39c10b4d30e2530c5bf421cce0747
  		}
  	});
  	if (!willRetry) {
-@@ -13596,6 +13639,15 @@ async function runEmbeddedAttempt(params) {
+@@ -7426,9 +7469,11 @@ function toMidTurnPrecheckRequest(result) {
+ 	return {
+ 		route: result.route,
+ 		estimatedPromptTokens: result.estimatedPromptTokens,
++		pressureSource: result.pressureSource,
+ 		promptBudgetBeforeReserve: result.promptBudgetBeforeReserve,
+ 		overflowTokens: result.overflowTokens,
+ 		toolResultReducibleChars: result.toolResultReducibleChars,
++		toolResultAggregateTargetChars: result.toolResultAggregateTargetChars,
+ 		effectiveReserveTokens: result.effectiveReserveTokens
+ 	};
+ }
+@@ -11169,8 +11214,10 @@ function wrapStreamFnWithMessageTransform(streamFn, transform) {
+ function buildPreflightRecoveryBudgetSnapshot(snapshot) {
+ 	return {
+ 		estimatedPromptTokens: snapshot.estimatedPromptTokens,
++		pressureSource: snapshot.pressureSource,
+ 		promptBudgetBeforeReserve: snapshot.promptBudgetBeforeReserve,
+-		overflowTokens: snapshot.overflowTokens
++		overflowTokens: snapshot.overflowTokens,
++		toolResultAggregateTargetChars: snapshot.toolResultAggregateTargetChars
+ 	};
+ }
+ const aggregateToolResultPressureWarnings = /* @__PURE__ */ new Set();
+@@ -13581,6 +13628,7 @@ async function runEmbeddedAttempt(params) {
+ 						sessionManager: activeSessionManager,
+ 						contextWindowTokens: contextTokenBudget,
+ 						maxCharsOverride: toolResultMaxChars,
++						aggregateMaxCharsOverride: request.toolResultAggregateTargetChars,
+ 						sessionFile: params.sessionFile,
+ 						sessionId: params.sessionId,
+ 						sessionKey: params.sessionKey,
+@@ -13596,6 +13644,15 @@ async function runEmbeddedAttempt(params) {
  						};
  						const sessionContext = activeSessionManager.buildSessionContext();
  						activeSession.agent.state.messages = sessionContext.messages;
@@ -1388,6 +1566,14 @@ index 41d3492a4965c62292eaa74a4d0b746b6bc4e4b2..3bf39c10b4d30e2530c5bf421cce0747
  						logMidTurnPrecheck(request.route, `handled=true truncatedCount=${truncationResult.truncatedCount}`);
  					} else {
  						preflightRecovery = {
+@@ -14188,6 +14245,7 @@ async function runEmbeddedAttempt(params) {
+ 							sessionManager: activeSessionManager,
+ 							contextWindowTokens: contextTokenBudget,
+ 							maxCharsOverride: toolResultMaxChars,
++							aggregateMaxCharsOverride: preemptiveCompaction.toolResultAggregateTargetChars,
+ 							sessionFile: params.sessionFile,
+ 							sessionId: params.sessionId,
+ 							sessionKey: params.sessionKey,
 diff --git a/dist/server-chat-wgxNCdC3.js b/dist/server-chat-wgxNCdC3.js
 index e03fecec0657ddd63833fd4804efba1d21d2f361..6fa31407a9c30d42cc9d907e2f1d862edf5bba12 100644
 --- a/dist/server-chat-wgxNCdC3.js
@@ -1500,10 +1686,18 @@ index db68c120f69a4f2bc4121f3b75a456319fd227ed..43f833d6e0df04a396c2edd527377bfe
  }
  function isRestartRecoveryLifecycleEvent(params) {
 diff --git a/dist/sessions-UcKjjh_n.js b/dist/sessions-UcKjjh_n.js
-index e07a744d7d564110d069e03bf8949d69a2ee0a27..6af1121bec9fa3e2c365ba77bc96509edc281bb5 100644
+index e07a744d7d564110d069e03bf8949d69a2ee0a27..66559bebb5afe18080ccc108b551e4d12aa39a99 100644
 --- a/dist/sessions-UcKjjh_n.js
 +++ b/dist/sessions-UcKjjh_n.js
-@@ -120,7 +120,13 @@ function shouldAttachPendingMessageSeq(params) {
+@@ -33,6 +33,7 @@ import { Gn as errorShape, Wn as ErrorCodes } from "./schema-BuOFpc7K.js";
+ import { t as triggerSessionPatchHook } from "./session-patch-hooks-gf9NDs3Z.js";
+ import { r as resolveIngressWorkspaceOverrideForSpawnedRun } from "./spawned-context-QGy9i1y8.js";
+ import { r as compactEmbeddedAgentSession } from "./embedded-agent-DGUuxGR2.js";
++import { n as classifyCompactionReason } from "./compact-reasons-ByJlIe1a.js";
+ import { a as isSessionLifecycleMutationActive, i as interruptSessionWorkAdmissions, o as isSessionWorkAdmissionActive, s as runExclusiveSessionLifecycleMutation, t as SESSION_WORK_ADMISSION_DRAIN_TIMEOUT_MS } from "./session-lifecycle-admission-DfdITEs1.js";
+ import { n as chatHandlers } from "./chat-pg-BxhF6.js";
+ import { r as setGatewayDedupeEntry, t as emitSessionsChanged } from "./session-change-event-gGmAI0Up.js";
+@@ -120,7 +121,13 @@ function shouldAttachPendingMessageSeq(params) {
  	return (params.payload && typeof params.payload === "object" ? params.payload.status : void 0) === "started";
  }
  function emitSessionOperation(context, payload) {
@@ -1518,7 +1712,7 @@ index e07a744d7d564110d069e03bf8949d69a2ee0a27..6af1121bec9fa3e2c365ba77bc96509e
  	if (connIds.size === 0) return;
  	context.broadcastToConnIds("session.operation", {
  		...payload,
-@@ -1873,22 +1879,39 @@ const sessionsHandlers = {
+@@ -1873,22 +1880,43 @@ const sessionsHandlers = {
  						workspaceDir: latestEntry.spawnedWorkspaceDir
  					}) ?? resolveAgentWorkspaceDir(cfg, target.agentId);
  					const operationId = randomUUID();
@@ -1561,13 +1755,17 @@ index e07a744d7d564110d069e03bf8949d69a2ee0a27..6af1121bec9fa3e2c365ba77bc96509e
 +							aborted,
 +							completed: completed && !aborted,
 +							willRetry: false,
++							...!completed && !aborted && detailText ? {
++								reasonCode: classifyCompactionReason(detailText),
++								failureReason: detailText
++							} : {},
 +							detail: detailText
 +						});
 +					};
  					let result;
  					try {
  						result = await compactEmbeddedAgentSession({
-@@ -1914,7 +1937,7 @@ const sessionsHandlers = {
+@@ -1914,7 +1942,7 @@ const sessionsHandlers = {
  							trigger: "manual"
  						});
  					} catch (err) {
@@ -1576,7 +1774,7 @@ index e07a744d7d564110d069e03bf8949d69a2ee0a27..6af1121bec9fa3e2c365ba77bc96509e
  						throw err;
  					}
  					if (result.ok && result.compacted) {
-@@ -1947,7 +1970,7 @@ const sessionsHandlers = {
+@@ -1947,7 +1975,7 @@ const sessionsHandlers = {
  								}
  							})).ok;
  						} catch (err) {
@@ -1605,6 +1803,20 @@ index 15b9c3b2aea87e1f1782e8669de218d30afd9a00..e62c2a2061b639ba7291d9c19e6e8603
  	"totalTokensFresh",
  	"estimatedCostUsd",
  	"cacheRead",
+diff --git a/dist/tool-result-truncation-rzMcqvvu.js b/dist/tool-result-truncation-rzMcqvvu.js
+index d6ebea2f..6524e621 100644
+--- a/dist/tool-result-truncation-rzMcqvvu.js
++++ b/dist/tool-result-truncation-rzMcqvvu.js
+@@ -444,7 +444,8 @@ function buildAggregateToolResultReplacements(params) {
+ 	const recoveryCandidates = [
+ 		...aggregateRecoveryCandidates.filter((item) => item.aggregateEligible),
+ 		...aggregateRecoveryCandidates.filter((item) => !item.aggregateEligible),
+-		...candidates.filter((item) => item.deferredByFreshProjection && !item.protectedByTrailingBatch)
++		...candidates.filter((item) => item.deferredByFreshProjection && !item.protectedByTrailingBatch),
++		...candidates.filter((item) => item.protectedByTrailingBatch)
+ 	];
+ 	for (const candidate of recoveryCandidates) {
+ 		if (remainingReduction <= 0) break;
 diff --git a/dist/types-DVCyjomt.d.ts b/dist/types-DVCyjomt.d.ts
 index 41fa12971e3a0729ac0a5c996644dfdbc940f54e..ef8c9baa5b284ac727926e6f8408663b84618728 100644
 --- a/dist/types-DVCyjomt.d.ts

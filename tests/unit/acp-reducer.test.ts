@@ -951,11 +951,56 @@ describe('ACP timeline reducer', () => {
     });
   });
 
+  it('adds terminal compaction failure details to the existing occurrence', () => {
+    let state = applyAcpSessionUpdate(createEmptyAcpTimeline('agent:pi:s1', 1), {
+      sessionId: 'agent:pi:s1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          'openclaw.ai/compaction': {
+            version: 1,
+            compactionId: 'cmp-pressure',
+            status: 'in_progress',
+            source: 'preflight',
+          },
+        },
+      },
+    } as never);
+
+    state = applyAcpSessionUpdate(state, {
+      sessionId: 'agent:pi:s1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          'openclaw.ai/compaction': {
+            version: 1,
+            compactionId: 'cmp-pressure',
+            status: 'failed',
+            source: 'preflight',
+            reasonCode: 'no_compactable_entries',
+            reason: 'no real conversation messages',
+          },
+        },
+      },
+    } as never);
+
+    expect(state.itemOrder).toEqual(['compaction:cmp-pressure']);
+    expect(state.itemsById['compaction:cmp-pressure']).toMatchObject({
+      status: 'failed',
+      reasonCode: 'no_compactable_entries',
+      reason: 'no real conversation messages',
+    });
+  });
+
   it.each([
     ['version', { version: 2, compactionId: 'cmp-1', status: 'in_progress', source: 'threshold' }],
     ['compaction ID', { version: 1, compactionId: '', status: 'in_progress', source: 'threshold' }],
     ['status', { version: 1, compactionId: 'cmp-1', status: 'pending', source: 'threshold' }],
     ['source', { version: 1, compactionId: 'cmp-1', status: 'in_progress', source: 'unknown' }],
+    ['reason code', { version: 1, compactionId: 'cmp-1', status: 'failed', source: 'preflight', reasonCode: 42 }],
+    ['oversized reason code', { version: 1, compactionId: 'cmp-1', status: 'failed', source: 'preflight', reasonCode: 'x'.repeat(101) }],
+    ['reason', { version: 1, compactionId: 'cmp-1', status: 'failed', source: 'preflight', reason: false }],
+    ['oversized reason', { version: 1, compactionId: 'cmp-1', status: 'failed', source: 'preflight', reason: 'x'.repeat(501) }],
   ])('ignores compaction metadata with an invalid %s', (_field, compaction) => {
     const state = createEmptyAcpTimeline('agent:pi:s1', 1);
     const next = applyAcpSessionUpdate(state, {

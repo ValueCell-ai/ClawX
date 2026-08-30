@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { shouldPreemptivelyCompactBeforePrompt } from 'openclaw/plugin-sdk/agent-harness-runtime';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const dist = path.join(root, 'node_modules/openclaw/dist');
@@ -38,6 +39,96 @@ function messageEntry(
 }
 
 describe('OpenClaw no-retained-tail compaction patch', () => {
+  it('derives an aggregate tool-result target from the measured prompt overflow', () => {
+    const resultSizes = [3569, 19623, 22020, 21930, 5341, 13078, 13066, 8297, 11613, 7459, 5194];
+    const messages = resultSizes.map((length, index) => ({
+      role: 'toolResult',
+      toolCallId: `call-${index}`,
+      toolName: 'web_fetch',
+      content: [{ type: 'text', text: 'x'.repeat(length) }],
+      isError: false,
+      timestamp: index,
+    }));
+
+    const result = shouldPreemptivelyCompactBeforePrompt({
+      messages: messages as never,
+      prompt: '',
+      contextTokenBudget: 128_000,
+      reserveTokens: 50_000,
+      toolResultMaxChars: 32_000,
+      llmBoundaryTokenPressure: {
+        estimatedPromptTokens: 92_662,
+        source: 'field-reproduction',
+      },
+    });
+
+    expect(result).toMatchObject({
+      route: 'truncate_tool_results_only',
+      overflowTokens: 14_662,
+      pressureSource: 'field-reproduction',
+    });
+    expect(result.toolResultReducibleChars).toBeGreaterThan(0);
+    expect(result.toolResultAggregateTargetChars).toBe(43_218);
+    expect(result.toolResultAggregateTargetChars).toBeLessThan(
+      resultSizes.reduce((sum, length) => sum + length, 0),
+    );
+  });
+
+  it('bounds a protected trailing tool-result batch without removing its entries', async () => {
+    const resultSizes = [3569, 19623, 22020, 21930, 5341, 13078, 13066, 8297, 11613, 7459, 5194];
+    const branch = [{
+      type: 'message',
+      id: 'assistant-entry',
+      parentId: null,
+      message: { role: 'assistant', content: [{ type: 'text', text: 'working' }] },
+    }, ...resultSizes.map((length, index) => ({
+      type: 'message',
+      id: `result-${index}`,
+      parentId: index === 0 ? 'assistant-entry' : `result-${index - 1}`,
+      message: {
+        role: 'toolResult',
+        toolCallId: `call-${index}`,
+        toolName: 'web_fetch',
+        content: [{ type: 'text', text: 'x'.repeat(length) }],
+        isError: false,
+      },
+    }))];
+    const rewrittenMessages: Array<{ role: string; toolCallId?: string; content: Array<{ text: string }> }> = [];
+    const truncationPath = path.join(dist, 'tool-result-truncation-rzMcqvvu.js');
+    const { u: truncateOversizedToolResultsInSessionManager } = await import(
+      pathToFileURL(truncationPath).href
+    ) as {
+      u: (params: Record<string, unknown>) => { truncated: boolean; truncatedCount: number };
+    };
+
+    const result = truncateOversizedToolResultsInSessionManager({
+      sessionManager: {
+        getBranch: () => branch,
+        branch: () => undefined,
+        resetLeaf: () => undefined,
+        appendMessage: (message: typeof rewrittenMessages[number]) => {
+          rewrittenMessages.push(message);
+          return `rewritten-${rewrittenMessages.length}`;
+        },
+      },
+      contextWindowTokens: 128_000,
+      maxCharsOverride: 32_000,
+      aggregateMaxCharsOverride: 43_218,
+      protectTrailingToolResults: true,
+    });
+
+    expect(result.truncated).toBe(true);
+    expect(result.truncatedCount).toBeGreaterThan(0);
+    expect(rewrittenMessages.map((message) => message.toolCallId)).toEqual(
+      resultSizes.map((_length, index) => `call-${index}`),
+    );
+    expect(rewrittenMessages.every((message) => message.content[0]?.text.length > 0)).toBe(true);
+    expect(rewrittenMessages.reduce(
+      (total, message) => total + (message.content[0]?.text.length ?? 0),
+      0,
+    )).toBeLessThanOrEqual(43_218);
+  });
+
   it('accepts keepRecentTokens=0 in OpenClaw configuration', async () => {
     const schemaPath = path.join(dist, 'zod-schema-O9ml_nmo.js');
     const { t: OpenClawSchema } = await import(pathToFileURL(schemaPath).href) as {
@@ -155,6 +246,40 @@ describe('OpenClaw no-retained-tail compaction patch', () => {
     );
     expect(embeddedAgentSource.indexOf('const retryingFromTranscript =')).toBeLessThan(
       embeddedAgentSource.indexOf('const isProgressContinuation ='),
+    );
+  });
+
+  it('carries pressure targets into truncation before resetting no-real-conversation state', async () => {
+    const selectionSource = await readFile(path.join(dist, 'selection-JInn13lc.js'), 'utf8');
+    const embeddedAgentSource = await readFile(
+      path.join(dist, 'embedded-agent-DGUuxGR2.js'),
+      'utf8',
+    );
+    const noRealStart = embeddedAgentSource.indexOf(
+      'if (preflightRecovery && isNoRealConversationCompactionNoop(compactResult))',
+    );
+    const noRealEnd = embeddedAgentSource.indexOf(
+      '\n\t\t\t\t\t\t\tif (compactResult.compacted)',
+      noRealStart,
+    );
+    const noRealSource = embeddedAgentSource.slice(noRealStart, noRealEnd);
+
+    expect(selectionSource).toContain(
+      'toolResultAggregateTargetChars: result.toolResultAggregateTargetChars',
+    );
+    expect(selectionSource).toContain(
+      'aggregateMaxCharsOverride: request.toolResultAggregateTargetChars',
+    );
+    expect(selectionSource).toContain(
+      'aggregateMaxCharsOverride: preemptiveCompaction.toolResultAggregateTargetChars',
+    );
+    expect(noRealSource).toContain('truncateOversizedToolResultsInSession({');
+    expect(noRealSource).toContain(
+      'aggregateMaxCharsOverride: preflightRecovery.toolResultAggregateTargetChars',
+    );
+    expect(noRealSource).toContain('protectTrailingToolResults: true');
+    expect(noRealSource.indexOf('truncationResult.truncated')).toBeLessThan(
+      noRealSource.indexOf('resetNoRealConversationTokenSnapshot({'),
     );
   });
 });

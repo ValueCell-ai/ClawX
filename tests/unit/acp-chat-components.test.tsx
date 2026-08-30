@@ -76,6 +76,7 @@ vi.mock('react-i18next', () => ({
         'acp.compaction.continuing': 'Context compacted and continuing',
         'acp.compaction.failed': 'Context compaction failed',
         'acp.compaction.cancelled': 'Context compaction cancelled',
+        'acp.compaction.reason': 'Reason: {{reason}}',
         'acp.dismiss': 'Dismiss',
         'acp.attachment.loading': 'Loading attachment',
         'acp.attachment.unavailable': 'Attachment unavailable',
@@ -1055,6 +1056,34 @@ describe('ACP chat timeline components', () => {
     ]);
     expect(screen.queryByText('SECRET COMPACTION SUMMARY')).not.toBeInTheDocument();
     expect(screen.queryByText('SECRET COMPACTION CONTENT')).not.toBeInTheDocument();
+  });
+
+  it('shows the bounded reason only for failed compactions', () => {
+    const failed = compactionItem({
+      id: 'compaction:failed',
+      compactionId: 'failed',
+      status: 'failed',
+      reasonCode: 'no_compactable_entries',
+      reason: 'no real conversation messages',
+    });
+    const completed = compactionItem({
+      id: 'compaction:completed',
+      compactionId: 'completed',
+      status: 'completed',
+      reasonCode: 'summary_failed',
+      reason: 'must stay hidden',
+    });
+    const state = snapshot({
+      itemOrder: [failed.id, completed.id],
+      itemsById: { [failed.id]: failed, [completed.id]: completed },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+
+    expect(screen.getByTestId('acp-compaction-failure-reason')).toHaveTextContent(
+      'Reason: no real conversation messages',
+    );
+    expect(screen.queryByText('must stay hidden')).not.toBeInTheDocument();
   });
 
   it('uses status semantics for live compactions but not historical replay markers', () => {

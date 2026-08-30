@@ -278,6 +278,26 @@ test.describe('ClawX ACP chat timeline', () => {
         'Context compacted and continuing',
         'Compacted history',
       ]);
+
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          'openclaw.ai/compaction': {
+            version: 1,
+            compactionId: 'failed-compaction-3',
+            status: 'failed',
+            source: 'preflight',
+            reasonCode: 'no_compactable_entries',
+            reason: 'no real conversation messages',
+            timestamp: '2026-08-30T00:00:03.000Z',
+          },
+        },
+      }]);
+
+      await expect(compactionStatuses).toHaveCount(3);
+      await expect(page.getByTestId('acp-compaction-failure-reason')).toHaveText(
+        'Reason: no real conversation messages',
+      );
     } finally {
       await closeElectronApp(app);
     }

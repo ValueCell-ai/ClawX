@@ -57,6 +57,7 @@ requiredTests:
 acceptance:
   - Explicit context-engine compaction calls used by overflow, preflight, and timeout recovery emit one structured start and one terminal agent compaction event regardless of the context engine ownsCompaction flag; in-session AgentSession compaction lifecycle remains unchanged.
   - The direct lifecycle reuses one compactionId for start and terminal events, maps aborted work to cancelled, successful work to completed, and incomplete non-aborted work to failed.
+  - Incomplete non-aborted direct, command, and session-operation compactions keep source separate from a stable reasonCode and bounded failureReason for recorded ACP projection.
   - Assistant snapshot extensions emit only their unseen suffix, identical or stale prefixes emit nothing, and shorter non-prefix chunks emit in full through the ordinary recorded ACP update path.
   - An aborted Chat terminal carrying buffered assistant text runs that text through the same recorded delta path before prompt cancellation; error-terminal prose is not projected as an ordinary assistant message.
   - Complete ledger replay does not fetch the bounded transcript, run a cross-source selector, strip injected prompt envelopes, or replace ledger events with transcript-derived events.

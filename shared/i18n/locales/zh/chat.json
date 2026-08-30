@@ -77,7 +77,8 @@
             "completed": "已压缩历史上下文",
             "continuing": "上下文已压缩，正在继续",
             "failed": "上下文压缩失败",
-            "cancelled": "上下文压缩已取消"
+            "cancelled": "上下文压缩已取消",
+            "reason": "原因：{{reason}}"
         },
         "attachment": {
             "loading": "正在加载附件",

@@ -14,6 +14,8 @@ Chat 使用由 Electron Main 持有的 ACP stdio bridge。Main 通过私有进�
 
 只有在上游 ACP 没有对应能力时，才允许绕过 ACP。此类兼容性路径必须保持狭窄、有界，并绑定 session 和 generation；同时必须在相关 Harness reference 或 rule 中记录其原因、事实来源、限制、协调行为和移除条件，不得悄悄演变为竞争性的权威来源。
 
+补丁后的 OpenClaw 会在提交给 Provider 前执行 prompt 压力恢复。当聚合工具结果文本超过扣除预留后的 prompt 预算时，它会根据实测溢出量和安全缓冲推导一个截断目标，并在 mid-turn、pre-prompt 和 post-compaction 恢复中复用该目标。系统会优先缩减较早的工具输出，同时保留每组工具调用/结果配对以及最新结果的有界表示。压缩返回“没有真实会话消息”时，不会丢弃已经实测到的 transcript 或渲染后 prompt 压力。结构化压缩失败事件会将触发来源与可选的稳定原因码分开，并在 ACP 记录前把纯文本原因裁剪到 500 个字符。
+
 ### ACP 历史权威与有界 transcript 补充
 
 ACP `session/load` 回放是 Chat 历史的首要事实来源。ClawX 不会持久化第二套 ACP ledger、精简 timeline、回放缓存或重建的工具历史。当 OpenClaw 的结构化 ACP event ledger 不可用时，其 ACP adapter 会按 transcript 顺序把持久化的 `toolCall` 和 `toolResult` 记录重建为原生工具更新，并保留 text-tool-text 边界；ClawX 本身不会推断这些记录。OpenClaw 的部分能力目前还没有完全对应的 ACP 实现；例如，assistant 媒体可能不会出现在 ACP 中，Gateway 处理也可能从可见的实时回复中移除 assistant `MEDIA:` 指令。因此，ClawX 只保留有界、带标记、仅存于内存的兼容性补充路径：

@@ -77,7 +77,8 @@
             "completed": "Compacted history",
             "continuing": "Context compacted and continuing",
             "failed": "Context compaction failed",
-            "cancelled": "Context compaction cancelled"
+            "cancelled": "Context compaction cancelled",
+            "reason": "Reason: {{reason}}"
         },
         "attachment": {
             "loading": "Loading attachment",

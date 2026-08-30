@@ -77,7 +77,8 @@
             "completed": "履歴を圧縮しました",
             "continuing": "コンテキストを圧縮して続行中",
             "failed": "コンテキストの圧縮に失敗しました",
-            "cancelled": "コンテキストの圧縮をキャンセルしました"
+            "cancelled": "コンテキストの圧縮をキャンセルしました",
+            "reason": "理由: {{reason}}"
         },
         "attachment": {
             "loading": "添付ファイルを読み込み中",

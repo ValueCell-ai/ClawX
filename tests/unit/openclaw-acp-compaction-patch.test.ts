@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import vm from 'node:vm';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 const root = path.resolve(import.meta.dirname, '../..');
@@ -25,12 +26,68 @@ function addedLinesForFile(patch: string, file: string): string {
 describe('OpenClaw ACP compaction lifecycle patch', () => {
   let patch: string;
   let installedEmbedded: string;
+  let installedAcp: string;
 
   beforeAll(async () => {
-    [patch, installedEmbedded] = await Promise.all([
+    [patch, installedEmbedded, installedAcp] = await Promise.all([
       readFile(patchPath, 'utf8'),
       readFile(path.join(root, 'node_modules/openclaw/dist/embedded-agent-DGUuxGR2.js'), 'utf8'),
+      readFile(path.join(root, 'node_modules/openclaw/dist/acp-cli-BXc5GttU.js'), 'utf8'),
     ]);
+  });
+
+  it('projects a stable code and bounded explanation for failed compactions', () => {
+    const start = installedAcp.indexOf('const ACP_COMPACTION_SOURCES =');
+    const end = installedAcp.indexOf('\n//#endregion', start);
+    const context = {
+      normalizeOptionalString: (value: unknown) => (
+        typeof value === 'string' && value.trim() ? value.trim() : undefined
+      ),
+      timestampMsToIsoString: () => undefined,
+    } as Record<string, unknown>;
+    vm.runInNewContext(
+      `${installedAcp.slice(start, end)}\nglobalThis.buildAcpCompactionUpdate = buildAcpCompactionUpdate;`,
+      context,
+    );
+    const buildAcpCompactionUpdate = context.buildAcpCompactionUpdate as (
+      data: Record<string, unknown>,
+      runId: string,
+    ) => Record<string, unknown>;
+
+    const update = buildAcpCompactionUpdate({
+      phase: 'end',
+      compactionId: 'cmp-pressure',
+      source: 'preflight',
+      completed: false,
+      aborted: false,
+      reasonCode: 'no_compactable_entries',
+      failureReason: '  no real conversation messages  ',
+    }, 'run-pressure');
+
+    expect(update).toEqual({
+      sessionUpdate: 'session_info_update',
+      _meta: {
+        'openclaw.ai/compaction': {
+          version: 1,
+          compactionId: 'cmp-pressure',
+          status: 'failed',
+          source: 'preflight',
+          runId: 'run-pressure',
+          reasonCode: 'no_compactable_entries',
+          reason: 'no real conversation messages',
+        },
+      },
+    });
+
+    const boundedUpdate = buildAcpCompactionUpdate({
+      phase: 'end',
+      compactionId: 'cmp-long-reason',
+      source: 'preflight',
+      completed: false,
+      aborted: false,
+      failureReason: 'x'.repeat(1_000),
+    }, 'run-pressure') as { _meta: { 'openclaw.ai/compaction': { reason: string } } };
+    expect(boundedUpdate._meta['openclaw.ai/compaction'].reason).toHaveLength(500);
   });
 
   it('projects structured live lifecycle events into recorded ACP metadata', () => {
@@ -38,7 +95,8 @@ describe('OpenClaw ACP compaction lifecycle patch', () => {
     expect(patch).toContain('sessionUpdate: "session_info_update"');
     expect(patch).toContain('record: true');
     expect(patch).toContain('stream === "compaction"');
-    expect(patch).toContain('status: phase === "start" ? "in_progress"');
+    expect(patch).toContain('const status = phase === "start" ? "in_progress"');
+    expect(patch).toContain('status,');
     expect(patch).toContain('data.aborted === true ? "cancelled"');
     expect(patch).toContain('data.completed === true ? "completed" : "failed"');
   });
@@ -86,7 +144,9 @@ describe('OpenClaw ACP compaction lifecycle patch', () => {
     expect(commands).toContain('params.opts?.abortSignal?.aborted === true');
     expect(commands).toContain('compactError?.name === "AbortError"');
     expect(commands).toContain('result?.reason === "aborted"');
-    expect(commands).toContain('completed: result?.ok === true && result.compacted === true && !aborted');
+    expect(commands).toContain('const completed = result?.ok === true && result.compacted === true && !aborted;');
+    expect(commands).toContain('reasonCode: classifyCompactionReason(failureReason)');
+    expect(commands).toContain('failureReason');
     expect(commands).not.toMatch(/completed: false,\s*willRetry:/);
     expect(commands).not.toContain('summary:');
   });
