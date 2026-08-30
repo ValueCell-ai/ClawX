@@ -4,7 +4,7 @@ import { AcpToolCallCard } from '@/pages/Chat/AcpToolCallCard';
 import { AcpAttachmentPart } from '@/pages/Chat/AcpAttachmentPart';
 import { AcpTimeline, streamingMessageSegmentIds } from '@/pages/Chat/AcpTimeline';
 import { AcpTurnFileActivity } from '@/pages/Chat/AcpTurnFileActivity';
-import type { AcpTimelineSnapshot, AttachmentRenderPart, ToolCallItem } from '@/lib/acp/timeline-types';
+import type { AcpTimelineSnapshot, AttachmentRenderPart, CompactionItem, ToolCallItem } from '@/lib/acp/timeline-types';
 import type { AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 
@@ -71,6 +71,11 @@ vi.mock('react-i18next', () => ({
         'acp.unsupportedContent': 'Unsupported content',
         'acp.turnDuration': 'Took {{duration}}',
         'acp.turnElapsed': '{{duration}} elapsed',
+        'acp.compaction.inProgress': 'Compacting context',
+        'acp.compaction.completed': 'Compacted history',
+        'acp.compaction.continuing': 'Context compacted and continuing',
+        'acp.compaction.failed': 'Context compaction failed',
+        'acp.compaction.cancelled': 'Context compaction cancelled',
         'acp.dismiss': 'Dismiss',
         'acp.attachment.loading': 'Loading attachment',
         'acp.attachment.unavailable': 'Attachment unavailable',
@@ -168,6 +173,17 @@ function toolCallItem(overrides: Partial<ToolCallItem>): ToolCallItem {
     status: 'completed',
     outputParts: [{ kind: 'markdown', text: 'File contents loaded.' }],
     locations: [],
+    ...overrides,
+  };
+}
+
+function compactionItem(overrides: Partial<CompactionItem>): CompactionItem {
+  return {
+    kind: 'compaction',
+    id: 'compaction:compact-1',
+    compactionId: 'compact-1',
+    status: 'completed',
+    source: 'threshold',
     ...overrides,
   };
 }
@@ -992,6 +1008,72 @@ describe('ACP chat timeline components', () => {
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent('File contents loaded.');
     expect(screen.getByTestId('acp-plan-item')).toHaveTextContent('Update component tests');
     expect(screen.getByText('Second assistant segment.')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['in_progress', false, 'Compacting context'],
+    ['completed', false, 'Compacted history'],
+    ['completed', true, 'Context compacted and continuing'],
+    ['failed', false, 'Context compaction failed'],
+    ['cancelled', false, 'Context compaction cancelled'],
+  ] as const)('renders the %s compaction lifecycle state with willRetry=%s', (status, willRetry, label) => {
+    const item = compactionItem({ status, willRetry });
+    const state = snapshot({
+      itemOrder: [item.id],
+      itemsById: { [item.id]: item },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+
+    const row = screen.getByTestId('acp-compaction-status');
+    expect(row).toHaveTextContent(label);
+    expect(row).toHaveClass('w-full');
+    if (status === 'in_progress') {
+      expect(row.querySelector('svg')).toHaveClass('animate-spin', 'motion-reduce:animate-none');
+    }
+  });
+
+  it('renders multiple compactions separately in timeline order without exposing metadata content', () => {
+    const first = {
+      ...compactionItem({ id: 'compaction:first', compactionId: 'first', status: 'completed' }),
+      summary: 'SECRET COMPACTION SUMMARY',
+    } as CompactionItem & { summary: string };
+    const second = {
+      ...compactionItem({ id: 'compaction:second', compactionId: 'second', status: 'failed' }),
+      content: 'SECRET COMPACTION CONTENT',
+    } as CompactionItem & { content: string };
+    const state = snapshot({
+      itemOrder: [first.id, second.id],
+      itemsById: { [first.id]: first, [second.id]: second },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+
+    expect(screen.getAllByTestId('acp-compaction-status').map((row) => row.textContent)).toEqual([
+      'Compacted history',
+      'Context compaction failed',
+    ]);
+    expect(screen.queryByText('SECRET COMPACTION SUMMARY')).not.toBeInTheDocument();
+    expect(screen.queryByText('SECRET COMPACTION CONTENT')).not.toBeInTheDocument();
+  });
+
+  it('uses status semantics for live compactions but not historical replay markers', () => {
+    const live = compactionItem({ id: 'compaction:live', compactionId: 'live', status: 'in_progress' });
+    const historical = compactionItem({
+      id: 'compaction:historical',
+      compactionId: 'historical',
+      status: 'completed',
+      historical: true,
+    });
+    const state = snapshot({
+      itemOrder: [live.id, historical.id],
+      itemsById: { [live.id]: live, [historical.id]: historical },
+    });
+
+    render(<AcpTimeline snapshot={state} />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('Compacting context');
+    expect(screen.getByText('Compacted history').parentElement).not.toHaveAttribute('role');
   });
 
   it('collapses multiple completed tool calls into one group after the turn settles', () => {

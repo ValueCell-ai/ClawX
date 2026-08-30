@@ -809,6 +809,166 @@ describe('ACP timeline reducer', () => {
     });
   });
 
+  it('reduces compaction lifecycle metadata into ordered timeline items', () => {
+    let state = createEmptyAcpTimeline('agent:pi:s1', 1);
+    state = applyAcpSessionUpdate(state, {
+      sessionId: 'agent:pi:s1',
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'msg-a',
+        content: { type: 'text', text: 'Before compaction' },
+      },
+    });
+
+    state = applyAcpSessionUpdate(state, {
+      sessionId: 'agent:pi:s1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        title: 'Compacting session',
+        updatedAt: '2026-08-30T00:00:00.000Z',
+        _meta: {
+          'openclaw.ai/compaction': {
+            version: 1,
+            compactionId: 'cmp-1',
+            status: 'in_progress',
+            source: 'threshold',
+            runId: 'run-1',
+            timestamp: '2026-08-30T00:00:00.000Z',
+          },
+        },
+      },
+    } as never);
+
+    expect(state.itemOrder).toEqual(['msg-a:0', 'compaction:cmp-1']);
+    expect(state.openMessageSegments).toEqual({});
+    expect(state.metadata).toMatchObject({
+      title: 'Compacting session',
+      updatedAt: '2026-08-30T00:00:00.000Z',
+    });
+    expect(state.itemsById['compaction:cmp-1']).toEqual({
+      kind: 'compaction',
+      id: 'compaction:cmp-1',
+      compactionId: 'cmp-1',
+      status: 'in_progress',
+      source: 'threshold',
+      runId: 'run-1',
+      timestamp: '2026-08-30T00:00:00.000Z',
+      historical: false,
+    });
+
+    state = applyAcpSessionUpdate(state, {
+      sessionId: 'agent:pi:s1',
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        messageId: 'msg-during-compaction',
+        content: { type: 'text', text: 'Continuing after compaction' },
+      },
+    });
+    const orderAfterStart = state.itemOrder;
+    const openSegmentsAfterStart = state.openMessageSegments;
+    state = applyAcpSessionUpdate(state, {
+      sessionId: 'agent:pi:s1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          'openclaw.ai/compaction': {
+            version: 1,
+            compactionId: 'cmp-1',
+            status: 'completed',
+            source: 'threshold',
+            runId: 'run-replacement',
+            willRetry: true,
+            timestamp: '2026-08-30T00:00:01.000Z',
+          },
+        },
+      },
+    } as never);
+
+    expect(state.itemOrder).toBe(orderAfterStart);
+    expect(state.openMessageSegments).toBe(openSegmentsAfterStart);
+    expect(state.itemsById['compaction:cmp-1']).toEqual({
+      kind: 'compaction',
+      id: 'compaction:cmp-1',
+      compactionId: 'cmp-1',
+      status: 'completed',
+      source: 'threshold',
+      runId: 'run-1',
+      willRetry: true,
+      timestamp: '2026-08-30T00:00:00.000Z',
+      historical: false,
+    });
+
+    state = applyAcpSessionUpdate(state, {
+      sessionId: 'agent:pi:s1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          'openclaw.ai/compaction': {
+            version: 1,
+            compactionId: 'cmp-2',
+            status: 'in_progress',
+            source: 'threshold',
+            runId: 'run-1',
+          },
+        },
+      },
+    } as never);
+
+    expect(state.itemOrder).toEqual([
+      'msg-a:0',
+      'compaction:cmp-1',
+      'msg-during-compaction:0',
+      'compaction:cmp-2',
+    ]);
+    expect(state.itemsById['compaction:cmp-2']).toMatchObject({
+      kind: 'compaction',
+      compactionId: 'cmp-2',
+      runId: 'run-1',
+    });
+  });
+
+  it('marks replayed compaction metadata as historical', () => {
+    const state = applyAcpSessionUpdate(createEmptyAcpTimeline('agent:pi:s1', 1), {
+      sessionId: 'agent:pi:s1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          'openclaw.ai/compaction': {
+            version: 1,
+            compactionId: 'transcript-compaction-1',
+            status: 'completed',
+            source: 'transcript',
+          },
+        },
+      },
+    } as never, { historical: true });
+
+    expect(state.itemsById['compaction:transcript-compaction-1']).toMatchObject({
+      kind: 'compaction',
+      status: 'completed',
+      source: 'transcript',
+      historical: true,
+    });
+  });
+
+  it.each([
+    ['version', { version: 2, compactionId: 'cmp-1', status: 'in_progress', source: 'threshold' }],
+    ['compaction ID', { version: 1, compactionId: '', status: 'in_progress', source: 'threshold' }],
+    ['status', { version: 1, compactionId: 'cmp-1', status: 'pending', source: 'threshold' }],
+    ['source', { version: 1, compactionId: 'cmp-1', status: 'in_progress', source: 'unknown' }],
+  ])('ignores compaction metadata with an invalid %s', (_field, compaction) => {
+    const state = createEmptyAcpTimeline('agent:pi:s1', 1);
+    const next = applyAcpSessionUpdate(state, {
+      sessionId: 'agent:pi:s1',
+      update: {
+        sessionUpdate: 'session_info_update',
+        _meta: { 'openclaw.ai/compaction': compaction },
+      },
+    } as never);
+
+    expect(next).toBe(state);
+  });
+
   it('updates metadata for config option updates', () => {
     let state = createEmptyAcpTimeline('agent:pi:s1', 1);
     const configOptions = [

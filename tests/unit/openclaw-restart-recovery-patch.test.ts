@@ -105,7 +105,8 @@ describe('OpenClaw restart recovery patch', () => {
     expect(patch).toContain('normalizeOptionalString(entry?.lifecycleRunId) !== runId');
     expect(patch).toContain('sessionKey?: string | undefined');
     expect(patch).toContain('restartRecoveryDeliverySourceRunId?: string');
-    expect(patch).toContain('this.gateway.request("sessions.messages.subscribe", { key: pending.sessionKey })');
+    expect(patch).toContain('this.ensureSessionMessageSubscription(sessionKey, entry)');
+    expect(patch).toContain('this.gateway.request("sessions.messages.subscribe", { key: sessionKey })');
     expect(patch).not.toContain('this.gateway.request("sessions.subscribe", {})');
     expect(patch).toContain('evt.event === "session.tool"');
     expect(patch).not.toContain('diff --git a/scripts/README.md');
@@ -346,8 +347,9 @@ describe('OpenClaw restart recovery patch', () => {
     expect(patch).toContain('typedBlock.type === "toolCall"');
     expect(patch).toContain('sessionUpdate: "tool_call_update"');
     expect(patch).toContain('chunk.sessionUpdate === "user_message_chunk"');
-    expect(patch).toContain('const subscriptionReady = Promise.all');
-    expect(patch).toContain('subscriptionReady.then(() => this.reconcilePendingPrompts');
+    expect(patch).toContain('async handleGatewayReconnect()');
+    expect(patch).toContain('session message subscription recovery failed');
+    expect(patch).toContain('if (disconnectContext) await this.reconcilePendingPrompts');
   });
 
   it('retries the final ACP usage snapshot when a new session reports zero tokens', async () => {

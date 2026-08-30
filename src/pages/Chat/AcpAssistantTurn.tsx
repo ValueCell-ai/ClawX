@@ -14,6 +14,7 @@ import { AcpAttachmentPart } from './AcpAttachmentPart';
 import type { AcpTurnTiming } from '@/lib/acp/turn-timings';
 import type { TimelineItem, ToolCallItem } from '@/lib/acp/timeline-types';
 import { cn } from '@/lib/utils';
+import { AcpCompactionStatus } from './AcpCompactionStatus';
 
 /** Keep prose, tools, and file cards on the same column in a wide transcript. */
 const assistantTurnBlockClassName = 'w-full min-w-0';
@@ -207,6 +208,14 @@ export function AcpAssistantTurn({
             return (
               <div key={item.id} data-acp-item-id={item.id} className={assistantTurnBlockClassName}>
                 <AcpPlanItem item={item} />
+              </div>
+            );
+          }
+
+          if (item.kind === 'compaction') {
+            return (
+              <div key={item.id} data-acp-item-id={item.id} className={assistantTurnBlockClassName}>
+                <AcpCompactionStatus item={item} />
               </div>
             );
           }

@@ -72,6 +72,13 @@
         "copied": "コピーしました",
         "turnDuration": "所要時間 {{duration}}",
         "turnElapsed": "経過時間 {{duration}}",
+        "compaction": {
+            "inProgress": "コンテキストを圧縮中",
+            "completed": "履歴を圧縮しました",
+            "continuing": "コンテキストを圧縮して続行中",
+            "failed": "コンテキストの圧縮に失敗しました",
+            "cancelled": "コンテキストの圧縮をキャンセルしました"
+        },
         "attachment": {
             "loading": "添付ファイルを読み込み中",
             "unavailable": "添付ファイルを利用できません",

@@ -64,6 +64,7 @@ async function emitAcpSessionUpdates(
   app: ElectronApplication,
   updates: AcpSessionUpdate[],
   generation = 1,
+  historical = false,
 ) {
   await app.evaluate(
     async ({ app: _app }, payload) => {
@@ -73,6 +74,7 @@ async function emitAcpSessionUpdates(
           window.webContents.send('chat:acp-session-update', {
             sessionKey: payload.sessionKey,
             generation: payload.generation,
+            ...(payload.historical ? { historical: true } : {}),
             notification: {
               sessionId: payload.sessionKey,
               update,
@@ -81,7 +83,7 @@ async function emitAcpSessionUpdates(
         }
       }
     },
-    { sessionKey: PROJECT_MANAGER_SESSION_KEY, generation, updates },
+    { sessionKey: PROJECT_MANAGER_SESSION_KEY, generation, historical, updates },
   );
 }
 
@@ -209,6 +211,73 @@ test.describe('ClawX ACP chat timeline', () => {
       await expect(page.getByText(longRunProcessSegments.at(-1)!, { exact: true })).toBeVisible();
       await expect(page.getByText(longRunSummary, { exact: true })).toBeVisible();
       await expect(page.getByText(longRunReplyText, { exact: true })).toHaveCount(0);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('updates ACP compaction in place and keeps historical compaction markers ordered', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installAcpChatMocks(app);
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+
+      const compactionStatuses = page.getByTestId('acp-compaction-status');
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          'openclaw.ai/compaction': {
+            version: 1,
+            compactionId: 'live-compaction-1',
+            status: 'in_progress',
+            source: 'threshold',
+            runId: 'run-1',
+            timestamp: '2026-08-30T00:00:00.000Z',
+          },
+        },
+      }]);
+
+      await expect(compactionStatuses).toHaveCount(1);
+      await expect(compactionStatuses).toHaveText('Compacting context');
+
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          'openclaw.ai/compaction': {
+            version: 1,
+            compactionId: 'live-compaction-1',
+            status: 'completed',
+            source: 'threshold',
+            runId: 'run-1',
+            willRetry: true,
+            timestamp: '2026-08-30T00:00:01.000Z',
+          },
+        },
+      }]);
+
+      await expect(compactionStatuses).toHaveCount(1);
+      await expect(compactionStatuses).toHaveText('Context compacted and continuing');
+
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'session_info_update',
+        _meta: {
+          'openclaw.ai/compaction': {
+            version: 1,
+            compactionId: 'transcript-compaction-2',
+            status: 'completed',
+            source: 'transcript',
+            timestamp: '2026-08-30T00:00:02.000Z',
+          },
+        },
+      }], 1, true);
+
+      await expect(compactionStatuses).toHaveCount(2);
+      await expect(compactionStatuses).toHaveText([
+        'Context compacted and continuing',
+        'Compacted history',
+      ]);
     } finally {
       await closeElectronApp(app);
     }

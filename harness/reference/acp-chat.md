@@ -1,12 +1,12 @@
 # ACP Chat Architecture And Timeline
 
-Status: current architecture reference, reviewed 2026-07-27.
+Status: current architecture reference, reviewed 2026-08-30.
 
 Related scenario: `acp-chat-experience`
 
 Related rules: `acp-chat-state-and-history`, `attachment-access-safety`, `renderer-main-boundary`
 
-Related tasks: `acp-native-chat`, `acp-media-attachments`, `filter-openclaw-heartbeat-session`, `recover-acp-session-after-gateway-restart`
+Related tasks: `acp-native-chat`, `acp-media-attachments`, `filter-openclaw-heartbeat-session`, `recover-acp-session-after-gateway-restart`, `show-acp-compaction-lifecycle`
 
 ## Ownership
 
@@ -27,6 +27,14 @@ For every Chat semantic and context exposed by ACP, ACP is the preferred authori
 
 An ACP bypass is allowed only when upstream has no equivalent capability. The exception must be narrow, bounded, session- and generation-scoped, and documented with its rationale, source of truth, limits, reconciliation behavior, and removal condition in a Harness reference or rule. It must never become a second semantic authority.
 
+### Compaction Compatibility
+
+The pinned ACP SDK does not yet accept the draft Session Compaction RFD update. Until it does, patched OpenClaw projects compaction through a standard `session_info_update` with `_meta["openclaw.ai/compaction"]`. The nested payload has `version: 1`, a non-empty occurrence-specific `compactionId`, status `in_progress`, `completed`, `failed`, or `cancelled`, source `threshold`, `overflow`, `preflight`, `manual`, or `transcript`, and optional typed `runId`, `willRetry`, and `timestamp` fields. This is a versioned ACP compatibility extension, not a Renderer Gateway path or a second transport.
+
+Live lifecycle evidence comes only from structured OpenClaw events. AgentSession threshold compaction and owning context-engine preflight or overflow recovery emit agent `stream: "compaction"` start/end events. The actual `/compact` command wraps `compactEmbeddedAgentSession` with that same agent lifecycle. A direct `sessions.compact` operation instead emits `session.operation` start/end events for `operation: "compact"`; the ACP bridge owns a prompt-lifetime scoped session-message subscription so those events reach the matching pending session. Every start creates a fresh ID, its terminal event reuses that ID, and a later occurrence gets another ID even within one run. Successful work maps to `completed`, an aborted operation to `cancelled`, and any other incomplete terminal to `failed`; starts omit `willRetry` until a terminal event can provide the boolean outcome. The bridge records emitted updates in its ACP event ledger. No summary is forwarded, and stderr, token-usage changes, and assistant text are not evidence.
+
+This extension has one removal condition: when the pinned ACP SDK accepts the native Session Compaction RFD update and the distributed OpenClaw adapter emits that native update for the same live and replay paths, remove the metadata producer and Renderer version-1 validator and consume the native event instead.
+
 ## Identity And Race Protection
 
 Renderer-visible session identity is the OpenClaw Gateway session key. Main may hold a different ACP session id returned by `newSession`; it rewrites downstream routing to the matching Gateway session key. Loads on the shared ACP connection are serialized. A routing envelope carries the session key and the Main-owned generation token for the matching load or live prompt. Renderer uses a separate local request sequence to reject stale load completions; preparing a local-only session must not advance the ACP generation. Renderer ignores updates, permission requests, and asynchronous hydration results whose session or generation matches neither the selected session nor a retained live prompt. Generation is an in-memory race token rather than a durable sequence; Main may restore the previous value when a load fails, so code must compare it together with session and current-operation state rather than assume global monotonicity.
@@ -39,7 +47,7 @@ When guarded Gateway recovery interrupts an accepted main-session run, patched O
 
 ## History Authority
 
-ACP `session/load` replay is the primary source of Chat history. ClawX does not persist an ACP ledger, reduced timeline, replay cache, or reconstructed tool history. Full structured replay restores recorded tools and file activity. When that ledger is unavailable, OpenClaw's ACP adapter maps persisted transcript `toolCall` and `toolResult` records to native ACP tool updates in transcript order, preserving assistant text segments on either side; this is upstream ACP replay, not a ClawX transcript supplement or inference path.
+ACP `session/load` replay is the primary source of Chat history. ClawX does not persist an ACP ledger, reduced timeline, replay cache, or reconstructed tool history. Full structured replay restores recorded tools, file activity, and recorded compaction lifecycle updates. When that ledger is unavailable, OpenClaw's ACP adapter requests a bounded `sessions.get` response, currently limited to 1,000,000 message records. It maps persisted transcript `toolCall` and `toolResult` records in that response to native ACP tool updates and maps each included durable `type: "compaction"` record to one completed version `1` metadata marker keyed by the record's durable ID with source `transcript`. Response order is preserved, assistant text segments remain on either side, and compaction summaries are excluded. This fallback does not load or imply unbounded transcript history; it is upstream ACP replay, not a ClawX transcript supplement or inference path.
 
 OpenClaw emits replay through ordinary `session/update` notifications and completes the replay before `session/load` returns. Main collects those raw notifications for the active load generation and returns them with the load result instead of forwarding them incrementally. Renderer temporarily groups generation-matching host events that arrive during the IPC result handoff, then runs the normal reducer over the combined batch and publishes the resulting timeline in one state update. This is an in-flight transaction buffer only, not a history cache; after load, each live update continues through the normal host-event route and is applied immediately without a Renderer batching timer. Permission requests are accepted only after the current loaded session starts a prompt, preventing load-time or handoff requests from creating invisible waiters.
 
@@ -57,7 +65,8 @@ type TimelineItem =
   | ThoughtItem
   | ToolCallItem
   | PermissionItem
-  | PlanItem;
+  | PlanItem
+  | CompactionItem;
 
 type MessageSegmentItem = {
   kind: 'message-segment';
@@ -67,9 +76,21 @@ type MessageSegmentItem = {
   segmentIndex: number;
   parts: RenderPart[];
 };
+
+type CompactionItem = {
+  kind: 'compaction';
+  id: string;
+  compactionId: string;
+  status: 'in_progress' | 'completed' | 'failed' | 'cancelled';
+  source: 'threshold' | 'overflow' | 'preflight' | 'manual' | 'transcript';
+  runId?: string;
+  willRetry?: boolean;
+  timestamp?: string;
+  historical?: boolean;
+};
 ```
 
-The reducer preserves first-seen ACP order and patches existing items in place. Interleaving a process block with assistant text closes the current segment; later text for that message creates another segment. Gateway assistant updates may be complete snapshots or non-prefix chunks. The OpenClaw ACP bridge emits only the unseen suffix of a strict extension, ignores an identical or stale prefix, and emits a non-prefix update in full so a shorter trailing fragment is not dropped and a new segment is not sliced by stale character count. Replay and live updates use the same reducer path. Optimistic user segments are allowed and are coalesced with the ACP user echo.
+The reducer preserves first-seen ACP order and patches existing items in place. It validates compaction metadata version, ID, status, source, and optional field types before creating `compaction:<compactionId>`. A first-seen occurrence closes open message segments and enters the flat timeline; later metadata with the same ID updates that exact item without moving it, while another ID remains a separate ordered marker. Replay marks the item historical, and first-seen optional metadata and historical provenance survive later updates. Interleaving any other process block with assistant text also closes the current segment; later text for that message creates another segment. Gateway assistant updates may be complete snapshots or non-prefix chunks. The OpenClaw ACP bridge emits only the unseen suffix of a strict extension, ignores an identical or stale prefix, and emits a non-prefix update in full so a shorter trailing fragment is not dropped and a new segment is not sliced by stale character count. Replay and live updates use the same reducer path. Optimistic user segments are allowed and are coalesced with the ACP user echo.
 
 This prefix comparison is a compatibility heuristic in the patched `openclaw@2026.7.1-2` ACP adapter, not a formally correct stream algorithm. Gateway protocol v4 already defines `message` as the cumulative assistant snapshot, `deltaText` as the incremental operation, and `replace=true` as a full-content replacement. The pinned ACP adapter does not consume those fields and its append-only update path has no stable live message identity for an in-place replacement. Text alone cannot distinguish a snapshot from an independent chunk that happens to repeat, extend, or shorten earlier text, so the heuristic can misclassify valid output. Treat it only as a loss-avoidance workaround until the adapter consumes `deltaText` and `replace` and exposes explicit replacement semantics.
 
@@ -101,6 +122,7 @@ Available attachment cards contain a primary semantic action with keyboard activ
 ## Chat Behaviors
 
 - The primary Chat view renders process activity directly in the ordered ACP timeline.
+- Live compaction renders as a localized status row that updates in place from compacting to completed, continuing, failed, or cancelled. Historical replay renders each included completed occurrence separately in response order. The row never displays the compaction summary.
 - A recoverable initial `reply was never sent` load failure may leave an empty new-chat page usable; prompt failures remain visible.
 - The working indicator follows the same sending state as the Stop action and supports reduced motion.
 - The question directory is derived only from active user message segments. Duplicate text remains separate, titles use the first non-empty Markdown part, and textless entries use a localized fallback. Fewer than two questions disables navigation. When open, the directory floats above the conversation without changing the chat column width. Selection scrolls smoothly to the current-snapshot anchor; a missing anchor is a safe no-op. The UI caps the directory at 300 recent entries and reports the hidden count when older entries are omitted.
@@ -108,6 +130,6 @@ Available attachment cards contain a primary semantic action with keyboard activ
 
 ## Validation Anchors
 
-Key tests live in `tests/unit/acp-*.test.*`, `tests/unit/acp-timeline-groups.test.ts`, `tests/unit/attachment-access.test.ts`, `tests/unit/chat-question-directory.test.tsx`, `tests/e2e/chat-acp-inline-timeline.spec.ts`, and `tests/e2e/chat-acp-attachments.spec.ts`.
+Key tests live in `tests/unit/acp-*.test.*`, `tests/unit/openclaw-acp-compaction-patch.test.ts`, `tests/unit/openclaw-restart-recovery-patch.test.ts`, `tests/unit/acp-timeline-groups.test.ts`, `tests/unit/attachment-access.test.ts`, `tests/unit/chat-question-directory.test.tsx`, `tests/e2e/chat-acp-inline-timeline.spec.ts`, `tests/e2e/chat-acp-process-timeline.spec.ts`, and `tests/e2e/chat-acp-attachments.spec.ts`.
 
 This reference consolidates the former ACP native Chat, Chat polish, turn grouping, and question-directory design documents. Later implementation decisions supersede the original no-optimistic-message rule, the assumption that ACP id always equals Gateway session key, and segment-level assistant copy controls.

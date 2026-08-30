@@ -105,7 +105,23 @@ export type PlanItem = {
   entries: PlanEntry[];
 };
 
-export type TimelineItem = MessageSegmentItem | ThoughtItem | ToolCallItem | PermissionItem | PlanItem;
+export type CompactionStatus = 'in_progress' | 'completed' | 'failed' | 'cancelled';
+
+export type CompactionSource = 'threshold' | 'overflow' | 'preflight' | 'manual' | 'transcript';
+
+export type CompactionItem = {
+  kind: 'compaction';
+  id: string;
+  compactionId: string;
+  status: CompactionStatus;
+  source: CompactionSource;
+  runId?: string;
+  willRetry?: boolean;
+  timestamp?: string;
+  historical?: boolean;
+};
+
+export type TimelineItem = MessageSegmentItem | ThoughtItem | ToolCallItem | PermissionItem | PlanItem | CompactionItem;
 
 export type AcpSessionMetadata = {
   currentModeId?: string;

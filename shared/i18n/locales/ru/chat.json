@@ -72,6 +72,13 @@
         "copied": "Скопировано",
         "turnDuration": "Заняло {{duration}}",
         "turnElapsed": "Прошло {{duration}}",
+        "compaction": {
+            "inProgress": "Сжатие контекста",
+            "completed": "История сжата",
+            "continuing": "Контекст сжат, работа продолжается",
+            "failed": "Не удалось сжать контекст",
+            "cancelled": "Сжатие контекста отменено"
+        },
         "attachment": {
             "loading": "Загрузка вложения",
             "unavailable": "Вложение недоступно",

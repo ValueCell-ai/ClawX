@@ -72,6 +72,13 @@
         "copied": "已复制",
         "turnDuration": "用时 {{duration}}",
         "turnElapsed": "已处理 {{duration}}",
+        "compaction": {
+            "inProgress": "正在压缩上下文",
+            "completed": "已压缩历史上下文",
+            "continuing": "上下文已压缩，正在继续",
+            "failed": "上下文压缩失败",
+            "cancelled": "上下文压缩已取消"
+        },
         "attachment": {
             "loading": "正在加载附件",
             "unavailable": "附件不可用",
