@@ -3,6 +3,7 @@ import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from
 
 const CONTROL_SESSION_KEY = 'agent:main:main';
 const TARGET_SESSION_KEY = 'agent:main:attention-target';
+const SUBAGENT_SESSION_KEY = 'agent:main:subagent:child-1';
 const WORKSPACE = '/workspace';
 const LIST_TS = 1_753_000_000_000;
 const GATEWAY_CONNECTED_AT = 1_752_999_000_000;
@@ -50,6 +51,15 @@ async function installSessionAttentionMocks(app: ElectronApplication): Promise<v
       derivedTitle: 'Attention target',
       workspacePath: WORKSPACE,
       updatedAt: LIST_TS - 2_000,
+      status: 'done',
+      hasActiveRun: false,
+    },
+    {
+      key: SUBAGENT_SESSION_KEY,
+      displayName: '[Subagent Context] You are running as a subagent (depth 1/1).',
+      derivedTitle: '[Subagent Context] You are running as a subagent (depth 1/1).',
+      workspacePath: WORKSPACE,
+      updatedAt: LIST_TS - 3_000,
       status: 'done',
       hasActiveRun: false,
     },
@@ -103,6 +113,7 @@ async function installSessionAttentionMocks(app: ElectronApplication): Promise<v
       }])]: { ok: true, workspaceRoot: WORKSPACE, executionCwd: WORKSPACE },
       ...acpLoadResponse(CONTROL_SESSION_KEY),
       ...acpLoadResponse(TARGET_SESSION_KEY),
+      ...acpLoadResponse(SUBAGENT_SESSION_KEY),
     },
   });
 }
@@ -143,6 +154,27 @@ async function emitSessionSnapshot(
 }
 
 test.describe('ClawX sidebar session attention', () => {
+  test('marks native subagent sessions and cleans only their displayed context prefix', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      await installSessionAttentionMocks(app);
+      const page = await reloadStableWindow(app);
+      const row = page.getByTestId(`sidebar-session-${SUBAGENT_SESSION_KEY}`);
+      const tag = page.getByTestId(`sidebar-session-subagent-${SUBAGENT_SESSION_KEY}`);
+
+      await expect(row).toBeVisible();
+      await expect(row).toContainText('You are running as a subagent (depth 1/1).');
+      await expect(row).not.toContainText('[Subagent Context]');
+      await expect(tag).toHaveText('Subagent');
+      await expect(tag.locator('svg')).toHaveClass(/lucide-bot-message-square/);
+      await expect(page.getByTestId(`sidebar-session-${CONTROL_SESSION_KEY}`))
+        .not.toContainText('Subagent');
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('projects Gateway busy and unread state through Chat mount, key changes, and unmount', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 

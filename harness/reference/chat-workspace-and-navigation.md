@@ -37,6 +37,8 @@ Sessions are grouped by workspace, not by date bucket. The default workspace sor
 
 Each group initially displays five sessions and loads five more at a time. Collapse and visible-count state are per workspace and in memory. Relative time and ordering use the same timestamp; actions replace the timestamp on hover or keyboard focus.
 
+An exact canonical `agent:<agentId>:subagent:<childId>` row remains in its normal workspace group and adds a localized subagent tag before its title. For this presentation only, ClawX removes one leading `[Subagent Context]` marker from the rendered title. This is never a session-data mutation and keys such as `agent:<agentId>:acp:<id>` are not native subagents.
+
 Non-default workspace headers expose a rename action on hover or keyboard focus. A custom name updates both the sidebar group and the composer workspace chip; the header and chip keep the full filesystem path in their title text.
 
 Sidebar validates distinct non-default group paths through Main. A confirmed unavailable group shows a warning badge and destructive delete action; available, unresolved, and default groups do not. One confirmation hard-deletes the group's sessions sequentially across agents. Successful sessions disappear together, failed sessions remain for retry, and workspace recents/labels are removed only after the full group succeeds.

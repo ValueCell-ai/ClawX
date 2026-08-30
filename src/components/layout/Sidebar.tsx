@@ -28,6 +28,7 @@ import {
   LoaderCircle,
   Loader2,
   Mic,
+  BotMessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { isGatewayRestarting } from '@/lib/gateway-status';
@@ -38,7 +39,12 @@ import { useSessionAttentionStore } from '@/stores/session-attention';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { groupSessionsByWorkspace } from './session-buckets';
-import { shouldIncludeSessionInSidebarList } from '@/stores/chat/session-key-utils';
+import {
+  formatSubagentSessionTitle,
+  isNativeSubagentSessionKey,
+  isOpenClawHeartbeatOnlySession,
+  shouldIncludeSessionInSidebarList,
+} from '@/stores/chat/session-key-utils';
 import { CHANNEL_NAMES } from '@shared/types/channel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -56,7 +62,6 @@ import { useWorkspaceAvailability } from '@/hooks/use-workspace-availability';
 import { projectSessionRunState } from '@/stores/chat/session-status';
 import { getSessionDisplayTitle } from '@shared/chat/session-title';
 import { DEFAULT_SESSION_KEY } from '@shared/chat/types';
-import { isOpenClawHeartbeatOnlySession } from '@/stores/chat/session-key-utils';
 import { realtimeTalkController } from '@/lib/talk/realtime-talk-controller';
 import { useRealtimeTalkStore } from '@/stores/realtime-talk';
 
@@ -758,6 +763,18 @@ export function Sidebar() {
                         const isEditing = editingSessionKey === s.key;
                         const isCurrentSession = isOnChat && currentSessionKey === s.key;
                         const sessionLabel = getSessionDisplayTitle(s, sessionLabels);
+                        const isNativeSubagent = isNativeSubagentSessionKey(s.key);
+                        const hasContextPrefix = isNativeSubagent
+                          && formatSubagentSessionTitle(s.key, sessionLabel) !== sessionLabel;
+                        const contextTitle = hasContextPrefix
+                          ? [s.label, s.derivedTitle, s.displayName].find((candidate) => (
+                              candidate && formatSubagentSessionTitle(s.key, candidate) !== candidate
+                            ))
+                          : undefined;
+                        const displaySessionLabel = formatSubagentSessionTitle(
+                          s.key,
+                          contextTitle || sessionLabel,
+                        );
                         const relativeTime = formatSessionRelativeTime(activityMs, nowMs, i18n.language);
                         const runState = projectSessionRunState(s);
                         const attention = sessionAttentionByKey[s.key];
@@ -842,7 +859,17 @@ export function Sidebar() {
                                         {channelName}
                                       </span>
                                     )}
-                                    <span className="truncate">{sessionLabel}</span>
+                                    {isNativeSubagent && (
+                                      <Badge
+                                        variant="secondary"
+                                        data-testid={`sidebar-session-subagent-${s.key}`}
+                                        className="shrink-0 gap-1 px-1 py-0 text-2xs font-medium"
+                                      >
+                                        <BotMessageSquare aria-hidden="true" className="h-3 w-3" />
+                                        {t('chat:sessionList.subagent')}
+                                      </Badge>
+                                    )}
+                                    <span className="truncate">{displaySessionLabel}</span>
                                   </div>
                                 </button>
                                 {isBusy ? (

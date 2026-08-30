@@ -17,4 +17,6 @@ Only exact-key observed-busy and unread presentation state MAY persist. Visibili
 
 Every ready Gateway epoch MUST call `sessions.subscribe` for `sessions.changed` and force canonical list hydration. List flights MUST buffer events, accept timestamp equality, reject strictly older epoch/per-key results, and preserve attention under unorderable or failed reconciliation until canonical recovery. Missing list rows MUST NOT prune attention. Exact deletion MUST clear attention and advance same-key label-hydration incarnation before recreation.
 
+Native subagent presentation is independent of attention. Only an exact canonical `agent:<agentId>:subagent:<childId>` key receives the localized subagent tag. ClawX may strip one leading `[Subagent Context]` marker from that row's display title only; it must not infer subagent status from transcript prose or mutate catalog, session, title, or transcript data.
+
 Algorithms, rationale, limitations, future Gateway-unread migration, and validation anchors are defined in `harness/reference/sidebar-session-attention.md`.

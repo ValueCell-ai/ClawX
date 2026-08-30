@@ -1,14 +1,35 @@
 import { describe, expect, it } from 'vitest';
 import {
+  formatSubagentSessionTitle,
   findHiddenOpenClawHeartbeatSession,
   isChannelSessionKey,
   isClawXDesktopSessionKey,
+  isNativeSubagentSessionKey,
   isPlaceholderChannelSession,
   shouldIncludeSessionInSidebarList,
 } from '@/stores/chat/session-key-utils';
 import type { ChatSession } from '@/stores/chat/types';
 
 describe('session-key-utils', () => {
+  it('classifies only canonical native subagent session keys', () => {
+    expect(isNativeSubagentSessionKey('agent:main:subagent:child-1')).toBe(true);
+    expect(isNativeSubagentSessionKey('agent:research:subagent:child-2')).toBe(true);
+    expect(isNativeSubagentSessionKey('agent:main:acp:child-1')).toBe(false);
+    expect(isNativeSubagentSessionKey('agent:main:session-subagent-child-1')).toBe(false);
+    expect(isNativeSubagentSessionKey('subagent:child-1')).toBe(false);
+  });
+
+  it('removes the subagent context marker only from native subagent display titles', () => {
+    const title = '[Subagent Context] You are running as a subagent (depth 1/1).';
+    expect(formatSubagentSessionTitle('agent:main:subagent:child-1', title)).toBe(
+      'You are running as a subagent (depth 1/1).',
+    );
+    expect(formatSubagentSessionTitle('agent:main:session-1', title)).toBe(title);
+    expect(formatSubagentSessionTitle('agent:main:subagent:child-1', 'Review the build')).toBe(
+      'Review the build',
+    );
+  });
+
   it('detects feishu and other channel session keys', () => {
     expect(isChannelSessionKey('agent:main:feishu:ou_abc123')).toBe(true);
     expect(isChannelSessionKey('agent:main:telegram:12345')).toBe(true);
