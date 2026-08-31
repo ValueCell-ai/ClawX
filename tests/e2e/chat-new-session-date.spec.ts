@@ -211,7 +211,7 @@ test.describe('ClawX chat workspace session list', () => {
     }
   });
 
-  test('new chat stays hidden until its first prompt becomes the sidebar title', async ({ launchElectronApp }) => {
+  test('new chat uses a placeholder header until its first prompt becomes the title', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     const oldTimestampMs = Date.now() - 35 * 24 * 60 * 60 * 1000;
     const prompt = 'Investigate the sidebar title race';
@@ -273,6 +273,9 @@ test.describe('ClawX chat workspace session list', () => {
       await expect(page.getByTestId(defaultWorkspaceSessionGroupTestId()).getByText(/agent:main:session-/)).toHaveCount(0);
       await expect(page.getByTestId(defaultWorkspaceSessionGroupToggleTestId())).toHaveAttribute('aria-expanded', 'true');
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      if (process.platform === 'win32') {
+        await expect(page.getByTestId('chat-session-title')).toHaveText('New conversation');
+      }
       await page.getByTestId('chat-composer-input').fill(prompt);
       await page.getByTestId('chat-composer-send').click();
 
@@ -299,6 +302,9 @@ test.describe('ClawX chat workspace session list', () => {
 
       await expect(sessionRow).toContainText(prompt);
       await expect(sessionRow).not.toContainText('ACP');
+      if (process.platform === 'win32') {
+        await expect(page.getByTestId('chat-session-title')).toHaveText(prompt);
+      }
       const sawAcpTitle = await page.evaluate(() => {
         const observation = (globalThis as unknown as {
           __newChatTitleObservation?: { observer: MutationObserver; state: { sawAcpTitle: boolean } };

@@ -223,9 +223,11 @@ export function Chat() {
     () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
     [agents, currentAgentId],
   );
-  const currentSessionTitle = currentSession
-    ? getSessionDisplayTitle(currentSession, sessionLabels)
-    : currentSessionKey;
+  const currentSessionTitle = currentSession?.createdLocally
+    ? t('newSession')
+    : currentSession
+      ? getSessionDisplayTitle(currentSession, sessionLabels)
+      : currentSessionKey;
   const effectiveWorkspace = useMemo(
     () => resolveEffectiveWorkspace({
       session: currentSession,

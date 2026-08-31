@@ -12,6 +12,7 @@
     },
     "noLogs": "（ログはまだありません）",
     "scrollToLatest": "最下部に戻る",
+    "newSession": "新しい会話",
     "toolbar": {
         "refresh": "チャットを更新",
         "currentAgent": "{{agent}}",

@@ -12,6 +12,7 @@
     },
     "noLogs": "（暂无日志）",
     "scrollToLatest": "回到底部",
+    "newSession": "新会话",
     "toolbar": {
         "refresh": "刷新聊天",
         "currentAgent": "{{agent}}",

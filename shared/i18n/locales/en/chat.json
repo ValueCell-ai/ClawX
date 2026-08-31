@@ -12,6 +12,7 @@
     },
     "noLogs": "(No logs available yet)",
     "scrollToLatest": "Back to bottom",
+    "newSession": "New conversation",
     "toolbar": {
         "refresh": "Refresh chat",
         "currentAgent": "{{agent}}",

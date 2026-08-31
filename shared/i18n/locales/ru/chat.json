@@ -12,6 +12,7 @@
     },
     "noLogs": "(Журналы ещё недоступны)",
     "scrollToLatest": "Вернуться вниз",
+    "newSession": "Новый разговор",
     "toolbar": {
         "refresh": "Обновить чат",
         "currentAgent": "{{agent}}",
