@@ -2054,16 +2054,30 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(reviewerSessionRow).toContainText('Hello reviewer');
       await expect(reviewerSessionRow).not.toContainText('ACP');
 
+      await expect.poll(async () => {
+        const requests = await getTargetAgentRequests(app);
+        return requests.filter((request) => request.action === 'loadAcpSession').length;
+      }).toBe(2);
       const requests = await getTargetAgentRequests(app);
-      expect(requests.filter((request) => request.action === 'loadAcpSession')).toEqual([{
-        action: 'loadAcpSession',
-        payload: {
-          sessionKey: REVIEWER_SESSION_KEY,
-          workspaceRoot: REVIEWER_WORKSPACE,
-          cwd: REVIEWER_WORKSPACE,
-          createIfMissing: true,
+      expect(requests.filter((request) => request.action === 'loadAcpSession')).toEqual([
+        {
+          action: 'loadAcpSession',
+          payload: {
+            sessionKey: REVIEWER_SESSION_KEY,
+            workspaceRoot: REVIEWER_WORKSPACE,
+            cwd: REVIEWER_WORKSPACE,
+            createIfMissing: true,
+          },
         },
-      }]);
+        {
+          action: 'loadAcpSession',
+          payload: {
+            sessionKey: REVIEWER_SESSION_KEY,
+            workspaceRoot: REVIEWER_WORKSPACE,
+            cwd: REVIEWER_WORKSPACE,
+          },
+        },
+      ]);
       expect(requests.some((request) => (
         request.action === 'sendAcpPrompt'
         && request.payload.sessionKey === REVIEWER_SESSION_KEY

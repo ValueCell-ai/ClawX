@@ -155,7 +155,13 @@ test.describe('ClawX ACP chat timeline', () => {
           locations: [],
         },
       ]);
+      await expect(page.getByTestId('acp-thought-block')).toContainText('Need to inspect the current implementation first.');
+      await expect(page.getByTestId('acp-tool-call-card')).toContainText('Read file');
+      await expect(page.getByTestId('acp-tool-call-card')).toContainText('Loaded src/pages/Chat/index.tsx');
+
       await emitAcpPermissionRequest(app);
+      await expect(page.getByTestId('acp-permission-card')).toContainText('Allow edit?');
+
       await emitAcpSessionUpdates(app, [
         {
           sessionUpdate: 'plan',
@@ -169,10 +175,6 @@ test.describe('ClawX ACP chat timeline', () => {
       ]);
 
       await expect(page.getByTestId('acp-chat-timeline')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('acp-thought-block')).toContainText('Need to inspect the current implementation first.');
-      await expect(page.getByTestId('acp-tool-call-card')).toContainText('Read file');
-      await expect(page.getByTestId('acp-tool-call-card')).toContainText('Loaded src/pages/Chat/index.tsx');
-      await expect(page.getByTestId('acp-permission-card')).toContainText('Allow edit?');
       await expect(page.getByTestId('acp-plan-item')).toContainText('Update Chat page tests');
       await expect(page.getByText('The Chat page now renders ACP timeline blocks inline.')).toBeVisible();
     } finally {

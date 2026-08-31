@@ -208,7 +208,16 @@ async function installFileActivityMocks(app: ElectronApplication, options: {
         const message = String(request.payload?.message ?? '');
         const updates = (payload.liveByPrompt as Record<string, AcpSessionUpdate[]>)[message] ?? [];
         if (sessionKey === activeSessionKey) {
-          setTimeout(() => sendUpdates(sessionKey, promptGeneration, false, updates), payload.liveDelayMs);
+          await new Promise((resolve) => setTimeout(resolve, payload.liveDelayMs));
+          sendUpdates(sessionKey, promptGeneration, false, updates);
+          if (sessionKey === activeSessionKey) {
+            const messageId = String(request.payload?.messageId ?? `fixture-user-${promptGeneration}`);
+            replayBySession.set(sessionKey, [
+              ...(replayBySession.get(sessionKey) ?? []),
+              user(messageId, message),
+              ...updates,
+            ]);
+          }
         }
         return { id: request.id, ok: true, data: { success: true, generation: promptGeneration } };
       }

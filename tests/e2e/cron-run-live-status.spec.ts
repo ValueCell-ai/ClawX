@@ -303,7 +303,7 @@ test.describe('ClawX cron run live status', () => {
       }]);
 
       await expect(page.getByTestId('acp-tool-call-card')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('acp-tool-call-card')).toContainText('read');
+      await expect(page.getByTestId('acp-tool-call-card')).toContainText('Read');
 
       await emitAcpSessionUpdates(app, CRON_BASE_KEY, [{
         sessionUpdate: 'tool_call_update',

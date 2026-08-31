@@ -219,7 +219,7 @@ export function ImageGenerationSettings() {
       ) : (
         <div
           data-testid="image-generation-settings-surface"
-          className="space-y-5 rounded-2xl p-1 dark:border-white/10 md:p-1"
+          className="space-y-5 rounded-2xl bg-surface-input p-1 dark:border-white/10 md:p-1"
         >
           <div
             data-testid="image-generation-endpoint-card"
