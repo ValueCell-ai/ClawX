@@ -1,12 +1,12 @@
 # ACP Chat Architecture And Timeline
 
-Status: current architecture reference, reviewed 2026-08-30.
+Status: current architecture reference, reviewed 2026-09-01.
 
 Related scenario: `acp-chat-experience`
 
 Related rules: `acp-chat-state-and-history`, `attachment-access-safety`, `renderer-main-boundary`
 
-Related tasks: `acp-native-chat`, `acp-media-attachments`, `filter-openclaw-heartbeat-session`, `recover-acp-session-after-gateway-restart`, `show-acp-compaction-lifecycle`, `recover-compaction-tool-pressure`
+Related tasks: `acp-native-chat`, `acp-media-attachments`, `filter-openclaw-heartbeat-session`, `recover-acp-session-after-gateway-restart`, `show-acp-compaction-lifecycle`, `recover-compaction-tool-pressure`, `embed-subagent-sessions-in-parent-chat`
 
 ## Ownership
 
@@ -26,6 +26,16 @@ Gateway remains responsible for non-Chat capabilities. Renderer Chat does not ca
 For every Chat semantic and context exposed by ACP, ACP is the preferred authority, not only for `session/load` history. This includes session identity and routing where applicable, workspace and execution `cwd`, prompt and timeline state, and standard resource or attachment semantics. When ACP provides the value or event, Main and Renderer must use it rather than substitute Gateway snapshots, transcript inference, local configuration, or a parallel projection.
 
 An ACP bypass is allowed only when upstream has no equivalent capability. The exception must be narrow, bounded, session- and generation-scoped, and documented with its rationale, source of truth, limits, reconciliation behavior, and removal condition in a Harness reference or rule. It must never become a second semantic authority.
+
+### Subagent Lineage And Titles
+
+ACP `session/list` is the sole lineage membership and title authority for native subagents. Main initializes the existing ACP connection, requires the advertised list capability, and follows opaque cursors without changing the loaded ACP session. It validates every page and stops after at most 128 pages; repeated, blank, malformed, or over-limit cursors return a typed failure instead of a partial family. Duplicate session IDs keep their first listed occurrence.
+
+OpenClaw lineage is read only from `SessionInfo._meta`. A valid `parentSessionId` takes priority, with `spawnedBy` as the fallback when the preferred field is absent or invalid; blank and self-referential candidates are rejected. Only exact `agent:<agentId>:subagent:<childId>` IDs are native children. The result contains the requested current session and its direct children only, with ACP title fallback to the exact session key and deterministic newest-first ordering. Nested descendants belong to their own direct parent and are not flattened into an ancestor's panel.
+
+The family is an in-memory, selected-session-scoped projection. Renderer rejects stale request completion after navigation. A completed structured `sessions_spawn` result whose details report `status: accepted` and non-empty `runId` and `childSessionKey` is only an invalidation signal: Renderer refreshes ACP `session/list`, and never treats tool output as lineage, title, or membership. Historical restoration is bounded by what the current ACP list returns. ClawX has no persistent lineage store and no transcript, announcement, assistant-prose, Gateway-lineage, or UUID fallback for archived, deleted, cleaned, or otherwise unlisted children.
+
+Renderer joins each ACP child to the same exact key in the Gateway session catalog before presenting an action. Latest exact-key Gateway catalog presence gates current child visibility and actionability plus direct-parent return-target availability. Presence does not create lineage membership or titles. Gateway `status` and `hasActiveRun` remain the sole run-state authority through the shared projection, with exact-key `observedBusy` only when that projection is unknown; ACP prompt and local sending state do not drive child status. Drill-down uses normal session selection and ACP loading. A child header returns to the direct parent from ACP rather than browser history, and the action is withheld when that exact catalog target no longer exists.
 
 ### Compaction Compatibility
 

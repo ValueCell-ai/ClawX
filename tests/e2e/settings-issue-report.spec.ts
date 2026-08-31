@@ -3,6 +3,7 @@ import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from
 
 const FIRST_SESSION_KEY = 'agent:main:main';
 const SECOND_SESSION_KEY = 'agent:main:broken-export';
+const CHILD_SESSION_KEY = 'agent:main:subagent:report-child';
 const WORKSPACE = '/workspace';
 const REPORT_PATH = '/tmp/clawx-issue-report-20260825-123456Z.zip';
 
@@ -19,6 +20,7 @@ async function installMocks(app: ElectronApplication): Promise<void> {
   const sessions = [
     { key: FIRST_SESSION_KEY, displayName: 'Current conversation', workspacePath: WORKSPACE, updatedAt: 2 },
     { key: SECOND_SESSION_KEY, displayName: 'Broken conversation', workspacePath: WORKSPACE, updatedAt: 1 },
+    { key: CHILD_SESSION_KEY, displayName: 'Subagent transcript', workspacePath: WORKSPACE, updatedAt: 0 },
   ];
   const sessionKeys = sessions.map((session) => session.key);
   const sessionsList = { success: true, result: { sessions } };
@@ -61,6 +63,7 @@ async function installMocks(app: ElectronApplication): Promise<void> {
         includedFiles: [
           'conversations/main/main.jsonl',
           'conversations/main/broken-export.jsonl',
+          'conversations/main/report-child.jsonl',
           'config/openclaw.json',
         ],
       },
@@ -100,9 +103,11 @@ test.describe('settings issue report export', () => {
 
       await expect(page.getByTestId(`issue-report-session-${FIRST_SESSION_KEY}`)).toBeChecked();
       await expect(page.getByTestId(`issue-report-session-${SECOND_SESSION_KEY}`)).not.toBeChecked();
+      await expect(page.getByTestId(`issue-report-session-${CHILD_SESSION_KEY}`)).not.toBeChecked();
       await page.getByTestId('issue-report-select-all').check();
       await expect(page.getByTestId(`issue-report-session-${SECOND_SESSION_KEY}`)).toBeChecked();
-      await expect(page.getByTestId('issue-report-selection-count')).toContainText('2');
+      await expect(page.getByTestId(`issue-report-session-${CHILD_SESSION_KEY}`)).toBeChecked();
+      await expect(page.getByTestId('issue-report-selection-count')).toContainText('3');
 
       await page.getByTestId('issue-report-export').click();
       await expect(page.getByTestId('issue-report-path')).toHaveText(REPORT_PATH);
@@ -115,7 +120,7 @@ test.describe('settings issue report export', () => {
       expect(invocations).toContainEqual(expect.objectContaining({
         module: 'diagnostics',
         action: 'exportIssueReport',
-        payload: { sessionKeys: [FIRST_SESSION_KEY, SECOND_SESSION_KEY] },
+        payload: { sessionKeys: [FIRST_SESSION_KEY, SECOND_SESSION_KEY, CHILD_SESSION_KEY] },
       }));
       expect(invocations).toContainEqual(expect.objectContaining({
         module: 'shell',

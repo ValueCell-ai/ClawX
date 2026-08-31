@@ -104,6 +104,9 @@ const openDialog = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/host-api', () => ({
   hostApi: {
+    chat: {
+      getAcpSessionFamily: vi.fn(async () => ({ success: true, current: null, children: [] })),
+    },
     dialog: { open: openDialog },
     files: { resolveWorkspaceContext },
   },

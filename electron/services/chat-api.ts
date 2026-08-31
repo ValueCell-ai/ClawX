@@ -16,6 +16,7 @@ export function createChatApi({
   const acpChat = createAcpChatService(mainWindow, acpSessionAccessRegistry, gatewayManager);
 
   return {
+    getAcpSessionFamily: (payload) => acpChat.getSessionFamily(payload),
     loadAcpSession: (payload) => acpChat.loadSession(payload),
     sendAcpPrompt: (payload) => acpChat.sendPrompt(payload),
     cancelAcpSession: (payload) => acpChat.cancelSession(payload),

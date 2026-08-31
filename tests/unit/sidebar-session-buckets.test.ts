@@ -498,6 +498,56 @@ describe('sidebar session helpers', () => {
     expect(betaLoadMore).toHaveTextContent('Load more');
   });
 
+  it('counts only visible rows while retaining hidden native children in a workspace group', () => {
+    const workspacePath = '/repo/subagents';
+    const childKey = 'agent:main:subagent:hidden-child';
+    seedSidebarState();
+    useChatStore.setState({
+      sessions: [
+        { key: sidebarSessionKey, displayName: 'Visible parent', workspacePath, updatedAt: 2 },
+        { key: childKey, displayName: 'Hidden child', workspacePath, updatedAt: 1 },
+      ],
+      currentSessionKey: sidebarSessionKey,
+    });
+
+    renderSidebar();
+
+    expect(screen.getByTestId(getWorkspaceGroupToggleTestId(workspacePath))).toHaveTextContent('1');
+    expect(screen.getByTestId(`sidebar-session-${sidebarSessionKey}`)).toBeInTheDocument();
+    expect(screen.queryByTestId(`sidebar-session-${childKey}`)).not.toBeInTheDocument();
+  });
+
+  it('includes hidden native children when cleaning up an unavailable workspace', async () => {
+    const workspacePath = '/repo/missing-subagents';
+    const childKey = 'agent:main:subagent:hidden-child';
+    const deleteSessions = vi.fn().mockResolvedValue({
+      deletedKeys: [sidebarSessionKey, childKey],
+      failedKeys: [],
+    });
+    const removeWorkspace = vi.fn().mockResolvedValue(undefined);
+    seedSidebarState();
+    useSettingsStore.setState({ removeWorkspace });
+    useChatStore.setState({
+      sessions: [
+        { key: sidebarSessionKey, displayName: 'Visible parent', workspacePath, updatedAt: 2 },
+        { key: childKey, displayName: 'Hidden child', workspacePath, updatedAt: 1 },
+      ],
+      currentSessionKey: sidebarSessionKey,
+      deleteSessions,
+    });
+
+    renderSidebar();
+
+    const deleteWorkspace = await screen.findByTestId(
+      `workspace-session-group-delete-${encodeURIComponent(workspacePath)}`,
+    );
+    fireEvent.click(deleteWorkspace);
+    fireEvent.click(screen.getByTestId('confirm-dialog-confirm-button'));
+
+    await waitFor(() => expect(deleteSessions).toHaveBeenCalledWith([sidebarSessionKey, childKey]));
+    expect(removeWorkspace).toHaveBeenCalledWith(workspacePath);
+  });
+
   it('formats activity timestamps through timeago with locale mapping', () => {
     const nowMs = new Date('2026-05-06T12:00:00.000Z').getTime();
     const activityMs = nowMs - 2 * 60 * 60 * 1000;

@@ -74,6 +74,20 @@
             "collapse": "Collapse plan",
             "tasks": "Plan tasks"
         },
+        "subagentSessions": {
+            "count": "Subagents: {{count}}",
+            "expand": "Expand subagent sessions",
+            "collapse": "Collapse subagent sessions",
+            "toggle": "{{action}}, {{count}}",
+            "panel": "Subagent sessions",
+            "open": "Open subagent {{title}}",
+            "marker": "Subagent",
+            "returnToParent": "Return to parent conversation",
+            "busy": "Running",
+            "settled": "Settled",
+            "aggregateStatus": "Subagents: {{status}}",
+            "rowStatus": "{{title}}: {{status}}"
+        },
         "failed": "Failed",
         "cancelled": "Cancelled",
         "loadFailed": "Failed to load session",

@@ -50,6 +50,9 @@ ownedPaths:
   - tests/unit/chat-store-session-label-fetch.test.ts
   - tests/unit/composer-drafts.test.ts
   - tests/unit/sidebar-session-buckets.test.ts
+  - tests/unit/acp-subagent-sessions.test.tsx
+  - tests/unit/chat-acp-inline-timeline.test.tsx
+  - tests/unit/chat-session-selection.test.ts
   - tests/unit/i18n-locale-parity.test.ts
   - tests/unit/session-buckets.test.ts
   - tests/unit/generated-files.test.ts
@@ -66,6 +69,7 @@ ownedPaths:
   - tests/e2e/chat-acp-inline-timeline.spec.ts
   - tests/e2e/chat-question-directory.spec.ts
   - tests/e2e/chat-sidebar-session-attention.spec.ts
+  - tests/e2e/chat-subagent-sessions.spec.ts
   - tests/e2e/chat-acp-attachments.spec.ts
   - tests/e2e/chat-file-changes.spec.ts
   - tests/e2e/office-document-preview.spec.ts
@@ -90,7 +94,7 @@ requiredRules:
   - docs-sync
 ---
 
-This scenario covers inheriting the selected conversation's effective workspace when creating a new Chat; selecting persisted recent, known-session, or newly browsed workspaces while the new Chat remains unbound; validating workspace availability before ACP load; deriving a newly visible local-session title atomically from its first prompt; replacing truncated cwd-only and matching synthetic UUID-date fallback titles with transcript prompts, including for the canonical main conversation after workspace resolution; recovering from deleted global or inherited workspace paths; marking unavailable non-default sidebar groups; permanently deleting their sessions after confirmation; removing every sidebar conversation owned by an Agent immediately after that Agent and its managed data are permanently deleted, clearing a successfully removed managed workspace from the new-chat workspace menu and persisted workspace metadata, with safe selection repair; binding workspaces through OpenClaw ACP cwd while pinning the canonical `agent:main:main` session to the default workspace when replay metadata is stale; targeting another agent without losing that agent's workspace or first prompt; restoring historical workspace context; renaming imported workspace display labels; navigating workspace-grouped sessions with busy, unread, and relative-time status; keeping each conversation's unsent composer text and textarea caret or selection isolated and restoring both when the user returns; browsing the effective workspace; previewing authorized local HTML and supported Office documents under their documented safety boundaries; and jumping among user questions from an overlay that leaves the conversation width unchanged.
+This scenario covers inheriting the selected conversation's effective workspace when creating a new Chat; selecting persisted recent, known-session, or newly browsed workspaces while the new Chat remains unbound; validating workspace availability before ACP load; deriving a newly visible local-session title atomically from its first prompt; replacing truncated cwd-only and matching synthetic UUID-date fallback titles with transcript prompts, including for the canonical main conversation after workspace resolution; recovering from deleted global or inherited workspace paths; marking unavailable non-default sidebar groups; permanently deleting their sessions after confirmation; removing every sidebar conversation owned by an Agent immediately after that Agent and its managed data are permanently deleted, clearing a successfully removed managed workspace from the new-chat workspace menu and persisted workspace metadata, with safe selection repair; binding workspaces through OpenClaw ACP cwd while pinning the canonical `agent:main:main` session to the default workspace when replay metadata is stale; targeting another agent without losing that agent's workspace or first prompt; restoring historical workspace context; renaming imported workspace display labels; navigating workspace-grouped sessions with busy, unread, and relative-time status; hiding native child rows as presentation-only while retaining their exact-key catalog records; drilling from a parent into ACP-listed direct children and returning to the direct ACP parent with deleted-target guards and exact non-cascading deletion; keeping each conversation's unsent composer text and textarea caret or selection isolated and restoring both when the user returns; browsing the effective workspace; previewing authorized local HTML and supported Office documents under their documented safety boundaries; and jumping among user questions from an overlay that leaves the conversation width unchanged. Latest exact-key Gateway catalog presence gates child actions and return-target availability without creating ACP lineage or titles.
 
 Workspace file browsing keeps the store value `browser`; local HTML uses the existing `preview` tab and has no independent browser tab or toolbar. Current workspace resolution, ordering, title normalization, and file-browser behavior are documented in `harness/reference/chat-workspace-and-navigation.md`; the HTML guest contract is documented in `harness/reference/web-browser.md`; static Markdown rendering and safety requirements are documented in `harness/reference/markdown-rendering.md`; desktop compositing and interaction profiling requirements are documented in `harness/reference/electron-rendering-performance.md`.
 

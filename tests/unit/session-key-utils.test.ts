@@ -7,6 +7,7 @@ import {
   isNativeSubagentSessionKey,
   isPlaceholderChannelSession,
   shouldIncludeSessionInSidebarList,
+  shouldIncludeSessionInWorkspaceDeletion,
 } from '@/stores/chat/session-key-utils';
 import type { ChatSession } from '@/stores/chat/types';
 
@@ -17,6 +18,19 @@ describe('session-key-utils', () => {
     expect(isNativeSubagentSessionKey('agent:main:acp:child-1')).toBe(false);
     expect(isNativeSubagentSessionKey('agent:main:session-subagent-child-1')).toBe(false);
     expect(isNativeSubagentSessionKey('subagent:child-1')).toBe(false);
+  });
+
+  it('hides native subagent rows from sidebar presentation without hiding ACP sessions', () => {
+    const nativeChild: ChatSession = {
+      key: 'agent:main:subagent:child-1',
+      displayName: 'Child conversation',
+    };
+    expect(shouldIncludeSessionInSidebarList(nativeChild)).toBe(false);
+    expect(shouldIncludeSessionInWorkspaceDeletion(nativeChild)).toBe(true);
+    expect(shouldIncludeSessionInSidebarList({
+      key: 'agent:main:acp:child-1',
+      displayName: 'ACP conversation',
+    })).toBe(true);
   });
 
   it('removes the subagent context marker only from native subagent display titles', () => {

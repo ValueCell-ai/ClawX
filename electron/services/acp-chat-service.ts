@@ -10,6 +10,7 @@ import {
   type ContentBlock,
   type RequestPermissionRequest,
   type RequestPermissionResponse,
+  type SessionInfo,
   type SessionNotification,
 } from '@agentclientprotocol/sdk';
 import { HOST_EVENT_CHANNELS } from '@shared/host-events/contract';
@@ -20,8 +21,10 @@ import type {
   AcpChatPromptPayload,
   AcpChatRespondPermissionPayload,
   AcpPermissionRequestEnvelope,
+  AcpSessionFamilyResult,
   AcpSessionUpdateEnvelope,
 } from '@shared/acp-chat/types';
+import { projectAcpSessionFamily } from '@shared/acp-chat/subagent-lineage';
 import { getOpenClawEmbeddedForkSpec } from '../utils/openclaw-cli';
 import {
   approvePendingLocalDeviceRequests,
@@ -37,7 +40,10 @@ import {
   OPENCLAW_ACP_RECOVERY_GRACE_ENV,
 } from '../gateway/recovery-budget';
 
-type AcpConnection = Pick<ClientSideConnection, 'initialize' | 'newSession' | 'loadSession' | 'prompt' | 'cancel'>;
+type AcpConnection = Pick<
+  ClientSideConnection,
+  'initialize' | 'newSession' | 'loadSession' | 'listSessions' | 'prompt' | 'cancel'
+>;
 type MainWindowLike = {
   webContents: Pick<BrowserWindow['webContents'], 'send'>;
 };
@@ -65,6 +71,11 @@ type AcpChildProcess = ChildProcess & {
   stdout: NonNullable<ChildProcess['stdout']>;
   stderr: NonNullable<ChildProcess['stderr']>;
 };
+type AcpInitializationFlight = {
+  promise: Promise<AcpConnection> | null;
+};
+
+const ACP_SESSION_LIST_MAX_PAGES = 128;
 
 function ok(generation?: number, sessionUpdates?: AcpSessionUpdateEnvelope[]): AcpChatOperationResult {
   return {
@@ -78,12 +89,44 @@ function fail(error: unknown): AcpChatOperationResult {
   return { success: false, error: error instanceof Error ? error.message : String(error) };
 }
 
+function failSessionFamily(error: unknown): AcpSessionFamilyResult {
+  return {
+    success: false,
+    current: null,
+    children: [],
+    error: error instanceof Error ? error.message : String(error),
+  };
+}
+
 function cancelledPermissionResponse(): RequestPermissionResponse {
   return { outcome: { outcome: 'cancelled' } };
 }
 
 function isValidSessionKey(value: unknown): value is string {
   return typeof value === 'string' && value.startsWith('agent:') && value.length > 'agent:'.length;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function isAcpSessionInfo(value: unknown): value is SessionInfo {
+  return isPlainRecord(value)
+    && typeof value.sessionId === 'string'
+    && value.sessionId.length > 0
+    && typeof value.cwd === 'string';
+}
+
+function readAcpSessionListPage(value: unknown): { sessions: SessionInfo[]; nextCursor?: unknown } | null {
+  if (!isPlainRecord(value) || !Array.isArray(value.sessions) || !value.sessions.every(isAcpSessionInfo)) {
+    return null;
+  }
+  return {
+    sessions: value.sessions,
+    ...(Object.hasOwn(value, 'nextCursor') ? { nextCursor: value.nextCursor } : {}),
+  };
 }
 
 function sessionUpdateType(notification: SessionNotification): string | undefined {
@@ -134,7 +177,7 @@ function filterAcpStdoutDiagnostics(output: ReadableStream<Uint8Array>): Readabl
 export class AcpChatService {
   private child: AcpChildProcess | null = null;
   private connection: AcpConnection | null;
-  private initializing: Promise<AcpConnection> | null = null;
+  private initializationFlight: AcpInitializationFlight | null = null;
   private initialized = false;
   private generation = 0;
   private generationSeq = 0;
@@ -145,6 +188,7 @@ export class AcpChatService {
   private historicalSessionKey: string | null = null;
   private historicalGeneration: number | null = null;
   private permissionsEnabled = false;
+  private sessionListSupported = false;
   private loadQueue: Promise<void> | null = null;
   private activeLoadBatch: AcpSessionLoadBatch | null = null;
   private readonly livePrompts = new Map<string, AcpLivePromptContext>();
@@ -205,6 +249,43 @@ export class AcpChatService {
       }
     };
     return run();
+  }
+
+  async getSessionFamily(payload: unknown): Promise<AcpSessionFamilyResult> {
+    if (!isPlainRecord(payload) || !isValidSessionKey(payload.sessionKey)) {
+      return failSessionFamily('Invalid ACP session family payload');
+    }
+
+    try {
+      const connection = await this.ensureConnection();
+      if (!this.sessionListSupported) {
+        return failSessionFamily('ACP agent does not support session/list');
+      }
+
+      const sessions: SessionInfo[] = [];
+      const seenCursors = new Set<string>();
+      let cursor: string | undefined;
+      for (let page = 0; page < ACP_SESSION_LIST_MAX_PAGES; page += 1) {
+        const result = readAcpSessionListPage(await connection.listSessions(cursor ? { cursor } : {}));
+        if (!result) return failSessionFamily('Invalid ACP session/list response');
+        sessions.push(...result.sessions);
+
+        const nextCursor = result.nextCursor;
+        if (nextCursor == null) {
+          return projectAcpSessionFamily(payload.sessionKey, sessions);
+        }
+        if (typeof nextCursor !== 'string' || !nextCursor.trim() || seenCursors.has(nextCursor)) {
+          return failSessionFamily('Invalid ACP session/list cursor');
+        }
+        seenCursors.add(nextCursor);
+        cursor = nextCursor;
+      }
+
+      return failSessionFamily(`ACP session/list exceeded ${ACP_SESSION_LIST_MAX_PAGES} pages`);
+    } catch (error) {
+      logger.error(`[acp-chat] getSessionFamily failed: ${String(error)}`);
+      return failSessionFamily(error);
+    }
   }
 
   private async performLoadSession(payload: AcpChatLoadPayload): Promise<AcpChatOperationResult> {
@@ -477,23 +558,30 @@ export class AcpChatService {
 
   private async ensureConnection(): Promise<AcpConnection> {
     if (this.connection && this.initialized) return this.connection;
-    if (this.initializing) return this.initializing;
+    if (this.initializationFlight?.promise) return this.initializationFlight.promise;
 
-    this.initializing = this.initializeConnection();
+    const flight: AcpInitializationFlight = { promise: null };
+    this.initializationFlight = flight;
+    const initializing = this.initializeConnection(flight);
+    flight.promise = initializing;
     try {
-      return await this.initializing;
+      return await initializing;
     } finally {
-      this.initializing = null;
+      if (this.initializationFlight === flight) this.initializationFlight = null;
     }
   }
 
-  private async initializeConnection(): Promise<AcpConnection> {
+  private async initializeConnection(flight: AcpInitializationFlight): Promise<AcpConnection> {
     await this.approveLocalDeviceRequests();
 
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         return await this.initializeConnectionOnce(attempt);
       } catch (error) {
+        if (this.initializationFlight !== flight) {
+          if (this.initializationFlight !== null) throw error;
+          this.initializationFlight = flight;
+        }
         if (attempt >= 2) throw error;
         logger.info(
           `[acp-chat] ACP connect failed on attempt ${attempt}; auto-approving local device requests and retrying: ${
@@ -501,6 +589,7 @@ export class AcpChatService {
           }`,
         );
         await this.approveLocalDeviceRequests();
+        if (this.initializationFlight !== flight) throw error;
       }
     }
 
@@ -534,6 +623,7 @@ export class AcpChatService {
       this.trace('connection/initialize:failed', { details: { reason: 'missing-loadSession-capability' } });
       throw new Error('ACP agent does not support session/load');
     }
+    this.sessionListSupported = isPlainRecord(result.agentCapabilities.sessionCapabilities?.list);
     this.initialized = true;
     this.trace('connection/initialize:success', { details: { protocolVersion: PROTOCOL_VERSION, attempt } });
 
@@ -608,7 +698,7 @@ export class AcpChatService {
     this.trace('connection/dropped', { details: { pendingPermissionCount: this.permissionWaiters.size } });
     this.resolveAllPermissionWaiters(cancelledPermissionResponse());
     this.initialized = false;
-    this.initializing = null;
+    this.initializationFlight = null;
     this.connection = null;
     this.child = null;
     this.loadedSessionKey = null;
@@ -616,6 +706,7 @@ export class AcpChatService {
     this.historicalSessionKey = null;
     this.historicalGeneration = null;
     this.permissionsEnabled = false;
+    this.sessionListSupported = false;
     this.livePrompts.clear();
   }
 

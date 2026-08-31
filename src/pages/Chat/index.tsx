@@ -6,11 +6,13 @@ import {
   Suspense, lazy, useCallback, useDeferredValue, useEffect,
   useLayoutEffect, useMemo, useRef, useState, type SetStateAction,
 } from 'react';
-import { AlertTriangle, ArrowDownToLine, FolderOpen } from 'lucide-react';
+import { AlertTriangle, ArrowDownToLine, ArrowLeft, BotMessageSquare, FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { DEFAULT_SESSION_KEY } from '@shared/chat/types';
+import type { AcpSessionFamilyResult } from '@shared/acp-chat/types';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { useAgentsStore } from '@/stores/agents';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { useChatStore } from '@/stores/chat';
@@ -30,7 +32,7 @@ import { useStickToBottomInstant } from '@/hooks/use-stick-to-bottom-instant';
 import { useWorkspaceAvailability } from '@/hooks/use-workspace-availability';
 import { getAcpUserMessageAnchorId } from '@/lib/acp/timeline-anchors';
 import { getCurrentAcpPlan } from '@/lib/acp/current-plan';
-import type { MessageSegmentItem, RenderPart } from '@/lib/acp/timeline-types';
+import type { MessageSegmentItem, RenderPart, ToolCallItem } from '@/lib/acp/timeline-types';
 import { createEmptyAcpTimeline } from '@/lib/acp/reducer';
 import { projectOpenClawFileActivities, type AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 import { hostApi } from '@/lib/host-api';
@@ -43,6 +45,9 @@ import { LiveTalkTranscript } from './LiveTalkTranscript';
 import { LIVE_TALK_TRANSCRIPT_MOCK } from './live-talk-transcript-mock';
 import { useRealtimeTalkStore } from '@/stores/realtime-talk';
 import { realtimeTalkController } from '@/lib/talk/realtime-talk-controller';
+import { projectSessionRunState } from '@/stores/chat/session-status';
+import { formatSubagentSessionTitle, isNativeSubagentSessionKey } from '@/stores/chat/session-key-utils';
+import type { AcpSubagentSession } from './AcpSubagentSessions';
 
 const ArtifactPanelLazy = lazy(() =>
   import('@/components/file-preview/ArtifactPanel').then((m) => ({ default: m.ArtifactPanel })),
@@ -70,6 +75,27 @@ type WorkspaceContextCheck = {
   key: string;
   available: boolean;
 };
+
+type LoadedAcpSessionFamily = {
+  sessionKey: string;
+  result: Extract<AcpSessionFamilyResult, { success: true }>;
+};
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function successfulSessionSpawnIdentity(item: ToolCallItem): string | null {
+  const toolName = item.title.split(':', 1)[0]?.trim();
+  if (toolName !== 'sessions_spawn' || item.status !== 'completed') return null;
+  const details = recordValue(recordValue(item.output)?.details);
+  if (details?.status !== 'accepted') return null;
+  const runId = typeof details.runId === 'string' ? details.runId.trim() : '';
+  const childSessionKey = typeof details.childSessionKey === 'string' ? details.childSessionKey.trim() : '';
+  return runId && childSessionKey ? `${item.toolCallId}\0${runId}\0${childSessionKey}` : null;
+}
 
 function buildQuestionDirectoryTitle(item: MessageSegmentItem, fallback: string): string {
   const markdown = item.parts.find(
@@ -195,9 +221,12 @@ export function Chat() {
   const composerDraft = useComposerDraftStore((s) => s.drafts[currentSessionKey] ?? '');
   const setComposerDraft = useComposerDraftStore((s) => s.setDraft);
   const loadSessions = useChatStore((s) => s.loadSessions);
+  const switchSession = useChatStore((s) => s.switchSession);
   const selectAcpSession = useChatStore((s) => s.selectAcpSession);
   const acknowledgeAcpSessionCreated = useChatStore((s) => s.acknowledgeAcpSessionCreated);
   const setVisibleSession = useSessionAttentionStore((s) => s.setVisibleSession);
+  const sessionAttentionByKey = useSessionAttentionStore((s) => s.bySessionKey);
+  const markSessionRead = useSessionAttentionStore((s) => s.markRead);
   const chatWorkspacePath = useSettingsStore((s) => s.chatWorkspacePath);
   const recentWorkspacePaths = useSettingsStore((s) => s.recentWorkspacePaths ?? []);
   const workspaceLabels = useSettingsStore((s) => s.workspaceLabels);
@@ -215,6 +244,7 @@ export function Chat() {
     executionCwd: string;
   } | null>(null);
   const [workspaceContextCheck, setWorkspaceContextCheck] = useState<WorkspaceContextCheck | null>(null);
+  const [loadedSessionFamily, setLoadedSessionFamily] = useState<LoadedAcpSessionFamily | null>(null);
   const currentSession = useMemo(
     () => sessions.find((session) => session.key === currentSessionKey) ?? null,
     [currentSessionKey, sessions],
@@ -223,7 +253,7 @@ export function Chat() {
     () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
     [agents, currentAgentId],
   );
-  const currentSessionTitle = currentSession?.createdLocally
+  const catalogSessionTitle = currentSession?.createdLocally
     ? t('newSession')
     : currentSession
       ? getSessionDisplayTitle(currentSession, sessionLabels)
@@ -354,12 +384,37 @@ export function Chat() {
   const closeArtifactPanel = useArtifactPanel((s) => s.close);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
   const acpLoadInFlightKeyRef = useRef<string | null>(null);
+  const familyRequestIdRef = useRef(0);
+  const selectedFamilySessionKeyRef = useRef(currentSessionKey);
+  const spawnInvalidationRef = useRef({ sessionKey: '', signature: '' });
   const liveTalkAreaRef = useRef<HTMLDivElement | null>(null);
   const liveTranscriptCountRef = useRef(visibleTalkTranscripts.length);
   const { contentRef, scrollRef, scrollToBottom, isAtBottom } = useStickToBottomInstant(
     currentSessionKey,
     acpSending || acpCancelling,
   );
+  selectedFamilySessionKeyRef.current = currentSessionKey;
+
+  const loadCurrentSessionFamily = useCallback((sessionKey: string) => {
+    const requestId = ++familyRequestIdRef.current;
+    void hostApi.chat.getAcpSessionFamily({ sessionKey }).then((result) => {
+      if (
+        requestId !== familyRequestIdRef.current
+        || selectedFamilySessionKeyRef.current !== sessionKey
+        || !result.success
+      ) return;
+      setLoadedSessionFamily({ sessionKey, result });
+    }).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    familyRequestIdRef.current += 1;
+    setLoadedSessionFamily((current) => current?.sessionKey === currentSessionKey ? current : null);
+    if (currentSessionKey) loadCurrentSessionFamily(currentSessionKey);
+    return () => {
+      familyRequestIdRef.current += 1;
+    };
+  }, [currentSessionKey, loadCurrentSessionFamily]);
 
   useEffect(() => {
     setVisibleSession(currentSessionKey);
@@ -543,6 +598,64 @@ export function Chat() {
       : null,
     [currentSessionKey, visibleAcpTimeline],
   );
+  const successfulSpawnSignature = useMemo(() => {
+    if (visibleAcpTimeline.sessionId !== currentSessionKey) return '';
+    return visibleAcpTimeline.itemOrder
+      .map((itemId) => visibleAcpTimeline.itemsById[itemId])
+      .filter((item): item is ToolCallItem => item?.kind === 'tool-call')
+      .map(successfulSessionSpawnIdentity)
+      .filter((identity): identity is string => identity !== null)
+      .join('\n');
+  }, [currentSessionKey, visibleAcpTimeline]);
+  useEffect(() => {
+    const previous = spawnInvalidationRef.current;
+    if (previous.sessionKey !== currentSessionKey) {
+      spawnInvalidationRef.current = { sessionKey: currentSessionKey, signature: successfulSpawnSignature };
+      return;
+    }
+    if (previous.signature === successfulSpawnSignature) return;
+    spawnInvalidationRef.current = { sessionKey: currentSessionKey, signature: successfulSpawnSignature };
+    if (successfulSpawnSignature) loadCurrentSessionFamily(currentSessionKey);
+  }, [currentSessionKey, loadCurrentSessionFamily, successfulSpawnSignature]);
+  const visibleSessionFamily = loadedSessionFamily?.sessionKey === currentSessionKey
+    ? loadedSessionFamily.result
+    : null;
+  const catalogSessionByKey = useMemo(
+    () => new Map(sessions.map((session) => [session.key, session])),
+    [sessions],
+  );
+  const subagentSessions = useMemo<AcpSubagentSession[]>(() => {
+    if (!visibleSessionFamily) return [];
+    return visibleSessionFamily.children.flatMap((child) => {
+      const catalogSession = catalogSessionByKey.get(child.sessionKey);
+      if (!catalogSession) return [];
+      const runState = catalogSession ? projectSessionRunState(catalogSession) : 'unknown';
+      return [{
+        sessionKey: child.sessionKey,
+        title: child.title,
+        busy: runState === 'busy'
+          || (runState === 'unknown' && sessionAttentionByKey[child.sessionKey]?.observedBusy === true),
+      }];
+    });
+  }, [catalogSessionByKey, sessionAttentionByKey, visibleSessionFamily]);
+  const isCurrentSessionSubagent = visibleSessionFamily?.current?.sessionKey === currentSessionKey
+    && isNativeSubagentSessionKey(currentSessionKey);
+  const currentSessionTitle = isNativeSubagentSessionKey(currentSessionKey)
+    ? isCurrentSessionSubagent
+      ? formatSubagentSessionTitle(currentSessionKey, visibleSessionFamily.current!.title)
+      : currentSessionKey
+    : catalogSessionTitle;
+  const familyParentSessionKey = isCurrentSessionSubagent
+    ? visibleSessionFamily.current?.parentSessionKey
+    : null;
+  const directParentSessionKey = familyParentSessionKey && catalogSessionByKey.has(familyParentSessionKey)
+    ? familyParentSessionKey
+    : null;
+  const navigateToSession = useCallback((sessionKey: string) => {
+    if (!useChatStore.getState().sessions.some((session) => session.key === sessionKey)) return;
+    markSessionRead(sessionKey);
+    if (sessionKey !== currentSessionKey) switchSession(sessionKey);
+  }, [currentSessionKey, markSessionRead, switchSession]);
   const handleComposerDraftChange = useCallback((update: SetStateAction<string>) => {
     setComposerDraft(currentSessionKey, update);
   }, [currentSessionKey, setComposerDraft]);
@@ -565,15 +678,43 @@ export function Chat() {
           isWindows ? 'gap-4' : 'justify-end',
         )}>
           <div data-testid="chat-toolbar-drag-region" className="drag-region absolute inset-0 z-0" aria-hidden="true" />
-          {isWindows && (
-            <div className="drag-region relative z-10 min-w-0 flex-1">
-              <h1
-                data-testid="chat-session-title"
-                title={currentSessionTitle}
-                className="truncate text-sm font-medium text-foreground"
-              >
-                {currentSessionTitle}
-              </h1>
+          {(isWindows || isCurrentSessionSubagent) && (
+            <div className={cn(
+              'relative z-10 flex min-w-0 flex-1 items-center gap-2',
+              isWindows ? 'drag-region' : 'no-drag',
+            )}>
+              {isWindows && (
+                <h1
+                  data-testid="chat-session-title"
+                  title={currentSessionTitle}
+                  className="min-w-0 truncate text-sm font-medium text-foreground"
+                >
+                  {currentSessionTitle}
+                </h1>
+              )}
+              {isCurrentSessionSubagent && (
+                <>
+                  <Badge
+                    variant="secondary"
+                    data-testid="chat-subagent-marker"
+                    className="no-drag shrink-0 gap-1 px-1.5 py-0.5 text-2xs font-medium"
+                  >
+                    <BotMessageSquare aria-hidden="true" className="h-3 w-3" />
+                    {t('acp.subagentSessions.marker')}
+                  </Badge>
+                  {directParentSessionKey && (
+                    <button
+                      type="button"
+                      onClick={() => navigateToSession(directParentSessionKey)}
+                      aria-label={t('acp.subagentSessions.returnToParent')}
+                      className="no-drag inline-flex min-w-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10"
+                    >
+                      <ArrowLeft aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{t('acp.subagentSessions.returnToParent')}</span>
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           )}
           <div data-testid="chat-toolbar-actions" className="no-drag relative z-10">
@@ -736,6 +877,8 @@ export function Chat() {
           onSelectWorkspace={setChatWorkspacePath}
           contextUsage={composerContextUsage}
           currentPlan={currentPlan}
+          subagentSessions={subagentSessions}
+          onSelectSubagent={navigateToSession}
           talkActive={liveTalkTranscriptVisible}
         />
       </div>

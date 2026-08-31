@@ -375,6 +375,136 @@ describe('harness specs', () => {
     }
   });
 
+  it('defines the embedded ACP subagent session contract', async () => {
+    const [
+      task,
+      oldTask,
+      gatewayScenario,
+      workspaceScenario,
+      acpRule,
+      attentionRule,
+      acpReference,
+      workspaceReference,
+      englishReadme,
+      chineseReadme,
+      japaneseReadme,
+    ] = await Promise.all([
+      loadSpec('harness/specs/tasks/embed-subagent-sessions-in-parent-chat.md'),
+      loadSpec('harness/specs/tasks/surface-subagent-sessions-and-announcements.md'),
+      loadSpec('harness/specs/scenarios/gateway-backend-communication.md'),
+      loadSpec('harness/specs/scenarios/chat-workspace-and-navigation.md'),
+      loadSpec('harness/specs/rules/acp-chat-state-and-history.md'),
+      loadSpec('harness/specs/rules/sidebar-session-attention-authority.md'),
+      readFile('harness/reference/acp-chat.md', 'utf8'),
+      readFile('harness/reference/chat-workspace-and-navigation.md', 'utf8'),
+      readFile('README.md', 'utf8'),
+      readFile('README.zh-CN.md', 'utf8'),
+      readFile('README.ja-JP.md', 'utf8'),
+    ]);
+
+    expect(task.data).toMatchObject({
+      id: 'embed-subagent-sessions-in-parent-chat',
+      scenario: 'gateway-backend-communication',
+      taskType: 'runtime-bridge',
+      requiredProfiles: ['fast', 'comms', 'e2e'],
+      docs: { required: true },
+    });
+    expect(task.data.touchedAreas).toEqual(expect.arrayContaining([
+      'shared/acp-chat/types.ts',
+      'src/lib/acp/subagent-lineage.ts',
+      'tests/unit/acp-subagent-lineage.test.ts',
+    ]));
+    expect(task.data.requiredTests).toEqual(expect.arrayContaining([
+      'pnpm harness validate --spec harness/specs/tasks/embed-subagent-sessions-in-parent-chat.md',
+      expect.stringContaining('tests/unit/acp-subagent-lineage.test.ts'),
+    ]));
+
+    const taskAcceptance = (task.data.acceptance as string[]).join('\n');
+    expect(taskAcceptance).toContain('sole lineage membership and title authority');
+    expect(taskAcceptance).toContain('prefers `parentSessionId`');
+    expect(taskAcceptance).toContain('falls back to `spawnedBy`');
+    expect(taskAcceptance).toContain('direct native children');
+    expect(taskAcceptance).toContain('Latest exact-key Gateway catalog presence gates current child visibility and actionability');
+    expect(taskAcceptance).toContain('return-target availability');
+    expect(taskAcceptance).toContain('Presence does not create lineage membership or titles');
+    expect(taskAcceptance).toContain('`status` and `hasActiveRun`');
+    expect(taskAcceptance).toContain('sole run-state authority');
+    expect(taskAcceptance).toContain('completed structured accepted ACP `sessions_spawn`');
+    expect(taskAcceptance).toContain('non-empty `runId` and `childSessionKey`');
+    expect(taskAcceptance).toContain('invalidation signal');
+    expect(task.body).toContain('128 pages');
+    expect(task.body).toContain('Archived, deleted, cleaned, or otherwise unlisted historical children are excluded');
+    expect(task.body).toContain('does not scan transcripts, announcements, assistant prose, Gateway lineage, or child UUIDs');
+    expect(taskAcceptance).not.toContain('only for the run status that ACP does not expose');
+
+    const taskBehavior = (task.data.expectedUserBehavior as string[]).join('\n');
+    expect(taskBehavior).toContain('localized composer control');
+    expect(taskBehavior).toContain('only when at least one ACP-listed direct native child is also present under its exact key in the latest Gateway catalog');
+    expect(taskBehavior).toContain('Each expanded row appears only for an ACP-listed direct child that is also present under its exact key in the latest Gateway catalog');
+    expect(taskBehavior).toContain('return action appears only while its ACP-listed direct parent is also present under its exact key in the latest Gateway catalog');
+    expect(taskBehavior).toContain('ACP remains the sole lineage membership and title authority');
+    expect(taskBehavior).toContain('Gateway absence only gates current actionability');
+
+    const oldTaskBehavior = (oldTask.data.expectedUserBehavior as string[]).join('\n');
+    expect(oldTaskBehavior).toContain('no longer appears in the sidebar');
+    expect(oldTaskBehavior).toContain('remains in the shared session catalog');
+
+    expect(gatewayScenario.body).toContain('ACP `session/list` is the sole lineage membership and title authority');
+    expect(gatewayScenario.body).toContain('Latest exact-key Gateway catalog presence gates current child visibility and actionability');
+    expect(gatewayScenario.body).toContain('Presence never creates lineage membership or titles');
+    expect(gatewayScenario.body).toContain('`status` and `hasActiveRun` remain the sole run-state authority');
+
+    expect(workspaceScenario.body).toContain('return-target availability');
+    expect(workspaceScenario.body).toContain('exact non-cascading deletion');
+
+    expect(acpRule.body).toContain('ACP `session/list` is the sole lineage membership and title authority');
+    expect(acpRule.body).toContain('accepted status, non-empty `runId`, and non-empty `childSessionKey`');
+    expect(acpRule.body).toContain('only an invalidation signal');
+    expect(acpRule.body).toContain('128 pages');
+    expect(acpRule.body).toContain('archived, deleted, cleaned, or otherwise unlisted children');
+    expect(acpRule.body).toContain('transcript, announcement, assistant prose, Gateway parent fields, or child UUIDs');
+
+    expect(attentionRule.body).toContain('Latest exact-key Gateway catalog presence');
+    expect(attentionRule.body).toContain('gates current child visibility and actionability');
+    expect(attentionRule.body).toContain('return-target availability');
+    expect(attentionRule.body).toContain('Presence MUST NOT create lineage membership or titles');
+    expect(attentionRule.body).toContain('excluded from every implicit fallback candidate set');
+    expect(attentionRule.body).toContain('exact and non-cascading');
+
+    expect(acpReference).toContain('ACP `session/list` is the sole lineage membership and title authority');
+    expect(acpReference).toContain('at most 128 pages');
+    expect(acpReference).toContain('status: accepted');
+    expect(acpReference).toContain('non-empty `runId` and `childSessionKey`');
+    expect(acpReference).toContain('only an invalidation signal');
+    expect(acpReference).toContain('no transcript, announcement, assistant-prose, Gateway-lineage, or UUID fallback');
+    expect(acpReference).toContain('Latest exact-key Gateway catalog presence gates current child visibility and actionability');
+    expect(acpReference).toContain('Presence does not create lineage membership or titles');
+
+    expect(workspaceReference).toContain('Latest exact-key Gateway catalog presence');
+    expect(workspaceReference).toContain('return-target availability');
+    expect(workspaceReference).toContain('Gateway `status` and `hasActiveRun` remain the sole run-state authority');
+    expect(workspaceReference).toContain('Presence does not invent lineage membership or titles');
+    expect(workspaceReference).toContain('direct ACP parent');
+    expect(workspaceReference).toContain('browser history');
+    expect(workspaceReference).toContain('excluded from every implicit fallback candidate set');
+    expect(workspaceReference).toContain('Deletion is exact and non-cascading');
+    expect(workspaceReference).not.toContain('uses the exact Gateway catalog row only for `status` and `hasActiveRun`');
+
+    const staleSidebarContract = 'remains selectable in the normal workspace session list';
+    expect(taskBehavior).not.toContain(staleSidebarContract);
+    expect(oldTaskBehavior).not.toContain(staleSidebarContract);
+    expect(gatewayScenario.body).not.toContain(staleSidebarContract);
+    expect(workspaceScenario.body).not.toContain(staleSidebarContract);
+    expect(acpRule.body).not.toContain(staleSidebarContract);
+    expect(attentionRule.body).not.toContain(staleSidebarContract);
+    expect(acpReference).not.toContain(staleSidebarContract);
+    expect(workspaceReference).not.toContain(staleSidebarContract);
+
+    expect(englishReadme).toContain('embedded subagent status with child drill-down and direct-parent return');
+    expect(chineseReadme).toContain('内嵌子 Agent 状态、下钻及直接返回父会话');
+    expect(japaneseReadme).toContain('埋め込みサブエージェントの状態表示・子会話への移動・直接の親会話への復帰');
+  });
+
   it('defines the local HTML preview harness contract', async () => {
     const expectedRules = [
       'renderer-main-boundary',

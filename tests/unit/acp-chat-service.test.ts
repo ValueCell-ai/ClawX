@@ -58,9 +58,13 @@ vi.mock('node:child_process', () => ({
 
 function createConnection() {
   return {
-    initialize: vi.fn().mockResolvedValue({ protocolVersion: 1, agentCapabilities: { loadSession: true } }),
+    initialize: vi.fn().mockResolvedValue({
+      protocolVersion: 1,
+      agentCapabilities: { loadSession: true, sessionCapabilities: { list: {} } },
+    }),
     newSession: vi.fn().mockResolvedValue({ sessionId: 'acp-session-1' }),
     loadSession: vi.fn().mockResolvedValue({}),
+    listSessions: vi.fn().mockResolvedValue({ sessions: [], nextCursor: null }),
     prompt: vi.fn().mockResolvedValue({ stopReason: 'end_turn' }),
     cancel: vi.fn().mockResolvedValue(undefined),
   };
@@ -103,10 +107,14 @@ function createFakeChild() {
     stdin: PassThrough;
     stdout: PassThrough;
     stderr: PassThrough;
+    exitCode: number | null;
+    signalCode: NodeJS.Signals | null;
   };
   child.stdin = new PassThrough();
   child.stdout = new PassThrough();
   child.stderr = new PassThrough();
+  child.exitCode = null;
+  child.signalCode = null;
   return child;
 }
 
@@ -133,7 +141,10 @@ async function expectCancelledSoon(promise: Promise<unknown>) {
 }
 
 function createInitResponse() {
-  return { protocolVersion: 1, agentCapabilities: { loadSession: true } };
+  return {
+    protocolVersion: 1,
+    agentCapabilities: { loadSession: true, sessionCapabilities: { list: {} } },
+  };
 }
 
 function createDeferred<T>() {
@@ -237,6 +248,262 @@ describe('AcpChatService', () => {
       mcpServers: [],
     });
     expect(connection.newSession).not.toHaveBeenCalled();
+  });
+
+  it('follows ACP session/list cursors, projects the requested family, and preserves the loaded session', async () => {
+    const connection = createConnection();
+    connection.listSessions
+      .mockResolvedValueOnce({
+        sessions: [
+          {
+            sessionId: 'agent:main:parent',
+            cwd: '/workspace',
+            title: 'Parent',
+            updatedAt: '2026-09-01T09:00:00.000Z',
+          },
+          {
+            sessionId: 'agent:main:subagent:older',
+            cwd: '/workspace',
+            title: 'Older child',
+            updatedAt: '2026-09-01T10:00:00.000Z',
+            _meta: { spawnedBy: 'agent:main:parent' },
+          },
+        ],
+        nextCursor: 'page-2',
+      })
+      .mockResolvedValueOnce({
+        sessions: [
+          {
+            sessionId: 'agent:main:subagent:newer',
+            cwd: '/workspace',
+            title: 'Newer child',
+            updatedAt: '2026-09-01T11:00:00.000Z',
+            _meta: { parentSessionId: 'agent:main:parent' },
+          },
+          {
+            sessionId: 'agent:main:subagent:grandchild',
+            cwd: '/workspace',
+            _meta: { parentSessionId: 'agent:main:subagent:newer' },
+          },
+        ],
+        nextCursor: null,
+      });
+    const { service } = await createService(connection);
+    await service.loadSession({
+      sessionKey: 'agent:main:loaded',
+      workspaceRoot: '/workspace',
+      cwd: '/workspace',
+    });
+    connection.loadSession.mockClear();
+
+    await expect(service.getSessionFamily({ sessionKey: 'agent:main:parent' })).resolves.toEqual({
+      success: true,
+      current: {
+        sessionKey: 'agent:main:parent',
+        title: 'Parent',
+        updatedAt: '2026-09-01T09:00:00.000Z',
+        parentSessionKey: null,
+      },
+      children: [
+        {
+          sessionKey: 'agent:main:subagent:newer',
+          title: 'Newer child',
+          updatedAt: '2026-09-01T11:00:00.000Z',
+          parentSessionKey: 'agent:main:parent',
+        },
+        {
+          sessionKey: 'agent:main:subagent:older',
+          title: 'Older child',
+          updatedAt: '2026-09-01T10:00:00.000Z',
+          parentSessionKey: 'agent:main:parent',
+        },
+      ],
+    });
+
+    expect(connection.listSessions).toHaveBeenNthCalledWith(1, {});
+    expect(connection.listSessions).toHaveBeenNthCalledWith(2, { cursor: 'page-2' });
+    expect(connection.loadSession).not.toHaveBeenCalled();
+    await expect(service.sendPrompt({
+      sessionKey: 'agent:main:loaded',
+      cwd: '/workspace',
+      message: 'still loaded',
+    })).resolves.toEqual({ success: true, generation: 1 });
+    expect(connection.prompt).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'agent:main:loaded',
+    }));
+  });
+
+  it('requires the ACP session/list capability advertised during initialization', async () => {
+    const connection = createConnection();
+    connection.initialize.mockResolvedValueOnce({
+      protocolVersion: 1,
+      agentCapabilities: { loadSession: true, sessionCapabilities: {} },
+    });
+    const { service } = await createService(connection);
+
+    await expect(service.getSessionFamily({ sessionKey: 'agent:main:parent' })).resolves.toEqual({
+      success: false,
+      current: null,
+      children: [],
+      error: 'ACP agent does not support session/list',
+    });
+    expect(connection.listSessions).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    false,
+    'supported',
+    [],
+    new Date('2026-09-01T00:00:00.000Z'),
+    42,
+    null,
+  ])('rejects malformed ACP session/list capability value %p', async (listCapability) => {
+    const connection = createConnection();
+    connection.initialize.mockResolvedValueOnce({
+      protocolVersion: 1,
+      agentCapabilities: {
+        loadSession: true,
+        sessionCapabilities: { list: listCapability },
+      },
+    });
+    const { service } = await createService(connection);
+
+    await expect(service.getSessionFamily({ sessionKey: 'agent:main:parent' })).resolves.toEqual({
+      success: false,
+      current: null,
+      children: [],
+      error: 'ACP agent does not support session/list',
+    });
+    expect(connection.listSessions).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    undefined,
+    null,
+    'agent:main:parent',
+    [],
+    {},
+    { sessionKey: '' },
+    { sessionKey: 42 },
+    { sessionKey: 'main' },
+  ])('returns a typed failure for invalid ACP session family payload %p', async (payload) => {
+    const { service, connection } = await createService();
+
+    await expect(service.getSessionFamily(payload as never)).resolves.toEqual({
+      success: false,
+      current: null,
+      children: [],
+      error: 'Invalid ACP session family payload',
+    });
+    expect(connection.initialize).not.toHaveBeenCalled();
+    expect(connection.listSessions).not.toHaveBeenCalled();
+  });
+
+  it('returns a typed failure when ACP initialization rejects', async () => {
+    const connection = createConnection();
+    connection.initialize.mockRejectedValue(new Error('Initialization failed'));
+    const { service } = await createService(connection);
+
+    await expect(service.getSessionFamily({ sessionKey: 'agent:main:parent' })).resolves.toEqual({
+      success: false,
+      current: null,
+      children: [],
+      error: 'Initialization failed',
+    });
+    expect(connection.initialize).toHaveBeenCalledTimes(2);
+    expect(connection.listSessions).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: 'repeated cursor',
+      arrange: (listSessions: ReturnType<typeof vi.fn>) => listSessions
+        .mockResolvedValueOnce({ sessions: [], nextCursor: 'same-cursor' })
+        .mockResolvedValueOnce({ sessions: [], nextCursor: 'same-cursor' }),
+      expectedCalls: 2,
+    },
+    {
+      name: 'non-string cursor',
+      arrange: (listSessions: ReturnType<typeof vi.fn>) => listSessions
+        .mockResolvedValueOnce({ sessions: [], nextCursor: 42 }),
+      expectedCalls: 1,
+    },
+    {
+      name: 'empty cursor',
+      arrange: (listSessions: ReturnType<typeof vi.fn>) => listSessions
+        .mockResolvedValueOnce({ sessions: [], nextCursor: '' }),
+      expectedCalls: 1,
+    },
+    {
+      name: 'blank cursor',
+      arrange: (listSessions: ReturnType<typeof vi.fn>) => listSessions
+        .mockResolvedValueOnce({ sessions: [], nextCursor: '   ' }),
+      expectedCalls: 1,
+    },
+  ])('terminates malformed ACP session/list pagination for a $name', async ({ arrange, expectedCalls }) => {
+    const connection = createConnection();
+    arrange(connection.listSessions);
+    const { service } = await createService(connection);
+
+    await expect(service.getSessionFamily({ sessionKey: 'agent:main:parent' })).resolves.toEqual({
+      success: false,
+      current: null,
+      children: [],
+      error: 'Invalid ACP session/list cursor',
+    });
+    expect(connection.listSessions).toHaveBeenCalledTimes(expectedCalls);
+  });
+
+  it.each([
+    undefined,
+    null,
+    [],
+    {},
+    { sessions: null },
+    { sessions: 'not-an-array' },
+    { sessions: [null] },
+    { sessions: [{ cwd: '/workspace' }] },
+  ])('returns a typed failure for malformed ACP session/list page %p', async (page) => {
+    const connection = createConnection();
+    connection.listSessions.mockResolvedValueOnce(page);
+    const { service } = await createService(connection);
+
+    await expect(service.getSessionFamily({ sessionKey: 'agent:main:parent' })).resolves.toEqual({
+      success: false,
+      current: null,
+      children: [],
+      error: 'Invalid ACP session/list response',
+    });
+  });
+
+  it('bounds ACP session/list pagination even when every cursor is unique', async () => {
+    const connection = createConnection();
+    connection.listSessions.mockImplementation(async ({ cursor }: { cursor?: string }) => ({
+      sessions: [],
+      nextCursor: `cursor-${Number(cursor?.split('-')[1] ?? 0) + 1}`,
+    }));
+    const { service } = await createService(connection);
+
+    await expect(service.getSessionFamily({ sessionKey: 'agent:main:parent' })).resolves.toEqual({
+      success: false,
+      current: null,
+      children: [],
+      error: 'ACP session/list exceeded 128 pages',
+    });
+    expect(connection.listSessions).toHaveBeenCalledTimes(128);
+  });
+
+  it('returns an empty typed failure when ACP session/list fails', async () => {
+    const connection = createConnection();
+    connection.listSessions.mockRejectedValueOnce(new Error('Gateway unavailable'));
+    const { service } = await createService(connection);
+
+    await expect(service.getSessionFamily({ sessionKey: 'agent:main:parent' })).resolves.toEqual({
+      success: false,
+      current: null,
+      children: [],
+      error: 'Gateway unavailable',
+    });
   });
 
   it('creates fresh generated sessions with ACP session/new so replay ledgers are complete', async () => {
@@ -802,6 +1069,81 @@ describe('AcpChatService', () => {
 
     initialized.resolve(createInitResponse());
     await expect(Promise.all([firstLoad, secondLoad])).resolves.toHaveLength(2);
+  });
+
+  it('keeps replacement initialization single-flight when a family query loses its startup child', async () => {
+    const firstConnection = createConnection();
+    const firstInitialized = createDeferred<ReturnType<typeof createInitResponse>>();
+    firstConnection.initialize.mockReturnValue(firstInitialized.promise);
+    const { service, child: firstChild } = await createSpawnedService(firstConnection);
+    const firstFamily = service.getSessionFamily({ sessionKey: 'agent:main:parent' });
+    await vi.waitFor(() => expect(firstConnection.initialize).toHaveBeenCalledTimes(1));
+
+    const secondConnection = createConnection();
+    const secondInitialized = createDeferred<ReturnType<typeof createInitResponse>>();
+    secondConnection.initialize.mockReturnValue(secondInitialized.promise);
+    acpSdkMock.state.connectionForSpawn = secondConnection;
+    childProcessMock.state.child = createFakeChild();
+
+    firstChild.emit('exit', 1);
+    const replacementFamily = service.getSessionFamily({ sessionKey: 'agent:main:parent' });
+    await expect(firstFamily).resolves.toEqual({
+      success: false,
+      current: null,
+      children: [],
+      error: 'ACP process exited with code 1',
+    });
+    const replacementLoad = service.loadSession({
+      sessionKey: 'agent:main:loaded',
+      workspaceRoot: '/workspace',
+      cwd: '/workspace',
+    });
+    await vi.waitFor(() => expect(secondConnection.initialize).toHaveBeenCalled());
+
+    expect(secondConnection.initialize).toHaveBeenCalledTimes(1);
+    secondInitialized.resolve(createInitResponse());
+    await expect(replacementFamily).resolves.toEqual({
+      success: true,
+      current: null,
+      children: [],
+    });
+    await expect(replacementLoad).resolves.toEqual({ success: true, generation: 1 });
+    expect(secondConnection.initialize).toHaveBeenCalledTimes(1);
+    expect(secondConnection.listSessions).toHaveBeenCalledTimes(1);
+    expect(secondConnection.loadSession).toHaveBeenCalledWith({
+      sessionId: 'agent:main:loaded',
+      cwd: '/workspace',
+      mcpServers: [],
+    });
+  });
+
+  it('retains the owned startup retry when no replacement initialization wins the child-exit race', async () => {
+    const firstConnection = createConnection();
+    const firstInitialized = createDeferred<ReturnType<typeof createInitResponse>>();
+    firstConnection.initialize.mockReturnValue(firstInitialized.promise);
+    const { service, child: firstChild } = await createSpawnedService(firstConnection);
+    const family = service.getSessionFamily({ sessionKey: 'agent:main:parent' });
+    await vi.waitFor(() => expect(firstConnection.initialize).toHaveBeenCalledTimes(1));
+
+    const retryConnection = createConnection();
+    acpSdkMock.state.connectionForSpawn = retryConnection;
+    childProcessMock.state.child = createFakeChild();
+    firstChild.emit('exit', 1);
+
+    await expect(family).resolves.toEqual({
+      success: true,
+      current: null,
+      children: [],
+    });
+    await expect(service.loadSession({
+      sessionKey: 'agent:main:loaded',
+      workspaceRoot: '/workspace',
+      cwd: '/workspace',
+    })).resolves.toEqual({ success: true, generation: 1 });
+    expect(childProcessMock.fork).toHaveBeenCalledTimes(2);
+    expect(retryConnection.initialize).toHaveBeenCalledTimes(1);
+    expect(retryConnection.listSessions).toHaveBeenCalledTimes(1);
+    expect(retryConnection.loadSession).toHaveBeenCalledTimes(1);
   });
 
   it('serializes overlapping session loads on the shared ACP connection', async () => {

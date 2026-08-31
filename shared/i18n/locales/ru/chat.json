@@ -74,6 +74,20 @@
             "collapse": "Свернуть план",
             "tasks": "Задачи плана"
         },
+        "subagentSessions": {
+            "count": "Субагенты: {{count}}",
+            "expand": "Развернуть сеансы субагентов",
+            "collapse": "Свернуть сеансы субагентов",
+            "toggle": "{{action}}, {{count}}",
+            "panel": "Сеансы субагентов",
+            "open": "Открыть субагента {{title}}",
+            "marker": "Субагент",
+            "returnToParent": "Вернуться к родительскому разговору",
+            "busy": "Выполняется",
+            "settled": "Завершено",
+            "aggregateStatus": "Субагенты: {{status}}",
+            "rowStatus": "{{title}}: {{status}}"
+        },
         "failed": "Ошибка",
         "cancelled": "Отменено",
         "loadFailed": "Не удалось загрузить сеанс",

@@ -28,7 +28,6 @@ import {
   LoaderCircle,
   Loader2,
   Mic,
-  BotMessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { isGatewayRestarting } from '@/lib/gateway-status';
@@ -40,10 +39,9 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { groupSessionsByWorkspace } from './session-buckets';
 import {
-  formatSubagentSessionTitle,
-  isNativeSubagentSessionKey,
   isOpenClawHeartbeatOnlySession,
   shouldIncludeSessionInSidebarList,
+  shouldIncludeSessionInWorkspaceDeletion,
 } from '@/stores/chat/session-key-utils';
 import { CHANNEL_NAMES } from '@shared/types/channel';
 import { Button } from '@/components/ui/button';
@@ -424,12 +422,12 @@ export function Sidebar() {
       ?? agents.find((agent) => agent.id === 'main')?.workspace,
     [agents],
   );
-  const sidebarSessions = useMemo(
-    () => sessions.filter((session) => shouldIncludeSessionInSidebarList(session)),
+  const workspaceCatalogSessions = useMemo(
+    () => sessions.filter((session) => shouldIncludeSessionInWorkspaceDeletion(session)),
     [sessions],
   );
-  const workspaceSessionGroups = groupSessionsByWorkspace(
-    sidebarSessions,
+  const workspaceCatalogGroups = groupSessionsByWorkspace(
+    workspaceCatalogSessions,
     sessionLastActivity,
     t('chat:workspace.defaultLabel'),
     chatWorkspacePath,
@@ -441,17 +439,28 @@ export function Sidebar() {
     ],
     defaultAgentWorkspace,
   );
+  const workspaceSessionGroups = workspaceCatalogGroups.map((group) => ({
+    ...group,
+    sessions: group.sessions.filter(({ session }) => shouldIncludeSessionInSidebarList(session)),
+  }));
   const workspaceAvailability = useWorkspaceAvailability(
     workspaceSessionGroups.map((group) => group.workspacePath),
   );
-  const allWorkspaceGroupsCollapsed = workspaceSessionGroups.length > 0
-    && workspaceSessionGroups.every((group) => collapsedWorkspaceGroups[getWorkspaceGroupStateKey(group.workspacePath)] ?? false);
+  const displayedWorkspaceSessionGroups = workspaceSessionGroups.filter((group) => (
+    group.sessions.length > 0
+    || (
+      workspaceAvailability[group.workspacePath] === 'unavailable'
+      && !isDefaultWorkspacePath(group.workspacePath)
+    )
+  ));
+  const allWorkspaceGroupsCollapsed = displayedWorkspaceSessionGroups.length > 0
+    && displayedWorkspaceSessionGroups.every((group) => collapsedWorkspaceGroups[getWorkspaceGroupStateKey(group.workspacePath)] ?? false);
 
   const toggleAllWorkspaceGroups = () => {
     const nextCollapsed = !allWorkspaceGroupsCollapsed;
     setCollapsedWorkspaceGroups((current) => {
       const next = { ...current };
-      for (const group of workspaceSessionGroups) {
+      for (const group of displayedWorkspaceSessionGroups) {
         next[getWorkspaceGroupStateKey(group.workspacePath)] = nextCollapsed;
       }
       return next;
@@ -608,7 +617,7 @@ export function Sidebar() {
       </nav>
 
       {/* Session list — below Settings, only when expanded */}
-      {!sidebarCollapsed && sidebarSessions.length > 0 && (
+      {!sidebarCollapsed && displayedWorkspaceSessionGroups.length > 0 && (
         <div className="mt-4 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2">
           <div className="mb-1 flex items-center justify-between gap-2 pl-2.5">
             <span className="text-tiny font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
@@ -633,7 +642,7 @@ export function Sidebar() {
           </div>
 
           <div className="space-y-1.5">
-            {workspaceSessionGroups.map((workspaceGroup) => {
+            {displayedWorkspaceSessionGroups.map((workspaceGroup) => {
               const workspaceStateKey = getWorkspaceGroupStateKey(workspaceGroup.workspacePath);
               const collapsed = collapsedWorkspaceGroups[workspaceStateKey] ?? false;
               const visibleCount = workspaceVisibleSessionCounts[workspaceStateKey] ?? INITIAL_WORKSPACE_SESSION_LIMIT;
@@ -743,7 +752,9 @@ export function Sidebar() {
                             setWorkspaceToDelete({
                               path: workspaceGroup.workspacePath,
                               label: workspaceGroup.label,
-                              sessionKeys: workspaceGroup.sessions.map(({ session }) => session.key),
+                              sessionKeys: workspaceCatalogGroups
+                                .find((group) => group.workspacePath === workspaceGroup.workspacePath)
+                                ?.sessions.map(({ session }) => session.key) ?? [],
                             });
                             setWorkspaceDeleteDialogOpen(true);
                           }}
@@ -763,18 +774,6 @@ export function Sidebar() {
                         const isEditing = editingSessionKey === s.key;
                         const isCurrentSession = isOnChat && currentSessionKey === s.key;
                         const sessionLabel = getSessionDisplayTitle(s, sessionLabels);
-                        const isNativeSubagent = isNativeSubagentSessionKey(s.key);
-                        const hasContextPrefix = isNativeSubagent
-                          && formatSubagentSessionTitle(s.key, sessionLabel) !== sessionLabel;
-                        const contextTitle = hasContextPrefix
-                          ? [s.label, s.derivedTitle, s.displayName].find((candidate) => (
-                              candidate && formatSubagentSessionTitle(s.key, candidate) !== candidate
-                            ))
-                          : undefined;
-                        const displaySessionLabel = formatSubagentSessionTitle(
-                          s.key,
-                          contextTitle || sessionLabel,
-                        );
                         const relativeTime = formatSessionRelativeTime(activityMs, nowMs, i18n.language);
                         const runState = projectSessionRunState(s);
                         const attention = sessionAttentionByKey[s.key];
@@ -859,17 +858,7 @@ export function Sidebar() {
                                         {channelName}
                                       </span>
                                     )}
-                                    {isNativeSubagent && (
-                                      <Badge
-                                        variant="secondary"
-                                        data-testid={`sidebar-session-subagent-${s.key}`}
-                                        className="shrink-0 gap-1 px-1 py-0 text-2xs font-medium"
-                                      >
-                                        <BotMessageSquare aria-hidden="true" className="h-3 w-3" />
-                                        {t('chat:sessionList.subagent')}
-                                      </Badge>
-                                    )}
-                                    <span className="truncate">{displaySessionLabel}</span>
+                                    <span className="truncate">{sessionLabel}</span>
                                   </div>
                                 </button>
                                 {isBusy ? (

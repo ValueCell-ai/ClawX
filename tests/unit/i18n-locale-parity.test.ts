@@ -240,4 +240,32 @@ describe('i18n locale parity', () => {
       }
     }
   });
+
+  it('ships localized ACP subagent composer-control copy in every locale', () => {
+    for (const locale of ['en', 'zh', 'ja', 'ru'] as const) {
+      const chat = I18N_RESOURCES[locale].chat as JsonObject;
+      for (const key of [
+        'acp.subagentSessions.count',
+        'acp.subagentSessions.expand',
+        'acp.subagentSessions.collapse',
+        'acp.subagentSessions.toggle',
+        'acp.subagentSessions.panel',
+        'acp.subagentSessions.open',
+        'acp.subagentSessions.busy',
+        'acp.subagentSessions.settled',
+        'acp.subagentSessions.aggregateStatus',
+        'acp.subagentSessions.rowStatus',
+      ]) {
+        expect(
+          getValueAtPath(chat, key),
+          `${locale} is missing ${key}`,
+        ).toBeTypeOf('string');
+      }
+      expect(extractTokens(getValueAtPath(chat, 'acp.subagentSessions.count') ?? '')).toEqual(new Set(['count']));
+      expect(extractTokens(getValueAtPath(chat, 'acp.subagentSessions.toggle') ?? '')).toEqual(new Set(['action', 'count']));
+      expect(extractTokens(getValueAtPath(chat, 'acp.subagentSessions.open') ?? '')).toEqual(new Set(['title']));
+      expect(extractTokens(getValueAtPath(chat, 'acp.subagentSessions.aggregateStatus') ?? '')).toEqual(new Set(['status']));
+      expect(extractTokens(getValueAtPath(chat, 'acp.subagentSessions.rowStatus') ?? '')).toEqual(new Set(['status', 'title']));
+    }
+  });
 });

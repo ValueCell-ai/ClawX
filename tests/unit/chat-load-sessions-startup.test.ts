@@ -113,6 +113,33 @@ describe('chat session catalog startup', () => {
     });
   });
 
+  it('does not recreate a missing selected native child during catalog repair', async () => {
+    const missingChildKey = 'agent:main:subagent:missing-child';
+    const retainedChildKey = 'agent:main:subagent:retained-child';
+    gatewayRpcMock.mockResolvedValue({
+      ts: 1,
+      sessions: [{ key: retainedChildKey, updatedAt: 9_000 }],
+    });
+
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: missingChildKey,
+      currentAgentId: 'main',
+      sessions: [{ key: missingChildKey }],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+
+    await useChatStore.getState().loadSessions();
+
+    const state = useChatStore.getState();
+    expect(state.currentSessionKey).toMatch(/^agent:main:session-\d+$/);
+    expect(state.currentSessionKey).not.toBe(missingChildKey);
+    expect(state.currentSessionKey).not.toBe(retainedChildKey);
+    expect(state.sessions).toContainEqual(expect.objectContaining({ key: retainedChildKey }));
+    expect(state.sessions).not.toContainEqual(expect.objectContaining({ key: missingChildKey }));
+  });
+
   it('rejects stale list rows and buffered events for a deleted agent until recreation', async () => {
     const deletedKey = 'agent:test1:session-delayed';
     const catalog = deferredCatalog();

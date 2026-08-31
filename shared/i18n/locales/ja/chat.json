@@ -74,6 +74,20 @@
             "collapse": "計画を折りたたむ",
             "tasks": "計画のタスク"
         },
+        "subagentSessions": {
+            "count": "サブエージェント: {{count}}",
+            "expand": "サブエージェントセッションを展開",
+            "collapse": "サブエージェントセッションを折りたたむ",
+            "toggle": "{{action}}、{{count}}",
+            "panel": "サブエージェントセッション",
+            "open": "サブエージェント {{title}} を開く",
+            "marker": "サブエージェント",
+            "returnToParent": "親の会話に戻る",
+            "busy": "実行中",
+            "settled": "完了",
+            "aggregateStatus": "サブエージェント: {{status}}",
+            "rowStatus": "{{title}}: {{status}}"
+        },
         "failed": "失敗",
         "cancelled": "キャンセル済み",
         "loadFailed": "セッションの読み込みに失敗しました",

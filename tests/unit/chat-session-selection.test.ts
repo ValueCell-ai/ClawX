@@ -47,4 +47,14 @@ describe('pickStartupSessionFallback', () => {
 
     expect(pickStartupSessionFallback('agent:main:main', sessions)).toBe('agent:research:desk');
   });
+
+  it('never chooses a hidden native subagent as an implicit fallback', () => {
+    const sessions: ChatSession[] = [
+      { key: 'agent:main:subagent:newest-child', updatedAt: 9_000 },
+      { key: 'agent:main:session-visible', updatedAt: 1_000 },
+    ];
+
+    expect(pickStartupSessionFallback('agent:main:deleted', sessions)).toBe('agent:main:session-visible');
+    expect(pickStartupSessionFallback('agent:main:deleted', [sessions[0]!])).toBeNull();
+  });
 });

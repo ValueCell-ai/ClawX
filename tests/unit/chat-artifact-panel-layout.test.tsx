@@ -17,6 +17,9 @@ vi.mock('@/stores/gateway', () => ({
 
 vi.mock('@/lib/host-api', () => ({
   hostApi: {
+    chat: {
+      getAcpSessionFamily: vi.fn(async () => ({ success: true, current: null, children: [] })),
+    },
     files: {
       resolveWorkspaceContext: vi.fn(async ({ workspaceRoot, executionCwd }) => ({ ok: true, workspaceRoot, executionCwd })),
     },

@@ -154,22 +154,42 @@ async function emitSessionSnapshot(
 }
 
 test.describe('ClawX sidebar session attention', () => {
-  test('marks native subagent sessions and cleans only their displayed context prefix', async ({ launchElectronApp }) => {
+  test('hides native subagent rows without removing their exact-key attention state', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
       await installSessionAttentionMocks(app);
       const page = await reloadStableWindow(app);
-      const row = page.getByTestId(`sidebar-session-${SUBAGENT_SESSION_KEY}`);
-      const tag = page.getByTestId(`sidebar-session-subagent-${SUBAGENT_SESSION_KEY}`);
-
-      await expect(row).toBeVisible();
-      await expect(row).toContainText('You are running as a subagent (depth 1/1).');
-      await expect(row).not.toContainText('[Subagent Context]');
-      await expect(tag).toHaveText('Subagent');
-      await expect(tag.locator('svg')).toHaveClass(/lucide-bot-message-square/);
+      await expect(page.getByTestId(`sidebar-session-${SUBAGENT_SESSION_KEY}`)).toHaveCount(0);
+      await expect(page.getByTestId(`sidebar-session-subagent-${SUBAGENT_SESSION_KEY}`)).toHaveCount(0);
       await expect(page.getByTestId(`sidebar-session-${CONTROL_SESSION_KEY}`))
         .not.toContainText('Subagent');
+
+      await emitSessionSnapshot(app, {
+        sessionKey: SUBAGENT_SESSION_KEY,
+        ts: LIST_TS + 1_000,
+        status: 'running',
+        hasActiveRun: true,
+      });
+      await expect.poll(async () => page.evaluate((sessionKey) => {
+        const persisted = JSON.parse(localStorage.getItem('clawx.session-attention') ?? '{}') as {
+          state?: { bySessionKey?: Record<string, { observedBusy: boolean; unread: boolean }> };
+        };
+        return persisted.state?.bySessionKey?.[sessionKey];
+      }, SUBAGENT_SESSION_KEY)).toEqual({ observedBusy: true, unread: false });
+      await emitSessionSnapshot(app, {
+        sessionKey: SUBAGENT_SESSION_KEY,
+        ts: LIST_TS + 2_000,
+        status: 'done',
+        hasActiveRun: false,
+      });
+
+      await expect.poll(async () => page.evaluate((sessionKey) => {
+        const persisted = JSON.parse(localStorage.getItem('clawx.session-attention') ?? '{}') as {
+          state?: { bySessionKey?: Record<string, { observedBusy: boolean; unread: boolean }> };
+        };
+        return persisted.state?.bySessionKey?.[sessionKey];
+      }, SUBAGENT_SESSION_KEY)).toEqual({ observedBusy: false, unread: true });
     } finally {
       await closeElectronApp(app);
     }

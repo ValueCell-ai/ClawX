@@ -1,5 +1,5 @@
 import { isCronSessionKey } from './cron-session-utils';
-import { isChannelSessionKey } from './session-key-utils';
+import { isChannelSessionKey, isNativeSubagentSessionKey } from './session-key-utils';
 import type { ChatSession } from './types';
 
 function getAgentIdFromSessionKey(sessionKey: string): string {
@@ -21,22 +21,23 @@ export function pickStartupSessionFallback(
   currentSessionKey: string,
   sessions: ChatSession[],
 ): string | null {
-  if (sessions.length === 0) return null;
+  const fallbackCandidates = sessions.filter((session) => !isNativeSubagentSessionKey(session.key));
+  if (fallbackCandidates.length === 0) return null;
 
   const agentId = getAgentIdFromSessionKey(currentSessionKey);
   const agentMainKey = `agent:${agentId}:main`;
-  const agentMain = sessions.find((session) => session.key === agentMainKey);
+  const agentMain = fallbackCandidates.find((session) => session.key === agentMainKey);
   if (agentMain) return agentMain.key;
 
   const agentNonCron = sortByUpdatedAtDesc(
-    sessions.filter((session) => session.key.startsWith(`agent:${agentId}:`)
+    fallbackCandidates.filter((session) => session.key.startsWith(`agent:${agentId}:`)
       && !isCronSessionKey(session.key)
       && !isChannelSessionKey(session.key)),
   );
   if (agentNonCron.length > 0) return agentNonCron[0]!.key;
 
   const nonCron = sortByUpdatedAtDesc(
-    sessions.filter((session) => !isCronSessionKey(session.key) && !isChannelSessionKey(session.key)),
+    fallbackCandidates.filter((session) => !isCronSessionKey(session.key) && !isChannelSessionKey(session.key)),
   );
   if (nonCron.length > 0) return nonCron[0]!.key;
 

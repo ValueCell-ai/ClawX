@@ -1,6 +1,6 @@
 import type { ChatSession, GatewaySessionsChangedPayload } from './types';
 import { parseCronSessionKey } from './cron-session-utils';
-import { shouldIncludeSessionInSidebarList } from './session-key-utils';
+import { shouldRetainSessionInCatalog } from './session-key-utils';
 
 export type { GatewaySessionsChangedPayload } from './types';
 
@@ -179,7 +179,7 @@ export function applyGatewaySessionsChanged(
       return { sessions, applied: false, requiresReload: true };
     }
     const inserted = normalizeGatewaySessionRow({ ...nested, key });
-    if (!shouldIncludeSessionInSidebarList(inserted)) {
+    if (!shouldRetainSessionInCatalog(inserted)) {
       return { sessions, applied: false, requiresReload: false };
     }
     if (eventTs !== undefined) latestEventTsByKey.set(key, eventTs);
@@ -198,7 +198,7 @@ export function applyGatewaySessionsChanged(
 
   if (eventTs !== undefined) latestEventTsByKey.set(key, eventTs);
   const nextSessions = [...sessions];
-  if (merged.createdLocally || shouldIncludeSessionInSidebarList(merged)) {
+  if (merged.createdLocally || shouldRetainSessionInCatalog(merged)) {
     nextSessions[index] = merged;
   } else {
     nextSessions.splice(index, 1);

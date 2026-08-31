@@ -19,8 +19,9 @@ import {
 import {
   findHiddenOpenClawHeartbeatSession,
   isClawXDesktopSessionKey,
+  isNativeSubagentSessionKey,
   isOpenClawHeartbeatOnlySession,
-  shouldIncludeSessionInSidebarList,
+  shouldRetainSessionInCatalog,
 } from './chat/session-key-utils';
 import {
   LABEL_FETCH_RETRY_DELAYS_MS,
@@ -567,7 +568,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               .map((session) => normalizeGatewaySessionRow(session as Record<string, unknown>))
               .filter((session) => !belongsToDeletedAgent(session.key));
             const normalizedSessionKeys = new Set(normalizedSessions.map((session) => session.key));
-            const sessions = normalizedSessions.filter(shouldIncludeSessionInSidebarList);
+            const sessions = normalizedSessions.filter(shouldRetainSessionInCatalog);
 
             const canonicalBySuffix = new Map<string, string>();
             for (const session of sessions) {
@@ -745,14 +746,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
             if (
               !replacedHiddenHeartbeatSession
               && !visibleMergedSessions.some((session) => session.key === nextSessionKey)
-              && visibleMergedSessions.length > 0
             ) {
               const hasLocalPendingSession = localSessions.some(
                 (session) => session.key === nextSessionKey && session.createdLocally,
               );
               if (!hasLocalPendingSession) {
-                const fallbackKey = pickStartupSessionFallback(nextSessionKey, visibleMergedSessions);
-                if (fallbackKey) nextSessionKey = fallbackKey;
+                if (isNativeSubagentSessionKey(nextSessionKey)) {
+                  const selection = repairMissingCurrentSelection(nextSessionKey, visibleMergedSessions);
+                  visibleMergedSessions = selection.sessions;
+                  nextSessionKey = selection.currentSessionKey;
+                } else if (visibleMergedSessions.length > 0) {
+                  const fallbackKey = pickStartupSessionFallback(nextSessionKey, visibleMergedSessions);
+                  if (fallbackKey) nextSessionKey = fallbackKey;
+                }
               }
             }
 

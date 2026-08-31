@@ -4,6 +4,8 @@ import type {
   AcpChatOperationResult,
   AcpChatPromptPayload,
   AcpChatRespondPermissionPayload,
+  AcpSessionFamilyPayload,
+  AcpSessionFamilyResult,
 } from '../acp-chat/types';
 import type { RawMessage } from '../chat/types';
 import type { AgentsSnapshot } from '../types/agent';
@@ -1046,6 +1048,7 @@ export type HostApiContract = {
     turnTimings: (payload: SessionTurnTimingsPayload) => SessionTurnTimingsResult;
   };
   chat: {
+    getAcpSessionFamily: (payload: AcpSessionFamilyPayload) => AcpSessionFamilyResult;
     loadAcpSession: (payload: AcpChatLoadPayload) => AcpChatOperationResult;
     sendAcpPrompt: (payload: AcpChatPromptPayload) => AcpChatOperationResult;
     cancelAcpSession: (payload: AcpChatCancelPayload) => AcpChatOperationResult;

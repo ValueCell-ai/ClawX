@@ -1,12 +1,12 @@
 # Chat Workspace And Navigation
 
-Status: current workspace reference, reviewed 2026-07-23.
+Status: current workspace reference, reviewed 2026-09-01.
 
 Related scenario: `chat-workspace-and-navigation`
 
 Related rules: `session-workspace-authority`, `sidebar-session-attention-authority`, `ui-i18n-design-tokens`, `office-preview-safety`, `web-browser-security-and-lifecycle`
 
-Related tasks: `chat-workspace-context`, `fix-default-main-cwd-title`, `sidebar-session-attention`, `office-document-preview`, `web-browser`
+Related tasks: `chat-workspace-context`, `fix-default-main-cwd-title`, `sidebar-session-attention`, `office-document-preview`, `web-browser`, `embed-subagent-sessions-in-parent-chat`
 
 ## Workspace Authority
 
@@ -37,7 +37,7 @@ Sessions are grouped by workspace, not by date bucket. The default workspace sor
 
 Each group initially displays five sessions and loads five more at a time. Collapse and visible-count state are per workspace and in memory. Relative time and ordering use the same timestamp; actions replace the timestamp on hover or keyboard focus.
 
-An exact canonical `agent:<agentId>:subagent:<childId>` row remains in its normal workspace group and adds a localized subagent tag before its title. For this presentation only, ClawX removes one leading `[Subagent Context]` marker from the rendered title. This is never a session-data mutation and keys such as `agent:<agentId>:acp:<id>` are not native subagents.
+An exact canonical `agent:<agentId>:subagent:<childId>` row is hidden from sidebar presentation and visible workspace counts. This filtering is presentation-only: the row remains in the shared session catalog for exact-key status and attention, direct navigation, and unavailable-workspace cleanup. For embedded child titles only, ClawX removes one leading `[Subagent Context]` marker from the rendered ACP title. This is never a session-data mutation, and keys such as `agent:<agentId>:acp:<id>` are not native subagents.
 
 Non-default workspace headers expose a rename action on hover or keyboard focus. A custom name updates both the sidebar group and the composer workspace chip; the header and chip keep the full filesystem path in their title text.
 
@@ -54,6 +54,14 @@ Read state follows visible Chat integration rather than the retained current-ses
 The versioned attention store persists only exact-key `observedBusy` and `unread` state. This allows a later idle canonical snapshot to recover completion when ClawX previously observed the run as busy, including across an app restart. A run that starts and finishes while ClawX is fully offline cannot be inferred and must not create unread state. Run-scoped cron keys also cannot drive base-row attention because the bundled Gateway does not expose a recoverable canonical relationship.
 
 The complete projection, persistence, list/event ordering, failure recovery, and future `sessions.patch({ unread: false })` migration are documented in `harness/reference/sidebar-session-attention.md`.
+
+## Embedded Subagent Navigation
+
+A parent conversation presents only its direct native children returned by bounded ACP `session/list`. ACP `session/list` is the sole lineage membership and title authority. Latest exact-key Gateway catalog presence gates current child visibility and actionability plus direct-parent return-target availability. Presence does not invent lineage membership or titles. For available children, Gateway `status` and `hasActiveRun` remain the sole run-state authority, projected by the shared helper with exact-key `observedBusy` as the unknown-state fallback. A successful structured `sessions_spawn` result invalidates this family and triggers a canonical ACP refresh; its output does not directly add a child.
+
+Selecting a child uses the existing exact session-selection and ACP-load path. The child header shows a localized marker and returns to its direct ACP parent, including when that parent is itself a subagent; it never follows browser history. Child and return actions are present only while their exact targets remain in the latest catalog and recheck that catalog when activated. If the direct parent is deleted, the selected child's marker remains but its return action disappears. If a child is deleted, it disappears from the parent's panel and a stale click is ignored.
+
+Hidden native children are excluded from every implicit fallback candidate set, so startup, catalog repair, and deletion repair cannot select one merely because it is newest. A selected child remains valid while its exact catalog row exists, but a missing selected child is not recreated as a local placeholder. Deletion is exact and non-cascading: deleting a parent does not delete a child, deleting a parent while a child is selected leaves that child selected, and deleting the current parent chooses only a visible fallback. Workspace cleanup still includes retained hidden children even though workspace groups and counts use displayed rows only.
 
 ## Workspace Browser And Local HTML Preview
 
@@ -75,6 +83,6 @@ The Chat question directory belongs to the active ACP timeline rather than works
 
 ## Validation Anchors
 
-Key tests include `tests/unit/workspace-context.test.ts`, `tests/unit/session-title.test.ts`, `tests/unit/session-buckets.test.ts`, `tests/unit/sidebar-session-buckets.test.ts`, `tests/unit/use-new-chat-action.test.tsx`, `tests/unit/chat-store-session-label-fetch.test.ts`, `tests/unit/workspace-browser-body.test.tsx`, `tests/unit/office-file-viewers.test.tsx`, `tests/unit/chat-acp-page.test.tsx`, `tests/unit/artifact-panel-store.test.ts`, `tests/unit/artifact-panel.test.tsx`, `tests/unit/main-layout.test.tsx`, `tests/unit/web-browser-host.test.tsx`, `tests/e2e/chat-workspace-context.spec.ts`, `tests/e2e/chat-acp-attachments.spec.ts`, `tests/e2e/chat-file-changes.spec.ts`, and `tests/e2e/office-document-preview.spec.ts`.
+Key tests include `tests/unit/workspace-context.test.ts`, `tests/unit/session-title.test.ts`, `tests/unit/session-buckets.test.ts`, `tests/unit/sidebar-session-buckets.test.ts`, `tests/unit/chat-session-selection.test.ts`, `tests/unit/chat-session-management.test.ts`, `tests/unit/chat-acp-inline-timeline.test.tsx`, `tests/unit/use-new-chat-action.test.tsx`, `tests/unit/chat-store-session-label-fetch.test.ts`, `tests/unit/workspace-browser-body.test.tsx`, `tests/unit/office-file-viewers.test.tsx`, `tests/unit/chat-acp-page.test.tsx`, `tests/unit/artifact-panel-store.test.ts`, `tests/unit/artifact-panel.test.tsx`, `tests/unit/main-layout.test.tsx`, `tests/unit/web-browser-host.test.tsx`, `tests/e2e/chat-workspace-context.spec.ts`, `tests/e2e/chat-subagent-sessions.spec.ts`, `tests/e2e/chat-acp-attachments.spec.ts`, `tests/e2e/chat-file-changes.spec.ts`, and `tests/e2e/office-document-preview.spec.ts`.
 
 This reference consolidates the former workspace sidebar, chat workspace context, sidebar workspace UI, and ACP working-directory title designs. The later flat activity-sorted sidebar supersedes the earlier recency buckets.

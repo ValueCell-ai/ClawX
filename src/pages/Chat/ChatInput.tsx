@@ -34,6 +34,7 @@ import { fetchQuickAccessSkills } from '@/lib/quick-access-skills';
 import { DEFAULT_WORKSPACE_CWD, isDefaultWorkspacePath, normalizeWorkspacePath } from '@/lib/workspace-context';
 import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
 import { AcpSessionPlan } from './AcpSessionPlan';
+import { AcpSubagentSessions, type AcpSubagentSession } from './AcpSubagentSessions';
 import { realtimeTalkController } from '@/lib/talk/realtime-talk-controller';
 import logoSvg from '@/assets/logo.svg';
 
@@ -71,6 +72,8 @@ interface ChatInputProps {
   onSelectWorkspace?: (path: string) => void;
   contextUsage?: unknown;
   currentPlan?: AcpCurrentPlan | null;
+  subagentSessions?: AcpSubagentSession[];
+  onSelectSubagent?: (sessionKey: string) => void;
   talkActive?: boolean;
 }
 
@@ -312,6 +315,8 @@ export function ChatInput({
   onSelectWorkspace,
   contextUsage,
   currentPlan,
+  subagentSessions = [],
+  onSelectSubagent,
   talkActive,
 }: ChatInputProps) {
   const { t, i18n } = useTranslation('chat');
@@ -1083,7 +1088,17 @@ export function ChatInput({
         </div>
       )}
       <div className="w-full">
-        <div className="text-right">
+        <div
+          data-testid="chat-composer-session-controls"
+          className="flex flex-wrap items-start justify-end gap-2 text-right"
+        >
+          {typeof onSelectSubagent === 'function' && (
+            <AcpSubagentSessions
+              sessions={subagentSessions}
+              sessionKey={draftKey ?? ''}
+              onSelectSession={onSelectSubagent}
+            />
+          )}
           <AcpSessionPlan plan={currentPlan} sessionKey={draftKey ?? ''} />
         </div>
 

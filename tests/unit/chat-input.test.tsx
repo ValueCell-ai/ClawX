@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ChatInput } from '@/pages/Chat/ChatInput';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
+import type { AcpSubagentSession } from '@/pages/Chat/AcpSubagentSessions';
 import { useRealtimeTalkStore } from '@/stores/realtime-talk';
 import { realtimeTalkController } from '@/lib/talk/realtime-talk-controller';
 const hostApiFetchMock = vi.hoisted(() => vi.fn());
@@ -145,6 +146,26 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Skill not found';
     case 'composer.contextUsage':
       return `${String(vars?.percentage ?? '')} context used: ${String(vars?.used ?? '')} / ${String(vars?.total ?? '')} tokens`;
+    case 'acp.subagentSessions.count':
+      return `Subagents: ${String(vars?.count ?? '')}`;
+    case 'acp.subagentSessions.expand':
+      return 'Expand subagent sessions';
+    case 'acp.subagentSessions.collapse':
+      return 'Collapse subagent sessions';
+    case 'acp.subagentSessions.toggle':
+      return `${String(vars?.action ?? '')}, ${String(vars?.count ?? '')}`;
+    case 'acp.subagentSessions.panel':
+      return 'Subagent sessions';
+    case 'acp.subagentSessions.open':
+      return `Open subagent ${String(vars?.title ?? '')}`;
+    case 'acp.subagentSessions.busy':
+      return 'Running';
+    case 'acp.subagentSessions.settled':
+      return 'Settled';
+    case 'acp.subagentSessions.aggregateStatus':
+      return `Subagents: ${String(vars?.status ?? '')}`;
+    case 'acp.subagentSessions.rowStatus':
+      return `${String(vars?.title ?? '')}: ${String(vars?.status ?? '')}`;
     case 'talk.start':
       return 'Start Talk';
     case 'talk.stop':
@@ -384,6 +405,64 @@ describe('ChatInput agent targeting', () => {
     expect(composer).not.toContainElement(plan);
     expect(plan.compareDocumentPosition(working) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(plan.parentElement?.parentElement).toHaveClass('text-right');
+  });
+
+  it('places the subagent count control immediately left of the plan control', () => {
+    const currentPlan: AcpCurrentPlan = {
+      completedCount: 1,
+      totalCount: 2,
+      steps: [
+        { step: 'Inspect the timeline', status: 'completed' },
+        { step: 'Render the composer controls', status: 'in_progress' },
+      ],
+    };
+    const subagentSessions: AcpSubagentSession[] = [{
+      sessionKey: 'agent:main:subagent:research',
+      title: 'Research behavior',
+      busy: false,
+    }];
+
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          draftKey="agent:main:parent"
+          currentPlan={currentPlan}
+          subagentSessions={subagentSessions}
+          onSelectSubagent={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    const subagents = screen.getByTestId('acp-subagent-sessions-toggle');
+    const plan = screen.getByTestId('acp-session-plan-toggle');
+    const controls = screen.getByTestId('chat-composer-session-controls');
+    expect(controls).toHaveClass('justify-end');
+    expect(controls).toContainElement(subagents);
+    expect(controls).toContainElement(plan);
+    expect(subagents.compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByTestId('chat-composer-box')).not.toContainElement(subagents);
+  });
+
+  it('does not render actionable subagent controls without a real selection callback', () => {
+    const subagentSessions: AcpSubagentSession[] = [{
+      sessionKey: 'agent:main:subagent:research',
+      title: 'Research behavior',
+      busy: false,
+    }];
+
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          draftKey="agent:main:parent"
+          subagentSessions={subagentSessions}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.queryByTestId('acp-subagent-sessions-toggle')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('acp-subagent-session-row')).not.toBeInTheDocument();
   });
 
   it('locks composer controls while Talk is connecting and restores the exact local draft after cleanup', () => {

@@ -86,14 +86,21 @@ export function findHiddenOpenClawHeartbeatSession(sessionKey: string, sessions:
   return session && isOpenClawHeartbeatOnlySession(session) ? session : null;
 }
 
-export function shouldIncludeSessionInSidebarList(session: ChatSession): boolean {
+export function shouldRetainSessionInCatalog(session: ChatSession): boolean {
   if (!session.key) return false;
-  // Hide renderer-local placeholders created by New Chat until the first message
-  // creates the backing ACP session (acknowledgeAcpSessionCreated clears the flag).
   if (session.createdLocally) return false;
   if (isOpenClawHeartbeatOnlySession(session)) return false;
   if (isChannelSessionKey(session.key)) {
     return !isPlaceholderChannelSession(session);
   }
   return true;
+}
+
+export function shouldIncludeSessionInSidebarList(session: ChatSession): boolean {
+  // Native children remain in the catalog for status, attention, and deletion joins.
+  return shouldRetainSessionInCatalog(session) && !isNativeSubagentSessionKey(session.key);
+}
+
+export function shouldIncludeSessionInWorkspaceDeletion(session: ChatSession): boolean {
+  return shouldRetainSessionInCatalog(session);
 }

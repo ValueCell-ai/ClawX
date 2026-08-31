@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/dialog';
 import { hostApi } from '@/lib/host-api';
 import { useChatStore } from '@/stores/chat';
-import { shouldIncludeSessionInSidebarList } from '@/stores/chat/session-key-utils';
+import { shouldRetainSessionInCatalog } from '@/stores/chat/session-key-utils';
 
 export function IssueReportExport() {
   const { t } = useTranslation(['settings', 'common']);
@@ -38,7 +38,7 @@ export function IssueReportExport() {
   const [error, setError] = useState('');
 
   const availableSessions = useMemo(() => sessions
-    .filter(shouldIncludeSessionInSidebarList)
+    .filter(shouldRetainSessionInCatalog)
     .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))
     .map((session) => ({
       key: session.key,

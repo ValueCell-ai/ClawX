@@ -74,6 +74,20 @@
             "collapse": "折叠计划",
             "tasks": "计划任务"
         },
+        "subagentSessions": {
+            "count": "子智能体：{{count}}",
+            "expand": "展开子智能体会话",
+            "collapse": "折叠子智能体会话",
+            "toggle": "{{action}}，{{count}}",
+            "panel": "子智能体会话",
+            "open": "打开子智能体 {{title}}",
+            "marker": "子智能体",
+            "returnToParent": "返回父会话",
+            "busy": "运行中",
+            "settled": "已结束",
+            "aggregateStatus": "子智能体：{{status}}",
+            "rowStatus": "{{title}}：{{status}}"
+        },
         "failed": "失败",
         "cancelled": "已取消",
         "loadFailed": "会话加载失败",

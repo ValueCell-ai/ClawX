@@ -1312,7 +1312,7 @@ describe('host services', () => {
     );
   });
 
-  it('registers exactly the four ACP chat actions', async () => {
+  it('registers exactly the five ACP chat actions', async () => {
     const { createChatApi } = await import('@electron/services/chat-api');
 
     expect(Object.keys(createChatApi({
@@ -1320,6 +1320,7 @@ describe('host services', () => {
       mainWindow: {} as never,
       acpSessionAccessRegistry: {} as never,
     }))).toEqual([
+      'getAcpSessionFamily',
       'loadAcpSession',
       'sendAcpPrompt',
       'cancelAcpSession',

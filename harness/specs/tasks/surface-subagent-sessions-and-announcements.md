@@ -1,9 +1,9 @@
 ---
 id: surface-subagent-sessions-and-announcements
-title: Surface subagent sessions and post-prompt announcements
+title: Preserve post-prompt announcements and subagent classification
 scenario: gateway-backend-communication
 taskType: runtime-bridge
-intent: Identify native OpenClaw subagent sessions in the sidebar and preserve main-session assistant announcements both live and after ACP replay has settled.
+intent: Preserve native OpenClaw subagent classification after its navigation moved into parent Chat, and preserve main-session assistant announcements both live and after ACP replay has settled.
 touchedAreas:
   - harness/specs/tasks/surface-subagent-sessions-and-announcements.md
   - harness/specs/scenarios/gateway-backend-communication.md
@@ -23,8 +23,8 @@ touchedAreas:
   - tests/unit/openclaw-acp-stream-patch.test.ts
   - tests/e2e/chat-sidebar-session-attention.spec.ts
 expectedUserBehavior:
-  - A native `agent:<agentId>:subagent:<id>` row remains selectable in the normal workspace session list but carries a localized BotMessageSquare subagent tag before its title.
-  - The leading `[Subagent Context]` marker is removed from that row's displayed title without changing OpenClaw session data or non-subagent titles.
+  - A native `agent:<agentId>:subagent:<id>` session no longer appears in the sidebar, but remains in the shared session catalog for exact-key status, attention, routing, workspace cleanup, and deletion behavior.
+  - Parent Chat presents direct children using ACP lineage and titles; the leading `[Subagent Context]` marker is removed only from displayed child titles without changing OpenClaw session data or non-subagent titles.
   - Assistant text from a later `announce:v1` run appears incrementally while its parent session remains loaded, even after the original ACP prompt settled.
   - Reopening the parent session preserves exact complete-ledger replay and appends only durable transcript records newer than the ledger high-water timestamp.
 requiredProfiles:
@@ -48,7 +48,7 @@ requiredTests:
   - pnpm run comms:compare
 acceptance:
   - Native subagent classification derives from the exact third canonical key segment and does not parse transcript prose or classify `agent:<id>:acp:<id>` as a native subagent.
-  - Sidebar presentation uses the localized subagent tag and removes the leading context marker only in ClawX display state; no OpenClaw transcript, session row, or title is mutated.
+  - Sidebar hiding is presentation-only: native child rows remain in the shared catalog, and parent Chat removes the leading context marker only in ClawX display state; no OpenClaw transcript, session row, or title is mutated.
   - A loaded session retains one passive session-message subscription independently of prompt-lifetime subscription references and releases or replaces it on close, shutdown, or active-session replacement.
   - A no-pending `announce:v1` Chat delta or final for the exact loaded session is projected through ordinary recorded ACP updates with run-scoped snapshot reconciliation; unrelated or normal settled run IDs are ignored by this ambient path.
   - An ambient terminal records a later session snapshot checkpoint so a subsequent transcript-tail replay cannot duplicate text already captured live.
@@ -66,5 +66,7 @@ at 2026-08-30 17:35 UTC. Its complete ledger ended before two later synthetic
 `announce:v1` runs appended assistant records to the same durable transcript.
 OpenClaw WebUI displayed `第一次「检查一下」——两个已完成，一个大任务还在跑` and
 the final completion, while ClawX replayed only the earlier ledger. The child
-sessions use canonical keys under `agent:main:subagent:<uuid>` and currently
-surface their `[Subagent Context]` marker as an ordinary sidebar title prefix.
+sessions use canonical keys under `agent:main:subagent:<uuid>`. Their former
+ordinary sidebar-row presentation is superseded by
+`embed-subagent-sessions-in-parent-chat`: current ClawX hides those rows only in
+sidebar presentation and exposes direct children from ACP inside parent Chat.

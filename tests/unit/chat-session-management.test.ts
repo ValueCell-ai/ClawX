@@ -357,6 +357,80 @@ describe('chat session management', () => {
     expect(window.localStorage.getItem('clawx.session-attention')).not.toContain(deletedKey);
   });
 
+  it('deletes an exact parent session without cascading to its native subagent child', async () => {
+    const parentKey = 'agent:main:parent';
+    const childKey = 'agent:main:subagent:child-1';
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: 'agent:main:survivor',
+      sessions: [
+        { key: parentKey },
+        { key: childKey },
+        { key: 'agent:main:survivor' },
+      ],
+      sessionLabels: {
+        [parentKey]: 'Parent',
+        [childKey]: 'Child',
+      },
+      sessionLastActivity: {},
+    });
+
+    await expect(useChatStore.getState().deleteSession(parentKey)).resolves.toEqual({ success: true });
+
+    expect(sessionDeleteMock).toHaveBeenCalledTimes(1);
+    expect(sessionDeleteMock).toHaveBeenCalledWith(parentKey);
+    expect(useChatStore.getState().sessions).toContainEqual({ key: childKey });
+    expect(useChatStore.getState().sessionLabels[childKey]).toBe('Child');
+  });
+
+  it('keeps an explicitly selected native child selected when its parent is deleted', async () => {
+    const parentKey = 'agent:main:parent';
+    const childKey = 'agent:main:subagent:child-1';
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: childKey,
+      currentAgentId: 'main',
+      sessions: [
+        { key: parentKey },
+        { key: childKey },
+        { key: 'agent:main:survivor' },
+      ],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+
+    await expect(useChatStore.getState().deleteSession(parentKey)).resolves.toEqual({ success: true });
+
+    expect(useChatStore.getState().currentSessionKey).toBe(childKey);
+    expect(useChatStore.getState().sessions.map((session) => session.key)).toEqual([
+      childKey,
+      'agent:main:survivor',
+    ]);
+  });
+
+  it('does not select a hidden native child when deleting the current parent', async () => {
+    const parentKey = 'agent:main:parent';
+    const childKey = 'agent:main:subagent:newest-child';
+    const survivorKey = 'agent:main:visible-survivor';
+    const { useChatStore } = await import('@/stores/chat');
+    useChatStore.setState({
+      currentSessionKey: parentKey,
+      currentAgentId: 'main',
+      sessions: [
+        { key: parentKey, updatedAt: 10 },
+        { key: childKey, updatedAt: 1_000 },
+        { key: survivorKey, updatedAt: 100 },
+      ],
+      sessionLabels: {},
+      sessionLastActivity: {},
+    });
+
+    await expect(useChatStore.getState().deleteSession(parentKey)).resolves.toEqual({ success: true });
+
+    expect(useChatStore.getState().currentSessionKey).toBe(survivorKey);
+    expect(useChatStore.getState().sessions).toContainEqual({ key: childKey, updatedAt: 1_000 });
+  });
+
   it('retains session state when a single hard delete reports failure', async () => {
     const key = 'agent:main:delete-failed';
     sessionDeleteMock.mockResolvedValueOnce({ success: false, error: 'locked' });

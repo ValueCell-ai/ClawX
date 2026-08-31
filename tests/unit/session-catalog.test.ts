@@ -158,6 +158,31 @@ describe('Gateway session catalog projection', () => {
     }]);
   });
 
+  it('retains native subagent rows in the catalog while applying status updates', () => {
+    const childKey = 'agent:main:subagent:child-1';
+    const inserted = applyGatewaySessionsChanged(
+      [],
+      {
+        sessionKey: childKey,
+        ts: 10,
+        session: { key: childKey, status: 'running', hasActiveRun: true },
+      },
+      new Map(),
+    );
+    const settled = applyGatewaySessionsChanged(
+      inserted.sessions,
+      {
+        sessionKey: childKey,
+        ts: 11,
+        session: { key: childKey, status: 'done', hasActiveRun: false },
+      },
+      new Map(),
+    );
+
+    expect(inserted.sessions).toEqual([{ key: childKey, status: 'running', hasActiveRun: true }]);
+    expect(settled.sessions).toEqual([{ key: childKey, status: 'done', hasActiveRun: false }]);
+  });
+
   it('never inserts or mutates attention rows from run-scoped cron snapshots', () => {
     const baseKey = 'agent:main:cron:job-a';
     const runKey = `${baseKey}:run:run-a`;
