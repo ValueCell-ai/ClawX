@@ -23,7 +23,7 @@ jobs:
           - windows-latest
     env:
       CI: 'true'
-      CLAWX_E2E_WORKERS: '2'
+      CLAWX_E2E_WORKERS: '1'
       # Linux runners cannot use Electron's setuid chrome-sandbox; harmless on macOS/Windows.
       ELECTRON_DISABLE_SANDBOX: '1'
 
