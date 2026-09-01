@@ -117,6 +117,29 @@ export function toArray(value) {
   return [value];
 }
 
+export function validateSpecReferences(spec, scenarios, rules) {
+  const failures = [];
+  const scenarioIds = new Set(scenarios.map((candidate) => candidate.data?.id).filter(Boolean));
+  const ruleIds = new Set(rules.map((candidate) => candidate.data?.id).filter(Boolean));
+  const referencedScenarios = new Set([
+    ...toArray(spec.data?.scenario),
+    ...toArray(spec.data?.scenarios),
+  ].filter(Boolean));
+
+  for (const scenarioId of referencedScenarios) {
+    if (!scenarioIds.has(scenarioId)) {
+      failures.push(`${spec.path}: references unknown scenario "${scenarioId}"`);
+    }
+  }
+  for (const ruleId of new Set(toArray(spec.data?.requiredRules).filter(Boolean))) {
+    if (!ruleIds.has(ruleId)) {
+      failures.push(`${spec.path}: references unknown rule "${ruleId}"`);
+    }
+  }
+
+  return failures;
+}
+
 export function isGatewayBackendCommunicationTask(spec) {
   return spec.data?.scenario === 'gateway-backend-communication'
     || toArray(spec.data?.scenarios).includes('gateway-backend-communication');

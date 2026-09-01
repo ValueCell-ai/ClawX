@@ -61,6 +61,7 @@ requiredRules:
   - docs-sync
 requiredTests:
   - pnpm harness validate --spec harness/specs/tasks/remove-realtime-talk.md
+  - pnpm exec vitest run tests/unit/harness-specs.test.ts
   - pnpm run lint:check
   - pnpm run typecheck
   - pnpm test
@@ -73,6 +74,8 @@ acceptance:
   - No Talk-specific microphone permission, locale key, model tab, transcript UI, audio capture/playback code, or test remains.
   - Chat audio attachments and OpenClaw Discord voice dependencies are retained.
   - Gateway event routing and shutdown behavior remain valid after the dedicated Talk relay path is removed.
+  - The obsolete add-realtime-talk task is deleted, and surviving task specs neither require deleted Talk scenarios/rules nor prescribe restoring the feature.
+  - Harness validation rejects task specs that reference missing primary or supplemental scenarios or required rules.
   - English, Simplified Chinese, and Japanese documentation no longer advertise Realtime Talk.
   - Electron E2E coverage proves developer mode no longer exposes the removed entry points.
 docs:

@@ -9,6 +9,7 @@ import {
   loadSpec,
   parseFrontmatter,
   pathMatchesAny,
+  validateSpecReferences,
 } from '../../harness/src/specs.mjs';
 import {
   scanBackendCommunicationBoundary,
@@ -27,6 +28,28 @@ async function readMarkdownTree(directory: string): Promise<Array<{ file: string
   }));
   return nested.flat();
 }
+
+describe('harness spec references', () => {
+  it('rejects missing primary or supplemental scenarios and required rules', () => {
+    const failures = validateSpecReferences(
+      {
+        path: 'harness/specs/tasks/example.md',
+        data: {
+          scenario: 'gateway-backend-communication',
+          scenarios: ['removed-scenario'],
+          requiredRules: ['renderer-main-boundary', 'removed-rule'],
+        },
+      },
+      [{ data: { id: 'gateway-backend-communication' } }],
+      [{ data: { id: 'renderer-main-boundary' } }],
+    );
+
+    expect(failures).toEqual([
+      'harness/specs/tasks/example.md: references unknown scenario "removed-scenario"',
+      'harness/specs/tasks/example.md: references unknown rule "removed-rule"',
+    ]);
+  });
+});
 
 describe('harness specs', () => {
   it('defines the three-minute Gateway liveness recovery contract', async () => {
@@ -467,15 +490,9 @@ describe('harness specs', () => {
       expect(scenarioById.get(scenarioId)?.data.requiredRules).toContain('office-preview-safety');
     }
 
-    const legacyTalkTaskPaths = [
-      'docs/plans/2026-08-16-realtime-talk.md',
-      'docs/specs/2026-08-16-realtime-talk-design.md',
-    ];
     for (const { file, content } of harnessMarkdown) {
       const designOrPlanPaths = [...content.matchAll(/docs\/(?:specs|plans)\/[^\s)]+/g)].map((match) => match[0]);
-      expect(designOrPlanPaths, `${file} must not depend on deleted design or plan documents`).toEqual(
-        file === 'harness/specs/tasks/add-realtime-talk.md' ? legacyTalkTaskPaths : [],
-      );
+      expect(designOrPlanPaths, `${file} must not depend on deleted design or plan documents`).toEqual([]);
     }
     const exists = async (p: string) => {
       try {

@@ -11,6 +11,7 @@ import {
   loadScenarioSpecs,
   loadSpec,
   toArray,
+  validateSpecReferences,
 } from './specs.mjs';
 import {
   scanBackendCommunicationBoundary,
@@ -50,11 +51,6 @@ function printUsage() {
   ].join('\n'));
 }
 
-async function findScenario(id) {
-  const scenarios = await loadScenarioSpecs();
-  return scenarios.find((scenario) => scenario.data.id === id);
-}
-
 async function list() {
   const scenarios = await loadScenarioSpecs();
   const rules = await loadRuleSpecs();
@@ -67,13 +63,19 @@ async function list() {
 }
 
 async function validate(specPath, options = {}) {
-  const spec = await loadSpec(specPath);
-  const scenario = spec.data.scenario ? await findScenario(spec.data.scenario) : null;
+  const [spec, scenarios, rules] = await Promise.all([
+    loadSpec(specPath),
+    loadScenarioSpecs(),
+    loadRuleSpecs(),
+  ]);
+  const scenario = spec.data.scenario
+    ? scenarios.find((candidate) => candidate.data.id === spec.data.scenario)
+    : null;
   const shouldCheckDiff = !options.noDiff && (options.checkDiff || Boolean(spec.data.scenario));
   const changedFiles = shouldCheckDiff
     ? await getChangedFiles(options.since ?? 'origin/main')
     : [];
-  const failures = [];
+  const failures = validateSpecReferences(spec, scenarios, rules);
 
   if (spec.data.type === 'runtime-bridge' && spec.data.id === 'gateway-backend-communication') {
     for (const profile of ['fast', 'comms']) {
