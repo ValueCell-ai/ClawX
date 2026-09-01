@@ -676,7 +676,9 @@ export function Settings() {
             <div className="flex items-center justify-between">
               <div>
                 <Label className="text-sm font-medium text-foreground">{t('advanced.devMode')}</Label>
-                <p className="text-meta text-muted-foreground mt-1">{t('advanced.devModeDesc')}</p>
+                <p className="text-meta text-muted-foreground mt-1" data-testid="settings-developer-mode-desc">
+                  {t('advanced.devModeDesc')}
+                </p>
               </div>
               <Switch
                 checked={devModeUnlocked}
@@ -684,11 +686,6 @@ export function Settings() {
                 data-testid="settings-dev-mode-switch"
               />
             </div>
-            {!devModeUnlocked && (
-              <p className="text-meta text-muted-foreground" data-testid="settings-developer-locked-guidance">
-                {t('advanced.devModeDesc')}
-              </p>
-            )}
             {devModeUnlocked && (
               <>
                 <div data-testid="settings-developer-advanced">
