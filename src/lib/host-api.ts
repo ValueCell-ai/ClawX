@@ -50,15 +50,6 @@ import type {
   AcpSessionFamilyPayload,
 } from '@shared/acp-chat/types';
 import type { CronJobCreateInput, CronJobUpdateInput } from '@shared/types/cron';
-import type {
-  TalkAcknowledgeMarkPayload,
-  TalkAppendAudioPayload,
-  TalkRelayIdPayload,
-  TalkRealtimeSettingsPayload,
-  TalkStartAgentConsultPayload,
-  TalkStartRelayPayload,
-  TalkSubmitToolResultPayload,
-} from '@shared/talk/types';
 import { invokeHost } from './host-api-client';
 
 export type {
@@ -120,14 +111,6 @@ export type {
   WorkspaceNativeFileResult,
   WorkspaceOpenHandlersResult,
 } from '@shared/host-api/contract';
-export type {
-  TalkAgentConsultResult,
-  TalkCatalog,
-  TalkOperationResult,
-  TalkRelayEvent,
-  TalkRelaySession,
-} from '@shared/talk/types';
-
 export const hostApi = {
   app: {
     openClawDoctor: async (mode: OpenClawDoctorMode): Promise<OpenClawDoctorResult> => ({
@@ -200,19 +183,6 @@ export const hostApi = {
     rpc: <T = unknown>(method: string, params?: unknown, timeoutMs?: number) => (
       invokeHost('gateway', 'rpc', { method, params, timeoutMs }) as Promise<T>
     ),
-  },
-  talk: {
-    catalog: () => invokeHost('talk', 'catalog'),
-    updateRealtimeSettings: (input: TalkRealtimeSettingsPayload) => (
-      invokeHost('talk', 'updateRealtimeSettings', input)
-    ),
-    startRelay: (input: TalkStartRelayPayload) => invokeHost('talk', 'startRelay', input),
-    appendAudio: (input: TalkAppendAudioPayload) => invokeHost('talk', 'appendAudio', input),
-    cancelOutput: (input: TalkRelayIdPayload) => invokeHost('talk', 'cancelOutput', input),
-    submitToolResult: (input: TalkSubmitToolResultPayload) => invokeHost('talk', 'submitToolResult', input),
-    acknowledgeMark: (input: TalkAcknowledgeMarkPayload) => invokeHost('talk', 'acknowledgeMark', input),
-    stopRelay: (input: TalkRelayIdPayload) => invokeHost('talk', 'stopRelay', input),
-    startAgentConsult: (input: TalkStartAgentConsultPayload) => invokeHost('talk', 'startAgentConsult', input),
   },
   logs: {
     recent: (tailLines = 100) => invokeHost('logs', 'recent', { tailLines }),

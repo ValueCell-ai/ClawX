@@ -57,13 +57,6 @@ const { acpState, agentsState, artifactPanelState, attentionState, chatState, ga
   },
 }));
 
-const talkState = vi.hoisted(() => ({
-  status: 'idle',
-  isActive: false,
-  sessionKey: null as string | null,
-  transcripts: [] as Array<{ role: 'assistant'; text: string; final: boolean }>,
-}));
-
 const ensureAcpChatSubscriptions = vi.hoisted(() => vi.fn());
 const resolveWorkspaceContext = vi.hoisted(() => vi.fn());
 const getAcpSessionFamily = vi.hoisted(() => vi.fn());
@@ -91,17 +84,6 @@ vi.mock('@/stores/acp-chat-session', () => ({
 
 vi.mock('@/stores/gateway', () => ({
   useGatewayStore: (selector: (state: typeof gatewayState) => unknown) => selector(gatewayState),
-}));
-
-vi.mock('@/stores/realtime-talk', () => ({
-  useRealtimeTalkStore: (selector: (state: typeof talkState) => unknown) => selector(talkState),
-}));
-
-vi.mock('@/lib/talk/realtime-talk-controller', () => ({
-  realtimeTalkController: {
-    handleSessionChange: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn().mockResolvedValue(undefined),
-  },
 }));
 
 vi.mock('@/stores/agents', () => ({
@@ -347,10 +329,6 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     gatewayState.status = { state: 'running', gatewayReady: true, port: 18789 };
     stickState.isAtBottom = true;
     stickState.scrollToBottom.mockReset();
-    talkState.status = 'idle';
-    talkState.isActive = false;
-    talkState.sessionKey = null;
-    talkState.transcripts = [];
     window.electron.platform = 'linux';
   });
 
@@ -383,49 +361,6 @@ describe('ACP Chat page inline timeline lifecycle', () => {
         cwd: '/workspace',
       });
     });
-  });
-
-  it('shows direct Talk transcripts instead of the ACP timeline while Talk is active', async () => {
-    talkState.status = 'listening';
-    talkState.isActive = true;
-    talkState.sessionKey = 'agent:main:main';
-    talkState.transcripts = [{ role: 'assistant', text: 'Direct Talk response', final: true }];
-    const { Chat } = await import('@/pages/Chat/index');
-    const { container } = render(<Chat />);
-
-    expect(screen.getByText('Direct Talk response')).toBeInTheDocument();
-    expect(screen.queryByTestId('acp-chat-timeline')).not.toBeInTheDocument();
-    expect(container.querySelectorAll('[data-acp-item-id]')).toHaveLength(0);
-  });
-
-  it('hides transient Talk state immediately when it belongs to a different session', async () => {
-    talkState.status = 'listening';
-    talkState.isActive = true;
-    talkState.sessionKey = 'agent:main:other';
-    talkState.transcripts = [{ role: 'assistant', text: 'Direct Talk response', final: true }];
-    const { Chat } = await import('@/pages/Chat/index');
-
-    render(<Chat />);
-
-    expect(screen.queryByText('Direct Talk response')).not.toBeInTheDocument();
-  });
-
-  it('brings a newly received live Talk area into view without scrolling the ACP timeline', async () => {
-    const scrollIntoView = vi.fn();
-    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView });
-    talkState.status = 'listening';
-    talkState.isActive = true;
-    talkState.sessionKey = 'agent:main:main';
-    talkState.transcripts = [];
-    const { Chat } = await import('@/pages/Chat/index');
-    const { rerender } = render(<Chat />);
-
-    talkState.transcripts = [{ role: 'assistant', text: 'Newest direct Talk response', final: true }];
-    rerender(<Chat />);
-
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
-    expect(stickState.scrollToBottom).not.toHaveBeenCalled();
-    expect(screen.getByText('Newest direct Talk response')).toBeInTheDocument();
   });
 
   it('keeps ACP tool status in the inline timeline while the composer is busy', async () => {

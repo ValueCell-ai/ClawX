@@ -40,11 +40,6 @@ const onChatEvent = <E extends HostEventName<'chat'>>(
   handler: HostEventHandler<'chat', E>,
 ) => onIpc(HOST_EVENT_CHANNELS.chat[event], handler);
 
-const onTalkEvent = <E extends HostEventName<'talk'>>(
-  event: E,
-  handler: HostEventHandler<'talk', E>,
-) => onIpc(HOST_EVENT_CHANNELS.talk[event], handler);
-
 const onOAuthEvent = <E extends HostEventName<'oauth'>>(
   event: E,
   handler: HostEventHandler<'oauth', E>,
@@ -103,7 +98,6 @@ export const hostEvents = {
   onAcpPermissionRequest: (handler: HostEventHandler<'chat', 'acpPermissionRequest'>) => (
     onChatEvent('acpPermissionRequest', handler)
   ),
-  onTalkEvent: (handler: HostEventHandler<'talk', 'event'>) => onTalkEvent('event', handler),
   onOAuthCode: (handler: HostEventHandler<'oauth', 'code'>) => onOAuthEvent('code', handler),
   onOAuthSuccess: (handler: HostEventHandler<'oauth', 'success'>) => onOAuthEvent('success', handler),
   onOAuthError: (handler: HostEventHandler<'oauth', 'error'>) => onOAuthEvent('error', handler),

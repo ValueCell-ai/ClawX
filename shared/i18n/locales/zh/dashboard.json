@@ -14,8 +14,7 @@
         "subtitle": "管理您的 AI 提供商并监控 Token 用量",
         "tabs": {
             "chat": "对话模型",
-            "imageGeneration": "图像生成",
-            "realtimeTalk": "实时语音"
+            "imageGeneration": "图像生成"
         }
     },
     "quickActions": {

@@ -157,28 +157,6 @@
     "proxySaved": "Proxy settings saved",
     "proxySaveFailed": "Failed to save proxy settings"
   },
-  "talk": {
-    "title": "Talk",
-    "description": "Configure realtime Talk through the OpenClaw Gateway Relay.",
-    "refresh": "Refresh Talk availability",
-    "provider": "Realtime provider",
-    "model": "Realtime model",
-    "unavailable": "Unavailable",
-    "providerHelp": "All realtime providers registered by OpenClaw are listed.",
-    "providerUnavailable": "{{providers}} are disabled because they are not configured in OpenClaw.",
-    "modelHelp": "Models are supplied by the selected provider. Configure and select a provider to enable this list.",
-    "openConfig": "Open OpenClaw config",
-    "openConfigFailed": "Could not open OpenClaw config",
-    "readiness": {
-      "ready": "Talk is ready",
-      "unavailable": "Talk is unavailable"
-    },
-    "save": "Save Talk settings",
-    "saving": "Saving Talk settings...",
-    "saved": "Talk settings saved",
-    "loadFailed": "Could not load Talk settings",
-    "saveFailed": "Could not save Talk settings"
-  },
   "updates": {
     "title": "Updates",
     "description": "Keep ClawX up to date",

@@ -7,22 +7,6 @@ const DIRECT_GATEWAY_HTTP_PATTERN = /fetch\s*\(\s*['"`]http:\/\/(?:127\.0\.0\.1|
 const DIRECT_GATEWAY_WS_PATTERN = /new\s+WebSocket\s*\(\s*['"`]ws:\/\/(?:127\.0\.0\.1|localhost):18789|ws:\/\/(?:127\.0\.0\.1|localhost):18789/;
 const HOST_API_LOCAL_HTTP_PATTERN = /fetch\s*\(\s*['"`]http:\/\/(?:127\.0\.0\.1|localhost):13210|HOST_API_BASE\s*=\s*`?http:\/\/127\.0\.0\.1:\$\{HOST_API_PORT\}`?/;
 const GATEWAY_READY_MUTATION_PATTERN = /gatewayReady\s*[:=]\s*(?:true|false)|setStatus\s*\([^)]*gatewayReady|setState\s*\([^)]*gatewayReady/s;
-const DIRECT_WEBSOCKET_PATTERN = /new\s+WebSocket\s*\(/;
-const WEBRTC_PATTERN = /\b(?:RTCPeerConnection|webkitRTCPeerConnection)\b/;
-const BROWSER_PERSISTENCE_PATTERN = /\b(?:localStorage|sessionStorage)\.(?:setItem|removeItem|clear)\s*\(|\bpersist\s*\(/;
-const FILE_WRITE_PATTERN = /\b(?:writeFile|appendFile|writeFileSync|appendFileSync)\s*\(/;
-const SYNTHETIC_ACP_TALK_PATTERN = /(?:appendSyntheticAssistantMessage|upsertSyntheticTurnAttachments)\s*\([^)]*\b(?:talk|relay|transcript)/i;
-const REALTIME_TALK_AUTHORITY_PATHS = [
-  'shared/talk/**',
-  'src/lib/talk/**',
-  'src/lib/host-api.ts',
-  'src/lib/host-events.ts',
-  'src/stores/realtime-talk.ts',
-  'src/stores/acp-chat-session.ts',
-  'src/pages/Chat/**',
-  'src/components/settings/TalkSettings.tsx',
-  'src/pages/Settings/index.tsx',
-];
 const COMMUNICATION_PATHS = [
   'src/lib/api-client.ts',
   'src/lib/host-api.ts',
@@ -84,48 +68,6 @@ export async function scanBackendCommunicationBoundary(files) {
     }
   }
 
-  return failures;
-}
-
-export function scanRealtimeTalkAuthorityText(file, text) {
-  const failures = [];
-  if (DIRECT_IPC_PATTERN.test(text)) {
-    failures.push(`${file}: Talk renderer must not call window.electron.ipcRenderer.invoke directly`);
-  }
-  if (DIRECT_GATEWAY_HTTP_PATTERN.test(text)) {
-    failures.push(`${file}: Talk renderer must not fetch Gateway HTTP directly`);
-  }
-  if (DIRECT_WEBSOCKET_PATTERN.test(text)) {
-    failures.push(`${file}: Talk renderer must not open Gateway or provider WebSocket connections directly`);
-  }
-  if (WEBRTC_PATTERN.test(text)) {
-    failures.push(`${file}: Talk renderer must not create WebRTC connections`);
-  }
-  if (BROWSER_PERSISTENCE_PATTERN.test(text)) {
-    failures.push(`${file}: Talk transcripts must not use browser persistence`);
-  }
-  if (FILE_WRITE_PATTERN.test(text)) {
-    failures.push(`${file}: Talk transcripts must not write local files`);
-  }
-  if (SYNTHETIC_ACP_TALK_PATTERN.test(text)) {
-    failures.push(`${file}: Talk must not project direct transcripts into ACP history`);
-  }
-  return failures;
-}
-
-export function selectRealtimeTalkAuthorityFiles(files) {
-  return unique(files).filter((file) => (
-    /\.(ts|tsx)$/.test(file) && pathMatchesAny(file, REALTIME_TALK_AUTHORITY_PATHS)
-  ));
-}
-
-export async function scanRealtimeTalkAuthority(files) {
-  const failures = [];
-  const scanFiles = selectRealtimeTalkAuthorityFiles(files);
-  for (const file of scanFiles) {
-    const text = await readTextIfExists(file);
-    if (text) failures.push(...scanRealtimeTalkAuthorityText(file, text));
-  }
   return failures;
 }
 

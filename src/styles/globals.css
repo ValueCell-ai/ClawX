@@ -328,20 +328,6 @@
     animation: clawx-chat-thinking-dot-pulse var(--uib-speed) ease-in-out calc(var(--uib-speed) * -0.125) infinite;
   }
 
-  .clawx-talk-listening-ring {
-    animation: clawx-talk-listening-ring var(--talk-ring-duration) ease-in-out infinite;
-    background: hsl(var(--muted-foreground) / var(--talk-ring-opacity));
-    box-shadow: 0 0 var(--talk-ring-shadow) hsl(var(--muted-foreground) / var(--talk-ring-opacity));
-    will-change: opacity, transform;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .clawx-talk-listening-ring {
-      animation: none;
-      opacity: var(--talk-ring-opacity);
-      transform: scale(var(--talk-ring-scale));
-    }
-  }
 }
 
 @keyframes clawx-chat-thinking-dot-pulse {
@@ -352,19 +338,6 @@
 
   50% {
     transform: scale(1);
-  }
-}
-
-@keyframes clawx-talk-listening-ring {
-  0%,
-  100% {
-    opacity: var(--talk-ring-min-opacity);
-    transform: scale(1);
-  }
-
-  50% {
-    opacity: var(--talk-ring-opacity);
-    transform: scale(var(--talk-ring-scale));
   }
 }
 

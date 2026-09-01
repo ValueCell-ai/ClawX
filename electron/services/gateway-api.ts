@@ -61,7 +61,7 @@ export function createGatewayApi(gatewayManager: GatewayManager): CompleteHostSe
         throw new Error('Invalid gateway RPC method');
       }
       if (method.startsWith('talk.')) {
-        throw new Error('Talk Gateway RPCs must use the typed Talk API');
+        throw new Error('Talk Gateway RPCs are not supported');
       }
       const timeoutMs = parseTimeoutMs(body.timeoutMs);
       return gatewayManager.rpc(method, body.params, timeoutMs);

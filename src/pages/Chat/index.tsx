@@ -4,7 +4,7 @@
  */
 import {
   Suspense, lazy, useCallback, useDeferredValue, useEffect,
-  useLayoutEffect, useMemo, useRef, useState, type SetStateAction,
+  useMemo, useRef, useState, type SetStateAction,
 } from 'react';
 import { AlertTriangle, ArrowDownToLine, ArrowLeft, BotMessageSquare, FolderOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -41,10 +41,6 @@ import { ChatInput, type ChatWorkspaceOption, type FileAttachment } from './Chat
 import { ChatToolbar } from './ChatToolbar';
 import { AcpTimeline } from './AcpTimeline';
 import { AcpErrorBanner } from './AcpErrorBanner';
-import { LiveTalkTranscript } from './LiveTalkTranscript';
-import { LIVE_TALK_TRANSCRIPT_MOCK } from './live-talk-transcript-mock';
-import { useRealtimeTalkStore } from '@/stores/realtime-talk';
-import { realtimeTalkController } from '@/lib/talk/realtime-talk-controller';
 import { projectSessionRunState } from '@/stores/chat/session-status';
 import { formatSubagentSessionTitle, isNativeSubagentSessionKey } from '@/stores/chat/session-key-utils';
 import type { AcpSubagentSession } from './AcpSubagentSessions';
@@ -365,20 +361,6 @@ export function Chat() {
   const cancelAcp = useAcpChatSessionStore((s) => s.cancel);
   const respondAcpPermission = useAcpChatSessionStore((s) => s.respondPermission);
   const clearAcpError = useAcpChatSessionStore((s) => s.clearError);
-  const talkActive = useRealtimeTalkStore((s) => s.isActive);
-  const talkSessionKey = useRealtimeTalkStore((s) => s.sessionKey);
-  const talkTranscripts = useRealtimeTalkStore((s) => s.transcripts);
-  const talkMatchesCurrentSession = talkSessionKey === currentSessionKey;
-  const visibleTalkActive = talkActive && talkMatchesCurrentSession;
-  const liveTalkMockEnabled = import.meta.env.DEV
-    && new URLSearchParams(window.location.search).get('liveTalkMock') === '1';
-  const liveTalkTranscriptVisible = visibleTalkActive || liveTalkMockEnabled;
-  const visibleTalkTranscripts = liveTalkMockEnabled
-    ? LIVE_TALK_TRANSCRIPT_MOCK
-    : talkMatchesCurrentSession
-      ? talkTranscripts
-      : [];
-
   const panelOpen = useArtifactPanel((s) => s.open);
   const panelWidthPct = useArtifactPanel((s) => s.widthPct);
   const closeArtifactPanel = useArtifactPanel((s) => s.close);
@@ -387,8 +369,6 @@ export function Chat() {
   const familyRequestIdRef = useRef(0);
   const selectedFamilySessionKeyRef = useRef(currentSessionKey);
   const spawnInvalidationRef = useRef({ sessionKey: '', signature: '' });
-  const liveTalkAreaRef = useRef<HTMLDivElement | null>(null);
-  const liveTranscriptCountRef = useRef(visibleTalkTranscripts.length);
   const { contentRef, scrollRef, scrollToBottom, isAtBottom } = useStickToBottomInstant(
     currentSessionKey,
     acpSending || acpCancelling,
@@ -420,28 +400,6 @@ export function Chat() {
     setVisibleSession(currentSessionKey);
     return () => setVisibleSession(null);
   }, [currentSessionKey, setVisibleSession]);
-
-  useLayoutEffect(() => {
-    const previousCount = liveTranscriptCountRef.current;
-    liveTranscriptCountRef.current = visibleTalkTranscripts.length;
-    if (visibleTalkTranscripts.length <= previousCount) return;
-    liveTalkAreaRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [visibleTalkTranscripts.length]);
-
-  useEffect(() => {
-    void realtimeTalkController.handleSessionChange(currentSessionKey ?? '');
-  }, [currentSessionKey]);
-
-  useEffect(() => {
-    const stopTalk = () => {
-      void realtimeTalkController.stop();
-    };
-    window.addEventListener('pagehide', stopTalk);
-    return () => {
-      window.removeEventListener('pagehide', stopTalk);
-      stopTalk();
-    };
-  }, []);
 
   useEffect(() => {
     void fetchAgents().catch(() => undefined);
@@ -734,41 +692,33 @@ export function Chat() {
             <div data-testid="chat-scroll-column" className="relative min-h-0 min-w-0 flex-1">
               <div ref={scrollRef} className="h-full min-h-0 min-w-0 overflow-y-auto" data-testid="chat-scroll-container">
                 <div ref={contentRef} className="mx-auto max-w-4xl space-y-4">
-                  {liveTalkTranscriptVisible ? (
-                    <div ref={liveTalkAreaRef}>
-                      <LiveTalkTranscript transcripts={visibleTalkTranscripts} />
+                  {workspaceUnavailable && (
+                    <WorkspaceUnavailableBanner
+                      path={cwd}
+                      readOnly={effectiveWorkspace.readOnly}
+                      onChooseWorkspace={effectiveWorkspace.readOnly ? undefined : () => void chooseReplacementWorkspace()}
+                    />
+                  )}
+                  {visibleAcpError && <AcpErrorBanner message={visibleAcpError} onDismiss={clearAcpError} />}
+                  {acpLoading ? (
+                    <div className="flex min-h-[40vh] items-center justify-center" data-testid="acp-chat-loading">
+                      <LoadingSpinner size="md" />
                     </div>
+                  ) : visibleAcpTimeline.itemOrder.length === 0 ? (
+                    <AcpEmptyState />
                   ) : (
-                    <>
-                      {workspaceUnavailable && (
-                        <WorkspaceUnavailableBanner
-                          path={cwd}
-                          readOnly={effectiveWorkspace.readOnly}
-                          onChooseWorkspace={effectiveWorkspace.readOnly ? undefined : () => void chooseReplacementWorkspace()}
-                        />
-                      )}
-                      {visibleAcpError && <AcpErrorBanner message={visibleAcpError} onDismiss={clearAcpError} />}
-                      {acpLoading ? (
-                        <div className="flex min-h-[40vh] items-center justify-center" data-testid="acp-chat-loading">
-                          <LoadingSpinner size="md" />
-                        </div>
-                      ) : visibleAcpTimeline.itemOrder.length === 0 ? (
-                        <AcpEmptyState />
-                      ) : (
-                        <AcpTimeline
-                          snapshot={visibleAcpTimeline}
-                          isStreaming={acpSending || acpCancelling}
-                          turnTimingsByUserMessageId={acpTurnTimings}
-                          fileActivity={fileActivity}
-                          workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey
-                            ? resolvedWorkspaceContext.workspaceRoot
-                            : undefined}
-                          onPermissionSelect={(requestId, optionId) => {
-                            void respondAcpPermission(requestId, optionId);
-                          }}
-                        />
-                      )}
-                    </>
+                    <AcpTimeline
+                      snapshot={visibleAcpTimeline}
+                      isStreaming={acpSending || acpCancelling}
+                      turnTimingsByUserMessageId={acpTurnTimings}
+                      fileActivity={fileActivity}
+                      workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey
+                        ? resolvedWorkspaceContext.workspaceRoot
+                        : undefined}
+                      onPermissionSelect={(requestId, optionId) => {
+                        void respondAcpPermission(requestId, optionId);
+                      }}
+                    />
                   )}
                 </div>
               </div>
@@ -788,7 +738,7 @@ export function Chat() {
               )}
             </div>
 
-            {!liveTalkTranscriptVisible && questionDirectoryVisible && <QuestionDirectory items={questionDirectoryItems} />}
+            {questionDirectoryVisible && <QuestionDirectory items={questionDirectoryItems} />}
           </div>
         </div>
 
@@ -879,7 +829,6 @@ export function Chat() {
           currentPlan={currentPlan}
           subagentSessions={subagentSessions}
           onSelectSubagent={navigateToSession}
-          talkActive={liveTalkTranscriptVisible}
         />
       </div>
 

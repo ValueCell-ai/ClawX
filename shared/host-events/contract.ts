@@ -4,7 +4,6 @@ import type {
 } from '../acp-chat/types';
 import type { UpdateStatusSnapshot } from '../host-api/contract';
 import type { ChatRuntimeEvent } from '../chat-runtime-events';
-import type { TalkRelayEvent } from '../talk/types';
 import type {
   GatewayNotification,
   GatewayRuntimePayload,
@@ -83,9 +82,6 @@ export type HostEventContract = {
     acpSessionUpdate: (payload: AcpSessionUpdateEnvelope) => void;
     acpPermissionRequest: (payload: AcpPermissionRequestEnvelope) => void;
   };
-  talk: {
-    event: (payload: TalkRelayEvent) => void;
-  };
   oauth: {
     code: (payload: OAuthCodeEvent) => void;
     success: (payload: OAuthSuccessEvent) => void;
@@ -134,9 +130,6 @@ export const HOST_EVENT_CHANNELS = {
     runtimeEvent: 'chat:runtime-event',
     acpSessionUpdate: 'chat:acp-session-update',
     acpPermissionRequest: 'chat:acp-permission-request',
-  },
-  talk: {
-    event: 'talk:event',
   },
   oauth: {
     code: 'oauth:code',

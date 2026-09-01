@@ -54,7 +54,6 @@ import { deviceOAuthManager } from '../utils/device-oauth';
 import { browserOAuthManager } from '../utils/browser-oauth';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { syncAllProviderAuthToRuntime } from '../services/providers/provider-runtime-sync';
-import { closeWindowAfterActiveTalk, forwardActiveTalkEvent, type TalkRelayOwnership } from '../services/talk-api';
 
 const WINDOWS_APP_USER_MODEL_ID = 'app.clawx.desktop';
 const isE2EMode = process.env.CLAWX_E2E === '1';
@@ -120,7 +119,6 @@ const gotTheLock = gotElectronLock && gotFileLock;
 let mainWindow: BrowserWindow | null = null;
 let gatewayManager!: GatewayManager;
 let clawHubService!: ClawHubService;
-let talkRelayOwnership: TalkRelayOwnership | null = null;
 const hostApiRegistry = new HostApiRegistry();
 const webBrowserGuestRegistry = new WebBrowserGuestRegistry();
 let webBrowserSession!: Session;
@@ -259,7 +257,6 @@ function focusMainWindow(): void {
 
 function createMainWindow(): BrowserWindow {
   const win = createWindow();
-  let hideAfterTalkCleanupInFlight = false;
 
   win.once('ready-to-show', () => {
     if (mainWindow !== win) {
@@ -284,24 +281,7 @@ function createMainWindow(): BrowserWindow {
   win.on('close', (event) => {
     if (!isQuitting() && !isE2EMode) {
       event.preventDefault();
-      if (hideAfterTalkCleanupInFlight) return;
-      hideAfterTalkCleanupInFlight = true;
-      const ownership = talkRelayOwnership;
-      if (!ownership) {
-        hideAfterTalkCleanupInFlight = false;
-        win.hide();
-        return;
-      }
-      closeWindowAfterActiveTalk({
-        ownership,
-        gatewayManager,
-        sendTalkEvent: (talkEvent) => sendMainWindowEvent('talk:event', talkEvent),
-        hide: () => {
-          hideAfterTalkCleanupInFlight = false;
-          if (!win.isDestroyed() && !isQuitting()) win.hide();
-        },
-        logWarn: (message, error) => logger.warn(message, error),
-      });
+      win.hide();
     }
   });
 
@@ -375,7 +355,7 @@ async function initialize(): Promise<void> {
   );
 
   // Register IPC handlers
-  talkRelayOwnership = registerIpcHandlers(
+  registerIpcHandlers(
     gatewayManager,
     clawHubService,
     window,
@@ -501,13 +481,6 @@ async function initialize(): Promise<void> {
 
   gatewayManager.on('chat:runtime-event', (data) => {
     sendMainWindowEvent('chat:runtime-event', data);
-  });
-
-  gatewayManager.on('talk:event', (data) => {
-    if (!talkRelayOwnership) return;
-    forwardActiveTalkEvent(talkRelayOwnership, data, (event) => {
-      sendMainWindowEvent('talk:event', event);
-    });
   });
 
   gatewayManager.on('channel:status', (data) => {

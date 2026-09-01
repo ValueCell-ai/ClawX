@@ -44,10 +44,6 @@ vi.mock('@/components/settings/ImageGenerationSettings', () => ({
   ImageGenerationSettings: () => <div data-testid="image-generation-settings-panel" />,
 }));
 
-vi.mock('@/components/settings/TalkSettings', () => ({
-  TalkSettings: () => <div data-testid="talk-settings-panel" />,
-}));
-
 vi.mock('@/components/common/FeedbackState', () => ({
   FeedbackState: ({ title }: { title: string }) => <div>{title}</div>,
 }));
@@ -117,7 +113,7 @@ describe('Models page auto refresh', () => {
     expect(hostApiFetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('uses a single chat panel when developer mode is locked and gates image and realtime Talk settings', async () => {
+  it('uses a single chat panel when developer mode is locked and gates image settings', async () => {
     const { unmount } = renderModels();
 
     await act(async () => {
@@ -143,10 +139,6 @@ describe('Models page auto refresh', () => {
     expect(screen.getByTestId('image-generation-settings-panel')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Token Usage History' })).not.toBeInTheDocument();
 
-    fireEvent.mouseDown(screen.getByTestId('models-tab-realtime-talk'), { button: 0 });
-    expect(screen.getByTestId('talk-settings-panel')).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Token Usage History' })).not.toBeInTheDocument();
-
     fireEvent.mouseDown(screen.getByTestId('models-tab-chat'), { button: 0 });
     expect(screen.getByRole('heading', { name: 'Token Usage History' })).toBeInTheDocument();
   });
@@ -159,8 +151,8 @@ describe('Models page auto refresh', () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByTestId('models-tab-realtime-talk')).toHaveAttribute('data-state', 'active');
-    expect(screen.getByTestId('talk-settings-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('models-tab-chat')).toHaveAttribute('data-state', 'active');
+    expect(screen.queryByTestId('models-tab-realtime-talk')).not.toBeInTheDocument();
 
     unmount();
     renderModels('/models?tab=unsupported');

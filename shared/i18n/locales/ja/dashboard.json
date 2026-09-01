@@ -14,8 +14,7 @@
         "subtitle": "AI プロバイダーを管理し、トークン使用量を監視します",
         "tabs": {
             "chat": "チャットモデル",
-            "imageGeneration": "画像生成",
-            "realtimeTalk": "リアルタイム Talk"
+            "imageGeneration": "画像生成"
         }
     },
     "quickActions": {

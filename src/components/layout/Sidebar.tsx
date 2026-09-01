@@ -27,7 +27,6 @@ import {
   ChevronsDownUp,
   LoaderCircle,
   Loader2,
-  Mic,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { isGatewayRestarting } from '@/lib/gateway-status';
@@ -39,7 +38,6 @@ import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { groupSessionsByWorkspace } from './session-buckets';
 import {
-  isOpenClawHeartbeatOnlySession,
   shouldIncludeSessionInSidebarList,
   shouldIncludeSessionInWorkspaceDeletion,
 } from '@/stores/chat/session-key-utils';
@@ -48,7 +46,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { hostApi } from '@/lib/host-api';
 import { formatSessionRelativeTime } from '@/lib/relative-time';
 import { SIDEBAR_COLLAPSED_WIDTH, MAC_SIDEBAR_CHROME_HEIGHT } from '@shared/sidebar-layout';
@@ -59,9 +56,6 @@ import { isDefaultWorkspacePath } from '@/lib/workspace-context';
 import { useWorkspaceAvailability } from '@/hooks/use-workspace-availability';
 import { projectSessionRunState } from '@/stores/chat/session-status';
 import { getSessionDisplayTitle } from '@shared/chat/session-title';
-import { DEFAULT_SESSION_KEY } from '@shared/chat/types';
-import { realtimeTalkController } from '@/lib/talk/realtime-talk-controller';
-import { useRealtimeTalkStore } from '@/stores/realtime-talk';
 
 interface NavItemProps {
   to: string;
@@ -170,17 +164,6 @@ export function Sidebar() {
   const sessionAttentionByKey = useSessionAttentionStore((s) => s.bySessionKey);
   const markRead = useSessionAttentionStore((s) => s.markRead);
   const handleNewChat = useNewChatAction();
-  const talkActive = useRealtimeTalkStore((state) => state.isActive);
-  const talkSessionAvailable = Boolean(
-    currentSessionKey
-    && currentSessionKey !== DEFAULT_SESSION_KEY
-    && sessions.some((session) => session.key === currentSessionKey && !isOpenClawHeartbeatOnlySession(session)),
-  );
-
-  useEffect(() => {
-    if (!devModeUnlocked && talkActive) void realtimeTalkController.stop();
-  }, [devModeUnlocked, talkActive]);
-
   const gatewayStatus = useGatewayStore((s) => s.status);
   const isGatewayRunning = gatewayStatus.state === 'running';
   const isGatewayReady = isGatewayRunning && gatewayStatus.gatewayReady !== false;
@@ -218,33 +201,6 @@ export function Sidebar() {
   const openDevConsole = async () => {
     await openControlUi('OpenClaw Page');
   };
-
-  const handleTalk = useCallback(async () => {
-    if (talkActive) {
-      await realtimeTalkController.stop();
-      return;
-    }
-    const session = sessions.find((candidate) => candidate.key === currentSessionKey);
-    if (
-      !currentSessionKey
-      || currentSessionKey === DEFAULT_SESSION_KEY
-      || !session
-      || isOpenClawHeartbeatOnlySession(session)
-    ) {
-      navigate('/');
-      return;
-    }
-    try {
-      const catalog = await realtimeTalkController.catalog();
-      if (catalog.realtime.ready !== true) {
-        navigate('/models?tab=realtime-talk');
-        return;
-      }
-      await realtimeTalkController.start({ sessionKey: currentSessionKey });
-    } catch {
-      navigate('/models?tab=realtime-talk');
-    }
-  }, [currentSessionKey, navigate, sessions, talkActive]);
 
   const { t, i18n } = useTranslation(['common', 'chat']);
   const [sessionToDelete, setSessionToDelete] = useState<{ key: string; label: string } | null>(null);
@@ -584,36 +540,6 @@ export function Sidebar() {
         {navItems.map((item) => (
           <NavItem key={item.to} {...item} collapsed={sidebarCollapsed} />
         ))}
-        {devModeUnlocked && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="block">
-                <button
-                  type="button"
-                  data-testid="sidebar-talk"
-                  onClick={() => void handleTalk()}
-                  disabled={!talkActive && !talkSessionAvailable}
-                  className={cn(
-                    'sidebar-nav-text flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
-                    'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
-                    'disabled:cursor-not-allowed disabled:text-muted-foreground/50 disabled:hover:bg-transparent',
-                    talkActive && 'bg-black/5 dark:bg-white/10 text-foreground',
-                    sidebarCollapsed && 'justify-center px-0',
-                  )}
-                  aria-pressed={talkActive}
-                >
-                  <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">
-                    <Mic className="h-4 w-4" strokeWidth={2} />
-                  </div>
-                  {!sidebarCollapsed && <span className="flex-1 text-left">{t(talkActive ? 'chat:talk.stop' : 'chat:talk.start')}</span>}
-                </button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{t(talkActive ? 'chat:talk.stop' : talkSessionAvailable ? 'chat:talk.start' : 'chat:talk.unavailable.session')}</p>
-            </TooltipContent>
-          </Tooltip>
-        )}
       </nav>
 
       {/* Session list — below Settings, only when expanded */}

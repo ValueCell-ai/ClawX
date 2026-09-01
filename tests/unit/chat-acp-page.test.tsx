@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Chat } from '@/pages/Chat';
 import type { AcpTimelineSnapshot } from '@/lib/acp/timeline-types';
 
-const { acpState, agentsState, artifactPanelState, artifactPanelProps, chatState, gatewayState, settingsState, talkState, talkController } = vi.hoisted(() => ({
+const { acpState, agentsState, artifactPanelState, artifactPanelProps, chatState, gatewayState, settingsState } = vi.hoisted(() => ({
   acpState: {
     timeline: {
       sessionId: 'agent:main:main',
@@ -86,16 +86,6 @@ const { acpState, agentsState, artifactPanelState, artifactPanelProps, chatState
     chatWorkspacePath: '/workspace',
     setChatWorkspacePath: vi.fn(),
   },
-  talkState: {
-    status: 'idle',
-    isActive: false,
-    sessionKey: null as string | null,
-    transcripts: [] as Array<{ role: 'user' | 'assistant'; text: string; final: boolean }>,
-  },
-  talkController: {
-    handleSessionChange: vi.fn().mockResolvedValue(undefined),
-    stop: vi.fn().mockResolvedValue(undefined),
-  },
 }));
 
 const ensureAcpChatSubscriptions = vi.hoisted(() => vi.fn());
@@ -141,14 +131,6 @@ vi.mock('@/stores/gateway', () => ({
   useGatewayStore: (selector: (state: typeof gatewayState) => unknown) => selector(gatewayState),
 }));
 
-vi.mock('@/stores/realtime-talk', () => ({
-  useRealtimeTalkStore: (selector: (state: typeof talkState) => unknown) => selector(talkState),
-}));
-
-vi.mock('@/lib/talk/realtime-talk-controller', () => ({
-  realtimeTalkController: talkController,
-}));
-
 vi.mock('@/hooks/use-stick-to-bottom-instant', () => ({
   useStickToBottomInstant: () => ({
     contentRef: { current: null },
@@ -171,7 +153,6 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
     workspaceLabel,
     workspacePath,
     workspaceReadOnly,
-    talkActive,
   }: {
     disabled?: boolean;
     onSend: (text: string, attachments?: Array<Record<string, unknown>>, targetAgentId?: string | null) => void;
@@ -180,10 +161,9 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
     workspaceLabel?: string;
     workspacePath?: string;
     workspaceReadOnly?: boolean;
-    talkActive?: boolean;
     onSelectWorkspace?: (path: string) => void;
   }) => (
-    <div data-testid="mock-chat-input" data-disabled={disabled ? 'true' : 'false'} data-sending={sending ? 'true' : 'false'} data-talk-active={talkActive ? 'true' : 'false'}>
+    <div data-testid="mock-chat-input" data-disabled={disabled ? 'true' : 'false'} data-sending={sending ? 'true' : 'false'}>
       <span data-testid="mock-workspace-label">{workspaceLabel}</span>
       <span data-testid="mock-workspace-path">{workspacePath}</span>
       <span data-testid="mock-workspace-readonly">{workspaceReadOnly ? 'readonly' : 'editable'}</span>
@@ -379,14 +359,6 @@ describe('ACP Chat page', () => {
     settingsState.chatWorkspacePath = '/workspace';
     settingsState.setChatWorkspacePath.mockReset();
     gatewayState.status = { state: 'running', gatewayReady: true, port: 18789 };
-    talkState.status = 'idle';
-    talkState.isActive = false;
-    talkState.sessionKey = null;
-    talkState.transcripts = [];
-    talkController.handleSessionChange.mockReset();
-    talkController.handleSessionChange.mockResolvedValue(undefined);
-    talkController.stop.mockReset();
-    talkController.stop.mockResolvedValue(undefined);
   });
 
   it('renders ACP inline timeline content', async () => {
@@ -409,26 +381,6 @@ describe('ACP Chat page', () => {
         sessionKey: 'agent:main:main', workspaceRoot: '/workspace', cwd: '/workspace',
       });
     });
-  });
-
-  it('locks the Chat composer and best-effort stops Talk on session switch and unmount', async () => {
-    talkState.status = 'connecting';
-    talkState.isActive = true;
-    talkState.sessionKey = 'agent:main:main';
-    const { rerender, unmount } = render(<Chat />);
-
-    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-talk-active', 'true');
-
-    chatState.currentSessionKey = 'agent:main:session-2';
-    chatState.sessions = [{ key: 'agent:main:session-2', workspacePath: '/workspace' }];
-    acpState.activeSessionKey = 'agent:main:session-2';
-    acpState.timeline = { ...emptyTimeline(), sessionId: 'agent:main:session-2' };
-    rerender(<Chat />);
-
-    await waitFor(() => expect(talkController.handleSessionChange).toHaveBeenCalledWith('agent:main:session-2'));
-    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-talk-active', 'false');
-    unmount();
-    expect(talkController.stop).toHaveBeenCalled();
   });
 
   it('sends ready staged attachments and cancels through the ACP session store', async () => {

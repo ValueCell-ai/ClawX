@@ -8,7 +8,7 @@
  */
 import {
   useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo,
-  type CSSProperties, type SetStateAction,
+  type SetStateAction,
 } from 'react';
 import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Search, ChevronDown, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,6 @@ import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
-import { useRealtimeTalkStore } from '@/stores/realtime-talk';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { buildPreviewTarget } from '@/components/file-preview/build-preview-target';
 import { useProviderStore } from '@/stores/providers';
@@ -35,8 +34,6 @@ import { DEFAULT_WORKSPACE_CWD, isDefaultWorkspacePath, normalizeWorkspacePath }
 import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
 import { AcpSessionPlan } from './AcpSessionPlan';
 import { AcpSubagentSessions, type AcpSubagentSession } from './AcpSubagentSessions';
-import { realtimeTalkController } from '@/lib/talk/realtime-talk-controller';
-import logoSvg from '@/assets/logo.svg';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -74,7 +71,6 @@ interface ChatInputProps {
   currentPlan?: AcpCurrentPlan | null;
   subagentSessions?: AcpSubagentSession[];
   onSelectSubagent?: (sessionKey: string) => void;
-  talkActive?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -317,7 +313,6 @@ export function ChatInput({
   currentPlan,
   subagentSessions = [],
   onSelectSubagent,
-  talkActive,
 }: ChatInputProps) {
   const { t, i18n } = useTranslation('chat');
   const [uncontrolledInput, setUncontrolledInput] = useState('');
@@ -363,11 +358,6 @@ export function ChatInput({
   const providerError = useProviderStore((s) => s.error);
   const refreshProviderSnapshot = useProviderStore((s) => s.refreshProviderSnapshot);
   const currentAgentId = useChatStore((s) => s.currentAgentId);
-  const talkStatus = useRealtimeTalkStore((s) => s.status);
-  const talkInputLevel = useRealtimeTalkStore((s) => s.inputLevel);
-  const storeTalkActive = useRealtimeTalkStore((s) => s.isActive);
-  const talkConsultRefreshError = useRealtimeTalkStore((s) => s.consultRefreshError);
-  const talkConsultRefreshRetrying = useRealtimeTalkStore((s) => s.consultRefreshRetrying);
   const currentAgent = useMemo(
     () => (agents ?? []).find((agent) => agent.id === currentAgentId) ?? null,
     [agents, currentAgentId],
@@ -415,15 +405,7 @@ export function ChatInput({
   const showModelPicker = modelOptions.length > 1;
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
   const isGatewayUsable = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
-  const talkIsActive = talkActive ?? storeTalkActive;
-  const talkListeningRingStyle = {
-    '--talk-ring-scale': `${1.12 + talkInputLevel * 0.36}`,
-    '--talk-ring-opacity': `${0.28 + talkInputLevel * 0.52}`,
-    '--talk-ring-min-opacity': `${(0.28 + talkInputLevel * 0.52) * 0.45}`,
-    '--talk-ring-shadow': `${10 + talkInputLevel * 30}px`,
-    '--talk-ring-duration': `${1800 - talkInputLevel * 900}ms`,
-  } as CSSProperties;
-  const inputDisabled = disabled || talkIsActive;
+  const inputDisabled = disabled;
   const attachmentsLocked = inputDisabled;
   const gatewayUnavailable = !isGatewayUsable;
   const workspaceSelectorDisabled = workspaceReadOnly || inputDisabled || sending || !onSelectWorkspace;
@@ -925,10 +907,6 @@ export function ChatInput({
     onStop?.();
   }, [canStop, onStop]);
 
-  const handleRetryConsultRefresh = useCallback(() => {
-    void realtimeTalkController.retryConsultRefresh();
-  }, []);
-
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Backspace') {
@@ -1068,25 +1046,6 @@ export function ChatInput({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {talkIsActive && (
-        <div
-          data-testid="chat-talk-listening-indicator"
-          role="meter"
-          aria-label={t(`talk.status.${talkStatus}`)}
-          aria-valuemin={0}
-          aria-valuemax={1}
-          aria-valuenow={talkInputLevel}
-          className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2"
-        >
-          <div className="relative grid h-20 w-20 place-items-center">
-            <span className="clawx-talk-listening-ring absolute -inset-1 rounded-full" style={talkListeningRingStyle} />
-            <span className="clawx-talk-listening-ring absolute -inset-4 rounded-full" style={talkListeningRingStyle} />
-            <div className="relative grid h-16 w-16 place-items-center rounded-full border border-border bg-surface-modal p-2 shadow-lg shadow-black/10 dark:shadow-black/30">
-              <img src={logoSvg} alt="" className="h-full w-full object-contain" />
-            </div>
-          </div>
-        </div>
-      )}
       <div className="w-full">
         <div
           data-testid="chat-composer-session-controls"
@@ -1225,9 +1184,6 @@ export function ChatInput({
 
           {/* Action Row — icons on their own line */}
           <div className="mt-1.5 flex items-center gap-1">
-             <div data-testid="chat-talk-status" role="status" aria-live="polite" className="sr-only">
-               {t(`talk.status.${talkStatus}`)}
-             </div>
             {/* Attach Button */}
             <Button
               variant="ghost"
@@ -1453,26 +1409,6 @@ export function ChatInput({
               )}
             </Button>
           </div>
-          {talkIsActive && talkConsultRefreshError && (
-            <div
-              data-testid="chat-talk-consult-refresh-error"
-              role="alert"
-              className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-surface-input px-2.5 py-1.5 text-tiny text-amber-700 dark:text-amber-400"
-            >
-              <span>{t('talk.consultRefresh.failed')}</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                data-testid="chat-talk-consult-refresh-retry"
-                className="h-auto shrink-0 px-1.5 py-0.5 text-tiny text-amber-700 hover:bg-black/5 hover:text-amber-700 dark:text-amber-400 dark:hover:bg-white/10 dark:hover:text-amber-400"
-                disabled={talkConsultRefreshRetrying}
-                onClick={handleRetryConsultRefresh}
-              >
-                {talkConsultRefreshRetrying ? t('talk.consultRefresh.retrying') : t('talk.consultRefresh.retry')}
-              </Button>
-            </div>
-          )}
         </div>
         <div
           data-testid="chat-composer-footer"

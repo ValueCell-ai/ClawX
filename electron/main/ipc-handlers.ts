@@ -65,7 +65,6 @@ import { createSessionsApi } from '../services/sessions-api';
 import { createSkillsApi } from '../services/skills-api';
 import { createUsageApi } from '../services/usage-api';
 import { createWebBrowserApi } from '../services/web-browser-api';
-import { createTalkApi, createTalkRelayOwnership, type TalkRelayOwnership } from '../services/talk-api';
 import type { WebBrowserGuestRegistry } from './web-browser-policy';
 import {
   isLaunchAtStartupKey,
@@ -86,12 +85,12 @@ export function registerIpcHandlers(
   hostApiRegistry: HostApiRegistry,
   browserSession: Session,
   registry: WebBrowserGuestRegistry,
-): TalkRelayOwnership {
+): void {
   // Unified request protocol (non-breaking: legacy channels remain available)
   registerUnifiedRequestHandlers(gatewayManager);
 
   // Typed host invoke handlers (new renderer facade; legacy channels remain available)
-  const talkRelayOwnership = registerTypedHostHandlers(
+  registerTypedHostHandlers(
     gatewayManager,
     clawHubService,
     mainWindow,
@@ -136,7 +135,6 @@ export function registerIpcHandlers(
   // File preview handlers (sandboxed read/write/list for inline viewer)
   registerFilePreviewHandlers();
 
-  return talkRelayOwnership;
 }
 
 function registerTypedHostHandlers(
@@ -146,7 +144,7 @@ function registerTypedHostHandlers(
   hostApiRegistry: HostApiRegistry,
   browserSession: Session,
   registry: WebBrowserGuestRegistry,
-): TalkRelayOwnership {
+): void {
   const acpSessionAccessRegistry = new AcpSessionAccessRegistry();
   const stagedAttachments = new StagedAttachmentRegistry();
   const attachmentOpenWith = createAttachmentOpenWithService();
@@ -155,7 +153,6 @@ function registerTypedHostHandlers(
     stagedAttachments,
     openWith: attachmentOpenWith,
   });
-  const talkRelayOwnership = createTalkRelayOwnership();
   hostApiRegistry.registerCoreServices({
     app: createAppApi(),
     openclaw: createOpenClawApi(),
@@ -167,7 +164,6 @@ function registerTypedHostHandlers(
     uv: createUvApi(),
     settings: createSettingsApi(gatewayManager),
     gateway: createGatewayApi(gatewayManager),
-    talk: createTalkApi(gatewayManager, talkRelayOwnership),
     logs: createLogsApi(),
     channels: createChannelsApi({ gatewayManager, mainWindow }),
     agents: createAgentsApi({ gatewayManager }),
@@ -185,7 +181,6 @@ function registerTypedHostHandlers(
     usage: createUsageApi(),
   });
   registerHostInvokeHandler(hostApiRegistry);
-  return talkRelayOwnership;
 }
 
 function registerUnifiedRequestHandlers(gatewayManager: GatewayManager): void {

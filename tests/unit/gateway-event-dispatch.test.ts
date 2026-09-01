@@ -48,16 +48,6 @@ describe('dispatchProtocolEvent', () => {
     expect(emitter.emit).toHaveBeenCalledWith('chat:message', { message: { text: 'hello' } });
   });
 
-  it('dispatches talk.event to talk:event without the generic notification path', () => {
-    const emitter = createMockEmitter();
-    const payload = { relaySessionId: 'relay-1', type: 'transcript', role: 'assistant', text: 'Hello' };
-
-    dispatchProtocolEvent(emitter, 'talk.event', payload);
-
-    expect(emitter.emit).toHaveBeenCalledWith('talk:event', payload);
-    expect(emitter.emit).not.toHaveBeenCalledWith('notification', expect.anything());
-  });
-
   it('does not normalize non-terminal lifecycle phase=end as run.ended', () => {
     const emitter = createMockEmitter();
     const payload = {

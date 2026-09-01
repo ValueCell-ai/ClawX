@@ -45,7 +45,6 @@ import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
 import type { AcpTimelineSnapshot, MessageSegmentItem, PermissionItem, RenderPart } from '@/lib/acp/timeline-types';
 import { isCronSessionKey } from './chat/cron-session-utils';
-import { stopActiveRealtimeTalk, useRealtimeTalkStore } from './realtime-talk';
 
 const EMPTY_SESSION_ID = '';
 const CANCEL_PERMISSION_OPTION_ID = '__cancelled__';
@@ -139,8 +138,6 @@ type ImageGenerationProjectionOptions = {
 
 type PermissionOutcome = AcpChatRespondPermissionPayload['outcome'];
 type AcpChatLoadOptions = {
-  // Only the Talk consult controller may retain its live relay during ACP replay.
-  preserveRealtimeTalk?: true;
   // Forces Main to obtain the logical Gateway session transcript through a fresh ACP session.
   forceDurableReplay?: true;
 };
@@ -1062,8 +1059,6 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
   turnTimingsByUserMessageId: {},
 
   prepareLocalSession(input) {
-    void stopActiveRealtimeTalk();
-    useRealtimeTalkStore.getState().reset();
     captureLiveSession(get());
     loadRequestSeq += 1;
     pendingLoadUpdates.clear();
@@ -1086,7 +1081,6 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
   },
 
   async loadSession(input) {
-    const { preserveRealtimeTalk, ...hostInput } = input;
     captureLiveSession(get());
     const requestId = loadRequestSeq + 1;
     loadRequestSeq = requestId;
@@ -1110,13 +1104,8 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       timeline: liveSnapshot?.timeline ?? createEmptyAcpTimeline(input.sessionKey, generation),
       turnTimingsByUserMessageId: liveSnapshot?.turnTimingsByUserMessageId ?? {},
     });
-    if (!preserveRealtimeTalk) {
-      await stopActiveRealtimeTalk();
-      useRealtimeTalkStore.getState().reset();
-    }
-
     try {
-      let result = await hostApi.chat.loadAcpSession(hostInput);
+      let result = await hostApi.chat.loadAcpSession(input);
       let state = get();
       if (
         loadRequestSeq !== requestId
@@ -1126,15 +1115,13 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       ) return false;
         if (!result.success) {
           pendingLoadUpdates.clear();
-          set(preserveRealtimeTalk
-            ? { loading: false, error: failedOperationMessage(result, 'ACP session load failed') }
-            : {
-              activeSessionKey: null,
-              workspaceRoot: null,
-              cwd: null,
-              loading: false,
-              error: failedOperationMessage(result, 'ACP session load failed'),
-            });
+          set({
+            activeSessionKey: null,
+            workspaceRoot: null,
+            cwd: null,
+            loading: false,
+            error: failedOperationMessage(result, 'ACP session load failed'),
+          });
           return false;
         }
 
@@ -1165,7 +1152,7 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
           pendingLoadUpdates.clear();
           set({
             loading: false,
-            ...(preserveRealtimeTalk ? {} : { sending: false }),
+            sending: false,
             error: failedOperationMessage(result, 'ACP session load failed'),
           });
           return false;
@@ -1282,15 +1269,13 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
           && state.activeSessionKey === input.sessionKey
           && state.workspaceRoot === input.workspaceRoot
           && state.cwd === input.cwd
-          ? (preserveRealtimeTalk
-            ? { loading: false, error: errorMessage(error, 'ACP session load failed') }
-            : {
-              activeSessionKey: null,
-              workspaceRoot: null,
-              cwd: null,
-              loading: false,
-              error: errorMessage(error, 'ACP session load failed'),
-            })
+          ? {
+            activeSessionKey: null,
+            workspaceRoot: null,
+            cwd: null,
+            loading: false,
+            error: errorMessage(error, 'ACP session load failed'),
+          }
           : {}
       ));
       return false;
@@ -1305,7 +1290,6 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
       workspaceRoot,
       cwd,
       ...options,
-      ...(options?.preserveRealtimeTalk ? { forceDurableReplay: true } : {}),
     });
   },
 
@@ -1315,8 +1299,6 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
     const generation = startState.generation;
     const loadRequestId = loadRequestSeq;
     if (startState.activeSessionKey !== sessionKey || startState.sending) return false;
-    if (useRealtimeTalkStore.getState().isActive) return false;
-
     const messageId = input.messageId ?? createOptimisticMessageId();
     const payload = { ...input, messageId };
     const startedAtMs = Date.now();

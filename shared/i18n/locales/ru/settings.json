@@ -157,28 +157,6 @@
     "proxySaved": "Настройки прокси сохранены",
     "proxySaveFailed": "Не удалось сохранить настройки прокси"
   },
-  "talk": {
-    "title": "Talk",
-    "description": "Настройте Talk в реальном времени через OpenClaw Gateway Relay.",
-    "refresh": "Обновить доступность Talk",
-    "provider": "Провайдер реального времени",
-    "model": "Модель реального времени",
-    "unavailable": "Недоступен",
-    "providerHelp": "Отображаются все realtime-провайдеры, зарегистрированные OpenClaw.",
-    "providerUnavailable": "{{providers}} отключены, потому что не настроены в OpenClaw.",
-    "modelHelp": "Модели предоставляются выбранным провайдером. Настройте и выберите провайдера, чтобы включить этот список.",
-    "openConfig": "Открыть конфигурацию OpenClaw",
-    "openConfigFailed": "Не удалось открыть конфигурацию OpenClaw",
-    "readiness": {
-      "ready": "Talk готов",
-      "unavailable": "Talk недоступен"
-    },
-    "save": "Сохранить настройки Talk",
-    "saving": "Сохранение настроек Talk...",
-    "saved": "Настройки Talk сохранены",
-    "loadFailed": "Не удалось загрузить настройки Talk",
-    "saveFailed": "Не удалось сохранить настройки Talk"
-  },
   "updates": {
     "title": "Обновления",
     "description": "Поддерживайте ClawX в актуальном состоянии",

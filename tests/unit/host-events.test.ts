@@ -74,18 +74,6 @@ describe('hostEvents', () => {
     expect(on).toHaveBeenCalledWith('channel:wechat-qr', expect.any(Function));
   });
 
-  it('subscribes to Talk relay events over the dedicated IPC channel', async () => {
-    const { hostEvents } = await import('@/lib/host-events');
-    const handler = vi.fn();
-
-    hostEvents.onTalkEvent(handler);
-    const callback = on.mock.calls[0]?.[1] as ((payload: unknown) => void) | undefined;
-    callback?.({ relaySessionId: 'relay-1', type: 'ready' });
-
-    expect(on).toHaveBeenCalledWith('talk:event', expect.any(Function));
-    expect(handler).toHaveBeenCalledWith({ relaySessionId: 'relay-1', type: 'ready' });
-  });
-
   it('does not create EventSource fallback', async () => {
     const eventSource = vi.fn();
     vi.stubGlobal('EventSource', eventSource);

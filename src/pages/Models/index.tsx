@@ -9,7 +9,6 @@ import { hostApi } from '@/lib/host-api';
 import { trackUiEvent } from '@/lib/telemetry';
 import { ProvidersSettings } from '@/components/settings/ProvidersSettings';
 import { ImageGenerationSettings } from '@/components/settings/ImageGenerationSettings';
-import { TalkSettings } from '@/components/settings/TalkSettings';
 import { FeedbackState } from '@/components/common/FeedbackState';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -28,12 +27,10 @@ const USAGE_AUTO_REFRESH_INTERVAL_MS = 15_000;
 
 const HIDDEN_USAGE_MARKERS = ['gateway-injected', 'delivery-mirror'];
 
-type ModelsManagementTab = 'chat' | 'image-generation' | 'realtime-talk';
+type ModelsManagementTab = 'chat' | 'image-generation';
 
 function getModelsManagementTab(tab: string | null, devModeUnlocked: boolean): ModelsManagementTab {
-  if (tab === 'image-generation' || tab === 'realtime-talk') {
-    return devModeUnlocked ? tab : 'chat';
-  }
+  if (tab === 'image-generation') return devModeUnlocked ? tab : 'chat';
   return tab === 'chat' ? tab : 'chat';
 }
 
@@ -328,18 +325,12 @@ export function Models() {
                 <TabsTrigger value="image-generation" data-testid="models-tab-image-generation">
                   {t('dashboard:models.tabs.imageGeneration')}
                 </TabsTrigger>
-                <TabsTrigger value="realtime-talk" data-testid="models-tab-realtime-talk">
-                  {t('dashboard:models.tabs.realtimeTalk')}
-                </TabsTrigger>
               </TabsList>
               <TabsContent value="chat" className="mt-8">
                 <ProvidersSettings />
               </TabsContent>
               <TabsContent value="image-generation" className="mt-8">
                 <ImageGenerationSettings />
-              </TabsContent>
-              <TabsContent value="realtime-talk" className="mt-8">
-                <TalkSettings />
               </TabsContent>
             </Tabs>
           ) : (

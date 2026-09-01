@@ -405,7 +405,7 @@ describe('host services', () => {
     expect(setSettingMock).toHaveBeenCalledWith('recentWorkspacePaths', ['/Users/alex/workspace/ClawX']);
   });
 
-  it('routes validated non-Talk gateway rpc directly to the manager and blocks Talk methods', async () => {
+  it('routes validated gateway RPC methods directly to the manager', async () => {
     const gatewayManager = {
       rpc: vi.fn(async () => ({ ok: true })),
     };
@@ -424,13 +424,15 @@ describe('host services', () => {
       42,
     );
     await expect(gatewayApi.rpc({ method: '   ' })).rejects.toThrow('Invalid gateway RPC method');
+    await expect(gatewayApi.rpc({ method: 'talk.session.start' })).rejects.toThrow(
+      'Talk Gateway RPCs are not supported',
+    );
     await expect(gatewayApi.rpc({ method: 'status', timeoutMs: 0 })).rejects.toThrow(
       'Invalid gateway RPC timeout',
     );
-    await expect(gatewayApi.rpc({ method: ' talk.session.create ' })).rejects.toThrow(
-      'Talk Gateway RPCs must use the typed Talk API',
-    );
-    expect(gatewayManager.rpc).toHaveBeenCalledTimes(1);
+    await expect(gatewayApi.rpc({ method: ' custom.runtime.method ' })).resolves.toEqual({ ok: true });
+    expect(gatewayManager.rpc).toHaveBeenLastCalledWith('custom.runtime.method', undefined, undefined);
+    expect(gatewayManager.rpc).toHaveBeenCalledTimes(2);
   });
 
   it('exposes provider account snapshot actions through the typed providers service', async () => {
@@ -1328,38 +1330,14 @@ describe('host services', () => {
     ]);
   });
 
-  it('registers the typed Talk service with Main-owned relay ownership and no legacy direct IPC channel', () => {
+  it('registers core services without a Talk-specific bridge', () => {
     const source = readFileSync(join(process.cwd(), 'electron/main/ipc-handlers.ts'), 'utf8');
     const mainSource = readFileSync(join(process.cwd(), 'electron/main/index.ts'), 'utf8');
-    const registerIpcHandlersSource = source.slice(
-      source.indexOf('export function registerIpcHandlers('),
-      source.indexOf('function registerTypedHostHandlers('),
-    );
-
-    expect(source).toContain('const talkRelayOwnership = createTalkRelayOwnership();');
-    expect(source).toContain('talk: createTalkApi(gatewayManager, talkRelayOwnership)');
+    expect(source).not.toContain('createTalkApi');
+    expect(source).not.toContain('createTalkRelayOwnership');
     expect(source).not.toMatch(/ipcMain\.handle\(\s*['"]talk:/);
-    expect(mainSource).toContain('forwardActiveTalkEvent(talkRelayOwnership, data');
-    const returnIndex = registerIpcHandlersSource.indexOf('return talkRelayOwnership;');
-    expect(returnIndex).toBeGreaterThan(-1);
-    [
-      'registerGatewayHandlers(gatewayManager);',
-      'registerOpenClawHandlers();',
-      'registerProviderHandlers(gatewayManager);',
-      'registerShellHandlers();',
-      'registerDialogHandlers();',
-      'registerAppHandlers();',
-      'registerSettingsHandlers(gatewayManager);',
-      'registerUsageHandlers();',
-      'registerCronHandlers(gatewayManager);',
-      'registerWindowHandlers(mainWindow);',
-      'registerWhatsAppHandlers(mainWindow);',
-      'registerFilePreviewHandlers();',
-    ].forEach((registration) => {
-      const registrationIndex = registerIpcHandlersSource.indexOf(registration);
-      expect(registrationIndex).toBeGreaterThan(-1);
-      expect(registrationIndex).toBeLessThan(returnIndex);
-    });
+    expect(mainSource).not.toContain("'talk:event'");
+    expect(mainSource).not.toContain('forwardActiveTalkEvent');
   });
 
   it('loads session summaries and transcript history through the typed sessions service', async () => {
