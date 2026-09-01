@@ -13,7 +13,7 @@ jobs:
   electron-e2e:
     name: Electron E2E (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -23,7 +23,7 @@ jobs:
           - windows-latest
     env:
       CI: 'true'
-      CLAWX_E2E_WORKERS: '1'
+      CLAWX_E2E_WORKERS: '2'
       # Linux runners cannot use Electron's setuid chrome-sandbox; harmless on macOS/Windows.
       ELECTRON_DISABLE_SANDBOX: '1'
 
