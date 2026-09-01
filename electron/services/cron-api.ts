@@ -139,6 +139,7 @@ function resolveCronRunSessionKey(
 }
 
 async function loadFullCronRunReplies(
+  gatewayManager: GatewayManager,
   parsed: CronSessionKeyParts,
   runs: CronRunLogEntry[],
 ): Promise<Map<CronRunLogEntry, string>> {
@@ -149,7 +150,13 @@ async function loadFullCronRunReplies(
 
     const runSessionKey = resolveCronRunSessionKey(parsed, entry);
     if (!runSessionKey) return;
-    const transcript = await loadSessionTranscriptByKey(runSessionKey, 1_000);
+    const history = await gatewayManager.rpc('chat.history', {
+      sessionKey: runSessionKey,
+      limit: 1_000,
+    }).catch(() => null) as { messages?: unknown } | null;
+    const transcript = Array.isArray(history?.messages)
+      ? history.messages.filter((message): message is RawMessage => isRecord(message))
+      : (await loadSessionTranscriptByKey(runSessionKey, 1_000) ?? []);
     if (!transcript?.length) return;
 
     const fullReply = getFinalAssistantReply(transcript);
@@ -236,31 +243,18 @@ async function readCronRunHistory(
 }
 
 async function readSessionStoreEntry(
-  agentId: string,
+  gatewayManager: GatewayManager,
   sessionKey: string,
 ): Promise<Record<string, unknown> | undefined> {
-  const storePath = join(getOpenClawConfigDir(), 'agents', agentId, 'sessions', 'sessions.json');
-  const raw = await readFile(storePath, 'utf8').catch(() => '');
-  if (!raw.trim()) return undefined;
-
   try {
-    const store = JSON.parse(raw) as Record<string, unknown>;
-    const directEntry = store[sessionKey];
-    if (directEntry && typeof directEntry === 'object') return directEntry as Record<string, unknown>;
-
-    const sessions = (store as { sessions?: unknown }).sessions;
-    if (Array.isArray(sessions)) {
-      const arrayEntry = sessions.find((entry) => {
-        if (!entry || typeof entry !== 'object') return false;
-        const record = entry as Record<string, unknown>;
-        return record.key === sessionKey || record.sessionKey === sessionKey;
-      });
-      if (arrayEntry && typeof arrayEntry === 'object') return arrayEntry as Record<string, unknown>;
-    }
+    const result = await gatewayManager.rpc('sessions.describe', {
+      key: sessionKey,
+    }) as unknown;
+    if (!isRecord(result)) return undefined;
+    return isRecord(result.session) ? result.session : result;
   } catch {
     return undefined;
   }
-  return undefined;
 }
 
 function buildCronSessionFallbackMessages(params: {
@@ -552,7 +546,11 @@ function repairCronJobsInBackground(gatewayManager: GatewayManager, jobs: Gatewa
           let correctAgentId = await resolveAgentIdFromChannel(channel, accountId);
           let resolvedAccountId: string | null = null;
           if (!correctAgentId && !accountId && toAddress) {
-            resolvedAccountId = await resolveAccountIdFromSessionHistory(toAddress, channel);
+            resolvedAccountId = await resolveAccountIdFromSessionHistory(
+              toAddress,
+              channel,
+              gatewayManager,
+            );
             if (resolvedAccountId) {
               correctAgentId = await resolveAgentIdFromChannel(channel, resolvedAccountId);
             }
@@ -652,11 +650,11 @@ export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManag
         gatewayManager.rpc('cron.list', { includeDisabled: true }, 8000)
           .catch(() => ({ jobs: [] as GatewayCronJob[] })),
         readCronRunHistory(gatewayManager, parsedSession.jobId, limit),
-        readSessionStoreEntry(parsedSession.agentId, sessionKey),
+        readSessionStoreEntry(gatewayManager, sessionKey),
       ]);
       const jobs = (jobsResult as { jobs?: GatewayCronJob[] }).jobs ?? [];
       const job = jobs.find((item) => item.id === parsedSession.jobId);
-      const fullReplies = await loadFullCronRunReplies(parsedSession, runs);
+      const fullReplies = await loadFullCronRunReplies(gatewayManager, parsedSession, runs);
       return {
         messages: buildCronSessionFallbackMessages({
           sessionKey,

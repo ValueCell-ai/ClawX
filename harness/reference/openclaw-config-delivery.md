@@ -1,6 +1,6 @@
 # OpenClaw Config Delivery
 
-ClawX bundles OpenClaw 2026.7.1-2. OpenClaw owns the field-level decision between a no-op snapshot update, hot application, subsystem restart, and in-process Gateway restart.
+ClawX bundles OpenClaw 2026.8.1. OpenClaw owns the field-level decision between a no-op snapshot update, hot application, subsystem restart, and in-process Gateway restart.
 
 Provider, Agent, Channel, skill, proxy, image-generation, and plugin-install helpers express config changes as mutators. One Main-owned coordinator owns selection of the authoritative baseline and the commit:
 
@@ -16,8 +16,12 @@ Gateway WebSocket tracing must redact the complete serialized `raw` payload for 
 
 Coordinator-backed reads follow the same authority rule: prefer the runtime-shaped `config.get.config` object while Gateway is running and use JSON5 file parsing while it is not. Compound views derive all config-backed fields from one snapshot.
 
-OpenClaw 2026.7.1-2 keeps auth-profile SQLite snapshots in memory. After a completed auth-store write batch, ClawX calls `secrets.reload` once when Gateway is running. `config.set` does not replace this refresh. Agent `models.json` needs no explicit RPC because OpenClaw re-reads it when its file fingerprint changes.
+OpenClaw 2026.8.1 keeps auth-profile SQLite snapshots in memory. After a completed auth-store write batch, ClawX calls `secrets.reload` once when Gateway is running. `config.set` does not replace this refresh. Agent `models.json` needs no explicit RPC because OpenClaw re-reads it when its file fingerprint changes.
 
-Before launch, upgrade compatibility cleanup checks the canonical `state/openclaw.sqlite` update-check row. If it exists, the SQLite row is authoritative and any legacy root `update-check.json` is moved with restrictive permissions under `backups/`; otherwise the JSON remains in place for OpenClaw to import. This cleanup runs after the one-time upgrade snapshot and prevents harmless updater-bookkeeping differences from blocking Gateway readiness or triggering an ineffective doctor retry. The snapshot is removed after either the native ready event or a successful RPC-router readiness fallback, covering the race where a fast Gateway emits readiness before ClawX attaches its WebSocket client.
+Before launch, the 2026.8.1 preflight creates a checksum-verified, owner-only recovery checkpoint outside the active state directory. It then canonicalizes Doctor-blocking legacy config keys, including `compaction.keepRecentTokens: 0`, and repairs the known empty premature `session_participants` table left in legacy agent databases before running non-interactive Doctor repair followed by explicit all-agent session SQLite import, inspect, and validate stages. The database repair verifies integrity and fails closed if the premature table contains data or dependent schema. Each completed stage is recorded atomically in the checkpoint so interruption resumes from the first unproven stage. Inspect and validate require parseable JSON proof in addition to a zero exit code; failure prevents Gateway spawn.
+
+After migration, compatibility cleanup checks the canonical `state/openclaw.sqlite` update-check row. If it exists, the SQLite row is authoritative and any legacy root `update-check.json` is moved with restrictive permissions under `backups/`; otherwise the JSON remains in place for OpenClaw to import. The migration checkpoint is retained after readiness and is removed only by an explicit recovery-retention cleanup flow.
+
+ClawX writes only the 2026.8.1 canonical configuration shapes: `agents.entries`, explicit multi-agent ownership with `agents.defaults.systemAgent.agentId`, top-level `memory.search`, `agents.defaults.mediaModels.image`, and `openai/*` model routes. Legacy `agents.list`, `agents.defaults.memorySearch`, `imageGenerationModel`, `reserveTokensFloor`, and `identifierInstructions` are migration inputs and are never recreated.
 
 Full ClawX process replacement remains necessary after a successful coordinator commit when values are injected only at process creation, including proxy environment changes, or for explicit manual lifecycle and health/crash recovery. OpenClaw config categories must not be duplicated as a ClawX restart whitelist.

@@ -29,7 +29,7 @@ ownedPaths:
   - tests/e2e/chat-sidebar-session-attention.spec.ts
   - tests/unit/session-key-utils.test.ts
   - tests/unit/openclaw-acp-stream-patch.test.ts
-  - patches/openclaw@2026.7.1-2.patch
+  - package.json
   - pnpm-lock.yaml
   - shared/web-browser.ts
   - electron/main/web-browser-policy.ts

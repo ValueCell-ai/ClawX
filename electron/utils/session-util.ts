@@ -4,6 +4,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getOpenClawConfigDir } from './paths';
+import type { GatewayManager } from '../gateway/manager';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -29,7 +30,36 @@ export function extractSessionRecords(store: JsonRecord): JsonRecord[] {
 export async function resolveAccountIdFromSessionHistory(
   toAddress: string,
   channelType: string,
+  gatewayManager?: Pick<GatewayManager, 'rpc'>,
 ): Promise<string | null> {
+  if (gatewayManager) {
+    try {
+      const result = await gatewayManager.rpc('sessions.list', {
+        limit: 500,
+        archived: 'all',
+      }) as { sessions?: unknown; rows?: unknown };
+      const rows = Array.isArray(result.sessions)
+        ? result.sessions
+        : (Array.isArray(result.rows) ? result.rows : []);
+      for (const session of rows) {
+        if (!session || typeof session !== 'object') continue;
+        const deliveryContext = (session as JsonRecord).deliveryContext;
+        if (!deliveryContext || typeof deliveryContext !== 'object') continue;
+        const context = deliveryContext as JsonRecord;
+        if (
+          context.to === toAddress
+          && context.channel === channelType
+          && typeof context.accountId === 'string'
+        ) {
+          return context.accountId;
+        }
+      }
+      return null;
+    } catch {
+      // Compatibility fallback for pre-8.1 file-backed runtimes.
+    }
+  }
+
   const agentsDir = join(getOpenClawConfigDir(), 'agents');
 
   let agentDirs: Array<{ name: string; isDirectory: () => boolean }>;

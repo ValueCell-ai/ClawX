@@ -2,10 +2,6 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { removeUpgradeSnapshotMock } = vi.hoisted(() => ({
-  removeUpgradeSnapshotMock: vi.fn(async () => ({ status: 'removed' as const, snapshotDir: '/tmp/snapshot' })),
-}));
-
 vi.mock('electron', () => ({
   app: {
     getPath: () => '/tmp',
@@ -25,10 +21,6 @@ vi.mock('@electron/utils/logger', () => ({
 
 vi.mock('@electron/utils/config', () => ({
   PORTS: { OPENCLAW_GATEWAY: 18789 },
-}));
-
-vi.mock('@electron/utils/openclaw-upgrade-snapshot', () => ({
-  removeOpenClaw2026_7_1UpgradeSnapshot: removeUpgradeSnapshotMock,
 }));
 
 vi.mock('@electron/gateway/startup-orchestrator', () => ({
@@ -111,7 +103,6 @@ describe('GatewayManager gatewayReady fallback', () => {
     const readyUpdate = statusUpdates.find((u) => u.gatewayReady === true);
     expect(readyUpdate).toBeDefined();
     expect(rpcSpy).toHaveBeenCalledWith('system-presence', {}, 5_000);
-    expect(removeUpgradeSnapshotMock).toHaveBeenCalledOnce();
   });
 
   it('keeps gatewayReady=false when fallback RPC router probe fails', async () => {

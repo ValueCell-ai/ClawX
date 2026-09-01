@@ -100,7 +100,12 @@ function bundleOnePlugin({ npmName, pluginId }) {
   echo`📦 Bundling plugin ${npmName} -> ${outputDir}`;
 
   if (fs.existsSync(outputDir)) {
-    fs.rmSync(outputDir, { recursive: true, force: true });
+    fs.rmSync(outputDir, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 200,
+    });
   }
   fs.mkdirSync(outputDir, { recursive: true });
 

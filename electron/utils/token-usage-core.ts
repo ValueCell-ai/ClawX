@@ -197,7 +197,7 @@ function parseUsageFromShape(usage: unknown): ParsedUsageTokens | undefined {
 
 interface TranscriptLineShape {
   type?: string;
-  timestamp?: string;
+  timestamp?: string | number;
   message?: {
     role?: string;
     model?: string;
@@ -277,9 +277,12 @@ export function parseUsageEntriesFromJsonl(
     }
 
     const message = parsed.message;
-    if (!message || !parsed.timestamp) {
+    if (!message || parsed.timestamp === undefined || parsed.timestamp === null) {
       continue;
     }
+    const timestamp = typeof parsed.timestamp === 'number'
+      ? new Date(parsed.timestamp < 1e12 ? parsed.timestamp * 1000 : parsed.timestamp).toISOString()
+      : parsed.timestamp;
 
     if (message.role === 'assistant' && 'usage' in message) {
       const usage = parseUsageFromShape(message.usage);
@@ -287,7 +290,7 @@ export function parseUsageEntriesFromJsonl(
 
       const contentText = normalizeUsageContent((message as Record<string, unknown>).content);
       entries.push({
-        timestamp: parsed.timestamp,
+        timestamp,
         sessionId: context.sessionId,
         agentId: context.agentId,
         model: message.model ?? message.modelRef,
@@ -316,7 +319,7 @@ export function parseUsageEntriesFromJsonl(
       ?? normalizeUsageContent((message as Record<string, unknown>).content);
 
     entries.push({
-      timestamp: parsed.timestamp,
+      timestamp,
       sessionId: context.sessionId,
       agentId: context.agentId,
       model,

@@ -9,6 +9,7 @@ import type {
 import { logger } from '../utils/logger';
 import { resolveOpenClawConfigPath, resolveOpenClawStateDir } from '../utils/paths';
 import { resolveSessionTranscriptPath } from '../utils/session-files';
+import type { GatewayManager } from '../gateway/manager';
 
 const SAFE_AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const REDACTED = '[REDACTED]';
@@ -20,6 +21,7 @@ type IssueReportDependencies = {
   openClawLogDir?: string;
   outputDir?: string;
   now?: () => Date;
+  gatewayManager?: Pick<GatewayManager, 'rpc'>;
 };
 
 type IssueReportManifest = {
@@ -253,10 +255,40 @@ async function exportIssueReportInternal(
 ): Promise<IssueReportExportResult> {
   const selectedSessions = parseSessionKeys(payload?.sessionKeys);
   const stateDir = resolve(dependencies.stateDir ?? resolveOpenClawStateDir());
-  const transcripts: Array<{ sessionKey: string; agentId: string; path: string }> = [];
+  const transcripts: Array<{
+    sessionKey: string;
+    agentId: string;
+    path?: string;
+    content?: string;
+  }> = [];
   const skippedSessionKeys: string[] = [];
   for (const selected of selectedSessions) {
     try {
+      if (dependencies.gatewayManager) {
+        try {
+          const history = await dependencies.gatewayManager.rpc('chat.history', {
+            sessionKey: selected.sessionKey,
+            limit: 1_000,
+          }) as { messages?: unknown };
+          if (Array.isArray(history?.messages)) {
+            transcripts.push({
+              ...selected,
+              content: history.messages.map((message) => JSON.stringify({
+                type: 'message',
+                timestamp: (
+                  message && typeof message === 'object'
+                    ? (message as Record<string, unknown>).timestamp
+                    : undefined
+                ) ?? new Date(0).toISOString(),
+                message,
+              })).join('\n') + '\n',
+            });
+            continue;
+          }
+        } catch {
+          // Compatibility fallback for archived legacy transcripts.
+        }
+      }
       transcripts.push({
         ...selected,
         path: await resolveTranscript(stateDir, selected.sessionKey, selected.agentId),
@@ -289,14 +321,19 @@ async function exportIssueReportInternal(
 
   const usedTranscriptPaths = new Set<string>();
   for (const transcript of transcripts) {
-    const fileName = basename(transcript.path);
+    const fileName = transcript.path
+      ? basename(transcript.path)
+      : `${transcript.sessionKey.replace(/[^A-Za-z0-9_-]+/g, '-')}.jsonl`;
     let transcriptArchivePath = `conversations/${transcript.agentId}/${fileName}`;
     for (let suffix = 2; usedTranscriptPaths.has(transcriptArchivePath); suffix += 1) {
       const stem = fileName.toLowerCase().endsWith('.jsonl') ? fileName.slice(0, -6) : fileName;
       transcriptArchivePath = `conversations/${transcript.agentId}/${stem}-${suffix}.jsonl`;
     }
     usedTranscriptPaths.add(transcriptArchivePath);
-    zip.file(transcriptArchivePath, await readFile(transcript.path));
+    zip.file(
+      transcriptArchivePath,
+      transcript.content ?? await readFile(transcript.path!),
+    );
     manifest.includedFiles.push(transcriptArchivePath);
   }
 

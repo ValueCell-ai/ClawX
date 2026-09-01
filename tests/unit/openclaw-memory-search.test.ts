@@ -14,9 +14,9 @@ describe('openclaw-memory-search', () => {
       agents: {
         defaults: {
           model: { primary: 'custom-customfc/gpt-5.5' },
-          memorySearch: { enabled: true, provider: 'none' },
         },
       },
+      memory: { search: { enabled: true, provider: 'none' } },
     });
   });
 
@@ -24,9 +24,7 @@ describe('openclaw-memory-search', () => {
     const config: Record<string, unknown> = {};
     expect(ensureMemorySearchFtsDefault(config)).toBe('seeded');
     expect(config).toEqual({
-      agents: {
-        defaults: { memorySearch: { enabled: true, provider: 'none' } },
-      },
+      memory: { search: { enabled: true, provider: 'none' } },
     });
   });
 
@@ -63,6 +61,22 @@ describe('openclaw-memory-search', () => {
     expect(config).toEqual(before);
   });
 
+  it('preserves canonical top-level and keyed per-agent search settings', () => {
+    const globalConfig: Record<string, unknown> = {
+      memory: { search: { provider: 'openai' } },
+    };
+    expect(ensureMemorySearchFtsDefault(globalConfig, true)).toBe('unchanged');
+
+    const perAgentConfig: Record<string, unknown> = {
+      agents: {
+        entries: {
+          research: { memory: { search: { provider: 'none' } } },
+        },
+      },
+    };
+    expect(ensureMemorySearchFtsDefault(perAgentConfig, true)).toBe('unchanged');
+  });
+
   it('treats explicit enabled=true as user config', () => {
     const config: Record<string, unknown> = {
       agents: { defaults: { memorySearch: { enabled: true } } },
@@ -86,9 +100,8 @@ describe('openclaw-memory-search', () => {
     };
     expect(ensureMemorySearchFtsDefault(config, true)).toBe('migrated');
     expect(config).toEqual({
-      agents: {
-        defaults: { memorySearch: { enabled: true, provider: 'none' } },
-      },
+      agents: { defaults: {} },
+      memory: { search: { enabled: true, provider: 'none' } },
     });
   });
 

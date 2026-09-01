@@ -26,7 +26,6 @@ import {
   getReconnectSkipReason,
   isOpenClawFatalConfigExitCode,
 } from './process-policy';
-import { removeOpenClaw2026_7_1UpgradeSnapshot } from '../utils/openclaw-upgrade-snapshot';
 import {
   clearPendingGatewayRequests,
   rejectPendingGatewayRequest,
@@ -210,7 +209,6 @@ export class GatewayManager extends EventEmitter {
   private deadlineEscalationPending = false;
   private deadlineProbeInFlight = false;
   private deferredDeadlineProbeLivenessAt: number | undefined;
-  private upgradeSnapshotCleanupAttempted = false;
   private externalShutdownSupported: boolean | null = null;
   private reconnectAttemptsTotal = 0;
   private reconnectSuccessTotal = 0;
@@ -272,7 +270,6 @@ export class GatewayManager extends EventEmitter {
         logger.info('Gateway subsystems ready (event received)');
         this.setStatus({ gatewayReady: true });
       }
-      void this.cleanupOpenClawUpgradeSnapshot();
     });
     this.on('gateway:health', (payload) => {
       this.capabilityMonitor.recordOpenClawHealth(payload);
@@ -786,7 +783,6 @@ export class GatewayManager extends EventEmitter {
         // A fast Gateway can emit gateway.ready before the WebSocket client is
         // attached. A successful router probe is equivalent readiness, so it
         // must also complete the one-time migration snapshot lifecycle.
-        void this.cleanupOpenClawUpgradeSnapshot();
       }
     } catch (error) {
       this.capabilityMonitor.recordCoreProbe({
@@ -1303,20 +1299,6 @@ export class GatewayManager extends EventEmitter {
   private cancelDeadlineRecovery(): void {
     this.clearDeadlineEscalation();
     this.recoveryController.stop();
-  }
-
-  private async cleanupOpenClawUpgradeSnapshot(): Promise<void> {
-    if (this.upgradeSnapshotCleanupAttempted) return;
-    this.upgradeSnapshotCleanupAttempted = true;
-
-    try {
-      const result = await removeOpenClaw2026_7_1UpgradeSnapshot();
-      if (result.status === 'removed') {
-        logger.info(`[upgrade] Removed OpenClaw 2026.7.1 pre-migration snapshot: ${result.snapshotDir}`);
-      }
-    } catch (error) {
-      logger.warn('[upgrade] Failed to remove OpenClaw 2026.7.1 pre-migration snapshot:', error);
-    }
   }
 
   /**

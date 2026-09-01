@@ -2,6 +2,7 @@ import { openSync, closeSync, fstatSync, readSync } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
+import type { GatewayManager } from '../gateway/manager';
 import { stripAcpWorkingDirectoryPrefix } from '@shared/chat/session-title';
 import { isOpenClawHeartbeatPollText } from '@shared/chat/openclaw-internal';
 import type { RawMessage } from '@shared/chat/types';
@@ -52,6 +53,10 @@ type SessionPayload = {
   sessionId?: unknown;
   limit?: unknown;
   sessionKeys?: unknown;
+};
+
+type SessionsApiOptions = {
+  gatewayManager?: Pick<GatewayManager, 'rpc'>;
 };
 
 function extractMessageText(content: unknown): string {
@@ -519,7 +524,7 @@ async function loadSessionTurnTimingsByKey(
   }
 }
 
-async function deleteSession(sessionKey: string): Promise<{ success: boolean; error?: string }> {
+async function deleteLegacyFileSession(sessionKey: string): Promise<{ success: boolean; error?: string }> {
   if (!sessionKey || !sessionKey.startsWith('agent:')) {
     return { success: false, error: `Invalid sessionKey: ${sessionKey}` };
   }
@@ -588,7 +593,7 @@ async function deleteSession(sessionKey: string): Promise<{ success: boolean; er
   return { success: true };
 }
 
-async function renameSession(sessionKey: string, label: string): Promise<{ success: boolean; error?: string }> {
+async function renameLegacyFileSession(sessionKey: string, label: string): Promise<{ success: boolean; error?: string }> {
   if (!sessionKey || !sessionKey.startsWith('agent:')) {
     return { success: false, error: `Invalid sessionKey: ${sessionKey}` };
   }
@@ -633,9 +638,110 @@ async function renameSession(sessionKey: string, label: string): Promise<{ succe
   return { success: true };
 }
 
-export function createSessionsApi(): CompleteHostServiceRegistry['sessions'] {
+function sessionAgentId(sessionKey: string): string | null {
+  const parsed = parseSessionKey(sessionKey);
+  return parsed && SAFE_SESSION_SEGMENT.test(parsed.agentId) ? parsed.agentId : null;
+}
+
+async function deleteGatewaySession(
+  gatewayManager: Pick<GatewayManager, 'rpc'>,
+  sessionKey: string,
+): Promise<{ success: boolean; error?: string }> {
+  const agentId = sessionAgentId(sessionKey);
+  if (!agentId) return { success: false, error: `Invalid sessionKey: ${sessionKey}` };
+  try {
+    await gatewayManager.rpc('sessions.delete', {
+      key: sessionKey,
+      deleteTranscript: true,
+    });
+    return { success: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/\b(?:not found|missing|unknown session)\b/i.test(message)) return { success: true };
+    return { success: false, error: message };
+  }
+}
+
+async function renameGatewaySession(
+  gatewayManager: Pick<GatewayManager, 'rpc'>,
+  sessionKey: string,
+  label: string,
+): Promise<{ success: boolean; error?: string }> {
+  const agentId = sessionAgentId(sessionKey);
+  const trimmedLabel = label.trim();
+  if (!agentId) return { success: false, error: `Invalid sessionKey: ${sessionKey}` };
+  if (!trimmedLabel) return { success: false, error: 'Label cannot be empty' };
+  try {
+    await gatewayManager.rpc('sessions.patch', { key: sessionKey, label: trimmedLabel });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function loadGatewayHistory(
+  gatewayManager: Pick<GatewayManager, 'rpc'>,
+  sessionKey: string,
+  limit: number,
+): Promise<TranscriptMessage[] | null> {
+  try {
+    const result = await gatewayManager.rpc('chat.history', { sessionKey, limit }) as {
+      messages?: unknown;
+    };
+    return Array.isArray(result?.messages)
+      ? result.messages.filter((message): message is TranscriptMessage => isRecord(message))
+      : [];
+  } catch {
+    return null;
+  }
+}
+
+async function loadGatewaySummaries(
+  gatewayManager: Pick<GatewayManager, 'rpc'>,
+  sessionKeys: string[],
+  workspaceByKey: Map<string, string>,
+): Promise<SessionSummary[]> {
+  const result = await gatewayManager.rpc('sessions.preview', {
+    keys: sessionKeys,
+    limit: 6,
+    maxChars: 1_000,
+  }) as {
+    previews?: Array<{
+      key?: unknown;
+      status?: unknown;
+      items?: Array<{ role?: unknown; text?: unknown }>;
+    }>;
+  };
+  const previews = new Map((Array.isArray(result?.previews) ? result.previews : [])
+    .filter((entry) => typeof entry.key === 'string')
+    .map((entry) => [entry.key as string, entry]));
+  return sessionKeys.map((sessionKey) => {
+    const preview = previews.get(sessionKey);
+    const visibleItems = Array.isArray(preview?.items) ? preview.items : [];
+    const userTexts = visibleItems
+      .filter((item) => item.role === 'user' && typeof item.text === 'string')
+      .map((item) => cleanSummaryUserText(item.text as string))
+      .filter(Boolean);
+    const firstUserText = userTexts.find((text) => !isInternalSummaryText(text)) ?? null;
+    return {
+      sessionKey,
+      firstUserText,
+      lastTimestamp: null,
+      workspacePath: workspaceByKey.get(sessionKey.trim()) ?? null,
+      heartbeatOnly: userTexts.length > 0 && firstUserText === null,
+    };
+  });
+}
+
+export function createSessionsApi(options: SessionsApiOptions = {}): CompleteHostServiceRegistry['sessions'] {
+  const gatewayManager = options.gatewayManager;
   return {
-    delete: async (payload) => deleteSession(getSessionKey(payload)),
+    delete: async (payload) => {
+      const sessionKey = getSessionKey(payload);
+      return gatewayManager
+        ? deleteGatewaySession(gatewayManager, sessionKey)
+        : deleteLegacyFileSession(sessionKey);
+    },
     rename: async (payload) => {
       const body = isRecord(payload) ? payload as SessionPayload : {};
       const sessionKey = getSessionKey(payload);
@@ -643,7 +749,9 @@ export function createSessionsApi(): CompleteHostServiceRegistry['sessions'] {
       if (typeof label !== 'string') {
         throw new Error('Label cannot be empty');
       }
-      return renameSession(sessionKey, label);
+      return gatewayManager
+        ? renameGatewaySession(gatewayManager, sessionKey, label)
+        : renameLegacyFileSession(sessionKey, label);
     },
     summaries: async (payload) => {
       const body = isRecord(payload) ? payload as SessionPayload : {};
@@ -654,9 +762,11 @@ export function createSessionsApi(): CompleteHostServiceRegistry['sessions'] {
       const workspaceByKey = await readOpenClawAcpSessionCwds(sessionKeys);
       return {
         success: true,
-        summaries: await Promise.all(sessionKeys.map((sessionKey) => (
-          loadSessionSummary(sessionKey, workspaceByKey.get(sessionKey.trim()) ?? null)
-        ))),
+        summaries: gatewayManager
+          ? await loadGatewaySummaries(gatewayManager, sessionKeys, workspaceByKey)
+          : await Promise.all(sessionKeys.map((sessionKey) => (
+            loadSessionSummary(sessionKey, workspaceByKey.get(sessionKey.trim()) ?? null)
+          ))),
       };
     },
     history: async (payload) => {
@@ -664,7 +774,9 @@ export function createSessionsApi(): CompleteHostServiceRegistry['sessions'] {
       const limit = getLimit(payload);
 
       if (typeof body.sessionKey === 'string' && body.sessionKey.trim()) {
-        const messages = await loadSessionTranscriptByKey(body.sessionKey.trim(), limit);
+        const messages = gatewayManager
+          ? await loadGatewayHistory(gatewayManager, body.sessionKey.trim(), limit)
+          : await loadSessionTranscriptByKey(body.sessionKey.trim(), limit);
         if (!messages) return { success: false, error: 'Transcript not found' };
         return { success: true, messages };
       }
@@ -692,7 +804,13 @@ export function createSessionsApi(): CompleteHostServiceRegistry['sessions'] {
       const body = isRecord(payload) ? payload as SessionPayload : {};
       const sessionKey = typeof body.sessionKey === 'string' ? body.sessionKey.trim() : '';
       if (!sessionKey) return { success: false, error: 'sessionKey is required' };
-      const timings = await loadSessionTurnTimingsByKey(sessionKey, getLimit(payload, 1000));
+      const timings = gatewayManager
+        ? extractTranscriptTurnTimings((await loadGatewayHistory(
+          gatewayManager,
+          sessionKey,
+          getLimit(payload, 1000),
+        ) ?? []).map((message) => ({ message })))
+        : await loadSessionTurnTimingsByKey(sessionKey, getLimit(payload, 1000));
       if (!timings) return { success: false, error: 'Transcript not found' };
       return { success: true, timings };
     },

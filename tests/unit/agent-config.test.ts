@@ -158,8 +158,9 @@ describe('agent config lifecycle', () => {
 
     await updateAgentModel('coder', 'ark/ark-code-latest');
     let config = await readOpenClawJson();
-    let coder = ((config.agents as { list: Array<{ id: string; model?: { primary?: string } }> }).list)
-      .find((agent) => agent.id === 'coder');
+    let coder = (config.agents as {
+      entries: Record<string, { model?: { primary?: string } }>;
+    }).entries.coder;
     expect(coder?.model?.primary).toBe('ark/ark-code-latest');
 
     let snapshot = await listAgentsSnapshot();
@@ -172,8 +173,9 @@ describe('agent config lifecycle', () => {
 
     await updateAgentModel('coder', null);
     config = await readOpenClawJson();
-    coder = ((config.agents as { list: Array<{ id: string; model?: unknown }> }).list)
-      .find((agent) => agent.id === 'coder');
+    coder = (config.agents as {
+      entries: Record<string, { model?: { primary?: string } }>;
+    }).entries.coder;
     expect(coder?.model).toBeUndefined();
 
     snapshot = await listAgentsSnapshot();
@@ -210,7 +212,7 @@ describe('agent config lifecycle', () => {
 
     const config = await readOpenClawJson();
     const defaults = (config.agents as { defaults: { compaction: unknown } }).defaults;
-    expect(defaults.compaction).toEqual({ mode: 'safeguard', reserveTokensFloor: 68_000 });
+    expect(defaults.compaction).toEqual({ mode: 'safeguard' });
     expect(snapshot.agents.find((agent) => agent.id === 'coder')?.contextWindow).toBe(272_000);
   });
 
@@ -243,8 +245,8 @@ describe('agent config lifecycle', () => {
     let snapshot = await updateAgentModel('coder', 'deepseek/deepseek-chat');
     let config = await readOpenClawJson();
     expect(snapshot.agents.find((agent) => agent.id === 'coder')?.contextWindow).toBe(400_000);
-    expect((config.agents as { defaults: { compaction: { reserveTokensFloor: number } } })
-      .defaults.compaction.reserveTokensFloor).toBe(100_000);
+    expect((config.agents as { defaults: { compaction: Record<string, unknown> } })
+      .defaults.compaction.reserveTokensFloor).toBeUndefined();
 
     snapshot = await updateAgentModel('coder', null);
     config = await readOpenClawJson();
@@ -252,8 +254,8 @@ describe('agent config lifecycle', () => {
       modelRef: 'openai/gpt-5.6-sol',
       contextWindow: 272_000,
     });
-    expect((config.agents as { defaults: { compaction: { reserveTokensFloor: number } } })
-      .defaults.compaction.reserveTokensFloor).toBe(68_000);
+    expect((config.agents as { defaults: { compaction: Record<string, unknown> } })
+      .defaults.compaction.reserveTokensFloor).toBeUndefined();
   });
 
   it('mutates the running coordinator snapshot instead of replacing it from the local file', async () => {
@@ -283,7 +285,7 @@ describe('agent config lifecycle', () => {
 
     expect(runningConfig).toMatchObject({
       gatewayOnly: true,
-      agents: { list: [{ id: 'main', name: 'Coordinator Main', default: true }] },
+      agents: { entries: { main: { name: 'Coordinator Main' } } },
     });
     expect(snapshot.agents[0].name).toBe('Coordinator Main');
     expect(await readOpenClawJson()).toEqual({ localOnly: true });
@@ -331,10 +333,11 @@ describe('agent config lifecycle', () => {
     const config = await readOpenClawJson();
     const main = snapshot.agents.find((agent) => agent.id === 'main');
     const coder = snapshot.agents.find((agent) => agent.id === 'coder');
-    const mainEntry = ((config.agents as { list: Array<{ id: string; model?: unknown }> }).list)
-      .find((agent) => agent.id === 'main');
-    const coderEntry = ((config.agents as { list: Array<{ id: string; model?: { primary?: string } }> }).list)
-      .find((agent) => agent.id === 'coder');
+    const entries = (config.agents as {
+      entries: Record<string, { model?: { primary?: string } }>;
+    }).entries;
+    const mainEntry = entries.main;
+    const coderEntry = entries.coder;
 
     expect(main).toMatchObject({
       modelRef: 'minimax-portal/MiniMax-M3',
@@ -419,10 +422,17 @@ describe('agent config lifecycle', () => {
     expect(snapshot.channelOwners.feishu).toBe('main');
 
     const config = await readOpenClawJson();
-    expect((config.agents as { list: Array<{ id: string }> }).list.map((agent) => agent.id)).toEqual([
-      'main',
-      'test3',
-    ]);
+    const canonicalAgents = config.agents as {
+      entries: Record<string, unknown>;
+      ownership?: string;
+      defaults?: { systemAgent?: { agentId?: string } };
+      list?: unknown;
+    };
+    expect(Object.keys(canonicalAgents.entries))
+      .toEqual(['main', 'test3']);
+    expect(canonicalAgents.ownership).toBe('explicit');
+    expect(canonicalAgents.defaults?.systemAgent?.agentId).toBe('main');
+    expect(canonicalAgents.list).toBeUndefined();
     expect(config.bindings).toEqual([]);
     await expect(access(test2RuntimeDir)).rejects.toThrow();
     // The service removes the workspace after `deleteAgentConfig` commits, so the
@@ -870,8 +880,8 @@ describe('agent config lifecycle', () => {
     await expect(createAgent('Research')).rejects.toThrow();
 
     const config = await readOpenClawJson();
-    const agents = (config.agents as { list: Array<{ id: string }> }).list;
-    expect(agents.map((agent) => agent.id)).toEqual(['main']);
+    const agents = (config.agents as { entries: Record<string, unknown> }).entries;
+    expect(Object.keys(agents)).toEqual(['main']);
     await expect(readFile(blockedWorkspace, 'utf8')).resolves.toBe('pre-existing file');
     await expect(access(join(testHome, '.openclaw', 'agents', 'research'))).rejects.toThrow();
   });
@@ -891,6 +901,6 @@ describe('agent config lifecycle', () => {
     await expect(lstat(workspaceLink)).resolves.toMatchObject({});
     expect((await lstat(workspaceLink)).isSymbolicLink()).toBe(true);
     const config = await readOpenClawJson();
-    expect((config.agents as { list: Array<{ id: string }> }).list.map((agent) => agent.id)).toEqual(['main']);
+    expect(Object.keys((config.agents as { entries: Record<string, unknown> }).entries)).toEqual(['main']);
   });
 });

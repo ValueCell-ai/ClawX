@@ -867,10 +867,12 @@ function findFilesByName(rootDir, matcher) {
 }
 
 function patchBundledRuntime(outputDir) {
-  // OpenClaw 2026.7.1 routes ordinary child-process execution through
+  // OpenClaw 2026.8.1 routes ordinary child-process execution through
   // resolveChildProcessInvocation(), which already sets windowsHide=true.
-  // PTY execution remains patched below because node-pty follows a separate
-  // launch path and is disabled on Windows in ClawX packaged builds.
+  // PTY execution now flows through the process supervisor, but node-pty still
+  // follows a separate launch path and is omitted from Windows packaged builds.
+  // Remove these substitutions once upstream gates supervisor PTY mode on
+  // process.platform and passes windowsHide to @lydell/node-pty itself.
   const replacePatches = [];
 
   let count = 0;
@@ -900,22 +902,22 @@ function patchBundledRuntime(outputDir) {
 
   const ptyTargets = findFilesByName(
     path.join(outputDir, 'dist'),
-    /^(supervisor|bash-tools)-.*\.js$/,
+    /^(supervisor|bash-tools(?:\.exec-runtime)?)-.*\.js$/,
   );
   const ptyPatches = [
     {
       label: 'pty launcher windowsHide',
       search: `\tconst pty = spawn(preparedSpawn.command, preparedSpawn.args, {
 \t\tcwd: params.cwd,
-\t\tenv: preparedSpawn.env ? toStringEnv(preparedSpawn.env) : void 0,
-\t\tname: params.name ?? process.env.TERM ?? "xterm-256color",
+\t\tenv: spawnEnv,
+\t\tname: terminalName,
 \t\tcols: params.cols ?? 120,
 \t\trows: params.rows ?? 30
 \t});`,
       replace: `\tconst pty = spawn(preparedSpawn.command, preparedSpawn.args, {
 \t\tcwd: params.cwd,
-\t\tenv: preparedSpawn.env ? toStringEnv(preparedSpawn.env) : void 0,
-\t\tname: params.name ?? process.env.TERM ?? "xterm-256color",
+\t\tenv: spawnEnv,
+\t\tname: terminalName,
 \t\tcols: params.cols ?? 120,
 \t\trows: params.rows ?? 30,
 \t\twindowsHide: true
@@ -923,13 +925,8 @@ function patchBundledRuntime(outputDir) {
     },
     {
       label: 'disable pty on windows',
-      search: `\t\t\tconst usePty = params.pty === true && !sandbox;`,
-      replace: `\t\t\tconst usePty = params.pty === true && !sandbox && process.platform !== "win32";`,
-    },
-    {
-      label: 'disable approval pty on windows',
-      search: `\t\t\t\t\tpty: params.pty === true && !sandbox,`,
-      replace: `\t\t\t\t\tpty: params.pty === true && !sandbox && process.platform !== "win32",`,
+      search: `\t\tif (opts.usePty) return {`,
+      replace: `\t\tif (opts.usePty && process.platform !== "win32") return {`,
     },
   ];
 
@@ -947,7 +944,7 @@ function patchBundledRuntime(outputDir) {
       }
     }
     if (!matchedAny) {
-      throw new Error(`Required OpenClaw 2026.7.1 patch not found: ${patch.label}`);
+      throw new Error(`Required OpenClaw 2026.8.1 patch not found: ${patch.label}`);
     }
   }
 

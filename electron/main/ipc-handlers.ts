@@ -174,11 +174,11 @@ function registerTypedHostHandlers(
       stagedAttachments,
     }),
     media: createMediaApi({ attachmentAccess }),
-    sessions: createSessionsApi(),
+    sessions: createSessionsApi({ gatewayManager }),
     chat: createChatApi({ gatewayManager, mainWindow, acpSessionAccessRegistry }),
     cron: createCronApi({ gatewayManager }),
     skills: createSkillsApi({ clawHubService, gatewayManager }),
-    usage: createUsageApi(),
+    usage: createUsageApi({ gatewayManager }),
   });
   registerHostInvokeHandler(hostApiRegistry);
 }
@@ -657,7 +657,11 @@ function registerCronHandlers(gatewayManager: GatewayManager): void {
           // If no accountId, try to resolve it from session history
           let resolvedAccountId: string | null = null;
           if (!correctAgentId && !accountId && toAddress) {
-            resolvedAccountId = await resolveAccountIdFromSessionHistory(toAddress, channel);
+            resolvedAccountId = await resolveAccountIdFromSessionHistory(
+              toAddress,
+              channel,
+              gatewayManager,
+            );
             if (resolvedAccountId) {
               correctAgentId = await resolveAgentIdFromChannel(channel, resolvedAccountId);
             }

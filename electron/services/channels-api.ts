@@ -538,71 +538,89 @@ async function listSessionDerivedTargetOptions(params: {
   channelType: string;
   accountId?: string;
   query?: string;
+  gatewayManager?: Pick<GatewayManager, 'rpc'>;
 }): Promise<ChannelTargetOptionView[]> {
   const storedChannelType = resolveStoredChannelType(params.channelType);
-  const agentsDir = join(getOpenClawConfigDir(), 'agents');
-  const agentDirs = await readdir(agentsDir, { withFileTypes: true }).catch(() => []);
   const q = params.query?.trim().toLowerCase() || '';
   const candidates: Array<ChannelTargetOptionView & { updatedAt: number }> = [];
   const seen = new Set<string>();
+  let sessions: JsonRecord[] = [];
 
-  for (const entry of agentDirs) {
-    if (!entry.isDirectory()) continue;
-    const sessionsPath = join(agentsDir, entry.name, 'sessions', 'sessions.json');
-    const raw = await readFile(sessionsPath, 'utf8').catch(() => '');
-    if (!raw.trim()) continue;
-
-    let parsed: JsonRecord;
+  if (params.gatewayManager) {
     try {
-      parsed = JSON.parse(raw) as JsonRecord;
+      const result = await params.gatewayManager.rpc('sessions.list', {
+        limit: 500,
+        archived: 'all',
+      }) as { sessions?: unknown; rows?: unknown };
+      const rows = Array.isArray(result.sessions)
+        ? result.sessions
+        : (Array.isArray(result.rows) ? result.rows : []);
+      sessions = rows.filter((entry): entry is JsonRecord => (
+        Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry)
+      ));
     } catch {
-      continue;
+      // Compatibility fallback for older file-backed runtimes.
     }
+  }
 
-    for (const session of extractSessionRecords(parsed)) {
-      const deliveryContext = session.deliveryContext && typeof session.deliveryContext === 'object'
-        ? session.deliveryContext as JsonRecord
-        : undefined;
-      const origin = session.origin && typeof session.origin === 'object'
-        ? session.origin as JsonRecord
-        : undefined;
-      const sessionChannelType = readNonEmptyString(deliveryContext?.channel)
-        || readNonEmptyString(session.lastChannel)
-        || readNonEmptyString(session.channel)
-        || readNonEmptyString(origin?.provider)
-        || readNonEmptyString(origin?.surface);
-      if (!sessionChannelType || resolveStoredChannelType(sessionChannelType) !== storedChannelType) continue;
+  if (sessions.length === 0) {
+    const agentsDir = join(getOpenClawConfigDir(), 'agents');
+    const agentDirs = await readdir(agentsDir, { withFileTypes: true }).catch(() => []);
+    for (const entry of agentDirs) {
+      if (!entry.isDirectory()) continue;
+      const sessionsPath = join(agentsDir, entry.name, 'sessions', 'sessions.json');
+      const raw = await readFile(sessionsPath, 'utf8').catch(() => '');
+      if (!raw.trim()) continue;
+      try {
+        sessions.push(...extractSessionRecords(JSON.parse(raw) as JsonRecord));
+      } catch {
+        // Ignore malformed compatibility stores.
+      }
+    }
+  }
 
-      const sessionAccountId = readNonEmptyString(deliveryContext?.accountId)
-        || readNonEmptyString(session.lastAccountId)
-        || readNonEmptyString(origin?.accountId);
-      if (params.accountId && sessionAccountId && sessionAccountId !== params.accountId) continue;
-      if (params.accountId && !sessionAccountId) continue;
+  for (const session of sessions) {
+    const deliveryContext = session.deliveryContext && typeof session.deliveryContext === 'object'
+      ? session.deliveryContext as JsonRecord
+      : undefined;
+    const origin = session.origin && typeof session.origin === 'object'
+      ? session.origin as JsonRecord
+      : undefined;
+    const sessionChannelType = readNonEmptyString(deliveryContext?.channel)
+      || readNonEmptyString(session.lastChannel)
+      || readNonEmptyString(session.channel)
+      || readNonEmptyString(origin?.provider)
+      || readNonEmptyString(origin?.surface);
+    if (!sessionChannelType || resolveStoredChannelType(sessionChannelType) !== storedChannelType) continue;
 
-      const value = readNonEmptyString(deliveryContext?.to)
-        || readNonEmptyString(session.lastTo)
-        || readNonEmptyString(origin?.to);
-      if (!value || seen.has(value)) continue;
+    const sessionAccountId = readNonEmptyString(deliveryContext?.accountId)
+      || readNonEmptyString(session.lastAccountId)
+      || readNonEmptyString(origin?.accountId);
+    if (params.accountId && sessionAccountId !== params.accountId) continue;
 
-      const labelBase = readNonEmptyString(session.displayName)
-        || readNonEmptyString(session.subject)
-        || readNonEmptyString(origin?.label)
-        || value;
-      const label = buildChannelTargetLabel(labelBase, value);
-      if (q && !label.toLowerCase().includes(q) && !value.toLowerCase().includes(q)) continue;
+    const value = readNonEmptyString(deliveryContext?.to)
+      || readNonEmptyString(session.lastTo)
+      || readNonEmptyString(origin?.to);
+    if (!value || seen.has(value)) continue;
 
-      seen.add(value);
-      candidates.push({
+    const labelBase = readNonEmptyString(session.displayName)
+      || readNonEmptyString(session.subject)
+      || readNonEmptyString(origin?.label)
+      || value;
+    const label = buildChannelTargetLabel(labelBase, value);
+    if (q && !label.toLowerCase().includes(q) && !value.toLowerCase().includes(q)) continue;
+
+    seen.add(value);
+    candidates.push({
+      value,
+      label,
+      kind: inferTargetKindFromValue(
+        storedChannelType,
         value,
-        label,
-        kind: inferTargetKindFromValue(
-          storedChannelType,
-          value,
-          readNonEmptyString(session.chatType) || readNonEmptyString(origin?.chatType),
-        ),
-        updatedAt: typeof session.updatedAt === 'number' ? session.updatedAt : 0,
-      });
-    }
+        readNonEmptyString(session.chatType) || readNonEmptyString(origin?.chatType),
+      ),
+      updatedAt: typeof session.updatedAt === 'number' ? session.updatedAt : 0,
+    });
   }
 
   return candidates
@@ -852,6 +870,7 @@ async function listChannelTargetOptions(params: {
   channelType: string;
   accountId?: string;
   query?: string;
+  gatewayManager: Pick<GatewayManager, 'rpc'>;
 }): Promise<ChannelTargetOptionView[]> {
   const storedChannelType = resolveStoredChannelType(params.channelType);
   const cacheKey = buildChannelTargetCacheKey(params);
@@ -879,18 +898,29 @@ async function listChannelTargetOptions(params: {
     if (storedChannelType === 'wecom') {
       const [reqIdTargets, sessionTargets] = await Promise.all([
         listWeComReqIdTargetOptions(params.accountId, params.query),
-        listSessionDerivedTargetOptions({ channelType: 'wecom', accountId: params.accountId, query: params.query }),
+        listSessionDerivedTargetOptions({
+          channelType: 'wecom',
+          accountId: params.accountId,
+          query: params.query,
+          gatewayManager: params.gatewayManager,
+        }),
       ]);
       return mergeTargetOptions(sessionTargets, reqIdTargets);
     }
     if (storedChannelType === 'dingtalk') {
-      return await listSessionDerivedTargetOptions({ channelType: 'dingtalk', accountId: params.accountId, query: params.query });
+      return await listSessionDerivedTargetOptions({
+        channelType: 'dingtalk',
+        accountId: params.accountId,
+        query: params.query,
+        gatewayManager: params.gatewayManager,
+      });
     }
     if (storedChannelType === OPENCLAW_WECHAT_CHANNEL_TYPE) {
       return await listSessionDerivedTargetOptions({
         channelType: OPENCLAW_WECHAT_CHANNEL_TYPE,
         accountId: params.accountId,
         query: params.query,
+        gatewayManager: params.gatewayManager,
       });
     }
     if (
@@ -1081,7 +1111,12 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       const channelType = requireString(payload, 'channelType');
       const accountId = optionalString(payload, 'accountId');
       const query = optionalString(payload, 'query');
-      const targets = await listChannelTargetOptions({ channelType, accountId, query });
+      const targets = await listChannelTargetOptions({
+        channelType,
+        accountId,
+        query,
+        gatewayManager: ctx.gatewayManager,
+      });
       return { success: true, channelType, accountId, targets };
     },
     setDefaultAccount: async (payload) => {

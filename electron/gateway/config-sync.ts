@@ -37,7 +37,7 @@ import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandid
 import { safeRmSync } from '../utils/safe-fs';
 import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
 import {
-  ensureOpenClaw2026_7_1UpgradeSnapshot,
+  ensureOpenClaw2026_8_1UpgradeSnapshot,
   quarantineLegacyUpdateCheckState,
 } from '../utils/openclaw-upgrade-snapshot';
 import { stripSystemdSupervisorEnv } from './config-sync-env';
@@ -50,6 +50,10 @@ import {
   type PrelaunchMaintenanceRunResult,
   type PrelaunchMaintenanceTaskName,
 } from './prelaunch-maintenance-cache';
+import {
+  finalizeOpenClaw2026_8_1Migration,
+  runOpenClaw2026_8_1MigrationPreflight,
+} from './openclaw-8-1-migration';
 
 
 export interface GatewayLaunchContext {
@@ -285,7 +289,11 @@ function resolveImageGenerationPrimary(config: unknown): string | null {
   if (!agents || typeof agents !== 'object') return null;
   const defaults = (agents as { defaults?: unknown }).defaults;
   if (!defaults || typeof defaults !== 'object') return null;
-  const imageGenerationModel = (defaults as { imageGenerationModel?: unknown }).imageGenerationModel;
+  const defaultsRecord = defaults as Record<string, unknown>;
+  const mediaModels = defaultsRecord.mediaModels && typeof defaultsRecord.mediaModels === 'object'
+    ? defaultsRecord.mediaModels as Record<string, unknown>
+    : undefined;
+  const imageGenerationModel = mediaModels?.image ?? defaultsRecord.imageGenerationModel;
   if (typeof imageGenerationModel === 'string') return imageGenerationModel.trim() || null;
   if (imageGenerationModel && typeof imageGenerationModel === 'object') {
     const primary = (imageGenerationModel as { primary?: unknown }).primary;
@@ -641,17 +649,20 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     throw new Error(`OpenClaw package not found at: ${openclawDir}`);
   }
 
+  let upgradeSnapshotDir = '';
   await measureAsync(timingsMs, 'upgradeSnapshotMs', async () => {
-    try {
-      const snapshot = await ensureOpenClaw2026_7_1UpgradeSnapshot();
-      if (snapshot.status === 'created') {
-        logger.info(`[upgrade] Created OpenClaw 2026.7.1 pre-migration snapshot (${snapshot.files.length} files): ${snapshot.snapshotDir}`);
-      }
-    } catch (error) {
-      // OpenClaw also maintains migration-specific backups. Keep startup
-      // available if the additional ClawX safety snapshot cannot be written.
-      logger.warn('[upgrade] Failed to create OpenClaw 2026.7.1 pre-migration snapshot:', error);
+    const snapshot = await ensureOpenClaw2026_8_1UpgradeSnapshot();
+    upgradeSnapshotDir = snapshot.snapshotDir;
+    if (snapshot.status === 'created') {
+      logger.info(`[upgrade] Created verified OpenClaw 2026.8.1 recovery checkpoint (${snapshot.files.length} files): ${snapshot.snapshotDir}`);
     }
+  });
+  await measureAsync(timingsMs, 'upgradeMigrationMs', async () => {
+    await runOpenClaw2026_8_1MigrationPreflight({
+      snapshotDir: upgradeSnapshotDir,
+      entryScript,
+      openclawDir,
+    });
   });
 
   await measureAsync(timingsMs, 'legacyUpdateCheckCleanupMs', async () => {
@@ -671,6 +682,13 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
   const prelaunchSummary = await measureAsync(timingsMs, 'prelaunchSyncMs', async () => (
     await syncGatewayConfigBeforeLaunch(appSettings, openclawDir)
   ));
+  await measureAsync(timingsMs, 'upgradeFinalValidationMs', async () => {
+    await finalizeOpenClaw2026_8_1Migration({
+      snapshotDir: upgradeSnapshotDir,
+      entryScript,
+      openclawDir,
+    });
+  });
 
   if (!existsSync(entryScript)) {
     throw new Error(`OpenClaw entry script not found at: ${entryScript}`);
@@ -713,6 +731,7 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     OPENCLAW_GATEWAY_TOKEN: appSettings.gatewayToken,
     OPENCLAW_SKIP_CHANNELS: skipChannels ? '1' : '',
     OPENCLAW_NO_RESPAWN: '1',
+    OPENCLAW_SUPERVISOR_MODE: 'external',
     // Disable OpenClaw's interactive-shell env snapshot. When the Gateway runs
     // as an Electron utilityProcess, `process.execPath` is the Electron binary,
     // and OpenClaw captures the shell env by spawning `process.execPath -e
