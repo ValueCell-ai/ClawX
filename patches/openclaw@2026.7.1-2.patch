@@ -1560,3 +1560,95 @@ index e7e2a95..a87dc28 100644
 -		keepRecentTokens: number().int().positive().optional(),
 +		keepRecentTokens: number().int().nonnegative().optional(),
  		reserveTokensFloor: number().int().nonnegative().optional(),
+diff --git a/dist/io-By0s-a_s.js b/dist/io-By0s-a_s.js
+--- a/dist/io-By0s-a_s.js
++++ b/dist/io-By0s-a_s.js
+@@ -989,9 +989,11 @@ function resolveConfigObserveSuspiciousReasons(params) {
+ 	const reasons = [];
+ 	const baseline = params.lastKnownGood;
+ 	if (!baseline) return reasons;
+-	if (baseline.bytes >= 512 && params.bytes < Math.floor(baseline.bytes * .5)) reasons.push(`size-drop-vs-last-good:${baseline.bytes}->${params.bytes}`);
++	const baselineBytes = baseline.canonicalBytes ?? baseline.bytes;
++	const currentBytes = params.canonicalBytes ?? params.bytes;
++	if (baselineBytes >= 512 && currentBytes < Math.floor(baselineBytes * .5)) reasons.push(`size-drop-vs-last-good:${baseline.bytes}->${params.bytes}`);
+ 	if (baseline.hasMeta && !params.hasMeta) reasons.push("missing-meta-vs-last-good");
+ 	if (baseline.gatewayMode && !params.gatewayMode) reasons.push("gateway-mode-missing-vs-last-good");
+ 	if (baseline.gatewayMode && isUpdateChannelOnlyRoot(params.parsed)) reasons.push("update-channel-only-root");
+ 	return reasons;
+ }
+@@ -4736,6 +4738,10 @@ function setConfigHealthEntry(state, configPath, entry) {
+ 		}
+ 	};
+ }
++function resolveCanonicalConfigBytes(raw, parsed) {
++	if (!isRecord$1(parsed)) return Buffer.byteLength(raw, "utf-8");
++	return Buffer.byteLength(JSON.stringify(parsed, null, 2).trimEnd().concat("\n"), "utf-8");
++}
+ async function readConfigFingerprintForPath(deps, targetPath) {
+ 	try {
+ 		const raw = await deps.fs.promises.readFile(targetPath, "utf-8");
+@@ -4744,6 +4750,7 @@ async function readConfigFingerprintForPath(deps, targetPath) {
+ 		return {
+ 			hash: hashConfigRaw(raw),
+ 			bytes: Buffer.byteLength(raw, "utf-8"),
++			canonicalBytes: resolveCanonicalConfigBytes(raw, parsed),
+ 			mtimeMs: stat?.mtimeMs ?? null,
+ 			ctimeMs: stat?.ctimeMs ?? null,
+ 			...resolveConfigStatMetadata(stat),
+@@ -4764,6 +4771,7 @@ function readConfigFingerprintForPathSync(deps, targetPath) {
+ 		return {
+ 			hash: hashConfigRaw(raw),
+ 			bytes: Buffer.byteLength(raw, "utf-8"),
++			canonicalBytes: resolveCanonicalConfigBytes(raw, parsed),
+ 			mtimeMs: stat?.mtimeMs ?? null,
+ 			ctimeMs: stat?.ctimeMs ?? null,
+ 			...resolveConfigStatMetadata(stat),
+@@ -4781,4 +4789,4 @@ function sameFingerprint(left, right) {
+-	if (!left) return false;
+-	return left.hash === right.hash && left.bytes === right.bytes && left.mtimeMs === right.mtimeMs && left.ctimeMs === right.ctimeMs && left.dev === right.dev && left.ino === right.ino && left.mode === right.mode && left.nlink === right.nlink && left.uid === right.uid && left.gid === right.gid && left.hasMeta === right.hasMeta && left.gatewayMode === right.gatewayMode;
++	if (!left) return false;
++	return left.hash === right.hash && left.bytes === right.bytes && left.canonicalBytes === right.canonicalBytes && left.mtimeMs === right.mtimeMs && left.ctimeMs === right.ctimeMs && left.dev === right.dev && left.ino === right.ino && left.mode === right.mode && left.nlink === right.nlink && left.uid === right.uid && left.gid === right.gid && left.hasMeta === right.hasMeta && left.gatewayMode === right.gatewayMode;
+ }
+ async function observeConfigSnapshot(deps, snapshot) {
+@@ -4790,6 +4798,7 @@ async function observeConfigSnapshot(deps, snapshot) {
+ 	const current = {
+ 		hash: resolveConfigSnapshotHash(snapshot) ?? hashConfigRaw(snapshot.raw),
+ 		bytes: Buffer.byteLength(snapshot.raw, "utf-8"),
++		canonicalBytes: resolveCanonicalConfigBytes(snapshot.raw, snapshot.parsed),
+ 		mtimeMs: stat?.mtimeMs ?? null,
+ 		ctimeMs: stat?.ctimeMs ?? null,
+ 		...resolveConfigStatMetadata(stat),
+@@ -4800,9 +4809,11 @@ async function observeConfigSnapshot(deps, snapshot) {
+ 	};
+ 	let healthState = await readConfigHealthState(deps);
+ 	const entry = getConfigHealthEntry(healthState, snapshot.path);
+-	const backupBaseline = entry.lastKnownGood ?? await readConfigFingerprintForPath(deps, `${snapshot.path}.bak`) ?? void 0;
++	const backupFingerprint = await readConfigFingerprintForPath(deps, `${snapshot.path}.bak`);
++	const backupBaseline = backupFingerprint?.hash === entry.lastKnownGood?.hash ? backupFingerprint : entry.lastKnownGood ?? backupFingerprint ?? void 0;
+ 	const suspicious = resolveConfigObserveSuspiciousReasons({
+ 		bytes: current.bytes,
++		canonicalBytes: current.canonicalBytes,
+ 		hasMeta: current.hasMeta,
+ 		gatewayMode: current.gatewayMode,
+ 		parsed: snapshot.parsed,
+@@ -4893,6 +4904,7 @@ function observeConfigSnapshotSync(deps, snapshot) {
+ 	const current = {
+ 		hash: resolveConfigSnapshotHash(snapshot) ?? hashConfigRaw(snapshot.raw),
+ 		bytes: Buffer.byteLength(snapshot.raw, "utf-8"),
++		canonicalBytes: resolveCanonicalConfigBytes(snapshot.raw, snapshot.parsed),
+ 		mtimeMs: stat?.mtimeMs ?? null,
+ 		ctimeMs: stat?.ctimeMs ?? null,
+ 		...resolveConfigStatMetadata(stat),
+@@ -4903,9 +4915,11 @@ function observeConfigSnapshotSync(deps, snapshot) {
+ 	};
+ 	let healthState = readConfigHealthStateSync(deps);
+ 	const entry = getConfigHealthEntry(healthState, snapshot.path);
+-	const backupBaseline = entry.lastKnownGood ?? readConfigFingerprintForPathSync(deps, `${snapshot.path}.bak`) ?? void 0;
++	const backupFingerprint = readConfigFingerprintForPathSync(deps, `${snapshot.path}.bak`);
++	const backupBaseline = backupFingerprint?.hash === entry.lastKnownGood?.hash ? backupFingerprint : entry.lastKnownGood ?? backupFingerprint ?? void 0;
+ 	const suspicious = resolveConfigObserveSuspiciousReasons({
+ 		bytes: current.bytes,
++		canonicalBytes: current.canonicalBytes,
+ 		hasMeta: current.hasMeta,
+ 		gatewayMode: current.gatewayMode,
+ 		parsed: snapshot.parsed,
