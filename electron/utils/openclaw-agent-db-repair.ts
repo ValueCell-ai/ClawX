@@ -121,6 +121,40 @@ function restorePrematureParticipantsTable(database: DatabaseSync, pathname: str
   return true;
 }
 
+/** Read agent schema readiness without changing database contents. */
+export async function inspectOpenClawAgentDatabaseMigrations(
+  options: RepairOptions = {},
+): Promise<OpenClawAgentDbRepairResult> {
+  const agentsDir = join(options.stateDir ?? resolveOpenClawStateDir(), 'agents');
+  let entries;
+  try {
+    entries = await readdir(agentsDir, { withFileTypes: true });
+  } catch {
+    return { inspected: [], repaired: [], pendingMigration: [] };
+  }
+
+  const inspected: string[] = [];
+  const pendingMigration: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const pathname = join(agentsDir, entry.name, 'agent', 'openclaw-agent.sqlite');
+    if (!await isRegularFile(pathname)) continue;
+    inspected.push(pathname);
+
+    const database = new DatabaseSync(pathname, { readOnly: true });
+    try {
+      const version = readUserVersion(database);
+      if (version > 0 && version < CURRENT_AGENT_SCHEMA_VERSION) {
+        pendingMigration.push(pathname);
+      }
+    } finally {
+      database.close();
+    }
+  }
+
+  return { inspected, repaired: [], pendingMigration };
+}
+
 /**
  * Repairs a known pre-8.1 additive-schema drift before Doctor owns the full
  * agent database migration. Populated premature tables are atomically renamed

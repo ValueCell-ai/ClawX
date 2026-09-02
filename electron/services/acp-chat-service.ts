@@ -558,6 +558,13 @@ export class AcpChatService {
 
   private async ensureConnection(): Promise<AcpConnection> {
     if (this.connection && this.initialized) return this.connection;
+    // ACP reads the same agent SQLite databases as Gateway startup migration.
+    // Do not spawn it while Gateway is disconnected or still starting, or it
+    // can become an active writer and make Doctor's stopped-writer migration
+    // fail repeatedly.
+    if (this.gateway && !this.gateway.isConnected()) {
+      throw new Error('Gateway is not ready for ACP');
+    }
     if (this.initializationFlight?.promise) return this.initializationFlight.promise;
 
     const flight: AcpInitializationFlight = { promise: null };

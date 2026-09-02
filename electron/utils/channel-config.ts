@@ -617,12 +617,6 @@ function transformChannelConfig(
 
         transformedConfig.groupPolicy = 'allowlist';
         transformedConfig.dm = { enabled: false };
-        transformedConfig.retry = {
-            attempts: 3,
-            minDelayMs: 500,
-            maxDelayMs: 30000,
-            jitter: 0.1,
-        };
 
         if (guildId && typeof guildId === 'string' && guildId.trim()) {
             const guildConfig: Record<string, unknown> = {

@@ -3965,8 +3965,13 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
             return channelModified;
           };
           const sanitizeDiscordGuilds = (target: Record<string, unknown>): boolean => {
+            let targetModified = false;
+            if ('retry' in target) {
+              delete target.retry;
+              targetModified = true;
+            }
             const guilds = target.guilds;
-            if (!guilds || typeof guilds !== 'object' || Array.isArray(guilds)) return false;
+            if (!guilds || typeof guilds !== 'object' || Array.isArray(guilds)) return targetModified;
             let guildsModified = false;
             for (const guildConfig of Object.values(guilds as Record<string, unknown>)) {
               if (!guildConfig || typeof guildConfig !== 'object' || Array.isArray(guildConfig)) continue;
@@ -3976,16 +3981,16 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
                 guildsModified = sanitizeDiscordGuildChannelConfig(channelConfig) || guildsModified;
               }
             }
-            return guildsModified;
+            return guildsModified || targetModified;
           };
 
           const sanitizedTopLevel = sanitizeDiscordGuilds(section);
           const sanitizedAccounts = Object.values(accounts ?? {}).some((accountConfig) => (
-            accountConfig && typeof accountConfig === 'object' && sanitizeDiscordGuilds(accountConfig)
+            accountConfig && typeof accountConfig === 'object' && sanitizeDiscordGuilds(accountConfig as Record<string, unknown>)
           ));
           if (sanitizedTopLevel || sanitizedAccounts) {
             modified = true;
-            console.log('[sanitize] Removed incompatible Discord channel allow flags');
+            console.log('[sanitize] Removed incompatible Discord channel config (allow/retry flags)');
           }
         }
       }

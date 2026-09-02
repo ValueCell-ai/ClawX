@@ -3,6 +3,7 @@ import { chmod, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { logger } from '../utils/logger';
 import {
+  inspectOpenClawAgentDatabaseMigrations,
   repairOpenClawAgentDatabasesFor2026_8_1Doctor,
   restoreOpenClawAgentDatabaseParticipantsAfter2026_8_1Doctor,
 } from '../utils/openclaw-agent-db-repair';
@@ -46,9 +47,21 @@ type MigrationOptions = {
   env?: Record<string, string | undefined>;
   execute?: (args: string[]) => Promise<CommandResult>;
   canonicalizeConfig?: () => Promise<unknown>;
+  inspectAgentDatabases?: () => Promise<unknown>;
   repairAgentDatabases?: () => Promise<unknown>;
   restoreAgentDatabases?: () => Promise<unknown>;
 };
+
+function pendingAgentDatabaseMigrations(result: unknown): string[] {
+  return (
+    result
+    && typeof result === 'object'
+    && 'pendingMigration' in result
+    && Array.isArray(result.pendingMigration)
+  )
+    ? result.pendingMigration.filter((value): value is string => typeof value === 'string')
+    : [];
+}
 
 const OFFLINE_COMMANDS: Array<{ stage: OpenClawMigrationStage; args: string[] }> = [
   {
@@ -184,25 +197,24 @@ export async function runOpenClaw2026_8_1MigrationPreflight(
   const receiptPath = join(options.snapshotDir, RECEIPT_FILE);
   const existing = await readReceipt(receiptPath);
   let completedStages = new Set(existing?.completedStages ?? []);
+  // The compatibility repair is idempotent and must immediately precede an
+  // unfinished Doctor run. A failed Doctor can leave or recreate the drifted
+  // table even when an older receipt recorded the repair stage.
+  if (!completedStages.has('doctor-fix')) {
+    completedStages.delete('agent-db-repair');
+  }
   if (existing?.status === 'completed') {
     const databaseState = await (
-      options.repairAgentDatabases
-      ?? repairOpenClawAgentDatabasesFor2026_8_1Doctor
+      options.inspectAgentDatabases
+      ?? inspectOpenClawAgentDatabaseMigrations
     )();
-    const pendingMigration = (
-      databaseState
-      && typeof databaseState === 'object'
-      && 'pendingMigration' in databaseState
-      && Array.isArray(databaseState.pendingMigration)
-    )
-      ? databaseState.pendingMigration
-      : [];
+    const pendingMigration = pendingAgentDatabaseMigrations(databaseState);
     if (pendingMigration.length === 0) return existing;
 
     logger.warn(
       `[upgrade] Agent database migration became pending after the completed receipt; rerunning Doctor (${pendingMigration.length} database(s))`,
     );
-    completedStages = new Set(['config-canonicalize', 'agent-db-repair']);
+    completedStages = new Set(['config-canonicalize']);
   }
   const execute = options.execute ?? ((args) => executeOpenClawCommand(
     options.entryScript,
@@ -320,6 +332,18 @@ export async function runOpenClaw2026_8_1MigrationPreflight(
     try {
       const result = await execute(command.args);
       assertStageProof(command.stage, result);
+      if (command.stage === 'doctor-fix') {
+        const databaseState = await (
+          options.inspectAgentDatabases
+          ?? inspectOpenClawAgentDatabaseMigrations
+        )();
+        const pendingMigration = pendingAgentDatabaseMigrations(databaseState);
+        if (pendingMigration.length > 0) {
+          throw new Error(
+            `Doctor exited successfully but ${pendingMigration.length} agent database migration(s) remain pending`,
+          );
+        }
+      }
       completedStages.add(command.stage);
       receipt = {
         ...receipt,

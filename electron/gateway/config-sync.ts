@@ -33,7 +33,7 @@ import { buildProxyEnv, resolveProxySettings } from '../utils/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
-import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, resolvePluginNpmPackagePath } from '../utils/plugin-install';
+import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources, cleanupStaleGlobalNpmPluginMirrors, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, resolvePluginNpmPackagePath } from '../utils/plugin-install';
 import { safeRmSync } from '../utils/safe-fs';
 import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
 import {
@@ -548,6 +548,7 @@ export async function syncGatewayConfigBeforeLaunch(
     // be skipped when plugin-maintenance is cache-hit, otherwise official
     // external plugins like WhatsApp fail openKeyedStore at runtime.
     await measureAsync(timingsMs, 'trustedPluginInstallSyncMs', async () => {
+      cleanupStaleGlobalNpmPluginMirrors();
       await cleanupUnconfiguredChannelPluginInstallRecords(configuredChannels);
       await repairTrustedOfficialPluginInstallRecords();
     });
@@ -649,6 +650,14 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     throw new Error(`OpenClaw package not found at: ${openclawDir}`);
   }
 
+  // Doctor loads plugin contracts before it can migrate agent databases.
+  // Repair ClawX mirrors and remove stale OpenClaw npm projects first so an
+  // incompatible duplicate plugin cannot block the mandatory offline repair.
+  await measureAsync(timingsMs, 'preMigrationPluginRepairMs', async () => {
+    cleanupStaleGlobalNpmPluginMirrors();
+    await repairTrustedOfficialPluginInstallRecords();
+  });
+
   let upgradeSnapshotDir = '';
   await measureAsync(timingsMs, 'upgradeSnapshotMs', async () => {
     const snapshot = await ensureOpenClaw2026_8_1UpgradeSnapshot();
@@ -664,7 +673,6 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
       openclawDir,
     });
   });
-
   await measureAsync(timingsMs, 'legacyUpdateCheckCleanupMs', async () => {
     try {
       const cleanup = await quarantineLegacyUpdateCheckState();

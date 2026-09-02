@@ -784,6 +784,33 @@ describe('sanitizeOpenClawConfig', () => {
     expect(entries.qqbot).toEqual({ enabled: true });
   });
 
+  it('removes legacy Discord retry config rejected by OpenClaw 8.1', async () => {
+    await writeOpenClawJson({
+      channels: {
+        discord: {
+          enabled: true,
+          token: 'discord-token',
+          retry: { attempts: 3, minDelayMs: 500, maxDelayMs: 30000, jitter: 0.1 },
+          accounts: {
+            default: {
+              enabled: true,
+              token: 'discord-token',
+              retry: { attempts: 3, minDelayMs: 500, maxDelayMs: 30000, jitter: 0.1 },
+            },
+          },
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const discord = (result.channels as Record<string, Record<string, unknown>>).discord;
+    expect(discord).not.toHaveProperty('retry');
+    expect(discord.accounts?.default).not.toHaveProperty('retry');
+  });
+
   it('normalizes legacy feishu plugin state to a single external plugin and removes built-in feishu', async () => {
     await writeOpenClawJson({
       channels: {

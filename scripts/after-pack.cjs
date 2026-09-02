@@ -308,6 +308,9 @@ function cleanupKnownRuntimeJunk(rootDir, platform, arch) {
 exports.__test = {
   cleanupNativePlatformPackages,
   cleanupNodeModulesRuntimeJunk,
+  patchLegacyCommonJsImportMeta,
+  patchLegacyPluginSdkRootImports,
+  patchLegacyPluginSdkSubpaths,
 };
 
 // ── Broken module patcher ─────────────────────────────────────────────────────
@@ -523,6 +526,93 @@ function patchPluginIds(pluginDir, expectedId) {
   }
 }
 
+const LEGACY_PLUGIN_SDK_ROOT_IMPORT_RE = /(["'])openclaw\/plugin-sdk\1/g;
+
+function patchLegacyPluginSdkRootImports(pluginDir) {
+  const { readFileSync, writeFileSync } = require('fs');
+  const pkgJsonPath = join(pluginDir, 'package.json');
+  if (!existsSync(pkgJsonPath)) return;
+
+  const pkg = JSON.parse(readFileSync(pkgJsonPath, 'utf8'));
+  const entryFiles = [...new Set([
+    pkg.main,
+    pkg.module,
+    'index.js',
+    'dist/index.js',
+  ].filter(Boolean))];
+
+  for (const entry of entryFiles) {
+    const entryPath = join(pluginDir, entry);
+    if (!existsSync(entryPath)) continue;
+    const content = readFileSync(entryPath, 'utf8');
+    if (!content.includes('openclaw/plugin-sdk')) continue;
+
+    const next = content.replace(
+      LEGACY_PLUGIN_SDK_ROOT_IMPORT_RE,
+      '$1openclaw/plugin-sdk/core$1',
+    );
+    if (next === content) continue;
+    writeFileSync(entryPath, next, 'utf8');
+    console.log(`[after-pack] 🩹 Patched legacy plugin-sdk root import in ${entry}`);
+  }
+}
+
+function listPluginJavaScriptFiles(rootDir) {
+  const files = [];
+  const stack = [rootDir];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    let entries;
+    try {
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.name === 'node_modules') continue;
+      const fullPath = join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith('.js')) {
+        files.push(fullPath);
+      }
+    }
+  }
+  return files;
+}
+
+function patchLegacyPluginSdkSubpaths(pluginDir) {
+  const { readFileSync, writeFileSync } = require('fs');
+  const replacements = new Map([
+    ['openclaw/plugin-sdk/channel-runtime', 'openclaw/plugin-sdk/channel-reply-pipeline'],
+  ]);
+  for (const filePath of listPluginJavaScriptFiles(pluginDir)) {
+    const content = readFileSync(filePath, 'utf8');
+    let next = content;
+    for (const [legacyPath, currentPath] of replacements) {
+      next = next.replaceAll(legacyPath, currentPath);
+    }
+    if (next !== content) writeFileSync(filePath, next, 'utf8');
+  }
+}
+
+function patchLegacyCommonJsImportMeta(pluginDir) {
+  const { readFileSync, writeFileSync } = require('fs');
+  const filenameFallback =
+    /typeof __filename !== (["'])undefined\1 \? __filename : import\.meta\.url/g;
+  const versionDirDeclarations =
+    /[ \t]*const __filename = \(0, node_url_1\.fileURLToPath\)\(import\.meta\.url\);\r?\n[ \t]*const __dirname = \(0, node_path_1\.dirname\)\(__filename\);\r?\n/g;
+
+  for (const filePath of listPluginJavaScriptFiles(pluginDir)) {
+    const content = readFileSync(filePath, 'utf8');
+    if (!content.includes('import.meta.url')) continue;
+    const next = content
+      .replace(filenameFallback, '__filename')
+      .replace(versionDirDeclarations, '');
+    if (next !== content) writeFileSync(filePath, next, 'utf8');
+  }
+}
+
 // ── Plugin bundler ───────────────────────────────────────────────────────────
 // Bundles a single OpenClaw plugin (and its transitive deps) from node_modules
 // directly into the packaged resources directory.  Mirrors the logic in
@@ -722,6 +812,9 @@ exports.default = async function afterPack(context) {
       }
       // Fix hardcoded plugin ID mismatches in compiled JS
       patchPluginIds(pluginDestDir, pluginId);
+      patchLegacyPluginSdkRootImports(pluginDestDir);
+      patchLegacyPluginSdkSubpaths(pluginDestDir);
+      patchLegacyCommonJsImportMeta(pluginDestDir);
     }
   }
 

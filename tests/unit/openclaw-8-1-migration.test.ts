@@ -49,6 +49,7 @@ describe('OpenClaw 8.1 migration preflight', () => {
         return await execute(args);
       },
       canonicalizeConfig,
+      inspectAgentDatabases: vi.fn(async () => ({ pendingMigration: [] })),
       repairAgentDatabases,
       restoreAgentDatabases,
     };
@@ -92,6 +93,7 @@ describe('OpenClaw 8.1 migration preflight', () => {
       openclawDir: '/runtime',
       execute: firstExecute,
       canonicalizeConfig,
+      inspectAgentDatabases: vi.fn(async () => ({ pendingMigration: [] })),
       repairAgentDatabases,
       restoreAgentDatabases,
     })).rejects.toThrow('session-import');
@@ -103,6 +105,7 @@ describe('OpenClaw 8.1 migration preflight', () => {
       openclawDir: '/runtime',
       execute: retryExecute,
       canonicalizeConfig,
+      inspectAgentDatabases: vi.fn(async () => ({ pendingMigration: [] })),
       repairAgentDatabases,
       restoreAgentDatabases,
     });
@@ -132,6 +135,7 @@ describe('OpenClaw 8.1 migration preflight', () => {
       openclawDir: '/runtime',
       execute,
       canonicalizeConfig: vi.fn(async () => {}),
+      inspectAgentDatabases: vi.fn(async () => ({ pendingMigration: [] })),
       repairAgentDatabases: vi.fn(async () => {}),
       restoreAgentDatabases: vi.fn(async () => {}),
     };
@@ -150,6 +154,7 @@ describe('OpenClaw 8.1 migration preflight', () => {
       openclawDir: '/runtime',
       execute,
       canonicalizeConfig: vi.fn(async () => {}),
+      inspectAgentDatabases: vi.fn(async () => ({ pendingMigration: [] })),
       repairAgentDatabases: vi.fn(async () => {
         throw new Error('non-empty premature session_participants table');
       }),
@@ -157,5 +162,30 @@ describe('OpenClaw 8.1 migration preflight', () => {
     })).rejects.toThrow('agent-db-repair');
 
     expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when Doctor exits zero but an agent database remains unmigrated', async () => {
+    const snapshotDir = await createSnapshotDir();
+    const execute = vi.fn(async () => ({ code: 0, stdout: '{}', stderr: '' }));
+
+    await expect(runOpenClaw2026_8_1MigrationPreflight({
+      snapshotDir,
+      entryScript: '/runtime/openclaw.mjs',
+      openclawDir: '/runtime',
+      execute,
+      canonicalizeConfig: vi.fn(async () => {}),
+      inspectAgentDatabases: vi.fn(async () => ({
+        pendingMigration: ['/state/agents/main/agent/openclaw-agent.sqlite'],
+      })),
+      repairAgentDatabases: vi.fn(async () => {}),
+      restoreAgentDatabases: vi.fn(async () => {}),
+    })).rejects.toThrow('agent database migration(s) remain pending');
+
+    expect(execute).toHaveBeenCalledWith([
+      'doctor',
+      '--fix',
+      '--yes',
+      '--non-interactive',
+    ]);
   });
 });

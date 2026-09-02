@@ -100,12 +100,23 @@ function bundleOnePlugin({ npmName, pluginId }) {
   echo`📦 Bundling plugin ${npmName} -> ${outputDir}`;
 
   if (fs.existsSync(outputDir)) {
-    fs.rmSync(outputDir, {
-      recursive: true,
-      force: true,
-      maxRetries: 5,
-      retryDelay: 200,
-    });
+    // Renaming first keeps the canonical output path deterministic even when
+    // macOS indexing briefly recreates files while recursive removal runs.
+    const staleDir = path.join(
+      path.dirname(OUTPUT_ROOT),
+      `.stale-openclaw-plugin-${pluginId}-${process.pid}-${Date.now()}`,
+    );
+    fs.renameSync(outputDir, staleDir);
+    try {
+      fs.rmSync(staleDir, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 200,
+      });
+    } catch (err) {
+      echo`   ⚠️  Quarantined stale ${pluginId} bundle could not be fully removed: ${err.message}`;
+    }
   }
   fs.mkdirSync(outputDir, { recursive: true });
 
@@ -187,6 +198,9 @@ function bundleOnePlugin({ npmName, pluginId }) {
   //    their JS output than what openclaw.plugin.json declares.  The Gateway
   //    validates that these match, so we fix it post-copy.
   patchPluginId(outputDir, pluginId);
+  patchLegacyPluginSdkRootImports(outputDir);
+  patchLegacyPluginSdkSubpaths(outputDir);
+  patchLegacyCommonJsImportMeta(outputDir);
 
   echo`   ✅ ${pluginId}: copied ${copiedCount} deps (skipped dupes: ${skippedDupes})`;
 }
@@ -212,7 +226,12 @@ function patchPluginId(pluginDir, expectedId) {
   if (!fs.existsSync(pkgJsonPath)) return;
 
   const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
-  const entryFiles = [pkg.main, pkg.module].filter(Boolean);
+  const entryFiles = [...new Set([
+    pkg.main,
+    pkg.module,
+    'index.js',
+    'dist/index.js',
+  ].filter(Boolean))];
 
   // Known ID mismatches to patch.  Keys are the wrong ID found in compiled JS,
   // values are the correct ID (must match openclaw.plugin.json).
@@ -242,6 +261,100 @@ function patchPluginId(pluginDir, expectedId) {
     if (patched) {
       fs.writeFileSync(entryPath, content, 'utf8');
     }
+  }
+}
+
+const LEGACY_PLUGIN_SDK_ROOT_IMPORT_RE = /(["'])openclaw\/plugin-sdk\1/g;
+
+function patchLegacyPluginSdkRootImports(pluginDir) {
+  const pkgJsonPath = path.join(pluginDir, 'package.json');
+  if (!fs.existsSync(pkgJsonPath)) return;
+
+  const pkg = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
+  const entryFiles = [...new Set([
+    pkg.main,
+    pkg.module,
+    'index.js',
+    'dist/index.js',
+  ].filter(Boolean))];
+
+  for (const entry of entryFiles) {
+    const entryPath = path.join(pluginDir, entry);
+    if (!fs.existsSync(entryPath)) continue;
+
+    const content = fs.readFileSync(entryPath, 'utf8');
+    if (!content.includes('openclaw/plugin-sdk')) continue;
+    const next = content.replace(LEGACY_PLUGIN_SDK_ROOT_IMPORT_RE, '$1openclaw/plugin-sdk/core$1');
+    if (next === content) continue;
+
+    fs.writeFileSync(entryPath, next, 'utf8');
+    echo`   🩹 Patched legacy plugin-sdk root import in ${entry}`;
+  }
+}
+
+function listPluginJavaScriptFiles(rootDir) {
+  const files = [];
+  const stack = [rootDir];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.name === 'node_modules') continue;
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith('.js')) {
+        files.push(fullPath);
+      }
+    }
+  }
+  return files;
+}
+
+function patchLegacyPluginSdkSubpaths(pluginDir) {
+  const replacements = new Map([
+    ['openclaw/plugin-sdk/channel-runtime', 'openclaw/plugin-sdk/channel-reply-pipeline'],
+  ]);
+  let patchedFiles = 0;
+  for (const filePath of listPluginJavaScriptFiles(pluginDir)) {
+    const content = fs.readFileSync(filePath, 'utf8');
+    let next = content;
+    for (const [legacyPath, currentPath] of replacements) {
+      next = next.replaceAll(legacyPath, currentPath);
+    }
+    if (next === content) continue;
+    fs.writeFileSync(filePath, next, 'utf8');
+    patchedFiles++;
+  }
+  if (patchedFiles > 0) {
+    echo`   🩹 Patched legacy plugin-sdk subpaths in ${patchedFiles} file(s)`;
+  }
+}
+
+function patchLegacyCommonJsImportMeta(pluginDir) {
+  const filenameFallback =
+    /typeof __filename !== (["'])undefined\1 \? __filename : import\.meta\.url/g;
+  const versionDirDeclarations =
+    /[ \t]*const __filename = \(0, node_url_1\.fileURLToPath\)\(import\.meta\.url\);\r?\n[ \t]*const __dirname = \(0, node_path_1\.dirname\)\(__filename\);\r?\n/g;
+  let patchedFiles = 0;
+
+  for (const filePath of listPluginJavaScriptFiles(pluginDir)) {
+    const content = fs.readFileSync(filePath, 'utf8');
+    if (!content.includes('import.meta.url')) continue;
+    const next = content
+      .replace(filenameFallback, '__filename')
+      .replace(versionDirDeclarations, '');
+    if (next === content) continue;
+    fs.writeFileSync(filePath, next, 'utf8');
+    patchedFiles++;
+  }
+  if (patchedFiles > 0) {
+    echo`   🩹 Patched CommonJS import.meta compatibility in ${patchedFiles} file(s)`;
   }
 }
 

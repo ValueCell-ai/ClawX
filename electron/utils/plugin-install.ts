@@ -7,6 +7,7 @@
  */
 import { app } from 'electron';
 import path from 'node:path';
+import { fork } from 'node:child_process';
 import { existsSync, cpSync, copyFileSync, statSync, lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync, readdirSync, realpathSync, symlinkSync, unlinkSync } from 'node:fs';
 import { readdir, stat, copyFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -15,10 +16,12 @@ import { logger } from './logger';
 import { getOpenClawResolvedDir } from './paths';
 import { safeRmSync } from './safe-fs';
 import {
+  hasPluginCapabilityConsent,
   upsertPluginInstallRecordsIntoSqlite,
   removePluginInstallRecordsFromSqlite,
   ensureOpenClawStateDirExists,
 } from './plugin-install-index';
+import { getOpenClawEmbeddedForkSpec } from './openclaw-cli';
 import { mutateOpenClawConfig } from '../gateway/config-delivery';
 
 function normalizeFsPathForWindows(filePath: string): string {
@@ -204,6 +207,304 @@ export function fixupPluginManifest(targetDir: string): void {
   // 3. Fix hardcoded plugin IDs in compiled JS entry files.
   //    The Gateway validates that the JS export's `id` matches the manifest.
   patchPluginEntryIds(targetDir);
+
+  // 4. OpenClaw 2026.8.1 removed the monolithic openclaw/plugin-sdk barrel.
+  //    Older external channel plugins still import it from their entry file.
+  patchLegacyPluginSdkRootImports(targetDir);
+  patchLegacyPluginSdkSubpaths(targetDir);
+
+  // 5. Some CommonJS channel payloads were published with import.meta.url in
+  //    their compiled output. OpenClaw 8.1 then evaluates them as ESM and the
+  //    remaining `exports.*` statements fail before registration.
+  patchLegacyCommonJsImportMeta(targetDir);
+}
+
+const LEGACY_PLUGIN_SDK_ROOT_IMPORT_RE = /(["'])openclaw\/plugin-sdk\1/g;
+const LEGACY_CJS_FILENAME_FALLBACK =
+  /typeof __filename !== (["'])undefined\1 \? __filename : import\.meta\.url/g;
+const LEGACY_CJS_VERSION_DIR_DECLARATIONS =
+  /[ \t]*const __filename = \(0, node_url_1\.fileURLToPath\)\(import\.meta\.url\);\r?\n[ \t]*const __dirname = \(0, node_path_1\.dirname\)\(__filename\);\r?\n/g;
+const CHANNEL_PLUGIN_ENABLE_IDS: Record<string, string> = {
+  discord: 'discord',
+  qqbot: 'qqbot',
+  whatsapp: 'whatsapp',
+  feishu: 'openclaw-lark',
+};
+const CHANNEL_PLUGIN_MIRROR_DIRS: Record<string, string> = {
+  discord: 'discord',
+  qqbot: 'qqbot',
+  whatsapp: 'whatsapp',
+  feishu: 'feishu-openclaw-plugin',
+};
+
+function listPluginEntryFiles(targetDir: string): string[] {
+  const pkgPath = join(targetDir, 'package.json');
+  let pkg: Record<string, unknown>;
+  try {
+    pkg = JSON.parse(readFileSync(fsPath(pkgPath), 'utf-8')) as Record<string, unknown>;
+  } catch {
+    return [];
+  }
+
+  const entryFiles = [
+    pkg.main,
+    pkg.module,
+    'index.js',
+    'dist/index.js',
+  ].filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+  return [...new Set(entryFiles)]
+    .map((entry) => join(targetDir, entry))
+    .filter((entryPath) => existsSync(fsPath(entryPath)));
+}
+
+/** Rewrite legacy `openclaw/plugin-sdk` root imports to the 2026.8.1 core entry. */
+export function patchLegacyPluginSdkRootImports(targetDir: string): void {
+  let patchedFiles = 0;
+  for (const filePath of listPluginEntryFiles(targetDir)) {
+    let content: string;
+    try {
+      content = readFileSync(fsPath(filePath), 'utf-8');
+    } catch {
+      continue;
+    }
+    if (!content.includes('openclaw/plugin-sdk')) continue;
+    const next = content.replace(LEGACY_PLUGIN_SDK_ROOT_IMPORT_RE, '$1openclaw/plugin-sdk/core$1');
+    if (next === content) continue;
+    writeFileSync(fsPath(filePath), next, 'utf-8');
+    patchedFiles++;
+  }
+  if (patchedFiles > 0) {
+    logger.info(`[plugin] Patched legacy plugin-sdk root imports in ${patchedFiles} file(s) under ${targetDir}`);
+  }
+}
+
+function listPluginJavaScriptFiles(rootDir: string): string[] {
+  const files: string[] = [];
+  const stack = [rootDir];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) continue;
+    let entries: Array<{ name: string; isDirectory(): boolean; isFile(): boolean }>;
+    try {
+      entries = readdirSync(fsPath(current), { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.name === 'node_modules') continue;
+      const fullPath = join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith('.js')) {
+        files.push(fullPath);
+      }
+    }
+  }
+  return files;
+}
+
+/** Rewrite SDK subpaths renamed by OpenClaw 8.1. */
+export function patchLegacyPluginSdkSubpaths(targetDir: string): void {
+  const replacements = new Map([
+    ['openclaw/plugin-sdk/channel-runtime', 'openclaw/plugin-sdk/channel-reply-pipeline'],
+  ]);
+  let patchedFiles = 0;
+  for (const filePath of listPluginJavaScriptFiles(targetDir)) {
+    let content: string;
+    try {
+      content = readFileSync(fsPath(filePath), 'utf-8');
+    } catch {
+      continue;
+    }
+    let next = content;
+    for (const [legacyPath, currentPath] of replacements) {
+      next = next.replaceAll(legacyPath, currentPath);
+    }
+    if (next === content) continue;
+    writeFileSync(fsPath(filePath), next, 'utf-8');
+    patchedFiles++;
+  }
+  if (patchedFiles > 0) {
+    logger.info(`[plugin] Patched legacy plugin-sdk subpaths in ${patchedFiles} file(s) under ${targetDir}`);
+  }
+}
+
+/** Make incorrectly emitted CommonJS payloads parse consistently as CommonJS. */
+export function patchLegacyCommonJsImportMeta(targetDir: string): void {
+  let patchedFiles = 0;
+  for (const filePath of listPluginJavaScriptFiles(targetDir)) {
+    let content: string;
+    try {
+      content = readFileSync(fsPath(filePath), 'utf-8');
+    } catch {
+      continue;
+    }
+    if (!content.includes('import.meta.url')) continue;
+    const next = content
+      .replace(LEGACY_CJS_FILENAME_FALLBACK, '__filename')
+      .replace(LEGACY_CJS_VERSION_DIR_DECLARATIONS, '');
+    if (next === content) continue;
+    writeFileSync(fsPath(filePath), next, 'utf-8');
+    patchedFiles++;
+  }
+  if (patchedFiles > 0) {
+    logger.info(`[plugin] Patched CommonJS import.meta compatibility in ${patchedFiles} file(s) under ${targetDir}`);
+  }
+}
+
+function resolvePackageUnderNodeModules(nodeModulesDir: string, npmName: string): string {
+  const parts = npmName.split('/');
+  if (parts.length === 1) {
+    return join(nodeModulesDir, parts[0]);
+  }
+  return join(nodeModulesDir, parts[0], parts[1]);
+}
+
+function listGlobalNpmPluginLocations(npmName: string): Array<{
+  removalRoot: string;
+  manifestPath: string;
+  packageJsonPath: string;
+}> {
+  const npmRoot = join(homedir(), '.openclaw', 'npm');
+  const globalPackageDir = resolvePackageUnderNodeModules(join(npmRoot, 'node_modules'), npmName);
+  const locations = [{
+    removalRoot: globalPackageDir,
+    manifestPath: join(globalPackageDir, 'openclaw.plugin.json'),
+    packageJsonPath: join(globalPackageDir, 'package.json'),
+  }];
+  const projectsDir = join(npmRoot, 'projects');
+  let projectEntries: Array<{ name: string; isDirectory(): boolean }> = [];
+  try {
+    projectEntries = readdirSync(fsPath(projectsDir), { withFileTypes: true });
+  } catch {
+    return locations;
+  }
+  for (const entry of projectEntries) {
+    if (!entry.isDirectory()) continue;
+    const projectDir = join(projectsDir, entry.name);
+    const packageDir = resolvePackageUnderNodeModules(join(projectDir, 'node_modules'), npmName);
+    locations.push({
+      removalRoot: projectDir,
+      manifestPath: join(packageDir, 'openclaw.plugin.json'),
+      packageJsonPath: join(packageDir, 'package.json'),
+    });
+  }
+  return locations;
+}
+
+/**
+ * Remove stale OpenClaw-managed npm plugin copies under ~/.openclaw/npm when a
+ * ClawX mirror already exists in ~/.openclaw/extensions. Those global installs
+ * can override the newer bundled mirror and break OpenClaw 2026.8.1 startup.
+ */
+export function cleanupStaleGlobalNpmPluginMirrors(): { removed: string[]; failed: string[] } {
+  const removed: string[] = [];
+  const failed: string[] = [];
+
+  for (const [pluginDirName, definition] of Object.entries(TRUSTED_OFFICIAL_EXTENSION_PLUGINS)) {
+    const mirrorDir = join(homedir(), '.openclaw', 'extensions', pluginDirName);
+    if (!existsSync(fsPath(join(mirrorDir, 'openclaw.plugin.json')))) {
+      continue;
+    }
+    const mirrorVersion = readPluginVersion(join(mirrorDir, 'package.json'));
+
+    const npmNames = [...new Set([definition.npmName, ...(definition.legacyNpmNames ?? [])])];
+    for (const npmName of npmNames) {
+      for (const location of listGlobalNpmPluginLocations(npmName)) {
+        if (!existsSync(fsPath(location.manifestPath))) continue;
+        if (
+          npmName === definition.npmName
+          && mirrorVersion
+          && readPluginVersion(location.packageJsonPath) === mirrorVersion
+        ) {
+          continue;
+        }
+        try {
+          logger.info(
+            `[plugin] Removing stale global npm plugin mirror: ${npmName} (${location.removalRoot})`,
+          );
+          safeRmSync(fsPath(location.removalRoot));
+          removed.push(npmName);
+        } catch (error) {
+          logger.warn(`[plugin] Failed to remove stale global npm plugin ${npmName}:`, error);
+          failed.push(npmName);
+        }
+      }
+    }
+  }
+
+  return {
+    removed: [...new Set(removed)],
+    failed: [...new Set(failed)],
+  };
+}
+
+async function runEmbeddedOpenClawCli(
+  args: string[],
+  envOverrides: NodeJS.ProcessEnv = {},
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const spec = getOpenClawEmbeddedForkSpec(args);
+  spec.options.env = {
+    ...spec.options.env,
+    ...envOverrides,
+  };
+  return await new Promise((resolve, reject) => {
+    const child = fork(spec.modulePath, spec.args, spec.options);
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      callback();
+    };
+    const timeout = setTimeout(() => {
+      child.kill();
+      finish(() => reject(new Error(`OpenClaw CLI timed out: ${args.join(' ')}`)));
+    }, 90_000);
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', (error) => finish(() => reject(error)));
+    child.on('exit', (code) => finish(() => resolve({
+      code: code ?? 1,
+      stdout,
+      stderr,
+    })));
+  });
+}
+
+/**
+ * Record artifact-bound consent for ClawX-bundled official channel plugins.
+ * OpenClaw 2026.8.1 does not persist explicit consent for an already-enabled
+ * legacy record, so disable/re-enable only when the durable record is absent.
+ */
+export async function ensureConfiguredOfficialPluginCapabilityConsent(
+  configuredChannels: string[],
+): Promise<void> {
+  for (const channelType of [...new Set(configuredChannels)]) {
+    const pluginId = CHANNEL_PLUGIN_ENABLE_IDS[channelType];
+    const mirrorDirName = CHANNEL_PLUGIN_MIRROR_DIRS[channelType];
+    if (!pluginId || !mirrorDirName || hasPluginCapabilityConsent(pluginId)) continue;
+    const mirrorDir = join(homedir(), '.openclaw', 'extensions', mirrorDirName);
+    if (!existsSync(fsPath(join(mirrorDir, 'openclaw.plugin.json')))) continue;
+    const enabled = await runEmbeddedOpenClawCli([
+      'plugins',
+      'enable',
+      pluginId,
+      '--accept-capabilities',
+    ]);
+    if (enabled.code !== 0) {
+      throw new Error(
+        `Failed to persist capability consent for ${pluginId}: ${enabled.stderr.trim() || enabled.stdout.trim()}`,
+      );
+    }
+    logger.info(`[plugin] Persisted capability consent for ${pluginId}`);
+  }
 }
 
 /**
@@ -278,6 +579,8 @@ type TrustedOfficialExtensionPlugin = {
   /** Path records keep OpenClaw from replacing a ClawX-patched mirror. */
   recordSource?: 'npm' | 'path';
   legacyPluginIds?: string[];
+  /** Older OpenClaw npm installs that can shadow ClawX mirrors under ~/.openclaw/npm. */
+  legacyNpmNames?: string[];
 };
 
 const TRUSTED_OFFICIAL_EXTENSION_PLUGINS: Record<string, TrustedOfficialExtensionPlugin> = {
@@ -292,14 +595,14 @@ const TRUSTED_OFFICIAL_EXTENSION_PLUGINS: Record<string, TrustedOfficialExtensio
     legacyPluginIds: ['wecom-openclaw-plugin'],
   },
   // @larksuite/openclaw-lark 2026.7.9 declares ./dist/index.js as `main`, but
-  // publishes its runtime entry as ./index.js. OpenClaw 2026.7.1 rejects old
-  // managed npm records during its post-core smoke check. Make ClawX's complete
-  // mirror the canonical path-owned payload instead.
+  // publishes its runtime entry as ./index.js. Keep authoritative npm owner
+  // metadata for capability consent while pointing installPath at the
+  // compatibility-patched ClawX mirror.
   'feishu-openclaw-plugin': {
     npmName: '@larksuite/openclaw-lark',
     pluginId: 'openclaw-lark',
-    recordSource: 'path',
     legacyPluginIds: ['feishu-openclaw-plugin', 'feishu'],
+    legacyNpmNames: ['@openclaw/openclaw-lark'],
   },
   whatsapp: { npmName: '@openclaw/whatsapp' },
   discord: { npmName: '@openclaw/discord' },
@@ -609,6 +912,9 @@ export async function repairTrustedOfficialPluginInstallRecords(): Promise<void>
     if (!existsSync(fsPath(join(targetDir, 'openclaw.plugin.json')))) {
       continue;
     }
+    // Repair copied payloads on every launch, including cache hits and
+    // installations created by older ClawX builds.
+    fixupPluginManifest(targetDir);
     await syncTrustedOfficialPluginInstallRecord(pluginDirName, targetDir);
   }
 }
