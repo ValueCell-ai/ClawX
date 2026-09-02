@@ -235,7 +235,12 @@ export function AcpAssistantTurn({
 
         {(timing || clipboardText.trim().length > 0) && (
           <div className={cn('flex items-center', assistantTurnBlockClassName)}>
-            {timing && <AcpTurnDuration timing={timing} />}
+            {timing && (
+              <AcpTurnDuration
+                key={timing.status === 'running' ? timing.startedAtMs : timing.durationMs}
+                timing={timing}
+              />
+            )}
             {clipboardText.trim().length > 0 && (
               <div className="ml-auto min-w-0 flex-1">
                 <AcpAssistantHoverBar text={clipboardText} />

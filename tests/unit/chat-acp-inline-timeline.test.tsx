@@ -113,6 +113,7 @@ vi.mock('react-i18next', () => ({
     t: (key: string, params?: Record<string, unknown> | string) => {
       if (typeof params === 'string') return params;
       if (key === 'acp.turnElapsed') return `${params?.duration} elapsed`;
+      if (key === 'acp.turnDuration') return `${params?.duration} used`;
       const labels: Record<string, string> = {
         'acp.thought': 'Thought',
         'acp.tool': 'Tool',
@@ -305,6 +306,7 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     deferredAcpTimeline.value = null;
     acpState.loading = false;
     acpState.sending = false;
+    acpState.turnTimingsByUserMessageId = {};
     acpState.cancelling = false;
     acpState.error = null;
     acpState.activeSessionKey = 'agent:main:main';
@@ -588,6 +590,9 @@ describe('ACP Chat page inline timeline lifecycle', () => {
         },
       ];
       acpState.activeSessionKey = childKey;
+      acpState.turnTimingsByUserMessageId = {
+        'user-child': { source: 'transcript', status: 'complete', durationMs: 3_000 },
+      };
       acpState.timeline = {
         ...emptyTimeline(),
         sessionId: childKey,
@@ -609,11 +614,20 @@ describe('ACP Chat page inline timeline lifecycle', () => {
         children: [],
       });
       const { Chat } = await import('@/pages/Chat/index');
-      render(<Chat />);
+      const { rerender } = render(<Chat />);
 
       await waitFor(() => expect(screen.getByTestId('chat-subagent-marker')).toHaveTextContent('Subagent'));
       expect(screen.queryByTestId('mock-chat-input')).not.toBeInTheDocument();
       expect(screen.getByTestId('chat-composer-working-indicator')).toHaveTextContent('Thinking');
+      await waitFor(() => expect(screen.getByTestId('acp-turn-duration')).toHaveTextContent('3 sec elapsed'));
+
+      chatState.sessions = [
+        { key: parentKey, workspacePath: '/workspace' },
+        { key: childKey, workspacePath: '/workspace', status: 'done', hasActiveRun: false },
+      ];
+      rerender(<Chat />);
+      await waitFor(() => expect(screen.getByTestId('acp-turn-duration')).toHaveTextContent('3 sec used'));
+      expect(screen.queryByTestId('chat-composer-working-indicator')).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Return to parent conversation' }));
 
       expect(attentionState.markRead).toHaveBeenCalledWith(parentKey);

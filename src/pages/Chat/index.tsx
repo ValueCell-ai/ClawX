@@ -33,6 +33,7 @@ import { useWorkspaceAvailability } from '@/hooks/use-workspace-availability';
 import { getAcpUserMessageAnchorId } from '@/lib/acp/timeline-anchors';
 import { getCurrentAcpPlan } from '@/lib/acp/current-plan';
 import type { MessageSegmentItem, RenderPart, ToolCallItem } from '@/lib/acp/timeline-types';
+import type { AcpTurnTiming } from '@/lib/acp/turn-timings';
 import { createEmptyAcpTimeline } from '@/lib/acp/reducer';
 import { projectOpenClawFileActivities, type AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 import { hostApi } from '@/lib/host-api';
@@ -625,6 +626,51 @@ export function Chat() {
     || sessionAttentionByKey[currentSessionKey]?.observedBusy === true
     || activeSubagentSessionKeys.has(currentSessionKey)
   );
+  const completedSubagentTurn = useMemo(() => {
+    if (!currentSubagentBusy) return null;
+    for (let index = visibleAcpTimeline.itemOrder.length - 1; index >= 0; index -= 1) {
+      const item = visibleAcpTimeline.itemsById[visibleAcpTimeline.itemOrder[index]];
+      if (item?.kind !== 'message-segment' || item.role !== 'user') continue;
+      const timing = acpTurnTimings[item.messageId];
+      if (timing?.status === 'complete') {
+        return { messageId: item.messageId, durationMs: timing.durationMs };
+      }
+    }
+    return null;
+  }, [acpTurnTimings, currentSubagentBusy, visibleAcpTimeline]);
+  const [liveSubagentTurn, setLiveSubagentTurn] = useState<{
+    sessionKey: string;
+    messageId: string;
+    startedAtMs: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!completedSubagentTurn) {
+      setLiveSubagentTurn((current) => (
+        current?.sessionKey === currentSessionKey ? null : current
+      ));
+      return;
+    }
+    setLiveSubagentTurn((current) => (
+      current?.sessionKey === currentSessionKey && current.messageId === completedSubagentTurn.messageId
+        ? current
+        : {
+            sessionKey: currentSessionKey,
+            messageId: completedSubagentTurn.messageId,
+            startedAtMs: Date.now() - completedSubagentTurn.durationMs,
+          }
+    ));
+  }, [completedSubagentTurn, currentSessionKey]);
+  const visibleTurnTimings = useMemo(() => {
+    if (liveSubagentTurn?.sessionKey !== currentSessionKey) return acpTurnTimings;
+    return {
+      ...acpTurnTimings,
+      [liveSubagentTurn.messageId]: {
+        source: 'live',
+        status: 'running',
+        startedAtMs: liveSubagentTurn.startedAtMs,
+      } satisfies AcpTurnTiming,
+    };
+  }, [acpTurnTimings, currentSessionKey, liveSubagentTurn]);
   const navigateToSession = useCallback((sessionKey: string) => {
     if (!useChatStore.getState().sessions.some((session) => session.key === sessionKey)) return;
     markSessionRead(sessionKey);
@@ -735,7 +781,7 @@ export function Chat() {
                     <AcpTimeline
                       snapshot={visibleAcpTimeline}
                       isStreaming={acpSending || acpCancelling}
-                      turnTimingsByUserMessageId={acpTurnTimings}
+                      turnTimingsByUserMessageId={visibleTurnTimings}
                       fileActivity={fileActivity}
                       workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey
                         ? resolvedWorkspaceContext.workspaceRoot
