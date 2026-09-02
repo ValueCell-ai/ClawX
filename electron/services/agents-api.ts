@@ -12,6 +12,8 @@ import {
   updateAgentName,
 } from '../utils/agent-config';
 import { deleteChannelAccountConfig } from '../utils/channel-config';
+import { logger } from '../utils/logger';
+import { inspectOpenClawAgentDatabaseMigrations } from '../utils/openclaw-agent-db-repair';
 import { ensureClawXContext } from '../utils/openclaw-workspace';
 import { isRecord } from './payload-utils';
 import { syncAgentModelOverrideToRuntime, syncAllProviderAuthToRuntime } from './providers/provider-runtime-sync';
@@ -27,16 +29,32 @@ function requireString(payload: unknown, key: string): string {
   return payload[key].trim();
 }
 
-export function createAgentsApi(_ctx: AgentsApiContext): CompleteHostServiceRegistry['agents'] {
+async function ensureAgentDatabasesReady(ctx: AgentsApiContext): Promise<void> {
+  const before = await inspectOpenClawAgentDatabaseMigrations();
+  if (before.pendingMigration.length === 0) return;
+
+  logger.info(
+    `[agents] Migrating ${before.pendingMigration.length} pending agent database(s) after Agent creation`,
+  );
+  await ctx.gatewayManager.restart();
+
+  const after = await inspectOpenClawAgentDatabaseMigrations();
+  if (after.pendingMigration.length > 0) {
+    throw new Error(
+      `Agent database migration did not complete for ${after.pendingMigration.length} database(s)`,
+    );
+  }
+}
+
+export function createAgentsApi(ctx: AgentsApiContext): CompleteHostServiceRegistry['agents'] {
   return {
     list: async () => ({ success: true, ...(await listAgentsSnapshot()) }),
     create: async (payload) => {
       const name = requireString(payload, 'name');
       const inheritWorkspace = isRecord(payload) ? payload.inheritWorkspace === true : undefined;
       const snapshot = await createAgent(name, { inheritWorkspace });
-      syncAllProviderAuthToRuntime().catch((err) => {
-        console.warn('[agents] Failed to sync provider auth after agent creation:', err);
-      });
+      await syncAllProviderAuthToRuntime();
+      await ensureAgentDatabasesReady(ctx);
       void ensureClawXContext({ waitForAllConfiguredWorkspaces: true }).catch((err) => {
         console.warn('[agents] Failed to ensure ClawX context after agent creation:', err);
       });

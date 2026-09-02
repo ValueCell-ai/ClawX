@@ -12,7 +12,7 @@ import { DatabaseSync } from 'node:sqlite';
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
 const AUTH_SQLITE_FILENAME = 'openclaw-agent.sqlite';
 const PRIMARY_ROW_KEY = 'primary';
-const SCHEMA_VERSION = 1;
+const AUTH_BOOTSTRAP_SCHEMA_VERSION = 1;
 
 const OPENCLAW_AGENT_SCHEMA_SQL = `CREATE TABLE IF NOT EXISTS schema_meta (
   meta_key TEXT NOT NULL PRIMARY KEY,
@@ -92,19 +92,21 @@ function ensureAgentAuthDir(agentId: string): void {
 }
 
 function ensureDatabaseSchema(db: DatabaseSync, agentId: string): void {
+  const isUninitialized = !db.prepare(
+    "SELECT 1 FROM sqlite_schema WHERE type = 'table' LIMIT 1",
+  ).get();
   db.exec(OPENCLAW_AGENT_SCHEMA_SQL);
-  db.exec(`PRAGMA user_version = ${SCHEMA_VERSION};`);
+  if (!isUninitialized) {
+    return;
+  }
+
+  db.exec(`PRAGMA user_version = ${AUTH_BOOTSTRAP_SCHEMA_VERSION};`);
   const now = Date.now();
   db.prepare(`
     INSERT INTO schema_meta (
       meta_key, role, schema_version, agent_id, app_version, created_at, updated_at
     ) VALUES (?, 'agent', ?, ?, NULL, ?, ?)
-    ON CONFLICT(meta_key) DO UPDATE SET
-      role = excluded.role,
-      schema_version = excluded.schema_version,
-      agent_id = excluded.agent_id,
-      updated_at = excluded.updated_at
-  `).run(PRIMARY_ROW_KEY, SCHEMA_VERSION, agentId, now, now);
+  `).run(PRIMARY_ROW_KEY, AUTH_BOOTSTRAP_SCHEMA_VERSION, agentId, now, now);
 }
 
 function tightenDatabasePermissions(sqlitePath: string): void {

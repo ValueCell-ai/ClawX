@@ -51,6 +51,7 @@ conditionalProfiles:
       - Web Browser guest, navigation, session, permission, or data policy changes
 requiredRules:
   - openclaw-config-delivery
+  - openclaw-agent-database-ownership
   - renderer-main-boundary
   - backend-communication-boundary
   - api-client-transport-policy

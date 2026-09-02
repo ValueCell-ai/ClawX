@@ -20,6 +20,7 @@ const {
   getAllSettingsMock,
   getChannelFormValuesMock,
   getSettingMock,
+  inspectOpenClawAgentDatabaseMigrationsMock,
   listLogFilesMock,
   logDir,
   listAgentsSnapshotFromConfigMock,
@@ -65,6 +66,7 @@ const {
   getAllSettingsMock: vi.fn(),
   getChannelFormValuesMock: vi.fn(),
   getSettingMock: vi.fn(),
+  inspectOpenClawAgentDatabaseMigrationsMock: vi.fn(),
   listLogFilesMock: vi.fn(),
   logDir: '/tmp/clawx-host-services-test-logs',
   listAgentsSnapshotFromConfigMock: vi.fn(),
@@ -210,6 +212,12 @@ vi.mock('@electron/utils/openclaw-workspace', () => ({
   ensureClawXContext: (...args: unknown[]) => ensureClawXContextMock(...args),
 }));
 
+vi.mock('@electron/utils/openclaw-agent-db-repair', () => ({
+  inspectOpenClawAgentDatabaseMigrations: (...args: unknown[]) => (
+    inspectOpenClawAgentDatabaseMigrationsMock(...args)
+  ),
+}));
+
 vi.mock('@electron/services/providers/provider-runtime-sync', () => ({
   syncAllProviderAuthToRuntime: vi.fn(),
   syncAgentModelOverrideToRuntime: vi.fn(),
@@ -317,6 +325,11 @@ describe('host services', () => {
     listConfiguredChannelsMock.mockResolvedValue([]);
     listConfiguredChannelsFromConfigMock.mockResolvedValue([]);
     listConfiguredChannelAccountsFromConfigMock.mockReturnValue({});
+    inspectOpenClawAgentDatabaseMigrationsMock.mockResolvedValue({
+      inspected: [],
+      repaired: [],
+      pendingMigration: [],
+    });
     listAgentsSnapshotMock.mockResolvedValue({
       agents: [],
       defaultAgentId: 'main',
@@ -1005,7 +1018,7 @@ describe('host services', () => {
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
   });
 
-  it('creates and updates agents without scheduling lifecycle work', async () => {
+  it('creates and updates agents without lifecycle work when databases are current', async () => {
     const snapshot = {
       agents: [{ id: 'writer', name: 'Writer' }],
       defaultAgentId: 'main',
@@ -1031,6 +1044,69 @@ describe('host services', () => {
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
     expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
     expect(gatewayManager.restart).not.toHaveBeenCalled();
+  });
+
+  it('awaits a managed migration before a newly created agent becomes ready', async () => {
+    const snapshot = {
+      agents: [{ id: 'writer', name: 'Writer' }],
+      defaultAgentId: 'main',
+      defaultModelRef: null,
+      configuredChannelTypes: [],
+      channelOwners: {},
+      channelAccountOwners: {},
+    };
+    createAgentMock.mockResolvedValue(snapshot);
+    inspectOpenClawAgentDatabaseMigrationsMock
+      .mockResolvedValueOnce({
+        inspected: ['/tmp/writer/openclaw-agent.sqlite'],
+        repaired: [],
+        pendingMigration: ['/tmp/writer/openclaw-agent.sqlite'],
+      })
+      .mockResolvedValueOnce({
+        inspected: ['/tmp/writer/openclaw-agent.sqlite'],
+        repaired: [],
+        pendingMigration: [],
+      });
+    const gatewayManager = {
+      restart: vi.fn().mockResolvedValue(undefined),
+    };
+    const { createAgentsApi } = await import('@electron/services/agents-api');
+    const providerRuntimeSync = await import('@electron/services/providers/provider-runtime-sync');
+
+    await expect(createAgentsApi({ gatewayManager: gatewayManager as never }).create({
+      name: 'Writer',
+    })).resolves.toEqual({ success: true, ...snapshot });
+
+    expect(providerRuntimeSync.syncAllProviderAuthToRuntime).toHaveBeenCalledTimes(1);
+    expect(gatewayManager.restart).toHaveBeenCalledTimes(1);
+    expect(inspectOpenClawAgentDatabaseMigrationsMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not report a newly created agent ready when migration remains pending', async () => {
+    const snapshot = {
+      agents: [{ id: 'writer', name: 'Writer' }],
+      defaultAgentId: 'main',
+      defaultModelRef: null,
+      configuredChannelTypes: [],
+      channelOwners: {},
+      channelAccountOwners: {},
+    };
+    createAgentMock.mockResolvedValue(snapshot);
+    inspectOpenClawAgentDatabaseMigrationsMock.mockResolvedValue({
+      inspected: ['/tmp/writer/openclaw-agent.sqlite'],
+      repaired: [],
+      pendingMigration: ['/tmp/writer/openclaw-agent.sqlite'],
+    });
+    const gatewayManager = {
+      restart: vi.fn().mockResolvedValue(undefined),
+    };
+    const { createAgentsApi } = await import('@electron/services/agents-api');
+
+    await expect(createAgentsApi({ gatewayManager: gatewayManager as never }).create({
+      name: 'Writer',
+    })).rejects.toThrow('Agent database migration did not complete for 1 database(s)');
+
+    expect(gatewayManager.restart).toHaveBeenCalledTimes(1);
   });
 
   it('removes agent channel bindings without scheduling lifecycle work', async () => {
