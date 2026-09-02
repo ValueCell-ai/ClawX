@@ -8,18 +8,18 @@ import { describe, expect, it } from 'vitest';
 const require = createRequire(import.meta.url);
 
 describe('openclaw bundle config', () => {
-  it('pins the OpenClaw 2026.8.1 runtime compatibility matrix', () => {
+  it('pins the OpenClaw 2026.8.2 runtime compatibility matrix', () => {
     const packageJson = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
     };
     expect(packageJson.dependencies?.['@agentclientprotocol/sdk']).toBe('1.1.0');
     expect(packageJson.devDependencies).toMatchObject({
-      openclaw: '2026.8.1',
+      openclaw: '2026.8.2',
       electron: '40.10.6',
-      '@openclaw/discord': '2026.8.1',
+      '@openclaw/discord': '2026.8.2',
       '@openclaw/qqbot': '2026.7.1',
-      '@openclaw/whatsapp': '2026.8.1',
+      '@openclaw/whatsapp': '2026.8.2',
       '@soimy/dingtalk': '3.6.6',
       '@wecom/wecom-openclaw-plugin': '2026.7.2',
       '@larksuite/openclaw-lark': '2026.7.9',
@@ -68,7 +68,8 @@ describe('openclaw bundle config', () => {
     expect(lockfile).not.toContain("'@larksuite/openclaw-lark@2026.6.10':");
     expect(lockfile).not.toContain("'@openclaw/ai@2026.7.1':");
     expect(lockfile).not.toContain("'@openclaw/ai@2026.7.1-2':");
-    expect(lockfile).toContain("'@openclaw/ai@2026.8.1':");
+    expect(lockfile).not.toContain("'@openclaw/ai@2026.8.1':");
+    expect(lockfile).toContain("'@openclaw/ai@2026.8.2':");
   });
 
   it('includes Electron runtime-only packages needed in packaged builds', async () => {
