@@ -1022,6 +1022,11 @@ test.describe('ClawX ACP inline timeline', () => {
           toolCallId: 'read-package',
           title: 'read: path: package.json',
           status: 'completed',
+          rawInput: {
+            path: '/workspace/package.json',
+            offset: 0,
+            limit: 2_000,
+          },
           content: [{ type: 'content', content: { type: 'text', text: 'Loaded package metadata' } }],
           locations: [],
         },
@@ -1032,6 +1037,7 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(card).toBeVisible();
       await expect(card).toContainText('Read: path: package.json');
       await expect(card).toContainText('Loaded package metadata');
+      await expect(card.getByTestId('acp-tool-input-pre')).toContainText('/workspace/package.json');
       const toolLabel = card.getByText('Tool', { exact: true });
       expect(await toolLabel.evaluate((element) => element.previousElementSibling?.classList.contains('lucide-wrench'))).toBe(true);
       expect(await toolLabel.evaluate((element) => element.nextElementSibling?.getAttribute('data-testid'))).toBe('acp-tool-icon-scan-text');
@@ -1435,6 +1441,9 @@ test.describe('ClawX ACP inline timeline', () => {
           toolCallId: 'history-tool',
           title: 'Historical tool',
           status: 'completed',
+          rawInput: {
+            command: 'command -v tvly && tvly search "US data center protests opposition residents recent approvals moratorium 2026"',
+          },
           content: [{ type: 'content', content: { type: 'text', text: 'historical output' } }],
           locations: [],
         },
@@ -1453,6 +1462,9 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(card).toHaveAttribute('data-expanded', 'false');
       await page.getByTestId('acp-tool-toggle').click();
       await expect(card).toHaveAttribute('data-expanded', 'true');
+      await expect(card.getByTestId('acp-tool-input-pre')).toContainText(
+        'US data center protests opposition residents recent approvals moratorium 2026',
+      );
       await expect(card).toContainText('historical output');
       const turn = page.getByTestId('acp-assistant-turn');
       await expect(turn).toContainText('Before the historical tool');

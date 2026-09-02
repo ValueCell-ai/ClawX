@@ -1340,6 +1340,27 @@ describe('ACP chat timeline components', () => {
     expect(screen.getByTestId('acp-tool-input-pre')).toHaveTextContent('A long task title that is truncated in the card header');
   });
 
+  it('shows the complete historical tool input after expanding the card', () => {
+    render(<AcpToolCallCard item={toolCallItem({
+      title: 'exec: command: command -v tvly && tvly search ...',
+      input: {
+        command: 'command -v tvly && tvly search "US data center protests opposition residents recent approvals moratorium 2026"',
+        timeout: 120_000,
+      },
+      historical: true,
+      status: 'completed',
+      outputParts: [],
+    })} />);
+
+    const card = screen.getByTestId('acp-tool-call-card');
+    expect(card).toHaveAttribute('data-expanded', 'false');
+    fireEvent.click(screen.getByTestId('acp-tool-toggle'));
+    expect(JSON.parse(screen.getByTestId('acp-tool-input-pre').textContent ?? '')).toEqual({
+      command: 'command -v tvly && tvly search "US data center protests opposition residents recent approvals moratorium 2026"',
+      timeout: 120_000,
+    });
+  });
+
   it.each([
     ['update_plan: plan: [{"step":"Review"}]', undefined, 'Update plan: plan: [{"step":"Review"}]', 'list-checks'],
     ['web_fetch: url: https://example.com', undefined, 'Read web page: url: https://example.com', 'globe'],
