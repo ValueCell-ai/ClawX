@@ -75,7 +75,7 @@
             "tasks": "Задачи плана"
         },
         "subagentSessions": {
-            "count": "Субагенты: {{count}}",
+            "count": "Отправлено субагентов: {{count}}",
             "expand": "Развернуть сеансы субагентов",
             "collapse": "Свернуть сеансы субагентов",
             "toggle": "{{action}}, {{count}}",
@@ -264,6 +264,7 @@
         "send": "Отправить",
         "stop": "Остановить",
         "thinking": "Думаю…",
+        "subagentsWorking": "Субагенты работают",
         "gatewayConnected": "подключён",
         "gatewayStarting": "запуск",
         "gatewayStatus": "шлюз {{state}}",

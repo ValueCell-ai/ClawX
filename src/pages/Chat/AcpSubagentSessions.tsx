@@ -54,7 +54,7 @@ export function AcpSubagentSessions({
   const aggregateStatusLabel = t('acp.subagentSessions.aggregateStatus', { status: aggregateStateLabel });
 
   return (
-    <div className="mb-2 min-w-0 text-right">
+    <div className="relative min-w-0 text-right">
       <button
         type="button"
         data-testid="acp-subagent-sessions-toggle"
@@ -94,7 +94,7 @@ export function AcpSubagentSessions({
           id={panelId}
           data-testid="acp-subagent-sessions-panel"
           aria-label={t('acp.subagentSessions.panel')}
-          className="mt-2 max-h-48 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-black/10 bg-surface-modal p-2 text-left shadow-sm dark:border-white/10"
+          className="absolute bottom-full right-0 z-10 mb-2 max-h-48 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-black/10 bg-surface-modal p-2 text-left shadow-sm dark:border-white/10"
         >
           <ul className="space-y-1">
             {sessions.map((session, index) => {

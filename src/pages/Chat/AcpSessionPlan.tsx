@@ -36,7 +36,7 @@ export function AcpSessionPlan({
   const panelId = 'acp-session-plan-panel';
 
   return (
-    <div className="mb-2">
+    <div className="relative min-w-0 text-right">
       <button
         type="button"
         data-testid="acp-session-plan-toggle"
@@ -67,7 +67,7 @@ export function AcpSessionPlan({
           id={panelId}
           data-testid="acp-session-plan-panel"
           aria-label={t('acp.sessionPlan.tasks')}
-          className="mt-2 max-h-48 overflow-y-auto rounded-xl border border-black/10 bg-surface-modal p-2 text-left shadow-sm dark:border-white/10"
+          className="absolute bottom-full right-0 z-10 mb-2 max-h-48 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-black/10 bg-surface-modal p-2 text-left shadow-sm dark:border-white/10"
         >
           <ol className="space-y-1">
             {plan.steps.map((step, index) => {

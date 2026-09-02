@@ -75,7 +75,7 @@
             "tasks": "計画のタスク"
         },
         "subagentSessions": {
-            "count": "サブエージェント: {{count}}",
+            "count": "{{count}} 件のサブエージェントを派出済み",
             "expand": "サブエージェントセッションを展開",
             "collapse": "サブエージェントセッションを折りたたむ",
             "toggle": "{{action}}、{{count}}",
@@ -264,6 +264,7 @@
         "send": "送信",
         "stop": "停止",
         "thinking": "考え中…",
+        "subagentsWorking": "サブエージェントが作業中",
         "gatewayConnected": "接続済み",
         "gatewayStarting": "起動中",
         "gatewayStatus": "ゲートウェイ {{state}}",

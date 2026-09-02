@@ -75,7 +75,7 @@
             "tasks": "计划任务"
         },
         "subagentSessions": {
-            "count": "子智能体：{{count}}",
+            "count": "已派出 {{count}} 个子智能体",
             "expand": "展开子智能体会话",
             "collapse": "折叠子智能体会话",
             "toggle": "{{action}}，{{count}}",
@@ -264,6 +264,7 @@
         "send": "发送",
         "stop": "停止",
         "thinking": "思考中…",
+        "subagentsWorking": "子智能体工作中",
         "gatewayConnected": "已连接",
         "gatewayStarting": "启动中",
         "gatewayStatus": "网关{{state}}",

@@ -75,7 +75,7 @@
             "tasks": "Plan tasks"
         },
         "subagentSessions": {
-            "count": "Subagents: {{count}}",
+            "count": "Dispatched {{count}} subagents",
             "expand": "Expand subagent sessions",
             "collapse": "Collapse subagent sessions",
             "toggle": "{{action}}, {{count}}",
@@ -264,6 +264,7 @@
         "send": "Send",
         "stop": "Stop",
         "thinking": "Thinking…",
+        "subagentsWorking": "Subagents working…",
         "gatewayConnected": "connected",
         "gatewayStarting": "starting",
         "gatewayStatus": "gateway {{state}}",

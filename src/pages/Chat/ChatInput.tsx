@@ -1037,6 +1037,12 @@ export function ChatInput({
     [attachmentsLocked, stageBufferFiles, stagePathFiles, t],
   );
 
+  const hasWorkingSubagents = subagentSessions.some((session) => session.busy);
+  const showWorkingIndicator = sending || hasWorkingSubagents;
+  const showSubagentControl = typeof onSelectSubagent === 'function' && subagentSessions.length > 0;
+  const showStatusRow = showWorkingIndicator || showSubagentControl || currentPlan != null;
+  const workingLabel = sending ? t('composer.thinking') : t('composer.subagentsWorking');
+
   return (
     <div
       className={cn(
@@ -1047,38 +1053,38 @@ export function ChatInput({
       onDrop={handleDrop}
     >
       <div className="w-full">
-        <div
-          data-testid="chat-composer-session-controls"
-          className="flex flex-wrap items-start justify-end gap-2 text-right"
-        >
-          {typeof onSelectSubagent === 'function' && (
-            <AcpSubagentSessions
-              sessions={subagentSessions}
-              sessionKey={draftKey ?? ''}
-              onSelectSession={onSelectSubagent}
-            />
-          )}
-          <AcpSessionPlan plan={currentPlan} sessionKey={draftKey ?? ''} />
-        </div>
-
-        {sending && (
+        {showStatusRow && (
           <div
             data-testid="chat-composer-working-indicator"
-            role="status"
-            aria-live="polite"
-            aria-label={t('composer.thinking')}
-            className="mb-2 flex h-5 items-center gap-2 text-sm text-muted-foreground"
+            role={showWorkingIndicator ? 'status' : undefined}
+            aria-live={showWorkingIndicator ? 'polite' : undefined}
+            aria-label={showWorkingIndicator ? workingLabel : undefined}
+            className="mb-2 flex min-h-5 items-center justify-between gap-2 text-sm text-muted-foreground"
           >
-            <span
-              data-testid="chat-composer-dot-pulse"
-              aria-hidden="true"
-              className="clawx-chat-thinking-dot-pulse"
-            >
-              <span className="clawx-chat-thinking-dot-pulse-inner">
-                <span className="clawx-chat-thinking-dot-pulse-dot" />
+            {showWorkingIndicator ? (
+              <span className="flex min-w-0 items-center gap-2">
+                <span
+                  data-testid="chat-composer-dot-pulse"
+                  aria-hidden="true"
+                  className="clawx-chat-thinking-dot-pulse"
+                >
+                  <span className="clawx-chat-thinking-dot-pulse-inner">
+                    <span className="clawx-chat-thinking-dot-pulse-dot" />
+                  </span>
+                </span>
+                <span>{workingLabel}</span>
               </span>
-            </span>
-            <span>{t('composer.thinking')}</span>
+            ) : <span aria-hidden="true" />}
+            <div className="flex shrink-0 items-center gap-2">
+              {showSubagentControl && typeof onSelectSubagent === 'function' && (
+                <AcpSubagentSessions
+                  sessions={subagentSessions}
+                  sessionKey={draftKey ?? ''}
+                  onSelectSession={onSelectSubagent}
+                />
+              )}
+              <AcpSessionPlan plan={currentPlan} sessionKey={draftKey ?? ''} />
+            </div>
           </div>
         )}
 
