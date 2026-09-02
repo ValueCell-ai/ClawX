@@ -69,7 +69,7 @@
         "pending": "Ожидает",
         "completed": "Завершено",
         "sessionPlan": {
-            "progress": "{{completed}} / {{total}}",
+            "progress": "Задачи: {{completed}} / {{total}}",
             "expand": "Развернуть план",
             "collapse": "Свернуть план",
             "tasks": "Задачи плана"

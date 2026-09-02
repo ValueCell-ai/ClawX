@@ -69,7 +69,7 @@
         "pending": "待处理",
         "completed": "已完成",
         "sessionPlan": {
-            "progress": "{{completed}} / {{total}}",
+            "progress": "待办项 {{completed}} / {{total}}",
             "expand": "展开计划",
             "collapse": "折叠计划",
             "tasks": "计划任务"
@@ -264,7 +264,7 @@
         "send": "发送",
         "stop": "停止",
         "thinking": "思考中…",
-        "subagentsWorking": "子智能体工作中",
+        "subagentsWorking": "子智能体工作中…",
         "gatewayConnected": "已连接",
         "gatewayStarting": "启动中",
         "gatewayStatus": "网关{{state}}",

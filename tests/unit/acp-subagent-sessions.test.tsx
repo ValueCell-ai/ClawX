@@ -9,7 +9,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, values?: Record<string, unknown>) => {
       const labels: Record<string, string> = {
-        'acp.subagentSessions.count': 'Subagents: {{count}}',
+        'acp.subagentSessions.count': 'Dispatched {{count}} subagents',
         'acp.subagentSessions.expand': 'Expand subagent sessions',
         'acp.subagentSessions.collapse': 'Collapse subagent sessions',
         'acp.subagentSessions.toggle': '{{action}}, {{count}}',
@@ -64,9 +64,9 @@ describe('AcpSubagentSessions', () => {
     const toggle = screen.getByTestId('acp-subagent-sessions-toggle');
     expect(toggle).toHaveAttribute('type', 'button');
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(toggle).toHaveAccessibleName('Expand subagent sessions, Subagents: 2');
+    expect(toggle).toHaveAccessibleName('Expand subagent sessions, Dispatched 2 subagents');
     expect(toggle).toHaveAccessibleDescription('Subagents: Running');
-    expect(toggle).toHaveTextContent('Subagents: 2');
+    expect(toggle).toHaveTextContent('Dispatched 2 subagents');
     expect(toggle.querySelector('.lucide-loader-circle')).toHaveClass(
       'animate-spin',
       'motion-reduce:animate-none',
@@ -90,15 +90,15 @@ describe('AcpSubagentSessions', () => {
       />,
     );
 
-    const toggle = screen.getByRole('button', { name: 'Expand subagent sessions, Subagents: 2' });
+    const toggle = screen.getByRole('button', { name: 'Expand subagent sessions, Dispatched 2 subagents' });
     expect(toggle).toHaveAttribute('type', 'button');
     fireEvent.click(toggle);
 
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(toggle).toHaveAccessibleName('Collapse subagent sessions, Subagents: 2');
+    expect(toggle).toHaveAccessibleName('Collapse subagent sessions, Dispatched 2 subagents');
     const panel = screen.getByTestId('acp-subagent-sessions-panel');
     expect(panel).toHaveAttribute('aria-label', 'Subagent sessions');
-    expect(panel).toHaveClass('max-h-48', 'overflow-y-auto', 'bg-surface-modal');
+    expect(panel).toHaveClass('absolute', 'bottom-full', 'right-0', 'max-h-48', 'overflow-y-auto', 'bg-surface-modal');
     expect(toggle).toHaveAttribute('aria-controls', panel.id);
   });
 
@@ -185,8 +185,8 @@ describe('AcpSubagentSessions', () => {
 
     expect(screen.getByTestId('acp-subagent-sessions-panel')).toBeInTheDocument();
     const toggle = screen.getByTestId('acp-subagent-sessions-toggle');
-    expect(toggle).toHaveTextContent('Subagents: 3');
-    expect(toggle).toHaveAccessibleName('Collapse subagent sessions, Subagents: 3');
+    expect(toggle).toHaveTextContent('Dispatched 3 subagents');
+    expect(toggle).toHaveAccessibleName('Collapse subagent sessions, Dispatched 3 subagents');
     expect(toggle).toHaveAccessibleDescription('Subagents: Settled');
     expect(toggle.querySelector('.lucide-bot')).toBeInTheDocument();
     expect(toggle.querySelector('.lucide-loader-circle')).not.toBeInTheDocument();

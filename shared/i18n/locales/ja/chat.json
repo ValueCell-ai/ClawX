@@ -69,7 +69,7 @@
         "pending": "保留中",
         "completed": "完了",
         "sessionPlan": {
-            "progress": "{{completed}} / {{total}}",
+            "progress": "タスク {{completed}} / {{total}}",
             "expand": "計画を展開",
             "collapse": "計画を折りたたむ",
             "tasks": "計画のタスク"

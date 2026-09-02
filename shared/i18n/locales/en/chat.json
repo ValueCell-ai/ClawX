@@ -69,7 +69,7 @@
         "pending": "Pending",
         "completed": "Completed",
         "sessionPlan": {
-            "progress": "{{completed}} / {{total}}",
+            "progress": "Todo items: {{completed}} / {{total}}",
             "expand": "Expand plan",
             "collapse": "Collapse plan",
             "tasks": "Plan tasks"

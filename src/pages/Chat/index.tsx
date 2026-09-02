@@ -59,6 +59,9 @@ const EMPTY_FILE_ACTIVITY: AcpFileActivityProjection = {
   uniqueFileCount: 0,
 };
 
+// A session switch remounts Chat before the child catalog row is refreshed.
+const activeSubagentSessionKeys = new Set<string>();
+
 type QuestionDirectoryItem = {
   itemId: string;
   anchorId: string;
@@ -503,7 +506,6 @@ export function Chat() {
   const platform = window.electron?.platform;
   const isMac = platform === 'darwin';
   const isWindows = platform === 'win32';
-  const composerBusy = acpSending || acpCancelling;
   const showScrollToLatest = visibleAcpTimeline.itemOrder.length > 0 && !isAtBottom;
   const hasAttemptedAcpPromptForCurrentSession = lastPromptAttemptSessionKey === currentSessionKey;
   const visibleAcpError = !workspaceUnavailable && acpError
@@ -582,6 +584,10 @@ export function Chat() {
     () => new Map(sessions.map((session) => [session.key, session])),
     [sessions],
   );
+  const currentCatalogSession = catalogSessionByKey.get(currentSessionKey);
+  const currentSessionRunState = currentCatalogSession
+    ? projectSessionRunState(currentCatalogSession)
+    : 'unknown';
   const subagentSessions = useMemo<AcpSubagentSession[]>(() => {
     if (!visibleSessionFamily) return [];
     return visibleSessionFamily.children.flatMap((child) => {
@@ -596,6 +602,11 @@ export function Chat() {
       }];
     });
   }, [catalogSessionByKey, sessionAttentionByKey, visibleSessionFamily]);
+  useEffect(() => {
+    for (const session of subagentSessions) {
+      if (!session.busy) activeSubagentSessionKeys.delete(session.sessionKey);
+    }
+  }, [subagentSessions]);
   const isCurrentSessionSubagent = visibleSessionFamily?.current?.sessionKey === currentSessionKey
     && isNativeSubagentSessionKey(currentSessionKey);
   const currentSessionTitle = isNativeSubagentSessionKey(currentSessionKey)
@@ -609,11 +620,25 @@ export function Chat() {
   const directParentSessionKey = familyParentSessionKey && catalogSessionByKey.has(familyParentSessionKey)
     ? familyParentSessionKey
     : null;
+  const currentSubagentBusy = isCurrentSessionSubagent && (
+    currentSessionRunState === 'busy'
+    || sessionAttentionByKey[currentSessionKey]?.observedBusy === true
+    || activeSubagentSessionKeys.has(currentSessionKey)
+  );
   const navigateToSession = useCallback((sessionKey: string) => {
     if (!useChatStore.getState().sessions.some((session) => session.key === sessionKey)) return;
     markSessionRead(sessionKey);
     if (sessionKey !== currentSessionKey) switchSession(sessionKey);
   }, [currentSessionKey, markSessionRead, switchSession]);
+  const selectSubagentSession = useCallback((sessionKey: string) => {
+    if (
+      projectSessionRunState(catalogSessionByKey.get(sessionKey) ?? {}) === 'busy'
+      || sessionAttentionByKey[sessionKey]?.observedBusy === true
+    ) {
+      activeSubagentSessionKeys.add(sessionKey);
+    }
+    navigateToSession(sessionKey);
+  }, [catalogSessionByKey, navigateToSession, sessionAttentionByKey]);
   const handleComposerDraftChange = useCallback((update: SetStateAction<string>) => {
     setComposerDraft(currentSessionKey, update);
   }, [currentSessionKey, setComposerDraft]);
@@ -742,7 +767,7 @@ export function Chat() {
           </div>
         </div>
 
-        <ChatInput
+        {(!isCurrentSessionSubagent || currentSubagentBusy) && <ChatInput
           draft={composerDraft}
           draftKey={currentSessionKey}
           onDraftChange={handleComposerDraftChange}
@@ -818,7 +843,8 @@ export function Chat() {
           }}
           onStop={() => void cancelAcp()}
           disabled={acpLoading || acpCancelling || !cwd || !workspaceContextAvailable}
-          sending={composerBusy}
+          sending={isCurrentSessionSubagent ? currentSubagentBusy : acpSending || acpCancelling}
+          statusOnly={isCurrentSessionSubagent}
           imageGenerating={imageGenerationPending}
           workspaceLabel={workspaceLabel}
           workspacePath={cwd}
@@ -828,8 +854,8 @@ export function Chat() {
           contextUsage={composerContextUsage}
           currentPlan={currentPlan}
           subagentSessions={subagentSessions}
-          onSelectSubagent={navigateToSession}
-        />
+          onSelectSubagent={selectSubagentSession}
+        />}
       </div>
 
       {panelOpen && (

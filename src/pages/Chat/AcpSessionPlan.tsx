@@ -17,9 +17,13 @@ function getPlanIdentity({ completedCount, totalCount, steps }: AcpCurrentPlan):
 export function AcpSessionPlan({
   plan,
   sessionKey,
+  isExpanded,
+  onExpandedChange,
 }: {
   plan: AcpCurrentPlan | null | undefined;
   sessionKey: string;
+  isExpanded?: boolean;
+  onExpandedChange?: (isExpanded: boolean) => void;
 }) {
   const { t } = useTranslation('chat');
   const [expansion, setExpansion] = useState(() => ({
@@ -31,7 +35,9 @@ export function AcpSessionPlan({
   if (!plan) return null;
 
   const planIdentity = getPlanIdentity(plan);
-  const expanded = expansion.planIdentity === planIdentity && expansion.sessionKey === sessionKey && expansion.expanded;
+  const expanded = expansion.planIdentity === planIdentity
+    && expansion.sessionKey === sessionKey
+    && (isExpanded ?? expansion.expanded);
   const complete = plan.completedCount === plan.totalCount;
   const panelId = 'acp-session-plan-panel';
 
@@ -43,11 +49,11 @@ export function AcpSessionPlan({
         aria-expanded={expanded}
         aria-controls={panelId}
         aria-label={t(expanded ? 'acp.sessionPlan.collapse' : 'acp.sessionPlan.expand')}
-        onClick={() => setExpansion((current) => ({
-          planIdentity,
-          sessionKey,
-          expanded: current.planIdentity === planIdentity && current.sessionKey === sessionKey ? !current.expanded : true,
-        }))}
+        onClick={() => {
+          const nextExpanded = !expanded;
+          setExpansion({ planIdentity, sessionKey, expanded: nextExpanded });
+          onExpandedChange?.(nextExpanded);
+        }}
         className={cn(
           'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
           'border-black/10 bg-surface-input text-foreground hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10',
