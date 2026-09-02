@@ -1,6 +1,6 @@
 # OpenClaw Session Storage
 
-OpenClaw 2026.8.1 owns active session metadata and transcript state through its
+OpenClaw 2026.8.2 owns active session metadata and transcript state through its
 SQLite-backed Gateway contracts. ClawX must not edit active `sessions.json` or
 transcript JSONL files.
 
@@ -8,9 +8,11 @@ Main-process services use `sessions.list`, `sessions.describe`,
 `sessions.preview`, `sessions.patch`, `sessions.delete`, and `chat.history` for
 conversation history, labels, deletion, summaries, token usage, Cron replay,
 channel target discovery, delivery-account resolution, and issue-report
-exports. File readers remain only as compatibility fallbacks for legacy
-archives and tests; JSONL generated for a support ZIP is an export format, not
-the active store.
+exports. When Gateway history is unavailable, issue-report export reads the
+canonical per-agent SQLite active transcript projection in a read-only
+transaction. It never reads active or migrated conversations from legacy
+`sessions.json` or transcript files. JSONL generated for a support ZIP is an
+export format, not the active store.
 
 Before the first 2026.8.1 Gateway launch, ClawX snapshots every discovered
 agent's `sessions.json`, transcript/reset/trajectory files, SQLite databases

@@ -1,8 +1,9 @@
-import { mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import JSZip from 'jszip';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { exportIssueReport, redactDiagnosticText, redactOpenClawConfig } from '@electron/services/issue-report-api';
 
 const temporaryDirectories: string[] = [];
@@ -12,29 +13,62 @@ async function makeFixture() {
   temporaryDirectories.push(root);
   const stateDir = join(root, 'state');
   const sessionsDir = join(stateDir, 'agents', 'main', 'sessions');
+  const agentDir = join(stateDir, 'agents', 'main', 'agent');
+  const databasePath = join(agentDir, 'openclaw-agent.sqlite');
   const clawxLogDir = join(root, 'clawx-logs');
   const openClawLogDir = join(stateDir, 'logs');
   const outputDir = join(root, 'Desktop');
   const configPath = join(stateDir, 'openclaw.json');
-  const transcriptPath = join(sessionsDir, 'conversation-1.jsonl');
-  const secondTranscriptPath = join(sessionsDir, 'conversation-2.jsonl');
   await Promise.all([
     mkdir(sessionsDir, { recursive: true }),
+    mkdir(agentDir, { recursive: true }),
     mkdir(clawxLogDir, { recursive: true }),
     mkdir(openClawLogDir, { recursive: true }),
   ]);
+  const database = new DatabaseSync(databasePath);
+  database.exec(`
+    PRAGMA user_version = 19;
+    CREATE TABLE session_nodes (
+      session_key TEXT PRIMARY KEY,
+      current_session_id TEXT NOT NULL
+    );
+    CREATE TABLE transcript_events (
+      session_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      event_json TEXT NOT NULL,
+      PRIMARY KEY (session_id, seq)
+    );
+    CREATE TABLE session_transcript_active_events (
+      session_id TEXT NOT NULL,
+      active_position INTEGER NOT NULL,
+      event_seq INTEGER NOT NULL,
+      PRIMARY KEY (session_id, active_position)
+    );
+    CREATE TABLE session_transcript_index_state (
+      session_id TEXT PRIMARY KEY,
+      needs_rebuild INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT INTO session_nodes VALUES
+      ('agent:main:session-1', 'conversation-1'),
+      ('agent:main:session-2', 'conversation-2');
+    INSERT INTO transcript_events VALUES
+      ('conversation-1', 1, '{"type":"message","message":{"role":"user","content":"keep transcript verbatim"}}'),
+      ('conversation-2', 1, '{"type":"message","message":{"role":"user","content":"second transcript"}}');
+    INSERT INTO session_transcript_active_events VALUES
+      ('conversation-1', 0, 1),
+      ('conversation-2', 0, 1);
+    INSERT INTO session_transcript_index_state VALUES
+      ('conversation-1', 0),
+      ('conversation-2', 0);
+  `);
+  database.close();
   await writeFile(join(sessionsDir, 'sessions.json'), JSON.stringify({
-    'agent:main:session-1': {
-      sessionFile: transcriptPath,
-      label: 'Broken conversation',
-    },
-    'agent:main:session-2': {
-      sessionFile: secondTranscriptPath,
-      label: 'Second conversation',
-    },
+    'agent:main:legacy-only': { sessionFile: join(sessionsDir, 'legacy-only.jsonl') },
   }));
-  await writeFile(transcriptPath, '{"type":"message","message":{"role":"user","content":"keep transcript verbatim"}}\n');
-  await writeFile(secondTranscriptPath, '{"type":"message","message":{"role":"user","content":"second transcript"}}\n');
+  await writeFile(
+    join(sessionsDir, 'legacy-only.jsonl'),
+    '{"type":"message","message":{"role":"user","content":"must not be exported"}}\n',
+  );
   await writeFile(configPath, JSON.stringify({
     gateway: { auth: { token: 'gateway-secret' } },
     models: { providers: { custom: { apiKey: 'provider-secret', maxTokens: 8192 } } },
@@ -51,8 +85,7 @@ async function makeFixture() {
     openClawLogDir,
     outputDir,
     configPath,
-    transcriptPath,
-    secondTranscriptPath,
+    databasePath,
   };
 }
 
@@ -87,8 +120,8 @@ describe('issue report export', () => {
       'config/openclaw.json',
       'conversations/',
       'conversations/main/',
-      'conversations/main/conversation-1.jsonl',
-      'conversations/main/conversation-2.jsonl',
+      'conversations/main/agent-main-session-1.jsonl',
+      'conversations/main/agent-main-session-2.jsonl',
       'logs/',
       'logs/clawx/',
       'logs/clawx/clawx.log',
@@ -96,9 +129,9 @@ describe('issue report export', () => {
       'logs/openclaw/gateway.log',
       'manifest.json',
     ]);
-    await expect(zip.file('conversations/main/conversation-1.jsonl')!.async('string'))
+    await expect(zip.file('conversations/main/agent-main-session-1.jsonl')!.async('string'))
       .resolves.toContain('keep transcript verbatim');
-    await expect(zip.file('conversations/main/conversation-2.jsonl')!.async('string'))
+    await expect(zip.file('conversations/main/agent-main-session-2.jsonl')!.async('string'))
       .resolves.toContain('second transcript');
 
     const config = JSON.parse(await zip.file('config/openclaw.json')!.async('string'));
@@ -141,17 +174,35 @@ describe('issue report export', () => {
     expect(second.path).toBe(join(fixture.outputDir, 'clawx-issue-report-20260825-123456Z-1.zip'));
   });
 
-  it('rejects a transcript symlink that escapes the agent sessions directory', async () => {
+  it('prefers Gateway history over direct SQLite access', async () => {
     const fixture = await makeFixture();
-    const outsideTranscript = join(fixture.root, 'outside.jsonl');
-    await writeFile(outsideTranscript, '{}\n');
-    await writeFile(join(fixture.sessionsDir, 'sessions.json'), JSON.stringify({
-      'agent:main:session-escape': 'escape.jsonl',
-    }));
-    await symlink(outsideTranscript, join(fixture.sessionsDir, 'escape.jsonl'));
+    const rpc = vi.fn().mockResolvedValue({
+      messages: [{ role: 'assistant', content: 'Gateway is authoritative' }],
+    });
+    const result = await exportIssueReport(
+      { sessionKeys: ['agent:main:session-1'] },
+      {
+        stateDir: join(fixture.root, 'missing-state'),
+        outputDir: fixture.outputDir,
+        clawxLogDir: null,
+        openClawLogDir: join(fixture.root, 'missing-logs'),
+        gatewayManager: { rpc },
+      },
+    );
 
+    expect(rpc).toHaveBeenCalledWith('chat.history', {
+      sessionKey: 'agent:main:session-1',
+      limit: 1_000,
+    });
+    const zip = await JSZip.loadAsync(await readFile(result.path!));
+    await expect(zip.file('conversations/main/agent-main-session-1.jsonl')!.async('string'))
+      .resolves.toContain('Gateway is authoritative');
+  });
+
+  it('does not read legacy sessions.json or transcript JSONL files', async () => {
+    const fixture = await makeFixture();
     await expect(exportIssueReport(
-      { sessionKeys: ['agent:main:session-escape'] },
+      { sessionKeys: ['agent:main:legacy-only'] },
       {
         stateDir: fixture.stateDir,
         configPath: fixture.configPath,
@@ -159,8 +210,34 @@ describe('issue report export', () => {
         openClawLogDir: fixture.openClawLogDir,
         outputDir: fixture.outputDir,
       },
-    )).rejects.toThrow('outside its session directory');
+    )).rejects.toThrow('None of the selected conversation transcripts could be found');
     await expect(readdir(fixture.outputDir)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('exports only the active SQLite transcript projection', async () => {
+    const fixture = await makeFixture();
+    const database = new DatabaseSync(fixture.databasePath);
+    database.exec(`
+      INSERT INTO transcript_events VALUES
+        ('conversation-1', 2, '{"type":"message","message":{"role":"assistant","content":"obsolete branch"}}'),
+        ('conversation-1', 3, '{"type":"message","message":{"role":"assistant","content":"active branch"}}');
+      INSERT INTO session_transcript_active_events VALUES ('conversation-1', 1, 3);
+    `);
+    database.close();
+
+    const result = await exportIssueReport(
+      { sessionKeys: ['agent:main:session-1'] },
+      {
+        stateDir: fixture.stateDir,
+        outputDir: fixture.outputDir,
+        clawxLogDir: null,
+        openClawLogDir: join(fixture.root, 'missing-logs'),
+      },
+    );
+    const zip = await JSZip.loadAsync(await readFile(result.path!));
+    const transcript = await zip.file('conversations/main/agent-main-session-1.jsonl')!.async('string');
+    expect(transcript).toContain('active branch');
+    expect(transcript).not.toContain('obsolete branch');
   });
 
   it('fails when none of the selected conversations has an available transcript', async () => {
