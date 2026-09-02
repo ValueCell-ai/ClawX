@@ -38,6 +38,7 @@ expectedUserBehavior:
   - Multi-agent upgrades retain an explicit system agent and channel/account bindings so channel ingress, heartbeat, and scheduled delivery do not silently lose their owner.
   - Active session history, rename, and deletion use OpenClaw storage-neutral Gateway contracts rather than mutating sessions.json or live JSONL files.
   - Dashboard usage history, cron replay, issue-report export, and ACP transcript supplements continue to work for both migrated sessions and new SQLite-only sessions.
+  - Toggling an OpenClaw 8.1 system-owned heartbeat monitor updates its agent heartbeat configuration instead of sending the rejected cron.update request.
   - Realtime Talk remains removed. The upgrade must not restore its UI, host contracts, Gateway bridge, or SDK dependencies; ordinary audio attachments and channel voice dependencies remain supported.
 requiredProfiles:
   - fast
@@ -69,14 +70,16 @@ requiredTests:
   - tests/unit/plugin-install.test.ts
   - tests/unit/plugin-install-index.test.ts
   - tests/unit/host-services.test.ts
+  - tests/unit/cron-api.test.ts
   - tests/unit/token-usage-files.test.ts
 acceptance:
   - package.json and the lockfile resolve OpenClaw and @openclaw/ai to 2026.8.1, with compatible versions of every plugin bundled by ClawX.
   - Any local OpenClaw patch contains only ClawX-supported upgrade defects reproduced against vanilla 2026.8.1 and records its upstream source and removal condition.
-  - After creating the verified snapshot, the migration preflight canonicalizes Doctor-blocking legacy keys and safely repairs known legacy agent database drift before Doctor repair; it remains resumable after interruption and does not accept a zero Doctor exit code as sufficient proof.
+  - After creating the verified snapshot, the migration preflight canonicalizes Doctor-blocking legacy keys and safely repairs known legacy agent database drift before Doctor repair, preserving and restoring populated premature participant rows; it remains resumable after interruption and does not accept a zero Doctor exit code as sufficient proof.
   - Post-migration validation confirms canonical config keys, supported agent database schemas, no blocking legacy session store, preserved session samples, and no missing or version-drifted active plugins.
   - ClawX writes agents.entries, memory.search, agents.defaults.mediaModels, canonical OpenAI routes, explicit multi-agent ownership, system-agent ownership, and preserved routing bindings without recreating retired keys.
   - ClawX does not directly mutate active sessions.json or transcript JSONL files under OpenClaw 2026.8.1.
+  - ClawX distinguishes user-owned cron jobs from system-owned heartbeat monitors and persists heartbeat enablement through canonical config delivery.
   - Upgrade fixtures cover fresh install, supported version jumps, single and multi-agent state, interrupted retry, OpenAI/Codex routing, plugin drift, and new SQLite-only sessions.
   - Harness validation, type checks, unit tests, communication regression checks, bundle smoke, and upgrade Electron E2E pass.
   - Upgrade and downgrade boundaries are documented in all maintained README locales.

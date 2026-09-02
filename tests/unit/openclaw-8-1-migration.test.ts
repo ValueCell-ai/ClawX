@@ -35,6 +35,9 @@ describe('OpenClaw 8.1 migration preflight', () => {
     const repairAgentDatabases = vi.fn(async () => {
       calls.push('agent-db-repair');
     });
+    const restoreAgentDatabases = vi.fn(async () => {
+      calls.push('agent-db-restore');
+    });
     const execute = vi.fn(async () => ({ code: 0, stdout: '{}', stderr: '' }));
 
     const options = {
@@ -47,6 +50,7 @@ describe('OpenClaw 8.1 migration preflight', () => {
       },
       canonicalizeConfig,
       repairAgentDatabases,
+      restoreAgentDatabases,
     };
     const preflightReceipt = await runOpenClaw2026_8_1MigrationPreflight(options);
     expect(preflightReceipt.status).toBe('running');
@@ -62,8 +66,10 @@ describe('OpenClaw 8.1 migration preflight', () => {
     ]);
     expect(calls[0]).toBe('config-canonicalize');
     expect(calls[1]).toBe('agent-db-repair');
+    expect(calls[3]).toBe('agent-db-restore');
     expect(canonicalizeConfig).toHaveBeenCalledTimes(1);
     expect(repairAgentDatabases).toHaveBeenCalledTimes(1);
+    expect(restoreAgentDatabases).toHaveBeenCalledTimes(1);
     expect(receipt.status).toBe('completed');
     await expect(readFile(join(snapshotDir, 'migration-receipt.json'), 'utf8'))
       .resolves.toContain('"status": "completed"');
@@ -73,6 +79,7 @@ describe('OpenClaw 8.1 migration preflight', () => {
     const snapshotDir = await createSnapshotDir();
     const canonicalizeConfig = vi.fn(async () => {});
     const repairAgentDatabases = vi.fn(async () => {});
+    const restoreAgentDatabases = vi.fn(async () => {});
     const firstExecute = vi.fn(async (args: string[]) => ({
       code: args.includes('import') ? 1 : 0,
       stdout: '',
@@ -86,6 +93,7 @@ describe('OpenClaw 8.1 migration preflight', () => {
       execute: firstExecute,
       canonicalizeConfig,
       repairAgentDatabases,
+      restoreAgentDatabases,
     })).rejects.toThrow('session-import');
 
     const retryExecute = vi.fn(async () => ({ code: 0, stdout: '{}', stderr: '' }));
@@ -96,6 +104,7 @@ describe('OpenClaw 8.1 migration preflight', () => {
       execute: retryExecute,
       canonicalizeConfig,
       repairAgentDatabases,
+      restoreAgentDatabases,
     });
 
     expect(retryExecute.mock.calls[0]?.[0]).toEqual([
@@ -124,6 +133,7 @@ describe('OpenClaw 8.1 migration preflight', () => {
       execute,
       canonicalizeConfig: vi.fn(async () => {}),
       repairAgentDatabases: vi.fn(async () => {}),
+      restoreAgentDatabases: vi.fn(async () => {}),
     };
     await runOpenClaw2026_8_1MigrationPreflight(options);
     await expect(finalizeOpenClaw2026_8_1Migration(options))
@@ -143,6 +153,7 @@ describe('OpenClaw 8.1 migration preflight', () => {
       repairAgentDatabases: vi.fn(async () => {
         throw new Error('non-empty premature session_participants table');
       }),
+      restoreAgentDatabases: vi.fn(async () => {}),
     })).rejects.toThrow('agent-db-repair');
 
     expect(execute).not.toHaveBeenCalled();

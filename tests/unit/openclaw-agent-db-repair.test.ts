@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
-import { repairOpenClawAgentDatabasesFor2026_8_1Doctor } from '@electron/utils/openclaw-agent-db-repair';
+import {
+  repairOpenClawAgentDatabasesFor2026_8_1Doctor,
+  restoreOpenClawAgentDatabaseParticipantsAfter2026_8_1Doctor,
+} from '@electron/utils/openclaw-agent-db-repair';
 
 const tempDirs: string[] = [];
 
@@ -78,16 +81,58 @@ describe('OpenClaw 8.1 agent database pre-Doctor repair', () => {
     database.close();
   });
 
-  it('fails closed without changing a populated premature participant table', async () => {
+  it('preserves and restores a populated premature participant table around Doctor', async () => {
     const { pathname, stateDir } = await createAgentDatabase(true);
 
     await expect(repairOpenClawAgentDatabasesFor2026_8_1Doctor({ stateDir }))
-      .rejects.toThrow('non-empty premature session_participants');
+      .resolves.toEqual({
+        inspected: [pathname],
+        repaired: [pathname],
+        pendingMigration: [pathname],
+      });
 
-    const database = new DatabaseSync(pathname, { readOnly: true });
-    expect((database.prepare('SELECT count(*) AS count FROM session_participants').get() as {
+    const database = new DatabaseSync(pathname);
+    expect(database.prepare(
+      'SELECT 1 FROM sqlite_schema WHERE type = ? AND name = ?',
+    ).get('table', 'session_participants')).toBeUndefined();
+    expect((database.prepare(
+      'SELECT count(*) AS count FROM clawx_session_participants_8_1_backup',
+    ).get() as {
       count: number;
     }).count).toBe(1);
     database.close();
+
+    // Simulate Doctor completing the canonical schema migration.
+    const migratedDatabase = new DatabaseSync(pathname);
+    migratedDatabase.exec(`
+      PRAGMA user_version = 19;
+      CREATE TABLE session_participants (
+        session_key TEXT NOT NULL,
+        identity_namespace TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        contribution_count INTEGER NOT NULL,
+        first_prompted_at INTEGER,
+        last_prompted_at INTEGER,
+        PRIMARY KEY (session_key, identity_namespace, actor_id),
+        FOREIGN KEY (session_key) REFERENCES session_nodes(session_key) ON DELETE CASCADE
+      ) STRICT;
+    `);
+    migratedDatabase.close();
+
+    await expect(restoreOpenClawAgentDatabaseParticipantsAfter2026_8_1Doctor({ stateDir }))
+      .resolves.toEqual({
+        inspected: [pathname],
+        repaired: [pathname],
+        pendingMigration: [],
+      });
+
+    const restoredDatabase = new DatabaseSync(pathname, { readOnly: true });
+    expect((restoredDatabase.prepare('SELECT count(*) AS count FROM session_participants').get() as {
+      count: number;
+    }).count).toBe(1);
+    expect(restoredDatabase.prepare(
+      'SELECT 1 FROM sqlite_schema WHERE type = ? AND name = ?',
+    ).get('table', 'clawx_session_participants_8_1_backup')).toBeUndefined();
+    restoredDatabase.close();
   });
 });

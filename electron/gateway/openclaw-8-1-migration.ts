@@ -2,7 +2,10 @@ import { spawn } from 'node:child_process';
 import { chmod, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { logger } from '../utils/logger';
-import { repairOpenClawAgentDatabasesFor2026_8_1Doctor } from '../utils/openclaw-agent-db-repair';
+import {
+  repairOpenClawAgentDatabasesFor2026_8_1Doctor,
+  restoreOpenClawAgentDatabaseParticipantsAfter2026_8_1Doctor,
+} from '../utils/openclaw-agent-db-repair';
 import { canonicalizeOpenClawConfigFor2026_8_1Doctor } from '../utils/openclaw-auth';
 
 const RECEIPT_VERSION = 1;
@@ -13,6 +16,7 @@ export type OpenClawMigrationStage =
   | 'config-canonicalize'
   | 'agent-db-repair'
   | 'doctor-fix'
+  | 'agent-db-restore'
   | 'session-import'
   | 'session-inspect'
   | 'session-validate'
@@ -43,6 +47,7 @@ type MigrationOptions = {
   execute?: (args: string[]) => Promise<CommandResult>;
   canonicalizeConfig?: () => Promise<unknown>;
   repairAgentDatabases?: () => Promise<unknown>;
+  restoreAgentDatabases?: () => Promise<unknown>;
 };
 
 const OFFLINE_COMMANDS: Array<{ stage: OpenClawMigrationStage; args: string[] }> = [
@@ -280,6 +285,36 @@ export async function runOpenClaw2026_8_1MigrationPreflight(
   }
 
   for (const command of OFFLINE_COMMANDS) {
+    if (command.stage === 'session-import' && !completedStages.has('agent-db-restore')) {
+      logger.info('[upgrade] Restoring preserved OpenClaw agent participant data');
+      try {
+        await (
+          options.restoreAgentDatabases
+          ?? restoreOpenClawAgentDatabaseParticipantsAfter2026_8_1Doctor
+        )();
+        completedStages.add('agent-db-restore');
+        receipt = {
+          ...receipt,
+          completedStages: [...completedStages],
+          updatedAt: new Date().toISOString(),
+        };
+        await writeReceipt(receiptPath, receipt);
+      } catch (error) {
+        receipt = {
+          ...receipt,
+          status: 'failed',
+          failedStage: 'agent-db-restore',
+          error: error instanceof Error ? error.message : String(error),
+          completedStages: [...completedStages],
+          updatedAt: new Date().toISOString(),
+        };
+        await writeReceipt(receiptPath, receipt);
+        throw new Error(
+          `OpenClaw 8.1 migration failed at agent-db-restore: ${receipt.error}`,
+          { cause: error },
+        );
+      }
+    }
     if (completedStages.has(command.stage)) continue;
     logger.info(`[upgrade] Running OpenClaw 8.1 migration stage: ${command.stage}`);
     try {
@@ -331,6 +366,7 @@ export async function finalizeOpenClaw2026_8_1Migration(
     !existing
     || !existing.completedStages.includes('config-canonicalize')
     || !existing.completedStages.includes('agent-db-repair')
+    || !existing.completedStages.includes('agent-db-restore')
     || OFFLINE_COMMANDS.some(({ stage }) => !existing.completedStages.includes(stage))
   ) {
     throw new Error('OpenClaw 8.1 offline migration stages are incomplete');

@@ -4,6 +4,7 @@ import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { RawMessage } from '@shared/chat/types';
 import type { CronJob, CronJobDelivery, CronSchedule } from '@shared/types/cron';
 import type { GatewayManager } from '../gateway/manager';
+import { mutateOpenClawConfig } from '../gateway/config-delivery';
 import { getOpenClawConfigDir } from '../utils/paths';
 import { resolveAgentIdFromChannel } from '../utils/agent-config';
 import { toOpenClawChannelType, toUiChannelType } from '../utils/channel-alias';
@@ -13,6 +14,7 @@ import { isRecord } from './payload-utils';
 
 interface GatewayCronJob {
   id: string;
+  declarationKey?: string;
   name: string;
   description?: string;
   enabled: boolean;
@@ -20,6 +22,7 @@ interface GatewayCronJob {
   updatedAtMs: number;
   schedule: { kind: string; expr?: string; everyMs?: number; at?: string; tz?: string };
   payload: { kind: string; message?: string; text?: string };
+  agentId?: string;
   delivery?: { mode: string; channel?: string; to?: string; accountId?: string };
   sessionTarget?: string;
   state: {
@@ -429,6 +432,56 @@ function buildCronUpdatePatch(input: Record<string, unknown>): Record<string, un
   return patch;
 }
 
+function heartbeatAgentId(job: GatewayCronJob): string | null {
+  if (job.payload?.kind !== 'heartbeat') return null;
+  if (typeof job.agentId === 'string' && job.agentId.trim()) return job.agentId.trim();
+  const declarationKey = typeof job.declarationKey === 'string' ? job.declarationKey.trim() : '';
+  return declarationKey.startsWith('heartbeat:') && declarationKey.length > 'heartbeat:'.length
+    ? declarationKey.slice('heartbeat:'.length)
+    : null;
+}
+
+function heartbeatInterval(job: GatewayCronJob): string {
+  const everyMs = job.schedule?.kind === 'every' ? job.schedule.everyMs : undefined;
+  if (typeof everyMs !== 'number' || !Number.isFinite(everyMs) || everyMs <= 0) return '30m';
+  if (everyMs % 3_600_000 === 0) return `${everyMs / 3_600_000}h`;
+  if (everyMs % 60_000 === 0) return `${everyMs / 60_000}m`;
+  if (everyMs % 1_000 === 0) return `${everyMs / 1_000}s`;
+  return `${Math.round(everyMs)}ms`;
+}
+
+async function toggleHeartbeatMonitor(
+  jobs: GatewayCronJob[],
+  selectedJob: GatewayCronJob,
+  enabled: boolean,
+): Promise<void> {
+  const selectedAgentId = heartbeatAgentId(selectedJob);
+  if (!selectedAgentId) throw new Error('Heartbeat monitor is missing its agent owner');
+
+  await mutateOpenClawConfig((config) => {
+    const agents = isRecord(config.agents) ? config.agents : {};
+    const entries = isRecord(agents.entries) ? agents.entries : {};
+
+    // A per-agent heartbeat block makes OpenClaw select only explicitly
+    // configured heartbeat agents. Materialize every existing monitor first so
+    // toggling one agent cannot accidentally remove sibling monitors.
+    for (const job of jobs) {
+      const agentId = heartbeatAgentId(job);
+      if (!agentId) continue;
+      const entry = isRecord(entries[agentId]) ? entries[agentId] : {};
+      const heartbeat = isRecord(entry.heartbeat) ? entry.heartbeat : {};
+      heartbeat.every = agentId === selectedAgentId
+        ? (enabled ? heartbeatInterval(job) : '0m')
+        : (job.enabled ? heartbeatInterval(job) : '0m');
+      entry.heartbeat = heartbeat;
+      entries[agentId] = entry;
+    }
+
+    agents.entries = entries;
+    config.agents = agents;
+  });
+}
+
 function transformCronJob(job: GatewayCronJob): CronJob {
   const message = job.payload?.message || job.payload?.text || '';
   const gatewayDelivery = normalizeCronDelivery(job.delivery);
@@ -632,8 +685,17 @@ export function createCronApi({ gatewayManager }: { gatewayManager: GatewayManag
     delete: async (payload) => gatewayManager.rpc('cron.remove', { id: getId(payload) }),
     toggle: async (payload) => {
       const body = payload;
+      const id = getId(body);
+      const listResult = await gatewayManager.rpc('cron.list', { includeDisabled: true }, 8000);
+      const jobs = (listResult as { jobs?: GatewayCronJob[] })?.jobs
+        ?? (Array.isArray(listResult) ? listResult as GatewayCronJob[] : []);
+      const job = jobs.find((item) => item.id === id);
+      if (job && heartbeatAgentId(job)) {
+        await toggleHeartbeatMonitor(jobs, job, body.enabled === true);
+        return { success: true };
+      }
       return gatewayManager.rpc('cron.update', {
-        id: getId(body),
+        id,
         patch: { enabled: body.enabled === true },
       });
     },

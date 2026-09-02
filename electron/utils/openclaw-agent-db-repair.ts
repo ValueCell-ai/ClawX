@@ -5,6 +5,7 @@ import { resolveOpenClawStateDir } from './paths';
 
 const CURRENT_AGENT_SCHEMA_VERSION = 19;
 const PARTICIPANTS_TABLE = 'session_participants';
+const PARTICIPANTS_BACKUP_TABLE = 'clawx_session_participants_8_1_backup';
 
 type RepairOptions = {
   stateDir?: string;
@@ -54,10 +55,8 @@ function repairPrematureParticipantsTable(database: DatabaseSync, pathname: stri
   const countRow = database.prepare(`SELECT count(*) AS count FROM ${PARTICIPANTS_TABLE}`).get() as {
     count?: unknown;
   };
-  if (countRow.count !== 0) {
-    throw new Error(
-      `Refusing to rebuild non-empty premature ${PARTICIPANTS_TABLE} table in ${pathname}`,
-    );
+  if (countRow.count !== 0 && tableExists(database, PARTICIPANTS_BACKUP_TABLE)) {
+    throw new Error(`Refusing agent database repair because ${PARTICIPANTS_BACKUP_TABLE} already exists: ${pathname}`);
   }
 
   const dependentSchema = database.prepare(`
@@ -78,15 +77,55 @@ function repairPrematureParticipantsTable(database: DatabaseSync, pathname: stri
     );
   }
 
-  database.exec(`BEGIN IMMEDIATE; DROP TABLE ${PARTICIPANTS_TABLE}; COMMIT;`);
+  database.exec(countRow.count === 0
+    ? `BEGIN IMMEDIATE; DROP TABLE ${PARTICIPANTS_TABLE}; COMMIT;`
+    : `BEGIN IMMEDIATE; ALTER TABLE ${PARTICIPANTS_TABLE} RENAME TO ${PARTICIPANTS_BACKUP_TABLE}; COMMIT;`);
+  return true;
+}
+
+function restorePrematureParticipantsTable(database: DatabaseSync, pathname: string): boolean {
+  if (!tableExists(database, PARTICIPANTS_BACKUP_TABLE)) return false;
+  if (readUserVersion(database) < CURRENT_AGENT_SCHEMA_VERSION) {
+    throw new Error(`Cannot restore participant data before Doctor completes schema migration: ${pathname}`);
+  }
+  if (!tableExists(database, PARTICIPANTS_TABLE)) {
+    throw new Error(`Cannot restore participant data because ${PARTICIPANTS_TABLE} is missing: ${pathname}`);
+  }
+
+  const integrity = database.prepare('PRAGMA integrity_check').get() as { integrity_check?: unknown };
+  if (integrity.integrity_check !== 'ok') {
+    throw new Error(`Refusing participant restore because integrity_check failed: ${pathname}`);
+  }
+
+  database.exec(`
+    BEGIN IMMEDIATE;
+    INSERT OR REPLACE INTO ${PARTICIPANTS_TABLE} (
+      session_key,
+      identity_namespace,
+      actor_id,
+      contribution_count,
+      first_prompted_at,
+      last_prompted_at
+    )
+    SELECT
+      session_key,
+      identity_namespace,
+      actor_id,
+      contribution_count,
+      first_prompted_at,
+      last_prompted_at
+    FROM ${PARTICIPANTS_BACKUP_TABLE};
+    DROP TABLE ${PARTICIPANTS_BACKUP_TABLE};
+    COMMIT;
+  `);
   return true;
 }
 
 /**
  * Repairs a known pre-8.1 additive-schema drift before Doctor owns the full
- * agent database migration. Recovery is intentionally limited to an empty
- * premature table; any populated or structurally unexpected database fails
- * closed and remains available in the verified upgrade snapshot.
+ * agent database migration. Populated premature tables are atomically renamed
+ * so Doctor can create the canonical table, then restored by the post-Doctor
+ * stage without translating or dropping participant identities.
  */
 export async function repairOpenClawAgentDatabasesFor2026_8_1Doctor(
   options: RepairOptions = {},
@@ -115,6 +154,46 @@ export async function repairOpenClawAgentDatabasesFor2026_8_1Doctor(
         pendingMigration.push(pathname);
       }
       if (repairPrematureParticipantsTable(database, pathname)) repaired.push(pathname);
+    } catch (error) {
+      try {
+        database.exec('ROLLBACK');
+      } catch {
+        // No active transaction, or SQLite already rolled it back.
+      }
+      throw error;
+    } finally {
+      database.close();
+    }
+  }
+
+  return { inspected, repaired, pendingMigration };
+}
+
+export async function restoreOpenClawAgentDatabaseParticipantsAfter2026_8_1Doctor(
+  options: RepairOptions = {},
+): Promise<OpenClawAgentDbRepairResult> {
+  const agentsDir = join(options.stateDir ?? resolveOpenClawStateDir(), 'agents');
+  let entries;
+  try {
+    entries = await readdir(agentsDir, { withFileTypes: true });
+  } catch {
+    return { inspected: [], repaired: [], pendingMigration: [] };
+  }
+
+  const inspected: string[] = [];
+  const repaired: string[] = [];
+  const pendingMigration: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const pathname = join(agentsDir, entry.name, 'agent', 'openclaw-agent.sqlite');
+    if (!await isRegularFile(pathname)) continue;
+    inspected.push(pathname);
+
+    const database = new DatabaseSync(pathname);
+    try {
+      if (restorePrematureParticipantsTable(database, pathname)) repaired.push(pathname);
+      const version = readUserVersion(database);
+      if (version > 0 && version < CURRENT_AGENT_SCHEMA_VERSION) pendingMigration.push(pathname);
     } catch (error) {
       try {
         database.exec('ROLLBACK');
