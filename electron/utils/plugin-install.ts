@@ -373,21 +373,20 @@ function listGlobalNpmPluginLocations(npmName: string): Array<{
     packageJsonPath: join(globalPackageDir, 'package.json'),
   }];
   const projectsDir = join(npmRoot, 'projects');
-  let projectEntries: Array<{ name: string; isDirectory(): boolean }> = [];
   try {
-    projectEntries = readdirSync(fsPath(projectsDir), { withFileTypes: true });
+    const projectEntries = readdirSync(fsPath(projectsDir), { withFileTypes: true });
+    for (const entry of projectEntries) {
+      if (!entry.isDirectory()) continue;
+      const projectDir = join(projectsDir, entry.name);
+      const packageDir = resolvePackageUnderNodeModules(join(projectDir, 'node_modules'), npmName);
+      locations.push({
+        removalRoot: projectDir,
+        manifestPath: join(packageDir, 'openclaw.plugin.json'),
+        packageJsonPath: join(packageDir, 'package.json'),
+      });
+    }
   } catch {
     return locations;
-  }
-  for (const entry of projectEntries) {
-    if (!entry.isDirectory()) continue;
-    const projectDir = join(projectsDir, entry.name);
-    const packageDir = resolvePackageUnderNodeModules(join(projectDir, 'node_modules'), npmName);
-    locations.push({
-      removalRoot: projectDir,
-      manifestPath: join(packageDir, 'openclaw.plugin.json'),
-      packageJsonPath: join(packageDir, 'package.json'),
-    });
   }
   return locations;
 }
