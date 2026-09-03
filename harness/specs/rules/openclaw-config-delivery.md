@@ -18,6 +18,18 @@ When the Gateway is running, the coordinator prefers the runtime-shaped `config.
 
 Coordinator mutators are replayable transformations. They must not perform filesystem writes, SQLite writes, settings writes, lifecycle actions, or other non-idempotent external effects; preload required external inputs before entering the mutator and perform follow-up effects only after a successful commit.
 
+When enabling or changing a channel account can trigger an immediate native
+Gateway reload, the same coordinator mutation must also persist any inferred
+account-scoped Agent binding required for multi-agent routing. A channel must
+not become enabled in one config revision while its required owner is deferred
+to a follow-up mutation.
+
+Plugin-backed channel saves must satisfy the bundled plugin's runtime schema,
+including required defaults that are not exposed by the ClawX form. Startup
+sanitization must migrate legacy ClawX channel shapes before delivery, preserve
+valid user allowlists, and normalize recoverable scalar values without
+discarding their intent.
+
 Gateway WebSocket traces must replace serialized `raw` config-write payloads with a redacted marker. They must not log credentials introduced by a mutator.
 
 When the Gateway is stopped or starting, the same coordinator mutates the resolved config file under the shared config lock. It must not start the Gateway solely to apply a config mutation.

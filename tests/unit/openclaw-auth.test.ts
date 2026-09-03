@@ -711,16 +711,52 @@ describe('sanitizeOpenClawConfig', () => {
       'whatsapp-agent': { enabled: true, phoneNumber: '+15555550123' },
     });
     expect(channels.qqbot.accounts).toEqual({
-      'qq-agent': { enabled: true, appId: 'qq-app', clientSecret: 'qq-secret' },
+      'qq-agent': {
+        enabled: true,
+        appId: 'qq-app',
+        clientSecret: 'qq-secret',
+        allowFrom: ['*'],
+      },
     });
     expect(channels.qqbot.appId).toBe('qq-app');
     expect(channels.qqbot.clientSecret).toBe('qq-secret');
+    expect(channels.qqbot.allowFrom).toEqual(['*']);
 
     const plugins = result.plugins as Record<string, unknown>;
     const entries = plugins.entries as Record<string, Record<string, unknown>>;
     expect(entries.discord).toEqual({ enabled: true });
     expect(entries.whatsapp).toEqual({ enabled: true });
     expect(entries.qqbot).toEqual({ enabled: true });
+  });
+
+  it('migrates legacy QQBot allowFrom values without replacing existing allowlists', async () => {
+    await writeOpenClawJson({
+      channels: {
+        qqbot: {
+          enabled: true,
+          defaultAccount: 'default',
+          appId: 'qq-default',
+          clientSecret: 'default-secret',
+          allowFrom: ['existing-user'],
+          accounts: {
+            default: { appId: 'qq-default', clientSecret: 'default-secret' },
+            secondary: { appId: 'qq-secondary', clientSecret: 'secondary-secret', allowFrom: 'secondary-user' },
+            third: { appId: 'qq-third', clientSecret: 'third-secret' },
+          },
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const qqbot = (result.channels as Record<string, Record<string, unknown>>).qqbot;
+    const accounts = qqbot.accounts as Record<string, Record<string, unknown>>;
+    expect(qqbot.allowFrom).toEqual(['existing-user']);
+    expect(accounts.default.allowFrom).toEqual(['existing-user']);
+    expect(accounts.secondary.allowFrom).toEqual(['secondary-user']);
+    expect(accounts.third.allowFrom).toEqual(['*']);
   });
 
   it('normalizes QQBot as an external plugin without credential mirrors', async () => {

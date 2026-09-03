@@ -2038,6 +2038,49 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function normalizeQQBotAllowFrom(value: unknown, fallback: unknown[] = ['*']): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string' || typeof value === 'number') return [value];
+  return [...fallback];
+}
+
+function migrateQQBotAllowFrom(config: Record<string, unknown>): boolean {
+  if (!isPlainRecord(config.channels) || !isPlainRecord(config.channels.qqbot)) return false;
+
+  const qqbot = config.channels.qqbot;
+  if (Object.keys(qqbot).length === 0) return false;
+
+  const accounts = isPlainRecord(qqbot.accounts) ? qqbot.accounts : undefined;
+  const configuredDefaultAccount = typeof qqbot.defaultAccount === 'string'
+    ? qqbot.defaultAccount.trim()
+    : '';
+  const defaultAccountId = configuredDefaultAccount || 'default';
+  const defaultAccount = accounts && isPlainRecord(accounts[defaultAccountId])
+    ? accounts[defaultAccountId]
+    : undefined;
+  const topLevelFallback = normalizeQQBotAllowFrom(defaultAccount?.allowFrom);
+  const normalizedTopLevel = normalizeQQBotAllowFrom(qqbot.allowFrom, topLevelFallback);
+  let modified = false;
+
+  if (!Array.isArray(qqbot.allowFrom)) {
+    qqbot.allowFrom = normalizedTopLevel;
+    modified = true;
+  }
+
+  if (accounts) {
+    for (const [accountId, accountValue] of Object.entries(accounts)) {
+      if (!isPlainRecord(accountValue) || Array.isArray(accountValue.allowFrom)) continue;
+      accountValue.allowFrom = normalizeQQBotAllowFrom(
+        accountValue.allowFrom,
+        accountId === defaultAccountId ? normalizedTopLevel : ['*'],
+      );
+      modified = true;
+    }
+  }
+
+  return modified;
+}
+
 function removeLegacyMoonshotKimiSearchConfig(config: Record<string, unknown>): boolean {
   if (!isPlainRecord(config.tools) || !isPlainRecord(config.tools.web) || !isPlainRecord(config.tools.web.search)) {
     return false;
@@ -3902,6 +3945,11 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         delete config.plugins;
         modified = true;
       }
+    }
+
+    if (migrateQQBotAllowFrom(config)) {
+      console.log('[sanitize] Added required QQBot allowFrom defaults');
+      modified = true;
     }
 
     // ── channels default-account migration and cleanup ─────────────

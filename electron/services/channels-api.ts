@@ -23,6 +23,7 @@ import {
   clearAllBindingsForChannel,
   clearChannelBinding,
   ensureScopedChannelBinding as ensureAgentScopedChannelBinding,
+  ensureScopedChannelBindingInConfig,
   listAgentsSnapshot,
   listAgentsSnapshotFromConfig,
 } from '../utils/agent-config';
@@ -1060,8 +1061,11 @@ async function awaitWeChatQrLogin(
       userId: result.userId,
     });
     const restartGateway = shouldRestartRunningGateway(ctx, OPENCLAW_WECHAT_CHANNEL_TYPE);
-    await saveChannelConfig(UI_WECHAT_CHANNEL_TYPE, { enabled: true }, normalizedAccountId);
-    await ensureScopedChannelBinding(UI_WECHAT_CHANNEL_TYPE, normalizedAccountId);
+    await saveChannelConfig(UI_WECHAT_CHANNEL_TYPE, { enabled: true }, normalizedAccountId, {
+      applyRelatedConfig: (config) => {
+        ensureScopedChannelBindingInConfig(config, OPENCLAW_WECHAT_CHANNEL_TYPE, normalizedAccountId);
+      },
+    });
     if (restartGateway) {
       scheduleGatewayRestartForPluginChannel(ctx, OPENCLAW_WECHAT_CHANNEL_TYPE);
     }
@@ -1170,20 +1174,24 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       const accountId = optionalString(payload, 'accountId');
       await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
       const storedChannelType = resolveStoredChannelType(channelType);
+      const scopedAccountId = accountId || 'default';
       const restartGateway = shouldRestartRunningGateway(ctx, storedChannelType);
       const [installResult, existingValues] = await Promise.all([
         ensureChannelPluginInstalled(storedChannelType),
         getChannelFormValues(channelType, accountId),
       ]);
       if (isSameConfigValues(existingValues, config)) {
-        await ensureScopedChannelBinding(channelType, accountId);
+        await ensureScopedChannelBinding(channelType, scopedAccountId);
         if (restartGateway) {
           scheduleGatewayRestartForPluginChannel(ctx, storedChannelType, 'noChange');
         }
         return { success: true, noChange: true, ...(restartGateway ? { activationPending: true } : {}) };
       }
-      await saveChannelConfig(channelType, config, accountId);
-      await ensureScopedChannelBinding(channelType, accountId);
+      await saveChannelConfig(channelType, config, accountId, {
+        applyRelatedConfig: (configSnapshot) => {
+          ensureScopedChannelBindingInConfig(configSnapshot, storedChannelType, scopedAccountId);
+        },
+      });
       if (restartGateway && !installResult.peerLinkOk) {
         scheduleGatewayRestartForPluginChannel(ctx, storedChannelType, 'peerLinkRepairFailed');
         return { success: true, activationPending: true };

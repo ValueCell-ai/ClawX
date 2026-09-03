@@ -995,39 +995,47 @@ export async function migrateLegacyChannelWideBinding(channelType: string): Prom
   logger.info('Migrated legacy channel-wide binding', { channelType });
 }
 
-export async function ensureScopedChannelBinding(channelType: string, accountId?: string): Promise<void> {
+export function ensureScopedChannelBindingInConfig(
+  configSnapshot: unknown,
+  channelType: string,
+  accountId?: string,
+): void {
   const normalizedAccountId = accountId?.trim();
   if (!normalizedAccountId) return;
 
-  await mutateOpenClawConfig((configSnapshot) => {
-    const config = configSnapshot as AgentConfigDocument;
-    const { entries } = normalizeAgentsConfig(config);
-    if (entries.length === 0) return;
-    const validAgentIds = new Set(entries.map((entry) => normalizeAgentIdForBinding(entry.id)));
+  const config = configSnapshot as AgentConfigDocument;
+  const { entries } = normalizeAgentsConfig(config);
+  if (entries.length === 0) return;
+  const validAgentIds = new Set(entries.map((entry) => normalizeAgentIdForBinding(entry.id)));
 
-    if (normalizedAccountId === DEFAULT_ACCOUNT_ID) {
-      const mainAgent = entries.find((entry) => entry.id === MAIN_AGENT_ID);
-      if (mainAgent) {
-        config.bindings = upsertBindingsForChannel(
-          config.bindings,
-          channelType,
-          mainAgent.id,
-          DEFAULT_ACCOUNT_ID,
-        );
-      }
-      return;
-    }
-
-    migrateLegacyChannelBindingInConfig(config, channelType, validAgentIds);
-    const accountAgent = entries.find((entry) => entry.id === normalizedAccountId);
-    if (accountAgent) {
+  if (normalizedAccountId === DEFAULT_ACCOUNT_ID) {
+    const mainAgent = entries.find((entry) => entry.id === MAIN_AGENT_ID);
+    if (mainAgent) {
       config.bindings = upsertBindingsForChannel(
         config.bindings,
         channelType,
-        accountAgent.id,
-        normalizedAccountId,
+        mainAgent.id,
+        DEFAULT_ACCOUNT_ID,
       );
     }
+    return;
+  }
+
+  migrateLegacyChannelBindingInConfig(config, channelType, validAgentIds);
+  const accountAgent = entries.find((entry) => entry.id === normalizedAccountId);
+  if (accountAgent) {
+    config.bindings = upsertBindingsForChannel(
+      config.bindings,
+      channelType,
+      accountAgent.id,
+      normalizedAccountId,
+    );
+  }
+}
+
+export async function ensureScopedChannelBinding(channelType: string, accountId?: string): Promise<void> {
+  await mutateOpenClawConfig((configSnapshot) => {
+    ensureScopedChannelBindingInConfig(configSnapshot, channelType, accountId);
   });
-  logger.info('Ensured scoped channel binding', { channelType, accountId: normalizedAccountId });
+  logger.info('Ensured scoped channel binding', { channelType, accountId: accountId?.trim() });
 }

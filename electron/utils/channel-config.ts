@@ -671,6 +671,15 @@ function transformChannelConfig(
         transformedConfig.allowFrom = allowFrom;
     }
 
+    if (channelType === 'qqbot') {
+        const allowFrom = transformedConfig.allowFrom ?? existingAccountConfig.allowFrom;
+        transformedConfig.allowFrom = Array.isArray(allowFrom)
+            ? allowFrom
+            : typeof allowFrom === 'string' || typeof allowFrom === 'number'
+                ? [allowFrom]
+                : ['*'];
+    }
+
     if (channelType === 'whatsapp') {
         // The WhatsApp plugin stores QR/session state on disk and does not
         // require static credentials, but the runtime still needs an enabled
@@ -798,6 +807,9 @@ export async function saveChannelConfig(
     channelType: string,
     config: ChannelConfigData,
     accountId?: string,
+    options?: {
+        applyRelatedConfig?: (config: OpenClawConfig) => void;
+    },
 ): Promise<void> {
     const resolvedChannelType = resolveStoredChannelType(channelType);
     const resolvedAccountId = accountId || DEFAULT_ACCOUNT_ID;
@@ -876,6 +888,10 @@ export async function saveChannelConfig(
             }
         }
 
+        // Apply routing ownership in this same replayable coordinator mutation.
+        // A channel save may trigger an immediate native Gateway reload, so a
+        // follow-up config transaction would be too late for multi-agent startup.
+        options?.applyRelatedConfig?.(currentConfig);
         sanitizeChannelSectionsBeforeWrite(currentConfig);
     });
     logger.info('Channel config saved', {

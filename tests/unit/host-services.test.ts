@@ -15,6 +15,7 @@ const {
   deleteChannelConfigMock,
   ensureFeishuPluginInstalledMock,
   ensureScopedChannelBindingMock,
+  ensureScopedChannelBindingInConfigMock,
   ensureClawXContextMock,
   ensureWeChatPluginInstalledMock,
   getAllSettingsMock,
@@ -61,6 +62,7 @@ const {
   deleteChannelConfigMock: vi.fn(),
   ensureFeishuPluginInstalledMock: vi.fn(),
   ensureScopedChannelBindingMock: vi.fn(),
+  ensureScopedChannelBindingInConfigMock: vi.fn(),
   ensureClawXContextMock: vi.fn(),
   ensureWeChatPluginInstalledMock: vi.fn(),
   getAllSettingsMock: vi.fn(),
@@ -189,6 +191,7 @@ vi.mock('@electron/utils/agent-config', () => ({
   createAgent: (...args: unknown[]) => createAgentMock(...args),
   deleteAgentConfig: (...args: unknown[]) => deleteAgentConfigMock(...args),
   ensureScopedChannelBinding: (...args: unknown[]) => ensureScopedChannelBindingMock(...args),
+  ensureScopedChannelBindingInConfig: (...args: unknown[]) => ensureScopedChannelBindingInConfigMock(...args),
   listAgentsSnapshot: (...args: unknown[]) => listAgentsSnapshotMock(...args),
   listAgentsSnapshotFromConfig: (...args: unknown[]) => listAgentsSnapshotFromConfigMock(...args),
   migrateLegacyChannelWideBinding: (...args: unknown[]) => migrateLegacyChannelWideBindingMock(...args),
@@ -868,8 +871,9 @@ describe('host services', () => {
       'feishu',
       { appId: 'cli_new', appSecret: 'new-secret' },
       'default',
+      expect.objectContaining({ applyRelatedConfig: expect.any(Function) }),
     );
-    expect(ensureScopedChannelBindingMock).toHaveBeenCalledWith('feishu', 'default');
+    expect(ensureScopedChannelBindingMock).not.toHaveBeenCalled();
     expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
     expect(gatewayManager.restart).not.toHaveBeenCalled();
@@ -904,6 +908,7 @@ describe('host services', () => {
       'feishu',
       { appId: 'cli_new', appSecret: 'new-secret' },
       'default',
+      expect.objectContaining({ applyRelatedConfig: expect.any(Function) }),
     );
     expect(gatewayManager.debouncedRestart).toHaveBeenCalledWith(0);
   });
@@ -925,6 +930,17 @@ describe('host services', () => {
     expect(saveChannelConfigMock).toHaveBeenCalledWith(
       'telegram',
       { botToken: 'new-token', allowedUsers: '1' },
+      'default',
+      expect.objectContaining({ applyRelatedConfig: expect.any(Function) }),
+    );
+    const saveOptions = saveChannelConfigMock.mock.calls[0]?.[3] as {
+      applyRelatedConfig?: (config: Record<string, unknown>) => void;
+    };
+    const configSnapshot = {};
+    saveOptions.applyRelatedConfig?.(configSnapshot);
+    expect(ensureScopedChannelBindingInConfigMock).toHaveBeenCalledWith(
+      configSnapshot,
+      'telegram',
       'default',
     );
     expect(gatewayManager.restart).not.toHaveBeenCalled();
@@ -1227,7 +1243,12 @@ describe('host services', () => {
     await createChannelsApi({ gatewayManager: gatewayManager as never }).startLogin({ channelType: 'wechat' });
 
     await vi.waitFor(() => {
-      expect(saveChannelConfigMock).toHaveBeenCalledWith('wechat', { enabled: true }, 'wx-account');
+      expect(saveChannelConfigMock).toHaveBeenCalledWith(
+        'wechat',
+        { enabled: true },
+        'wx-account',
+        expect.objectContaining({ applyRelatedConfig: expect.any(Function) }),
+      );
       expect(gatewayManager.debouncedRestart).toHaveBeenCalledWith(0);
     });
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
