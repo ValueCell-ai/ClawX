@@ -1,0 +1,36 @@
+diff --git a/dist/agent-create-eHTUT-v1.js b/dist/agent-create-eHTUT-v1.js
+index 369e0cd..983416f 100644
+--- a/dist/agent-create-eHTUT-v1.js
++++ b/dist/agent-create-eHTUT-v1.js
+@@ -14,6 +14,7 @@ import { a as transformConfigFileWithRetry, o as withConfigMutationExclusive } f
+ import "./config-Bc8HuSgl.js";
+ import { a as recordAgentProvenance } from "./agent-provenance-CoY7m-91.js";
+ import { c as readAgentDeletionJournal } from "./agent-deletion-journal-DE-LIY-0.js";
++import { i as deleteWorkspaceState, s as prepareWorkspaceStateDeletion } from "./workspace-state-store-CvVwbkF-.js";
+ import { o as resolveSharedAuthStoreOwnership } from "./path-resolve-BV5Yqbp0.js";
+ import { p as ensureAgentWorkspace, r as DEFAULT_IDENTITY_FILENAME } from "./workspace-CAteGiRq.js";
+ import { r as isReservedSystemAgentId } from "./agent-id-CaFmP6-7.js";
+@@ -130,11 +131,22 @@ async function createAgent(params) {
+ 			const gateError = await evaluateMainCreationGate(lockedConfig, agentId);
+ 			if (gateError) return gateError;
+ 			const deletion = readAgentDeletionJournal(agentId);
+ 			if (deletion && !deletion.cleanupCompleted) return createError("deletion-pending", `agent "${agentId}" deletion cleanup is still pending`, agentId);
++			let vanishedWorkspaceStatePlan;
++			if (deletion?.cleanupCompleted && deletion.deleteFiles === false) {
++				const recreationWorkspaceDir = explicitWorkspace ?? resolveAgentWorkspaceDir(lockedConfig, agentId);
++				if (recreationWorkspaceDir === deletion.workspaceDir) try {
++					await fs.access(recreationWorkspaceDir);
++				} catch (error) {
++					if (error?.code !== "ENOENT") throw error;
++					vanishedWorkspaceStatePlan = prepareWorkspaceStateDeletion(recreationWorkspaceDir);
++				}
++			}
+ 			let tombstoneClaimed = false;
+-			if (deletion?.cleanupCompleted && findAgentEntryIndex(listAgentEntries(lockedConfig), agentId) >= 0) {
++			if (deletion?.cleanupCompleted) {
+ 				if (!claimCompletedAgentDeletion(agentId, deletion.operationId)) throw new Error(`agent "${agentId}" deletion tombstone changed during creation`);
+ 				tombstoneClaimed = true;
++				if (vanishedWorkspaceStatePlan) deleteWorkspaceState(vanishedWorkspaceStatePlan);
+ 			}
+ 			const committed = await transformConfig({
+ 				afterWrite: { mode: "auto" },

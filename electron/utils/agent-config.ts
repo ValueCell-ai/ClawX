@@ -1,6 +1,5 @@
-import { copyFile, lstat, mkdir, readdir, rm } from 'fs/promises';
+import { copyFile, lstat, mkdir, rm } from 'fs/promises';
 import { join, normalize } from 'path';
-import { isDeepStrictEqual } from 'node:util';
 import { mutateOpenClawConfig } from '../gateway/config-delivery';
 import { deleteAgentChannelAccounts, listConfiguredChannelsFromConfig, readOpenClawConfig } from './channel-config';
 import type { OpenClawConfig } from './channel-config';
@@ -143,20 +142,6 @@ function formatModelLabel(model: unknown): string | null {
 
 function normalizeAgentName(name: string): string {
   return name.trim() || 'Agent';
-}
-
-function slugifyAgentId(name: string): string {
-  const normalized = name
-    .normalize('NFKD')
-    .replace(/[^\w\s-]/g, '')
-    .toLowerCase()
-    .replace(/[_\s]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-
-  if (!normalized || /^\d+$/.test(normalized)) return 'agent';
-  if (normalized === MAIN_AGENT_ID) return 'agent';
-  return normalized;
 }
 
 async function fileExists(path: string): Promise<boolean> {
@@ -369,23 +354,6 @@ function upsertBindingsForChannel(
   return nextBindings.length > 0 ? nextBindings : undefined;
 }
 
-async function listExistingAgentIdsOnDisk(): Promise<Set<string>> {
-  const ids = new Set<string>();
-  const agentsDir = join(getOpenClawConfigDir(), 'agents');
-
-  try {
-    if (!(await fileExists(agentsDir))) return ids;
-    const entries = await readdir(agentsDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory()) ids.add(entry.name);
-    }
-  } catch {
-    // ignore discovery failures
-  }
-
-  return ids;
-}
-
 async function removeAgentRuntimeDirectory(agentId: string): Promise<void> {
   const runtimeDir = join(getOpenClawConfigDir(), 'agents', agentId);
   try {
@@ -439,13 +407,18 @@ export async function removeAgentWorkspaceDirectory(
   }
 }
 
-async function copyBootstrapFiles(sourceWorkspace: string, targetWorkspace: string): Promise<void> {
+async function copyBootstrapFiles(
+  sourceWorkspace: string,
+  targetWorkspace: string,
+  options?: { overwriteExisting?: boolean },
+): Promise<void> {
   await ensureDir(targetWorkspace);
 
   for (const fileName of AGENT_BOOTSTRAP_FILES) {
     const source = join(sourceWorkspace, fileName);
     const target = join(targetWorkspace, fileName);
-    if (!(await fileExists(source)) || (await fileExists(target))) continue;
+    if (!(await fileExists(source))) continue;
+    if (!options?.overwriteExisting && (await fileExists(target))) continue;
     await copyFile(source, target);
   }
 }
@@ -464,7 +437,7 @@ async function copyRuntimeFiles(sourceAgentDir: string, targetAgentDir: string):
 async function provisionAgentFilesystem(
   config: AgentConfigDocument,
   agent: AgentListEntry,
-  options?: { inheritWorkspace?: boolean },
+  options?: { inheritWorkspace?: boolean; overwriteInheritedWorkspace?: boolean },
 ): Promise<void> {
   const { entries } = normalizeAgentsConfig(config);
   const mainEntry = entries.find((entry) => entry.id === MAIN_AGENT_ID) ?? createImplicitMainEntry(config);
@@ -484,7 +457,9 @@ async function provisionAgentFilesystem(
   // on first use, but ClawX still pre-seeds IDENTITY.md so desktop workspaces
   // skip the chat-first bootstrap flow.
   if (options?.inheritWorkspace && targetWorkspace !== sourceWorkspace) {
-    await copyBootstrapFiles(sourceWorkspace, targetWorkspace);
+    await copyBootstrapFiles(sourceWorkspace, targetWorkspace, {
+      overwriteExisting: options.overwriteInheritedWorkspace,
+    });
   }
   await ensureClawXIdentityFile(targetWorkspace, { createDir: true });
   if (targetAgentDir !== sourceAgentDir) {
@@ -661,94 +636,49 @@ export async function resolveAgentIdFromChannel(channel: string, accountId?: str
 
 export async function createAgent(
   name: string,
-  options?: { inheritWorkspace?: boolean },
+  options: { inheritWorkspace?: boolean } | undefined,
+  createAgentThroughGateway: (name: string) => Promise<unknown>,
+  rollbackAgentThroughGateway: (agentId: string) => Promise<unknown>,
 ): Promise<AgentsSnapshot> {
-  let snapshot: AgentsSnapshot | undefined;
-  let createdAgentId = '';
-  let agentToProvision: AgentListEntry | undefined;
-  let provisioningConfig: AgentConfigDocument | undefined;
-  await mutateOpenClawConfig(async (configSnapshot) => {
-    const config = configSnapshot as AgentConfigDocument;
-    const {
-      agentsConfig,
-      entries,
-      syntheticMain,
-      defaultAgentId,
-    } = normalizeAgentsConfig(config);
-    const normalizedName = normalizeAgentName(name);
-    const existingIds = new Set(entries.map((entry) => entry.id));
-    const diskIds = await listExistingAgentIdsOnDisk();
-    let nextId = slugifyAgentId(normalizedName);
-    let suffix = 2;
+  const normalizedName = normalizeAgentName(name);
+  const createResult = await createAgentThroughGateway(normalizedName);
+  if (!createResult || typeof createResult !== 'object') {
+    throw new Error('OpenClaw agents.create returned an invalid result');
+  }
+  const createdAgentId = typeof (createResult as { agentId?: unknown }).agentId === 'string'
+    ? (createResult as { agentId: string }).agentId.trim()
+    : '';
+  if (!createdAgentId) {
+    throw new Error('OpenClaw agents.create did not return an Agent ID');
+  }
 
-    while (existingIds.has(nextId) || diskIds.has(nextId)) {
-      nextId = `${slugifyAgentId(normalizedName)}-${suffix}`;
-      suffix += 1;
-    }
-
-    const nextEntries = syntheticMain ? [createImplicitMainEntry(config), ...entries.filter((_, index) => index > 0)] : [...entries];
-    const newAgent: AgentListEntry = {
-      id: nextId,
-      name: normalizedName,
-      workspace: `~/.openclaw/workspace-${nextId}`,
-      agentDir: getDefaultAgentDirPath(nextId),
-    };
-
-    if (!nextEntries.some((entry) => entry.id === MAIN_AGENT_ID) && syntheticMain) {
-      nextEntries.unshift(createImplicitMainEntry(config));
-    }
-    nextEntries.push(newAgent);
-
-    config.agents = writeCanonicalAgentEntries(agentsConfig, nextEntries, defaultAgentId);
-
-    createdAgentId = nextId;
-    agentToProvision = newAgent;
-    provisioningConfig = structuredClone(config);
-    snapshot = await buildSnapshotFromConfig(config);
-  });
-  const createdAgent = agentToProvision!;
-  const workspaceExisted = await fileExists(expandPath(createdAgent.workspace!));
-  const runtimeDirectory = join(getOpenClawConfigDir(), 'agents', createdAgent.id);
-  const runtimeDirectoryExisted = await fileExists(runtimeDirectory);
   try {
-    await provisionAgentFilesystem(provisioningConfig!, createdAgent, { inheritWorkspace: options?.inheritWorkspace });
+    const config = await readOpenClawConfig() as AgentConfigDocument;
+    const { entries } = normalizeAgentsConfig(config);
+    const createdAgent = entries.find((entry) => entry.id === createdAgentId);
+    if (!createdAgent) {
+      throw new Error(`OpenClaw agents.create did not persist Agent "${createdAgentId}"`);
+    }
+    await provisionAgentFilesystem(config, createdAgent, {
+      inheritWorkspace: options?.inheritWorkspace,
+      overwriteInheritedWorkspace: options?.inheritWorkspace,
+    });
   } catch (provisioningError) {
-    let rollbackError: unknown;
     try {
-      await mutateOpenClawConfig((configSnapshot) => {
-        const config = configSnapshot as AgentConfigDocument;
-        const { agentsConfig, entries } = normalizeAgentsConfig(config);
-        const createdIndex = entries.findIndex((entry) => (
-          entry.id === createdAgent.id && isDeepStrictEqual(entry, createdAgent)
-        ));
-        if (createdIndex === -1) return;
-        config.agents = writeCanonicalAgentEntries(
-          agentsConfig,
-          entries.filter((_, index) => index !== createdIndex),
-          normalizeAgentsConfig(config).defaultAgentId,
-        );
-      });
-    } catch (error) {
-      rollbackError = error;
-    }
-
-    if (!workspaceExisted) {
-      await removeAgentWorkspaceDirectory(createdAgent);
-    }
-    if (!runtimeDirectoryExisted) {
-      await removeAgentRuntimeDirectory(createdAgent.id);
-    }
-    if (rollbackError) {
+      await rollbackAgentThroughGateway(createdAgentId);
+    } catch (rollbackError) {
       throw new AggregateError(
         [provisioningError, rollbackError],
-        `Failed to provision agent "${createdAgent.id}" and roll back its config entry`,
-        { cause: provisioningError },
+        `Failed to provision agent "${createdAgentId}" and roll back its config entry`,
+        { cause: rollbackError },
       );
     }
     throw provisioningError;
   }
+
+  const snapshot = await listAgentsSnapshot();
   logger.info('Created agent config entry', { agentId: createdAgentId, inheritWorkspace: !!options?.inheritWorkspace });
-  return snapshot!;
+  return snapshot;
 }
 
 export async function updateAgentName(agentId: string, name: string): Promise<AgentsSnapshot> {
@@ -842,7 +772,10 @@ export async function updateAgentModel(agentId: string, modelRef: string | null)
 
 export async function deleteAgentConfig(
   agentId: string,
-  deleteAgentThroughGateway: (agentId: string) => Promise<unknown>,
+  deleteAgentThroughGateway: (
+    agentId: string,
+    options: { deleteFiles: boolean },
+  ) => Promise<unknown>,
 ): Promise<{ snapshot: AgentsSnapshot; removedEntry: AgentListEntry }> {
   if (agentId === MAIN_AGENT_ID) {
     throw new Error('The main agent cannot be deleted');
@@ -875,8 +808,13 @@ export async function deleteAgentConfig(
 
   // OpenClaw 2026.8.2 rejects roster removal through config.set. Its dedicated
   // RPC owns the authoritative Agent deletion and removes associated bindings.
-  // Keep file deletion disabled so ClawX can preserve unmanaged workspaces.
-  await deleteAgentThroughGateway(agentId);
+  // Let OpenClaw remove ClawX-managed workspaces so it also clears their durable
+  // bootstrap attestations. Otherwise same-ID recreation can mistake the
+  // intentionally removed workspace for unexpected data loss. Custom workspace
+  // paths remain preserved and retain their OpenClaw state.
+  await deleteAgentThroughGateway(agentId, {
+    deleteFiles: getManagedWorkspaceDirectory(removedEntry) !== null,
+  });
   await deleteAgentChannelAccounts(agentId, ownedLegacyAccounts);
   await removeAgentRuntimeDirectory(agentId);
   const snapshot = await listAgentsSnapshot();

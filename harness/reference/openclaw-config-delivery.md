@@ -12,10 +12,22 @@ Provider, Agent, Channel, skill, proxy, image-generation, and plugin-install hel
 
 This is not a write-then-notify design. No provider, Agent, Channel, skill, proxy, image-generation, or plugin-install helper may write the active config independently. The coordinator prevents a locally read stale snapshot from overwriting concurrent Gateway or CLI config changes.
 
-OpenClaw 2026.8.2 protects existing Agent roster entries from removal through
-generic `config.set`. ClawX therefore delegates intentional roster deletion to
-`agents.delete` with file deletion disabled, then applies its narrower cleanup
-policy for Agent runtime data, managed workspaces, and owned channel accounts.
+OpenClaw 2026.8.2 protects Agent roster additions and removals from generic
+`config.set` mutations. ClawX therefore delegates creation to `agents.create`
+before applying requested workspace inheritance and runtime credentials. It
+delegates deletion to `agents.delete`, enabling OpenClaw-owned file and durable
+workspace-state cleanup only for ClawX-managed workspaces. Custom workspace
+paths are deleted from the roster but preserved on disk; ClawX still removes
+owned channel accounts and any remaining managed runtime data.
+
+OpenClaw's deletion journal remains authoritative while cleanup is incomplete.
+Once cleanup is complete, same-ID `agents.create` must atomically claim that
+tombstone before the recreated Agent opens its database. The version-pinned
+2026.8.2 compatibility patch also clears stale bootstrap attestation state when
+a legacy ClawX deletion removed a managed workspace outside OpenClaw. This
+allows affected Agent IDs to be recreated without weakening the vanished-
+workspace guard generally. Post-create initialization failures are rolled back
+through `agents.delete`.
 
 Gateway WebSocket tracing must redact the complete serialized `raw` payload for `config.set`, `config.patch`, and `config.apply`; key-based structural redaction cannot inspect secrets embedded inside that string.
 

@@ -52,9 +52,43 @@ export function createAgentsApi(ctx: AgentsApiContext): CompleteHostServiceRegis
     create: async (payload) => {
       const name = requireString(payload, 'name');
       const inheritWorkspace = isRecord(payload) ? payload.inheritWorkspace === true : undefined;
-      const snapshot = await createAgent(name, { inheritWorkspace });
-      await syncAllProviderAuthToRuntime();
-      await ensureAgentDatabasesReady(ctx);
+      let createdAgentId: string | null = null;
+      const snapshot = await createAgent(
+        name,
+        { inheritWorkspace },
+        async (normalizedName) => {
+          const result = await ctx.gatewayManager.rpc('agents.create', {
+            name: normalizedName,
+          });
+          if (isRecord(result) && typeof result.agentId === 'string') {
+            createdAgentId = result.agentId;
+          }
+          return result;
+        },
+        (agentId) => ctx.gatewayManager.rpc('agents.delete', {
+          agentId,
+          deleteFiles: true,
+        }),
+      );
+      try {
+        await syncAllProviderAuthToRuntime();
+        await ensureAgentDatabasesReady(ctx);
+      } catch (postCreateError) {
+        if (!createdAgentId) throw postCreateError;
+        try {
+          await ctx.gatewayManager.rpc('agents.delete', {
+            agentId: createdAgentId,
+            deleteFiles: true,
+          });
+        } catch (rollbackError) {
+          throw new AggregateError(
+            [postCreateError, rollbackError],
+            `Agent "${createdAgentId}" was created but initialization and rollback both failed`,
+            { cause: rollbackError },
+          );
+        }
+        throw postCreateError;
+      }
       void ensureClawXContext({ waitForAllConfiguredWorkspaces: true }).catch((err) => {
         console.warn('[agents] Failed to ensure ClawX context after agent creation:', err);
       });
@@ -78,9 +112,9 @@ export function createAgentsApi(ctx: AgentsApiContext): CompleteHostServiceRegis
       const agentId = requireString(payload, 'id');
       const { snapshot, removedEntry } = await deleteAgentConfig(
         agentId,
-        (id) => ctx.gatewayManager.rpc('agents.delete', {
+        (id, options) => ctx.gatewayManager.rpc('agents.delete', {
           agentId: id,
-          deleteFiles: false,
+          deleteFiles: options.deleteFiles,
         }),
       );
       const removedWorkspacePath = await removeAgentWorkspaceDirectory(removedEntry).catch((err) => {

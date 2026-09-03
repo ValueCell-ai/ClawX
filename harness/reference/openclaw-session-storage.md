@@ -21,13 +21,13 @@ Doctor then imports and validates all-agent session state while the Gateway is
 stopped. A failed or interrupted migration preserves both source data and the
 external recovery checkpoint and blocks Gateway startup.
 
-OpenClaw also owns the canonical per-agent database schema version. ClawX may
-create the version-1 auth bootstrap tables for a previously uninitialized
-Agent, but credential synchronization must preserve every existing nonzero
-schema version and its canonical `schema_meta` row. A newly created bootstrap
-database is not chat-ready until the managed offline migration path upgrades
-it to the bundled runtime's current schema and verifies that no migration
-remains pending.
+OpenClaw also owns the canonical per-agent database schema version. Before
+writing credentials to a previously uninitialized Agent database, ClawX invokes
+OpenClaw's exported schema initializer so the database starts at the bundled
+runtime's current schema without a Gateway restart. Credential synchronization
+must preserve every existing nonzero schema version and its canonical
+`schema_meta` row. The managed offline migration path remains a fallback only
+for pre-existing databases below the bundled schema.
 
 Deleting a conversation calls `sessions.delete` with transcript deletion
 enabled. Renaming calls `sessions.patch`. Missing deletes are idempotent.

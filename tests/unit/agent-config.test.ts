@@ -43,6 +43,50 @@ async function readOpenClawJson(): Promise<Record<string, unknown>> {
   return JSON.parse(content) as Record<string, unknown>;
 }
 
+async function emulateGatewayAgentCreate(name: string): Promise<{ agentId: string }> {
+  const config = await readOpenClawJson();
+  const agents = config.agents as {
+    list?: Array<{ id?: string; name?: string }>;
+    entries?: Record<string, { id?: string; name?: string }>;
+  } | undefined;
+  const existingEntries = agents?.entries
+    ? Object.values(agents.entries)
+    : agents?.list ?? [];
+  const normalizedBase = name
+    .normalize('NFKD')
+    .replace(/[^\w\s-]/g, '')
+    .toLowerCase()
+    .replace(/[_\s]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  const baseId = !normalizedBase || /^\d+$/.test(normalizedBase) || normalizedBase === 'main'
+    ? 'agent'
+    : normalizedBase;
+  const existingIds = new Set(existingEntries.map((entry) => entry.id));
+  let agentId = baseId;
+  let suffix = 2;
+  while (existingIds.has(agentId)) {
+    agentId = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+
+  config.agents = {
+    ...(agents ?? {}),
+    entries: Object.fromEntries([
+      ...existingEntries.map((entry) => [entry.id, entry]),
+      [agentId, {
+        id: agentId,
+        name,
+        workspace: `~/.openclaw/workspace-${agentId}`,
+        agentDir: `~/.openclaw/agents/${agentId}/agent`,
+      }],
+    ]),
+  };
+  delete (config.agents as { list?: unknown }).list;
+  await writeOpenClawJson(config);
+  return { agentId };
+}
+
 async function emulateGatewayAgentDelete(agentId: string): Promise<void> {
   const config = await readOpenClawJson();
   const agents = config.agents as {
@@ -63,6 +107,11 @@ async function emulateGatewayAgentDelete(agentId: string): Promise<void> {
     ));
   }
   await writeOpenClawJson(config);
+}
+
+async function emulateGatewayCreatedAgentRollback(agentId: string): Promise<void> {
+  await emulateGatewayAgentDelete(agentId);
+  await rm(join(testHome, '.openclaw', 'agents', agentId), { recursive: true, force: true });
 }
 
 describe('agent config lifecycle', () => {
@@ -438,8 +487,10 @@ describe('agent config lifecycle', () => {
       removeAgentWorkspaceDirectory,
     } = await import('@electron/utils/agent-config');
 
-    const { snapshot, removedEntry } = await deleteAgentConfig('test2', emulateGatewayAgentDelete);
+    const gatewayDelete = vi.fn(emulateGatewayAgentDelete);
+    const { snapshot, removedEntry } = await deleteAgentConfig('test2', gatewayDelete);
 
+    expect(gatewayDelete).toHaveBeenCalledWith('test2', { deleteFiles: true });
     expect(snapshot.agents.map((agent) => agent.id)).toEqual(['main', 'test3']);
     expect(snapshot.channelOwners.feishu).toBe('main');
 
@@ -454,8 +505,8 @@ describe('agent config lifecycle', () => {
     expect(persistedAgentIds).toEqual(['main', 'test3']);
     expect(config.bindings).toEqual([]);
     await expect(access(test2RuntimeDir)).rejects.toThrow();
-    // The service removes the workspace after the authoritative Gateway RPC,
-    // so the ClawX cleanup leaves it in place for the caller.
+    // This test double only mutates the roster. Production asks OpenClaw to
+    // remove the managed workspace and its durable bootstrap state atomically.
     await expect(access(test2WorkspaceDir)).resolves.toBeUndefined();
 
     await expect(removeAgentWorkspaceDirectory(removedEntry))
@@ -499,9 +550,11 @@ describe('agent config lifecycle', () => {
       removeAgentWorkspaceDirectory,
     } = await import('@electron/utils/agent-config');
 
-    const { removedEntry } = await deleteAgentConfig('test2', emulateGatewayAgentDelete);
+    const gatewayDelete = vi.fn(emulateGatewayAgentDelete);
+    const { removedEntry } = await deleteAgentConfig('test2', gatewayDelete);
     await expect(removeAgentWorkspaceDirectory(removedEntry)).resolves.toBeNull();
 
+    expect(gatewayDelete).toHaveBeenCalledWith('test2', { deleteFiles: false });
     await expect(access(customWorkspaceDir)).resolves.toBeUndefined();
 
     warnSpy.mockRestore();
@@ -860,8 +913,8 @@ describe('agent config lifecycle', () => {
 
     const { createAgent, listAgentsSnapshot } = await import('@electron/utils/agent-config');
 
-    await createAgent('测试2');
-    await createAgent('测试1');
+    await createAgent('测试2', undefined, emulateGatewayAgentCreate, emulateGatewayAgentDelete);
+    await createAgent('测试1', undefined, emulateGatewayAgentCreate, emulateGatewayAgentDelete);
 
     const snapshot = await listAgentsSnapshot();
     const agentIds = snapshot.agents.map((agent) => agent.id);
@@ -881,12 +934,12 @@ describe('agent config lifecycle', () => {
 
     const { createAgent } = await import('@electron/utils/agent-config');
 
-    await createAgent('Research');
+    await createAgent('Research', undefined, emulateGatewayAgentCreate, emulateGatewayAgentDelete);
 
     await expect(readFile(join(testHome, '.openclaw', 'workspace-research', 'IDENTITY.md'), 'utf8')).resolves.toContain('ClawX');
   });
 
-  it('rolls back a committed agent entry when filesystem provisioning fails', async () => {
+  it('rolls back a Gateway-created agent when filesystem provisioning fails', async () => {
     await writeOpenClawJson({
       agents: {
         list: [{ id: 'main', name: 'Main', default: true }],
@@ -896,7 +949,12 @@ describe('agent config lifecycle', () => {
     await writeFile(blockedWorkspace, 'pre-existing file', 'utf8');
     const { createAgent } = await import('@electron/utils/agent-config');
 
-    await expect(createAgent('Research')).rejects.toThrow();
+    await expect(createAgent(
+      'Research',
+      undefined,
+      emulateGatewayAgentCreate,
+      emulateGatewayCreatedAgentRollback,
+    )).rejects.toThrow();
 
     const config = await readOpenClawJson();
     const agents = (config.agents as { entries: Record<string, unknown> }).entries;
@@ -915,7 +973,12 @@ describe('agent config lifecycle', () => {
     await symlink(join(testHome, 'missing-workspace-target'), workspaceLink);
     const { createAgent } = await import('@electron/utils/agent-config');
 
-    await expect(createAgent('Research')).rejects.toThrow();
+    await expect(createAgent(
+      'Research',
+      undefined,
+      emulateGatewayAgentCreate,
+      emulateGatewayCreatedAgentRollback,
+    )).rejects.toThrow();
 
     await expect(lstat(workspaceLink)).resolves.toMatchObject({});
     expect((await lstat(workspaceLink)).isSymbolicLink()).toBe(true);

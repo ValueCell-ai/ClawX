@@ -946,7 +946,7 @@ describe('host services', () => {
     expect(gatewayManager.restart).not.toHaveBeenCalled();
   });
 
-  it('deletes agents by awaiting config commit then removing workspace without restarting', async () => {
+  it('lets OpenClaw remove a managed workspace before confirming deletion', async () => {
     const snapshot = {
       agents: [],
       defaultAgentId: 'main',
@@ -958,9 +958,9 @@ describe('host services', () => {
     const removedEntry = { id: 'code', workspace: '/tmp/code-workspace' };
     deleteAgentConfigMock.mockImplementation(async (
       agentId: string,
-      deleteAgentThroughGateway: (id: string) => Promise<unknown>,
+      deleteAgentThroughGateway: (id: string, options: { deleteFiles: boolean }) => Promise<unknown>,
     ) => {
-      await deleteAgentThroughGateway(agentId);
+      await deleteAgentThroughGateway(agentId, { deleteFiles: true });
       return { snapshot, removedEntry };
     });
     removeAgentWorkspaceDirectoryMock.mockResolvedValue('/tmp/code-workspace');
@@ -981,7 +981,7 @@ describe('host services', () => {
     expect(deleteAgentConfigMock).toHaveBeenCalledWith('code', expect.any(Function));
     expect(gatewayManager.rpc).toHaveBeenCalledWith('agents.delete', {
       agentId: 'code',
-      deleteFiles: false,
+      deleteFiles: true,
     });
     expect(gatewayManager.restart).not.toHaveBeenCalled();
     expect(removeAgentWorkspaceDirectoryMock).toHaveBeenCalledWith(removedEntry);
@@ -992,9 +992,9 @@ describe('host services', () => {
   it('does not remove an Agent workspace when the authoritative delete RPC fails', async () => {
     deleteAgentConfigMock.mockImplementation(async (
       agentId: string,
-      deleteAgentThroughGateway: (id: string) => Promise<unknown>,
+      deleteAgentThroughGateway: (id: string, options: { deleteFiles: boolean }) => Promise<unknown>,
     ) => {
-      await deleteAgentThroughGateway(agentId);
+      await deleteAgentThroughGateway(agentId, { deleteFiles: true });
       throw new Error('unreachable');
     });
     const gatewayManager = {
@@ -1073,12 +1073,21 @@ describe('host services', () => {
       channelOwners: {},
       channelAccountOwners: {},
     };
-    createAgentMock.mockResolvedValue(snapshot);
+    createAgentMock.mockImplementation(async (
+      name: string,
+      options: { inheritWorkspace?: boolean },
+      createAgentThroughGateway: (normalizedName: string) => Promise<unknown>,
+    ) => {
+      expect(options).toEqual({ inheritWorkspace: false });
+      await createAgentThroughGateway(name);
+      return snapshot;
+    });
     updateAgentNameMock.mockResolvedValue(snapshot);
     const gatewayManager = {
       getStatus: vi.fn(() => ({ state: 'running' })),
       debouncedReload: vi.fn(),
       debouncedRestart: vi.fn(),
+      rpc: vi.fn().mockResolvedValue({ status: 'created', agentId: 'writer' }),
       restart: vi.fn(),
     };
     const { createAgentsApi } = await import('@electron/services/agents-api');
@@ -1089,7 +1098,34 @@ describe('host services', () => {
 
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
     expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
+    expect(gatewayManager.rpc).toHaveBeenCalledWith('agents.create', { name: 'Writer' });
     expect(gatewayManager.restart).not.toHaveBeenCalled();
+  });
+
+  it('rolls back failed post-create provisioning through agents.delete', async () => {
+    createAgentMock.mockImplementation(async (
+      name: string,
+      _options: unknown,
+      createAgentThroughGateway: (normalizedName: string) => Promise<unknown>,
+      rollbackAgentThroughGateway: (agentId: string) => Promise<unknown>,
+    ) => {
+      await createAgentThroughGateway(name);
+      await rollbackAgentThroughGateway('writer');
+      throw new Error('workspace provisioning failed');
+    });
+    const gatewayManager = {
+      rpc: vi.fn().mockResolvedValue({ ok: true, agentId: 'writer' }),
+    };
+    const { createAgentsApi } = await import('@electron/services/agents-api');
+
+    await expect(createAgentsApi({ gatewayManager: gatewayManager as never }).create({ name: 'Writer' }))
+      .rejects.toThrow('workspace provisioning failed');
+
+    expect(gatewayManager.rpc).toHaveBeenNthCalledWith(1, 'agents.create', { name: 'Writer' });
+    expect(gatewayManager.rpc).toHaveBeenNthCalledWith(2, 'agents.delete', {
+      agentId: 'writer',
+      deleteFiles: true,
+    });
   });
 
   it('awaits a managed migration before a newly created agent becomes ready', async () => {

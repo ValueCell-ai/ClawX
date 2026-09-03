@@ -19,6 +19,9 @@
         "overrides": {
             "isbinaryfile": "^5.0.0"
         },
+        "patchedDependencies": {
+            "openclaw@2026.8.2": "patches/openclaw@2026.8.2.patch"
+        },
         "supportedArchitectures": {
             "os": [
                 "current"
