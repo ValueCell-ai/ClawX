@@ -19,5 +19,5 @@ Rules:
 - ClawX must include `gateway`, `nodes`, `create_goal`, `get_goal`, and `update_goal` in both deny lists without blocking application-owned Gateway RPCs; it must not implicitly deny messaging, session orchestration, or agent discovery tools
 - when no embedding credentials or user-owned memory-search config exist, preserve `memory_search` through OpenClaw's explicit FTS-only provider instead of disabling the tool
 - migrations may replace only the exact legacy ClawX-managed memory-search default, must run at most once, and must preserve later user opt-outs
-- when compaction config is absent, seed safeguard mode with `reserveTokensFloor = 50000` and `midTurnPrecheck.enabled = true`; active-model synchronization owns the reserve floor, using 25% only when the selected model row explicitly declares a valid `contextWindow` or `contextTokens`, otherwise writing `50000` without model-name inference; explicit mid-turn precheck choices remain user-owned
+- OpenClaw 2026.8.1 active config must not contain retired compaction keys `reserveTokensFloor` or `identifierInstructions`; ClawX seeds `identifierPolicy: strict` and `midTurnPrecheck.enabled: true`, preserves an explicit `identifierPolicy: off`, and preserves explicit mid-turn precheck choices
 - tests for config rewrites should assert the final active config, not only intermediate helper output

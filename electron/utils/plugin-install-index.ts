@@ -78,6 +78,30 @@ function openStateDatabase(sqlitePath: string): DatabaseSync {
   return db;
 }
 
+export function hasPluginCapabilityConsent(pluginId: string): boolean {
+  const sqlitePath = resolveOpenClawStateSqlitePath();
+  if (!existsSync(sqlitePath)) return false;
+
+  let db: DatabaseSync | null = null;
+  try {
+    db = new DatabaseSync(sqlitePath, { readOnly: true });
+    const row = db.prepare(`
+      SELECT install_records_json
+        FROM installed_plugin_index
+       WHERE index_key = ?
+    `).get(INSTALLED_PLUGIN_INDEX_KEY) as { install_records_json?: string } | undefined;
+    const record = parseInstallRecordsJson(row?.install_records_json)[pluginId];
+    return Boolean(
+      record
+      && Object.keys(record).some((key) => key.startsWith('accepted'))
+    );
+  } catch {
+    return false;
+  } finally {
+    db?.close();
+  }
+}
+
 /**
  * Upsert trusted install records into openclaw.sqlite.
  * ClawX-authored records win over stale SQLite entries for the same plugin id.
@@ -112,6 +136,17 @@ export function upsertPluginInstallRecordsIntoSqlite(
       for (const [pluginId, record] of Object.entries(records)) {
         const current = merged[pluginId];
         if (current && installRecordsMatch(current, record)) {
+          continue;
+        }
+        if (
+          current
+          && current.installPath === record.installPath
+          && current.version === record.version
+          && Object.keys(current).some((key) => key.startsWith('accepted'))
+        ) {
+          // Preserve OpenClaw's artifact-bound capability acceptance fields.
+          // ClawX only owns the mirror path/version and must not downgrade a
+          // richer lifecycle record written by the official CLI.
           continue;
         }
         merged[pluginId] = record;

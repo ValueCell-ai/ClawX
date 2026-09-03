@@ -120,6 +120,10 @@ vi.mock('@electron/gateway/config-delivery', () => ({
   mutateOpenClawConfig: mockMutateOpenClawConfig,
 }));
 
+vi.mock('@electron/utils/safe-fs', () => ({
+  safeRmSync: (targetPath: string) => mockRmSync(targetPath),
+}));
+
 function setPlatform(platform: NodeJS.Platform): void {
   Object.defineProperty(process, 'platform', {
     value: platform,
@@ -336,8 +340,9 @@ describe('plugin installer diagnostics', () => {
     expect(result).toEqual({ installed: true, peerLinkOk: true });
     expect(mockUpsertPluginInstallRecordsIntoSqlite).toHaveBeenCalledWith({
       whatsapp: expect.objectContaining({
+        source: 'npm',
+        spec: '@openclaw/whatsapp',
         installPath: targetDir,
-        resolvedName: '@openclaw/whatsapp',
       }),
     });
   });
@@ -414,7 +419,7 @@ describe('plugin installer diagnostics', () => {
     });
   });
 
-  it('replaces legacy Feishu npm ownership with the ClawX path mirror', async () => {
+  it('replaces legacy Feishu ownership with the authoritative ClawX mirror', async () => {
     const targetDir = '/home/test/.openclaw/extensions/feishu-openclaw-plugin';
     configState.authoritative = {
       gatewayOnly: true,
@@ -450,8 +455,8 @@ describe('plugin installer diagnostics', () => {
     ]);
     expect(mockUpsertPluginInstallRecordsIntoSqlite).toHaveBeenCalledWith({
       'openclaw-lark': expect.objectContaining({
-        source: 'path',
-        sourcePath: targetDir,
+        source: 'npm',
+        spec: '@larksuite/openclaw-lark',
         installPath: targetDir,
         version: '2026.7.9',
       }),
@@ -465,6 +470,89 @@ describe('plugin installer diagnostics', () => {
     await expect(removeTrustedOfficialPluginInstallRecord('whatsapp')).resolves.toBe(true);
     expect(mockMutateOpenClawConfig).toHaveBeenCalledOnce();
     expect(mockRemovePluginInstallRecordsFromSqlite).toHaveBeenCalledWith(['whatsapp']);
+  });
+
+  it('records authoritative npm ownership for Discord mirrors', async () => {
+    const targetDir = '/home/test/.openclaw/extensions/discord';
+
+    mockExistsSync.mockImplementation((input: string) => {
+      const value = String(input);
+      return value === `${targetDir}/openclaw.plugin.json`
+        || value === `${targetDir}/package.json`;
+    });
+    mockReadFileSync.mockImplementation((input: string) => {
+      if (String(input) === `${targetDir}/package.json`) {
+        return JSON.stringify({ version: '2026.8.1' });
+      }
+      return '{}';
+    });
+
+    const { syncTrustedOfficialPluginInstallRecord } = await import('@electron/utils/plugin-install');
+    await expect(syncTrustedOfficialPluginInstallRecord('discord', targetDir)).resolves.toBe(true);
+    expect(mockUpsertPluginInstallRecordsIntoSqlite).toHaveBeenCalledWith({
+      discord: expect.objectContaining({
+        source: 'npm',
+        spec: '@openclaw/discord',
+        installPath: targetDir,
+        version: '2026.8.1',
+      }),
+    });
+  });
+
+  it('removes stale global npm plugin mirrors when a ClawX extension mirror exists', async () => {
+    const mirrorDir = '/home/test/.openclaw/extensions/discord';
+    const staleNpmDir = '/home/test/.openclaw/npm/node_modules/@openclaw/discord';
+    const staleProjectDir = '/home/test/.openclaw/npm/projects/openclaw-discord-abc123';
+    const staleProjectManifest =
+      `${staleProjectDir}/node_modules/@openclaw/discord/openclaw.plugin.json`;
+
+    mockExistsSync.mockImplementation((input: string) => {
+      const value = String(input);
+      return value === `${mirrorDir}/openclaw.plugin.json`
+        || value === `${staleNpmDir}/openclaw.plugin.json`
+        || value === staleProjectManifest;
+    });
+    mockReaddirSync.mockImplementation((input: string) => (
+      String(input) === '/home/test/.openclaw/npm/projects'
+        ? [{ name: 'openclaw-discord-abc123', isDirectory: () => true }]
+        : []
+    ));
+
+    const { cleanupStaleGlobalNpmPluginMirrors } = await import('@electron/utils/plugin-install');
+    const result = cleanupStaleGlobalNpmPluginMirrors();
+
+    expect(result.removed).toEqual(['@openclaw/discord']);
+    expect(result.failed).toEqual([]);
+    expect(mockRmSync).toHaveBeenCalledWith(staleNpmDir);
+    expect(mockRmSync).toHaveBeenCalledWith(staleProjectDir);
+  });
+
+  it('patches legacy openclaw/plugin-sdk root imports to plugin-sdk/core', async () => {
+    const targetDir = '/home/test/.openclaw/extensions/feishu-openclaw-plugin';
+    const entryPath = `${targetDir}/index.js`;
+
+    mockExistsSync.mockImplementation((input: string) => {
+      const value = String(input);
+      return value === `${targetDir}/package.json` || value === entryPath;
+    });
+    mockReadFileSync.mockImplementation((input: string) => {
+      if (String(input) === `${targetDir}/package.json`) {
+        return JSON.stringify({ main: 'index.js' });
+      }
+      if (String(input) === entryPath) {
+        return 'const sdk = require("openclaw/plugin-sdk");\n';
+      }
+      return '{}';
+    });
+
+    const { patchLegacyPluginSdkRootImports } = await import('@electron/utils/plugin-install');
+    patchLegacyPluginSdkRootImports(targetDir);
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      entryPath,
+      'const sdk = require("openclaw/plugin-sdk/core");\n',
+      'utf-8',
+    );
   });
 
   it('links a mirrored plugin openclaw peer to the bundled runtime', async () => {

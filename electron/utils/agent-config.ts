@@ -1,6 +1,5 @@
-import { copyFile, lstat, mkdir, readdir, rm } from 'fs/promises';
+import { copyFile, lstat, mkdir, rm } from 'fs/promises';
 import { join, normalize } from 'path';
-import { isDeepStrictEqual } from 'node:util';
 import { mutateOpenClawConfig } from '../gateway/config-delivery';
 import { deleteAgentChannelAccounts, listConfiguredChannelsFromConfig, readOpenClawConfig } from './channel-config';
 import type { OpenClawConfig } from './channel-config';
@@ -8,10 +7,7 @@ import { expandPath, getOpenClawConfigDir } from './paths';
 import * as logger from './logger';
 import { toUiChannelType } from './channel-alias';
 import { ensureClawXIdentityFile } from './openclaw-workspace';
-import {
-  applyModelAwareCompactionReserveTokensFloor,
-  resolveModelContextWindow,
-} from './openclaw-compaction';
+import { resolveModelContextWindow } from './openclaw-compaction';
 
 const MAIN_AGENT_ID = 'main';
 const MAIN_AGENT_NAME = 'Main Agent';
@@ -39,6 +35,10 @@ interface AgentModelConfig {
 interface AgentDefaultsConfig {
   workspace?: string;
   model?: string | AgentModelConfig;
+  systemAgent?: {
+    agentId?: string;
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 }
 
@@ -53,6 +53,9 @@ interface AgentListEntry extends Record<string, unknown> {
 
 interface AgentsConfig extends Record<string, unknown> {
   defaults?: AgentDefaultsConfig;
+  entries?: Record<string, Omit<AgentListEntry, 'id'>>;
+  ownership?: 'explicit';
+  /** Doctor-only legacy input. ClawX never writes this field on 8.1. */
   list?: AgentListEntry[];
 }
 
@@ -141,20 +144,6 @@ function normalizeAgentName(name: string): string {
   return name.trim() || 'Agent';
 }
 
-function slugifyAgentId(name: string): string {
-  const normalized = name
-    .normalize('NFKD')
-    .replace(/[^\w\s-]/g, '')
-    .toLowerCase()
-    .replace(/[_\s]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
-
-  if (!normalized || /^\d+$/.test(normalized)) return 'agent';
-  if (normalized === MAIN_AGENT_ID) return 'agent';
-  return normalized;
-}
-
 async function fileExists(path: string): Promise<boolean> {
   try {
     await lstat(path);
@@ -202,11 +191,16 @@ function normalizeAgentsConfig(config: AgentConfigDocument): {
   const agentsConfig = (config.agents && typeof config.agents === 'object'
     ? { ...(config.agents as AgentsConfig) }
     : {}) as AgentsConfig;
-  const rawEntries = Array.isArray(agentsConfig.list)
-    ? agentsConfig.list.filter((entry): entry is AgentListEntry => (
-      Boolean(entry) && typeof entry === 'object' && typeof entry.id === 'string' && entry.id.trim().length > 0
-    ))
+  const keyedEntries = agentsConfig.entries && typeof agentsConfig.entries === 'object'
+    ? Object.entries(agentsConfig.entries).map(([id, entry]) => ({ id, ...entry }))
     : [];
+  const rawEntries: AgentListEntry[] = keyedEntries.length > 0
+    ? keyedEntries
+    : (Array.isArray(agentsConfig.list)
+      ? agentsConfig.list.filter((entry): entry is AgentListEntry => (
+      Boolean(entry) && typeof entry === 'object' && typeof entry.id === 'string' && entry.id.trim().length > 0
+      ))
+      : []);
 
   if (rawEntries.length === 0) {
     const main = createImplicitMainEntry(config);
@@ -218,13 +212,48 @@ function normalizeAgentsConfig(config: AgentConfigDocument): {
     };
   }
 
-  const defaultEntry = rawEntries.find((entry) => entry.default) ?? rawEntries[0];
+  const configuredSystemAgentId = agentsConfig.defaults?.systemAgent?.agentId;
+  const defaultEntry = rawEntries.find((entry) => entry.id === configuredSystemAgentId)
+    ?? rawEntries.find((entry) => entry.default)
+    ?? rawEntries[0];
   return {
     agentsConfig,
     entries: rawEntries.map((entry) => ({ ...entry })),
     defaultAgentId: defaultEntry.id,
     syntheticMain: false,
   };
+}
+
+function writeCanonicalAgentEntries(
+  agentsConfig: AgentsConfig,
+  entries: AgentListEntry[],
+  systemAgentId: string,
+): AgentsConfig {
+  const next: AgentsConfig = { ...agentsConfig };
+  delete next.list;
+  next.entries = Object.fromEntries(entries.map((entry) => {
+    const { id, default: _legacyDefault, ...value } = entry;
+    return [id, value];
+  }));
+  if (next.defaults?.compaction && typeof next.defaults.compaction === 'object') {
+    const compaction = { ...(next.defaults.compaction as Record<string, unknown>) };
+    delete compaction.reserveTokensFloor;
+    delete compaction.identifierInstructions;
+    if (compaction.identifierPolicy === 'custom') compaction.identifierPolicy = 'strict';
+    next.defaults = { ...next.defaults, compaction };
+  }
+
+  if (entries.length > 1) {
+    next.ownership = 'explicit';
+    next.defaults = {
+      ...next.defaults,
+      systemAgent: {
+        ...next.defaults?.systemAgent,
+        agentId: systemAgentId,
+      },
+    };
+  }
+  return next;
 }
 
 function isChannelBinding(binding: unknown): binding is ChannelBindingConfig {
@@ -325,23 +354,6 @@ function upsertBindingsForChannel(
   return nextBindings.length > 0 ? nextBindings : undefined;
 }
 
-async function listExistingAgentIdsOnDisk(): Promise<Set<string>> {
-  const ids = new Set<string>();
-  const agentsDir = join(getOpenClawConfigDir(), 'agents');
-
-  try {
-    if (!(await fileExists(agentsDir))) return ids;
-    const entries = await readdir(agentsDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory()) ids.add(entry.name);
-    }
-  } catch {
-    // ignore discovery failures
-  }
-
-  return ids;
-}
-
 async function removeAgentRuntimeDirectory(agentId: string): Promise<void> {
   const runtimeDir = join(getOpenClawConfigDir(), 'agents', agentId);
   try {
@@ -395,13 +407,18 @@ export async function removeAgentWorkspaceDirectory(
   }
 }
 
-async function copyBootstrapFiles(sourceWorkspace: string, targetWorkspace: string): Promise<void> {
+async function copyBootstrapFiles(
+  sourceWorkspace: string,
+  targetWorkspace: string,
+  options?: { overwriteExisting?: boolean },
+): Promise<void> {
   await ensureDir(targetWorkspace);
 
   for (const fileName of AGENT_BOOTSTRAP_FILES) {
     const source = join(sourceWorkspace, fileName);
     const target = join(targetWorkspace, fileName);
-    if (!(await fileExists(source)) || (await fileExists(target))) continue;
+    if (!(await fileExists(source))) continue;
+    if (!options?.overwriteExisting && (await fileExists(target))) continue;
     await copyFile(source, target);
   }
 }
@@ -420,7 +437,7 @@ async function copyRuntimeFiles(sourceAgentDir: string, targetAgentDir: string):
 async function provisionAgentFilesystem(
   config: AgentConfigDocument,
   agent: AgentListEntry,
-  options?: { inheritWorkspace?: boolean },
+  options?: { inheritWorkspace?: boolean; overwriteInheritedWorkspace?: boolean },
 ): Promise<void> {
   const { entries } = normalizeAgentsConfig(config);
   const mainEntry = entries.find((entry) => entry.id === MAIN_AGENT_ID) ?? createImplicitMainEntry(config);
@@ -440,7 +457,9 @@ async function provisionAgentFilesystem(
   // on first use, but ClawX still pre-seeds IDENTITY.md so desktop workspaces
   // skip the chat-first bootstrap flow.
   if (options?.inheritWorkspace && targetWorkspace !== sourceWorkspace) {
-    await copyBootstrapFiles(sourceWorkspace, targetWorkspace);
+    await copyBootstrapFiles(sourceWorkspace, targetWorkspace, {
+      overwriteExisting: options.overwriteInheritedWorkspace,
+    });
   }
   await ensureClawXIdentityFile(targetWorkspace, { createDir: true });
   if (targetAgentDir !== sourceAgentDir) {
@@ -569,6 +588,14 @@ export async function listAgentsSnapshot(): Promise<AgentsSnapshot> {
       config as unknown as Record<string, unknown>,
       authProfileProviders,
     );
+    const normalized = normalizeAgentsConfig(config);
+    if (normalized.agentsConfig.list) {
+      config.agents = writeCanonicalAgentEntries(
+        normalized.agentsConfig,
+        normalized.entries,
+        normalized.defaultAgentId,
+      );
+    }
     snapshot = await buildSnapshotFromConfig(config);
   });
   if (prunedRuntimeModelRefs) {
@@ -609,91 +636,49 @@ export async function resolveAgentIdFromChannel(channel: string, accountId?: str
 
 export async function createAgent(
   name: string,
-  options?: { inheritWorkspace?: boolean },
+  options: { inheritWorkspace?: boolean } | undefined,
+  createAgentThroughGateway: (name: string) => Promise<unknown>,
+  rollbackAgentThroughGateway: (agentId: string) => Promise<unknown>,
 ): Promise<AgentsSnapshot> {
-  let snapshot: AgentsSnapshot | undefined;
-  let createdAgentId = '';
-  let agentToProvision: AgentListEntry | undefined;
-  let provisioningConfig: AgentConfigDocument | undefined;
-  await mutateOpenClawConfig(async (configSnapshot) => {
-    const config = configSnapshot as AgentConfigDocument;
-    const { agentsConfig, entries, syntheticMain } = normalizeAgentsConfig(config);
-    const normalizedName = normalizeAgentName(name);
-    const existingIds = new Set(entries.map((entry) => entry.id));
-    const diskIds = await listExistingAgentIdsOnDisk();
-    let nextId = slugifyAgentId(normalizedName);
-    let suffix = 2;
+  const normalizedName = normalizeAgentName(name);
+  const createResult = await createAgentThroughGateway(normalizedName);
+  if (!createResult || typeof createResult !== 'object') {
+    throw new Error('OpenClaw agents.create returned an invalid result');
+  }
+  const createdAgentId = typeof (createResult as { agentId?: unknown }).agentId === 'string'
+    ? (createResult as { agentId: string }).agentId.trim()
+    : '';
+  if (!createdAgentId) {
+    throw new Error('OpenClaw agents.create did not return an Agent ID');
+  }
 
-    while (existingIds.has(nextId) || diskIds.has(nextId)) {
-      nextId = `${slugifyAgentId(normalizedName)}-${suffix}`;
-      suffix += 1;
-    }
-
-    const nextEntries = syntheticMain ? [createImplicitMainEntry(config), ...entries.filter((_, index) => index > 0)] : [...entries];
-    const newAgent: AgentListEntry = {
-      id: nextId,
-      name: normalizedName,
-      workspace: `~/.openclaw/workspace-${nextId}`,
-      agentDir: getDefaultAgentDirPath(nextId),
-    };
-
-    if (!nextEntries.some((entry) => entry.id === MAIN_AGENT_ID) && syntheticMain) {
-      nextEntries.unshift(createImplicitMainEntry(config));
-    }
-    nextEntries.push(newAgent);
-
-    config.agents = {
-      ...agentsConfig,
-      list: nextEntries,
-    };
-
-    createdAgentId = nextId;
-    agentToProvision = newAgent;
-    provisioningConfig = structuredClone(config);
-    snapshot = await buildSnapshotFromConfig(config);
-  });
-  const createdAgent = agentToProvision!;
-  const workspaceExisted = await fileExists(expandPath(createdAgent.workspace!));
-  const runtimeDirectory = join(getOpenClawConfigDir(), 'agents', createdAgent.id);
-  const runtimeDirectoryExisted = await fileExists(runtimeDirectory);
   try {
-    await provisionAgentFilesystem(provisioningConfig!, createdAgent, { inheritWorkspace: options?.inheritWorkspace });
+    const config = await readOpenClawConfig() as AgentConfigDocument;
+    const { entries } = normalizeAgentsConfig(config);
+    const createdAgent = entries.find((entry) => entry.id === createdAgentId);
+    if (!createdAgent) {
+      throw new Error(`OpenClaw agents.create did not persist Agent "${createdAgentId}"`);
+    }
+    await provisionAgentFilesystem(config, createdAgent, {
+      inheritWorkspace: options?.inheritWorkspace,
+      overwriteInheritedWorkspace: options?.inheritWorkspace,
+    });
   } catch (provisioningError) {
-    let rollbackError: unknown;
     try {
-      await mutateOpenClawConfig((configSnapshot) => {
-        const config = configSnapshot as AgentConfigDocument;
-        const { agentsConfig, entries } = normalizeAgentsConfig(config);
-        const createdIndex = entries.findIndex((entry) => (
-          entry.id === createdAgent.id && isDeepStrictEqual(entry, createdAgent)
-        ));
-        if (createdIndex === -1) return;
-        config.agents = {
-          ...agentsConfig,
-          list: entries.filter((_, index) => index !== createdIndex),
-        };
-      });
-    } catch (error) {
-      rollbackError = error;
-    }
-
-    if (!workspaceExisted) {
-      await removeAgentWorkspaceDirectory(createdAgent);
-    }
-    if (!runtimeDirectoryExisted) {
-      await removeAgentRuntimeDirectory(createdAgent.id);
-    }
-    if (rollbackError) {
+      await rollbackAgentThroughGateway(createdAgentId);
+    } catch (rollbackError) {
       throw new AggregateError(
         [provisioningError, rollbackError],
-        `Failed to provision agent "${createdAgent.id}" and roll back its config entry`,
-        { cause: provisioningError },
+        `Failed to provision agent "${createdAgentId}" and roll back its config entry`,
+        { cause: rollbackError },
       );
     }
     throw provisioningError;
   }
+
+  const snapshot = await listAgentsSnapshot();
   logger.info('Created agent config entry', { agentId: createdAgentId, inheritWorkspace: !!options?.inheritWorkspace });
-  return snapshot!;
+  return snapshot;
 }
 
 export async function updateAgentName(agentId: string, name: string): Promise<AgentsSnapshot> {
@@ -712,10 +697,11 @@ export async function updateAgentName(agentId: string, name: string): Promise<Ag
       name: normalizedName,
     };
 
-    config.agents = {
-      ...agentsConfig,
-      list: entries,
-    };
+    config.agents = writeCanonicalAgentEntries(
+      agentsConfig,
+      entries,
+      normalizeAgentsConfig(config).defaultAgentId,
+    );
 
     snapshot = await buildSnapshotFromConfig(config);
   });
@@ -773,76 +759,67 @@ export async function updateAgentModel(agentId: string, modelRef: string | null)
     }
 
     entries[index] = nextEntry;
-    config.agents = {
-      ...agentsConfig,
-      list: entries,
-    };
-    applyModelAwareCompactionReserveTokensFloor(
-      config,
-      resolveModelRef(nextEntry.model) ?? resolveModelRef(agentsConfig.defaults?.model),
+    config.agents = writeCanonicalAgentEntries(
+      agentsConfig,
+      entries,
+      normalizeAgentsConfig(config).defaultAgentId,
     );
-
     snapshot = await buildSnapshotFromConfig(config);
   });
   logger.info('Updated agent model', { agentId, modelRef: normalizedModelRef || null });
   return snapshot!;
 }
 
-export async function deleteAgentConfig(agentId: string): Promise<{ snapshot: AgentsSnapshot; removedEntry: AgentListEntry }> {
+export async function deleteAgentConfig(
+  agentId: string,
+  deleteAgentThroughGateway: (
+    agentId: string,
+    options: { deleteFiles: boolean },
+  ) => Promise<unknown>,
+): Promise<{ snapshot: AgentsSnapshot; removedEntry: AgentListEntry }> {
   if (agentId === MAIN_AGENT_ID) {
     throw new Error('The main agent cannot be deleted');
   }
 
-  let result: { snapshot: AgentsSnapshot; removedEntry: AgentListEntry } | undefined;
-  await mutateOpenClawConfig(async (configSnapshot) => {
-    const config = configSnapshot as AgentConfigDocument;
-    const { agentsConfig, entries, defaultAgentId } = normalizeAgentsConfig(config);
-    const bindingsBeforeDeletion = Array.isArray(config.bindings)
-      ? config.bindings.filter(isChannelBinding)
-      : [];
-    const removedEntry = entries.find((entry) => entry.id === agentId);
-    const nextEntries = entries.filter((entry) => entry.id !== agentId);
-    if (!removedEntry || nextEntries.length === entries.length) {
-      throw new Error(`Agent "${agentId}" not found`);
-    }
+  const config = await readOpenClawConfig() as AgentConfigDocument;
+  const { entries } = normalizeAgentsConfig(config);
+  const removedEntry = entries.find((entry) => entry.id === agentId);
+  if (!removedEntry) {
+    throw new Error(`Agent "${agentId}" not found`);
+  }
 
-    config.agents = {
-      ...agentsConfig,
-      list: nextEntries,
-    };
-    config.bindings = Array.isArray(config.bindings)
-      ? config.bindings.filter((binding) => !(isChannelBinding(binding) && binding.agentId === agentId))
-      : undefined;
+  const bindingsBeforeDeletion = Array.isArray(config.bindings)
+    ? config.bindings.filter(isChannelBinding)
+    : [];
+  const normalizedAgentId = normalizeAgentIdForBinding(agentId);
+  const legacyAccountId = resolveAccountIdForAgent(agentId);
+  const { channelToAgent, accountToAgent } = getChannelBindingMap(bindingsBeforeDeletion);
+  const boundChannelTypes = new Set(bindingsBeforeDeletion.map((binding) => binding.match.channel));
+  const ownedLegacyAccounts = new Set(
+    [...boundChannelTypes]
+      .filter((channelType) => {
+        const accountOwner = accountToAgent.get(`${channelType}:${legacyAccountId}`);
+        const effectiveOwner = accountOwner
+          ?? (legacyAccountId === DEFAULT_ACCOUNT_ID ? channelToAgent.get(channelType) : undefined);
+        return effectiveOwner === normalizedAgentId;
+      })
+      .map((channelType) => `${channelType}:${legacyAccountId}`),
+  );
 
-    if (defaultAgentId === agentId && nextEntries.length > 0) {
-      nextEntries[0] = {
-        ...nextEntries[0],
-        default: true,
-      };
-    }
-
-    const normalizedAgentId = normalizeAgentIdForBinding(agentId);
-    const legacyAccountId = resolveAccountIdForAgent(agentId);
-    const { channelToAgent, accountToAgent } = getChannelBindingMap(bindingsBeforeDeletion);
-    const boundChannelTypes = new Set(bindingsBeforeDeletion.map((binding) => binding.match.channel));
-    const ownedLegacyAccounts = new Set(
-      [...boundChannelTypes]
-        .filter((channelType) => {
-          const accountOwner = accountToAgent.get(`${channelType}:${legacyAccountId}`);
-          const effectiveOwner = accountOwner
-            ?? (legacyAccountId === DEFAULT_ACCOUNT_ID ? channelToAgent.get(channelType) : undefined);
-          return effectiveOwner === normalizedAgentId;
-        })
-        .map((channelType) => `${channelType}:${legacyAccountId}`),
-    );
-
-    await deleteAgentChannelAccounts(agentId, ownedLegacyAccounts);
-    result = { snapshot: await buildSnapshotFromConfig(config), removedEntry };
+  // OpenClaw 2026.8.2 rejects roster removal through config.set. Its dedicated
+  // RPC owns the authoritative Agent deletion and removes associated bindings.
+  // Let OpenClaw remove ClawX-managed workspaces so it also clears their durable
+  // bootstrap attestations. Otherwise same-ID recreation can mistake the
+  // intentionally removed workspace for unexpected data loss. Custom workspace
+  // paths remain preserved and retain their OpenClaw state.
+  await deleteAgentThroughGateway(agentId, {
+    deleteFiles: getManagedWorkspaceDirectory(removedEntry) !== null,
   });
+  await deleteAgentChannelAccounts(agentId, ownedLegacyAccounts);
   await removeAgentRuntimeDirectory(agentId);
-  // The caller removes the workspace only after the coordinator commit above.
+  const snapshot = await listAgentsSnapshot();
   logger.info('Deleted agent config entry', { agentId });
-  return result!;
+  return { snapshot, removedEntry };
 }
 
 export async function assignChannelToAgent(agentId: string, channelType: string): Promise<AgentsSnapshot> {
@@ -950,39 +927,47 @@ export async function migrateLegacyChannelWideBinding(channelType: string): Prom
   logger.info('Migrated legacy channel-wide binding', { channelType });
 }
 
-export async function ensureScopedChannelBinding(channelType: string, accountId?: string): Promise<void> {
+export function ensureScopedChannelBindingInConfig(
+  configSnapshot: unknown,
+  channelType: string,
+  accountId?: string,
+): void {
   const normalizedAccountId = accountId?.trim();
   if (!normalizedAccountId) return;
 
-  await mutateOpenClawConfig((configSnapshot) => {
-    const config = configSnapshot as AgentConfigDocument;
-    const { entries } = normalizeAgentsConfig(config);
-    if (entries.length === 0) return;
-    const validAgentIds = new Set(entries.map((entry) => normalizeAgentIdForBinding(entry.id)));
+  const config = configSnapshot as AgentConfigDocument;
+  const { entries } = normalizeAgentsConfig(config);
+  if (entries.length === 0) return;
+  const validAgentIds = new Set(entries.map((entry) => normalizeAgentIdForBinding(entry.id)));
 
-    if (normalizedAccountId === DEFAULT_ACCOUNT_ID) {
-      const mainAgent = entries.find((entry) => entry.id === MAIN_AGENT_ID);
-      if (mainAgent) {
-        config.bindings = upsertBindingsForChannel(
-          config.bindings,
-          channelType,
-          mainAgent.id,
-          DEFAULT_ACCOUNT_ID,
-        );
-      }
-      return;
-    }
-
-    migrateLegacyChannelBindingInConfig(config, channelType, validAgentIds);
-    const accountAgent = entries.find((entry) => entry.id === normalizedAccountId);
-    if (accountAgent) {
+  if (normalizedAccountId === DEFAULT_ACCOUNT_ID) {
+    const mainAgent = entries.find((entry) => entry.id === MAIN_AGENT_ID);
+    if (mainAgent) {
       config.bindings = upsertBindingsForChannel(
         config.bindings,
         channelType,
-        accountAgent.id,
-        normalizedAccountId,
+        mainAgent.id,
+        DEFAULT_ACCOUNT_ID,
       );
     }
+    return;
+  }
+
+  migrateLegacyChannelBindingInConfig(config, channelType, validAgentIds);
+  const accountAgent = entries.find((entry) => entry.id === normalizedAccountId);
+  if (accountAgent) {
+    config.bindings = upsertBindingsForChannel(
+      config.bindings,
+      channelType,
+      accountAgent.id,
+      normalizedAccountId,
+    );
+  }
+}
+
+export async function ensureScopedChannelBinding(channelType: string, accountId?: string): Promise<void> {
+  await mutateOpenClawConfig((configSnapshot) => {
+    ensureScopedChannelBindingInConfig(configSnapshot, channelType, accountId);
   });
-  logger.info('Ensured scoped channel binding', { channelType, accountId: normalizedAccountId });
+  logger.info('Ensured scoped channel binding', { channelType, accountId: accountId?.trim() });
 }

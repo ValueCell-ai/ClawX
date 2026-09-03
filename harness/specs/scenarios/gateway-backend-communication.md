@@ -29,7 +29,7 @@ ownedPaths:
   - tests/e2e/chat-sidebar-session-attention.spec.ts
   - tests/unit/session-key-utils.test.ts
   - tests/unit/openclaw-acp-stream-patch.test.ts
-  - patches/openclaw@2026.7.1-2.patch
+  - package.json
   - pnpm-lock.yaml
   - shared/web-browser.ts
   - electron/main/web-browser-policy.ts
@@ -51,6 +51,7 @@ conditionalProfiles:
       - Web Browser guest, navigation, session, permission, or data policy changes
 requiredRules:
   - openclaw-config-delivery
+  - openclaw-agent-database-ownership
   - renderer-main-boundary
   - backend-communication-boundary
   - api-client-transport-policy

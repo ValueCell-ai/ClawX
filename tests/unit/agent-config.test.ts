@@ -43,6 +43,77 @@ async function readOpenClawJson(): Promise<Record<string, unknown>> {
   return JSON.parse(content) as Record<string, unknown>;
 }
 
+async function emulateGatewayAgentCreate(name: string): Promise<{ agentId: string }> {
+  const config = await readOpenClawJson();
+  const agents = config.agents as {
+    list?: Array<{ id?: string; name?: string }>;
+    entries?: Record<string, { id?: string; name?: string }>;
+  } | undefined;
+  const existingEntries = agents?.entries
+    ? Object.values(agents.entries)
+    : agents?.list ?? [];
+  const normalizedBase = name
+    .normalize('NFKD')
+    .replace(/[^\w\s-]/g, '')
+    .toLowerCase()
+    .replace(/[_\s]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  const baseId = !normalizedBase || /^\d+$/.test(normalizedBase) || normalizedBase === 'main'
+    ? 'agent'
+    : normalizedBase;
+  const existingIds = new Set(existingEntries.map((entry) => entry.id));
+  let agentId = baseId;
+  let suffix = 2;
+  while (existingIds.has(agentId)) {
+    agentId = `${baseId}-${suffix}`;
+    suffix += 1;
+  }
+
+  config.agents = {
+    ...(agents ?? {}),
+    entries: Object.fromEntries([
+      ...existingEntries.map((entry) => [entry.id, entry]),
+      [agentId, {
+        id: agentId,
+        name,
+        workspace: `~/.openclaw/workspace-${agentId}`,
+        agentDir: `~/.openclaw/agents/${agentId}/agent`,
+      }],
+    ]),
+  };
+  delete (config.agents as { list?: unknown }).list;
+  await writeOpenClawJson(config);
+  return { agentId };
+}
+
+async function emulateGatewayAgentDelete(agentId: string): Promise<void> {
+  const config = await readOpenClawJson();
+  const agents = config.agents as {
+    list?: Array<{ id?: string }>;
+    entries?: Record<string, unknown>;
+  } | undefined;
+  if (Array.isArray(agents?.list)) {
+    agents.list = agents.list.filter((entry) => entry.id !== agentId);
+  }
+  if (agents?.entries) {
+    delete agents.entries[agentId];
+  }
+  if (Array.isArray(config.bindings)) {
+    config.bindings = config.bindings.filter((binding) => (
+      !binding
+      || typeof binding !== 'object'
+      || (binding as { agentId?: string }).agentId !== agentId
+    ));
+  }
+  await writeOpenClawJson(config);
+}
+
+async function emulateGatewayCreatedAgentRollback(agentId: string): Promise<void> {
+  await emulateGatewayAgentDelete(agentId);
+  await rm(join(testHome, '.openclaw', 'agents', agentId), { recursive: true, force: true });
+}
+
 describe('agent config lifecycle', () => {
   beforeEach(async () => {
     vi.resetModules();
@@ -158,8 +229,9 @@ describe('agent config lifecycle', () => {
 
     await updateAgentModel('coder', 'ark/ark-code-latest');
     let config = await readOpenClawJson();
-    let coder = ((config.agents as { list: Array<{ id: string; model?: { primary?: string } }> }).list)
-      .find((agent) => agent.id === 'coder');
+    let coder = (config.agents as {
+      entries: Record<string, { model?: { primary?: string } }>;
+    }).entries.coder;
     expect(coder?.model?.primary).toBe('ark/ark-code-latest');
 
     let snapshot = await listAgentsSnapshot();
@@ -172,8 +244,9 @@ describe('agent config lifecycle', () => {
 
     await updateAgentModel('coder', null);
     config = await readOpenClawJson();
-    coder = ((config.agents as { list: Array<{ id: string; model?: unknown }> }).list)
-      .find((agent) => agent.id === 'coder');
+    coder = (config.agents as {
+      entries: Record<string, { model?: { primary?: string } }>;
+    }).entries.coder;
     expect(coder?.model).toBeUndefined();
 
     snapshot = await listAgentsSnapshot();
@@ -210,7 +283,7 @@ describe('agent config lifecycle', () => {
 
     const config = await readOpenClawJson();
     const defaults = (config.agents as { defaults: { compaction: unknown } }).defaults;
-    expect(defaults.compaction).toEqual({ mode: 'safeguard', reserveTokensFloor: 68_000 });
+    expect(defaults.compaction).toEqual({ mode: 'safeguard' });
     expect(snapshot.agents.find((agent) => agent.id === 'coder')?.contextWindow).toBe(272_000);
   });
 
@@ -243,8 +316,8 @@ describe('agent config lifecycle', () => {
     let snapshot = await updateAgentModel('coder', 'deepseek/deepseek-chat');
     let config = await readOpenClawJson();
     expect(snapshot.agents.find((agent) => agent.id === 'coder')?.contextWindow).toBe(400_000);
-    expect((config.agents as { defaults: { compaction: { reserveTokensFloor: number } } })
-      .defaults.compaction.reserveTokensFloor).toBe(100_000);
+    expect((config.agents as { defaults: { compaction: Record<string, unknown> } })
+      .defaults.compaction.reserveTokensFloor).toBeUndefined();
 
     snapshot = await updateAgentModel('coder', null);
     config = await readOpenClawJson();
@@ -252,8 +325,8 @@ describe('agent config lifecycle', () => {
       modelRef: 'openai/gpt-5.6-sol',
       contextWindow: 272_000,
     });
-    expect((config.agents as { defaults: { compaction: { reserveTokensFloor: number } } })
-      .defaults.compaction.reserveTokensFloor).toBe(68_000);
+    expect((config.agents as { defaults: { compaction: Record<string, unknown> } })
+      .defaults.compaction.reserveTokensFloor).toBeUndefined();
   });
 
   it('mutates the running coordinator snapshot instead of replacing it from the local file', async () => {
@@ -283,7 +356,7 @@ describe('agent config lifecycle', () => {
 
     expect(runningConfig).toMatchObject({
       gatewayOnly: true,
-      agents: { list: [{ id: 'main', name: 'Coordinator Main', default: true }] },
+      agents: { entries: { main: { name: 'Coordinator Main' } } },
     });
     expect(snapshot.agents[0].name).toBe('Coordinator Main');
     expect(await readOpenClawJson()).toEqual({ localOnly: true });
@@ -331,10 +404,11 @@ describe('agent config lifecycle', () => {
     const config = await readOpenClawJson();
     const main = snapshot.agents.find((agent) => agent.id === 'main');
     const coder = snapshot.agents.find((agent) => agent.id === 'coder');
-    const mainEntry = ((config.agents as { list: Array<{ id: string; model?: unknown }> }).list)
-      .find((agent) => agent.id === 'main');
-    const coderEntry = ((config.agents as { list: Array<{ id: string; model?: { primary?: string } }> }).list)
-      .find((agent) => agent.id === 'coder');
+    const entries = (config.agents as {
+      entries: Record<string, { model?: { primary?: string } }>;
+    }).entries;
+    const mainEntry = entries.main;
+    const coderEntry = entries.coder;
 
     expect(main).toMatchObject({
       modelRef: 'minimax-portal/MiniMax-M3',
@@ -413,20 +487,26 @@ describe('agent config lifecycle', () => {
       removeAgentWorkspaceDirectory,
     } = await import('@electron/utils/agent-config');
 
-    const { snapshot, removedEntry } = await deleteAgentConfig('test2');
+    const gatewayDelete = vi.fn(emulateGatewayAgentDelete);
+    const { snapshot, removedEntry } = await deleteAgentConfig('test2', gatewayDelete);
 
+    expect(gatewayDelete).toHaveBeenCalledWith('test2', { deleteFiles: true });
     expect(snapshot.agents.map((agent) => agent.id)).toEqual(['main', 'test3']);
     expect(snapshot.channelOwners.feishu).toBe('main');
 
     const config = await readOpenClawJson();
-    expect((config.agents as { list: Array<{ id: string }> }).list.map((agent) => agent.id)).toEqual([
-      'main',
-      'test3',
-    ]);
+    const persistedAgents = config.agents as {
+      entries?: Record<string, unknown>;
+      list?: Array<{ id: string }>;
+    };
+    const persistedAgentIds = persistedAgents.entries
+      ? Object.keys(persistedAgents.entries)
+      : persistedAgents.list?.map((entry) => entry.id);
+    expect(persistedAgentIds).toEqual(['main', 'test3']);
     expect(config.bindings).toEqual([]);
     await expect(access(test2RuntimeDir)).rejects.toThrow();
-    // The service removes the workspace after `deleteAgentConfig` commits, so the
-    // config mutation leaves it in place for the caller.
+    // This test double only mutates the roster. Production asks OpenClaw to
+    // remove the managed workspace and its durable bootstrap state atomically.
     await expect(access(test2WorkspaceDir)).resolves.toBeUndefined();
 
     await expect(removeAgentWorkspaceDirectory(removedEntry))
@@ -470,9 +550,11 @@ describe('agent config lifecycle', () => {
       removeAgentWorkspaceDirectory,
     } = await import('@electron/utils/agent-config');
 
-    const { removedEntry } = await deleteAgentConfig('test2');
+    const gatewayDelete = vi.fn(emulateGatewayAgentDelete);
+    const { removedEntry } = await deleteAgentConfig('test2', gatewayDelete);
     await expect(removeAgentWorkspaceDirectory(removedEntry)).resolves.toBeNull();
 
+    expect(gatewayDelete).toHaveBeenCalledWith('test2', { deleteFiles: false });
     await expect(access(customWorkspaceDir)).resolves.toBeUndefined();
 
     warnSpy.mockRestore();
@@ -510,7 +592,7 @@ describe('agent config lifecycle', () => {
     });
 
     const { deleteAgentConfig } = await import('@electron/utils/agent-config');
-    await deleteAgentConfig('test2');
+    await deleteAgentConfig('test2', emulateGatewayAgentDelete);
 
     const config = await readOpenClawJson();
     const feishu = (config.channels as Record<string, unknown>).feishu as {
@@ -542,7 +624,7 @@ describe('agent config lifecycle', () => {
     });
     const { deleteAgentConfig } = await import('@electron/utils/agent-config');
 
-    await deleteAgentConfig('test2');
+    await deleteAgentConfig('test2', emulateGatewayAgentDelete);
 
     const config = await readOpenClawJson();
     const telegram = (config.channels as Record<string, unknown>).telegram as {
@@ -581,7 +663,7 @@ describe('agent config lifecycle', () => {
     });
     const { deleteAgentConfig } = await import('@electron/utils/agent-config');
 
-    await deleteAgentConfig('test2');
+    await deleteAgentConfig('test2', emulateGatewayAgentDelete);
 
     const config = await readOpenClawJson();
     expect((config.channels as Record<string, unknown>).telegram).toBeUndefined();
@@ -616,7 +698,7 @@ describe('agent config lifecycle', () => {
     });
     const { deleteAgentConfig } = await import('@electron/utils/agent-config');
 
-    await deleteAgentConfig('test2');
+    await deleteAgentConfig('test2', emulateGatewayAgentDelete);
 
     const config = await readOpenClawJson();
     const discordChannel = (config.channels as {
@@ -831,8 +913,8 @@ describe('agent config lifecycle', () => {
 
     const { createAgent, listAgentsSnapshot } = await import('@electron/utils/agent-config');
 
-    await createAgent('测试2');
-    await createAgent('测试1');
+    await createAgent('测试2', undefined, emulateGatewayAgentCreate, emulateGatewayAgentDelete);
+    await createAgent('测试1', undefined, emulateGatewayAgentCreate, emulateGatewayAgentDelete);
 
     const snapshot = await listAgentsSnapshot();
     const agentIds = snapshot.agents.map((agent) => agent.id);
@@ -852,12 +934,12 @@ describe('agent config lifecycle', () => {
 
     const { createAgent } = await import('@electron/utils/agent-config');
 
-    await createAgent('Research');
+    await createAgent('Research', undefined, emulateGatewayAgentCreate, emulateGatewayAgentDelete);
 
     await expect(readFile(join(testHome, '.openclaw', 'workspace-research', 'IDENTITY.md'), 'utf8')).resolves.toContain('ClawX');
   });
 
-  it('rolls back a committed agent entry when filesystem provisioning fails', async () => {
+  it('rolls back a Gateway-created agent when filesystem provisioning fails', async () => {
     await writeOpenClawJson({
       agents: {
         list: [{ id: 'main', name: 'Main', default: true }],
@@ -867,11 +949,16 @@ describe('agent config lifecycle', () => {
     await writeFile(blockedWorkspace, 'pre-existing file', 'utf8');
     const { createAgent } = await import('@electron/utils/agent-config');
 
-    await expect(createAgent('Research')).rejects.toThrow();
+    await expect(createAgent(
+      'Research',
+      undefined,
+      emulateGatewayAgentCreate,
+      emulateGatewayCreatedAgentRollback,
+    )).rejects.toThrow();
 
     const config = await readOpenClawJson();
-    const agents = (config.agents as { list: Array<{ id: string }> }).list;
-    expect(agents.map((agent) => agent.id)).toEqual(['main']);
+    const agents = (config.agents as { entries: Record<string, unknown> }).entries;
+    expect(Object.keys(agents)).toEqual(['main']);
     await expect(readFile(blockedWorkspace, 'utf8')).resolves.toBe('pre-existing file');
     await expect(access(join(testHome, '.openclaw', 'agents', 'research'))).rejects.toThrow();
   });
@@ -886,11 +973,16 @@ describe('agent config lifecycle', () => {
     await symlink(join(testHome, 'missing-workspace-target'), workspaceLink);
     const { createAgent } = await import('@electron/utils/agent-config');
 
-    await expect(createAgent('Research')).rejects.toThrow();
+    await expect(createAgent(
+      'Research',
+      undefined,
+      emulateGatewayAgentCreate,
+      emulateGatewayCreatedAgentRollback,
+    )).rejects.toThrow();
 
     await expect(lstat(workspaceLink)).resolves.toMatchObject({});
     expect((await lstat(workspaceLink)).isSymbolicLink()).toBe(true);
     const config = await readOpenClawJson();
-    expect((config.agents as { list: Array<{ id: string }> }).list.map((agent) => agent.id)).toEqual(['main']);
+    expect(Object.keys((config.agents as { entries: Record<string, unknown> }).entries)).toEqual(['main']);
   });
 });

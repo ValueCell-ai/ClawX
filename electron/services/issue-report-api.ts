@@ -1,5 +1,6 @@
-import { access, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { access, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { basename, join, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import JSZip from 'jszip';
 import JSON5 from 'json5';
 import type {
@@ -8,10 +9,11 @@ import type {
 } from '@shared/host-api/contract';
 import { logger } from '../utils/logger';
 import { resolveOpenClawConfigPath, resolveOpenClawStateDir } from '../utils/paths';
-import { resolveSessionTranscriptPath } from '../utils/session-files';
+import type { GatewayManager } from '../gateway/manager';
 
 const SAFE_AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const REDACTED = '[REDACTED]';
+const OPENCLAW_8_2_AGENT_SCHEMA_VERSION = 19;
 
 type IssueReportDependencies = {
   stateDir?: string;
@@ -20,6 +22,7 @@ type IssueReportDependencies = {
   openClawLogDir?: string;
   outputDir?: string;
   now?: () => Date;
+  gatewayManager?: Pick<GatewayManager, 'rpc'>;
 };
 
 type IssueReportManifest = {
@@ -116,50 +119,86 @@ function parseSessionKeys(sessionKeys: unknown): Array<{ sessionKey: string; age
 
 class TranscriptUnavailableError extends Error {}
 
-function isInside(parent: string, child: string): boolean {
-  const rel = relative(parent, child);
-  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
-}
-
-async function resolveTranscript(
+async function readSqliteTranscript(
   stateDir: string,
   sessionKey: string,
   agentId: string,
 ): Promise<string> {
-  const sessionsDir = join(stateDir, 'agents', agentId, 'sessions');
-  let sessionsJson: Record<string, unknown>;
+  const databasePath = join(stateDir, 'agents', agentId, 'agent', 'openclaw-agent.sqlite');
   try {
-    sessionsJson = JSON5.parse(await readFile(join(sessionsDir, 'sessions.json'), 'utf8')) as Record<string, unknown>;
-  } catch {
-    throw new TranscriptUnavailableError('The selected conversation transcript could not be found');
-  }
-  const resolution = resolveSessionTranscriptPath(sessionsJson, sessionsDir, sessionKey);
-  if (!resolution.ok) {
-    if (resolution.failure.kind === 'path-outside-scope') {
-      throw new Error('The selected conversation transcript is outside its session directory');
-    }
+    await access(databasePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     throw new TranscriptUnavailableError('The selected conversation transcript could not be found');
   }
 
-  let realSessionsDir: string;
-  let realTranscript: string;
+  const database = new DatabaseSync(databasePath, { readOnly: true });
+  let transactionOpen = false;
   try {
-    [realSessionsDir, realTranscript] = await Promise.all([
-      realpath(sessionsDir),
-      realpath(resolution.resolvedSrcPath),
-    ]);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    database.exec('PRAGMA query_only = ON; PRAGMA busy_timeout = 2000;');
+    const version = database.prepare('PRAGMA user_version').get() as { user_version?: unknown };
+    if (version.user_version !== OPENCLAW_8_2_AGENT_SCHEMA_VERSION) {
+      throw new Error(
+        `Unsupported OpenClaw agent database schema: ${String(version.user_version)}`,
+      );
+    }
+    const requiredTables = [
+      'session_nodes',
+      'transcript_events',
+      'session_transcript_active_events',
+      'session_transcript_index_state',
+    ];
+    const existingTables = database.prepare(
+      `SELECT name FROM sqlite_schema
+       WHERE type = 'table' AND name IN (${requiredTables.map(() => '?').join(', ')})`,
+    ).all(...requiredTables) as Array<{ name?: unknown }>;
+    if (new Set(existingTables.map((row) => row.name)).size !== requiredTables.length) {
+      throw new Error('OpenClaw agent database is missing canonical transcript tables');
+    }
+
+    database.exec('BEGIN');
+    transactionOpen = true;
+    const session = database.prepare(
+      'SELECT current_session_id FROM session_nodes WHERE session_key = ?',
+    ).get(sessionKey) as { current_session_id?: unknown } | undefined;
+    if (typeof session?.current_session_id !== 'string') {
       throw new TranscriptUnavailableError('The selected conversation transcript could not be found');
     }
-    throw error;
+    const indexState = database.prepare(
+      'SELECT needs_rebuild FROM session_transcript_index_state WHERE session_id = ?',
+    ).get(session.current_session_id) as { needs_rebuild?: unknown } | undefined;
+    if (indexState?.needs_rebuild === 1) {
+      throw new Error(`OpenClaw transcript projection requires rebuild: ${sessionKey}`);
+    }
+    const rows = database.prepare(`
+      SELECT events.event_json
+      FROM session_transcript_active_events AS active
+      JOIN transcript_events AS events
+        ON events.session_id = active.session_id
+       AND events.seq = active.event_seq
+      WHERE active.session_id = ?
+      ORDER BY active.active_position ASC
+    `).all(session.current_session_id) as Array<{ event_json?: unknown }>;
+    const lines = rows.map((row) => {
+      if (typeof row.event_json !== 'string') {
+        throw new Error(`OpenClaw transcript contains an invalid event: ${sessionKey}`);
+      }
+      JSON.parse(row.event_json);
+      return row.event_json;
+    });
+    database.exec('COMMIT');
+    transactionOpen = false;
+    return lines.length > 0 ? `${lines.join('\n')}\n` : '';
+  } finally {
+    if (transactionOpen) {
+      try {
+        database.exec('ROLLBACK');
+      } catch {
+        // SQLite may already have rolled back the read transaction.
+      }
+    }
+    database.close();
   }
-  if (!isInside(realSessionsDir, realTranscript)) {
-    throw new Error('The selected conversation transcript is outside its session directory');
-  }
-  const stat = await lstat(realTranscript);
-  if (!stat.isFile()) throw new Error('The selected conversation transcript is not a file');
-  return realTranscript;
 }
 
 async function addOptionalFile(
@@ -253,13 +292,42 @@ async function exportIssueReportInternal(
 ): Promise<IssueReportExportResult> {
   const selectedSessions = parseSessionKeys(payload?.sessionKeys);
   const stateDir = resolve(dependencies.stateDir ?? resolveOpenClawStateDir());
-  const transcripts: Array<{ sessionKey: string; agentId: string; path: string }> = [];
+  const transcripts: Array<{
+    sessionKey: string;
+    agentId: string;
+    content: string;
+  }> = [];
   const skippedSessionKeys: string[] = [];
   for (const selected of selectedSessions) {
     try {
+      if (dependencies.gatewayManager) {
+        try {
+          const history = await dependencies.gatewayManager.rpc('chat.history', {
+            sessionKey: selected.sessionKey,
+            limit: 1_000,
+          }) as { messages?: unknown };
+          if (Array.isArray(history?.messages)) {
+            transcripts.push({
+              ...selected,
+              content: history.messages.map((message) => JSON.stringify({
+                type: 'message',
+                timestamp: (
+                  message && typeof message === 'object'
+                    ? (message as Record<string, unknown>).timestamp
+                    : undefined
+                ) ?? new Date(0).toISOString(),
+                message,
+              })).join('\n') + '\n',
+            });
+            continue;
+          }
+        } catch {
+          // Compatibility fallback for archived legacy transcripts.
+        }
+      }
       transcripts.push({
         ...selected,
-        path: await resolveTranscript(stateDir, selected.sessionKey, selected.agentId),
+        content: await readSqliteTranscript(stateDir, selected.sessionKey, selected.agentId),
       });
     } catch (error) {
       if (!(error instanceof TranscriptUnavailableError)) throw error;
@@ -289,14 +357,17 @@ async function exportIssueReportInternal(
 
   const usedTranscriptPaths = new Set<string>();
   for (const transcript of transcripts) {
-    const fileName = basename(transcript.path);
+    const fileName = `${transcript.sessionKey.replace(/[^A-Za-z0-9_-]+/g, '-')}.jsonl`;
     let transcriptArchivePath = `conversations/${transcript.agentId}/${fileName}`;
     for (let suffix = 2; usedTranscriptPaths.has(transcriptArchivePath); suffix += 1) {
       const stem = fileName.toLowerCase().endsWith('.jsonl') ? fileName.slice(0, -6) : fileName;
       transcriptArchivePath = `conversations/${transcript.agentId}/${stem}-${suffix}.jsonl`;
     }
     usedTranscriptPaths.add(transcriptArchivePath);
-    zip.file(transcriptArchivePath, await readFile(transcript.path));
+    zip.file(
+      transcriptArchivePath,
+      transcript.content,
+    );
     manifest.includedFiles.push(transcriptArchivePath);
   }
 

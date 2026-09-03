@@ -127,9 +127,18 @@ export async function listImageGenerationProvidersInProcess(params: {
 }>> {
   const { listRuntimeImageGenerationProviders } = await getImageGenerationRuntime();
   const { resolveAgentModelPrimaryValue } = await getModelInputHelpers();
-  const defaults = (params.config as { agents?: { defaults?: { imageGenerationModel?: unknown } } })
+  const defaults = (params.config as {
+    agents?: {
+      defaults?: {
+        mediaModels?: { image?: unknown };
+        imageGenerationModel?: unknown;
+      };
+    };
+  })
     ?.agents?.defaults;
-  const primaryRef = resolveAgentModelPrimaryValue(defaults?.imageGenerationModel);
+  const primaryRef = resolveAgentModelPrimaryValue(
+    defaults?.mediaModels?.image ?? defaults?.imageGenerationModel,
+  );
   const selectedProvider = primaryRef?.includes('/')
     ? primaryRef.slice(0, primaryRef.indexOf('/')).trim().toLowerCase()
     : undefined;

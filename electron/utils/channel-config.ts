@@ -617,12 +617,6 @@ function transformChannelConfig(
 
         transformedConfig.groupPolicy = 'allowlist';
         transformedConfig.dm = { enabled: false };
-        transformedConfig.retry = {
-            attempts: 3,
-            minDelayMs: 500,
-            maxDelayMs: 30000,
-            jitter: 0.1,
-        };
 
         if (guildId && typeof guildId === 'string' && guildId.trim()) {
             const guildConfig: Record<string, unknown> = {
@@ -675,6 +669,15 @@ function transformChannelConfig(
         }
 
         transformedConfig.allowFrom = allowFrom;
+    }
+
+    if (channelType === 'qqbot') {
+        const allowFrom = transformedConfig.allowFrom ?? existingAccountConfig.allowFrom;
+        transformedConfig.allowFrom = Array.isArray(allowFrom)
+            ? allowFrom
+            : typeof allowFrom === 'string' || typeof allowFrom === 'number'
+                ? [allowFrom]
+                : ['*'];
     }
 
     if (channelType === 'whatsapp') {
@@ -804,6 +807,9 @@ export async function saveChannelConfig(
     channelType: string,
     config: ChannelConfigData,
     accountId?: string,
+    options?: {
+        applyRelatedConfig?: (config: OpenClawConfig) => void;
+    },
 ): Promise<void> {
     const resolvedChannelType = resolveStoredChannelType(channelType);
     const resolvedAccountId = accountId || DEFAULT_ACCOUNT_ID;
@@ -882,6 +888,10 @@ export async function saveChannelConfig(
             }
         }
 
+        // Apply routing ownership in this same replayable coordinator mutation.
+        // A channel save may trigger an immediate native Gateway reload, so a
+        // follow-up config transaction would be too late for multi-agent startup.
+        options?.applyRelatedConfig?.(currentConfig);
         sanitizeChannelSectionsBeforeWrite(currentConfig);
     });
     logger.info('Channel config saved', {

@@ -242,16 +242,47 @@ describe('WeCom plugin configuration', () => {
     await saveChannelConfig('qqbot', { appId: 'qq-app', token: 'qq-token', appSecret: 'qq-secret' }, 'default');
 
     const config = await readOpenClawJson();
-    const channels = config.channels as Record<string, { accounts?: Record<string, unknown> }>;
+    const channels = config.channels as Record<string, {
+      allowFrom?: unknown[];
+      accounts?: Record<string, { allowFrom?: unknown[] }>;
+    }>;
     const plugins = config.plugins as { allow?: string[]; entries?: Record<string, Record<string, unknown>> };
 
     expect(channels.discord.accounts?.default).toBeDefined();
     expect(channels.qqbot.accounts?.default).toBeDefined();
+    expect(channels.qqbot.allowFrom).toEqual(['*']);
+    expect(channels.qqbot.accounts?.default.allowFrom).toEqual(['*']);
     expect(channels.whatsapp.accounts?.default).toBeDefined();
     expect(plugins.allow).toEqual(expect.arrayContaining(['discord', 'qqbot', 'whatsapp']));
     expect(plugins.entries?.discord).toEqual({ enabled: true });
     expect(plugins.entries?.qqbot).toEqual({ enabled: true });
     expect(plugins.entries?.whatsapp).toEqual({ enabled: true });
+  });
+
+  it('preserves and normalizes an existing QQBot allowFrom value when saving credentials', async () => {
+    const { saveChannelConfig } = await import('@electron/utils/channel-config');
+
+    await writeOpenClawJson({
+      channels: {
+        qqbot: {
+          enabled: true,
+          defaultAccount: 'default',
+          accounts: {
+            default: { appId: 'qq-app', clientSecret: 'old-secret', allowFrom: 'qq-user' },
+          },
+        },
+      },
+    });
+
+    await saveChannelConfig('qqbot', { appId: 'qq-app', clientSecret: 'new-secret' }, 'default');
+
+    const config = await readOpenClawJson();
+    const qqbot = (config.channels as Record<string, {
+      allowFrom?: unknown[];
+      accounts?: Record<string, { allowFrom?: unknown[] }>;
+    }>).qqbot;
+    expect(qqbot.allowFrom).toEqual(['qq-user']);
+    expect(qqbot.accounts?.default.allowFrom).toEqual(['qq-user']);
   });
 
   it('saves discord guild channel allowlist without schema-invalid allow flags', async () => {
@@ -479,7 +510,15 @@ describe('coordinated channel config delivery', () => {
 
   it('mutates the running coordinator snapshot without replacing it from the local file', async () => {
     await writeOpenClawJson({ localOnly: true });
-    let runningConfig: Record<string, unknown> = { gatewayOnly: true };
+    let runningConfig: Record<string, unknown> = {
+      gatewayOnly: true,
+      agents: {
+        entries: {
+          main: { name: 'Main' },
+          code: { name: 'Code' },
+        },
+      },
+    };
     let hash = 'hash-1';
     const manager = {
       getStatus: vi.fn(() => ({ state: 'running' as const })),
@@ -496,8 +535,13 @@ describe('coordinated channel config delivery', () => {
     const { registerOpenClawConfigCoordinator } = await import('@electron/gateway/config-delivery');
     registerOpenClawConfigCoordinator(manager);
     const channelConfig = await import('@electron/utils/channel-config');
+    const { ensureScopedChannelBindingInConfig } = await import('@electron/utils/agent-config');
 
-    await channelConfig.saveChannelConfig('telegram', { botToken: 'gateway-token' }, 'default');
+    await channelConfig.saveChannelConfig('telegram', { botToken: 'gateway-token' }, 'default', {
+      applyRelatedConfig: (config) => {
+        ensureScopedChannelBindingInConfig(config, 'telegram', 'default');
+      },
+    });
 
     expect(runningConfig).toMatchObject({
       gatewayOnly: true,
@@ -506,7 +550,11 @@ describe('coordinated channel config delivery', () => {
           accounts: { default: { botToken: 'gateway-token' } },
         },
       },
+      bindings: [
+        { agentId: 'main', match: { channel: 'telegram', accountId: 'default' } },
+      ],
     });
+    expect(manager.rpc.mock.calls.filter(([method]) => method === 'config.set')).toHaveLength(1);
     expect(await readOpenClawJson()).toEqual({ localOnly: true });
     expect(channelConfig).not.toHaveProperty('writeOpenClawConfig');
   });

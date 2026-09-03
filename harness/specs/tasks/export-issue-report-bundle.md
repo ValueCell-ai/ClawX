@@ -16,6 +16,7 @@ touchedAreas:
   - electron/extensions/builtin/diagnostics.ts
   - src/lib/host-api.ts
   - src/components/settings/IssueReportExport.tsx
+  - harness/reference/openclaw-session-storage.md
   - src/pages/Settings/index.tsx
   - shared/i18n/locales/en/settings.json
   - shared/i18n/locales/zh/settings.json
@@ -31,9 +32,9 @@ expectedUserBehavior:
   - Settings contains an always-visible Support section with an issue-report export button.
   - Activating the button opens a localized dialog that lists transcripts, sanitized OpenClaw configuration, diagnostic logs, and the manifest as bundle contents.
   - The user can select individual conversations or select all available conversations.
-  - Export creates a ZIP on the operating system Desktop directory containing every selected JSONL transcript, a sanitized OpenClaw JSON configuration when available, logs, and a manifest.
+  - Export creates a ZIP on the operating system Desktop directory containing every selected conversation as JSONL generated from Gateway history or the canonical per-agent SQLite transcript store, a sanitized OpenClaw JSON configuration when available, logs, and a manifest.
   - After success, the dialog displays the full ZIP path and offers a Show in Folder action.
-  - Stale selections with missing transcripts are skipped and reported; export fails if no selected transcript is available or if a selected path is unsafe.
+  - Stale selections with missing transcripts are skipped and reported; export fails if no selected transcript is available.
 requiredProfiles:
   - fast
   - comms
@@ -53,8 +54,9 @@ requiredTests:
   - tests/e2e/settings-issue-report.spec.ts
 acceptance:
   - Renderer invokes diagnostics.exportIssueReport only through src/lib/host-api.ts.
-  - Main requires at least one session key and resolves every available selected transcript under its matching agent sessions directory without following an escaping symlink.
-  - The ZIP contains every available selected transcript, a recursively redacted OpenClaw config when present, available ClawX and OpenClaw log files with common credential forms redacted, and a manifest that reports stale selections.
+  - Main requires at least one session key, prefers Gateway `chat.history`, and falls back only to a read-only transaction over the matching agent's canonical SQLite transcript tables.
+  - The ZIP contains every available selected transcript serialized as JSONL, a recursively redacted OpenClaw config when present, available ClawX and OpenClaw log files with common credential forms redacted, and a manifest that reports stale selections.
+  - Active OpenClaw 8.2 conversations are never read from legacy `sessions.json` or transcript JSONL files.
   - Archive entry names do not expose source absolute paths.
   - Export writes a uniquely named ZIP atomically to the Desktop directory on macOS and Windows and returns its absolute path.
   - The success state visibly renders the path and can reveal it in the platform file manager.
@@ -72,7 +74,7 @@ references:
 - Add an issue-report entry in Settings and a dialog that previews bundle contents.
 - Allow one, multiple, or all available conversations to be selected.
 - Send only selected session keys through the typed Host API; all file access remains in Main.
-- Include selected transcripts, sanitized OpenClaw config, available application/runtime logs, and a manifest.
+- Include selected transcripts from Gateway history or canonical SQLite, sanitized OpenClaw config, available application/runtime logs, and a manifest.
 - Show and reveal the resulting ZIP path.
 
 ## Out Of Scope

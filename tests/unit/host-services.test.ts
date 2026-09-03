@@ -15,11 +15,13 @@ const {
   deleteChannelConfigMock,
   ensureFeishuPluginInstalledMock,
   ensureScopedChannelBindingMock,
+  ensureScopedChannelBindingInConfigMock,
   ensureClawXContextMock,
   ensureWeChatPluginInstalledMock,
   getAllSettingsMock,
   getChannelFormValuesMock,
   getSettingMock,
+  inspectOpenClawAgentDatabaseMigrationsMock,
   listLogFilesMock,
   logDir,
   listAgentsSnapshotFromConfigMock,
@@ -60,11 +62,13 @@ const {
   deleteChannelConfigMock: vi.fn(),
   ensureFeishuPluginInstalledMock: vi.fn(),
   ensureScopedChannelBindingMock: vi.fn(),
+  ensureScopedChannelBindingInConfigMock: vi.fn(),
   ensureClawXContextMock: vi.fn(),
   ensureWeChatPluginInstalledMock: vi.fn(),
   getAllSettingsMock: vi.fn(),
   getChannelFormValuesMock: vi.fn(),
   getSettingMock: vi.fn(),
+  inspectOpenClawAgentDatabaseMigrationsMock: vi.fn(),
   listLogFilesMock: vi.fn(),
   logDir: '/tmp/clawx-host-services-test-logs',
   listAgentsSnapshotFromConfigMock: vi.fn(),
@@ -187,6 +191,7 @@ vi.mock('@electron/utils/agent-config', () => ({
   createAgent: (...args: unknown[]) => createAgentMock(...args),
   deleteAgentConfig: (...args: unknown[]) => deleteAgentConfigMock(...args),
   ensureScopedChannelBinding: (...args: unknown[]) => ensureScopedChannelBindingMock(...args),
+  ensureScopedChannelBindingInConfig: (...args: unknown[]) => ensureScopedChannelBindingInConfigMock(...args),
   listAgentsSnapshot: (...args: unknown[]) => listAgentsSnapshotMock(...args),
   listAgentsSnapshotFromConfig: (...args: unknown[]) => listAgentsSnapshotFromConfigMock(...args),
   migrateLegacyChannelWideBinding: (...args: unknown[]) => migrateLegacyChannelWideBindingMock(...args),
@@ -208,6 +213,12 @@ vi.mock('@electron/utils/plugin-install', () => ({
 
 vi.mock('@electron/utils/openclaw-workspace', () => ({
   ensureClawXContext: (...args: unknown[]) => ensureClawXContextMock(...args),
+}));
+
+vi.mock('@electron/utils/openclaw-agent-db-repair', () => ({
+  inspectOpenClawAgentDatabaseMigrations: (...args: unknown[]) => (
+    inspectOpenClawAgentDatabaseMigrationsMock(...args)
+  ),
 }));
 
 vi.mock('@electron/services/providers/provider-runtime-sync', () => ({
@@ -317,6 +328,11 @@ describe('host services', () => {
     listConfiguredChannelsMock.mockResolvedValue([]);
     listConfiguredChannelsFromConfigMock.mockResolvedValue([]);
     listConfiguredChannelAccountsFromConfigMock.mockReturnValue({});
+    inspectOpenClawAgentDatabaseMigrationsMock.mockResolvedValue({
+      inspected: [],
+      repaired: [],
+      pendingMigration: [],
+    });
     listAgentsSnapshotMock.mockResolvedValue({
       agents: [],
       defaultAgentId: 'main',
@@ -855,8 +871,9 @@ describe('host services', () => {
       'feishu',
       { appId: 'cli_new', appSecret: 'new-secret' },
       'default',
+      expect.objectContaining({ applyRelatedConfig: expect.any(Function) }),
     );
-    expect(ensureScopedChannelBindingMock).toHaveBeenCalledWith('feishu', 'default');
+    expect(ensureScopedChannelBindingMock).not.toHaveBeenCalled();
     expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
     expect(gatewayManager.restart).not.toHaveBeenCalled();
@@ -891,6 +908,7 @@ describe('host services', () => {
       'feishu',
       { appId: 'cli_new', appSecret: 'new-secret' },
       'default',
+      expect.objectContaining({ applyRelatedConfig: expect.any(Function) }),
     );
     expect(gatewayManager.debouncedRestart).toHaveBeenCalledWith(0);
   });
@@ -913,11 +931,22 @@ describe('host services', () => {
       'telegram',
       { botToken: 'new-token', allowedUsers: '1' },
       'default',
+      expect.objectContaining({ applyRelatedConfig: expect.any(Function) }),
+    );
+    const saveOptions = saveChannelConfigMock.mock.calls[0]?.[3] as {
+      applyRelatedConfig?: (config: Record<string, unknown>) => void;
+    };
+    const configSnapshot = {};
+    saveOptions.applyRelatedConfig?.(configSnapshot);
+    expect(ensureScopedChannelBindingInConfigMock).toHaveBeenCalledWith(
+      configSnapshot,
+      'telegram',
+      'default',
     );
     expect(gatewayManager.restart).not.toHaveBeenCalled();
   });
 
-  it('deletes agents by awaiting config commit then removing workspace without restarting', async () => {
+  it('lets OpenClaw remove a managed workspace before confirming deletion', async () => {
     const snapshot = {
       agents: [],
       defaultAgentId: 'main',
@@ -927,10 +956,17 @@ describe('host services', () => {
       channelAccountOwners: {},
     };
     const removedEntry = { id: 'code', workspace: '/tmp/code-workspace' };
-    deleteAgentConfigMock.mockResolvedValue({ snapshot, removedEntry });
+    deleteAgentConfigMock.mockImplementation(async (
+      agentId: string,
+      deleteAgentThroughGateway: (id: string, options: { deleteFiles: boolean }) => Promise<unknown>,
+    ) => {
+      await deleteAgentThroughGateway(agentId, { deleteFiles: true });
+      return { snapshot, removedEntry };
+    });
     removeAgentWorkspaceDirectoryMock.mockResolvedValue('/tmp/code-workspace');
     const gatewayManager = {
       getStatus: vi.fn(() => ({ state: 'stopped' })),
+      rpc: vi.fn().mockResolvedValue({ ok: true, agentId: 'code' }),
       restart: vi.fn().mockResolvedValue(undefined),
     };
     const { createAgentsApi } = await import('@electron/services/agents-api');
@@ -942,11 +978,34 @@ describe('host services', () => {
         removedWorkspacePath: '/tmp/code-workspace',
       });
 
-    expect(deleteAgentConfigMock).toHaveBeenCalledWith('code');
+    expect(deleteAgentConfigMock).toHaveBeenCalledWith('code', expect.any(Function));
+    expect(gatewayManager.rpc).toHaveBeenCalledWith('agents.delete', {
+      agentId: 'code',
+      deleteFiles: true,
+    });
     expect(gatewayManager.restart).not.toHaveBeenCalled();
     expect(removeAgentWorkspaceDirectoryMock).toHaveBeenCalledWith(removedEntry);
     expect(deleteAgentConfigMock.mock.invocationCallOrder[0])
       .toBeLessThan(removeAgentWorkspaceDirectoryMock.mock.invocationCallOrder[0]);
+  });
+
+  it('does not remove an Agent workspace when the authoritative delete RPC fails', async () => {
+    deleteAgentConfigMock.mockImplementation(async (
+      agentId: string,
+      deleteAgentThroughGateway: (id: string, options: { deleteFiles: boolean }) => Promise<unknown>,
+    ) => {
+      await deleteAgentThroughGateway(agentId, { deleteFiles: true });
+      throw new Error('unreachable');
+    });
+    const gatewayManager = {
+      rpc: vi.fn().mockRejectedValue(new Error('agents.delete unavailable')),
+    };
+    const { createAgentsApi } = await import('@electron/services/agents-api');
+
+    await expect(createAgentsApi({ gatewayManager: gatewayManager as never }).delete({ id: 'code' }))
+      .rejects.toThrow('agents.delete unavailable');
+
+    expect(removeAgentWorkspaceDirectoryMock).not.toHaveBeenCalled();
   });
 
   it('updates agent model without scheduling lifecycle work', async () => {
@@ -1005,7 +1064,7 @@ describe('host services', () => {
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
   });
 
-  it('creates and updates agents without scheduling lifecycle work', async () => {
+  it('creates and updates agents without lifecycle work when databases are current', async () => {
     const snapshot = {
       agents: [{ id: 'writer', name: 'Writer' }],
       defaultAgentId: 'main',
@@ -1014,12 +1073,21 @@ describe('host services', () => {
       channelOwners: {},
       channelAccountOwners: {},
     };
-    createAgentMock.mockResolvedValue(snapshot);
+    createAgentMock.mockImplementation(async (
+      name: string,
+      options: { inheritWorkspace?: boolean },
+      createAgentThroughGateway: (normalizedName: string) => Promise<unknown>,
+    ) => {
+      expect(options).toEqual({ inheritWorkspace: false });
+      await createAgentThroughGateway(name);
+      return snapshot;
+    });
     updateAgentNameMock.mockResolvedValue(snapshot);
     const gatewayManager = {
       getStatus: vi.fn(() => ({ state: 'running' })),
       debouncedReload: vi.fn(),
       debouncedRestart: vi.fn(),
+      rpc: vi.fn().mockResolvedValue({ status: 'created', agentId: 'writer' }),
       restart: vi.fn(),
     };
     const { createAgentsApi } = await import('@electron/services/agents-api');
@@ -1030,7 +1098,97 @@ describe('host services', () => {
 
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
     expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
+    expect(gatewayManager.rpc).toHaveBeenCalledWith('agents.create', { name: 'Writer' });
     expect(gatewayManager.restart).not.toHaveBeenCalled();
+  });
+
+  it('rolls back failed post-create provisioning through agents.delete', async () => {
+    createAgentMock.mockImplementation(async (
+      name: string,
+      _options: unknown,
+      createAgentThroughGateway: (normalizedName: string) => Promise<unknown>,
+      rollbackAgentThroughGateway: (agentId: string) => Promise<unknown>,
+    ) => {
+      await createAgentThroughGateway(name);
+      await rollbackAgentThroughGateway('writer');
+      throw new Error('workspace provisioning failed');
+    });
+    const gatewayManager = {
+      rpc: vi.fn().mockResolvedValue({ ok: true, agentId: 'writer' }),
+    };
+    const { createAgentsApi } = await import('@electron/services/agents-api');
+
+    await expect(createAgentsApi({ gatewayManager: gatewayManager as never }).create({ name: 'Writer' }))
+      .rejects.toThrow('workspace provisioning failed');
+
+    expect(gatewayManager.rpc).toHaveBeenNthCalledWith(1, 'agents.create', { name: 'Writer' });
+    expect(gatewayManager.rpc).toHaveBeenNthCalledWith(2, 'agents.delete', {
+      agentId: 'writer',
+      deleteFiles: true,
+    });
+  });
+
+  it('awaits a managed migration before a newly created agent becomes ready', async () => {
+    const snapshot = {
+      agents: [{ id: 'writer', name: 'Writer' }],
+      defaultAgentId: 'main',
+      defaultModelRef: null,
+      configuredChannelTypes: [],
+      channelOwners: {},
+      channelAccountOwners: {},
+    };
+    createAgentMock.mockResolvedValue(snapshot);
+    inspectOpenClawAgentDatabaseMigrationsMock
+      .mockResolvedValueOnce({
+        inspected: ['/tmp/writer/openclaw-agent.sqlite'],
+        repaired: [],
+        pendingMigration: ['/tmp/writer/openclaw-agent.sqlite'],
+      })
+      .mockResolvedValueOnce({
+        inspected: ['/tmp/writer/openclaw-agent.sqlite'],
+        repaired: [],
+        pendingMigration: [],
+      });
+    const gatewayManager = {
+      restart: vi.fn().mockResolvedValue(undefined),
+    };
+    const { createAgentsApi } = await import('@electron/services/agents-api');
+    const providerRuntimeSync = await import('@electron/services/providers/provider-runtime-sync');
+
+    await expect(createAgentsApi({ gatewayManager: gatewayManager as never }).create({
+      name: 'Writer',
+    })).resolves.toEqual({ success: true, ...snapshot });
+
+    expect(providerRuntimeSync.syncAllProviderAuthToRuntime).toHaveBeenCalledTimes(1);
+    expect(gatewayManager.restart).toHaveBeenCalledTimes(1);
+    expect(inspectOpenClawAgentDatabaseMigrationsMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not report a newly created agent ready when migration remains pending', async () => {
+    const snapshot = {
+      agents: [{ id: 'writer', name: 'Writer' }],
+      defaultAgentId: 'main',
+      defaultModelRef: null,
+      configuredChannelTypes: [],
+      channelOwners: {},
+      channelAccountOwners: {},
+    };
+    createAgentMock.mockResolvedValue(snapshot);
+    inspectOpenClawAgentDatabaseMigrationsMock.mockResolvedValue({
+      inspected: ['/tmp/writer/openclaw-agent.sqlite'],
+      repaired: [],
+      pendingMigration: ['/tmp/writer/openclaw-agent.sqlite'],
+    });
+    const gatewayManager = {
+      restart: vi.fn().mockResolvedValue(undefined),
+    };
+    const { createAgentsApi } = await import('@electron/services/agents-api');
+
+    await expect(createAgentsApi({ gatewayManager: gatewayManager as never }).create({
+      name: 'Writer',
+    })).rejects.toThrow('Agent database migration did not complete for 1 database(s)');
+
+    expect(gatewayManager.restart).toHaveBeenCalledTimes(1);
   });
 
   it('removes agent channel bindings without scheduling lifecycle work', async () => {
@@ -1151,7 +1309,12 @@ describe('host services', () => {
     await createChannelsApi({ gatewayManager: gatewayManager as never }).startLogin({ channelType: 'wechat' });
 
     await vi.waitFor(() => {
-      expect(saveChannelConfigMock).toHaveBeenCalledWith('wechat', { enabled: true }, 'wx-account');
+      expect(saveChannelConfigMock).toHaveBeenCalledWith(
+        'wechat',
+        { enabled: true },
+        'wx-account',
+        expect.objectContaining({ applyRelatedConfig: expect.any(Function) }),
+      );
       expect(gatewayManager.debouncedRestart).toHaveBeenCalledWith(0);
     });
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();

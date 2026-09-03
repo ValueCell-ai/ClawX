@@ -15,15 +15,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * True when the user manages memorySearch themselves: either
- * `agents.defaults.memorySearch` or any `agents.list[].memorySearch` exists.
+ * True when the user manages memory search themselves through the 8.1
+ * top-level default, a keyed per-agent override, or Doctor-only legacy input.
  */
 export function hasUserMemorySearchConfig(config: Record<string, unknown>): boolean {
+  const memory = isRecord(config.memory) ? config.memory : undefined;
+  if (memory?.search !== undefined) return true;
+
   const agents = isRecord(config.agents) ? config.agents : undefined;
   if (!agents) return false;
 
   const defaults = isRecord(agents.defaults) ? agents.defaults : undefined;
   if (defaults && defaults.memorySearch !== undefined) return true;
+
+  const entries = isRecord(agents.entries) ? Object.values(agents.entries) : [];
+  if (entries.some((entry) => (
+    isRecord(entry)
+    && isRecord(entry.memory)
+    && entry.memory.search !== undefined
+  ))) return true;
 
   const list = Array.isArray(agents.list) ? agents.list : [];
   return list.some((entry) => isRecord(entry) && entry.memorySearch !== undefined);
@@ -39,26 +49,26 @@ export function ensureMemorySearchFtsDefault(
   config: Record<string, unknown>,
   migrateLegacyDisabledDefault = false,
 ): MemorySearchDefaultResult {
-  const agents = (isRecord(config.agents) ? config.agents : {}) as Record<string, unknown>;
-  const list = Array.isArray(agents.list) ? agents.list : [];
-  if (list.some((entry) => isRecord(entry) && entry.memorySearch !== undefined)) {
-    return 'unchanged';
-  }
-
-  const defaults = (isRecord(agents.defaults) ? agents.defaults : {}) as Record<string, unknown>;
-  const memorySearch = defaults.memorySearch;
-
-  if (memorySearch !== undefined) {
-    const isLegacyDisabledDefault = isRecord(memorySearch)
-      && Object.keys(memorySearch).length === 1
-      && memorySearch.enabled === false;
+  let migratedLegacyDefault = false;
+  if (hasUserMemorySearchConfig(config)) {
+    const agents = isRecord(config.agents) ? config.agents : undefined;
+    const defaults = agents && isRecord(agents.defaults) ? agents.defaults : undefined;
+    const legacyMemorySearch = defaults?.memorySearch;
+    const isLegacyDisabledDefault = isRecord(legacyMemorySearch)
+      && Object.keys(legacyMemorySearch).length === 1
+      && legacyMemorySearch.enabled === false;
     if (!migrateLegacyDisabledDefault || !isLegacyDisabledDefault) {
       return 'unchanged';
     }
+    delete defaults!.memorySearch;
+    migratedLegacyDefault = true;
   }
 
-  defaults.memorySearch = { enabled: true, provider: 'none' };
-  agents.defaults = defaults;
-  config.agents = agents;
-  return memorySearch === undefined ? 'seeded' : 'migrated';
+  const memory = (isRecord(config.memory) ? config.memory : {}) as Record<string, unknown>;
+  if (memory.search !== undefined) {
+    return 'unchanged';
+  }
+  memory.search = { enabled: true, provider: 'none' };
+  config.memory = memory;
+  return migratedLegacyDefault ? 'migrated' : 'seeded';
 }

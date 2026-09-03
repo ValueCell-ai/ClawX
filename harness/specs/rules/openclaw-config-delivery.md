@@ -14,9 +14,34 @@ ClawX must defer runtime config planning to the bundled OpenClaw Gateway.
 
 The Main-owned config coordinator must own the entire read-modify-write transaction. Production helpers must not write the active OpenClaw config and then notify another layer afterward.
 
+Intentional Agent creation and deletion must use OpenClaw's `agents.create` and
+`agents.delete` RPCs. A generic `config.set` mutation must never add or remove an
+Agent roster entry.
+
+Completed Agent deletion journals must be claimed before recreating the same
+Agent ID. For ClawX-managed workspaces, deletion must let OpenClaw remove both
+the files and durable bootstrap attestation; custom workspace paths must remain
+on disk. Same-ID recreation may clear stale attestation only when a completed
+legacy deletion tombstone proves that its preserved workspace path has since
+vanished. Incomplete deletion journals must continue fencing their owned paths,
+and any failure after roster creation must roll the new Agent back through
+`agents.delete`.
+
 When the Gateway is running, the coordinator prefers the runtime-shaped `config.get.config` object as the mutation baseline, applies the caller's mutator, and commits through `config.set` with the returned `hash` as `baseHash`. Source-shaped `raw` is only a compatibility fallback because its redacted secret paths may not align with OpenClaw's write-side runtime snapshot. A successful mutation must not be followed by `SIGUSR1` or a redundant ClawX process restart. Base-hash conflicts retry once from a new snapshot; other RPC failures fail closed instead of performing an out-of-band file write. When `config.set` itself durably writes the exact requested config and then a native code-1012 reload drops its response, the coordinator may verify that persisted commit after Gateway leaves running state and accept it without replaying or rewriting the mutation.
 
 Coordinator mutators are replayable transformations. They must not perform filesystem writes, SQLite writes, settings writes, lifecycle actions, or other non-idempotent external effects; preload required external inputs before entering the mutator and perform follow-up effects only after a successful commit.
+
+When enabling or changing a channel account can trigger an immediate native
+Gateway reload, the same coordinator mutation must also persist any inferred
+account-scoped Agent binding required for multi-agent routing. A channel must
+not become enabled in one config revision while its required owner is deferred
+to a follow-up mutation.
+
+Plugin-backed channel saves must satisfy the bundled plugin's runtime schema,
+including required defaults that are not exposed by the ClawX form. Startup
+sanitization must migrate legacy ClawX channel shapes before delivery, preserve
+valid user allowlists, and normalize recoverable scalar values without
+discarding their intent.
 
 Gateway WebSocket traces must replace serialized `raw` config-write payloads with a redacted marker. They must not log credentials introduced by a mutator.
 

@@ -102,6 +102,8 @@ export function createDiagnosticsApi(ctx: DiagnosticsApiContext): CompleteHostSe
     },
     acpTrace: async () => getAcpTraceSnapshot(),
     recordAcpTrace: async (payload) => recordRendererAcpTrace(payload),
-    exportIssueReport: async (payload) => exportIssueReport(payload),
+    exportIssueReport: async (payload) => exportIssueReport(payload, {
+      gatewayManager: ctx.gatewayManager,
+    }),
   };
 }

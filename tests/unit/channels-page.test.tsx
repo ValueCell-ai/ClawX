@@ -311,8 +311,12 @@ describe('Channels page status refresh', () => {
     ]);
   });
 
-  it('removes a channel optimistically before the host delete settles', async () => {
-    subscribeHostEventMock.mockImplementation(() => vi.fn());
+  it('keeps a channel optimistically removed when stale runtime refreshes arrive during deletion', async () => {
+    let channelStatusHandler: (() => void) | undefined;
+    subscribeHostEventMock.mockImplementation((eventName: string, handler: () => void) => {
+      if (eventName === 'gateway:channel-status') channelStatusHandler = handler;
+      return vi.fn();
+    });
     const deleteDeferred = createDeferred<{ success: true }>();
     hostApiCallMock.mockImplementation(async (path: string) => {
       if (path === 'channels.accounts') {
@@ -347,6 +351,15 @@ describe('Channels page status refresh', () => {
       expect(screen.queryByTitle('account.deleteChannel')).not.toBeInTheDocument();
     });
     expect(toastSuccessMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      channelStatusHandler?.();
+    });
+    await waitFor(() => {
+      const runtimeRefreshes = hostApiCallMock.mock.calls.filter(([path]) => path === 'channels.accounts');
+      expect(runtimeRefreshes.length).toBeGreaterThan(1);
+      expect(screen.queryByTitle('account.deleteChannel')).not.toBeInTheDocument();
+    });
 
     await act(async () => {
       deleteDeferred.resolve({ success: true });

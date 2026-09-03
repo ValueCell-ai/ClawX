@@ -293,6 +293,7 @@ export async function runOpenClawDoctorRepair(): Promise<boolean> {
       ...baseEnvPatched,
       ...uvEnv,
       OPENCLAW_NO_RESPAWN: '1',
+      OPENCLAW_SUPERVISOR_MODE: 'external',
     };
 
     const child = utilityProcess.fork(entryScript, doctorArgs, {

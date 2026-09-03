@@ -89,6 +89,28 @@ function removeDeletedTarget(groups: ChannelGroupItem[], target: DeleteTarget): 
   return groups.filter((group) => group.channelType !== target.channelType);
 }
 
+function deleteTargetKey(target: DeleteTarget): string {
+  return `${target.channelType}:${target.accountId ?? '*'}`;
+}
+
+function hasDeleteTarget(groups: ChannelGroupItem[], target: DeleteTarget): boolean {
+  const group = groups.find((candidate) => candidate.channelType === target.channelType);
+  if (!group) return false;
+  if (!target.accountId) return true;
+  return group.accounts.some((account) => account.accountId === target.accountId);
+}
+
+function suppressDeletingTargets(
+  groups: ChannelGroupItem[],
+  targets: Iterable<DeleteTarget>,
+): ChannelGroupItem[] {
+  let next = groups;
+  for (const target of targets) {
+    next = removeDeletedTarget(next, target);
+  }
+  return next;
+}
+
 const DEFAULT_GATEWAY_HEALTH: GatewayHealthSummary = {
   state: 'healthy',
   reasons: [],
@@ -127,6 +149,7 @@ export function Channels() {
   );
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const convergenceRefreshTimersRef = useRef<number[]>([]);
+  const deletingTargetsRef = useRef(new Map<string, { target: DeleteTarget; durable: boolean }>());
   const fetchInFlightRef = useRef(false);
   const queuedFetchOptionsRef = useRef<FetchPageDataOptions | null>(null);
   const agentsFetchInFlightRef = useRef<Promise<void> | null>(null);
@@ -228,7 +251,19 @@ export function Channels() {
           throw new Error(channelsPayload.error || 'Failed to load channels');
         }
 
-        setChannelGroups(channelsPayload.channels || []);
+        const fetchedGroups = channelsPayload.channels || [];
+        const pendingDeletes = [...deletingTargetsRef.current.values()];
+        setChannelGroups(suppressDeletingTargets(
+          fetchedGroups,
+          pendingDeletes.map(({ target }) => target),
+        ));
+        if (!configOnly) {
+          for (const { target, durable } of pendingDeletes) {
+            if (durable && !hasDeleteTarget(fetchedGroups, target)) {
+              deletingTargetsRef.current.delete(deleteTargetKey(target));
+            }
+          }
+        }
         setGatewayHealth(channelsPayload.gatewayHealth || DEFAULT_GATEWAY_HEALTH);
         setDiagnosticsSnapshot(null);
         setShowDiagnostics(false);
@@ -459,16 +494,21 @@ export function Channels() {
     // Close the dialog and update the list before waiting for OpenClaw's
     // coordinated config delivery. Main still owns the durable mutation; on
     // failure, reload the file-backed view to restore the actual state.
+    const targetKey = deleteTargetKey(target);
+    deletingTargetsRef.current.set(targetKey, { target, durable: false });
     setDeleteTarget(null);
     setChannelGroups((prev) => removeDeletedTarget(prev, target));
 
     try {
       await hostApi.channels.deleteConfig(target.channelType, target.accountId);
+      deletingTargetsRef.current.set(targetKey, { target, durable: true });
       toast.success(target.accountId ? t('toast.accountDeleted') : t('toast.channelDeleted'));
+      void fetchPageData({ configOnly: true });
       window.setTimeout(() => {
         void fetchPageData();
       }, 1200);
     } catch (deleteError) {
+      deletingTargetsRef.current.delete(targetKey);
       toast.error(t('toast.configFailed', { error: String(deleteError) }));
       void fetchPageData({ configOnly: true });
     }
@@ -865,6 +905,17 @@ export function Channels() {
             setInitialConfigValuesForModal(undefined);
           }}
           onChannelSaved={async () => {
+            // A deliberate reconfiguration supersedes any runtime-convergence
+            // tombstone left by a recent delete of this channel/account.
+            if (selectedChannelType) {
+              deletingTargetsRef.current.delete(deleteTargetKey({ channelType: selectedChannelType }));
+              if (selectedAccountId) {
+                deletingTargetsRef.current.delete(deleteTargetKey({
+                  channelType: selectedChannelType,
+                  accountId: selectedAccountId,
+                }));
+              }
+            }
             // The host may still be restarting Gateway for plugin activation.
             // Read the committed file-backed view immediately and let the
             // existing convergence loop refresh runtime status asynchronously.

@@ -2,6 +2,7 @@
 
 import { existsSync } from 'fs';
 import { mkdir, readFile, rm, writeFile } from 'fs/promises';
+import { DatabaseSync } from 'node:sqlite';
 import { join } from 'path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -33,7 +34,7 @@ describe('openclaw-auth-sqlite', () => {
     await rm(testHome, { recursive: true, force: true });
   });
 
-  it('migrates auth-profiles.json into openclaw-agent.sqlite when sqlite is empty', async () => {
+  it('migrates auth-profiles.json into a current OpenClaw agent database', async () => {
     await writeJsonStore('main', {
       version: 1,
       profiles: {
@@ -56,6 +57,13 @@ describe('openclaw-auth-sqlite', () => {
     const migrated = await migrateAuthProfilesJsonToSqliteIfNeeded('main');
     expect(migrated).toBe(true);
     expect(existsSync(getAuthProfilesSqlitePath('main'))).toBe(true);
+
+    const database = new DatabaseSync(getAuthProfilesSqlitePath('main'), { readOnly: true });
+    expect(database.prepare('PRAGMA user_version').get()).toEqual({ user_version: 19 });
+    expect(database.prepare(
+      'SELECT schema_version, agent_id FROM schema_meta WHERE meta_key = ?',
+    ).get('primary')).toEqual({ schema_version: 19, agent_id: 'main' });
+    database.close();
 
     const sqliteStore = readAuthProfilesFromSqlite('main');
     expect(sqliteStore?.profiles['custom-customc7:default']).toMatchObject({
@@ -90,5 +98,37 @@ describe('openclaw-auth-sqlite', () => {
     expect((json.profiles as Record<string, unknown>)['custom-customc7:default']).toMatchObject({
       key: 'sk-runtime-key',
     });
+  });
+
+  it('preserves canonical schema metadata when writing credentials to an existing database', async () => {
+    const { saveProviderKeyToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    const { getAuthProfilesSqlitePath } = await import('@electron/utils/openclaw-auth-sqlite');
+    const sqlitePath = getAuthProfilesSqlitePath('main');
+
+    await saveProviderKeyToOpenClaw('custom-customc7', 'first-key', 'main');
+    const database = new DatabaseSync(sqlitePath);
+    const originalMetadata = database.prepare(
+      'SELECT schema_version, agent_id, app_version, created_at, updated_at FROM schema_meta WHERE meta_key = ?',
+    ).get('primary');
+    database.exec(`
+      CREATE TABLE clawx_test_marker (id TEXT PRIMARY KEY);
+      INSERT INTO clawx_test_marker (id) VALUES ('preserved');
+    `);
+    database.close();
+
+    await saveProviderKeyToOpenClaw('custom-customc7', 'sk-runtime-key', 'main');
+
+    const reopened = new DatabaseSync(sqlitePath, { readOnly: true });
+    expect(reopened.prepare('PRAGMA user_version').get()).toEqual({ user_version: 19 });
+    expect(reopened.prepare(
+      'SELECT schema_version, agent_id, app_version, created_at, updated_at FROM schema_meta WHERE meta_key = ?',
+    ).get('primary')).toEqual(originalMetadata);
+    expect(reopened.prepare(
+      'SELECT store_json FROM auth_profile_store WHERE store_key = ?',
+    ).get('primary')).toBeTruthy();
+    expect(reopened.prepare(
+      'SELECT id FROM clawx_test_marker',
+    ).get()).toEqual({ id: 'preserved' });
+    reopened.close();
   });
 });

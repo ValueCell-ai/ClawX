@@ -13,7 +13,6 @@ const { testHome, testUserData, getSettingMock, setSettingMock } = vi.hoisted(()
     setSettingMock: vi.fn(),
   };
 });
-const COMPACTION_IDENTIFIER_INSTRUCTIONS = 'Preserve only identifiers referenced by unresolved asks, active constraints, modified files, or pending next steps.';
 
 vi.mock('os', async () => {
   const actual = await vi.importActual<typeof import('os')>('os');
@@ -411,6 +410,79 @@ describe('sanitizeOpenClawConfig', () => {
     logSpy.mockRestore();
   });
 
+  it('canonicalizes OpenClaw 8.1 agent, memory, media, and compaction keys', async () => {
+    await writeOpenClawJson({
+      agents: {
+        defaults: {
+          memorySearch: { provider: 'none' },
+          imageGenerationModel: { primary: 'openai/gpt-image-2' },
+          mediaGenerationAutoProviderFallback: false,
+          compaction: {
+            mode: 'safeguard',
+            keepRecentTokens: 0,
+            identifierPolicy: 'custom',
+            identifierInstructions: 'legacy',
+            reserveTokensFloor: 50_000,
+          },
+        },
+        list: [
+          { id: 'main', name: 'Main', default: true },
+          { id: 'research', name: 'Research', memorySearch: { provider: 'openai' } },
+        ],
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const agents = result.agents as Record<string, unknown>;
+    const defaults = agents.defaults as Record<string, unknown>;
+    const entries = agents.entries as Record<string, Record<string, unknown>>;
+    expect(agents.list).toBeUndefined();
+    expect(agents.ownership).toBe('explicit');
+    expect(defaults.systemAgent).toEqual({ agentId: 'main' });
+    expect(defaults.memorySearch).toBeUndefined();
+    expect((result.memory as Record<string, unknown>).search).toEqual({ provider: 'none' });
+    expect(defaults.imageGenerationModel).toBeUndefined();
+    expect(defaults.mediaModels).toEqual({ image: { primary: 'openai/gpt-image-2' } });
+    expect(defaults.mediaGenerationAutoProviderFallback).toBeUndefined();
+    expect(defaults.compaction).toEqual({
+      mode: 'safeguard',
+      keepRecentTokens: 1,
+      identifierPolicy: 'strict',
+    });
+    expect(entries.research.memory).toEqual({ search: { provider: 'openai' } });
+  });
+
+  it('repairs the legacy zero-token compaction tail before the 8.1 Doctor runs', async () => {
+    await writeOpenClawJson({
+      meta: { lastTouchedAt: '2026-08-01T00:00:00.000Z' },
+      agents: {
+        defaults: {
+          compaction: { keepRecentTokens: 0 },
+        },
+      },
+      session: { idleMinutes: 10_080 },
+      skills: { workshop: { autonomous: { enabled: false } } },
+      plugins: { bundledDiscovery: true },
+    });
+
+    const { canonicalizeOpenClawConfigFor2026_8_1Doctor } = await import(
+      '@electron/utils/openclaw-auth'
+    );
+    await expect(canonicalizeOpenClawConfigFor2026_8_1Doctor()).resolves.toBe(true);
+
+    const result = await readOpenClawJson();
+    const agents = result.agents as Record<string, unknown>;
+    const defaults = agents.defaults as Record<string, unknown>;
+    expect(defaults.compaction).toEqual({ keepRecentTokens: 1 });
+    expect(result.meta).toEqual({});
+    expect(result.session).toEqual({ reset: { mode: 'idle', idleMinutes: 10_080 } });
+    expect(result.skills).toEqual({ workshop: { autonomous: { mode: 'off' } } });
+    expect(result.plugins).toEqual({});
+  });
+
   it('sanitizes the running Gateway snapshot without replacing it from the fallback file', async () => {
     await writeOpenClawJson({ fallbackOnly: true });
     const rpc = vi.fn(async (method: string) => {
@@ -456,13 +528,15 @@ describe('sanitizeOpenClawConfig', () => {
     const tools = result.tools as Record<string, unknown>;
     expect(tools.profile).toBe('full');
     expect(tools.deny).toEqual(CLAWX_DESKTOP_TOOL_DENY);
+    expect(tools.exec).toEqual({ mode: 'full' });
     const gateway = result.gateway as Record<string, unknown>;
     const gatewayTools = gateway.tools as Record<string, unknown>;
     expect(gatewayTools.deny).toEqual(CLAWX_DESKTOP_TOOL_DENY);
     const skills = result.skills as Record<string, unknown>;
     const workshop = skills.workshop as Record<string, unknown>;
     const autonomous = workshop.autonomous as Record<string, unknown>;
-    expect(autonomous.enabled).toBe(false);
+    expect(autonomous.mode).toBe('off');
+    expect(autonomous.enabled).toBeUndefined();
     const entries = skills.entries as Record<string, Record<string, unknown>>;
     expect(entries['skill-creator'].enabled).toBe(true);
 
@@ -497,7 +571,9 @@ describe('sanitizeOpenClawConfig', () => {
     const gateway = result.gateway as Record<string, unknown>;
     expect((gateway.tools as Record<string, unknown>).deny).toEqual(CLAWX_DESKTOP_TOOL_DENY);
     const skills = result.skills as Record<string, unknown>;
-    expect(((skills.workshop as Record<string, unknown>).autonomous as Record<string, unknown>).enabled).toBe(false);
+    expect(((skills.workshop as Record<string, unknown>).autonomous as Record<string, unknown>)).toEqual({
+      mode: 'off',
+    });
     expect((skills.entries as Record<string, Record<string, unknown>>)['skill-creator'].enabled).toBe(true);
 
     logSpy.mockRestore();
@@ -635,16 +711,52 @@ describe('sanitizeOpenClawConfig', () => {
       'whatsapp-agent': { enabled: true, phoneNumber: '+15555550123' },
     });
     expect(channels.qqbot.accounts).toEqual({
-      'qq-agent': { enabled: true, appId: 'qq-app', clientSecret: 'qq-secret' },
+      'qq-agent': {
+        enabled: true,
+        appId: 'qq-app',
+        clientSecret: 'qq-secret',
+        allowFrom: ['*'],
+      },
     });
     expect(channels.qqbot.appId).toBe('qq-app');
     expect(channels.qqbot.clientSecret).toBe('qq-secret');
+    expect(channels.qqbot.allowFrom).toEqual(['*']);
 
     const plugins = result.plugins as Record<string, unknown>;
     const entries = plugins.entries as Record<string, Record<string, unknown>>;
     expect(entries.discord).toEqual({ enabled: true });
     expect(entries.whatsapp).toEqual({ enabled: true });
     expect(entries.qqbot).toEqual({ enabled: true });
+  });
+
+  it('migrates legacy QQBot allowFrom values without replacing existing allowlists', async () => {
+    await writeOpenClawJson({
+      channels: {
+        qqbot: {
+          enabled: true,
+          defaultAccount: 'default',
+          appId: 'qq-default',
+          clientSecret: 'default-secret',
+          allowFrom: ['existing-user'],
+          accounts: {
+            default: { appId: 'qq-default', clientSecret: 'default-secret' },
+            secondary: { appId: 'qq-secondary', clientSecret: 'secondary-secret', allowFrom: 'secondary-user' },
+            third: { appId: 'qq-third', clientSecret: 'third-secret' },
+          },
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const qqbot = (result.channels as Record<string, Record<string, unknown>>).qqbot;
+    const accounts = qqbot.accounts as Record<string, Record<string, unknown>>;
+    expect(qqbot.allowFrom).toEqual(['existing-user']);
+    expect(accounts.default.allowFrom).toEqual(['existing-user']);
+    expect(accounts.secondary.allowFrom).toEqual(['secondary-user']);
+    expect(accounts.third.allowFrom).toEqual(['*']);
   });
 
   it('normalizes QQBot as an external plugin without credential mirrors', async () => {
@@ -706,6 +818,33 @@ describe('sanitizeOpenClawConfig', () => {
     expect(entries.discord).toEqual({ enabled: true });
     expect(entries.whatsapp).toEqual({ enabled: true });
     expect(entries.qqbot).toEqual({ enabled: true });
+  });
+
+  it('removes legacy Discord retry config rejected by OpenClaw 8.1', async () => {
+    await writeOpenClawJson({
+      channels: {
+        discord: {
+          enabled: true,
+          token: 'discord-token',
+          retry: { attempts: 3, minDelayMs: 500, maxDelayMs: 30000, jitter: 0.1 },
+          accounts: {
+            default: {
+              enabled: true,
+              token: 'discord-token',
+              retry: { attempts: 3, minDelayMs: 500, maxDelayMs: 30000, jitter: 0.1 },
+            },
+          },
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const discord = (result.channels as Record<string, Record<string, unknown>>).discord;
+    expect(discord).not.toHaveProperty('retry');
+    expect(discord.accounts?.default).not.toHaveProperty('retry');
   });
 
   it('normalizes legacy feishu plugin state to a single external plugin and removes built-in feishu', async () => {
@@ -1486,7 +1625,7 @@ describe('setOpenClawDefaultModelWithOverride model metadata', () => {
     expect(newModel).not.toHaveProperty('contextWindow');
     expect(newModel).not.toHaveProperty('customField');
     const defaults = (result.agents as Record<string, unknown>).defaults as Record<string, unknown>;
-    expect((defaults.compaction as Record<string, unknown>).reserveTokensFloor).toBe(50_000);
+    expect((defaults.compaction as Record<string, unknown> | undefined)?.reserveTokensFloor).toBeUndefined();
   });
 
   it('preserves model input metadata after switching to another provider and back', async () => {
@@ -2494,12 +2633,15 @@ describe('syncOpenAiCompatibleImageRelay', () => {
     expect(providers.openai).toEqual({ baseUrl: 'https://api.openai.com/v1', api: 'openai-responses', models: [] });
     expect(providers['clawx-openai-image']).toBeUndefined();
     const defaults = (result.agents as Record<string, unknown>).defaults as Record<string, unknown>;
-    expect(defaults.imageGenerationModel).toEqual({
-      primary: 'google/gemini-3.1-flash-image-preview',
-      fallbacks: [],
-      timeoutMs: 180000,
-      maxPixels: 4194304,
+    expect(defaults.mediaModels).toEqual({
+      image: {
+        primary: 'google/gemini-3.1-flash-image-preview',
+        fallbacks: [],
+        timeoutMs: 180000,
+        maxPixels: 4194304,
+      },
     });
+    expect(defaults.imageGenerationModel).toBeUndefined();
     expect(result.plugins).toBeUndefined();
   });
 });
@@ -2788,11 +2930,9 @@ describe('batchSyncConfigFields', () => {
     expect(defaults.compaction).toEqual({
       mode: 'safeguard',
       qualityGuard: { enabled: false },
-      keepRecentTokens: 0,
+      keepRecentTokens: 1,
       recentTurnsPreserve: 0,
-      identifierPolicy: 'custom',
-      identifierInstructions: COMPACTION_IDENTIFIER_INSTRUCTIONS,
-      reserveTokensFloor: 50_000,
+      identifierPolicy: 'strict',
       midTurnPrecheck: { enabled: true },
     });
   });
@@ -2821,7 +2961,7 @@ describe('batchSyncConfigFields', () => {
     const config = await readOpenClawJson();
     const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
     const compaction = defaults.compaction as Record<string, unknown>;
-    expect(compaction.reserveTokensFloor).toBe(68_000);
+    expect(compaction.reserveTokensFloor).toBeUndefined();
   });
 
   it('resets a stale inferred reserve floor when the model row has no explicit context', async () => {
@@ -2851,7 +2991,7 @@ describe('batchSyncConfigFields', () => {
     const providers = (config.models as Record<string, unknown>).providers as Record<string, unknown>;
     const deepseekModels = (providers.deepseek as Record<string, unknown>).models as Array<Record<string, unknown>>;
 
-    expect(compaction.reserveTokensFloor).toBe(50_000);
+    expect(compaction.reserveTokensFloor).toBeUndefined();
     expect(deepseekModels[0]?.contextWindow).toBeUndefined();
   });
 
@@ -2873,11 +3013,9 @@ describe('batchSyncConfigFields', () => {
     expect(defaults.compaction).toEqual({
       mode: 'safeguard',
       qualityGuard: { enabled: false },
-      keepRecentTokens: 0,
+      keepRecentTokens: 1,
       recentTurnsPreserve: 0,
-      identifierPolicy: 'custom',
-      identifierInstructions: COMPACTION_IDENTIFIER_INSTRUCTIONS,
-      reserveTokensFloor: 50_000,
+      identifierPolicy: 'strict',
       midTurnPrecheck: { enabled: true },
     });
   });
@@ -2901,11 +3039,9 @@ describe('batchSyncConfigFields', () => {
     expect(defaults.compaction).toEqual({
       mode: 'safeguard',
       qualityGuard: { enabled: false },
-      keepRecentTokens: 0,
+      keepRecentTokens: 1,
       recentTurnsPreserve: 0,
-      identifierPolicy: 'custom',
-      identifierInstructions: COMPACTION_IDENTIFIER_INSTRUCTIONS,
-      reserveTokensFloor: 50_000,
+      identifierPolicy: 'strict',
       midTurnPrecheck: { enabled: true },
     });
   });
@@ -2938,11 +3074,9 @@ describe('batchSyncConfigFields', () => {
     expect(defaults.compaction).toEqual({
       mode: 'default',
       qualityGuard: { enabled: false },
-      keepRecentTokens: 0,
+      keepRecentTokens: 1,
       recentTurnsPreserve: 0,
-      identifierPolicy: 'custom',
-      identifierInstructions: COMPACTION_IDENTIFIER_INSTRUCTIONS,
-      reserveTokensFloor: 50_000,
+      identifierPolicy: 'off',
       midTurnPrecheck: { enabled: false },
     });
   });
@@ -2954,8 +3088,7 @@ describe('batchSyncConfigFields', () => {
     await batchSyncConfigFields('new-token');
 
     const config = await readOpenClawJson();
-    const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
-    expect(defaults.memorySearch).toEqual({ enabled: true, provider: 'none' });
+    expect((config.memory as Record<string, unknown>).search).toEqual({ enabled: true, provider: 'none' });
     expect(setSettingMock).toHaveBeenCalledWith('memorySearchFtsMigrationVersion', 1);
   });
 
@@ -2977,8 +3110,7 @@ describe('batchSyncConfigFields', () => {
     await batchSyncConfigFields('new-token');
 
     const config = await readOpenClawJson();
-    const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
-    expect(defaults.memorySearch).toBeUndefined();
+    expect(config.memory).toBeUndefined();
     expect(setSettingMock).toHaveBeenCalledWith('memorySearchFtsMigrationVersion', 1);
   });
 
@@ -2992,8 +3124,7 @@ describe('batchSyncConfigFields', () => {
     await batchSyncConfigFields('new-token');
 
     const config = await readOpenClawJson();
-    const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
-    expect(defaults.memorySearch).toEqual({ enabled: true, provider: 'none' });
+    expect((config.memory as Record<string, unknown>).search).toEqual({ enabled: true, provider: 'none' });
     expect(setSettingMock).toHaveBeenCalledWith('memorySearchFtsMigrationVersion', 1);
   });
 
