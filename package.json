@@ -1,6 +1,6 @@
 {
     "name": "clawx",
-    "version": "0.5.5",
+    "version": "0.5.6",
     "pnpm": {
         "onlyBuiltDependencies": [
             "@discordjs/opus",
