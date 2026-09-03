@@ -87,6 +87,7 @@ mac:
   notarize: true
   extendInfo:
     NSCameraUsageDescription: ClawX requires camera access for video features
+    NSMicrophoneUsageDescription: ClawX requires microphone access for voice features
 
 dmg:
   # Explicit volume size prevents dmg-builder@1.2.0 auto-calculation from

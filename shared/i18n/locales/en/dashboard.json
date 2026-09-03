@@ -14,7 +14,8 @@
         "subtitle": "Manage your AI providers and monitor token usage.",
         "tabs": {
             "chat": "Chat models",
-            "imageGeneration": "Image generation"
+            "imageGeneration": "Image generation",
+            "voice": "Speech-to-text"
         }
     },
     "quickActions": {
