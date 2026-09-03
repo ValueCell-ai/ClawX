@@ -39,9 +39,9 @@ test.describe('Channel deletion responsiveness', () => {
         action?: string;
       }) => {
         if (request?.module === 'channels' && request.action === 'accounts') {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const pending = (globalThis as any).__clawxDeletePending === true;
-          return respond(request.id, pending ? { success: true, channels: [] } : response);
+          // Simulate a stale runtime snapshot that still reports the channel
+          // while OpenClaw is completing its asynchronous adapter shutdown.
+          return respond(request.id, response);
         }
         if (request?.module === 'agents' && request.action === 'list') {
           return respond(request.id, { success: true, agents: [] });
@@ -72,6 +72,14 @@ test.describe('Channel deletion responsiveness', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (globalThis as any).__clawxDeletePending;
     })).toBe(true);
+
+    await electronApp.evaluate(({ BrowserWindow }) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('gateway:channel-status', { channelType: 'feishu' });
+      }
+    });
+    await page.waitForTimeout(250);
+    await expect(channelsPage.getByTitle('Delete channel')).toHaveCount(0);
 
     await electronApp.evaluate(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

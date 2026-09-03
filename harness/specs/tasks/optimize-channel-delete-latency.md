@@ -35,6 +35,7 @@ expectedUserBehavior:
   - Main still durably deletes the channel configuration and associated binding.
   - A failed deletion reports an error and refreshes the file-backed channel view to restore the actual state.
   - Runtime convergence refresh remains asynchronous and does not block the delete interaction.
+  - Stale channel-status events received while OpenClaw stops an adapter do not restore the optimistically deleted channel or account.
 requiredProfiles:
   - fast
   - comms
@@ -55,6 +56,7 @@ acceptance:
   - The UI applies deletion optimistically before the host delete promise settles.
   - The host delete request remains the only mutation path; Renderer does not edit OpenClaw configuration directly.
   - Failure triggers a config-only refresh rather than leaving stale optimistic state.
+  - Pending deletion tombstones suppress stale runtime snapshots until a post-commit runtime response confirms that the target is absent.
   - No direct Renderer Gateway request or new transport path is added.
 docs:
   required: false
