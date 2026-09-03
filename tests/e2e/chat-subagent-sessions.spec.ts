@@ -1,5 +1,12 @@
 import type { ElectronApplication, Page } from '@playwright/test';
-import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
+import {
+  closeElectronApp,
+  emitAcpSessionUpdates,
+  expect,
+  getStableWindow,
+  installIpcMocks,
+  test,
+} from './fixtures/electron';
 
 const PARENT_KEY = 'agent:main:main';
 const HISTORICAL_CHILD_KEY = 'agent:main:subagent:historical-child';
@@ -276,10 +283,32 @@ test.describe('ClawX embedded subagent sessions', () => {
       await expect(page.getByTestId(`sidebar-session-${LIVE_CHILD_KEY}`)).toHaveCount(0);
 
       const toggle = page.getByTestId('acp-subagent-sessions-toggle');
-      await expect(toggle).toContainText('Subagents: 1');
+      await expect(toggle).toContainText('Dispatched 1 subagents');
+      await expect(page.getByTestId('chat-composer-working-indicator')).toHaveAccessibleName('Subagents working…');
+      const position = await page.evaluate(() => {
+        const indicator = document.querySelector<HTMLElement>('[data-testid="chat-composer-working-indicator"]');
+        const subagents = document.querySelector<HTMLElement>('[data-testid="acp-subagent-sessions-toggle"]');
+        if (!indicator || !subagents) return null;
+        const indicatorBox = indicator.getBoundingClientRect();
+        const subagentsBox = subagents.getBoundingClientRect();
+        return {
+          indicatorRight: indicatorBox.right,
+          indicatorTop: indicatorBox.top,
+          subagentsRight: subagentsBox.right,
+          subagentsTop: subagentsBox.top,
+        };
+      });
+      expect(position).not.toBeNull();
+      expect(position!.subagentsRight).toBeCloseTo(position!.indicatorRight, 0);
+      expect(position!.subagentsTop).toBeCloseTo(position!.indicatorTop, 0);
       await toggle.click();
-      const panel = page.getByTestId('acp-subagent-sessions-panel');
+      let panel = page.getByTestId('acp-subagent-sessions-panel');
       await expect(panel).toBeVisible();
+      const panelBox = await panel.boundingBox();
+      const toggleBox = await toggle.boundingBox();
+      expect(panelBox).toBeTruthy();
+      expect(toggleBox).toBeTruthy();
+      expect(panelBox!.y + panelBox!.height).toBeLessThanOrEqual(toggleBox!.y);
       await expect(panel.getByTestId('acp-subagent-session-row').filter({ hasText: 'Historical ACP child' })).toBeVisible();
       await expect(panel).not.toContainText('[Subagent Context]');
       await expect(panel).not.toContainText('Gateway historical title');
@@ -287,12 +316,91 @@ test.describe('ClawX embedded subagent sessions', () => {
       await emitSessionStatus(app, HISTORICAL_CHILD_KEY, 'running', true);
       await expect(page.getByTestId('acp-subagent-sessions-status')).toHaveText('Subagents: Running');
       await expect(panel).toBeVisible();
+      await panel.getByRole('button', { name: 'Open subagent Historical ACP child' }).click();
+      await expect(page.getByTestId('chat-subagent-marker')).toHaveText('Subagent');
+      await expect(page.getByTestId('chat-composer-box')).toHaveCount(0);
+      await expect(page.getByTestId('chat-composer-working-indicator')).toHaveAccessibleName('Thinking…');
+      await emitAcpSessionUpdates(app, {
+        sessionKey: HISTORICAL_CHILD_KEY,
+        generation: 1,
+        updates: [
+          {
+            sessionUpdate: 'agent_thought_chunk',
+            content: { type: 'text', text: 'Checking live child evidence.' },
+          },
+          {
+            sessionUpdate: 'agent_message_chunk',
+            messageId: 'live-child-message',
+            content: { type: 'text', text: 'Live child progress before completion.' },
+          },
+        ],
+      });
+      await expect(page.getByTestId('acp-thought-block')).toContainText('Checking live child evidence.');
+      const liveChildMessage = page.getByTestId('acp-assistant-message')
+        .filter({ hasText: 'Live child progress before completion.' });
+      await expect(liveChildMessage).toBeVisible();
+      await expect(liveChildMessage.locator('[data-sd-animate]')).not.toHaveCount(0);
+      await emitAcpSessionUpdates(app, {
+        sessionKey: HISTORICAL_CHILD_KEY,
+        generation: 1,
+        updates: [{
+          sessionUpdate: 'tool_call',
+          toolCallId: 'live-child-tool',
+          title: 'Fetch live child source',
+          status: 'in_progress',
+          content: [{ type: 'content', content: { type: 'text', text: 'Fetching source live.' } }],
+          locations: [],
+        }],
+      });
+      const liveChildTool = page.getByTestId('acp-tool-call-card')
+        .filter({ hasText: 'Fetch live child source' });
+      await expect(liveChildTool).toBeVisible();
+      await expect(liveChildTool).toContainText('Running');
+      await expect(liveChildTool).toHaveAttribute('data-expanded', 'true');
+      await emitAcpSessionUpdates(app, {
+        sessionKey: HISTORICAL_CHILD_KEY,
+        generation: 1,
+        updates: [{
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'live-child-tool',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'Source fetched live.' } }],
+          locations: [],
+        }],
+      });
+      await expect(liveChildTool).toContainText('Completed');
+      await expect(liveChildTool).toContainText('Source fetched live.');
+      await emitAcpSessionUpdates(app, {
+        sessionKey: HISTORICAL_CHILD_KEY,
+        generation: 1,
+        updates: [{
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'live-child-message',
+          content: { type: 'text', text: ' More output arrived live.' },
+        }],
+      });
+      const laterLiveChildMessage = page.getByTestId('acp-assistant-message')
+        .filter({ hasText: 'More output arrived live.' });
+      await expect(laterLiveChildMessage).toBeVisible();
+      const orderedLiveParts = page.getByTestId('acp-assistant-turn')
+        .locator('[data-testid="acp-assistant-message"], [data-testid="acp-tool-call-card"]');
+      await expect(orderedLiveParts).toHaveCount(3);
+      await expect(orderedLiveParts.nth(0)).toContainText('Live child progress before completion.');
+      await expect(orderedLiveParts.nth(1)).toContainText('Fetch live child source');
+      await expect(orderedLiveParts.nth(2)).toContainText('More output arrived live.');
+      await expect(page.getByTestId('chat-composer-working-indicator')).toHaveAccessibleName('Thinking…');
       await emitSessionStatus(app, HISTORICAL_CHILD_KEY, 'done', false);
+      await expect(page.getByTestId('chat-composer-working-indicator')).toHaveCount(0);
+      await expect(laterLiveChildMessage.locator('[data-sd-animate]')).toHaveCount(0);
+      await page.getByRole('button', { name: 'Return to parent conversation' }).click();
+      if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+      panel = page.getByTestId('acp-subagent-sessions-panel');
+      await expect(panel).toBeVisible();
       await expect(page.getByTestId('acp-subagent-sessions-status')).toHaveText('Subagents: Settled');
       await expect(panel).toBeVisible();
 
       await emitSuccessfulSpawn(app);
-      await expect(toggle).toContainText('Subagents: 2');
+      await expect(toggle).toContainText('Dispatched 2 subagents');
       await expect(panel).toBeVisible();
       await expect(panel.getByTestId('acp-subagent-session-row').filter({ hasText: 'Canonical live ACP child' })).toBeVisible();
       await expect(panel).not.toContainText(SIGNAL_ONLY_CHILD_KEY);
@@ -303,10 +411,10 @@ test.describe('ClawX embedded subagent sessions', () => {
       await expect(page.getByTestId(`sidebar-session-${HISTORICAL_CHILD_KEY}`)).toHaveCount(0);
 
       await page.getByRole('button', { name: 'Return to parent conversation' }).click();
-      await expect(page.getByTestId('acp-subagent-sessions-toggle')).toContainText('Subagents: 2');
+      await expect(page.getByTestId('acp-subagent-sessions-toggle')).toContainText('Dispatched 2 subagents');
 
       page = await reloadStableWindow(app);
-      await expect(page.getByTestId('acp-subagent-sessions-toggle')).toContainText('Subagents: 2');
+      await expect(page.getByTestId('acp-subagent-sessions-toggle')).toContainText('Dispatched 2 subagents');
       await expect(page.getByTestId(`sidebar-session-${HISTORICAL_CHILD_KEY}`)).toHaveCount(0);
       await expect(page.getByTestId(`sidebar-session-${LIVE_CHILD_KEY}`)).toHaveCount(0);
 

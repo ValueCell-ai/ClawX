@@ -10,7 +10,7 @@ vi.mock('react-i18next', () => ({
         'acp.pending': 'Pending',
         'acp.running': 'Running',
         'acp.completed': 'Completed',
-        'acp.sessionPlan.progress': '{{completed}} / {{total}}',
+        'acp.sessionPlan.progress': 'Todo items: {{completed}} / {{total}}',
         'acp.sessionPlan.expand': 'Expand plan',
         'acp.sessionPlan.collapse': 'Collapse plan',
         'acp.sessionPlan.tasks': 'Plan tasks',
@@ -45,7 +45,7 @@ describe('AcpSessionPlan', () => {
     expect(toggle).toHaveAttribute('type', 'button');
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(toggle).toHaveAttribute('aria-label', 'Expand plan');
-    expect(toggle).toHaveTextContent('1 / 3');
+    expect(toggle).toHaveTextContent('Todo items: 1 / 3');
     expect(toggle.querySelector('.lucide-list-checks')).toBeInTheDocument();
     expect(screen.queryByTestId('acp-session-plan-panel')).not.toBeInTheDocument();
 
@@ -91,7 +91,7 @@ describe('AcpSessionPlan', () => {
     expect(steps[0]).not.toHaveTextContent('Completed');
     expect(steps[1]).not.toHaveTextContent('Running');
     expect(steps[2]).not.toHaveTextContent('Pending');
-    expect(panel).toHaveClass('max-h-48', 'overflow-y-auto');
+    expect(panel).toHaveClass('absolute', 'bottom-full', 'right-0', 'max-h-48', 'overflow-y-auto');
     expect(panel.querySelectorAll('button, input[type="checkbox"]')).toHaveLength(0);
     expect(screen.queryByRole('button', { name: /edit|delete/i })).not.toBeInTheDocument();
   });

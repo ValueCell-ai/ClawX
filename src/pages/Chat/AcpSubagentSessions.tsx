@@ -29,10 +29,14 @@ export function AcpSubagentSessions({
   sessions,
   sessionKey,
   onSelectSession,
+  isExpanded,
+  onExpandedChange,
 }: {
   sessions: AcpSubagentSession[];
   sessionKey: string;
   onSelectSession: (sessionKey: string) => void;
+  isExpanded?: boolean;
+  onExpandedChange?: (isExpanded: boolean) => void;
 }) {
   const { t } = useTranslation('chat');
   const generatedId = useId();
@@ -46,7 +50,7 @@ export function AcpSubagentSessions({
 
   if (sessions.length === 0) return null;
 
-  const expanded = expansion.sessionKey === sessionKey && expansion.expanded;
+  const expanded = expansion.sessionKey === sessionKey && (isExpanded ?? expansion.expanded);
   const anyBusy = sessions.some((session) => session.busy);
   const countLabel = t('acp.subagentSessions.count', { count: sessions.length });
   const actionLabel = t(expanded ? 'acp.subagentSessions.collapse' : 'acp.subagentSessions.expand');
@@ -54,7 +58,7 @@ export function AcpSubagentSessions({
   const aggregateStatusLabel = t('acp.subagentSessions.aggregateStatus', { status: aggregateStateLabel });
 
   return (
-    <div className="mb-2 min-w-0 text-right">
+    <div className="relative min-w-0 text-right">
       <button
         type="button"
         data-testid="acp-subagent-sessions-toggle"
@@ -62,10 +66,11 @@ export function AcpSubagentSessions({
         aria-controls={panelId}
         aria-label={t('acp.subagentSessions.toggle', { action: actionLabel, count: countLabel })}
         aria-describedby={aggregateStatusId}
-        onClick={() => setExpansion((current) => ({
-          sessionKey,
-          expanded: current.sessionKey === sessionKey ? !current.expanded : true,
-        }))}
+        onClick={() => {
+          const nextExpanded = !expanded;
+          setExpansion({ sessionKey, expanded: nextExpanded });
+          onExpandedChange?.(nextExpanded);
+        }}
         className={cn(
           'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
           'border-black/10 bg-surface-input text-foreground hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10',
@@ -94,7 +99,7 @@ export function AcpSubagentSessions({
           id={panelId}
           data-testid="acp-subagent-sessions-panel"
           aria-label={t('acp.subagentSessions.panel')}
-          className="mt-2 max-h-48 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-black/10 bg-surface-modal p-2 text-left shadow-sm dark:border-white/10"
+          className="absolute bottom-full right-0 z-10 mb-2 max-h-48 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-black/10 bg-surface-modal p-2 text-left shadow-sm dark:border-white/10"
         >
           <ul className="space-y-1">
             {sessions.map((session, index) => {

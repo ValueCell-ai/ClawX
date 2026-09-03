@@ -12,7 +12,9 @@ describe('OpenClaw 8.2 ACP stream compatibility', () => {
 
     expect(changelog).toContain('## 2026.8.2');
     expect(changelog).toContain('Reply completion:');
+    expect(changelog).toContain('Subagent ownership:');
     expect(changelog).toContain('Starting chats:');
     expect(changelog).toContain('Retained conversation inputs:');
+    expect(changelog).toContain('recognize frozen subagent live-test opt-in');
   });
 });

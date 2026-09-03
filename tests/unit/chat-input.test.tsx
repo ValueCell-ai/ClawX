@@ -116,6 +116,8 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Stop';
     case 'composer.thinking':
       return 'Thinking…';
+    case 'composer.subagentsWorking':
+      return 'Subagents working…';
     case 'imageGeneration.generating':
       return 'Generating image, please wait…';
     case 'composer.gatewayConnected':
@@ -357,7 +359,41 @@ describe('ChatInput agent targeting', () => {
     expect(screen.queryByTestId('chat-composer-zoomies')).not.toBeInTheDocument();
   });
 
-  it('renders the current ACP plan above the composer and right-aligned', () => {
+  it('renders only the existing thinking status row for a read-only subagent session', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput onSend={vi.fn()} sending statusOnly />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole('status', { name: 'Thinking…' })).toHaveAttribute(
+      'data-testid',
+      'chat-composer-working-indicator',
+    );
+    expect(screen.getByTestId('chat-composer-dot-pulse')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-composer-box')).not.toBeInTheDocument();
+  });
+
+  it('keeps the main thinking label while both the main agent and a subagent are working', () => {
+    render(
+      <TooltipProvider>
+        <ChatInput
+          onSend={vi.fn()}
+          sending
+          subagentSessions={[{
+            sessionKey: 'agent:main:subagent:research',
+            title: 'Research behavior',
+            busy: true,
+          }]}
+          onSelectSubagent={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByTestId('chat-composer-working-indicator')).toHaveAccessibleName('Thinking…');
+  });
+
+  it('places the current ACP plan on the right side of the thinking indicator', () => {
     const currentPlan: AcpCurrentPlan = {
       completedCount: 1,
       totalCount: 2,
@@ -382,11 +418,11 @@ describe('ChatInput agent targeting', () => {
     const working = screen.getByTestId('chat-composer-working-indicator');
     const composer = screen.getByTestId('chat-composer-box');
     expect(composer).not.toContainElement(plan);
-    expect(plan.compareDocumentPosition(working) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(plan.parentElement?.parentElement).toHaveClass('text-right');
+    expect(working).toContainElement(plan);
+    expect(screen.queryByTestId('chat-composer-session-controls')).not.toBeInTheDocument();
   });
 
-  it('places the subagent count control immediately left of the plan control', () => {
+  it('shows active subagent work in the thinking indicator and places its control at the right edge', () => {
     const currentPlan: AcpCurrentPlan = {
       completedCount: 1,
       totalCount: 2,
@@ -398,7 +434,7 @@ describe('ChatInput agent targeting', () => {
     const subagentSessions: AcpSubagentSession[] = [{
       sessionKey: 'agent:main:subagent:research',
       title: 'Research behavior',
-      busy: false,
+      busy: true,
     }];
 
     render(
@@ -413,14 +449,24 @@ describe('ChatInput agent targeting', () => {
       </TooltipProvider>,
     );
 
+    const indicator = screen.getByTestId('chat-composer-working-indicator');
     const subagents = screen.getByTestId('acp-subagent-sessions-toggle');
     const plan = screen.getByTestId('acp-session-plan-toggle');
-    const controls = screen.getByTestId('chat-composer-session-controls');
-    expect(controls).toHaveClass('justify-end');
-    expect(controls).toContainElement(subagents);
-    expect(controls).toContainElement(plan);
+    expect(indicator).toHaveAccessibleName('Subagents working…');
+    expect(indicator).toHaveTextContent('Subagents working…');
+    expect(indicator).toHaveClass('justify-between');
+    expect(indicator).toContainElement(subagents);
+    expect(indicator).toContainElement(plan);
     expect(subagents.compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByTestId('chat-composer-session-controls')).not.toBeInTheDocument();
     expect(screen.getByTestId('chat-composer-box')).not.toContainElement(subagents);
+
+    fireEvent.click(subagents);
+    expect(screen.getByTestId('acp-subagent-sessions-panel')).toBeInTheDocument();
+
+    fireEvent.click(plan);
+    expect(screen.queryByTestId('acp-subagent-sessions-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId('acp-session-plan-panel')).toBeInTheDocument();
   });
 
   it('does not render actionable subagent controls without a real selection callback', () => {

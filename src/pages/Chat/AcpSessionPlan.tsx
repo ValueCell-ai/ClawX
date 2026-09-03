@@ -17,9 +17,13 @@ function getPlanIdentity({ completedCount, totalCount, steps }: AcpCurrentPlan):
 export function AcpSessionPlan({
   plan,
   sessionKey,
+  isExpanded,
+  onExpandedChange,
 }: {
   plan: AcpCurrentPlan | null | undefined;
   sessionKey: string;
+  isExpanded?: boolean;
+  onExpandedChange?: (isExpanded: boolean) => void;
 }) {
   const { t } = useTranslation('chat');
   const [expansion, setExpansion] = useState(() => ({
@@ -31,23 +35,25 @@ export function AcpSessionPlan({
   if (!plan) return null;
 
   const planIdentity = getPlanIdentity(plan);
-  const expanded = expansion.planIdentity === planIdentity && expansion.sessionKey === sessionKey && expansion.expanded;
+  const expanded = expansion.planIdentity === planIdentity
+    && expansion.sessionKey === sessionKey
+    && (isExpanded ?? expansion.expanded);
   const complete = plan.completedCount === plan.totalCount;
   const panelId = 'acp-session-plan-panel';
 
   return (
-    <div className="mb-2">
+    <div className="relative min-w-0 text-right">
       <button
         type="button"
         data-testid="acp-session-plan-toggle"
         aria-expanded={expanded}
         aria-controls={panelId}
         aria-label={t(expanded ? 'acp.sessionPlan.collapse' : 'acp.sessionPlan.expand')}
-        onClick={() => setExpansion((current) => ({
-          planIdentity,
-          sessionKey,
-          expanded: current.planIdentity === planIdentity && current.sessionKey === sessionKey ? !current.expanded : true,
-        }))}
+        onClick={() => {
+          const nextExpanded = !expanded;
+          setExpansion({ planIdentity, sessionKey, expanded: nextExpanded });
+          onExpandedChange?.(nextExpanded);
+        }}
         className={cn(
           'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
           'border-black/10 bg-surface-input text-foreground hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/10',
@@ -67,7 +73,7 @@ export function AcpSessionPlan({
           id={panelId}
           data-testid="acp-session-plan-panel"
           aria-label={t('acp.sessionPlan.tasks')}
-          className="mt-2 max-h-48 overflow-y-auto rounded-xl border border-black/10 bg-surface-modal p-2 text-left shadow-sm dark:border-white/10"
+          className="absolute bottom-full right-0 z-10 mb-2 max-h-48 w-80 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-black/10 bg-surface-modal p-2 text-left shadow-sm dark:border-white/10"
         >
           <ol className="space-y-1">
             {plan.steps.map((step, index) => {

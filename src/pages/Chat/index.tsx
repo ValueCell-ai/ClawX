@@ -33,6 +33,7 @@ import { useWorkspaceAvailability } from '@/hooks/use-workspace-availability';
 import { getAcpUserMessageAnchorId } from '@/lib/acp/timeline-anchors';
 import { getCurrentAcpPlan } from '@/lib/acp/current-plan';
 import type { MessageSegmentItem, RenderPart, ToolCallItem } from '@/lib/acp/timeline-types';
+import type { AcpTurnTiming } from '@/lib/acp/turn-timings';
 import { createEmptyAcpTimeline } from '@/lib/acp/reducer';
 import { projectOpenClawFileActivities, type AcpFileActivityProjection } from '@/lib/acp/openclaw-file-activities';
 import { hostApi } from '@/lib/host-api';
@@ -58,6 +59,9 @@ const EMPTY_FILE_ACTIVITY: AcpFileActivityProjection = {
   fileGroups: [],
   uniqueFileCount: 0,
 };
+
+// A session switch remounts Chat before the child catalog row is refreshed.
+const activeSubagentSessionKeys = new Set<string>();
 
 type QuestionDirectoryItem = {
   itemId: string;
@@ -503,7 +507,6 @@ export function Chat() {
   const platform = window.electron?.platform;
   const isMac = platform === 'darwin';
   const isWindows = platform === 'win32';
-  const composerBusy = acpSending || acpCancelling;
   const showScrollToLatest = visibleAcpTimeline.itemOrder.length > 0 && !isAtBottom;
   const hasAttemptedAcpPromptForCurrentSession = lastPromptAttemptSessionKey === currentSessionKey;
   const visibleAcpError = !workspaceUnavailable && acpError
@@ -582,6 +585,10 @@ export function Chat() {
     () => new Map(sessions.map((session) => [session.key, session])),
     [sessions],
   );
+  const currentCatalogSession = catalogSessionByKey.get(currentSessionKey);
+  const currentSessionRunState = currentCatalogSession
+    ? projectSessionRunState(currentCatalogSession)
+    : 'unknown';
   const subagentSessions = useMemo<AcpSubagentSession[]>(() => {
     if (!visibleSessionFamily) return [];
     return visibleSessionFamily.children.flatMap((child) => {
@@ -596,6 +603,14 @@ export function Chat() {
       }];
     });
   }, [catalogSessionByKey, sessionAttentionByKey, visibleSessionFamily]);
+  useEffect(() => {
+    for (const session of subagentSessions) {
+      if (!session.busy) activeSubagentSessionKeys.delete(session.sessionKey);
+    }
+    if (currentSessionRunState === 'idle') {
+      activeSubagentSessionKeys.delete(currentSessionKey);
+    }
+  }, [currentSessionKey, currentSessionRunState, subagentSessions]);
   const isCurrentSessionSubagent = visibleSessionFamily?.current?.sessionKey === currentSessionKey
     && isNativeSubagentSessionKey(currentSessionKey);
   const currentSessionTitle = isNativeSubagentSessionKey(currentSessionKey)
@@ -609,11 +624,72 @@ export function Chat() {
   const directParentSessionKey = familyParentSessionKey && catalogSessionByKey.has(familyParentSessionKey)
     ? familyParentSessionKey
     : null;
+  const currentSubagentBusy = isCurrentSessionSubagent && (
+    currentSessionRunState === 'busy'
+    || (currentSessionRunState === 'unknown' && (
+      sessionAttentionByKey[currentSessionKey]?.observedBusy === true
+      || activeSubagentSessionKeys.has(currentSessionKey)
+    ))
+  );
+  const completedSubagentTurn = useMemo(() => {
+    if (!currentSubagentBusy) return null;
+    for (let index = visibleAcpTimeline.itemOrder.length - 1; index >= 0; index -= 1) {
+      const item = visibleAcpTimeline.itemsById[visibleAcpTimeline.itemOrder[index]];
+      if (item?.kind !== 'message-segment' || item.role !== 'user') continue;
+      const timing = acpTurnTimings[item.messageId];
+      if (timing?.status === 'complete') {
+        return { messageId: item.messageId, durationMs: timing.durationMs };
+      }
+    }
+    return null;
+  }, [acpTurnTimings, currentSubagentBusy, visibleAcpTimeline]);
+  const [liveSubagentTurn, setLiveSubagentTurn] = useState<{
+    sessionKey: string;
+    messageId: string;
+    startedAtMs: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!completedSubagentTurn) {
+      setLiveSubagentTurn((current) => (
+        current?.sessionKey === currentSessionKey ? null : current
+      ));
+      return;
+    }
+    setLiveSubagentTurn((current) => (
+      current?.sessionKey === currentSessionKey && current.messageId === completedSubagentTurn.messageId
+        ? current
+        : {
+            sessionKey: currentSessionKey,
+            messageId: completedSubagentTurn.messageId,
+            startedAtMs: Date.now() - completedSubagentTurn.durationMs,
+          }
+    ));
+  }, [completedSubagentTurn, currentSessionKey]);
+  const visibleTurnTimings = useMemo(() => {
+    if (liveSubagentTurn?.sessionKey !== currentSessionKey) return acpTurnTimings;
+    return {
+      ...acpTurnTimings,
+      [liveSubagentTurn.messageId]: {
+        source: 'live',
+        status: 'running',
+        startedAtMs: liveSubagentTurn.startedAtMs,
+      } satisfies AcpTurnTiming,
+    };
+  }, [acpTurnTimings, currentSessionKey, liveSubagentTurn]);
   const navigateToSession = useCallback((sessionKey: string) => {
     if (!useChatStore.getState().sessions.some((session) => session.key === sessionKey)) return;
     markSessionRead(sessionKey);
     if (sessionKey !== currentSessionKey) switchSession(sessionKey);
   }, [currentSessionKey, markSessionRead, switchSession]);
+  const selectSubagentSession = useCallback((sessionKey: string) => {
+    if (
+      projectSessionRunState(catalogSessionByKey.get(sessionKey) ?? {}) === 'busy'
+      || sessionAttentionByKey[sessionKey]?.observedBusy === true
+    ) {
+      activeSubagentSessionKeys.add(sessionKey);
+    }
+    navigateToSession(sessionKey);
+  }, [catalogSessionByKey, navigateToSession, sessionAttentionByKey]);
   const handleComposerDraftChange = useCallback((update: SetStateAction<string>) => {
     setComposerDraft(currentSessionKey, update);
   }, [currentSessionKey, setComposerDraft]);
@@ -709,8 +785,8 @@ export function Chat() {
                   ) : (
                     <AcpTimeline
                       snapshot={visibleAcpTimeline}
-                      isStreaming={acpSending || acpCancelling}
-                      turnTimingsByUserMessageId={acpTurnTimings}
+                      isStreaming={acpSending || acpCancelling || currentSubagentBusy}
+                      turnTimingsByUserMessageId={visibleTurnTimings}
                       fileActivity={fileActivity}
                       workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey
                         ? resolvedWorkspaceContext.workspaceRoot
@@ -742,7 +818,7 @@ export function Chat() {
           </div>
         </div>
 
-        <ChatInput
+        {(!isCurrentSessionSubagent || currentSubagentBusy) && <ChatInput
           draft={composerDraft}
           draftKey={currentSessionKey}
           onDraftChange={handleComposerDraftChange}
@@ -818,7 +894,8 @@ export function Chat() {
           }}
           onStop={() => void cancelAcp()}
           disabled={acpLoading || acpCancelling || !cwd || !workspaceContextAvailable}
-          sending={composerBusy}
+          sending={isCurrentSessionSubagent ? currentSubagentBusy : acpSending || acpCancelling}
+          statusOnly={isCurrentSessionSubagent}
           imageGenerating={imageGenerationPending}
           workspaceLabel={workspaceLabel}
           workspacePath={cwd}
@@ -828,8 +905,8 @@ export function Chat() {
           contextUsage={composerContextUsage}
           currentPlan={currentPlan}
           subagentSessions={subagentSessions}
-          onSelectSubagent={navigateToSession}
-        />
+          onSelectSubagent={selectSubagentSession}
+        />}
       </div>
 
       {panelOpen && (

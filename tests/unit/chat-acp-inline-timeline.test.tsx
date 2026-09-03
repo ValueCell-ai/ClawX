@@ -8,6 +8,7 @@ const { acpState, agentsState, artifactPanelState, attentionState, chatState, ga
     timeline: null as AcpTimelineSnapshot | null,
     loading: false,
     sending: false,
+    turnTimingsByUserMessageId: {} as Record<string, unknown>,
     cancelling: false,
     error: null as string | null,
     activeSessionKey: 'agent:main:main' as string | null,
@@ -108,8 +109,11 @@ vi.mock('@/stores/artifact-panel', () => ({
 vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({
+    i18n: { language: 'en' },
     t: (key: string, params?: Record<string, unknown> | string) => {
       if (typeof params === 'string') return params;
+      if (key === 'acp.turnElapsed') return `${params?.duration} elapsed`;
+      if (key === 'acp.turnDuration') return `${params?.duration} used`;
       const labels: Record<string, string> = {
         'acp.thought': 'Thought',
         'acp.tool': 'Tool',
@@ -148,13 +152,16 @@ vi.mock('@/pages/Chat/ChatToolbar', () => ({
 }));
 
 vi.mock('@/pages/Chat/ChatInput', () => ({
-  ChatInput: ({ disabled, sending, currentPlan, subagentSessions, onSelectSubagent }: {
+  ChatInput: ({ disabled, sending, statusOnly, currentPlan, subagentSessions, onSelectSubagent }: {
     disabled?: boolean;
     sending?: boolean;
+    statusOnly?: boolean;
     currentPlan?: AcpCurrentPlan | null;
     subagentSessions?: Array<{ sessionKey: string; title: string; busy: boolean }>;
     onSelectSubagent?: (sessionKey: string) => void;
-  }) => (
+  }) => statusOnly ? (
+    <div data-testid="chat-composer-working-indicator">{sending ? 'Thinking' : ''}</div>
+  ) : (
     <div
       data-testid="mock-chat-input"
       data-disabled={disabled ? 'true' : 'false'}
@@ -299,6 +306,7 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     deferredAcpTimeline.value = null;
     acpState.loading = false;
     acpState.sending = false;
+    acpState.turnTimingsByUserMessageId = {};
     acpState.cancelling = false;
     acpState.error = null;
     acpState.activeSessionKey = 'agent:main:main';
@@ -565,7 +573,7 @@ describe('ACP Chat page inline timeline lifecycle', () => {
   });
 
   it.each(['darwin', 'win32'] as const)(
-    'shows a child marker and returns to the exact direct parent in the %s Chat header',
+    'hides the composer for a running child before returning to its exact parent in the %s Chat header',
     async (platform) => {
       const childKey = 'agent:main:subagent:child';
       const parentKey = 'agent:main:parent';
@@ -573,19 +581,53 @@ describe('ACP Chat page inline timeline lifecycle', () => {
       chatState.currentSessionKey = childKey;
       chatState.sessions = [
         { key: parentKey, workspacePath: '/workspace' },
-        { key: childKey, workspacePath: '/workspace' },
+        {
+          key: childKey,
+          workspacePath: '/workspace',
+          status: 'running',
+          hasActiveRun: true,
+          updatedAt: Date.now() - 3_000,
+        },
       ];
       acpState.activeSessionKey = childKey;
-      acpState.timeline = { ...emptyTimeline(), sessionId: childKey };
+      acpState.turnTimingsByUserMessageId = {
+        'user-child': { source: 'transcript', status: 'complete', durationMs: 3_000 },
+      };
+      acpState.timeline = {
+        ...emptyTimeline(),
+        sessionId: childKey,
+        itemOrder: ['user-child:0', 'tool:child-work'],
+        itemsById: {
+          'user-child:0': {
+            kind: 'message-segment', id: 'user-child:0', role: 'user', messageId: 'user-child', segmentIndex: 0,
+            parts: [{ kind: 'markdown', text: 'Research this task' }],
+          },
+          'tool:child-work': {
+            kind: 'tool-call', id: 'tool:child-work', toolCallId: 'child-work', title: 'Research task',
+            status: 'running', outputParts: [], locations: [],
+          },
+        },
+      };
       getAcpSessionFamily.mockResolvedValue({
         success: true,
         current: { sessionKey: childKey, title: 'Child', updatedAt: null, parentSessionKey: parentKey },
         children: [],
       });
       const { Chat } = await import('@/pages/Chat/index');
-      render(<Chat />);
+      const { rerender } = render(<Chat />);
 
       await waitFor(() => expect(screen.getByTestId('chat-subagent-marker')).toHaveTextContent('Subagent'));
+      expect(screen.queryByTestId('mock-chat-input')).not.toBeInTheDocument();
+      expect(screen.getByTestId('chat-composer-working-indicator')).toHaveTextContent('Thinking');
+      await waitFor(() => expect(screen.getByTestId('acp-turn-duration')).toHaveTextContent('3 sec elapsed'));
+
+      chatState.sessions = [
+        { key: parentKey, workspacePath: '/workspace' },
+        { key: childKey, workspacePath: '/workspace', status: 'done', hasActiveRun: false },
+      ];
+      rerender(<Chat />);
+      await waitFor(() => expect(screen.getByTestId('acp-turn-duration')).toHaveTextContent('3 sec used'));
+      expect(screen.queryByTestId('chat-composer-working-indicator')).not.toBeInTheDocument();
       fireEvent.click(screen.getByRole('button', { name: 'Return to parent conversation' }));
 
       expect(attentionState.markRead).toHaveBeenCalledWith(parentKey);
