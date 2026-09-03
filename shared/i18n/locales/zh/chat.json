@@ -279,7 +279,22 @@
         "folderAttachment": "文件夹",
         "skillPreviewTooltip": "预览 SKILL.md",
         "skillPreviewNotFound": "找不到该技能。请打开技能列表以刷新。",
-        "contextUsage": "已使用 {{percentage}} 上下文：{{used}} / {{total}} 个 token"
+        "contextUsage": "已使用 {{percentage}} 上下文：{{used}} / {{total}} 个 token",
+        "voiceInput": "语音输入",
+        "voiceStop": "停止录音",
+        "voiceNotConfigured": "语音转写尚未配置，请前往「模型」页设置。",
+        "voiceError": {
+            "MIC_UNAVAILABLE": "麦克风不可用，请检查系统权限。",
+            "TOO_SHORT": "未捕获到语音。",
+            "NOT_CONFIGURED": "尚未配置语音转写。",
+            "AUTH": "API 密钥无效或权限不足。",
+            "RATE_LIMITED": "请求过于频繁，请稍后再试。",
+            "SERVER": "语音服务暂时不可用。",
+            "REQUEST": "语音请求失败。",
+            "NETWORK": "无法连接语音服务，请检查网络或 Base URL。",
+            "EMPTY_RESULT": "未识别到语音内容。",
+            "INVALID_INPUT": "录音文件无效。"
+        }
     },
     "sessionList": {
         "title": "会话列表",

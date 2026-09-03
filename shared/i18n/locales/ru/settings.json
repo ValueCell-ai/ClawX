@@ -312,5 +312,33 @@
     "docs": "Веб-сайт",
     "github": "GitHub",
     "faq": "FAQ"
+  },
+  "asr": {
+    "title": "Распознавание речи",
+    "description": "Настройте провайдера распознавания речи для голосового ввода в редакторе сообщений. Поддерживаются конечные точки, совместимые с протоколом OpenAI Audio Transcriptions.",
+    "presets": {
+      "label": "Провайдер",
+      "openai": "OpenAI",
+      "groq": "Groq",
+      "siliconflow": "SiliconFlow",
+      "custom": "Свой вариант"
+    },
+    "baseUrl": "Базовый URL API",
+    "model": "Модель",
+    "language": "Язык",
+    "languageAuto": "Автоопределение (рекомендуется)",
+    "apiKey": "API-ключ",
+    "apiKeyConfiguredPlaceholder": "Ключ API для этого провайдера уже настроен. Оставьте поле пустым, чтобы сохранить его.",
+    "apiKeyLink": "Получить ключ API",
+    "apiKeyLinkTitle": "Открыть консоль провайдера, чтобы получить ключ API",
+    "save": "Сохранить",
+    "toast": {
+      "saved": "Настройки распознавания речи сохранены."
+    },
+    "errors": {
+      "invalidBaseUrl": "Базовый URL должен начинаться с http:// или https://.",
+      "modelRequired": "Укажите название модели.",
+      "request": "Не удалось сохранить. Попробуйте ещё раз."
+    }
   }
 }

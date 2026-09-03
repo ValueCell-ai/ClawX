@@ -312,5 +312,33 @@
     "docs": "公式サイト",
     "github": "GitHub",
     "faq": "よくある質問"
+  },
+  "asr": {
+    "title": "音声入力",
+    "description": "入力欄での音声入力に使う音声認識プロバイダーを設定します。OpenAI Audio Transcriptions プロトコル互換のエンドポイントに対応しています。",
+    "presets": {
+      "label": "プロバイダー",
+      "openai": "OpenAI",
+      "groq": "Groq",
+      "siliconflow": "SiliconFlow",
+      "custom": "カスタム"
+    },
+    "baseUrl": "APIベースURL",
+    "model": "モデル",
+    "language": "言語",
+    "languageAuto": "自動検出（推奨）",
+    "apiKey": "APIキー",
+    "apiKeyConfiguredPlaceholder": "このプロバイダーには API キーが設定済みです。変更しない場合は空のままにしてください。",
+    "apiKeyLink": "APIキーを取得",
+    "apiKeyLinkTitle": "プロバイダーのコンソールで API キーを取得",
+    "save": "保存",
+    "toast": {
+      "saved": "音声認識の設定を保存しました。"
+    },
+    "errors": {
+      "invalidBaseUrl": "ベースURLは http:// または https:// で始まる必要があります。",
+      "modelRequired": "モデル名を入力してください。",
+      "request": "保存できませんでした。もう一度お試しください。"
+    }
   }
 }

@@ -312,5 +312,33 @@
     "docs": "官网",
     "github": "GitHub",
     "faq": "常见问题"
+  },
+  "asr": {
+    "title": "语音转写",
+    "description": "配置用于输入框语音听写的语音转写服务，使用兼容 OpenAI Audio Transcriptions 协议的端点。",
+    "presets": {
+      "label": "服务商",
+      "openai": "OpenAI",
+      "groq": "Groq",
+      "siliconflow": "硅基流动",
+      "custom": "自定义"
+    },
+    "baseUrl": "API 地址",
+    "model": "模型",
+    "language": "语言",
+    "languageAuto": "自动识别（推荐）",
+    "apiKey": "API 密钥",
+    "apiKeyConfiguredPlaceholder": "此 Provider 已配置 API 密钥，留空保持不变",
+    "apiKeyLink": "获取 API 密钥",
+    "apiKeyLinkTitle": "前往服务商控制台获取 API 密钥",
+    "save": "保存",
+    "toast": {
+      "saved": "语音转写设置已保存。"
+    },
+    "errors": {
+      "invalidBaseUrl": "API 地址必须以 http:// 或 https:// 开头。",
+      "modelRequired": "请填写模型名称。",
+      "request": "保存失败，请重试。"
+    }
   }
 }

@@ -279,7 +279,22 @@
         "folderAttachment": "Folder",
         "skillPreviewTooltip": "Preview SKILL.md",
         "skillPreviewNotFound": "Could not find this skill. Open the skill picker to refresh the list.",
-        "contextUsage": "{{percentage}} context used: {{used}} / {{total}} tokens"
+        "contextUsage": "{{percentage}} context used: {{used}} / {{total}} tokens",
+        "voiceInput": "Voice input",
+        "voiceStop": "Stop recording",
+        "voiceNotConfigured": "Voice transcription is not configured. Open Models to set it up.",
+        "voiceError": {
+            "MIC_UNAVAILABLE": "Microphone unavailable. Check system permissions.",
+            "TOO_SHORT": "No speech captured.",
+            "NOT_CONFIGURED": "Voice transcription is not configured.",
+            "AUTH": "Invalid API key or insufficient permission.",
+            "RATE_LIMITED": "Too many requests. Try again shortly.",
+            "SERVER": "Speech service is temporarily unavailable.",
+            "REQUEST": "Voice request failed.",
+            "NETWORK": "Cannot reach the speech service. Check network or Base URL.",
+            "EMPTY_RESULT": "No speech recognized.",
+            "INVALID_INPUT": "Invalid audio recording."
+        }
     },
     "sessionList": {
         "title": "Sessions",

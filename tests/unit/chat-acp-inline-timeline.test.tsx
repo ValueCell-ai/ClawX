@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AcpTimelineSnapshot } from '@/lib/acp/timeline-types';
 import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
 
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => vi.fn(),
+}));
+
 const { acpState, agentsState, artifactPanelState, attentionState, chatState, gatewayState, stickState } = vi.hoisted(() => ({
   acpState: {
     timeline: null as AcpTimelineSnapshot | null,

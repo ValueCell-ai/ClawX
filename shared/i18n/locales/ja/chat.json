@@ -279,7 +279,22 @@
         "folderAttachment": "フォルダ",
         "skillPreviewTooltip": "SKILL.md をプレビュー",
         "skillPreviewNotFound": "この Skill が見つかりません。Skill ピッカーを開いて一覧を更新してください。",
-        "contextUsage": "コンテキスト使用量 {{percentage}}: {{used}} / {{total}} トークン"
+        "contextUsage": "コンテキスト使用量 {{percentage}}: {{used}} / {{total}} トークン",
+        "voiceInput": "音声入力",
+        "voiceStop": "録音を停止",
+        "voiceNotConfigured": "音声入力が未設定です。「モデル」ページで設定してください。",
+        "voiceError": {
+            "MIC_UNAVAILABLE": "マイクを利用できません。システムの権限を確認してください。",
+            "TOO_SHORT": "音声を検出できませんでした。",
+            "NOT_CONFIGURED": "音声文字起こしが設定されていません。",
+            "AUTH": "API キーが無効か、権限が不足しています。",
+            "RATE_LIMITED": "リクエストが多すぎます。しばらくしてから再試行してください。",
+            "SERVER": "音声サービスが一時的に利用できません。",
+            "REQUEST": "音声リクエストに失敗しました。",
+            "NETWORK": "音声サービスに接続できません。ネットワークまたは Base URL を確認してください。",
+            "EMPTY_RESULT": "音声を認識できませんでした。",
+            "INVALID_INPUT": "録音データが無効です。"
+        }
     },
     "sessionList": {
         "title": "セッション一覧",

@@ -293,7 +293,6 @@
     "selectAll": "Select all ({{count}})",
     "selectedCount": "{{count}} conversation(s) selected",
     "noSessions": "No conversations are available to export.",
-
     "export": "Create ZIP ({{count}})",
     "exporting": "Creating ZIP...",
     "exportSucceeded": "Issue report exported",
@@ -313,5 +312,33 @@
     "docs": "Website",
     "github": "GitHub",
     "faq": "FAQ"
+  },
+  "asr": {
+    "title": "Speech-to-text",
+    "description": "Configure the speech-to-text provider used for voice dictation in the composer. Works with any endpoint compatible with the OpenAI Audio Transcriptions protocol.",
+    "presets": {
+      "label": "Provider",
+      "openai": "OpenAI",
+      "groq": "Groq",
+      "siliconflow": "SiliconFlow",
+      "custom": "Custom"
+    },
+    "baseUrl": "API base URL",
+    "model": "Model",
+    "language": "Language",
+    "languageAuto": "Auto-detect (recommended)",
+    "apiKey": "API key",
+    "apiKeyConfiguredPlaceholder": "An API key is already configured for this provider. Leave blank to keep it.",
+    "apiKeyLink": "Get API key",
+    "apiKeyLinkTitle": "Open the provider console to get an API key",
+    "save": "Save",
+    "toast": {
+      "saved": "Speech-to-text settings saved."
+    },
+    "errors": {
+      "invalidBaseUrl": "The base URL must start with http:// or https://.",
+      "modelRequired": "Enter a model name.",
+      "request": "Saving failed. Please try again."
+    }
   }
 }
