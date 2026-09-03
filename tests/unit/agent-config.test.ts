@@ -43,6 +43,28 @@ async function readOpenClawJson(): Promise<Record<string, unknown>> {
   return JSON.parse(content) as Record<string, unknown>;
 }
 
+async function emulateGatewayAgentDelete(agentId: string): Promise<void> {
+  const config = await readOpenClawJson();
+  const agents = config.agents as {
+    list?: Array<{ id?: string }>;
+    entries?: Record<string, unknown>;
+  } | undefined;
+  if (Array.isArray(agents?.list)) {
+    agents.list = agents.list.filter((entry) => entry.id !== agentId);
+  }
+  if (agents?.entries) {
+    delete agents.entries[agentId];
+  }
+  if (Array.isArray(config.bindings)) {
+    config.bindings = config.bindings.filter((binding) => (
+      !binding
+      || typeof binding !== 'object'
+      || (binding as { agentId?: string }).agentId !== agentId
+    ));
+  }
+  await writeOpenClawJson(config);
+}
+
 describe('agent config lifecycle', () => {
   beforeEach(async () => {
     vi.resetModules();
@@ -416,27 +438,24 @@ describe('agent config lifecycle', () => {
       removeAgentWorkspaceDirectory,
     } = await import('@electron/utils/agent-config');
 
-    const { snapshot, removedEntry } = await deleteAgentConfig('test2');
+    const { snapshot, removedEntry } = await deleteAgentConfig('test2', emulateGatewayAgentDelete);
 
     expect(snapshot.agents.map((agent) => agent.id)).toEqual(['main', 'test3']);
     expect(snapshot.channelOwners.feishu).toBe('main');
 
     const config = await readOpenClawJson();
-    const canonicalAgents = config.agents as {
-      entries: Record<string, unknown>;
-      ownership?: string;
-      defaults?: { systemAgent?: { agentId?: string } };
-      list?: unknown;
+    const persistedAgents = config.agents as {
+      entries?: Record<string, unknown>;
+      list?: Array<{ id: string }>;
     };
-    expect(Object.keys(canonicalAgents.entries))
-      .toEqual(['main', 'test3']);
-    expect(canonicalAgents.ownership).toBe('explicit');
-    expect(canonicalAgents.defaults?.systemAgent?.agentId).toBe('main');
-    expect(canonicalAgents.list).toBeUndefined();
+    const persistedAgentIds = persistedAgents.entries
+      ? Object.keys(persistedAgents.entries)
+      : persistedAgents.list?.map((entry) => entry.id);
+    expect(persistedAgentIds).toEqual(['main', 'test3']);
     expect(config.bindings).toEqual([]);
     await expect(access(test2RuntimeDir)).rejects.toThrow();
-    // The service removes the workspace after `deleteAgentConfig` commits, so the
-    // config mutation leaves it in place for the caller.
+    // The service removes the workspace after the authoritative Gateway RPC,
+    // so the ClawX cleanup leaves it in place for the caller.
     await expect(access(test2WorkspaceDir)).resolves.toBeUndefined();
 
     await expect(removeAgentWorkspaceDirectory(removedEntry))
@@ -480,7 +499,7 @@ describe('agent config lifecycle', () => {
       removeAgentWorkspaceDirectory,
     } = await import('@electron/utils/agent-config');
 
-    const { removedEntry } = await deleteAgentConfig('test2');
+    const { removedEntry } = await deleteAgentConfig('test2', emulateGatewayAgentDelete);
     await expect(removeAgentWorkspaceDirectory(removedEntry)).resolves.toBeNull();
 
     await expect(access(customWorkspaceDir)).resolves.toBeUndefined();
@@ -520,7 +539,7 @@ describe('agent config lifecycle', () => {
     });
 
     const { deleteAgentConfig } = await import('@electron/utils/agent-config');
-    await deleteAgentConfig('test2');
+    await deleteAgentConfig('test2', emulateGatewayAgentDelete);
 
     const config = await readOpenClawJson();
     const feishu = (config.channels as Record<string, unknown>).feishu as {
@@ -552,7 +571,7 @@ describe('agent config lifecycle', () => {
     });
     const { deleteAgentConfig } = await import('@electron/utils/agent-config');
 
-    await deleteAgentConfig('test2');
+    await deleteAgentConfig('test2', emulateGatewayAgentDelete);
 
     const config = await readOpenClawJson();
     const telegram = (config.channels as Record<string, unknown>).telegram as {
@@ -591,7 +610,7 @@ describe('agent config lifecycle', () => {
     });
     const { deleteAgentConfig } = await import('@electron/utils/agent-config');
 
-    await deleteAgentConfig('test2');
+    await deleteAgentConfig('test2', emulateGatewayAgentDelete);
 
     const config = await readOpenClawJson();
     expect((config.channels as Record<string, unknown>).telegram).toBeUndefined();
@@ -626,7 +645,7 @@ describe('agent config lifecycle', () => {
     });
     const { deleteAgentConfig } = await import('@electron/utils/agent-config');
 
-    await deleteAgentConfig('test2');
+    await deleteAgentConfig('test2', emulateGatewayAgentDelete);
 
     const config = await readOpenClawJson();
     const discordChannel = (config.channels as {

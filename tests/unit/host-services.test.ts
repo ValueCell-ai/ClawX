@@ -956,10 +956,17 @@ describe('host services', () => {
       channelAccountOwners: {},
     };
     const removedEntry = { id: 'code', workspace: '/tmp/code-workspace' };
-    deleteAgentConfigMock.mockResolvedValue({ snapshot, removedEntry });
+    deleteAgentConfigMock.mockImplementation(async (
+      agentId: string,
+      deleteAgentThroughGateway: (id: string) => Promise<unknown>,
+    ) => {
+      await deleteAgentThroughGateway(agentId);
+      return { snapshot, removedEntry };
+    });
     removeAgentWorkspaceDirectoryMock.mockResolvedValue('/tmp/code-workspace');
     const gatewayManager = {
       getStatus: vi.fn(() => ({ state: 'stopped' })),
+      rpc: vi.fn().mockResolvedValue({ ok: true, agentId: 'code' }),
       restart: vi.fn().mockResolvedValue(undefined),
     };
     const { createAgentsApi } = await import('@electron/services/agents-api');
@@ -971,11 +978,34 @@ describe('host services', () => {
         removedWorkspacePath: '/tmp/code-workspace',
       });
 
-    expect(deleteAgentConfigMock).toHaveBeenCalledWith('code');
+    expect(deleteAgentConfigMock).toHaveBeenCalledWith('code', expect.any(Function));
+    expect(gatewayManager.rpc).toHaveBeenCalledWith('agents.delete', {
+      agentId: 'code',
+      deleteFiles: false,
+    });
     expect(gatewayManager.restart).not.toHaveBeenCalled();
     expect(removeAgentWorkspaceDirectoryMock).toHaveBeenCalledWith(removedEntry);
     expect(deleteAgentConfigMock.mock.invocationCallOrder[0])
       .toBeLessThan(removeAgentWorkspaceDirectoryMock.mock.invocationCallOrder[0]);
+  });
+
+  it('does not remove an Agent workspace when the authoritative delete RPC fails', async () => {
+    deleteAgentConfigMock.mockImplementation(async (
+      agentId: string,
+      deleteAgentThroughGateway: (id: string) => Promise<unknown>,
+    ) => {
+      await deleteAgentThroughGateway(agentId);
+      throw new Error('unreachable');
+    });
+    const gatewayManager = {
+      rpc: vi.fn().mockRejectedValue(new Error('agents.delete unavailable')),
+    };
+    const { createAgentsApi } = await import('@electron/services/agents-api');
+
+    await expect(createAgentsApi({ gatewayManager: gatewayManager as never }).delete({ id: 'code' }))
+      .rejects.toThrow('agents.delete unavailable');
+
+    expect(removeAgentWorkspaceDirectoryMock).not.toHaveBeenCalled();
   });
 
   it('updates agent model without scheduling lifecycle work', async () => {

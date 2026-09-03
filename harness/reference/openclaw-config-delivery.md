@@ -12,6 +12,11 @@ Provider, Agent, Channel, skill, proxy, image-generation, and plugin-install hel
 
 This is not a write-then-notify design. No provider, Agent, Channel, skill, proxy, image-generation, or plugin-install helper may write the active config independently. The coordinator prevents a locally read stale snapshot from overwriting concurrent Gateway or CLI config changes.
 
+OpenClaw 2026.8.2 protects existing Agent roster entries from removal through
+generic `config.set`. ClawX therefore delegates intentional roster deletion to
+`agents.delete` with file deletion disabled, then applies its narrower cleanup
+policy for Agent runtime data, managed workspaces, and owned channel accounts.
+
 Gateway WebSocket tracing must redact the complete serialized `raw` payload for `config.set`, `config.patch`, and `config.apply`; key-based structural redaction cannot inspect secrets embedded inside that string.
 
 Coordinator-backed reads follow the same authority rule: prefer the runtime-shaped `config.get.config` object while Gateway is running and use JSON5 file parsing while it is not. Compound views derive all config-backed fields from one snapshot.

@@ -8,7 +8,10 @@ touchedAreas:
   - README.md
   - README.zh-CN.md
   - README.ja-JP.md
+  - README.ru-RU.md
   - harness/specs/tasks/fix-agent-deletion-session-catalog.md
+  - harness/specs/rules/openclaw-config-delivery.md
+  - harness/reference/openclaw-config-delivery.md
   - harness/specs/scenarios/gateway-backend-communication.md
   - harness/specs/scenarios/chat-workspace-and-navigation.md
   - harness/specs/rules/acp-chat-state-and-history.md
@@ -49,6 +52,7 @@ touchedAreas:
   - tests/e2e/chat-workspace-context.spec.ts
 expectedUserBehavior:
   - Deleting a non-default agent requires confirmation that the agent, managed workspace, and all associated chat history will be permanently deleted and cannot be recovered.
+  - ClawX requests intentional Agent removal through OpenClaw's `agents.delete` RPC instead of removing `agents.entries` through `config.set`.
   - After Main confirms deletion, every renderer session whose canonical key belongs to that agent disappears immediately without waiting for a Gateway restart or another sessions.list request.
   - If the deleted agent owns the selected conversation, Chat selects a safe surviving conversation, preferring the main agent, or creates a main-agent local placeholder when no safe conversation remains.
   - Renderer-only labels, activity, composer drafts, pending catalog state, label hydration state, and persisted attention for removed sessions are cleared.
@@ -85,6 +89,8 @@ requiredTests:
   - pnpm run comms:compare
 acceptance:
   - Agent deletion remains Main-authoritative and Renderer calls it only through the typed host API.
+  - Main calls `agents.delete` with `deleteFiles: false`, allowing OpenClaw to own roster deletion while ClawX retains its managed-workspace and runtime-directory cleanup policy.
+  - No ClawX `config.set` mutation removes an Agent roster entry.
   - Renderer forgets an agent's sessions only after the host agent deletion succeeds; a failed deletion preserves the existing chat catalog.
   - Session ownership is matched by the exact canonical prefix `agent:<agentId>:` so similarly named agents are not affected.
   - Selection repair never creates a placeholder for the agent that was just deleted.

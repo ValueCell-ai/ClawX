@@ -76,7 +76,13 @@ export function createAgentsApi(ctx: AgentsApiContext): CompleteHostServiceRegis
     },
     delete: async (payload) => {
       const agentId = requireString(payload, 'id');
-      const { snapshot, removedEntry } = await deleteAgentConfig(agentId);
+      const { snapshot, removedEntry } = await deleteAgentConfig(
+        agentId,
+        (id) => ctx.gatewayManager.rpc('agents.delete', {
+          agentId: id,
+          deleteFiles: false,
+        }),
+      );
       const removedWorkspacePath = await removeAgentWorkspaceDirectory(removedEntry).catch((err) => {
         console.warn('[agents] Failed to remove workspace after agent deletion:', err);
         return null;

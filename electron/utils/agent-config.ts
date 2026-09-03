@@ -840,54 +840,48 @@ export async function updateAgentModel(agentId: string, modelRef: string | null)
   return snapshot!;
 }
 
-export async function deleteAgentConfig(agentId: string): Promise<{ snapshot: AgentsSnapshot; removedEntry: AgentListEntry }> {
+export async function deleteAgentConfig(
+  agentId: string,
+  deleteAgentThroughGateway: (agentId: string) => Promise<unknown>,
+): Promise<{ snapshot: AgentsSnapshot; removedEntry: AgentListEntry }> {
   if (agentId === MAIN_AGENT_ID) {
     throw new Error('The main agent cannot be deleted');
   }
 
-  let result: { snapshot: AgentsSnapshot; removedEntry: AgentListEntry } | undefined;
-  await mutateOpenClawConfig(async (configSnapshot) => {
-    const config = configSnapshot as AgentConfigDocument;
-    const { agentsConfig, entries, defaultAgentId } = normalizeAgentsConfig(config);
-    const bindingsBeforeDeletion = Array.isArray(config.bindings)
-      ? config.bindings.filter(isChannelBinding)
-      : [];
-    const removedEntry = entries.find((entry) => entry.id === agentId);
-    const nextEntries = entries.filter((entry) => entry.id !== agentId);
-    if (!removedEntry || nextEntries.length === entries.length) {
-      throw new Error(`Agent "${agentId}" not found`);
-    }
+  const config = await readOpenClawConfig() as AgentConfigDocument;
+  const { entries } = normalizeAgentsConfig(config);
+  const removedEntry = entries.find((entry) => entry.id === agentId);
+  if (!removedEntry) {
+    throw new Error(`Agent "${agentId}" not found`);
+  }
 
-    const nextSystemAgentId = defaultAgentId === agentId && nextEntries.length > 0
-      ? nextEntries[0].id
-      : defaultAgentId;
-    config.agents = writeCanonicalAgentEntries(agentsConfig, nextEntries, nextSystemAgentId);
-    config.bindings = Array.isArray(config.bindings)
-      ? config.bindings.filter((binding) => !(isChannelBinding(binding) && binding.agentId === agentId))
-      : undefined;
+  const bindingsBeforeDeletion = Array.isArray(config.bindings)
+    ? config.bindings.filter(isChannelBinding)
+    : [];
+  const normalizedAgentId = normalizeAgentIdForBinding(agentId);
+  const legacyAccountId = resolveAccountIdForAgent(agentId);
+  const { channelToAgent, accountToAgent } = getChannelBindingMap(bindingsBeforeDeletion);
+  const boundChannelTypes = new Set(bindingsBeforeDeletion.map((binding) => binding.match.channel));
+  const ownedLegacyAccounts = new Set(
+    [...boundChannelTypes]
+      .filter((channelType) => {
+        const accountOwner = accountToAgent.get(`${channelType}:${legacyAccountId}`);
+        const effectiveOwner = accountOwner
+          ?? (legacyAccountId === DEFAULT_ACCOUNT_ID ? channelToAgent.get(channelType) : undefined);
+        return effectiveOwner === normalizedAgentId;
+      })
+      .map((channelType) => `${channelType}:${legacyAccountId}`),
+  );
 
-    const normalizedAgentId = normalizeAgentIdForBinding(agentId);
-    const legacyAccountId = resolveAccountIdForAgent(agentId);
-    const { channelToAgent, accountToAgent } = getChannelBindingMap(bindingsBeforeDeletion);
-    const boundChannelTypes = new Set(bindingsBeforeDeletion.map((binding) => binding.match.channel));
-    const ownedLegacyAccounts = new Set(
-      [...boundChannelTypes]
-        .filter((channelType) => {
-          const accountOwner = accountToAgent.get(`${channelType}:${legacyAccountId}`);
-          const effectiveOwner = accountOwner
-            ?? (legacyAccountId === DEFAULT_ACCOUNT_ID ? channelToAgent.get(channelType) : undefined);
-          return effectiveOwner === normalizedAgentId;
-        })
-        .map((channelType) => `${channelType}:${legacyAccountId}`),
-    );
-
-    await deleteAgentChannelAccounts(agentId, ownedLegacyAccounts);
-    result = { snapshot: await buildSnapshotFromConfig(config), removedEntry };
-  });
+  // OpenClaw 2026.8.2 rejects roster removal through config.set. Its dedicated
+  // RPC owns the authoritative Agent deletion and removes associated bindings.
+  // Keep file deletion disabled so ClawX can preserve unmanaged workspaces.
+  await deleteAgentThroughGateway(agentId);
+  await deleteAgentChannelAccounts(agentId, ownedLegacyAccounts);
   await removeAgentRuntimeDirectory(agentId);
-  // The caller removes the workspace only after the coordinator commit above.
+  const snapshot = await listAgentsSnapshot();
   logger.info('Deleted agent config entry', { agentId });
-  return result!;
+  return { snapshot, removedEntry };
 }
 
 export async function assignChannelToAgent(agentId: string, channelType: string): Promise<AgentsSnapshot> {
