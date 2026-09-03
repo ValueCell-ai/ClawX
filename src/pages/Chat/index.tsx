@@ -607,7 +607,10 @@ export function Chat() {
     for (const session of subagentSessions) {
       if (!session.busy) activeSubagentSessionKeys.delete(session.sessionKey);
     }
-  }, [subagentSessions]);
+    if (currentSessionRunState === 'idle') {
+      activeSubagentSessionKeys.delete(currentSessionKey);
+    }
+  }, [currentSessionKey, currentSessionRunState, subagentSessions]);
   const isCurrentSessionSubagent = visibleSessionFamily?.current?.sessionKey === currentSessionKey
     && isNativeSubagentSessionKey(currentSessionKey);
   const currentSessionTitle = isNativeSubagentSessionKey(currentSessionKey)
@@ -623,8 +626,10 @@ export function Chat() {
     : null;
   const currentSubagentBusy = isCurrentSessionSubagent && (
     currentSessionRunState === 'busy'
-    || sessionAttentionByKey[currentSessionKey]?.observedBusy === true
-    || activeSubagentSessionKeys.has(currentSessionKey)
+    || (currentSessionRunState === 'unknown' && (
+      sessionAttentionByKey[currentSessionKey]?.observedBusy === true
+      || activeSubagentSessionKeys.has(currentSessionKey)
+    ))
   );
   const completedSubagentTurn = useMemo(() => {
     if (!currentSubagentBusy) return null;
@@ -780,7 +785,7 @@ export function Chat() {
                   ) : (
                     <AcpTimeline
                       snapshot={visibleAcpTimeline}
-                      isStreaming={acpSending || acpCancelling}
+                      isStreaming={acpSending || acpCancelling || currentSubagentBusy}
                       turnTimingsByUserMessageId={visibleTurnTimings}
                       fileActivity={fileActivity}
                       workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey

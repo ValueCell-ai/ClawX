@@ -154,6 +154,7 @@ describe('harness specs', () => {
     const [
       task,
       oldTask,
+      liveTask,
       gatewayScenario,
       workspaceScenario,
       acpRule,
@@ -166,6 +167,7 @@ describe('harness specs', () => {
     ] = await Promise.all([
       loadSpec('harness/specs/tasks/embed-subagent-sessions-in-parent-chat.md'),
       loadSpec('harness/specs/tasks/surface-subagent-sessions-and-announcements.md'),
+      loadSpec('harness/specs/tasks/stream-loaded-subagent-session-live.md'),
       loadSpec('harness/specs/scenarios/gateway-backend-communication.md'),
       loadSpec('harness/specs/scenarios/chat-workspace-and-navigation.md'),
       loadSpec('harness/specs/rules/acp-chat-state-and-history.md'),
@@ -224,6 +226,23 @@ describe('harness specs', () => {
     expect(oldTaskBehavior).toContain('no longer appears in the sidebar');
     expect(oldTaskBehavior).toContain('remains in the shared session catalog');
 
+    expect(liveTask.data).toMatchObject({
+      id: 'stream-loaded-subagent-session-live',
+      scenario: 'gateway-backend-communication',
+      taskType: 'runtime-bridge',
+      requiredProfiles: ['fast', 'comms', 'e2e'],
+      docs: { required: true },
+    });
+    const liveTaskAcceptance = (liveTask.data.acceptance as string[]).join('\n');
+    expect(liveTaskAcceptance).toContain('canonical `agent:<agentId>:subagent:<childId>` shape');
+    expect(liveTaskAcceptance).toContain('ordinary no-pending parent runs remain ignored');
+    expect(liveTaskAcceptance).toContain('Gateway catalog run state remains the authority');
+    expect(liveTaskAcceptance).toContain('tool lifecycle update paths');
+    expect(liveTaskAcceptance).toContain('preserves those baselines across tool boundaries');
+    expect(liveTaskAcceptance).toContain('subscribes before fetching the replay snapshot');
+    expect(liveTaskAcceptance).toContain('previous owner and subscription remain available until load commits');
+    expect(liveTaskAcceptance).toContain('terminal catalog state overrides transient attention');
+
     expect(gatewayScenario.body).toContain('ACP `session/list` is the sole lineage membership and title authority');
     expect(gatewayScenario.body).toContain('Latest exact-key Gateway catalog presence gates current child visibility and actionability');
     expect(gatewayScenario.body).toContain('Presence never creates lineage membership or titles');
@@ -235,9 +254,13 @@ describe('harness specs', () => {
     expect(acpRule.body).toContain('ACP `session/list` is the sole lineage membership and title authority');
     expect(acpRule.body).toContain('accepted status, non-empty `runId`, and non-empty `childSessionKey`');
     expect(acpRule.body).toContain('only an invalidation signal');
+    expect(acpRule.body).toContain('buffer matching Chat and Agent events');
+    expect(acpRule.body).toContain('commentary as thought chunks');
     expect(acpRule.body).toContain('128 pages');
     expect(acpRule.body).toContain('archived, deleted, cleaned, or otherwise unlisted children');
     expect(acpRule.body).toContain('transcript, announcement, assistant prose, Gateway parent fields, or child UUIDs');
+    expect(acpRule.body).toContain('recorded tool lifecycle updates');
+    expect(acpRule.body).toContain('tool boundaries in the same assistant turn must preserve them');
 
     expect(attentionRule.body).toContain('Latest exact-key Gateway catalog presence');
     expect(attentionRule.body).toContain('gates current child visibility and actionability');
@@ -254,6 +277,8 @@ describe('harness specs', () => {
     expect(acpReference).toContain('no transcript, announcement, assistant-prose, Gateway-lineage, or UUID fallback');
     expect(acpReference).toContain('Latest exact-key Gateway catalog presence gates current child visibility and actionability');
     expect(acpReference).toContain('Presence does not create lineage membership or titles');
+    expect(acpReference).toContain('recorded tool start, update, and result events');
+    expect(acpReference).toContain('tool boundaries preserve those baselines');
 
     expect(workspaceReference).toContain('Latest exact-key Gateway catalog presence');
     expect(workspaceReference).toContain('return-target availability');
@@ -275,9 +300,9 @@ describe('harness specs', () => {
     expect(acpReference).not.toContain(staleSidebarContract);
     expect(workspaceReference).not.toContain(staleSidebarContract);
 
-    expect(englishReadme).toContain('embedded subagent status with child drill-down and direct-parent return');
-    expect(chineseReadme).toContain('内嵌子 Agent 状态、下钻及直接返回父会话');
-    expect(japaneseReadme).toContain('埋め込みサブエージェントの状態表示・子会話への移動・直接の親会話への復帰');
+    expect(englishReadme).toContain('embedded subagent status with live read-only child drill-down and direct-parent return');
+    expect(chineseReadme).toContain('内嵌子 Agent 状态、实时只读下钻及直接返回父会话');
+    expect(japaneseReadme).toContain('埋め込みサブエージェントの状態表示・ライブ更新される読み取り専用の子会話・直接の親会話への復帰');
   });
 
   it('defines the local HTML preview harness contract', async () => {

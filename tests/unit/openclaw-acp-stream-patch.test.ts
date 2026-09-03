@@ -20,6 +20,14 @@ type DeltaHandler = (this: {
 
 type ChatHandler = (this: {
   findPendingBySessionKey: () => Record<string, unknown> | undefined;
+  findAmbientSession: (sessionKey: string, runId: string) => Record<string, unknown> | undefined;
+  ambientSession?: Record<string, unknown>;
+  handleAmbientChatEvent: (
+    session: Record<string, unknown>,
+    runId: string,
+    state: string,
+    messageData?: Record<string, unknown>,
+  ) => Promise<void>;
   handleDeltaEvent: (sessionId: string, messageData: Record<string, unknown>) => Promise<void>;
   finishPrompt: (sessionId: string, pending: Record<string, unknown>, stopReason: string) => Promise<void>;
 }, event: { payload: Record<string, unknown> }) => Promise<void>;
@@ -54,6 +62,10 @@ type PostLedgerTranscriptSelector = (
 
 type AmbientChatHandler = (this: {
   ambientChatRuns: Map<string, Record<string, unknown>>;
+  getOrCreateAmbientChatRun?: (
+    session: Record<string, unknown>,
+    runId: string,
+  ) => Record<string, unknown> | undefined;
   sessionUpdates: { emit: (value: unknown) => Promise<void> };
   getSessionSnapshot: (sessionKey: string) => Promise<Record<string, unknown>>;
   sendSessionSnapshotUpdate: (
@@ -63,6 +75,53 @@ type AmbientChatHandler = (this: {
   ) => Promise<void>;
   log: (message: string) => void;
 }, session: Record<string, unknown>, runId: string, state: string, messageData?: Record<string, unknown>) => Promise<void>;
+
+type AmbientRunFactory = (this: {
+  ambientChatRuns: Map<string, Record<string, unknown>>;
+}, session: Record<string, unknown>, runId: string) => Record<string, unknown> | undefined;
+
+type AmbientReplayBaselineResolver = (
+  ledgerEvents: Array<{ update?: Record<string, unknown> }>,
+  transcript: Array<Record<string, unknown>>,
+) => { sentText?: string; sentThought?: string };
+
+type AgentEventHandler = (this: {
+  findPendingBySessionKey: () => Record<string, unknown> | undefined;
+  findAmbientSession: (sessionKey: string, runId: string) => Record<string, unknown> | undefined;
+  getOrCreateAmbientChatRun: (
+    session: Record<string, unknown>,
+    runId: string,
+  ) => Record<string, unknown> | undefined;
+  emitCompactionUpdate: () => Promise<void>;
+  handleApprovalEvent: () => Promise<void>;
+  handleDeltaEvent: (sessionId: string, messageData: Record<string, unknown>) => Promise<void>;
+  handleAmbientChatEvent: (
+    session: Record<string, unknown>,
+    runId: string,
+    state: string,
+    messageData: Record<string, unknown>,
+  ) => Promise<void>;
+  sessionUpdates: { emit: (value: unknown) => Promise<void> };
+}, event: { payload: Record<string, unknown> }) => Promise<void>;
+
+type GatewayEventHandler = (this: {
+  ambientSession?: {
+    sessionKey: string;
+    replayPending?: boolean;
+    pendingEvents?: Array<Record<string, unknown>>;
+  };
+  dispatchGatewayEvent?: (event: Record<string, unknown>) => Promise<void>;
+  handleChatEvent: (event: Record<string, unknown>) => Promise<void>;
+  handleSessionOperationEvent: (event: Record<string, unknown>) => Promise<void>;
+  handleExecApprovalRequestEvent: (event: Record<string, unknown>) => void;
+  handleAgentEvent: (event: Record<string, unknown>) => Promise<void>;
+}, event: Record<string, unknown>) => Promise<void>;
+
+type AmbientSessionLifecycle = {
+  activate: (this: Record<string, unknown>, session: Record<string, unknown>, replayBaseline?: Record<string, unknown>, options?: Record<string, unknown>) => Promise<void>;
+  complete: (this: Record<string, unknown>, session: Record<string, unknown>, replayBaseline: Record<string, unknown>) => Promise<void>;
+  rollback: (this: Record<string, unknown>, session: Record<string, unknown>) => Promise<void>;
+};
 
 function extractDeltaHandler(bundle: string): DeltaHandler {
   const methodStart = bundle.indexOf('async handleDeltaEvent(sessionId, messageData)');
@@ -171,6 +230,122 @@ function extractAmbientChatHandler(bundle: string): AmbientChatHandler {
   return context.handleAmbientChatEvent;
 }
 
+function extractAmbientRunFactory(bundle: string): AmbientRunFactory {
+  const methodStart = bundle.indexOf('getOrCreateAmbientChatRun(session, runId)');
+  const methodEnd = bundle.indexOf('\n\tasync handleAmbientChatEvent', methodStart);
+  if (methodStart < 0 || methodEnd <= methodStart) {
+    throw new Error('OpenClaw ambient run factory was not found');
+  }
+  const methodSource = bundle
+    .slice(methodStart, methodEnd)
+    .replace('getOrCreateAmbientChatRun', 'function getOrCreateAmbientChatRun');
+  const context = { getOrCreateAmbientChatRun: undefined as AmbientRunFactory | undefined };
+  runInNewContext(`globalThis.getOrCreateAmbientChatRun = ${methodSource};`, context);
+  if (!context.getOrCreateAmbientChatRun) throw new Error('OpenClaw ambient run factory could not be loaded');
+  return context.getOrCreateAmbientChatRun;
+}
+
+function extractAmbientReplayBaselineResolver(bundle: string): AmbientReplayBaselineResolver {
+  const start = bundle.indexOf('function resolveAmbientReplayBaseline(');
+  const end = bundle.indexOf('\nfunction selectPostLedgerTranscript', start);
+  if (start < 0 || end <= start) throw new Error('OpenClaw ambient replay baseline resolver was not found');
+  const context = {
+    extractReplayChunks,
+    resolveAmbientReplayBaseline: undefined as AmbientReplayBaselineResolver | undefined,
+  };
+  function extractReplayChunks(message: Record<string, unknown>) {
+    const role = message.role;
+    if (role === 'toolResult') return [{ sessionUpdate: 'tool_call_update' }];
+    const text = typeof message.content === 'string' ? message.content : '';
+    if (!text || (role !== 'user' && role !== 'assistant')) return [];
+    return [{
+      sessionUpdate: role === 'user' ? 'user_message_chunk' : 'agent_message_chunk',
+      text,
+    }];
+  }
+  runInNewContext(
+    `${bundle.slice(start, end)}\nglobalThis.resolveAmbientReplayBaseline = resolveAmbientReplayBaseline;`,
+    context,
+  );
+  if (!context.resolveAmbientReplayBaseline) throw new Error('OpenClaw ambient replay baseline resolver could not be loaded');
+  return context.resolveAmbientReplayBaseline;
+}
+
+function extractAgentEventHandler(bundle: string): AgentEventHandler {
+  const methodStart = bundle.indexOf('async handleAgentEvent(evt)');
+  const methodEnd = bundle.indexOf('\n\tasync handleSessionOperationEvent', methodStart);
+  if (methodStart < 0 || methodEnd <= methodStart) throw new Error('OpenClaw ACP agent event handler was not found');
+  const methodSource = bundle
+    .slice(methodStart, methodEnd)
+    .replace('async handleAgentEvent', 'async function handleAgentEvent');
+  const context = {
+    formatToolTitle: (name: unknown) => String(name ?? 'tool'),
+    inferToolKind: () => 'other',
+    extractToolCallLocations: () => [],
+    extractToolCallContent: (value: unknown) => value,
+    normalizeOptionalString: (value: unknown) => (
+      typeof value === 'string' && value.trim() ? value.trim() : undefined
+    ),
+    resolveAssistantEventPhase: (value: unknown) => (
+      (value as { phase?: unknown } | undefined)?.phase === 'commentary' ? 'commentary' : undefined
+    ),
+    resolveAcpEventTextSnapshot: (previousText: string, value: unknown) => {
+      const data = value as { text?: unknown; delta?: unknown };
+      const nextText = typeof data?.text === 'string' ? data.text : '';
+      const nextDelta = typeof data?.delta === 'string' ? data.delta : '';
+      if (nextText && previousText && nextText.startsWith(previousText)) return nextText;
+      if (nextDelta) return previousText + nextDelta;
+      return nextText || previousText;
+    },
+    handleAgentEvent: undefined as AgentEventHandler | undefined,
+  };
+  runInNewContext(`globalThis.handleAgentEvent = ${methodSource};`, context);
+  if (!context.handleAgentEvent) throw new Error('OpenClaw ACP agent event handler could not be loaded');
+  return context.handleAgentEvent;
+}
+
+function extractGatewayEventHandler(bundle: string): GatewayEventHandler {
+  const methodStart = bundle.indexOf('async handleGatewayEvent(evt)');
+  const methodEnd = bundle.indexOf('\n\tasync initialize', methodStart);
+  if (methodStart < 0 || methodEnd <= methodStart) throw new Error('OpenClaw ACP gateway event handler was not found');
+  const methodSource = bundle
+    .slice(methodStart, methodEnd)
+    .replace('async handleGatewayEvent', 'async function handleGatewayEvent');
+  const context = { handleGatewayEvent: undefined as GatewayEventHandler | undefined };
+  runInNewContext(`globalThis.handleGatewayEvent = ${methodSource};`, context);
+  if (!context.handleGatewayEvent) throw new Error('OpenClaw ACP gateway event handler could not be loaded');
+  return context.handleGatewayEvent;
+}
+
+function extractAmbientSessionLifecycle(bundle: string): AmbientSessionLifecycle {
+  const activateStart = bundle.indexOf('async activateAmbientSession(session, replayBaseline, opts = {})');
+  const completeStart = bundle.indexOf('\n\tasync completeAmbientSessionReplay', activateStart);
+  const rollbackStart = bundle.indexOf('\n\tasync rollbackAmbientSessionReplay', completeStart);
+  const deactivateStart = bundle.indexOf('\n\tasync deactivateAmbientSession', rollbackStart);
+  if (activateStart < 0 || completeStart < 0 || rollbackStart < 0 || deactivateStart < 0) {
+    throw new Error('OpenClaw ambient session lifecycle methods were not found');
+  }
+  const context = {
+    activate: undefined as AmbientSessionLifecycle['activate'] | undefined,
+    complete: undefined as AmbientSessionLifecycle['complete'] | undefined,
+    rollback: undefined as AmbientSessionLifecycle['rollback'] | undefined,
+  };
+  const asFunction = (source: string, name: string) => source.replace(`async ${name}`, `async function ${name}`);
+  runInNewContext(`
+    globalThis.activate = ${asFunction(bundle.slice(activateStart, completeStart), 'activateAmbientSession')};
+    globalThis.complete = ${asFunction(bundle.slice(completeStart + 2, rollbackStart), 'completeAmbientSessionReplay')};
+    globalThis.rollback = ${asFunction(bundle.slice(rollbackStart + 2, deactivateStart), 'rollbackAmbientSessionReplay')};
+  `, context);
+  if (!context.activate || !context.complete || !context.rollback) {
+    throw new Error('OpenClaw ambient session lifecycle methods could not be loaded');
+  }
+  return {
+    activate: context.activate,
+    complete: context.complete,
+    rollback: context.rollback,
+  };
+}
+
 describe('OpenClaw ACP assistant stream patch', () => {
   it('selects only finite transcript records strictly newer than a complete ledger', async () => {
     const bundle = await readFile(bundlePath, 'utf8');
@@ -212,6 +387,7 @@ describe('OpenClaw ACP assistant stream patch', () => {
   it('streams no-pending announce runs for the loaded session and checkpoints their terminal', async () => {
     const bundle = await readFile(bundlePath, 'utf8');
     const handleAmbientChatEvent = extractAmbientChatHandler(bundle);
+    const getOrCreateAmbientChatRun = extractAmbientRunFactory(bundle);
     const calls: Array<Record<string, unknown>> = [];
     const session = {
       sessionId: 'parent-session',
@@ -220,6 +396,9 @@ describe('OpenClaw ACP assistant stream patch', () => {
     };
     const receiver = {
       ambientChatRuns: new Map<string, Record<string, unknown>>(),
+      getOrCreateAmbientChatRun: (routedSession: Record<string, unknown>, ambientRunId: string) => (
+        getOrCreateAmbientChatRun.call(receiver, routedSession, ambientRunId)
+      ),
       sessionUpdates: {
         emit: async (value: unknown) => calls.push(value as Record<string, unknown>),
       },
@@ -272,7 +451,7 @@ describe('OpenClaw ACP assistant stream patch', () => {
 
     const loadStart = bundle.indexOf('async loadSession(params)');
     const loadEnd = bundle.indexOf('\n\tasync listSessions', loadStart);
-    expect(bundle.slice(loadStart, loadEnd)).toContain('activateAmbientSession(session)');
+    expect(bundle.slice(loadStart, loadEnd)).toContain('activateAmbientSession(session');
     for (const [startMarker, endMarker] of [
       ['async newSession(params)', '\n\tasync loadSession'],
       ['async resumeSession(params)', '\n\tasync closeSession'],
@@ -293,9 +472,13 @@ describe('OpenClaw ACP assistant stream patch', () => {
     const chatStart = bundle.indexOf('async handleChatEvent(evt)');
     const chatEnd = bundle.indexOf('\n\tasync handleDeltaEvent', chatStart);
     const chatSource = bundle.slice(chatStart, chatEnd);
+    const ambientRouteStart = bundle.indexOf('\n\tfindAmbientSession(sessionKey, runId) {');
+    const ambientRouteEnd = bundle.indexOf('\n\tgetOrCreateAmbientChatRun', ambientRouteStart);
+    const ambientRouteSource = bundle.slice(ambientRouteStart, ambientRouteEnd);
     expect(chatSource).toContain('handleAmbientChatEvent');
-    expect(chatSource).toContain('runId.startsWith("announce:v1:")');
-    expect(chatSource).toContain('ambientSession.sessionKey !== sessionKey');
+    expect(ambientRouteSource).toContain('normalizedRunId.startsWith("announce:v1:")');
+    expect(ambientRouteSource).toContain('ambientSession.sessionKey !== sessionKey');
+    expect(ambientRouteSource).toContain('normalizeOptionalString(runId)');
 
     for (let index = 0; index < 105; index += 1) {
       await handleAmbientChatEvent.call(
@@ -306,6 +489,299 @@ describe('OpenClaw ACP assistant stream patch', () => {
       );
     }
     expect(receiver.ambientChatRuns.size).toBeLessThanOrEqual(100);
+  });
+
+  it('routes no-pending ordinary runs only for the exact loaded native subagent', async () => {
+    const bundle = await readFile(bundlePath, 'utf8');
+    const handleChatEvent = extractChatHandler(bundle);
+    const childSession = {
+      sessionId: 'child-session',
+      sessionKey: 'agent:main:subagent:child-1',
+    };
+    const calls: string[] = [];
+    const receiver = {
+      ambientSession: childSession,
+      findPendingBySessionKey: () => undefined,
+      findAmbientSession: (sessionKey: string, runId: string) => {
+        const current = receiver.ambientSession;
+        const normalizedRunId = runId.trim();
+        if (current?.sessionKey !== sessionKey || !normalizedRunId) return undefined;
+        const parts = sessionKey.split(':');
+        if (normalizedRunId.startsWith('announce:v1:') || (
+          parts.length === 4 && parts[0] === 'agent' && parts[1] && parts[2] === 'subagent' && parts[3]
+        )) return current;
+        return undefined;
+      },
+      handleAmbientChatEvent: async (
+        session: Record<string, unknown>,
+        runId: string,
+        state: string,
+      ) => {
+        calls.push(`${String(session.sessionKey)}:${runId}:${state}`);
+      },
+      handleDeltaEvent: async () => undefined,
+      finishPrompt: async () => undefined,
+    };
+
+    const emit = async (sessionKey: string, runId: string) => {
+      await handleChatEvent.call(receiver, {
+        payload: {
+          sessionKey,
+          runId,
+          state: 'delta',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'live child output' }] },
+        },
+      });
+    };
+
+    await emit(childSession.sessionKey, 'child-run-1');
+    await emit(childSession.sessionKey, '');
+    await emit(childSession.sessionKey, '   ');
+    await emit('agent:main:subagent:other-child', 'other-child-run');
+    receiver.ambientSession = { sessionId: 'parent-session', sessionKey: 'agent:main:main' };
+    await emit('agent:main:main', 'ordinary-parent-run');
+    await emit('agent:main:main', 'announce:v1:child-run:parent');
+    receiver.ambientSession = { sessionId: 'malformed-child', sessionKey: 'agent:main:subagent:' };
+    await emit('agent:main:subagent:', 'malformed-child-run');
+
+    expect(calls).toEqual([
+      'agent:main:subagent:child-1:child-run-1:delta',
+      'agent:main:main:announce:v1:child-run:parent:delta',
+    ]);
+  });
+
+  it('routes commentary agent events as live thought for an exact loaded native subagent', async () => {
+    const bundle = await readFile(bundlePath, 'utf8');
+    const handleAgentEvent = extractAgentEventHandler(bundle);
+    const childSession = {
+      sessionId: 'child-session',
+      sessionKey: 'agent:main:subagent:child-1',
+    };
+    const ambientRun: Record<string, unknown> = { settled: false, sentThought: 'Need' };
+    const messages: Record<string, unknown>[] = [];
+
+    await handleAgentEvent.call({
+      findPendingBySessionKey: () => undefined,
+      findAmbientSession: () => childSession,
+      getOrCreateAmbientChatRun: () => ambientRun,
+      emitCompactionUpdate: async () => undefined,
+      handleApprovalEvent: async () => undefined,
+      handleDeltaEvent: async () => undefined,
+      handleAmbientChatEvent: async (_session, _runId, _state, messageData) => {
+        messages.push(messageData);
+      },
+      sessionUpdates: { emit: async () => undefined },
+    }, {
+      payload: {
+        stream: 'assistant',
+        runId: 'child-run',
+        sessionKey: childSession.sessionKey,
+        data: { phase: 'commentary', text: 'Need evidence', delta: ' evidence' },
+      },
+    });
+
+    expect(messages).toEqual([{
+      content: [{ type: 'thinking', thinking: 'Need evidence' }],
+    }]);
+  });
+
+  it('buffers exact-session Gateway events while session replay establishes its baseline', async () => {
+    const bundle = await readFile(bundlePath, 'utf8');
+    const handleGatewayEvent = extractGatewayEventHandler(bundle);
+    const pendingEvents: Array<Record<string, unknown>> = [];
+    const routed: string[] = [];
+    const event = {
+      event: 'chat',
+      payload: {
+        sessionKey: 'agent:main:subagent:child-1',
+        runId: 'child-run',
+        state: 'delta',
+      },
+    };
+
+    await handleGatewayEvent.call({
+      ambientSession: {
+        sessionKey: 'agent:main:subagent:child-1',
+        replayPending: true,
+        pendingEvents,
+      },
+      dispatchGatewayEvent: async () => routed.push('dispatch'),
+      handleChatEvent: async () => routed.push('chat'),
+      handleSessionOperationEvent: async () => routed.push('operation'),
+      handleExecApprovalRequestEvent: () => routed.push('approval'),
+      handleAgentEvent: async () => routed.push('agent'),
+    }, event);
+
+    expect(pendingEvents).toEqual([event]);
+    expect(routed).toEqual([]);
+
+    const loadStart = bundle.indexOf('async loadSession(params)');
+    const loadEnd = bundle.indexOf('\n\tasync listSessions', loadStart);
+    const loadSource = bundle.slice(loadStart, loadEnd);
+    expect(loadSource.indexOf('activateAmbientSession(session, void 0, { replayPending: true })'))
+      .toBeLessThan(loadSource.indexOf('this.getSessionTranscript(session.sessionKey)'));
+    expect(loadSource).toContain('completeAmbientSessionReplay(session, replayBaseline)');
+    expect(loadSource).toContain('rollbackAmbientSessionReplay(session)');
+    expect(loadSource).not.toContain('deactivateAmbientSession(session.sessionId)');
+    expect(loadSource.indexOf('sendAvailableCommands(session, { record: false })'))
+      .toBeLessThan(loadSource.indexOf('completeAmbientSessionReplay(session, replayBaseline)'));
+  });
+
+  it('keeps the previous ambient owner until replay commits and restores it on rollback', async () => {
+    const bundle = await readFile(bundlePath, 'utf8');
+    const lifecycle = extractAmbientSessionLifecycle(bundle);
+    const previous = { sessionId: 'parent-session', sessionKey: 'agent:main:main' };
+    const child = { sessionId: 'child-session', sessionKey: 'agent:main:subagent:child-1' };
+    const acquired: string[] = [];
+    const released: string[] = [];
+    const dispatched: string[] = [];
+    const receiver = {
+      ambientSession: previous as Record<string, unknown> | undefined,
+      ambientChatRuns: new Map<string, Record<string, unknown>>([['old-run', {}]]),
+      acquireSessionMessageSubscription: async (sessionKey: string) => { acquired.push(sessionKey); },
+      releaseSessionMessageSubscription: async (sessionKey: string) => { released.push(sessionKey); },
+      dispatchGatewayEvent: async (event: Record<string, unknown>) => {
+        dispatched.push(String(event.event));
+      },
+    };
+
+    await lifecycle.activate.call(receiver, child, undefined, { replayPending: true });
+    expect(receiver.ambientSession).toMatchObject({
+      ...child,
+      replayPending: true,
+      previousAmbientSession: previous,
+      replaySubscriptionAcquired: true,
+    });
+    expect(acquired).toEqual([child.sessionKey]);
+    expect(released).toEqual([]);
+
+    await lifecycle.rollback.call(receiver, child);
+    expect(receiver.ambientSession).toBe(previous);
+    expect(released).toEqual([child.sessionKey]);
+
+    released.length = 0;
+    await lifecycle.activate.call(receiver, child, undefined, { replayPending: true });
+    const pendingSession = receiver.ambientSession as {
+      pendingEvents: Array<Record<string, unknown>>;
+      replayPending: boolean;
+      sentText?: string;
+    };
+    pendingSession.pendingEvents.push({ event: 'agent' }, { event: 'chat' });
+    await lifecycle.complete.call(receiver, child, { sentText: 'replayed' });
+
+    expect(dispatched).toEqual(['agent', 'chat']);
+    expect(receiver.ambientSession).toMatchObject({ ...child, sentText: 'replayed', replayPending: false });
+    expect(receiver.ambientSession).not.toHaveProperty('previousAmbientSession');
+    expect(receiver.ambientSession).not.toHaveProperty('pendingEvents');
+    expect(released).toEqual([previous.sessionKey]);
+  });
+
+  it('continues a partially replayed child message across tool boundaries without repeating its cumulative prefix', async () => {
+    const bundle = await readFile(bundlePath, 'utf8');
+    const resolveAmbientReplayBaseline = extractAmbientReplayBaselineResolver(bundle);
+    const getOrCreateAmbientChatRun = extractAmbientRunFactory(bundle);
+    const handleAmbientChatEvent = extractAmbientChatHandler(bundle);
+    const handleAgentEvent = extractAgentEventHandler(bundle);
+    const baseline = resolveAmbientReplayBaseline([], [
+      { role: 'assistant', content: 'A' },
+      { role: 'toolResult', content: 'tool result' },
+      { role: 'assistant', content: 'B' },
+    ]);
+    const session = {
+      sessionId: 'child-session',
+      sessionKey: 'agent:main:subagent:child-1',
+      ...baseline,
+    };
+    const emitted: string[] = [];
+    const receiver = {
+      ambientChatRuns: new Map<string, Record<string, unknown>>(),
+      getOrCreateAmbientChatRun: (
+        routedSession: Record<string, unknown>,
+        runId: string,
+      ) => getOrCreateAmbientChatRun.call(receiver, routedSession, runId),
+      sessionUpdates: {
+        emit: async (value: unknown) => {
+          const update = (value as { update?: { content?: { text?: string } } }).update;
+          if (update?.content?.text) emitted.push(update.content.text);
+        },
+      },
+      getSessionSnapshot: async () => ({}),
+      sendSessionSnapshotUpdate: async () => undefined,
+      log: () => undefined,
+    };
+
+    await handleAgentEvent.call({
+      ...receiver,
+      findPendingBySessionKey: () => undefined,
+      findAmbientSession: () => session,
+      emitCompactionUpdate: async () => undefined,
+      handleApprovalEvent: async () => undefined,
+    }, {
+      payload: {
+        stream: 'tool',
+        runId: 'child-run',
+        sessionKey: session.sessionKey,
+        data: { phase: 'start', name: 'web_fetch', toolCallId: 'tool-1', args: {} },
+      },
+    });
+    await handleAmbientChatEvent.call(receiver, session, 'child-run', 'delta', {
+      content: [{ type: 'text', text: 'ABC' }],
+    });
+
+    expect(emitted).toEqual(['C']);
+    expect(session).not.toHaveProperty('sentText');
+    const loadStart = bundle.indexOf('async loadSession(params)');
+    const loadEnd = bundle.indexOf('\n\tasync listSessions', loadStart);
+    const loadSource = bundle.slice(loadStart, loadEnd);
+    expect(loadSource).toContain('resolveAmbientReplayBaseline(ledgerReplay.complete ? ledgerReplay.events : [], transcriptReplay)');
+    expect(loadSource).toContain('completeAmbientSessionReplay(session, replayBaseline)');
+  });
+
+  it('streams tool lifecycle updates for an exact loaded native subagent without a pending prompt', async () => {
+    const bundle = await readFile(bundlePath, 'utf8');
+    const handleAgentEvent = extractAgentEventHandler(bundle);
+    const childSession = {
+      sessionId: 'child-session',
+      sessionKey: 'agent:main:subagent:child-1',
+    };
+    const ambientRun: Record<string, unknown> = { settled: false };
+    const calls: Array<Record<string, unknown>> = [];
+    const receiver = {
+      findPendingBySessionKey: () => undefined,
+      findAmbientSession: (sessionKey: string, runId: string) => (
+        sessionKey === childSession.sessionKey && runId === 'child-run' ? childSession : undefined
+      ),
+      getOrCreateAmbientChatRun: () => ambientRun,
+      emitCompactionUpdate: async () => undefined,
+      handleApprovalEvent: async () => undefined,
+      sessionUpdates: { emit: async (value: unknown) => calls.push(value as Record<string, unknown>) },
+    };
+    const emit = async (phase: string, data: Record<string, unknown> = {}) => {
+      await handleAgentEvent.call(receiver, {
+        payload: {
+          stream: 'tool',
+          runId: 'child-run',
+          sessionKey: childSession.sessionKey,
+          data: { phase, name: 'web_fetch', toolCallId: 'child-tool', ...data },
+        },
+      });
+    };
+
+    await emit('start', { args: { url: 'https://example.com' } });
+    await emit('update', { partialResult: { content: [{ type: 'text', text: 'fetching' }] } });
+    await emit('result', { result: { content: [{ type: 'text', text: 'done' }] } });
+
+    expect(calls.map((call) => call.update)).toEqual([
+      expect.objectContaining({ sessionUpdate: 'tool_call', toolCallId: 'child-tool', status: 'in_progress' }),
+      expect.objectContaining({ sessionUpdate: 'tool_call_update', toolCallId: 'child-tool', status: 'in_progress' }),
+      expect.objectContaining({ sessionUpdate: 'tool_call_update', toolCallId: 'child-tool', status: 'completed' }),
+    ]);
+    expect(calls).toEqual(calls.map((_call) => expect.objectContaining({
+      sessionId: childSession.sessionId,
+      sessionKey: childSession.sessionKey,
+      runId: 'child-run',
+      record: true,
+    })));
   });
 
   it('reconciles the final assistant snapshot against text actually emitted to Gateway', async () => {
