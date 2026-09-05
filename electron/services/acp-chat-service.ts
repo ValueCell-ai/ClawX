@@ -76,6 +76,10 @@ type AcpInitializationFlight = {
 };
 
 const ACP_SESSION_LIST_MAX_PAGES = 128;
+// The ACP child only shuts down on SIGINT/SIGTERM and deliberately survives
+// Gateway loss by reconnecting, so quit cleanup must signal it explicitly.
+const ACP_STOP_SIGTERM_GRACE_MS = 3_000;
+const ACP_STOP_SIGKILL_WAIT_MS = 1_000;
 
 function ok(generation?: number, sessionUpdates?: AcpSessionUpdateEnvelope[]): AcpChatOperationResult {
   return {
@@ -556,6 +560,49 @@ export class AcpChatService {
     return ok(waiter.generation);
   }
 
+  /**
+   * Terminates the owned ACP child process (openclaw-acp).
+   *
+   * The child only shuts down on SIGINT/SIGTERM — it neither watches stdin EOF
+   * nor its parent PID, and it reconnects when the Gateway disappears, so it
+   * must be signalled explicitly or it will be orphaned when ClawX quits.
+   */
+  async stop(sigtermGraceMs: number = ACP_STOP_SIGTERM_GRACE_MS): Promise<void> {
+    const child = this.child;
+    if (!child) return;
+
+    if (child.exitCode !== null || child.signalCode) {
+      this.dropConnectionForChild(child);
+      return;
+    }
+
+    this.trace('connection/stop:start', {});
+    const exited = this.waitForChildExit(child);
+    child.kill('SIGTERM');
+
+    const stoppedGracefully = await Promise.race([
+      exited.then(() => true),
+      new Promise<'sigterm-timeout'>((resolve) => {
+        setTimeout(() => resolve('sigterm-timeout'), sigtermGraceMs).unref();
+      }),
+    ]);
+    if (stoppedGracefully === true) return;
+
+    this.trace('connection/stop:timeout', { details: { sigtermGraceMs } });
+    try {
+      child.kill('SIGKILL');
+    } catch (error) {
+      logger.warn(`[acp-chat] ACP SIGKILL failed: ${String(error)}`);
+      return;
+    }
+    await Promise.race([
+      exited,
+      new Promise((resolve) => {
+        setTimeout(resolve, ACP_STOP_SIGKILL_WAIT_MS).unref();
+      }),
+    ]);
+  }
+
   private async ensureConnection(): Promise<AcpConnection> {
     if (this.connection && this.initialized) return this.connection;
     if (this.initializationFlight?.promise) return this.initializationFlight.promise;
@@ -877,10 +924,22 @@ export class AcpChatService {
   }
 }
 
+let activeInstance: AcpChatService | null = null;
+
+/**
+ * The AcpChatService created for this app run, or null before chat handlers
+ * are registered. Quit cleanup uses this to terminate the ACP child process.
+ */
+export function getActiveAcpChatService(): AcpChatService | null {
+  return activeInstance;
+}
+
 export function createAcpChatService(
   mainWindow: MainWindowLike,
   accessRegistry: AcpSessionAccessRegistry,
   gateway?: GatewayPairingRpcClient,
 ): AcpChatService {
-  return new AcpChatService(mainWindow, accessRegistry, undefined, gateway);
+  const service = new AcpChatService(mainWindow, accessRegistry, undefined, gateway);
+  activeInstance = service;
+  return service;
 }
