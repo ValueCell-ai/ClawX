@@ -2,9 +2,31 @@ packages:
   - '.'
   - 'harness'
 
+onlyBuiltDependencies:
+  - '@discordjs/opus'
+  - '@google/genai'
+  - '@whiskeysockets/baileys'
+  - electron-winstaller
+  - koffi
+  - node-llama-cpp
+  - openclaw
+  - protobufjs
+  - sharp
+  - tree-sitter-bash
+
 ignoredBuiltDependencies:
   - electron
   - esbuild
+
+overrides:
+  isbinaryfile: ^5.0.0
+
+supportedArchitectures:
+  os:
+    - current
+  cpu:
+    - x64
+    - arm64
 
 patchedDependencies:
   openclaw@2026.7.1-2: patches/openclaw@2026.7.1-2.patch

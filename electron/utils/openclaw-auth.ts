@@ -45,6 +45,7 @@ import {
   normalizeOpenClawApiProtocol,
 } from '../shared/providers/types';
 import { inferCustomModelInputModalities } from '../shared/providers/model-capabilities';
+import { isCuaPlatformSupported } from './cua-platform';
 import {
   applyModelAwareCompactionReserveTokensFloor,
   DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR,
@@ -2035,6 +2036,48 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+export function applyClawXCuaPluginPolicy(
+  config: Record<string, unknown>,
+  supported: boolean,
+): boolean {
+  const pluginId = 'clawx-cua-computer';
+  if (!supported && !isPlainRecord(config.plugins)) return false;
+
+  const plugins = isPlainRecord(config.plugins)
+    ? config.plugins as Record<string, unknown>
+    : {};
+  const existingAllow = Array.isArray(plugins.allow)
+    ? (plugins.allow as unknown[]).filter((value): value is string => typeof value === 'string')
+    : [];
+  const nextAllow = supported
+    ? [...new Set([...existingAllow, pluginId])]
+    : existingAllow.filter((id) => id !== pluginId);
+  const entries = isPlainRecord(plugins.entries)
+    ? plugins.entries as Record<string, unknown>
+    : {};
+  const hasEntry = Object.prototype.hasOwnProperty.call(entries, pluginId);
+  const existingEntry = isPlainRecord(entries[pluginId])
+    ? entries[pluginId] as Record<string, unknown>
+    : {};
+  let modified = JSON.stringify(existingAllow) !== JSON.stringify(nextAllow);
+
+  plugins.allow = nextAllow;
+  if (supported) {
+    if (plugins.enabled !== true) modified = true;
+    if (existingEntry.enabled !== true) modified = true;
+    plugins.enabled = true;
+    entries[pluginId] = { ...existingEntry, enabled: true };
+    plugins.entries = entries;
+  } else if (hasEntry) {
+    if (existingEntry.enabled !== false) modified = true;
+    entries[pluginId] = { ...existingEntry, enabled: false };
+    plugins.entries = entries;
+  }
+
+  if (modified) config.plugins = plugins;
+  return modified;
+}
+
 function removeLegacyMoonshotKimiSearchConfig(config: Record<string, unknown>): boolean {
   if (!isPlainRecord(config.tools) || !isPlainRecord(config.tools.web) || !isPlainRecord(config.tools.web.search)) {
     return false;
@@ -3764,6 +3807,9 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         modified = true;
       }
     }
+
+    // ClawX owns this path-installed tool and its local daemon lifecycle.
+    if (applyClawXCuaPluginPolicy(config, isCuaPlatformSupported())) modified = true;
 
     // ── channels default-account migration and cleanup ─────────────
     // Most OpenClaw channel plugins/built-ins read the default account's

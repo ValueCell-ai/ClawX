@@ -1,0 +1,16 @@
+{
+  "name": "clawx-cua-computer-plugin",
+  "version": "0.1.0",
+  "description": "ClawX local computer-use tool for OpenClaw",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs",
+  "openclaw": {
+    "extensions": [
+      "./index.mjs"
+    ]
+  },
+  "peerDependencies": {
+    "openclaw": "*"
+  }
+}

@@ -40,7 +40,7 @@ import {
   ensureOpenClaw2026_7_1UpgradeSnapshot,
   quarantineLegacyUpdateCheckState,
 } from '../utils/openclaw-upgrade-snapshot';
-import { stripSystemdSupervisorEnv } from './config-sync-env';
+import { stripSystemdSupervisorEnv, withCuaConnectionFileEnv } from './config-sync-env';
 import { cleanupAgentsSymlinkedSkills, cleanupStalePluginRuntimeDeps } from './skills-symlink-cleanup';
 import {
   buildPrelaunchMaintenanceCacheKey,
@@ -701,7 +701,11 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     : 'disabled';
 
   const { NODE_OPTIONS: _nodeOptions, ...baseEnv } = process.env;
-  const baseEnvRecord = baseEnv as Record<string, string | undefined>;
+  const baseEnvRecord = withCuaConnectionFileEnv(
+    baseEnv as Record<string, string | undefined>,
+    platform,
+    app.getPath('userData'),
+  );
   const baseEnvPatched = binPathExists
     ? prependPathEntry(baseEnvRecord, binPath).env
     : baseEnvRecord;

@@ -84,6 +84,7 @@ Building AI agents shouldn't require mastering the command line. ClawX was desig
 - **⏰ Cron-Based Automation**: Define recurring or one-time schedules, insert skills into scheduled prompts, and deliver results to external channels.
 - **🧩 Extensible Skill System**: Manage skills locally without depending on the Gateway, discover skills from multiple OpenClaw sources, and use bundled document-processing skills for `pdf`, `xlsx`, `docx`, and `pptx`.
 - **🔐 Secure Provider Integration**: Connect OpenAI, Anthropic, Z.AI / GLM, and other providers with credentials stored in the native system keychain; supports OAuth, custom providers, and compatibility fallbacks. In Developer Mode, configure image-generation endpoints in **Models -> Image Generation**.
+- **💻 Local Computer Use**: On macOS 13+ (Intel or Apple silicon) and Windows x64, agents can capture and control the primary display through a driver bundled with ClawX. The capability remains local to this installation and does not require OpenClaw node pairing or a separate runtime download.
 - **🌙 Adaptive Theming**: Choose light mode, dark mode, or system-synchronized themes.
 - **🚀 Startup Launch Control**: Enable **Launch at system startup** in **Settings -> General**.
 - **🔔 Update Prompts**: Check for new versions at startup and choose whether to download or install them.
@@ -102,6 +103,7 @@ Building AI agents shouldn't require mastering the command line. ClawX was desig
 ### System Requirements
 
 - **Operating System**: macOS 11+, Windows 10+, or Linux (Ubuntu 20.04+)
+- **Computer Use**: macOS 13+ on x64/arm64, or Windows 10+ on x64; other supported ClawX platforms continue to work without this tool
 - **Memory**: 4GB RAM minimum (8GB recommended)
 - **Storage**: 1GB available disk space
 
@@ -136,6 +138,12 @@ When you launch ClawX for the first time, the **Setup Wizard** will guide you th
 
 The wizard preselects your system language when it is supported, and falls back to English otherwise.
 
+### Local Computer Use
+
+On supported macOS and Windows installations, ClawX starts its bundled Computer Use driver locally and makes a `computer` tool available to agents. It can capture the primary display and perform pointer, click, drag, scroll, text, key, and bounded wait actions. It does not discover or control remote machines and does not use OpenClaw node pairing.
+
+On macOS, grant both **Accessibility** and **Screen Recording** when prompted. If either permission is denied, later granted in System Settings, or revoked while ClawX is running, return to ClawX and restart it before retrying. Missing permissions or packaged driver files make the tool unavailable without preventing Chat or the Gateway from starting.
+
 > Web search note: ClawX disables OpenClaw's general-purpose `web_search` tool at both the agent and Gateway policy layers. This includes Moonshot (Kimi) search; managed browser automation and `web_fetch` remain available.
 >
 > Internal tool note: ClawX also disables `gateway`, `nodes`, `create_goal`, `get_goal`, and `update_goal` for agents at both policy layers. Application-owned Gateway RPCs remain available, as do messaging, session orchestration, and agent discovery tools.
@@ -153,6 +161,7 @@ Open **Settings -> Gateway -> Proxy** to configure the default proxy, bypass rul
 ClawX uses a **dual-process architecture with a unified Host API layer**: the React renderer calls one client abstraction, while Electron Main owns protocol selection, Gateway lifecycle, and the ACP Chat stdio bridge.
 
 - **Process model**: Electron Main owns the window, Gateway supervision, system integration, and updates; the OpenClaw Gateway provides AI orchestration, channel, and skill capabilities; the renderer does not access local endpoints directly.
+- **Local Computer Use**: Electron Main directly owns the privileged bundled CUA daemon and macOS permission checks. The Gateway receives only a private, generation-scoped MCP launch descriptor, and the bundled plugin starts an unprivileged local proxy; no node host, pairing flow, remote discovery, or runtime download is involved.
 - **Configuration delivery**: Main uses `config.get`/`config.set` while the Gateway is running and updates the resolved JSON5 config while it is stopped or starting; ordinary provider, agent, skill, and model changes do not replace the process, and credentials are hot-reloaded through `secrets.reload`. After three minutes without verified Gateway activity, ClawX verifies the core RPC and restarts only an unavailable Gateway process it owns; externally managed Gateways are left for manual recovery.
 - **ACP Chat**: Chat UI talks to OpenClaw via [ACP (Agent Client Protocol)](https://agentclientprotocol.com), providing a relatively stable chat protocol surface in front of the rapidly iterating OpenClaw. ACP runs through a Main-owned stdio bridge, supporting authenticated history replay after config reloads, streaming across navigation, and Main-validated media, attachments, and file activity. When a guarded Gateway restart interrupts an accepted turn, the patched OpenClaw runtime explicitly links its recovery run to the original ACP prompt so subsequent text and tool activity continue in the same in-memory turn; later history replay restores persisted tool boundaries as native ACP updates. If another restart loses terminal delivery after the final response is persisted, run- and session-scoped reconciliation settles the pending prompt instead of leaving Chat executing.
 - **Design principles**: One frontend entry point, Main-owned transport, graceful recovery with reconnect/timeout/backoff, secure storage, and CORS-safe boundaries.

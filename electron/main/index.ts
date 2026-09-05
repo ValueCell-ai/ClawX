@@ -49,6 +49,9 @@ import {
 import { createSignalQuitHandler } from './signal-quit';
 import { acquireProcessInstanceFileLock } from './process-instance-lock';
 import { ensureBuiltinSkillsInstalled, ensurePreinstalledSkillsInstalled, trimBundledOpenClawSkillsAndConfigs } from '../utils/skill-config';
+import { createDefaultCuaRuntimeManager, type CuaRuntimeManager } from '../utils/cua-runtime';
+import { isCuaPlatformSupported } from '../utils/cua-platform';
+import { ensureClawXCuaPluginInstalled } from '../utils/plugin-install';
 
 import { deviceOAuthManager } from '../utils/device-oauth';
 import { browserOAuthManager } from '../utils/browser-oauth';
@@ -118,6 +121,7 @@ const gotTheLock = gotElectronLock && gotFileLock;
 // Global references
 let mainWindow: BrowserWindow | null = null;
 let gatewayManager!: GatewayManager;
+let cuaRuntimeManager!: CuaRuntimeManager;
 let clawHubService!: ClawHubService;
 const hostApiRegistry = new HostApiRegistry();
 const webBrowserGuestRegistry = new WebBrowserGuestRegistry();
@@ -527,6 +531,28 @@ async function initialize(): Promise<void> {
     sendMainWindowEvent('channel:whatsapp-error', error);
   });
 
+  if (!isE2EMode) {
+    if (isCuaPlatformSupported()) {
+      try {
+        const result = await ensureClawXCuaPluginInstalled();
+        if (result.warning) {
+          logger.warn(`[plugin] ClawX Computer: ${result.warning}`);
+        }
+      } catch (error) {
+        logger.warn('Failed to install ClawX Computer plugin; continuing with Gateway startup:', error);
+      }
+    }
+
+    try {
+      const started = await cuaRuntimeManager.start();
+      if (!started) {
+        logger.info('Local CUA runtime is unavailable; continuing without Computer Use');
+      }
+    } catch (error) {
+      logger.warn('Local CUA runtime failed to start; continuing with Gateway startup:', error);
+    }
+  }
+
   // Start Gateway automatically (this seeds missing bootstrap files with full templates)
   const gatewayAutoStart = await getSetting('gatewayAutoStart');
   if (!isE2EMode && gatewayAutoStart) {
@@ -589,6 +615,7 @@ if (gotTheLock) {
   }
 
   gatewayManager = new GatewayManager();
+  cuaRuntimeManager = createDefaultCuaRuntimeManager();
   registerOpenClawConfigCoordinator(gatewayManager);
   clawHubService = new ClawHubService();
 
@@ -628,6 +655,11 @@ if (gotTheLock) {
     // Register only after initialization so activation cannot race the initial
     // window or claim the single browser guest before host handlers are ready.
     app.on('activate', () => {
+      if (!isE2EMode) {
+        void cuaRuntimeManager.refreshPermissions().catch((error) => {
+          logger.warn('Failed to refresh local CUA permissions:', error);
+        });
+      }
       if (BrowserWindow.getAllWindows().length === 0) {
         loadMainWindow(createMainWindow());
       } else {
@@ -659,9 +691,21 @@ if (gotTheLock) {
 
     void extensionRegistry.teardownAll();
 
-    const stopPromise = gatewayManager.stop().catch((err) => {
-      logger.warn('gatewayManager.stop() error during quit:', err);
-    });
+    const stopPromise = (async () => {
+      try {
+        await gatewayManager.stop();
+      } catch (err) {
+        logger.warn('gatewayManager.stop() error during quit:', err);
+      } finally {
+        if (!isE2EMode) {
+          try {
+            await cuaRuntimeManager.stop();
+          } catch (err) {
+            logger.warn('cuaRuntimeManager.stop() error during quit:', err);
+          }
+        }
+      }
+    })();
     const timeoutPromise = new Promise<'timeout'>((resolve) => {
       setTimeout(() => resolve('timeout'), 5000);
     });

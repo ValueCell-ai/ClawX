@@ -1,34 +1,6 @@
 {
     "name": "clawx",
     "version": "0.5.6",
-    "pnpm": {
-        "onlyBuiltDependencies": [
-            "@discordjs/opus",
-            "@google/genai",
-            "@whiskeysockets/baileys",
-            "electron",
-            "electron-winstaller",
-            "esbuild",
-            "koffi",
-            "node-llama-cpp",
-            "openclaw",
-            "protobufjs",
-            "sharp",
-            "tree-sitter-bash"
-        ],
-        "overrides": {
-            "isbinaryfile": "^5.0.0"
-        },
-        "supportedArchitectures": {
-            "os": [
-                "current"
-            ],
-            "cpu": [
-                "x64",
-                "arm64"
-            ]
-        }
-    },
     "description": "ClawX - Graphical AI Assistant based on OpenClaw",
     "main": "dist-electron/main/index.js",
     "author": "ClawX Team",
@@ -36,11 +8,11 @@
     "private": true,
     "scripts": {
         "postinstall": "node scripts/patch-browser-hint.mjs",
-        "init": "pnpm install && pnpm run uv:download && pnpm run agent-browser:download",
+        "init": "pnpm install && pnpm run uv:download && pnpm run agent-browser:download && pnpm run cua-driver:download",
         "predev": "node scripts/generate-ext-bridge.mjs && zx scripts/prepare-preinstalled-skills-dev.mjs",
         "dev": "vite",
         "ext:bridge": "node scripts/generate-ext-bridge.mjs",
-        "build": "node scripts/generate-ext-bridge.mjs && pnpm run build:vite && zx scripts/bundle-openclaw.mjs && zx scripts/bundle-openclaw-plugins.mjs && zx scripts/bundle-preinstalled-skills.mjs && node scripts/run-electron-builder.mjs",
+        "build": "pnpm run cua-driver:download && node scripts/generate-ext-bridge.mjs && pnpm run build:vite && zx scripts/bundle-openclaw.mjs && zx scripts/bundle-openclaw-plugins.mjs && zx scripts/bundle-preinstalled-skills.mjs && node scripts/run-electron-builder.mjs",
         "build:vite": "node --max-old-space-size=6144 ./node_modules/vite/bin/vite.js build",
         "bundle:openclaw-plugins": "zx scripts/bundle-openclaw-plugins.mjs",
         "bundle:preinstalled-skills": "zx scripts/bundle-preinstalled-skills.mjs",
@@ -69,15 +41,20 @@
         "agent-browser:download:win": "zx scripts/download-bundled-agent-browser.mjs --platform=win",
         "agent-browser:download:linux": "zx scripts/download-bundled-agent-browser.mjs --platform=linux",
         "agent-browser:download:all": "zx scripts/download-bundled-agent-browser.mjs --all",
+        "cua-driver:download": "node scripts/download-cua-driver.mjs",
+        "cua-driver:download:mac": "node scripts/download-cua-driver.mjs --platform=mac",
+        "cua-driver:download:win": "node scripts/download-cua-driver.mjs --platform=win",
+        "cua-driver:download:all": "node scripts/download-cua-driver.mjs --all",
         "node:download:win": "zx scripts/download-bundled-node.mjs --platform=win",
-        "prep:win-binaries": "pnpm run uv:download:win && pnpm run agent-browser:download:win && pnpm run node:download:win",
+        "prep:mac-binaries": "pnpm run uv:download:mac && pnpm run agent-browser:download:mac && pnpm run cua-driver:download:mac",
+        "prep:win-binaries": "pnpm run uv:download:win && pnpm run agent-browser:download:win && pnpm run node:download:win && pnpm run cua-driver:download:win",
         "icons": "zx scripts/generate-icons.mjs",
         "package": "node scripts/generate-ext-bridge.mjs && pnpm run build:vite && zx scripts/bundle-openclaw.mjs && zx scripts/bundle-openclaw-plugins.mjs && zx scripts/bundle-preinstalled-skills.mjs",
-        "package:mac": "pnpm run package && node scripts/run-electron-builder.mjs --mac --publish never",
-        "package:mac:local": "SKIP_PREINSTALLED_SKILLS=1 pnpm run package && node scripts/run-electron-builder.mjs --mac --publish never",
+        "package:mac": "pnpm run prep:mac-binaries && pnpm run package && node scripts/run-electron-builder.mjs --mac --publish never",
+        "package:mac:local": "pnpm run prep:mac-binaries && SKIP_PREINSTALLED_SKILLS=1 pnpm run package && node scripts/run-electron-builder.mjs --mac --publish never",
         "package:win": "pnpm run prep:win-binaries && pnpm run package && node scripts/patch-nsis-win.mjs && node scripts/run-electron-builder.mjs --win --publish never",
         "package:linux": "pnpm run package && node scripts/run-electron-builder.mjs --linux --publish never",
-        "release": "pnpm run uv:download && pnpm run agent-browser:download && pnpm run package && node scripts/run-electron-builder.mjs --publish always",
+        "release": "pnpm run uv:download && pnpm run agent-browser:download && pnpm run cua-driver:download && pnpm run package && node scripts/run-electron-builder.mjs --publish always",
         "preversion": "node scripts/pre-version-fetch-tags.mjs",
         "version": "node scripts/assert-release-version.mjs",
         "version:patch": "pnpm version patch",
@@ -91,6 +68,7 @@
     },
     "dependencies": {
         "@agentclientprotocol/sdk": "1.1.0",
+        "@trycua/cua-driver": "0.21.0",
         "electron-store": "^11.0.2",
         "electron-updater": "^6.8.3",
         "json5": "2.2.3",

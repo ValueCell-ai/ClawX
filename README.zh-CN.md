@@ -83,6 +83,7 @@ ClawX 预置了最佳实践的模型供应商配置，原生支持 Windows 平�
 - **⏰ 定时任务自动化**：可视化定义触发器与时间间隔，让 AI 智能体 7×24 小时自动运行；支持周期（每小时/每天/工作日/每周/自定义 cron）与单次执行，并可将结果自动投递到外部频道。
 - **🧩 可扩展技能系统**：本地优先的技能管理，扫描托管与 workspace 技能目录，无需依赖 Gateway 即可启用或停用技能；预装文档处理技能（`pdf`、`xlsx`、`docx`、`pptx`）。
 - **🔐 安全的供应商集成**：支持 OpenAI、Anthropic、Z.AI / GLM 等供应商，凭证经系统原生密钥链安全存储；提供自定义 Provider、OAuth 登录与兼容网关的降级探测。在开发者模式下，请前往 **模型 → 图像生成** 配置生图端点。
+- **💻 本机 Computer Use**：在 macOS 13+（Intel 或 Apple 芯片）和 Windows x64 上，Agent 可通过 ClawX 内置的驱动截取并操作主显示器。该能力仅限本机，不需要 OpenClaw 节点配对，也不会在运行时额外下载组件。
 - **🌙 自适应主题**：支持浅色、深色与跟随系统主题。
 - **🚀 开机启动控制**：在 设置 → 通用 中开启开机自动启动。
 - **🔔 更新提示**：启动时自动检查新版本，由你决定是否下载或安装更新。
@@ -101,6 +102,7 @@ ClawX 预置了最佳实践的模型供应商配置，原生支持 Windows 平�
 ### 系统要求
 
 - **操作系统**：macOS 11+、Windows 10+ 或 Linux（Ubuntu 20.04+）
+- **Computer Use**：macOS 13+ x64/arm64，或 Windows 10+ x64；ClawX 在其他受支持平台上仍可正常使用，但不提供此工具
 - **内存**：最低 4GB RAM（推荐 8GB）
 - **存储空间**：1GB 可用磁盘空间
 
@@ -132,6 +134,12 @@ pnpm dev
 3. **技能包** – 选择适用于常见场景的预配置技能
 4. **验证** – 在进入主界面前测试你的配置
 
+### 本机 Computer Use
+
+在受支持的 macOS 和 Windows 安装中，ClawX 会在本机启动随应用打包的 Computer Use 驱动，并向 Agent 提供 `computer` 工具。该工具可截取主显示器，并执行指针移动、点击、拖动、滚动、文本输入、组合键和有限时长等待。它不会发现或控制远程计算机，也不使用 OpenClaw 节点配对。
+
+在 macOS 上，请在系统提示时同时授予 ClawX **辅助功能**和**屏幕录制**权限。如果拒绝权限、稍后在系统设置中授权，或在 ClawX 运行时撤销权限，请返回 ClawX 并重启应用后再试。权限或打包驱动缺失时，该工具会显示为不可用，但不会阻止聊天或 Gateway 启动。
+
 > Web search 说明：ClawX 会在 Agent 和 Gateway 两层策略中禁用 OpenClaw 的通用 `web_search` 工具。
 > 这也包括 Moonshot（Kimi）搜索；受管浏览器自动化和 `web_fetch` 仍然可用。
 >
@@ -154,6 +162,7 @@ ClawX 内置了代理设置，适用于需要通过本地代理客户端访问�
 ClawX 采用 **双进程 + Host API 统一接入架构**：React 渲染进程只通过统一的 host-api/api-client 抽象与后端交互，协议选择、Gateway 生命周期与 ACP Chat stdio bridge 全部由 Electron 主进程统一管理。
 
 - **进程模型**：Electron 主进程负责窗口、网关进程监控、系统集成与自动更新；OpenClaw Gateway 作为独立运行时进程提供 AI 编排、频道和技能能力；渲染层不直接访问本地端点。
+- **本机 Computer Use**：Electron Main 直接持有高权限的内置 CUA daemon，并负责 macOS 权限检查。Gateway 仅接收私有、按 generation 隔离的 MCP 启动描述符，内置插件只启动无特权的本机代理；整个流程不涉及 node host、配对、远程发现或运行时下载。
 - **配置交付**：Gateway 运行时由 Main 使用 `config.get` / `config.set`，停止或启动中则更新解析后的 JSON5 配置；普通 Provider/Agent/Skill/模型修改不会替换进程，凭据通过 `secrets.reload` 热更新。连续三分钟没有已验证的 Gateway 活动后，ClawX 会验证核心 RPC，并且只重启其自身拥有且不可用的 Gateway 进程；外部管理的 Gateway 保留给用户手动恢复。
 - **ACP Chat**：Chat UI 基于 ACP ([Agent Client Protocol](https://agentclientprotocol.com)) 与 OpenClaw 交互，从而在高速迭代的 OpenClaw 前找到相对稳定的聊天协议面。ACP 走 Main 持有的 stdio bridge，支持配置热重载后的历史回放认证、跨页面持续流式输出，以及由 Main 验证和加载的媒体/附件/文件活动（Changes）展示。当受保护的 Gateway 重启中断已接收的对话轮次时，补丁后的 OpenClaw 运行时会将恢复 run 显式关联到原 ACP prompt，使后续文本和工具活动继续进入同一个内存轮次；之后的历史回放也会以原生 ACP 更新恢复持久化的工具边界。如果最终答复持久化后再次重启导致终态通知丢失，按 run 和会话范围执行的结算会结束 pending prompt，避免 Chat 一直显示执行中。
 - **设计原则**：前端调用单一入口、Main 掌控传输策略、优雅恢复（重连/超时/退避）、安全存储与 CORS 安全。

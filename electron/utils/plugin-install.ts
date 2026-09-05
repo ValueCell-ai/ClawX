@@ -309,6 +309,10 @@ const TRUSTED_OFFICIAL_EXTENSION_PLUGINS: Record<string, TrustedOfficialExtensio
     npmName: 'clawx-openai-image-plugin',
     recordSource: 'path',
   },
+  'clawx-cua-computer': {
+    npmName: 'clawx-cua-computer-plugin',
+    recordSource: 'path',
+  },
 };
 
 type TrustedOfficialPluginInstallRecord = Record<string, unknown> & {
@@ -939,6 +943,14 @@ export function ensureClawXOpenAiImagePluginInstalled(): Promise<PluginInstallRe
     'clawx-openai-image',
     buildCandidateSources('clawx-openai-image'),
     'ClawX OpenAI Image',
+  );
+}
+
+export function ensureClawXCuaPluginInstalled(): Promise<PluginInstallResult> {
+  return ensurePluginInstalled(
+    'clawx-cua-computer',
+    buildCandidateSources('clawx-cua-computer'),
+    'ClawX Computer',
   );
 }
 

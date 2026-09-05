@@ -681,7 +681,7 @@ describe('sanitizeOpenClawConfig', () => {
     const result = await readOpenClawJson();
     const plugins = result.plugins as Record<string, unknown>;
     const entries = plugins.entries as Record<string, Record<string, unknown>>;
-    expect(plugins.allow).toEqual(['qqbot']);
+    expect(plugins.allow).toEqual(['qqbot', 'clawx-cua-computer']);
     expect(entries.qqbot).toEqual({ enabled: true });
     expect(entries['openclaw-qqbot']).toBeUndefined();
     expect((result.channels as Record<string, unknown>).qqbot).toBeDefined();
@@ -875,7 +875,7 @@ describe('sanitizeOpenClawConfig', () => {
     const allow = plugins.allow as string[];
     const entries = plugins.entries as Record<string, Record<string, unknown>>;
 
-    expect(allow).toEqual(['custom-plugin']);
+    expect(allow).toEqual(['custom-plugin', 'clawx-cua-computer']);
     expect(entries['minimax-portal-auth']).toBeUndefined();
     expect(entries['custom-plugin']).toEqual({ enabled: true });
   });
@@ -940,7 +940,7 @@ describe('sanitizeOpenClawConfig', () => {
     const plugins = result.plugins as Record<string, unknown>;
     const allow = plugins.allow as string[];
 
-    expect(allow).toEqual(['custom-installed', 'configured-plugin']);
+    expect(allow).toEqual(['custom-installed', 'configured-plugin', 'clawx-cua-computer']);
     expect((plugins.entries as Record<string, unknown>)['configured-plugin']).toEqual({ enabled: true });
   });
 
@@ -969,7 +969,7 @@ describe('sanitizeOpenClawConfig', () => {
     const allow = plugins.allow as string[];
     const load = plugins.load as Record<string, unknown>;
 
-    expect(allow).toEqual(['custom-loaded']);
+    expect(allow).toEqual(['custom-loaded', 'clawx-cua-computer']);
     expect(load.paths).toEqual([loadedPluginDir]);
   });
 
@@ -1091,6 +1091,63 @@ describe('sanitizeOpenClawConfig', () => {
 
     expect(allow).toContain('custom-plugin');
     expect(allow).toContain('openai');
+  });
+
+  it('always enables the ClawX CUA plugin while preserving unrelated plugin config', async () => {
+    await writeOpenClawJson({
+      plugins: {
+        enabled: false,
+        allow: ['custom-plugin', 'clawx-cua-computer', 'custom-plugin'],
+        load: { paths: ['relative/plugin'] },
+        entries: {
+          'custom-plugin': { enabled: true, config: { keep: 'yes' } },
+          'clawx-cua-computer': { enabled: false, config: { preserved: true } },
+        },
+      },
+    });
+
+    const extensionDir = join(testHome, '.openclaw', 'extensions', 'custom-plugin');
+    await mkdir(extensionDir, { recursive: true });
+    await writeFile(
+      join(extensionDir, 'openclaw.plugin.json'),
+      JSON.stringify({ id: 'custom-plugin' }),
+      'utf8',
+    );
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const plugins = result.plugins as Record<string, unknown>;
+    const entries = plugins.entries as Record<string, Record<string, unknown>>;
+    expect(plugins.enabled).toBe(true);
+    expect((plugins.allow as string[]).filter((id) => id === 'clawx-cua-computer')).toHaveLength(1);
+    expect(plugins.allow).toContain('custom-plugin');
+    expect(entries['custom-plugin']).toEqual({ enabled: true, config: { keep: 'yes' } });
+    expect(entries['clawx-cua-computer']).toEqual({ enabled: true, config: { preserved: true } });
+    expect(plugins.load).toEqual({ paths: ['relative/plugin'] });
+  });
+
+  it('disables the ClawX CUA plugin without changing unrelated plugins on unsupported hosts', async () => {
+    const { applyClawXCuaPluginPolicy } = await import('@electron/utils/openclaw-auth');
+    const config: Record<string, unknown> = {
+      plugins: {
+        enabled: true,
+        allow: ['custom-plugin', 'clawx-cua-computer'],
+        entries: {
+          'custom-plugin': { enabled: true },
+          'clawx-cua-computer': { enabled: true, config: { preserved: true } },
+        },
+      },
+    };
+
+    expect(applyClawXCuaPluginPolicy(config, false)).toBe(true);
+
+    const plugins = config.plugins as Record<string, unknown>;
+    const entries = plugins.entries as Record<string, Record<string, unknown>>;
+    expect(plugins.allow).toEqual(['custom-plugin']);
+    expect(entries['custom-plugin']).toEqual({ enabled: true });
+    expect(entries['clawx-cua-computer']).toEqual({ enabled: false, config: { preserved: true } });
   });
 });
 
@@ -1903,7 +1960,7 @@ describe('auth-backed provider discovery', () => {
     const allow = plugins.allow as string[];
     const entries = plugins.entries as Record<string, Record<string, unknown>>;
 
-    expect(allow).toEqual(['custom-plugin']);
+    expect(allow).toEqual(['custom-plugin', 'clawx-cua-computer']);
     expect(entries['minimax-portal-auth']).toBeUndefined();
     expect(entries['custom-plugin']).toEqual({ enabled: true });
   });

@@ -283,6 +283,41 @@ function cleanupNodeModulesRuntimeJunk(nodeModulesDir, platform, arch) {
   return removed;
 }
 
+function assertCuaPackagedRuntime(resourcesDir, platform, arch) {
+  const target = `${platform}-${arch}`;
+  const packageNames = {
+    'darwin-x64': 'cua-driver-darwin-x64',
+    'darwin-arm64': 'cua-driver-darwin-arm64',
+    'win32-x64': 'cua-driver-win32-x64-msvc',
+  };
+  const packageName = packageNames[target];
+  if (!packageName) return;
+
+  const executable = join(resourcesDir, 'bin', platform === 'win32' ? 'cua-driver.exe' : 'cua-driver');
+  if (!existsSync(normWin(executable))) {
+    throw new Error(`[after-pack] Missing bundled CUA executable for ${target}: ${executable}`);
+  }
+  if (platform !== 'win32' && (statSync(normWin(executable)).mode & 0o111) === 0) {
+    throw new Error(`[after-pack] Bundled CUA executable is not executable for ${target}: ${executable}`);
+  }
+
+  const nativeDir = join(
+    resourcesDir,
+    'app.asar.unpacked',
+    'node_modules',
+    '@trycua',
+    packageName,
+  );
+  const nativeEntries = existsSync(normWin(nativeDir)) ? readdirSync(normWin(nativeDir)) : [];
+  const libraryExtension = platform === 'win32' ? '.dll' : '.dylib';
+  if (
+    !nativeEntries.some((name) => name.endsWith('.node'))
+    || !nativeEntries.some((name) => name.endsWith(libraryExtension))
+  ) {
+    throw new Error(`[after-pack] Missing unpacked CUA native SDK for ${target}: ${nativeDir}`);
+  }
+}
+
 function cleanupKnownRuntimeJunk(rootDir, platform, arch) {
   let removed = 0;
   const stack = [rootDir];
@@ -306,6 +341,7 @@ function cleanupKnownRuntimeJunk(rootDir, platform, arch) {
 }
 
 exports.__test = {
+  assertCuaPackagedRuntime,
   cleanupNativePlatformPackages,
   cleanupNodeModulesRuntimeJunk,
 };
@@ -883,6 +919,7 @@ exports.default = async function afterPack(context) {
   // which extracts those files to app.asar.unpacked/.  We patch them here so
   // Electron's transparent asar fs layer serves the fixed version at runtime.
   const asarUnpackedDir = join(resourcesDir, 'app.asar.unpacked');
+  assertCuaPackagedRuntime(resourcesDir, platform, arch);
   if (existsSync(asarUnpackedDir)) {
     const { readFileSync: readFS, writeFileSync: writeFS } = require('fs');
     let asarLruCount = 0;

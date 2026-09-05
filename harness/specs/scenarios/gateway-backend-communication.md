@@ -67,6 +67,7 @@ requiredRules:
   - provider-model-selection-authority
   - sidebar-session-attention-authority
   - web-browser-security-and-lifecycle
+  - local-computer-use
   - e2e-parallel-isolation
   - comms-regression
   - docs-sync
@@ -103,6 +104,8 @@ ClawX's prelaunch config sanitizer also owns desktop tool policy. It must keep `
 Scheduled-task history is Main-owned backend data. Current OpenClaw versions must be queried through the Gateway `cron.runs` RPC; direct run-log file reads are allowed only as a compatibility fallback for older file-backed runtimes. When a run's bounded summary ends with OpenClaw's truncation ellipsis, Main may recover the complete final assistant reply from the run transcript identified by that `cron.runs` entry, but only when the transcript reply is longer and shares the entire summary prefix. When a cron base session has no ACP replay, Renderer may project that typed host result into a generation-scoped, in-memory historical ACP timeline, but must not replace or duplicate non-empty ACP replay.
 
 The local HTML Preview privileged bridge is also Main-owned: Renderer may load a validated local HTML file or open that current file externally through the typed Host API. The guest is an implementation detail of the existing `preview` tab; there is no `web-browser` artifact tab or general address navigation. The durable guest contract is `harness/reference/web-browser.md`.
+
+Local Computer Use is also Main-owned. Electron Main directly supervises the embedded CUA daemon and publishes a private generation-scoped MCP descriptor for a ClawX-owned Gateway plugin; the plugin never starts the privileged daemon and the feature does not use OpenClaw nodes, pairing, or `node.invoke`.
 
 Gateway session-catalog subscription, normalization, ordered list/event replay, attention transitions, and reconnect recovery are documented in `harness/reference/sidebar-session-attention.md`. The first prompt sent to a newly created non-default Agent must title its `agent:<id>:main` conversation; synthetic transport display names such as `ACP` must not replace that label, and transcript-summary hydration must restore it after reload. Deleting an Agent is also a session-catalog lifecycle boundary: after Main confirms the destructive config/filesystem operation, Renderer must immediately forget every canonical `agent:<deletedId>:` row, retain an in-memory tombstone that blocks stale list rows and delayed events, and repair selection without waiting for a Gateway restart. An authoritative Agent snapshot containing the same ID clears the tombstone to support recreation, but an Agent-list request that predates a confirmed mutation must not publish or reconcile afterward. An already-absent session index or entry is an idempotent conversation-delete success, while malformed indexes and unsafe transcript paths remain failures. Electron test-process isolation and global-resource scheduling are documented in `harness/reference/e2e-parallelism.md`.
 

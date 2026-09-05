@@ -14,6 +14,7 @@ describe('openclaw bundle config', () => {
       devDependencies?: Record<string, string>;
     };
     expect(packageJson.dependencies?.['@agentclientprotocol/sdk']).toBe('1.1.0');
+    expect(packageJson.dependencies?.['@trycua/cua-driver']).toBe('0.21.0');
     expect(packageJson.devDependencies).toMatchObject({
       openclaw: '2026.7.1-2',
       electron: '40.10.6',
@@ -30,6 +31,14 @@ describe('openclaw bundle config', () => {
       'utf8',
     );
     expect(nodeDownloadScript).toContain("const NODE_VERSION = '22.22.3'");
+  });
+
+  it('unpacks every native CUA SDK library required by Electron Main', () => {
+    const builderConfig = readFileSync(resolve(process.cwd(), 'electron-builder.yml'), 'utf8');
+
+    expect(builderConfig).toContain('- "**/node_modules/@trycua/**/*.node"');
+    expect(builderConfig).toContain('- "**/node_modules/@trycua/**/*.dylib"');
+    expect(builderConfig).toContain('- "**/node_modules/@trycua/**/*.dll"');
   });
 
   it('uses an Electron runtime with OpenClaw-compatible Node and SQLite versions', () => {

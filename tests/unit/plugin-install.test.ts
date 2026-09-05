@@ -342,6 +342,45 @@ describe('plugin installer diagnostics', () => {
     });
   });
 
+  it('installs the ClawX CUA plugin as a trusted path-owned official mirror', async () => {
+    const targetDir = '/home/test/.openclaw/extensions/clawx-cua-computer';
+    mockApp.isPackaged = false;
+    let copied = false;
+    mockCpSync.mockImplementation(() => {
+      copied = true;
+    });
+    mockExistsSync.mockImplementation((input: string) => {
+      const value = String(input);
+      if (value.startsWith(targetDir)) return copied;
+      return value.includes('openclaw.plugin.json') || value.endsWith('package.json');
+    });
+    mockReadFileSync.mockImplementation((input: string) => (
+      String(input).endsWith('package.json')
+        ? JSON.stringify({ version: '0.1.0' })
+        : JSON.stringify({ id: 'clawx-cua-computer' })
+    ));
+
+    const { ensureClawXCuaPluginInstalled } = await import('@electron/utils/plugin-install');
+    const result = await ensureClawXCuaPluginInstalled();
+    const sourceDir = String(mockCpSync.mock.calls[0][0]);
+
+    expect(result).toEqual({ installed: true, peerLinkOk: true });
+    expect(sourceDir).toMatch(/openclaw-plugins\/clawx-cua-computer$/);
+    expect(mockCpSync).toHaveBeenCalledWith(sourceDir, targetDir, {
+      recursive: true,
+      dereference: true,
+    });
+    expect(mockUpsertPluginInstallRecordsIntoSqlite).toHaveBeenCalledWith({
+      'clawx-cua-computer': expect.objectContaining({
+        source: 'path',
+        sourcePath: targetDir,
+        spec: targetDir,
+        installPath: targetDir,
+        version: '0.1.0',
+      }),
+    });
+  });
+
   it('reports a failed OpenClaw peer link repair for an installed mirror', async () => {
     const targetDir = '/home/test/.openclaw/extensions/qqbot';
 

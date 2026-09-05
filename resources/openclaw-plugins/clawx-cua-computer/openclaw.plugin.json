@@ -1,0 +1,21 @@
+{
+  "id": "clawx-cua-computer",
+  "name": "ClawX Computer",
+  "description": "Local primary-desktop computer use managed by ClawX.",
+  "version": "0.1.0",
+  "entry": "index.mjs",
+  "enabledByDefault": true,
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": [
+      "computer"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

@@ -38,16 +38,20 @@ afterPack: ./scripts/after-pack.cjs
 asar: true
 asarUnpack:
   - "**/*.node"
+  # CUA's UniFFI package loads a native Node bridge plus its adjacent platform
+  # library at runtime; keep the complete native boundary outside ASAR.
+  - "**/node_modules/@trycua/**/*.node"
+  - "**/node_modules/@trycua/**/*.dylib"
+  - "**/node_modules/@trycua/**/*.dll"
   # lru-cache CJS/ESM interop: older CJS versions (v5, v6, v7) don't export
   # `LRUCache` as a named property, breaking `import { LRUCache }` in Node.js
   # 22+ (Electron 40+).  Unpacking lets afterPack patch them in place.
   - "**/node_modules/lru-cache/**"
 
 # Disable native module rebuilding.
-# The Electron renderer/main process has no native (.node) dependencies.
-# All native modules (opus, sharp, koffi …) belong to openclaw, which is
-# bundled separately (bundle-openclaw.mjs → extraResources) and runs in its
-# own process — @electron/rebuild must NOT touch them.
+# The Electron main process uses CUA's prebuilt native package. Other native
+# modules (opus, sharp, koffi …) belong to separately bundled OpenClaw.
+# @electron/rebuild must not replace any of these pinned prebuilt artifacts.
 npmRebuild: false
 
 # Auto-update configuration
