@@ -778,7 +778,7 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     expect(screen.queryByTestId(`mock-subagent-${childKey}`)).not.toBeInTheDocument();
   });
 
-  it('withholds a deferred prior-session plan after the active session changes', async () => {
+  it('does not let a deferred prior-session plan replace the active session plan', async () => {
     const previousSessionKey = 'agent:previous:main';
     const currentSessionKey = 'agent:other:main';
     deferredAcpTimeline.value = { ...timelineWithCurrentPlan(), sessionId: previousSessionKey };
@@ -789,7 +789,10 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     const { Chat } = await import('@/pages/Chat/index');
     render(<Chat />);
 
-    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-current-plan', '');
+    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute(
+      'data-current-plan',
+      '1/2:Inspect the current timeline|Render the plan in the composer',
+    );
   });
 
   it('renders ACP load errors as inline timeline errors', async () => {

@@ -35,6 +35,7 @@ import { DEFAULT_WORKSPACE_CWD, isDefaultWorkspacePath, normalizeWorkspacePath }
 import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
 import { useVoiceDictation } from '@/hooks/useVoiceDictation';
 import { VoiceDictationButton } from '@/components/voice/VoiceDictationButton';
+import { ModelIcon } from '@/components/common/ModelIcon';
 import { AcpSessionPlan } from './AcpSessionPlan';
 import { AcpSubagentSessions, type AcpSubagentSession } from './AcpSubagentSessions';
 
@@ -1435,7 +1436,9 @@ export function ChatInput({
                 >
                   {switchingModelRef ? (
                     <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-                  ) : null}
+                  ) : (
+                    <ModelIcon modelName={currentModelLabel} testId="chat-model-picker-current-icon" />
+                  )}
                   <span className="truncate">{currentModelLabel}</span>
                   <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', modelPickerOpen && 'rotate-180')} />
                 </button>
@@ -1459,14 +1462,17 @@ export function ChatInput({
                           )}
                           data-testid={`chat-model-picker-option-${option.label}`}
                         >
-                          <span className="min-w-0 truncate">
-                            <span>{option.modelId}</span>
-                            {option.providerName ? (
-                              <>
-                                {' '}
-                                <span className="font-normal text-muted-foreground">{option.providerName}</span>
-                              </>
-                            ) : null}
+                          <span className="flex min-w-0 items-center gap-2">
+                            <ModelIcon modelName={option.modelId} testId="chat-model-picker-option-icon" />
+                            <span className="min-w-0 truncate">
+                              <span>{option.modelId}</span>
+                              {option.providerName ? (
+                                <>
+                                  {' '}
+                                  <span className="font-normal text-muted-foreground">{option.providerName}</span>
+                                </>
+                              ) : null}
+                            </span>
                           </span>
                           {option.modelRef === effectiveModelRef && (
                             <span className="h-1.5 w-1.5 rounded-full bg-primary" />

@@ -212,6 +212,7 @@ ClawXは次の優れたオープンソースプロジェクトの上に構築さ
 - [React](https://react.dev/) - UIコンポーネントライブラリ
 - [shadcn/ui](https://ui.shadcn.com/) - 美しく設計されたコンポーネント
 - [Zustand](https://github.com/pmndrs/zustand) - 軽量な状態管理
+- [LobeHub Icons](https://lobehub.com/zh/icons) - チャットモデルセレクターで使用しているモデルアイコン
 
 ## コミュニティ
 

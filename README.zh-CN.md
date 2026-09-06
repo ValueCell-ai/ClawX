@@ -212,6 +212,7 @@ ClawX 构建于以下优秀的开源项目之上：
 - [React](https://react.dev/) – UI 组件库
 - [shadcn/ui](https://ui.shadcn.com/) – 精美设计的组件库
 - [Zustand](https://github.com/pmndrs/zustand) – 轻量级状态管理
+- [LobeHub Icons](https://lobehub.com/zh/icons) – 聊天模型选择器使用的模型图标
 
 
 ## 社区

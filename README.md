@@ -212,6 +212,7 @@ ClawX is built on the shoulders of excellent open-source projects:
 - [React](https://react.dev/) - UI component library
 - [shadcn/ui](https://ui.shadcn.com/) - Beautifully designed components
 - [Zustand](https://github.com/pmndrs/zustand) - Lightweight state management
+- [LobeHub Icons](https://lobehub.com/zh/icons) - Model icons used in the chat model selector
 
 ## Community
 

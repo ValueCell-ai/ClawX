@@ -210,6 +210,7 @@ ClawX построен на основе следующих отличных п�
 - [React](https://react.dev/) - Библиотека UI-компонентов
 - [shadcn/ui](https://ui.shadcn.com/) - Красиво спроектированные компоненты
 - [Zustand](https://github.com/pmndrs/zustand) - Лёгкое управление состоянием
+- [LobeHub Icons](https://lobehub.com/zh/icons) - Иконки моделей, используемые в селекторе моделей чата
 
 ## Сообщество
 
