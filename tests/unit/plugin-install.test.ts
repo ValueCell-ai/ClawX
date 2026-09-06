@@ -342,7 +342,11 @@ describe('plugin installer diagnostics', () => {
     });
   });
 
-  it('installs the ClawX CUA plugin as a trusted path-owned official mirror', async () => {
+  it.each([false, true])('installs the bundled ClawX CUA mirror over legacy 0.1.0 (existing=%s)', async (existing) => {
+    const actualFs = await vi.importActual<typeof import('node:fs')>('node:fs');
+    const sourcePackage = JSON.parse(actualFs.readFileSync(
+      path.resolve('resources/openclaw-plugins/clawx-cua-computer/package.json'), 'utf8',
+    ));
     const targetDir = '/home/test/.openclaw/extensions/clawx-cua-computer';
     mockApp.isPackaged = false;
     let copied = false;
@@ -351,17 +355,18 @@ describe('plugin installer diagnostics', () => {
     });
     mockExistsSync.mockImplementation((input: string) => {
       const value = String(input);
-      if (value.startsWith(targetDir)) return copied;
+      if (value.startsWith(targetDir)) return existing || copied;
       return value.includes('openclaw.plugin.json') || value.endsWith('package.json');
     });
     mockReadFileSync.mockImplementation((input: string) => (
       String(input).endsWith('package.json')
-        ? JSON.stringify({ version: '0.1.0' })
+        ? JSON.stringify({ version: String(input).startsWith(targetDir) && !copied ? '0.1.0' : sourcePackage.version })
         : JSON.stringify({ id: 'clawx-cua-computer' })
     ));
 
     const { ensureClawXCuaPluginInstalled } = await import('@electron/utils/plugin-install');
     const result = await ensureClawXCuaPluginInstalled();
+    expect(mockCpSync).toHaveBeenCalledOnce();
     const sourceDir = String(mockCpSync.mock.calls[0][0]);
 
     expect(result).toEqual({ installed: true, peerLinkOk: true });
@@ -376,7 +381,7 @@ describe('plugin installer diagnostics', () => {
         sourcePath: targetDir,
         spec: targetDir,
         installPath: targetDir,
-        version: '0.1.0',
+        version: sourcePackage.version,
       }),
     });
   });

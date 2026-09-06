@@ -1,9 +1,9 @@
 {
     "computerUse": {
         "title": "Computer Use",
-        "description": "Let agents capture and control this computer's primary display using the bundled local driver.",
+        "description": "Let agents read the screen and operate this computer through the bundled CUA driver.",
         "enable": "Enable Computer Use",
-        "warning": "Off by default. Enabling gives agents desktop control. Disabling stops the driver and removes the computer tool. Gateway configuration may reload and interrupt active work.",
+        "warning": "When enabled, agents can control your computer through the computer tool. Use it together with the /computer-use skill.",
         "off": "Disabled. Agents cannot use the computer tool.",
         "running": "The local driver is running.",
         "unavailable": "Enabled, but the driver is unavailable. Check permissions and the bundled driver, then turn this off and on to retry.",
@@ -13,7 +13,8 @@
         "screenRecording": "Screen Recording",
         "granted": "Granted",
         "notGranted": "Not granted",
-        "permissionHint": "These statuses are read-only. Only the button below requests permissions. If denied, allow ClawX in System Settings > Privacy & Security; macOS may require restarting ClawX. Turning this feature off does not revoke OS grants.",
+        "permissionHint": "Grant ClawX the Accessibility and Screen & System Audio Recording permissions so Computer Use works correctly. Restart ClawX after changing grants. If a permission request was previously denied or ignored, clicking \"Request Permissions\" may not show a prompt again; in that case, adjust it manually in System Settings > Privacy & Security.",
+        "permissionRequestIncomplete": "The permission request returned, but required access is still not granted. macOS may not show another dialog, especially after a previous decision. Check the listed app in System Settings, then restart and refresh. This status cannot tell whether access was never requested or previously denied.",
         "request": "Request Permissions",
         "error": "Could not complete the operation. Refresh the status and retry; see application logs for details."
     },

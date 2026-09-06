@@ -1,4 +1,5 @@
 import { spawn as nodeSpawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { lstat as nodeLstat, readFile as nodeReadFile } from 'node:fs/promises';
 
 export const MCP_LIMITS = Object.freeze({
@@ -11,7 +12,7 @@ export const MCP_LIMITS = Object.freeze({
   maxStderrBytes: 32 * 1024,
 });
 
-const SESSION_NAME = 'clawx-primary-desktop';
+const SESSION_NAME = 'clawx-computer-use';
 const MAX_DESCRIPTOR_ITEMS = 256;
 const MAX_DESCRIPTOR_STRING_BYTES = 32 * 1024;
 
@@ -343,17 +344,20 @@ export function createProxyManager({
   let descriptor = null;
   let proxy = null;
   let sessionStarted = false;
+  let sessionName = null;
   let stopped = false;
 
   async function disposeCurrent() {
     const current = proxy;
     const shouldEndSession = sessionStarted;
+    const currentSessionName = sessionName;
     proxy = null;
     sessionStarted = false;
+    sessionName = null;
     if (!current) return;
     if (shouldEndSession) {
       try {
-        await current.callTool('end_session', { session: SESSION_NAME }, MCP_LIMITS.shutdownTimeoutMs);
+        await current.callTool('end_session', { session: currentSessionName }, MCP_LIMITS.shutdownTimeoutMs);
       } catch {
         // The process may already be gone; disposal must still continue.
       }
@@ -371,13 +375,16 @@ export function createProxyManager({
     if (!descriptor) throw unavailable('CUA connection descriptor is unavailable');
     if (!proxy) {
       const candidate = await createProxy(descriptor);
+      // CUA binds a public label to its transport even after that lease ends.
+      const candidateSessionName = `${SESSION_NAME}-${randomUUID()}`;
       try {
-        await candidate.callTool('start_session', { session: SESSION_NAME }, MCP_LIMITS.startupTimeoutMs);
+        await candidate.callTool('start_session', { session: candidateSessionName }, MCP_LIMITS.startupTimeoutMs);
       } catch (error) {
         await candidate.dispose().catch(() => undefined);
         throw error;
       }
       proxy = candidate;
+      sessionName = candidateSessionName;
       sessionStarted = true;
     }
     return proxy;
@@ -404,7 +411,7 @@ export function createProxyManager({
           async callTool(name, args = {}, timeoutMs = MCP_LIMITS.requestTimeoutMs) {
             const current = await ensureProxy();
             try {
-              return await current.callTool(name, { ...args, session: SESSION_NAME }, timeoutMs);
+              return await current.callTool(name, { ...args, session: sessionName }, timeoutMs);
             } catch (error) {
               if (proxy === current) await disposeCurrent().catch(() => undefined);
               throw error;

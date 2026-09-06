@@ -1,6 +1,6 @@
 {
   "name": "clawx-cua-computer-plugin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "ClawX local computer-use tool for OpenClaw",
   "private": true,
   "type": "module",

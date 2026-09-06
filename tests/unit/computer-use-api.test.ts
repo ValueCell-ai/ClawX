@@ -34,6 +34,18 @@ beforeEach(() => {
 });
 
 describe('Computer Use management', () => {
+  it('returns unchanged permissions after an explicit request and never re-prompts on status or refresh', async () => {
+    mocks.enabled = true;
+    const { api, runtime } = harness();
+    runtime.start.mockResolvedValue(false);
+    const before = await api.status();
+    expect(await api.requestPermissions()).toEqual(before);
+    await api.status();
+    await api.refresh();
+    expect(runtime.requestPermissions).toHaveBeenCalledOnce();
+    expect((await api.status()).permissions?.screenRecording).toBe('denied');
+  });
+
   it('reports disabled status without runtime side effects and rejects permission requests', async () => {
     const { api, runtime } = harness();
     expect((await api.status()).enabled).toBe(false);

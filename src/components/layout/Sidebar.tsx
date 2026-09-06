@@ -458,12 +458,12 @@ export function Sidebar() {
       label: t('sidebar.cronTasks'),
       testId: 'sidebar-nav-cron',
     },
-    {
+    ...(devModeUnlocked ? [{
       to: '/computer-use',
       icon: <Monitor className="h-4 w-4" strokeWidth={2} />,
       label: t('computerUse.title'),
       testId: 'sidebar-nav-computer-use',
-    },
+    }] : []),
   ];
 
   const navItems = [

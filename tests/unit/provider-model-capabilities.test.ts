@@ -18,6 +18,9 @@ describe('inferCustomModelInputModalities', () => {
     'gemini-3-flash',
     'qwen2.5-vl',
     'glm-4v',
+    'glm-5.3-flash',
+    'zai/GLM-5.3-Flash',
+    'glm-5.3-flash:latest',
     'openai/gpt-5.6-sol',
   ])('marks known vision model %s as image-capable', (modelId) => {
     expect(inferCustomModelInputModalities(modelId)).toEqual(['text', 'image']);
@@ -28,6 +31,9 @@ describe('inferCustomModelInputModalities', () => {
     'kimi-k2.6',
     'qwen3.6-plus',
     'unknown-private-model',
+    'glm-5.3',
+    'glm-5.3-flash-lite',
+    'glm-5.4-flash',
   ])('uses conservative text-only input for %s', (modelId) => {
     expect(inferCustomModelInputModalities(modelId)).toEqual(['text']);
   });

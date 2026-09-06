@@ -1954,6 +1954,12 @@ function upsertOpenClawProviderEntry(
       : {}),
   }));
   let mergedModels = mergeProviderModels(registryModels, existingModels, runtimeModels);
+  if (options.inferRuntimeModelInputs) {
+    mergedModels = mergedModels.map((model) => ({
+      ...model,
+      input: model.input ?? inferCustomModelInputModalities(String(model.id)),
+    }));
+  }
   if (options.api === 'anthropic-messages') {
     mergedModels = mergedModels.map((model) => ensureAnthropicMessagesModelEntry(model, provider, existingProvider));
   }
@@ -2873,6 +2879,7 @@ async function updateModelsJsonProviderEntriesForAgents(
       const base = prev ? { ...prev, id: m.id, name: m.name } : { ...m };
       return {
         ...base,
+        input: base.input ?? m.input ?? inferCustomModelInputModalities(m.id),
         cost: normalizePiAiModelCost((base as { cost?: unknown }).cost),
       };
     });

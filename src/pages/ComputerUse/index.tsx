@@ -10,6 +10,7 @@ export function ComputerUse() {
   const [status, setStatus] = useState<ComputerUseStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [permissionRequestCompleted, setPermissionRequestCompleted] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -23,11 +24,13 @@ export function ComputerUse() {
     return () => { cancelled = true; window.removeEventListener('focus', refresh); };
   }, []);
 
-  const run = async (operation: () => Promise<ComputerUseStatus>) => {
+  const run = async (operation: () => Promise<ComputerUseStatus>, requestingPermissions = false) => {
     setBusy(true);
     setFailed(false);
+    setPermissionRequestCompleted(false);
     try {
       setStatus(await operation());
+      setPermissionRequestCompleted(requestingPermissions);
     } catch {
       setFailed(true);
       // A failed reconciliation may still have persisted a safe disabled state.
@@ -71,10 +74,15 @@ export function ComputerUse() {
               <dd data-testid="computer-use-screen-recording">{t(`computerUse.${permissions.screenRecording === 'granted' ? 'granted' : 'notGranted'}`)}</dd>
             </div>
           </dl>
-          <p className="text-sm text-muted-foreground">{t('computerUse.permissionHint')}</p>
+          <p className="text-sm text-muted-foreground" data-testid="computer-use-permission-hint">{t('computerUse.permissionHint')}</p>
           <Button data-testid="computer-use-request-permissions" variant="outline"
             disabled={busy || !status?.enabled || !status.supported || Boolean(granted)}
-            onClick={() => void run(hostApi.computerUse.requestPermissions)}>{t('computerUse.request')}</Button>
+            onClick={() => void run(hostApi.computerUse.requestPermissions, true)}>{t('computerUse.request')}</Button>
+          {permissionRequestCompleted && status?.enabled && !granted && (
+            <p role="status" data-testid="computer-use-permission-feedback" className="text-sm text-amber-700 dark:text-amber-400">
+              {t('computerUse.permissionRequestIncomplete')}
+            </p>
+          )}
         </section>
       )}
       <Button variant="outline" disabled={busy} onClick={() => void run(hostApi.computerUse.status)}>{t('actions.refresh')}</Button>

@@ -80,15 +80,14 @@ describe('ClawX CUA plugin manifest and registration', () => {
   });
 
   it('installs the plugin before starting CUA or Gateway', async () => {
-    const source = await readFile(
-      new URL('../../electron/main/index.ts', import.meta.url),
-      'utf8',
-    );
+    const source = await readFile(new URL('../../electron/main/index.ts', import.meta.url), 'utf8');
     const initialize = source.indexOf('await computerUseApi.initialize()');
     expect(initialize).toBeGreaterThan(-1);
     expect(initialize).toBeLessThan(source.indexOf('await gatewayManager.start()'));
     const service = await readFile(new URL('../../electron/services/computer-use-api.ts', import.meta.url), 'utf8');
-    expect(service.indexOf('await ensureClawXCuaPluginInstalled()')).toBeLessThan(service.indexOf('await runtime.start()'));
+    expect(service.indexOf('await ensureClawXCuaPluginInstalled()')).toBeLessThan(
+      service.indexOf('await runtime.start()'),
+    );
   });
 });
 
@@ -97,10 +96,12 @@ describe('CUA descriptor validation', () => {
     const { validateDescriptor } = await import(mcpClientModule);
 
     expect(validateDescriptor(DESCRIPTOR)).toEqual(DESCRIPTOR);
-    expect(validateDescriptor({
-      ...DESCRIPTOR,
-      command: 'C:\\Program Files\\ClawX\\cua-driver.exe',
-    }).command).toBe('C:\\Program Files\\ClawX\\cua-driver.exe');
+    expect(
+      validateDescriptor({
+        ...DESCRIPTOR,
+        command: 'C:\\Program Files\\ClawX\\cua-driver.exe',
+      }).command,
+    ).toBe('C:\\Program Files\\ClawX\\cua-driver.exe');
   });
 
   it.each([
@@ -113,10 +114,12 @@ describe('CUA descriptor validation', () => {
     [{ ...DESCRIPTOR, environment: [{ name: 'A', value: 1 }] }, 'environment'],
   ])('rejects malformed descriptors as unavailable', async (value, message) => {
     const { validateDescriptor } = await import(mcpClientModule);
-    expect(() => validateDescriptor(value)).toThrow(expect.objectContaining({
-      code: 'COMPUTER_DRIVER_UNAVAILABLE',
-      message: expect.stringContaining(message),
-    }));
+    expect(() => validateDescriptor(value)).toThrow(
+      expect.objectContaining({
+        code: 'COMPUTER_DRIVER_UNAVAILABLE',
+        message: expect.stringContaining(message),
+      }),
+    );
   });
 
   it('reads only the env-selected regular non-symlink file within 64 KiB', async () => {
@@ -128,47 +131,59 @@ describe('CUA descriptor validation', () => {
     }));
     const readFileMock = vi.fn(async () => JSON.stringify(DESCRIPTOR));
 
-    await expect(readConnectionDescriptor({
-      environment: { CLAWX_CUA_CONNECTION_FILE: '/private/descriptor.json' },
-      lstat,
-      readFile: readFileMock,
-    })).resolves.toEqual(DESCRIPTOR);
+    await expect(
+      readConnectionDescriptor({
+        environment: { CLAWX_CUA_CONNECTION_FILE: '/private/descriptor.json' },
+        lstat,
+        readFile: readFileMock,
+      }),
+    ).resolves.toEqual(DESCRIPTOR);
     expect(lstat).toHaveBeenCalledWith('/private/descriptor.json');
     expect(readFileMock).toHaveBeenCalledWith('/private/descriptor.json');
 
-    await expect(readConnectionDescriptor({
-      environment: {},
-      lstat,
-      readFile: readFileMock,
-    })).rejects.toMatchObject({ code: 'COMPUTER_DRIVER_UNAVAILABLE' });
-    await expect(readConnectionDescriptor({
-      environment: { CLAWX_CUA_CONNECTION_FILE: '/private/link.json' },
-      lstat: vi.fn(async () => ({
-        size: 100,
-        isFile: () => true,
-        isSymbolicLink: () => true,
-      })),
-      readFile: readFileMock,
-    })).rejects.toMatchObject({ code: 'COMPUTER_DRIVER_UNAVAILABLE' });
-    await expect(readConnectionDescriptor({
-      environment: { CLAWX_CUA_CONNECTION_FILE: '/private/large.json' },
-      lstat: vi.fn(async () => ({
-        size: 65 * 1024,
-        isFile: () => true,
-        isSymbolicLink: () => false,
-      })),
-      readFile: readFileMock,
-    })).rejects.toMatchObject({ code: 'COMPUTER_DRIVER_UNAVAILABLE' });
+    await expect(
+      readConnectionDescriptor({
+        environment: {},
+        lstat,
+        readFile: readFileMock,
+      }),
+    ).rejects.toMatchObject({ code: 'COMPUTER_DRIVER_UNAVAILABLE' });
+    await expect(
+      readConnectionDescriptor({
+        environment: { CLAWX_CUA_CONNECTION_FILE: '/private/link.json' },
+        lstat: vi.fn(async () => ({
+          size: 100,
+          isFile: () => true,
+          isSymbolicLink: () => true,
+        })),
+        readFile: readFileMock,
+      }),
+    ).rejects.toMatchObject({ code: 'COMPUTER_DRIVER_UNAVAILABLE' });
+    await expect(
+      readConnectionDescriptor({
+        environment: { CLAWX_CUA_CONNECTION_FILE: '/private/large.json' },
+        lstat: vi.fn(async () => ({
+          size: 65 * 1024,
+          isFile: () => true,
+          isSymbolicLink: () => false,
+        })),
+        readFile: readFileMock,
+      }),
+    ).rejects.toMatchObject({ code: 'COMPUTER_DRIVER_UNAVAILABLE' });
   });
 
   it('returns actionable guidance when Main has not published a descriptor', async () => {
     const { readConnectionDescriptor } = await import(mcpClientModule);
     const missing = Object.assign(new Error('missing'), { code: 'ENOENT' });
 
-    await expect(readConnectionDescriptor({
-      environment: { CLAWX_CUA_CONNECTION_FILE: '/private/missing.json' },
-      lstat: vi.fn(async () => { throw missing; }),
-    })).rejects.toMatchObject({
+    await expect(
+      readConnectionDescriptor({
+        environment: { CLAWX_CUA_CONNECTION_FILE: '/private/missing.json' },
+        lstat: vi.fn(async () => {
+          throw missing;
+        }),
+      }),
+    ).rejects.toMatchObject({
       code: 'COMPUTER_DRIVER_UNAVAILABLE',
       message: expect.stringMatching(/Accessibility.*Screen Recording.*restart ClawX|reinstall ClawX/i),
     });
@@ -177,10 +192,7 @@ describe('CUA descriptor validation', () => {
 
 describe('bounded MCP client', () => {
   it('uses the documented bounds and performs initialize before tool calls', async () => {
-    const {
-      MCP_LIMITS,
-      createMcpClient,
-    } = await import(mcpClientModule);
+    const { MCP_LIMITS, createMcpClient } = await import(mcpClientModule);
     expect(MCP_LIMITS).toEqual({
       maxDescriptorBytes: 64 * 1024,
       maxLineBytes: 256 * 1024 * 1024,
@@ -206,11 +218,13 @@ describe('bounded MCP client', () => {
         const request = JSON.parse(String(chunk).trim()) as Record<string, unknown>;
         requests.push(request);
         if (request.method === 'initialize') {
-          child.stdout.write(`${JSON.stringify({
-            jsonrpc: '2.0',
-            id: request.id,
-            result: { protocolVersion: DESCRIPTOR.mcpProtocolVersion, capabilities: {} },
-          })}\n`);
+          child.stdout.write(
+            `${JSON.stringify({
+              jsonrpc: '2.0',
+              id: request.id,
+              result: { protocolVersion: DESCRIPTOR.mcpProtocolVersion, capabilities: {} },
+            })}\n`,
+          );
         } else if (request.method === 'tools/call') {
           child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result: screenshotResult() })}\n`);
         } else if (request.method === 'shutdown') {
@@ -261,22 +275,26 @@ describe('bounded MCP client', () => {
       write(chunk, _encoding, callback) {
         const request = JSON.parse(String(chunk).trim()) as Record<string, unknown>;
         if (request.method === 'initialize') {
-          child.stdout.write(`${JSON.stringify({
-            jsonrpc: '2.0',
-            id: request.id,
-            result: { protocolVersion: DESCRIPTOR.mcpProtocolVersion },
-          })}\n`);
+          child.stdout.write(
+            `${JSON.stringify({
+              jsonrpc: '2.0',
+              id: request.id,
+              result: { protocolVersion: DESCRIPTOR.mcpProtocolVersion },
+            })}\n`,
+          );
         } else if (request.method === 'tools/call') {
           toolCalls += 1;
-          child.stdout.write(`${JSON.stringify({
-            jsonrpc: '2.0',
-            id: request.id,
-            result: {
-              isError: true,
-              content: [{ type: 'text', text: 'permission denied' }],
-              structuredContent: { code: 'permission_required' },
-            },
-          })}\n`);
+          child.stdout.write(
+            `${JSON.stringify({
+              jsonrpc: '2.0',
+              id: request.id,
+              result: {
+                isError: true,
+                content: [{ type: 'text', text: 'permission denied' }],
+                structuredContent: { code: 'permission_required' },
+              },
+            })}\n`,
+          );
         } else if (request.method === 'shutdown') {
           child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result: {} })}\n`);
         }
@@ -307,11 +325,13 @@ describe('bounded MCP client', () => {
     child.stdin = new Writable({
       write(chunk, _encoding, callback) {
         const request = JSON.parse(String(chunk).trim()) as Record<string, unknown>;
-        child.stdout.write(`${JSON.stringify({
-          jsonrpc: '2.0',
-          id: request.id,
-          result: { protocolVersion: 'incompatible' },
-        })}\n`);
+        child.stdout.write(
+          `${JSON.stringify({
+            jsonrpc: '2.0',
+            id: request.id,
+            result: { protocolVersion: 'incompatible' },
+          })}\n`,
+        );
         callback();
       },
     });
@@ -338,11 +358,13 @@ describe('bounded MCP client', () => {
       write(chunk, _encoding, callback) {
         const request = JSON.parse(String(chunk).trim()) as Record<string, unknown>;
         if (request.method === 'initialize') {
-          child.stdout.write(`${JSON.stringify({
-            jsonrpc: '2.0',
-            id: request.id,
-            result: { protocolVersion: DESCRIPTOR.mcpProtocolVersion },
-          })}\n`);
+          child.stdout.write(
+            `${JSON.stringify({
+              jsonrpc: '2.0',
+              id: request.id,
+              result: { protocolVersion: DESCRIPTOR.mcpProtocolVersion },
+            })}\n`,
+          );
         }
         callback();
       },
@@ -372,9 +394,7 @@ describe('bounded MCP client', () => {
       callTool: vi.fn(async () => ({})),
       dispose: vi.fn(async () => undefined),
     };
-    const createProxy = vi.fn()
-      .mockResolvedValueOnce(first)
-      .mockResolvedValueOnce(second);
+    const createProxy = vi.fn().mockResolvedValueOnce(first).mockResolvedValueOnce(second);
     const manager = createProxyManager({
       readDescriptor: vi.fn(async () => DESCRIPTOR),
       createProxy,
@@ -386,13 +406,54 @@ describe('bounded MCP client', () => {
     expect(createProxy).toHaveBeenCalledTimes(2);
   });
 
+  it('uses fresh session leases across reconnections and manager instances', async () => {
+    const { createProxyManager } = await import(mcpClientModule);
+    const leased = new Set<string>();
+    let failFirstProbe = true;
+    const probes = vi.fn();
+    const createProxy = async () => {
+      let ownedSession: string;
+      return {
+        callTool: async (name: string, args: { session: string }) => {
+          if (name === 'start_session') {
+            if (leased.has(args.session)) throw new Error('session_unavailable');
+            leased.add(args.session);
+            ownedSession = args.session;
+          } else {
+            expect(args.session).toBe(ownedSession);
+            if (name === 'probe') {
+              probes();
+              if (failFirstProbe) {
+                failFirstProbe = false;
+                throw new Error('connection lost');
+              }
+            }
+          }
+          return {};
+        },
+        dispose: async () => undefined,
+      };
+    };
+    const dependencies = { readDescriptor: async () => DESCRIPTOR, createProxy };
+    const first = createProxyManager(dependencies);
+    await expect(first.execute(({ callTool }) => callTool('probe'))).rejects.toThrow('connection lost');
+    await expect(first.execute(({ callTool }) => callTool('probe'))).resolves.toEqual({});
+    await first.dispose();
+    const second = createProxyManager(dependencies);
+    await expect(second.execute(({ callTool }) => callTool('probe'))).resolves.toEqual({});
+    await second.dispose();
+    expect(leased.size).toBe(3);
+    expect(probes).toHaveBeenCalledTimes(3);
+  });
+
   it('disposes the current proxy when its descriptor disappears', async () => {
     const { createProxyManager, computerDriverError } = await import(mcpClientModule);
     const proxy = {
       callTool: vi.fn(async () => ({})),
       dispose: vi.fn(async () => undefined),
     };
-    const readDescriptor = vi.fn()
+    const readDescriptor = vi
+      .fn()
       .mockResolvedValueOnce(DESCRIPTOR)
       .mockRejectedValueOnce(computerDriverError('COMPUTER_DRIVER_UNAVAILABLE', 'descriptor removed'));
     const manager = createProxyManager({
@@ -433,20 +494,38 @@ describe('computer action mapping', () => {
       toolName: 'click',
       arguments: { x: 10, y: 20, button: 'left', count: 1, target: TARGET },
     });
-    expect(mapComputerAction({ action: 'right_click', coordinate: [11, 21] }).arguments).toMatchObject({ button: 'right', count: 1, target: TARGET });
-    expect(mapComputerAction({ action: 'middle_click', coordinate: [12, 22] }).arguments).toMatchObject({ button: 'middle', count: 1, target: TARGET });
-    expect(mapComputerAction({ action: 'double_click', coordinate: [13, 23] }).arguments).toMatchObject({ button: 'left', count: 2, target: TARGET });
-    expect(mapComputerAction({ action: 'triple_click', coordinate: [14, 24] }).arguments).toMatchObject({ button: 'left', count: 3, target: TARGET });
+    expect(mapComputerAction({ action: 'right_click', coordinate: [11, 21] }).arguments).toMatchObject({
+      button: 'right',
+      count: 1,
+      target: TARGET,
+    });
+    expect(mapComputerAction({ action: 'middle_click', coordinate: [12, 22] }).arguments).toMatchObject({
+      button: 'middle',
+      count: 1,
+      target: TARGET,
+    });
+    expect(mapComputerAction({ action: 'double_click', coordinate: [13, 23] }).arguments).toMatchObject({
+      button: 'left',
+      count: 2,
+      target: TARGET,
+    });
+    expect(mapComputerAction({ action: 'triple_click', coordinate: [14, 24] }).arguments).toMatchObject({
+      button: 'left',
+      count: 3,
+      target: TARGET,
+    });
     expect(mapComputerAction({ action: 'mouse_move', coordinate: [15, 25] })).toEqual({
       toolName: 'move_cursor',
       arguments: { x: 15, y: 25, target: TARGET },
     });
-    expect(mapComputerAction({
-      action: 'left_click_drag',
-      startCoordinate: [1, 2],
-      coordinate: [30, 40],
-      duration: 1.25,
-    })).toEqual({
+    expect(
+      mapComputerAction({
+        action: 'left_click_drag',
+        startCoordinate: [1, 2],
+        coordinate: [30, 40],
+        duration: 1.25,
+      }),
+    ).toEqual({
       toolName: 'drag',
       arguments: {
         from_x: 1,
@@ -457,12 +536,14 @@ describe('computer action mapping', () => {
         target: TARGET,
       },
     });
-    expect(mapComputerAction({
-      action: 'scroll',
-      coordinate: [16, 26],
-      scrollDirection: 'down',
-      scrollAmount: 500,
-    })).toEqual({
+    expect(
+      mapComputerAction({
+        action: 'scroll',
+        coordinate: [16, 26],
+        scrollDirection: 'down',
+        scrollAmount: 500,
+      }),
+    ).toEqual({
       toolName: 'scroll',
       arguments: { x: 16, y: 26, direction: 'down', by: 'line', amount: 50, target: TARGET },
     });
@@ -474,10 +555,10 @@ describe('computer action mapping', () => {
 
   it('normalizes key aliases and rejects layout-dependent punctuation', async () => {
     const { parseKeyCombination } = await import(computerToolModule);
-    expect(parseKeyCombination('meta+Shift+T')).toEqual({ key: 't', modifiers: ['meta', 'shift'] });
+    expect(parseKeyCombination('meta+Shift+T')).toEqual({ key: 't', modifiers: ['cmd', 'shift'] });
     expect(parseKeyCombination('control+option+Return')).toEqual({ key: 'enter', modifiers: ['ctrl', 'alt'] });
-    expect(parseKeyCombination('win+F12')).toEqual({ key: 'f12', modifiers: ['meta'] });
-    expect(parseKeyCombination('cmd+PageUp')).toEqual({ key: 'pageup', modifiers: ['meta'] });
+    expect(parseKeyCombination('win+F12')).toEqual({ key: 'f12', modifiers: ['cmd'] });
+    expect(parseKeyCombination('cmd+PageUp')).toEqual({ key: 'pageup', modifiers: ['cmd'] });
     expect(() => parseKeyCombination('ctrl+/')).toThrow(/layout-dependent punctuation/i);
     expect(() => parseKeyCombination('ctrl+1')).toThrow(/layout-dependent/i);
     expect(() => parseKeyCombination('ctrl+a+b')).toThrow(/one non-modifier/i);
@@ -491,13 +572,44 @@ describe('computer action mapping', () => {
 });
 
 describe('computer tool execution', () => {
+  it.each(['Meta', 'Cmd', 'Command', 'Win', 'Super'])(
+    'delivers %s+Space with the CUA Command modifier',
+    async (alias) => {
+      const { createProxyManager } = await import(mcpClientModule);
+      const { createComputerTool } = await import(computerToolModule);
+      const proxy = {
+        callTool: vi.fn(async (name: string) => (name === 'get_desktop_state' ? screenshotResult() : {})),
+        dispose: vi.fn(async () => undefined),
+      };
+      const manager = createProxyManager({
+        readDescriptor: async () => DESCRIPTOR,
+        createProxy: async () => proxy,
+      });
+      const tool = createComputerTool({ proxyManager: manager, sleep: vi.fn() });
+
+      await tool.execute('shortcut', { action: 'key', text: `${alias}+Space` });
+
+      expect(proxy.callTool).toHaveBeenCalledWith(
+        'press_key',
+        {
+          key: 'space',
+          modifiers: ['cmd'],
+          target: TARGET,
+          session: expect.stringMatching(/^clawx-computer-use-/),
+        },
+        expect.anything(),
+      );
+      await manager.dispose();
+    },
+  );
+
   it('returns native PNG geometry with non-outbound media metadata', async () => {
     const { createProxyManager } = await import(mcpClientModule);
     const { createComputerTool } = await import(computerToolModule);
     const proxy = {
-      callTool: vi.fn(async (name: string) => (
-        name === 'start_session' ? { structuredContent: { active: true } } : screenshotResult(2880, 1800)
-      )),
+      callTool: vi.fn(async (name: string) =>
+        name === 'start_session' ? { structuredContent: { active: true } } : screenshotResult(2880, 1800),
+      ),
       dispose: vi.fn(async () => undefined),
     };
     const manager = createProxyManager({
@@ -523,8 +635,9 @@ describe('computer tool execution', () => {
       screenHeight: 900,
       media: { outbound: false },
     });
-    expect(proxy.callTool).toHaveBeenNthCalledWith(1, 'start_session', { session: 'clawx-primary-desktop' }, expect.anything());
-    expect(proxy.callTool).toHaveBeenNthCalledWith(2, 'get_desktop_state', { session: 'clawx-primary-desktop' }, expect.anything());
+    const session = expect.stringMatching(/^clawx-computer-use-/);
+    expect(proxy.callTool).toHaveBeenNthCalledWith(1, 'start_session', { session }, expect.anything());
+    expect(proxy.callTool).toHaveBeenNthCalledWith(2, 'get_desktop_state', { session }, expect.anything());
   });
 
   it('requires a same-generation screenshot and rejects out-of-frame coordinates', async () => {
@@ -534,9 +647,9 @@ describe('computer tool execution', () => {
     const proxies: Array<{ callTool: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn> }> = [];
     const createProxy = vi.fn(async () => {
       const proxy = {
-        callTool: vi.fn(async (name: string) => (
-          name === 'get_desktop_state' ? screenshotResult(100, 50) : { structuredContent: { effect: 'unverifiable' } }
-        )),
+        callTool: vi.fn(async (name: string) =>
+          name === 'get_desktop_state' ? screenshotResult(100, 50) : { structuredContent: { effect: 'unverifiable' } },
+        ),
         dispose: vi.fn(async () => undefined),
       };
       proxies.push(proxy);
@@ -550,11 +663,17 @@ describe('computer tool execution', () => {
 
     await expect(tool.execute('call-1', { action: 'left_click', coordinate: [1, 1] })).rejects.toThrow(/screenshot/i);
     await tool.execute('call-2', { action: 'screenshot' });
-    await expect(tool.execute('call-3', { action: 'left_click', coordinate: [-1, 1] })).rejects.toThrow(/non-negative/i);
-    await expect(tool.execute('call-4', { action: 'left_click', coordinate: [100, 1] })).rejects.toThrow(/outside.*100x50/i);
+    await expect(tool.execute('call-3', { action: 'left_click', coordinate: [-1, 1] })).rejects.toThrow(
+      /non-negative/i,
+    );
+    await expect(tool.execute('call-4', { action: 'left_click', coordinate: [100, 1] })).rejects.toThrow(
+      /outside.*100x50/i,
+    );
 
     descriptor = { ...DESCRIPTOR, generation: 'generation-2' };
-    await expect(tool.execute('call-5', { action: 'left_click', coordinate: [1, 1] })).rejects.toThrow(/same descriptor generation/i);
+    await expect(tool.execute('call-5', { action: 'left_click', coordinate: [1, 1] })).rejects.toThrow(
+      /same descriptor generation/i,
+    );
     expect(proxies[0].dispose).toHaveBeenCalledOnce();
     expect(createProxy).toHaveBeenCalledOnce();
   });
@@ -563,7 +682,9 @@ describe('computer tool execution', () => {
     const { createProxyManager } = await import(mcpClientModule);
     const order: string[] = [];
     let releaseFirst!: () => void;
-    const firstBlocked = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const firstBlocked = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
     const proxy = {
       callTool: vi.fn(async (name: string, args: Record<string, unknown>) => {
         if (name === 'start_session') return {};
@@ -580,8 +701,14 @@ describe('computer tool execution', () => {
       createProxy: vi.fn(async () => proxy),
     });
 
-    const first = manager.execute(({ callTool }: { callTool: (name: string, args: Record<string, unknown>) => Promise<unknown> }) => callTool('type_text', { text: 'one' }));
-    const second = manager.execute(({ callTool }: { callTool: (name: string, args: Record<string, unknown>) => Promise<unknown> }) => callTool('type_text', { text: 'two' }));
+    const first = manager.execute(
+      ({ callTool }: { callTool: (name: string, args: Record<string, unknown>) => Promise<unknown> }) =>
+        callTool('type_text', { text: 'one' }),
+    );
+    const second = manager.execute(
+      ({ callTool }: { callTool: (name: string, args: Record<string, unknown>) => Promise<unknown> }) =>
+        callTool('type_text', { text: 'two' }),
+    );
     await vi.waitFor(() => expect(order).toEqual(['start-one']));
     releaseFirst();
     await Promise.all([first, second]);
@@ -629,14 +756,15 @@ describe('computer tool execution', () => {
     const { createComputerTool } = await import(computerToolModule);
     let calls = 0;
     const proxyManager = {
-      execute: (operation: (context: unknown) => Promise<unknown>) => operation({
-        generation: DESCRIPTOR.generation,
-        callTool: vi.fn(async (name: string) => {
-          calls += 1;
-          if (name === 'get_desktop_state') return screenshotResult(100, 50);
-          throw Object.assign(new Error('request timed out'), { code: 'COMPUTER_DRIVER_UNAVAILABLE' });
+      execute: (operation: (context: unknown) => Promise<unknown>) =>
+        operation({
+          generation: DESCRIPTOR.generation,
+          callTool: vi.fn(async (name: string) => {
+            calls += 1;
+            if (name === 'get_desktop_state') return screenshotResult(100, 50);
+            throw Object.assign(new Error('request timed out'), { code: 'COMPUTER_DRIVER_UNAVAILABLE' });
+          }),
         }),
-      }),
     };
     const tool = createComputerTool({ proxyManager, sleep: vi.fn() });
     await tool.execute('call-1', { action: 'screenshot' });
@@ -650,9 +778,7 @@ describe('computer tool execution', () => {
     const { createProxyManager } = await import(mcpClientModule);
     const { createComputerTool } = await import(computerToolModule);
     const proxy = {
-      callTool: vi.fn(async (name: string) => (
-        name === 'get_desktop_state' ? screenshotResult() : {}
-      )),
+      callTool: vi.fn(async (name: string) => (name === 'get_desktop_state' ? screenshotResult() : {})),
       dispose: vi.fn(async () => undefined),
     };
     const sleep = vi.fn(async () => undefined);
@@ -667,7 +793,11 @@ describe('computer tool execution', () => {
     await manager.dispose();
 
     expect(sleep).toHaveBeenCalledWith(100_000);
-    expect(proxy.callTool).toHaveBeenCalledWith('end_session', { session: 'clawx-primary-desktop' }, 2_000);
+    expect(proxy.callTool).toHaveBeenCalledWith(
+      'end_session',
+      { session: expect.stringMatching(/^clawx-computer-use-/) },
+      2_000,
+    );
     expect(proxy.dispose).toHaveBeenCalledOnce();
   });
 });

@@ -1,9 +1,9 @@
 {
     "computerUse": {
         "title": "操作计算机",
-        "description": "允许 Agent 通过内置的本机驱动截取并操作这台计算机的主显示器。",
+        "description": "允许 Agent 通过内置的 CUA 驱动读取屏幕和操作这台计算机。",
         "enable": "启用操作计算机",
-        "warning": "默认关闭。启用后 Agent 可控制桌面；关闭会停止驱动并移除 computer 工具。Gateway 配置可能重新加载并中断正在进行的任务。",
+        "warning": "启用后 Agent 可通过 computer 工具控制你的计算机。可配合 /computer-use 技能使用。",
         "off": "已关闭，Agent 无法使用 computer 工具。",
         "running": "本机驱动正在运行。",
         "unavailable": "已启用，但驱动不可用。请检查权限和内置驱动，再关闭并重新启用以重试。",
@@ -13,7 +13,8 @@
         "screenRecording": "屏幕录制",
         "granted": "已授权",
         "notGranted": "未授权",
-        "permissionHint": "这里只读显示权限状态，仅下方按钮会请求授权。如果权限被拒绝，请前往系统设置 > 隐私与安全性中允许 ClawX；macOS 可能要求重启 ClawX。关闭此功能不会撤销系统授权。",
+        "permissionHint": "为 ClawX 开启「辅助功能」和「录屏与系统录音」权限，以让「操作计算机」功能正确工作。修改授权后需重启 ClawX 生效。如先前拒绝 / 忽略过权限请求，点击「请求权限」按钮可能不会弹出授权提示，此时请在「系统设置 > 隐私与安全性」中手动操作。",
+        "permissionRequestIncomplete": "权限请求已返回，但所需权限仍未授予。macOS 不一定会再次弹窗，尤其是在已有授权决定时。请检查系统设置中列出的应用，重启后刷新状态。此状态无法区分从未请求与此前已拒绝。",
         "request": "请求权限",
         "error": "操作未能完成。请刷新状态后重试，详情请查看应用日志。"
     },

@@ -1,7 +1,7 @@
-import type { ElectronApplication } from '@playwright/test';
+import type { ElectronApplication, Page } from '@playwright/test';
 import { expect, installIpcMocks, test } from './fixtures/electron';
 
-async function installComputerFixture(electronApp: ElectronApplication, supported = true, mac = true) {
+async function installComputerFixture(electronApp: ElectronApplication, supported = true, mac = true, grantPermissions = true) {
   await electronApp.evaluate(({ ipcMain }, options) => {
     type Request = { id: string; module: string; action: string; payload?: { enabled: boolean } };
     const original = (ipcMain as unknown as { _invokeHandlers: Map<string, (event: unknown, request: Request) => unknown> })._invokeHandlers.get('host:invoke')!;
@@ -18,18 +18,35 @@ async function installComputerFixture(electronApp: ElectronApplication, supporte
       if (request.action === 'setEnabled') state.enabled = request.payload!.enabled;
       if (request.action === 'requestPermissions') {
         if (!state.enabled) throw new Error('disabled');
-        state.permissions = { accessibility: true, screenRecording: 'granted' };
-        state.running = true;
+        if (options.grantPermissions) {
+          state.permissions = { accessibility: true, screenRecording: 'granted' };
+          state.running = true;
+        }
       }
       if (!state.enabled) state.running = false;
       return { id: request.id, ok: true, data: state };
     });
-  }, { supported, mac });
+  }, { supported, mac, grantPermissions });
 }
+
+async function enableDeveloperMode(page: Page) {
+  await page.getByTestId('sidebar-nav-settings').click();
+  await page.getByTestId('settings-dev-mode-switch').click();
+  await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'checked');
+}
+
+test.afterEach(async ({ page }) => {
+  const settingsLink = page.getByTestId('sidebar-nav-settings');
+  if (await settingsLink.count() === 0) return;
+  await settingsLink.click();
+  const devModeSwitch = page.getByTestId('settings-dev-mode-switch');
+  if (await devModeSwitch.getAttribute('data-state') === 'checked') await devModeSwitch.click();
+});
 
 test('Computer Use is default off and only the explicit button requests permissions', async ({ electronApp, page }) => {
   await installComputerFixture(electronApp);
   await page.getByTestId('setup-skip-button').click();
+  await enableDeveloperMode(page);
   await page.getByTestId('sidebar-nav-computer-use').click();
   await expect(page.getByTestId('computer-use-page')).toBeVisible();
   const toggle = page.getByTestId('computer-use-toggle');
@@ -56,9 +73,29 @@ test('Computer Use is default off and only the explicit button requests permissi
 test('unsupported platforms cannot opt in and non-macOS does not show macOS permissions', async ({ electronApp, page }) => {
   await installComputerFixture(electronApp, false, false);
   await page.getByTestId('setup-skip-button').click();
+  await enableDeveloperMode(page);
   await page.getByTestId('sidebar-nav-computer-use').click();
   await expect(page.getByTestId('computer-use-toggle')).toBeDisabled();
   await expect(page.getByTestId('computer-use-request-permissions')).toHaveCount(0);
+});
+
+test('an unchanged permission request shows guidance without implicitly re-prompting', async ({ electronApp, page }) => {
+  await installComputerFixture(electronApp, true, true, false);
+  await page.getByTestId('setup-skip-button').click();
+  await enableDeveloperMode(page);
+  await page.getByTestId('sidebar-nav-computer-use').click();
+  const feedback = page.getByTestId('computer-use-permission-feedback');
+  await expect(feedback).toHaveCount(0);
+  await page.getByTestId('computer-use-toggle').click();
+  await expect(feedback).toHaveCount(0);
+  await page.getByTestId('computer-use-request-permissions').click();
+  await expect(feedback).toBeVisible();
+  await expect(feedback).toContainText(/System Settings/);
+  await expect(page.getByTestId('computer-use-request-permissions')).toBeEnabled();
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  expect(await electronApp.evaluate(() => (globalThis as unknown as { computerUseCalls: string[] }).computerUseCalls.filter((action) => action === 'requestPermissions'))).toHaveLength(1);
+  await page.getByTestId('computer-use-toggle').click();
+  await expect(feedback).toHaveCount(0);
 });
 
 test('the real host defaults off and rejects permission requests without loading the driver', async ({ page }) => {
@@ -77,6 +114,7 @@ test('failed opt-in displays an error and retains the safe host state', async ({
     '["computerUse","setEnabled",{"enabled":true}]': 'Gateway policy update failed',
   } });
   await page.getByTestId('setup-skip-button').click();
+  await enableDeveloperMode(page);
   await page.getByTestId('sidebar-nav-computer-use').click();
   await page.getByTestId('computer-use-toggle').click();
   await expect(page.getByRole('alert')).toBeVisible();

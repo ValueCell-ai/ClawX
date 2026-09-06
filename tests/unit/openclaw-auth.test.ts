@@ -1115,17 +1115,19 @@ describe('sanitizeOpenClawConfig', () => {
       'utf8',
     );
     const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    const { isCuaPlatformSupported } = await import('@electron/utils/cua-platform');
     await sanitizeOpenClawConfig();
     await sanitizeOpenClawConfig();
 
     const result = await readOpenClawJson();
     const plugins = result.plugins as Record<string, unknown>;
     const entries = plugins.entries as Record<string, Record<string, unknown>>;
-    expect(plugins.enabled).toBe(enabled === true);
+    const expectedEnabled = isCuaPlatformSupported() && enabled === true;
+    expect(plugins.enabled).toBe(expectedEnabled);
     expect((plugins.allow as string[]).filter((id) => id === 'clawx-cua-computer')).toHaveLength(1);
     expect(plugins.allow).toContain('custom-plugin');
     expect(entries['custom-plugin']).toEqual({ enabled: true, config: { keep: 'yes' } });
-    expect(entries['clawx-cua-computer']).toEqual({ enabled: enabled === true, config: { preserved: true } });
+    expect(entries['clawx-cua-computer']).toEqual({ enabled: expectedEnabled, config: { preserved: true } });
     expect(plugins.load).toEqual({ paths: ['relative/plugin'] });
   });
 
@@ -1292,6 +1294,25 @@ describe('syncProviderConfigToOpenClaw', () => {
         input: ['text'],
       }),
     ]);
+  });
+
+  it.each([
+    [undefined, ['text', 'image']],
+    [['text'], ['text']],
+  ])('fills only missing input on existing custom model rows (%j)', async (input, expected) => {
+    await writeOpenClawJson({ models: { providers: { 'custom-example': {
+      baseUrl: 'https://example.com/v1', api: 'openai-completions',
+      models: [{ id: 'gpt-5.5', name: 'Existing model', input }],
+    } } } });
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await syncProviderConfigToOpenClaw('custom-example', 'gpt-5.5', {
+      baseUrl: 'https://example.com/v1', api: 'openai-completions',
+    });
+    const result = await readOpenClawJson();
+    const providers = (result.models as { providers: Record<string, { models: unknown[] }> }).providers;
+    expect(providers['custom-example'].models[0]).toMatchObject({
+      name: 'Existing model', input: expected,
+    });
   });
 
   it('does not infer contextWindow for new custom-provider model rows', async () => {
@@ -2235,6 +2256,27 @@ describe('anthropic-messages maxTokens', () => {
     const second = JSON.parse(await readFile(modelsPath, 'utf8')) as Record<string, unknown>;
     const secondEntry = (second.providers as Record<string, Record<string, unknown>>)['custom-example'];
     expect(secondEntry.timeoutSeconds).toBe(90);
+  });
+
+  it.each([false, true])('fills missing agent model inputs (existing=%s) without overriding text-only models', async (existing) => {
+    await writeOpenClawJson({ agents: { list: [{ id: 'main', name: 'Main' }] } });
+    const modelsPath = join(testHome, '.openclaw', 'agents', 'main', 'agent', 'models.json');
+    const models = [
+      { id: 'gpt-5.5', name: 'gpt-5.5' },
+      { id: 'private-model-x', name: 'private-model-x' },
+      { id: 'gpt-4o', name: 'Text-only deployment', input: ['text'] },
+    ];
+    if (existing) {
+      await mkdir(join(testHome, '.openclaw', 'agents', 'main', 'agent'), { recursive: true });
+      await writeFile(modelsPath, JSON.stringify({ providers: { 'custom-example': { models } } }));
+    }
+    const { updateAgentModelProvider } = await import('@electron/utils/openclaw-auth');
+    await updateAgentModelProvider('custom-example', {
+      api: 'openai-completions', models,
+    });
+    const result = JSON.parse(await readFile(modelsPath, 'utf8'));
+    expect(result.providers['custom-example'].models.map((model: { input?: string[] }) => model.input))
+      .toEqual([['text', 'image'], ['text'], ['text']]);
   });
 
   it('adds maxTokens to agent models.json for anthropic-messages providers', async () => {

@@ -27,11 +27,12 @@ const COORDINATE_ACTIONS = new Set([
   'scroll',
 ]);
 const MODIFIER_ALIASES = new Map([
-  ['cmd', 'meta'],
-  ['command', 'meta'],
-  ['meta', 'meta'],
-  ['win', 'meta'],
-  ['super', 'meta'],
+  // CUA accepts cmd on both platforms; macOS silently ignores meta.
+  ['cmd', 'cmd'],
+  ['command', 'cmd'],
+  ['meta', 'cmd'],
+  ['win', 'cmd'],
+  ['super', 'cmd'],
   ['control', 'ctrl'],
   ['ctrl', 'ctrl'],
   ['option', 'alt'],

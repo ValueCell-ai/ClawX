@@ -17,6 +17,11 @@ explicitly owns that field.
 New model IDs may receive deterministic capability defaults, but metadata from a
 different model ID must never be copied onto them.
 
+Provider synchronization fills missing `input` modalities on custom-provider
+and agent `models.json` rows using the shared conservative inference. Explicit
+input declarations, especially text-only deployments of otherwise visual model
+families, remain authoritative. Do not infer context limits as a side effect.
+
 Custom-provider model rows (`models.providers.custom-*`) must not receive an
 inferred `contextWindow` or `contextTokens` from their model names. Existing
 rows missing both fields remain unset. Rows that already declare either field

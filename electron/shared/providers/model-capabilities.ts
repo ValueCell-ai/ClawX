@@ -193,6 +193,7 @@ export function inferKnownModelContextWindow(
 }
 
 const VISION_MODEL_PATTERNS: RegExp[] = [
+  /^glm-5\.3-flash$/,
   /\b(?:gpt-4o|gpt-4\.1|gpt-[5-9]|o[134])\b/,
   /\bclaude-(?:3|4|fable|sonnet|opus|haiku)\b/,
   /\bgemini\b/,
@@ -202,7 +203,7 @@ const VISION_MODEL_PATTERNS: RegExp[] = [
 ];
 
 /**
- * Mirrors OpenClaw 2026.5.20 custom-provider onboarding inference.
+ * Extends OpenClaw 2026.5.20 custom-provider onboarding inference with known models.
  * Unknown models use the same conservative text-only fallback as non-interactive onboarding.
  */
 export function inferCustomModelInputModalities(modelId: string): ModelInputModality[] {
