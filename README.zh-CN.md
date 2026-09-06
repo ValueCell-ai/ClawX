@@ -140,7 +140,7 @@ Computer Use 是可选功能，**默认关闭**，包括尚未明确选择的已
 
 macOS 管理页只读显示**辅助功能**和**屏幕录制**状态。启动、激活和启用开关均不会请求权限；需先启用功能，再明确点击**请求权限**。如果曾拒绝，请在系统设置 > 隐私与安全性中允许 ClawX；macOS 可能要求重启应用。关闭功能不会撤销系统授权。权限或驱动缺失时驱动不可用，但不阻止聊天或 Gateway 启动。
 
-内置的 `clawx-cua-computer` 是 OpenClaw 插件，注册模型可见的 `computer` 工具，通过本机 MCP stdio 代理连接 Main 持有的驱动。它不是 Skill，也不会安装 Skill；动作说明由工具描述和参数定义提供。
+内置的 `clawx-cua-computer` 是 OpenClaw 插件，注册模型可见的 `computer` 工具，通过本机 MCP stdio 代理连接 Main 持有的驱动。开发环境和打包版本还本地附带独立的第一方 **computer-use** Skill。在聊天的技能选择器中选择它，即可插入 `/computer-use`，用于明确的桌面操作任务。其英文指导涵盖基于截图的操作、结果验证，以及破坏性或对外操作前的确认；它不是授权或安全保证，选择 Skill 不会启用 Computer Use 或授予系统权限。启动时会安装到 `~/.openclaw/skills/computer-use`，不会覆盖已有同名目录，也不需要运行时下载 Skill。
 
 > Web search 说明：ClawX 会在 Agent 和 Gateway 两层策略中禁用 OpenClaw 的通用 `web_search` 工具。
 > 这也包括 Moonshot（Kimi）搜索；受管浏览器自动化和 `web_fetch` 仍然可用。

@@ -51,8 +51,8 @@ docs:
 
 # Optional Computer Use
 
-The bundled OpenClaw plugin exposes a computer tool over a local MCP proxy,
-not an installed Skill. No Skill is added by this task.
+The bundled OpenClaw plugin exposes a computer tool over a local MCP proxy.
+The separate `builtin-computer-use-skill` task adds workflow guidance, not authorization.
 
 The task builds on the branch's bundled-driver implementation; its packaging
 paths are included because harness validation reviews the full branch diff.

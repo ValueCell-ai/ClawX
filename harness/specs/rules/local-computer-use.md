@@ -10,6 +10,8 @@ appliesTo:
   - electron/main/index.ts
   - electron/gateway/config-sync.ts
   - resources/openclaw-plugins/clawx-cua-computer/**
+  - resources/skills/computer-use/**
+  - electron/utils/skill-config.ts
   - scripts/download-cua-driver.mjs
   - scripts/cua-driver-artifacts.mjs
   - scripts/after-pack.cjs
@@ -32,3 +34,4 @@ severity: error
 - Serialize all computer actions. Coordinate actions require a screenshot from the current runtime generation, reject out-of-frame coordinates, and target only the primary display.
 - Bound MCP input, pending request count, startup/request/shutdown timeouts, and stderr retention. A daemon or proxy failure must fail closed without replaying an action whose completion is unknown.
 - Screenshot results are model-only media and must not be forwarded to messaging channels.
+- Keep the bundled computer-use skill as concise English guidance for explicit desktop tasks, not authorization or an exclusive tool gate. Match the local schema and errors; never enable the feature or request OS grants through model scripts. Preserve same-name user skills during installation. Record research in `harness/reference/computer-use-skill.md` rather than bloating model instructions.

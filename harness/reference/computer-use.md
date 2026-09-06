@@ -28,9 +28,10 @@ the enabled preference with an unavailable runtime so users can grant permission
 
 The `clawx-cua-computer` OpenClaw plugin registers `computer` as a model-facing
 tool. Its private MCP stdio proxy connects to the Main-owned bundled daemon.
-Tool descriptions and the action schema already explain supported operations and
-screenshot coordinates. No Skill is installed. Consider a Skill only for a proven
-need for higher-level desktop workflows, not to replace permission or plugin policy.
+Tool descriptions and the action schema define supported operations and coordinates.
+The separate first-party `computer-use` skill supplies screenshot/action/verification
+guidance through the existing picker; it does not replace permission or plugin policy.
+See `harness/reference/computer-use-skill.md` for its sources and distribution.
 
 Coverage: runtime and management unit tests, plugin policy sanitization tests,
 settings persistence tests, and Electron management-page tests. Automated tests
