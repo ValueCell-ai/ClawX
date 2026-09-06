@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Chat } from '@/pages/Chat';
 import type { AcpTimelineSnapshot } from '@/lib/acp/timeline-types';
@@ -654,6 +654,85 @@ describe('ACP Chat page', () => {
       });
     });
     resolveInitialLoad(true);
+  });
+
+  it('does not flash a greeting or spinner during a fast persisted session switch', async () => {
+    acpState.workspaceRoot = '/workspace';
+    acpState.cwd = '/workspace';
+    const { rerender } = render(<Chat />);
+    await waitFor(() => expect(resolveWorkspaceContext).toHaveBeenCalled());
+
+    const workspace = deferredPromise();
+    resolveWorkspaceContext.mockImplementation(async () => {
+      await workspace.promise;
+      return { ok: true, workspaceRoot: '/workspace', executionCwd: '/workspace' };
+    });
+    const sessionKey = 'agent:main:session-b';
+    chatState.sessions.push({ key: sessionKey, workspacePath: '/workspace' });
+    chatState.currentSessionKey = sessionKey;
+    acpState.loadSession.mockImplementation(() => new Promise(() => {}));
+    rerender(<Chat />);
+
+    expect(screen.queryByTestId('acp-chat-empty-state')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('acp-chat-loading')).not.toBeInTheDocument();
+    expect(screen.queryByText('List project files')).not.toBeInTheDocument();
+    await act(async () => workspace.resolve());
+    acpState.activeSessionKey = sessionKey;
+    acpState.timeline = { ...emptyTimeline(), sessionId: sessionKey };
+    acpState.loading = true;
+    rerender(<Chat />);
+    expect(screen.queryByTestId('acp-chat-loading')).not.toBeInTheDocument();
+
+    const greetingFrames: boolean[] = [];
+    const observer = new MutationObserver(() => {
+      greetingFrames.push(!!screen.queryByTestId('acp-chat-empty-state'));
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    acpState.timeline = { ...populatedTimeline(), sessionId: sessionKey };
+    acpState.loading = false;
+    rerender(<Chat />);
+    await waitFor(() => expect(screen.getByText('List project files')).toBeInTheDocument());
+    observer.disconnect();
+    expect(greetingFrames).not.toContain(true);
+  });
+
+  it('does not treat an error from the previous session as resolved empty history', async () => {
+    chatState.currentSessionKey = 'agent:main:session-b';
+    chatState.sessions.push({ key: chatState.currentSessionKey, workspacePath: '/workspace' });
+    acpState.error = 'Previous prompt failed';
+    resolveWorkspaceContext.mockReturnValue(new Promise(() => {}));
+    render(<Chat />);
+    expect(screen.queryByTestId('acp-chat-empty-state')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('acp-chat-loading')).toBeInTheDocument();
+  });
+
+  it('does not resume loading when a completed load error is dismissed', async () => {
+    acpState.activeSessionKey = null;
+    acpState.timeline = emptyTimeline();
+    acpState.error = 'History load failed';
+    acpState.loadSession.mockResolvedValue(false);
+    const { rerender } = render(<Chat />);
+    await waitFor(() => expect(acpState.loadSession).toHaveBeenCalledTimes(1));
+    acpState.error = null;
+    rerender(<Chat />);
+    expect(screen.getByTestId('acp-chat-empty-state')).toBeInTheDocument();
+    expect(screen.queryByTestId('acp-chat-loading')).not.toBeInTheDocument();
+    expect(acpState.loadSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows feedback for slow history loads and then renders genuinely empty history', async () => {
+    acpState.loading = true;
+    acpState.timeline = emptyTimeline();
+    acpState.workspaceRoot = '/workspace';
+    acpState.cwd = '/workspace';
+    const { rerender } = render(<Chat />);
+    expect(screen.queryByTestId('acp-chat-loading')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('acp-chat-empty-state')).not.toBeInTheDocument();
+    expect(await screen.findByTestId('acp-chat-loading')).toBeInTheDocument();
+    acpState.loading = false;
+    rerender(<Chat />);
+    expect(screen.queryByTestId('acp-chat-loading')).not.toBeInTheDocument();
+    expect(screen.getByTestId('acp-chat-empty-state')).toBeInTheDocument();
   });
 
   it('starts a new load when returning to a session whose earlier load is still pending', async () => {
