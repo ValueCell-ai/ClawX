@@ -52,6 +52,7 @@
             "updatePlan": "更新计划",
             "webFetch": "读取网页",
             "browser": "操作浏览器",
+            "computer": "操作计算机",
             "execCommand": "执行命令",
             "read": "读取",
             "write": "写入",

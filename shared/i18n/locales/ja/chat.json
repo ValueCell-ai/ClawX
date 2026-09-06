@@ -52,6 +52,7 @@
             "updatePlan": "計画を更新",
             "webFetch": "Webページを読む",
             "browser": "ブラウザーを操作",
+            "computer": "コンピューターを操作",
             "execCommand": "コマンドを実行",
             "read": "読み取り",
             "write": "書き込み",

@@ -1555,6 +1555,14 @@ test.describe('ClawX ACP inline timeline', () => {
           locations: [],
         },
         {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-9',
+          title: 'computer: action: screenshot',
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'screenshot captured' } }],
+          locations: [],
+        },
+        {
           sessionUpdate: 'agent_message',
           messageId: 'history-assistant',
           content: [{ type: 'text', text: 'Hangzhou is cloudy today.' }],
@@ -1575,7 +1583,7 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(0);
 
       await expandAcpToolCallsGroup(page);
-      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(8);
+      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(9);
       await expect(page.getByText('Update plan: plan: [{"step":"Check weather"}]', { exact: true })).toBeVisible();
       await expect(page.getByText('Read web page: url: https://example.com/weather', { exact: true })).toBeVisible();
       await expect(page.getByText('Control browser: action: navigate', { exact: true })).toBeVisible();
@@ -1584,6 +1592,7 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByText('Write: path: weather.md', { exact: true })).toBeVisible();
       await expect(page.getByText('Spawn subagent: task: Check weather', { exact: true })).toBeVisible();
       await expect(page.getByText('Search memory: query: weather history', { exact: true })).toBeVisible();
+      await expect(page.getByText('Control computer: action: screenshot', { exact: true })).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-list-checks')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-globe')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-square-mouse-pointer')).toBeVisible();
@@ -1592,6 +1601,7 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-tool-icon-save')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-bot')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-database')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-mouse-pointer-click')).toBeVisible();
       await expect(page.getByTestId('acp-assistant-turn')).toContainText('Hangzhou is cloudy today.');
     } finally {
       await closeElectronApp(app);
