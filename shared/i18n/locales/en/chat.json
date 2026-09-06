@@ -52,6 +52,7 @@
             "updatePlan": "Update plan",
             "webFetch": "Read web page",
             "browser": "Control browser",
+            "computer": "Control computer",
             "execCommand": "Run command",
             "read": "Read",
             "write": "Write",
