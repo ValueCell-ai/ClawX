@@ -1,4 +1,22 @@
 {
+    "computerUse": {
+        "title": "操作计算机",
+        "description": "允许 Agent 通过内置的本机驱动截取并操作这台计算机的主显示器。",
+        "enable": "启用操作计算机",
+        "warning": "默认关闭。启用后 Agent 可控制桌面；关闭会停止驱动并移除 computer 工具。Gateway 配置可能重新加载并中断正在进行的任务。",
+        "off": "已关闭，Agent 无法使用 computer 工具。",
+        "running": "本机驱动正在运行。",
+        "unavailable": "已启用，但驱动不可用。请检查权限和内置驱动，再关闭并重新启用以重试。",
+        "unsupported": "需要 macOS 13+（Intel 或 Apple 芯片），或 Windows 10+ x64。",
+        "permissions": "macOS 权限",
+        "accessibility": "辅助功能",
+        "screenRecording": "屏幕录制",
+        "granted": "已授权",
+        "notGranted": "未授权",
+        "permissionHint": "这里只读显示权限状态，仅下方按钮会请求授权。如果权限被拒绝，请前往系统设置 > 隐私与安全性中允许 ClawX；macOS 可能要求重启 ClawX。关闭此功能不会撤销系统授权。",
+        "request": "请求权限",
+        "error": "操作未能完成。请刷新状态后重试，详情请查看应用日志。"
+    },
     "sidebar": {
         "chat": "聊天",
         "newChat": "新对话",

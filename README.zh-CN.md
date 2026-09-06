@@ -136,9 +136,11 @@ pnpm dev
 
 ### 本机 Computer Use
 
-在受支持的 macOS 和 Windows 安装中，ClawX 会在本机启动随应用打包的 Computer Use 驱动，并向 Agent 提供 `computer` 工具。该工具可截取主显示器，并执行指针移动、点击、拖动、滚动、文本输入、组合键和有限时长等待。它不会发现或控制远程计算机，也不使用 OpenClaw 节点配对。
+Computer Use 是可选功能，**默认关闭**，包括尚未明确选择的已有安装。请在侧边栏的**操作计算机**页面启用。在受支持的 macOS 和 Windows 上，内置驱动通过 `computer` 工具提供主显示器截图、移动、点击、拖动、滚动、文本输入、组合键和有限时长等待。开关在重启后保留；关闭会停止驱动、删除连接描述符并禁用面向 Agent 的 Gateway 插件。Gateway 配置重新加载可能中断当前任务。该能力不涉及远程发现或 OpenClaw 节点配对。
 
-在 macOS 上，请在系统提示时同时授予 ClawX **辅助功能**和**屏幕录制**权限。如果拒绝权限、稍后在系统设置中授权，或在 ClawX 运行时撤销权限，请返回 ClawX 并重启应用后再试。权限或打包驱动缺失时，该工具会显示为不可用，但不会阻止聊天或 Gateway 启动。
+macOS 管理页只读显示**辅助功能**和**屏幕录制**状态。启动、激活和启用开关均不会请求权限；需先启用功能，再明确点击**请求权限**。如果曾拒绝，请在系统设置 > 隐私与安全性中允许 ClawX；macOS 可能要求重启应用。关闭功能不会撤销系统授权。权限或驱动缺失时驱动不可用，但不阻止聊天或 Gateway 启动。
+
+内置的 `clawx-cua-computer` 是 OpenClaw 插件，注册模型可见的 `computer` 工具，通过本机 MCP stdio 代理连接 Main 持有的驱动。它不是 Skill，也不会安装 Skill；动作说明由工具描述和参数定义提供。
 
 > Web search 说明：ClawX 会在 Agent 和 Gateway 两层策略中禁用 OpenClaw 的通用 `web_search` 工具。
 > 这也包括 Moonshot（Kimi）搜索；受管浏览器自动化和 `web_fetch` 仍然可用。

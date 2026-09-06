@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { access, chmod, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { release } from 'node:os';
 import path from 'node:path';
-import { app } from 'electron';
+import { app, systemPreferences } from 'electron';
 import { isCuaPlatformSupported } from './cua-platform';
+import { getSetting } from './store';
 
 export const CLAWX_CUA_CONNECTION_FILE_ENV = 'CLAWX_CUA_CONNECTION_FILE';
 
@@ -49,7 +50,6 @@ interface CuaEmbeddedSdk {
 
 interface MacOSPermissionSdk {
   requestMacOSPermissions(): unknown;
-  hasRequiredMacOSPermissions(status: unknown): boolean;
 }
 
 interface CuaFileSystem {
@@ -73,6 +73,8 @@ export interface CuaRuntimeDependencies {
   resourcesPath: string;
   cwd: string;
   userDataPath: string;
+  isEnabled(): Promise<boolean>;
+  readPermissions(): { accessibility: boolean; screenRecording: string };
   fs: CuaFileSystem;
   loadEmbeddedSdk(): Promise<unknown>;
   loadMacOSPermissions(): Promise<unknown>;
@@ -110,6 +112,7 @@ export class CuaRuntimeManager {
   constructor(private readonly dependencies: CuaRuntimeDependencies) {}
 
   start(): Promise<boolean> {
+    if (this.stopPromise) return this.stopPromise.then(() => this.start());
     if (this.started) return Promise.resolve(true);
     if (this.startPromise) return this.startPromise;
 
@@ -130,6 +133,7 @@ export class CuaRuntimeManager {
 
   private async startInternal(): Promise<boolean> {
     await this.removeDescriptor();
+    if (!await this.dependencies.isEnabled()) return false;
 
     const binaryPath = resolveCuaDriverPath(this.dependencies);
     if (!binaryPath || !(await this.dependencies.fs.exists(binaryPath))) {
@@ -137,9 +141,8 @@ export class CuaRuntimeManager {
     }
 
     if (this.dependencies.platform === 'darwin') {
-      const permissions = await this.dependencies.loadMacOSPermissions() as MacOSPermissionSdk;
-      const status = permissions.requestMacOSPermissions();
-      if (!permissions.hasRequiredMacOSPermissions(status)) {
+      const status = this.dependencies.readPermissions();
+      if (!status.accessibility || status.screenRecording !== 'granted') {
         return false;
       }
     }
@@ -194,23 +197,47 @@ export class CuaRuntimeManager {
     const host = this.host;
     this.host = null;
     this.started = false;
-    await this.removeDescriptor();
     try {
-      await host?.stop();
+      await this.removeDescriptor();
     } finally {
+      // Even a descriptor cleanup failure must not leave a privileged daemon alive.
       try {
-        host?.uniffiDestroy?.();
+        await host?.stop();
       } finally {
-        await this.removeDescriptor();
+        try {
+          host?.uniffiDestroy?.();
+        } finally {
+          await this.removeDescriptor();
+        }
       }
     }
   }
 
-  async refreshPermissions(): Promise<boolean> {
-    if (this.dependencies.platform !== 'darwin') return this.started;
+  getStatus() {
+    return {
+      supported: isCuaPlatformSupported(this.dependencies.platform, this.dependencies.arch, this.dependencies.osRelease),
+      running: this.started,
+      permissions: this.dependencies.platform === 'darwin' ? this.dependencies.readPermissions() : null,
+    };
+  }
+
+  async requestPermissions(): Promise<void> {
+    if (!await this.dependencies.isEnabled()) throw new Error('Computer Use is disabled');
+    if (!this.getStatus().supported || this.dependencies.platform !== 'darwin') {
+      throw new Error('Computer Use permission requests are unsupported');
+    }
     const permissions = await this.dependencies.loadMacOSPermissions() as MacOSPermissionSdk;
-    const status = permissions.requestMacOSPermissions();
-    if (!permissions.hasRequiredMacOSPermissions(status)) {
+    await permissions.requestMacOSPermissions();
+  }
+
+  async refreshPermissions(): Promise<boolean> {
+    if (!await this.dependencies.isEnabled()) {
+      await this.stop();
+      return false;
+    }
+    if (this.dependencies.platform !== 'darwin') return this.started;
+    const status = this.dependencies.readPermissions();
+    if (!status.accessibility || status.screenRecording !== 'granted') {
       if (this.started || this.host) await this.stop();
       return false;
     }
@@ -273,6 +300,11 @@ export function createDefaultCuaRuntimeManager(): CuaRuntimeManager {
     resourcesPath: process.resourcesPath,
     cwd: process.cwd(),
     userDataPath: app.getPath('userData'),
+    isEnabled: async () => (await getSetting('computerUseEnabled')) === true,
+    readPermissions: () => ({
+      accessibility: systemPreferences.isTrustedAccessibilityClient(false),
+      screenRecording: systemPreferences.getMediaAccessStatus('screen'),
+    }),
     fs: {
       exists: async (filePath) => access(filePath).then(() => true, () => false),
       mkdir,

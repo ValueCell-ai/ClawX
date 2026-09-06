@@ -140,9 +140,11 @@ The wizard preselects your system language when it is supported, and falls back 
 
 ### Local Computer Use
 
-On supported macOS and Windows installations, ClawX starts its bundled Computer Use driver locally and makes a `computer` tool available to agents. It can capture the primary display and perform pointer, click, drag, scroll, text, key, and bounded wait actions. It does not discover or control remote machines and does not use OpenClaw node pairing.
+Computer Use is optional and **off by default**, including existing installations without an explicit preference. Open **Computer Use** in the sidebar to enable it. On supported macOS and Windows installations, the bundled driver supplies a `computer` tool for primary-display screenshots, pointer, click, drag, scroll, text, key, and bounded wait actions. The choice persists across restarts. Disabling stops the driver, removes its connection descriptor, and disables the Gateway plugin for agents. Gateway configuration reloads may interrupt active work. No remote discovery or OpenClaw node pairing is involved.
 
-On macOS, grant both **Accessibility** and **Screen Recording** when prompted. If either permission is denied, later granted in System Settings, or revoked while ClawX is running, return to ClawX and restart it before retrying. Missing permissions or packaged driver files make the tool unavailable without preventing Chat or the Gateway from starting.
+On macOS, the management page shows read-only **Accessibility** and **Screen Recording** statuses. Startup, activation, and enabling the toggle never request permissions. Enable the feature and explicitly choose **Request Permissions** to authorize ClawX. If denied, use System Settings > Privacy & Security; macOS may require restarting ClawX after changing grants. Disabling Computer Use does not revoke OS grants. Missing permissions or driver files leave the driver unavailable without preventing Chat or Gateway startup.
+
+The bundled `clawx-cua-computer` OpenClaw plugin registers the model-facing `computer` tool and uses a local MCP stdio proxy to reach the Main-owned driver. It is not a Skill and does not install one; the tool schema and description provide action instructions.
 
 > Web search note: ClawX disables OpenClaw's general-purpose `web_search` tool at both the agent and Gateway policy layers. This includes Moonshot (Kimi) search; managed browser automation and `web_fetch` remain available.
 >

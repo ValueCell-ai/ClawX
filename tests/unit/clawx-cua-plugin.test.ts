@@ -84,10 +84,11 @@ describe('ClawX CUA plugin manifest and registration', () => {
       new URL('../../electron/main/index.ts', import.meta.url),
       'utf8',
     );
-    const install = source.indexOf('await ensureClawXCuaPluginInstalled()');
-    expect(install).toBeGreaterThan(-1);
-    expect(install).toBeLessThan(source.indexOf('await cuaRuntimeManager.start()'));
-    expect(install).toBeLessThan(source.indexOf('await gatewayManager.start()'));
+    const initialize = source.indexOf('await computerUseApi.initialize()');
+    expect(initialize).toBeGreaterThan(-1);
+    expect(initialize).toBeLessThan(source.indexOf('await gatewayManager.start()'));
+    const service = await readFile(new URL('../../electron/services/computer-use-api.ts', import.meta.url), 'utf8');
+    expect(service.indexOf('await ensureClawXCuaPluginInstalled()')).toBeLessThan(service.indexOf('await runtime.start()'));
   });
 });
 

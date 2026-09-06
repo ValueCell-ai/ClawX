@@ -2039,6 +2039,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 export function applyClawXCuaPluginPolicy(
   config: Record<string, unknown>,
   supported: boolean,
+  enabled = false,
 ): boolean {
   const pluginId = 'clawx-cua-computer';
   if (!supported && !isPlainRecord(config.plugins)) return false;
@@ -2046,12 +2047,7 @@ export function applyClawXCuaPluginPolicy(
   const plugins = isPlainRecord(config.plugins)
     ? config.plugins as Record<string, unknown>
     : {};
-  const existingAllow = Array.isArray(plugins.allow)
-    ? (plugins.allow as unknown[]).filter((value): value is string => typeof value === 'string')
-    : [];
-  const nextAllow = supported
-    ? [...new Set([...existingAllow, pluginId])]
-    : existingAllow.filter((id) => id !== pluginId);
+  const active = supported && enabled;
   const entries = isPlainRecord(plugins.entries)
     ? plugins.entries as Record<string, unknown>
     : {};
@@ -2059,16 +2055,21 @@ export function applyClawXCuaPluginPolicy(
   const existingEntry = isPlainRecord(entries[pluginId])
     ? entries[pluginId] as Record<string, unknown>
     : {};
-  let modified = JSON.stringify(existingAllow) !== JSON.stringify(nextAllow);
+  let modified = false;
 
-  plugins.allow = nextAllow;
-  if (supported) {
+  // Missing/empty allowlists are unrestricted in OpenClaw. Never narrow them
+  // on enable or empty a restrictive list on disable; entries controls CUA.
+  if (active && Array.isArray(plugins.allow) && plugins.allow.length > 0 && !plugins.allow.includes(pluginId)) {
+    plugins.allow = [...plugins.allow, pluginId];
+    modified = true;
+  }
+  if (active) {
     if (plugins.enabled !== true) modified = true;
     if (existingEntry.enabled !== true) modified = true;
     plugins.enabled = true;
     entries[pluginId] = { ...existingEntry, enabled: true };
     plugins.entries = entries;
-  } else if (hasEntry) {
+  } else if (hasEntry || supported) {
     if (existingEntry.enabled !== false) modified = true;
     entries[pluginId] = { ...existingEntry, enabled: false };
     plugins.entries = entries;
@@ -3809,7 +3810,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     }
 
     // ClawX owns this path-installed tool and its local daemon lifecycle.
-    if (applyClawXCuaPluginPolicy(config, isCuaPlatformSupported())) modified = true;
+    if (applyClawXCuaPluginPolicy(config, isCuaPlatformSupported(), await getSetting('computerUseEnabled') === true)) modified = true;
 
     // ── channels default-account migration and cleanup ─────────────
     // Most OpenClaw channel plugins/built-ins read the default account's

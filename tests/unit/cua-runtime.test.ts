@@ -63,6 +63,7 @@ async function createHarness(overrides: Partial<CuaRuntimeDependencies> = {}) {
   const withOptions = vi.fn(() => host);
   const createOptions = vi.fn((options: unknown) => options);
   const requestMacOSPermissions = vi.fn(() => ({ accessibility: true, screenRecording: true }));
+  const readPermissions = vi.fn(() => ({ accessibility: true, screenRecording: 'granted' }));
   const hasRequiredMacOSPermissions = vi.fn(() => true);
   const renameFile = vi.fn(rename);
 
@@ -74,6 +75,8 @@ async function createHarness(overrides: Partial<CuaRuntimeDependencies> = {}) {
     resourcesPath,
     cwd,
     userDataPath,
+    isEnabled: async () => true,
+    readPermissions,
     fs: {
       exists: async (filePath) => access(filePath).then(() => true, () => false),
       mkdir,
@@ -103,12 +106,32 @@ async function createHarness(overrides: Partial<CuaRuntimeDependencies> = {}) {
     host,
     renameFile,
     requestMacOSPermissions,
+    readPermissions,
     userDataPath,
     withOptions,
   };
 }
 
 describe('CuaRuntimeManager', () => {
+  it('does not load permission or embedded SDKs on startup or activation while disabled', async () => {
+    const harness = await createHarness({ isEnabled: async () => false });
+    const manager = new CuaRuntimeManager(harness.dependencies);
+    await expect(manager.start()).resolves.toBe(false);
+    await expect(manager.refreshPermissions()).resolves.toBe(false);
+    await expect(manager.requestPermissions()).rejects.toThrow('disabled');
+    expect(harness.dependencies.loadMacOSPermissions).not.toHaveBeenCalled();
+    expect(harness.dependencies.loadEmbeddedSdk).not.toHaveBeenCalled();
+  });
+
+  it('never requests permissions implicitly when enabled', async () => {
+    const harness = await createHarness();
+    const manager = new CuaRuntimeManager(harness.dependencies);
+    await manager.start();
+    await manager.refreshPermissions();
+    expect(harness.requestMacOSPermissions).not.toHaveBeenCalled();
+    await manager.requestPermissions();
+    expect(harness.requestMacOSPermissions).toHaveBeenCalledOnce();
+  });
   it('does not load or start the SDK on unsupported platforms and removes a stale descriptor', async () => {
     const harness = await createHarness({ platform: 'linux', arch: 'x64' });
     const connectionFile = getCuaConnectionFilePath(harness.userDataPath);
@@ -141,18 +164,14 @@ describe('CuaRuntimeManager', () => {
     expect(harness.dependencies.loadMacOSPermissions).not.toHaveBeenCalled();
   });
 
-  it('requests macOS permissions but does not start when either required grant is denied', async () => {
+  it('reads macOS permissions without requesting and does not start when denied', async () => {
     const harness = await createHarness();
-    harness.requestMacOSPermissions.mockReturnValue({ accessibility: false, screenRecording: true });
+    harness.readPermissions.mockReturnValue({ accessibility: false, screenRecording: 'granted' });
     harness.hasRequiredMacOSPermissions.mockReturnValue(false);
 
     await expect(new CuaRuntimeManager(harness.dependencies).start()).resolves.toBe(false);
 
-    expect(harness.requestMacOSPermissions).toHaveBeenCalledOnce();
-    expect(harness.hasRequiredMacOSPermissions).toHaveBeenCalledWith({
-      accessibility: false,
-      screenRecording: true,
-    });
+    expect(harness.requestMacOSPermissions).not.toHaveBeenCalled();
     expect(harness.dependencies.loadEmbeddedSdk).not.toHaveBeenCalled();
     expect(harness.host.start).not.toHaveBeenCalled();
   });
@@ -239,6 +258,32 @@ describe('CuaRuntimeManager', () => {
     await expect(access(connectionFile)).rejects.toThrow();
   });
 
+  it('stops the native host even if removing the descriptor fails', async () => {
+    const harness = await createHarness();
+    const manager = new CuaRuntimeManager(harness.dependencies);
+    await manager.start();
+    harness.dependencies.fs.rm = vi.fn().mockRejectedValueOnce(new Error('cleanup failed')).mockResolvedValue(undefined);
+    await expect(manager.stop()).rejects.toThrow('cleanup failed');
+    expect(harness.host.stop).toHaveBeenCalledOnce();
+    expect(harness.host.uniffiDestroy).toHaveBeenCalledOnce();
+  });
+
+  it('waits for an in-flight stop before starting a fresh generation', async () => {
+    const harness = await createHarness();
+    const manager = new CuaRuntimeManager(harness.dependencies);
+    await manager.start();
+    let release!: () => void;
+    harness.host.stop.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+    const stop = manager.stop();
+    await vi.waitFor(() => expect(harness.host.stop).toHaveBeenCalledOnce());
+    const start = manager.start();
+    expect(harness.host.start).toHaveBeenCalledOnce();
+    release();
+    await stop;
+    await expect(start).resolves.toBe(true);
+    expect(harness.host.start).toHaveBeenCalledTimes(2);
+  });
+
   it('invalidates the descriptor and allows restart after an unexpected daemon exit', async () => {
     const harness = await createHarness();
     let resolveExit!: () => void;
@@ -262,7 +307,7 @@ describe('CuaRuntimeManager', () => {
     const manager = new CuaRuntimeManager(harness.dependencies);
     const connectionFile = getCuaConnectionFilePath(harness.userDataPath);
     await manager.start();
-    harness.requestMacOSPermissions.mockReturnValue({ accessibility: true, screenRecording: false });
+    harness.readPermissions.mockReturnValue({ accessibility: true, screenRecording: 'denied' });
     harness.hasRequiredMacOSPermissions.mockReturnValue(false);
 
     await expect(manager.refreshPermissions()).resolves.toBe(false);

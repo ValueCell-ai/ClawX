@@ -35,7 +35,7 @@ touchedAreas:
   - README.zh-CN.md
   - README.ja-JP.md
 expectedUserBehavior:
-  - On macOS and Windows, local agent runs receive a computer tool without running an OpenClaw node host or approving a node pairing request.
+  - After explicit opt-in on macOS and Windows, local agent runs receive a computer tool without running an OpenClaw node host or approving a node pairing request.
   - The computer tool can capture the primary display and perform clicks, pointer movement, drag, scroll, text input, key chords, and bounded waits.
   - macOS attributes Accessibility and Screen Recording permission requests to ClawX; the CUA daemon never appears as a separately permissioned app.
   - Missing permissions, missing binaries, malformed runtime descriptors, and crashed proxies fail with an actionable COMPUTER_DRIVER_UNAVAILABLE error instead of crashing ClawX or Gateway.
@@ -54,11 +54,11 @@ requiredTests:
   - tests/unit/clawx-cua-plugin.test.ts
   - tests/unit/gateway-process-launcher.test.ts
 acceptance:
-  - Electron Main starts the bundled cua-driver executable as a direct child through @trycua/cua-driver EmbeddedCuaDriverHost and stops it after Gateway during orderly quit.
+  - After explicit opt-in, Electron Main starts the bundled cua-driver executable as a direct child through @trycua/cua-driver EmbeddedCuaDriverHost and stops it after Gateway during orderly quit.
   - Main publishes only a generation-scoped MCP launch descriptor in the ClawX user-data directory; the plugin never starts the privileged serve daemon.
   - The bundled plugin registers a non-optional computer tool against OpenClaw 2026.7.1-2 and reads the descriptor path from CLAWX_CUA_CONNECTION_FILE.
   - Computer actions are serialized, coordinate actions require a prior screenshot, MCP errors are bounded and normalized, and every successful action returns a follow-up primary-display screenshot when capture succeeds.
-  - The plugin and daemon are enabled locally without adding gateway.nodes allowCommands, node.invoke policies, node-host startup, pairing, remote node discovery, or renderer-owned backend transport.
+  - The plugin and daemon are enabled only after explicit local opt-in, without adding gateway.nodes allowCommands, node.invoke policies, node-host startup, pairing, remote node discovery, or renderer-owned backend transport.
   - CUA release downloads are version-pinned and SHA256-verified for macOS universal and Windows x64 assets.
   - Packaged native SDK libraries are outside ASAR where required and the cua-driver executable is included in each supported macOS/Windows package.
 docs:

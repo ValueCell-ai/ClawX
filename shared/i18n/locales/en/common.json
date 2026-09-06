@@ -1,4 +1,22 @@
 {
+    "computerUse": {
+        "title": "Computer Use",
+        "description": "Let agents capture and control this computer's primary display using the bundled local driver.",
+        "enable": "Enable Computer Use",
+        "warning": "Off by default. Enabling gives agents desktop control. Disabling stops the driver and removes the computer tool. Gateway configuration may reload and interrupt active work.",
+        "off": "Disabled. Agents cannot use the computer tool.",
+        "running": "The local driver is running.",
+        "unavailable": "Enabled, but the driver is unavailable. Check permissions and the bundled driver, then turn this off and on to retry.",
+        "unsupported": "Requires macOS 13+ (Intel or Apple silicon), or Windows 10+ x64.",
+        "permissions": "macOS Permissions",
+        "accessibility": "Accessibility",
+        "screenRecording": "Screen Recording",
+        "granted": "Granted",
+        "notGranted": "Not granted",
+        "permissionHint": "These statuses are read-only. Only the button below requests permissions. If denied, allow ClawX in System Settings > Privacy & Security; macOS may require restarting ClawX. Turning this feature off does not revoke OS grants.",
+        "request": "Request Permissions",
+        "error": "Could not complete the operation. Refresh the status and retry; see application logs for details."
+    },
     "sidebar": {
         "chat": "Chat",
         "newChat": "New Chat",

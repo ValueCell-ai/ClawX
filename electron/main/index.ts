@@ -30,7 +30,7 @@ import {
 import { autoInstallCliIfNeeded, generateCompletionCache, installCompletionToProfile } from '../utils/openclaw-cli';
 import { isQuitting, setQuitting } from './app-state';
 import { getMacTrafficLightPosition, syncMacTrafficLightPosition } from './traffic-light-layout';
-import { getSetting } from '../utils/store';
+import { getSetting, registerComputerUsePreferenceHandler } from '../utils/store';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
 import { WebBrowserGuestRegistry, installWebBrowserGuestPolicy } from './web-browser-policy';
@@ -50,8 +50,7 @@ import { createSignalQuitHandler } from './signal-quit';
 import { acquireProcessInstanceFileLock } from './process-instance-lock';
 import { ensureBuiltinSkillsInstalled, ensurePreinstalledSkillsInstalled, trimBundledOpenClawSkillsAndConfigs } from '../utils/skill-config';
 import { createDefaultCuaRuntimeManager, type CuaRuntimeManager } from '../utils/cua-runtime';
-import { isCuaPlatformSupported } from '../utils/cua-platform';
-import { ensureClawXCuaPluginInstalled } from '../utils/plugin-install';
+import { createComputerUseApi, type ComputerUseApi } from '../services/computer-use-api';
 
 import { deviceOAuthManager } from '../utils/device-oauth';
 import { browserOAuthManager } from '../utils/browser-oauth';
@@ -122,6 +121,7 @@ const gotTheLock = gotElectronLock && gotFileLock;
 let mainWindow: BrowserWindow | null = null;
 let gatewayManager!: GatewayManager;
 let cuaRuntimeManager!: CuaRuntimeManager;
+let computerUseApi!: ComputerUseApi;
 let clawHubService!: ClawHubService;
 const hostApiRegistry = new HostApiRegistry();
 const webBrowserGuestRegistry = new WebBrowserGuestRegistry();
@@ -359,6 +359,11 @@ async function initialize(): Promise<void> {
   );
 
   // Register IPC handlers
+  hostApiRegistry.registerCoreServices({ computerUse: {
+    status: computerUseApi.status,
+    setEnabled: computerUseApi.setEnabled,
+    requestPermissions: computerUseApi.requestPermissions,
+  } });
   registerIpcHandlers(
     gatewayManager,
     clawHubService,
@@ -532,22 +537,8 @@ async function initialize(): Promise<void> {
   });
 
   if (!isE2EMode) {
-    if (isCuaPlatformSupported()) {
-      try {
-        const result = await ensureClawXCuaPluginInstalled();
-        if (result.warning) {
-          logger.warn(`[plugin] ClawX Computer: ${result.warning}`);
-        }
-      } catch (error) {
-        logger.warn('Failed to install ClawX Computer plugin; continuing with Gateway startup:', error);
-      }
-    }
-
     try {
-      const started = await cuaRuntimeManager.start();
-      if (!started) {
-        logger.info('Local CUA runtime is unavailable; continuing without Computer Use');
-      }
+      await computerUseApi.initialize();
     } catch (error) {
       logger.warn('Local CUA runtime failed to start; continuing with Gateway startup:', error);
     }
@@ -616,6 +607,10 @@ if (gotTheLock) {
 
   gatewayManager = new GatewayManager();
   cuaRuntimeManager = createDefaultCuaRuntimeManager();
+  computerUseApi = createComputerUseApi(cuaRuntimeManager);
+  registerComputerUsePreferenceHandler(async (enabled) => {
+    await computerUseApi.setEnabled({ enabled });
+  });
   registerOpenClawConfigCoordinator(gatewayManager);
   clawHubService = new ClawHubService();
 
@@ -656,7 +651,7 @@ if (gotTheLock) {
     // window or claim the single browser guest before host handlers are ready.
     app.on('activate', () => {
       if (!isE2EMode) {
-        void cuaRuntimeManager.refreshPermissions().catch((error) => {
+        void computerUseApi.refresh().catch((error) => {
           logger.warn('Failed to refresh local CUA permissions:', error);
         });
       }
@@ -699,7 +694,7 @@ if (gotTheLock) {
       } finally {
         if (!isE2EMode) {
           try {
-            await cuaRuntimeManager.stop();
+            await computerUseApi.stop();
           } catch (err) {
             logger.warn('cuaRuntimeManager.stop() error during quit:', err);
           }

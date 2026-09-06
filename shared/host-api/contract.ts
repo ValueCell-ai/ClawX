@@ -115,6 +115,7 @@ export type SettingsSnapshot = Partial<{
   launchAtStartup: boolean;
   telemetryEnabled: boolean;
   gatewayAutoStart: boolean;
+  computerUseEnabled: boolean;
   gatewayPort: number;
   proxyEnabled: boolean;
   proxyServer: string;
@@ -138,6 +139,13 @@ export type SettingsGetPayload = { key: SettingsKey };
 export type SettingsSetPayload = { key: SettingsKey; value: SettingsValue };
 export type SettingsSetManyPayload = { patch: Partial<SettingsSnapshot> };
 export type SettingsResetResult = HostSuccess & { settings: SettingsSnapshot };
+
+export interface ComputerUseStatus {
+  enabled: boolean;
+  supported: boolean;
+  running: boolean;
+  permissions: { accessibility: boolean; screenRecording: string } | null;
+}
 
 export type GatewayControlUiResult = HostSuccess & {
   url?: string;
@@ -900,6 +908,11 @@ export type HostApiContract = {
     set: (payload: SettingsSetPayload) => HostSuccess;
     setMany: (payload: SettingsSetManyPayload) => HostSuccess;
     reset: () => SettingsResetResult;
+  };
+  computerUse: {
+    status: () => ComputerUseStatus;
+    setEnabled: (payload: { enabled: boolean }) => ComputerUseStatus;
+    requestPermissions: () => ComputerUseStatus;
   };
   gateway: {
     status: () => GatewayStatus;

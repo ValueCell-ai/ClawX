@@ -16,6 +16,7 @@ import { Channels } from './pages/Channels';
 import { Skills } from './pages/Skills';
 import { Cron } from './pages/Cron';
 import { Settings } from './pages/Settings';
+import { ComputerUse } from './pages/ComputerUse';
 import { Setup } from './pages/Setup';
 import { useSettingsStore } from './stores/settings';
 import { useUpdateStore } from './stores/update';
@@ -207,6 +208,7 @@ function App() {
             <Route path="/channels" element={<Channels />} />
             <Route path="/skills" element={<Skills />} />
             <Route path="/cron" element={<Cron />} />
+            <Route path="/computer-use" element={<ComputerUse />} />
             <Route path="/settings/*" element={<Settings />} />
             {extraRoutes.map((r) => (
               <Route key={r.path} path={r.path} element={<r.component />} />

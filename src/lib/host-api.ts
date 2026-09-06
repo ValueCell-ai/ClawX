@@ -127,6 +127,11 @@ export const hostApi = {
       invokeHost('openclaw', 'getCompactionReserve') as Promise<OpenClawCompactionReserveResult>
     ),
   },
+  computerUse: {
+    status: () => invokeHost('computerUse', 'status'),
+    setEnabled: (enabled: boolean) => invokeHost('computerUse', 'setEnabled', { enabled }),
+    requestPermissions: () => invokeHost('computerUse', 'requestPermissions'),
+  },
   shell: {
     openExternal: (url: string) => invokeHost('shell', 'openExternal', { url } satisfies ShellOpenExternalPayload),
     showItemInFolder: (path: string) => invokeHost('shell', 'showItemInFolder', { path } satisfies ShellPathPayload),
