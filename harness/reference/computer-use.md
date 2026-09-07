@@ -12,6 +12,12 @@ silent Accessibility check and screen media-access status, never the CUA request
 function. Only the management page's explicit enabled permission action invokes
 the native CUA permission request. OS grants survive disabling the feature.
 
+Orderly quit starts Gateway and Computer Use cleanup concurrently and logs each
+stop failure independently. Both share the existing five-second quit deadline;
+the Gateway timeout termination and emergency exit paths are unchanged. E2E mode
+still skips Computer Use cleanup. This does not guarantee daemon shutdown before
+the deadline or change the service's serialized lifecycle queue.
+
 Disabling stops the daemon and removes the generation descriptor before updating
 plugin policy through the config coordinator. In-flight actions are not replayed.
 The coordinator delivers live changes with config.get/config.set, or writes the

@@ -26,6 +26,7 @@ severity: error
 
 - Computer Use is local-only. Do not start an OpenClaw node host, call `node.invoke`, add pairing flows, discover remote nodes, or expose node selection for this capability.
 - Electron Main must be the direct parent of `cua-driver serve --embedded`. The Gateway plugin may start only the MCP stdio proxy from the host-issued descriptor.
+- Orderly quit starts Gateway and Computer Use stops concurrently, handles each error independently, and retains the shared five-second deadline and existing Gateway timeout termination. E2E mode skips Computer Use cleanup; no new force-kill or lifecycle queue mechanism is required.
 - The daemon executable must be version-pinned, checksum-verified, shipped outside ASAR, executable on POSIX systems, and signed before the enclosing macOS app is signed and notarized.
 - Both lazy CUA SDK imports must use physical file URLs in ASAR builds, with their JS dependencies unpacked as well. Validate native initialization in real packaged Electron for both entrypoints, not just file existence or config patterns; see `harness/reference/computer-use.md`. Import checks must not request permissions or construct a driver host.
 - Computer Use is optional and defaults off, including upgrades without an explicit saved preference. Disabled startup and activation must not load the privileged SDK or request permissions. Disable removes the descriptor, stops the daemon, and disables the plugin policy; serialize lifecycle and preference mutations.

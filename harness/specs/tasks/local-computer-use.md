@@ -54,7 +54,7 @@ requiredTests:
   - tests/unit/clawx-cua-plugin.test.ts
   - tests/unit/gateway-process-launcher.test.ts
 acceptance:
-  - After explicit opt-in, Electron Main starts the bundled cua-driver executable as a direct child through @trycua/cua-driver EmbeddedCuaDriverHost and stops it after Gateway during orderly quit.
+  - After explicit opt-in, Electron Main starts the bundled cua-driver executable as a direct child through @trycua/cua-driver EmbeddedCuaDriverHost and stops it concurrently with Gateway during orderly quit.
   - Main publishes only a generation-scoped MCP launch descriptor in the ClawX user-data directory; the plugin never starts the privileged serve daemon.
   - The bundled plugin registers a non-optional computer tool against OpenClaw 2026.7.1-2 and reads the descriptor path from CLAWX_CUA_CONNECTION_FILE.
   - Computer actions are serialized, coordinate actions require a prior screenshot, MCP errors are bounded and normalized, and every successful action returns a follow-up primary-display screenshot when capture succeeds.

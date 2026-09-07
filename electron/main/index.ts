@@ -684,12 +684,15 @@ if (gotTheLock) {
 
     void extensionRegistry.teardownAll();
 
-    const stopPromise = (async () => {
-      try {
-        await gatewayManager.stop();
-      } catch (err) {
-        logger.warn('gatewayManager.stop() error during quit:', err);
-      } finally {
+    const stopPromise = Promise.all([
+      (async () => {
+        try {
+          await gatewayManager.stop();
+        } catch (err) {
+          logger.warn('gatewayManager.stop() error during quit:', err);
+        }
+      })(),
+      (async () => {
         if (!isE2EMode) {
           try {
             await computerUseApi.stop();
@@ -697,8 +700,8 @@ if (gotTheLock) {
             logger.warn('cuaRuntimeManager.stop() error during quit:', err);
           }
         }
-      }
-    })();
+      })(),
+    ]);
     const timeoutPromise = new Promise<'timeout'>((resolve) => {
       setTimeout(() => resolve('timeout'), 5000);
     });
