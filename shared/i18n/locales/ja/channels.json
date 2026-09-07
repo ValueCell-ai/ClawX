@@ -98,7 +98,14 @@
         "generateQRCode": "QRコードを生成",
         "updateAndReconnect": "更新して再接続",
         "saveAndConnect": "保存して接続",
-        "envVar": "環境変数: {{var}}"
+        "envVar": "環境変数: {{var}}",
+        "validationErrors": {
+            "feishuAppIdRequired": "App ID を入力してください。",
+            "feishuAppSecretRequired": "App Secret を入力してください。",
+            "feishuAppSecretEqualsAppId": "App Secret が App ID と同一です。Feishu 開発者コンソール → 認証情報と基本情報 から App Secret をコピーしてください。",
+            "feishuRejected": "Feishu が認証情報を拒否しました: {{error}}。開発者コンソールの App ID / App Secret を確認してください。",
+            "feishuConnectionError": "Feishu に接続して認証情報を確認できませんでした: {{error}}"
+        }
     },
     "health": {
         "state": {

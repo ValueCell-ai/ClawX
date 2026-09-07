@@ -249,10 +249,16 @@ export type ChannelFormValuesResult = HostSuccess & {
 export type ChannelCredentialValidationPayload = ChannelTypePayload & {
   config: Record<string, unknown>;
 };
+export type ChannelCredentialValidationErrorCode = {
+  code: string;
+  params?: Record<string, string>;
+};
 export type ChannelCredentialValidationResult = HostSuccess & {
   valid: boolean;
   errors?: string[];
   warnings?: string[];
+  /** Stable codes for renderer-side localization; `errors` is the English fallback. */
+  errorCodes?: ChannelCredentialValidationErrorCode[];
   details?: {
     botUsername?: string;
     guildName?: string;

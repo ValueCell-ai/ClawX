@@ -99,7 +99,22 @@ export function ChannelConfigModal({
   } | null>(null);
 
   const meta: ChannelMeta | null = selectedType ? CHANNEL_META[selectedType] : null;
-  const shouldUseCredentialValidation = selectedType !== 'feishu';
+  const shouldUseCredentialValidation = meta?.connectionType === 'token';
+
+  // Main returns stable error codes next to its English fallback text so the
+  // modal can show localized messages (e.g. Feishu App Secret pasted as App ID).
+  const localizeValidationErrors = useCallback((response: {
+    errors?: string[];
+    errorCodes?: Array<{ code: string; params?: Record<string, string> }>;
+  }): string[] => {
+    const fallback = response.errors ?? [];
+    if (!response.errorCodes?.length) return fallback;
+    return response.errorCodes.map(({ code, params }, index) => {
+      const key = `dialog.validationErrors.${code}`;
+      const localized = t(key, { ...params, defaultValue: '' });
+      return localized || fallback[index] || fallback[0] || code;
+    });
+  }, [t]);
   const usesManagedQrAccounts = usesPluginManagedQrAccounts(selectedType);
   const showAccountIdEditor = allowEditAccountId && !usesManagedQrAccounts;
   const resolvedAccountId = usesManagedQrAccounts
@@ -306,7 +321,7 @@ export function ChannelConfigModal({
 
       setValidationResult({
         valid: result.valid || false,
-        errors: result.errors || [],
+        errors: localizeValidationErrors(result),
         warnings,
       });
     } catch (error) {
@@ -363,9 +378,10 @@ export function ChannelConfigModal({
         const validationResponse = await hostApi.channels.validateCredentials(selectedType, configValues);
 
         if (!validationResponse.valid) {
+          const errors = localizeValidationErrors(validationResponse);
           setValidationResult({
             valid: false,
-            errors: validationResponse.errors || ['Validation failed'],
+            errors: errors.length > 0 ? errors : [t('dialog.validationFailed')],
             warnings: validationResponse.warnings || [],
           });
           setConnecting(false);

@@ -49,6 +49,7 @@ const {
   saveWeChatAccountStateMock,
   startWeChatLoginSessionMock,
   waitForWeChatLoginSessionMock,
+  ensurePluginChannelRuntimeActivatedMock,
 } = vi.hoisted(() => ({
   applyProxySettingsMock: vi.fn(),
   assignChannelAccountToAgentMock: vi.fn(),
@@ -126,6 +127,7 @@ const {
   saveWeChatAccountStateMock: vi.fn(),
   startWeChatLoginSessionMock: vi.fn(),
   waitForWeChatLoginSessionMock: vi.fn(),
+  ensurePluginChannelRuntimeActivatedMock: vi.fn(),
 }));
 
 vi.mock('@electron/utils/store', () => ({
@@ -172,6 +174,7 @@ vi.mock('@electron/utils/channel-config', () => ({
   listConfiguredChannels: (...args: unknown[]) => listConfiguredChannelsMock(...args),
   listConfiguredChannelsFromConfig: (...args: unknown[]) => listConfiguredChannelsFromConfigMock(...args),
   readOpenClawConfig: (...args: unknown[]) => readOpenClawConfigMock(...args),
+  resolveFeishuApiOrigin: vi.fn(() => 'https://open.feishu.cn'),
   saveChannelConfig: (...args: unknown[]) => saveChannelConfigMock(...args),
   setChannelDefaultAccount: (...args: unknown[]) => setChannelDefaultAccountMock(...args),
   setChannelEnabled: (...args: unknown[]) => setChannelEnabledMock(...args),
@@ -256,6 +259,10 @@ vi.mock('@electron/utils/device-oauth', () => ({
   },
 }));
 
+vi.mock('@electron/services/plugin-channel-activation', () => ({
+  ensurePluginChannelRuntimeActivated: (...args: unknown[]) => ensurePluginChannelRuntimeActivatedMock(...args),
+}));
+
 vi.mock('@electron/utils/wechat-login', () => ({
   cancelWeChatLoginSession: vi.fn(),
   saveWeChatAccountState: (...args: unknown[]) => saveWeChatAccountStateMock(...args),
@@ -310,8 +317,11 @@ const baseSettings = {
 };
 
 describe('host services', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    vi.useRealTimers();
+    const { resetChannelProbeFailuresForTests } = await import('@electron/services/channels-api');
+    resetChannelProbeFailuresForTests();
     getAllSettingsMock.mockResolvedValue(baseSettings);
     readOpenClawConfigMock.mockResolvedValue({ channels: {} });
     listConfiguredChannelsMock.mockResolvedValue([]);
@@ -345,6 +355,7 @@ describe('host services', () => {
     validateApiKeyWithProviderMock.mockResolvedValue({ valid: true });
     ensureFeishuPluginInstalledMock.mockResolvedValue({ installed: true, peerLinkOk: true });
     ensureWeChatPluginInstalledMock.mockResolvedValue({ installed: true });
+    ensurePluginChannelRuntimeActivatedMock.mockResolvedValue('already-live');
     ensureClawXContextMock.mockResolvedValue(undefined);
     rmSync(logDir, { recursive: true, force: true });
     rmSync(testOpenClawConfigDir, { recursive: true, force: true });
@@ -732,6 +743,177 @@ describe('host services', () => {
     expect(gatewayManager.rpc).not.toHaveBeenCalled();
   });
 
+  it('reports connecting for a configured plugin channel missing from runtime status', async () => {
+    readOpenClawConfigMock.mockResolvedValue({
+      channels: {
+        dingtalk: {
+          enabled: true,
+          accounts: {
+            default: { clientId: 'ding-client' },
+          },
+        },
+      },
+    });
+    listConfiguredChannelsFromConfigMock.mockResolvedValue(['dingtalk']);
+    listConfiguredChannelAccountsFromConfigMock.mockReturnValue({
+      dingtalk: {
+        defaultAccountId: 'default',
+        accountIds: ['default'],
+      },
+    });
+    const gatewayManager = {
+      rpc: vi.fn().mockResolvedValue({
+        channelAccounts: {
+          feishu: [{ accountId: 'default', connected: true, running: true, configured: true }],
+        },
+      }),
+      getStatus: vi.fn(() => ({ state: 'running', port: 18789 })),
+      getDiagnostics: vi.fn(() => ({ consecutiveHeartbeatMisses: 0, consecutiveRpcFailures: 0 })),
+    };
+    const { createChannelsApi } = await import('@electron/services/channels-api');
+    const result = await createChannelsApi({ gatewayManager: gatewayManager as never }).accounts({ mode: 'runtime' });
+    const dingtalk = result.channels.find((channel) => channel.channelType === 'dingtalk');
+
+    expect(result.success).toBe(true);
+    expect(dingtalk).toMatchObject({
+      channelType: 'dingtalk',
+      status: 'connecting',
+      accounts: [
+        {
+          accountId: 'default',
+          configured: true,
+          status: 'connecting',
+        },
+      ],
+    });
+  });
+
+  describe('remembered channel probe failures', () => {
+    const feishuConfig = {
+      channels: {
+        feishu: {
+          enabled: true,
+          accounts: {
+            default: { appId: 'cli_app', appSecret: 'cli_app' },
+          },
+        },
+      },
+    };
+
+    function configureFeishu() {
+      readOpenClawConfigMock.mockResolvedValue(feishuConfig);
+      listConfiguredChannelsFromConfigMock.mockResolvedValue(['feishu']);
+      listConfiguredChannelAccountsFromConfigMock.mockReturnValue({
+        feishu: { defaultAccountId: 'default', accountIds: ['default'] },
+      });
+    }
+
+    function feishuAccount(overrides: Record<string, unknown> = {}) {
+      return {
+        channelAccounts: {
+          feishu: [{ accountId: 'default', configured: true, running: true, connected: false, ...overrides }],
+        },
+      };
+    }
+
+    function createGatewayManager(rpc: ReturnType<typeof vi.fn>) {
+      return {
+        rpc,
+        getStatus: vi.fn(() => ({ state: 'running', port: 18789, gatewayReady: true })),
+        getDiagnostics: vi.fn(() => ({ consecutiveHeartbeatMisses: 0, consecutiveRpcFailures: 0 })),
+      };
+    }
+
+    it('keeps a probe failure visible on later cached snapshots until a probe succeeds', async () => {
+      configureFeishu();
+      const rpc = vi.fn().mockImplementation(async (_method: string, params: { probe?: boolean }) =>
+        params.probe
+          ? feishuAccount({ lastError: 'Request failed with status code 400', probe: { ok: false } })
+          : feishuAccount(),
+      );
+      const { createChannelsApi } = await import('@electron/services/channels-api');
+      const channelsApi = createChannelsApi({ gatewayManager: createGatewayManager(rpc) as never });
+
+      const probed = await channelsApi.accounts({ mode: 'runtime', probe: true });
+      expect(probed.channels[0]).toMatchObject({ channelType: 'feishu', status: 'error' });
+
+      const cached = await channelsApi.accounts({ mode: 'runtime' });
+      expect(rpc).toHaveBeenLastCalledWith('channels.status', { probe: false }, 8000);
+      expect(cached.channels[0]).toMatchObject({
+        channelType: 'feishu',
+        status: 'error',
+        accounts: [{ accountId: 'default', status: 'error', lastError: 'Request failed with status code 400' }],
+      });
+
+      rpc.mockImplementation(async () => feishuAccount({ probe: { ok: true } }));
+      const recovered = await channelsApi.accounts({ mode: 'runtime', probe: true });
+      expect(recovered.channels[0]).toMatchObject({ channelType: 'feishu', status: 'connected' });
+      const cachedAfterRecovery = await channelsApi.accounts({ mode: 'runtime' });
+      expect(cachedAfterRecovery.channels[0]).toMatchObject({ channelType: 'feishu', status: 'connected' });
+    });
+
+    it('re-probes a remembered failure after the recheck interval so a fixed channel recovers by itself', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-09-07T10:35:00.000Z'));
+      configureFeishu();
+      const rpc = vi.fn().mockImplementation(async (_method: string, params: { probe?: boolean }) =>
+        params.probe
+          ? feishuAccount({ lastError: 'API error: app_id or app_secret is invalid', probe: { ok: false } })
+          : feishuAccount(),
+      );
+      const { createChannelsApi } = await import('@electron/services/channels-api');
+      const channelsApi = createChannelsApi({ gatewayManager: createGatewayManager(rpc) as never });
+
+      await channelsApi.accounts({ mode: 'runtime', probe: true });
+      vi.setSystemTime(new Date('2026-09-07T10:35:10.000Z'));
+      await channelsApi.accounts({ mode: 'runtime' });
+      expect(rpc).toHaveBeenLastCalledWith('channels.status', { probe: false }, 8000);
+
+      // Credentials fixed outside this view; the next cached poll after 30s is upgraded to a probe.
+      rpc.mockImplementation(async () => feishuAccount({ probe: { ok: true } }));
+      vi.setSystemTime(new Date('2026-09-07T10:35:31.000Z'));
+      const rechecked = await channelsApi.accounts({ mode: 'runtime' });
+      expect(rpc).toHaveBeenLastCalledWith('channels.status', { probe: true }, 5000);
+      expect(rechecked.channels[0]).toMatchObject({ channelType: 'feishu', status: 'connected' });
+
+      vi.setSystemTime(new Date('2026-09-07T10:36:10.000Z'));
+      await channelsApi.accounts({ mode: 'runtime' });
+      expect(rpc).toHaveBeenLastCalledWith('channels.status', { probe: false }, 8000);
+    });
+
+    it('forgets a remembered failure when the account is saved again or deleted', async () => {
+      configureFeishu();
+      getChannelFormValuesMock.mockResolvedValue({ appId: 'cli_app', appSecret: 'cli_app' });
+      const rpc = vi.fn().mockImplementation(async (_method: string, params: { probe?: boolean }) =>
+        params.probe
+          ? feishuAccount({ lastError: 'Request failed with status code 400', probe: { ok: false } })
+          : feishuAccount(),
+      );
+      const gatewayManager = {
+        ...createGatewayManager(rpc),
+        debouncedRestart: vi.fn(),
+        debouncedReload: vi.fn(),
+        restart: vi.fn().mockResolvedValue(undefined),
+      };
+      const { createChannelsApi } = await import('@electron/services/channels-api');
+      const channelsApi = createChannelsApi({ gatewayManager: gatewayManager as never });
+
+      await channelsApi.accounts({ mode: 'runtime', probe: true });
+      await channelsApi.saveConfig({
+        channelType: 'feishu',
+        accountId: 'default',
+        config: { appId: 'cli_app', appSecret: 'real-secret' },
+      });
+      const afterSave = await channelsApi.accounts({ mode: 'runtime' });
+      expect(afterSave.channels[0]).toMatchObject({ channelType: 'feishu', status: 'connected' });
+
+      await channelsApi.accounts({ mode: 'runtime', probe: true });
+      await channelsApi.deleteConfig({ channelType: 'feishu' });
+      const afterDelete = await channelsApi.accounts({ mode: 'runtime' });
+      expect(afterDelete.channels[0]).toMatchObject({ channelType: 'feishu', status: 'connected' });
+    });
+  });
+
   it('lists channel targets from session history and validates channel type', async () => {
     const sessionsDir = join(testOpenClawConfigDir, 'agents', 'main', 'sessions');
     mkdirSync(sessionsDir, { recursive: true });
@@ -857,9 +1039,169 @@ describe('host services', () => {
       'default',
     );
     expect(ensureScopedChannelBindingMock).toHaveBeenCalledWith('feishu', 'default');
+    expect(ensurePluginChannelRuntimeActivatedMock).toHaveBeenCalledWith(
+      gatewayManager,
+      'feishu',
+      'default',
+    );
     expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
     expect(gatewayManager.restart).not.toHaveBeenCalled();
+  });
+
+  it('forces one Gateway restart when a changed plugin save stays missing from runtime status', async () => {
+    const { ensurePluginChannelRuntimeActivated } = await vi.importActual<
+      typeof import('@electron/services/plugin-channel-activation')
+    >('@electron/services/plugin-channel-activation');
+    let now = 0;
+    ensurePluginChannelRuntimeActivatedMock.mockImplementation(
+      (gateway: unknown, storedChannelType: string, accountId: string) =>
+        ensurePluginChannelRuntimeActivated(
+          gateway as Parameters<typeof ensurePluginChannelRuntimeActivated>[0],
+          storedChannelType,
+          accountId,
+          {
+            now: () => now,
+            sleep: async (ms) => {
+              now += ms;
+            },
+            hotWaitMs: 1000,
+            pollIntervalMs: 500,
+            postRestartWaitMs: 500,
+          },
+        ),
+    );
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'main', name: 'Main' }],
+      defaultAgentId: 'main',
+      defaultModelRef: null,
+      configuredChannelTypes: ['feishu'],
+      channelOwners: {},
+      channelAccountOwners: {},
+    });
+    getChannelFormValuesMock.mockResolvedValue({ appId: 'old', appSecret: 'old-secret' });
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state: 'running', port: 18789, gatewayReady: true })),
+      rpc: vi.fn().mockResolvedValue({ channelAccounts: {} }),
+      debouncedRestart: vi.fn(),
+      debouncedReload: vi.fn(),
+      restart: vi.fn().mockResolvedValue(undefined),
+    };
+    const { createChannelsApi } = await import('@electron/services/channels-api');
+
+    await expect(createChannelsApi({ gatewayManager: gatewayManager as never }).saveConfig({
+      channelType: 'feishu',
+      accountId: 'default',
+      config: { appId: 'cli_new', appSecret: 'new-secret' },
+    })).resolves.toEqual({ success: true, activationPending: true });
+
+    expect(gatewayManager.restart).toHaveBeenCalledTimes(1);
+    expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
+  });
+
+  it('keeps a changed plugin save successful when the forced Gateway restart fails', async () => {
+    const { ensurePluginChannelRuntimeActivated } = await vi.importActual<
+      typeof import('@electron/services/plugin-channel-activation')
+    >('@electron/services/plugin-channel-activation');
+    let now = 0;
+    ensurePluginChannelRuntimeActivatedMock.mockImplementation(
+      (gateway: unknown, storedChannelType: string, accountId: string) =>
+        ensurePluginChannelRuntimeActivated(
+          gateway as Parameters<typeof ensurePluginChannelRuntimeActivated>[0],
+          storedChannelType,
+          accountId,
+          {
+            now: () => now,
+            sleep: async (ms) => {
+              now += ms;
+            },
+            hotWaitMs: 1000,
+            pollIntervalMs: 500,
+            postRestartWaitMs: 500,
+          },
+        ),
+    );
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'main', name: 'Main' }],
+      defaultAgentId: 'main',
+      defaultModelRef: null,
+      configuredChannelTypes: ['feishu'],
+      channelOwners: {},
+      channelAccountOwners: {},
+    });
+    getChannelFormValuesMock.mockResolvedValue({ appId: 'old', appSecret: 'old-secret' });
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state: 'running', port: 18789, gatewayReady: true })),
+      rpc: vi.fn().mockResolvedValue({ channelAccounts: {} }),
+      debouncedRestart: vi.fn(),
+      debouncedReload: vi.fn(),
+      restart: vi.fn().mockRejectedValue(new Error('Gateway start failed')),
+    };
+    const { createChannelsApi } = await import('@electron/services/channels-api');
+
+    await expect(createChannelsApi({ gatewayManager: gatewayManager as never }).saveConfig({
+      channelType: 'feishu',
+      accountId: 'default',
+      config: { appId: 'cli_new', appSecret: 'new-secret' },
+    })).resolves.toEqual({ success: true, activationPending: true });
+
+    expect(saveChannelConfigMock).toHaveBeenCalledWith(
+      'feishu',
+      { appId: 'cli_new', appSecret: 'new-secret' },
+      'default',
+    );
+    expect(gatewayManager.restart).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not force a Gateway restart while plugin activation polls a reconnecting Gateway', async () => {
+    const { ensurePluginChannelRuntimeActivated } = await vi.importActual<
+      typeof import('@electron/services/plugin-channel-activation')
+    >('@electron/services/plugin-channel-activation');
+    let now = 0;
+    let state = 'running';
+    ensurePluginChannelRuntimeActivatedMock.mockImplementation(
+      (gateway: unknown, storedChannelType: string, accountId: string) =>
+        ensurePluginChannelRuntimeActivated(
+          gateway as Parameters<typeof ensurePluginChannelRuntimeActivated>[0],
+          storedChannelType,
+          accountId,
+          {
+            now: () => now,
+            sleep: async (ms) => {
+              now += ms;
+              state = 'reconnecting';
+            },
+            hotWaitMs: 1000,
+            pollIntervalMs: 500,
+          },
+        ),
+    );
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'main', name: 'Main' }],
+      defaultAgentId: 'main',
+      defaultModelRef: null,
+      configuredChannelTypes: ['feishu'],
+      channelOwners: {},
+      channelAccountOwners: {},
+    });
+    getChannelFormValuesMock.mockResolvedValue({ appId: 'old', appSecret: 'old-secret' });
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state })),
+      rpc: vi.fn().mockResolvedValue({ channelAccounts: {} }),
+      debouncedRestart: vi.fn(),
+      debouncedReload: vi.fn(),
+      restart: vi.fn().mockResolvedValue(undefined),
+    };
+    const { createChannelsApi } = await import('@electron/services/channels-api');
+
+    await expect(createChannelsApi({ gatewayManager: gatewayManager as never }).saveConfig({
+      channelType: 'feishu',
+      accountId: 'default',
+      config: { appId: 'cli_new', appSecret: 'new-secret' },
+    })).resolves.toEqual({ success: true, activationPending: true });
+
+    expect(gatewayManager.restart).not.toHaveBeenCalled();
+    expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
   });
 
   it('schedules Gateway restart when plugin peer link repair fails on changed save', async () => {
@@ -892,6 +1234,7 @@ describe('host services', () => {
       { appId: 'cli_new', appSecret: 'new-secret' },
       'default',
     );
+    expect(ensurePluginChannelRuntimeActivatedMock).not.toHaveBeenCalled();
     expect(gatewayManager.debouncedRestart).toHaveBeenCalledWith(0);
   });
 
@@ -1119,7 +1462,7 @@ describe('host services', () => {
     expect(source).not.toContain('debouncedRestart(8000)');
   });
 
-  it('persists successful WeChat login and restarts a running Gateway', async () => {
+  it('persists successful WeChat login and activates without an extra debounced restart', async () => {
     startWeChatLoginSessionMock.mockResolvedValue({
       qrcodeUrl: 'https://example.com/qr',
       sessionKey: 'session-1',
@@ -1152,10 +1495,142 @@ describe('host services', () => {
 
     await vi.waitFor(() => {
       expect(saveChannelConfigMock).toHaveBeenCalledWith('wechat', { enabled: true }, 'wx-account');
-      expect(gatewayManager.debouncedRestart).toHaveBeenCalledWith(0);
+      expect(ensurePluginChannelRuntimeActivatedMock).toHaveBeenCalledWith(
+        gatewayManager,
+        'openclaw-weixin',
+        'wx-account',
+      );
     });
+    expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
     expect(gatewayManager.debouncedReload).not.toHaveBeenCalled();
     expect(gatewayManager.restart).not.toHaveBeenCalled();
+  });
+
+  it('forces one Gateway restart after WeChat QR when the new account stays missing', async () => {
+    const { ensurePluginChannelRuntimeActivated } = await vi.importActual<
+      typeof import('@electron/services/plugin-channel-activation')
+    >('@electron/services/plugin-channel-activation');
+    let now = 0;
+    ensurePluginChannelRuntimeActivatedMock.mockImplementation(
+      (gateway: unknown, storedChannelType: string, accountId: string) =>
+        ensurePluginChannelRuntimeActivated(
+          gateway as Parameters<typeof ensurePluginChannelRuntimeActivated>[0],
+          storedChannelType,
+          accountId,
+          {
+            now: () => now,
+            sleep: async (ms) => {
+              now += ms;
+            },
+            hotWaitMs: 1000,
+            pollIntervalMs: 500,
+            postRestartWaitMs: 500,
+          },
+        ),
+    );
+    startWeChatLoginSessionMock.mockResolvedValue({
+      qrcodeUrl: 'https://example.com/qr',
+      sessionKey: 'session-1',
+    });
+    waitForWeChatLoginSessionMock.mockResolvedValue({
+      connected: true,
+      accountId: 'wx-account',
+      botToken: 'wx-token',
+      baseUrl: 'https://api.example.com',
+      userId: 'wx-user',
+    });
+    saveWeChatAccountStateMock.mockResolvedValue('wx-account');
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'main', name: 'Main' }],
+      defaultAgentId: 'main',
+      defaultModelRef: null,
+      configuredChannelTypes: ['openclaw-weixin'],
+      channelOwners: {},
+      channelAccountOwners: {},
+    });
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state: 'running', gatewayReady: true })),
+      rpc: vi.fn().mockResolvedValue({ channelAccounts: {} }),
+      debouncedReload: vi.fn(),
+      debouncedRestart: vi.fn(),
+      restart: vi.fn().mockResolvedValue(undefined),
+    };
+    const { createChannelsApi } = await import('@electron/services/channels-api');
+
+    await createChannelsApi({ gatewayManager: gatewayManager as never }).startLogin({ channelType: 'wechat' });
+
+    await vi.waitFor(() => {
+      expect(gatewayManager.restart).toHaveBeenCalledTimes(1);
+    });
+    expect(gatewayManager.debouncedRestart).not.toHaveBeenCalled();
+  });
+
+  it('still emits WeChat QR success when the forced Gateway restart fails', async () => {
+    const { ensurePluginChannelRuntimeActivated } = await vi.importActual<
+      typeof import('@electron/services/plugin-channel-activation')
+    >('@electron/services/plugin-channel-activation');
+    let now = 0;
+    ensurePluginChannelRuntimeActivatedMock.mockImplementation(
+      (gateway: unknown, storedChannelType: string, accountId: string) =>
+        ensurePluginChannelRuntimeActivated(
+          gateway as Parameters<typeof ensurePluginChannelRuntimeActivated>[0],
+          storedChannelType,
+          accountId,
+          {
+            now: () => now,
+            sleep: async (ms) => {
+              now += ms;
+            },
+            hotWaitMs: 1000,
+            pollIntervalMs: 500,
+            postRestartWaitMs: 500,
+          },
+        ),
+    );
+    startWeChatLoginSessionMock.mockResolvedValue({
+      qrcodeUrl: 'https://example.com/qr',
+      sessionKey: 'session-1',
+    });
+    waitForWeChatLoginSessionMock.mockResolvedValue({
+      connected: true,
+      accountId: 'wx-account',
+      botToken: 'wx-token',
+      baseUrl: 'https://api.example.com',
+      userId: 'wx-user',
+    });
+    saveWeChatAccountStateMock.mockResolvedValue('wx-account');
+    listAgentsSnapshotMock.mockResolvedValue({
+      agents: [{ id: 'main', name: 'Main' }],
+      defaultAgentId: 'main',
+      defaultModelRef: null,
+      configuredChannelTypes: ['openclaw-weixin'],
+      channelOwners: {},
+      channelAccountOwners: {},
+    });
+    const send = vi.fn();
+    const mainWindow = { isDestroyed: () => false, webContents: { send } };
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state: 'running', gatewayReady: true })),
+      rpc: vi.fn().mockResolvedValue({ channelAccounts: {} }),
+      debouncedReload: vi.fn(),
+      debouncedRestart: vi.fn(),
+      restart: vi.fn().mockRejectedValue(new Error('Gateway start failed')),
+    };
+    const { createChannelsApi } = await import('@electron/services/channels-api');
+
+    await createChannelsApi({
+      gatewayManager: gatewayManager as never,
+      mainWindow: mainWindow as never,
+    }).startLogin({ channelType: 'wechat' });
+
+    await vi.waitFor(() => {
+      expect(send).toHaveBeenCalledWith(
+        'channel:wechat-success',
+        expect.objectContaining({ accountId: 'wx-account' }),
+      );
+    });
+    expect(send).not.toHaveBeenCalledWith('channel:wechat-error', expect.anything());
+    expect(gatewayManager.restart).toHaveBeenCalledTimes(1);
   });
 
   it('returns diagnostics snapshot with channel view and log tails', async () => {

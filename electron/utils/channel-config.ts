@@ -1491,10 +1491,20 @@ export function parseDoctorValidationOutput(channelType: string, output: string)
     };
 }
 
+/**
+ * Stable identifier for a validation error so the renderer can localize it;
+ * `errors` keeps the English fallback text.
+ */
+export interface CredentialValidationErrorCode {
+    code: string;
+    params?: Record<string, string>;
+}
+
 export interface CredentialValidationResult {
     valid: boolean;
     errors: string[];
     warnings: string[];
+    errorCodes?: CredentialValidationErrorCode[];
     details?: Record<string, string>;
 }
 
@@ -1507,9 +1517,82 @@ export async function validateChannelCredentials(
             return validateDiscordCredentials(config);
         case 'telegram':
             return validateTelegramCredentials(config);
+        case 'feishu':
+            return validateFeishuCredentials(config);
         default:
             return { valid: true, errors: [], warnings: ['No online validation available for this channel type.'] };
     }
+}
+
+export function resolveFeishuApiOrigin(domain: unknown): string {
+    if (typeof domain === 'string' && domain.trim().toLowerCase() === 'lark') {
+        return 'https://open.larksuite.com';
+    }
+    return 'https://open.feishu.cn';
+}
+
+function feishuValidationFailure(
+    code: string,
+    message: string,
+    params?: Record<string, string>,
+    warnings: string[] = [],
+): CredentialValidationResult {
+    return { valid: false, errors: [message], warnings, errorCodes: [{ code, params }] };
+}
+
+/**
+ * The openclaw-lark plugin keeps its account "running" even when Feishu rejects
+ * the credentials (it only logs `app_id or app_secret is invalid`), so the
+ * Channels view would show Connected for a bot that can never receive events.
+ * Request a tenant_access_token before persisting so bad credentials are
+ * rejected in the modal instead.
+ */
+async function validateFeishuCredentials(
+    config: Record<string, string>
+): Promise<CredentialValidationResult> {
+    const appId = config.appId?.trim();
+    const appSecret = config.appSecret?.trim();
+
+    if (!appId) return feishuValidationFailure('feishuAppIdRequired', 'App ID is required');
+    if (!appSecret) return feishuValidationFailure('feishuAppSecretRequired', 'App Secret is required');
+    if (appSecret === appId) {
+        return feishuValidationFailure(
+            'feishuAppSecretEqualsAppId',
+            'App Secret is identical to App ID. Copy the App Secret from Feishu Developer Console → Credentials & Basic Info.',
+        );
+    }
+
+    const origin = resolveFeishuApiOrigin(config.domain);
+    try {
+        const response = await proxyAwareFetch(`${origin}/open-apis/auth/v3/tenant_access_token/internal`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+            code?: number;
+            msg?: string;
+            tenant_access_token?: string;
+        };
+        if (!response.ok || payload.code !== 0 || !payload.tenant_access_token) {
+            const reason = payload.msg?.trim()
+                || (typeof payload.code === 'number' ? `code ${payload.code}` : `HTTP ${response.status}`);
+            return feishuValidationFailure(
+                'feishuRejected',
+                `Feishu rejected the credentials: ${reason}`,
+                { error: reason },
+            );
+        }
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return feishuValidationFailure(
+            'feishuConnectionError',
+            `Connection error when validating Feishu credentials: ${reason}`,
+            { error: reason },
+        );
+    }
+
+    return { valid: true, errors: [], warnings: [] };
 }
 
 async function validateDiscordCredentials(

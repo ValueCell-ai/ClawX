@@ -98,7 +98,14 @@
         "generateQRCode": "Generate QR Code",
         "updateAndReconnect": "Update & Reconnect",
         "saveAndConnect": "Save & Connect",
-        "envVar": "Environment Variable: {{var}}"
+        "envVar": "Environment Variable: {{var}}",
+        "validationErrors": {
+            "feishuAppIdRequired": "App ID is required.",
+            "feishuAppSecretRequired": "App Secret is required.",
+            "feishuAppSecretEqualsAppId": "App Secret is identical to App ID. Copy the App Secret from Feishu Developer Console → Credentials & Basic Info.",
+            "feishuRejected": "Feishu rejected the credentials: {{error}}. Check App ID / App Secret in the Developer Console.",
+            "feishuConnectionError": "Could not reach Feishu to verify the credentials: {{error}}"
+        }
     },
     "health": {
         "state": {

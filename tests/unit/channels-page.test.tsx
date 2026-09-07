@@ -311,6 +311,47 @@ describe('Channels page status refresh', () => {
     ]);
   });
 
+  it('validates Feishu credentials before saving and shows the localized rejection', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') return { success: true, channels: [] };
+      if (path === 'agents.list') return { success: true, agents: [] };
+      if (path === 'channels.validateCredentials') {
+        return {
+          success: true,
+          valid: false,
+          errors: ['App Secret is identical to App ID.'],
+          errorCodes: [{ code: 'feishuAppSecretEqualsAppId' }],
+          warnings: [],
+        };
+      }
+      if (path === 'channels.saveConfig') return { success: true };
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<Channels />);
+    fireEvent.click(await screen.findByRole('button', { name: /Feishu/ }));
+    fireEvent.change(document.getElementById('appId') as HTMLInputElement, {
+      target: { value: 'cli_a8cf7d97fbb8d00d' },
+    });
+    fireEvent.change(document.getElementById('appSecret') as HTMLInputElement, {
+      target: { value: 'cli_a8cf7d97fbb8d00d' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'dialog.saveAndConnect' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('dialog.validationErrors.feishuAppSecretEqualsAppId')).toBeInTheDocument();
+    });
+    expect(hostApiCallMock.mock.calls.filter(([path]) => path === 'channels.validateCredentials')).toEqual([
+      ['channels.validateCredentials', {
+        channelType: 'feishu',
+        config: { appId: 'cli_a8cf7d97fbb8d00d', appSecret: 'cli_a8cf7d97fbb8d00d' },
+      }],
+    ]);
+    expect(hostApiCallMock.mock.calls.filter(([path]) => path === 'channels.saveConfig')).toHaveLength(0);
+    expect(screen.getByText('dialog.configureTitle')).toBeInTheDocument();
+  });
+
   it('removes a channel optimistically before the host delete settles', async () => {
     subscribeHostEventMock.mockImplementation(() => vi.fn());
     const deleteDeferred = createDeferred<{ success: true }>();

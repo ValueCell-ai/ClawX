@@ -545,6 +545,140 @@ describe('OpenClaw config delivery coordinator', () => {
     })).resolves.toBe(true);
   });
 
+  it('accepts a lost config.set commit although OpenClaw stamped meta and restored redacted secrets', async () => {
+    // config.get hands ClawX a redacted snapshot; config.set restores the real
+    // secret and stamps meta.lastTouched* before the 1012 close loses the reply.
+    const gatewayManager = createGatewayManager();
+    gatewayManager.rpc.mockImplementation(async (method: string, params: unknown) => {
+      if (method === 'config.get') {
+        return {
+          config: {
+            gateway: { auth: { token: '__OPENCLAW_REDACTED__' } },
+            channels: {},
+            meta: { lastTouchedVersion: '2026.7.1-2', lastTouchedAt: '2026-09-07T10:00:00.000Z' },
+          },
+          hash: 'hash-1',
+        };
+      }
+      if (method === 'config.set') {
+        const submitted = JSON.parse((params as { raw: string }).raw) as Record<string, unknown>;
+        const persisted = {
+          ...submitted,
+          gateway: { auth: { token: 'real-secret-token' } },
+          meta: { lastTouchedVersion: '2026.7.1-2', lastTouchedAt: '2026-09-07T10:10:00.354Z' },
+        };
+        await writeFile(configPath, JSON.stringify(persisted), 'utf8');
+        gatewayManager.getStatus.mockReturnValue({ state: 'reconnecting' });
+        throw new Error('Gateway service restart');
+      }
+      throw new Error(`Unexpected RPC method: ${method}`);
+    });
+    registerOpenClawConfigCoordinator(gatewayManager);
+
+    await expect(mutateOpenClawConfig((config) => {
+      (config.channels as Record<string, unknown>)['openclaw-weixin'] = {
+        accounts: { 'wx-bot': { enabled: true } },
+        enabled: true,
+      };
+    })).resolves.toBe(true);
+
+    expect(gatewayManager.rpc).toHaveBeenCalledTimes(2);
+    expect(renameMock).not.toHaveBeenCalled();
+    expect(JSON.parse(await readFile(configPath, 'utf8'))).toMatchObject({
+      gateway: { auth: { token: 'real-secret-token' } },
+      channels: { 'openclaw-weixin': { accounts: { 'wx-bot': { enabled: true } }, enabled: true } },
+    });
+  });
+
+  it('rejects a lost config.set commit when the persisted snapshot differs beyond meta and redaction', async () => {
+    const gatewayManager = createGatewayManager();
+    gatewayManager.rpc.mockImplementation(async (method: string, params: unknown) => {
+      if (method === 'config.get') {
+        return { config: { channels: { feishu: { enabled: false } } }, hash: 'hash-1' };
+      }
+      if (method === 'config.set') {
+        void params;
+        // Simulate a write that did not land: the file still holds the old value
+        // while the Gateway is (in ClawX's view) still connected.
+        await writeFile(configPath, JSON.stringify({
+          channels: { feishu: { enabled: false } },
+          meta: { lastTouchedAt: '2026-09-07T10:10:00.354Z' },
+        }), 'utf8');
+        throw new Error('RPC timeout: config.set');
+      }
+      throw new Error(`Unexpected RPC method: ${method}`);
+    });
+    registerOpenClawConfigCoordinator(gatewayManager);
+
+    await expect(mutateOpenClawConfig((config) => {
+      (config.channels as Record<string, Record<string, unknown>>).feishu.enabled = true;
+    })).rejects.toThrow('RPC timeout: config.set');
+  });
+
+  it('replays the mutator through the file path when the Gateway drops during config.get', async () => {
+    await writeFile(configPath, JSON.stringify({
+      channels: { 'openclaw-weixin': { enabled: true } },
+      bindings: [],
+    }), 'utf8');
+    const gatewayManager = createGatewayManager();
+    gatewayManager.rpc.mockImplementation(async (method: string) => {
+      if (method === 'config.get') {
+        // A code-1012 reload from the previous commit rejects the in-flight read.
+        gatewayManager.getStatus.mockReturnValue({ state: 'reconnecting' });
+        throw new Error('Gateway service restart');
+      }
+      throw new Error(`Unexpected RPC method: ${method}`);
+    });
+    registerOpenClawConfigCoordinator(gatewayManager);
+
+    await expect(mutateOpenClawConfig((config) => {
+      config.bindings = [{ agentId: 'main', match: { channel: 'openclaw-weixin', accountId: 'wx-bot' } }];
+    })).resolves.toBe(true);
+
+    expect(gatewayManager.rpc).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(await readFile(configPath, 'utf8'))).toEqual({
+      channels: { 'openclaw-weixin': { enabled: true } },
+      bindings: [{ agentId: 'main', match: { channel: 'openclaw-weixin', accountId: 'wx-bot' } }],
+    });
+  });
+
+  it('replays the mutator through the file path when a lost config.set cannot be verified', async () => {
+    await writeFile(configPath, JSON.stringify({ channels: { feishu: { enabled: false } } }), 'utf8');
+    const gatewayManager = createGatewayManager();
+    gatewayManager.rpc.mockImplementation(async (method: string) => {
+      if (method === 'config.get') {
+        return { config: { channels: { feishu: { enabled: false } } }, hash: 'hash-1' };
+      }
+      if (method === 'config.set') {
+        // Socket closed before OpenClaw applied the write; the file is unchanged.
+        gatewayManager.getStatus.mockReturnValue({ state: 'reconnecting' });
+        throw new Error('Gateway service restart');
+      }
+      throw new Error(`Unexpected RPC method: ${method}`);
+    });
+    registerOpenClawConfigCoordinator(gatewayManager);
+
+    await expect(mutateOpenClawConfig((config) => {
+      (config.channels as Record<string, Record<string, unknown>>).feishu.enabled = true;
+    })).resolves.toBe(true);
+
+    expect(JSON.parse(await readFile(configPath, 'utf8'))).toEqual({
+      channels: { feishu: { enabled: true } },
+    });
+  });
+
+  it('reads the durable file when config.get is rejected by a Gateway service restart', async () => {
+    await writeFile(configPath, JSON.stringify({ channels: { wecom: { enabled: true } } }), 'utf8');
+    const gatewayManager = createGatewayManager();
+    gatewayManager.rpc.mockRejectedValue(new Error('Gateway service restart'));
+    registerOpenClawConfigCoordinator(gatewayManager);
+
+    await expect(readOpenClawConfigSnapshot()).resolves.toEqual({
+      config: { channels: { wecom: { enabled: true } } },
+      exists: true,
+    });
+  });
+
   it.each(['config.get', 'config.set'] as const)(
     'fails closed when running %s fails',
     async (failedMethod) => {

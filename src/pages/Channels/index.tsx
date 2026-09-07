@@ -646,7 +646,10 @@ export function Channels() {
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <span>{group.channelType}</span>
                             <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
-                            <span className="flex items-center gap-1">
+                            <span
+                              className="flex items-center gap-1"
+                              data-testid={`channel-status-${group.channelType}`}
+                            >
                               <span
                                 className={cn(
                                   'inline-block h-1.5 w-1.5 rounded-full shrink-0',
