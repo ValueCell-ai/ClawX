@@ -98,7 +98,7 @@ test('an unchanged permission request shows guidance without implicitly re-promp
   await expect(feedback).toHaveCount(0);
 });
 
-test('the real host defaults off and rejects permission requests without loading the driver', async ({ page }) => {
+test('the real host defaults off and rejects permission requests without loading the driver', async ({ electronApp, page }) => {
   const result = await page.evaluate(async () => {
     const status = await window.clawx.hostInvoke({ id: 'computer-status', module: 'computerUse', action: 'status' });
     const request = await window.clawx.hostInvoke({ id: 'computer-request', module: 'computerUse', action: 'requestPermissions' });
@@ -106,6 +106,11 @@ test('the real host defaults off and rejects permission requests without loading
   });
   expect(result.status).toMatchObject({ ok: true, data: { enabled: false, running: false } });
   expect(result.request).toMatchObject({ ok: false, error: { message: 'Computer Use is disabled' } });
+  const nativeLibraries = await electronApp.evaluate(() => {
+    const report = process.report.getReport() as { sharedObjects: string[] };
+    return report.sharedObjects.filter((file) => /cua_driver_(sdk|node_runtime)/.test(file));
+  });
+  expect(nativeLibraries).toEqual([]);
 });
 
 test('failed opt-in displays an error and retains the safe host state', async ({ electronApp, page }) => {

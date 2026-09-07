@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -91,5 +91,10 @@ describe('after-pack cleanup helpers', () => {
     expect(() => afterPack.__test!.assertCuaPackagedRuntime(resourcesDir, 'darwin', 'arm64')).toThrow(
       /native SDK/i,
     );
+  });
+
+  it('unpacks the complete CUA module tree so its loader resolves native libraries outside ASAR', () => {
+    const builderConfig = readFileSync(new URL('../../electron-builder.yml', import.meta.url), 'utf8');
+    expect(builderConfig).toContain('  - "**/node_modules/@trycua/**"');
   });
 });

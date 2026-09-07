@@ -72,6 +72,70 @@ Restart Gateway after the mirror update to discard loaded plugin modules.
 
 ## Permission requests and development attribution
 
+### Packaged native imports
+
+CUA 0.21.0 uses `dist/native/node-runtime.js` and generated `*-ffi.js` loaders.
+`@ubjs/node`'s `resolveLibPath` uses `createRequire(callerUrl).resolve` to locate
+the sibling platform package. It does not use `import.meta.resolve`, and this
+SDK call supplies no library override or environment override. Electron's
+virtual filesystem can find an unpacked file via an `app.asar` path while the
+native addon's own `dlopen` cannot: macOS returns ENOTDIR (`errno=20`). Electron's
+`process.dlopen` handling for `.node` files does not rewrite paths passed later
+to Rust's library loader. Unpacking all of `@trycua` alone is insufficient.
+
+`electron/utils/cua-sdk.ts` lazily imports the pinned exported `dist/electron.js`
+and `dist/embedded.js` using physical `app.asar.unpacked` file URLs. Unpack
+`@ubjs/core` and `@ubjs/node` too; physical ESM imports cannot find JS dependencies
+that exist only inside the adjacent archive. Development keeps bare package
+imports. There are no dependency patches, signing changes, or TCC workarounds.
+
+Run `pnpm cua:smoke:asar <app Resources directory>` to build a minimal true ASAR
+app from the packaged SDK bytes and current unpack rules, using a temporary copy
+of the pinned Electron runtime. `--baseline` uses bare imports and intentionally
+fails with the old virtual-path error. `--artifact` uses the source app's actual
+unpacked dependency tree read-only, so stale/missing unpacked JS fails rather than
+being repaired by the fixture. Run this after directory packaging as well.
+The smoke checks the pinned export map, lazy loading, `app.isPackaged`, fresh
+Electron Main processes for each entrypoint, and the physically loaded dylib/DLL
+in the process report. It does not use `ELECTRON_RUN_AS_NODE`. `electron` initializes
+native bindings on import; `embedded` defers loading, so the smoke invokes only
+the generated ABI initializer (checksums/callback registration), never a host
+constructor, permission request, settings opener, or desktop action.
+
+The macOS arm64 reproduction used the installed app's unmodified SDK bytes;
+its dylib existed and `codesign --verify --deep --strict` succeeded. Both old
+load paths failed with errno 20 and both physical load paths passed. This proves
+path resolution, not signed-release TCC attribution or Windows execution; run the
+same smoke on Windows and Intel macOS artifacts on their respective hosts.
+Electron reference: https://www.electronjs.org/docs/latest/tutorial/asar-archives
+
+Reproduction and verification commands (run from the repo root):
+
+```sh
+# Expected failure: both generated native loaders receive virtual ASAR paths.
+pnpm cua:smoke:asar /Applications/ClawX.app/Contents/Resources --baseline
+# Expected failure on the old app: physical imports cannot resolve @ubjs/node.
+pnpm cua:smoke:asar /Applications/ClawX.app/Contents/Resources --artifact
+# Pass: same packaged SDK bytes with the corrected loader and unpack rules.
+pnpm cua:smoke:asar /Applications/ClawX.app/Contents/Resources
+pnpm run build:vite
+node scripts/run-electron-builder.mjs --mac --arm64 --dir --publish never -c.directories.output=release/cua-asar-fix
+pnpm cua:smoke:asar release/cua-asar-fix/mac-arm64/ClawX.app/Contents/Resources --artifact
+codesign --verify --deep --strict release/cua-asar-fix/mac-arm64/ClawX.app
+```
+
+The fresh arm64 directory build and both artifact imports passed. The normal
+builder selected ad-hoc signing and skipped notarization because distribution
+credentials were unavailable; no signing settings were overridden to fix loading.
+Existing release DMG/ZIP files were not rebuilt or replaced. The smoke tests the
+production helper compiled into a minimal package, not full ClawX startup under
+a distribution signature. The management E2E additionally verifies the real Main
+process has no loaded CUA native libraries after a disabled permission request.
+README.md, README.zh-CN.md, and README.ja-JP.md were reviewed: this changes only
+internal packaging/loading, not their documented opt-in or permission flow.
+
+### OS attribution
+
 The pinned CUA 0.21.0 Electron helper invokes the native host request function;
 screen permission uses `CGRequestScreenCaptureAccess()` and the read-only probe
 uses `CGPreflightScreenCaptureAccess()`. These are not APIs for resetting a

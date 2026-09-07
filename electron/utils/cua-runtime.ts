@@ -4,6 +4,7 @@ import { release } from 'node:os';
 import path from 'node:path';
 import { app, systemPreferences } from 'electron';
 import { isCuaPlatformSupported } from './cua-platform';
+import { loadCuaSdk } from './cua-sdk';
 import { getSetting } from './store';
 
 export const CLAWX_CUA_CONNECTION_FILE_ENV = 'CLAWX_CUA_CONNECTION_FILE';
@@ -313,7 +314,7 @@ export function createDefaultCuaRuntimeManager(): CuaRuntimeManager {
       rename,
       chmod,
     },
-    loadEmbeddedSdk: () => import('@trycua/cua-driver/embedded'),
-    loadMacOSPermissions: () => import('@trycua/cua-driver/electron'),
+    loadEmbeddedSdk: () => loadCuaSdk('embedded'),
+    loadMacOSPermissions: () => loadCuaSdk('electron'),
   });
 }

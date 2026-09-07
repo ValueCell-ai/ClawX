@@ -42,6 +42,7 @@
         "agent-browser:download:linux": "zx scripts/download-bundled-agent-browser.mjs --platform=linux",
         "agent-browser:download:all": "zx scripts/download-bundled-agent-browser.mjs --all",
         "cua-driver:download": "node scripts/download-cua-driver.mjs",
+        "cua:smoke:asar": "node scripts/smoke-cua-asar.mjs",
         "cua-driver:download:mac": "node scripts/download-cua-driver.mjs --platform=mac",
         "cua-driver:download:win": "node scripts/download-cua-driver.mjs --platform=win",
         "cua-driver:download:all": "node scripts/download-cua-driver.mjs --all",

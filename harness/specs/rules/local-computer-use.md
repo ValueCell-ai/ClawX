@@ -3,6 +3,8 @@ id: local-computer-use
 title: Local Computer Use ownership and lifecycle
 appliesTo:
   - electron/utils/cua-runtime.ts
+  - electron/utils/cua-sdk.ts
+  - scripts/smoke-cua-asar.mjs
   - electron/utils/cua-platform.ts
   - electron/services/computer-use-api.ts
   - electron/utils/store.ts
@@ -25,6 +27,7 @@ severity: error
 - Computer Use is local-only. Do not start an OpenClaw node host, call `node.invoke`, add pairing flows, discover remote nodes, or expose node selection for this capability.
 - Electron Main must be the direct parent of `cua-driver serve --embedded`. The Gateway plugin may start only the MCP stdio proxy from the host-issued descriptor.
 - The daemon executable must be version-pinned, checksum-verified, shipped outside ASAR, executable on POSIX systems, and signed before the enclosing macOS app is signed and notarized.
+- Both lazy CUA SDK imports must use physical file URLs in ASAR builds, with their JS dependencies unpacked as well. Validate native initialization in real packaged Electron for both entrypoints, not just file existence or config patterns; see `harness/reference/computer-use.md`. Import checks must not request permissions or construct a driver host.
 - Computer Use is optional and defaults off, including upgrades without an explicit saved preference. Disabled startup and activation must not load the privileged SDK or request permissions. Disable removes the descriptor, stops the daemon, and disables the plugin policy; serialize lifecycle and preference mutations.
 - On macOS, read permission status without prompts on startup, activation and page load. Request Accessibility and Screen Recording from the Main-process host only through an explicit enabled management action, and do not start the daemon until both grants are present. Permission changes invalidate the daemon generation and its proxies.
 - A completed request with ungranted access must show actionable feedback, not imply a native dialog opened or that access was granted. Screen permission probes do not establish denial history. Guide users to the OS-listed responsible app; development launches may be attributed to a terminal or IDE rather than ClawX. Never reset TCC or remove grants automatically.

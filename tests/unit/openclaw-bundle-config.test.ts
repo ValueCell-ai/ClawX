@@ -36,9 +36,8 @@ describe('openclaw bundle config', () => {
   it('unpacks every native CUA SDK library required by Electron Main', () => {
     const builderConfig = readFileSync(resolve(process.cwd(), 'electron-builder.yml'), 'utf8');
 
-    expect(builderConfig).toContain('- "**/node_modules/@trycua/**/*.node"');
-    expect(builderConfig).toContain('- "**/node_modules/@trycua/**/*.dylib"');
-    expect(builderConfig).toContain('- "**/node_modules/@trycua/**/*.dll"');
+    expect(builderConfig).toContain('- "**/node_modules/@trycua/**"');
+    expect(builderConfig).toContain('- "**/node_modules/@ubjs/**"');
   });
 
   it('uses an Electron runtime with OpenClaw-compatible Node and SQLite versions', () => {
