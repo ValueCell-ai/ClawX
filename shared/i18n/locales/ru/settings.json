@@ -126,7 +126,22 @@
       "step1": "Скопируйте код авторизации ниже.",
       "step2": "Откройте страницу входа в браузере.",
       "step3": "Вставьте код для подтверждения доступа.",
-      "requestingCode": "Запрос кода безопасного входа..."
+      "requestingCode": "Запрос кода безопасного входа...",
+      "completeBrowserLogin": "Завершите вход в браузере",
+      "manualCallbackHelp": "Откройте страницу авторизации, завершите вход и вставьте URL обратного вызова или код.",
+      "openAuthorizationPage": "Открыть страницу авторизации",
+      "callbackPlaceholder": "Вставьте URL обратного вызова или код",
+      "submitCode": "Отправить код",
+      "tokenDanceCancelled": "Авторизация TokenDance отменена.",
+      "tokenDanceCallbackUnavailable": "Не удалось запустить безопасный локальный обратный вызов TokenDance.",
+      "tokenDanceTimedOut": "Время авторизации TokenDance истекло. Повторите попытку.",
+      "tokenDanceExchangeFailed": "TokenDance не смог обменять код авторизации (HTTP {{status}}).",
+      "tokenDanceMissingKey": "Авторизация TokenDance завершена, но API-ключ не получен. Повторите авторизацию."
+    },
+    "recovery": {
+      "topUpBalance": "Недостаточно средств на балансе TokenDance. Пополните счёт и повторите попытку.",
+      "reauthorizeApiKey": "Ключ TokenDance больше недействителен. Удалите этого провайдера и повторно авторизуйте TokenDance.",
+      "apiKeyQuota": "Ключ TokenDance достиг периодической квоты. Дождитесь её сброса или повторно авторизуйте TokenDance."
     }
   },
   "gateway": {

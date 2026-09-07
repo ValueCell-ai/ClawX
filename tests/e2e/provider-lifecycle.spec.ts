@@ -127,6 +127,65 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('add-provider-api-key-input')).toHaveCount(0);
   });
 
+  test('shows TokenDance OAuth with its attributed endpoint and default model', async ({ page }) => {
+    await completeSetup(page);
+
+    await page.getByTestId('sidebar-nav-models').click();
+    await page.getByTestId('providers-add-button').click();
+    await expect(page.getByTestId('add-provider-type-tokendance')).toBeVisible();
+
+    await page.getByTestId('add-provider-type-tokendance').click();
+    await expect(page.getByTestId('add-provider-auth-oauth-tab')).toBeVisible();
+    await expect(page.getByTestId('add-provider-auth-apikey-tab')).toBeVisible();
+    await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('qwen3.8-max');
+    await expect(page.getByTestId('add-provider-oauth-login-button')).toBeVisible();
+
+    await page.getByTestId('add-provider-auth-apikey-tab').click();
+    await expect(page.getByTestId('add-provider-api-key-input')).toBeVisible();
+  });
+
+  test('shows TokenDance recovery guidance returned by Main validation', async ({ electronApp, page }) => {
+    await completeSetup(page);
+
+    await electronApp.evaluate(async ({ app: _app }) => {
+      const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+      const handlers = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers;
+      const originalHostInvoke = handlers?.get('host:invoke');
+      if (!originalHostInvoke) throw new Error('host:invoke handler unavailable');
+
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', async (event: unknown, request: {
+        id?: string;
+        module?: string;
+        action?: string;
+      }) => {
+        if (request.module === 'providers' && request.action === 'validateKey') {
+          return {
+            id: request.id,
+            ok: true,
+            data: {
+              valid: false,
+              error: 'Balance insufficient',
+              recoveryAction: 'top_up_balance',
+            },
+          };
+        }
+        return originalHostInvoke(event, request);
+      });
+    });
+
+    await page.getByTestId('sidebar-nav-models').click();
+    await page.getByTestId('providers-add-button').click();
+    await page.getByTestId('add-provider-type-tokendance').click();
+    await page.getByTestId('add-provider-auth-apikey-tab').click();
+    await page.getByTestId('add-provider-api-key-input').fill('td-insufficient');
+    await page.getByTestId('add-provider-submit-button').click();
+
+    await expect(page.getByText(/TokenDance balance is insufficient/i)).toBeVisible();
+  });
+
   test('trims whitespace before validating and saving a custom provider key', async ({ electronApp, page }) => {
     await completeSetup(page);
 

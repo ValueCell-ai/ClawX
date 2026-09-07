@@ -430,7 +430,7 @@ async function requestOAuth(payload: ProviderPayload<'requestOAuth'>) {
     label: typeof body.label === 'string' ? body.label : undefined,
   };
   try {
-    if (provider === 'openai') {
+    if (provider === 'openai' || provider === 'tokendance') {
       await browserOAuthManager.startFlow(provider as BrowserOAuthProviderType, options);
     } else {
       await deviceOAuthManager.startFlow(provider as OAuthProviderType, region, options);

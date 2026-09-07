@@ -34,6 +34,7 @@ import {
   PROVIDER_TYPE_INFO,
   getProviderDocsUrl,
   type ProviderType,
+  type ProviderValidationResult,
   getProviderIconUrl,
   normalizeProviderApiKeyInput,
   resolveProviderApiKeyForSave,
@@ -132,6 +133,38 @@ function shouldShowUserAgentField(account: ProviderAccount): boolean {
 
 function shouldShowUserAgentFieldForNewProvider(providerType: ProviderType | null): boolean {
   return providerType === 'custom';
+}
+
+function getOAuthErrorMessage(message: string, t: (key: string, options?: Record<string, unknown>) => string): string {
+  if (message.startsWith('tokendanceOAuth.exchangeFailed:')) {
+    return t('aiProviders.oauth.tokenDanceExchangeFailed', {
+      status: message.slice('tokendanceOAuth.exchangeFailed:'.length),
+    });
+  }
+  const keyByCode: Record<string, string> = {
+    'tokendanceOAuth.cancelled': 'aiProviders.oauth.tokenDanceCancelled',
+    'tokendanceOAuth.callbackUnavailable': 'aiProviders.oauth.tokenDanceCallbackUnavailable',
+    'tokendanceOAuth.timedOut': 'aiProviders.oauth.tokenDanceTimedOut',
+    'tokendanceOAuth.missingKey': 'aiProviders.oauth.tokenDanceMissingKey',
+  };
+  const key = keyByCode[message];
+  return key ? t(key) : message;
+}
+
+function getProviderValidationError(
+  result: ProviderValidationResult,
+  t: (key: string) => string,
+): string {
+  switch (result.recoveryAction) {
+    case 'top_up_balance':
+      return t('aiProviders.recovery.topUpBalance');
+    case 'reauthorize_api_key':
+      return t('aiProviders.recovery.reauthorizeApiKey');
+    case 'api_key_quota':
+      return t('aiProviders.recovery.apiKeyQuota');
+    default:
+      return result.error || t('aiProviders.toast.invalidKey');
+  }
 }
 
 function getAuthModeLabel(
@@ -338,7 +371,7 @@ interface ProviderCardProps {
   onValidateKey: (
     key: string,
     options?: { baseUrl?: string; apiProtocol?: ProviderAccount['apiProtocol']; modelId?: string }
-  ) => Promise<{ valid: boolean; error?: string }>;
+  ) => Promise<ProviderValidationResult>;
   devModeUnlocked: boolean;
 }
 
@@ -441,7 +474,7 @@ function ProviderCard({
         });
         setValidating(false);
         if (!result.valid) {
-          setValidationError(result.error || t('aiProviders.toast.invalidKey'));
+          setValidationError(getProviderValidationError(result, t));
           setSaving(false);
           return;
         }
@@ -935,7 +968,7 @@ interface AddProviderDialogProps {
     type: string,
     apiKey: string,
     options?: { baseUrl?: string; apiProtocol?: ProviderAccount['apiProtocol']; modelId?: string }
-  ) => Promise<{ valid: boolean; error?: string }>;
+  ) => Promise<ProviderValidationResult>;
   devModeUnlocked: boolean;
 }
 
@@ -1121,7 +1154,7 @@ function AddProviderDialog({
     };
 
     const handleError = (data: OAuthErrorEvent) => {
-      setOauthError(data.message);
+      setOauthError(getOAuthErrorMessage(data.message, latestRef.current.t));
       setOauthData(null);
       pendingOAuthRef.current = null;
     };
@@ -1247,7 +1280,7 @@ function AddProviderDialog({
           modelId: modelId.trim() || undefined,
         });
         if (!result.valid) {
-          setValidationError(result.error || t('aiProviders.toast.invalidKey'));
+          setValidationError(getProviderValidationError(result, t));
           setSaving(false);
           return;
         }
@@ -1638,7 +1671,7 @@ function AddProviderDialog({
                               <p className="font-semibold text-sm">{t('aiProviders.oauth.authFailed')}</p>
                               <p className="text-meta opacity-80">{oauthError}</p>
                               <Button variant="outline" size="sm" onClick={handleCancelOAuth} className="mt-2 rounded-full px-6 h-9">
-                                Try Again
+                                {t('aiProviders.oauth.tryAgain')}
                               </Button>
                             </div>
                           ) : !oauthData ? (
@@ -1649,9 +1682,9 @@ function AddProviderDialog({
                           ) : oauthData.mode === 'manual' ? (
                             <div className="space-y-4 w-full">
                               <div className="space-y-2">
-                                <h3 className="font-semibold text-base text-foreground">Complete OpenAI Login</h3>
+                                <h3 className="font-semibold text-base text-foreground">{t('aiProviders.oauth.completeBrowserLogin')}</h3>
                                 <p className="text-meta text-muted-foreground text-left bg-black/5 dark:bg-white/5 p-4 rounded-xl">
-                                  {oauthData.message || 'Open the authorization page, complete login, then paste the callback URL or code below.'}
+                                  {oauthData.message || t('aiProviders.oauth.manualCallbackHelp')}
                                 </p>
                               </div>
 
@@ -1661,11 +1694,11 @@ function AddProviderDialog({
                                 onClick={() => hostApi.shell.openExternal(oauthData.authorizationUrl)}
                               >
                                 <ExternalLink className="h-4 w-4 mr-2" />
-                                Open Authorization Page
+                                {t('aiProviders.oauth.openAuthorizationPage')}
                               </Button>
 
                               <Input
-                                placeholder="Paste callback URL or code"
+                                placeholder={t('aiProviders.oauth.callbackPlaceholder')}
                                 value={manualCodeInput}
                                 onChange={(e) => setManualCodeInput(e.target.value)}
                                 className={inputClasses}
@@ -1676,11 +1709,11 @@ function AddProviderDialog({
                                 onClick={handleSubmitManualOAuthCode}
                                 disabled={!manualCodeInput.trim()}
                               >
-                                Submit Code
+                                {t('aiProviders.oauth.submitCode')}
                               </Button>
 
                               <Button variant="ghost" className="w-full rounded-full h-[42px] font-semibold text-muted-foreground" onClick={handleCancelOAuth}>
-                                Cancel
+                                {t('aiProviders.oauth.cancel')}
                               </Button>
                             </div>
                           ) : (
@@ -1726,7 +1759,7 @@ function AddProviderDialog({
                               </div>
 
                               <Button variant="ghost" className="w-full rounded-full h-[42px] font-semibold text-muted-foreground" onClick={handleCancelOAuth}>
-                                Cancel
+                                {t('aiProviders.oauth.cancel')}
                               </Button>
                             </div>
                           )}

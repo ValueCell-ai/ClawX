@@ -83,7 +83,7 @@ Building AI agents shouldn't require mastering the command line. ClawX was desig
 - **📡 Multi-Channel Management**: Configure and monitor independent AI channels with multiple accounts, per-account agent binding, default-account switching, and the bundled official Tencent personal WeChat channel plugin.
 - **⏰ Cron-Based Automation**: Define recurring or one-time schedules, insert skills into scheduled prompts, and deliver results to external channels.
 - **🧩 Extensible Skill System**: Manage skills locally without depending on the Gateway, discover skills from multiple OpenClaw sources, and use bundled document-processing skills for `pdf`, `xlsx`, `docx`, and `pptx`.
-- **🔐 Secure Provider Integration**: Connect OpenAI, Anthropic, Z.AI / GLM, and other providers with credentials stored in the native system keychain; supports OAuth, custom providers, and compatibility fallbacks. In Developer Mode, configure image-generation endpoints in **Models -> Image Generation**.
+- **🔐 Secure Provider Integration**: Connect OpenAI, Anthropic, Z.AI / GLM, TokenDance, and other providers with credentials stored in the native system keychain; TokenDance supports browser OAuth with PKCE and ClawX request attribution, alongside custom providers and compatibility fallbacks. In Developer Mode, configure image-generation endpoints in **Models -> Image Generation**.
 - **🌙 Adaptive Theming**: Choose light mode, dark mode, or system-synchronized themes.
 - **🚀 Startup Launch Control**: Enable **Launch at system startup** in **Settings -> General**.
 - **🔔 Update Prompts**: Check for new versions at startup and choose whether to download or install them.

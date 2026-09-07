@@ -12,6 +12,7 @@ export interface AgentProviderUpdatePayload {
     baseUrl: string;
     api: string;
     apiKey: string | undefined;
+    headers?: Record<string, string>;
     models: Array<{ id: string; name: string; cost: PiAiModelCostRates }>;
   };
 }
@@ -46,6 +47,7 @@ export function buildNonOAuthAgentProviderUpdate(
       baseUrl,
       api,
       apiKey: meta?.apiKeyEnv,
+      ...(meta?.headers ? { headers: meta.headers } : {}),
       models: modelId ? [piAiModelsJsonModelEntry(modelId)] : [],
     },
   };

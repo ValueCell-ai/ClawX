@@ -92,6 +92,11 @@
         "cancelled": "キャンセル済み",
         "loadFailed": "セッションの読み込みに失敗しました",
         "promptFailed": "プロンプトの送信に失敗しました",
+        "tokenDanceRecovery": {
+            "top_up_balance": "TokenDance の残高が不足しています。チャージしてからこのリクエストを再試行してください。",
+            "reauthorize_api_key": "TokenDance キーは無効です。モデル設定を開き、TokenDance を再認証してください。",
+            "api_key_quota": "TokenDance キーが期間上限に達しました。上限のリセットを待つか、TokenDance を再認証してください。"
+        },
         "unsupportedContent": "未対応のコンテンツ",
         "dismiss": "閉じる",
         "image": "画像",

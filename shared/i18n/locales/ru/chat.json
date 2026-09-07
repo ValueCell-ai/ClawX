@@ -92,6 +92,11 @@
         "cancelled": "Отменено",
         "loadFailed": "Не удалось загрузить сеанс",
         "promptFailed": "Не удалось отправить запрос",
+        "tokenDanceRecovery": {
+            "top_up_balance": "Недостаточно средств на балансе TokenDance. Пополните счёт и повторите запрос.",
+            "reauthorize_api_key": "Ключ TokenDance больше недействителен. Откройте настройки моделей и повторно авторизуйте TokenDance.",
+            "api_key_quota": "Ключ TokenDance достиг периодической квоты. Дождитесь её сброса или повторно авторизуйте TokenDance."
+        },
         "unsupportedContent": "Неподдерживаемое содержимое",
         "dismiss": "Закрыть",
         "image": "Изображение",

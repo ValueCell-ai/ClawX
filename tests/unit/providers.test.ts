@@ -36,6 +36,28 @@ describe('provider metadata', () => {
     );
   });
 
+  it('includes TokenDance OAuth with ClawX request attribution', () => {
+    expect(PROVIDER_TYPES).toContain('tokendance');
+    expect(BUILTIN_PROVIDER_TYPES).toContain('tokendance');
+    expect(PROVIDER_TYPE_INFO).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'tokendance',
+        name: 'TokenDance',
+        isOAuth: true,
+        supportsApiKey: true,
+        defaultBaseUrl: 'https://tokendance.space/gateway/v1',
+        defaultModelId: 'qwen3.8-max',
+      }),
+    ]));
+    expect(getProviderEnvVar('tokendance')).toBe('TOKENDANCE_API_KEY');
+    expect(getProviderConfig('tokendance')).toEqual({
+      baseUrl: 'https://tokendance.space/gateway/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'TOKENDANCE_API_KEY',
+      headers: { 'X-App-URL': 'https://clawx.com.cn' },
+    });
+  });
+
   it('includes ark in the backend provider registry', () => {
     expect(BUILTIN_PROVIDER_TYPES).toContain('ark');
     expect(getProviderEnvVar('ark')).toBe('ARK_API_KEY');
@@ -108,7 +130,7 @@ describe('provider metadata', () => {
 
   it('keeps builtin provider sources in sync', () => {
     expect(BUILTIN_PROVIDER_TYPES).toEqual(
-      expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'ark', 'moonshot', 'siliconflow', 'minimax-portal', 'minimax-portal-cn', 'zai', 'zai-global', 'modelstudio', 'ollama'])
+      expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'tokendance', 'ark', 'moonshot', 'siliconflow', 'minimax-portal', 'minimax-portal-cn', 'zai', 'zai-global', 'modelstudio', 'ollama'])
     );
   });
 

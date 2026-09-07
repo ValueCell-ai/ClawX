@@ -126,7 +126,22 @@
       "step1": "Copy the authorization code below.",
       "step2": "Open the login page in your browser.",
       "step3": "Paste the code to approve access.",
-      "requestingCode": "Requesting secure login code..."
+      "requestingCode": "Requesting secure login code...",
+      "completeBrowserLogin": "Complete browser login",
+      "manualCallbackHelp": "Open the authorization page, complete login, then paste the callback URL or code below.",
+      "openAuthorizationPage": "Open authorization page",
+      "callbackPlaceholder": "Paste callback URL or code",
+      "submitCode": "Submit code",
+      "tokenDanceCancelled": "TokenDance authorization was cancelled.",
+      "tokenDanceCallbackUnavailable": "Could not start the secure local callback for TokenDance.",
+      "tokenDanceTimedOut": "TokenDance authorization timed out. Please try again.",
+      "tokenDanceExchangeFailed": "TokenDance could not exchange the authorization code (HTTP {{status}}).",
+      "tokenDanceMissingKey": "TokenDance completed authorization but returned no API key. Please authorize again."
+    },
+    "recovery": {
+      "topUpBalance": "Your TokenDance balance is insufficient. Top up your TokenDance account, then retry.",
+      "reauthorizeApiKey": "This TokenDance key is no longer valid. Remove this provider and authorize TokenDance again.",
+      "apiKeyQuota": "This TokenDance key has reached its periodic quota. Wait for the quota to reset, or authorize TokenDance again."
     }
   },
   "gateway": {

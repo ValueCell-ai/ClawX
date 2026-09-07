@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import type {
   ProviderAccount,
   ProviderConfig,
+  ProviderValidationResult,
   ProviderVendorInfo,
   ProviderWithKeyInfo,
 } from '@/lib/providers';
@@ -39,7 +40,7 @@ interface ProviderState {
     accountId: string,
     apiKey: string,
     options?: { baseUrl?: string; apiProtocol?: ProviderAccount['apiProtocol']; modelId?: string }
-  ) => Promise<{ valid: boolean; error?: string }>;
+  ) => Promise<ProviderValidationResult>;
   getAccountApiKey: (accountId: string) => Promise<string | null>;
 
   // Legacy compatibility aliases
@@ -63,7 +64,7 @@ interface ProviderState {
     providerId: string,
     apiKey: string,
     options?: { baseUrl?: string; apiProtocol?: ProviderAccount['apiProtocol'] }
-  ) => Promise<{ valid: boolean; error?: string }>;
+  ) => Promise<ProviderValidationResult>;
   getApiKey: (providerId: string) => Promise<string | null>;
 }
 
@@ -272,8 +273,12 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
           options,
       });
       return result?.valid === true
-        ? { valid: true }
-        : { valid: false, error: result?.error };
+        ? { valid: true, recoveryAction: result.recoveryAction }
+        : {
+          valid: false,
+          error: result?.error,
+          recoveryAction: result?.recoveryAction,
+        };
     } catch (error) {
       return { valid: false, error: String(error) };
     }

@@ -92,6 +92,11 @@
         "cancelled": "Cancelled",
         "loadFailed": "Failed to load session",
         "promptFailed": "Failed to send prompt",
+        "tokenDanceRecovery": {
+            "top_up_balance": "Your TokenDance balance is insufficient. Top up your account, then retry this request.",
+            "reauthorize_api_key": "Your TokenDance key is no longer valid. Open Models settings and authorize TokenDance again.",
+            "api_key_quota": "This TokenDance key reached its periodic quota. Wait for the quota to reset, or authorize TokenDance again."
+        },
         "unsupportedContent": "Unsupported content",
         "dismiss": "Dismiss",
         "image": "Image",

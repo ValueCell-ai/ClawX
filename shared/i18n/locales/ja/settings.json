@@ -126,7 +126,22 @@
       "step1": "以下の認証コードをコピーしてください。",
       "step2": "ブラウザでログインページを開いてください。",
       "step3": "コードを貼り付けてアクセスを承認してください。",
-      "requestingCode": "セキュアログインコードを取得中..."
+      "requestingCode": "セキュアログインコードを取得中...",
+      "completeBrowserLogin": "ブラウザでログインを完了",
+      "manualCallbackHelp": "認証ページを開いてログインを完了し、コールバック URL または認証コードを貼り付けてください。",
+      "openAuthorizationPage": "認証ページを開く",
+      "callbackPlaceholder": "コールバック URL またはコードを貼り付け",
+      "submitCode": "コードを送信",
+      "tokenDanceCancelled": "TokenDance の認証はキャンセルされました。",
+      "tokenDanceCallbackUnavailable": "TokenDance 用の安全なローカルコールバックを開始できませんでした。",
+      "tokenDanceTimedOut": "TokenDance の認証がタイムアウトしました。もう一度お試しください。",
+      "tokenDanceExchangeFailed": "TokenDance で認証コードを交換できませんでした（HTTP {{status}}）。",
+      "tokenDanceMissingKey": "TokenDance の認証は完了しましたが、API キーが返されませんでした。再認証してください。"
+    },
+    "recovery": {
+      "topUpBalance": "TokenDance の残高が不足しています。チャージしてから再試行してください。",
+      "reauthorizeApiKey": "TokenDance キーは無効です。このプロバイダーを削除し、TokenDance を再認証してください。",
+      "apiKeyQuota": "TokenDance キーが期間上限に達しました。上限のリセットを待つか、TokenDance を再認証してください。"
     }
   },
   "gateway": {
