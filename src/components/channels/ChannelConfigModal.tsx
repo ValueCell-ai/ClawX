@@ -374,6 +374,7 @@ export function ChannelConfigModal({
         return;
       }
 
+      let discoveredDomain: string | undefined;
       if (meta.connectionType === 'token' && shouldUseCredentialValidation) {
         const validationResponse = await hostApi.channels.validateCredentials(selectedType, configValues);
 
@@ -394,6 +395,9 @@ export function ChannelConfigModal({
           if (details.botUsername) warnings.push(`Bot: @${details.botUsername}`);
           if (details.guildName) warnings.push(`Server: ${details.guildName}`);
           if (details.channelName) warnings.push(`Channel: #${details.channelName}`);
+          if (typeof details.domain === 'string' && details.domain.trim()) {
+            discoveredDomain = details.domain.trim();
+          }
         }
 
         setValidationResult({
@@ -404,6 +408,9 @@ export function ChannelConfigModal({
       }
 
       const config: Record<string, unknown> = { ...configValues };
+      if (discoveredDomain) {
+        config.domain = discoveredDomain;
+      }
       const saveResult = await hostApi.channels.saveConfig({ channelType: selectedType, config, accountId: resolvedAccountId });
       if (!saveResult?.success) {
         throw new Error(saveResult?.error || 'Failed to save channel config');

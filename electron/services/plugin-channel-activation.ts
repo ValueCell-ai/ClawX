@@ -82,22 +82,36 @@ function isAccountSnapshotLive(
   return isChannelRuntimeConnected(snapshot);
 }
 
-export async function readPluginChannelLive(
+type PluginChannelStatusRead =
+  | { ok: true; live: boolean }
+  | { ok: false };
+
+async function readPluginChannelStatus(
   gateway: PluginChannelActivationGateway,
   storedChannelType: string,
   accountId: string,
-  rpcTimeoutMs = PLUGIN_CHANNEL_STATUS_RPC_TIMEOUT_MS,
-): Promise<boolean> {
+  rpcTimeoutMs: number,
+): Promise<PluginChannelStatusRead> {
   try {
     const status = await gateway.rpc<PluginChannelActivationStatusPayload>(
       'channels.status',
       { probe: false },
       rpcTimeoutMs,
     );
-    return isAccountSnapshotLive(status?.channelAccounts?.[storedChannelType], accountId);
+    return { ok: true, live: isAccountSnapshotLive(status?.channelAccounts?.[storedChannelType], accountId) };
   } catch {
-    return false;
+    return { ok: false };
   }
+}
+
+export async function readPluginChannelLive(
+  gateway: PluginChannelActivationGateway,
+  storedChannelType: string,
+  accountId: string,
+  rpcTimeoutMs = PLUGIN_CHANNEL_STATUS_RPC_TIMEOUT_MS,
+): Promise<boolean> {
+  const read = await readPluginChannelStatus(gateway, storedChannelType, accountId, rpcTimeoutMs);
+  return read.ok && read.live;
 }
 
 export async function ensurePluginChannelRuntimeActivated(
@@ -122,19 +136,34 @@ export async function ensurePluginChannelRuntimeActivated(
     return 'unavailable';
   }
 
-  if (initialState === 'running' && await readPluginChannelLive(gateway, storedChannelType, resolvedAccountId, rpcTimeoutMs)) {
-    return 'already-live';
+  let sawSuccessfulStatus = false;
+  const initialRead = await readPluginChannelStatus(gateway, storedChannelType, resolvedAccountId, rpcTimeoutMs);
+  if (initialRead.ok) {
+    sawSuccessfulStatus = true;
+    if (initialState === 'running' && initialRead.live) {
+      return 'already-live';
+    }
   }
 
   const hotDeadline = now() + hotWaitMs;
   while (now() < hotDeadline) {
     await sleep(pollIntervalMs);
-    if (await readPluginChannelLive(gateway, storedChannelType, resolvedAccountId, rpcTimeoutMs)) {
+    const hotRead = await readPluginChannelStatus(gateway, storedChannelType, resolvedAccountId, rpcTimeoutMs);
+    if (!hotRead.ok) continue;
+    sawSuccessfulStatus = true;
+    if (hotRead.live) {
       logger.info(
         `[plugin-channel-activation] hot-activated channel=${storedChannelType} account=${resolvedAccountId}`,
       );
       return 'hot-activated';
     }
+  }
+
+  if (!sawSuccessfulStatus) {
+    logger.info(
+      `[plugin-channel-activation] skip restart channel=${storedChannelType} account=${resolvedAccountId} reason=status-rpc-failed`,
+    );
+    return 'unavailable';
   }
 
   const statusAfterWait = gateway.getStatus();

@@ -824,6 +824,26 @@ describe('host services', () => {
       };
     }
 
+    it('keeps a probe failure visible even when a cached snapshot reports connected', async () => {
+      configureFeishu();
+      const rpc = vi.fn().mockImplementation(async (_method: string, params: { probe?: boolean }) =>
+        params.probe
+          ? feishuAccount({ lastError: 'Request failed with status code 400', probe: { ok: false } })
+          : feishuAccount({ connected: true }),
+      );
+      const { createChannelsApi } = await import('@electron/services/channels-api');
+      const channelsApi = createChannelsApi({ gatewayManager: createGatewayManager(rpc) as never });
+
+      await channelsApi.accounts({ mode: 'runtime', probe: true });
+      const cached = await channelsApi.accounts({ mode: 'runtime' });
+      expect(rpc).toHaveBeenLastCalledWith('channels.status', { probe: false }, 8000);
+      expect(cached.channels[0]).toMatchObject({
+        channelType: 'feishu',
+        status: 'error',
+        accounts: [{ accountId: 'default', status: 'error', lastError: 'Request failed with status code 400' }],
+      });
+    });
+
     it('keeps a probe failure visible on later cached snapshots until a probe succeeds', async () => {
       configureFeishu();
       const rpc = vi.fn().mockImplementation(async (_method: string, params: { probe?: boolean }) =>

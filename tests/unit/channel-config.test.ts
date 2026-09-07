@@ -666,18 +666,53 @@ describe('Feishu credential validation', () => {
       appSecret: 'wrong-secret',
     });
 
-    expect(proxyAwareFetchMock).toHaveBeenCalledWith(
+    expect(proxyAwareFetchMock).toHaveBeenNthCalledWith(
+      1,
       'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal',
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ app_id: 'cli_a8cf7d97fbb8d00d', app_secret: 'wrong-secret' }),
       }),
     );
+    expect(proxyAwareFetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal',
+      expect.anything(),
+    );
     expect(result).toMatchObject({
       valid: false,
       errorCodes: [{ code: 'feishuRejected', params: { error: 'app_id or app_secret is invalid' } }],
     });
     expect(result.errors[0]).toContain('app_id or app_secret is invalid');
+  });
+
+  it('accepts Lark credentials when Feishu rejects and the Larksuite token request succeeds', async () => {
+    proxyAwareFetchMock
+      .mockResolvedValueOnce(jsonResponse({ code: 10003, msg: 'app_id or app_secret is invalid' }, 400))
+      .mockResolvedValueOnce(jsonResponse({ code: 0, msg: 'ok', tenant_access_token: 't-lark', expire: 7200 }));
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    const result = await validateChannelCredentials('feishu', {
+      appId: 'cli_a8cf7d97fbb8d00d',
+      appSecret: 'lark-secret',
+    });
+
+    expect(proxyAwareFetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal',
+      expect.anything(),
+    );
+    expect(proxyAwareFetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal',
+      expect.anything(),
+    );
+    expect(result).toEqual({
+      valid: true,
+      errors: [],
+      warnings: [],
+      details: { domain: 'lark' },
+    });
   });
 
   it('accepts credentials once Feishu issues a tenant access token and honours the lark domain', async () => {
@@ -694,7 +729,12 @@ describe('Feishu credential validation', () => {
       'https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal',
       expect.anything(),
     );
-    expect(result).toEqual({ valid: true, errors: [], warnings: [] });
+    expect(result).toEqual({
+      valid: true,
+      errors: [],
+      warnings: [],
+      details: { domain: 'lark' },
+    });
   });
 
   it('reports a connection error instead of throwing when Feishu is unreachable', async () => {

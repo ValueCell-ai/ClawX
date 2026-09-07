@@ -158,7 +158,7 @@ describe('ensurePluginChannelRuntimeActivated', () => {
     expect(restart).not.toHaveBeenCalled();
   });
 
-  it('treats RPC failures as not yet live instead of throwing', async () => {
+  it('does not restart when every channels.status read fails', async () => {
     const { gateway, restart } = createGateway({
       rpcError: new Error('Gateway service restart'),
     });
@@ -171,6 +171,32 @@ describe('ensurePluginChannelRuntimeActivated', () => {
       },
       hotWaitMs: 500,
       pollIntervalMs: 250,
+      postRestartWaitMs: 250,
+    })).resolves.toBe('unavailable');
+    expect(restart).not.toHaveBeenCalled();
+  });
+
+  it('still restarts after a successful empty status even if earlier reads failed', async () => {
+    let calls = 0;
+    const restart = vi.fn().mockResolvedValue(undefined);
+    const gateway = {
+      getStatus: vi.fn(() => ({ state: 'running', gatewayReady: true })),
+      rpc: vi.fn().mockImplementation(async () => {
+        calls += 1;
+        if (calls < 2) throw new Error('RPC timeout: channels.status');
+        return { channelAccounts: {} };
+      }),
+      restart,
+    };
+    let now = 0;
+
+    await expect(ensurePluginChannelRuntimeActivated(gateway, 'dingtalk', 'default', {
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms;
+      },
+      hotWaitMs: 1000,
+      pollIntervalMs: 500,
       postRestartWaitMs: 250,
     })).resolves.toBe('restarted');
     expect(restart).toHaveBeenCalledTimes(1);

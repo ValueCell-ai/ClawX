@@ -311,13 +311,14 @@ function overlayRememberedProbeFailures(status: GatewayChannelStatusPayload | nu
       const key = channelProbeFailureKey(channelType, resolveRuntimeAccountId(account));
       const remembered = channelProbeFailures.get(key);
       if (!remembered) continue;
-      if (account.connected === true) {
-        channelProbeFailures.delete(key);
-        continue;
-      }
       if (typeof account.lastError === 'string' && account.lastError.trim()) continue;
       account.lastError = remembered.lastError;
       account.probe = { ok: false, error: remembered.lastError };
+      // A cached snapshot can still carry a stale connected flag. Keep the
+      // remembered failure and do not let that flag look like a recovery.
+      if (account.connected === true) {
+        account.connected = false;
+      }
     }
   }
 }

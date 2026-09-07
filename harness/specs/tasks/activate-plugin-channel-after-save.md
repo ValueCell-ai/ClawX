@@ -47,7 +47,7 @@ requiredTests:
   - tests/e2e/channels-plugin-activation-status.spec.ts
 acceptance:
   - ensurePluginChannelRuntimeActivated returns already-live without restart when channels.status already has the account.
-  - The activator polls for a short window and does not restart while Gateway is reconnecting, starting, or running with gatewayReady still false.
+  - The activator polls for a short window and does not restart while Gateway is reconnecting, starting, or running with gatewayReady still false, or when every channels.status read failed.
   - A still-missing account after the wait window causes exactly one gatewayManager.restart(); a rejected restart is logged and returns unavailable instead of throwing.
   - Changed plugin saveConfig awaits the activator and does not call debouncedRestart(0) when peer link repair succeeds.
   - WeChat QR success emits only after the activator finishes and never calls scheduleGatewayRestartForPluginChannel.

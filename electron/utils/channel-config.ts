@@ -1524,11 +1524,30 @@ export async function validateChannelCredentials(
     }
 }
 
+const FEISHU_API_ORIGINS = {
+    feishu: 'https://open.feishu.cn',
+    lark: 'https://open.larksuite.com',
+} as const;
+
+type FeishuApiDomain = keyof typeof FEISHU_API_ORIGINS;
+
 export function resolveFeishuApiOrigin(domain: unknown): string {
+    return FEISHU_API_ORIGINS[resolveFeishuApiDomain(domain)];
+}
+
+function resolveFeishuApiDomain(domain: unknown): FeishuApiDomain {
     if (typeof domain === 'string' && domain.trim().toLowerCase() === 'lark') {
-        return 'https://open.larksuite.com';
+        return 'lark';
     }
-    return 'https://open.feishu.cn';
+    return 'feishu';
+}
+
+/** New accounts have no domain field; try Feishu first, then Lark. */
+function feishuValidationDomains(domain: unknown): FeishuApiDomain[] {
+    if (typeof domain === 'string' && domain.trim()) {
+        return [resolveFeishuApiDomain(domain)];
+    }
+    return ['feishu', 'lark'];
 }
 
 function feishuValidationFailure(
@@ -1538,6 +1557,38 @@ function feishuValidationFailure(
     warnings: string[] = [],
 ): CredentialValidationResult {
     return { valid: false, errors: [message], warnings, errorCodes: [{ code, params }] };
+}
+
+async function requestFeishuTenantAccessToken(
+    origin: string,
+    appId: string,
+    appSecret: string,
+): Promise<
+    | { ok: true }
+    | { ok: false; kind: 'rejected'; reason: string }
+    | { ok: false; kind: 'connection'; reason: string }
+> {
+    try {
+        const response = await proxyAwareFetch(`${origin}/open-apis/auth/v3/tenant_access_token/internal`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+            code?: number;
+            msg?: string;
+            tenant_access_token?: string;
+        };
+        if (!response.ok || payload.code !== 0 || !payload.tenant_access_token) {
+            const reason = payload.msg?.trim()
+                || (typeof payload.code === 'number' ? `code ${payload.code}` : `HTTP ${response.status}`);
+            return { ok: false, kind: 'rejected', reason };
+        }
+        return { ok: true };
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return { ok: false, kind: 'connection', reason };
+    }
 }
 
 /**
@@ -1562,37 +1613,37 @@ async function validateFeishuCredentials(
         );
     }
 
-    const origin = resolveFeishuApiOrigin(config.domain);
-    try {
-        const response = await proxyAwareFetch(`${origin}/open-apis/auth/v3/tenant_access_token/internal`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
-        });
-        const payload = (await response.json().catch(() => ({}))) as {
-            code?: number;
-            msg?: string;
-            tenant_access_token?: string;
-        };
-        if (!response.ok || payload.code !== 0 || !payload.tenant_access_token) {
-            const reason = payload.msg?.trim()
-                || (typeof payload.code === 'number' ? `code ${payload.code}` : `HTTP ${response.status}`);
-            return feishuValidationFailure(
-                'feishuRejected',
-                `Feishu rejected the credentials: ${reason}`,
-                { error: reason },
-            );
+    let firstRejection: CredentialValidationResult | undefined;
+    let firstConnectionError: CredentialValidationResult | undefined;
+    for (const domain of feishuValidationDomains(config.domain)) {
+        const result = await requestFeishuTenantAccessToken(FEISHU_API_ORIGINS[domain], appId, appSecret);
+        if (result.ok) {
+            return {
+                valid: true,
+                errors: [],
+                warnings: [],
+                ...(domain === 'lark' ? { details: { domain: 'lark' } } : {}),
+            };
         }
-    } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        return feishuValidationFailure(
+        if (result.kind === 'rejected') {
+            firstRejection ??= feishuValidationFailure(
+                'feishuRejected',
+                `Feishu rejected the credentials: ${result.reason}`,
+                { error: result.reason },
+            );
+            continue;
+        }
+        firstConnectionError ??= feishuValidationFailure(
             'feishuConnectionError',
-            `Connection error when validating Feishu credentials: ${reason}`,
-            { error: reason },
+            `Connection error when validating Feishu credentials: ${result.reason}`,
+            { error: result.reason },
         );
     }
 
-    return { valid: true, errors: [], warnings: [] };
+    return firstRejection ?? firstConnectionError ?? feishuValidationFailure(
+        'feishuConnectionError',
+        'Connection error when validating Feishu credentials',
+    );
 }
 
 async function validateDiscordCredentials(

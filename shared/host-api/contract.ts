@@ -263,6 +263,8 @@ export type ChannelCredentialValidationResult = HostSuccess & {
     botUsername?: string;
     guildName?: string;
     channelName?: string;
+    /** Discovered Feishu vs Lark origin when the form does not collect `domain`. */
+    domain?: string;
   };
 };
 export type ChannelSaveConfigPayload = ChannelTypePayload & {
