@@ -330,6 +330,15 @@ function shouldRecheckRememberedProbeFailures(now: number): boolean {
   return false;
 }
 
+/** Advance the recheck clock so a failed upgrade does not probe on every poll. */
+function markRememberedProbeFailuresRechecked(now: number): void {
+  for (const [key, failure] of channelProbeFailures.entries()) {
+    if (now - failure.recordedAt >= CHANNEL_PROBE_FAILURE_RECHECK_MS) {
+      channelProbeFailures.set(key, { ...failure, recordedAt: now });
+    }
+  }
+}
+
 /** Credentials changed or the account is gone: the remembered probe result no longer applies. */
 export function forgetChannelProbeFailures(storedChannelType: string, accountId?: string): void {
   if (accountId) {
@@ -364,6 +373,9 @@ export async function buildChannelAccountsView(
   const requestedProbe = options?.probe === true;
   const recheckProbe = !skipRuntime && !requestedProbe && shouldRecheckRememberedProbeFailures(startedAt);
   const probe = requestedProbe || recheckProbe;
+  if (recheckProbe) {
+    markRememberedProbeFailuresRechecked(startedAt);
+  }
   if (!skipRuntime) {
     try {
       const rpcStartedAt = Date.now();
@@ -1241,7 +1253,8 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
     validateCredentials: async (payload) => {
       const channelType = requireString(payload, 'channelType');
       const config = isRecord(payload) && isRecord(payload.config) ? payload.config as Record<string, string> : {};
-      return { success: true, ...(await validateChannelCredentials(channelType, config)) };
+      const accountId = optionalString(payload, 'accountId');
+      return { success: true, ...(await validateChannelCredentials(channelType, config, { accountId })) };
     },
     saveConfig: async (payload) => {
       const channelType = requireString(payload, 'channelType');

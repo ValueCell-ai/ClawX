@@ -102,6 +102,7 @@
         "validationErrors": {
             "feishuAppIdRequired": "App ID is required.",
             "feishuAppSecretRequired": "App Secret is required.",
+            "feishuAppSecretReenter": "Re-enter the App Secret to update this account. The stored secret is hidden while Gateway is running.",
             "feishuAppSecretEqualsAppId": "App Secret is identical to App ID. Copy the App Secret from Feishu Developer Console → Credentials & Basic Info.",
             "feishuRejected": "Feishu rejected the credentials: {{error}}. Check App ID / App Secret in the Developer Console.",
             "feishuConnectionError": "Could not reach Feishu to verify the credentials: {{error}}"

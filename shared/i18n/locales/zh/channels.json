@@ -102,6 +102,7 @@
         "validationErrors": {
             "feishuAppIdRequired": "请填写 App ID。",
             "feishuAppSecretRequired": "请填写 App Secret。",
+            "feishuAppSecretReenter": "请重新输入 App Secret 后再更新。Gateway 运行时不会回显已保存的密钥。",
             "feishuAppSecretEqualsAppId": "App Secret 与 App ID 相同。请到飞书开发者后台 → 凭证与基础信息 复制 App Secret。",
             "feishuRejected": "飞书拒绝了该凭证：{{error}}。请核对开发者后台中的 App ID / App Secret。",
             "feishuConnectionError": "无法连接飞书验证凭证：{{error}}"

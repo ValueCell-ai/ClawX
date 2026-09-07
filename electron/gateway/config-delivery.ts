@@ -49,7 +49,7 @@ let transactionTail: Promise<void> = Promise.resolve();
 const activeMutation = new AsyncLocalStorage<ActiveMutationContext>();
 
 /** Placeholder OpenClaw substitutes for sensitive values in `config.get` snapshots. */
-const OPENCLAW_REDACTED_SENTINEL = '__OPENCLAW_REDACTED__';
+export const OPENCLAW_REDACTED_SENTINEL = '__OPENCLAW_REDACTED__';
 /** `meta` fields OpenClaw stamps automatically on every config write. */
 const OPENCLAW_AUTO_MANAGED_META_FIELDS = ['lastTouchedAt', 'lastTouchedVersion'] as const;
 
@@ -367,6 +367,12 @@ export function mutateOpenClawConfig(
     () => undefined,
   );
   return transaction;
+}
+
+/** Always read the on-disk config, never a redacted `config.get` snapshot. */
+export async function readDurableOpenClawConfig(): Promise<OpenClawConfig> {
+  const snapshot = await readFileConfig(resolveOpenClawConfigPath());
+  return snapshot.config;
 }
 
 export function readOpenClawConfigSnapshot(): Promise<OpenClawConfigSnapshot> {

@@ -8,7 +8,12 @@ import { access, mkdir, readFile, writeFile, readdir, stat, rm } from 'fs/promis
 import { constants } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import { mutateOpenClawConfig, readOpenClawConfigSnapshot } from '../gateway/config-delivery';
+import {
+    mutateOpenClawConfig,
+    OPENCLAW_REDACTED_SENTINEL,
+    readDurableOpenClawConfig,
+    readOpenClawConfigSnapshot,
+} from '../gateway/config-delivery';
 import { getOpenClawResolvedDir, resolveOpenClawConfigPath } from './paths';
 import * as logger from './logger';
 import { proxyAwareFetch } from './proxy-fetch';
@@ -1510,7 +1515,8 @@ export interface CredentialValidationResult {
 
 export async function validateChannelCredentials(
     channelType: string,
-    config: Record<string, string>
+    config: Record<string, string>,
+    options?: { accountId?: string },
 ): Promise<CredentialValidationResult> {
     switch (resolveStoredChannelType(channelType)) {
         case 'discord':
@@ -1518,7 +1524,7 @@ export async function validateChannelCredentials(
         case 'telegram':
             return validateTelegramCredentials(config);
         case 'feishu':
-            return validateFeishuCredentials(config);
+            return validateFeishuCredentials(config, options);
         default:
             return { valid: true, errors: [], warnings: ['No online validation available for this channel type.'] };
     }
@@ -1548,6 +1554,46 @@ function feishuValidationDomains(domain: unknown): FeishuApiDomain[] {
         return [resolveFeishuApiDomain(domain)];
     }
     return ['feishu', 'lark'];
+}
+
+function pickPreservedFeishuAppSecret(account: ChannelConfigData | undefined): string | undefined {
+    const secret = typeof account?.appSecret === 'string' ? account.appSecret.trim() : '';
+    if (!secret || secret === OPENCLAW_REDACTED_SENTINEL) return undefined;
+    return secret;
+}
+
+/**
+ * `config.get` redacts appSecret to `__OPENCLAW_REDACTED__` while Gateway is
+ * running. Validation must use the durable file so an edit that leaves the
+ * secret untouched does not send the placeholder to Feishu.
+ */
+async function resolvePreservedFeishuAppSecret(
+    appId: string,
+    accountId?: string,
+): Promise<string | undefined> {
+    try {
+        const config = await readDurableOpenClawConfig();
+        const section = config.channels && typeof config.channels === 'object' && !Array.isArray(config.channels)
+            ? (config.channels as Record<string, ChannelConfigData>).feishu
+            : undefined;
+        if (!section || typeof section !== 'object' || Array.isArray(section)) return undefined;
+
+        const accounts = getChannelAccountsMap(section);
+        if (accountId) {
+            const fromAccount = pickPreservedFeishuAppSecret(accounts?.[accountId]);
+            if (fromAccount) return fromAccount;
+        }
+        for (const account of Object.values(accounts ?? {})) {
+            const candidateAppId = typeof account.appId === 'string' ? account.appId.trim() : '';
+            if (candidateAppId === appId) {
+                const fromMatch = pickPreservedFeishuAppSecret(account);
+                if (fromMatch) return fromMatch;
+            }
+        }
+        return pickPreservedFeishuAppSecret(accounts?.default) ?? pickPreservedFeishuAppSecret(section);
+    } catch {
+        return undefined;
+    }
 }
 
 function feishuValidationFailure(
@@ -1599,12 +1645,23 @@ async function requestFeishuTenantAccessToken(
  * rejected in the modal instead.
  */
 async function validateFeishuCredentials(
-    config: Record<string, string>
+    config: Record<string, string>,
+    options?: { accountId?: string },
 ): Promise<CredentialValidationResult> {
     const appId = config.appId?.trim();
-    const appSecret = config.appSecret?.trim();
+    let appSecret = config.appSecret?.trim();
 
     if (!appId) return feishuValidationFailure('feishuAppIdRequired', 'App ID is required');
+    if (appSecret === OPENCLAW_REDACTED_SENTINEL) {
+        const preserved = await resolvePreservedFeishuAppSecret(appId, options?.accountId);
+        if (!preserved) {
+            return feishuValidationFailure(
+                'feishuAppSecretReenter',
+                'Re-enter the App Secret to update this account. The stored secret is hidden while Gateway is running.',
+            );
+        }
+        appSecret = preserved;
+    }
     if (!appSecret) return feishuValidationFailure('feishuAppSecretRequired', 'App Secret is required');
     if (appSecret === appId) {
         return feishuValidationFailure(

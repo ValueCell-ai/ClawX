@@ -248,6 +248,7 @@ export type ChannelFormValuesResult = HostSuccess & {
 };
 export type ChannelCredentialValidationPayload = ChannelTypePayload & {
   config: Record<string, unknown>;
+  accountId?: string;
 };
 export type ChannelCredentialValidationErrorCode = {
   code: string;

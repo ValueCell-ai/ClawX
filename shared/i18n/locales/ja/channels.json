@@ -102,6 +102,7 @@
         "validationErrors": {
             "feishuAppIdRequired": "App ID を入力してください。",
             "feishuAppSecretRequired": "App Secret を入力してください。",
+            "feishuAppSecretReenter": "このアカウントを更新するには App Secret を再入力してください。Gateway 実行中は保存済みのシークレットは表示されません。",
             "feishuAppSecretEqualsAppId": "App Secret が App ID と同一です。Feishu 開発者コンソール → 認証情報と基本情報 から App Secret をコピーしてください。",
             "feishuRejected": "Feishu が認証情報を拒否しました: {{error}}。開発者コンソールの App ID / App Secret を確認してください。",
             "feishuConnectionError": "Feishu に接続して認証情報を確認できませんでした: {{error}}"

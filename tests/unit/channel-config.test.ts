@@ -619,6 +619,7 @@ describe('Feishu credential validation', () => {
   beforeEach(async () => {
     vi.resetAllMocks();
     vi.resetModules();
+    await rm(testHome, { recursive: true, force: true });
   });
 
   function jsonResponse(body: unknown, status = 200): Response {
@@ -734,6 +735,50 @@ describe('Feishu credential validation', () => {
       errors: [],
       warnings: [],
       details: { domain: 'lark' },
+    });
+  });
+
+  it('validates a redacted App Secret against the durable file instead of sending the placeholder', async () => {
+    await writeOpenClawJson({
+      channels: {
+        feishu: {
+          enabled: true,
+          accounts: {
+            default: { appId: 'cli_a8cf7d97fbb8d00d', appSecret: 'real-secret' },
+          },
+        },
+      },
+    });
+    proxyAwareFetchMock.mockResolvedValue(jsonResponse({ code: 0, msg: 'ok', tenant_access_token: 't-abc', expire: 7200 }));
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    const result = await validateChannelCredentials('feishu', {
+      appId: 'cli_a8cf7d97fbb8d00d',
+      appSecret: '__OPENCLAW_REDACTED__',
+    }, { accountId: 'default' });
+
+    expect(proxyAwareFetchMock).toHaveBeenCalledWith(
+      'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ app_id: 'cli_a8cf7d97fbb8d00d', app_secret: 'real-secret' }),
+      }),
+    );
+    expect(result.valid).toBe(true);
+  });
+
+  it('asks the user to re-enter the App Secret when the redacted placeholder cannot be resolved', async () => {
+    const { validateChannelCredentials } = await import('@electron/utils/channel-config');
+
+    const result = await validateChannelCredentials('feishu', {
+      appId: 'cli_a8cf7d97fbb8d00d',
+      appSecret: '__OPENCLAW_REDACTED__',
+    });
+
+    expect(proxyAwareFetchMock).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      valid: false,
+      errorCodes: [{ code: 'feishuAppSecretReenter' }],
     });
   });
 

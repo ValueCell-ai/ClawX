@@ -901,6 +901,35 @@ describe('host services', () => {
       expect(rpc).toHaveBeenLastCalledWith('channels.status', { probe: false }, 8000);
     });
 
+    it('backs off automatic re-probes when the upgraded channels.status call fails', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-09-07T10:35:00.000Z'));
+      configureFeishu();
+      const rpc = vi.fn().mockImplementation(async (_method: string, params: { probe?: boolean }) =>
+        params.probe
+          ? feishuAccount({ lastError: 'Request failed with status code 400', probe: { ok: false } })
+          : feishuAccount(),
+      );
+      const { createChannelsApi } = await import('@electron/services/channels-api');
+      const channelsApi = createChannelsApi({ gatewayManager: createGatewayManager(rpc) as never });
+
+      await channelsApi.accounts({ mode: 'runtime', probe: true });
+      rpc.mockRejectedValueOnce(new Error('Gateway not connected'));
+      vi.setSystemTime(new Date('2026-09-07T10:35:31.000Z'));
+      await channelsApi.accounts({ mode: 'runtime' });
+      expect(rpc).toHaveBeenLastCalledWith('channels.status', { probe: true }, 5000);
+
+      rpc.mockImplementation(async () => feishuAccount({ probe: { ok: true } }));
+      vi.setSystemTime(new Date('2026-09-07T10:35:40.000Z'));
+      await channelsApi.accounts({ mode: 'runtime' });
+      expect(rpc).toHaveBeenLastCalledWith('channels.status', { probe: false }, 8000);
+
+      vi.setSystemTime(new Date('2026-09-07T10:36:02.000Z'));
+      const recovered = await channelsApi.accounts({ mode: 'runtime' });
+      expect(rpc).toHaveBeenLastCalledWith('channels.status', { probe: true }, 5000);
+      expect(recovered.channels[0]).toMatchObject({ channelType: 'feishu', status: 'connected' });
+    });
+
     it('forgets a remembered failure when the account is saved again or deleted', async () => {
       configureFeishu();
       getChannelFormValuesMock.mockResolvedValue({ appId: 'cli_app', appSecret: 'cli_app' });

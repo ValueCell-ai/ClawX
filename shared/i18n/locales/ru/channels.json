@@ -102,6 +102,7 @@
         "validationErrors": {
             "feishuAppIdRequired": "Укажите App ID.",
             "feishuAppSecretRequired": "Укажите App Secret.",
+            "feishuAppSecretReenter": "Введите App Secret ещё раз, чтобы обновить аккаунт. Сохранённый секрет скрыт, пока Gateway запущен.",
             "feishuAppSecretEqualsAppId": "App Secret совпадает с App ID. Скопируйте App Secret в консоли разработчика Feishu → Credentials & Basic Info.",
             "feishuRejected": "Feishu отклонил учётные данные: {{error}}. Проверьте App ID / App Secret в консоли разработчика.",
             "feishuConnectionError": "Не удалось связаться с Feishu для проверки учётных данных: {{error}}"

@@ -33,8 +33,12 @@ vi.mock('@/lib/host-api', () => ({
       deleteConfig: (channelType: string, accountId?: string) => {
         return hostApiCallMock('channels.deleteConfig', { channelType, accountId });
       },
-      validateCredentials: (channelType: string, config: Record<string, unknown>) => (
-        hostApiCallMock('channels.validateCredentials', { channelType, config })
+      validateCredentials: (channelType: string, config: Record<string, unknown>, accountId?: string) => (
+        hostApiCallMock('channels.validateCredentials', {
+          channelType,
+          config,
+          ...(accountId ? { accountId } : {}),
+        })
       ),
       saveBinding: (input: unknown) => hostApiCallMock('channels.saveBinding', input),
       deleteBinding: (input: unknown) => hostApiCallMock('channels.deleteBinding', input),

@@ -309,7 +309,7 @@ export function ChannelConfigModal({
     setValidationResult(null);
 
     try {
-      const result = await hostApi.channels.validateCredentials(selectedType, configValues);
+      const result = await hostApi.channels.validateCredentials(selectedType, configValues, resolvedAccountId);
 
       const warnings = result.warnings || [];
       if (result.valid && result.details) {
@@ -376,7 +376,11 @@ export function ChannelConfigModal({
 
       let discoveredDomain: string | undefined;
       if (meta.connectionType === 'token' && shouldUseCredentialValidation) {
-        const validationResponse = await hostApi.channels.validateCredentials(selectedType, configValues);
+        const validationResponse = await hostApi.channels.validateCredentials(
+          selectedType,
+          configValues,
+          resolvedAccountId,
+        );
 
         if (!validationResponse.valid) {
           const errors = localizeValidationErrors(validationResponse);

@@ -45,9 +45,9 @@ requiredTests:
   - tests/e2e/channels-feishu-credential-validation.spec.ts
 acceptance:
   - validateChannelCredentials('feishu') returns valid=false with errorCodes feishuAppIdRequired / feishuAppSecretRequired / feishuAppSecretEqualsAppId before any network call.
-  - validateChannelCredentials('feishu') POSTs to <origin>/open-apis/auth/v3/tenant_access_token/internal via proxyAwareFetch, honours domain=lark, tries open.feishu.cn then open.larksuite.com when domain is unset, and maps a non-zero code to feishuRejected and a thrown fetch to feishuConnectionError without throwing.
+  - validateChannelCredentials('feishu') POSTs to <origin>/open-apis/auth/v3/tenant_access_token/internal via proxyAwareFetch, honours domain=lark, tries open.feishu.cn then open.larksuite.com when domain is unset, substitutes a durable-file App Secret when the form value is __OPENCLAW_REDACTED__, and maps a non-zero code to feishuRejected and a thrown fetch to feishuConnectionError without throwing.
   - ChannelConfigModal runs credential validation for every token channel, localizes errorCodes through channels:dialog.validationErrors.*, and does not call saveConfig when validation fails.
-  - buildChannelAccountsView remembers per-account probe failures from probe=1 snapshots, overlays lastError on probe=0 snapshots, upgrades a cached request to probe=1 once a remembered failure is at least 30 seconds old, and clears entries on a successful probe, saveConfig, or deleteConfig.
+  - buildChannelAccountsView remembers per-account probe failures from probe=1 snapshots, overlays lastError on probe=0 snapshots, upgrades a cached request to probe=1 once a remembered failure is at least 30 seconds old, records that recheck even when the RPC fails so the next polls stay cached, and clears entries on a successful probe, saveConfig, or deleteConfig.
 docs:
   required: false
 ---
