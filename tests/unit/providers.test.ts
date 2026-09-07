@@ -4,8 +4,10 @@ import {
   PROVIDER_TYPES,
   PROVIDER_TYPE_INFO,
   getProviderDocsUrl,
+  getProviderIconUrl,
   resolveProviderApiKeyForSave,
   resolveProviderModelForSave,
+  shouldInvertInDark,
   shouldShowProviderModelId,
 } from '@/lib/providers';
 import {
@@ -49,6 +51,8 @@ describe('provider metadata', () => {
         defaultModelId: 'qwen3.8-max',
       }),
     ]));
+    expect(getProviderIconUrl('tokendance')).toContain('tokendance.svg');
+    expect(shouldInvertInDark('tokendance')).toBe(false);
     expect(getProviderEnvVar('tokendance')).toBe('TOKENDANCE_API_KEY');
     expect(getProviderConfig('tokendance')).toEqual({
       baseUrl: 'https://tokendance.space/gateway/v1',

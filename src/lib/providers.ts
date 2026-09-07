@@ -281,8 +281,8 @@ export function getProviderIconUrl(type: ProviderType | string): string | undefi
 }
 
 /** Whether a provider's logo needs CSS invert in dark mode (all logos are monochrome) */
-export function shouldInvertInDark(_type: ProviderType | string): boolean {
-  return true;
+export function shouldInvertInDark(type: ProviderType | string): boolean {
+  return type !== 'tokendance';
 }
 
 /** Provider list shown in the Setup wizard */
