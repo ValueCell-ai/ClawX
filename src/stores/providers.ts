@@ -189,6 +189,21 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   deleteProvider: async (providerId) => get().removeAccount(providerId),
 
   removeAccount: async (accountId) => {
+    const previous = {
+      accounts: get().accounts,
+      statuses: get().statuses,
+      defaultAccountId: get().defaultAccountId,
+    };
+
+    // Remove the card before Main finishes OpenClaw/keychain cleanup. Those
+    // operations can take a moment but should not make the UI feel blocked.
+    set((state) => ({
+      accounts: state.accounts.filter((account) => account.id !== accountId),
+      statuses: state.statuses.filter((status) => status.id !== accountId),
+      defaultAccountId: state.defaultAccountId === accountId ? null : state.defaultAccountId,
+      error: null,
+    }));
+
     try {
       const result = await hostApi.providers.deleteAccount(accountId);
 
@@ -196,8 +211,22 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
         throw new Error(result.error || 'Failed to delete provider account');
       }
 
-      await get().refreshProviderSnapshot();
+      // Reconcile silently so the optimistic removal is not replaced by a
+      // full-page loading state while Main chooses a replacement default.
+      try {
+        const snapshot = await fetchProviderSnapshot();
+        set({
+          statuses: snapshot.statuses ?? [],
+          accounts: snapshot.accounts ?? [],
+          vendors: snapshot.vendors ?? [],
+          defaultAccountId: snapshot.defaultAccountId ?? null,
+          loading: false,
+        });
+      } catch (refreshError) {
+        set({ error: String(refreshError), loading: false });
+      }
     } catch (error) {
+      set({ ...previous, loading: false, error: String(error) });
       console.error('Failed to delete account:', error);
       throw error;
     }

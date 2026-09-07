@@ -66,7 +66,7 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('provider-set-default-deepseek-replacement-e2e')).toHaveCount(0);
   });
 
-  test('shows a saved provider and removes it cleanly after deletion', async ({ page }) => {
+  test('shows a saved provider and removes it immediately while deletion finishes', async ({ electronApp, page }) => {
     await completeSetup(page);
     await seedTestProvider(page);
 
@@ -74,11 +74,32 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('providers-settings')).toBeVisible();
     await expect(page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`)).toContainText(TEST_PROVIDER_LABEL);
 
+    await electronApp.evaluate(async ({ app: _app }) => {
+      const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+      const handlers = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers;
+      const originalHostInvoke = handlers?.get('host:invoke');
+      if (!originalHostInvoke) throw new Error('host:invoke handler unavailable');
+
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', async (event: unknown, request: {
+        module?: string;
+        action?: string;
+      }) => {
+        if (request.module === 'providers' && request.action === 'deleteAccount') {
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+        }
+        return originalHostInvoke(event, request);
+      });
+    });
+
     await page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`).hover();
     await page.getByTestId(`provider-delete-${TEST_PROVIDER_ID}`).click();
 
-    await expect(page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`)).toHaveCount(0);
+    await expect(page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`)).toHaveCount(0, { timeout: 500 });
     await expect(page.getByText(TEST_PROVIDER_LABEL)).toHaveCount(0);
+    await expect(page.getByText('Provider deleted')).toBeVisible();
   });
 
   test('does not redisplay a deleted provider after relaunch', async ({ electronApp, launchElectronApp, page }) => {

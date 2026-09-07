@@ -47,8 +47,14 @@ describe('TokenDance OAuth', () => {
         expect(callback.hostname).toBe('127.0.0.1');
         expect(Number(callback.port)).toBeGreaterThan(0);
         callback.searchParams.set('code', 'one-time-code');
-        const response = await fetch(callback);
+        const response = await fetch(callback, {
+          headers: { 'Accept-Language': 'zh-CN' },
+        });
         expect(response.status).toBe(200);
+        expect(response.headers.get('cache-control')).toBe('no-store');
+        const html = await response.text();
+        expect(html).toContain('授权成功');
+        expect(html).toContain('TokenDance 已成功连接到 ClawX。');
       },
     });
 

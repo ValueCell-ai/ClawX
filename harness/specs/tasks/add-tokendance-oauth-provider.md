@@ -40,13 +40,16 @@ touchedAreas:
   - tests/unit/providers.test.ts
   - tests/unit/provider-validation.test.ts
   - tests/unit/provider-runtime-sync.test.ts
+  - tests/unit/provider-store-init.test.ts
   - tests/e2e/provider-lifecycle.spec.ts
   - README.md
   - README.zh-CN.md
   - README.ja-JP.md
 expectedUserBehavior:
   - TokenDance appears in the add-provider dialog with its official website logo and OAuth Login and API Key choices.
-  - OAuth opens TokenDance in the system browser, returns through a random loopback callback, exchanges the one-time code with S256 PKCE, and stores only the resulting API key in ClawX secret storage.
+  - OAuth opens TokenDance in the system browser, returns through a random loopback callback, displays a localized success page, exchanges the one-time code with S256 PKCE, and stores only the resulting API key in ClawX secret storage.
+  - Successful OAuth closes the setup dialog and shows feedback immediately while the provider list refreshes in the background.
+  - Deleting a provider removes its card optimistically while Main completes runtime and keychain cleanup.
   - TokenDance model and validation requests carry X-App-URL set to https://clawx.com.cn.
   - A TokenDance recovery response produces guidance for balance top-up, reauthorization, or periodic quota reset instead of being treated as an unclassified credential failure.
 requiredProfiles:
@@ -69,16 +72,18 @@ requiredTests:
   - tests/unit/providers.test.ts
   - tests/unit/provider-validation.test.ts
   - tests/unit/provider-runtime-sync.test.ts
+  - tests/unit/provider-store-init.test.ts
   - tests/e2e/provider-lifecycle.spec.ts
 acceptance:
   - The OAuth authorization URL includes an encoded loopback callback, S256 challenge, app_url=https://clawx.com.cn, and key_name=ClawX.
-  - The callback flow validates its opaque flow identifier, enforces a ten-minute timeout, supports cancellation, and sends the original verifier only to the TokenDance key exchange endpoint.
+  - The callback flow validates its opaque flow identifier, enforces a ten-minute timeout, supports cancellation, shows a localized success page instead of a blank callback, and sends the original verifier only to the TokenDance key exchange endpoint.
   - The exchanged API key is stored as an api_key secret even though the account auth mode records oauth_browser; the key is never written to logs, callback URLs, or renderer state.
   - TokenDance uses the official website logo without dark-mode color inversion in the add-provider dialog.
   - TokenDance runtime config uses https://tokendance.space/gateway/v1, openai-completions, qwen3.8-max as the default model, and X-App-URL=https://clawx.com.cn.
   - Manual TokenDance API keys use the same runtime attribution header.
   - Main-owned validation uses a minimal request with the configured model because TokenDance `/models` is public, reads only the documented TokenDance-Recovery-Action values, and returns the typed action for localized UI guidance.
   - The pinned OpenClaw runtime preserves documented recovery actions from failed model-response headers in its sanitized error text, and the Chat error banner replaces that marker with localized guidance.
+  - OAuth success feedback and provider deletion update the UI immediately without waiting for follow-up runtime synchronization or snapshot reconciliation.
   - Renderer code adds no direct IPC or Gateway HTTP calls.
   - Focused tests, harness validation, communication replay, communication compare, typecheck, and lint pass.
 docs:

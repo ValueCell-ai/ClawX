@@ -46,6 +46,80 @@ function abortError(message = 'tokendanceOAuth.cancelled'): Error {
   return error;
 }
 
+type CallbackCopy = {
+  lang: string;
+  title: string;
+  description: string;
+  closeHint: string;
+};
+
+const CALLBACK_COPY: Record<string, CallbackCopy> = {
+  en: {
+    lang: 'en',
+    title: 'Authorization successful',
+    description: 'TokenDance has been connected to ClawX.',
+    closeHint: 'You can close this page and return to ClawX.',
+  },
+  zh: {
+    lang: 'zh-CN',
+    title: '授权成功',
+    description: 'TokenDance 已成功连接到 ClawX。',
+    closeHint: '现在可以关闭此页面并返回 ClawX。',
+  },
+  ja: {
+    lang: 'ja',
+    title: '認証が完了しました',
+    description: 'TokenDance が ClawX に接続されました。',
+    closeHint: 'このページを閉じて ClawX に戻ることができます。',
+  },
+  ru: {
+    lang: 'ru',
+    title: 'Авторизация выполнена',
+    description: 'TokenDance успешно подключён к ClawX.',
+    closeHint: 'Можно закрыть эту страницу и вернуться в ClawX.',
+  },
+};
+
+function renderSuccessPage(acceptLanguage: string | string[] | undefined): string {
+  const requestedLanguage = Array.isArray(acceptLanguage) ? acceptLanguage[0] : acceptLanguage;
+  const language = requestedLanguage?.trim().toLowerCase() || 'en';
+  const locale = language.startsWith('zh')
+    ? 'zh'
+    : language.startsWith('ja')
+      ? 'ja'
+      : language.startsWith('ru')
+        ? 'ru'
+        : 'en';
+  const copy = CALLBACK_COPY[locale];
+
+  return `<!doctype html>
+<html lang="${copy.lang}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ClawX · TokenDance</title>
+  <style>
+    :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: #f7f7f5; color: #171717; }
+    main { width: min(420px, calc(100vw - 48px)); padding: 40px; text-align: center; border-radius: 24px; background: #fff; box-shadow: 0 18px 60px rgba(0,0,0,.12); }
+    .mark { display: grid; place-items: center; width: 56px; height: 56px; margin: 0 auto 20px; border-radius: 50%; background: #18181b; color: #fff; font-size: 30px; }
+    h1 { margin: 0 0 12px; font-size: 26px; font-weight: 650; }
+    p { margin: 6px 0; color: #52525b; line-height: 1.6; }
+    @media (prefers-color-scheme: dark) { body { background: #111; color: #fafafa; } main { background: #1c1c1e; } p { color: #b3b3b8; } .mark { background: #fafafa; color: #18181b; } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="mark" aria-hidden="true">✓</div>
+    <h1>${copy.title}</h1>
+    <p>${copy.description}</p>
+    <p>${copy.closeHint}</p>
+  </main>
+  <script>window.setTimeout(() => window.close(), 3000)</script>
+</body>
+</html>`;
+}
+
 async function listenOnLoopback(server: Server): Promise<number> {
   await new Promise<void>((resolve, reject) => {
     const onError = (error: Error) => {
@@ -96,9 +170,10 @@ export async function loginTokenDanceOAuth(
 
       response.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
-        'Content-Security-Policy': "default-src 'none'; script-src 'unsafe-inline'",
+        'Cache-Control': 'no-store',
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
       });
-      response.end('<!doctype html><meta charset="utf-8"><title>ClawX</title><script>window.close()</script>');
+      response.end(renderSuccessPage(request.headers['accept-language']));
       if (!settled) {
         settled = true;
         settleCode?.(code);

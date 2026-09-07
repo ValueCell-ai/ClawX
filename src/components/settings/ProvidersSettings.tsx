@@ -1122,7 +1122,7 @@ function AddProviderDialog({
       setOauthError(null);
     };
 
-    const handleSuccess = async (payload: OAuthSuccessEvent) => {
+    const handleSuccess = (payload: OAuthSuccessEvent) => {
       setOauthFlowing(false);
       setOauthData(null);
       setManualCodeInput('');
@@ -1130,27 +1130,30 @@ function AddProviderDialog({
 
       const { onClose: close, t: translate } = latestRef.current;
       const accountId = payload?.accountId || pendingOAuthRef.current?.accountId;
+      pendingOAuthRef.current = null;
+
+      // The Main process only emits success after credentials are persisted.
+      // Close immediately so runtime synchronization does not make a successful
+      // browser OAuth flow appear stuck in the UI.
+      close();
+      toast.success(translate('aiProviders.toast.added'));
 
       // device-oauth.ts already saved the provider config to the backend,
       // including the dynamically resolved baseUrl for the region (e.g. CN vs Global).
-      // If we call add() here with undefined baseUrl, it will overwrite and erase it!
-      // So we just fetch the latest list from the backend to update the UI.
-      try {
-        const store = useProviderStore.getState();
-        await store.refreshProviderSnapshot();
+      // Refresh and select it without delaying success feedback.
+      void (async () => {
+        try {
+          const store = useProviderStore.getState();
+          await store.refreshProviderSnapshot();
 
-        // OAuth sign-in should immediately become active default to avoid
-        // leaving runtime on an API-key-only provider/model.
-        if (accountId) {
-          await store.setDefaultAccount(accountId);
+          if (accountId) {
+            await store.setDefaultAccount(accountId);
+          }
+        } catch (err) {
+          console.error('Failed to refresh providers after OAuth:', err);
+          toast.error(translate('aiProviders.toast.failedDefault'));
         }
-      } catch (err) {
-        console.error('Failed to refresh providers after OAuth:', err);
-      }
-
-      pendingOAuthRef.current = null;
-      close();
-      toast.success(translate('aiProviders.toast.added'));
+      })();
     };
 
     const handleError = (data: OAuthErrorEvent) => {
