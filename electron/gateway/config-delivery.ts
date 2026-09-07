@@ -150,6 +150,40 @@ export function isPersistedConfigSetCommitEquivalent(
   return isPersistedValueEquivalent(stripAutoManagedMeta(persisted), stripAutoManagedMeta(submitted));
 }
 
+/**
+ * A mutator that started from a redacted `config.get` snapshot can write
+ * `__OPENCLAW_REDACTED__` over real secrets when it is replayed against the
+ * durable file. Put the file's original values back before persisting.
+ */
+export function restoreRedactedSentinelsFromBaseline(current: unknown, baseline: unknown): void {
+  if (Array.isArray(current) && Array.isArray(baseline)) {
+    const length = Math.min(current.length, baseline.length);
+    for (let index = 0; index < length; index += 1) {
+      if (current[index] === OPENCLAW_REDACTED_SENTINEL) {
+        current[index] = baseline[index];
+      } else {
+        restoreRedactedSentinelsFromBaseline(current[index], baseline[index]);
+      }
+    }
+    return;
+  }
+  if (
+    !current || typeof current !== 'object' || Array.isArray(current)
+    || !baseline || typeof baseline !== 'object' || Array.isArray(baseline)
+  ) {
+    return;
+  }
+  const currentRecord = current as Record<string, unknown>;
+  const baselineRecord = baseline as Record<string, unknown>;
+  for (const key of Object.keys(currentRecord)) {
+    if (currentRecord[key] === OPENCLAW_REDACTED_SENTINEL && key in baselineRecord) {
+      currentRecord[key] = baselineRecord[key];
+    } else {
+      restoreRedactedSentinelsFromBaseline(currentRecord[key], baselineRecord[key]);
+    }
+  }
+}
+
 async function acceptPersistedConfigSetCommitIfMatched(config: OpenClawConfig): Promise<boolean> {
   const persisted = await readFileConfig(resolveOpenClawConfigPath());
   return isPersistedConfigSetCommitEquivalent(persisted.config, config);
@@ -256,8 +290,11 @@ async function mutateFileConfig(
     const configPath = resolveOpenClawConfigPath();
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const snapshot = await readFileConfig(configPath);
+      const durableBaseline = structuredClone(snapshot.config);
       await options.beforeApply?.();
-      const changed = await applyMutator(snapshot.config, mutator, snapshot.raw !== undefined);
+      await applyMutator(snapshot.config, mutator, snapshot.raw !== undefined);
+      restoreRedactedSentinelsFromBaseline(snapshot.config, durableBaseline);
+      const changed = !isDeepStrictEqual(snapshot.config, durableBaseline);
 
       if (manager?.getStatus().state === 'running') {
         return await mutateRunningConfig(manager, mutator, options);

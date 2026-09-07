@@ -743,6 +743,46 @@ describe('host services', () => {
     expect(gatewayManager.rpc).not.toHaveBeenCalled();
   });
 
+  it('keeps a disabled configured account disconnected instead of pending activation', async () => {
+    readOpenClawConfigMock.mockResolvedValue({
+      channels: {
+        dingtalk: {
+          enabled: true,
+          accounts: {
+            default: { clientId: 'ding-client', enabled: false },
+          },
+        },
+      },
+    });
+    listConfiguredChannelsFromConfigMock.mockResolvedValue(['dingtalk']);
+    listConfiguredChannelAccountsFromConfigMock.mockReturnValue({
+      dingtalk: {
+        defaultAccountId: 'default',
+        accountIds: ['default'],
+      },
+    });
+    const gatewayManager = {
+      rpc: vi.fn().mockResolvedValue({ channelAccounts: {} }),
+      getStatus: vi.fn(() => ({ state: 'running', port: 18789 })),
+      getDiagnostics: vi.fn(() => ({ consecutiveHeartbeatMisses: 0, consecutiveRpcFailures: 0 })),
+    };
+    const { createChannelsApi } = await import('@electron/services/channels-api');
+    const result = await createChannelsApi({ gatewayManager: gatewayManager as never }).accounts({ mode: 'runtime' });
+    const dingtalk = result.channels.find((channel) => channel.channelType === 'dingtalk');
+
+    expect(dingtalk).toMatchObject({
+      channelType: 'dingtalk',
+      status: 'disconnected',
+      accounts: [
+        {
+          accountId: 'default',
+          configured: true,
+          status: 'disconnected',
+        },
+      ],
+    });
+  });
+
   it('reports connecting for a configured plugin channel missing from runtime status', async () => {
     readOpenClawConfigMock.mockResolvedValue({
       channels: {

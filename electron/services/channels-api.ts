@@ -339,6 +339,24 @@ function markRememberedProbeFailuresRechecked(now: number): void {
   }
 }
 
+function isChannelAccountEnabledInConfig(
+  config: Awaited<ReturnType<typeof readOpenClawConfig>>,
+  storedChannelType: string,
+  accountId: string,
+): boolean {
+  const section = config.channels?.[storedChannelType];
+  if (!section || typeof section !== 'object') return false;
+  if (section.enabled === false) return false;
+  const accounts = section.accounts;
+  if (accounts && typeof accounts === 'object' && !Array.isArray(accounts)) {
+    const account = (accounts as Record<string, { enabled?: unknown }>)[accountId];
+    if (account && typeof account === 'object' && !Array.isArray(account)) {
+      return account.enabled !== false;
+    }
+  }
+  return true;
+}
+
 /** Credentials changed or the account is gone: the remembered probe result no longer applies. */
 export function forgetChannelProbeFailures(storedChannelType: string, accountId?: string): void {
   if (accountId) {
@@ -458,11 +476,13 @@ export async function buildChannelAccountsView(
       const runtimeSnapshot: ChannelRuntimeAccountSnapshot = runtime ?? {};
       const configured = channelAccountsFromConfig.includes(accountId) || runtime?.configured === true;
       const lastError = typeof runtime?.lastError === 'string' ? runtime.lastError : undefined;
+      const expectedLive = (configured || hasLocalConfig)
+        && isChannelAccountEnabledInConfig(openClawConfig, rawChannelType, accountId);
       const baseStatus = computeChannelRuntimeStatus(runtimeSnapshot, {
         gatewayHealthState: effectiveGatewayHealthState,
       });
       const status = applyPendingActivationStatus(baseStatus, {
-        hasLocalConfig: configured || hasLocalConfig,
+        hasLocalConfig: expectedLive,
         hasRuntimeAccount: Boolean(runtime),
         hasRuntimeError: Boolean(lastError?.trim()) || hasSummaryRuntimeError(channelSummary),
       });
@@ -507,8 +527,11 @@ export async function buildChannelAccountsView(
         : pickChannelRuntimeStatus(visibleAccountSnapshots, channelSummary, {
           gatewayHealthState: effectiveGatewayHealthState,
         });
+    const hasEnabledLocalConfig = channelAccountsFromConfig.some((accountId) => (
+      isChannelAccountEnabledInConfig(openClawConfig, rawChannelType, accountId)
+    )) || (hasLocalConfig && channelAccountsFromConfig.length === 0);
     const groupStatus = applyPendingActivationStatus(resolvedGroupStatus, {
-      hasLocalConfig,
+      hasLocalConfig: hasEnabledLocalConfig,
       hasRuntimeAccount: runtimeAccounts.length > 0,
       hasRuntimeError,
     });

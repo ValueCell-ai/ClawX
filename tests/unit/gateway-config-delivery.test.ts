@@ -9,6 +9,7 @@ import {
   readOpenClawConfigSnapshot,
   registerOpenClawConfigCoordinator,
   resetOpenClawConfigCoordinatorForTests,
+  restoreRedactedSentinelsFromBaseline,
 } from '@electron/gateway/config-delivery';
 
 const { renameMock } = vi.hoisted(() => ({
@@ -37,6 +38,38 @@ function createGatewayManager(state: 'running' | 'stopped' | 'starting' = 'runni
     restart: vi.fn(),
   };
 }
+
+describe('restoreRedactedSentinelsFromBaseline', () => {
+  it('replaces sentinels from the baseline and leaves other fields intact', () => {
+    const current = {
+      channels: {
+        feishu: {
+          accounts: {
+            default: { appId: 'cli_new', appSecret: '__OPENCLAW_REDACTED__' },
+          },
+        },
+      },
+    };
+    restoreRedactedSentinelsFromBaseline(current, {
+      channels: {
+        feishu: {
+          accounts: {
+            default: { appId: 'cli_old', appSecret: 'real-secret' },
+          },
+        },
+      },
+    });
+    expect(current).toEqual({
+      channels: {
+        feishu: {
+          accounts: {
+            default: { appId: 'cli_new', appSecret: 'real-secret' },
+          },
+        },
+      },
+    });
+  });
+});
 
 describe('OpenClaw config delivery coordinator', () => {
   let testDir: string;
@@ -664,6 +697,60 @@ describe('OpenClaw config delivery coordinator', () => {
 
     expect(JSON.parse(await readFile(configPath, 'utf8'))).toEqual({
       channels: { feishu: { enabled: true } },
+    });
+  });
+
+  it('does not persist redacted sentinels when a lost config.set is replayed to the file', async () => {
+    await writeFile(configPath, JSON.stringify({
+      channels: {
+        feishu: {
+          enabled: true,
+          accounts: { default: { appId: 'cli_old', appSecret: 'real-secret' } },
+        },
+      },
+    }), 'utf8');
+    const gatewayManager = createGatewayManager();
+    gatewayManager.rpc.mockImplementation(async (method: string) => {
+      if (method === 'config.get') {
+        return {
+          config: {
+            channels: {
+              feishu: {
+                enabled: true,
+                accounts: { default: { appId: 'cli_old', appSecret: '__OPENCLAW_REDACTED__' } },
+              },
+            },
+          },
+          hash: 'hash-1',
+        };
+      }
+      if (method === 'config.set') {
+        gatewayManager.getStatus.mockReturnValue({ state: 'reconnecting' });
+        throw new Error('Gateway service restart');
+      }
+      throw new Error(`Unexpected RPC method: ${method}`);
+    });
+    registerOpenClawConfigCoordinator(gatewayManager);
+
+    await expect(mutateOpenClawConfig((config) => {
+      const accounts = (config.channels as {
+        feishu: { accounts: Record<string, Record<string, unknown>> };
+      }).feishu.accounts;
+      accounts.default = {
+        ...accounts.default,
+        appId: 'cli_new',
+        appSecret: '__OPENCLAW_REDACTED__',
+        enabled: true,
+      };
+    })).resolves.toBe(true);
+
+    expect(JSON.parse(await readFile(configPath, 'utf8'))).toEqual({
+      channels: {
+        feishu: {
+          enabled: true,
+          accounts: { default: { appId: 'cli_new', appSecret: 'real-secret', enabled: true } },
+        },
+      },
     });
   });
 

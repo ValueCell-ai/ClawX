@@ -27,6 +27,8 @@ expectedUserBehavior:
   - A WeChat QR login or plugin save whose config.set acknowledgement is lost to OpenClaw's in-process restart still succeeds: the persisted file is accepted when it differs only by OpenClaw's auto-managed meta stamp and restored redaction sentinels, and otherwise the pure mutator is replayed through the durable file path.
   - A forced Gateway restart that fails, or a Gateway that is still loading plugins after a native reload, never turns a committed save or QR login into an error toast.
   - A configured plugin channel that is not yet in the runtime snapshot shows Connecting instead of Disconnected while Gateway is healthy.
+  - A configured account with `enabled: false` stays Disconnected when it is absent from the runtime snapshot.
+  - Activating accountId `default` does not treat a differently named sole runtime account as already live.
 requiredProfiles:
   - fast
   - comms
@@ -52,7 +54,9 @@ acceptance:
   - Changed plugin saveConfig awaits the activator and does not call debouncedRestart(0) when peer link repair succeeds.
   - WeChat QR success emits only after the activator finishes and never calls scheduleGatewayRestartForPluginChannel.
   - A config.set reply lost to "Gateway service restart" is accepted when the persisted file matches the submitted config ignoring meta.lastTouchedAt, meta.lastTouchedVersion, and __OPENCLAW_REDACTED__ sentinels; an unverifiable loss or a config.get rejected by the restart replays the mutator through mutateFileConfig instead of failing the caller.
-  - Configured-but-absent runtime rows report connecting, not disconnected.
+  - File replay restores any `__OPENCLAW_REDACTED__` fields from the pre-mutator durable snapshot before persisting, so a redacted running-Gateway edit cannot overwrite real secrets.
+  - ensurePluginChannelRuntimeActivated does not treat a named sole runtime account as the requested `default`.
+  - Configured-but-absent runtime rows report connecting, not disconnected, unless the account or channel section is disabled.
 docs:
   required: false
 ---

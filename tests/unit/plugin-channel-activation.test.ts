@@ -38,6 +38,39 @@ function liveStatus(channelType: string, accountId: string) {
 }
 
 describe('ensurePluginChannelRuntimeActivated', () => {
+  it('does not treat a differently named sole account as the requested default', async () => {
+    const { gateway, restart } = createGateway({
+      status: liveStatus('dingtalk', 'agent-a'),
+    });
+    let now = 0;
+
+    await expect(ensurePluginChannelRuntimeActivated(gateway, 'dingtalk', 'default', {
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms;
+      },
+      hotWaitMs: 1000,
+      pollIntervalMs: 500,
+      postRestartWaitMs: 250,
+    })).resolves.toBe('restarted');
+    expect(restart).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a single unnamed runtime account as the default account', async () => {
+    const { gateway, restart } = createGateway({
+      status: {
+        channelAccounts: {
+          dingtalk: [{ connected: true, running: true }],
+        },
+      },
+    });
+
+    await expect(ensurePluginChannelRuntimeActivated(gateway, 'dingtalk', 'default', {
+      sleep: async () => undefined,
+    })).resolves.toBe('already-live');
+    expect(restart).not.toHaveBeenCalled();
+  });
+
   it('returns already-live when the account is in the runtime snapshot', async () => {
     const { gateway, restart } = createGateway({
       status: liveStatus('dingtalk', 'default'),

@@ -54,6 +54,16 @@ function isGatewayReadyForForcedRestart(status: { state: string; gatewayReady?: 
   return status.state === 'running' && status.gatewayReady === true;
 }
 
+function unnamedDefaultAccountFallback<T extends { accountId?: string }>(
+  accounts: T[],
+  requested: string,
+): T | undefined {
+  if (requested !== 'default' || accounts.length !== 1) return undefined;
+  const only = accounts[0];
+  const current = typeof only.accountId === 'string' ? only.accountId.trim() : '';
+  return current ? undefined : only;
+}
+
 function isAccountSnapshotLive(
   accounts: Array<{
     accountId?: string;
@@ -70,7 +80,7 @@ function isAccountSnapshotLive(
   const matched = accounts.find((account) => {
     const current = typeof account.accountId === 'string' ? account.accountId.trim() : '';
     return current === requested;
-  }) ?? (requested === 'default' && accounts.length === 1 ? accounts[0] : undefined);
+  }) ?? unnamedDefaultAccountFallback(accounts, requested);
   if (!matched) return false;
   const snapshot: ChannelRuntimeAccountSnapshot = {
     connected: matched.connected,
