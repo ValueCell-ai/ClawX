@@ -75,8 +75,8 @@ importers:
         specifier: ^1.3.7
         version: 1.3.7
       '@larksuite/openclaw-lark':
-        specifier: 2026.7.9
-        version: 2026.7.9(openclaw@2026.7.1-2(patch_hash=58140e0bf1cdbdf7c684d97e3f36cde7410f91a59a740888f40b52c0b3dcc959)(encoding@0.1.13))
+        specifier: 2026.7.16
+        version: 2026.7.16(openclaw@2026.7.1-2(patch_hash=58140e0bf1cdbdf7c684d97e3f36cde7410f91a59a740888f40b52c0b3dcc959)(encoding@0.1.13))
       '@larksuiteoapi/node-sdk':
         specifier: ^1.61.1
         version: 1.62.0
@@ -135,8 +135,8 @@ importers:
         specifier: ^0.34.48
         version: 0.34.48
       '@soimy/dingtalk':
-        specifier: 3.6.6
-        version: 3.6.6(openclaw@2026.7.1-2(patch_hash=58140e0bf1cdbdf7c684d97e3f36cde7410f91a59a740888f40b52c0b3dcc959)(encoding@0.1.13))
+        specifier: 3.6.10
+        version: 3.6.10(openclaw@2026.7.1-2(patch_hash=58140e0bf1cdbdf7c684d97e3f36cde7410f91a59a740888f40b52c0b3dcc959)(encoding@0.1.13))
       '@streamdown/cjk':
         specifier: ^1.0.3
         version: 1.0.3(@types/mdast@4.0.4)(micromark-util-types@2.0.2)(micromark@4.0.2)(react@19.2.4)(unified@11.0.5)
@@ -150,8 +150,8 @@ importers:
         specifier: ^1.1.0
         version: 1.1.0
       '@tencent-weixin/openclaw-weixin':
-        specifier: ^2.4.6
-        version: 2.4.6(openclaw@2026.7.1-2(patch_hash=58140e0bf1cdbdf7c684d97e3f36cde7410f91a59a740888f40b52c0b3dcc959)(encoding@0.1.13))
+        specifier: 2.4.8
+        version: 2.4.8(openclaw@2026.7.1-2(patch_hash=58140e0bf1cdbdf7c684d97e3f36cde7410f91a59a740888f40b52c0b3dcc959)(encoding@0.1.13))
       '@testing-library/jest-dom':
         specifier: ^6.9.1
         version: 6.9.1
@@ -183,8 +183,8 @@ importers:
         specifier: ^5.1.4
         version: 5.2.0(vite@7.3.1(@types/node@25.5.0)(jiti@1.21.7)(tsx@4.21.0)(yaml@2.9.0))
       '@wecom/wecom-openclaw-plugin':
-        specifier: 2026.7.2
-        version: 2026.7.2(openclaw@2026.7.1-2(patch_hash=58140e0bf1cdbdf7c684d97e3f36cde7410f91a59a740888f40b52c0b3dcc959)(encoding@0.1.13))
+        specifier: 2026.8.17
+        version: 2026.8.17(openclaw@2026.7.1-2(patch_hash=58140e0bf1cdbdf7c684d97e3f36cde7410f91a59a740888f40b52c0b3dcc959)(encoding@0.1.13))
       '@whiskeysockets/baileys':
         specifier: 7.0.0-rc.9
         version: 7.0.0-rc.9(audio-decode@2.2.3)(jimp@1.6.1)(sharp@0.34.5)
@@ -1224,8 +1224,8 @@ packages:
   '@kurkle/color@0.3.4':
     resolution: {integrity: sha512-M5UknZPHRu3DEDWoipU6sE8PdkZ6Z/S+v4dD+Ke8IaNlpdSQah50lz1KtcFBa2vsdOnwbbnxJwVM4wty6udA5w==}
 
-  '@larksuite/openclaw-lark@2026.7.9':
-    resolution: {integrity: sha512-3rRkGU85CtFOROT12ysd9cCc/w7RHM/f9OQuDIvNYF5oaun3NM6Z03CPvLkhI+GccJxxM0Lfr64LUeZCYj8Ezw==}
+  '@larksuite/openclaw-lark@2026.7.16':
+    resolution: {integrity: sha512-D3LNGy+Nk9QZnMi0ir0AvMSyaVc0xaU+0U5psRgwGRlvmgXLjsa5ayrko4zD1Es2DNutLCrYBRIu3yOY5DI+zw==}
     engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
@@ -2344,10 +2344,11 @@ packages:
     resolution: {integrity: sha512-oBN+msHzPnm1M5DDx3wVD7iBwpNXFUtkh2MrAbUJu0OhKjliLChi28hq++mu1+qdMpAVQO5JKAvQQxYVbyneiw==}
     engines: {node: '>= 10'}
 
-  '@soimy/dingtalk@3.6.6':
-    resolution: {integrity: sha512-qbzxQWjgQBlORwMWt9kI1FG1uBm1V7BRKZyMO72xwaSWEhH+i+hbnZjARmPhxYAv0DpbZp0RWe0h7Jno0HnADg==}
+  '@soimy/dingtalk@3.6.10':
+    resolution: {integrity: sha512-wDe3+ukyNIoj+kxZUysvFCZBi6nmNjenTcVrRlovS0HcbqyHVRytIrVF2rPIanEeqjkbLKFEwgtV7ONGX31SRA==}
+    engines: {node: '>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0'}
     peerDependencies:
-      openclaw: '>=2026.3.28'
+      openclaw: '>=2026.7.1-2'
     peerDependenciesMeta:
       openclaw:
         optional: true
@@ -2381,8 +2382,8 @@ packages:
     resolution: {integrity: sha512-3nQ2mdyzPRKpBHjd3QiKZDwNzw1F7fBN+rSq8Xms2gg+JWZR4SY2Zdf+doqTyXdyVjG4Y0QM7IA4U42zT9xxzw==}
     engines: {node: '>=18.0.0'}
 
-  '@tencent-weixin/openclaw-weixin@2.4.6':
-    resolution: {integrity: sha512-qw9k3PLTiMWGNjjsknHgcTManH1w4j+Ji1ArWIaYLKCq3aFRsVwcqnPi127bvOoVMJGW4dbyJ8NECEMgoO+iRw==}
+  '@tencent-weixin/openclaw-weixin@2.4.8':
+    resolution: {integrity: sha512-hhO9prUQwzfSpIL6XGWazRsxNs89K+Mis3iQW6a8eum4AIDxOUiTFMg4nlNVD/au0SjAx5CcJjo3KYWZqGpgQA==}
     engines: {node: '>=22'}
     peerDependencies:
       openclaw: '>=2026.5.12'
@@ -2744,8 +2745,43 @@ packages:
   '@wecom/aibot-node-sdk@1.0.6':
     resolution: {integrity: sha512-WZJN3Q+s+94Qjc0VW8d5W1cVkA3emYxiqf+mNRO9UEHoF40puHvizreNMtudjFhm7mmkYiK5ue/QzNiCk+xwLA==}
 
-  '@wecom/wecom-openclaw-plugin@2026.7.2':
-    resolution: {integrity: sha512-7kqdBIOF3SgDDoBoFtO6jxnxofbYSgbKdxZDNabD0y0jg2xKcVqlXZOOJ9+XQho/QOtIFrnRH2IRnPukFEYwJg==}
+  '@wecom/cli-darwin-arm64@1.2.0':
+    resolution: {integrity: sha512-fI5ii3F84NzsoIH8/WSLlSuNbcYeitwfOjAL7ktUSi6QtOyFK6yqXcWde5u67p9ZZj57tEFOqsgS4bOZdQIEUw==}
+    engines: {node: '>=18'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@wecom/cli-darwin-x64@1.2.0':
+    resolution: {integrity: sha512-zFKV1w5w3jcev3l6NaX6nHs9nRGPyCyUjWseXh+zWU3OlZPR0JQck+wiumoDC+VWITteKPYv6fcDziMsTSi4vw==}
+    engines: {node: '>=18'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@wecom/cli-linux-arm64@1.2.0':
+    resolution: {integrity: sha512-vdYSO1bZfm6maQlVwtqlaBmL/mZBsT+iauzArBDZw/fg/GBJiX3f9wwVvjw6O9B/SVu7uzijOyQHhB7zyDuGxA==}
+    engines: {node: '>=18'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@wecom/cli-linux-x64@1.2.0':
+    resolution: {integrity: sha512-Nhsg0ZH5KW+kmtHNXgJNXj8ze1+twPmaYadEQOaEOFAFjD76LWwINaehgRAwWJ4+ttzRxrHQBDAnluIvEDDDkQ==}
+    engines: {node: '>=18'}
+    cpu: [x64]
+    os: [linux]
+
+  '@wecom/cli-win32-x64@1.2.0':
+    resolution: {integrity: sha512-Ns4LLBiqJgbTjriSUjcxIB6pP5kpcKFkt7V/yrDE+vQBA7Zz1tTtvg9xogKpXquOq+WsMCE0qSI+6Qv6IPb3qg==}
+    engines: {node: '>=18'}
+    cpu: [x64]
+    os: [win32]
+
+  '@wecom/cli@1.2.0':
+    resolution: {integrity: sha512-GaVCie2We3EWrOiIYlXp5FpjznikbS1oShFyZjIz2uDDdQlkbA8CJzjhzrAzRgIDU/oaxpmEucp9WHN/yiuzuQ==}
+    engines: {node: '>=18'}
+    hasBin: true
+
+  '@wecom/wecom-openclaw-plugin@2026.8.17':
+    resolution: {integrity: sha512-gaXKH/NtkQecgOBw87RFY1kP0KYSXq2ztGiVlxWR082C3tMABBEDNbSYXOF9y1VbLTa0QoKI2YxdLaL3JKcXag==}
     peerDependencies:
       openclaw: '>=2026.3.28'
     peerDependenciesMeta:
@@ -2771,7 +2807,6 @@ packages:
   '@xmldom/xmldom@0.8.11':
     resolution: {integrity: sha512-cQzWCtO6C8TQiYl1ruKNn2U6Ao4o4WBBcbL61yJl84x+j5sOWWFU9X7DpND8XZG3daDppSsigMdfAIl2upQBRw==}
     engines: {node: '>=10.0.0'}
-    deprecated: this version has critical issues, please update to the latest version
 
   abbrev@4.0.0:
     resolution: {integrity: sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA==}
@@ -7822,7 +7857,7 @@ snapshots:
 
   '@kurkle/color@0.3.4': {}
 
-  '@larksuite/openclaw-lark@2026.7.9(openclaw@2026.7.1-2(patch_hash=58140e0bf1cdbdf7c684d97e3f36cde7410f91a59a740888f40b52c0b3dcc959)(encoding@0.1.13))':
+  '@larksuite/openclaw-lark@2026.7.16(openclaw@2026.7.1-2(patch_hash=58140e0bf1cdbdf7c684d97e3f36cde7410f91a59a740888f40b52c0b3dcc959)(encoding@0.1.13))':
     dependencies:
       '@larksuiteoapi/node-sdk': 1.66.1
       '@sinclair/typebox': 0.34.49
@@ -8814,7 +8849,7 @@ snapshots:
       - '@emnapi/core'
       - '@emnapi/runtime'
 
-  '@soimy/dingtalk@3.6.6(openclaw@2026.7.1-2(patch_hash=58140e0bf1cdbdf7c684d97e3f36cde7410f91a59a740888f40b52c0b3dcc959)(encoding@0.1.13))':
+  '@soimy/dingtalk@3.6.10(openclaw@2026.7.1-2(patch_hash=58140e0bf1cdbdf7c684d97e3f36cde7410f91a59a740888f40b52c0b3dcc959)(encoding@0.1.13))':
     dependencies:
       axios: 1.13.6(debug@4.4.3)
       dingtalk-stream: 2.1.5
@@ -8869,7 +8904,7 @@ snapshots:
     dependencies:
       qrcode-terminal: 0.12.0
 
-  '@tencent-weixin/openclaw-weixin@2.4.6(openclaw@2026.7.1-2(patch_hash=58140e0bf1cdbdf7c684d97e3f36cde7410f91a59a740888f40b52c0b3dcc959)(encoding@0.1.13))':
+  '@tencent-weixin/openclaw-weixin@2.4.8(openclaw@2026.7.1-2(patch_hash=58140e0bf1cdbdf7c684d97e3f36cde7410f91a59a740888f40b52c0b3dcc959)(encoding@0.1.13))':
     dependencies:
       openclaw: 2026.7.1-2(patch_hash=58140e0bf1cdbdf7c684d97e3f36cde7410f91a59a740888f40b52c0b3dcc959)(encoding@0.1.13)
       qrcode-terminal: 0.12.0
@@ -9351,13 +9386,36 @@ snapshots:
       - debug
       - utf-8-validate
 
-  '@wecom/wecom-openclaw-plugin@2026.7.2(openclaw@2026.7.1-2(patch_hash=58140e0bf1cdbdf7c684d97e3f36cde7410f91a59a740888f40b52c0b3dcc959)(encoding@0.1.13))':
+  '@wecom/cli-darwin-arm64@1.2.0':
+    optional: true
+
+  '@wecom/cli-darwin-x64@1.2.0':
+    optional: true
+
+  '@wecom/cli-linux-arm64@1.2.0':
+    optional: true
+
+  '@wecom/cli-linux-x64@1.2.0':
+    optional: true
+
+  '@wecom/cli-win32-x64@1.2.0':
+    optional: true
+
+  '@wecom/cli@1.2.0':
+    optionalDependencies:
+      '@wecom/cli-darwin-arm64': 1.2.0
+      '@wecom/cli-darwin-x64': 1.2.0
+      '@wecom/cli-linux-arm64': 1.2.0
+      '@wecom/cli-linux-x64': 1.2.0
+      '@wecom/cli-win32-x64': 1.2.0
+
+  '@wecom/wecom-openclaw-plugin@2026.8.17(openclaw@2026.7.1-2(patch_hash=58140e0bf1cdbdf7c684d97e3f36cde7410f91a59a740888f40b52c0b3dcc959)(encoding@0.1.13))':
     dependencies:
       '@wecom/aibot-node-sdk': 1.0.6
+      '@wecom/cli': 1.2.0
       fast-xml-parser: 5.7.3
       file-type: 21.3.4
       undici: 7.24.6
-      zod: 4.4.3
     optionalDependencies:
       openclaw: 2026.7.1-2(patch_hash=58140e0bf1cdbdf7c684d97e3f36cde7410f91a59a740888f40b52c0b3dcc959)(encoding@0.1.13)
     transitivePeerDependencies:

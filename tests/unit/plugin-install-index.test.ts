@@ -113,10 +113,10 @@ describe('plugin install index sqlite persistence', () => {
       source: 'npm',
       spec: '@wecom/wecom-openclaw-plugin',
       installPath: '/home/test/.openclaw/extensions/wecom',
-      version: '2026.7.2',
+      version: '2026.8.17',
       resolvedName: '@wecom/wecom-openclaw-plugin',
-      resolvedVersion: '2026.7.2',
-      resolvedSpec: '@wecom/wecom-openclaw-plugin@2026.7.2',
+      resolvedVersion: '2026.8.17',
+      resolvedSpec: '@wecom/wecom-openclaw-plugin@2026.8.17',
     };
 
     expect(upsertPluginInstallRecordsIntoSqlite({ wecom: record })).toBe(true);

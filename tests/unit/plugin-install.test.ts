@@ -181,7 +181,7 @@ describe('plugin installer diagnostics', () => {
       if (value.endsWith('package.json')) {
         return JSON.stringify({
           name: '@wecom/wecom',
-          version: '2026.7.2',
+          version: '2026.8.17',
           main: 'dist/index.js',
           openclaw: { install: { npmSpec: '@wecom/wecom', localPath: 'extensions/wecom' } },
         });
@@ -392,7 +392,7 @@ describe('plugin installer diagnostics', () => {
     });
     mockReadFileSync.mockImplementation((input: string) => {
       if (String(input) === `${targetDir}/package.json`) {
-        return JSON.stringify({ version: '2026.7.2' });
+        return JSON.stringify({ version: '2026.8.17' });
       }
       return '{}';
     });
@@ -409,7 +409,7 @@ describe('plugin installer diagnostics', () => {
         source: 'path',
         sourcePath: targetDir,
         installPath: targetDir,
-        version: '2026.7.2',
+        version: '2026.8.17',
       }),
     });
   });
@@ -433,7 +433,7 @@ describe('plugin installer diagnostics', () => {
     });
     mockReadFileSync.mockImplementation((input: string) => {
       if (String(input) === `${targetDir}/package.json`) {
-        return JSON.stringify({ version: '2026.7.9' });
+        return JSON.stringify({ version: '2026.7.16' });
       }
       return '{}';
     });
@@ -453,7 +453,7 @@ describe('plugin installer diagnostics', () => {
         source: 'path',
         sourcePath: targetDir,
         installPath: targetDir,
-        version: '2026.7.9',
+        version: '2026.7.16',
       }),
     });
   });
