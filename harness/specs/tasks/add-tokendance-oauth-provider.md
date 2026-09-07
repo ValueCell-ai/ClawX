@@ -18,6 +18,8 @@ touchedAreas:
   - electron/services/providers/provider-runtime-sync.ts
   - electron/main/provider-model-sync.ts
   - shared/host-api/contract.ts
+  - src/assets/providers/index.ts
+  - src/assets/providers/tokendance.svg
   - src/lib/providers.ts
   - src/stores/providers.ts
   - src/components/settings/ProvidersSettings.tsx
@@ -43,7 +45,7 @@ touchedAreas:
   - README.zh-CN.md
   - README.ja-JP.md
 expectedUserBehavior:
-  - TokenDance appears in the add-provider dialog with OAuth Login and API Key choices.
+  - TokenDance appears in the add-provider dialog with its official website logo and OAuth Login and API Key choices.
   - OAuth opens TokenDance in the system browser, returns through a random loopback callback, exchanges the one-time code with S256 PKCE, and stores only the resulting API key in ClawX secret storage.
   - TokenDance model and validation requests carry X-App-URL set to https://clawx.com.cn.
   - A TokenDance recovery response produces guidance for balance top-up, reauthorization, or periodic quota reset instead of being treated as an unclassified credential failure.
@@ -72,6 +74,7 @@ acceptance:
   - The OAuth authorization URL includes an encoded loopback callback, S256 challenge, app_url=https://clawx.com.cn, and key_name=ClawX.
   - The callback flow validates its opaque flow identifier, enforces a ten-minute timeout, supports cancellation, and sends the original verifier only to the TokenDance key exchange endpoint.
   - The exchanged API key is stored as an api_key secret even though the account auth mode records oauth_browser; the key is never written to logs, callback URLs, or renderer state.
+  - TokenDance uses the official website logo without dark-mode color inversion in the add-provider dialog.
   - TokenDance runtime config uses https://tokendance.space/gateway/v1, openai-completions, qwen3.8-max as the default model, and X-App-URL=https://clawx.com.cn.
   - Manual TokenDance API keys use the same runtime attribution header.
   - Main-owned validation uses a minimal request with the configured model because TokenDance `/models` is public, reads only the documented TokenDance-Recovery-Action values, and returns the typed action for localized UI guidance.

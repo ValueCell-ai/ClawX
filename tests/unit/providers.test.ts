@@ -51,7 +51,7 @@ describe('provider metadata', () => {
         defaultModelId: 'qwen3.8-max',
       }),
     ]));
-    expect(getProviderIconUrl('tokendance')).toContain('tokendance.svg');
+    expect(getProviderIconUrl('tokendance')).toMatch(/^data:image\/svg\+xml,/);
     expect(shouldInvertInDark('tokendance')).toBe(false);
     expect(getProviderEnvVar('tokendance')).toBe('TOKENDANCE_API_KEY');
     expect(getProviderConfig('tokendance')).toEqual({

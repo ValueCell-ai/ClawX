@@ -132,9 +132,13 @@ test.describe('ClawX provider lifecycle', () => {
 
     await page.getByTestId('sidebar-nav-models').click();
     await page.getByTestId('providers-add-button').click();
-    await expect(page.getByTestId('add-provider-type-tokendance')).toBeVisible();
+    const tokenDanceType = page.getByTestId('add-provider-type-tokendance');
+    await expect(tokenDanceType).toBeVisible();
+    const tokenDanceLogo = tokenDanceType.getByRole('img', { name: 'TokenDance' });
+    await expect(tokenDanceLogo).toHaveAttribute('src', /^data:image\/svg\+xml,/);
+    await expect(tokenDanceLogo).not.toHaveClass(/dark:invert/);
 
-    await page.getByTestId('add-provider-type-tokendance').click();
+    await tokenDanceType.click();
     await expect(page.getByTestId('add-provider-auth-oauth-tab')).toBeVisible();
     await expect(page.getByTestId('add-provider-auth-apikey-tab')).toBeVisible();
     await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('qwen3.8-max');
