@@ -5,6 +5,7 @@ import {
   PROVIDER_TYPE_INFO,
   getProviderDocsUrl,
   getProviderIconUrl,
+  isProviderAvailableForLanguage,
   resolveProviderApiKeyForSave,
   resolveProviderModelForSave,
   shouldInvertInDark,
@@ -49,6 +50,7 @@ describe('provider metadata', () => {
         supportsApiKey: true,
         defaultBaseUrl: 'https://tokendance.space/gateway/v1',
         defaultModelId: 'qwen3.8-max',
+        availableInLanguages: ['zh'],
       }),
     ]));
     expect(getProviderIconUrl('tokendance')).toMatch(/^data:image\/svg\+xml,/);
@@ -60,6 +62,20 @@ describe('provider metadata', () => {
       apiKeyEnv: 'TOKENDANCE_API_KEY',
       headers: { 'X-App-URL': 'https://clawx.com.cn' },
     });
+  });
+
+  it('limits TokenDance discovery to Chinese interface locales', () => {
+    const tokenDance = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'tokendance');
+    const openAi = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'openai');
+
+    expect(tokenDance).toBeDefined();
+    expect(isProviderAvailableForLanguage(tokenDance!, 'zh')).toBe(true);
+    expect(isProviderAvailableForLanguage(tokenDance!, 'zh-CN')).toBe(true);
+    expect(isProviderAvailableForLanguage(tokenDance!, 'en')).toBe(false);
+    expect(isProviderAvailableForLanguage(tokenDance!, 'ja')).toBe(false);
+    expect(isProviderAvailableForLanguage(tokenDance!, 'ru')).toBe(false);
+    expect(isProviderAvailableForLanguage(tokenDance!, 'unsupported')).toBe(false);
+    expect(isProviderAvailableForLanguage(openAi!, 'en')).toBe(true);
   });
 
   it('includes ark in the backend provider registry', () => {

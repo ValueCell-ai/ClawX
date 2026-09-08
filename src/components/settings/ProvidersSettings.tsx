@@ -36,6 +36,7 @@ import {
   type ProviderType,
   type ProviderValidationResult,
   getProviderIconUrl,
+  isProviderAvailableForLanguage,
   normalizeProviderApiKeyInput,
   resolveProviderApiKeyForSave,
   resolveProviderModelForSave,
@@ -1231,8 +1232,9 @@ function AddProviderDialog({
   };
 
   const availableTypes = PROVIDER_TYPE_INFO.filter((type) => {
-    // Skip providers that are temporarily hidden from the UI.
+    // Skip providers that are temporarily hidden or unavailable in this UI language.
     if (type.hidden) return false;
+    if (!isProviderAvailableForLanguage(type, i18n.resolvedLanguage || i18n.language)) return false;
 
     // MiniMax portal variants are mutually exclusive — hide BOTH variants
     // when either one already exists (account may have vendorId of either variant).

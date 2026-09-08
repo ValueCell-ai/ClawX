@@ -148,11 +148,35 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('add-provider-api-key-input')).toHaveCount(0);
   });
 
-  test('shows TokenDance OAuth with its attributed endpoint and default model', async ({ page }) => {
+  test('only exposes TokenDance setup in the Chinese interface', async ({ page }) => {
     await completeSetup(page);
 
+    await page.evaluate(async () => {
+      const now = new Date().toISOString();
+      await window.electron.ipcRenderer.invoke('provider:save', {
+        id: 'tokendance-existing-e2e',
+        name: 'TokenDance Existing E2E',
+        type: 'tokendance',
+        baseUrl: 'https://tokendance.space/gateway/v1',
+        model: 'qwen3.8-max',
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
     await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('provider-card-tokendance-existing-e2e')).toBeVisible();
     await page.getByTestId('providers-add-button').click();
+    await expect(page.getByTestId('add-provider-type-tokendance')).toHaveCount(0);
+    await page.getByTestId('add-provider-close-button').click();
+
+    await page.getByTestId('sidebar-nav-settings').click();
+    await page.getByRole('button', { name: '中文' }).click();
+    await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('provider-card-tokendance-existing-e2e')).toBeVisible();
+    await page.getByTestId('providers-add-button').click();
+
     const tokenDanceType = page.getByTestId('add-provider-type-tokendance');
     await expect(tokenDanceType).toBeVisible();
     const tokenDanceLogo = tokenDanceType.getByRole('img', { name: 'TokenDance' });
@@ -201,6 +225,8 @@ test.describe('ClawX provider lifecycle', () => {
       });
     });
 
+    await page.getByTestId('sidebar-nav-settings').click();
+    await page.getByRole('button', { name: '中文' }).click();
     await page.getByTestId('sidebar-nav-models').click();
     await page.getByTestId('providers-add-button').click();
     await page.getByTestId('add-provider-type-tokendance').click();
@@ -208,7 +234,7 @@ test.describe('ClawX provider lifecycle', () => {
     await page.getByTestId('add-provider-api-key-input').fill('td-insufficient');
     await page.getByTestId('add-provider-submit-button').click();
 
-    await expect(page.getByText(/TokenDance balance is insufficient/i)).toBeVisible();
+    await expect(page.getByText(/TokenDance 账户余额不足/)).toBeVisible();
   });
 
   test('trims whitespace before validating and saving a custom provider key', async ({ electronApp, page }) => {

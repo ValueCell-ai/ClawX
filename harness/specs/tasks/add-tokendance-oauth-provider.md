@@ -46,7 +46,7 @@ touchedAreas:
   - README.zh-CN.md
   - README.ja-JP.md
 expectedUserBehavior:
-  - TokenDance appears in the add-provider dialog with its official website logo and OAuth Login and API Key choices.
+  - In the Chinese interface, TokenDance appears in the add-provider dialog with its official website logo and OAuth Login and API Key choices; other interface languages do not offer it for new setup.
   - OAuth opens TokenDance in the system browser, returns through a random loopback callback, displays a localized success page, exchanges the one-time code with S256 PKCE, and stores only the resulting API key in ClawX secret storage.
   - Successful OAuth closes the setup dialog and shows feedback immediately while the provider list refreshes in the background.
   - Deleting a provider removes its card optimistically while Main completes runtime and keychain cleanup.
@@ -78,7 +78,7 @@ acceptance:
   - The OAuth authorization URL includes an encoded loopback callback, S256 challenge, app_url=https://clawx.com.cn, and key_name=ClawX.
   - The callback flow validates its opaque flow identifier, enforces a ten-minute timeout, supports cancellation, shows a localized success page instead of a blank callback, and sends the original verifier only to the TokenDance key exchange endpoint.
   - The exchanged API key is stored as an api_key secret even though the account auth mode records oauth_browser; the key is never written to logs, callback URLs, or renderer state.
-  - TokenDance uses the official website logo without dark-mode color inversion in the add-provider dialog.
+  - In the Chinese interface, TokenDance uses the official website logo without dark-mode color inversion in the add-provider dialog; it is absent from that catalog in non-Chinese interfaces.
   - TokenDance runtime config uses https://tokendance.space/gateway/v1, openai-completions, qwen3.8-max as the default model, and X-App-URL=https://clawx.com.cn.
   - Manual TokenDance API keys use the same runtime attribution header.
   - Main-owned validation uses a minimal request with the configured model because TokenDance `/models` is public, reads only the documented TokenDance-Recovery-Action values, and returns the typed action for localized UI guidance.
@@ -98,7 +98,7 @@ TokenDance identifies ClawX with the stable App URL `https://clawx.com.cn`. OAut
 
 ## Scope
 
-- Register TokenDance in shared, Main, and Renderer provider catalogs.
+- Register TokenDance in shared, Main, and Renderer provider catalogs, with add-provider discovery restricted to the Chinese interface.
 - Implement random-port loopback OAuth with Authorization Code and S256 PKCE.
 - Exchange the code in Electron Main and store the returned key through the provider secret service.
 - Configure OpenClaw with the TokenDance OpenAI Chat Completions endpoint, `qwen3.8-max` default model, and attribution header.

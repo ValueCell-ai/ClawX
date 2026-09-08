@@ -6,6 +6,9 @@
  * layer so TypeScript project boundaries remain stable during the migration.
  */
 
+import { providerIcons } from '@/assets/providers';
+import { resolveSupportedLanguage, type LanguageCode } from '@shared/language';
+
 export const PROVIDER_TYPES = [
   'anthropic',
   'openai',
@@ -104,6 +107,8 @@ export interface ProviderTypeInfo {
   hidden?: boolean;
   /** If true, hide OAuth sign-in controls in the add-provider UI (logic remains enabled). */
   hideOAuthUi?: boolean;
+  /** Limits discovery in the add-provider UI without affecting configured accounts. */
+  availableInLanguages?: readonly LanguageCode[];
 }
 
 export type ProviderRecoveryAction = 'top_up_balance' | 'reauthorize_api_key' | 'api_key_quota';
@@ -155,8 +160,6 @@ export interface ProviderAccount {
   createdAt: string;
   updatedAt: string;
 }
-
-import { providerIcons } from '@/assets/providers';
 
 /** All supported provider types with UI metadata */
 export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
@@ -214,6 +217,7 @@ export const PROVIDER_TYPE_INFO: ProviderTypeInfo[] = [
     modelIdPlaceholder: 'qwen3.8-max',
     apiKeyUrl: 'https://tokendance.space/keys',
     docsUrl: 'https://tokendance.space/docs/ai-integration',
+    availableInLanguages: ['zh'],
   },
   { id: 'minimax-portal-cn', name: 'MiniMax (CN)', icon: '☁️', placeholder: 'sk-...', model: 'MiniMax', requiresApiKey: false, isOAuth: true, supportsApiKey: true, defaultModelId: 'MiniMax-M3', showModelId: true, modelIdPlaceholder: 'MiniMax-M3', apiKeyUrl: 'https://platform.minimaxi.com/' },
   { id: 'moonshot', name: 'Moonshot (CN)', icon: '🌙', placeholder: 'sk-...', model: 'Kimi', requiresApiKey: true, defaultBaseUrl: 'https://api.moonshot.cn/v1', showModelId: true, defaultModelId: 'kimi-k2.6', modelIdPlaceholder: 'kimi-k2.6', docsUrl: 'https://platform.moonshot.cn/' },
@@ -291,6 +295,18 @@ export const SETUP_PROVIDERS = PROVIDER_TYPE_INFO;
 /** Get type info by provider type id */
 export function getProviderTypeInfo(type: ProviderType): ProviderTypeInfo | undefined {
   return PROVIDER_TYPE_INFO.find((t) => t.id === type);
+}
+
+/** Whether a provider should be discoverable in the add-provider UI for this language. */
+export function isProviderAvailableForLanguage(
+  provider: Pick<ProviderTypeInfo, 'availableInLanguages'>,
+  language: string | null | undefined,
+): boolean {
+  if (!provider.availableInLanguages?.length) {
+    return true;
+  }
+
+  return provider.availableInLanguages.includes(resolveSupportedLanguage(language));
 }
 
 export function getProviderDocsUrl(
