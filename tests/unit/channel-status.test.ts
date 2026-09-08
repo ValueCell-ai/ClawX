@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyPendingActivationStatus,
   computeChannelRuntimeStatus,
   pickChannelRuntimeStatus,
 } from '@/lib/channel-status';
@@ -100,5 +101,34 @@ describe('channel runtime status helpers', () => {
         { gatewayHealthState: 'degraded' },
       ),
     ).toBe('error');
+  });
+
+  it('shows connecting for a configured channel that is not in the runtime snapshot yet', () => {
+    expect(applyPendingActivationStatus('disconnected', {
+      hasLocalConfig: true,
+      hasRuntimeAccount: false,
+      hasRuntimeError: false,
+    })).toBe('connecting');
+  });
+
+  it('keeps disconnected when a runtime account already exists', () => {
+    expect(applyPendingActivationStatus('disconnected', {
+      hasLocalConfig: true,
+      hasRuntimeAccount: true,
+      hasRuntimeError: false,
+    })).toBe('disconnected');
+  });
+
+  it('does not override connected or error statuses', () => {
+    expect(applyPendingActivationStatus('connected', {
+      hasLocalConfig: true,
+      hasRuntimeAccount: false,
+      hasRuntimeError: false,
+    })).toBe('connected');
+    expect(applyPendingActivationStatus('error', {
+      hasLocalConfig: true,
+      hasRuntimeAccount: false,
+      hasRuntimeError: true,
+    })).toBe('error');
   });
 });
