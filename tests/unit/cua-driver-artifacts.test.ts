@@ -10,7 +10,11 @@ import {
   CUA_DRIVER_VERSION,
   resolveCuaDriverArtifact,
 } from '../../scripts/cua-driver-artifacts.mjs';
-import { installCuaDriverArtifact, selectCuaDriverTargets } from '../../scripts/download-cua-driver.mjs';
+import {
+  installCuaDriverArtifact,
+  patchWindowsExecutableSubsystem,
+  selectCuaDriverTargets,
+} from '../../scripts/download-cua-driver.mjs';
 
 const tempDirs: string[] = [];
 
@@ -18,6 +22,23 @@ async function createTempDir() {
   const directory = await mkdtemp(join(tmpdir(), 'clawx-cua-driver-'));
   tempDirs.push(directory);
   return directory;
+}
+
+function buildMinimalPeImage(subsystem: number): Buffer {
+  const image = Buffer.alloc(0x200, 0);
+  image.write('MZ', 0, 'ascii');
+  const peOffset = 0x80;
+  image.writeInt32LE(peOffset, 0x3c);
+  image.writeUInt32LE(0x00004550, peOffset);
+  image.writeUInt16LE(0x20b, peOffset + 24);
+  image.writeUInt16LE(subsystem, peOffset + 24 + 68);
+  image.writeUInt8(0xab, 0x10);
+  return image;
+}
+
+function readPeSubsystem(image: Buffer): number {
+  const peOffset = image.readInt32LE(0x3c);
+  return image.readUInt16LE(peOffset + 24 + 68);
 }
 
 afterEach(async () => {
@@ -88,13 +109,13 @@ describe('CUA driver downloader', () => {
     await expect(stat(join(outputBase, 'win32-x64', 'cua-driver.exe'))).rejects.toThrow();
   });
 
-  it('extracts only cua-driver.exe and preserves sibling binaries', async () => {
+  it('extracts only cua-driver.exe, hides its console window, and preserves sibling binaries', async () => {
     const outputBase = await createTempDir();
     const targetDir = join(outputBase, 'win32-x64');
     await writeFile(join(outputBase, 'sibling-placeholder'), 'outside target');
 
     const zip = new JSZip();
-    zip.file('cua-driver.exe', 'driver');
+    zip.file('cua-driver.exe', buildMinimalPeImage(3));
     zip.file('do-not-extract.txt', 'unexpected');
     const archive = await zip.generateAsync({ type: 'nodebuffer' });
     const sha256 = await import('node:crypto').then(({ createHash }) =>
@@ -111,7 +132,9 @@ describe('CUA driver downloader', () => {
       outputBase,
     });
 
-    expect(await readFile(join(targetDir, 'cua-driver.exe'), 'utf8')).toBe('driver');
+    const installed = await readFile(join(targetDir, 'cua-driver.exe'));
+    expect(readPeSubsystem(installed)).toBe(2);
+    expect(installed.readUInt8(0x10)).toBe(0xab);
     await expect(stat(join(targetDir, 'do-not-extract.txt'))).rejects.toThrow();
     expect(await readFile(join(outputBase, 'sibling-placeholder'), 'utf8')).toBe('outside target');
   });
@@ -151,6 +174,26 @@ describe('CUA driver downloader', () => {
     expect(await readFile(join(targetDir, 'uv'), 'utf8')).toBe('keep me');
     await expect(stat(join(targetDir, 'do-not-extract.txt'))).rejects.toThrow();
     expect((await stat(join(targetDir, 'cua-driver'))).mode & 0o111).toBe(0o111);
+  });
+});
+
+describe('CUA driver Windows console suppression', () => {
+  it('flips the console subsystem to GUI in place', () => {
+    const image = buildMinimalPeImage(3);
+    expect(patchWindowsExecutableSubsystem(image)).toBe('patched');
+    expect(readPeSubsystem(image)).toBe(2);
+    expect(image.readUInt8(0x10)).toBe(0xab);
+  });
+
+  it('is idempotent for already-GUI images', () => {
+    const image = buildMinimalPeImage(2);
+    expect(patchWindowsExecutableSubsystem(image)).toBe('already-gui');
+    expect(readPeSubsystem(image)).toBe(2);
+  });
+
+  it('fails closed on non-PE content', async () => {
+    expect(() => patchWindowsExecutableSubsystem(Buffer.alloc(0x100, 0))).toThrow(/PE signature/);
+    expect(() => patchWindowsExecutableSubsystem(Buffer.from('driver'))).toThrow(/PE header/);
   });
 });
 

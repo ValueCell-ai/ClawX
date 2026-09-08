@@ -6,6 +6,7 @@ import {
   copyFile,
   mkdir,
   mkdtemp,
+  readFile,
   rename,
   rm,
   writeFile,
@@ -28,6 +29,71 @@ const PLATFORM_GROUPS = Object.freeze({
   mac: ['darwin-x64', 'darwin-arm64'],
   win: ['win32-x64'],
 });
+
+// PE optional-header fields (same offsets for PE32 and PE32+).
+const PE_POINTER_OFFSET = 0x3c;
+const PE_SIGNATURE = 0x00004550;
+const PE_OPTIONAL_HEADER_OFFSET = 24; // from PE signature start (4 sig + 20 COFF)
+const PE_SUBSYSTEM_OFFSET = 68;
+const PE_MAGIC_32PLUS = 0x20b;
+const PE_MAGIC_32 = 0x10b;
+const SUBSYSTEM_CONSOLE = 3;
+const SUBSYSTEM_WINDOWS_GUI = 2;
+
+/**
+ * Flip the PE optional-header subsystem of a Windows executable from console
+ * to GUI.
+ *
+ * The upstream cua-driver.exe is a console-subsystem binary, and the embedded
+ * CUA SDK spawns it from Rust without CREATE_NO_WINDOW (the
+ * EmbeddedDriverHostOptions record exposes no such field). Spawned from the
+ * packaged (GUI-subsystem) Electron host, Windows therefore allocates a
+ * visible console window for the daemon. In dev the host inherits a console
+ * from the terminal, so the window never appears there.
+ *
+ * A GUI-subsystem image never gets a console allocated, while piped
+ * stdout/stderr (used by the SDK to discover the named pipe endpoint) keep
+ * working exactly as before.
+ *
+ * Returns 'patched' when the subsystem was flipped, 'already-gui' when the
+ * image is already a GUI-subsystem binary, and throws on any unexpected PE
+ * layout so upstream binary changes are noticed instead of silently skipped.
+ */
+export function patchWindowsExecutableSubsystem(image) {
+  if (image.length < PE_POINTER_OFFSET + 4) {
+    throw new Error('cua-driver.exe is too small to contain a PE header');
+  }
+  const peOffset = image.readInt32LE(PE_POINTER_OFFSET);
+  if (
+    peOffset <= 0
+    || peOffset + PE_OPTIONAL_HEADER_OFFSET + PE_SUBSYSTEM_OFFSET + 2 > image.length
+    || image.readUInt32LE(peOffset) !== PE_SIGNATURE
+  ) {
+    throw new Error('cua-driver.exe does not contain the expected PE signature');
+  }
+  const optionalHeaderOffset = peOffset + PE_OPTIONAL_HEADER_OFFSET;
+  const magic = image.readUInt16LE(optionalHeaderOffset);
+  if (magic !== PE_MAGIC_32PLUS && magic !== PE_MAGIC_32) {
+    throw new Error(`Unsupported PE optional header magic: 0x${magic.toString(16)}`);
+  }
+  const subsystemOffset = optionalHeaderOffset + PE_SUBSYSTEM_OFFSET;
+  const subsystem = image.readUInt16LE(subsystemOffset);
+  if (subsystem === SUBSYSTEM_WINDOWS_GUI) return 'already-gui';
+  if (subsystem !== SUBSYSTEM_CONSOLE) {
+    throw new Error(`Unexpected PE subsystem ${subsystem} for cua-driver.exe`);
+  }
+  image.writeUInt16LE(SUBSYSTEM_WINDOWS_GUI, subsystemOffset);
+  return 'patched';
+}
+
+async function suppressWindowsConsoleWindow(binaryPath) {
+  const image = await readFile(binaryPath);
+  const result = patchWindowsExecutableSubsystem(image);
+  if (result === 'patched') {
+    await writeFile(binaryPath, image);
+  }
+  return result;
+}
 
 export function selectCuaDriverTargets(args, platform = currentPlatform(), arch = currentArch()) {
   if (args.includes('--all')) {
@@ -111,6 +177,10 @@ export async function installCuaDriverArtifact(target, options = {}) {
     await copyFile(extractedDriver, temporaryDestination);
     if (!target.startsWith('win32-')) {
       await chmod(temporaryDestination, 0o755);
+    } else {
+      // Hide the console window Windows would otherwise allocate for the
+      // console-subsystem daemon when spawned from the packaged GUI host.
+      await suppressWindowsConsoleWindow(temporaryDestination);
     }
 
     await rm(destination, { force: true });
