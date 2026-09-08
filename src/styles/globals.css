@@ -109,10 +109,27 @@
  *     `bg-brand` / `bg-brand-hover` are reserved for branded surfaces
  *     where a divergent Apple-blue is explicitly desired (rare).
  *     Reference: pages/Models "+ Add Provider" trigger.
+ *
+ *   NATIVE <select> BACKGROUNDS
+ *   ─────────────────────────────────────────────────────────────────────
+ *     Native selects MUST keep an opaque themed background
+ *     (`bg-background` or `bg-surface-input`) — never `bg-transparent`.
+ *     Chromium paints the dropdown popup with the select's own computed
+ *     background/color, so a transparent select renders a white popup
+ *     behind light option text in dark mode (Windows especially).
+ *     When sharing `inputClasses` (which use `bg-transparent`) with a
+ *     select, append `bg-background` to the select's className.
+ *     Reference: components/ui/select.tsx, components/settings/AsrSettings.tsx.
  * ────────────────────────────────────────────────────────────────────────── */
 
 @layer base {
   :root {
+    /* Declare the used color scheme so native form controls (select
+     * dropdown popups, scrollbars, etc.) render with matching colors.
+     * Without this, Chromium on Windows paints <select> popups white
+     * even in dark mode, making options unreadable. */
+    color-scheme: light;
+
     /* ── shadcn semantic tokens (light) ─────────────────────────── */
     /* Clean neutral page background matching the white/gray light theme. */
     --background: 0 0% 100%;
@@ -173,6 +190,8 @@
 
   /* Neutral deep-gray dark palette */
   .dark {
+    color-scheme: dark;
+
     --background: 240 4% 11%;
     --foreground: 210 20% 96%;
     --card: 240 3% 14%;

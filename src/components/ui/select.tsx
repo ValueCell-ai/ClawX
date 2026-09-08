@@ -1,6 +1,15 @@
 /**
  * Select Component
  * Styled native select matching shadcn/ui conventions
+ *
+ * IMPORTANT: keep an OPAQUE background (`bg-background`) on this element.
+ * Chromium paints the dropdown popup using the <select>'s computed
+ * background-color and text color. If a caller overrides it with
+ * `bg-transparent` (e.g. shared input classes), the popup on Windows
+ * renders with a white page background while option text stays light in
+ * dark mode — white-on-white. When customizing, pass an opaque themed
+ * background (e.g. `bg-background` / `bg-surface-input`), never a
+ * transparent one.
  */
 import * as React from 'react';
 import { cn } from '@/lib/utils';

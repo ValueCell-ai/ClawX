@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DiagnosticsGatewaySnapshotResult } from '@shared/host-api/contract';
 
 const {
+  applyNativeThemeSettingMock,
   applyProxySettingsMock,
   assignChannelAccountToAgentMock,
   assignChannelToAgentMock,
@@ -51,6 +52,7 @@ const {
   waitForWeChatLoginSessionMock,
   ensurePluginChannelRuntimeActivatedMock,
 } = vi.hoisted(() => ({
+  applyNativeThemeSettingMock: vi.fn(),
   applyProxySettingsMock: vi.fn(),
   assignChannelAccountToAgentMock: vi.fn(),
   assignChannelToAgentMock: vi.fn(),
@@ -147,6 +149,10 @@ vi.mock('@electron/main/proxy', () => ({
 
 vi.mock('@electron/main/launch-at-startup', () => ({
   syncLaunchAtStartupSettingFromStore: (...args: unknown[]) => syncLaunchAtStartupSettingFromStoreMock(...args),
+}));
+
+vi.mock('@electron/main/native-theme', () => ({
+  applyNativeThemeSetting: (...args: unknown[]) => applyNativeThemeSettingMock(...args),
 }));
 
 vi.mock('@electron/utils/logger', async (importOriginal) => {
@@ -399,6 +405,38 @@ describe('host services', () => {
     expect(syncLaunchAtStartupSettingFromStoreMock).toHaveBeenCalledTimes(2);
     expect(syncProxyConfigToOpenClawMock).toHaveBeenCalledTimes(1);
     expect(gatewayManager.restart).not.toHaveBeenCalled();
+  });
+
+  it('applies the native theme source after theme settings change and reset', async () => {
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state: 'stopped', port: 18789 })),
+      restart: vi.fn(),
+    };
+    const { createSettingsApi } = await import('@electron/services/settings-api');
+    const settingsApi = createSettingsApi(gatewayManager as never);
+
+    await expect(settingsApi.set({ key: 'theme', value: 'dark' })).resolves.toEqual({ success: true });
+    await expect(settingsApi.setMany({ patch: { theme: 'light' } })).resolves.toEqual({ success: true });
+    await expect(settingsApi.reset()).resolves.toEqual({ success: true, settings: baseSettings });
+
+    expect(applyNativeThemeSettingMock).toHaveBeenNthCalledWith(1, 'dark');
+    expect(applyNativeThemeSettingMock).toHaveBeenNthCalledWith(2, 'light');
+    expect(applyNativeThemeSettingMock).toHaveBeenNthCalledWith(3, baseSettings.theme);
+    expect(setSettingMock).toHaveBeenCalledWith('theme', 'dark');
+    expect(gatewayManager.restart).not.toHaveBeenCalled();
+  });
+
+  it('does not touch the native theme for unrelated settings', async () => {
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state: 'stopped', port: 18789 })),
+      restart: vi.fn(),
+    };
+    const { createSettingsApi } = await import('@electron/services/settings-api');
+    const settingsApi = createSettingsApi(gatewayManager as never);
+
+    await expect(settingsApi.set({ key: 'chatWorkspacePath', value: '/tmp/ws' })).resolves.toEqual({ success: true });
+
+    expect(applyNativeThemeSettingMock).not.toHaveBeenCalled();
   });
 
   it('accepts chat workspace settings through the typed settings API', async () => {

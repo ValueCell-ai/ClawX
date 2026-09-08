@@ -33,6 +33,7 @@ import { getMacTrafficLightPosition, syncMacTrafficLightPosition } from './traff
 import { getSetting } from '../utils/store';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
+import { syncNativeThemeFromStore } from './native-theme';
 import { WebBrowserGuestRegistry, installWebBrowserGuestPolicy } from './web-browser-policy';
 import { configureWebBrowserSession } from './web-browser-session';
 import {
@@ -328,6 +329,11 @@ async function initialize(): Promise<void> {
 
   // Set application menu
   await createMenu();
+
+  // Align native widget rendering (select popups, scrollbars, dialogs) with
+  // the persisted theme before the window is created so the window and its
+  // first popups never flash with a mismatched scheme.
+  await syncNativeThemeFromStore();
 
   // Create the main window
   const window = createMainWindow();

@@ -27,6 +27,7 @@ import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { getProviderConfig } from '../utils/provider-registry';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
+import { applyNativeThemeSetting } from './native-theme';
 import { getRecentTokenUsageHistory } from '../utils/token-usage';
 import { getProviderService } from '../services/providers/provider-service';
 import {
@@ -1114,6 +1115,9 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     if (key === 'language') {
       await createMenu(typeof value === 'string' ? value : undefined);
     }
+    if (key === 'theme') {
+      await applyNativeThemeSetting(value);
+    }
 
     return { success: true };
   });
@@ -1140,6 +1144,9 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     if (entries.some(([key]) => key === 'language')) {
       await createMenu(typeof patch.language === 'string' ? patch.language : undefined);
     }
+    if (entries.some(([key]) => key === 'theme')) {
+      await applyNativeThemeSetting(patch.theme);
+    }
 
     return { success: true };
   });
@@ -1150,6 +1157,7 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     await handleProxySettingsChange();
     await syncLaunchAtStartupSettingFromStore();
     await createMenu(settings.language);
+    await applyNativeThemeSetting(settings.theme);
     return { success: true, settings };
   });
 }

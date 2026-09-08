@@ -160,7 +160,7 @@ export function AsrSettings() {
               id="asr-preset"
               value={preset}
               onChange={(e) => handlePresetChange(e.target.value as AsrPreset)}
-              className={cn(inputClasses, 'w-full')}
+              className={cn(inputClasses, 'w-full bg-background')}
               data-testid="asr-preset-select"
             >
               {ASR_PRESETS.map((presetKey) => (
@@ -212,7 +212,7 @@ export function AsrSettings() {
                 id="asr-language"
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
-                className={cn(inputClasses, 'w-full')}
+                className={cn(inputClasses, 'w-full bg-background')}
                 data-testid="asr-language-input"
               >
                 <option value="">{t('settings:asr.languageAuto')}</option>
