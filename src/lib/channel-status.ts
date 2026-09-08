@@ -111,3 +111,18 @@ export function pickChannelRuntimeStatus(
 
   return 'disconnected';
 }
+
+export function applyPendingActivationStatus(
+  status: ChannelConnectionStatus,
+  options: {
+    hasLocalConfig: boolean;
+    hasRuntimeAccount: boolean;
+    hasRuntimeError: boolean;
+  },
+): ChannelConnectionStatus {
+  if (status !== 'disconnected') return status;
+  if (!options.hasLocalConfig || options.hasRuntimeAccount || options.hasRuntimeError) {
+    return status;
+  }
+  return 'connecting';
+}

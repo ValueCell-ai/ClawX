@@ -31,3 +31,16 @@ to explicit values and otherwise uses the 50000-token reserve fallback.
 Provider-level request settings are also preserved on rewrite. ClawX must not
 inject a default `timeoutSeconds` into provider entries; absent values remain
 absent and explicit values remain user-owned.
+
+One narrow compatibility default is ClawX-owned: an Astra model under a
+`custom-*` provider using `openai-completions` receives
+`agents.defaults.models["provider/model"].params.extra_body.reasoning_effort =
+"none"` when no reasoning effort is already configured. OpenClaw reads request
+parameters from this per-model runtime map, not provider-catalog rows in
+`models.providers.*.models` or per-Agent `models.json`. Never overwrite an
+explicit reasoning-effort value, and do not apply the default to other models,
+protocols, or providers. Provider deletion must remove matching entries from
+both default and per-Agent model catalogs so generated runtime parameters do
+not leave stale models behind. When deletion empties an `agents.*.models` map,
+keep an explicit empty object in the `config.set` payload: OpenClaw treats this
+as a protected map and preserves its old entries when the field is omitted.

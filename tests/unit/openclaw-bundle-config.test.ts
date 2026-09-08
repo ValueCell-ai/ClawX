@@ -21,9 +21,10 @@ describe('openclaw bundle config', () => {
       '@openclaw/discord': '2026.7.1',
       '@openclaw/qqbot': '2026.7.1',
       '@openclaw/whatsapp': '2026.7.1',
-      '@soimy/dingtalk': '3.6.6',
-      '@wecom/wecom-openclaw-plugin': '2026.7.2',
-      '@larksuite/openclaw-lark': '2026.7.9',
+      '@soimy/dingtalk': '3.6.10',
+      '@wecom/wecom-openclaw-plugin': '2026.8.17',
+      '@larksuite/openclaw-lark': '2026.7.16',
+      '@tencent-weixin/openclaw-weixin': '2.4.8',
     });
 
     const nodeDownloadScript = readFileSync(
@@ -72,8 +73,12 @@ describe('openclaw bundle config', () => {
   it('does not retain superseded channel plugin packages in the lockfile', () => {
     const lockfile = readFileSync(resolve(process.cwd(), 'pnpm-lock.yaml'), 'utf8');
     expect(lockfile).not.toContain("'@soimy/dingtalk@3.6.4':");
+    expect(lockfile).not.toContain("'@soimy/dingtalk@3.6.6':");
     expect(lockfile).not.toContain("'@wecom/wecom-openclaw-plugin@2026.6.23':");
+    expect(lockfile).not.toContain("'@wecom/wecom-openclaw-plugin@2026.7.2':");
     expect(lockfile).not.toContain("'@larksuite/openclaw-lark@2026.6.10':");
+    expect(lockfile).not.toContain("'@larksuite/openclaw-lark@2026.7.9':");
+    expect(lockfile).not.toContain("'@tencent-weixin/openclaw-weixin@2.4.6':");
     expect(lockfile).not.toContain("'@openclaw/ai@2026.7.1':");
     expect(lockfile).toContain("'@openclaw/ai@2026.7.1-2':");
   });

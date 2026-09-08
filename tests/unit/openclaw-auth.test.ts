@@ -1274,6 +1274,60 @@ describe('syncProviderConfigToOpenClaw', () => {
     ]);
   });
 
+  it('defaults custom Astra completions runtime params to reasoning_effort none', async () => {
+    await writeOpenClawJson({ models: { providers: {} } });
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await syncProviderConfigToOpenClaw('custom-example', 'gpt-6-astra', {
+      baseUrl: 'https://example.com/v1',
+      api: 'openai-completions',
+    });
+
+    const result = await readOpenClawJson();
+    const agents = result.agents as Record<string, Record<string, unknown>>;
+    const configuredModels = agents.defaults.models as Record<string, Record<string, unknown>>;
+
+    expect(configuredModels['custom-example/gpt-6-astra'].params).toEqual({
+      extra_body: { reasoning_effort: 'none' },
+    });
+  });
+
+  it('preserves explicit Astra runtime params and skips non-completions protocols', async () => {
+    await writeOpenClawJson({
+      models: { providers: {} },
+      agents: {
+        defaults: {
+          models: {
+            'custom-example/gpt-6-astra': {
+              alias: 'astra',
+              params: { extra_body: { reasoning_effort: 'high', keep: true } },
+            },
+          },
+        },
+      },
+    });
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await syncProviderConfigToOpenClaw('custom-example', 'gpt-6-astra', {
+      baseUrl: 'https://example.com/v1',
+      api: 'openai-completions',
+    });
+    await syncProviderConfigToOpenClaw('custom-responses', 'gpt-6-astra', {
+      baseUrl: 'https://example.com/v1',
+      api: 'openai-responses',
+    });
+
+    const result = await readOpenClawJson();
+    const agents = result.agents as Record<string, Record<string, unknown>>;
+    const configuredModels = agents.defaults.models as Record<string, Record<string, unknown>>;
+
+    expect(configuredModels['custom-example/gpt-6-astra']).toEqual({
+      alias: 'astra',
+      params: { extra_body: { reasoning_effort: 'high', keep: true } },
+    });
+    expect(configuredModels['custom-responses/gpt-6-astra']).toBeUndefined();
+  });
+
   it('infers text-only input for a new unknown custom-provider model', async () => {
     await writeOpenClawJson({ models: { providers: {} } });
 
@@ -1820,6 +1874,10 @@ describe('auth-backed provider discovery', () => {
       lastGood: {
         'custom-abc12345': 'custom-abc12345:backup',
       },
+      usageStats: {
+        'custom-abc12345:default': { lastUsed: 123 },
+        'custom-abc12345:orphaned': { lastUsed: 456 },
+      },
     });
 
     const {
@@ -1839,6 +1897,7 @@ describe('auth-backed provider discovery', () => {
     expect(mainProfiles.profiles).toEqual({});
     expect(mainProfiles.order).toEqual({});
     expect(mainProfiles.lastGood).toEqual({});
+    expect(mainProfiles.usageStats).toEqual({});
     expect((config.auth as { profiles?: Record<string, unknown> }).profiles).toEqual({});
     expect((config.models as { providers?: Record<string, unknown> }).providers).toEqual({});
     expect(result.providers).toEqual({});
@@ -1865,9 +1924,22 @@ describe('auth-backed provider discovery', () => {
             primary: 'custom-abc12345/gpt-5.5',
             fallbacks: ['minimax-portal/MiniMax-M3'],
           },
+          models: {
+            'custom-abc12345/gpt-5.5': { params: { temperature: 0.5 } },
+            'minimax-portal/MiniMax-M3': { alias: 'minimax' },
+          },
         },
         list: [
-          { id: 'main', name: 'Main', default: true, model: { primary: 'custom-abc12345/gpt-5.5' } },
+          {
+            id: 'main',
+            name: 'Main',
+            default: true,
+            model: { primary: 'custom-abc12345/gpt-5.5' },
+            models: {
+              'custom-abc12345/gpt-5.5': { alias: 'custom' },
+              'minimax-portal/MiniMax-M3': { alias: 'minimax' },
+            },
+          },
         ],
       },
     });
@@ -1877,13 +1949,90 @@ describe('auth-backed provider discovery', () => {
 
     const config = await readOpenClawJson();
     const agents = config.agents as {
-      defaults?: { model?: { primary?: string; fallbacks?: string[] } };
-      list?: Array<{ id: string; model?: { primary?: string } }>;
+      defaults?: {
+        model?: { primary?: string; fallbacks?: string[] };
+        models?: Record<string, unknown>;
+      };
+      list?: Array<{
+        id: string;
+        model?: { primary?: string };
+        models?: Record<string, unknown>;
+      }>;
     };
 
     expect(agents.defaults?.model?.primary).toBeUndefined();
     expect(agents.defaults?.model?.fallbacks).toEqual(['minimax-portal/MiniMax-M3']);
+    expect(agents.defaults?.models).toEqual({
+      'minimax-portal/MiniMax-M3': { alias: 'minimax' },
+    });
     expect(agents.list?.[0]?.model).toBeUndefined();
+    expect(agents.list?.[0]?.models).toEqual({
+      'minimax-portal/MiniMax-M3': { alias: 'minimax' },
+    });
+  });
+
+  it('commits provider and model-catalog deletion as separate gateway mutations', async () => {
+    let runningConfig: Record<string, unknown> = {
+      models: {
+        providers: {
+          'custom-abc12345': {
+            baseUrl: 'https://api.example.com/v1',
+            api: 'openai-completions',
+          },
+        },
+      },
+      agents: {
+        defaults: {
+          models: {
+            'custom-abc12345/gpt-6-astra': {
+              params: { extra_body: { reasoning_effort: 'none' } },
+            },
+          },
+        },
+      },
+    };
+    let revision = 1;
+    const commits: Array<Record<string, unknown>> = [];
+    const manager = {
+      getStatus: vi.fn(() => ({ state: 'running' as const })),
+      rpc: vi.fn(async (method: string, params?: { raw?: string }) => {
+        if (method === 'config.get') {
+          return { config: structuredClone(runningConfig), hash: `hash-${revision}` };
+        }
+        if (method === 'config.set') {
+          const nextConfig = JSON.parse(params?.raw ?? '{}') as Record<string, unknown>;
+          const currentDefaults = ((runningConfig.agents as Record<string, unknown> | undefined)
+            ?.defaults as Record<string, unknown> | undefined);
+          const nextDefaults = ((nextConfig.agents as Record<string, unknown> | undefined)
+            ?.defaults as Record<string, unknown> | undefined);
+          // Match OpenClaw's protected-map behavior: an omitted models field is
+          // preserved, while an explicit empty object clears the catalog.
+          if (currentDefaults?.models !== undefined
+            && nextDefaults
+            && !Object.hasOwn(nextDefaults, 'models')) {
+            nextDefaults.models = structuredClone(currentDefaults.models);
+          }
+          runningConfig = nextConfig;
+          commits.push(structuredClone(runningConfig));
+          revision += 1;
+          return { ok: true };
+        }
+        throw new Error(`Unexpected RPC method: ${method}`);
+      }),
+    };
+    const { registerOpenClawConfigCoordinator } = await import('@electron/gateway/config-delivery');
+    registerOpenClawConfigCoordinator(manager);
+    const { removeProviderFromOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    await removeProviderFromOpenClaw('custom-abc12345');
+
+    expect(commits).toHaveLength(2);
+    expect(((commits[0].models as Record<string, unknown>).providers as Record<string, unknown>))
+      .not.toHaveProperty('custom-abc12345');
+    expect((((commits[0].agents as Record<string, unknown>).defaults as Record<string, unknown>)
+      .models as Record<string, unknown>)).toHaveProperty('custom-abc12345/gpt-6-astra');
+    expect(((commits[1].agents as Record<string, unknown>).defaults as Record<string, unknown>)
+      .models).toEqual({});
   });
 
   it('propagates a coordinator failure while removing a provider', async () => {

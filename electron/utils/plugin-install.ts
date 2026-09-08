@@ -291,10 +291,10 @@ const TRUSTED_OFFICIAL_EXTENSION_PLUGINS: Record<string, TrustedOfficialExtensio
     recordSource: 'path',
     legacyPluginIds: ['wecom-openclaw-plugin'],
   },
-  // @larksuite/openclaw-lark 2026.7.9 declares ./dist/index.js as `main`, but
-  // publishes its runtime entry as ./index.js. OpenClaw 2026.7.1 rejects old
-  // managed npm records during its post-core smoke check. Make ClawX's complete
-  // mirror the canonical path-owned payload instead.
+  // @larksuite/openclaw-lark 2026.7.16 still declares ./dist/index.js as
+  // `main`, but publishes its runtime entry as ./index.js. OpenClaw 2026.7.1
+  // rejects old managed npm records during its post-core smoke check. Make
+  // ClawX's complete mirror the canonical path-owned payload instead.
   'feishu-openclaw-plugin': {
     npmName: '@larksuite/openclaw-lark',
     pluginId: 'openclaw-lark',

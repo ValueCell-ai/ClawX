@@ -212,8 +212,12 @@ export const hostApi = {
     deleteConfig: (channelType: string, accountId?: string) => (
       invokeHost('channels', 'deleteConfig', { channelType, accountId })
     ),
-    validateCredentials: (channelType: string, config: Record<string, unknown>) => (
-      invokeHost('channels', 'validateCredentials', { channelType, config })
+    validateCredentials: (channelType: string, config: Record<string, unknown>, accountId?: string) => (
+      invokeHost('channels', 'validateCredentials', {
+        channelType,
+        config,
+        ...(accountId ? { accountId } : {}),
+      })
     ),
     saveBinding: (input: { channelType: string; accountId: string; agentId: string }) => (
       invokeHost('channels', 'bindingSave', input)

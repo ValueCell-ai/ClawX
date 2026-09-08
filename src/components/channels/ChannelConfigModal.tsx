@@ -99,7 +99,22 @@ export function ChannelConfigModal({
   } | null>(null);
 
   const meta: ChannelMeta | null = selectedType ? CHANNEL_META[selectedType] : null;
-  const shouldUseCredentialValidation = selectedType !== 'feishu';
+  const shouldUseCredentialValidation = meta?.connectionType === 'token';
+
+  // Main returns stable error codes next to its English fallback text so the
+  // modal can show localized messages (e.g. Feishu App Secret pasted as App ID).
+  const localizeValidationErrors = useCallback((response: {
+    errors?: string[];
+    errorCodes?: Array<{ code: string; params?: Record<string, string> }>;
+  }): string[] => {
+    const fallback = response.errors ?? [];
+    if (!response.errorCodes?.length) return fallback;
+    return response.errorCodes.map(({ code, params }, index) => {
+      const key = `dialog.validationErrors.${code}`;
+      const localized = t(key, { ...params, defaultValue: '' });
+      return localized || fallback[index] || fallback[0] || code;
+    });
+  }, [t]);
   const usesManagedQrAccounts = usesPluginManagedQrAccounts(selectedType);
   const showAccountIdEditor = allowEditAccountId && !usesManagedQrAccounts;
   const resolvedAccountId = usesManagedQrAccounts
@@ -294,7 +309,7 @@ export function ChannelConfigModal({
     setValidationResult(null);
 
     try {
-      const result = await hostApi.channels.validateCredentials(selectedType, configValues);
+      const result = await hostApi.channels.validateCredentials(selectedType, configValues, resolvedAccountId);
 
       const warnings = result.warnings || [];
       if (result.valid && result.details) {
@@ -306,7 +321,7 @@ export function ChannelConfigModal({
 
       setValidationResult({
         valid: result.valid || false,
-        errors: result.errors || [],
+        errors: localizeValidationErrors(result),
         warnings,
       });
     } catch (error) {
@@ -359,13 +374,19 @@ export function ChannelConfigModal({
         return;
       }
 
+      let discoveredDomain: string | undefined;
       if (meta.connectionType === 'token' && shouldUseCredentialValidation) {
-        const validationResponse = await hostApi.channels.validateCredentials(selectedType, configValues);
+        const validationResponse = await hostApi.channels.validateCredentials(
+          selectedType,
+          configValues,
+          resolvedAccountId,
+        );
 
         if (!validationResponse.valid) {
+          const errors = localizeValidationErrors(validationResponse);
           setValidationResult({
             valid: false,
-            errors: validationResponse.errors || ['Validation failed'],
+            errors: errors.length > 0 ? errors : [t('dialog.validationFailed')],
             warnings: validationResponse.warnings || [],
           });
           setConnecting(false);
@@ -378,6 +399,9 @@ export function ChannelConfigModal({
           if (details.botUsername) warnings.push(`Bot: @${details.botUsername}`);
           if (details.guildName) warnings.push(`Server: ${details.guildName}`);
           if (details.channelName) warnings.push(`Channel: #${details.channelName}`);
+          if (typeof details.domain === 'string' && details.domain.trim()) {
+            discoveredDomain = details.domain.trim();
+          }
         }
 
         setValidationResult({
@@ -388,6 +412,9 @@ export function ChannelConfigModal({
       }
 
       const config: Record<string, unknown> = { ...configValues };
+      if (discoveredDomain) {
+        config.domain = discoveredDomain;
+      }
       const saveResult = await hostApi.channels.saveConfig({ channelType: selectedType, config, accountId: resolvedAccountId });
       if (!saveResult?.success) {
         throw new Error(saveResult?.error || 'Failed to save channel config');

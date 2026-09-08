@@ -351,39 +351,60 @@ type AuthProfilesStore = PersistedAuthProfilesStore;
 
 function removeProfilesForProvider(store: AuthProfilesStore, provider: string): boolean {
   const removedProfileIds = new Set<string>();
+  const providerProfilePrefix = `${provider}:`;
+  let modified = false;
 
   for (const [profileId, profile] of Object.entries(store.profiles)) {
-    if (profile?.provider !== provider) {
+    if (profile?.provider !== provider && !profileId.startsWith(providerProfilePrefix)) {
       continue;
     }
     delete store.profiles[profileId];
     removedProfileIds.add(profileId);
-  }
-
-  if (removedProfileIds.size === 0) {
-    return false;
+    modified = true;
   }
 
   if (store.order) {
     for (const [orderProvider, profileIds] of Object.entries(store.order)) {
-      const nextProfileIds = profileIds.filter((profileId) => !removedProfileIds.has(profileId));
-      if (nextProfileIds.length > 0) {
-        store.order[orderProvider] = nextProfileIds;
-      } else {
+      if (orderProvider === provider) {
         delete store.order[orderProvider];
+        modified = true;
+        continue;
+      }
+      const nextProfileIds = profileIds.filter((profileId) => (
+        !removedProfileIds.has(profileId) && !profileId.startsWith(providerProfilePrefix)
+      ));
+      if (nextProfileIds.length !== profileIds.length) {
+        modified = true;
+        if (nextProfileIds.length > 0) {
+          store.order[orderProvider] = nextProfileIds;
+        } else {
+          delete store.order[orderProvider];
+        }
       }
     }
   }
 
   if (store.lastGood) {
     for (const [lastGoodProvider, profileId] of Object.entries(store.lastGood)) {
-      if (removedProfileIds.has(profileId)) {
+      if (lastGoodProvider === provider
+        || removedProfileIds.has(profileId)
+        || profileId.startsWith(providerProfilePrefix)) {
         delete store.lastGood[lastGoodProvider];
+        modified = true;
       }
     }
   }
 
-  return true;
+  if (store.usageStats) {
+    for (const profileId of Object.keys(store.usageStats)) {
+      if (removedProfileIds.has(profileId) || profileId.startsWith(providerProfilePrefix)) {
+        delete store.usageStats[profileId];
+        modified = true;
+      }
+    }
+  }
+
+  return modified;
 }
 
 function removeProfileFromStore(
@@ -420,6 +441,11 @@ function removeProfileFromStore(
         changed = true;
       }
     }
+  }
+
+  if (shouldCleanReferences && store.usageStats?.[profileId] !== undefined) {
+    delete store.usageStats[profileId];
+    changed = true;
   }
 
   return changed;
@@ -1149,6 +1175,49 @@ function deleteModelConfigIfEmpty(parent: Record<string, unknown>): void {
   }
 }
 
+function removeProviderEntriesFromModelCatalog(
+  parent: Record<string, unknown>,
+  providerKeys: ReadonlySet<string>,
+): boolean {
+  const configuredModels = parent.models;
+  if (!isPlainRecord(configuredModels)) return false;
+
+  let modified = false;
+  for (const modelRef of Object.keys(configuredModels)) {
+    const providerKey = getModelRefProviderKey(modelRef);
+    if (providerKey && providerKeys.has(providerKey)) {
+      delete configuredModels[modelRef];
+      modified = true;
+    }
+  }
+  // Keep an explicit empty object when the last entry is removed. OpenClaw
+  // treats agents.*.models as a protected map: omitting the field during
+  // config.set preserves the previous map, while `models: {}` clears it.
+  return modified;
+}
+
+function removeProviderEntriesFromAgentModelCatalogs(
+  config: Record<string, unknown>,
+  providerKeys: ReadonlySet<string>,
+): boolean {
+  const agents = config.agents;
+  if (!isPlainRecord(agents)) return false;
+
+  let modified = false;
+  if (isPlainRecord(agents.defaults)
+    && removeProviderEntriesFromModelCatalog(agents.defaults, providerKeys)) {
+    modified = true;
+  }
+  if (Array.isArray(agents.list)) {
+    for (const entry of agents.list) {
+      if (isPlainRecord(entry) && removeProviderEntriesFromModelCatalog(entry, providerKeys)) {
+        modified = true;
+      }
+    }
+  }
+  return modified;
+}
+
 const RUNTIME_GENERATED_PROVIDER_KEY = /^(custom|ollama)-[a-z0-9]+$/i;
 
 function isRuntimeGeneratedProviderKey(providerKey: string): boolean {
@@ -1303,6 +1372,16 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
       if (modified) {
         normalizeAgentsDefaultsCompactionMode(config);
       }
+  });
+
+  // Keep model-catalog removal in its own transaction. The running Gateway can
+  // normalize provider deletion independently, so verify the latest snapshot
+  // after that commit instead of relying on both removals landing together.
+  const providerKeySet = new Set(providerKeysToRemove);
+  await mutateOpenClawConfig((config) => {
+    if (removeProviderEntriesFromAgentModelCatalogs(config, providerKeySet)) {
+      normalizeAgentsDefaultsCompactionMode(config);
+    }
   });
 
   // Remove the provider from each per-agent model registry used by pi-ai.
@@ -1687,6 +1766,57 @@ function mergeProviderModels(
   return merged;
 }
 
+function hasConfiguredReasoningEffort(params: Record<string, unknown>): boolean {
+  const candidates = [params, params.extra_body, params.extraBody];
+  return candidates.some((candidate) => (
+    isPlainRecord(candidate)
+      && (Object.hasOwn(candidate, 'reasoning_effort') || Object.hasOwn(candidate, 'reasoningEffort'))
+  ));
+}
+
+function ensureCustomAstraCompletionsReasoningEffort(
+  config: Record<string, unknown>,
+  provider: string,
+  api: string | undefined,
+  modelIds: string[],
+): void {
+  if (!provider.startsWith('custom-') || api !== 'openai-completions') return;
+
+  const astraModelIds = modelIds.filter((modelId) => /astra/i.test(modelId));
+  if (astraModelIds.length === 0) return;
+
+  const agents = isPlainRecord(config.agents) ? config.agents : {};
+  const defaults = isPlainRecord(agents.defaults) ? agents.defaults : {};
+  const defaultParams = isPlainRecord(defaults.params) ? defaults.params : {};
+  if (hasConfiguredReasoningEffort(defaultParams)) return;
+
+  const configuredModels = isPlainRecord(defaults.models) ? defaults.models : {};
+  for (const modelId of astraModelIds) {
+    const modelRef = `${provider}/${modelId}`;
+    const model = isPlainRecord(configuredModels[modelRef]) ? configuredModels[modelRef] : {};
+    const params = isPlainRecord(model.params) ? model.params : {};
+    if (hasConfiguredReasoningEffort(params)) continue;
+
+    const extraBody = isPlainRecord(params.extra_body)
+      ? params.extra_body
+      : (isPlainRecord(params.extraBody) ? params.extraBody : {});
+    configuredModels[modelRef] = {
+      ...model,
+      params: {
+        ...params,
+        extra_body: {
+          ...extraBody,
+          reasoning_effort: 'none',
+        },
+      },
+    };
+  }
+
+  defaults.models = configuredModels;
+  agents.defaults = defaults;
+  config.agents = agents;
+}
+
 /**
  * OpenClaw 2026.5+ requires a positive `maxTokens` on each model (and can
  * fall back to provider-level `maxTokens`) when `api` is `anthropic-messages`.
@@ -1998,6 +2128,12 @@ function upsertOpenClawProviderEntry(
   providers[provider] = nextProvider;
   models.providers = providers;
   config.models = models;
+  ensureCustomAstraCompletionsReasoningEffort(
+    config,
+    provider,
+    options.api,
+    mergedModels.flatMap((model) => typeof model.id === 'string' ? [model.id] : []),
+  );
 
   if (removedLegacyMoonshot) {
     console.log('Removed legacy models.providers.moonshot alias entry');

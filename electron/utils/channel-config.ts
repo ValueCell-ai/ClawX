@@ -8,7 +8,12 @@ import { access, mkdir, readFile, writeFile, readdir, stat, rm } from 'fs/promis
 import { constants } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import { mutateOpenClawConfig, readOpenClawConfigSnapshot } from '../gateway/config-delivery';
+import {
+    mutateOpenClawConfig,
+    OPENCLAW_REDACTED_SENTINEL,
+    readDurableOpenClawConfig,
+    readOpenClawConfigSnapshot,
+} from '../gateway/config-delivery';
 import { getOpenClawResolvedDir, resolveOpenClawConfigPath } from './paths';
 import * as logger from './logger';
 import { proxyAwareFetch } from './proxy-fetch';
@@ -1491,25 +1496,211 @@ export function parseDoctorValidationOutput(channelType: string, output: string)
     };
 }
 
+/**
+ * Stable identifier for a validation error so the renderer can localize it;
+ * `errors` keeps the English fallback text.
+ */
+export interface CredentialValidationErrorCode {
+    code: string;
+    params?: Record<string, string>;
+}
+
 export interface CredentialValidationResult {
     valid: boolean;
     errors: string[];
     warnings: string[];
+    errorCodes?: CredentialValidationErrorCode[];
     details?: Record<string, string>;
 }
 
 export async function validateChannelCredentials(
     channelType: string,
-    config: Record<string, string>
+    config: Record<string, string>,
+    options?: { accountId?: string },
 ): Promise<CredentialValidationResult> {
     switch (resolveStoredChannelType(channelType)) {
         case 'discord':
             return validateDiscordCredentials(config);
         case 'telegram':
             return validateTelegramCredentials(config);
+        case 'feishu':
+            return validateFeishuCredentials(config, options);
         default:
             return { valid: true, errors: [], warnings: ['No online validation available for this channel type.'] };
     }
+}
+
+const FEISHU_API_ORIGINS = {
+    feishu: 'https://open.feishu.cn',
+    lark: 'https://open.larksuite.com',
+} as const;
+
+type FeishuApiDomain = keyof typeof FEISHU_API_ORIGINS;
+
+export function resolveFeishuApiOrigin(domain: unknown): string {
+    return FEISHU_API_ORIGINS[resolveFeishuApiDomain(domain)];
+}
+
+function resolveFeishuApiDomain(domain: unknown): FeishuApiDomain {
+    if (typeof domain === 'string' && domain.trim().toLowerCase() === 'lark') {
+        return 'lark';
+    }
+    return 'feishu';
+}
+
+/** New accounts have no domain field; try Feishu first, then Lark. */
+function feishuValidationDomains(domain: unknown): FeishuApiDomain[] {
+    if (typeof domain === 'string' && domain.trim()) {
+        return [resolveFeishuApiDomain(domain)];
+    }
+    return ['feishu', 'lark'];
+}
+
+function pickPreservedFeishuAppSecret(account: ChannelConfigData | undefined): string | undefined {
+    const secret = typeof account?.appSecret === 'string' ? account.appSecret.trim() : '';
+    if (!secret || secret === OPENCLAW_REDACTED_SENTINEL) return undefined;
+    return secret;
+}
+
+/**
+ * `config.get` redacts appSecret to `__OPENCLAW_REDACTED__` while Gateway is
+ * running. Validation must use the durable file so an edit that leaves the
+ * secret untouched does not send the placeholder to Feishu.
+ */
+async function resolvePreservedFeishuAppSecret(
+    appId: string,
+    accountId?: string,
+): Promise<string | undefined> {
+    try {
+        const config = await readDurableOpenClawConfig();
+        const section = config.channels && typeof config.channels === 'object' && !Array.isArray(config.channels)
+            ? (config.channels as Record<string, ChannelConfigData>).feishu
+            : undefined;
+        if (!section || typeof section !== 'object' || Array.isArray(section)) return undefined;
+
+        const accounts = getChannelAccountsMap(section);
+        if (accountId) {
+            const fromAccount = pickPreservedFeishuAppSecret(accounts?.[accountId]);
+            if (fromAccount) return fromAccount;
+        }
+        for (const account of Object.values(accounts ?? {})) {
+            const candidateAppId = typeof account.appId === 'string' ? account.appId.trim() : '';
+            if (candidateAppId === appId) {
+                const fromMatch = pickPreservedFeishuAppSecret(account);
+                if (fromMatch) return fromMatch;
+            }
+        }
+        return pickPreservedFeishuAppSecret(accounts?.default) ?? pickPreservedFeishuAppSecret(section);
+    } catch {
+        return undefined;
+    }
+}
+
+function feishuValidationFailure(
+    code: string,
+    message: string,
+    params?: Record<string, string>,
+    warnings: string[] = [],
+): CredentialValidationResult {
+    return { valid: false, errors: [message], warnings, errorCodes: [{ code, params }] };
+}
+
+async function requestFeishuTenantAccessToken(
+    origin: string,
+    appId: string,
+    appSecret: string,
+): Promise<
+    | { ok: true }
+    | { ok: false; kind: 'rejected'; reason: string }
+    | { ok: false; kind: 'connection'; reason: string }
+> {
+    try {
+        const response = await proxyAwareFetch(`${origin}/open-apis/auth/v3/tenant_access_token/internal`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+            code?: number;
+            msg?: string;
+            tenant_access_token?: string;
+        };
+        if (!response.ok || payload.code !== 0 || !payload.tenant_access_token) {
+            const reason = payload.msg?.trim()
+                || (typeof payload.code === 'number' ? `code ${payload.code}` : `HTTP ${response.status}`);
+            return { ok: false, kind: 'rejected', reason };
+        }
+        return { ok: true };
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return { ok: false, kind: 'connection', reason };
+    }
+}
+
+/**
+ * The openclaw-lark plugin keeps its account "running" even when Feishu rejects
+ * the credentials (it only logs `app_id or app_secret is invalid`), so the
+ * Channels view would show Connected for a bot that can never receive events.
+ * Request a tenant_access_token before persisting so bad credentials are
+ * rejected in the modal instead.
+ */
+async function validateFeishuCredentials(
+    config: Record<string, string>,
+    options?: { accountId?: string },
+): Promise<CredentialValidationResult> {
+    const appId = config.appId?.trim();
+    let appSecret = config.appSecret?.trim();
+
+    if (!appId) return feishuValidationFailure('feishuAppIdRequired', 'App ID is required');
+    if (appSecret === OPENCLAW_REDACTED_SENTINEL) {
+        const preserved = await resolvePreservedFeishuAppSecret(appId, options?.accountId);
+        if (!preserved) {
+            return feishuValidationFailure(
+                'feishuAppSecretReenter',
+                'Re-enter the App Secret to update this account. The stored secret is hidden while Gateway is running.',
+            );
+        }
+        appSecret = preserved;
+    }
+    if (!appSecret) return feishuValidationFailure('feishuAppSecretRequired', 'App Secret is required');
+    if (appSecret === appId) {
+        return feishuValidationFailure(
+            'feishuAppSecretEqualsAppId',
+            'App Secret is identical to App ID. Copy the App Secret from Feishu Developer Console → Credentials & Basic Info.',
+        );
+    }
+
+    let firstRejection: CredentialValidationResult | undefined;
+    let firstConnectionError: CredentialValidationResult | undefined;
+    for (const domain of feishuValidationDomains(config.domain)) {
+        const result = await requestFeishuTenantAccessToken(FEISHU_API_ORIGINS[domain], appId, appSecret);
+        if (result.ok) {
+            return {
+                valid: true,
+                errors: [],
+                warnings: [],
+                ...(domain === 'lark' ? { details: { domain: 'lark' } } : {}),
+            };
+        }
+        if (result.kind === 'rejected') {
+            firstRejection ??= feishuValidationFailure(
+                'feishuRejected',
+                `Feishu rejected the credentials: ${result.reason}`,
+                { error: result.reason },
+            );
+            continue;
+        }
+        firstConnectionError ??= feishuValidationFailure(
+            'feishuConnectionError',
+            `Connection error when validating Feishu credentials: ${result.reason}`,
+            { error: result.reason },
+        );
+    }
+
+    return firstRejection ?? firstConnectionError ?? feishuValidationFailure(
+        'feishuConnectionError',
+        'Connection error when validating Feishu credentials',
+    );
 }
 
 async function validateDiscordCredentials(
