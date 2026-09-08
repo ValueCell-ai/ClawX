@@ -110,6 +110,31 @@ describe('BrowserOAuthManager TokenDance flow', () => {
     expect(mocks.setOpenClawDefaultModelWithOverride).toHaveBeenCalledTimes(1);
   });
 
+  it('stops TokenDance persistence after cancellation during account creation', async () => {
+    const manager = new BrowserOAuthManager();
+    const successes: unknown[] = [];
+    let resolveAccountCreation: (() => void) | undefined;
+    mocks.createAccount.mockImplementationOnce((account) => (
+      new Promise((resolve) => {
+        resolveAccountCreation = () => resolve(account);
+      })
+    ));
+    manager.on('oauth:success', (payload) => successes.push(payload));
+
+    await manager.startFlow('tokendance', { accountId: 'tokendance-cancelled' });
+    mocks.pendingTokenDanceFlows[0].resolve({ apiKey: 'td-cancelled-secret' });
+    await vi.waitFor(() => expect(mocks.createAccount).toHaveBeenCalledTimes(1));
+
+    await manager.stopFlow();
+    resolveAccountCreation?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mocks.saveProviderKeyToOpenClaw).not.toHaveBeenCalled();
+    expect(mocks.setOpenClawDefaultModelWithOverride).not.toHaveBeenCalled();
+    expect(mocks.setDefaultAccount).not.toHaveBeenCalled();
+    expect(successes).toEqual([]);
+  });
+
   it('does not let cancellation cleanup clear the next flow', async () => {
     const manager = new BrowserOAuthManager();
     const successes: unknown[] = [];

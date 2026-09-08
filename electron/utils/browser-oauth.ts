@@ -68,6 +68,10 @@ export class BrowserOAuthManager extends EventEmitter {
     return this.active && this.activeFlowId === flowId;
   }
 
+  private ownsFlow(flowId: number, signal: AbortSignal): boolean {
+    return !signal.aborted && this.isCurrentFlow(flowId);
+  }
+
   private clearFlow(flowId: number): boolean {
     if (!this.isCurrentFlow(flowId)) {
       return false;
@@ -96,8 +100,8 @@ export class BrowserOAuthManager extends EventEmitter {
           signal,
           onProgress: (message) => logger.info(`[BrowserOAuth] ${message}`),
         });
-        if (this.isCurrentFlow(flowId)) {
-          await this.onTokenDanceSuccess(token, flowId);
+        if (this.ownsFlow(flowId, signal)) {
+          await this.onTokenDanceSuccess(token, flowId, signal);
         }
         return;
       }
@@ -269,7 +273,13 @@ export class BrowserOAuthManager extends EventEmitter {
     this.emitSuccess(providerType, nextAccount.id);
   }
 
-  private async onTokenDanceSuccess(token: TokenDanceOAuthResult, flowId: number): Promise<void> {
+  private async onTokenDanceSuccess(
+    token: TokenDanceOAuthResult,
+    flowId: number,
+    signal: AbortSignal,
+  ): Promise<void> {
+    if (!this.ownsFlow(flowId, signal)) return;
+
     const persistenceStartedAt = Date.now();
     const providerType = 'tokendance' as const;
     const accountId = this.activeAccountId || providerType;
@@ -277,6 +287,8 @@ export class BrowserOAuthManager extends EventEmitter {
 
     const providerService = getProviderService();
     const existing = await providerService.getAccount(accountId);
+    if (!this.ownsFlow(flowId, signal)) return;
+
     const model = existing?.model?.trim().replace(/^tokendance\//, '') || TOKENDANCE_DEFAULT_MODEL;
     const headers = Object.fromEntries(
       Object.entries(existing?.headers ?? {}).filter(([name]) => name.toLowerCase() !== 'x-app-url'),
@@ -300,8 +312,11 @@ export class BrowserOAuthManager extends EventEmitter {
       createdAt: existing?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }, token.apiKey);
+    if (!this.ownsFlow(flowId, signal)) return;
 
     await saveProviderKeyToOpenClaw(providerType, token.apiKey);
+    if (!this.ownsFlow(flowId, signal)) return;
+
     await setOpenClawDefaultModelWithOverride(
       providerType,
       `${providerType}/${model}`,
@@ -315,11 +330,14 @@ export class BrowserOAuthManager extends EventEmitter {
         fallback.startsWith(`${providerType}/`) ? fallback : `${providerType}/${fallback}`
       )),
     );
+    if (!this.ownsFlow(flowId, signal)) return;
 
     // OAuth already made this model the OpenClaw default. Persist the matching
     // account default before notifying Renderer so its follow-up selection is
     // a cheap no-op instead of another full runtime synchronization.
     await providerService.setDefaultAccount(nextAccount.id);
+    if (!this.ownsFlow(flowId, signal)) return;
+
     logger.info(
       `[BrowserOAuth] TokenDance credentials and runtime configuration persisted in ${Date.now() - persistenceStartedAt}ms`,
     );

@@ -88,7 +88,7 @@ acceptance:
   - Main-owned validation uses a minimal request with the configured model because TokenDance `/models` is public, reads only the documented TokenDance-Recovery-Action values, and returns the typed action for localized UI guidance.
   - The pinned OpenClaw runtime preserves documented recovery actions from failed model-response headers in its sanitized error text, and the Chat error banner replaces that marker with localized guidance.
   - OAuth success feedback and provider deletion update the UI immediately without waiting for follow-up runtime synchronization or snapshot reconciliation.
-  - Browser OAuth emits each completion once, ignores duplicate start requests while a flow is active, and stale cancellation cleanup cannot clear a newer flow.
+  - Browser OAuth emits each completion once, ignores duplicate start requests while a flow is active, and stale cancellation cleanup cannot clear a newer flow or continue into later persistence stages.
   - The callback response requests connection closure and callback-server teardown does not wait for Chromium's keep-alive timeout.
   - TokenDance records the account as default before emitting success, so Renderer confirmation does not trigger a second full runtime synchronization.
   - Renderer code adds no direct IPC or Gateway HTTP calls.
