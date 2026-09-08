@@ -23,6 +23,7 @@ export type TokenDanceOAuthOptions = {
   timeoutMs?: number;
   fetchImpl?: FetchLike;
   onAuthorizationUrl?: (url: string) => void;
+  onProgress?: (message: string) => void;
 };
 
 function base64Url(value: Buffer): string {
@@ -176,6 +177,7 @@ export async function loginTokenDanceOAuth(
       response.end(renderSuccessPage(request.headers['accept-language']));
       if (!settled) {
         settled = true;
+        options.onProgress?.('TokenDance authorization callback received');
         settleCode?.(code);
       }
     } catch (error) {
@@ -222,6 +224,7 @@ export async function loginTokenDanceOAuth(
     const code = await codePromise;
 
     const fetchImpl = options.fetchImpl ?? proxyAwareFetch;
+    const exchangeStartedAt = Date.now();
     const exchangeResponse = await fetchImpl(TOKENDANCE_KEY_EXCHANGE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -242,6 +245,7 @@ export async function loginTokenDanceOAuth(
     if (!apiKey) {
       throw new Error('tokendanceOAuth.missingKey');
     }
+    options.onProgress?.(`TokenDance API key exchange completed in ${Date.now() - exchangeStartedAt}ms`);
     return { apiKey };
   } finally {
     if (timeout) clearTimeout(timeout);

@@ -1171,6 +1171,10 @@ function AddProviderDialog({
       offCode();
       offSuccess();
       offError();
+      if (pendingOAuthRef.current) {
+        pendingOAuthRef.current = null;
+        void hostApi.providers.cancelOAuth();
+      }
     };
   }, [open]);
 

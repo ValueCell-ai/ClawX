@@ -470,7 +470,6 @@ async function submitOAuth(payload: ProviderPayload<'submitOAuth'>) {
 export function createProvidersApi(ctx: ProvidersApiContext): CompleteHostServiceRegistry['providers'] {
   const providerService = getProviderService();
   deviceOAuthManager.setWindow(ctx.mainWindow);
-  browserOAuthManager.setWindow(ctx.mainWindow);
 
   return {
     list: async () => providerService._listProvidersWithKeyInfoInternal(),

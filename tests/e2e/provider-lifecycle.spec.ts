@@ -148,8 +148,38 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('add-provider-api-key-input')).toHaveCount(0);
   });
 
-  test('only exposes TokenDance setup in the Chinese interface', async ({ page }) => {
+  test('only exposes TokenDance setup in Chinese and cancels it when the dialog closes', async ({ electronApp, page }) => {
     await completeSetup(page);
+
+    await electronApp.evaluate(async ({ app: _app }) => {
+      const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+      const handlers = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers;
+      const originalHostInvoke = handlers?.get('host:invoke');
+      if (!originalHostInvoke) throw new Error('host:invoke handler unavailable');
+
+      const state = { requests: 0, cancellations: 0 };
+      (globalThis as typeof globalThis & { tokenDanceOAuthE2E?: typeof state }).tokenDanceOAuthE2E = state;
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', async (event: unknown, request: {
+        id?: string;
+        module?: string;
+        action?: string;
+        payload?: { provider?: string };
+      }) => {
+        if (request.module === 'providers' && request.action === 'requestOAuth'
+          && request.payload?.provider === 'tokendance') {
+          state.requests += 1;
+          return { id: request.id, ok: true, data: { success: true } };
+        }
+        if (request.module === 'providers' && request.action === 'cancelOAuth') {
+          state.cancellations += 1;
+          return { id: request.id, ok: true, data: { success: true } };
+        }
+        return originalHostInvoke(event, request);
+      });
+    });
 
     await page.evaluate(async () => {
       const now = new Date().toISOString();
@@ -191,6 +221,26 @@ test.describe('ClawX provider lifecycle', () => {
 
     await page.getByTestId('add-provider-auth-apikey-tab').click();
     await expect(page.getByTestId('add-provider-api-key-input')).toBeVisible();
+
+    await page.getByTestId('add-provider-auth-oauth-tab').click();
+    await page.getByTestId('add-provider-oauth-login-button').click();
+    await expect(page.getByTestId('add-provider-oauth-login-button')).toBeDisabled();
+    await page.getByTestId('add-provider-close-button').click();
+
+    await expect.poll(() => electronApp.evaluate(() => (
+      (globalThis as typeof globalThis & {
+        tokenDanceOAuthE2E?: { requests: number; cancellations: number };
+      }).tokenDanceOAuthE2E
+    ))).toEqual({ requests: 1, cancellations: 1 });
+
+    await page.getByTestId('providers-add-button').click();
+    await page.getByTestId('add-provider-type-tokendance').click();
+    await page.getByTestId('add-provider-oauth-login-button').click();
+    await expect.poll(() => electronApp.evaluate(() => (
+      (globalThis as typeof globalThis & {
+        tokenDanceOAuthE2E?: { requests: number; cancellations: number };
+      }).tokenDanceOAuthE2E?.requests
+    ))).toBe(2);
   });
 
   test('shows TokenDance recovery guidance returned by Main validation', async ({ electronApp, page }) => {

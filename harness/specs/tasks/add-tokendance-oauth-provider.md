@@ -6,6 +6,7 @@ taskType: runtime-bridge
 intent: Add TokenDance as an OpenAI-compatible provider with Authorization Code plus S256 PKCE API-key provisioning, stable ClawX attribution, and actionable key-recovery guidance.
 touchedAreas:
   - harness/specs/tasks/add-tokendance-oauth-provider.md
+  - harness/specs/tasks/restrict-tokendance-to-chinese-ui.md
   - harness/specs/rules/tokendance-oauth-provider.md
   - harness/specs/scenarios/gateway-backend-communication.md
   - electron/shared/providers/types.ts
@@ -17,6 +18,7 @@ touchedAreas:
   - electron/services/providers/provider-validation.ts
   - electron/services/providers/provider-runtime-sync.ts
   - electron/main/provider-model-sync.ts
+  - electron/main/index.ts
   - shared/host-api/contract.ts
   - src/assets/providers/index.ts
   - src/assets/providers/tokendance.svg
@@ -35,6 +37,7 @@ touchedAreas:
   - patches/openclaw@2026.7.1-2.patch
   - pnpm-lock.yaml
   - tests/unit/tokendance-oauth.test.ts
+  - tests/unit/browser-oauth.test.ts
   - tests/unit/tokendance-openclaw-recovery.test.ts
   - tests/unit/acp-chat-components.test.tsx
   - tests/unit/providers.test.ts
@@ -48,7 +51,7 @@ touchedAreas:
 expectedUserBehavior:
   - In the Chinese interface, TokenDance appears in the add-provider dialog with its official website logo and OAuth Login and API Key choices; other interface languages do not offer it for new setup.
   - OAuth opens TokenDance in the system browser, returns through a random loopback callback, displays a localized success page, exchanges the one-time code with S256 PKCE, and stores only the resulting API key in ClawX secret storage.
-  - Successful OAuth closes the setup dialog and shows feedback immediately while the provider list refreshes in the background.
+  - Successful OAuth closes the setup dialog and shows feedback immediately while the provider list refreshes in the background, without repeating runtime default-model synchronization.
   - Deleting a provider removes its card optimistically while Main completes runtime and keychain cleanup.
   - TokenDance model and validation requests carry X-App-URL set to https://clawx.com.cn.
   - A TokenDance recovery response produces guidance for balance top-up, reauthorization, or periodic quota reset instead of being treated as an unclassified credential failure.
@@ -67,6 +70,7 @@ requiredRules:
   - tokendance-oauth-provider
 requiredTests:
   - tests/unit/tokendance-oauth.test.ts
+  - tests/unit/browser-oauth.test.ts
   - tests/unit/tokendance-openclaw-recovery.test.ts
   - tests/unit/acp-chat-components.test.tsx
   - tests/unit/providers.test.ts
@@ -84,6 +88,8 @@ acceptance:
   - Main-owned validation uses a minimal request with the configured model because TokenDance `/models` is public, reads only the documented TokenDance-Recovery-Action values, and returns the typed action for localized UI guidance.
   - The pinned OpenClaw runtime preserves documented recovery actions from failed model-response headers in its sanitized error text, and the Chat error banner replaces that marker with localized guidance.
   - OAuth success feedback and provider deletion update the UI immediately without waiting for follow-up runtime synchronization or snapshot reconciliation.
+  - Browser OAuth emits each completion once, ignores duplicate start requests while a flow is active, and stale cancellation cleanup cannot clear a newer flow.
+  - TokenDance records the account as default before emitting success, so Renderer confirmation does not trigger a second full runtime synchronization.
   - Renderer code adds no direct IPC or Gateway HTTP calls.
   - Focused tests, harness validation, communication replay, communication compare, typecheck, and lint pass.
 docs:

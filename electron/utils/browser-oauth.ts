@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { BrowserWindow, shell } from 'electron';
+import { shell } from 'electron';
 import { logger } from './logger';
 import { loginOpenAICodexOAuth, type OpenAICodexOAuthCredentials } from './openai-codex-oauth';
 import {
@@ -28,48 +28,77 @@ export type BrowserOAuthProviderType = 'openai' | 'tokendance';
 const OPENAI_RUNTIME_PROVIDER_ID = 'openai';
 const OPENAI_OAUTH_DEFAULT_MODEL = 'gpt-5.6-sol';
 
-class BrowserOAuthManager extends EventEmitter {
+export class BrowserOAuthManager extends EventEmitter {
   private activeAccountId: string | null = null;
   private activeLabel: string | null = null;
   private active = false;
-  private mainWindow: BrowserWindow | null = null;
+  private activeFlowId: number | null = null;
+  private nextFlowId = 0;
   private pendingManualCodeResolve: ((value: string) => void) | null = null;
   private pendingManualCodeReject: ((reason?: unknown) => void) | null = null;
   private flowAbortController: AbortController | null = null;
-
-  setWindow(window: BrowserWindow) {
-    this.mainWindow = window;
-  }
 
   async startFlow(
     provider: BrowserOAuthProviderType,
     options?: { accountId?: string; label?: string },
   ): Promise<boolean> {
+    // A double click or a reopened dialog can dispatch the same request twice.
+    // Reuse the active flow instead of opening parallel callback servers and
+    // repeating the expensive OpenClaw configuration synchronization.
     if (this.active) {
-      await this.stopFlow();
+      logger.info(`[BrowserOAuth] Ignoring duplicate start for ${provider}; a browser flow is already active`);
+      return true;
     }
 
+    const flowId = ++this.nextFlowId;
+    const controller = new AbortController();
     this.active = true;
+    this.activeFlowId = flowId;
     this.activeAccountId = options?.accountId || provider;
     this.activeLabel = options?.label || null;
-    this.flowAbortController = new AbortController();
+    this.flowAbortController = controller;
     this.emit('oauth:start', { provider, accountId: this.activeAccountId });
 
     // OpenAI flow may switch to manual callback mode; keep start API non-blocking.
-    void this.executeFlow(provider);
+    void this.executeFlow(provider, flowId, controller.signal);
     return true;
   }
 
-  private async executeFlow(provider: BrowserOAuthProviderType): Promise<void> {
+  private isCurrentFlow(flowId: number): boolean {
+    return this.active && this.activeFlowId === flowId;
+  }
+
+  private clearFlow(flowId: number): boolean {
+    if (!this.isCurrentFlow(flowId)) {
+      return false;
+    }
+    this.active = false;
+    this.activeFlowId = null;
+    this.activeAccountId = null;
+    this.activeLabel = null;
+    this.pendingManualCodeResolve = null;
+    this.pendingManualCodeReject = null;
+    this.flowAbortController = null;
+    return true;
+  }
+
+  private async executeFlow(
+    provider: BrowserOAuthProviderType,
+    flowId: number,
+    signal: AbortSignal,
+  ): Promise<void> {
     try {
       if (provider === 'tokendance') {
         const token = await loginTokenDanceOAuth({
           openUrl: async (url) => {
             await shell.openExternal(url);
           },
-          signal: this.flowAbortController?.signal,
+          signal,
+          onProgress: (message) => logger.info(`[BrowserOAuth] ${message}`),
         });
-        await this.onTokenDanceSuccess(token);
+        if (this.isCurrentFlow(flowId)) {
+          await this.onTokenDanceSuccess(token, flowId);
+        }
         return;
       }
 
@@ -88,12 +117,14 @@ class BrowserOAuthManager extends EventEmitter {
             authorizationUrl,
             message,
           };
-          this.emit('oauth:code', payload);
-          if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-            this.mainWindow.webContents.send('oauth:code', payload);
+          if (this.isCurrentFlow(flowId)) {
+            this.emit('oauth:code', payload);
           }
         },
         onManualCodeInput: async () => {
+          if (!this.isCurrentFlow(flowId)) {
+            throw new Error('OAuth flow cancelled');
+          }
           return await new Promise<string>((resolve, reject) => {
             this.pendingManualCodeResolve = resolve;
             this.pendingManualCodeReject = reject;
@@ -101,24 +132,22 @@ class BrowserOAuthManager extends EventEmitter {
         },
       });
 
-      await this.onSuccess(provider, token);
+      if (this.isCurrentFlow(flowId)) {
+        await this.onSuccess(provider, token, flowId);
+      }
     } catch (error) {
-      if (!this.active) {
+      if (!this.isCurrentFlow(flowId)) {
         return;
       }
       logger.error(`[BrowserOAuth] Flow error for ${provider}:`, error);
       this.emitError(error instanceof Error ? error.message : String(error));
-      this.active = false;
-      this.activeAccountId = null;
-      this.activeLabel = null;
-      this.pendingManualCodeResolve = null;
-      this.pendingManualCodeReject = null;
-      this.flowAbortController = null;
+      this.clearFlow(flowId);
     }
   }
 
   async stopFlow(): Promise<void> {
     this.active = false;
+    this.activeFlowId = null;
     this.flowAbortController?.abort();
     this.flowAbortController = null;
     this.activeAccountId = null;
@@ -145,16 +174,10 @@ class BrowserOAuthManager extends EventEmitter {
   private async onSuccess(
     providerType: 'openai',
     token: OpenAICodexOAuthCredentials,
+    flowId: number,
   ) {
     const accountId = this.activeAccountId || providerType;
     const accountLabel = this.activeLabel;
-    this.active = false;
-    this.activeAccountId = null;
-    this.activeLabel = null;
-    this.pendingManualCodeResolve = null;
-    this.pendingManualCodeReject = null;
-    this.flowAbortController = null;
-    logger.info(`[BrowserOAuth] Successfully completed OAuth for ${providerType}`);
 
     const providerService = getProviderService();
     const existing = await providerService.getAccount(accountId);
@@ -241,10 +264,13 @@ class BrowserOAuthManager extends EventEmitter {
       throw err;
     }
 
+    if (!this.clearFlow(flowId)) return;
+    logger.info(`[BrowserOAuth] Successfully completed OAuth for ${providerType}`);
     this.emitSuccess(providerType, nextAccount.id);
   }
 
-  private async onTokenDanceSuccess(token: TokenDanceOAuthResult): Promise<void> {
+  private async onTokenDanceSuccess(token: TokenDanceOAuthResult, flowId: number): Promise<void> {
+    const persistenceStartedAt = Date.now();
     const providerType = 'tokendance' as const;
     const accountId = this.activeAccountId || providerType;
     const accountLabel = this.activeLabel;
@@ -290,32 +316,25 @@ class BrowserOAuthManager extends EventEmitter {
       )),
     );
 
-    this.active = false;
-    this.activeAccountId = null;
-    this.activeLabel = null;
-    this.pendingManualCodeResolve = null;
-    this.pendingManualCodeReject = null;
-    this.flowAbortController = null;
+    // OAuth already made this model the OpenClaw default. Persist the matching
+    // account default before notifying Renderer so its follow-up selection is
+    // a cheap no-op instead of another full runtime synchronization.
+    await providerService.setDefaultAccount(nextAccount.id);
+    logger.info(
+      `[BrowserOAuth] TokenDance credentials and runtime configuration persisted in ${Date.now() - persistenceStartedAt}ms`,
+    );
+
+    if (!this.clearFlow(flowId)) return;
     logger.info(`[BrowserOAuth] Successfully completed OAuth for ${providerType}`);
     this.emitSuccess(providerType, nextAccount.id);
   }
 
   private emitSuccess(provider: BrowserOAuthProviderType, accountId: string): void {
     this.emit('oauth:success', { provider, accountId });
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('oauth:success', {
-        provider,
-        accountId,
-        success: true,
-      });
-    }
   }
 
   private emitError(message: string) {
     this.emit('oauth:error', { message });
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('oauth:error', { message });
-    }
   }
 }
 

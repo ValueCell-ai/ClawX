@@ -13,6 +13,7 @@ function base64Url(value: Buffer): string {
 describe('TokenDance OAuth', () => {
   it('uses a loopback callback and S256 PKCE before exchanging the code for an API key', async () => {
     let authorizationUrl: URL | undefined;
+    const progress: string[] = [];
     const fetchImpl = vi.fn(async (input: string | URL, init?: RequestInit) => {
       expect(String(input)).toBe(TOKENDANCE_KEY_EXCHANGE_URL);
       expect(init?.method).toBe('POST');
@@ -34,6 +35,7 @@ describe('TokenDance OAuth', () => {
 
     const result = await loginTokenDanceOAuth({
       fetchImpl,
+      onProgress: (message) => progress.push(message),
       openUrl: async (rawUrl) => {
         authorizationUrl = new URL(rawUrl);
         expect(authorizationUrl.origin).toBe('https://tokendance.space');
@@ -60,6 +62,10 @@ describe('TokenDance OAuth', () => {
 
     expect(result).toEqual({ apiKey: 'td-secret-key' });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(progress).toEqual([
+      'TokenDance authorization callback received',
+      expect.stringMatching(/^TokenDance API key exchange completed in \d+ms$/),
+    ]);
   });
 
   it('supports cancellation while waiting for the loopback callback', async () => {
