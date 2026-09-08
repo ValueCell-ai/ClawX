@@ -54,6 +54,7 @@ describe('TokenDance OAuth', () => {
         });
         expect(response.status).toBe(200);
         expect(response.headers.get('cache-control')).toBe('no-store');
+        expect(response.headers.get('connection')).toBe('close');
         const html = await response.text();
         expect(html).toContain('授权成功');
         expect(html).toContain('TokenDance 已成功连接到 ClawX。');
@@ -65,6 +66,7 @@ describe('TokenDance OAuth', () => {
     expect(progress).toEqual([
       'TokenDance authorization callback received',
       expect.stringMatching(/^TokenDance API key exchange completed in \d+ms$/),
+      expect.stringMatching(/^TokenDance callback server closed in \d+ms$/),
     ]);
   });
 

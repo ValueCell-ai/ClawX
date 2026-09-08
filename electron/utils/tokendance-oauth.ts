@@ -38,7 +38,13 @@ export function createTokenDancePkce(): { verifier: string; challenge: string } 
 
 function closeServer(server: Server): Promise<void> {
   if (!server.listening) return Promise.resolve();
-  return new Promise((resolve) => server.close(() => resolve()));
+  return new Promise((resolve) => {
+    server.close(() => resolve());
+    // Chromium may retain the loopback callback socket as a keep-alive
+    // connection for several seconds. It is no longer needed once the
+    // one-time code has been exchanged, so do not let it delay OAuth success.
+    server.closeAllConnections();
+  });
 }
 
 function abortError(message = 'tokendanceOAuth.cancelled'): Error {
@@ -172,6 +178,7 @@ export async function loginTokenDanceOAuth(
       response.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',
+        'Connection': 'close',
         'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
       });
       response.end(renderSuccessPage(request.headers['accept-language']));
@@ -250,6 +257,8 @@ export async function loginTokenDanceOAuth(
   } finally {
     if (timeout) clearTimeout(timeout);
     options.signal?.removeEventListener('abort', onAbort);
+    const closeStartedAt = Date.now();
     await closeServer(server);
+    options.onProgress?.(`TokenDance callback server closed in ${Date.now() - closeStartedAt}ms`);
   }
 }
