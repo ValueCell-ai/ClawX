@@ -11,7 +11,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -47,9 +47,11 @@ async function createHarness(overrides: Partial<CuaRuntimeDependencies> = {}) {
 
   const connection = {
     generation: 'generation-1',
+    driverVersion: '0.21.0',
+    socketPath: '/private/cua host/generation-1.sock',
     mcpProtocolVersion: '2025-06-18',
     mcp: {
-      command: binaryPath,
+      command: '/unrelated/mcp-client',
       args: ['mcp', '--socket', '/tmp/cua.sock'],
       environment: [{ name: 'CUA_DRIVER_SOCKET', value: '/tmp/cua.sock' }],
     },
@@ -115,12 +117,16 @@ async function createHarness(overrides: Partial<CuaRuntimeDependencies> = {}) {
 describe('CuaRuntimeManager', () => {
   it('does not load permission or embedded SDKs on startup or activation while disabled', async () => {
     const harness = await createHarness({ isEnabled: async () => false });
+    const connectionFile = getCuaConnectionFilePath(harness.userDataPath);
+    await mkdir(join(harness.userDataPath, 'cua'), { recursive: true });
+    await writeFile(connectionFile, '{"v":1}');
     const manager = new CuaRuntimeManager(harness.dependencies);
     await expect(manager.start()).resolves.toBe(false);
     await expect(manager.refreshPermissions()).resolves.toBe(false);
     await expect(manager.requestPermissions()).rejects.toThrow('disabled');
     expect(harness.dependencies.loadMacOSPermissions).not.toHaveBeenCalled();
     expect(harness.dependencies.loadEmbeddedSdk).not.toHaveBeenCalled();
+    await expect(access(connectionFile)).rejects.toThrow();
   });
 
   it('never requests permissions implicitly when enabled', async () => {
@@ -157,11 +163,15 @@ describe('CuaRuntimeManager', () => {
   it('does not load or start the SDK when the bundled executable is missing', async () => {
     const harness = await createHarness();
     harness.dependencies.fs.exists = vi.fn(async () => false);
+    const connectionFile = getCuaConnectionFilePath(harness.userDataPath);
+    await mkdir(join(harness.userDataPath, 'cua'), { recursive: true });
+    await writeFile(connectionFile, '{"v":1}');
 
     await expect(new CuaRuntimeManager(harness.dependencies).start()).resolves.toBe(false);
 
     expect(harness.dependencies.loadEmbeddedSdk).not.toHaveBeenCalled();
     expect(harness.dependencies.loadMacOSPermissions).not.toHaveBeenCalled();
+    await expect(access(connectionFile)).rejects.toThrow();
   });
 
   it('reads macOS permissions without requesting and does not start when denied', async () => {
@@ -178,6 +188,7 @@ describe('CuaRuntimeManager', () => {
 
   it('starts Windows without permission calls and keeps unrestricted flags inside exact host options', async () => {
     const harness = await createHarness({ platform: 'win32', arch: 'x64' });
+    harness.connection.socketPath = '\\\\.\\pipe\\cua-generation-1';
 
     await expect(new CuaRuntimeManager(harness.dependencies).start()).resolves.toBe(true);
 
@@ -194,6 +205,13 @@ describe('CuaRuntimeManager', () => {
     });
     expect(harness.withOptions).toHaveBeenCalledWith(harness.createOptions.mock.results[0].value);
     expect(harness.host.start).toHaveBeenCalledOnce();
+    expect(JSON.parse(await readFile(getCuaConnectionFilePath(harness.userDataPath), 'utf8'))).toEqual({
+      v: 2,
+      generation: harness.connection.generation,
+      driverVersion: '0.21.0',
+      binaryPath: join(harness.dependencies.resourcesPath, 'bin', 'cua-driver.exe'),
+      socketPath: harness.connection.socketPath,
+    });
   });
 
   it('atomically publishes only the private connection descriptor with POSIX permissions', async () => {
@@ -204,21 +222,21 @@ describe('CuaRuntimeManager', () => {
 
     const descriptor = JSON.parse(await readFile(connectionFile, 'utf8'));
     expect(descriptor).toEqual({
-      v: 1,
+      v: 2,
       generation: harness.connection.generation,
-      mcpProtocolVersion: harness.connection.mcpProtocolVersion,
-      command: harness.connection.mcp.command,
-      args: harness.connection.mcp.args,
-      environment: harness.connection.mcp.environment,
+      driverVersion: harness.connection.driverVersion,
+      binaryPath: harness.binaryPath,
+      socketPath: harness.connection.socketPath,
     });
     expect(Object.keys(descriptor)).toEqual([
       'v',
       'generation',
-      'mcpProtocolVersion',
-      'command',
-      'args',
-      'environment',
+      'driverVersion',
+      'binaryPath',
+      'socketPath',
     ]);
+    expect(isAbsolute(descriptor.binaryPath)).toBe(true);
+    expect(isAbsolute(descriptor.socketPath)).toBe(true);
     expect(harness.renameFile).toHaveBeenCalledOnce();
     const [temporaryPath, publishedPath] = harness.renameFile.mock.calls[0];
     expect(temporaryPath).not.toBe(connectionFile);
@@ -227,6 +245,39 @@ describe('CuaRuntimeManager', () => {
       expect((await stat(join(harness.userDataPath, 'cua'))).mode & 0o777).toBe(0o700);
       expect((await stat(connectionFile)).mode & 0o777).toBe(0o600);
     }
+  });
+
+  it('publishes the resolved development bundle rather than an MCP or PATH-selected executable', async () => {
+    const harness = await createHarness({ isPackaged: false });
+    const binaryPath = join(harness.dependencies.cwd, 'resources', 'bin', 'darwin-arm64', 'cua-driver');
+    await mkdir(join(binaryPath, '..'), { recursive: true });
+    await writeFile(binaryPath, 'driver');
+    await expect(new CuaRuntimeManager(harness.dependencies).start()).resolves.toBe(true);
+    expect(JSON.parse(await readFile(getCuaConnectionFilePath(harness.userDataPath), 'utf8'))).toEqual({
+      v: 2,
+      generation: harness.connection.generation,
+      driverVersion: harness.connection.driverVersion,
+      binaryPath,
+      socketPath: harness.connection.socketPath,
+    });
+  });
+
+  it('removes the temporary descriptor and stops the host when atomic publication fails', async () => {
+    const harness = await createHarness();
+    const connectionFile = getCuaConnectionFilePath(harness.userDataPath);
+    harness.renameFile.mockImplementationOnce(async (temporaryPath) => {
+      const descriptor = JSON.parse(await readFile(temporaryPath, 'utf8'));
+      expect(descriptor.v).toBe(2);
+      await expect(access(connectionFile)).rejects.toThrow();
+      throw new Error('publication failed');
+    });
+    const manager = new CuaRuntimeManager(harness.dependencies);
+    await expect(manager.start()).rejects.toThrow('publication failed');
+    await expect(access(harness.renameFile.mock.calls[0][0])).rejects.toThrow();
+    await expect(access(connectionFile)).rejects.toThrow();
+    expect(harness.host.stop).toHaveBeenCalledOnce();
+    expect(harness.host.uniffiDestroy).toHaveBeenCalledOnce();
+    expect(manager.getStatus().running).toBe(false);
   });
 
   it('starts once and stops once while always cleaning up the descriptor', async () => {
@@ -278,10 +329,22 @@ describe('CuaRuntimeManager', () => {
     await vi.waitFor(() => expect(harness.host.stop).toHaveBeenCalledOnce());
     const start = manager.start();
     expect(harness.host.start).toHaveBeenCalledOnce();
+    harness.host.start.mockResolvedValueOnce({
+      ...harness.connection,
+      generation: 'generation-2',
+      socketPath: '/private/cua host/generation-2.sock',
+    });
     release();
     await stop;
     await expect(start).resolves.toBe(true);
     expect(harness.host.start).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(await readFile(getCuaConnectionFilePath(harness.userDataPath), 'utf8'))).toEqual({
+      v: 2,
+      generation: 'generation-2',
+      driverVersion: harness.connection.driverVersion,
+      binaryPath: harness.binaryPath,
+      socketPath: '/private/cua host/generation-2.sock',
+    });
   });
 
   it('invalidates the descriptor and allows restart after an unexpected daemon exit', async () => {

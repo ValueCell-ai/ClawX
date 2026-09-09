@@ -54,17 +54,18 @@ describe('Computer Use management', () => {
     expect(runtime.requestPermissions).not.toHaveBeenCalled();
   });
 
-  it('persists opt-in, installs and starts without permission requests, then disables policy', async () => {
+  it('persists opt-in and starts without installing plugins or changing Gateway config', async () => {
     const { api, runtime } = harness();
     expect((await api.setEnabled({ enabled: true })).enabled).toBe(true);
     expect(runtime.start).toHaveBeenCalledOnce();
     expect(runtime.requestPermissions).not.toHaveBeenCalled();
-    expect(mocks.config).toMatchObject({ plugins: { entries: { 'clawx-cua-computer': { enabled: true } } } });
+    expect(mocks.install).not.toHaveBeenCalled();
+    expect(mocks.mutate).not.toHaveBeenCalled();
     await api.setEnabled({ enabled: false });
     expect(mocks.enabled).toBe(false);
     expect(runtime.stop).toHaveBeenCalledOnce();
-    expect(mocks.config).toMatchObject({ plugins: { entries: { 'clawx-cua-computer': { enabled: false } } } });
-    expect(mocks.config.plugins).not.toHaveProperty('allow');
+    expect(mocks.config).toEqual({});
+    expect(mocks.mutate).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -76,20 +77,18 @@ describe('Computer Use management', () => {
     'preserves allowlist semantics for live toggles with $allow', async ({ allow }) => {
       const { api } = harness();
       mocks.config = { plugins: {
+        enabled: false,
         ...(allow === undefined ? {} : { allow: [...allow] }),
         entries: { 'provider-plugin': { enabled: true } },
       } };
+      const original = structuredClone(mocks.config);
       await api.setEnabled({ enabled: false });
       expect((mocks.config.plugins as Record<string, unknown>).allow).toEqual(allow);
       for (const enabled of [true, false, true, false]) {
         await api.setEnabled({ enabled });
-        const plugins = mocks.config.plugins as Record<string, unknown>;
-        expect(plugins.allow).toEqual(allow?.length ? [...new Set([...allow, 'clawx-cua-computer'])] : allow);
-        expect(Object.hasOwn(plugins, 'allow')).toBe(allow !== undefined);
-        expect(plugins.entries).toEqual({
-          'provider-plugin': { enabled: true },
-          'clawx-cua-computer': { enabled },
-        });
+        expect(mocks.config).toEqual(original);
+        expect(mocks.mutate).not.toHaveBeenCalled();
+        expect(mocks.install).not.toHaveBeenCalled();
       }
     },
   );
@@ -109,13 +108,13 @@ describe('Computer Use management', () => {
     expect(runtime.refreshPermissions).not.toHaveBeenCalled();
   });
 
-  it('keeps disabled persistence and policy even if stopping fails', async () => {
+  it('keeps disabled persistence without changing Gateway config even if stopping fails', async () => {
     const { api, runtime } = harness();
     mocks.enabled = true;
     runtime.stop.mockRejectedValueOnce(new Error('stop failed'));
     await expect(api.setEnabled({ enabled: false })).rejects.toThrow('stop failed');
     expect(mocks.enabled).toBe(false);
-    expect(mocks.config).toMatchObject({ plugins: { entries: { 'clawx-cua-computer': { enabled: false } } } });
+    expect(mocks.mutate).not.toHaveBeenCalled();
   });
 
   it('starts a persisted opt-in without requesting permissions and does nothing privileged on default-off startup', async () => {
@@ -128,15 +127,17 @@ describe('Computer Use management', () => {
     await api.initialize();
     expect(runtime.start).toHaveBeenCalledOnce();
     expect(runtime.requestPermissions).not.toHaveBeenCalled();
+    expect(mocks.install).not.toHaveBeenCalled();
+    expect(mocks.mutate).not.toHaveBeenCalled();
   });
 
-  it('rolls back a failed enable and can retry after a policy error', async () => {
+  it('rolls back a failed enable and can retry after a host startup error', async () => {
     const { api, runtime } = harness();
-    mocks.mutate.mockRejectedValueOnce(new Error('Gateway config failed'));
-    await expect(api.setEnabled({ enabled: true })).rejects.toThrow('Gateway config failed');
+    runtime.start.mockRejectedValueOnce(new Error('Host startup failed'));
+    await expect(api.setEnabled({ enabled: true })).rejects.toThrow('Host startup failed');
     expect(mocks.enabled).toBe(false);
     expect(runtime.stop).toHaveBeenCalledOnce();
-    expect(mocks.config).toMatchObject({ plugins: { entries: { 'clawx-cua-computer': { enabled: false } } } });
+    expect(mocks.mutate).not.toHaveBeenCalled();
     await expect(api.setEnabled({ enabled: true })).resolves.toMatchObject({ enabled: true });
   });
 

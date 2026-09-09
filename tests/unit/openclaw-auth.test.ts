@@ -2,7 +2,7 @@
 
 import { mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { testHome, testUserData, getSettingMock, setSettingMock } = vi.hoisted(() => {
   const suffix = Math.random().toString(36).slice(2);
@@ -354,6 +354,8 @@ describe('removeProviderKeyFromOpenClaw', () => {
 });
 
 describe('sanitizeOpenClawConfig', () => {
+  afterEach(() => { getSettingMock.mockReset(); });
+
   beforeEach(async () => {
     vi.resetModules();
     vi.restoreAllMocks();
@@ -1093,8 +1095,8 @@ describe('sanitizeOpenClawConfig', () => {
     expect(allow).toContain('openai');
   });
 
-  it.each([true, false, undefined])('enforces explicit CUA opt-in (%s) while preserving unrelated plugin config', async (enabled) => {
-    getSettingMock.mockResolvedValueOnce(enabled).mockResolvedValueOnce(enabled);
+  it.each([true, false, undefined])('does not reconcile CUA policy for opt-in %s while preserving unrelated plugin config', async (enabled) => {
+    getSettingMock.mockImplementation(async (key) => key === 'computerUseEnabled' ? enabled : undefined);
     await writeOpenClawJson({
       plugins: {
         enabled: false,
@@ -1115,72 +1117,44 @@ describe('sanitizeOpenClawConfig', () => {
       'utf8',
     );
     const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
-    const { isCuaPlatformSupported } = await import('@electron/utils/cua-platform');
     await sanitizeOpenClawConfig();
     await sanitizeOpenClawConfig();
 
     const result = await readOpenClawJson();
     const plugins = result.plugins as Record<string, unknown>;
     const entries = plugins.entries as Record<string, Record<string, unknown>>;
-    const expectedEnabled = isCuaPlatformSupported() && enabled === true;
-    expect(plugins.enabled).toBe(expectedEnabled);
+    expect(plugins.enabled).toBe(false);
     expect((plugins.allow as string[]).filter((id) => id === 'clawx-cua-computer')).toHaveLength(1);
     expect(plugins.allow).toContain('custom-plugin');
     expect(entries['custom-plugin']).toEqual({ enabled: true, config: { keep: 'yes' } });
-    expect(entries['clawx-cua-computer']).toEqual({ enabled: expectedEnabled, config: { preserved: true } });
+    expect(entries['clawx-cua-computer']).toEqual({ enabled: false, config: { preserved: true } });
     expect(plugins.load).toEqual({ paths: ['relative/plugin'] });
+    expect(getSettingMock).not.toHaveBeenCalledWith('computerUseEnabled');
   });
 
-  it('disables the ClawX CUA plugin without changing unrelated plugins on unsupported hosts', async () => {
-    const { applyClawXCuaPluginPolicy } = await import('@electron/utils/openclaw-auth');
-    const config: Record<string, unknown> = {
+  it('does not register a CUA plugin when sanitizing fresh config', async () => {
+    getSettingMock.mockImplementation(async (key) => key === 'computerUseEnabled' ? true : undefined);
+    await writeOpenClawJson({});
+    const auth = await import('@electron/utils/openclaw-auth');
+    await auth.sanitizeOpenClawConfig();
+    expect((await readOpenClawJson()).plugins).toBeUndefined();
+    expect(Object.keys(auth)).not.toContain('applyClawXCuaPluginPolicy');
+  });
+
+  it('leaves a sole-CUA restrictive policy fixture for explicit cleanup rather than widening it', async () => {
+    const config = {
       plugins: {
-        enabled: true,
-        allow: ['custom-plugin', 'clawx-cua-computer'],
+        enabled: false,
+        allow: ['clawx-cua-computer'],
         entries: {
-          'custom-plugin': { enabled: true },
           'clawx-cua-computer': { enabled: true, config: { preserved: true } },
         },
       },
     };
-
-    expect(applyClawXCuaPluginPolicy(config, false)).toBe(true);
-
-    const plugins = config.plugins as Record<string, unknown>;
-    const entries = plugins.entries as Record<string, Record<string, unknown>>;
-    expect(plugins.allow).toEqual(['custom-plugin', 'clawx-cua-computer']);
-    expect(entries['custom-plugin']).toEqual({ enabled: true });
-    expect(entries['clawx-cua-computer']).toEqual({ enabled: false, config: { preserved: true } });
-  });
-});
-
-describe('Computer Use allowlist isolation', () => {
-  it.each([
-    { allow: undefined },
-    { allow: [] },
-    { allow: ['clawx-cua-computer'] },
-    { allow: ['custom-plugin'] },
-    { allow: ['custom-plugin', 'clawx-cua-computer'] },
-  ])('preserves unrelated plugin availability through repeated toggles with $allow', async ({ allow }) => {
-    const { applyClawXCuaPluginPolicy } = await import('@electron/utils/openclaw-auth');
-    const plugins = {
-      ...(allow === undefined ? {} : { allow: [...allow] }),
-      entries: { 'custom-plugin': { enabled: true, config: { keep: true } } },
-    };
-    const config: Record<string, unknown> = { plugins };
-    const initiallyAllowed = (id: string) => !allow?.length || allow.includes(id);
-    for (const enabled of [false, true, false, true, false]) {
-      applyClawXCuaPluginPolicy(config, true, enabled);
-      const current = plugins.allow;
-      for (const id of ['custom-plugin', 'global-extension', 'provider-plugin']) {
-        expect(!current?.length || current.includes(id)).toBe(initiallyAllowed(id));
-      }
-      expect(Object.hasOwn(plugins, 'allow')).toBe(allow !== undefined);
-      expect(plugins.entries['custom-plugin']).toEqual({ enabled: true, config: { keep: true } });
-      expect(plugins.entries).toMatchObject({ 'clawx-cua-computer': { enabled } });
-      expect(applyClawXCuaPluginPolicy(config, true, enabled)).toBe(false);
-    }
-    expect(plugins.allow).toEqual(allow?.length ? [...new Set([...allow, 'clawx-cua-computer'])] : allow);
+    await writeOpenClawJson(config);
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+    expect((await readOpenClawJson()).plugins).toEqual(config.plugins);
   });
 });
 

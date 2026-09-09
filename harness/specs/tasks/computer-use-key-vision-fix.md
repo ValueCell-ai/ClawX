@@ -5,11 +5,9 @@ scenario: gateway-backend-communication
 taskType: runtime-bridge
 intent: Preserve Command modifiers across the CUA boundary and infer missing model input metadata without overriding explicit text-only models.
 touchedAreas:
-  - resources/openclaw-plugins/clawx-cua-computer/computer-tool.mjs
-  - resources/openclaw-plugins/clawx-cua-computer/mcp-client.mjs
-  - resources/openclaw-plugins/clawx-cua-computer/package.json
+  - resources/skills/computer-use/**
   - electron/utils/openclaw-auth.ts
-  - tests/unit/clawx-cua-plugin.test.ts
+  - tests/unit/cua-cli-contract.test.ts
   - tests/unit/openclaw-auth.test.ts
   - harness/specs/tasks/computer-use-key-vision-fix.md
   - harness/specs/rules/local-computer-use.md
@@ -24,7 +22,7 @@ touchedAreas:
   - tests/unit/computer-use-api.test.ts
   - tests/unit/plugin-install.test.ts
 expectedUserBehavior:
-  - Meta and Command chords retain the Command modifier on macOS and Windows.
+  - Native CLI guidance uses the pinned cmd modifier for Command/Win chords and verifies shortcut effects rather than assuming acknowledgment proves success.
   - Provider synchronization fills missing image-input metadata for recognized vision models while preserving explicit input declarations.
 requiredProfiles:
   - fast
@@ -37,24 +35,31 @@ requiredRules:
   - comms-regression
   - docs-sync
 requiredTests:
-  - tests/unit/clawx-cua-plugin.test.ts
+  - tests/unit/cua-cli-contract.test.ts
+  - tests/unit/provider-model-capabilities.test.ts
   - tests/unit/openclaw-auth.test.ts
   - tests/unit/plugin-install.test.ts
   - tests/unit/computer-use-api.test.ts
   - tests/e2e/computer-use.spec.ts
 acceptance:
-  - The computer tool sends cmd rather than meta to CUA press_key, including Meta+Space.
+  - Native CLI guidance uses cmd rather than meta for CUA press_key; there is no custom computer-tool alias mapper.
   - Existing custom provider rows without input are repaired on sync, as are newly written and legacy agent models.json rows.
   - Explicit text-only input and unknown-model conservative fallback remain intact.
   - A returned permission request that leaves access ungranted shows actionable feedback without promising a native prompt; guidance accounts for development terminal or IDE attribution.
   - No permission bypass, automatic input replay, or unrelated screenshot capture is introduced.
-  - Each new MCP transport uses a fresh CUA session label; reconnection must not reuse another transport's lease or replay failed inputs.
-  - The bundled plugin version changes so existing 0.1.0 mirrors receive the fixes through normal installation.
+  - Native workflows use a unique explicit non-default session across accepting CLI calls and never blindly replay input after unknown completion or a generation change.
+  - Historical computer chat presentation and independent provider vision-metadata fixes remain without reinstalling or registering the retired plugin.
 docs:
   required: true
 ---
 
 # Diagnosis
+
+The old computer-tool alias mapper, per-MCP-transport lease fix, and plugin mirror
+version bump are historical. `harness/specs/tasks/cua-driver-cli.md` supersedes
+those adapter requirements and the removed plugin test. The provider input
+metadata repair, permission feedback, and no-replay principles remain active;
+the requirements above refer to their current native CLI integration.
 
 See harness/reference/computer-use.md for the pinned driver contract and live
 verification limitations. Native shortcut verification requires the user's OS

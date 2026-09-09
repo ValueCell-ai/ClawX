@@ -342,48 +342,46 @@ describe('plugin installer diagnostics', () => {
     });
   });
 
-  it.each([false, true])('installs the bundled ClawX CUA mirror over legacy 0.1.0 (existing=%s)', async (existing) => {
+  it('does not ship or expose an installer for the retired CUA adapter', async () => {
     const actualFs = await vi.importActual<typeof import('node:fs')>('node:fs');
-    const sourcePackage = JSON.parse(actualFs.readFileSync(
-      path.resolve('resources/openclaw-plugins/clawx-cua-computer/package.json'), 'utf8',
-    ));
-    const targetDir = '/home/test/.openclaw/extensions/clawx-cua-computer';
-    mockApp.isPackaged = false;
-    let copied = false;
-    mockCpSync.mockImplementation(() => {
-      copied = true;
-    });
+    for (const file of ['package.json', 'openclaw.plugin.json', 'index.mjs', 'computer-tool.mjs', 'mcp-client.mjs']) {
+      expect(actualFs.existsSync(path.resolve('resources/openclaw-plugins/clawx-cua-computer', file))).toBe(false);
+    }
+    const installer = await import('@electron/utils/plugin-install');
+    expect(Object.keys(installer)).not.toContain('ensureClawXCuaPluginInstalled');
+  });
+
+  it('skips CUA install and trust repair at startup while retaining the OpenAI image mirror', async () => {
+    const extensions = '/home/test/.openclaw/extensions';
+    const retiredDir = `${extensions}/clawx-cua-computer`;
+    const imageDir = `${extensions}/clawx-openai-image`;
+    configState.authoritative = { plugins: {
+      allow: ['clawx-cua-computer'],
+      entries: { 'clawx-cua-computer': { enabled: false } },
+      installs: { 'clawx-cua-computer': { source: 'path', installPath: retiredDir } },
+    } };
+    const original = structuredClone(configState.authoritative);
     mockExistsSync.mockImplementation((input: string) => {
       const value = String(input);
-      if (value.startsWith(targetDir)) return existing || copied;
-      return value.includes('openclaw.plugin.json') || value.endsWith('package.json');
+      return value.startsWith(retiredDir) || value.startsWith(imageDir);
     });
-    mockReadFileSync.mockImplementation((input: string) => (
-      String(input).endsWith('package.json')
-        ? JSON.stringify({ version: String(input).startsWith(targetDir) && !copied ? '0.1.0' : sourcePackage.version })
-        : JSON.stringify({ id: 'clawx-cua-computer' })
-    ));
+    mockReadFileSync.mockReturnValue(JSON.stringify({ version: '0.1.0' }));
 
-    const { ensureClawXCuaPluginInstalled } = await import('@electron/utils/plugin-install');
-    const result = await ensureClawXCuaPluginInstalled();
-    expect(mockCpSync).toHaveBeenCalledOnce();
-    const sourceDir = String(mockCpSync.mock.calls[0][0]);
-
-    expect(result).toEqual({ installed: true, peerLinkOk: true });
-    expect(sourceDir).toMatch(/openclaw-plugins\/clawx-cua-computer$/);
-    expect(mockCpSync).toHaveBeenCalledWith(sourceDir, targetDir, {
-      recursive: true,
-      dereference: true,
-    });
+    const { ensureAllBundledPluginsInstalled, syncTrustedOfficialPluginInstallRecord } = await import('@electron/utils/plugin-install');
+    await ensureAllBundledPluginsInstalled();
+    await expect(syncTrustedOfficialPluginInstallRecord('clawx-cua-computer', retiredDir)).resolves.toBe(false);
+    expect(configState.authoritative).toEqual(original);
+    expect(mockCpSync).not.toHaveBeenCalled();
     expect(mockUpsertPluginInstallRecordsIntoSqlite).toHaveBeenCalledWith({
-      'clawx-cua-computer': expect.objectContaining({
+      'clawx-openai-image': expect.objectContaining({
         source: 'path',
-        sourcePath: targetDir,
-        spec: targetDir,
-        installPath: targetDir,
-        version: sourcePackage.version,
+        installPath: imageDir,
       }),
     });
+    expect(mockUpsertPluginInstallRecordsIntoSqlite).not.toHaveBeenCalledWith(expect.objectContaining({
+      'clawx-cua-computer': expect.anything(),
+    }));
+    expect(mockReadFileSync.mock.calls.some(([file]) => String(file).startsWith(retiredDir))).toBe(false);
   });
 
   it('reports a failed OpenClaw peer link repair for an installed mirror', async () => {

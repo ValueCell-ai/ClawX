@@ -18,6 +18,9 @@ ownedPaths:
   - electron/gateway/**
   - electron/preload/**
   - electron/utils/**
+  - resources/skills/computer-use/**
+  - src/pages/ComputerUse/**
+  - tests/e2e/computer-use*.spec.ts
   - tests/unit/session-attention.test.ts
   - tests/unit/session-status.test.ts
   - tests/unit/session-catalog.test.ts
@@ -49,6 +52,7 @@ conditionalProfiles:
       - user-visible chat send/receive behavior changes
       - channels/agents/settings UI depends on new backend response shape
       - Web Browser guest, navigation, session, permission, or data policy changes
+      - Computer Use management wording, opt-in, skill selection, or exec/read image behavior changes
 requiredRules:
   - openclaw-config-delivery
   - renderer-main-boundary
@@ -105,9 +109,9 @@ Scheduled-task history is Main-owned backend data. Current OpenClaw versions mus
 
 The local HTML Preview privileged bridge is also Main-owned: Renderer may load a validated local HTML file or open that current file externally through the typed Host API. The guest is an implementation detail of the existing `preview` tab; there is no `web-browser` artifact tab or general address navigation. The durable guest contract is `harness/reference/web-browser.md`.
 
-Local Computer Use is also Main-owned and defaults off. The sidebar management page uses the typed host API for persistent opt-in and read-only macOS permission status. Only an explicit enabled permission action may prompt; startup and activation never prompt. Electron Main serializes lifecycle changes, directly supervises the embedded CUA daemon, and publishes a private generation-scoped MCP descriptor for a ClawX-owned Gateway plugin. Disabling stops the daemon, removes the descriptor, and reconciles disabled plugin policy. The plugin never starts the privileged daemon and the feature does not use OpenClaw nodes, pairing, or `node.invoke`. See `harness/specs/tasks/computer-use-opt-in.md` for management acceptance coverage.
+Local Computer Use is also Main-owned and defaults off. Its Developer Mode-gated sidebar page retains typed host-api management for persistent opt-in and read-only macOS permission status. Only an explicit enabled permission action may prompt; startup and activation never prompt. Main retains `EmbeddedCuaDriverHost`, native SDK/ASAR loading, serialized lifecycle changes, and embedded daemon supervision. It atomically publishes the private `{ v: 2, generation, driverVersion, binaryPath, socketPath }` descriptor at `CLAWX_CUA_CONNECTION_FILE`; disabling stops the daemon and removes the descriptor, without plugin-policy reconciliation. Model operations use existing OpenClaw `exec` with the descriptor's absolute bundled binary and explicit socket, and image-capable `read` for workspace-scoped screenshot files. There is no custom `computer` tool, OpenClaw plugin, MCP proxy, CLI action wrapper, node host, pairing, or `node.invoke`. Native window/AX/menu/verification and other pinned CLI capabilities are available on supported hosts, alongside primary-display capture/input, rather than a ClawX action subset. See `harness/specs/tasks/cua-driver-cli.md` for current acceptance; it supersedes earlier MCP requirements.
 
-The first-party `computer-use` skill supplies optional workflow guidance through the existing skill picker without changing this default-off policy. Selection does not authorize input or grant permissions. See `harness/specs/tasks/builtin-computer-use-skill.md` and `harness/reference/computer-use-skill.md` for local bundling, discovery, user-content preservation, and research provenance.
+The bundled `computer-use` Skill retains `/computer-use` and uses the official CUA 0.21.0 accompanying Skill from fixed commit `70db98d1bcd92890d778f4978e0eb107a4b66c1b`, with MIT-licensed offline documents and a short ClawX entrypoint. Selection neither enables the service nor grants permissions. CLI workflows require explicit named sessions, result-aware verification despite zero-exit errors, fresh image files, and rediscovery after generation changes without blind input replay. Shell approvals, sandbox/read restrictions, and image settings remain unchanged: Skill guidance is not a hard sandbox, global action lock, or native cancellation guarantee. See `harness/reference/computer-use.md` and `harness/reference/computer-use-skill.md` for lifecycle, image privacy, provenance, distribution, and validation limits.
 
 Gateway session-catalog subscription, normalization, ordered list/event replay, attention transitions, and reconnect recovery are documented in `harness/reference/sidebar-session-attention.md`. The first prompt sent to a newly created non-default Agent must title its `agent:<id>:main` conversation; synthetic transport display names such as `ACP` must not replace that label, and transcript-summary hydration must restore it after reload. Deleting an Agent is also a session-catalog lifecycle boundary: after Main confirms the destructive config/filesystem operation, Renderer must immediately forget every canonical `agent:<deletedId>:` row, retain an in-memory tombstone that blocks stale list rows and delayed events, and repair selection without waiting for a Gateway restart. An authoritative Agent snapshot containing the same ID clears the tombstone to support recreation, but an Agent-list request that predates a confirmed mutation must not publish or reconcile afterward. An already-absent session index or entry is an idempotent conversation-delete success, while malformed indexes and unsafe transcript paths remain failures. Electron test-process isolation and global-resource scheduling are documented in `harness/reference/e2e-parallelism.md`.
 

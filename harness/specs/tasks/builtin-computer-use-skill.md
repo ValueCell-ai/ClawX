@@ -3,7 +3,7 @@ id: builtin-computer-use-skill
 title: Built-in computer-use guidance
 scenario: gateway-backend-communication
 taskType: runtime-bridge
-intent: Ship original opt-in desktop guidance through the existing built-in skill installer and picker without changing tool authorization.
+intent: Retain computer-use discovery and opt-in independence while distributing the fixed official CUA 0.21.0 Skill with ClawX host guidance.
 touchedAreas:
   - resources/skills/computer-use/**
   - electron/utils/skill-config.ts
@@ -16,7 +16,6 @@ touchedAreas:
   - electron-builder.yml
   - package.json
   - pnpm-workspace.yaml
-  - resources/openclaw-plugins/clawx-cua-computer/**
   - scripts/after-pack.cjs
   - scripts/cua-driver-artifacts.mjs
   - scripts/download-cua-driver.mjs
@@ -25,7 +24,7 @@ touchedAreas:
 expectedUserBehavior:
   - Fresh dev and packaged installations discover computer-use in the existing skill picker.
   - Explicit selection inserts /computer-use without enabling Computer Use or operating the desktop.
-  - Existing same-name user skills and disabled preferences are preserved.
+  - Known old bundled instructions are replaced in place while unrelated user content and disabled preferences are preserved.
 requiredProfiles:
   - fast
   - comms
@@ -37,14 +36,14 @@ requiredRules:
   - docs-sync
 requiredTests:
   - tests/unit/builtin-computer-use-skill.test.ts
-  - tests/unit/clawx-cua-plugin.test.ts
+  - tests/unit/cua-cli-contract.test.ts
   - tests/unit/computer-use-settings.test.ts
   - tests/e2e/computer-use-skill.spec.ts
 acceptance:
-  - The English skill is original, concise, and matches the bundled computer tool schema and error behavior.
-  - First-party resources ship locally without a third-party manifest entry or runtime download.
+  - The computer-use name and /computer-use command remain, with concise ClawX guidance ahead of the official CUA 0.21.0 accompanying Skill from fixed commit 70db98d1bcd92890d778f4978e0eb107a4b66c1b.
+  - Upstream documents, MIT license, provenance, filename mapping, and hashes ship locally without a third-party manifest entry or runtime download; moving main is not used.
   - Installation and selection never mutate computer-use policy or OS permissions.
-  - Guidance covers screenshot pixels, focus, serialized actions, uncertain completion, untrusted screen content, and confirmation boundaries.
+  - Guidance covers Main-owned v 2 endpoint discovery, explicit native exec calls, named sessions, window/AX/menu/verification capabilities, image-capable read and resizing, uncertain completion, privacy, and confirmation boundaries without promising a hard shell sandbox or global action serialization.
   - Tests exercise real resource installation and discovery and never perform desktop input.
 docs:
   required: true
@@ -52,9 +51,14 @@ docs:
 
 # Built-in Computer Use
 
-See `harness/reference/computer-use-skill.md` for public research sources,
-original synthesis decisions, packaging paths, and validation limits.
+The original screenshot-only synthesis, plugin-schema validation, and blanket
+same-name-directory preservation requirements are superseded by
+`harness/specs/tasks/cua-driver-cli.md`. Only the known old bundled instructions
+are replaced; unrelated user content remains protected, without a general updater.
+The current requirements above replace the deleted plugin test with CLI contract
+coverage. See `harness/reference/computer-use-skill.md` for fixed official source,
+host-specific precedence, packaging paths, and validation limits.
 
 Harness validation covers the full branch diff, including the preceding bundled
-driver and opt-in tasks. Their packaging, plugin, shared, and renderer paths are
+driver and opt-in tasks. Their packaging, shared, and renderer paths are
 listed above for that inherited scope; this task does not alter their authorization.

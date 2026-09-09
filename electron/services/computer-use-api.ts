@@ -1,9 +1,6 @@
 import type { ComputerUseStatus } from '@shared/host-api/contract';
 import type { CuaRuntimeManager } from '../utils/cua-runtime';
 import { getSetting, saveComputerUseEnabled } from '../utils/store';
-import { ensureClawXCuaPluginInstalled } from '../utils/plugin-install';
-import { applyClawXCuaPluginPolicy } from '../utils/openclaw-auth';
-import { mutateOpenClawConfig } from '../gateway/config-delivery';
 import { logger } from '../utils/logger';
 
 export function createComputerUseApi(runtime: CuaRuntimeManager) {
@@ -18,26 +15,14 @@ export function createComputerUseApi(runtime: CuaRuntimeManager) {
     enabled: await getSetting('computerUseEnabled') === true,
     ...runtime.getStatus(),
   });
-  const syncPolicy = async (enabled: boolean) => {
-    await mutateOpenClawConfig((config) => {
-      applyClawXCuaPluginPolicy(config, runtime.getStatus().supported, enabled);
-    });
-  };
   const reconcile = async () => {
     const enabled = !closing && await getSetting('computerUseEnabled') === true;
     if (!enabled) {
-      try {
-        await runtime.stop();
-      } finally {
-        await syncPolicy(false);
-      }
+      await runtime.stop();
       return;
     }
-    const result = await ensureClawXCuaPluginInstalled();
-    if (result.warning) throw new Error(result.warning);
     if (runtime.getStatus().running) await runtime.refreshPermissions();
     else await runtime.start();
-    await syncPolicy(true);
   };
   return {
     status: () => serialize(status),
@@ -49,7 +34,7 @@ export function createComputerUseApi(runtime: CuaRuntimeManager) {
       try {
         await reconcile();
       } catch (error) {
-        // Failed opt-in must not leave a live daemon or an enabled agent tool.
+        // Failed opt-in must not leave a live daemon or an enabled preference.
         if (payload.enabled) {
           await saveComputerUseEnabled(false);
           await reconcile();

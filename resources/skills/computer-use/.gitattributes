@@ -1,0 +1,2 @@
+# Preserve exact upstream bytes on Windows checkouts as well as POSIX.
+*.md -text

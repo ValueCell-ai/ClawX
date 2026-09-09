@@ -83,7 +83,7 @@ ClawX 预置了最佳实践的模型供应商配置，原生支持 Windows 平�
 - **⏰ 定时任务自动化**：可视化定义触发器与时间间隔，让 AI 智能体 7×24 小时自动运行；支持周期（每小时/每天/工作日/每周/自定义 cron）与单次执行，并可将结果自动投递到外部频道。
 - **🧩 可扩展技能系统**：本地优先的技能管理，扫描托管与 workspace 技能目录，无需依赖 Gateway 即可启用或停用技能；预装文档处理技能（`pdf`、`xlsx`、`docx`、`pptx`）。
 - **🔐 安全的供应商集成**：支持 OpenAI、Anthropic、Z.AI / GLM 等供应商，凭证经系统原生密钥链安全存储；提供自定义 Provider、OAuth 登录与兼容网关的降级探测。在开发者模式下，请前往 **模型 → 图像生成** 配置生图端点。
-- **💻 本机 Computer Use**：在 macOS 13+（Intel 或 Apple 芯片）和 Windows x64 上，Agent 可通过 ClawX 内置的驱动截取并操作主显示器。该能力仅限本机，不需要 OpenClaw 节点配对，也不会在运行时额外下载组件。
+- **💻 本机 Computer Use**：在 macOS 13+（Intel 或 Apple 芯片）和 Windows x64 上，Agent 可通过内置的原生 CUA CLI 操作窗口、辅助功能元素、菜单和桌面，并验证结果。主显示器截图和输入能力继续保留。驱动在本机运行，不需要 OpenClaw 节点配对或运行时额外下载组件。
 - **🌙 自适应主题**：支持浅色、深色与跟随系统主题。
 - **🚀 开机启动控制**：在 设置 → 通用 中开启开机自动启动。
 - **🔔 更新提示**：启动时自动检查新版本，由你决定是否下载或安装更新。
@@ -102,7 +102,7 @@ ClawX 预置了最佳实践的模型供应商配置，原生支持 Windows 平�
 ### 系统要求
 
 - **操作系统**：macOS 11+、Windows 10+ 或 Linux（Ubuntu 20.04+）
-- **Computer Use**：macOS 13+ x64/arm64，或 Windows 10+ x64；ClawX 在其他受支持平台上仍可正常使用，但不提供此工具
+- **Computer Use**：macOS 13+ x64/arm64，或 Windows 10+ x64；ClawX 在其他受支持平台上仍可正常使用，但不提供此功能
 - **内存**：最低 4GB RAM（推荐 8GB）
 - **存储空间**：1GB 可用磁盘空间
 
@@ -138,13 +138,15 @@ pnpm dev
 
 请使用支持图片输入的模型和服务端点。截图成功不代表模型能看到图片。同步提供商时会为已识别的视觉模型补齐缺失的输入能力元数据，同时保留显式纯文本声明；未知模型仍按纯文本处理。如果提示不支持图片，请检查当前提供商和模型，不要继续盲目键盘输入。
 
-内置 Computer Use 插件按版本升级已安装副本；更新后请重启 ClawX 以加载新代码。新的驱动代理连接使用独立会话，不会自动重放失败的桌面输入。
+Computer Use 是可选功能，**默认关闭**，包括尚未明确选择的已有安装。请先在设置中开启**开发者模式**，再从侧边栏进入**操作计算机**页面启用此功能。开关在重启后保留。Electron Main 持有内置驱动服务并管理权限；关闭会停止该服务并删除私有连接描述符。该能力不涉及远程发现或 OpenClaw 节点配对。
 
-Computer Use 是可选功能，**默认关闭**，包括尚未明确选择的已有安装。请在侧边栏的**操作计算机**页面启用。在受支持的 macOS 和 Windows 上，内置驱动通过 `computer` 工具提供主显示器截图、移动、点击、拖动、滚动、文本输入、组合键和有限时长等待。开关在重启后保留；关闭会停止驱动、删除连接描述符并禁用面向 Agent 的 Gateway 插件。Gateway 配置重新加载可能中断当前任务。该能力不涉及远程发现或 OpenClaw 节点配对。
+Agent 通过 OpenClaw 现有的 `exec` 工具调用内置原生 CUA CLI，再通过支持图片的 `read` 工具查看截图文件。此路径不再使用 ClawX 的 `computer` 工具、OpenClaw 插件或 MCP 代理。在受支持平台上可使用固定版本 CLI 的完整原生能力，包括窗口、辅助功能元素（AX）、菜单、浏览器/录制操作和 `verify_state`，不再受 ClawX 自定义操作子集限制。主显示器截图、移动、点击、拖动、滚动、文本输入、组合键和有限时长等待继续可用；具体命令仍受平台、应用和系统权限限制。
 
 macOS 管理页只读显示**辅助功能**和**屏幕录制**状态。启动、激活和启用开关均不会请求权限；需先启用功能，再明确点击**请求权限**。请求不保证系统再次弹窗；如果权限仍未授予，页面会显示操作指引，而不是静默返回原状态。请在系统设置 > 隐私与安全性中检查辅助功能和屏幕与系统音频录制（旧版 macOS 为屏幕录制）。以系统实际列出的应用为准：安装版通常是 ClawX，开发环境可能归属于启动它的终端或 IDE，例如 Ghostty 或 VS Code。修改授权后请重启 ClawX，必要时也重启启动它的应用。屏幕权限检查无法区分从未请求与此前拒绝。关闭功能不会撤销系统授权。权限或驱动缺失时驱动不可用，但不阻止聊天或 Gateway 启动。
 
-内置的 `clawx-cua-computer` 是 OpenClaw 插件，注册模型可见的 `computer` 工具，通过本机 MCP stdio 代理连接 Main 持有的驱动。开发环境和打包版本还本地附带独立的第一方 **computer-use** Skill。在聊天的技能选择器中选择它，即可插入 `/computer-use`，用于明确的桌面操作任务。其英文指导涵盖基于截图的操作、结果验证，以及破坏性或对外操作前的确认；它不是授权或安全保证，选择 Skill 不会启用 Computer Use 或授予系统权限。启动时会安装到 `~/.openclaw/skills/computer-use`，不会覆盖已有同名目录，也不需要运行时下载 Skill。
+内置 **computer-use** Skill 保留 `/computer-use` 选择器命令，基于 [CUA 0.21.0 随附的官方 Skill](https://github.com/trycua/cua/tree/70db98d1bcd92890d778f4978e0eb107a4b66c1b/libs/cua-driver/rust/Skills/cua-driver)，来源固定为标签 `cua-driver-rs-v0.21.0`，而非持续变化的上游 `main`。MIT 许可的文档和许可证离线随包分发，附有简短的 ClawX 入口说明，涵盖 Main 端点、权限、会话和图片处理。启动时安装到 `~/.openclaw/skills/computer-use`，替换已知的旧版内置指令并保留无关用户内容。选择 Skill 不会启用服务或授予系统权限。详见 [Skill 来源与集成](harness/reference/computer-use-skill.md)。
+
+截图文件位于当前本机 Agent 工作区中由任务管理的目录，但读取图片供模型分析时，内容可能发送给模型提供商。请避免截取敏感窗口。此功能要求本机执行、工作区访问及模型/提供商图片支持；沙箱或远程上下文不兼容时应报告限制，不得放宽全局 shell 审批或另启驱动。Skill 指导不是 shell 沙箱或全局操作锁。取消 `exec` 无法撤销已被接受的原生操作，也不保证原生紧急停止。驱动重启或完成状态未知时，应重新发现端点并观察当前状态，再决定后续操作，不要盲目重放输入。涉及重大影响或对外操作时需确认。
 
 > Web search 说明：ClawX 会在 Agent 和 Gateway 两层策略中禁用 OpenClaw 的通用 `web_search` 工具。
 > 这也包括 Moonshot（Kimi）搜索；受管浏览器自动化和 `web_fetch` 仍然可用。
@@ -168,7 +170,7 @@ ClawX 内置了代理设置，适用于需要通过本地代理客户端访问�
 ClawX 采用 **双进程 + Host API 统一接入架构**：React 渲染进程只通过统一的 host-api/api-client 抽象与后端交互，协议选择、Gateway 生命周期与 ACP Chat stdio bridge 全部由 Electron 主进程统一管理。
 
 - **进程模型**：Electron 主进程负责窗口、网关进程监控、系统集成与自动更新；OpenClaw Gateway 作为独立运行时进程提供 AI 编排、频道和技能能力；渲染层不直接访问本地端点。
-- **本机 Computer Use**：Electron Main 直接持有高权限的内置 CUA daemon，并负责 macOS 权限检查。Gateway 仅接收私有、按 generation 隔离的 MCP 启动描述符，内置插件只启动无特权的本机代理；整个流程不涉及 node host、配对、远程发现或运行时下载。
+- **本机 Computer Use**：Electron Main 保留 `EmbeddedCuaDriverHost`、原生 SDK 加载、权限检查和 daemon 监督。`CLAWX_CUA_CONNECTION_FILE` 指向私有描述符 `{ v: 2, generation, driverVersion, binaryPath, socketPath }`。OpenClaw 现有的 `exec` 使用描述符中的内置程序绝对路径及显式 socket 调用 CLI，`read` 向模型提供截图。整个流程不使用自定义插件、MCP 代理、node host、配对或运行时下载。
 - **配置交付**：Gateway 运行时由 Main 使用 `config.get` / `config.set`，停止或启动中则更新解析后的 JSON5 配置；普通 Provider/Agent/Skill/模型修改不会替换进程，凭据通过 `secrets.reload` 热更新。连续三分钟没有已验证的 Gateway 活动后，ClawX 会验证核心 RPC，并且只重启其自身拥有且不可用的 Gateway 进程；外部管理的 Gateway 保留给用户手动恢复。
 - **ACP Chat**：Chat UI 基于 ACP ([Agent Client Protocol](https://agentclientprotocol.com)) 与 OpenClaw 交互，从而在高速迭代的 OpenClaw 前找到相对稳定的聊天协议面。ACP 走 Main 持有的 stdio bridge，支持配置热重载后的历史回放认证、跨页面持续流式输出，以及由 Main 验证和加载的媒体/附件/文件活动（Changes）展示。当受保护的 Gateway 重启中断已接收的对话轮次时，补丁后的 OpenClaw 运行时会将恢复 run 显式关联到原 ACP prompt，使后续文本和工具活动继续进入同一个内存轮次；之后的历史回放也会以原生 ACP 更新恢复持久化的工具边界。如果最终答复持久化后再次重启导致终态通知丢失，按 run 和会话范围执行的结算会结束 pending prompt，避免 Chat 一直显示执行中。
 - **设计原则**：前端调用单一入口、Main 掌控传输策略、优雅恢复（重连/超时/退避）、安全存储与 CORS 安全。

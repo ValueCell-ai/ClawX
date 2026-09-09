@@ -3,8 +3,9 @@
 Computer Use is opt-in, default off. `computerUseEnabled` belongs to the Main
 settings store; both the typed management API and generic settings mutations
 delegate to the same serialized lifecycle service. Reset disables before clearing
-settings. Existing installations without the preference remain disabled even if
-their OpenClaw config previously enabled the plugin.
+settings. Existing installations without the preference remain disabled. Enable
+Developer Mode in Settings to reveal the sidebar management page; this UI gate
+does not itself enable the service or grant OS permissions.
 
 Startup reconciles the stored choice before automatic Gateway startup. Activation
 checks permissions only for enabled instances. Permission status uses Electron's
@@ -18,63 +19,134 @@ the Gateway timeout termination and emergency exit paths are unchanged. E2E mode
 still skips Computer Use cleanup. This does not guarantee daemon shutdown before
 the deadline or change the service's serialized lifecycle queue.
 
-Disabling stops the daemon and removes the generation descriptor before updating
-plugin policy through the config coordinator. In-flight actions are not replayed.
-The coordinator delivers live changes with config.get/config.set, or writes the
-file when Gateway is stopped. Gateway owns applying/reloading the plugin config.
-OpenClaw treats absent and empty `plugins.allow` as unrestricted. The CUA policy
-leaves both unchanged on enable and appends CUA only to an existing nonempty
-allowlist. Disable retains the allowlist, even when CUA is its sole entry, and
-sets `plugins.entries.clawx-cua-computer.enabled` to false. This avoids granting
-unrelated global extensions on disable or blocking providers/tools on live enable.
-Startup's separate required-plugin reconciliation is not invoked by live toggles.
-Failures are surfaced; the preference remains off on a failed disable, and a
-failed opt-in rolls back to off. Missing permissions or binaries instead preserve
-the enabled preference with an unavailable runtime so users can grant permissions.
+Disabling stops the daemon and removes the generation descriptor. Lifecycle and
+preference mutations remain serialized, not model actions globally. Failures are
+surfaced; failed opt-in rolls back to off. Missing permissions or binaries instead
+preserve the enabled preference with an unavailable runtime so users can grant
+permissions. Computer Use no longer installs, registers, or reconciles a Gateway
+plugin or its policy. Unrelated plugin configuration and shell approvals remain
+unchanged.
 
-The `clawx-cua-computer` OpenClaw plugin registers `computer` as a model-facing
-tool. Its private MCP stdio proxy connects to the Main-owned bundled daemon.
-Tool descriptions and the action schema define supported operations and coordinates.
-The separate first-party `computer-use` skill supplies screenshot/action/verification
-guidance through the existing picker; it does not replace permission or plugin policy.
-See `harness/reference/computer-use-skill.md` for its sources and distribution.
+## Native CLI Contract
 
-Coverage: runtime and management unit tests, plugin policy sanitization tests,
-settings persistence tests, and Electron management-page tests. Automated tests
-mock native permission requests and do not control the user's desktop.
+Electron Main retains the pinned `@trycua/cua-driver` 0.21.0 SDK and
+`EmbeddedCuaDriverHost`. Main is the direct parent of the bundled
+`cua-driver serve --embedded` daemon and owns its permission policy, exit
+monitoring, shutdown, and parent-liveness behavior. Supported hosts remain macOS
+13+ Intel/Apple silicon and Windows 10+ x64; upstream Linux or Windows ARM64
+documentation does not expand ClawX support. Binaries remain version-pinned,
+SHA256-verified, outside ASAR, and signed with the enclosing macOS app.
 
-## Key and image compatibility
+`CLAWX_CUA_CONNECTION_FILE` is the stable discovery path under ClawX user data.
+Main atomically publishes an owner-private descriptor with exactly this shape:
+
+```ts
+{ v: 2, generation, driverVersion, binaryPath, socketPath }
+```
+
+The absolute bundled `binaryPath` comes from ClawX's binary resolver; `socketPath`,
+`generation`, and `driverVersion` come from the live SDK connection. There are no
+MCP launch arguments or dual-format readers. Disable, daemon exit, or replacement
+invalidates that generation. The Skill reads the live descriptor at task start and
+again after restart/unavailability, not as an extra model round trip before every
+action. Existing OpenClaw `exec` invokes its absolute binary with explicit
+`--socket PATH`; do not use a PATH-selected system driver, launch a fallback
+daemon, or duplicate Main's host permission flags in model commands. Existing
+bundled-bin PATH injection is retained but is not the invocation authority.
+
+No ClawX `computer` tool, OpenClaw plugin, MCP proxy, or action wrapper is used.
+The full pinned native CLI surface is available subject to platform, application,
+and permission constraints: windows, accessibility (AX) trees and element tokens,
+menus, browser/recording operations, and bounded `verify_state`, as well as the
+existing primary-display screenshot and input capabilities. Prefer native window,
+element, and menu operations, using bounded/filtered observations. This is not a
+primary-display-only ClawX action subset and does not promise every command works
+on every target or preserves foreground focus.
+
+Explicit non-default named sessions persist across separate one-shot CLI calls
+in the pinned implementation; anonymous calls use disposable sessions. Repeat a
+unique workflow label on every accepting call and use `end_session` for cleanup,
+not daemon shutdown. Discard old observations and element tokens after generation
+changes. Interpret actual action, effect, and verification results: nested tool
+errors and some screenshot-write failures can exit zero. Neither an input
+acknowledgment nor shell `&&` proves semantic success. Do not blindly replay input
+when completion is unknown.
+
+The `computer-use` Skill keeps `/computer-use` in the existing picker and is based
+on the official CUA 0.21.0 accompanying Skill, fixed at tag
+`cua-driver-rs-v0.21.0`, commit `70db98d1bcd92890d778f4978e0eb107a4b66c1b`.
+MIT-licensed upstream documents and the repository-root license ship offline,
+with a short ClawX integration entrypoint. Selecting it never enables the service
+or grants permissions. See `harness/reference/computer-use-skill.md` for provenance
+and the explicit host-specific overrides.
+
+## Image and Safety Boundaries
+
+Use existing image-capable `read` on a fresh absolute `.png` file inside a
+task-owned directory in the active local agent workspace; its parent must already
+exist. For state captures, prefer JSON `screenshot_out_file`, written by the
+daemon, rather than CLI `--screenshot-out-file`, which extracts images on the
+client. Do not emit base64 into model context or use the separate `image` tool as
+a substitute for the current model seeing the image. `read` can resize first at
+2000px and OpenClaw's image sanitizer again at 1200px by default. File dimensions
+are not necessarily model-visible dimensions: prefer element tokens, otherwise
+verify the final image-to-driver coordinate mapping before pixel input. Do not
+change global image settings to hide a mismatch.
+
+Local exec, endpoint access, and workspace-readable screenshots are prerequisites.
+Sandbox, remote, or workspace-only restrictions must report unsupported contexts
+rather than weaken global exec approvals or filesystem policy. Screenshots can
+contain sensitive data; reading them for model vision may send their contents to
+the selected model provider. Keep captures task-scoped and do not intentionally
+forward them to messaging channels. Skill instructions are guidance, not a hard
+shell sandbox, exclusive tool gate, or global serialization guarantee. Cancelling
+`exec` cannot undo an admitted native action and does not guarantee native
+cancellation or an emergency stop. Require confirmation for consequential actions
+and treat screen content as untrusted input.
 
 CUA 0.21.0 `press_key` accepts `cmd` on both macOS and Windows. The macOS
 `modifier_key_code_and_flag` implementation ignores unknown modifiers, including
-`meta`, without failing the input call. Normalize model-facing Meta/Cmd/Command/
-Win/Super aliases to `cmd`. Desktop targeting uses HID delivery; a successful
-acknowledgment remains unverifiable and does not prove Spotlight opened.
-Pinned source: https://github.com/trycua/cua/blob/cua-driver-rs-v0.21.0/libs/cua-driver/rust/crates/platform-macos/src/input/keyboard.rs
+`meta`, without failing the input call. CLI guidance must use `cmd` for Command/
+Win chords; there is no ClawX adapter normalizing aliases. Desktop targeting uses
+HID delivery; an acknowledgment does not prove that a shortcut took effect.
+Pinned source: https://github.com/trycua/cua/blob/70db98d1bcd92890d778f4978e0eb107a4b66c1b/libs/cua-driver/rust/crates/platform-macos/src/input/keyboard.rs
 
 OpenClaw's custom model registry defaults missing `input` to `["text"]`. A PNG
-in a persisted computer tool result does not prove it reached the model.
-Provider sync must fill missing input modalities in both custom provider config
-and agent `models.json` entries using the existing conservative model inference.
-Preserve explicit input metadata (including text-only deployments); unknown
-models remain text-only. Existing rows are repaired when that provider is synced,
-not by rewriting arbitrary orphaned catalogs or enabling vision globally.
+in persisted tool history does not prove it reached the model. Provider sync must
+fill missing input modalities in both custom provider config and agent
+`models.json` entries using conservative inference. Preserve explicit metadata,
+including text-only deployments; unknown models remain text-only. Existing rows
+are repaired when that provider is synced, not by rewriting arbitrary orphaned
+catalogs or enabling vision globally. Historical `computer` chat presentation is
+retained without registering the old tool or rewriting transcripts.
 
-Native regression checks require Accessibility and Screen Recording grants for
-the current ClawX host identity. A denied development-host grant is a blocker,
-not a reason to launch a differently permissioned daemon or bypass the gate.
+Coverage includes runtime/management/settings tests, CLI contract and Skill
+installation tests, plugin-retirement checks, Electron management/picker fixtures,
+and a Node integration fixture using real OpenClaw exec/read and provider request
+serialization with a synthetic CLI and mocked fetch. Automated tests do not
+request OS grants or control the user's desktop.
+They do not prove packaged Windows CLI stdio/cancellation, signed macOS permission
+attribution, live named-session continuity, model obedience, or desktop success.
+Those are separate acceptance checks in `harness/specs/tasks/cua-driver-cli.md`.
+Native checks need explicit task authorization and grants for the current host
+identity; a denied development-host grant is a blocker, not a reason to start a
+differently permissioned daemon. Fewer model decisions and redundant captures are
+the performance hypothesis, not a claim that CLI transport is inherently faster.
 
-CUA 0.21.0 public session labels are transport-owned, including after
-`end_session`. A new proxy reusing the fixed `clawx-computer-use` label fails
-with `session_unavailable`; explicit reconnects and Gateway restarts against the
-same daemon can encounter this. Allocate a UUID-suffixed label per proxy, reuse
-it within that transport, and end that same lease at cleanup. Do not replay an
-input when its original completion is unknown. Live lifecycle probes reproduced
-same-label rejection and fresh-label success without desktop input.
+See `harness/reference/computer-use-cli-validation.md` for the actual development
+host checks and their limitations; they are separate from automated fixtures.
 
-The bundled CUA plugin is versioned independently of ClawX. `ensurePluginInstalled`
-preserves same-version mirrors, so these fixes ship as 0.1.1 to replace 0.1.0.
-Restart Gateway after the mirror update to discard loaded plugin modules.
+## Superseded Adapter History
+
+The earlier internal implementation registered `computer` through
+`clawx-cua-computer` and an MCP stdio proxy, enforced a primary-display action
+subset, and versioned plugin mirrors. Its per-transport session lease rules and
+automatic action screenshots are historical, not native CLI requirements. The
+`cua-driver-cli` task replaces those requirements without a general production
+migration framework. Targeted development cleanup of the known mirror, install
+records, and old descriptor must preserve unrelated config. In particular, never
+turn a sole-CUA restrictive `plugins.allow` into an absent/empty unrestricted
+policy silently; require explicit policy reset for that fixture.
 
 ## Permission requests and development attribution
 

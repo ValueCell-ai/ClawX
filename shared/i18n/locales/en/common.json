@@ -1,10 +1,10 @@
 {
     "computerUse": {
         "title": "Computer Use",
-        "description": "Let agents read the screen and operate this computer through the bundled CUA driver.",
+        "description": "Let agents inspect windows, accessibility elements, and menus, verify results, and operate this computer through the bundled native CUA CLI.",
         "enable": "Enable Computer Use",
-        "warning": "When enabled, agents can control your computer through the computer tool. Use it together with the /computer-use skill.",
-        "off": "Disabled. Agents cannot use the computer tool.",
+        "warning": "Use /computer-use for guidance based on the official CUA 0.21.0 Skill. Agents use existing exec and image-capable read tools; screenshots may be sent to your model provider. Selecting the skill does not enable this service or grant permissions.",
+        "off": "Disabled. The ClawX-managed CUA service is stopped.",
         "running": "The local driver is running.",
         "unavailable": "Enabled, but the driver is unavailable. Check permissions and the bundled driver, then turn this off and on to retry.",
         "unsupported": "Requires macOS 13+ (Intel or Apple silicon), or Windows 10+ x64.",

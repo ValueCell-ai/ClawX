@@ -13,12 +13,8 @@ const CUA_APP_ID = 'app.clawx.desktop';
 
 interface CuaConnection {
   generation: string;
-  mcpProtocolVersion: string;
-  mcp: {
-    command: string;
-    args: string[];
-    environment: Array<{ name: string; value: string }>;
-  };
+  driverVersion: string;
+  socketPath: string;
 }
 
 interface CuaHost {
@@ -82,12 +78,11 @@ export interface CuaRuntimeDependencies {
 }
 
 interface CuaConnectionDescriptor {
-  v: 1;
+  v: 2;
   generation: string;
-  mcpProtocolVersion: string;
-  command: string;
-  args: string[];
-  environment: Array<{ name: string; value: string }>;
+  driverVersion: string;
+  binaryPath: string;
+  socketPath: string;
 }
 
 export function getCuaConnectionFilePath(userDataPath: string = app.getPath('userData')): string {
@@ -165,12 +160,11 @@ export class CuaRuntimeManager {
     try {
       const connection = await host.start();
       await this.publishDescriptor({
-        v: 1,
+        v: 2,
         generation: connection.generation,
-        mcpProtocolVersion: connection.mcpProtocolVersion,
-        command: connection.mcp.command,
-        args: connection.mcp.args,
-        environment: connection.mcp.environment,
+        driverVersion: connection.driverVersion,
+        binaryPath,
+        socketPath: connection.socketPath,
       });
       this.started = true;
       void this.monitorHostExit(host, connection.generation).catch(() => undefined);

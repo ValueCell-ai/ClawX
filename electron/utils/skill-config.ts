@@ -2,7 +2,8 @@
  * Skill Config Utilities
  * Skill configuration reads and coordinated mutations for openclaw.json.
  */
-import { readFile, writeFile, mkdir, readdir, rm } from 'fs/promises';
+import { readFile, writeFile, mkdir, readdir, rm, lstat, mkdtemp, rename } from 'fs/promises';
+import { createHash } from 'crypto';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -297,10 +298,21 @@ export async function trimBundledOpenClawSkillsAndConfigs(
  * and ship unchanged in both dev and packaged builds, without network fetching.
  */
 const BUILTIN_SKILLS = ['computer-use'] as const;
+// Exact former ClawX computer-tool manifest, normalized to LF for Windows installs.
+const OLD_COMPUTER_USE_SHA256 = '0c9d65f242d6eaea3e8c3b1b0205045393dd8fb27a9ea54af8797bda118a1374';
+
+async function isUntouchedOldComputerUseSkill(targetDir: string): Promise<boolean> {
+    if (!(await lstat(targetDir)).isDirectory()) return false;
+    const entries = await readdir(targetDir, { withFileTypes: true });
+    // Additional files, edited manifests, and symlinks are user-owned.
+    if (entries.length !== 1 || entries[0].name !== 'SKILL.md' || !entries[0].isFile()) return false;
+    const manifest = await readFile(join(targetDir, 'SKILL.md'), 'utf-8');
+    return createHash('sha256').update(manifest.replace(/\r\n/g, '\n')).digest('hex') === OLD_COMPUTER_USE_SHA256;
+}
 
 /**
  * Ensure built-in skills are deployed to ~/.openclaw/skills/<slug>/.
- * Preserves any existing same-name directory, including user-managed skills.
+ * Replaces only the untouched former computer-use bundle; preserves user skills.
  * Runs at app startup; all errors are logged and swallowed so they never
  * block the normal startup flow.
  */
@@ -310,10 +322,6 @@ export async function ensureBuiltinSkillsInstalled(): Promise<void> {
     for (const slug of BUILTIN_SKILLS) {
         const targetDir = join(skillsRoot, slug);
 
-        if (existsSync(targetDir)) {
-            continue; // already installed
-        }
-
         const sourceDir = join(getResourcesDir(), 'skills', slug);
 
         if (!existsSync(join(sourceDir, 'SKILL.md'))) {
@@ -321,14 +329,43 @@ export async function ensureBuiltinSkillsInstalled(): Promise<void> {
             continue;
         }
 
+        let stagingDir: string | undefined;
         try {
-            await mkdir(skillsRoot, { recursive: true });
-            // Claim a new directory only; never merge into an existing user skill.
-            await mkdir(targetDir);
-            await cpAsyncSafe(sourceDir, targetDir);
+            if (existsSync(targetDir)) {
+                if (slug !== 'computer-use' || !(await isUntouchedOldComputerUseSkill(targetDir))) continue;
+                // Stage outside skill discovery, on the same filesystem as the target.
+                stagingDir = await mkdtemp(join(skillsRoot, '..', '.computer-use-'));
+                const stagedBundle = join(stagingDir, 'bundle');
+                const previous = join(stagingDir, 'previous');
+                await cpAsyncSafe(sourceDir, stagedBundle);
+                if (!(await isUntouchedOldComputerUseSkill(targetDir))) continue;
+                await rename(targetDir, previous);
+                try {
+                    await rename(stagedBundle, targetDir);
+                } catch (error) {
+                    await rename(previous, targetDir);
+                    throw error;
+                }
+                await rm(previous, { recursive: true, force: true });
+            } else {
+                await mkdir(skillsRoot, { recursive: true });
+                await mkdir(targetDir);
+                await cpAsyncSafe(sourceDir, targetDir);
+            }
             logger.info(`Installed built-in skill: ${slug} -> ${targetDir}`);
         } catch (error) {
             logger.warn(`Failed to install built-in skill ${slug}:`, error);
+        } finally {
+            if (stagingDir) {
+                // Never delete the old bundle if publication rollback also failed.
+                if (existsSync(join(stagingDir, 'previous'))) {
+                    logger.warn(`Retained previous built-in skill for recovery: ${stagingDir}`);
+                } else {
+                    await rm(stagingDir, { recursive: true, force: true }).catch((error) => {
+                        logger.warn(`Failed to remove built-in skill staging directory ${stagingDir}:`, error);
+                    });
+                }
+            }
         }
     }
 }

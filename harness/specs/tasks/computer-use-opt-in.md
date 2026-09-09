@@ -10,7 +10,7 @@ touchedAreas:
   - src/**
   - tests/**
   - harness/**
-  - resources/openclaw-plugins/clawx-cua-computer/**
+  - resources/skills/computer-use/**
   - scripts/after-pack.cjs
   - scripts/cua-driver-artifacts.mjs
   - scripts/download-cua-driver.mjs
@@ -23,8 +23,8 @@ touchedAreas:
 expectedUserBehavior:
   - Computer Use defaults off including existing installations without an explicit preference.
   - Startup and activation never request permissions; only an explicit enabled permission action may do so.
-  - A sidebar management page shows the persistent toggle and read-only macOS permission states.
-  - Disabling stops the driver and removes the computer plugin from agent availability.
+  - The Developer Mode-gated sidebar management page shows the persistent toggle and read-only macOS permission states.
+  - Disabling stops the Main-owned driver and removes its private CLI endpoint descriptor without revoking OS grants.
 requiredProfiles:
   - fast
   - comms
@@ -40,8 +40,8 @@ requiredTests:
   - tests/unit/computer-use-settings.test.ts
   - tests/e2e/computer-use.spec.ts
 acceptance:
-  - Computer Use toggles preserve unrelated plugin allowlist availability; disabling never removes allow entries, and enabling extends only an already nonempty allowlist.
-  - Main serializes preference changes and runtime reconciliation and uses the config coordinator for plugin policy.
+  - Computer Use toggles do not install plugins or mutate plugin allowlists, global exec approvals, or sandbox policy.
+  - Main serializes preference changes and runtime reconciliation with failed-opt-in rollback, without promising global action serialization or native cancellation.
   - Disabled calls cannot load the privileged SDK or request permissions, even on activation.
   - All management text is translated into en, zh, ja, and ru and renderer uses host-api.
   - Tests do not invoke real OS permission prompts or desktop control.
@@ -51,8 +51,11 @@ docs:
 
 # Optional Computer Use
 
-The bundled OpenClaw plugin exposes a computer tool over a local MCP proxy.
-The separate `builtin-computer-use-skill` task adds workflow guidance, not authorization.
+The plugin/MCP transport and live plugin-policy mutation requirements of this
+original task are superseded by `harness/specs/tasks/cua-driver-cli.md`. The
+default-off preference, management API, explicit permission flow, and developer
+gate remain active requirements. Existing OpenClaw exec/read uses Main's CLI
+endpoint; `/computer-use` supplies guidance, not authorization.
 
 The task builds on the branch's bundled-driver implementation; its packaging
 paths are included because harness validation reviews the full branch diff.

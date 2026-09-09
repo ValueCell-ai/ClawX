@@ -15,7 +15,6 @@ touchedAreas:
   - README.zh-CN.md
   - README.ja-JP.md
   - pnpm-workspace.yaml
-  - resources/openclaw-plugins/clawx-cua-computer/**
   - resources/skills/computer-use/**
   - shared/**
   - src/**
@@ -44,5 +43,8 @@ docs:
 
 See `harness/reference/computer-use.md` for pinned native loader behavior and
 the package smoke command. Unpacking alone does not change ESM module URLs.
+These SDK loading requirements remain active under
+`harness/specs/tasks/cua-driver-cli.md`: retiring the plugin/MCP adapter does not
+remove Main's embedded or permission SDK imports or their physical ASAR paths.
 The touched areas include the existing Computer Use branch changes because
 harness validation includes the full branch diff, not just this follow-up.

@@ -49,6 +49,10 @@ test('Computer Use is default off and only the explicit button requests permissi
   await enableDeveloperMode(page);
   await page.getByTestId('sidebar-nav-computer-use').click();
   await expect(page.getByTestId('computer-use-page')).toBeVisible();
+  await expect(page.getByTestId('computer-use-page')).toContainText('Let agents inspect windows, accessibility elements, and menus, verify results, and operate this computer through the bundled native CUA CLI.');
+  await expect(page.getByTestId('computer-use-page')).toContainText('Use /computer-use for guidance based on the official CUA 0.21.0 Skill. Agents use existing exec and image-capable read tools; screenshots may be sent to your model provider. Selecting the skill does not enable this service or grant permissions.');
+  await expect(page.getByTestId('computer-use-page')).not.toContainText('computer tool');
+  await expect(page.getByTestId('computer-use-runtime')).toHaveText('Disabled. The ClawX-managed CUA service is stopped.');
   const toggle = page.getByTestId('computer-use-toggle');
   const request = page.getByTestId('computer-use-request-permissions');
   await expect(toggle).not.toBeChecked();
@@ -116,7 +120,7 @@ test('the real host defaults off and rejects permission requests without loading
 test('failed opt-in displays an error and retains the safe host state', async ({ electronApp, page }) => {
   await installComputerFixture(electronApp);
   await installIpcMocks(electronApp, { hostApiErrors: {
-    '["computerUse","setEnabled",{"enabled":true}]': 'Gateway policy update failed',
+    '["computerUse","setEnabled",{"enabled":true}]': 'Computer Use startup failed',
   } });
   await page.getByTestId('setup-skip-button').click();
   await enableDeveloperMode(page);
