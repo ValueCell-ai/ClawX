@@ -1604,6 +1604,22 @@ index dc3b1af0a26e6e0a961bfde5d86f29eeca4a87e4..b6c143bfdde23bb022edf5ce5d57f729
  									sessionId: activeSessionId,
  									sessionKey: params.sessionKey,
  									agentId: sessionAgentId,
+diff --git a/dist/errors-sMD712F3.js b/dist/errors-sMD712F3.js
+index 110e2be2b8fb306fa27e6b26689bc6976d8e7a12..f590ffada556c209e09643590dac76d54927d277 100644
+--- a/dist/errors-sMD712F3.js
++++ b/dist/errors-sMD712F3.js
+@@ -40,0 +41,8 @@ function hasErrnoCode(err, code) {
++const TOKENDANCE_RECOVERY_ACTIONS = /* @__PURE__ */ new Set(["top_up_balance", "reauthorize_api_key", "api_key_quota"]);
++function extractTokenDanceRecoveryAction(err) {
++	if (!err || typeof err !== "object") return;
++	const headers = err.headers;
++	if (!headers || typeof headers.get !== "function") return;
++	const action = headers.get("TokenDance-Recovery-Action")?.trim();
++	return TOKENDANCE_RECOVERY_ACTIONS.has(action) ? action : void 0;
++}
+@@ -71,0 +80,2 @@ function formatErrorMessage(err) {
++	const tokenDanceRecoveryAction = extractTokenDanceRecoveryAction(err);
++	if (tokenDanceRecoveryAction) formatted += ` [TokenDance-Recovery-Action:${tokenDanceRecoveryAction}]`;
 diff --git a/dist/exec-approval-DRfKKxhu.js b/dist/exec-approval-DRfKKxhu.js
 index f76d64d4041f579301e4ffacc38a20a7887567ef..eb4243089d8329eab00d9af9b106b46ef260df8c 100644
 --- a/dist/exec-approval-DRfKKxhu.js

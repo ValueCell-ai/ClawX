@@ -2934,6 +2934,7 @@ type AgentModelProviderEntry = {
     [key: string]: unknown;
   }>;
   apiKey?: string;
+  headers?: Record<string, string>;
   timeoutSeconds?: number;
   /** When true, pi-ai sends Authorization: Bearer instead of x-api-key */
   authHeader?: boolean;
@@ -2980,6 +2981,7 @@ async function updateModelsJsonProviderEntriesForAgents(
     if (entry.api !== undefined) existing.api = entry.api;
     if (mergedModels.length > 0) existing.models = mergedModels;
     if (entry.apiKey !== undefined) existing.apiKey = entry.apiKey;
+    if (entry.headers !== undefined) existing.headers = entry.headers;
     if (entry.timeoutSeconds !== undefined) existing.timeoutSeconds = entry.timeoutSeconds;
     if (entry.authHeader !== undefined) existing.authHeader = entry.authHeader;
     ensureAnthropicMessagesProviderDefaults(existing, providerType);

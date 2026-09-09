@@ -307,6 +307,49 @@ describe('provider-runtime-sync config delivery', () => {
     );
   });
 
+  it('forces ClawX attribution onto TokenDance global and agent provider configs', async () => {
+    const tokendance = createProvider({
+      id: 'tokendance-account',
+      type: 'tokendance',
+      baseUrl: 'https://tokendance.space/gateway/v1',
+      model: 'qwen3.8-max',
+      headers: { 'x-app-url': 'https://incorrect.example', 'X-Custom': 'kept' },
+    });
+    mocks.getProviderConfig.mockReturnValue({
+      api: 'openai-completions',
+      baseUrl: 'https://tokendance.space/gateway/v1',
+      apiKeyEnv: 'TOKENDANCE_API_KEY',
+      headers: { 'X-App-URL': 'https://clawx.com.cn' },
+    });
+    mocks.getAllProviders.mockResolvedValue([tokendance]);
+    mocks.listAgentsSnapshot.mockResolvedValue({
+      agents: [{ id: 'main', modelRef: 'tokendance/qwen3.8-max' }],
+    });
+
+    await syncSavedProviderToRuntime(tokendance, 'td-secret');
+
+    expect(mocks.syncProviderConfigToOpenClaw).toHaveBeenCalledWith(
+      'tokendance',
+      'qwen3.8-max',
+      expect.objectContaining({
+        headers: {
+          'X-App-URL': 'https://clawx.com.cn',
+          'X-Custom': 'kept',
+        },
+      }),
+    );
+    expect(mocks.updateSingleAgentModelProvider).toHaveBeenCalledWith(
+      'main',
+      'tokendance',
+      expect.objectContaining({
+        headers: {
+          'X-App-URL': 'https://clawx.com.cn',
+          'X-Custom': 'kept',
+        },
+      }),
+    );
+  });
+
   it('syncs a targeted agent model override to runtime provider registry', async () => {
     mocks.getAllProviders.mockResolvedValue([
       createProvider({

@@ -77,6 +77,20 @@ function normalizeProviderBaseUrl(
   return normalized;
 }
 
+function resolveProviderHeaders(
+  config: ProviderConfig,
+  meta: ReturnType<typeof getProviderConfig>,
+): Record<string, string> | undefined {
+  const headers = { ...(meta?.headers ?? {}), ...(config.headers ?? {}) };
+  if (config.type === 'tokendance') {
+    for (const name of Object.keys(headers)) {
+      if (name.toLowerCase() === 'x-app-url') delete headers[name];
+    }
+    headers['X-App-URL'] = 'https://clawx.com.cn';
+  }
+  return Object.keys(headers).length > 0 ? headers : undefined;
+}
+
 function shouldUseExplicitDefaultOverride(config: ProviderConfig, runtimeProviderKey: string): boolean {
   return Boolean(config.baseUrl || config.apiProtocol || runtimeProviderKey !== config.type);
 }
@@ -303,7 +317,7 @@ async function syncRuntimeProviderConfig(
     baseUrl: normalizeProviderBaseUrl(config, config.baseUrl || context.meta?.baseUrl, context.api),
     api: context.api,
     apiKeyEnv: context.meta?.apiKeyEnv,
-    headers: config.headers ?? context.meta?.headers,
+    headers: resolveProviderHeaders(config, context.meta),
   });
 }
 
@@ -426,6 +440,7 @@ async function buildAgentModelProviderEntry(
   api?: string;
   models?: Array<{ id: string; name: string; cost: PiAiModelCostRates }>;
   apiKey?: string;
+  headers?: Record<string, string>;
   authHeader?: boolean;
 } | null> {
   const meta = getProviderConfig(config.type);
@@ -455,6 +470,7 @@ async function buildAgentModelProviderEntry(
     api,
     models: [piAiModelsJsonModelEntry(modelId)],
     apiKey,
+    headers: resolveProviderHeaders(config, meta),
     authHeader,
   };
 }
@@ -534,7 +550,7 @@ export async function syncUpdatedProviderToRuntime(
           baseUrl: normalizeProviderBaseUrl(config, config.baseUrl || context.meta?.baseUrl, context.api),
           api: context.api,
           apiKeyEnv: context.meta?.apiKeyEnv,
-          headers: config.headers ?? context.meta?.headers,
+          headers: resolveProviderHeaders(config, context.meta),
         }, fallbackModels);
       } else {
         await setOpenClawDefaultModel(ock, modelOverride, fallbackModels);
@@ -658,7 +674,7 @@ export async function syncDefaultProviderToRuntime(
         ),
         api: provider.apiProtocol || getProviderConfig(provider.type)?.api,
         apiKeyEnv: getProviderConfig(provider.type)?.apiKeyEnv,
-        headers: provider.headers ?? getProviderConfig(provider.type)?.headers,
+        headers: resolveProviderHeaders(provider, getProviderConfig(provider.type)),
       }, fallbackModels);
     } else {
       await setOpenClawDefaultModel(ock, modelOverride, fallbackModels);

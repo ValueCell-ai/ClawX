@@ -1,58 +1,111 @@
 import { EventEmitter } from 'events';
-import { BrowserWindow, shell } from 'electron';
+import { shell } from 'electron';
 import { logger } from './logger';
 import { loginOpenAICodexOAuth, type OpenAICodexOAuthCredentials } from './openai-codex-oauth';
+import {
+  loginTokenDanceOAuth,
+  TOKENDANCE_APP_HEADER,
+  TOKENDANCE_DEFAULT_MODEL,
+  TOKENDANCE_GATEWAY_BASE_URL,
+  type TokenDanceOAuthResult,
+} from './tokendance-oauth';
 import { getProviderService } from '../services/providers/provider-service';
 import { getSecretStore } from '../services/secrets/secret-store';
 import {
   ensureOpenClawProviderAgentRuntimePins,
   OPENAI_CODEX_OAUTH_PROVIDER_CONFIG,
   saveOAuthTokenToOpenClaw,
+  saveProviderKeyToOpenClaw,
   setOpenClawDefaultModelWithOverride,
 } from './openclaw-auth';
 
 // Google was removed: OpenClaw's `google-gemini-cli` OAuth integration is an
 // unofficial third-party flow that requires the `gemini` CLI binary to be on
 // PATH and ships with explicit "use at your own risk" warnings about Google
-// account suspensions. ClawX does not bundle that binary, so the only
-// browser-OAuth provider we currently expose end-to-end is OpenAI Codex.
-export type BrowserOAuthProviderType = 'openai';
+// account suspensions. ClawX does not bundle that binary.
+export type BrowserOAuthProviderType = 'openai' | 'tokendance';
 
 const OPENAI_RUNTIME_PROVIDER_ID = 'openai';
 const OPENAI_OAUTH_DEFAULT_MODEL = 'gpt-5.6-sol';
 
-class BrowserOAuthManager extends EventEmitter {
+export class BrowserOAuthManager extends EventEmitter {
   private activeAccountId: string | null = null;
   private activeLabel: string | null = null;
   private active = false;
-  private mainWindow: BrowserWindow | null = null;
+  private activeFlowId: number | null = null;
+  private nextFlowId = 0;
   private pendingManualCodeResolve: ((value: string) => void) | null = null;
   private pendingManualCodeReject: ((reason?: unknown) => void) | null = null;
-
-  setWindow(window: BrowserWindow) {
-    this.mainWindow = window;
-  }
+  private flowAbortController: AbortController | null = null;
 
   async startFlow(
     provider: BrowserOAuthProviderType,
     options?: { accountId?: string; label?: string },
   ): Promise<boolean> {
+    // A double click or a reopened dialog can dispatch the same request twice.
+    // Reuse the active flow instead of opening parallel callback servers and
+    // repeating the expensive OpenClaw configuration synchronization.
     if (this.active) {
-      await this.stopFlow();
+      logger.info(`[BrowserOAuth] Ignoring duplicate start for ${provider}; a browser flow is already active`);
+      return true;
     }
 
+    const flowId = ++this.nextFlowId;
+    const controller = new AbortController();
     this.active = true;
+    this.activeFlowId = flowId;
     this.activeAccountId = options?.accountId || provider;
     this.activeLabel = options?.label || null;
+    this.flowAbortController = controller;
     this.emit('oauth:start', { provider, accountId: this.activeAccountId });
 
     // OpenAI flow may switch to manual callback mode; keep start API non-blocking.
-    void this.executeFlow(provider);
+    void this.executeFlow(provider, flowId, controller.signal);
     return true;
   }
 
-  private async executeFlow(provider: BrowserOAuthProviderType): Promise<void> {
+  private isCurrentFlow(flowId: number): boolean {
+    return this.active && this.activeFlowId === flowId;
+  }
+
+  private ownsFlow(flowId: number, signal: AbortSignal): boolean {
+    return !signal.aborted && this.isCurrentFlow(flowId);
+  }
+
+  private clearFlow(flowId: number): boolean {
+    if (!this.isCurrentFlow(flowId)) {
+      return false;
+    }
+    this.active = false;
+    this.activeFlowId = null;
+    this.activeAccountId = null;
+    this.activeLabel = null;
+    this.pendingManualCodeResolve = null;
+    this.pendingManualCodeReject = null;
+    this.flowAbortController = null;
+    return true;
+  }
+
+  private async executeFlow(
+    provider: BrowserOAuthProviderType,
+    flowId: number,
+    signal: AbortSignal,
+  ): Promise<void> {
     try {
+      if (provider === 'tokendance') {
+        const token = await loginTokenDanceOAuth({
+          openUrl: async (url) => {
+            await shell.openExternal(url);
+          },
+          signal,
+          onProgress: (message) => logger.info(`[BrowserOAuth] ${message}`),
+        });
+        if (this.ownsFlow(flowId, signal)) {
+          await this.onTokenDanceSuccess(token, flowId, signal);
+        }
+        return;
+      }
+
       const token = await loginOpenAICodexOAuth({
         openUrl: async (url) => {
           await shell.openExternal(url);
@@ -68,12 +121,14 @@ class BrowserOAuthManager extends EventEmitter {
             authorizationUrl,
             message,
           };
-          this.emit('oauth:code', payload);
-          if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-            this.mainWindow.webContents.send('oauth:code', payload);
+          if (this.isCurrentFlow(flowId)) {
+            this.emit('oauth:code', payload);
           }
         },
         onManualCodeInput: async () => {
+          if (!this.isCurrentFlow(flowId)) {
+            throw new Error('OAuth flow cancelled');
+          }
           return await new Promise<string>((resolve, reject) => {
             this.pendingManualCodeResolve = resolve;
             this.pendingManualCodeReject = reject;
@@ -81,23 +136,24 @@ class BrowserOAuthManager extends EventEmitter {
         },
       });
 
-      await this.onSuccess(provider, token);
+      if (this.isCurrentFlow(flowId)) {
+        await this.onSuccess(provider, token, flowId);
+      }
     } catch (error) {
-      if (!this.active) {
+      if (!this.isCurrentFlow(flowId)) {
         return;
       }
       logger.error(`[BrowserOAuth] Flow error for ${provider}:`, error);
       this.emitError(error instanceof Error ? error.message : String(error));
-      this.active = false;
-      this.activeAccountId = null;
-      this.activeLabel = null;
-      this.pendingManualCodeResolve = null;
-      this.pendingManualCodeReject = null;
+      this.clearFlow(flowId);
     }
   }
 
   async stopFlow(): Promise<void> {
     this.active = false;
+    this.activeFlowId = null;
+    this.flowAbortController?.abort();
+    this.flowAbortController = null;
     this.activeAccountId = null;
     this.activeLabel = null;
     if (this.pendingManualCodeReject) {
@@ -120,17 +176,12 @@ class BrowserOAuthManager extends EventEmitter {
   }
 
   private async onSuccess(
-    providerType: BrowserOAuthProviderType,
+    providerType: 'openai',
     token: OpenAICodexOAuthCredentials,
+    flowId: number,
   ) {
     const accountId = this.activeAccountId || providerType;
     const accountLabel = this.activeLabel;
-    this.active = false;
-    this.activeAccountId = null;
-    this.activeLabel = null;
-    this.pendingManualCodeResolve = null;
-    this.pendingManualCodeReject = null;
-    logger.info(`[BrowserOAuth] Successfully completed OAuth for ${providerType}`);
 
     const providerService = getProviderService();
     const existing = await providerService.getAccount(accountId);
@@ -217,21 +268,91 @@ class BrowserOAuthManager extends EventEmitter {
       throw err;
     }
 
-    this.emit('oauth:success', { provider: providerType, accountId: nextAccount.id });
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('oauth:success', {
-        provider: providerType,
-        accountId: nextAccount.id,
-        success: true,
-      });
-    }
+    if (!this.clearFlow(flowId)) return;
+    logger.info(`[BrowserOAuth] Successfully completed OAuth for ${providerType}`);
+    this.emitSuccess(providerType, nextAccount.id);
+  }
+
+  private async onTokenDanceSuccess(
+    token: TokenDanceOAuthResult,
+    flowId: number,
+    signal: AbortSignal,
+  ): Promise<void> {
+    if (!this.ownsFlow(flowId, signal)) return;
+
+    const persistenceStartedAt = Date.now();
+    const providerType = 'tokendance' as const;
+    const accountId = this.activeAccountId || providerType;
+    const accountLabel = this.activeLabel;
+
+    const providerService = getProviderService();
+    const existing = await providerService.getAccount(accountId);
+    if (!this.ownsFlow(flowId, signal)) return;
+
+    const model = existing?.model?.trim().replace(/^tokendance\//, '') || TOKENDANCE_DEFAULT_MODEL;
+    const headers = Object.fromEntries(
+      Object.entries(existing?.headers ?? {}).filter(([name]) => name.toLowerCase() !== 'x-app-url'),
+    );
+    Object.assign(headers, TOKENDANCE_APP_HEADER);
+
+    const nextAccount = await providerService.createAccount({
+      id: accountId,
+      vendorId: providerType,
+      label: accountLabel || existing?.label || 'TokenDance',
+      authMode: 'oauth_browser',
+      baseUrl: TOKENDANCE_GATEWAY_BASE_URL,
+      apiProtocol: 'openai-completions',
+      headers,
+      model,
+      fallbackModels: existing?.fallbackModels,
+      fallbackAccountIds: existing?.fallbackAccountIds,
+      enabled: existing?.enabled ?? true,
+      isDefault: existing?.isDefault ?? false,
+      metadata: existing?.metadata,
+      createdAt: existing?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }, token.apiKey);
+    if (!this.ownsFlow(flowId, signal)) return;
+
+    await saveProviderKeyToOpenClaw(providerType, token.apiKey);
+    if (!this.ownsFlow(flowId, signal)) return;
+
+    await setOpenClawDefaultModelWithOverride(
+      providerType,
+      `${providerType}/${model}`,
+      {
+        baseUrl: TOKENDANCE_GATEWAY_BASE_URL,
+        api: 'openai-completions',
+        apiKeyEnv: 'TOKENDANCE_API_KEY',
+        headers: TOKENDANCE_APP_HEADER,
+      },
+      (nextAccount.fallbackModels ?? []).map((fallback) => (
+        fallback.startsWith(`${providerType}/`) ? fallback : `${providerType}/${fallback}`
+      )),
+    );
+    if (!this.ownsFlow(flowId, signal)) return;
+
+    // OAuth already made this model the OpenClaw default. Persist the matching
+    // account default before notifying Renderer so its follow-up selection is
+    // a cheap no-op instead of another full runtime synchronization.
+    await providerService.setDefaultAccount(nextAccount.id);
+    if (!this.ownsFlow(flowId, signal)) return;
+
+    logger.info(
+      `[BrowserOAuth] TokenDance credentials and runtime configuration persisted in ${Date.now() - persistenceStartedAt}ms`,
+    );
+
+    if (!this.clearFlow(flowId)) return;
+    logger.info(`[BrowserOAuth] Successfully completed OAuth for ${providerType}`);
+    this.emitSuccess(providerType, nextAccount.id);
+  }
+
+  private emitSuccess(provider: BrowserOAuthProviderType, accountId: string): void {
+    this.emit('oauth:success', { provider, accountId });
   }
 
   private emitError(message: string) {
     this.emit('oauth:error', { message });
-    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
-      this.mainWindow.webContents.send('oauth:error', { message });
-    }
   }
 }
 

@@ -66,7 +66,7 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('provider-set-default-deepseek-replacement-e2e')).toHaveCount(0);
   });
 
-  test('shows a saved provider and removes it cleanly after deletion', async ({ page }) => {
+  test('shows a saved provider and removes it immediately while deletion finishes', async ({ electronApp, page }) => {
     await completeSetup(page);
     await seedTestProvider(page);
 
@@ -74,11 +74,32 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('providers-settings')).toBeVisible();
     await expect(page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`)).toContainText(TEST_PROVIDER_LABEL);
 
+    await electronApp.evaluate(async ({ app: _app }) => {
+      const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+      const handlers = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers;
+      const originalHostInvoke = handlers?.get('host:invoke');
+      if (!originalHostInvoke) throw new Error('host:invoke handler unavailable');
+
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', async (event: unknown, request: {
+        module?: string;
+        action?: string;
+      }) => {
+        if (request.module === 'providers' && request.action === 'deleteAccount') {
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+        }
+        return originalHostInvoke(event, request);
+      });
+    });
+
     await page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`).hover();
     await page.getByTestId(`provider-delete-${TEST_PROVIDER_ID}`).click();
 
-    await expect(page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`)).toHaveCount(0);
+    await expect(page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`)).toHaveCount(0, { timeout: 500 });
     await expect(page.getByText(TEST_PROVIDER_LABEL)).toHaveCount(0);
+    await expect(page.getByText('Provider deleted')).toBeVisible();
   });
 
   test('does not redisplay a deleted provider after relaunch', async ({ electronApp, launchElectronApp, page }) => {
@@ -125,6 +146,145 @@ test.describe('ClawX provider lifecycle', () => {
     await page.getByTestId('add-provider-auth-oauth-tab').click();
     await expect(page.getByTestId('add-provider-oauth-login-button')).toBeVisible();
     await expect(page.getByTestId('add-provider-api-key-input')).toHaveCount(0);
+  });
+
+  test('only exposes TokenDance setup in Chinese and cancels it when the dialog closes', async ({ electronApp, page }) => {
+    await completeSetup(page);
+
+    await electronApp.evaluate(async ({ app: _app }) => {
+      const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+      const handlers = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers;
+      const originalHostInvoke = handlers?.get('host:invoke');
+      if (!originalHostInvoke) throw new Error('host:invoke handler unavailable');
+
+      const state = { requests: 0, cancellations: 0 };
+      (globalThis as typeof globalThis & { tokenDanceOAuthE2E?: typeof state }).tokenDanceOAuthE2E = state;
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', async (event: unknown, request: {
+        id?: string;
+        module?: string;
+        action?: string;
+        payload?: { provider?: string };
+      }) => {
+        if (request.module === 'providers' && request.action === 'requestOAuth'
+          && request.payload?.provider === 'tokendance') {
+          state.requests += 1;
+          return { id: request.id, ok: true, data: { success: true } };
+        }
+        if (request.module === 'providers' && request.action === 'cancelOAuth') {
+          state.cancellations += 1;
+          return { id: request.id, ok: true, data: { success: true } };
+        }
+        return originalHostInvoke(event, request);
+      });
+    });
+
+    await page.evaluate(async () => {
+      const now = new Date().toISOString();
+      await window.electron.ipcRenderer.invoke('provider:save', {
+        id: 'tokendance-existing-e2e',
+        name: 'TokenDance Existing E2E',
+        type: 'tokendance',
+        baseUrl: 'https://tokendance.space/gateway/v1',
+        model: 'qwen3.8-max',
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('provider-card-tokendance-existing-e2e')).toBeVisible();
+    await page.getByTestId('providers-add-button').click();
+    await expect(page.getByTestId('add-provider-type-tokendance')).toHaveCount(0);
+    await page.getByTestId('add-provider-close-button').click();
+
+    await page.getByTestId('sidebar-nav-settings').click();
+    await page.getByRole('button', { name: '中文' }).click();
+    await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('provider-card-tokendance-existing-e2e')).toBeVisible();
+    await page.getByTestId('providers-add-button').click();
+
+    const tokenDanceType = page.getByTestId('add-provider-type-tokendance');
+    await expect(tokenDanceType).toBeVisible();
+    const tokenDanceLogo = tokenDanceType.getByRole('img', { name: 'TokenDance' });
+    await expect(tokenDanceLogo).toHaveAttribute('src', /^data:image\/svg\+xml,/);
+    await expect(tokenDanceLogo).not.toHaveClass(/dark:invert/);
+
+    await tokenDanceType.click();
+    await expect(page.getByTestId('add-provider-auth-oauth-tab')).toBeVisible();
+    await expect(page.getByTestId('add-provider-auth-apikey-tab')).toBeVisible();
+    await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('qwen3.8-max');
+    await expect(page.getByTestId('add-provider-oauth-login-button')).toBeVisible();
+
+    await page.getByTestId('add-provider-auth-apikey-tab').click();
+    await expect(page.getByTestId('add-provider-api-key-input')).toBeVisible();
+
+    await page.getByTestId('add-provider-auth-oauth-tab').click();
+    await page.getByTestId('add-provider-oauth-login-button').click();
+    await expect(page.getByTestId('add-provider-oauth-login-button')).toBeDisabled();
+    await page.getByTestId('add-provider-close-button').click();
+
+    await expect.poll(() => electronApp.evaluate(() => (
+      (globalThis as typeof globalThis & {
+        tokenDanceOAuthE2E?: { requests: number; cancellations: number };
+      }).tokenDanceOAuthE2E
+    ))).toEqual({ requests: 1, cancellations: 1 });
+
+    await page.getByTestId('providers-add-button').click();
+    await page.getByTestId('add-provider-type-tokendance').click();
+    await page.getByTestId('add-provider-oauth-login-button').click();
+    await expect.poll(() => electronApp.evaluate(() => (
+      (globalThis as typeof globalThis & {
+        tokenDanceOAuthE2E?: { requests: number; cancellations: number };
+      }).tokenDanceOAuthE2E?.requests
+    ))).toBe(2);
+  });
+
+  test('shows TokenDance recovery guidance returned by Main validation', async ({ electronApp, page }) => {
+    await completeSetup(page);
+
+    await electronApp.evaluate(async ({ app: _app }) => {
+      const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+      const handlers = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers;
+      const originalHostInvoke = handlers?.get('host:invoke');
+      if (!originalHostInvoke) throw new Error('host:invoke handler unavailable');
+
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', async (event: unknown, request: {
+        id?: string;
+        module?: string;
+        action?: string;
+      }) => {
+        if (request.module === 'providers' && request.action === 'validateKey') {
+          return {
+            id: request.id,
+            ok: true,
+            data: {
+              valid: false,
+              error: 'Balance insufficient',
+              recoveryAction: 'top_up_balance',
+            },
+          };
+        }
+        return originalHostInvoke(event, request);
+      });
+    });
+
+    await page.getByTestId('sidebar-nav-settings').click();
+    await page.getByRole('button', { name: '中文' }).click();
+    await page.getByTestId('sidebar-nav-models').click();
+    await page.getByTestId('providers-add-button').click();
+    await page.getByTestId('add-provider-type-tokendance').click();
+    await page.getByTestId('add-provider-auth-apikey-tab').click();
+    await page.getByTestId('add-provider-api-key-input').fill('td-insufficient');
+    await page.getByTestId('add-provider-submit-button').click();
+
+    await expect(page.getByText(/TokenDance 账户余额不足/)).toBeVisible();
   });
 
   test('trims whitespace before validating and saving a custom provider key', async ({ electronApp, page }) => {

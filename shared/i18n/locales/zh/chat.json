@@ -93,6 +93,11 @@
         "cancelled": "已取消",
         "loadFailed": "会话加载失败",
         "promptFailed": "发送提示失败",
+        "tokenDanceRecovery": {
+            "top_up_balance": "TokenDance 账户余额不足。请充值后重试此请求。",
+            "reauthorize_api_key": "TokenDance 密钥已失效。请打开模型设置并重新授权 TokenDance。",
+            "api_key_quota": "TokenDance 密钥已达到周期额度。请等待额度刷新，或重新授权 TokenDance。"
+        },
         "unsupportedContent": "不支持的内容",
         "dismiss": "关闭",
         "image": "图片",

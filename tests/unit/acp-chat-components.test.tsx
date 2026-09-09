@@ -77,6 +77,7 @@ vi.mock('react-i18next', () => ({
         'acp.cancelled': 'Cancelled',
         'acp.loadFailed': 'Load failed',
         'acp.promptFailed': 'Prompt failed',
+        'acp.tokenDanceRecovery.top_up_balance': 'Top up TokenDance and retry.',
         'acp.unsupportedContent': 'Unsupported content',
         'acp.turnDuration': 'Took {{duration}}',
         'acp.turnElapsed': '{{duration}} elapsed',
@@ -2287,6 +2288,20 @@ describe('ACP chat timeline components', () => {
     ].map((node) => Array.from(container.querySelectorAll('*')).indexOf(node));
     expect(ordered).toEqual([...ordered].sort((a, b) => a - b));
     expect(screen.getAllByTestId('acp-attachment-icon')).toHaveLength(2);
+  });
+
+  it('shows localized TokenDance recovery guidance without exposing the transport marker', () => {
+    render(
+      <AcpTimeline
+        snapshot={snapshot({})}
+        error="402 Balance insufficient [TokenDance-Recovery-Action:top_up_balance]"
+        errorKind="prompt"
+      />,
+    );
+
+    expect(screen.getByTestId('acp-error-banner')).toHaveTextContent('402 Balance insufficient');
+    expect(screen.getByTestId('tokendance-recovery-guidance')).toHaveTextContent('Top up TokenDance and retry.');
+    expect(screen.getByTestId('acp-error-banner')).not.toHaveTextContent('TokenDance-Recovery-Action');
   });
 
   it('dismisses the session error banner', () => {

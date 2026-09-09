@@ -4,8 +4,11 @@ import {
   PROVIDER_TYPES,
   PROVIDER_TYPE_INFO,
   getProviderDocsUrl,
+  getProviderIconUrl,
+  isProviderAvailableForLanguage,
   resolveProviderApiKeyForSave,
   resolveProviderModelForSave,
+  shouldInvertInDark,
   shouldShowProviderModelId,
 } from '@/lib/providers';
 import {
@@ -34,6 +37,45 @@ describe('provider metadata', () => {
         }),
       ])
     );
+  });
+
+  it('includes TokenDance OAuth with ClawX request attribution', () => {
+    expect(PROVIDER_TYPES).toContain('tokendance');
+    expect(BUILTIN_PROVIDER_TYPES).toContain('tokendance');
+    expect(PROVIDER_TYPE_INFO).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'tokendance',
+        name: 'TokenDance',
+        isOAuth: true,
+        supportsApiKey: true,
+        defaultBaseUrl: 'https://tokendance.space/gateway/v1',
+        defaultModelId: 'qwen3.8-max',
+        availableInLanguages: ['zh'],
+      }),
+    ]));
+    expect(getProviderIconUrl('tokendance')).toMatch(/^data:image\/svg\+xml,/);
+    expect(shouldInvertInDark('tokendance')).toBe(false);
+    expect(getProviderEnvVar('tokendance')).toBe('TOKENDANCE_API_KEY');
+    expect(getProviderConfig('tokendance')).toEqual({
+      baseUrl: 'https://tokendance.space/gateway/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'TOKENDANCE_API_KEY',
+      headers: { 'X-App-URL': 'https://clawx.com.cn' },
+    });
+  });
+
+  it('limits TokenDance discovery to Chinese interface locales', () => {
+    const tokenDance = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'tokendance');
+    const openAi = PROVIDER_TYPE_INFO.find((provider) => provider.id === 'openai');
+
+    expect(tokenDance).toBeDefined();
+    expect(isProviderAvailableForLanguage(tokenDance!, 'zh')).toBe(true);
+    expect(isProviderAvailableForLanguage(tokenDance!, 'zh-CN')).toBe(true);
+    expect(isProviderAvailableForLanguage(tokenDance!, 'en')).toBe(false);
+    expect(isProviderAvailableForLanguage(tokenDance!, 'ja')).toBe(false);
+    expect(isProviderAvailableForLanguage(tokenDance!, 'ru')).toBe(false);
+    expect(isProviderAvailableForLanguage(tokenDance!, 'unsupported')).toBe(false);
+    expect(isProviderAvailableForLanguage(openAi!, 'en')).toBe(true);
   });
 
   it('includes ark in the backend provider registry', () => {
@@ -108,7 +150,7 @@ describe('provider metadata', () => {
 
   it('keeps builtin provider sources in sync', () => {
     expect(BUILTIN_PROVIDER_TYPES).toEqual(
-      expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'ark', 'moonshot', 'siliconflow', 'minimax-portal', 'minimax-portal-cn', 'zai', 'zai-global', 'modelstudio', 'ollama'])
+      expect.arrayContaining(['anthropic', 'openai', 'google', 'openrouter', 'tokendance', 'ark', 'moonshot', 'siliconflow', 'minimax-portal', 'minimax-portal-cn', 'zai', 'zai-global', 'modelstudio', 'ollama'])
     );
   });
 

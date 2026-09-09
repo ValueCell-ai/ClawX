@@ -50,6 +50,64 @@ describe('validateApiKeyWithProvider', () => {
     );
   });
 
+  it('adds ClawX attribution and returns documented TokenDance recovery actions', async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { message: 'Balance insufficient' } }), {
+        status: 402,
+        headers: {
+          'Content-Type': 'application/json',
+          'TokenDance-Recovery-Action': 'top_up_balance',
+        },
+      }),
+    );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('tokendance', 'td-test-key', {
+      modelId: 'qwen3.8-max',
+    });
+
+    expect(result).toMatchObject({
+      valid: false,
+      status: 402,
+      recoveryAction: 'top_up_balance',
+    });
+    expect(proxyAwareFetch).toHaveBeenCalledWith(
+      'https://tokendance.space/gateway/v1/chat/completions',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          model: 'qwen3.8-max',
+          messages: [{ role: 'user', content: 'hi' }],
+          max_tokens: 1,
+        }),
+        headers: expect.objectContaining({
+          Authorization: 'Bearer td-test-key',
+          'X-App-URL': 'https://clawx.com.cn',
+        }),
+      }),
+    );
+  });
+
+  it('ignores unknown TokenDance recovery actions', async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { message: 'Provider error' } }), {
+        status: 402,
+        headers: {
+          'Content-Type': 'application/json',
+          'TokenDance-Recovery-Action': 'unexpected_action',
+        },
+      }),
+    );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('tokendance', 'td-test-key', {
+      modelId: 'qwen3.8-max',
+    });
+
+    expect(result).toMatchObject({ valid: false, status: 402 });
+    expect(result.recoveryAction).toBeUndefined();
+  });
+
   it('falls back to /responses for openai-responses when /models is unavailable', async () => {
     proxyAwareFetch
       .mockResolvedValueOnce(

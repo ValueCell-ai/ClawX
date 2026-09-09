@@ -1,5 +1,6 @@
 import { proxyAwareFetch } from '../../utils/proxy-fetch';
 import { getProviderConfig } from '../../utils/provider-registry';
+import type { ProviderRecoveryAction } from '@shared/host-api/contract';
 
 type ValidationProfile =
   | 'openai-completions'
@@ -9,8 +10,30 @@ type ValidationProfile =
   | 'openrouter'
   | 'none';
 
-type ValidationResult = { valid: boolean; error?: string; status?: number };
+type ValidationResult = {
+  valid: boolean;
+  error?: string;
+  status?: number;
+  recoveryAction?: ProviderRecoveryAction;
+};
 type ClassifiedValidationResult = ValidationResult & { authFailure?: boolean };
+
+const TOKENDANCE_RECOVERY_ACTIONS = new Set<ProviderRecoveryAction>([
+  'top_up_balance',
+  'reauthorize_api_key',
+  'api_key_quota',
+]);
+
+function getTokenDanceRecoveryAction(response: Response): ProviderRecoveryAction | undefined {
+  const value = response.headers.get('TokenDance-Recovery-Action')?.trim();
+  return value && TOKENDANCE_RECOVERY_ACTIONS.has(value as ProviderRecoveryAction)
+    ? value as ProviderRecoveryAction
+    : undefined;
+}
+
+function getProviderHeaders(providerType: string): Record<string, string> {
+  return { ...(getProviderConfig(providerType)?.headers ?? {}) };
+}
 
 const AUTH_ERROR_PATTERN = /\b(unauthorized|forbidden|access denied|invalid api key|api key invalid|incorrect api key|api key incorrect|authentication failed|auth failed|invalid credential|credential invalid|invalid signature|signature invalid|invalid access token|access token invalid|invalid bearer token|bearer token invalid|access token expired)\b|鉴权失败|認証失敗|认证失败|無效密鑰|无效密钥|密钥无效|密鑰無效|憑證無效|凭证无效/i;
 const AUTH_ERROR_CODE_PATTERN = /\b(unauthorized|forbidden|access[_-]?denied|invalid[_-]?api[_-]?key|api[_-]?key[_-]?invalid|incorrect[_-]?api[_-]?key|api[_-]?key[_-]?incorrect|authentication[_-]?failed|auth[_-]?failed|invalid[_-]?credential|credential[_-]?invalid|invalid[_-]?signature|signature[_-]?invalid|invalid[_-]?access[_-]?token|access[_-]?token[_-]?invalid|invalid[_-]?bearer[_-]?token|bearer[_-]?token[_-]?invalid|access[_-]?token[_-]?expired|invalid[_-]?token|token[_-]?invalid|token[_-]?expired)\b/i;
@@ -129,7 +152,11 @@ async function performProviderValidationRequest(
     logValidationStatus(providerLabel, response.status);
     const data = await response.json().catch(() => ({}));
     const result = classifyAuthResponse(response.status, data);
-    return { ...result, status: response.status };
+    return {
+      ...result,
+      status: response.status,
+      recoveryAction: getTokenDanceRecoveryAction(response),
+    };
   } catch (error) {
     return {
       valid: false,
@@ -167,7 +194,7 @@ function classifyAuthResponse(
 }
 
 function shouldFallbackFromModelsProbe(result: ClassifiedValidationResult): boolean {
-  if (result.valid || result.status === undefined) return false;
+  if (result.valid || result.status === undefined || result.recoveryAction) return false;
   if (result.status === 401 || result.status === 403) return false;
   if (result.authFailure) return false;
   return true;
@@ -203,11 +230,22 @@ async function validateOpenAiCompatibleKey(
     return { valid: false, error: `Base URL is required for provider "${providerType}" validation` };
   }
 
-  const headers = { Authorization: `Bearer ${apiKey}` };
+  const headers = {
+    ...getProviderHeaders(providerType),
+    Authorization: `Bearer ${apiKey}`,
+  };
   const probeModel = modelId?.trim() || 'validation-probe';
   const { modelsUrl, probeUrl } = resolveOpenAiProbeUrls(trimmedBaseUrl, apiProtocol);
-  const modelsResult = await performProviderValidationRequest(providerType, modelsUrl, headers);
 
+  // TokenDance exposes /models publicly, so it cannot prove that a key is valid.
+  // Use the configured model for a minimal authenticated request instead.
+  if (providerType === 'tokendance') {
+    return apiProtocol === 'openai-responses'
+      ? await performResponsesProbe(providerType, probeUrl, headers, probeModel)
+      : await performChatCompletionsProbe(providerType, probeUrl, headers, probeModel);
+  }
+
+  const modelsResult = await performProviderValidationRequest(providerType, modelsUrl, headers);
   if (shouldFallbackFromModelsProbe(modelsResult)) {
     console.log(
       `[clawx-validate] ${providerType} /models returned ${modelsResult.status}, falling back to ${apiProtocol} probe`,
@@ -239,7 +277,10 @@ async function performResponsesProbe(
     });
     logValidationStatus(providerLabel, response.status);
     const data = await response.json().catch(() => ({}));
-    return classifyProbeResponse(response.status, data);
+    return {
+      ...classifyProbeResponse(response.status, data),
+      recoveryAction: getTokenDanceRecoveryAction(response),
+    };
   } catch (error) {
     return {
       valid: false,
@@ -267,7 +308,10 @@ async function performChatCompletionsProbe(
     });
     logValidationStatus(providerLabel, response.status);
     const data = await response.json().catch(() => ({}));
-    return classifyProbeResponse(response.status, data);
+    return {
+      ...classifyProbeResponse(response.status, data),
+      recoveryAction: getTokenDanceRecoveryAction(response),
+    };
   } catch (error) {
     return {
       valid: false,
@@ -294,7 +338,10 @@ async function performAnthropicMessagesProbe(
     });
     logValidationStatus(providerLabel, response.status);
     const data = await response.json().catch(() => ({}));
-    return classifyProbeResponse(response.status, data);
+    return {
+      ...classifyProbeResponse(response.status, data),
+      recoveryAction: getTokenDanceRecoveryAction(response),
+    };
   } catch (error) {
     return {
       valid: false,
@@ -322,6 +369,7 @@ async function validateAnthropicHeaderKey(
   const base = rawBase.endsWith('/v1') ? rawBase : `${rawBase}/v1`;
   const url = `${base}/models?limit=1`;
   const headers = {
+    ...getProviderHeaders(providerType),
     'x-api-key': apiKey,
     'anthropic-version': '2023-06-01',
   };
@@ -350,7 +398,10 @@ async function validateOpenRouterKey(
   apiKey: string,
 ): Promise<ValidationResult> {
   const url = 'https://openrouter.ai/api/v1/auth/key';
-  const headers = { Authorization: `Bearer ${apiKey}` };
+  const headers = {
+    ...getProviderHeaders(providerType),
+    Authorization: `Bearer ${apiKey}`,
+  };
   return await performProviderValidationRequest(providerType, url, headers);
 }
 

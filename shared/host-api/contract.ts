@@ -347,6 +347,7 @@ export type ProviderType =
   | 'openai'
   | 'google'
   | 'openrouter'
+  | 'tokendance'
   | 'ark'
   | 'moonshot'
   | 'moonshot-global'
@@ -458,7 +459,12 @@ export type ProviderValidationPayload = {
   apiKey: string;
   options?: ProviderValidationOptions;
 };
-export type ProviderValidationResult = { valid: boolean; error?: string };
+export type ProviderRecoveryAction = 'top_up_balance' | 'reauthorize_api_key' | 'api_key_quota';
+export type ProviderValidationResult = {
+  valid: boolean;
+  error?: string;
+  recoveryAction?: ProviderRecoveryAction;
+};
 export type ProviderIdPayload = { providerId: string };
 export type ProviderApiKeyPayload = ProviderIdPayload & { apiKey: string };
 export type ProviderSavePayload = { config: ProviderConfig; apiKey?: string };

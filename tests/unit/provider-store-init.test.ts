@@ -3,13 +3,16 @@ import { act } from '@testing-library/react';
 
 // Mock fetchProviderSnapshot before importing the store
 const mockFetchProviderSnapshot = vi.fn();
+const mockDeleteAccount = vi.fn();
 vi.mock('@/lib/provider-accounts', () => ({
   fetchProviderSnapshot: (...args: unknown[]) => mockFetchProviderSnapshot(...args),
 }));
 
 vi.mock('@/lib/host-api', () => ({
   hostApi: {
-    providers: {},
+    providers: {
+      deleteAccount: (...args: unknown[]) => mockDeleteAccount(...args),
+    },
   },
 }));
 
@@ -86,6 +89,74 @@ describe('useProviderStore – init()', () => {
     expect(state.vendors).toEqual([]);
     expect(state.defaultAccountId).toBeNull();
     expect(state.loading).toBe(false);
+  });
+
+  it('optimistically removes an account while backend cleanup is pending', async () => {
+    let finishDelete: ((result: { success: boolean }) => void) | undefined;
+    mockDeleteAccount.mockReturnValueOnce(new Promise((resolve) => {
+      finishDelete = resolve;
+    }));
+    mockFetchProviderSnapshot.mockResolvedValueOnce({
+      statuses: [],
+      accounts: [],
+      vendors: [],
+      defaultAccountId: null,
+    });
+    useProviderStore.setState({
+      statuses: [{
+        id: 'tokendance',
+        name: 'TokenDance',
+        type: 'tokendance',
+        enabled: true,
+        createdAt: '2026-09-07T00:00:00.000Z',
+        updatedAt: '2026-09-07T00:00:00.000Z',
+        hasKey: true,
+        keyMasked: 'td-***',
+      }],
+      accounts: [{
+        id: 'tokendance',
+        vendorId: 'tokendance',
+        label: 'TokenDance',
+        authMode: 'oauth_browser',
+        enabled: true,
+        isDefault: true,
+        createdAt: '2026-09-07T00:00:00.000Z',
+        updatedAt: '2026-09-07T00:00:00.000Z',
+      }],
+      defaultAccountId: 'tokendance',
+    });
+
+    const removal = useProviderStore.getState().removeAccount('tokendance');
+
+    expect(useProviderStore.getState().accounts).toEqual([]);
+    expect(useProviderStore.getState().statuses).toEqual([]);
+    expect(useProviderStore.getState().defaultAccountId).toBeNull();
+    expect(mockFetchProviderSnapshot).not.toHaveBeenCalled();
+
+    finishDelete?.({ success: true });
+    await removal;
+
+    expect(mockFetchProviderSnapshot).toHaveBeenCalledOnce();
+    expect(useProviderStore.getState().accounts).toEqual([]);
+  });
+
+  it('restores an optimistically removed account when backend cleanup fails', async () => {
+    mockDeleteAccount.mockResolvedValueOnce({ success: false, error: 'cleanup failed' });
+    const account = {
+      id: 'tokendance',
+      vendorId: 'tokendance' as const,
+      label: 'TokenDance',
+      authMode: 'oauth_browser' as const,
+      enabled: true,
+      isDefault: false,
+      createdAt: '2026-09-07T00:00:00.000Z',
+      updatedAt: '2026-09-07T00:00:00.000Z',
+    };
+    useProviderStore.setState({ accounts: [account] });
+
+    await expect(useProviderStore.getState().removeAccount('tokendance')).rejects.toThrow('cleanup failed');
+
+    expect(useProviderStore.getState().accounts).toEqual([account]);
   });
 
   it('calling init() multiple times re-fetches the snapshot each time', async () => {

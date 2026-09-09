@@ -21,6 +21,10 @@ ownedPaths:
   - resources/skills/computer-use/**
   - src/pages/ComputerUse/**
   - tests/e2e/computer-use*.spec.ts
+  - electron/shared/providers/**
+  - src/components/settings/ProvidersSettings.tsx
+  - src/lib/providers.ts
+  - shared/host-api/contract.ts
   - tests/unit/session-attention.test.ts
   - tests/unit/session-status.test.ts
   - tests/unit/session-catalog.test.ts
@@ -69,6 +73,7 @@ requiredRules:
   - provider-default-invariant
   - provider-model-metadata-preservation
   - provider-model-selection-authority
+  - tokendance-oauth-provider
   - sidebar-session-attention-authority
   - web-browser-security-and-lifecycle
   - local-computer-use

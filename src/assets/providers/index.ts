@@ -11,6 +11,7 @@ import ollama from './ollama.svg';
 import custom from './custom.svg';
 import deepseek from './deepseek.svg';
 import zai from './zai.svg';
+import tokendance from './tokendance.svg';
 
 export const providerIcons: Record<string, string> = {
     anthropic,
@@ -29,4 +30,5 @@ export const providerIcons: Record<string, string> = {
     ollama,
     custom,
     deepseek,
+    tokendance,
 };
