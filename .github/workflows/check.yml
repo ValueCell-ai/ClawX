@@ -120,6 +120,9 @@ jobs:
       - name: Test Windows attachment open-with bridge
         run: pnpm exec vitest run tests/unit/attachment-open-with.test.ts tests/unit/attachment-open-with-native.test.ts tests/unit/safe-fs.test.ts
 
+      - name: Validate native CUA host configuration without starting the driver
+        run: pnpm exec vitest run tests/unit/cua-runtime.test.ts -t 'passes its startup options through the real native SDK constructor'
+
       - name: Generate extension bridge
         run: pnpm run ext:bridge
 

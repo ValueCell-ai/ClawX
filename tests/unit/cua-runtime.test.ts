@@ -115,6 +115,32 @@ async function createHarness(overrides: Partial<CuaRuntimeDependencies> = {}) {
 }
 
 describe('CuaRuntimeManager', () => {
+  it.skipIf(
+    !((process.platform === 'darwin' && ['arm64', 'x64'].includes(process.arch))
+      || (process.platform === 'win32' && process.arch === 'x64')),
+  )('passes its startup options through the real native SDK constructor without starting a native daemon', async () => {
+    const sdk = await import('@trycua/cua-driver/embedded');
+    const harness = await createHarness();
+    const validateOptions = vi.fn((options: Parameters<typeof sdk.EmbeddedCuaDriverHost.withOptions>[0]) => {
+      // withOptions validates native configuration synchronously; only start launches a daemon.
+      const nativeHost = sdk.EmbeddedCuaDriverHost.withOptions(options);
+      nativeHost.uniffiDestroy();
+      return harness.host;
+    });
+    harness.dependencies.loadEmbeddedSdk = async () => ({
+      EmbeddedDriverHostOptions: sdk.EmbeddedDriverHostOptions,
+      EmbeddedPermissionMode: sdk.EmbeddedPermissionMode,
+      EmbeddedCuaDriverHost: { withOptions: validateOptions },
+    });
+
+    const manager = new CuaRuntimeManager(harness.dependencies);
+    await expect(manager.start()).resolves.toBe(true);
+    expect(validateOptions).toHaveBeenCalledOnce();
+    expect(harness.host.start).toHaveBeenCalledOnce();
+    expect(harness.requestMacOSPermissions).not.toHaveBeenCalled();
+    await manager.stop();
+  });
+
   it('does not load permission or embedded SDKs on startup or activation while disabled', async () => {
     const harness = await createHarness({ isEnabled: async () => false });
     const connectionFile = getCuaConnectionFilePath(harness.userDataPath);
@@ -219,6 +245,10 @@ describe('CuaRuntimeManager', () => {
     const connectionFile = getCuaConnectionFilePath(harness.userDataPath);
 
     await expect(new CuaRuntimeManager(harness.dependencies).start()).resolves.toBe(true);
+
+    expect(harness.createOptions).toHaveBeenCalledWith(expect.objectContaining({
+      environment: [],
+    }));
 
     const descriptor = JSON.parse(await readFile(connectionFile, 'utf8'));
     expect(descriptor).toEqual({

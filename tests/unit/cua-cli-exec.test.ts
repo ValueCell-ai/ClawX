@@ -4,7 +4,10 @@ import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+
+vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } }));
+import { withCuaConnectionFileEnv } from '@electron/gateway/config-sync-env';
 
 // POSIX CLI quoting only. No native CUA, live Gateway, Electron, or real provider is used.
 describe.skipIf(process.platform === 'win32')('CUA CLI through pinned OpenClaw exec/read', () => {
@@ -20,6 +23,8 @@ describe.skipIf(process.platform === 'win32')('CUA CLI through pinned OpenClaw e
         maxBuffer: 2 * 1024 * 1024,
         // Do not inherit credentials, the user's config, shell startup files, or proxy settings.
         env: {
+          // Exercise the supported POSIX launch policy even on Linux CI, which does not ship CUA.
+          ...withCuaConnectionFileEnv({ CUA_DRIVER_RS_TELEMETRY_ENABLED: 'true' }, 'darwin', home),
           HOME: home, TMPDIR: home, XDG_CONFIG_HOME: home, XDG_CACHE_HOME: home,
           OPENCLAW_HOME: home, OPENCLAW_STATE_DIR: join(home, '.openclaw'),
           OPENCLAW_CONFIG_PATH: join(home, '.openclaw', 'openclaw.json'),
@@ -46,6 +51,7 @@ describe.skipIf(process.platform === 'win32')('CUA CLI through pinned OpenClaw e
     for (const call of report.calls) {
       expect(call.endpoint).toBe(report.descriptor.socketPath);
       expect(call.args.session).toBe('clawx-integration-workflow');
+      expect(call.telemetryEnabled).toBe('false');
     }
     expect(report.remainingSessions).toBe(0);
     expect(report.endpointErrors).toEqual([]);

@@ -10,6 +10,7 @@ const socket = connect(endpoint);
 socket.setTimeout(5000, () => socket.destroy(new Error('Synthetic endpoint timeout')));
 socket.on('connect', () => socket.write(`${JSON.stringify({
   tool, args: JSON.parse(json), pid: process.pid, endpoint,
+  telemetryEnabled: process.env.CUA_DRIVER_RS_TELEMETRY_ENABLED,
 })}\n`));
 socket.on('data', (data) => process.stdout.write(data));
 socket.on('error', (error) => {

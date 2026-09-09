@@ -1,0 +1,71 @@
+---
+id: cua-cli-telemetry
+title: Suppress CUA telemetry console flashes
+scenario: gateway-backend-communication
+taskType: runtime-bridge
+intent: Disable CUA product telemetry in Gateway CLI children while keeping embedded daemon options compatible with the pinned SDK environment allowlist.
+touchedAreas:
+  - .github/workflows/check.yml
+  - electron/**
+  - tests/**
+  - harness/**
+  - README.md
+  - README.zh-CN.md
+  - README.ja-JP.md
+  - resources/**
+  - scripts/**
+  - shared/**
+  - src/**
+  - package.json
+  - pnpm-lock.yaml
+  - pnpm-workspace.yaml
+  - electron-builder.yml
+expectedUserBehavior:
+  - CUA CLI calls started through ClawX inherit disabled driver telemetry without model-supplied environment overrides.
+  - Main's embedded daemon starts with SDK-accepted options without changing OS grants or the user's persistent CUA settings.
+requiredProfiles:
+  - fast
+  - comms
+requiredRules:
+  - backend-communication-boundary
+  - renderer-main-boundary
+  - local-computer-use
+  - comms-regression
+  - docs-sync
+requiredTests:
+  - tests/unit/gateway-process-launcher.test.ts
+  - tests/unit/cua-runtime.test.ts
+  - tests/unit/cua-cli-exec.test.ts
+acceptance:
+  - Gateway CLI children explicitly receive CUA_DRIVER_RS_TELEMETRY_ENABLED false on macOS and Windows, overriding inherited opt-in for these children only.
+  - Embedded options do not include the telemetry variable, which the pinned 0.21.0 SDK rejects and also filters from inherited environment.
+  - A real native SDK constructor validates the options produced by CuaRuntimeManager on supported hosts without starting a daemon or requesting permissions.
+  - The supported-platform CI job runs the native constructor test explicitly; Linux-only full unit runs must not be its sole coverage.
+  - Original environment objects and unrelated settings remain unchanged.
+  - Actual OpenClaw exec inheritance carries the flag into CLI children without per-call model intervention.
+  - Existing PE patch, SDK lifecycle, permission checks, tools, and direct CLI protocol remain unchanged.
+  - Windows user-reported A/B evidence is distinguished from local macOS regression tests and pending rebuilt-Windows acceptance.
+docs:
+  required: true
+---
+
+# CUA Telemetry Console Flashes
+
+User-reported Windows control: PowerShell alone does not flash; normal bundled
+CLI calls flash once each; the same calls with driver telemetry disabled do not;
+restoring the original environment restores flashing. Static CUA 0.21.0 source
+shows a telemetry worker spawning `cmd /c ver` without a no-window flag. The
+experiment isolates the telemetry-enabled path, not the exact console owner.
+
+Set the override on the Gateway, the parent of model CLI executions. Do not pass
+it to EmbeddedDriverHostOptions.environment: the real 0.21.0 constructor rejects
+it with EmbeddedDriverError.Configuration, even though its generated TypeScript
+type accepts arbitrary name/value pairs. The SDK also clears and allowlists its
+inherited environment, so a Main process.env override is not an alternative.
+
+The earlier two-path requirement caused a daemon startup regression and is
+superseded here. Daemon telemetry is left at the SDK/default behavior; CLI
+telemetry remains disabled. No persistent telemetry config, system environment,
+Windows PE, permissions, or model Skill changes are needed. Broad touched areas
+cover inherited branch scope; implementation remains limited to startup options
+and tests/docs.

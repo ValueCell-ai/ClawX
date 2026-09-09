@@ -25,6 +25,8 @@ severity: error
 
 # Local Computer Use ownership and lifecycle
 
+- Disable CUA CLI product telemetry with `CUA_DRIVER_RS_TELEMETRY_ENABLED=false` in the macOS/Windows Gateway child environment. Do not pass it to the 0.21.0 embedded daemon options: the native SDK rejects it as outside its environment allowlist and filters it from inherited environment as well. Keep daemon telemetry at SDK/default behavior. Validate startup options with the real native constructor on supported hosts, without starting a daemon. Preserve parent/system environment and standalone settings; this is not an OS permission, model-controlled policy, or ClawX telemetry preference. See `harness/specs/tasks/cua-cli-telemetry.md` for both the console-flash fix and its startup regression.
+
 - Computer Use is local-only. Do not start an OpenClaw node host, call `node.invoke`, add pairing flows, discover remote nodes, or expose node selection for this capability.
 - Electron Main must remain the direct parent of `cua-driver serve --embedded` through the pinned SDK's `EmbeddedCuaDriverHost`. Existing OpenClaw `exec` calls the native bundled CLI against Main's explicit endpoint; use image-capable `read` for screenshots. Do not add a custom model tool, OpenClaw plugin, MCP proxy, or CLI action wrapper.
 - Orderly quit starts Gateway and Computer Use stops concurrently, handles each error independently, and retains the shared five-second deadline and existing Gateway timeout termination. E2E mode skips Computer Use cleanup; no new force-kill or lifecycle queue mechanism is required.

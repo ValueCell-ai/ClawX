@@ -35,6 +35,8 @@ export function withCuaConnectionFileEnv(
   delete next[CLAWX_CUA_CONNECTION_FILE_ENV];
   if (platform === 'darwin' || platform === 'win32') {
     next[CLAWX_CUA_CONNECTION_FILE_ENV] = getCuaConnectionFilePath(userDataPath);
+    // CLI processes are Gateway children, not children of the managed CUA daemon.
+    next.CUA_DRIVER_RS_TELEMETRY_ENABLED = 'false';
   }
   return next;
 }

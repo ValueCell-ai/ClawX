@@ -45,15 +45,32 @@ describe('Gateway process launcher environment', () => {
 
     expect(withCuaConnectionFileEnv(source, 'darwin', '/user-data')).toEqual({
       PATH: '/usr/bin',
+      CUA_DRIVER_RS_TELEMETRY_ENABLED: 'false',
       [CLAWX_CUA_CONNECTION_FILE_ENV]: join('/user-data', 'cua', 'connection.json'),
     });
     expect(withCuaConnectionFileEnv(source, 'win32', 'C:\\UserData')).toEqual({
       PATH: '/usr/bin',
+      CUA_DRIVER_RS_TELEMETRY_ENABLED: 'false',
       [CLAWX_CUA_CONNECTION_FILE_ENV]: join('C:\\UserData', 'cua', 'connection.json'),
     });
     expect(withCuaConnectionFileEnv(source, 'linux', '/user-data')).toEqual({
       PATH: '/usr/bin',
     });
     expect(source[CLAWX_CUA_CONNECTION_FILE_ENV]).toBe('/inherited/connection.json');
+  });
+
+  it.each(['darwin', 'win32'] as const)('disables CUA telemetry for %s CLI children without changing the parent', (platform) => {
+    const source = {
+      CUA_DRIVER_RS_TELEMETRY_ENABLED: 'true',
+      CUA_TELEMETRY_ENABLED: 'true',
+      UNRELATED_SETTING: 'keep',
+    };
+    const original = { ...source };
+    const env = buildGatewayRuntimeEnv(withCuaConnectionFileEnv(source, platform, '/user-data'));
+    expect(env.CUA_DRIVER_RS_TELEMETRY_ENABLED).toBe('false');
+    expect(env.CUA_TELEMETRY_ENABLED).toBe('true');
+    expect(env.UNRELATED_SETTING).toBe('keep');
+    expect(source).toEqual(original);
+    expect(withCuaConnectionFileEnv(source, 'linux', '/user-data')).toEqual(source);
   });
 });

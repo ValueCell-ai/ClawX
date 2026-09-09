@@ -140,6 +140,8 @@ The wizard preselects your system language when it is supported, and falls back 
 
 ### Local Computer Use
 
+ClawX disables CUA Driver product telemetry in Gateway-launched CLI processes on macOS and Windows to avoid telemetry-related console flashes on Windows. The embedded SDK 0.21.0 rejects this environment override, so daemon telemetry is not overridden. This does not change system-wide environment variables, standalone CUA settings, or ClawX's own telemetry preference.
+
 Use a model and provider endpoint that support image input. Successful screenshot capture alone does not mean the model can see it. Provider synchronization fills missing input metadata for recognized vision models, while preserving explicit text-only declarations; unknown models remain text-only. If screenshots are reported as unsupported, check the selected provider/model rather than continuing blind keyboard input.
 
 Computer Use is optional and **off by default**, including existing installations without an explicit preference. Enable **Developer Mode** in Settings to reveal **Computer Use** in the sidebar, then enable the feature on that page. The choice persists across restarts. Electron Main owns the embedded driver service and permissions; disabling stops that service and removes its private connection descriptor. No remote discovery or OpenClaw node pairing is involved.

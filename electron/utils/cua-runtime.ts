@@ -37,7 +37,7 @@ interface CuaEmbeddedSdk {
       approveCapabilityManifest: boolean;
       approveSessionPolicy: boolean;
       inheritStderr: boolean;
-      environment: never[];
+      environment: Array<{ name: string; value: string }>;
     }) => unknown;
   };
   EmbeddedPermissionMode: {
@@ -152,6 +152,7 @@ export class CuaRuntimeManager {
       approveCapabilityManifest: false,
       approveSessionPolicy: false,
       inheritStderr: true,
+      // SDK 0.21.0 rejects telemetry overrides; disable CLI telemetry in the Gateway env instead.
       environment: [],
     });
     const host = sdk.EmbeddedCuaDriverHost.withOptions(options);
