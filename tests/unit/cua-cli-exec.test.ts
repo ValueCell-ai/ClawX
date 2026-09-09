@@ -41,7 +41,7 @@ describe.skipIf(process.platform === 'win32')('CUA CLI through pinned OpenClaw e
 
   it('bootstraps the descriptor and preserves endpoint/session across separate shell executions', () => {
     expect(report.version).toBe('2026.7.1-2');
-    expect(report.descriptor).toMatchObject({ v: 2, driverVersion: '0.21.0', generation: 'synthetic-generation-1' });
+    expect(report.descriptor).toMatchObject({ v: 2, driverVersion: '0.25.0', generation: 'synthetic-generation-1' });
     expect(report.descriptor.binaryPath).toContain("bundled driver's CLI.mjs");
     expect(report.descriptor.socketPath).toContain('host endpoint.sock');
     expect(report.calls.map((call: { tool: string }) => call.tool)).toEqual([

@@ -3,7 +3,7 @@ id: cua-cli-telemetry
 title: Suppress CUA telemetry console flashes
 scenario: gateway-backend-communication
 taskType: runtime-bridge
-intent: Disable CUA product telemetry in Gateway CLI children while keeping embedded daemon options compatible with the pinned SDK environment allowlist.
+intent: Retain the CUA telemetry regression contract; cua-025-upgrade supersedes the historical 0.21.0 CLI-only workaround with supported daemon and CLI overrides.
 touchedAreas:
   - .github/workflows/check.yml
   - electron/**
@@ -38,7 +38,7 @@ requiredTests:
   - tests/unit/cua-cli-exec.test.ts
 acceptance:
   - Gateway CLI children explicitly receive CUA_DRIVER_RS_TELEMETRY_ENABLED false on macOS and Windows, overriding inherited opt-in for these children only.
-  - Embedded options do not include the telemetry variable, which the pinned 0.21.0 SDK rejects and also filters from inherited environment.
+  - Current embedded options include telemetry false under cua-025-upgrade; the SDK allowlist supports it since 0.22.0, superseding the historical 0.21.0 exclusion below.
   - A real native SDK constructor validates the options produced by CuaRuntimeManager on supported hosts without starting a daemon or requesting permissions.
   - The supported-platform CI job runs the native constructor test explicitly; Linux-only full unit runs must not be its sole coverage.
   - Original environment objects and unrelated settings remain unchanged.
@@ -50,6 +50,15 @@ docs:
 ---
 
 # CUA Telemetry Console Flashes
+
+Current contract: `harness/specs/tasks/cua-025-upgrade.md` pins SDK/driver/Skill
+0.25.0 and requires the override in both Main daemon options and Gateway CLI
+children. The SDK now permits telemetry variables. Keep the PE patch and native
+constructor regression seam; this is not an automatic upstream no-window fix or
+new Windows validation. The following 0.21.0 diagnosis and remediation are
+superseded history, not instructions to remove the current daemon override.
+
+## Historical 0.21.0 Diagnosis and Remediation
 
 User-reported Windows control: PowerShell alone does not flash; normal bundled
 CLI calls flash once each; the same calls with driver telemetry disabled do not;
@@ -63,8 +72,8 @@ it with EmbeddedDriverError.Configuration, even though its generated TypeScript
 type accepts arbitrary name/value pairs. The SDK also clears and allowlists its
 inherited environment, so a Main process.env override is not an alternative.
 
-The earlier two-path requirement caused a daemon startup regression and is
-superseded here. Daemon telemetry is left at the SDK/default behavior; CLI
+The earlier two-path requirement caused a daemon startup regression and was
+superseded by this 0.21.0 workaround. Daemon telemetry was left at the SDK/default behavior; CLI
 telemetry remains disabled. No persistent telemetry config, system environment,
 Windows PE, permissions, or model Skill changes are needed. Broad touched areas
 cover inherited branch scope; implementation remains limited to startup options

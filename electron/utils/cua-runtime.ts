@@ -152,8 +152,7 @@ export class CuaRuntimeManager {
       approveCapabilityManifest: false,
       approveSessionPolicy: false,
       inheritStderr: true,
-      // SDK 0.21.0 rejects telemetry overrides; disable CLI telemetry in the Gateway env instead.
-      environment: [],
+      environment: [{ name: 'CUA_DRIVER_RS_TELEMETRY_ENABLED', value: 'false' }],
     });
     const host = sdk.EmbeddedCuaDriverHost.withOptions(options);
     this.host = host;

@@ -34,7 +34,7 @@ try {
     writeFileSync(destination, asar.extractFile(sourceAsar, relative));
   }
   const sdkPackage = JSON.parse(readFileSync(join(input, 'node_modules/@trycua/cua-driver/package.json'), 'utf8'));
-  assert.equal(sdkPackage.version, '0.21.0');
+  assert.equal(sdkPackage.version, '0.25.0');
   for (const entry of ['electron', 'embedded']) {
     assert.equal(sdkPackage.exports[`./${entry}`].import, `./dist/${entry}.js`);
   }

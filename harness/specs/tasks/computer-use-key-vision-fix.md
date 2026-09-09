@@ -61,6 +61,11 @@ those adapter requirements and the removed plugin test. The provider input
 metadata repair, permission feedback, and no-replay principles remain active;
 the requirements above refer to their current native CLI integration.
 
+`harness/specs/tasks/cua-025-upgrade.md` supersedes earlier 0.21.0 version-specific
+requirements with the SDK/driver/official Skill 0.25.0 contract. The old shortcut
+diagnosis remains historical evidence, not proof of native 0.25.0 shortcut
+delivery; provider metadata and permission boundaries above are unchanged.
+
 See harness/reference/computer-use.md for the pinned driver contract and live
 verification limitations. Native shortcut verification requires the user's OS
 grants; automated tests must not inject desktop input.

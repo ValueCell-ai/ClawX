@@ -1,4 +1,5 @@
-export const CUA_DRIVER_VERSION = '0.21.0';
+// Release commit: 45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f.
+export const CUA_DRIVER_VERSION = '0.25.0';
 export const CUA_DRIVER_RELEASE_TAG = `cua-driver-rs-v${CUA_DRIVER_VERSION}`;
 
 const RELEASE_BASE_URL = `https://github.com/trycua/cua/releases/download/${CUA_DRIVER_RELEASE_TAG}`;
@@ -8,7 +9,7 @@ const MAC_ARTIFACT = Object.freeze({
   archiveType: 'tar.gz',
   archiveEntry: 'cua-driver',
   binName: 'cua-driver',
-  sha256: '5e327e58f6ce81d5c117fe5edec5f267e87e1b921e8c5a8aa4f7f21cbcf5f273',
+  sha256: '29984f5363c12d9901588e814a3a519b8015a1255d7a59d658fbf2d3e51f8983',
 });
 
 const WINDOWS_X64_ARTIFACT = Object.freeze({
@@ -16,7 +17,7 @@ const WINDOWS_X64_ARTIFACT = Object.freeze({
   archiveType: 'zip',
   archiveEntry: 'cua-driver.exe',
   binName: 'cua-driver.exe',
-  sha256: 'd63f6a78e65afc06524048f5557fed36cdf01f0a8a680236e93c9a2fb3587f44',
+  sha256: '314f5df05933810499deaa61022c714341aff64f8e45157a589df6a4b1724fa4',
 });
 
 const ARTIFACTS = Object.freeze({

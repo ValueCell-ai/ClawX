@@ -3,7 +3,7 @@ id: builtin-computer-use-skill
 title: Built-in computer-use guidance
 scenario: gateway-backend-communication
 taskType: runtime-bridge
-intent: Retain computer-use discovery and opt-in independence while distributing the fixed official CUA 0.21.0 Skill with ClawX host guidance.
+intent: Retain computer-use discovery and opt-in independence while distributing the fixed official CUA 0.25.0 Skill with ClawX host guidance under cua-025-upgrade.
 touchedAreas:
   - resources/skills/computer-use/**
   - electron/utils/skill-config.ts
@@ -24,7 +24,7 @@ touchedAreas:
 expectedUserBehavior:
   - Fresh dev and packaged installations discover computer-use in the existing skill picker.
   - Explicit selection inserts /computer-use without enabling Computer Use or operating the desktop.
-  - Known old bundled instructions are replaced in place while unrelated user content and disabled preferences are preserved.
+  - Untouched known 0.21.0 bundled files are upgraded in place while user modifications, unrelated content, and disabled preferences are preserved.
 requiredProfiles:
   - fast
   - comms
@@ -40,7 +40,8 @@ requiredTests:
   - tests/unit/computer-use-settings.test.ts
   - tests/e2e/computer-use-skill.spec.ts
 acceptance:
-  - The computer-use name and /computer-use command remain, with concise ClawX guidance ahead of the official CUA 0.21.0 accompanying Skill from fixed commit 70db98d1bcd92890d778f4978e0eb107a4b66c1b.
+  - The computer-use name and /computer-use command remain, with concise ClawX guidance ahead of the official CUA 0.25.0 accompanying Skill from fixed commit 45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f.
+  - Known untouched 0.21.0 bundled files upgrade without leaving active old version requirements; user-modified files and unknown same-name Skills are not overwritten or relabeled as pristine upstream bytes.
   - Upstream documents, MIT license, provenance, filename mapping, and hashes ship locally without a third-party manifest entry or runtime download; moving main is not used.
   - Installation and selection never mutate computer-use policy or OS permissions.
   - Guidance covers Main-owned v 2 endpoint discovery, explicit native exec calls, named sessions, window/AX/menu/verification capabilities, image-capable read and resizing, uncertain completion, privacy, and confirmation boundaries without promising a hard shell sandbox or global action serialization.
@@ -50,6 +51,11 @@ docs:
 ---
 
 # Built-in Computer Use
+
+Current source and installed-bundle upgrade contract:
+`harness/specs/tasks/cua-025-upgrade.md`. Historical 0.21.0 source selection used
+tag `cua-driver-rs-v0.21.0`, commit `70db98d1bcd92890d778f4978e0eb107a4b66c1b`;
+that pin is superseded, not evidence of 0.25.0 installation or native success.
 
 The original screenshot-only synthesis, plugin-schema validation, and blanket
 same-name-directory preservation requirements are superseded by

@@ -13,7 +13,11 @@ for (const language of ['en', 'zh', 'ja', 'ru']) {
       await expect.poll(() => files.every((file) => existsSync(join(target, file))
         && readFileSync(join(target, file)).equals(readFileSync(join(source, file))))).toBe(true);
       const content = readFileSync(join(target, 'SKILL.md'), 'utf8');
-      expect(content).toContain('official CUA 0.21.0');
+      expect(content).toContain('official CUA 0.25.0');
+      expect(content).not.toContain('0.21.0');
+      expect(JSON.parse(readFileSync(join(target, 'UPSTREAM.json'), 'utf8'))).toMatchObject({
+        version: '0.25.0', commit: '45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f',
+      });
       expect(content).toContain('CLAWX_CUA_CONNECTION_FILE');
       expect(content).toContain('--socket');
       expect(content).not.toContain('Use only the available `computer` tool');

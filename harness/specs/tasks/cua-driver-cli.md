@@ -27,7 +27,7 @@ touchedAreas:
   - src/pages/Chat/AcpToolCallCard.tsx
 expectedUserBehavior:
   - Computer Use remains default off with explicit Main-owned permission requests and supervised daemon lifecycle.
-  - Selecting /computer-use loads guidance based on the official CUA 0.21.0 Skill without enabling the service.
+  - Selecting /computer-use loads guidance based on the official CUA 0.25.0 Skill under cua-025-upgrade without enabling the service.
   - The model invokes the bundled CLI through existing exec and reads screenshots through existing image-capable read.
   - Native window, element, menu, browser and verification commands are available without a ClawX action subset or MCP proxy.
 requiredProfiles:
@@ -52,7 +52,7 @@ acceptance:
   - The existing EmbeddedCuaDriverHost remains the lifecycle and permission owner with unchanged native package loading.
   - The private descriptor contains v 2, generation, driverVersion, binaryPath and socketPath, not MCP launch instructions.
   - The model-facing custom computer plugin, MCP client and automatic plugin installation/policy hooks are removed.
-  - The computer-use name is retained and documentation explicitly attributes the bundled guidance to the official 0.21.0 accompanying Skill.
+  - The computer-use name is retained and documentation attributes current guidance to the official 0.25.0 accompanying Skill; the original 0.21.0 source below is historical.
   - Pinned upstream documentation and license ship offline with concise ClawX-specific endpoint, permission, session and image guidance.
   - Skill selection never enables Computer Use, starts a daemon or prompts for OS permissions.
   - CLI examples use explicit Main-owned endpoints, named sessions and inspect results rather than assuming zero exit proves success.
@@ -65,15 +65,21 @@ docs:
 
 # Native CLI Computer Use
 
-Implementation plan: `harness/reference/cua-driver-cli-plan.md`.
+Historical implementation plan: `harness/reference/cua-driver-cli-plan.md`.
 This task supersedes the model-facing MCP requirements in the earlier Computer
 Use tasks. Main still starts the embedded daemon; the existing OpenClaw exec
 tool runs the native CLI against its private endpoint. The SDK is not removed.
 
-Use the official Skill snapshot from `cua-driver-rs-v0.21.0`, commit
+The current version/source and safe installed-bundle upgrade requirements are in
+`harness/specs/tasks/cua-025-upgrade.md`. That task supersedes the 0.21.0 pin,
+not Main ownership or the native CLI boundary established here.
+
+Historical source: the original task used the official Skill from `cua-driver-rs-v0.21.0`, commit
 `70db98d1bcd92890d778f4978e0eb107a4b66c1b`, under the existing `computer-use` name.
-The former implementation was internal-only; do not build a general upgrade
-framework. Preserve historical chat presentation and independent vision metadata
+The former plugin implementation was internal-only; do not build a general
+upgrade framework. The current upgrade does need narrowly scoped replacement of
+untouched known 0.21.0 bundled Skill files, preserving user changes.
+Preserve historical chat presentation and independent vision metadata
 fixes. Native permissions, provider image delivery and Windows packaged behavior
 must be reported separately from mocked tests.
 

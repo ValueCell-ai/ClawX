@@ -29,13 +29,34 @@ unchanged.
 
 ## Native CLI Contract
 
-Electron Main retains the pinned `@trycua/cua-driver` 0.21.0 SDK and
+Electron Main retains the pinned `@trycua/cua-driver` 0.25.0 SDK and
 `EmbeddedCuaDriverHost`. Main is the direct parent of the bundled
 `cua-driver serve --embedded` daemon and owns its permission policy, exit
 monitoring, shutdown, and parent-liveness behavior. Supported hosts remain macOS
 13+ Intel/Apple silicon and Windows 10+ x64; upstream Linux or Windows ARM64
 documentation does not expand ClawX support. Binaries remain version-pinned,
 SHA256-verified, outside ASAR, and signed with the enclosing macOS app.
+
+SDK, native driver, and official Skill are aligned to 0.25.0, from tag
+`cua-driver-rs-v0.25.0`, commit `45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f`.
+The current upgrade contract is `harness/specs/tasks/cua-025-upgrade.md`.
+
+On macOS and Windows, Main passes `CUA_DRIVER_RS_TELEMETRY_ENABLED=false` in
+`EmbeddedDriverHostOptions.environment`; Gateway supplies the same override to
+its CLI children. The native SDK safe allowlist admits telemetry variables since
+0.22.0 and still does in 0.25.0. Explicit overrides survive `env_clear()` and
+`safe_environment`, without mutating Main's parent environment, persistent CUA
+settings, or ClawX's telemetry preference. Validate actual manager-produced
+options with the real native constructor separately from mocked daemon I/O;
+construction must not start a daemon or request OS grants.
+
+Keep the Windows executable's console-to-GUI PE subsystem patch after archive
+checksum verification. The 0.25.0 telemetry source still spawns `cmd /c ver`
+without a no-window flag; the SDK allowlist change is not an automatic upstream
+no-window fix. Telemetry suppression and the PE patch address different process
+paths. The 0.21.0 Configuration failure and CLI-only workaround are superseded,
+not erased; see `harness/reference/computer-use-cli-validation.md` for their
+evidence and pending rebuilt-Windows 0.25.0 acceptance.
 
 `CLAWX_CUA_CONNECTION_FILE` is the stable discovery path under ClawX user data.
 Main atomically publishes an owner-private descriptor with exactly this shape:
@@ -63,9 +84,12 @@ element, and menu operations, using bounded/filtered observations. This is not a
 primary-display-only ClawX action subset and does not promise every command works
 on every target or preserves foreground focus.
 
-Explicit non-default named sessions persist across separate one-shot CLI calls
-in the pinned implementation; anonymous calls use disposable sessions. Repeat a
-unique workflow label on every accepting call and use `end_session` for cleanup,
+Pinned 0.25.0 `cli.rs::run_call` routes explicit non-default named sessions through
+the daemon-scoped `cli-explicit` namespace and skips disposable cleanup for them;
+anonymous calls use per-process sessions with `session_end`. This source-level
+contract differs from the official Skill's broad disposable-CLI wording and is
+not new live 0.25.0 continuity evidence. Repeat a unique workflow label on every
+accepting call and use `end_session` for cleanup,
 not daemon shutdown. Discard old observations and element tokens after generation
 changes. Interpret actual action, effect, and verification results: nested tool
 errors and some screenshot-write failures can exit zero. Neither an input
@@ -73,12 +97,17 @@ acknowledgment nor shell `&&` proves semantic success. Do not blindly replay inp
 when completion is unknown.
 
 The `computer-use` Skill keeps `/computer-use` in the existing picker and is based
-on the official CUA 0.21.0 accompanying Skill, fixed at tag
-`cua-driver-rs-v0.21.0`, commit `70db98d1bcd92890d778f4978e0eb107a4b66c1b`.
+on the official CUA 0.25.0 accompanying Skill, fixed at tag
+`cua-driver-rs-v0.25.0`, commit `45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f`.
 MIT-licensed upstream documents and the repository-root license ship offline,
 with a short ClawX integration entrypoint. Selecting it never enables the service
 or grants permissions. See `harness/reference/computer-use-skill.md` for provenance
 and the explicit host-specific overrides.
+
+Startup upgrades untouched known 0.21.0 bundled Skill files in place, including
+old version requirements, while preserving user-modified files and unrelated
+content. This narrowly scoped installed-bundle upgrade is not a general updater
+or permission to overwrite a same-name user Skill.
 
 ## Image and Safety Boundaries
 
@@ -104,7 +133,9 @@ shell sandbox, exclusive tool gate, or global serialization guarantee. Cancellin
 cancellation or an emergency stop. Require confirmation for consequential actions
 and treat screen content as untrusted input.
 
-CUA 0.21.0 `press_key` accepts `cmd` on both macOS and Windows. The macOS
+Use `cmd` for Command/Win chords in the pinned CLI guidance; no ClawX adapter
+normalizes aliases. Historical 0.21.0 diagnosis: `press_key` accepts `cmd` on both
+macOS and Windows. The macOS
 `modifier_key_code_and_flag` implementation ignores unknown modifiers, including
 `meta`, without failing the input call. CLI guidance must use `cmd` for Command/
 Win chords; there is no ClawX adapter normalizing aliases. Desktop targeting uses
@@ -127,7 +158,10 @@ serialization with a synthetic CLI and mocked fetch. Automated tests do not
 request OS grants or control the user's desktop.
 They do not prove packaged Windows CLI stdio/cancellation, signed macOS permission
 attribution, live named-session continuity, model obedience, or desktop success.
-Those are separate acceptance checks in `harness/specs/tasks/cua-driver-cli.md`.
+Those remain separate acceptance checks under
+`harness/specs/tasks/cua-025-upgrade.md`; the earlier CLI task and validation
+record contain 0.21.0 evidence, not 0.25.0 results. Browser/recording workflows and
+cleanup guarantees have not been established by these synthetic fixtures.
 Native checks need explicit task authorization and grants for the current host
 identity; a denied development-host grant is a blocker, not a reason to start a
 differently permissioned daemon. Fewer model decisions and redundant captures are
@@ -152,7 +186,8 @@ policy silently; require explicit policy reset for that fixture.
 
 ### Packaged native imports
 
-CUA 0.21.0 uses `dist/native/node-runtime.js` and generated `*-ffi.js` loaders.
+Historical 0.21.0 reproduction (superseded version, retained evidence): that SDK
+uses `dist/native/node-runtime.js` and generated `*-ffi.js` loaders.
 `@ubjs/node`'s `resolveLibPath` uses `createRequire(callerUrl).resolve` to locate
 the sibling platform package. It does not use `import.meta.resolve`, and this
 SDK call supplies no library override or environment override. Electron's
@@ -166,6 +201,9 @@ and `dist/embedded.js` using physical `app.asar.unpacked` file URLs. Unpack
 `@ubjs/core` and `@ubjs/node` too; physical ESM imports cannot find JS dependencies
 that exist only inside the adjacent archive. Development keeps bare package
 imports. There are no dependency patches, signing changes, or TCC workarounds.
+This physical-path requirement remains active for 0.25.0. Its export map,
+library layout, and rebuilt-package initialization require upgraded-byte checks;
+the 0.21.0 results below do not validate the new package.
 
 Run `pnpm cua:smoke:asar <app Resources directory>` to build a minimal true ASAR
 app from the packaged SDK bytes and current unpack rules, using a temporary copy
@@ -187,7 +225,7 @@ path resolution, not signed-release TCC attribution or Windows execution; run th
 same smoke on Windows and Intel macOS artifacts on their respective hosts.
 Electron reference: https://www.electronjs.org/docs/latest/tutorial/asar-archives
 
-Reproduction and verification commands (run from the repo root):
+Historical 0.21.0 reproduction and verification commands (run from the repo root):
 
 ```sh
 # Expected failure: both generated native loaders receive virtual ASAR paths.
@@ -202,7 +240,7 @@ pnpm cua:smoke:asar release/cua-asar-fix/mac-arm64/ClawX.app/Contents/Resources 
 codesign --verify --deep --strict release/cua-asar-fix/mac-arm64/ClawX.app
 ```
 
-The fresh arm64 directory build and both artifact imports passed. The normal
+The historical 0.21.0 arm64 directory build and both artifact imports passed. The normal
 builder selected ad-hoc signing and skipped notarization because distribution
 credentials were unavailable; no signing settings were overridden to fix loading.
 Existing release DMG/ZIP files were not rebuilt or replaced. The smoke tests the
@@ -214,8 +252,9 @@ internal packaging/loading, not their documented opt-in or permission flow.
 
 ### OS attribution
 
-The pinned CUA 0.21.0 Electron helper invokes the native host request function;
-screen permission uses `CGRequestScreenCaptureAccess()` and the read-only probe
+The historical CUA 0.21.0 source inspection found that its Electron helper invokes
+the native host request function; screen permission uses
+`CGRequestScreenCaptureAccess()` and the read-only probe
 uses `CGPreflightScreenCaptureAccess()`. These are not APIs for resetting a
 previous decision. A returned request does not prove that a dialog appeared.
 Electron's screen status delegates to Chromium's boolean screen-access check,
@@ -231,7 +270,7 @@ universal required reset or a promise of re-prompting. The app must never delete
 entries, reset TCC, or bypass authorization to reproduce it. Guide users to the
 actual listed app and let them manage grants, then restart and refresh.
 
-Sources:
+Historical permission sources (not 0.25.0 native validation):
 
 - https://github.com/trycua/cua/blob/cua-driver-rs-v0.21.0/libs/cua-driver/rust/Skills/cua-driver/EMBEDDING.md
 - https://github.com/trycua/cua/blob/cua-driver-rs-v0.21.0/libs/cua-driver/rust/crates/platform-macos/src/permissions/status.rs

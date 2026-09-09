@@ -14,7 +14,7 @@ describe('openclaw bundle config', () => {
       devDependencies?: Record<string, string>;
     };
     expect(packageJson.dependencies?.['@agentclientprotocol/sdk']).toBe('1.1.0');
-    expect(packageJson.dependencies?.['@trycua/cua-driver']).toBe('0.21.0');
+    expect(packageJson.dependencies?.['@trycua/cua-driver']).toBe('0.25.0');
     expect(packageJson.devDependencies).toMatchObject({
       openclaw: '2026.7.1-2',
       electron: '40.10.6',

@@ -43,8 +43,10 @@ docs:
 
 See `harness/reference/computer-use.md` for pinned native loader behavior and
 the package smoke command. Unpacking alone does not change ESM module URLs.
-These SDK loading requirements remain active under
-`harness/specs/tasks/cua-driver-cli.md`: retiring the plugin/MCP adapter does not
+The 0.21.0 reproduction and package results are historical, not proof that the
+upgraded artifacts pass. These SDK loading requirements remain active under
+`harness/specs/tasks/cua-025-upgrade.md`, which requires checking the 0.25.0 export
+and native library layout in rebuilt packages. Retiring the plugin/MCP adapter does not
 remove Main's embedded or permission SDK imports or their physical ASAR paths.
 The touched areas include the existing Computer Use branch changes because
 harness validation includes the full branch diff, not just this follow-up.

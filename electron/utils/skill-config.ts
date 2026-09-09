@@ -300,19 +300,42 @@ export async function trimBundledOpenClawSkillsAndConfigs(
 const BUILTIN_SKILLS = ['computer-use'] as const;
 // Exact former ClawX computer-tool manifest, normalized to LF for Windows installs.
 const OLD_COMPUTER_USE_SHA256 = '0c9d65f242d6eaea3e8c3b1b0205045393dd8fb27a9ea54af8797bda118a1374';
+// Whole flat bundles: sorted "filename\0sha256(bytes)\n", including SKILL.md and UPSTREAM.json.
+// Pin ownership in app code, never infer it from a writable installed manifest.
+const PREVIOUS_COMPUTER_USE_BUNDLE_SHA256 = '471805c1936cba3c68a784f28fc168e9d78648331d769115e8aa8edb88abca78'; // 0.21.0
+const COMPUTER_USE_BUNDLE_SHA256 = '6f3c595f9b5fdefcf02a68eeabcaa4bd7313bf8e135dd9db6848b268efabfd10'; // current resources
+
+async function computerUseBundleHash(directory: string): Promise<string | undefined> {
+    if (!(await lstat(directory)).isDirectory()) return undefined;
+    const entries = await readdir(directory, { withFileTypes: true });
+    if (entries.some((entry) => !entry.isFile())) return undefined;
+    const hash = createHash('sha256');
+    for (const name of entries.map((entry) => entry.name).sort()) {
+        let bytes = await readFile(join(directory, name));
+        // These two control files were text-normalized by Git on Windows; Markdown is -text.
+        if (name === '.gitattributes' || name === 'UPSTREAM.json') {
+            bytes = Buffer.from(bytes.toString('utf8').replace(/\r\n/g, '\n'));
+        }
+        hash.update(`${name}\0${createHash('sha256').update(bytes).digest('hex')}\n`);
+    }
+    return hash.digest('hex');
+}
 
 async function isUntouchedOldComputerUseSkill(targetDir: string): Promise<boolean> {
     if (!(await lstat(targetDir)).isDirectory()) return false;
     const entries = await readdir(targetDir, { withFileTypes: true });
     // Additional files, edited manifests, and symlinks are user-owned.
-    if (entries.length !== 1 || entries[0].name !== 'SKILL.md' || !entries[0].isFile()) return false;
+    if (entries.length !== 1) {
+        return await computerUseBundleHash(targetDir) === PREVIOUS_COMPUTER_USE_BUNDLE_SHA256;
+    }
+    if (entries[0].name !== 'SKILL.md' || !entries[0].isFile()) return false;
     const manifest = await readFile(join(targetDir, 'SKILL.md'), 'utf-8');
     return createHash('sha256').update(manifest.replace(/\r\n/g, '\n')).digest('hex') === OLD_COMPUTER_USE_SHA256;
 }
 
 /**
  * Ensure built-in skills are deployed to ~/.openclaw/skills/<slug>/.
- * Replaces only the untouched former computer-use bundle; preserves user skills.
+ * Replaces only untouched known former computer-use bundles; preserves user skills.
  * Runs at app startup; all errors are logged and swallowed so they never
  * block the normal startup flow.
  */
@@ -333,11 +356,19 @@ export async function ensureBuiltinSkillsInstalled(): Promise<void> {
         try {
             if (existsSync(targetDir)) {
                 if (slug !== 'computer-use' || !(await isUntouchedOldComputerUseSkill(targetDir))) continue;
+                const sourceHash = await computerUseBundleHash(sourceDir);
+                if (sourceHash !== COMPUTER_USE_BUNDLE_SHA256) {
+                    logger.warn(`Built-in computer-use source integrity mismatch, skipping replacement: ${sourceDir}`);
+                    continue;
+                }
                 // Stage outside skill discovery, on the same filesystem as the target.
                 stagingDir = await mkdtemp(join(skillsRoot, '..', '.computer-use-'));
                 const stagedBundle = join(stagingDir, 'bundle');
                 const previous = join(stagingDir, 'previous');
                 await cpAsyncSafe(sourceDir, stagedBundle);
+                if (await computerUseBundleHash(stagedBundle) !== sourceHash) {
+                    throw new Error('Staged computer-use bundle integrity mismatch');
+                }
                 if (!(await isUntouchedOldComputerUseSkill(targetDir))) continue;
                 await rename(targetDir, previous);
                 try {

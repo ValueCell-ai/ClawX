@@ -47,7 +47,7 @@ async function createHarness(overrides: Partial<CuaRuntimeDependencies> = {}) {
 
   const connection = {
     generation: 'generation-1',
-    driverVersion: '0.21.0',
+    driverVersion: '0.25.0',
     socketPath: '/private/cua host/generation-1.sock',
     mcpProtocolVersion: '2025-06-18',
     mcp: {
@@ -136,8 +136,12 @@ describe('CuaRuntimeManager', () => {
     const manager = new CuaRuntimeManager(harness.dependencies);
     await expect(manager.start()).resolves.toBe(true);
     expect(validateOptions).toHaveBeenCalledOnce();
+    expect(validateOptions).toHaveBeenCalledWith(expect.objectContaining({
+      environment: [{ name: 'CUA_DRIVER_RS_TELEMETRY_ENABLED', value: 'false' }],
+    }));
     expect(harness.host.start).toHaveBeenCalledOnce();
     expect(harness.requestMacOSPermissions).not.toHaveBeenCalled();
+    expect(harness.dependencies.loadMacOSPermissions).not.toHaveBeenCalled();
     await manager.stop();
   });
 
@@ -227,14 +231,14 @@ describe('CuaRuntimeManager', () => {
       approveCapabilityManifest: false,
       approveSessionPolicy: false,
       inheritStderr: true,
-      environment: [],
+      environment: [{ name: 'CUA_DRIVER_RS_TELEMETRY_ENABLED', value: 'false' }],
     });
     expect(harness.withOptions).toHaveBeenCalledWith(harness.createOptions.mock.results[0].value);
     expect(harness.host.start).toHaveBeenCalledOnce();
     expect(JSON.parse(await readFile(getCuaConnectionFilePath(harness.userDataPath), 'utf8'))).toEqual({
       v: 2,
       generation: harness.connection.generation,
-      driverVersion: '0.21.0',
+      driverVersion: '0.25.0',
       binaryPath: join(harness.dependencies.resourcesPath, 'bin', 'cua-driver.exe'),
       socketPath: harness.connection.socketPath,
     });
@@ -247,7 +251,7 @@ describe('CuaRuntimeManager', () => {
     await expect(new CuaRuntimeManager(harness.dependencies).start()).resolves.toBe(true);
 
     expect(harness.createOptions).toHaveBeenCalledWith(expect.objectContaining({
-      environment: [],
+      environment: [{ name: 'CUA_DRIVER_RS_TELEMETRY_ENABLED', value: 'false' }],
     }));
 
     const descriptor = JSON.parse(await readFile(connectionFile, 'utf8'));

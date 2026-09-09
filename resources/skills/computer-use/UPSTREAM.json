@@ -1,14 +1,29 @@
 {
   "repository": "https://github.com/trycua/cua",
-  "tag": "cua-driver-rs-v0.21.0",
-  "commit": "70db98d1bcd92890d778f4978e0eb107a4b66c1b",
-  "version": "0.21.0",
+  "tag": "cua-driver-rs-v0.25.0",
+  "commit": "45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f",
+  "version": "0.25.0",
   "notes": "Files are byte-for-byte upstream copies. Only upstream SKILL.md is renamed to UPSTREAM-SKILL.md; ClawX SKILL.md is the active integration entrypoint and takes precedence. LICENSE.md comes from the repository root. No runtime download or updater is needed.",
   "files": [
     {
-      "source": "libs/cua-driver/rust/Skills/cua-driver/SKILL.md",
-      "destination": "UPSTREAM-SKILL.md",
-      "sha256": "84b12b99d3c9640fdeb77e5d29e718db2be9fb4b307f87ac7a3f91efce883590"
+      "source": "LICENSE.md",
+      "destination": "LICENSE.md",
+      "sha256": "c0779290c1d4783169aa3dbfb55feb505e563ef8a004bbf55298ceffcfbda8d9"
+    },
+    {
+      "source": "libs/cua-driver/rust/Skills/cua-driver/BROWSER.md",
+      "destination": "BROWSER.md",
+      "sha256": "376960a136247d8ac2850f789fb7761c9619967c85e0f30c410f32890902e5d4"
+    },
+    {
+      "source": "libs/cua-driver/rust/Skills/cua-driver/EMBEDDING.md",
+      "destination": "EMBEDDING.md",
+      "sha256": "206e2c5ad3b5be5d7d5a0214975df9fa9e59026e72165c97eed4b59669db9715"
+    },
+    {
+      "source": "libs/cua-driver/rust/Skills/cua-driver/LINUX.md",
+      "destination": "LINUX.md",
+      "sha256": "4d096f19eab5c56f0231bed98e2048abc09f969a92e70311be9e1f5ecc5209e0"
     },
     {
       "source": "libs/cua-driver/rust/Skills/cua-driver/MACOS.md",
@@ -16,39 +31,24 @@
       "sha256": "8e5013cb7a9a3cb4cbae6fe43593f14627597f1f41395d769602ed9e3c0e1603"
     },
     {
-      "source": "libs/cua-driver/rust/Skills/cua-driver/WINDOWS.md",
-      "destination": "WINDOWS.md",
-      "sha256": "14230d64cc8c1993de242d916e693ff192ce4dd5bed773dcf15061e953d35712"
-    },
-    {
-      "source": "libs/cua-driver/rust/Skills/cua-driver/LINUX.md",
-      "destination": "LINUX.md",
-      "sha256": "951128289dd2a9fca602ca99433f91eb485aafe326513b0d92ea0f9101c9e606"
-    },
-    {
-      "source": "libs/cua-driver/rust/Skills/cua-driver/BROWSER.md",
-      "destination": "BROWSER.md",
-      "sha256": "2efdee2f8aa2feb5538f70828900f74f17af51f26bc77a3418f6f68a67542548"
-    },
-    {
-      "source": "libs/cua-driver/rust/Skills/cua-driver/RECORDING.md",
-      "destination": "RECORDING.md",
-      "sha256": "a97f9e7ce53d22e6e8f82ad1a741787e126f6bf746781d4c49488b48e657db52"
-    },
-    {
-      "source": "libs/cua-driver/rust/Skills/cua-driver/EMBEDDING.md",
-      "destination": "EMBEDDING.md",
-      "sha256": "412187f1800226a92cf4d026ae5ce0ae33c1858072941276e95eb935593a6039"
-    },
-    {
       "source": "libs/cua-driver/rust/Skills/cua-driver/README.md",
       "destination": "README.md",
       "sha256": "07580cc0a7df49dc088939e88d8c95ae387aeb4a94d61142f4527fade4b4328c"
     },
     {
-      "source": "LICENSE.md",
-      "destination": "LICENSE.md",
-      "sha256": "c0779290c1d4783169aa3dbfb55feb505e563ef8a004bbf55298ceffcfbda8d9"
+      "source": "libs/cua-driver/rust/Skills/cua-driver/RECORDING.md",
+      "destination": "RECORDING.md",
+      "sha256": "83a13ec47f18084969c765eca934812f182f8bcb4667c0cf2f9eee7bcf9883f1"
+    },
+    {
+      "source": "libs/cua-driver/rust/Skills/cua-driver/SKILL.md",
+      "destination": "UPSTREAM-SKILL.md",
+      "sha256": "da04f757d061e779792794f3636106654cd2ba26d588a65b4854f34ab4a2f7cd"
+    },
+    {
+      "source": "libs/cua-driver/rust/Skills/cua-driver/WINDOWS.md",
+      "destination": "WINDOWS.md",
+      "sha256": "0f42710550c9b6583f7cb705fbc1ffe320c790350b6a829c3689887747c909c5"
     }
   ]
 }

@@ -11,7 +11,7 @@ export function getCuaSdkSpecifier(entry: keyof CuaSdkModules): string {
   if (!app.isPackaged) return `@trycua/cua-driver/${entry}`;
   const appPath = app.getAppPath();
   const root = appPath.endsWith('.asar') ? `${appPath}.unpacked` : appPath;
-  // Pinned CUA 0.21.0 exports. Its UniFFI loader derives native paths from
+  // Pinned CUA 0.25.0 exports. Its UniFFI loader derives native paths from
   // import.meta.url; unpacking files alone leaves virtual ASAR module URLs.
   return pathToFileURL(join(root, 'node_modules/@trycua/cua-driver/dist', `${entry}.js`)).href;
 }

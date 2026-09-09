@@ -74,6 +74,12 @@ follow-up screenshots, and plugin test requirement are historical, not executabl
 acceptance. The requirements above retain the applicable lifecycle/packaging
 contract and use current CLI coverage instead of the removed adapter suite.
 
+`harness/specs/tasks/cua-025-upgrade.md` now owns the SDK/driver/official Skill
+0.25.0 pin and safe upgrade of untouched known 0.21.0 Skill files. Both Main daemon
+options and Gateway CLI children disable telemetry using the supported SDK
+allowlist; retain the Windows PE patch. Earlier 0.21.0 validation remains
+historical and does not establish rebuilt 0.25.0 behavior.
+
 ClawX still owns one local CUA daemon generation through Electron Main. The
 Gateway receives the private descriptor path; existing exec/read operations use
 that Main-owned endpoint. SDK/ASAR facts and permission attribution limits are in

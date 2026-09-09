@@ -1,12 +1,93 @@
 # Computer Use CLI Validation
 
-## Scope
+## Current 0.25.0 Contract and Gaps
+
+The current upgrade is `harness/specs/tasks/cua-025-upgrade.md`: SDK, native
+driver, and official Skill 0.25.0, tag `cua-driver-rs-v0.25.0`, commit
+`45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f`. The 0.21.0 observations below are
+historical, superseded-version evidence, not 0.25.0 test results.
+
+Static inspection of that fixed source confirms:
+
+- `cua-driver-sdk/src/embedded.rs` allows `CUA_DRIVER_RS_TELEMETRY_ENABLED` and
+  `CUA_TELEMETRY_ENABLED`. This allowlist change shipped in 0.22.0. ClawX now
+  supplies `CUA_DRIVER_RS_TELEMETRY_ENABLED=false` to both Main daemon options and
+  macOS/Windows Gateway CLI children, without global or persisted mutations.
+- `cua-driver/src/telemetry.rs::os_version` still invokes `cmd /c ver` on Windows
+  without a no-window flag. Retain both telemetry suppression and the existing
+  console-to-GUI PE patch; 0.25.0 is not an automatic upstream no-window fix.
+- `cli.rs::run_call` uses `cli-explicit` for nonempty, non-default session labels
+  and only sends disposable `session_end` for anonymous calls. The official
+  Skill's broader disposable-CLI wording does not describe this entire path.
+  This is source evidence, not a new live session-continuity test.
+- The same dispatch still extracts image blocks for CLI `--screenshot-out-file`
+  and can log write errors without failing the command. Prefer state-call JSON
+  `screenshot_out_file`, check the actual result and fresh file, then use `read`.
+  Neither zero exit nor the official Skill's "equivalent" wording proves success.
+
+Source links:
+
+- https://github.com/trycua/cua/blob/45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f/libs/cua-driver/rust/crates/cua-driver-sdk/src/embedded.rs
+- https://github.com/trycua/cua/blob/45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f/libs/cua-driver/rust/crates/cua-driver/src/telemetry.rs
+- https://github.com/trycua/cua/blob/45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f/libs/cua-driver/rust/crates/cua-driver/src/cli.rs
+- https://github.com/trycua/cua/blob/45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f/libs/cua-driver/rust/Skills/cua-driver/SKILL.md
+
+The integrated upgrade was verified on macOS arm64:
+
+- `pnpm run lint:check` passed with seven existing React fast-refresh warnings.
+- `pnpm run typecheck` passed for Main and Renderer.
+- `pnpm test`: 201 suites passed; 2392 tests passed and three skipped. This includes
+  the real native constructor accepting manager-produced telemetry-disabled
+  options, synthetic OpenClaw exec/read/provider payload coverage, and old-bundle
+  upgrade/preservation/failure tests. Before upgrading, the corresponding native
+  check reproduced 0.21.0's Configuration rejection.
+- `pnpm run build:vite` passed. Existing chunk-size, mixed-import and Browserslist
+  warnings remain.
+- `pnpm exec playwright test tests/e2e/computer-use.spec.ts tests/e2e/computer-use-skill.spec.ts tests/e2e/developer-mode.spec.ts`:
+  12 passed, including dependency specs and all four Skill locales.
+- Task validation with the real diff, selected harness dry-run, `harness:ci`,
+  `comms:replay`, and `comms:compare` passed.
+- Published SHA256 digests matched the downloaded macOS universal and Windows
+  x64 archives. Native macOS `--version` reports 0.25.0. The downloaded/patched
+  Windows executable is PE32+ GUI x86-64; this metadata check is not Windows
+  execution.
+- Independent review found no Critical or Important issues, including the tagged
+  upstream file hashes, old-bundle fixture provenance, and packaged dotfile rules.
+
+A fresh macOS directory package was produced with:
+
+```sh
+node scripts/run-electron-builder.mjs --mac --arm64 --dir --publish never -c.directories.output=release/cua-025-validation
+pnpm cua:smoke:asar release/cua-025-validation/mac-arm64/ClawX.app/Contents/Resources --artifact
+```
+
+Both `electron` and `embedded` imports passed in packaged Electron and loaded the
+actual artifact's unpacked 0.25.0 native library. A separate Playwright-launched
+copy of that full package used an isolated HOME/user-data and E2E mode. Inside its
+real Main process (`app.isPackaged=true`, `process.type=browser`), the packaged SDK
+accepted telemetry-disabled host options and the unstarted host was destroyed.
+The package contained all twelve Skill files, including `.gitattributes`, and its
+whole-bundle digest matched the installer constant. Neither probe started a native
+daemon or called OS permission APIs. The builder skipped signing because no valid
+Developer ID identity was available; this is a local validation artifact, not a
+signed/notarized distribution release or a replacement for the installed app.
+
+Keep these remaining checks separate from the results above:
+
+- Actual Windows CI/native constructor execution and Intel macOS execution.
+- Rebuilt daemon startup/shutdown, signed macOS permission attribution.
+- Rebuilt Windows 0.25.0 no-flash behavior, stdout/stderr, PowerShell JSON/Unicode,
+  waits and cancellation. The old user A/B result is not a new Windows test.
+- Live 0.25.0 named sessions, AX input, browser preparation/cleanup, recording,
+  model-visible screenshot delivery/resizing, and end-to-end task success.
+
+## Historical 0.21.0 Scope
 
 Validated on 2026-09-09 on macOS arm64, with bundled CUA Driver/SDK 0.21.0 and
 OpenClaw 2026.7.1-2. The Skill remains `computer-use` and is based on the official
 0.21.0 accompanying Skill, pinned in its `UPSTREAM.json`.
 
-## Automated Results
+## Historical 0.21.0 Automated Results
 
 - `pnpm run lint:check`: passed with seven existing React fast-refresh warnings.
 - `pnpm run typecheck`: node and web passed.
@@ -28,7 +109,7 @@ fetch boundary: image-capable read supplies image content; a screenshot path on
 stdout does not. This proves neither live provider receipt nor the complete
 Gateway/ACP model-driven loop. The synthetic 1x1 PNG does not test resizing.
 
-## Development Host
+## Historical 0.21.0 Development Host
 
 Started with the user-requested command:
 
@@ -63,7 +144,7 @@ Observed:
   Re-enabling restored the original preference with a new generation/socket.
 - Renderer reported zero console errors during these checks.
 
-## Native Input Limitation
+## Historical 0.21.0 Native Input Limitation
 
 CUA 0.21.0 reported `ax_window_unresolved` for the observed Electron window:
 there were zero AXWindow matches, so the element tree was empty and background
@@ -87,7 +168,7 @@ Sources:
 - https://github.com/trycua/cua/blob/70db98d1bcd92890d778f4978e0eb107a4b66c1b/libs/cua-driver/rust/crates/platform-macos/src/input/skylight.rs
 - https://github.com/trycua/cua/blob/70db98d1bcd92890d778f4978e0eb107a4b66c1b/libs/cua-driver/rust/crates/cua-driver-core/src/action_record.rs
 
-## Internal Installation Cleanup
+## Historical Internal Installation Cleanup
 
 The development machine retained an enabled `clawx-cua-computer` test plugin.
 With Gateway stopped, the official OpenClaw uninstall command removed its exact
@@ -101,7 +182,7 @@ deleted. They are no longer allowed/registered through the old managed entry.
 No unrelated plugin configuration was changed. A pre-existing validation warning
 for `clawx-openai-image-install-verify` remained outside this change's scope.
 
-## Remaining Acceptance
+## Historical 0.21.0 Remaining Acceptance
 
 - Packaged Windows stdout/stderr, PowerShell JSON/Unicode, wait and cancellation.
 - Signed-release macOS attribution and Intel macOS native behavior.
@@ -110,7 +191,7 @@ for `clawx-openai-image-install-verify` remained outside this change's scope.
 - Live model-driven completion, stop behavior and a controlled same-model latency
   comparison. No speedup percentage or universal task-success claim is made.
 
-## Windows Telemetry Flash Follow-Up
+## Historical 0.21.0 Windows Telemetry Flash Follow-Up
 
 The user performed an A/B/C/B control in Windows ClawX using the same ordinary
 exec path. A pure PowerShell command did not flash. Each normal bundled
@@ -126,9 +207,10 @@ patch applies to cua-driver.exe, not this descendant cmd.exe. The precise window
 owner has not been captured with a Windows process trace; the observed timing
 alone does not establish which worker created it.
 
-ClawX supplies the public telemetry-off override to the Gateway environment
-inherited by exec/CLI children on macOS and Windows. It does not override daemon
-telemetry, because the pinned embedded SDK rejects that variable (see below).
+The 0.21.0 workaround supplied the public telemetry-off override to the Gateway
+environment inherited by exec/CLI children on macOS and Windows. It did not
+override daemon telemetry, because that embedded SDK rejected the variable (see
+below). This CLI-only restriction is superseded by the current 0.25.0 contract.
 No upstream binary, persistent CUA setting, system environment or Skill command
 is changed. The normal CUA CLI self-reexec is not claimed to disappear; disabling
 telemetry prevents its telemetry worker path. Restart ClawX after installing the
@@ -138,7 +220,7 @@ OpenClaw exec environment inheritance into synthetic CLI processes.
 
 Source: https://github.com/trycua/cua/blob/70db98d1bcd92890d778f4978e0eb107a4b66c1b/libs/cua-driver/rust/crates/cua-driver/src/telemetry.rs
 
-## Embedded SDK Configuration Regression
+## Historical 0.21.0 Embedded SDK Configuration Regression
 
 The initial telemetry fix also passed the variable through
 `EmbeddedDriverHostOptions.environment`. The user reported daemon startup failure
@@ -149,12 +231,13 @@ constructor reproduced the exact error, with `error.inner.reason`:
 environment variable CUA_DRIVER_RS_TELEMETRY_ENABLED is not in the embedded safe allowlist
 ```
 
-The SDK's `validate_options` checks a fixed environment allowlist that excludes
+The 0.21.0 SDK's `validate_options` checks a fixed environment allowlist that excludes
 this variable. Its daemon launch also uses `env_clear()` and `safe_environment`,
 so placing the variable in Main's `process.env` would not deliver it either.
-Restore the accepted empty override list; retain the independent Gateway/CLI fix.
-Do not bypass the SDK boundary, change persistent settings, or replace the host
-lifecycle to force daemon telemetry off.
+The historical fix restored the accepted empty override list and retained the
+independent Gateway/CLI fix, without bypassing the SDK boundary, changing
+persistent settings, or replacing the host lifecycle. The empty-list requirement
+is superseded for 0.25.0; retain the failure evidence and native validation seam.
 
 The previous mock asserted the requested name/value pair but never ran native
 validation, so it falsely accepted the invalid options. The new regression test
