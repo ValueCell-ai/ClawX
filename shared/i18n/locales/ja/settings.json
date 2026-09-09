@@ -330,12 +330,18 @@
   },
   "asr": {
     "title": "音声入力",
-    "description": "入力欄での音声入力に使う音声認識プロバイダーを設定します。OpenAI Audio Transcriptions プロトコル互換のエンドポイントに対応しています。",
+    "description": "入力欄での音声入力に使う音声認識プロバイダーを設定します。OpenAI Audio Transcriptions（multipart アップロード）または OpenAI Chat Completions（input_audio）プロトコル互換のエンドポイントに対応しています。",
+    "protocol": {
+      "label": "API タイプ",
+      "transcriptions": "OpenAI Audio Transcriptions",
+      "chat": "OpenAI Chat Completions"
+    },
     "presets": {
       "label": "プロバイダー",
       "openai": "OpenAI",
       "groq": "Groq",
       "siliconflow": "SiliconFlow",
+      "bailian": "Alibaba Cloud Model Studio",
       "custom": "カスタム"
     },
     "baseUrl": "APIベースURL",

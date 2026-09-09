@@ -330,12 +330,18 @@
   },
   "asr": {
     "title": "Распознавание речи",
-    "description": "Настройте провайдера распознавания речи для голосового ввода в редакторе сообщений. Поддерживаются конечные точки, совместимые с протоколом OpenAI Audio Transcriptions.",
+    "description": "Настройте провайдера распознавания речи для голосового ввода в редакторе сообщений. Поддерживаются конечные точки, совместимые с протоколами OpenAI Audio Transcriptions (multipart) или OpenAI Chat Completions (input_audio).",
+    "protocol": {
+      "label": "Тип API",
+      "transcriptions": "OpenAI Audio Transcriptions",
+      "chat": "OpenAI Chat Completions"
+    },
     "presets": {
       "label": "Провайдер",
       "openai": "OpenAI",
       "groq": "Groq",
       "siliconflow": "SiliconFlow",
+      "bailian": "Alibaba Cloud Model Studio",
       "custom": "Свой вариант"
     },
     "baseUrl": "Базовый URL API",

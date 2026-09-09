@@ -330,12 +330,18 @@
   },
   "asr": {
     "title": "语音转写",
-    "description": "配置用于输入框语音听写的语音转写服务，使用兼容 OpenAI Audio Transcriptions 协议的端点。",
+    "description": "配置用于输入框语音听写的语音转写服务，支持 OpenAI Audio Transcriptions（multipart 上传）或 OpenAI Chat Completions（input_audio）协议的端点。",
+    "protocol": {
+      "label": "API 类型",
+      "transcriptions": "OpenAI Audio Transcriptions",
+      "chat": "OpenAI Chat Completions"
+    },
     "presets": {
       "label": "服务商",
       "openai": "OpenAI",
       "groq": "Groq",
       "siliconflow": "硅基流动",
+      "bailian": "阿里云百炼",
       "custom": "自定义"
     },
     "baseUrl": "API 地址",

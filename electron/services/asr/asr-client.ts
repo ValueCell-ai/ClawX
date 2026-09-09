@@ -1,4 +1,5 @@
 import type { AsrConfig } from '@shared/host-api/contract';
+import { normalizeAsrProtocol } from '@shared/asr/presets';
 import { ASR_PRESET_DEFAULTS } from '@shared/asr/presets';
 import { AsrClientError } from '@shared/asr/errors';
 import { isRecord } from '../payload-utils';
@@ -13,6 +14,13 @@ export function validateAsrConfig(config: AsrConfig): void {
   }
   if (typeof config.preset !== 'string' || !(config.preset in ASR_PRESET_DEFAULTS)) {
     throw new AsrClientError('INVALID_INPUT', 'Unknown ASR preset');
+  }
+  if (
+    config.protocol !== undefined &&
+    config.protocol !== 'transcriptions' &&
+    config.protocol !== 'chat'
+  ) {
+    throw new AsrClientError('INVALID_INPUT', 'Unknown ASR protocol');
   }
   if (typeof config.baseUrl !== 'string' || !config.baseUrl.trim()) {
     throw new AsrClientError('INVALID_INPUT', 'ASR base URL is required');
@@ -31,6 +39,111 @@ export function validateAsrConfig(config: AsrConfig): void {
   }
 }
 
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  fetchImpl?: typeof fetch,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ASR_REQUEST_TIMEOUT_MS);
+  try {
+    return await (fetchImpl ?? fetch)(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    throw new AsrClientError(
+      'NETWORK',
+      `ASR request failed: ${error instanceof Error ? error.message : 'unknown error'}`,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function assertResponseOk(response: Response): Promise<void> {
+  if (response.ok) return;
+  const snippet = (await response.text().catch(() => '')).trim().slice(0, 200);
+  throw new AsrClientError(
+    response.status === 401 || response.status === 403
+      ? 'AUTH'
+      : response.status === 429
+        ? 'RATE_LIMITED'
+        : response.status >= 500
+          ? 'SERVER'
+          : 'REQUEST',
+    `ASR request failed with status ${response.status}${snippet ? `: ${snippet}` : ''}`,
+  );
+}
+
+function extractChatContent(payload: unknown): string {
+  if (!isRecord(payload)) return '';
+  const choices = payload.choices;
+  if (!Array.isArray(choices) || choices.length === 0) return '';
+  const message = (choices[0] as { message?: unknown } | null)?.message;
+  if (!isRecord(message)) return '';
+  if (typeof message.content === 'string') return message.content.trim();
+  if (Array.isArray(message.content)) {
+    const text = message.content
+      .map((part) => (isRecord(part) && typeof part.text === 'string' ? part.text : ''))
+      .join('');
+    return text.trim();
+  }
+  return '';
+}
+
+async function transcribeViaChatCompletions(input: {
+  wav: Uint8Array;
+  config: AsrConfig;
+  apiKey: string;
+  baseUrl: string;
+  fetchImpl?: typeof fetch;
+}): Promise<string> {
+  const { wav, config, apiKey, baseUrl, fetchImpl } = input;
+  const payload = {
+    model: config.model,
+    stream: false,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'input_audio',
+            input_audio: {
+              data: Buffer.from(wav).toString('base64'),
+              format: 'wav',
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const response = await fetchWithTimeout(
+    `${baseUrl}/chat/completions`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    },
+    fetchImpl,
+  );
+  if (!response.ok) {
+    await assertResponseOk(response);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = await response.json();
+  } catch {
+    throw new AsrClientError('EMPTY_RESULT', 'ASR response is not valid JSON');
+  }
+  const text = extractChatContent(parsed);
+  if (!text) {
+    throw new AsrClientError('EMPTY_RESULT', 'ASR service returned no text');
+  }
+  return text;
+}
+
 export async function transcribeWav(input: {
   wav: Uint8Array;
   config: AsrConfig;
@@ -40,6 +153,10 @@ export async function transcribeWav(input: {
   const { wav, config, apiKey, fetchImpl } = input;
   const baseUrl = config.baseUrl.trim().replace(/\/+$/, '');
 
+  if (normalizeAsrProtocol(config.protocol) === 'chat') {
+    return transcribeViaChatCompletions({ wav, config, apiKey, baseUrl, fetchImpl });
+  }
+
   const form = new FormData();
   form.append('file', new Blob([new Uint8Array(wav)], { type: 'audio/wav' }), 'recording.wav');
   form.append('model', config.model);
@@ -48,37 +165,18 @@ export async function transcribeWav(input: {
     form.append('language', language);
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ASR_REQUEST_TIMEOUT_MS);
-  let response: Response;
-  try {
-    response = await (fetchImpl ?? fetch)(`${baseUrl}/audio/transcriptions`, {
+  const endpoint = config.preset === 'custom' ? baseUrl : `${baseUrl}/audio/transcriptions`;
+  const response = await fetchWithTimeout(
+    endpoint,
+    {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}` },
       body: form,
-      signal: controller.signal,
-    });
-  } catch (error) {
-    throw new AsrClientError(
-      'NETWORK',
-      `ASR request failed: ${error instanceof Error ? error.message : 'unknown error'}`,
-    );
-  } finally {
-    clearTimeout(timer);
-  }
-
+    },
+    fetchImpl,
+  );
   if (!response.ok) {
-    const snippet = (await response.text().catch(() => '')).trim().slice(0, 200);
-    throw new AsrClientError(
-      response.status === 401 || response.status === 403
-        ? 'AUTH'
-        : response.status === 429
-          ? 'RATE_LIMITED'
-          : response.status >= 500
-            ? 'SERVER'
-            : 'REQUEST',
-      `ASR request failed with status ${response.status}${snippet ? `: ${snippet}` : ''}`,
-    );
+    await assertResponseOk(response);
   }
 
   let payload: unknown;

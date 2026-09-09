@@ -33,6 +33,12 @@ function translate(key: string, options?: { defaultValue?: string }): string {
   switch (key) {
     case 'settings:asr.title':
       return 'Speech-to-text';
+    case 'settings:asr.protocol.label':
+      return 'API type';
+    case 'settings:asr.protocol.transcriptions':
+      return 'OpenAI Audio Transcriptions';
+    case 'settings:asr.protocol.chat':
+      return 'OpenAI Chat Completions';
     case 'settings:asr.presets.label':
       return 'Provider';
     case 'settings:asr.presets.openai':
@@ -41,6 +47,8 @@ function translate(key: string, options?: { defaultValue?: string }): string {
       return 'Groq';
     case 'settings:asr.presets.siliconflow':
       return 'SiliconFlow';
+    case 'settings:asr.presets.bailian':
+      return 'Alibaba Cloud Model Studio';
     case 'settings:asr.presets.custom':
       return 'Custom';
     case 'settings:asr.baseUrl':
@@ -180,6 +188,82 @@ describe('AsrSettings', () => {
     expect(screen.getByTestId('asr-model-input')).toHaveValue(ASR_PRESET_DEFAULTS.groq.model);
   });
 
+  it('shows the appended transcriptions suffix for standard presets but not for custom', async () => {
+    getConfigMock.mockResolvedValue(configResult());
+
+    renderAsrSettings();
+    await screen.findByTestId('asr-base-url-input');
+
+    expect(screen.getByTestId('asr-base-url-suffix')).toHaveTextContent('/audio/transcriptions');
+
+    fireEvent.change(screen.getByTestId('asr-preset-select'), { target: { value: 'custom' } });
+
+    expect(screen.queryByTestId('asr-base-url-suffix')).not.toBeInTheDocument();
+    expect(screen.getByTestId('asr-base-url-input')).toHaveAttribute(
+      'placeholder',
+      'https://api.example.com/v1/audio/transcriptions',
+    );
+
+    fireEvent.change(screen.getByTestId('asr-preset-select'), { target: { value: 'openai' } });
+
+    expect(screen.getByTestId('asr-base-url-suffix')).toBeInTheDocument();
+  });
+
+  it('switching to the chat protocol offers bailian and custom and prefills the bailian defaults', async () => {
+    getConfigMock.mockResolvedValue(configResult());
+
+    renderAsrSettings();
+    await screen.findByTestId('asr-base-url-input');
+
+    expect(screen.getByTestId('asr-protocol-select')).toHaveValue('transcriptions');
+
+    fireEvent.change(screen.getByTestId('asr-protocol-select'), { target: { value: 'chat' } });
+
+    const presetSelect = screen.getByTestId('asr-preset-select');
+    expect(presetSelect).toHaveValue('bailian');
+    expect(Array.from(presetSelect.children).map((option) => option.getAttribute('value')))
+      .toEqual(['bailian', 'custom']);
+    expect(screen.getByTestId('asr-base-url-input')).toHaveValue(
+      'https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+    );
+    expect(screen.getByTestId('asr-model-input')).toHaveValue('qwen3-asr-flash');
+    expect(screen.queryByTestId('asr-base-url-suffix')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('asr-language-input')).not.toBeInTheDocument();
+  });
+
+  it('saves the chat protocol without a language field and defaults to transcriptions when absent', async () => {
+    getConfigMock.mockResolvedValue({
+      configured: true,
+      config: {
+        preset: 'bailian',
+        protocol: 'chat',
+        baseUrl: 'https://ws123.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+        model: 'qwen3-asr-flash',
+      },
+      hasApiKey: true,
+    });
+
+    renderAsrSettings();
+    await screen.findByTestId('asr-base-url-input');
+
+    expect(screen.getByTestId('asr-protocol-select')).toHaveValue('chat');
+
+    fireEvent.click(screen.getByTestId('asr-save-button'));
+
+    await waitFor(() => {
+      expect(saveConfigMock).toHaveBeenCalledTimes(1);
+    });
+    expect(saveConfigMock).toHaveBeenCalledWith(
+      {
+        preset: 'bailian',
+        protocol: 'chat',
+        baseUrl: 'https://ws123.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+        model: 'qwen3-asr-flash',
+      },
+      undefined,
+    );
+  });
+
   it('blocks saving when the model is empty and shows an error toast', async () => {
     getConfigMock.mockResolvedValue(configResult());
 
@@ -222,7 +306,7 @@ describe('AsrSettings', () => {
       expect(saveConfigMock).toHaveBeenCalledTimes(1);
     });
     expect(saveConfigMock).toHaveBeenCalledWith(
-      { preset: 'groq', baseUrl: 'https://example.com/v1', model: 'whisper-1', language: 'zh' },
+      { preset: 'groq', protocol: 'transcriptions', baseUrl: 'https://example.com/v1', model: 'whisper-1', language: 'zh' },
       undefined,
     );
     expect(toastSuccessMock).toHaveBeenCalledWith('Speech-to-text settings saved.');
@@ -240,7 +324,7 @@ describe('AsrSettings', () => {
       expect(saveConfigMock).toHaveBeenCalledTimes(1);
     });
     expect(saveConfigMock).toHaveBeenCalledWith(
-      { preset: 'groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'whisper-large-v3', language: 'en' },
+      { preset: 'groq', protocol: 'transcriptions', baseUrl: 'https://api.groq.com/openai/v1', model: 'whisper-large-v3', language: 'en' },
       undefined,
     );
   });
@@ -258,7 +342,7 @@ describe('AsrSettings', () => {
       expect(saveConfigMock).toHaveBeenCalledTimes(1);
     });
     expect(saveConfigMock).toHaveBeenCalledWith(
-      { preset: 'groq', baseUrl: 'https://api.groq.com/openai/v1', model: 'whisper-large-v3', language: 'en' },
+      { preset: 'groq', protocol: 'transcriptions', baseUrl: 'https://api.groq.com/openai/v1', model: 'whisper-large-v3', language: 'en' },
       'sk-new-key',
     );
     expect(toastSuccessMock).toHaveBeenCalledWith('Speech-to-text settings saved.');

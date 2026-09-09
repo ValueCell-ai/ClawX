@@ -11,15 +11,18 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { hostApi } from '@/lib/host-api';
 import { parseAsrErrorCode, type AsrErrorCode } from '@shared/asr/errors';
-import { ASR_PRESET_DEFAULTS } from '@shared/asr/presets';
-import type { AsrConfig, AsrPreset } from '@shared/host-api/contract';
+import {
+  ASR_PRESET_DEFAULTS,
+  ASR_PRESETS_BY_PROTOCOL,
+  ASR_PROTOCOLS,
+  normalizeAsrProtocol,
+} from '@shared/asr/presets';
+import type { AsrConfig, AsrPreset, AsrProtocol } from '@shared/host-api/contract';
 import { cn } from '@/lib/utils';
 
 const inputClasses =
   'h-10 rounded-lg font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const labelClasses = 'text-sm text-foreground/80 font-bold';
-
-const ASR_PRESETS: AsrPreset[] = ['openai', 'groq', 'siliconflow', 'custom'];
 
 const ASR_LANGUAGE_OPTIONS = ['zh', 'en'] as const;
 
@@ -54,6 +57,7 @@ export function AsrSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
+  const [protocol, setProtocol] = useState<AsrProtocol>('transcriptions');
   const [preset, setPreset] = useState<AsrPreset>('openai');
   const [baseUrl, setBaseUrl] = useState(ASR_PRESET_DEFAULTS.openai.baseUrl);
   const [model, setModel] = useState(ASR_PRESET_DEFAULTS.openai.model);
@@ -67,11 +71,13 @@ export function AsrSettings() {
       const config = result.config;
       setHasApiKey(result.hasApiKey);
       if (config) {
+        setProtocol(normalizeAsrProtocol(config.protocol));
         setPreset(config.preset);
         setBaseUrl(config.baseUrl);
         setModel(config.model);
         setLanguage(config.language ?? '');
       } else {
+        setProtocol('transcriptions');
         setPreset('openai');
         setBaseUrl(ASR_PRESET_DEFAULTS.openai.baseUrl);
         setModel(ASR_PRESET_DEFAULTS.openai.model);
@@ -88,6 +94,14 @@ export function AsrSettings() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const handleProtocolChange = (next: AsrProtocol) => {
+    setProtocol(next);
+    const nextPreset = ASR_PRESETS_BY_PROTOCOL[next][0];
+    setPreset(nextPreset);
+    setBaseUrl(ASR_PRESET_DEFAULTS[nextPreset].baseUrl);
+    setModel(ASR_PRESET_DEFAULTS[nextPreset].model);
+  };
 
   const handlePresetChange = (next: AsrPreset) => {
     setPreset(next);
@@ -108,9 +122,9 @@ export function AsrSettings() {
     }
     setSaving(true);
     try {
-      const config: AsrConfig = { preset, baseUrl: trimmedBaseUrl, model: trimmedModel };
+      const config: AsrConfig = { preset, protocol, baseUrl: trimmedBaseUrl, model: trimmedModel };
       const trimmedLanguage = language.trim();
-      if (trimmedLanguage) {
+      if (protocol === 'transcriptions' && trimmedLanguage) {
         config.language = trimmedLanguage;
       }
       const trimmedApiKey = apiKey.trim();
@@ -153,6 +167,24 @@ export function AsrSettings() {
           className="space-y-4 rounded-xl border border-black/10 bg-surface-modal p-4 shadow-sm dark:border-white/10"
         >
           <div className="space-y-2 max-w-xs">
+            <Label htmlFor="asr-protocol" className={labelClasses}>
+              {t('settings:asr.protocol.label')}
+            </Label>
+            <Select
+              id="asr-protocol"
+              value={protocol}
+              onChange={(e) => handleProtocolChange(e.target.value as AsrProtocol)}
+              className={cn(inputClasses, 'w-full bg-background')}
+              data-testid="asr-protocol-select"
+            >
+              {ASR_PROTOCOLS.map((protocolKey) => (
+                <option key={protocolKey} value={protocolKey}>
+                  {t(`settings:asr.protocol.${protocolKey}`)}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="space-y-2 max-w-xs">
             <Label htmlFor="asr-preset" className={labelClasses}>
               {t('settings:asr.presets.label')}
             </Label>
@@ -163,7 +195,7 @@ export function AsrSettings() {
               className={cn(inputClasses, 'w-full bg-background')}
               data-testid="asr-preset-select"
             >
-              {ASR_PRESETS.map((presetKey) => (
+              {ASR_PRESETS_BY_PROTOCOL[protocol].map((presetKey) => (
                 <option key={presetKey} value={presetKey}>
                   {t(`settings:asr.presets.${presetKey}`)}
                 </option>
@@ -175,20 +207,31 @@ export function AsrSettings() {
               {t('settings:asr.baseUrl')}
             </Label>
             <div className="flex">
-              <Input
-                id="asr-base-url"
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="https://api.example.com/v1"
-                className={cn(inputClasses, 'rounded-r-none flex-1 min-w-0')}
-                data-testid="asr-base-url-input"
-              />
+            <Input
+              id="asr-base-url"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              placeholder={
+                protocol === 'transcriptions' && preset === 'custom'
+                  ? 'https://api.example.com/v1/audio/transcriptions'
+                  : 'https://api.example.com/v1'
+              }
+              className={cn(
+                inputClasses,
+                protocol === 'transcriptions' && preset !== 'custom'
+                  ? 'rounded-r-none flex-1 min-w-0'
+                  : 'w-full min-w-0',
+              )}
+              data-testid="asr-base-url-input"
+            />
+            {protocol === 'transcriptions' && preset !== 'custom' ? (
               <span
                 data-testid="asr-base-url-suffix"
                 className="flex items-center rounded-r-lg border border-l-0 border-black/10 bg-black/5 px-3 font-mono text-meta text-muted-foreground dark:border-white/10 dark:bg-white/5 select-none"
               >
                 /audio/transcriptions
               </span>
+            ) : null}
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -204,25 +247,27 @@ export function AsrSettings() {
                 data-testid="asr-model-input"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="asr-language" className={labelClasses}>
-                {t('settings:asr.language')}
-              </Label>
-              <Select
-                id="asr-language"
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-                className={cn(inputClasses, 'w-full bg-background')}
-                data-testid="asr-language-input"
-              >
-                <option value="">{t('settings:asr.languageAuto')}</option>
-                {ASR_LANGUAGE_OPTIONS.map((code) => (
-                  <option key={code} value={code}>
-                    {code}
-                  </option>
-                ))}
-              </Select>
-            </div>
+            {protocol === 'chat' ? null : (
+              <div className="space-y-2">
+                <Label htmlFor="asr-language" className={labelClasses}>
+                  {t('settings:asr.language')}
+                </Label>
+                <Select
+                  id="asr-language"
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value)}
+                  className={cn(inputClasses, 'w-full bg-background')}
+                  data-testid="asr-language-input"
+                >
+                  <option value="">{t('settings:asr.languageAuto')}</option>
+                  {ASR_LANGUAGE_OPTIONS.map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
           </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between">

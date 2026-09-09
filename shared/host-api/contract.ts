@@ -865,8 +865,15 @@ export type DeliveryChannelGroup = {
 };
 export type DeliveryTargetsResult = HostSuccess & { targets: DeliveryChannelGroup[] };
 
-export type AsrPreset = 'openai' | 'groq' | 'siliconflow' | 'custom';
-export type AsrConfig = { preset: AsrPreset; baseUrl: string; model: string; language?: string };
+export type AsrPreset = 'openai' | 'groq' | 'siliconflow' | 'bailian' | 'custom';
+export type AsrProtocol = 'transcriptions' | 'chat';
+export type AsrConfig = {
+  preset: AsrPreset;
+  protocol?: AsrProtocol;
+  baseUrl: string;
+  model: string;
+  language?: string;
+};
 export type AsrConfigPayload = { config: AsrConfig; apiKey?: string };
 export type AsrConfigResult = { configured: boolean; config: AsrConfig | null; hasApiKey: boolean };
 export type AsrTranscribePayload = { wav: Uint8Array };

@@ -76,6 +76,110 @@ describe('asr-client', () => {
       expect(fetchImpl.mock.calls[0][0]).toBe('http://127.0.0.1:8080/v1/audio/transcriptions');
     });
 
+    it('uses the custom preset base URL as the full endpoint without appending the suffix', async () => {
+      const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ text: 'ok' }));
+      await transcribeWav({
+        wav: new Uint8Array(8),
+        config: { ...openAiConfig, preset: 'custom', baseUrl: 'https://api.example.com/asr/recognize' },
+        apiKey: 'k',
+        fetchImpl,
+      });
+      expect(fetchImpl.mock.calls[0][0]).toBe('https://api.example.com/asr/recognize');
+    });
+
+    it('strips a trailing slash from a custom endpoint', async () => {
+      const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ text: 'ok' }));
+      await transcribeWav({
+        wav: new Uint8Array(8),
+        config: { ...openAiConfig, preset: 'custom', baseUrl: 'https://api.example.com/asr/recognize/' },
+        apiKey: 'k',
+        fetchImpl,
+      });
+      expect(fetchImpl.mock.calls[0][0]).toBe('https://api.example.com/asr/recognize');
+    });
+
+    describe('chat protocol', () => {
+      const chatConfig: AsrConfig = {
+        preset: 'bailian',
+        protocol: 'chat',
+        baseUrl: 'https://ws123.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+        model: 'qwen3-asr-flash',
+      };
+
+      it('posts a chat.completions JSON body with input_audio base64 wav and format', async () => {
+        const fetchImpl = vi.fn().mockResolvedValue(
+          jsonResponse({ choices: [{ message: { role: 'assistant', content: ' 你好世界 ' } }] }),
+        );
+        const wav = new Uint8Array([1, 2, 3, 4]);
+
+        await expect(transcribeWav({ wav, config: chatConfig, apiKey: 'sk-test', fetchImpl }))
+          .resolves.toBe('你好世界');
+
+        expect(fetchImpl).toHaveBeenCalledTimes(1);
+        const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+        expect(url).toBe(`${chatConfig.baseUrl}/chat/completions`);
+        expect(init.method).toBe('POST');
+        expect((init.headers as Record<string, string>).Authorization).toBe('Bearer sk-test');
+        expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
+
+        const body = JSON.parse(init.body as string);
+        expect(body).toEqual({
+          model: 'qwen3-asr-flash',
+          stream: false,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'input_audio',
+                  input_audio: { data: Buffer.from(wav).toString('base64'), format: 'wav' },
+                },
+              ],
+            },
+          ],
+        });
+      });
+
+      it('appends /chat/completions after stripping a trailing slash from the base URL', async () => {
+        const fetchImpl = vi.fn().mockResolvedValue(
+          jsonResponse({ choices: [{ message: { content: 'ok' } }] }),
+        );
+        await transcribeWav({
+          wav: new Uint8Array(8),
+          config: { ...chatConfig, baseUrl: `${chatConfig.baseUrl}/` },
+          apiKey: 'k',
+          fetchImpl,
+        });
+        expect(fetchImpl.mock.calls[0][0]).toBe(`${chatConfig.baseUrl}/chat/completions`);
+      });
+
+      it('joins text parts when message content is an array', async () => {
+        const fetchImpl = vi.fn().mockResolvedValue(
+          jsonResponse({
+            choices: [{ message: { content: [{ type: 'text', text: '你好' }, { type: 'text', text: '世界' }] } }],
+          }),
+        );
+        await expect(transcribeWav({ wav: new Uint8Array(8), config: chatConfig, apiKey: 'k', fetchImpl }))
+          .resolves.toBe('你好世界');
+      });
+
+      it('throws EMPTY_RESULT when choices or content are missing or blank', async () => {
+        const noChoices = vi.fn().mockResolvedValue(jsonResponse({ choices: [] }));
+        await expect(transcribeWav({ wav: new Uint8Array(8), config: chatConfig, apiKey: 'k', fetchImpl: noChoices }))
+          .rejects.toMatchObject({ code: 'EMPTY_RESULT' });
+
+        const blankContent = vi.fn().mockResolvedValue(jsonResponse({ choices: [{ message: { content: '   ' } }] }));
+        await expect(transcribeWav({ wav: new Uint8Array(8), config: chatConfig, apiKey: 'k', fetchImpl: blankContent }))
+          .rejects.toMatchObject({ code: 'EMPTY_RESULT' });
+      });
+
+      it('maps chat endpoint HTTP errors to the same stable codes', async () => {
+        const fetchImpl = vi.fn().mockResolvedValue(errorResponse(401));
+        await expect(transcribeWav({ wav: new Uint8Array(8), config: chatConfig, apiKey: 'k', fetchImpl }))
+          .rejects.toMatchObject({ code: 'AUTH' });
+      });
+    });
+
     it('appends language only when it is a non-empty trimmed string', async () => {
       const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ text: 'hi' }));
       await transcribeWav({
@@ -162,6 +266,17 @@ describe('asr-client', () => {
     it('rejects unknown presets', () => {
       expect(() => validateAsrConfig({ ...openAiConfig, preset: 'nope' as AsrConfig['preset'] }))
         .toThrow(AsrClientError);
+    });
+
+    it('rejects unknown protocols', () => {
+      expect(() => validateAsrConfig({ ...openAiConfig, protocol: 'nope' as AsrConfig['protocol'] }))
+        .toThrow(AsrClientError);
+    });
+
+    it('accepts both known protocols', () => {
+      expect(() => validateAsrConfig({ ...openAiConfig, protocol: 'transcriptions' })).not.toThrow();
+      expect(() => validateAsrConfig({ ...openAiConfig, protocol: 'chat' })).not.toThrow();
+      expect(() => validateAsrConfig(openAiConfig)).not.toThrow();
     });
   });
 });

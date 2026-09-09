@@ -140,6 +140,16 @@ test.describe('ClawX voice dictation', () => {
       await expect(page).toHaveURL(/\/models/);
       await expect(page).toHaveURL(/tab=voice/);
       await expect(page.getByTestId('asr-settings')).toBeVisible();
+
+      await expect(page.getByTestId('asr-protocol-select')).toHaveValue('transcriptions');
+      await expect(page.getByTestId('asr-base-url-suffix')).toBeVisible();
+
+      await page.getByTestId('asr-protocol-select').selectOption('chat');
+      await expect(page.getByTestId('asr-preset-select')).toContainText('Alibaba Cloud Model Studio');
+      await expect(page.getByTestId('asr-base-url-input')).toHaveValue(
+        'https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
+      );
+      await expect(page.getByTestId('asr-base-url-suffix')).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
