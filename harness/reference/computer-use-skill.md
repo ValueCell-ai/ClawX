@@ -107,14 +107,24 @@ outside ASAR. No runtime download, third-party manifest entry, or CLI action
 wrapper is needed. Existing skill listing and quick-access discovery find the
 same slug and `/computer-use` command.
 
-Untouched known 0.21.0 ClawX-bundled files are upgraded in place to the 0.25.0
-entrypoint and official reference snapshot. Match known shipped contents, not
-merely a directory name or version substring. Preserve user-modified files,
-unknown same-name Skills, and unrelated content; do not refresh provenance in a
-way that relabels user changes as pristine upstream bytes. A fully untouched
-bundle must not retain active 0.21.0 version requirements after upgrade. The
-earlier known internal instructions remain eligible for targeted replacement.
-This is not a general Skill updater or legacy migration framework.
+ClawX owns the entire installed `computer-use` directory. On every startup,
+compare the current source and destination dynamically, including relative paths
+and file contents. Any difference, including local edits, missing files, extra
+files/directories, or an unknown same-name Skill, triggers full replacement with
+the current bundle. Matching content is left untouched. There is no historical
+installation hash registry, old-version detection, or user-content preservation
+exception inside this directory. Custom variants must use another Skill name and
+directory; other-named Skills and settings, including enablement, are untouched.
+
+Stage the complete bundle outside discovery for both fresh and replacement
+installs, then publish it with rollback and cleanup. A failed copy or publication
+preserves the previous installation where possible and remains retryable; fresh
+installs must not expose a partial copy. Replace a same-name symlink itself without
+following or deleting its external referent. This narrowly scoped ownership policy
+does not introduce a general Skill updater or legacy migration framework. The
+official 0.25.0 document bytes and provenance/license checks, including the source
+file hashes in `UPSTREAM.json`, remain unchanged; those hashes verify provenance,
+not eligibility to replace an installation.
 Third-party preparation skip flags and
 cached preinstalled locks do not prevent this built-in distribution. Installation
 and selection do not enable Computer Use, start its daemon, mutate unrelated
@@ -122,14 +132,20 @@ configuration, or prompt for OS permissions.
 
 ## Validation Boundaries
 
-`harness/specs/tasks/cua-025-upgrade.md` is the current version and installed-bundle
-upgrade contract. `harness/specs/tasks/cua-driver-cli.md` superseded the original
-plugin-based Skill requirements; its 0.21.0 validation remains historical.
-Unit coverage checks pinned file hashes/license, offline resource
-installation, discovery, reference resolution, known old instruction replacement,
-user-content preservation, and CLI guidance contracts without native input.
+`harness/specs/tasks/cua-025-upgrade.md` remains the version/source contract;
+`harness/specs/tasks/managed-computer-use-skill.md` supersedes its known-pristine
+installation policy with authoritative same-name replacement.
+`harness/specs/tasks/cua-driver-cli.md` superseded the original plugin-based Skill
+requirements; its 0.21.0 validation remains historical.
+Required unit coverage includes pinned file hashes/license, offline resource
+installation, discovery, reference resolution, dynamic whole-directory comparison,
+unchanged-content skip, staged fresh/replacement publication, rollback, symlink
+safety, unrelated Skill/settings preservation, and CLI guidance without native input.
 Management E2E covers product wording, default-off state, permission gating, and
-safe failure; Skill E2E covers installation and `/computer-use` selection.
+safe failure; the four-locale Skill E2E seeds an edited same-name bundle and extra
+file/directory in each isolated test home before launch, asserts every bundled path
+and byte is restored and extras removed, and preserves another-named custom Skill.
+It also checks `/computer-use` selection without enabling or starting Computer Use.
 Synthetic exec/read fixtures cover command results and image delivery separately
 from actual native desktop operations.
 

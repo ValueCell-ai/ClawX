@@ -70,15 +70,17 @@ This task supersedes the model-facing MCP requirements in the earlier Computer
 Use tasks. Main still starts the embedded daemon; the existing OpenClaw exec
 tool runs the native CLI against its private endpoint. The SDK is not removed.
 
-The current version/source and safe installed-bundle upgrade requirements are in
+The current version/source requirements are in
 `harness/specs/tasks/cua-025-upgrade.md`. That task supersedes the 0.21.0 pin,
-not Main ownership or the native CLI boundary established here.
+not Main ownership or the native CLI boundary established here. Installation
+ownership is now governed by `harness/specs/tasks/managed-computer-use-skill.md`.
 
 Historical source: the original task used the official Skill from `cua-driver-rs-v0.21.0`, commit
 `70db98d1bcd92890d778f4978e0eb107a4b66c1b`, under the existing `computer-use` name.
 The former plugin implementation was internal-only; do not build a general
-upgrade framework. The current upgrade does need narrowly scoped replacement of
-untouched known 0.21.0 bundled Skill files, preserving user changes.
+upgrade framework. The managed-Skill task supersedes known-pristine-only upgrades:
+replace any differing same-name directory with the current bundle, including user
+edits/extras; preserve other-named Skills and settings. Custom variants need another name.
 Preserve historical chat presentation and independent vision metadata
 fixes. Native permissions, provider image delivery and Windows packaged behavior
 must be reported separately from mocked tests.

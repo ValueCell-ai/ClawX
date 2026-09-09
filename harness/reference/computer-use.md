@@ -104,10 +104,19 @@ with a short ClawX integration entrypoint. Selecting it never enables the servic
 or grants permissions. See `harness/reference/computer-use-skill.md` for provenance
 and the explicit host-specific overrides.
 
-Startup upgrades untouched known 0.21.0 bundled Skill files in place, including
-old version requirements, while preserving user-modified files and unrelated
-content. This narrowly scoped installed-bundle upgrade is not a general updater
-or permission to overwrite a same-name user Skill.
+ClawX owns the entire `~/.openclaw/skills/computer-use` directory. Every startup
+compares its paths and content with the current bundle and replaces any differing
+same-name installation, including user edits and extra files/directories. Matching
+content is left untouched; there is no historical installation hash registry or
+known-version gate. Custom variants must use another Skill name and directory.
+Other-named Skills and settings, including enablement preferences, remain unchanged.
+Fresh and replacement installs stage the full bundle outside Skill discovery;
+publication retains rollback and cleanup, preserving the prior installation where
+possible on failure for a later retry. A target symlink is replaced itself without
+following or deleting its external referent. This is not a general Skill updater
+and does not change the official 0.25.0 bytes or provenance/license verification.
+The ownership contract in `harness/specs/tasks/managed-computer-use-skill.md`
+supersedes the earlier known-pristine-bundle preservation policy.
 
 ## Image and Safety Boundaries
 

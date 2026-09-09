@@ -3,7 +3,7 @@
         "title": "操作计算机",
         "description": "允许 Agent 通过内置的原生 CUA CLI 检查窗口、辅助功能元素和菜单，验证结果并操作这台计算机。",
         "enable": "启用操作计算机",
-        "warning": "使用 /computer-use 获取基于官方 CUA 0.25.0 Skill 的指导。Agent 使用现有的 exec 和支持图片的 read 工具；截图可能发送给你的模型提供商。选择技能不会启用此服务或授予权限。",
+        "warning": "启用后，推荐配合 /computer-use 技能指导 AI 操作你的计算机。",
         "off": "已关闭。ClawX 管理的 CUA 服务已停止。",
         "running": "本机驱动正在运行。",
         "unavailable": "已启用，但驱动不可用。请检查权限和内置驱动，再关闭并重新启用以重试。",

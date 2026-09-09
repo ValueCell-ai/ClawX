@@ -1,17 +1,40 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
+function directoryContents(directory: string) {
+  return readdirSync(directory, { recursive: true, encoding: 'utf8' }).sort().map((entry) => {
+    const path = join(directory, entry);
+    return [entry, lstatSync(path).isDirectory() ? null : readFileSync(path)];
+  });
+}
+
 for (const language of ['en', 'zh', 'ja', 'ru']) {
-  test(`selects the bundled CLI computer-use skill without enabling desktop control (${language})`, async ({ launchElectronApp, homeDir }) => {
+  test(`restores the managed computer-use skill and selects it without enabling desktop control (${language})`, async ({ launchElectronApp, homeDir }) => {
+    const skills = join(homeDir, '.openclaw', 'skills');
+    const target = join(skills, 'computer-use');
+    const source = resolve('resources/skills/computer-use');
+    const bundledContents = directoryContents(source);
+    cpSync(source, target, { recursive: true });
+    writeFileSync(join(target, 'SKILL.md'), `${readFileSync(join(source, 'SKILL.md'), 'utf8')}\nLocal user edits.\n`);
+    writeFileSync(join(target, 'local-notes.txt'), 'User-added file.\n');
+    mkdirSync(join(target, 'local-extras'));
+    writeFileSync(join(target, 'local-extras', 'notes.txt'), 'User-added directory content.\n');
+    const custom = join(skills, 'custom-computer-use');
+    mkdirSync(custom);
+    writeFileSync(join(custom, 'SKILL.md'), '---\nname: custom-computer-use\ndescription: User-owned desktop instructions\n---\nKeep these custom instructions.\n');
+    writeFileSync(join(custom, 'notes.txt'), 'Keep this custom file.\n');
+    const customContents = directoryContents(custom);
+
     const app = await launchElectronApp({ skipSetup: true });
     try {
-      const target = join(homeDir, '.openclaw', 'skills', 'computer-use');
-      const source = resolve('resources/skills/computer-use');
-      const files = readdirSync(source).filter((file) => file.endsWith('.md') || file === 'UPSTREAM.json');
-      // Wait for the entire directory copy, not just the first manifest write.
-      await expect.poll(() => files.every((file) => existsSync(join(target, file))
-        && readFileSync(join(target, file)).equals(readFileSync(join(source, file))))).toBe(true);
+      // Retry across staged publication; compare every path and byte, including dotfiles.
+      await expect(async () => {
+        expect(directoryContents(target)).toEqual(bundledContents);
+      }).toPass({ timeout: 15_000 });
+      expect(existsSync(join(target, 'local-notes.txt'))).toBe(false);
+      expect(existsSync(join(target, 'local-extras'))).toBe(false);
+      expect(directoryContents(custom)).toEqual(customContents);
       const content = readFileSync(join(target, 'SKILL.md'), 'utf8');
       expect(content).toContain('official CUA 0.25.0');
       expect(content).not.toContain('0.21.0');
@@ -59,6 +82,7 @@ for (const language of ['en', 'zh', 'ja', 'ru']) {
       expect(calls).toEqual(expect.arrayContaining([{ module: 'skills', action: 'quickAccess', payload: expect.anything() }]));
       expect(calls.filter((call) => call.module === 'computerUse').map((call) => call.action)).toEqual(['status', 'status']);
       expect(calls.some((call) => call.module === 'chat' && call.action === 'send')).toBe(false);
+      expect(directoryContents(custom)).toEqual(customContents);
     } finally {
       await closeElectronApp(app);
     }

@@ -23,7 +23,7 @@ touchedAreas:
 expectedUserBehavior:
   - Computer Use retains its opt-in, permission UI and /computer-use name while using bundled native CUA 0.25.0.
   - Both the embedded daemon and Gateway-launched CLI disable CUA product telemetry without changing persistent or system settings.
-  - The official Skill accompanying the pinned 0.25.0 release is bundled offline and untouched prior ClawX Skill installations receive the new guidance.
+  - The official Skill accompanying the pinned 0.25.0 release is bundled offline; managed-computer-use-skill now governs whole-directory startup replacement, including same-name user edits and extras.
 requiredProfiles:
   - fast
   - comms
@@ -51,7 +51,7 @@ acceptance:
   - Keep physical ASAR-unpacked native SDK loading and validate the upgraded export/library layout.
   - Vendor the 0.25.0 official Skill snapshot and MIT license with exact source hashes while retaining computer-use as the only active Skill entrypoint.
   - Update ClawX-specific CLI guidance against the new command/session/screenshot contract, not a blind version-string replacement.
-  - Upgrade untouched known 0.21.0 bundled Skill files safely without overwriting user modifications or leaving old version requirements active.
+  - Follow managed-computer-use-skill for staged whole-directory replacement of any differing same-name installation, unchanged-content skip and rollback without historical installation hashes; preserve other-named Skills and settings.
   - Preserve Main-owned lifecycle, local-only CLI calls, no model-controlled permission grants, and no uncertain input replay.
   - Update four locales and three READMEs; report Windows native and rebuilt-package verification separately from synthetic tests.
 docs:
@@ -69,8 +69,10 @@ Configuration failure.
 
 Implementation units: SDK/artifacts/runtime; official Skill and narrowly scoped
 installed-bundle upgrades; product/reference docs and validation. These can be
-worked independently with disjoint file ownership. Only this task is the current
-upgrade contract; earlier version-specific validation remains historical.
+worked independently with disjoint file ownership. This task remains the version
+upgrade contract; `harness/specs/tasks/managed-computer-use-skill.md` supersedes its
+known-pristine-only installation policy. Earlier validation remains historical
+and does not verify that later ownership change.
 
 No upstream moving-main fetch, runtime dependency downloads, new action wrapper,
 MCP integration, platform expansion, or global/persisted telemetry mutation.

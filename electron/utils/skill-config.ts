@@ -298,44 +298,28 @@ export async function trimBundledOpenClawSkillsAndConfigs(
  * and ship unchanged in both dev and packaged builds, without network fetching.
  */
 const BUILTIN_SKILLS = ['computer-use'] as const;
-// Exact former ClawX computer-tool manifest, normalized to LF for Windows installs.
-const OLD_COMPUTER_USE_SHA256 = '0c9d65f242d6eaea3e8c3b1b0205045393dd8fb27a9ea54af8797bda118a1374';
-// Whole flat bundles: sorted "filename\0sha256(bytes)\n", including SKILL.md and UPSTREAM.json.
-// Pin ownership in app code, never infer it from a writable installed manifest.
-const PREVIOUS_COMPUTER_USE_BUNDLE_SHA256 = '471805c1936cba3c68a784f28fc168e9d78648331d769115e8aa8edb88abca78'; // 0.21.0
-const COMPUTER_USE_BUNDLE_SHA256 = '6f3c595f9b5fdefcf02a68eeabcaa4bd7313bf8e135dd9db6848b268efabfd10'; // current resources
 
 async function computerUseBundleHash(directory: string): Promise<string | undefined> {
-    if (!(await lstat(directory)).isDirectory()) return undefined;
-    const entries = await readdir(directory, { withFileTypes: true });
-    if (entries.some((entry) => !entry.isFile())) return undefined;
-    const hash = createHash('sha256');
-    for (const name of entries.map((entry) => entry.name).sort()) {
-        let bytes = await readFile(join(directory, name));
-        // These two control files were text-normalized by Git on Windows; Markdown is -text.
-        if (name === '.gitattributes' || name === 'UPSTREAM.json') {
-            bytes = Buffer.from(bytes.toString('utf8').replace(/\r\n/g, '\n'));
+    try {
+        // The shipped bundle is flat. Links or additional directories cannot match it.
+        if (!(await lstat(directory)).isDirectory()) return undefined;
+        const entries = await readdir(directory, { withFileTypes: true });
+        if (entries.some((entry) => !entry.isFile())) return undefined;
+        const hash = createHash('sha256');
+        for (const name of entries.map((entry) => entry.name).sort()) {
+            const bytes = await readFile(join(directory, name));
+            hash.update(`${name}\0${createHash('sha256').update(bytes).digest('hex')}\n`);
         }
-        hash.update(`${name}\0${createHash('sha256').update(bytes).digest('hex')}\n`);
+        return hash.digest('hex');
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+        throw error;
     }
-    return hash.digest('hex');
-}
-
-async function isUntouchedOldComputerUseSkill(targetDir: string): Promise<boolean> {
-    if (!(await lstat(targetDir)).isDirectory()) return false;
-    const entries = await readdir(targetDir, { withFileTypes: true });
-    // Additional files, edited manifests, and symlinks are user-owned.
-    if (entries.length !== 1) {
-        return await computerUseBundleHash(targetDir) === PREVIOUS_COMPUTER_USE_BUNDLE_SHA256;
-    }
-    if (entries[0].name !== 'SKILL.md' || !entries[0].isFile()) return false;
-    const manifest = await readFile(join(targetDir, 'SKILL.md'), 'utf-8');
-    return createHash('sha256').update(manifest.replace(/\r\n/g, '\n')).digest('hex') === OLD_COMPUTER_USE_SHA256;
 }
 
 /**
  * Ensure built-in skills are deployed to ~/.openclaw/skills/<slug>/.
- * Replaces only untouched known former computer-use bundles; preserves user skills.
+ * computer-use is fully managed: same-name edits and extras are replaced by the bundle.
  * Runs at app startup; all errors are logged and swallowed so they never
  * block the normal startup flow.
  */
@@ -354,42 +338,45 @@ export async function ensureBuiltinSkillsInstalled(): Promise<void> {
 
         let stagingDir: string | undefined;
         try {
-            if (existsSync(targetDir)) {
-                if (slug !== 'computer-use' || !(await isUntouchedOldComputerUseSkill(targetDir))) continue;
-                const sourceHash = await computerUseBundleHash(sourceDir);
-                if (sourceHash !== COMPUTER_USE_BUNDLE_SHA256) {
-                    logger.warn(`Built-in computer-use source integrity mismatch, skipping replacement: ${sourceDir}`);
-                    continue;
-                }
-                // Stage outside skill discovery, on the same filesystem as the target.
-                stagingDir = await mkdtemp(join(skillsRoot, '..', '.computer-use-'));
-                const stagedBundle = join(stagingDir, 'bundle');
-                const previous = join(stagingDir, 'previous');
-                await cpAsyncSafe(sourceDir, stagedBundle);
-                if (await computerUseBundleHash(stagedBundle) !== sourceHash) {
-                    throw new Error('Staged computer-use bundle integrity mismatch');
-                }
-                if (!(await isUntouchedOldComputerUseSkill(targetDir))) continue;
-                await rename(targetDir, previous);
-                try {
-                    await rename(stagedBundle, targetDir);
-                } catch (error) {
-                    await rename(previous, targetDir);
-                    throw error;
-                }
-                await rm(previous, { recursive: true, force: true });
-            } else {
-                await mkdir(skillsRoot, { recursive: true });
-                await mkdir(targetDir);
-                await cpAsyncSafe(sourceDir, targetDir);
+            const sourceHash = await computerUseBundleHash(sourceDir);
+            if (!sourceHash) throw new Error('Invalid bundled computer-use directory');
+            if (await computerUseBundleHash(targetDir) === sourceHash) continue;
+
+            await mkdir(skillsRoot, { recursive: true });
+            // Stage outside discovery for fresh installs as well as replacements.
+            stagingDir = await mkdtemp(join(skillsRoot, '..', '.computer-use-'));
+            const stagedBundle = join(stagingDir, 'bundle');
+            const previous = join(stagingDir, 'previous');
+            await cpAsyncSafe(sourceDir, stagedBundle);
+            if (await computerUseBundleHash(stagedBundle) !== sourceHash) {
+                throw new Error('Staged computer-use bundle integrity mismatch');
             }
+            let movedPrevious = false;
+            try {
+                // Rename the entry itself, including dangling links, without following it.
+                await rename(targetDir, previous);
+                movedPrevious = true;
+            } catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+            }
+            try {
+                await rename(stagedBundle, targetDir);
+            } catch (error) {
+                if (movedPrevious) await rename(previous, targetDir);
+                throw error;
+            }
+            if (movedPrevious) await rm(previous, { recursive: true, force: true });
             logger.info(`Installed built-in skill: ${slug} -> ${targetDir}`);
         } catch (error) {
             logger.warn(`Failed to install built-in skill ${slug}:`, error);
         } finally {
             if (stagingDir) {
                 // Never delete the old bundle if publication rollback also failed.
-                if (existsSync(join(stagingDir, 'previous'))) {
+                const hasPrevious = await lstat(join(stagingDir, 'previous')).then(
+                    () => true,
+                    (error: NodeJS.ErrnoException) => error.code !== 'ENOENT',
+                );
+                if (hasPrevious) {
                     logger.warn(`Retained previous built-in skill for recovery: ${stagingDir}`);
                 } else {
                     await rm(stagingDir, { recursive: true, force: true }).catch((error) => {

@@ -7,6 +7,24 @@ driver, and official Skill 0.25.0, tag `cua-driver-rs-v0.25.0`, commit
 `45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f`. The 0.21.0 observations below are
 historical, superseded-version evidence, not 0.25.0 test results.
 
+The installation ownership contract is now
+`harness/specs/tasks/managed-computer-use-skill.md`: ClawX replaces any differing
+same-name `computer-use` directory at startup with the current bundle, including
+local edits and extra files/directories, and skips matching content. It compares
+current paths/content without historical installation hashes, retains staged
+publication/rollback, and replaces a target symlink without following or deleting
+its external referent. Other-named Skills and settings remain unchanged; custom
+variants must use another name. Official 0.25.0 bytes and provenance/license
+verification remain unchanged. The updated four-locale E2E covers edited-bundle
+restoration, extra removal, custom-Skill preservation and default-off selection in
+isolated homes. After this ownership change, `pnpm test` passed 204 suites with
+2399 passing tests and three skipped; the focused installer suite passed 25 tests.
+`pnpm exec playwright test tests/e2e/computer-use-skill.spec.ts` passed all four
+locale cases plus two dependency tests. Typecheck, targeted lint, Vite build,
+task validation/dry-run and comms replay/compare passed. Failure coverage includes
+retaining the saved dangling/relative symlink when publication and rollback both
+fail. These checks ran on macOS; Windows filesystem behavior was not rerun here.
+
 Static inspection of that fixed source confirms:
 
 - `cua-driver-sdk/src/embedded.rs` allows `CUA_DRIVER_RS_TELEMETRY_ENABLED` and
@@ -32,7 +50,11 @@ Source links:
 - https://github.com/trycua/cua/blob/45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f/libs/cua-driver/rust/crates/cua-driver/src/cli.rs
 - https://github.com/trycua/cua/blob/45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f/libs/cua-driver/rust/Skills/cua-driver/SKILL.md
 
-The integrated upgrade was verified on macOS arm64:
+## Historical 0.25.0 Upgrade Results
+
+The integrated version upgrade was verified on macOS arm64 before the managed
+Skill ownership change. These outcomes are retained as historical evidence,
+including tests of the now-superseded user-content preservation policy:
 
 - `pnpm run lint:check` passed with seven existing React fast-refresh warnings.
 - `pnpm run typecheck` passed for Main and Renderer.
@@ -67,7 +89,8 @@ copy of that full package used an isolated HOME/user-data and E2E mode. Inside i
 real Main process (`app.isPackaged=true`, `process.type=browser`), the packaged SDK
 accepted telemetry-disabled host options and the unstarted host was destroyed.
 The package contained all twelve Skill files, including `.gitattributes`, and its
-whole-bundle digest matched the installer constant. Neither probe started a native
+whole-bundle digest matched the then-existing installer constant. That historical
+constant comparison is not part of the current installation policy. Neither probe started a native
 daemon or called OS permission APIs. The builder skipped signing because no valid
 Developer ID identity was available; this is a local validation artifact, not a
 signed/notarized distribution release or a replacement for the installed app.

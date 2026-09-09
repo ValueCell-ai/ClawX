@@ -148,7 +148,9 @@ Agent 通过 OpenClaw 现有的 `exec` 工具调用内置原生 CUA CLI，再通
 
 macOS 管理页只读显示**辅助功能**和**屏幕录制**状态。启动、激活和启用开关均不会请求权限；需先启用功能，再明确点击**请求权限**。请求不保证系统再次弹窗；如果权限仍未授予，页面会显示操作指引，而不是静默返回原状态。请在系统设置 > 隐私与安全性中检查辅助功能和屏幕与系统音频录制（旧版 macOS 为屏幕录制）。以系统实际列出的应用为准：安装版通常是 ClawX，开发环境可能归属于启动它的终端或 IDE，例如 Ghostty 或 VS Code。修改授权后请重启 ClawX，必要时也重启启动它的应用。屏幕权限检查无法区分从未请求与此前拒绝。关闭功能不会撤销系统授权。权限或驱动缺失时驱动不可用，但不阻止聊天或 Gateway 启动。
 
-内置 **computer-use** Skill 保留 `/computer-use` 选择器命令，基于 [CUA 0.25.0 随附的官方 Skill](https://github.com/trycua/cua/tree/45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f/libs/cua-driver/rust/Skills/cua-driver)，来源固定为标签 `cua-driver-rs-v0.25.0`、提交 `45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f`，而非持续变化的上游 `main`。MIT 许可的文档和许可证离线随包分发，附有简短的 ClawX 入口说明，涵盖 Main 端点、权限、会话和图片处理。启动时安装到 `~/.openclaw/skills/computer-use`，将未修改的已知 0.21.0 内置文件升级为新指导，保留用户修改和无关内容。不会强制覆盖已修改的文件；自动升级也不能在未修改的内置包中留下仍生效的旧版本要求。选择 Skill 不会启用服务或授予系统权限。详见 [Skill 来源与集成](harness/reference/computer-use-skill.md)。
+内置 **computer-use** Skill 保留 `/computer-use` 选择器命令，基于 [CUA 0.25.0 随附的官方 Skill](https://github.com/trycua/cua/tree/45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f/libs/cua-driver/rust/Skills/cua-driver)，来源固定为标签 `cua-driver-rs-v0.25.0`、提交 `45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f`，而非持续变化的上游 `main`。MIT 许可的文档和许可证离线随包分发，附有简短的 ClawX 入口说明，涵盖 Main 端点、权限、会话和图片处理。
+
+**ClawX 完全管理 `~/.openclaw/skills/computer-use` 目录。** 每次启动都会将与当前内置包不同的同名安装整体替换为内置内容，包括覆盖用户修改、移除额外文件和目录；内容一致时不做改动。自定义版本必须使用其他 Skill 名称和目录。其他名称的 Skill 和设置（包括 Computer Use 启用偏好）保持不变。替换先在暂存位置完成复制，并保留发布失败时的回滚；同名符号链接只替换链接本身，不跟随或删除其外部目标。比较以当前内置包为准，不维护历史安装哈希，也不改变官方 CUA 0.25.0 文档字节或来源校验。选择 Skill 不会启用服务或授予系统权限。详见 [Skill 来源与集成](harness/reference/computer-use-skill.md)。
 
 截图文件位于当前本机 Agent 工作区中由任务管理的目录，但读取图片供模型分析时，内容可能发送给模型提供商。请避免截取敏感窗口。此功能要求本机执行、工作区访问及模型/提供商图片支持；沙箱或远程上下文不兼容时应报告限制，不得放宽全局 shell 审批或另启驱动。Skill 指导不是 shell 沙箱或全局操作锁。取消 `exec` 无法撤销已被接受的原生操作，也不保证原生紧急停止。驱动重启或完成状态未知时，应重新发现端点并观察当前状态，再决定后续操作，不要盲目重放输入。涉及重大影响或对外操作时需确认。
 
