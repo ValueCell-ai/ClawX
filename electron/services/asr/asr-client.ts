@@ -107,8 +107,7 @@ async function transcribeViaChatCompletions(input: {
           {
             type: 'input_audio',
             input_audio: {
-              data: Buffer.from(wav).toString('base64'),
-              format: 'wav',
+              data: `data:audio/wav;base64,${Buffer.from(wav).toString('base64')}`,
             },
           },
         ],

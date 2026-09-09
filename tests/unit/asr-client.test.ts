@@ -106,7 +106,7 @@ describe('asr-client', () => {
         model: 'qwen3-asr-flash',
       };
 
-      it('posts a chat.completions JSON body with input_audio base64 wav and format', async () => {
+      it('posts a chat.completions JSON body with an input_audio data URI (bailian style)', async () => {
         const fetchImpl = vi.fn().mockResolvedValue(
           jsonResponse({ choices: [{ message: { role: 'assistant', content: ' 你好世界 ' } }] }),
         );
@@ -132,7 +132,9 @@ describe('asr-client', () => {
               content: [
                 {
                   type: 'input_audio',
-                  input_audio: { data: Buffer.from(wav).toString('base64'), format: 'wav' },
+                  input_audio: {
+                    data: `data:audio/wav;base64,${Buffer.from(wav).toString('base64')}`,
+                  },
                 },
               ],
             },
