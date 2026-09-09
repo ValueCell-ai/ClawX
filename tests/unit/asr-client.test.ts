@@ -106,7 +106,7 @@ describe('asr-client', () => {
         model: 'qwen3-asr-flash',
       };
 
-      it('posts a chat.completions JSON body with an input_audio data URI (bailian style)', async () => {
+      it('posts a chat.completions JSON body with an input_audio data URI for bailian', async () => {
         const fetchImpl = vi.fn().mockResolvedValue(
           jsonResponse({ choices: [{ message: { role: 'assistant', content: ' 你好世界 ' } }] }),
         );
@@ -139,6 +139,26 @@ describe('asr-client', () => {
               ],
             },
           ],
+        });
+      });
+
+      it('sends bare base64 plus format for a custom chat endpoint (OpenAI schema)', async () => {
+        const fetchImpl = vi.fn().mockResolvedValue(
+          jsonResponse({ choices: [{ message: { content: 'ok' } }] }),
+        );
+        const wav = new Uint8Array([1, 2, 3, 4]);
+
+        await transcribeWav({
+          wav,
+          config: { ...chatConfig, preset: 'custom', baseUrl: 'https://api.example.com/v1' },
+          apiKey: 'k',
+          fetchImpl,
+        });
+
+        const body = JSON.parse((fetchImpl.mock.calls[0][1] as RequestInit).body as string);
+        expect(body.messages[0].content[0].input_audio).toEqual({
+          data: Buffer.from(wav).toString('base64'),
+          format: 'wav',
         });
       });
 

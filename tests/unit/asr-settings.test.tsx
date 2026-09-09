@@ -53,6 +53,10 @@ function translate(key: string, options?: { defaultValue?: string }): string {
       return 'Custom';
     case 'settings:asr.baseUrl':
       return 'API base URL';
+    case 'settings:asr.hints.bailianDialect':
+      return 'Alibaba Cloud Model Studio encodes input_audio in its own non-standard dialect (Data URI); ClawX adapts it automatically.';
+    case 'settings:asr.hints.bailianWorkspace':
+      return 'Replace <WorkspaceId> with your Model Studio workspace ID. The Beijing and Singapore regions use different domains and API keys.';
     case 'settings:asr.model':
       return 'Model';
     case 'settings:asr.language':
@@ -144,7 +148,7 @@ describe('AsrSettings', () => {
     expect(screen.getByTestId('asr-api-key-input')).not.toHaveAttribute('placeholder');
   });
 
-  it('shows the provider console link only for siliconflow and opens it externally', async () => {
+  it('shows the provider console link for siliconflow and bailian and opens it externally', async () => {
     getConfigMock.mockResolvedValue(configResult({ config: { preset: 'siliconflow', baseUrl: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen3-ASR-1.7B' } }));
 
     renderAsrSettings();
@@ -156,6 +160,10 @@ describe('AsrSettings', () => {
 
     fireEvent.change(screen.getByTestId('asr-preset-select'), { target: { value: 'openai' } });
     expect(screen.queryByTestId('asr-api-key-link')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId('asr-protocol-select'), { target: { value: 'chat' } });
+    fireEvent.click(screen.getByTestId('asr-api-key-link'));
+    expect(openExternalMock).toHaveBeenCalledWith('https://bailian.console.aliyun.com/?apiKey=1');
   });
 
   it('renders the language select with auto-detect plus zh and en options', async () => {
@@ -229,6 +237,14 @@ describe('AsrSettings', () => {
     expect(screen.getByTestId('asr-model-input')).toHaveValue('qwen3-asr-flash');
     expect(screen.queryByTestId('asr-base-url-suffix')).not.toBeInTheDocument();
     expect(screen.queryByTestId('asr-language-input')).not.toBeInTheDocument();
+    expect(screen.getByTestId('asr-bailian-dialect-hint')).toBeInTheDocument();
+    expect(screen.getByTestId('asr-bailian-workspace-hint')).toBeInTheDocument();
+    expect(screen.getByTestId('asr-api-key-link')).toHaveAttribute('title', 'Open the provider console to get an API key');
+
+    fireEvent.change(presetSelect, { target: { value: 'custom' } });
+
+    expect(screen.queryByTestId('asr-bailian-dialect-hint')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('asr-bailian-workspace-hint')).not.toBeInTheDocument();
   });
 
   it('saves the chat protocol without a language field and defaults to transcriptions when absent', async () => {

@@ -21,14 +21,18 @@ import type { AsrConfig, AsrPreset, AsrProtocol } from '@shared/host-api/contrac
 import { cn } from '@/lib/utils';
 
 const inputClasses =
-  'h-10 rounded-lg font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
+  'h-10 rounded-lg font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-[color,background-color,border-color,box-shadow] text-foreground placeholder:text-foreground/40';
 const labelClasses = 'text-sm text-foreground/80 font-bold';
 
 const ASR_LANGUAGE_OPTIONS = ['zh', 'en'] as const;
 
 const ASR_PROVIDER_CONSOLES: Partial<Record<AsrPreset, string>> = {
   siliconflow: 'https://cloud.siliconflow.cn/me/account/ak',
+  bailian: 'https://bailian.console.aliyun.com/?apiKey=1',
 };
+
+const BAILIAN_DOCS_URL =
+  'https://help.aliyun.com/zh/model-studio/non-realtime-speech-recognition-user-guide#使用openai兼容api';
 
 const ASR_SAVE_ERROR_CODES: ReadonlySet<string> = new Set<AsrErrorCode>([
   'INVALID_INPUT',
@@ -166,41 +170,60 @@ export function AsrSettings() {
           data-testid="asr-settings-surface"
           className="space-y-4 rounded-xl border border-black/10 bg-surface-modal p-4 shadow-sm dark:border-white/10"
         >
-          <div className="space-y-2 max-w-xs">
-            <Label htmlFor="asr-protocol" className={labelClasses}>
-              {t('settings:asr.protocol.label')}
-            </Label>
-            <Select
-              id="asr-protocol"
-              value={protocol}
-              onChange={(e) => handleProtocolChange(e.target.value as AsrProtocol)}
-              className={cn(inputClasses, 'w-full bg-background')}
-              data-testid="asr-protocol-select"
-            >
-              {ASR_PROTOCOLS.map((protocolKey) => (
-                <option key={protocolKey} value={protocolKey}>
-                  {t(`settings:asr.protocol.${protocolKey}`)}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div className="space-y-2 max-w-xs">
-            <Label htmlFor="asr-preset" className={labelClasses}>
-              {t('settings:asr.presets.label')}
-            </Label>
-            <Select
-              id="asr-preset"
-              value={preset}
-              onChange={(e) => handlePresetChange(e.target.value as AsrPreset)}
-              className={cn(inputClasses, 'w-full bg-background')}
-              data-testid="asr-preset-select"
-            >
-              {ASR_PRESETS_BY_PROTOCOL[protocol].map((presetKey) => (
-                <option key={presetKey} value={presetKey}>
-                  {t(`settings:asr.presets.${presetKey}`)}
-                </option>
-              ))}
-            </Select>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="asr-protocol" className={labelClasses}>
+                {t('settings:asr.protocol.label')}
+              </Label>
+              <Select
+                id="asr-protocol"
+                value={protocol}
+                onChange={(e) => handleProtocolChange(e.target.value as AsrProtocol)}
+                className={cn(inputClasses, 'w-full bg-background')}
+                data-testid="asr-protocol-select"
+              >
+                {ASR_PROTOCOLS.map((protocolKey) => (
+                  <option key={protocolKey} value={protocolKey}>
+                    {t(`settings:asr.protocol.${protocolKey}`)}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="asr-preset" className={labelClasses}>
+                {t('settings:asr.presets.label')}
+              </Label>
+              <Select
+                id="asr-preset"
+                value={preset}
+                onChange={(e) => handlePresetChange(e.target.value as AsrPreset)}
+                className={cn(inputClasses, 'w-full bg-background')}
+                data-testid="asr-preset-select"
+              >
+                {ASR_PRESETS_BY_PROTOCOL[protocol].map((presetKey) => (
+                  <option key={presetKey} value={presetKey}>
+                    {t(`settings:asr.presets.${presetKey}`)}
+                  </option>
+                ))}
+              </Select>
+              {preset === 'bailian' ? (
+                <p
+                  data-testid="asr-bailian-dialect-hint"
+                  className="text-meta text-muted-foreground"
+                >
+                  {t('settings:asr.hints.bailianDialectPrefix')}
+                  <button
+                    type="button"
+                    className="text-blue-600 hover:underline dark:text-blue-400"
+                    onClick={() => void hostApi.shell.openExternal(BAILIAN_DOCS_URL)}
+                    data-testid="asr-bailian-docs-link"
+                  >
+                    {t('settings:asr.hints.bailianDialectLinkText')}
+                  </button>
+                  {t('settings:asr.hints.bailianDialectSuffix')}
+                </p>
+              ) : null}
+            </div>
           </div>
           <div className="space-y-2">
             <Label htmlFor="asr-base-url" className={labelClasses}>
@@ -233,6 +256,14 @@ export function AsrSettings() {
               </span>
             ) : null}
             </div>
+            {protocol === 'chat' && preset === 'bailian' ? (
+              <p
+                data-testid="asr-bailian-workspace-hint"
+                className="text-meta text-muted-foreground"
+              >
+                {t('settings:asr.hints.bailianWorkspace')}
+              </p>
+            ) : null}
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
@@ -278,7 +309,7 @@ export function AsrSettings() {
                 <Button
                   type="button"
                   variant="link"
-                  className="h-auto p-0 text-xs"
+                  className="h-auto p-0 text-xs gap-0.5"
                   onClick={() => void hostApi.shell.openExternal(providerConsoleUrl)}
                   data-testid="asr-api-key-link"
                   title={t('settings:asr.apiKeyLinkTitle')}

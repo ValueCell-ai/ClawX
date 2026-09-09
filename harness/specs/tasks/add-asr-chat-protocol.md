@@ -24,8 +24,8 @@ touchedAreas:
 expectedUserBehavior:
   - The Speech-to-text settings form shows an API type select offering OpenAI Audio Transcriptions and OpenAI Chat Completions; switching the type resets the provider preset list and prefills the first preset's base URL and model.
   - Under OpenAI Audio Transcriptions, presets are OpenAI, Groq, SiliconFlow, and custom, with the non-editable /audio/transcriptions suffix shown for the standard presets and hidden for custom, whose entered URL is used as the full endpoint; the language select stays visible.
-  - Under OpenAI Chat Completions, presets are Alibaba Cloud Model Studio and custom; bailian prefills https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1 with model qwen3-asr-flash, no forced suffix is displayed, and the language select is hidden.
-  - Chat-protocol transcription posts JSON to {baseUrl}/chat/completions with model, stream false, and a single user message whose input_audio part carries the WAV as a Data URI in data (data:audio/wav;base64,..., bailian dialect, no separate format field); the transcript comes from choices[0].message.content and empty or missing content maps to the EMPTY_RESULT error code.
+  - Under OpenAI Chat Completions, presets are Alibaba Cloud Model Studio and custom; bailian prefills https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1 with model qwen3-asr-flash, no forced suffix is displayed, and the language select is hidden. Selecting bailian shows localized hints (API type and provider selects share one row): its Data URI input_audio requirement with an inline docs link, the <WorkspaceId> placeholder/region note, plus a provider-console API-key link.
+  - Chat-protocol transcription posts JSON to {baseUrl}/chat/completions with model, stream false, and a single user message with an input_audio part; the bailian preset encodes audio as a Data URI (data:audio/wav;base64,..., bailian dialect, no separate format field) while custom presets follow OpenAI's schema (bare base64 data plus format wav); the transcript comes from choices[0].message.content and empty or missing content maps to the EMPTY_RESULT error code.
   - Saved configs record the selected protocol; legacy configs without a protocol keep working as transcriptions.
   - All new user-visible strings are localized in en, zh, ja, and ru.
 requiredProfiles:
@@ -48,7 +48,7 @@ requiredTests:
 acceptance:
   - Protocol branching happens in the Main-process `asr` client only; the renderer keeps using `hostApi.asr.transcribe` with the same WAV payload and never builds protocol-specific requests.
   - `AsrConfig.protocol` is optional in the contract and normalized in Main (`normalizeAsrProtocol`), so stored pre-protocol configs continue to transcribe via the transcriptions endpoint.
-  - The chat-protocol request body follows the Alibaba Cloud Model Studio dialect (Data URI `data` with `data:audio/wav;base64,` prelude, no separate `format` field, `stream: false`) without vendor extensions such as `asr_options`.
+  - The chat-protocol request body is dialect-specialized by preset: bailian sends the Data URI `data` with `data:audio/wav;base64,` prelude and no `format` field, custom sends OpenAI's bare base64 `data` plus `format: 'wav'`; both use `stream: false` and no vendor extensions such as `asr_options`.
   - HTTP status to error-code mapping, 30 s timeout, Bearer auth, and empty-result handling stay shared across both protocols.
   - The settings UI scopes the provider preset list by protocol, hides the language select for the chat protocol, and never renders a forced suffix element for chat or custom presets.
   - Unit tests cover the chat request shape, content extraction (string and part array), empty-result mapping, protocol validation, and the settings form's protocol switching and save payload; the Electron E2E spec covers the protocol selector and bailian prefill.

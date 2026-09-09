@@ -330,7 +330,7 @@
   },
   "asr": {
     "title": "音声入力",
-    "description": "入力欄での音声入力に使う音声認識プロバイダーを設定します。OpenAI Audio Transcriptions（multipart アップロード）または OpenAI Chat Completions（input_audio）プロトコル互換のエンドポイントに対応しています。",
+    "description": "入力欄での音声入力に使う音声認識プロバイダーを設定します。OpenAI Audio Transcriptions または Chat Completions プロトコル互換のエンドポイントに対応しています。",
     "protocol": {
       "label": "API タイプ",
       "transcriptions": "OpenAI Audio Transcriptions",
@@ -345,6 +345,12 @@
       "custom": "カスタム"
     },
     "baseUrl": "APIベースURL",
+    "hints": {
+      "bailianDialectPrefix": "Alibaba Cloud Model Studio の API は input_audio に純 Base64 ではなく Data URI を必要とします（",
+      "bailianDialectLinkText": "ドキュメント",
+      "bailianDialectSuffix": "を参照）。ClawX が自動的に対応します。",
+      "bailianWorkspace": "<WorkspaceId> を Model Studio のワークスペース ID に置き換え、必要に応じてリージョンのドメインを調整してください。"
+    },
     "model": "モデル",
     "language": "言語",
     "languageAuto": "自動検出（推奨）",

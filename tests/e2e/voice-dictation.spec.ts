@@ -150,6 +150,10 @@ test.describe('ClawX voice dictation', () => {
         'https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
       );
       await expect(page.getByTestId('asr-base-url-suffix')).toHaveCount(0);
+      await expect(page.getByTestId('asr-bailian-dialect-hint')).toBeVisible();
+      await expect(page.getByTestId('asr-bailian-docs-link')).toBeVisible();
+      await expect(page.getByTestId('asr-bailian-workspace-hint')).toBeVisible();
+      await expect(page.getByTestId('asr-api-key-link')).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }

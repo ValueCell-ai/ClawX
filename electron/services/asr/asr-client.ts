@@ -97,6 +97,13 @@ async function transcribeViaChatCompletions(input: {
   fetchImpl?: typeof fetch;
 }): Promise<string> {
   const { wav, config, apiKey, baseUrl, fetchImpl } = input;
+  const base64Wav = Buffer.from(wav).toString('base64');
+  // Alibaba Cloud Model Studio only accepts its Data-URI dialect; other
+  // (custom) endpoints follow OpenAI's input_audio schema.
+  const inputAudio =
+    config.preset === 'bailian'
+      ? { data: `data:audio/wav;base64,${base64Wav}` }
+      : { data: base64Wav, format: 'wav' };
   const payload = {
     model: config.model,
     stream: false,
@@ -106,9 +113,7 @@ async function transcribeViaChatCompletions(input: {
         content: [
           {
             type: 'input_audio',
-            input_audio: {
-              data: `data:audio/wav;base64,${Buffer.from(wav).toString('base64')}`,
-            },
+            input_audio: inputAudio,
           },
         ],
       },

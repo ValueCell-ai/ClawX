@@ -330,7 +330,7 @@
   },
   "asr": {
     "title": "Распознавание речи",
-    "description": "Настройте провайдера распознавания речи для голосового ввода в редакторе сообщений. Поддерживаются конечные точки, совместимые с протоколами OpenAI Audio Transcriptions (multipart) или OpenAI Chat Completions (input_audio).",
+    "description": "Настройте провайдера распознавания речи для голосового ввода в редакторе сообщений. Поддерживаются конечные точки, совместимые с протоколами OpenAI Audio Transcriptions или Chat Completions.",
     "protocol": {
       "label": "Тип API",
       "transcriptions": "OpenAI Audio Transcriptions",
@@ -345,6 +345,12 @@
       "custom": "Свой вариант"
     },
     "baseUrl": "Базовый URL API",
+    "hints": {
+      "bailianDialectPrefix": "API Alibaba Cloud Model Studio требует передачи input_audio в виде Data URI, а не чистого Base64 (см. ",
+      "bailianDialectLinkText": "документацию",
+      "bailianDialectSuffix": "); ClawX адаптирует это автоматически.",
+      "bailianWorkspace": "Замените <WorkspaceId> на идентификатор рабочего пространства Model Studio и при необходимости измените домен региона."
+    },
     "model": "Модель",
     "language": "Язык",
     "languageAuto": "Автоопределение (рекомендуется)",

@@ -330,7 +330,7 @@
   },
   "asr": {
     "title": "语音转写",
-    "description": "配置用于输入框语音听写的语音转写服务，支持 OpenAI Audio Transcriptions（multipart 上传）或 OpenAI Chat Completions（input_audio）协议的端点。",
+    "description": "配置用于输入框语音听写的语音转写服务，支持兼容 OpenAI Audio Transcriptions 或 Chat Completions 协议的端点。",
     "protocol": {
       "label": "API 类型",
       "transcriptions": "OpenAI Audio Transcriptions",
@@ -345,6 +345,12 @@
       "custom": "自定义"
     },
     "baseUrl": "API 地址",
+    "hints": {
+      "bailianDialectPrefix": "阿里云百炼 API 输入语音需 Data URI 而非纯 Base64 编码（见 ",
+      "bailianDialectLinkText": "文档",
+      "bailianDialectSuffix": "），ClawX 已适配。",
+      "bailianWorkspace": "请将 <WorkspaceId> 替换为你的百炼业务空间 ID，并按需调整地域名。"
+    },
     "model": "模型",
     "language": "语言",
     "languageAuto": "自动识别（推荐）",
