@@ -1,0 +1,25 @@
+diff --git a/dist/src/cli/tool.js b/dist/src/cli/tool.js
+index 79fb6f33ee8b797b109daa8dc16e94803484ea90..d504e69d39f255c6bafb47213d0ae641921bc375 100644
+--- a/dist/src/cli/tool.js
++++ b/dist/src/cli/tool.js
+@@ -11,7 +11,7 @@
+ import * as path from "node:path";
+ import { spawn } from "./process-launcher.js";
+ import { getWeComRuntime } from "../runtime.js";
+-import { hasMultiAccounts, resolveWeComAccountMulti } from "../accounts.js";
++import { listWeComAccountIds, resolveWeComAccountMulti } from "../accounts.js";
+ import { resolveStateDir } from "../state-dir-resolve.js";
+ import { CLI_ENV_PASSTHROUGH, CLI_KILL_FORCE_WAIT_MS, CLI_KILL_GRACE_MS, CLI_LOG, CLI_MAX_OUTPUT_BYTES, CLI_RESIGN_CODES, CLI_TIMEOUT_MS, CLI_TOOL_NAME, } from "./const.js";
+ import { CliArgvError, normalizeArgs } from "./argv.js";
+@@ -41,9 +41,9 @@ function resolveBot(accountId) {
+     catch {
+         throw new CliAuthError("插件运行时未初始化，无法读取 openclaw 配置");
+     }
+-    const multi = hasMultiAccounts(cfg);
++    const configuredAccountIds = listWeComAccountIds(cfg);
+     const id = accountId?.trim();
+-    if (!id && multi) {
++    if (!id && configuredAccountIds.length > 1) {
+         throw new CliAuthError("当前会话缺少账号上下文（agentAccountId），而配置中存在多个企业微信账号。" +
+             "为避免误用其他企业的凭据，本次调用已被拒绝。请在有明确会话上下文的场景下使用。");
+     }

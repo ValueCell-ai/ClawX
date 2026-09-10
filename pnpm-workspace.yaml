@@ -7,4 +7,5 @@ ignoredBuiltDependencies:
   - esbuild
 
 patchedDependencies:
+  '@wecom/wecom-openclaw-plugin@2026.8.17': patches/@wecom__wecom-openclaw-plugin@2026.8.17.patch
   openclaw@2026.7.1-2: patches/openclaw@2026.7.1-2.patch

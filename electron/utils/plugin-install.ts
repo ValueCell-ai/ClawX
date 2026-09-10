@@ -204,6 +204,37 @@ export function fixupPluginManifest(targetDir: string): void {
   // 3. Fix hardcoded plugin IDs in compiled JS entry files.
   //    The Gateway validates that the JS export's `id` matches the manifest.
   patchPluginEntryIds(targetDir);
+
+  // 4. Keep the WeCom business tool usable from account-less desktop Chat
+  // sessions when there is exactly one configured account. Upstream 2026.8.17
+  // treats any non-empty `accounts` map as ambiguous, but ClawX always writes
+  // even its sole default account into that map.
+  patchWeComCliSingleAccountFallback(targetDir);
+}
+
+function patchWeComCliSingleAccountFallback(targetDir: string): void {
+  const toolPath = join(targetDir, 'dist', 'src', 'cli', 'tool.js');
+  if (!existsSync(fsPath(toolPath))) return;
+
+  try {
+    const content = readFileSync(fsPath(toolPath), 'utf-8');
+    const next = content
+      .replace(
+        'import { hasMultiAccounts, resolveWeComAccountMulti } from "../accounts.js";',
+        'import { listWeComAccountIds, resolveWeComAccountMulti } from "../accounts.js";',
+      )
+      .replace(
+        '    const multi = hasMultiAccounts(cfg);\n    const id = accountId?.trim();\n    if (!id && multi) {',
+        '    const configuredAccountIds = listWeComAccountIds(cfg);\n    const id = accountId?.trim();\n    if (!id && configuredAccountIds.length > 1) {',
+      );
+
+    if (next !== content) {
+      writeFileSync(fsPath(toolPath), next, 'utf-8');
+      logger.info('[plugin] Patched WeCom desktop single-account tool fallback');
+    }
+  } catch (error) {
+    logger.warn('[plugin] Failed to patch WeCom desktop single-account tool fallback:', error);
+  }
 }
 
 /**
@@ -766,6 +797,10 @@ export async function ensurePluginInstalled(
   const sourceDir = candidateSources.find((dir) => existsSync(fsPath(join(dir, 'openclaw.plugin.json'))));
 
   async function finalizeInstalledMirror(): Promise<{ installed: true; peerLinkOk: boolean }> {
+    // Compatibility fixups must also run for an already-installed plugin whose
+    // upstream version is unchanged. This lets a ClawX patch repair existing
+    // 2026.8.17 mirrors instead of waiting for another upstream version bump.
+    fixupPluginManifest(targetDir);
     await syncTrustedOfficialPluginInstallRecord(pluginDirName, targetDir);
     return { installed: true, peerLinkOk: repairPluginOpenClawPeerLink(targetDir) };
   }
@@ -800,7 +835,6 @@ export async function ensurePluginInstalled(
         if (!existsSync(fsPath(join(targetDir, 'openclaw.plugin.json')))) {
           return { installed: false, warning: `Failed to install ${pluginLabel} plugin mirror (manifest missing).` };
         }
-        fixupPluginManifest(targetDir);
         const installed = await finalizeInstalledMirror();
         logger.info(`Installed ${pluginLabel} plugin from bundled mirror: ${sourceDir}`);
         return installed;
@@ -848,7 +882,6 @@ export async function ensurePluginInstalled(
           try {
             mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
             copyPluginFromNodeModules(npmPkgPath, targetDir, npmName);
-            fixupPluginManifest(targetDir);
             if (existsSync(fsPath(join(targetDir, 'openclaw.plugin.json')))) {
               return await finalizeInstalledMirror();
             }

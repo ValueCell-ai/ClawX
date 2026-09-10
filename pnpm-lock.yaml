@@ -8,6 +8,9 @@ overrides:
   isbinaryfile: ^5.0.0
 
 patchedDependencies:
+  '@wecom/wecom-openclaw-plugin@2026.8.17':
+    hash: 6b489a634f68250db0727c4fbfe0512afa9026e521c745649a8584e1efc63f3a
+    path: patches/@wecom__wecom-openclaw-plugin@2026.8.17.patch
   openclaw@2026.7.1-2:
     hash: a6a90cfd153444ab60911c9c46f210b6ade583ea8d16b27824cb31037f8866c1
     path: patches/openclaw@2026.7.1-2.patch
@@ -184,7 +187,7 @@ importers:
         version: 5.2.0(vite@7.3.1(@types/node@25.5.0)(jiti@1.21.7)(tsx@4.21.0)(yaml@2.9.0))
       '@wecom/wecom-openclaw-plugin':
         specifier: 2026.8.17
-        version: 2026.8.17(openclaw@2026.7.1-2(patch_hash=a6a90cfd153444ab60911c9c46f210b6ade583ea8d16b27824cb31037f8866c1)(encoding@0.1.13))
+        version: 2026.8.17(patch_hash=6b489a634f68250db0727c4fbfe0512afa9026e521c745649a8584e1efc63f3a)(openclaw@2026.7.1-2(patch_hash=a6a90cfd153444ab60911c9c46f210b6ade583ea8d16b27824cb31037f8866c1)(encoding@0.1.13))
       '@whiskeysockets/baileys':
         specifier: 7.0.0-rc.9
         version: 7.0.0-rc.9(audio-decode@2.2.3)(jimp@1.6.1)(sharp@0.34.5)
@@ -9409,7 +9412,7 @@ snapshots:
       '@wecom/cli-linux-x64': 1.2.0
       '@wecom/cli-win32-x64': 1.2.0
 
-  '@wecom/wecom-openclaw-plugin@2026.8.17(openclaw@2026.7.1-2(patch_hash=a6a90cfd153444ab60911c9c46f210b6ade583ea8d16b27824cb31037f8866c1)(encoding@0.1.13))':
+  '@wecom/wecom-openclaw-plugin@2026.8.17(patch_hash=6b489a634f68250db0727c4fbfe0512afa9026e521c745649a8584e1efc63f3a)(openclaw@2026.7.1-2(patch_hash=a6a90cfd153444ab60911c9c46f210b6ade583ea8d16b27824cb31037f8866c1)(encoding@0.1.13))':
     dependencies:
       '@wecom/aibot-node-sdk': 1.0.6
       '@wecom/cli': 1.2.0

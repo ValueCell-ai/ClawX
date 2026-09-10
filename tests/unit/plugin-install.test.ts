@@ -212,6 +212,89 @@ describe('plugin installer diagnostics', () => {
     );
   });
 
+  it('patches WeCom 2026.8.17 to allow account-less desktop chat with one account', async () => {
+    const targetDir = '/home/test/.openclaw/extensions/wecom';
+    const toolPath = `${targetDir}/dist/src/cli/tool.js`;
+    const upstreamTool = [
+      'import { hasMultiAccounts, resolveWeComAccountMulti } from "../accounts.js";',
+      'function resolveBot(accountId) {',
+      '    const multi = hasMultiAccounts(cfg);',
+      '    const id = accountId?.trim();',
+      '    if (!id && multi) {',
+      '        throw new Error("ambiguous");',
+      '    }',
+      '}',
+    ].join('\n');
+
+    mockExistsSync.mockImplementation((input: string) => String(input) === toolPath);
+    mockReadFileSync.mockImplementation((input: string) => (
+      String(input) === toolPath ? upstreamTool : '{}'
+    ));
+
+    const { fixupPluginManifest } = await import('@electron/utils/plugin-install');
+    fixupPluginManifest(targetDir);
+
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      toolPath,
+      expect.stringContaining('const configuredAccountIds = listWeComAccountIds(cfg);'),
+      'utf-8',
+    );
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      toolPath,
+      expect.stringContaining('if (!id && configuredAccountIds.length > 1)'),
+      'utf-8',
+    );
+    expect(mockLoggerInfo).toHaveBeenCalledWith(
+      '[plugin] Patched WeCom desktop single-account tool fallback',
+    );
+  });
+
+  it('repairs an already-installed same-version WeCom mirror', async () => {
+    const targetDir = '/home/test/.openclaw/extensions/wecom';
+    const sourceDir = '/bundle/wecom';
+    const toolPath = `${targetDir}/dist/src/cli/tool.js`;
+    const upstreamTool = [
+      'import { hasMultiAccounts, resolveWeComAccountMulti } from "../accounts.js";',
+      '    const multi = hasMultiAccounts(cfg);',
+      '    const id = accountId?.trim();',
+      '    if (!id && multi) {',
+    ].join('\n');
+
+    mockExistsSync.mockImplementation((input: string) => [
+      `${sourceDir}/openclaw.plugin.json`,
+      `${sourceDir}/package.json`,
+      `${targetDir}/openclaw.plugin.json`,
+      `${targetDir}/package.json`,
+      toolPath,
+    ].includes(String(input)));
+    mockReadFileSync.mockImplementation((input: string) => {
+      const value = String(input);
+      if (value === toolPath) return upstreamTool;
+      if (value.endsWith('openclaw.plugin.json')) {
+        return JSON.stringify({ id: 'wecom', channels: ['wecom'] });
+      }
+      if (value.endsWith('package.json')) {
+        return JSON.stringify({
+          name: '@wecom/wecom-openclaw-plugin',
+          version: '2026.8.17',
+          main: 'dist/index.js',
+        });
+      }
+      return '{}';
+    });
+
+    const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');
+    const result = await ensurePluginInstalled('wecom', [sourceDir], 'WeCom');
+
+    expect(result.installed).toBe(true);
+    expect(mockCpSync).not.toHaveBeenCalled();
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      toolPath,
+      expect.stringContaining('if (!id && configuredAccountIds.length > 1)'),
+      'utf-8',
+    );
+  });
+
   it('returns source-missing warning when bundled mirror cannot be found', async () => {
     const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');
     const result = await ensurePluginInstalled('wecom', ['/bundle/wecom'], 'WeCom');

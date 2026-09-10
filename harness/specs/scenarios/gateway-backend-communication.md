@@ -34,6 +34,7 @@ ownedPaths:
   - tests/unit/session-key-utils.test.ts
   - tests/unit/openclaw-acp-stream-patch.test.ts
   - patches/openclaw@2026.7.1-2.patch
+  - patches/@wecom__wecom-openclaw-plugin@2026.8.17.patch
   - pnpm-lock.yaml
   - shared/web-browser.ts
   - electron/main/web-browser-policy.ts
@@ -101,7 +102,7 @@ Renderer code must not create direct Gateway WebSocket connections. Gateway fram
 
 Typed generic Gateway RPC requests are validated by `electron/services/gateway-api.ts` and delegated directly to `GatewayManager.rpc`, including an optional positive finite timeout. This path has no Renderer Chat history/send specialization, polling queue, coalescing, or backpressure layer. ACP `session/load`, `session/prompt`, and `session/cancel` own ordinary Chat history and composer behavior independently.
 
-Channel/plugin migration behavior is also part of this scenario when ClawX rewrites OpenClaw config before Gateway launch. Upgrades must preserve single-owner channel registration for migrated plugin-backed channels such as Feishu/Lark.
+Channel/plugin migration behavior is also part of this scenario when ClawX rewrites OpenClaw config before Gateway launch. Upgrades must preserve single-owner channel registration for migrated plugin-backed channels such as Feishu/Lark. A desktop Chat session has no channel account context; a bundled WeCom business tool may fall back only when exactly one WeCom account is configured and must reject an ambiguous multi-account selection.
 
 ClawX's prelaunch config sanitizer also owns desktop tool policy. It must keep `web_search` in both the agent-level and Gateway-level deny lists without replacing existing deny entries or disabling managed browser automation and `web_fetch`. It must also deny the agent-facing `gateway`, `nodes`, `create_goal`, `get_goal`, and `update_goal` tools at both layers while preserving application-owned Gateway RPCs. Messaging, session orchestration, and agent discovery tools remain available unless another explicit policy denies them.
 
