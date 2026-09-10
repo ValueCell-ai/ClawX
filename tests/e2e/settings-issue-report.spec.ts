@@ -67,6 +67,11 @@ async function installMocks(app: ElectronApplication): Promise<void> {
           'config/openclaw.json',
         ],
       },
+      [stableStringify(['diagnostics', 'exportIssueReport', { sessionKeys: [] }])]: {
+        success: true,
+        path: REPORT_PATH,
+        includedFiles: ['config/openclaw.json', 'logs/clawx/clawx.log', 'manifest.json'],
+      },
       [stableStringify(['shell', 'showItemInFolder', { path: REPORT_PATH }])]: undefined,
     },
     recordHostInvocations: true,
@@ -126,6 +131,34 @@ test.describe('settings issue report export', () => {
         module: 'shell',
         action: 'showItemInFolder',
         payload: { path: REPORT_PATH },
+      }));
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('exports diagnostics without a selected conversation', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    try {
+      await installMocks(app);
+      const page = await reloadStableWindow(app);
+
+      await page.getByTestId('sidebar-nav-settings').click();
+      await page.getByTestId('settings-issue-report-open').click();
+      await page.getByTestId(`issue-report-session-${FIRST_SESSION_KEY}`).uncheck();
+      await expect(page.getByTestId('issue-report-selection-count')).toContainText('0');
+      await expect(page.getByTestId('issue-report-export')).toBeEnabled();
+      await page.getByTestId('issue-report-export').click();
+      await expect(page.getByTestId('issue-report-path')).toHaveText(REPORT_PATH);
+
+      const invocations = await app.evaluate(async () => (
+        (globalThis as unknown as { __e2eHostInvocations?: Array<Record<string, unknown>> })
+          .__e2eHostInvocations ?? []
+      ));
+      expect(invocations).toContainEqual(expect.objectContaining({
+        module: 'diagnostics',
+        action: 'exportIssueReport',
+        payload: { sessionKeys: [] },
       }));
     } finally {
       await closeElectronApp(app);

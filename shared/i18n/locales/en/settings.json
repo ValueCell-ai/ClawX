@@ -282,14 +282,14 @@
   "issueReport": {
     "actionTitle": "Export issue report",
     "actionDescription": "Create a diagnostic ZIP on your desktop for troubleshooting and support.",
-    "open": "Choose conversations",
+    "open": "Review and export",
     "dialogTitle": "Export issue report",
-    "dialogDescription": "Review what will be included, then choose one or more conversations. The ZIP will be saved to your desktop.",
+    "dialogDescription": "Review what will be included and optionally choose conversations. The ZIP will be saved to your desktop.",
     "contentsTitle": "Included in the ZIP",
     "contents": {
       "transcripts": {
         "title": "Conversation transcripts",
-        "description": "The complete JSONL file for every selected conversation."
+        "description": "The complete JSONL file for every selected conversation, if any."
       },
       "config": {
         "title": "OpenClaw configuration",
@@ -304,14 +304,15 @@
         "description": "A list of included and unavailable files."
       }
     },
-    "sessionsTitle": "Choose conversations",
+    "sessionsTitle": "Conversations (optional)",
     "selectAll": "Select all ({{count}})",
     "selectedCount": "{{count}} conversation(s) selected",
-    "noSessions": "No conversations are available to export.",
+    "noSessions": "No conversations are available. You can still export configuration and logs.",
     "export": "Create ZIP ({{count}})",
+    "exportWithoutConversations": "Create ZIP without conversations",
     "exporting": "Creating ZIP...",
     "exportSucceeded": "Issue report exported",
-    "skippedSessions": "{{count}} unavailable conversation(s) could not be included. The remaining selected conversations were exported.",
+    "skippedSessions": "{{count}} unavailable conversation(s) could not be included. The available diagnostics were still exported.",
     "exportFailed": "Failed to export issue report",
     "completeTitle": "Issue report ready",
     "completeDescription": "The ZIP was saved to the path below.",
