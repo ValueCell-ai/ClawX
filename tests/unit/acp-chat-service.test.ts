@@ -109,12 +109,14 @@ function createFakeChild() {
     stderr: PassThrough;
     exitCode: number | null;
     signalCode: NodeJS.Signals | null;
+    kill: ReturnType<typeof vi.fn>;
   };
   child.stdin = new PassThrough();
   child.stdout = new PassThrough();
   child.stderr = new PassThrough();
   child.exitCode = null;
   child.signalCode = null;
+  child.kill = vi.fn();
   return child;
 }
 
@@ -1602,5 +1604,80 @@ describe('AcpChatService', () => {
       rmSync(imagePath, { force: true });
       rmSync(filePath, { force: true });
     }
+  });
+
+  it('stop() resolves without signalling when no ACP child was spawned', async () => {
+    const { service } = await createService();
+
+    await expect(service.stop()).resolves.toBeUndefined();
+  });
+
+  it('stop() signals the ACP child with SIGTERM, drops connection state, and cancels permission waiters', async () => {
+    const { service, child } = await createSpawnedService();
+    await service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
+    await service.sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'edit the file' });
+    const pending = service.client.requestPermission({
+      sessionId: 'agent:pi:s1',
+      toolCall: { toolCallId: 'tool-1', title: 'Edit file', status: 'pending' },
+      options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }],
+    } as never);
+
+    const stopping = service.stop();
+    expect(child.kill).toHaveBeenCalledTimes(1);
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+    child.emit('exit', 0);
+    await expect(stopping).resolves.toBeUndefined();
+    await expectCancelledSoon(pending);
+
+    const secondConnection = createConnection();
+    acpSdkMock.state.connectionForSpawn = secondConnection;
+    childProcessMock.state.child = createFakeChild();
+    await expect(service.loadSession({ sessionKey: 'agent:pi:s2', workspaceRoot: '/repo', cwd: '/repo' })).resolves.toEqual({
+      success: true,
+      generation: 2,
+    });
+    expect(childProcessMock.fork).toHaveBeenCalledTimes(2);
+    expect(secondConnection.initialize).toHaveBeenCalledTimes(1);
+  });
+
+  it('stop() escalates to SIGKILL when the ACP child ignores SIGTERM', async () => {
+    const { service, child } = await createSpawnedService();
+    await service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
+
+    vi.useFakeTimers();
+    try {
+      const stopping = service.stop();
+      expect(child.kill).toHaveBeenCalledTimes(1);
+      expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(child.kill).toHaveBeenCalledTimes(2);
+      expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+
+      child.emit('exit', null, 'SIGKILL');
+      await expect(stopping).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stop() does not signal an already-exited ACP child', async () => {
+    const { service, child } = await createSpawnedService();
+    await service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
+    child.emit('exit', 0);
+    child.kill.mockClear();
+
+    await expect(service.stop()).resolves.toBeUndefined();
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+
+  it('registers the created service as the active instance for quit-time cleanup', async () => {
+    const module = await import('../../electron/services/acp-chat-service');
+    const service = module.createAcpChatService(
+      { webContents: { send: vi.fn() } } as never,
+      createPassthroughAccessRegistry() as never,
+    );
+
+    expect(module.getActiveAcpChatService()).toBe(service);
   });
 });

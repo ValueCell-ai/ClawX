@@ -78,8 +78,9 @@ Building AI agents shouldn't require mastering the command line. ClawX was desig
 
 - **🎯 Zero Configuration Barrier**: Complete setup through an intuitive graphical interface - no terminal commands, YAML files, or environment-variable hunting.
 - **💬 Intelligent Chat Interface**: Multi-session context and history, streaming Markdown with syntax highlighting, CJK-aware parsing, tables, KaTeX math, direct `@agent` routing, inline `/skill` cards, embedded subagent status with live read-only child drill-down and direct-parent return, workspace-first sessions, and read-only previews for Markdown, `.docx`, `.pptx`, and local HTML.
+- **🎙️ Voice Dictation**: Dictate into the chat composer — the mic button records your voice, transcribes it through a user-configured speech-to-text service, and inserts the text at the cursor. Set it up under **Models -> Speech-to-text**: pick the API type (OpenAI Audio Transcriptions or OpenAI Chat Completions with `input_audio`) and a matching preset (OpenAI, Groq, SiliconFlow, Alibaba Cloud Model Studio, or a custom endpoint).
 - **🤖 Agent Lifecycle Management**: Create and manage specialized Agents from the desktop. Deleting a non-default Agent requires explicit confirmation and permanently removes its ClawX-managed workspace and associated chat history; its conversations and removed workspace entry disappear from Chat immediately and cannot be recovered.
-- **🧰 Issue Report Export**: Open Settings > Support to review the bundle contents, select one or more conversations (or select all), and create a ZIP on the desktop with their JSONL transcripts, sanitized OpenClaw configuration, and available diagnostic logs; ClawX shows the saved path when complete.
+- **🧰 Issue Report Export**: Open Settings > Support to review the bundle contents and create a ZIP on the desktop with sanitized OpenClaw configuration and available diagnostic logs. Conversation selection is optional; selected JSONL transcripts are included when available, and ClawX shows the saved path when complete.
 - **📡 Multi-Channel Management**: Configure and monitor independent AI channels with multiple accounts, per-account agent binding, default-account switching, and the bundled official Tencent personal WeChat channel plugin.
 - **⏰ Cron-Based Automation**: Define recurring or one-time schedules, insert skills into scheduled prompts, and deliver results to external channels.
 - **🧩 Extensible Skill System**: Manage skills locally without depending on the Gateway, discover skills from multiple OpenClaw sources, and use bundled document-processing skills for `pdf`, `xlsx`, `docx`, and `pptx`.
@@ -234,6 +235,7 @@ ClawX is built on the shoulders of excellent open-source projects:
 - [React](https://react.dev/) - UI component library
 - [shadcn/ui](https://ui.shadcn.com/) - Beautifully designed components
 - [Zustand](https://github.com/pmndrs/zustand) - Lightweight state management
+- [LobeHub Icons](https://lobehub.com/zh/icons) - Model icons used in the chat model selector
 
 ## Community
 

@@ -26,7 +26,7 @@ describe('main quit lifecycle coordination', () => {
 });
 
 // Execute the registered callback itself without importing Main startup side effects.
-function setupQuit(isE2EMode = false) {
+function setupQuit(isE2EMode = false, hasAcpService = true) {
   const source = readFileSync('electron/main/index.ts', 'utf8');
   const start = source.indexOf("  app.on('before-quit',");
   const end = source.indexOf('\n  // Best-effort Gateway cleanup', start);
@@ -34,6 +34,8 @@ function setupQuit(isE2EMode = false) {
   expect(end).toBeGreaterThan(start);
   const gateway = Promise.withResolvers<void>();
   const computerUse = Promise.withResolvers<void>();
+  const acp = Promise.withResolvers<void>();
+  const acpChatService = { stop: vi.fn(() => acp.promise) };
   const gatewayManager = {
     stop: vi.fn(() => gateway.promise),
     forceTerminateOwnedProcessForQuit: vi.fn().mockResolvedValue(true),
@@ -45,24 +47,29 @@ function setupQuit(isE2EMode = false) {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText, {
     app, gatewayManager, computerUseApi, logger, isE2EMode, setTimeout,
+    getActiveAcpChatService: () => hasAcpService ? acpChatService : null,
     setQuitting: vi.fn(),
     extensionRegistry: { teardownAll: vi.fn() },
     quitLifecycleState: createQuitLifecycleState(),
     requestQuitLifecycleAction, markQuitCleanupCompleted,
   });
   const quit = () => app.on.mock.calls[0][1]({ preventDefault: vi.fn() });
-  return { quit, app, logger, gatewayManager, computerUseApi, gateway, computerUse };
+  return { quit, app, logger, gatewayManager, computerUseApi, acpChatService, gateway, computerUse, acp };
 }
 
 describe('Main before-quit cleanup', () => {
   afterEach(() => vi.useRealTimers());
 
-  it.each(['gateway', 'computerUse'] as const)('starts both stops and waits for pending %s cleanup', async (pending) => {
+  it.each(['gateway', 'computerUse'] as const)('stops ACP before Gateway while independently awaiting %s cleanup', async (pending) => {
     vi.useFakeTimers();
     const ctx = setupQuit();
     ctx.quit();
-    expect(ctx.gatewayManager.stop).toHaveBeenCalledOnce();
+    expect(ctx.acpChatService.stop).toHaveBeenCalledOnce();
+    expect(ctx.gatewayManager.stop).not.toHaveBeenCalled();
     expect(ctx.computerUseApi.stop).toHaveBeenCalledOnce();
+    ctx.acp.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ctx.gatewayManager.stop).toHaveBeenCalledOnce();
     ctx[pending === 'gateway' ? 'computerUse' : 'gateway'].resolve();
     await vi.advanceTimersByTimeAsync(0);
     expect(ctx.app.quit).not.toHaveBeenCalled();
@@ -72,11 +79,11 @@ describe('Main before-quit cleanup', () => {
     expect(ctx.gatewayManager.forceTerminateOwnedProcessForQuit).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])('logs both stop failures (synchronous: %s) and still quits', async (synchronous) => {
+  it.each([false, true])('logs each stop failure (synchronous: %s) and still quits', async (synchronous) => {
     vi.useFakeTimers();
     const ctx = setupQuit();
     const error = new Error('stop failed');
-    for (const owner of [ctx.gatewayManager, ctx.computerUseApi]) {
+    for (const owner of [ctx.acpChatService, ctx.gatewayManager, ctx.computerUseApi]) {
       owner.stop.mockImplementation(() => {
         if (synchronous) throw error;
         return Promise.reject(error);
@@ -84,6 +91,10 @@ describe('Main before-quit cleanup', () => {
     }
     ctx.quit();
     await vi.advanceTimersByTimeAsync(0);
+    expect(ctx.acpChatService.stop).toHaveBeenCalledOnce();
+    expect(ctx.gatewayManager.stop).toHaveBeenCalledOnce();
+    expect(ctx.computerUseApi.stop).toHaveBeenCalledOnce();
+    expect(ctx.logger.warn).toHaveBeenCalledWith('AcpChatService.stop() error during quit:', error);
     expect(ctx.logger.warn).toHaveBeenCalledWith('gatewayManager.stop() error during quit:', error);
     expect(ctx.logger.warn).toHaveBeenCalledWith('cuaRuntimeManager.stop() error during quit:', error);
     expect(ctx.app.quit).toHaveBeenCalledOnce();
@@ -93,20 +104,37 @@ describe('Main before-quit cleanup', () => {
     vi.useFakeTimers();
     const ctx = setupQuit(true);
     ctx.quit();
+    ctx.acp.resolve();
     ctx.gateway.resolve();
     await vi.advanceTimersByTimeAsync(0);
     expect(ctx.gatewayManager.stop).toHaveBeenCalledOnce();
+    expect(ctx.acpChatService.stop).toHaveBeenCalledOnce();
     expect(ctx.computerUseApi.stop).not.toHaveBeenCalled();
     expect(ctx.app.quit).toHaveBeenCalledOnce();
   });
 
-  it('keeps the five-second deadline and existing Gateway termination without restarting cleanup', async () => {
+  it('still stops Gateway and Computer Use when no ACP service exists', async () => {
+    vi.useFakeTimers();
+    const ctx = setupQuit(false, false);
+    ctx.quit();
+    ctx.gateway.resolve();
+    ctx.computerUse.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ctx.acpChatService.stop).not.toHaveBeenCalled();
+    expect(ctx.gatewayManager.stop).toHaveBeenCalledOnce();
+    expect(ctx.computerUseApi.stop).toHaveBeenCalledOnce();
+    expect(ctx.app.quit).toHaveBeenCalledOnce();
+  });
+
+  it.each(['acp', 'gateway'] as const)('keeps the shared five-second deadline while %s is pending without restarting cleanup', async (pending) => {
     vi.useFakeTimers();
     const ctx = setupQuit();
     ctx.quit();
     ctx.quit();
-    expect(ctx.gatewayManager.stop).toHaveBeenCalledOnce();
+    expect(ctx.acpChatService.stop).toHaveBeenCalledOnce();
+    expect(ctx.gatewayManager.stop).not.toHaveBeenCalled();
     expect(ctx.computerUseApi.stop).toHaveBeenCalledOnce();
+    if (pending === 'gateway') ctx.acp.resolve();
     await vi.advanceTimersByTimeAsync(4999);
     expect(ctx.app.quit).not.toHaveBeenCalled();
     expect(ctx.gatewayManager.forceTerminateOwnedProcessForQuit).not.toHaveBeenCalled();
@@ -114,7 +142,8 @@ describe('Main before-quit cleanup', () => {
     expect(ctx.gatewayManager.forceTerminateOwnedProcessForQuit).toHaveBeenCalledOnce();
     expect(ctx.app.quit).toHaveBeenCalledOnce();
     ctx.quit();
-    expect(ctx.gatewayManager.stop).toHaveBeenCalledOnce();
+    expect(ctx.acpChatService.stop).toHaveBeenCalledOnce();
+    expect(ctx.gatewayManager.stop).toHaveBeenCalledTimes(pending === 'gateway' ? 1 : 0);
     expect(ctx.computerUseApi.stop).toHaveBeenCalledOnce();
   });
 });

@@ -282,14 +282,14 @@
   "issueReport": {
     "actionTitle": "Export issue report",
     "actionDescription": "Create a diagnostic ZIP on your desktop for troubleshooting and support.",
-    "open": "Choose conversations",
+    "open": "Review and export",
     "dialogTitle": "Export issue report",
-    "dialogDescription": "Review what will be included, then choose one or more conversations. The ZIP will be saved to your desktop.",
+    "dialogDescription": "Review what will be included and optionally choose conversations. The ZIP will be saved to your desktop.",
     "contentsTitle": "Included in the ZIP",
     "contents": {
       "transcripts": {
         "title": "Conversation transcripts",
-        "description": "The complete JSONL file for every selected conversation."
+        "description": "The complete JSONL file for every selected conversation, if any."
       },
       "config": {
         "title": "OpenClaw configuration",
@@ -304,15 +304,15 @@
         "description": "A list of included and unavailable files."
       }
     },
-    "sessionsTitle": "Choose conversations",
+    "sessionsTitle": "Conversations (optional)",
     "selectAll": "Select all ({{count}})",
     "selectedCount": "{{count}} conversation(s) selected",
-    "noSessions": "No conversations are available to export.",
-
+    "noSessions": "No conversations are available. You can still export configuration and logs.",
     "export": "Create ZIP ({{count}})",
+    "exportWithoutConversations": "Create ZIP without conversations",
     "exporting": "Creating ZIP...",
     "exportSucceeded": "Issue report exported",
-    "skippedSessions": "{{count}} unavailable conversation(s) could not be included. The remaining selected conversations were exported.",
+    "skippedSessions": "{{count}} unavailable conversation(s) could not be included. The available diagnostics were still exported.",
     "exportFailed": "Failed to export issue report",
     "completeTitle": "Issue report ready",
     "completeDescription": "The ZIP was saved to the path below.",
@@ -328,5 +328,45 @@
     "docs": "Website",
     "github": "GitHub",
     "faq": "FAQ"
+  },
+  "asr": {
+    "title": "Speech-to-text",
+    "description": "Configure the speech-to-text provider used for voice dictation in the composer. Works with endpoints compatible with the OpenAI Audio Transcriptions or Chat Completions protocols.",
+    "protocol": {
+      "label": "API type",
+      "transcriptions": "OpenAI Audio Transcriptions",
+      "chat": "OpenAI Chat Completions"
+    },
+    "presets": {
+      "label": "Provider",
+      "openai": "OpenAI",
+      "groq": "Groq",
+      "siliconflow": "SiliconFlow",
+      "bailian": "Alibaba Cloud Model Studio",
+      "custom": "Custom"
+    },
+    "baseUrl": "API base URL",
+    "hints": {
+      "bailianDialectPrefix": "The Alibaba Cloud Model Studio API requires input_audio as a Data URI rather than plain Base64 (see ",
+      "bailianDialectLinkText": "docs",
+      "bailianDialectSuffix": "); ClawX adapts this automatically.",
+      "bailianWorkspace": "Replace <WorkspaceId> with your Model Studio workspace ID and adjust the region domain as needed."
+    },
+    "model": "Model",
+    "language": "Language",
+    "languageAuto": "Auto-detect (recommended)",
+    "apiKey": "API key",
+    "apiKeyConfiguredPlaceholder": "An API key is already configured for this provider. Leave blank to keep it.",
+    "apiKeyLink": "Get API key",
+    "apiKeyLinkTitle": "Open the provider console to get an API key",
+    "save": "Save",
+    "toast": {
+      "saved": "Speech-to-text settings saved."
+    },
+    "errors": {
+      "invalidBaseUrl": "The base URL must start with http:// or https://.",
+      "modelRequired": "Enter a model name.",
+      "request": "Saving failed. Please try again."
+    }
   }
 }

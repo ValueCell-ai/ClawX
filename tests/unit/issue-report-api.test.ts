@@ -163,20 +163,48 @@ describe('issue report export', () => {
     await expect(readdir(fixture.outputDir)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('fails when none of the selected conversations has an available transcript', async () => {
+  it('exports diagnostics when none of the selected conversations has an available transcript', async () => {
     const fixture = await makeFixture();
-    await expect(exportIssueReport(
+    const result = await exportIssueReport(
       { sessionKeys: ['agent:main:stale'] },
-      { stateDir: fixture.stateDir, outputDir: fixture.outputDir },
-    )).rejects.toThrow('None of the selected conversation transcripts could be found');
+      {
+        stateDir: fixture.stateDir,
+        configPath: fixture.configPath,
+        clawxLogDir: fixture.clawxLogDir,
+        openClawLogDir: fixture.openClawLogDir,
+        outputDir: fixture.outputDir,
+      },
+    );
+
+    expect(result.skippedSessionKeys).toEqual(['agent:main:stale']);
+    const zip = await JSZip.loadAsync(await readFile(result.path!));
+    expect(Object.keys(zip.files)).not.toContain('conversations/');
+    const manifest = JSON.parse(await zip.file('manifest.json')!.async('string'));
+    expect(manifest.sessionKeys).toEqual([]);
+    expect(manifest.skippedSessionKeys).toEqual(['agent:main:stale']);
   });
 
-  it('rejects an export with no selected conversations', async () => {
+  it('exports configuration, logs, and a manifest with no selected conversations', async () => {
     const fixture = await makeFixture();
-    await expect(exportIssueReport(
+    const result = await exportIssueReport(
       { sessionKeys: [] },
-      { stateDir: fixture.stateDir, outputDir: fixture.outputDir },
-    )).rejects.toThrow('At least one session key is required');
+      {
+        stateDir: fixture.stateDir,
+        configPath: fixture.configPath,
+        clawxLogDir: fixture.clawxLogDir,
+        openClawLogDir: fixture.openClawLogDir,
+        outputDir: fixture.outputDir,
+      },
+    );
+
+    const zip = await JSZip.loadAsync(await readFile(result.path!));
+    expect(Object.keys(zip.files)).not.toContain('conversations/');
+    expect(zip.file('config/openclaw.json')).not.toBeNull();
+    expect(zip.file('logs/clawx/clawx.log')).not.toBeNull();
+    expect(zip.file('logs/openclaw/gateway.log')).not.toBeNull();
+    const manifest = JSON.parse(await zip.file('manifest.json')!.async('string'));
+    expect(manifest.sessionKeys).toEqual([]);
+    expect(manifest.skippedSessionKeys).toEqual([]);
   });
 
   it('redacts nested config credentials without redacting token limits', () => {

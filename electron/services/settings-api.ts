@@ -2,6 +2,7 @@ import type { CompleteHostServiceRegistry } from '../main/ipc/host-contract';
 import type { GatewayManager } from '../gateway/manager';
 import { syncLaunchAtStartupSettingFromStore } from '../main/launch-at-startup';
 import { createMenu } from '../main/menu';
+import { applyNativeThemeSetting } from '../main/native-theme';
 import { applyProxySettings } from '../main/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import {
@@ -74,6 +75,10 @@ function patchTouchesLanguage(patch: Partial<AppSettings>): boolean {
   return Object.prototype.hasOwnProperty.call(patch, 'language');
 }
 
+function patchTouchesTheme(patch: Partial<AppSettings>): boolean {
+  return Object.prototype.hasOwnProperty.call(patch, 'theme');
+}
+
 async function handleProxySettingsChange(gatewayManager: GatewayManager): Promise<void> {
   const settings = await getAllSettings();
   await syncProxyConfigToOpenClaw(settings, { preserveExistingWhenDisabled: false });
@@ -95,6 +100,9 @@ async function runSettingsSideEffects(
   }
   if (patchTouchesLanguage(patch)) {
     await createMenu(typeof patch.language === 'string' ? patch.language : undefined);
+  }
+  if (patchTouchesTheme(patch)) {
+    await applyNativeThemeSetting(patch.theme);
   }
 }
 
@@ -127,6 +135,7 @@ export function createSettingsApi(gatewayManager: GatewayManager): CompleteHostS
       await syncLaunchAtStartupSettingFromStore();
       const settings = await getAllSettings();
       await createMenu(settings.language);
+      await applyNativeThemeSetting(settings.theme);
       return { success: true, settings };
     },
   };

@@ -160,6 +160,19 @@ function QuestionDirectory({ items }: { items: QuestionDirectoryItem[] }) {
   );
 }
 
+function AcpLoadingState() {
+  const [showSpinner, setShowSpinner] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setShowSpinner(true), 200);
+    return () => clearTimeout(timer);
+  }, []);
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center" aria-busy="true">
+      {showSpinner && <div data-testid="acp-chat-loading"><LoadingSpinner size="md" /></div>}
+    </div>
+  );
+}
+
 function AcpEmptyState() {
   const { t } = useTranslation('chat');
   return (
@@ -344,11 +357,14 @@ export function Chat() {
     () => createEmptyAcpTimeline(currentSessionKey ?? '', 0),
     [currentSessionKey],
   );
-  const visibleAcpTimeline = acpActiveSessionKey === currentSessionKey
-    ? renderedAcpTimeline
-    : acpTimeline.sessionId === currentSessionKey
-      ? acpTimeline
-      : emptyCurrentTimeline;
+  // Defer streaming updates, not session boundaries or the first history render.
+  const canDeferAcpTimeline = renderedAcpTimeline.sessionId === acpTimeline.sessionId
+    && renderedAcpTimeline.loadGeneration === acpTimeline.loadGeneration
+    && renderedAcpTimeline.itemOrder.length > 0
+    && acpTimeline.itemOrder.length > 0;
+  const visibleAcpTimeline = acpTimeline.sessionId === currentSessionKey
+    ? canDeferAcpTimeline ? renderedAcpTimeline : acpTimeline
+    : emptyCurrentTimeline;
   const acpTurnTimings = useAcpChatSessionStore((s) => s.turnTimingsByUserMessageId);
   const acpLoading = useAcpChatSessionStore((s) => s.loading);
   const acpSending = useAcpChatSessionStore((s) => s.sending);
@@ -455,6 +471,10 @@ export function Chat() {
   const workspaceUnavailable = !!workspaceContextKey
     && workspaceContextCheck?.key === workspaceContextKey
     && !workspaceContextCheck.available;
+  const acpPresentationPending = !currentSession?.createdLocally && (
+    acpLoading
+    || (acpTimeline.sessionId !== currentSessionKey && !workspaceUnavailable)
+  );
 
   useEffect(() => {
     if (currentSessionKey !== DEFAULT_SESSION_KEY || sessions.length > 0 || sessionDiscoveryAttempted) return;
@@ -776,10 +796,8 @@ export function Chat() {
                     />
                   )}
                   {visibleAcpError && <AcpErrorBanner message={visibleAcpError} onDismiss={clearAcpError} />}
-                  {acpLoading ? (
-                    <div className="flex min-h-[40vh] items-center justify-center" data-testid="acp-chat-loading">
-                      <LoadingSpinner size="md" />
-                    </div>
+                  {acpPresentationPending ? (
+                    <AcpLoadingState key={currentSessionKey} />
                   ) : visibleAcpTimeline.itemOrder.length === 0 ? (
                     <AcpEmptyState />
                   ) : (

@@ -102,8 +102,8 @@ function parseSessionKey(sessionKey: unknown): { sessionKey: string; agentId: st
 }
 
 function parseSessionKeys(sessionKeys: unknown): Array<{ sessionKey: string; agentId: string }> {
-  if (!Array.isArray(sessionKeys) || sessionKeys.length === 0) {
-    throw new Error('At least one session key is required');
+  if (!Array.isArray(sessionKeys)) {
+    throw new Error('Session keys must be an array');
   }
   if (sessionKeys.length > 500) throw new Error('Too many sessions selected');
   const unique = new Map<string, { sessionKey: string; agentId: string }>();
@@ -265,9 +265,6 @@ async function exportIssueReportInternal(
       if (!(error instanceof TranscriptUnavailableError)) throw error;
       skippedSessionKeys.push(selected.sessionKey);
     }
-  }
-  if (transcripts.length === 0) {
-    throw new Error('None of the selected conversation transcripts could be found');
   }
   const configPath = dependencies.configPath ?? resolveOpenClawConfigPath();
   const outputDir = resolve(dependencies.outputDir ?? await defaultDesktopDir());

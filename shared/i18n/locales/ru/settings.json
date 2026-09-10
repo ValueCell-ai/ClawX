@@ -282,14 +282,14 @@
   "issueReport": {
     "actionTitle": "Экспорт отчёта о проблеме",
     "actionDescription": "Создать диагностический ZIP на рабочем столе для устранения неполадок и поддержки.",
-    "open": "Выбрать разговоры",
+    "open": "Проверить и экспортировать",
     "dialogTitle": "Экспорт отчёта о проблеме",
-    "dialogDescription": "Проверьте состав архива и выберите один или несколько разговоров. ZIP будет сохранён на рабочем столе.",
+    "dialogDescription": "Проверьте состав архива и при необходимости выберите разговоры. ZIP будет сохранён на рабочем столе.",
     "contentsTitle": "Содержимое ZIP",
     "contents": {
       "transcripts": {
         "title": "История разговоров",
-        "description": "Полный JSONL-файл каждого выбранного разговора."
+        "description": "Полный JSONL-файл каждого выбранного разговора, если они выбраны."
       },
       "config": {
         "title": "Конфигурация OpenClaw",
@@ -304,14 +304,15 @@
         "description": "Список включённых и недоступных файлов."
       }
     },
-    "sessionsTitle": "Выберите разговоры",
+    "sessionsTitle": "Разговоры (необязательно)",
     "selectAll": "Выбрать все ({{count}})",
     "selectedCount": "Выбрано разговоров: {{count}}",
-    "noSessions": "Нет разговоров для экспорта.",
+    "noSessions": "Нет доступных разговоров. Конфигурацию и журналы всё равно можно экспортировать.",
     "export": "Создать ZIP ({{count}})",
+    "exportWithoutConversations": "Создать ZIP без разговоров",
     "exporting": "Создание ZIP...",
     "exportSucceeded": "Отчёт о проблеме экспортирован",
-    "skippedSessions": "Недоступные разговоры пропущены: {{count}}. Остальные выбранные разговоры экспортированы.",
+    "skippedSessions": "Недоступные разговоры пропущены: {{count}}. Доступные диагностические данные всё равно экспортированы.",
     "exportFailed": "Не удалось экспортировать отчёт о проблеме",
     "completeTitle": "Отчёт о проблеме готов",
     "completeDescription": "ZIP сохранён по указанному ниже пути.",
@@ -327,5 +328,45 @@
     "docs": "Веб-сайт",
     "github": "GitHub",
     "faq": "FAQ"
+  },
+  "asr": {
+    "title": "Распознавание речи",
+    "description": "Настройте провайдера распознавания речи для голосового ввода в редакторе сообщений. Поддерживаются конечные точки, совместимые с протоколами OpenAI Audio Transcriptions или Chat Completions.",
+    "protocol": {
+      "label": "Тип API",
+      "transcriptions": "OpenAI Audio Transcriptions",
+      "chat": "OpenAI Chat Completions"
+    },
+    "presets": {
+      "label": "Провайдер",
+      "openai": "OpenAI",
+      "groq": "Groq",
+      "siliconflow": "SiliconFlow",
+      "bailian": "Alibaba Cloud Model Studio",
+      "custom": "Свой вариант"
+    },
+    "baseUrl": "Базовый URL API",
+    "hints": {
+      "bailianDialectPrefix": "API Alibaba Cloud Model Studio требует передачи input_audio в виде Data URI, а не чистого Base64 (см. ",
+      "bailianDialectLinkText": "документацию",
+      "bailianDialectSuffix": "); ClawX адаптирует это автоматически.",
+      "bailianWorkspace": "Замените <WorkspaceId> на идентификатор рабочего пространства Model Studio и при необходимости измените домен региона."
+    },
+    "model": "Модель",
+    "language": "Язык",
+    "languageAuto": "Автоопределение (рекомендуется)",
+    "apiKey": "API-ключ",
+    "apiKeyConfiguredPlaceholder": "Ключ API для этого провайдера уже настроен. Оставьте поле пустым, чтобы сохранить его.",
+    "apiKeyLink": "Получить ключ API",
+    "apiKeyLinkTitle": "Открыть консоль провайдера, чтобы получить ключ API",
+    "save": "Сохранить",
+    "toast": {
+      "saved": "Настройки распознавания речи сохранены."
+    },
+    "errors": {
+      "invalidBaseUrl": "Базовый URL должен начинаться с http:// или https://.",
+      "modelRequired": "Укажите название модели.",
+      "request": "Не удалось сохранить. Попробуйте ещё раз."
+    }
   }
 }

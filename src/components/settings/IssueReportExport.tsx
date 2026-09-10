@@ -84,7 +84,7 @@ export function IssueReportExport() {
   };
 
   const handleExport = async () => {
-    if (selectedSet.size === 0 || exporting) return;
+    if (exporting) return;
     setExporting(true);
     setError('');
     try {
@@ -269,7 +269,7 @@ export function IssueReportExport() {
                 </DialogClose>
                 <Button
                   type="button"
-                  disabled={selectedSet.size === 0 || exporting}
+                  disabled={exporting}
                   onClick={() => void handleExport()}
                   data-testid="issue-report-export"
                 >
@@ -278,7 +278,9 @@ export function IssueReportExport() {
                     : <Archive className="mr-2 h-4 w-4" />}
                   {exporting
                     ? t('settings:issueReport.exporting')
-                    : t('settings:issueReport.export', { count: selectedSet.size })}
+                    : selectedSet.size > 0
+                      ? t('settings:issueReport.export', { count: selectedSet.size })
+                      : t('settings:issueReport.exportWithoutConversations')}
                 </Button>
               </div>
             </div>

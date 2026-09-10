@@ -84,6 +84,10 @@ vi.mock('sonner', () => ({
   },
 }));
 
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => vi.fn(),
+}));
+
 function translate(key: string, vars?: Record<string, unknown>): string {
   switch (key) {
     case 'composer.attachFiles':
@@ -504,6 +508,9 @@ describe('ChatInput agent targeting', () => {
     expect(input).not.toBeDisabled();
     fireEvent.change(input, { target: { value: 'Queue this after the image' } });
     expect(screen.getByTestId('chat-composer-send')).toBeDisabled();
+    const voice = screen.getByTestId('chat-composer-voice');
+    const send = screen.getByTestId('chat-composer-send');
+    expect(voice.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('keeps the existing thinking indicator while sending even when image generation has started', () => {

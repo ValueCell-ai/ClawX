@@ -8,7 +8,7 @@
  */
 import { useMemo } from 'react';
 import { Editor, languageForPath } from '@/lib/monaco/loader';
-import { useSettingsStore } from '@/stores/settings';
+import { useResolvedTheme } from '@/lib/use-resolved-theme';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 
 export interface MonacoViewerProps {
@@ -19,16 +19,6 @@ export interface MonacoViewerProps {
   className?: string;
 }
 
-function resolveMonacoTheme(theme: string | undefined): string {
-  if (theme === 'dark') return 'vs-dark';
-  if (theme === 'light') return 'vs';
-  // 'system' — derive from media query at the moment of mount
-  const prefersDark = typeof window !== 'undefined'
-    && window.matchMedia
-    && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  return prefersDark ? 'vs-dark' : 'vs';
-}
-
 export default function MonacoViewer({
   filePath,
   value,
@@ -36,9 +26,9 @@ export default function MonacoViewer({
   readOnly = false,
   className,
 }: MonacoViewerProps) {
-  const theme = useSettingsStore((s) => s.theme);
+  const resolvedTheme = useResolvedTheme();
   const language = useMemo(() => languageForPath(filePath), [filePath]);
-  const monacoTheme = resolveMonacoTheme(theme);
+  const monacoTheme = resolvedTheme === 'dark' ? 'vs-dark' : 'vs';
 
   return (
     <div className={className ?? 'h-full w-full'}>

@@ -403,7 +403,7 @@ export function ImageGenerationSettings() {
                 id="image-gen-test-agent"
                 value={testAgentId}
                 onChange={(e) => setTestAgentId(e.target.value)}
-                className={cn(inputClasses, 'w-full')}
+                className={cn(inputClasses, 'w-full bg-background')}
                 data-testid="image-generation-test-agent"
               >
                 {(snapshot?.agents ?? []).map((agent) => (

@@ -26,12 +26,16 @@ import { buildConfiguredModelOptions, formatModelRefLabel, isConfiguredModelRefA
 import type { AgentSummary } from '@/types/agent';
 import type { QuickAccessSkill } from '@/types/skill';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { rendererExtensionRegistry } from '@/extensions/registry';
 import { collectDroppedFiles } from '@/lib/collect-dropped-files';
 import { fetchQuickAccessSkills } from '@/lib/quick-access-skills';
 import { DEFAULT_WORKSPACE_CWD, isDefaultWorkspacePath, normalizeWorkspacePath } from '@/lib/workspace-context';
 import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
+import { useVoiceDictation } from '@/hooks/useVoiceDictation';
+import { VoiceDictationButton } from '@/components/voice/VoiceDictationButton';
+import { ModelIcon } from '@/components/common/ModelIcon';
 import { AcpSessionPlan } from './AcpSessionPlan';
 import { AcpSubagentSessions, type AcpSubagentSession } from './AcpSubagentSessions';
 
@@ -415,6 +419,36 @@ export function ChatInput({
   const workspaceSelectorDisabled = workspaceReadOnly || inputDisabled || sending || !onSelectWorkspace;
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
   const openArtifactPreview = useArtifactPanel((s) => s.openPreview);
+  const navigate = useNavigate();
+  const {
+    status: voiceStatus,
+    elapsedSeconds: voiceElapsedSeconds,
+    toggle: toggleVoiceDictation,
+    cancel: cancelVoiceDictation,
+    getLevels: getVoiceLevels,
+  } = useVoiceDictation({
+    disabled: inputDisabled || sending,
+    onUnconfigured: () => {
+      toast.info(t('composer.voiceNotConfigured'));
+      navigate('/models?tab=voice');
+    },
+    onError: (code) => {
+      toast.error(t(`composer.voiceError.${code}`, { defaultValue: t('composer.voiceError.REQUEST') }));
+    },
+    onTranscribed: (text) => {
+      const textarea = textareaRef.current;
+      const start = textarea?.selectionStart ?? input.length;
+      const end = textarea?.selectionEnd ?? start;
+      const nextValue = input.slice(0, start) + text + input.slice(end);
+      setInput(nextValue);
+      requestAnimationFrame(() => {
+        if (!textarea) return;
+        const caret = start + text.length;
+        textarea.focus();
+        textarea.setSelectionRange(caret, caret);
+      });
+    },
+  });
   if (!contextUsageSourceRef.current || contextUsageSourceRef.current.value !== contextUsage) {
     contextUsageSourceRef.current = { value: contextUsage, modelRef: effectiveModelRef };
   }
@@ -1230,7 +1264,7 @@ export function ChatInput({
               }}
               onPaste={handlePaste}
               placeholder={inputDisabled && gatewayUnavailable ? t('composer.gatewayDisconnectedPlaceholder') : ''}
-              disabled={inputDisabled}
+              disabled={inputDisabled || voiceStatus !== 'idle'}
               data-testid="chat-composer-input"
               className={cn(
                 'relative z-10 min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted-foreground/60',
@@ -1402,7 +1436,9 @@ export function ChatInput({
                 >
                   {switchingModelRef ? (
                     <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-                  ) : null}
+                  ) : (
+                    <ModelIcon modelName={currentModelLabel} testId="chat-model-picker-current-icon" />
+                  )}
                   <span className="truncate">{currentModelLabel}</span>
                   <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', modelPickerOpen && 'rotate-180')} />
                 </button>
@@ -1426,14 +1462,17 @@ export function ChatInput({
                           )}
                           data-testid={`chat-model-picker-option-${option.label}`}
                         >
-                          <span className="min-w-0 truncate">
-                            <span>{option.modelId}</span>
-                            {option.providerName ? (
-                              <>
-                                {' '}
-                                <span className="font-normal text-muted-foreground">{option.providerName}</span>
-                              </>
-                            ) : null}
+                          <span className="flex min-w-0 items-center gap-2">
+                            <ModelIcon modelName={option.modelId} testId="chat-model-picker-option-icon" />
+                            <span className="min-w-0 truncate">
+                              <span>{option.modelId}</span>
+                              {option.providerName ? (
+                                <>
+                                  {' '}
+                                  <span className="font-normal text-muted-foreground">{option.providerName}</span>
+                                </>
+                              ) : null}
+                            </span>
                           </span>
                           {option.modelRef === effectiveModelRef && (
                             <span className="h-1.5 w-1.5 rounded-full bg-primary" />
@@ -1446,26 +1485,37 @@ export function ChatInput({
               </div>
             )}
 
-            {/* Send Button — pushed to the right */}
-            <Button
-              onClick={sending ? handleStop : handleSend}
-              disabled={sending ? !canStop : !canSend}
-              size="icon"
-              data-testid="chat-composer-send"
-              className={`ml-auto shrink-0 h-8 w-8 rounded-lg transition-colors ${
-                (sending || canSend)
-                  ? 'bg-black/5 dark:bg-white/10 text-foreground hover:bg-black/10 dark:hover:bg-white/20'
-                  : 'text-muted-foreground/50 hover:bg-transparent bg-transparent'
-              }`}
-              variant="ghost"
-              title={sending ? t('composer.stop') : t('composer.send')}
-            >
-              {sending ? (
-                <Square className="h-3.5 w-3.5" fill="currentColor" />
-              ) : (
-                <SendHorizontal className="h-4 w-4" strokeWidth={2} />
-              )}
-            </Button>
+            <div className="ml-auto flex items-center gap-1">
+              <VoiceDictationButton
+                status={voiceStatus}
+                elapsedSeconds={voiceElapsedSeconds}
+                disabled={inputDisabled || sending}
+                onToggle={toggleVoiceDictation}
+                onCancel={cancelVoiceDictation}
+                getLevels={getVoiceLevels}
+              />
+
+              {/* Send Button */}
+              <Button
+                onClick={sending ? handleStop : handleSend}
+                disabled={sending ? !canStop : !canSend}
+                size="icon"
+                data-testid="chat-composer-send"
+                className={`shrink-0 h-8 w-8 rounded-lg transition-colors ${
+                  (sending || canSend)
+                    ? 'bg-black/5 dark:bg-white/10 text-foreground hover:bg-black/10 dark:hover:bg-white/20'
+                    : 'text-muted-foreground/50 hover:bg-transparent bg-transparent'
+                }`}
+                variant="ghost"
+                title={sending ? t('composer.stop') : t('composer.send')}
+              >
+                {sending ? (
+                  <Square className="h-3.5 w-3.5" fill="currentColor" />
+                ) : (
+                  <SendHorizontal className="h-4 w-4" strokeWidth={2} />
+                )}
+              </Button>
+            </div>
           </div>
         </div>
         <div

@@ -1,6 +1,9 @@
 import type {
   AgentCreatePayload,
   AgentUpdatePayload,
+  AsrConfig,
+  AsrConfigPayload,
+  AsrTranscribePayload,
   AcpTraceRecordPayload,
   AttachmentFileRef,
   AttachmentSourceRef,
@@ -432,6 +435,15 @@ export const hostApi = {
   usage: {
     recentTokenHistory: (limit?: number) => (
       invokeHost('usage', 'recentTokenHistory', { limit })
+    ),
+  },
+  asr: {
+    getConfig: () => invokeHost('asr', 'getConfig'),
+    saveConfig: (config: AsrConfig, apiKey?: string) => (
+      invokeHost('asr', 'saveConfig', { config, apiKey } satisfies AsrConfigPayload)
+    ),
+    transcribe: (wav: Uint8Array) => (
+      invokeHost('asr', 'transcribe', { wav } satisfies AsrTranscribePayload)
     ),
   },
 };

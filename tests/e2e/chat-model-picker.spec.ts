@@ -229,6 +229,7 @@ test.describe('ClawX chat model picker', () => {
 
       await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/model-alpha/);
       await expect(page.getByTestId('chat-model-picker-button')).not.toContainText('Alpha');
+      await expect(page.getByTestId('chat-model-picker-current-icon')).toHaveAttribute('data-model-icon', 'fallback');
       await page.getByTestId('chat-model-picker-button').click();
       await expect(page.getByTestId('chat-model-picker-menu')).toBeVisible();
       await expect(page.getByTestId('chat-model-picker-menu')).toContainText('provider/model-beta');
@@ -240,9 +241,18 @@ test.describe('ClawX chat model picker', () => {
       await expect(page.getByTestId('chat-model-picker-menu')).toContainText('kimi-k2.7');
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('kimi-k2.6');
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('moonshot/kimi-k2.7');
+      const gptOption = page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'gpt-5.6 OpenAI' });
+      await expect(gptOption.getByTestId('chat-model-picker-option-icon')).toHaveAttribute('data-model-icon', 'openai');
+      const kimiOption = page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'kimi-k2.7 Moonshot' });
+      await expect(kimiOption.getByTestId('chat-model-picker-option-icon')).toHaveAttribute('data-model-icon', 'kimi');
+      await gptOption.click();
+      await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/gpt-5.6/);
+      await expect(page.getByTestId('chat-model-picker-current-icon')).toHaveAttribute('data-model-icon', 'openai');
+      await page.getByTestId('chat-model-picker-button').click();
       await page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'provider/model-beta Beta' }).click();
       await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/provider\/model-beta/);
       await expect(page.getByTestId('chat-model-picker-button')).not.toContainText('Beta');
+      await expect(page.getByTestId('chat-model-picker-current-icon')).toHaveAttribute('data-model-icon', 'fallback');
 
       const requests = await app.evaluate(() => (
         (globalThis as typeof globalThis & { __chatModelPickerRequests?: Array<{ path: string; method: string; body: unknown }> }).__chatModelPickerRequests ?? []

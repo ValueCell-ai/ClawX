@@ -27,6 +27,7 @@ import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { getProviderConfig } from '../utils/provider-registry';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
+import { applyNativeThemeSetting } from './native-theme';
 import { getRecentTokenUsageHistory } from '../utils/token-usage';
 import { getProviderService } from '../services/providers/provider-service';
 import {
@@ -64,6 +65,7 @@ import { createProvidersApi } from '../services/providers-api';
 import { createSessionsApi } from '../services/sessions-api';
 import { createSkillsApi } from '../services/skills-api';
 import { createUsageApi } from '../services/usage-api';
+import { createAsrApi } from '../services/asr-api';
 import { createWebBrowserApi } from '../services/web-browser-api';
 import type { WebBrowserGuestRegistry } from './web-browser-policy';
 import {
@@ -179,6 +181,7 @@ function registerTypedHostHandlers(
     cron: createCronApi({ gatewayManager }),
     skills: createSkillsApi({ clawHubService, gatewayManager }),
     usage: createUsageApi(),
+    asr: createAsrApi(),
   });
   registerHostInvokeHandler(hostApiRegistry);
 }
@@ -1112,6 +1115,9 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     if (key === 'language') {
       await createMenu(typeof value === 'string' ? value : undefined);
     }
+    if (key === 'theme') {
+      await applyNativeThemeSetting(value);
+    }
 
     return { success: true };
   });
@@ -1138,6 +1144,9 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     if (entries.some(([key]) => key === 'language')) {
       await createMenu(typeof patch.language === 'string' ? patch.language : undefined);
     }
+    if (entries.some(([key]) => key === 'theme')) {
+      await applyNativeThemeSetting(patch.theme);
+    }
 
     return { success: true };
   });
@@ -1148,6 +1157,7 @@ function registerSettingsHandlers(gatewayManager: GatewayManager): void {
     await handleProxySettingsChange();
     await syncLaunchAtStartupSettingFromStore();
     await createMenu(settings.language);
+    await applyNativeThemeSetting(settings.theme);
     return { success: true, settings };
   });
 }

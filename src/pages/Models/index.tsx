@@ -9,6 +9,7 @@ import { hostApi } from '@/lib/host-api';
 import { trackUiEvent } from '@/lib/telemetry';
 import { ProvidersSettings } from '@/components/settings/ProvidersSettings';
 import { ImageGenerationSettings } from '@/components/settings/ImageGenerationSettings';
+import { AsrSettings } from '@/components/settings/AsrSettings';
 import { FeedbackState } from '@/components/common/FeedbackState';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -27,11 +28,12 @@ const USAGE_AUTO_REFRESH_INTERVAL_MS = 15_000;
 
 const HIDDEN_USAGE_MARKERS = ['gateway-injected', 'delivery-mirror'];
 
-type ModelsManagementTab = 'chat' | 'image-generation';
+type ModelsManagementTab = 'chat' | 'image-generation' | 'voice';
 
 function getModelsManagementTab(tab: string | null, devModeUnlocked: boolean): ModelsManagementTab {
+  if (tab === 'voice') return tab;
   if (tab === 'image-generation') return devModeUnlocked ? tab : 'chat';
-  return tab === 'chat' ? tab : 'chat';
+  return 'chat';
 }
 
 function isHiddenUsageSource(source?: string): boolean {
@@ -302,42 +304,46 @@ export function Models() {
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2 space-y-12">
-          {devModeUnlocked ? (
-            <Tabs
-              value={selectedManagementTab}
-              onValueChange={(value) => {
-                const nextTab = getModelsManagementTab(value, devModeUnlocked);
-                setSelectedManagementTab(nextTab);
-                const nextSearchParams = new URLSearchParams(searchParams);
-                if (nextTab === 'chat') {
-                  nextSearchParams.delete('tab');
-                } else {
-                  nextSearchParams.set('tab', nextTab);
-                }
-                setSearchParams(nextSearchParams);
-              }}
-              data-testid="models-management-tabs"
-            >
-              <TabsList>
-                <TabsTrigger value="chat" data-testid="models-tab-chat">
-                  {t('dashboard:models.tabs.chat')}
-                </TabsTrigger>
+          <Tabs
+            value={selectedManagementTab}
+            onValueChange={(value) => {
+              const nextTab = getModelsManagementTab(value, devModeUnlocked);
+              setSelectedManagementTab(nextTab);
+              const nextSearchParams = new URLSearchParams(searchParams);
+              if (nextTab === 'chat') {
+                nextSearchParams.delete('tab');
+              } else {
+                nextSearchParams.set('tab', nextTab);
+              }
+              setSearchParams(nextSearchParams);
+            }}
+            data-testid="models-management-tabs"
+          >
+            <TabsList>
+              <TabsTrigger value="chat" data-testid="models-tab-chat">
+                {t('dashboard:models.tabs.chat')}
+              </TabsTrigger>
+              <TabsTrigger value="voice" data-testid="models-tab-voice">
+                {t('dashboard:models.tabs.voice')}
+              </TabsTrigger>
+              {devModeUnlocked && (
                 <TabsTrigger value="image-generation" data-testid="models-tab-image-generation">
                   {t('dashboard:models.tabs.imageGeneration')}
                 </TabsTrigger>
-              </TabsList>
-              <TabsContent value="chat" className="mt-8">
-                <ProvidersSettings />
-              </TabsContent>
+              )}
+            </TabsList>
+            <TabsContent value="chat" className="mt-8">
+              <ProvidersSettings />
+            </TabsContent>
+            <TabsContent value="voice" className="mt-8">
+              <AsrSettings />
+            </TabsContent>
+            {devModeUnlocked && (
               <TabsContent value="image-generation" className="mt-8">
                 <ImageGenerationSettings />
               </TabsContent>
-            </Tabs>
-          ) : (
-            <>
-              <ProvidersSettings />
-            </>
-          )}
+            )}
+          </Tabs>
 
           {(!devModeUnlocked || selectedManagementTab === 'chat') && <div>
             <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight">

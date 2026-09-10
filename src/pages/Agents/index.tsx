@@ -303,7 +303,7 @@ function AgentCard({
 const inputClasses =
   'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const selectClasses =
-  'h-[44px] w-full rounded-xl font-mono text-meta bg-transparent border border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground px-3';
+  'h-[44px] w-full rounded-xl font-mono text-meta bg-background border border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground px-3';
 const labelClasses = 'text-sm text-foreground/80 font-bold';
 
 function ChannelLogo({ type }: { type: ChannelType }) {

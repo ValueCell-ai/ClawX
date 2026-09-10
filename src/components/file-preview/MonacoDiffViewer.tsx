@@ -5,7 +5,7 @@
  */
 import { useMemo } from 'react';
 import { DiffEditor, languageForPath } from '@/lib/monaco/loader';
-import { useSettingsStore } from '@/stores/settings';
+import { useResolvedTheme } from '@/lib/use-resolved-theme';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { cn } from '@/lib/utils';
 
@@ -15,16 +15,6 @@ export interface MonacoDiffViewerProps {
   original: string | null | undefined;
   modified: string;
   className?: string;
-}
-
-function resolveMonacoTheme(theme: string | undefined): string {
-  if (theme === 'dark') return 'vs-dark';
-  if (theme === 'light') return 'vs';
-  const prefersDark =
-    typeof window !== 'undefined'
-    && window.matchMedia
-    && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  return prefersDark ? 'vs-dark' : 'vs';
 }
 
 function diffModelPath(filePath: string, side: 'orig' | 'mod'): string {
@@ -38,9 +28,9 @@ export default function MonacoDiffViewer({
   modified,
   className,
 }: MonacoDiffViewerProps) {
-  const theme = useSettingsStore((s) => s.theme);
+  const resolvedTheme = useResolvedTheme();
   const language = useMemo(() => languageForPath(filePath), [filePath]);
-  const monacoTheme = resolveMonacoTheme(theme);
+  const monacoTheme = resolvedTheme === 'dark' ? 'vs-dark' : 'vs';
   const originalPath = useMemo(() => diffModelPath(filePath, 'orig'), [filePath]);
   const modifiedPath = useMemo(() => diffModelPath(filePath, 'mod'), [filePath]);
   const left = original ?? '';
