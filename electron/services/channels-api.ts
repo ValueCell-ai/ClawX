@@ -37,6 +37,7 @@ import {
   ensureWhatsAppPluginInstalled,
   type PluginInstallResult,
 } from '../utils/plugin-install';
+import { getDingTalkDwsStatusNote } from '../utils/dingtalk-dws';
 import {
   applyPendingActivationStatus,
   computeChannelRuntimeStatus,
@@ -152,6 +153,7 @@ interface ChannelAccountsView {
   defaultAccountId: string;
   status: ChannelConnectionStatus;
   statusReason?: string;
+  statusNote?: string;
   accounts: ChannelAccountView[];
 }
 
@@ -545,6 +547,7 @@ export async function buildChannelAccountsView(
         : groupStatus === 'degraded' && effectiveGatewayHealthState
           ? overlayStatusReason(gatewayHealth, 'gateway_degraded')
           : undefined,
+      statusNote: uiChannelType === 'dingtalk' ? getDingTalkDwsStatusNote() : undefined,
       accounts,
     });
   }
@@ -1200,14 +1203,14 @@ async function awaitWeChatQrLogin(
   }
 }
 
-async function ensureChannelPluginInstalled(storedChannelType: string): Promise<{ peerLinkOk: boolean }> {
+async function ensureChannelPluginInstalled(storedChannelType: string): Promise<{ peerLinkOk: boolean; warning?: string }> {
   const install = CHANNEL_PLUGIN_INSTALLERS[storedChannelType];
   if (!install) return { peerLinkOk: true };
   const result = await install();
   if (!result.installed) {
     throw new Error(result.warning || `${toUiChannelType(storedChannelType)} plugin install failed`);
   }
-  return { peerLinkOk: result.peerLinkOk !== false };
+  return { peerLinkOk: result.peerLinkOk !== false, warning: result.warning };
 }
 
 export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceRegistry['channels'] {
@@ -1295,7 +1298,12 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
         if (restartGateway) {
           scheduleGatewayRestartForPluginChannel(ctx, storedChannelType, 'noChange');
         }
-        return { success: true, noChange: true, ...(restartGateway ? { activationPending: true } : {}) };
+        return {
+          success: true,
+          noChange: true,
+          ...(restartGateway ? { activationPending: true } : {}),
+          ...(installResult.warning ? { warning: installResult.warning } : {}),
+        };
       }
       await saveChannelConfig(channelType, config, accountId);
       // New credentials invalidate any remembered probe failure for this account;
@@ -1304,7 +1312,11 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       await ensureScopedChannelBinding(channelType, accountId);
       if (restartGateway && !installResult.peerLinkOk) {
         scheduleGatewayRestartForPluginChannel(ctx, storedChannelType, 'peerLinkRepairFailed');
-        return { success: true, activationPending: true };
+        return {
+          success: true,
+          activationPending: true,
+          ...(installResult.warning ? { warning: installResult.warning } : {}),
+        };
       }
       // Already-live plugins stay on OpenClaw's config.set reload. First-enable
       // and re-enable wait briefly, then force one ClawX-owned restart if the
@@ -1316,7 +1328,11 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
           accountId?.trim() || 'default',
         );
       }
-      return { success: true, ...(restartGateway ? { activationPending: true } : {}) };
+      return {
+        success: true,
+        ...(restartGateway ? { activationPending: true } : {}),
+        ...(installResult.warning ? { warning: installResult.warning } : {}),
+      };
     },
     setEnabled: async (payload) => {
       const channelType = requireString(payload, 'channelType');

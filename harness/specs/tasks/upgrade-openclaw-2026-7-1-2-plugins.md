@@ -15,7 +15,7 @@ touchedAreas:
   - harness/specs/tasks/upgrade-openclaw-2026-7-1-2-plugins.md
 expectedUserBehavior:
   - Existing DingTalk, WeCom, Feishu, and personal WeChat channel configuration stays usable after the bundled plugin version bump.
-  - ClawX still registers WeCom as the legacy-compatible `wecom` identity and Feishu as path-owned `openclaw-lark`.
+  - ClawX still registers DingTalk as the remapped `dingtalk` identity, WeCom as the legacy-compatible `wecom` identity, and Feishu as path-owned `openclaw-lark`.
   - Discord, WhatsApp, and QQBot remain on 2026.7.1 because newer official lines require a newer OpenClaw core.
   - OpenClaw itself stays pinned at 2026.7.1-2.
 requiredProfiles:
@@ -26,7 +26,7 @@ requiredTests:
   - tests/unit/plugin-install-index.test.ts
   - tests/unit/channel-config.test.ts
 acceptance:
-  - DingTalk is pinned to 3.6.10, WeCom to 2026.8.17, Open Lark to 2026.7.16, and personal WeChat to 2.4.8.
+  - DingTalk is pinned to official `@dingtalk-real-ai/dingtalk-connector@0.8.25` remapped onto `dingtalk`, WeCom to 2026.8.17, Open Lark to 2026.7.16, and personal WeChat to 2.4.8.
   - Discord, WhatsApp, and QQBot remain pinned to 2026.7.1.
   - Each upgraded plugin still declares an OpenClaw peer that includes 2026.7.1-2.
   - Upstream WeCom and Open Lark manifest IDs stay `wecom-openclaw-plugin` and `openclaw-lark` so ClawX compatibility mappings do not change.

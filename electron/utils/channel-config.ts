@@ -23,6 +23,14 @@ import {
     normalizeOpenClawAccountId,
     toOpenClawChannelType,
 } from './channel-alias';
+import {
+    DINGTALK_OFFICIAL_PLUGIN_ID,
+    DINGTALK_PLUGIN_ID,
+    ensureDingTalkPluginActivation,
+    migrateDingTalkChannelSection,
+    migrateDingTalkPluginRegistrations,
+    sanitizeDingTalkChannelConfig,
+} from './dingtalk-plugin-compat';
 
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
 const WECOM_PLUGIN_ID = 'wecom';
@@ -30,11 +38,10 @@ const WECHAT_PLUGIN_ID = OPENCLAW_WECHAT_CHANNEL_TYPE;
 const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
 const DEFAULT_ACCOUNT_ID = 'default';
 // Channels whose top-level schema (additionalProperties:false) does NOT
-// include `defaultAccount`.  We still use the multi-account `accounts`
-// map, but strip `defaultAccount` before persisting to avoid plugin
-// schema validation errors.  ClawX falls back to DEFAULT_ACCOUNT_ID
-// when `defaultAccount` is absent.
-const CHANNELS_OMIT_DEFAULT_ACCOUNT_KEY = new Set(['dingtalk']);
+// include `defaultAccount`. Official DingTalk 0.8.25 accepts it, so the
+// set is empty: ClawX writes `defaultAccount` for normal multi-account
+// default behavior.
+const CHANNELS_OMIT_DEFAULT_ACCOUNT_KEY = new Set<string>();
 
 // Channels whose schema accepts a top-level default account and account map,
 // but whose account payload contains nested strict-schema objects that ClawX
@@ -158,6 +165,8 @@ function sanitizeChannelSectionsBeforeWrite(config: OpenClawConfig): void {
     }
 
     if (!config.channels) return;
+    migrateDingTalkChannelSection(config);
+    migrateDingTalkPluginRegistrations(config);
     for (const channelType of CHANNELS_OMIT_DEFAULT_ACCOUNT_KEY) {
         const section = config.channels[channelType];
         if (section) {
@@ -535,17 +544,9 @@ async function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType:
     }
 
     if (channelType === 'dingtalk') {
-        if (!currentConfig.plugins) {
-            currentConfig.plugins = { allow: ['dingtalk'], enabled: true };
-        } else {
-            currentConfig.plugins.enabled = true;
-            const allow: string[] = Array.isArray(currentConfig.plugins.allow)
-                ? (currentConfig.plugins.allow as string[])
-                : [];
-            if (!allow.includes('dingtalk')) {
-                currentConfig.plugins.allow = [...allow, 'dingtalk'];
-            }
-        }
+        migrateDingTalkChannelSection(currentConfig);
+        migrateDingTalkPluginRegistrations(currentConfig);
+        ensureDingTalkPluginActivation(currentConfig);
     }
 
     if (channelType === 'wecom') {
@@ -693,15 +694,7 @@ function transformChannelConfig(
     }
 
     if (channelType === 'dingtalk') {
-        // The per-account schema uses additionalProperties:false and does
-        // NOT include these legacy/obsolete fields.  Strip them before
-        // writing to accounts.<id> to avoid schema validation errors.
-        //   robotCode  – never existed in the plugin schema; clientId IS the robot code
-        //   corpId     – top-level only, legacy compat, runtime ignores it
-        //   agentId    – top-level only, legacy compat, runtime ignores it
-        delete transformedConfig.robotCode;
-        delete transformedConfig.corpId;
-        delete transformedConfig.agentId;
+        sanitizeDingTalkChannelConfig(transformedConfig);
     }
 
     return transformedConfig;
@@ -1080,7 +1073,11 @@ export async function deleteChannelConfig(channelType: string): Promise<void> {
                 }
             }
             if (resolvedChannelType === 'dingtalk') {
-                removePluginRegistration(currentConfig, 'dingtalk');
+                removePluginRegistration(currentConfig, DINGTALK_PLUGIN_ID);
+                removePluginRegistration(currentConfig, DINGTALK_OFFICIAL_PLUGIN_ID);
+                if (currentConfig.channels?.[DINGTALK_OFFICIAL_PLUGIN_ID]) {
+                    delete currentConfig.channels[DINGTALK_OFFICIAL_PLUGIN_ID];
+                }
             }
             if (resolvedChannelType === 'wecom') {
                 removePluginRegistration(currentConfig, WECOM_PLUGIN_ID);

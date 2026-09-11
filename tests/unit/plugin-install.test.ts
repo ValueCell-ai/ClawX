@@ -120,6 +120,11 @@ vi.mock('@electron/gateway/config-delivery', () => ({
   mutateOpenClawConfig: mockMutateOpenClawConfig,
 }));
 
+vi.mock('@electron/utils/dingtalk-dws', () => ({
+  ensureDingTalkDwsInstalled: vi.fn(() => ({ installed: true })),
+  removeLegacyOfficialDingTalkExtension: vi.fn(),
+}));
+
 function setPlatform(platform: NodeJS.Platform): void {
   Object.defineProperty(process, 'platform', {
     value: platform,
@@ -164,6 +169,141 @@ describe('plugin installer diagnostics', () => {
     if (ORIGINAL_PLATFORM_DESCRIPTOR) {
       Object.defineProperty(process, 'platform', ORIGINAL_PLATFORM_DESCRIPTOR);
     }
+  });
+
+  it('remaps official DingTalk connector onto the dingtalk channel identity', async () => {
+    const targetDir = '/home/test/.openclaw/extensions/dingtalk';
+    const entryPath = `${targetDir}/dist/index.mjs`;
+    mockExistsSync.mockImplementation((input: string) => [
+      `${targetDir}/openclaw.plugin.json`,
+      `${targetDir}/package.json`,
+      `${targetDir}/dist`,
+      entryPath,
+    ].includes(String(input)));
+    mockReaddirSync.mockImplementation((input: string) => {
+      if (String(input) === `${targetDir}/dist`) {
+        return [{ name: 'index.mjs', isDirectory: () => false, isFile: () => true }];
+      }
+      return [];
+    });
+    mockReadFileSync.mockImplementation((input: string) => {
+      const value = String(input);
+      if (value.endsWith('openclaw.plugin.json')) {
+        return JSON.stringify({
+          id: 'dingtalk-connector',
+          channels: ['dingtalk-connector'],
+          skills: ['./skills'],
+          channelConfigs: {
+            'dingtalk-connector': {
+              schema: { type: 'object', additionalProperties: false },
+            },
+          },
+        });
+      }
+      if (value.endsWith('package.json')) {
+        return JSON.stringify({
+          name: '@dingtalk-real-ai/dingtalk-connector',
+          version: '0.8.25',
+          main: 'dist/index.mjs',
+          openclaw: {
+            channels: ['dingtalk-connector'],
+            channel: { id: 'dingtalk-connector' },
+          },
+        });
+      }
+      if (value.endsWith('dist/index.mjs')) {
+        return [
+          'export const CHANNEL_ID = "dingtalk-connector";',
+          'api.registerGatewayMethod("dingtalk-connector.docs.create", handler);',
+          'export default { id: "dingtalk-connector" };',
+        ].join('\n');
+      }
+      return '{}';
+    });
+
+    const { fixupPluginManifest } = await import('@electron/utils/plugin-install');
+    fixupPluginManifest(targetDir);
+
+    const manifestWrite = mockWriteFileSync.mock.calls.find((call) => String(call[0]).endsWith('openclaw.plugin.json'));
+    expect(manifestWrite?.[1]).toContain('"id": "dingtalk"');
+    expect(manifestWrite?.[1]).toContain('"channelConfigs"');
+    expect(manifestWrite?.[1]).toContain('"dingtalk"');
+    expect(manifestWrite?.[1]).toContain('"./skills"');
+    expect(manifestWrite?.[1]).not.toContain('"dingtalk-connector"');
+
+    const pkgWrite = mockWriteFileSync.mock.calls.find((call) => String(call[0]).endsWith('package.json'));
+    expect(pkgWrite?.[1]).toContain('"name": "@dingtalk-real-ai/dingtalk-connector"');
+    expect(pkgWrite?.[1]).toContain('"id": "dingtalk"');
+
+    const jsWrite = mockWriteFileSync.mock.calls
+      .filter((call) => String(call[0]).endsWith('dist/index.mjs'))
+      .at(-1);
+    expect(jsWrite?.[1]).toContain('CHANNEL_ID = "dingtalk"');
+    expect(jsWrite?.[1]).toContain('dingtalk-connector.docs.create');
+    expect(jsWrite?.[1]).toContain('id: "dingtalk"');
+  });
+
+  it('replaces a community DingTalk mirror even when versions look equal', async () => {
+    const targetDir = '/home/test/.openclaw/extensions/dingtalk';
+    const sourceDir = '/bundle/dingtalk';
+    mockExistsSync.mockImplementation((input: string) => [
+      `${sourceDir}/openclaw.plugin.json`,
+      `${sourceDir}/package.json`,
+      `${targetDir}/openclaw.plugin.json`,
+      `${targetDir}/package.json`,
+    ].includes(String(input)));
+    mockReadFileSync.mockImplementation((input: string) => {
+      const value = String(input);
+      if (value === `${targetDir}/package.json`) {
+        return JSON.stringify({ name: '@soimy/dingtalk', version: '0.8.25' });
+      }
+      if (value === `${sourceDir}/package.json` || value === `${targetDir}/package.json`) {
+        return JSON.stringify({ name: '@dingtalk-real-ai/dingtalk-connector', version: '0.8.25' });
+      }
+      if (value.endsWith('openclaw.plugin.json')) {
+        return JSON.stringify({ id: 'dingtalk', channels: ['dingtalk'] });
+      }
+      if (value.endsWith('package.json')) {
+        return JSON.stringify({
+          name: '@dingtalk-real-ai/dingtalk-connector',
+          version: '0.8.25',
+        });
+      }
+      return '{}';
+    });
+
+    const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');
+    const result = await ensurePluginInstalled('dingtalk', [sourceDir], 'DingTalk');
+    expect(result.installed).toBe(true);
+    expect(mockCpSync).toHaveBeenCalled();
+  });
+
+  it('writes a path-owned DingTalk install record and removes the official legacy id', async () => {
+    const targetDir = '/home/test/.openclaw/extensions/dingtalk';
+    mockExistsSync.mockImplementation((input: string) => {
+      const value = String(input);
+      return value === `${targetDir}/openclaw.plugin.json`
+        || value === `${targetDir}/package.json`;
+    });
+    mockReadFileSync.mockImplementation((input: string) => {
+      if (String(input) === `${targetDir}/package.json`) {
+        return JSON.stringify({ version: '0.8.25' });
+      }
+      return '{}';
+    });
+    mockRealpathSync.mockImplementation((input: string) => input);
+
+    const { syncTrustedOfficialPluginInstallRecord } = await import('@electron/utils/plugin-install');
+    await expect(syncTrustedOfficialPluginInstallRecord('dingtalk', targetDir)).resolves.toBe(true);
+    expect(mockRemovePluginInstallRecordsFromSqlite).toHaveBeenCalledWith(['dingtalk-connector']);
+    expect(mockUpsertPluginInstallRecordsIntoSqlite).toHaveBeenCalledWith({
+      dingtalk: expect.objectContaining({
+        source: 'path',
+        sourcePath: targetDir,
+        installPath: targetDir,
+        version: '0.8.25',
+      }),
+    });
   });
 
   it('adds the WeCom channel descriptor while preserving valid upstream npm metadata', async () => {

@@ -19,7 +19,8 @@
  *      @mariozechner/clipboard).
  */
 
-const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync, readFileSync, writeFileSync } = require('fs');
+const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSync, readFileSync, writeFileSync, chmodSync } = require('fs');
+const { execFileSync } = require('child_process');
 const { join, dirname, basename, relative } = require('path');
 const { ELECTRON_MAIN_RUNTIME_PACKAGES } = require('./openclaw-bundle-config.mjs');
 const { patchNsisExtractTemplate } = require('./patch-nsis-extract.mjs');
@@ -42,6 +43,86 @@ const ARCH_MAP = { 0: 'ia32', 1: 'x64', 2: 'armv7l', 3: 'arm64', 4: 'universal' 
 
 function resolveArch(archEnum) {
   return ARCH_MAP[archEnum] || 'x64';
+}
+
+const DWS_PLATFORM_ARCHIVES = {
+  'darwin-x64': 'dws-darwin-amd64.tar.gz',
+  'darwin-arm64': 'dws-darwin-arm64.tar.gz',
+  'linux-x64': 'dws-linux-amd64.tar.gz',
+  'linux-arm64': 'dws-linux-arm64.tar.gz',
+  'win32-x64': 'dws-windows-amd64.zip',
+  'win32-arm64': 'dws-windows-arm64.zip',
+};
+
+function findDwsBinary(root) {
+  const stack = [root];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    let entries;
+    try { entries = readdirSync(current, { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries) {
+      const entryPath = join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(entryPath);
+        continue;
+      }
+      if (entry.name === 'dws' || entry.name === 'dws.exe') {
+        return entryPath;
+      }
+    }
+  }
+  return null;
+}
+
+function extractDingTalkDwsVendor(packageDir, platform, arch) {
+  const archiveName = DWS_PLATFORM_ARCHIVES[`${platform}-${arch}`];
+  if (!archiveName) {
+    console.warn(`[after-pack] ⚠️  No DingTalk dws archive for ${platform}-${arch}`);
+    return false;
+  }
+  const archivePath = join(packageDir, 'assets', archiveName);
+  const vendorDir = join(packageDir, 'vendor');
+  const vendorBin = join(vendorDir, platform === 'win32' ? 'dws.exe' : 'dws');
+  if (existsSync(vendorBin)) return true;
+  if (!existsSync(archivePath)) {
+    console.warn(`[after-pack] ⚠️  Missing DingTalk dws archive: ${archivePath}`);
+    return false;
+  }
+
+  const tmpDir = join(packageDir, '.dws-extract-tmp');
+  try {
+    rmSync(tmpDir, { recursive: true, force: true });
+    mkdirSync(tmpDir, { recursive: true });
+    if (archivePath.endsWith('.tar.gz')) {
+      execFileSync('tar', ['-xzf', archivePath, '-C', tmpDir], { stdio: 'ignore' });
+    } else if (platform === 'win32') {
+      execFileSync('powershell.exe', [
+        '-NoLogo',
+        '-NoProfile',
+        '-Command',
+        `Expand-Archive -Path '${archivePath.replace(/'/g, "''")}' -DestinationPath '${tmpDir.replace(/'/g, "''")}' -Force`,
+      ], { stdio: 'ignore' });
+    } else {
+      execFileSync('unzip', ['-q', archivePath, '-d', tmpDir], { stdio: 'ignore' });
+    }
+    const found = findDwsBinary(tmpDir);
+    if (!found) {
+      console.warn('[after-pack] ⚠️  DingTalk dws archive did not contain a binary');
+      return false;
+    }
+    mkdirSync(vendorDir, { recursive: true });
+    cpSync(found, vendorBin);
+    if (platform !== 'win32') {
+      chmodSync(vendorBin, 0o755);
+    }
+    console.log(`[after-pack] ✅ Extracted DingTalk dws binary to ${vendorBin}`);
+    return true;
+  } catch (error) {
+    console.warn(`[after-pack] ⚠️  Failed to extract DingTalk dws binary: ${error.message}`);
+    return false;
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
 }
 
 function readJsonSafe(filePath) {
@@ -524,6 +605,7 @@ function patchBrokenModules(nodeModulesDir) {
 
 const PLUGIN_ID_FIXES = {
   'wecom-openclaw-plugin': 'wecom',
+  'dingtalk-connector': 'dingtalk',
 };
 
 function patchPluginIds(pluginDir, expectedId) {
@@ -731,7 +813,7 @@ exports.default = async function afterPack(context) {
   //       directory doesn't exist (build/openclaw-plugins/ may not be pre-generated)
   //     - node_modules/ is excluded by .gitignore so the deps copy must be manual
   const BUNDLED_PLUGINS = [
-    { npmName: '@soimy/dingtalk', pluginId: 'dingtalk' },
+    { npmName: '@dingtalk-real-ai/dingtalk-connector', pluginId: 'dingtalk' },
     { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' },
     { npmName: '@larksuite/openclaw-lark', pluginId: 'feishu-openclaw-plugin' },
     { npmName: '@openclaw/discord', pluginId: 'discord' },
@@ -759,6 +841,16 @@ exports.default = async function afterPack(context) {
       // Fix hardcoded plugin ID mismatches in compiled JS
       patchPluginIds(pluginDestDir, pluginId);
     }
+  }
+
+  // 1.1b Bundle the official DingTalk workspace CLI (`dws`) so calendar/doc
+  //      skills can execute from the packaged Gateway PATH.
+  const dwsDestDir = join(resourcesDir, 'dingtalk-dws');
+  const dwsOk = bundlePlugin(nodeModulesRoot, 'dingtalk-workspace-cli', dwsDestDir);
+  if (dwsOk) {
+    cleanupUnnecessaryFiles(dwsDestDir);
+    extractDingTalkDwsVendor(dwsDestDir, platform, arch);
+    console.log(`[after-pack] ✅ Bundled DingTalk workspace CLI to ${dwsDestDir}`);
   }
 
   // 1.2 Copy built-in extension node_modules that electron-builder skipped.

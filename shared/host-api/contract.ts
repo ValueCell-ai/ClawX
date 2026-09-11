@@ -219,6 +219,8 @@ export type ChannelGroupItem = {
   defaultAccountId: string;
   status: ChannelRuntimeStatus;
   statusReason?: string;
+  /** i18n key under channels.health.reasons, shown even when connected. */
+  statusNote?: string;
   accounts: ChannelAccountItem[];
 };
 export type ChannelTargetOption = {

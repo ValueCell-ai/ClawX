@@ -21,7 +21,8 @@ describe('openclaw bundle config', () => {
       '@openclaw/discord': '2026.7.1',
       '@openclaw/qqbot': '2026.7.1',
       '@openclaw/whatsapp': '2026.7.1',
-      '@soimy/dingtalk': '3.6.10',
+      '@dingtalk-real-ai/dingtalk-connector': '0.8.25',
+      'dingtalk-workspace-cli': '1.0.30',
       '@wecom/wecom-openclaw-plugin': '2026.8.17',
       '@larksuite/openclaw-lark': '2026.7.16',
       '@tencent-weixin/openclaw-weixin': '2.4.8',
@@ -68,12 +69,18 @@ describe('openclaw bundle config', () => {
       id: 'openclaw-lark',
       channels: ['feishu'],
     });
+    expect(readManifest('@dingtalk-real-ai/dingtalk-connector')).toMatchObject({
+      id: 'dingtalk-connector',
+      channels: ['dingtalk-connector'],
+    });
   });
 
   it('does not retain superseded channel plugin packages in the lockfile', () => {
     const lockfile = readFileSync(resolve(process.cwd(), 'pnpm-lock.yaml'), 'utf8');
     expect(lockfile).not.toContain("'@soimy/dingtalk@3.6.4':");
     expect(lockfile).not.toContain("'@soimy/dingtalk@3.6.6':");
+    expect(lockfile).not.toContain("'@soimy/dingtalk@3.6.10':");
+    expect(lockfile).toContain("'@dingtalk-real-ai/dingtalk-connector@0.8.25':");
     expect(lockfile).not.toContain("'@wecom/wecom-openclaw-plugin@2026.6.23':");
     expect(lockfile).not.toContain("'@wecom/wecom-openclaw-plugin@2026.7.2':");
     expect(lockfile).not.toContain("'@larksuite/openclaw-lark@2026.6.10':");
