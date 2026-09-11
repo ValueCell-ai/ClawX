@@ -6,7 +6,7 @@
  * pnpm may ignore that script, so ClawX extracts the binary itself and
  * never copies dws skills into every agent home directory.
  */
-import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, type Dirent } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { delimiter, dirname, join } from 'node:path';
 import { homedir } from 'node:os';
@@ -58,7 +58,7 @@ function findDwsBinary(root: string): string | null {
   const stack = [root];
   while (stack.length > 0) {
     const current = stack.pop() as string;
-    let entries: ReturnType<typeof readdirSync>;
+    let entries: Dirent[];
     try {
       entries = readdirSync(current, { withFileTypes: true });
     } catch {

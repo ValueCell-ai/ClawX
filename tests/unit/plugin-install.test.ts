@@ -235,7 +235,9 @@ describe('plugin installer diagnostics', () => {
     expect(pkgWrite?.[1]).toContain('"name": "@dingtalk-real-ai/dingtalk-connector"');
     expect(pkgWrite?.[1]).toContain('"id": "dingtalk"');
 
-    const jsWrite = mockWriteFileSync.mock.calls.find((call) => String(call[0]).endsWith('dist/index.mjs'));
+    const jsWrite = mockWriteFileSync.mock.calls
+      .filter((call) => String(call[0]).endsWith('dist/index.mjs'))
+      .at(-1);
     expect(jsWrite?.[1]).toContain('CHANNEL_ID = "dingtalk"');
     expect(jsWrite?.[1]).toContain('dingtalk-connector.docs.create');
     expect(jsWrite?.[1]).toContain('id: "dingtalk"');

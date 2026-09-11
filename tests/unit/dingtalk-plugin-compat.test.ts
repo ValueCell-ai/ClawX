@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   DINGTALK_OFFICIAL_NPM,
@@ -198,5 +200,27 @@ describe('patchDingTalkChannelIdsInJs', () => {
     expect(content).toContain('const CHANNEL_ID = "dingtalk";');
     expect(content).toContain('api.registerGatewayMethod("dingtalk-connector.docs.create", handler);');
     expect(content).toContain("cfg.channels?.['dingtalk']");
+  });
+
+  it('patches published official connector chunks without rewriting Gateway RPCs', () => {
+    const distDir = resolve(process.cwd(), 'node_modules/@dingtalk-real-ai/dingtalk-connector/dist');
+    const files = readdirSync(distDir).filter((name) => name.endsWith('.mjs'));
+    expect(files.length).toBeGreaterThan(0);
+
+    let patchedAny = false;
+    let keptRpc = false;
+    for (const name of files) {
+      const source = readFileSync(resolve(distDir, name), 'utf8');
+      const { content, patched } = patchDingTalkChannelIdsInJs(source);
+      patchedAny = patchedAny || patched;
+      if (source.includes('dingtalk-connector.docs.create')) {
+        expect(content).toContain('dingtalk-connector.docs.create');
+        keptRpc = true;
+      }
+      expect(content).not.toMatch(/(["'])dingtalk-connector\1/);
+    }
+
+    expect(patchedAny).toBe(true);
+    expect(keptRpc).toBe(true);
   });
 });

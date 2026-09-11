@@ -27,22 +27,35 @@ const {
   mockSafeRmSync: vi.fn(),
 }));
 
-vi.mock('node:fs', () => ({
-  chmodSync: mockChmodSync,
-  cpSync: mockCpSync,
-  existsSync: mockExistsSync,
-  mkdirSync: mockMkdirSync,
-  readdirSync: mockReaddirSync,
-  readFileSync: mockReadFileSync,
-}));
+vi.mock('node:fs', () => {
+  const mocked = {
+    chmodSync: mockChmodSync,
+    cpSync: mockCpSync,
+    existsSync: mockExistsSync,
+    mkdirSync: mockMkdirSync,
+    readdirSync: mockReaddirSync,
+    readFileSync: mockReadFileSync,
+  };
+  return {
+    ...mocked,
+    default: mocked,
+  };
+});
 
 vi.mock('node:child_process', () => ({
   execFileSync: mockExecFileSync,
+  default: { execFileSync: mockExecFileSync },
 }));
 
-vi.mock('node:os', () => ({
-  homedir: () => mockHomedir(),
-}));
+vi.mock('node:os', () => {
+  const mocked = {
+    homedir: () => mockHomedir(),
+  };
+  return {
+    ...mocked,
+    default: mocked,
+  };
+});
 
 vi.mock('electron', () => ({
   app: mockApp,
