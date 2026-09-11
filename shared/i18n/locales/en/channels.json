@@ -122,7 +122,9 @@
             "rpc_timeout": "Recent Gateway RPC calls timed out.",
             "gateway_not_running": "Gateway is not running.",
             "gateway_error": "Gateway is in an error state.",
-            "runtime_error": "Channel runtime reported an error."
+            "runtime_error": "Channel runtime reported an error.",
+            "dingtalk_dws_missing": "Chat works. Calendar, docs, and other office skills need the bundled DingTalk workspace CLI (dws).",
+            "dingtalk_dws_auth_required": "Chat works. Calendar, docs, and other office skills need DingTalk workspace authorization."
         },
         "recovery": {
             "verifying": "ClawX is verifying Gateway responsiveness.",
@@ -212,7 +214,7 @@
             ]
         },
         "dingtalk": {
-            "description": "Connect DingTalk via OpenClaw channel plugin (Stream mode)",
+            "description": "Connect DingTalk with the official OpenClaw connector (Stream chat). Calendar, docs, and other office skills use the bundled dws CLI.",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnDgA78n43DbkiQjI1OqUA7b",
             "fields": {
                 "clientId": {
@@ -225,9 +227,10 @@
                 }
             },
             "instructions": [
-                "Install and enable the dingtalk plugin in OpenClaw",
+                "ClawX installs the official DingTalk connector and keeps your existing dingtalk channel identity",
                 "Create a DingTalk internal app and enable Stream mode",
-                "Fill in Client ID (AppKey) and Client Secret (AppSecret)"
+                "Fill in Client ID (AppKey) and Client Secret (AppSecret)",
+                "Chat works immediately; calendar, docs, and todos need DingTalk workspace authorization (dws)"
             ]
         },
         "feishu": {

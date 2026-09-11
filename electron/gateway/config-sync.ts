@@ -33,6 +33,7 @@ import { buildProxyEnv, resolveProxySettings } from '../utils/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
+import { resolveDingTalkDwsBinDir } from '../utils/dingtalk-dws';
 import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, resolvePluginNpmPackagePath } from '../utils/plugin-install';
 import { safeRmSync } from '../utils/safe-fs';
 import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
@@ -74,7 +75,7 @@ export interface GatewayPrelaunchSyncSummary {
 // ── Auto-upgrade bundled plugins on startup ──────────────────────
 
 const CHANNEL_PLUGIN_MAP: Record<string, { dirName: string; npmName: string }> = {
-  dingtalk: { dirName: 'dingtalk', npmName: '@soimy/dingtalk' },
+  dingtalk: { dirName: 'dingtalk', npmName: '@dingtalk-real-ai/dingtalk-connector' },
   wecom: { dirName: 'wecom', npmName: '@wecom/wecom-openclaw-plugin' },
   feishu: { dirName: 'feishu-openclaw-plugin', npmName: '@larksuite/openclaw-lark' },
   discord: { dirName: 'discord', npmName: '@openclaw/discord' },
@@ -706,9 +707,13 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     platform,
     app.getPath('userData'),
   );
-  const baseEnvPatched = binPathExists
+  const baseEnvWithBin = binPathExists
     ? prependPathEntry(baseEnvRecord, binPath).env
     : baseEnvRecord;
+  const dwsBinDir = resolveDingTalkDwsBinDir();
+  const baseEnvPatched = dwsBinDir
+    ? prependPathEntry(baseEnvWithBin, dwsBinDir).env
+    : baseEnvWithBin;
   const forkEnv: Record<string, string | undefined> = {
     ...stripSystemdSupervisorEnv(baseEnvPatched),
     ...providerEnv,
@@ -725,6 +730,10 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     // Electron app at <cwd>/const safe = new Set(...)". Turning the snapshot off
     // avoids that broken spawn; exec tools fall back to the Gateway launch env.
     OPENCLAW_EXEC_SHELL_SNAPSHOT: '0',
+    // Official DingTalk skills (`dws-cli`) expect the workspace CLI on PATH
+    // and the OpenClaw channel marker. Client credentials are injected by the
+    // remapped connector from the saved bot config.
+    DWS_CHANNEL: 'openclaw',
   };
 
   // Ensure extension-specific packages (e.g. grammy from the telegram

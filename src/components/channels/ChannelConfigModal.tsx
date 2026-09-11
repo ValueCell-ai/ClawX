@@ -79,7 +79,7 @@ export function ChannelConfigModal({
   onClose,
   onChannelSaved,
 }: ChannelConfigModalProps) {
-  const { t } = useTranslation('channels');
+  const { t, i18n } = useTranslation('channels');
   const [selectedType, setSelectedType] = useState<ChannelType | null>(initialSelectedType);
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [channelName, setChannelName] = useState('');
@@ -420,7 +420,8 @@ export function ChannelConfigModal({
         throw new Error(saveResult?.error || 'Failed to save channel config');
       }
       if (typeof saveResult.warning === 'string' && saveResult.warning) {
-        toast.warning(saveResult.warning);
+        const warningKey = `health.reasons.${saveResult.warning}`;
+        toast.warning(i18n.exists(warningKey, { ns: 'channels' }) ? t(warningKey) : saveResult.warning);
       }
 
       try {

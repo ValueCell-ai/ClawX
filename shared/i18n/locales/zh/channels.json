@@ -122,7 +122,9 @@
             "rpc_timeout": "最近的网关 RPC 调用发生超时。",
             "gateway_not_running": "网关当前未运行。",
             "gateway_error": "网关当前处于错误状态。",
-            "runtime_error": "频道运行时返回了错误。"
+            "runtime_error": "频道运行时返回了错误。",
+            "dingtalk_dws_missing": "聊天可用。日历、文档等办公技能需要已随包提供的钉钉工作台 CLI（dws）。",
+            "dingtalk_dws_auth_required": "聊天可用。日历、文档等办公技能还需要完成钉钉工作台授权。"
         },
         "recovery": {
             "verifying": "ClawX 正在验证网关响应。",
@@ -212,7 +214,7 @@
             ]
         },
         "dingtalk": {
-            "description": "通过 OpenClaw 渠道插件连接钉钉（Stream 模式）",
+            "description": "通过官方 OpenClaw 连接器接入钉钉（Stream 聊天）。日历、文档等办公技能使用随包提供的 dws CLI。",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnr8KfaA2mNPeQUeHO83eDPh",
             "fields": {
                 "clientId": {
@@ -225,9 +227,10 @@
                 }
             },
             "instructions": [
-                "先在 OpenClaw 安装并启用 dingtalk 插件",
+                "ClawX 会安装官方钉钉连接器，并继续使用现有的 dingtalk 频道身份",
                 "在钉钉开发者后台创建企业内部应用并开启 Stream 模式",
-                "填写 Client ID (AppKey) 和 Client Secret (AppSecret)"
+                "填写 Client ID (AppKey) 和 Client Secret (AppSecret)",
+                "聊天可立即使用；日历、文档和待办需要完成钉钉工作台授权（dws）"
             ]
         },
         "feishu": {

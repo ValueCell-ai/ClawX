@@ -122,7 +122,9 @@
             "rpc_timeout": "Недавние RPC-вызовы шлюза завершились по таймауту.",
             "gateway_not_running": "Шлюз не запущен.",
             "gateway_error": "Шлюз находится в состоянии ошибки.",
-            "runtime_error": "Среда выполнения канала сообщила об ошибке."
+            "runtime_error": "Среда выполнения канала сообщила об ошибке.",
+            "dingtalk_dws_missing": "Чат работает. Календарь, документы и другие офисные навыки требуют встроенный DingTalk workspace CLI (dws).",
+            "dingtalk_dws_auth_required": "Чат работает. Календарь, документы и другие офисные навыки требуют авторизацию DingTalk workspace."
         },
         "recovery": {
             "verifying": "ClawX проверяет доступность шлюза.",
@@ -212,7 +214,7 @@
             ]
         },
         "dingtalk": {
-            "description": "Подключите DingTalk через плагин канала OpenClaw (режим Stream)",
+            "description": "Подключите DingTalk через официальный коннектор OpenClaw (чат Stream). Календарь, документы и другие офисные навыки используют встроенный dws CLI.",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnDgA78n43DbkiQjI1OqUA7b",
             "fields": {
                 "clientId": {
@@ -225,9 +227,10 @@
                 }
             },
             "instructions": [
-                "Установите и включите плагин dingtalk в OpenClaw",
+                "ClawX устанавливает официальный коннектор DingTalk и сохраняет существующий идентификатор канала dingtalk",
                 "Создайте внутреннее приложение DingTalk и включите режим Stream",
-                "Заполните Client ID (AppKey) и Client Secret (AppSecret)"
+                "Заполните Client ID (AppKey) и Client Secret (AppSecret)",
+                "Чат работает сразу; календарь, документы и задачи требуют авторизацию DingTalk workspace (dws)"
             ]
         },
         "feishu": {

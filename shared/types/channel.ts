@@ -161,6 +161,7 @@ export const CHANNEL_META: Record<ChannelType, ChannelMeta> = {
       'channels:meta.dingtalk.instructions.0',
       'channels:meta.dingtalk.instructions.1',
       'channels:meta.dingtalk.instructions.2',
+      'channels:meta.dingtalk.instructions.3',
     ],
     isPlugin: true,
   },

@@ -663,6 +663,14 @@ export function Channels() {
                               {statusLabel(group.status)}
                             </span>
                           </div>
+                          {group.statusNote && (
+                            <p
+                              className="text-xs text-yellow-700 dark:text-yellow-400 mt-1"
+                              data-testid={`channel-note-${group.channelType}`}
+                            >
+                              {t(`health.reasons.${group.statusNote}`)}
+                            </p>
+                          )}
                         </div>
                       </div>
 

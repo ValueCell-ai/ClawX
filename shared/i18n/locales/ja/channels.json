@@ -122,7 +122,9 @@
             "rpc_timeout": "最近のゲートウェイ RPC がタイムアウトしました。",
             "gateway_not_running": "ゲートウェイは起動していません。",
             "gateway_error": "ゲートウェイはエラー状態です。",
-            "runtime_error": "チャンネルランタイムがエラーを返しました。"
+            "runtime_error": "チャンネルランタイムがエラーを返しました。",
+            "dingtalk_dws_missing": "チャットは利用できます。カレンダーやドキュメントなどのオフィススキルには、同梱の DingTalk workspace CLI（dws）が必要です。",
+            "dingtalk_dws_auth_required": "チャットは利用できます。カレンダーやドキュメントなどのオフィススキルには、DingTalk workspace の認可が必要です。"
         },
         "recovery": {
             "verifying": "ClawX がゲートウェイの応答を確認しています。",
@@ -212,7 +214,7 @@
             ]
         },
         "dingtalk": {
-            "description": "OpenClaw のチャンネルプラグイン経由で DingTalk に接続します（Stream モード）",
+            "description": "公式 OpenClaw コネクタで DingTalk に接続します（Stream チャット）。カレンダーやドキュメントなどのオフィススキルは同梱の dws CLI を使います。",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/Y5eNwiSiZidkLskrwtJc1rUln0b#doxcnDgA78n43DbkiQjI1OqUA7b",
             "fields": {
                 "clientId": {
@@ -225,9 +227,10 @@
                 }
             },
             "instructions": [
-                "まず OpenClaw に dingtalk プラグインをインストールして有効化します",
+                "ClawX は公式 DingTalk コネクタをインストールし、既存の dingtalk チャネル ID を維持します",
                 "DingTalk 開発者コンソールで社内アプリを作成し Stream モードを有効にします",
-                "Client ID (AppKey) と Client Secret (AppSecret) を入力します"
+                "Client ID (AppKey) と Client Secret (AppSecret) を入力します",
+                "チャットはすぐ使えます。カレンダー、ドキュメント、ToDo には DingTalk workspace 認可（dws）が必要です"
             ]
         },
         "feishu": {
