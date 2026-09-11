@@ -46,7 +46,7 @@ export interface FileAttachment {
   fileName: string;
   mimeType: string;
   fileSize: number;
-  stagedPath: string;        // Host-staged path included in ACP prompt media
+  stagedPath: string;        // Host-authorized source or buffer-staging path included in ACP prompt media
   preview: string | null;    // data URL for images, null for others
   status: 'staging' | 'ready' | 'error';
   error?: string;

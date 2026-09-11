@@ -136,6 +136,59 @@ test.describe('ACP media attachments', () => {
     }
   });
 
+  test('sends a dropped native file from its canonical source path', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      const fixture = await installAttachmentHostFixture(app, {
+        sessions: [{ key: MAIN_SESSION_KEY, title: 'Main session' }],
+      });
+      const sourcePath = await fixture.createWorkspaceFile('direct-source.txt', 'live source bytes');
+      await fixture.setSessionReplay(MAIN_SESSION_KEY, []);
+      await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [[]]);
+
+      const page = await openChat(app);
+      await page.evaluate((path) => {
+        const target = document.querySelector('[data-testid="chat-composer-input"]');
+        if (!target) throw new Error('Missing chat composer input');
+        const file = new File(['synthetic drag metadata'], 'direct-source.txt', { type: 'text/plain' });
+        Object.defineProperty(file, 'path', { value: path });
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        target.dispatchEvent(new DragEvent('drop', {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer,
+        }));
+      }, sourcePath);
+
+      await expect(page.getByText('direct-source.txt', { exact: true })).toBeVisible();
+      await page.getByTestId('chat-composer-input').fill('Read this source directly');
+      await page.getByTestId('chat-composer-send').click();
+
+      await expect.poll(async () => {
+        const request = (await fixture.getHostInvocations()).find((entry) => (
+          entry.module === 'chat'
+          && entry.action === 'sendAcpPrompt'
+          && entry.payload?.message === 'Read this source directly'
+        ));
+        const media = request?.payload?.media;
+        return Array.isArray(media)
+          && media.length === 1
+          && (media[0] as Record<string, unknown>).filePath === sourcePath;
+      }).toBe(true);
+      expect((await fixture.getHostInvocations()).some((request) => (
+        request.module === 'files'
+        && request.action === 'stagePaths'
+        && Array.isArray(request.payload?.filePaths)
+        && request.payload.filePaths[0] === sourcePath
+      ))).toBe(true);
+      expect(await getRecordedLegacyIpcInvocations(app)).toEqual([]);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('opens a local HTML attachment in the right-side Preview tab', async ({ launchElectronApp }) => {
     // Electron's webview support is unstable on Linux.
     test.skip(process.platform !== 'win32' && process.platform !== 'darwin');
@@ -698,7 +751,7 @@ test.describe('ACP media attachments', () => {
     }
   });
 
-  test('previews the reported live spreadsheet flow and restores one historical card', async ({ launchElectronApp }) => {
+  test('recovers a message-tool spreadsheet delivery and restores one historical card', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -717,10 +770,22 @@ test.describe('ACP media attachments', () => {
       await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [[
         { role: 'user', id: 'transcript-user-budget', content: PROMPT },
         {
-          role: 'assistant',
-          id: 'transcript-assistant-budget',
-          content: `MEDIA:${spreadsheetPath}\n${REPLY}`,
+          role: 'toolresult',
+          toolName: 'message',
+          content: 'Sent visible reply to the current source conversation via internal-ui.',
+          details: {
+            status: 'ok',
+            deliveryStatus: 'sent',
+            sourceReplyDeliveryMode: 'message_tool_only',
+            sourceReplySink: 'internal-ui',
+            sourceReply: {
+              text: REPLY,
+              mediaUrl: spreadsheetPath,
+              mediaUrls: [spreadsheetPath],
+            },
+          },
         },
+        { role: 'assistant', content: 'NO_REPLY' },
       ]]);
 
       await page.getByTestId('chat-composer-input').fill(PROMPT);

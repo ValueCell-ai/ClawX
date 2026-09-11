@@ -175,6 +175,40 @@ function persistedMediaFacts(message: RawMessage, executionCwd: string): Persist
   });
 }
 
+function deliveredMessageToolMediaFacts(
+  message: RawMessage,
+  executionCwd: string,
+): PersistedMediaFact[] {
+  const role = typeof message.role === 'string' ? message.role.toLowerCase() : '';
+  if (role !== 'toolresult' && role !== 'tool_result') return [];
+  if (message.toolName?.trim().toLowerCase() !== 'message' || message.isError === true) return [];
+
+  const details = recordValue(message.details);
+  if (!details
+    || optionalString(details.status)?.toLowerCase() !== 'ok'
+    || optionalString(details.deliveryStatus)?.toLowerCase() !== 'sent'
+    || optionalString(details.sourceReplySink)?.toLowerCase() !== 'internal-ui'
+    || optionalString(details.sourceReplyDeliveryMode)?.toLowerCase() !== 'message_tool_only') {
+    return [];
+  }
+
+  const sourceReply = recordValue(details.sourceReply);
+  if (!sourceReply) return [];
+  const references = [
+    sourceReply.mediaUrl,
+    ...(Array.isArray(sourceReply.mediaUrls) ? sourceReply.mediaUrls : []),
+  ];
+  const seen = new Set<string>();
+  const facts: PersistedMediaFact[] = [];
+  for (const value of references) {
+    const uri = parseStructuredReference(value, executionCwd);
+    if (!uri || seen.has(uri)) continue;
+    seen.add(uri);
+    facts.push({ uri, index: facts.length });
+  }
+  return facts;
+}
+
 function mediaReferences(text: string): Array<{ uri: string; line: number }> {
   const references: Array<{ uri: string; line: number }> = [];
   let fence: { marker: string; length: number } | null = null;
@@ -230,7 +264,31 @@ export function extractOpenClawMediaTurns(
       turns.push(current);
       continue;
     }
-    if (role !== 'assistant' || !current) continue;
+    if (!current) continue;
+
+    const deliveredFacts = deliveredMessageToolMediaFacts(message, input.executionCwd);
+    if (deliveredFacts.length > 0) {
+      const messageIdentity = message.id
+        ? `id:${message.id}`
+        : message.timestamp != null
+          ? `timestamp:${message.timestamp}`
+          : `content:${stableHash(JSON.stringify(message.details))}`;
+      for (const fact of deliveredFacts) {
+        if (input.suppressedUris.has(fact.uri)) continue;
+        const order = current.candidates.length;
+        current.candidates.push({
+          evidenceSeed: `${messageIdentity}:message-tool:${fact.index}:${fact.uri}`,
+          ...(message.id ? { transcriptMessageId: message.id } : {}),
+          uri: fact.uri,
+          order,
+          ...(fact.name ? { name: fact.name } : {}),
+          ...(fact.mimeType ? { mimeType: fact.mimeType } : {}),
+          ...(fact.size !== undefined ? { size: fact.size } : {}),
+        });
+      }
+      continue;
+    }
+    if (role !== 'assistant') continue;
 
     const text = textFromContent(message.content);
     const messageIdentity = message.id

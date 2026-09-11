@@ -165,6 +165,88 @@ describe('OpenClaw MEDIA transcript extraction', () => {
     ]);
   });
 
+  it('recovers files from confirmed internal-UI message-tool delivery metadata', () => {
+    const [turn] = extract(transcript(
+      { role: 'user', content: 'Create an Excel invoice' },
+      {
+        role: 'toolresult',
+        toolName: 'message',
+        content: [{ type: 'text', text: 'Sent visible reply to the current source conversation via internal-ui.' }],
+        details: {
+          status: 'ok',
+          deliveryStatus: 'sent',
+          sourceReplyDeliveryMode: 'message_tool_only',
+          sourceReplySink: 'internal-ui',
+          sourceReply: {
+            text: 'The spreadsheet is ready.',
+            mediaUrl: '/workspace/project/invoice.xlsx',
+            mediaUrls: [
+              '/workspace/project/invoice.xlsx',
+              '/workspace/project/supporting.csv',
+            ],
+          },
+        },
+      },
+      { role: 'assistant', content: 'NO_REPLY' },
+    ));
+
+    expect(turn?.candidates).toMatchObject([
+      { uri: '/workspace/project/invoice.xlsx', order: 0 },
+      { uri: '/workspace/project/supporting.csv', order: 1 },
+    ]);
+  });
+
+  it('rejects unconfirmed, failed, external, and model-authored message-tool media', () => {
+    const sourceReply = {
+      mediaUrls: ['/workspace/project/untrusted.xlsx'],
+    };
+    const [turn] = extract(transcript(
+      { role: 'user', content: 'Create an Excel invoice' },
+      {
+        role: 'assistant',
+        content: [{
+          type: 'toolCall',
+          name: 'message',
+          arguments: { action: 'send', attachments: [{ media: '/workspace/project/arguments.xlsx' }] },
+        }],
+      },
+      {
+        role: 'toolresult',
+        toolName: 'exec',
+        content: 'saved: /workspace/project/tool-output.xlsx',
+        details: {
+          status: 'ok', deliveryStatus: 'sent', sourceReplyDeliveryMode: 'message_tool_only', sourceReplySink: 'internal-ui', sourceReply,
+        },
+      },
+      {
+        role: 'toolresult',
+        toolName: 'message',
+        content: 'failed',
+        details: {
+          status: 'error', deliveryStatus: 'sent', sourceReplyDeliveryMode: 'message_tool_only', sourceReplySink: 'internal-ui', sourceReply,
+        },
+      },
+      {
+        role: 'toolresult',
+        toolName: 'message',
+        content: 'external',
+        details: {
+          status: 'ok', deliveryStatus: 'sent', sourceReplyDeliveryMode: 'message_tool_only', sourceReplySink: 'telegram', sourceReply,
+        },
+      },
+      {
+        role: 'toolresult',
+        toolName: 'message',
+        content: 'automatic',
+        details: {
+          status: 'ok', deliveryStatus: 'sent', sourceReplyDeliveryMode: 'automatic', sourceReplySink: 'internal-ui', sourceReply,
+        },
+      },
+    ));
+
+    expect(turn?.candidates).toEqual([]);
+  });
+
   it('prefers canonical media facts over duplicate MEDIA directives', () => {
     const [turn] = extract(transcript(
       { role: 'user', content: 'Create the report' },

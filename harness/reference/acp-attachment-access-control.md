@@ -32,8 +32,10 @@ An accepted absolute, home-relative, `file:`, or execution-cwd-relative referenc
 
 - `workspace`: the canonical target is inside the active ACP workspace root. Relative references resolve from the registered execution cwd.
 - `openclaw-media`: the canonical target is outside the workspace. This legacy scope name does not imply containment under an OpenClaw media root.
-- `staging`: when a staging id is supplied, it must match the exact canonical file or selected directory in the Main-owned staging record. The same target may also resolve from an explicit path without claiming staging identity.
+- `staging`: when a staging id is supplied, it must match the exact canonical source file, staged buffer file, or selected directory in the Main-owned staging record. The scope name describes Main-issued selection evidence, not necessarily physical storage under `clawx-staging`. The same target may also resolve from an explicit path without claiming staging identity.
 - `remote`: a normalized HTTP or HTTPS URL without embedded credentials. Remote references remain session/generation scoped and are revalidated immediately before external open.
+
+Native drag-and-drop and file-picker attachments provide stable filesystem paths. Main canonicalizes those paths, verifies a regular file or directory, registers the id against that exact source, and returns the source path to ACP without creating a duplicate. These attachments therefore have live-reference semantics: later source edits are visible, and moving or deleting the source can make the attachment unavailable. Clipboard and other pathless byte attachments still require an owner-only file under the pinned, symlink-resistant `clawx-staging` area. The same staging-id matching and session/generation revalidation apply to both source references and managed buffer files.
 
 Gateway outgoing media remains a record-bound special case, not a general local URL alias. Main validates the outgoing attachment id, requires the URL session key and managed record `sessionKey` to equal the active ACP session key, requires the record attachment id to match, and resolves the record's original file through a managed media root. If both transcript evidence and the record carry a message id, they must agree. The literal `global` session key follows exact equality and is never a wildcard.
 
