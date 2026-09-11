@@ -856,6 +856,7 @@ export function Chat() {
               .map((file) => ({
                 filePath: file.stagedPath,
                 stagingId: file.id,
+                sourceKind: file.sourceKind,
                 fileName: file.fileName,
                 mimeType: file.mimeType,
               }));

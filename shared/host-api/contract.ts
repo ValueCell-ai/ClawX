@@ -494,6 +494,7 @@ export type StagedFileResult = {
   mimeType: string;
   fileSize: number;
   stagedPath: string;
+  sourceKind: 'path' | 'buffer';
   preview: string | null;
   filePath?: string;
 };

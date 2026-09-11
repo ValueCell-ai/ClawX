@@ -604,6 +604,7 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
             mimeType: DIRECTORY_MIME_TYPE,
             fileSize: 0,
             stagedPath: canonicalPath,
+            sourceKind: 'path' as const,
             preview: null,
           });
           continue;
@@ -622,6 +623,7 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
           mimeType,
           fileSize: canonicalStat.size,
           stagedPath: canonicalPath,
+          sourceKind: 'path' as const,
           preview,
         });
       }
@@ -651,6 +653,7 @@ export function createFilesApi(dependencies: FilesApiDependencies = {}): Complet
         mimeType,
         fileSize: buffer.length,
         stagedPath: staged.path,
+        sourceKind: 'buffer' as const,
         preview,
       };
     },

@@ -376,11 +376,14 @@ describe('ACP image-generation compatibility extraction', () => {
     })).toBeNull();
   });
 
-  it('extracts historical ACP image-generation media from assistant MEDIA text', () => {
+  it.each([
+    { label: 'live', historical: false },
+    { label: 'historical', historical: true },
+  ])('extracts $label ACP image-generation media from assistant MEDIA text', ({ historical }) => {
     const evidence = extractImageGenerationCompletionFromAcpEnvelope({
       sessionKey: SESSION_KEY,
       generation: 1,
-      historical: true,
+      ...(historical ? { historical: true } : {}),
       notification: {
         sessionId: SESSION_KEY,
         update: {
@@ -397,8 +400,9 @@ describe('ACP image-generation compatibility extraction', () => {
     expect(evidence).toMatchObject({
       sessionKey: SESSION_KEY,
       source: 'acp-session-update',
-      historical: true,
-      caption: 'Generated image is ready.',
+      ...(historical ? { historical: true } : {}),
+      caption: '图片生成完成！这是为你创建的蓝天白云风景图。',
+      authoritativeCaption: true,
     });
     expect(evidence?.candidates).toEqual([
       {

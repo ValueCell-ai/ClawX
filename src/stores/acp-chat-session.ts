@@ -599,6 +599,70 @@ function imageCandidateUri(candidate: ImageGenerationMediaCandidate): string {
   return candidate.gatewayUrl ?? candidate.filePath ?? candidate.key;
 }
 
+function mergeImagePartsIntoAssistantMediaDirective(
+  timeline: AcpTimelineSnapshot,
+  evidence: ImageGenerationCompletionEvidence,
+  imageParts: RenderPart[],
+): AcpTimelineSnapshot | null {
+  if (imageParts.length === 0) return null;
+  const candidateUris = new Set(evidence.candidates.map(imageCandidateUri));
+
+  for (let index = timeline.itemOrder.length - 1; index >= 0; index -= 1) {
+    const itemId = timeline.itemOrder[index];
+    const item = itemId ? timeline.itemsById[itemId] : undefined;
+    if (
+      item?.kind !== 'message-segment'
+      || item.role !== 'assistant'
+      || item.compat
+      || (evidence.messageId && item.messageId !== evidence.messageId)
+    ) continue;
+
+    let removedDirective = false;
+    const strippedParts = item.parts.flatMap((part): RenderPart[] => {
+      if (part.kind !== 'markdown') return [part];
+      let removedFromPart = false;
+      const lines = part.text.split(/\r?\n/).filter((line) => {
+        const match = line.match(/^\s*MEDIA:\s*(.*?)\s*$/i);
+        if (!match || !candidateUris.has(match[1] ?? '')) return true;
+        removedDirective = true;
+        removedFromPart = true;
+        return false;
+      });
+      if (!removedFromPart) return [part];
+      const text = lines.join('\n')
+        .replace(/^(?:[ \t]*\n)+/, '')
+        .replace(/(?:\n[ \t]*)+$/, '');
+      return text ? [{ ...part, text }] : [];
+    });
+    if (!removedDirective) continue;
+
+    const existingMedia = new Set(strippedParts.flatMap((part) => (
+      part.kind === 'image' && part.mediaIdentity ? [part.mediaIdentity] : []
+    )));
+    const newImages = imageParts.filter((part) => (
+      part.kind !== 'image' || !part.mediaIdentity || !existingMedia.has(part.mediaIdentity)
+    ));
+    const hasVisibleContent = strippedParts.some((part) => (
+      part.kind !== 'markdown' || part.text.trim().length > 0
+    ));
+    const parts = [
+      ...(!hasVisibleContent && evidence.caption.trim()
+        ? [{ kind: 'markdown' as const, text: evidence.caption }]
+        : strippedParts),
+      ...newImages,
+    ];
+    return {
+      ...timeline,
+      itemsById: {
+        ...timeline.itemsById,
+        [item.id]: { ...item, parts },
+      },
+    };
+  }
+
+  return null;
+}
+
 function safeAttachmentName(uri: string): string {
   let value = uri;
   try {
@@ -1813,6 +1877,36 @@ export const useAcpChatSessionStore = create<AcpChatSessionState>((set, get) => 
         : missingCount > 0
           ? i18n.t('chat:imageGeneration.generatedReadyWithMissing')
           : i18n.t('chat:imageGeneration.generatedReady');
+    let mergedIntoAssistant = false;
+    if (imageParts.length > 0) {
+      set((current) => {
+        if (current.activeSessionKey !== sessionKey || current.generation !== generation) return {};
+        const timeline = mergeImagePartsIntoAssistantMediaDirective(current.timeline, evidence, imageParts);
+        if (!timeline) return {};
+        mergedIntoAssistant = true;
+        return {
+          timeline,
+          pendingImageGenerationTaskIds: settlePendingTask(current),
+        };
+      });
+    }
+    if (mergedIntoAssistant) {
+      if (missingCount === 0) commitDelivery(sessionKey, key, reservationOwner);
+      else releaseDelivery(sessionKey, key, reservationOwner);
+      recordProjectionTrace({
+        event: 'image-generation:projection-appended',
+        sessionKey,
+        generation,
+        details: projectionTraceDetails(evidence, {
+          reason: 'assistant-media-directive',
+          imageCount: imageParts.length,
+          missingCount,
+        }),
+      });
+      stopLiveTranscriptSupplementRetry(sessionKey, generation, correlatedTaskId);
+      return;
+    }
+
     const duplicateItemId = matchingSyntheticImageItemId(latest.timeline, imageParts);
     if (duplicateItemId) {
       const existingItem = latest.timeline.itemsById[duplicateItemId];

@@ -3127,17 +3127,71 @@ describe('ACP Chat store', () => {
       }],
     });
     const timeline = useAcpChatSessionStore.getState().timeline;
-    const syntheticId = timeline.itemOrder.find((id) => id.startsWith('compat:image-generation:'));
-    expect(syntheticId).toBeTruthy();
-    expect(timeline.itemsById[syntheticId!]).toMatchObject({
+    expect(timeline.itemOrder.some((id) => id.startsWith('compat:image-generation:'))).toBe(false);
+    expect(timeline.itemsById['replayed-image-result:0']).toMatchObject({
       kind: 'message-segment',
       role: 'assistant',
-      compat: { source: 'image-generation' },
       parts: [
-        { kind: 'markdown', text: 'Generated image is ready.' },
+        { kind: 'markdown', text: '图片生成完成！这是为你创建的蓝天白云风景图。' },
         { kind: 'image', source: 'data:image/png;base64,replayed-media-text', mimeType: 'image/png', alt: 'Image' },
       ],
     });
+    expect(JSON.stringify(timeline.itemsById['replayed-image-result:0'])).not.toContain('MEDIA:');
+  });
+
+  it('hydrates a live ACP assistant MEDIA completion in place after a matching image task start', async () => {
+    const taskId = '32aa3a12-a05b-4074-af4e-246cc4a9a303';
+    const generatedPath = '/Users/me/.openclaw/media/tool-image-generation/live-steak.png';
+    const { ensureAcpChatSubscriptions, useAcpChatSessionStore } = await importStore();
+    ensureAcpChatSubscriptions();
+    await useAcpChatSessionStore.getState().loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
+    hostApiMock.mediaThumbnails.mockResolvedValueOnce({
+      [generatedPath]: { preview: 'data:image/png;base64,live-steak', fileSize: 67 },
+    });
+
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'image-tool',
+          status: 'completed',
+          content: [{
+            type: 'content',
+            content: { type: 'text', text: `Background task started for image generation (${taskId}).` },
+          }],
+        },
+      },
+    });
+    hostEventsMock.updateListener?.({
+      sessionKey: 'agent:pi:s1',
+      generation: 1,
+      notification: {
+        sessionId: 'agent:pi:s1',
+        update: {
+          sessionUpdate: 'agent_message',
+          messageId: 'live-image-result',
+          content: [{
+            type: 'text',
+            text: `牛排来了 🥩\n\nMEDIA:${generatedPath}`,
+          }],
+        },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const timeline = useAcpChatSessionStore.getState().timeline;
+    expect(timeline.itemsById['live-image-result:0']).toMatchObject({
+      kind: 'message-segment',
+      role: 'assistant',
+      parts: [
+        { kind: 'markdown', text: '牛排来了 🥩' },
+        { kind: 'image', source: 'data:image/png;base64,live-steak', mimeType: 'image/png', alt: 'Image' },
+      ],
+    });
+    expect(JSON.stringify(timeline)).not.toContain('MEDIA:');
   });
 
   it('does not let historical replay context authorize live ACP media updates', async () => {

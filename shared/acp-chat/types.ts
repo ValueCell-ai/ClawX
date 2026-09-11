@@ -45,6 +45,7 @@ export type AcpChatLoadPayload = AcpSessionKeyPayload & {
 export type AcpPromptMediaItem = {
   filePath: string;
   stagingId: string;
+  sourceKind?: 'path' | 'buffer';
   fileName?: string;
   mimeType?: string;
 };

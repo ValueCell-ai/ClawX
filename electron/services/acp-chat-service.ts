@@ -889,7 +889,12 @@ export class AcpChatService {
       const fsP = await import('node:fs/promises');
       for (const item of media) {
         const mimeType = item.mimeType || 'application/octet-stream';
-        if (mimeType.startsWith('image/')) {
+        // A native file picker or drag/drop already gives Main a stable path.
+        // Keep that image as an ACP resource link: OpenClaw otherwise converts
+        // inline image bytes into a second ~/.openclaw/media/inbound file for
+        // text-only models, hiding the source path from the agent. Clipboard
+        // images have no stable source and must continue through inline bytes.
+        if (mimeType.startsWith('image/') && item.sourceKind !== 'path') {
           const data = await fsP.readFile(item.filePath, 'base64');
           blocks.push({
             type: 'image',
