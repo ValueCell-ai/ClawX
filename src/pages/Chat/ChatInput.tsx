@@ -47,6 +47,7 @@ export interface FileAttachment {
   mimeType: string;
   fileSize: number;
   stagedPath: string;        // Host-authorized source or buffer-staging path included in ACP prompt media
+  sourceKind: 'path' | 'buffer';
   preview: string | null;    // data URL for images, null for others
   status: 'staging' | 'ready' | 'error';
   error?: string;
@@ -786,6 +787,7 @@ export function ChatInput({
         mimeType: '',
         fileSize: 0,
         stagedPath: '',
+        sourceKind: 'path',
         preview: null,
         status: 'staging' as const,
       }]);
@@ -853,6 +855,7 @@ export function ChatInput({
         mimeType: file.type || 'application/octet-stream',
         fileSize: file.size,
         stagedPath: '',
+        sourceKind: 'buffer',
         preview: null,
         status: 'staging' as const,
       }]);

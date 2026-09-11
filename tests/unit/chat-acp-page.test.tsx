@@ -179,6 +179,7 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
             status: 'ready',
             id: 'staged-ready',
             stagedPath: '/tmp/ready.png',
+            sourceKind: 'path',
             fileName: 'ready.png',
             mimeType: 'image/png',
           },
@@ -186,6 +187,7 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
             status: 'staging',
             id: 'staged-pending',
             stagedPath: '/tmp/staging.txt',
+            sourceKind: 'path',
             fileName: 'staging.txt',
             mimeType: 'text/plain',
           },
@@ -402,7 +404,7 @@ describe('ACP Chat page', () => {
       cwd: '/workspace',
       message: 'Ship it',
       media: [{
-        filePath: '/tmp/ready.png', stagingId: 'staged-ready', fileName: 'ready.png', mimeType: 'image/png',
+        filePath: '/tmp/ready.png', stagingId: 'staged-ready', sourceKind: 'path', fileName: 'ready.png', mimeType: 'image/png',
       }],
     });
 

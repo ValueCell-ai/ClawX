@@ -83,7 +83,7 @@ ClawX 预置了最佳实践的模型供应商配置，原生支持 Windows 平�
 - **📡 多频道管理**：同时配置和监控多个 AI 频道，每个频道独立运行并支持多账号；内置腾讯官方个人微信渠道插件。
 - **⏰ 定时任务自动化**：可视化定义触发器与时间间隔，让 AI 智能体 7×24 小时自动运行；支持周期（每小时/每天/工作日/每周/自定义 cron）与单次执行，并可将结果自动投递到外部频道。
 - **🧩 可扩展技能系统**：本地优先的技能管理，扫描托管与 workspace 技能目录，无需依赖 Gateway 即可启用或停用技能；预装文档处理技能（`pdf`、`xlsx`、`docx`、`pptx`）。
-- **🔐 安全的供应商集成**：支持 OpenAI、Anthropic、Z.AI / GLM 等供应商，凭证经系统原生密钥链安全存储，同时提供自定义 Provider 与兼容网关的降级探测；中文界面的供应商目录还会提供 TokenDance，支持带 PKCE 与 ClawX 请求归因的浏览器 OAuth。在开发者模式下，请前往 **模型 → 图像生成** 配置生图端点。
+- **🔐 安全的供应商集成**：支持 OpenAI、Anthropic、Z.AI / GLM 等供应商，凭证经系统原生密钥链安全存储，同时提供自定义 Provider 与兼容网关的降级探测；中文界面的供应商目录还会提供 TokenDance，支持带 PKCE 与 ClawX 请求归因的浏览器 OAuth。在开发者模式下，请前往 **模型 → 图像生成** 配置生图端点；生成完成的图片会直接显示在聊天中，而不会暴露 OpenClaw 的原始 `MEDIA:` 路径。
 - **💻 本机 Computer Use**：在 macOS 13+（Intel 或 Apple 芯片）和 Windows x64 上，Agent 可通过内置的原生 CUA CLI 操作窗口、辅助功能元素、菜单和桌面，并验证结果。主显示器截图和输入能力继续保留。驱动在本机运行，不需要 OpenClaw 节点配对或运行时额外下载组件。
 - **🌙 自适应主题**：支持浅色、深色与跟随系统主题。
 - **🚀 开机启动控制**：在 设置 → 通用 中开启开机自动启动。
@@ -179,7 +179,7 @@ ClawX 采用 **双进程 + Host API 统一接入架构**：React 渲染进程只
 - **进程模型**：Electron 主进程负责窗口、网关进程监控、系统集成与自动更新；OpenClaw Gateway 作为独立运行时进程提供 AI 编排、频道和技能能力；渲染层不直接访问本地端点。
 - **本机 Computer Use**：Electron Main 保留 `EmbeddedCuaDriverHost`、原生 SDK 加载、权限检查和 daemon 监督。`CLAWX_CUA_CONNECTION_FILE` 指向私有描述符 `{ v: 2, generation, driverVersion, binaryPath, socketPath }`。OpenClaw 现有的 `exec` 使用描述符中的内置程序绝对路径及显式 socket 调用 CLI，`read` 向模型提供截图。整个流程不使用自定义插件、MCP 代理、node host、配对或运行时下载。
 - **配置交付**：Gateway 运行时由 Main 使用 `config.get` / `config.set`，停止或启动中则更新解析后的 JSON5 配置；普通 Provider/Agent/Skill/模型修改不会替换进程，凭据通过 `secrets.reload` 热更新。连续三分钟没有已验证的 Gateway 活动后，ClawX 会验证核心 RPC，并且只重启其自身拥有且不可用的 Gateway 进程；外部管理的 Gateway 保留给用户手动恢复。
-- **ACP Chat**：Chat UI 基于 ACP ([Agent Client Protocol](https://agentclientprotocol.com)) 与 OpenClaw 交互，从而在高速迭代的 OpenClaw 前找到相对稳定的聊天协议面。ACP 走 Main 持有的 stdio bridge，支持配置热重载后的历史回放认证、跨页面持续流式输出，以及由 Main 验证和加载的媒体/附件/文件活动（Changes）展示。通过原生拖拽或文件选择器添加的文件直接引用其规范化源路径，不再创建 ClawX 暂存副本，因此源文件后续发生修改、移动或删除时会影响附件；剪贴板等没有稳定路径的字节附件仍使用受保护的临时暂存。当 ACP 遗漏资源块时，经 OpenClaw internal-UI message 工具确认交付的生成文件（包括 Excel 工作簿）会恢复为附件卡片。当受保护的 Gateway 重启中断已接收的对话轮次时，补丁后的 OpenClaw 运行时会将恢复 run 显式关联到原 ACP prompt，使后续文本和工具活动继续进入同一个内存轮次；之后的历史回放也会以原生 ACP 更新恢复持久化的工具边界。如果最终答复持久化后再次重启导致终态通知丢失，按 run 和会话范围执行的结算会结束 pending prompt，避免 Chat 一直显示执行中。
+- **ACP Chat**：Chat UI 基于 ACP ([Agent Client Protocol](https://agentclientprotocol.com)) 与 OpenClaw 交互，从而在高速迭代的 OpenClaw 前找到相对稳定的聊天协议面。ACP 走 Main 持有的 stdio bridge，支持配置热重载后的历史回放认证、跨页面持续流式输出，以及由 Main 验证和加载的媒体/附件/文件活动（Changes）展示。通过原生拖拽或文件选择器添加的文件直接引用其规范化源路径，不再创建 ClawX 暂存副本；有路径的图片会继续作为 ACP 资源链接传递，不会再被 OpenClaw 重新写入 `media/inbound`，因此源文件后续发生修改、移动或删除时会影响附件。剪贴板等没有稳定路径的字节附件仍使用受保护的临时暂存和内联图片传输。当 ACP 遗漏资源块时，经 OpenClaw internal-UI message 工具确认交付的生成文件（包括 Excel 工作簿）会恢复为附件卡片。当受保护的 Gateway 重启中断已接收的对话轮次时，补丁后的 OpenClaw 运行时会将恢复 run 显式关联到原 ACP prompt，使后续文本和工具活动继续进入同一个内存轮次；之后的历史回放也会以原生 ACP 更新恢复持久化的工具边界。如果最终答复持久化后再次重启导致终态通知丢失，按 run 和会话范围执行的结算会结束 pending prompt，避免 Chat 一直显示执行中。
 - **设计原则**：前端调用单一入口、Main 掌控传输策略、优雅恢复（重连/超时/退避）、安全存储与 CORS 安全。
 
 > 完整架构说明（进程图、配置协调、ACP 文件活动语义与 Gateway 排障）请参阅 [docs/zh-CN/architecture.md](docs/zh-CN/architecture.md)。

@@ -538,28 +538,22 @@ test.describe('ClawX chat run state events', () => {
       const image = timeline.getByRole('img', { name: 'Image' });
       await expect(image).toBeVisible();
       await expect(image).toHaveAttribute('src', ONE_PIXEL_PNG_DATA_URL);
+      await expect(page.getByText(/MEDIA:/)).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }
   });
 
-  test('does not render plain MEDIA assistant text as an image', async ({ launchElectronApp }) => {
+  test('renders a live ACP assistant MEDIA completion after its image-generation task', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
-    const untrustedPath = '/tmp/not-trusted.png';
+    const generatedPath = '/Users/me/.openclaw/media/tool-image-generation/live-steak.png';
 
     try {
-      await installAcpChatMocks(app, { success: true, generation: 1 }, {
-        [stableStringify(['media', 'thumbnails', {
-          paths: [{ filePath: untrustedPath, mimeType: 'image/png' }],
-        }])]: {
-          [untrustedPath]: { preview: ONE_PIXEL_PNG_DATA_URL, fileSize: 67 },
-        },
-        [stableStringify(['media', 'thumbnails', {
-          paths: [{ filePath: untrustedPath }],
-        }])]: {
-          [untrustedPath]: { preview: ONE_PIXEL_PNG_DATA_URL, fileSize: 67 },
-        },
-      });
+      await installAcpChatMocks(
+        app,
+        { success: true, generation: 1 },
+        generatedImageHostApiMocks(generatedPath, 'e2e-live-generated-image'),
+      );
       const page = await openChat(app);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
 
@@ -579,14 +573,53 @@ test.describe('ClawX chat run state events', () => {
         },
         {
           sessionUpdate: 'agent_message',
-          messageId: 'plain-media-text',
-          content: [{ type: 'text', text: `MEDIA: ${untrustedPath}` }],
+          messageId: 'live-image-result',
+          content: [{
+            type: 'text',
+            text: `Steak is ready.\n\nMEDIA:${generatedPath}`,
+          }],
         },
       ]);
 
       const timeline = page.getByTestId('acp-chat-timeline');
+      await expect(page.getByText('Steak is ready.', { exact: true })).toBeVisible();
+      await expect(timeline.getByTestId('acp-image-part')).toBeVisible();
+      await expect(timeline.getByRole('img', { name: 'Image' })).toHaveAttribute('src', ONE_PIXEL_PNG_DATA_URL);
+      await expect(page.getByText(/MEDIA:/)).toHaveCount(0);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('does not render plain MEDIA assistant text without image-generation context', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const untrustedPath = '/tmp/not-trusted.png';
+
+    try {
+      await installAcpChatMocks(app, { success: true, generation: 1 }, {
+        [stableStringify(['media', 'thumbnails', {
+          paths: [{ filePath: untrustedPath, mimeType: 'image/png' }],
+        }])]: {
+          [untrustedPath]: { preview: ONE_PIXEL_PNG_DATA_URL, fileSize: 67 },
+        },
+        [stableStringify(['media', 'thumbnails', {
+          paths: [{ filePath: untrustedPath }],
+        }])]: {
+          [untrustedPath]: { preview: ONE_PIXEL_PNG_DATA_URL, fileSize: 67 },
+        },
+      });
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
+
+      await emitAcpSessionUpdates(app, [{
+        sessionUpdate: 'agent_message',
+        messageId: 'plain-media-text',
+        content: [{ type: 'text', text: `MEDIA:${untrustedPath}` }],
+      }]);
+
+      const timeline = page.getByTestId('acp-chat-timeline');
       await expect(timeline).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByText(`MEDIA: ${untrustedPath}`)).toBeVisible();
+      await expect(page.getByText(`MEDIA:${untrustedPath}`)).toBeVisible();
       await expect(timeline.getByTestId('acp-image-part')).toHaveCount(0);
       await expect(timeline.getByRole('img', { name: 'Image' })).toHaveCount(0);
     } finally {

@@ -22,6 +22,7 @@ export type ImageGenerationMediaCandidate = MediaThumbnailEntry & {
 
 export type ImageGenerationCompletionEvidence = {
   sessionKey?: string;
+  messageId?: string;
   source: 'gateway-chat-message' | 'runtime-event' | 'acp-session-update' | 'transcript-history';
   historical?: boolean;
   taskId?: string;
@@ -272,16 +273,20 @@ export function extractImageGenerationCompletionFromAcpEnvelope(
   if (!update) return null;
 
   const sessionUpdate = stringValue(update.sessionUpdate);
-  if (event.historical && (sessionUpdate === 'agent_message' || sessionUpdate === 'agent_message_chunk')) {
-    const candidates = collectMediaTagCandidates(textFromMessageContent(update.content));
+  if (sessionUpdate === 'agent_message' || sessionUpdate === 'agent_message_chunk') {
+    const assistantText = textFromMessageContent(update.content);
+    const candidates = collectMediaTagCandidates(assistantText);
     if (candidates.length === 0) return null;
     const messageId = stringValue(update.messageId) ?? 'unknown-message';
+    const caption = visibleAssistantText(assistantText);
     return {
       sessionKey: event.sessionKey,
       source: 'acp-session-update',
-      historical: true,
+      ...(messageId !== 'unknown-message' ? { messageId } : {}),
+      ...(event.historical ? { historical: true } : {}),
       evidenceId: `acp:${event.sessionKey}:${messageId}:${candidates.map((entry) => entry.key).join('|')}`,
-      caption: GENERATED_IMAGE_CAPTION,
+      caption: caption ?? GENERATED_IMAGE_CAPTION,
+      ...(caption ? { authoritativeCaption: true } : {}),
       candidates,
     };
   }

@@ -136,14 +136,18 @@ test.describe('ACP media attachments', () => {
     }
   });
 
-  test('sends a dropped native file from its canonical source path', async ({ launchElectronApp }) => {
+  test('sends a dropped native image from its canonical source path', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
       const fixture = await installAttachmentHostFixture(app, {
         sessions: [{ key: MAIN_SESSION_KEY, title: 'Main session' }],
       });
-      const sourcePath = await fixture.createWorkspaceFile('direct-source.txt', 'live source bytes');
+      const imageBytes = Uint8Array.from(Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+        'base64',
+      ));
+      const sourcePath = await fixture.createWorkspaceFile('direct-source.png', imageBytes);
       await fixture.setSessionReplay(MAIN_SESSION_KEY, []);
       await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [[]]);
 
@@ -151,7 +155,7 @@ test.describe('ACP media attachments', () => {
       await page.evaluate((path) => {
         const target = document.querySelector('[data-testid="chat-composer-input"]');
         if (!target) throw new Error('Missing chat composer input');
-        const file = new File(['synthetic drag metadata'], 'direct-source.txt', { type: 'text/plain' });
+        const file = new File(['synthetic drag metadata'], 'direct-source.png', { type: 'image/png' });
         Object.defineProperty(file, 'path', { value: path });
         const dataTransfer = new DataTransfer();
         dataTransfer.items.add(file);
@@ -162,7 +166,7 @@ test.describe('ACP media attachments', () => {
         }));
       }, sourcePath);
 
-      await expect(page.getByText('direct-source.txt', { exact: true })).toBeVisible();
+      await expect(page.getByAltText('direct-source.png', { exact: true })).toBeVisible();
       await page.getByTestId('chat-composer-input').fill('Read this source directly');
       await page.getByTestId('chat-composer-send').click();
 

@@ -103,6 +103,7 @@ describe('workspace-scoped files api', () => {
       mimeType: 'text/plain',
       fileSize: 5,
       stagedPath: canonicalFilePath,
+      sourceKind: 'path',
       preview: null,
     });
     expect(directoryResult).toMatchObject({
@@ -110,6 +111,7 @@ describe('workspace-scoped files api', () => {
       mimeType: 'application/x-directory',
       fileSize: 0,
       stagedPath: canonicalDirectoryPath,
+      sourceKind: 'path',
       preview: null,
     });
     await expect(stat(join(testDir, '.openclaw', 'media', 'outbound', 'clawx-staging')))
@@ -130,6 +132,7 @@ describe('workspace-scoped files api', () => {
 
     expect(stagedAttachments.get(result.id)).toBe(await realpath(result.stagedPath));
     expect(stagedAttachments.getDisplayPath(result.id)).toBeNull();
+    expect(result.sourceKind).toBe('buffer');
     expect(result.stagedPath).toContain(join('media', 'outbound', 'clawx-staging'));
   });
 

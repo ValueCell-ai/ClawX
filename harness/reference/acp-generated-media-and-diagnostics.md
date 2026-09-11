@@ -10,7 +10,7 @@ Related tasks: `acp-image-generation-compatibility`, `acp-historical-transcript-
 
 ## Preferred And Compatibility Paths
 
-Standard ACP image, `resource_link`, and URI-backed `resource` content blocks are preferred and render directly. OpenClaw ACP currently projects assistant text and thought content but can omit assistant media, while Gateway processing removes `MEDIA:` directives from the visible live reply. ClawX handles those gaps through two bounded in-memory compatibility exceptions. Neither revives the legacy Chat renderer nor represents synthetic data as a native ACP event.
+Standard ACP image, `resource_link`, and URI-backed `resource` content blocks are preferred and render directly. OpenClaw ACP can omit assistant media; depending on the runtime path it may either remove a `MEDIA:` directive from the visible reply or replay that directive as assistant text without a resource block. ClawX handles those gaps through two bounded in-memory compatibility exceptions. Neither revives the legacy Chat renderer nor represents synthetic data as a native ACP event.
 
 ## Bounded Transcript Exceptions
 
@@ -33,10 +33,10 @@ The projector:
 2. Accepts completion text and media only from bounded, trusted fields or approved historical context.
 3. Requires the active session and generation to remain unchanged.
 4. Resolves local paths or Gateway media through `hostApi.media.thumbnails` in Main.
-5. Inserts a marked synthetic assistant segment after the associated tool when possible.
+5. When a trusted ACP assistant message contains the matching `MEDIA:` directive, removes that raw directive and hydrates the image in the same assistant segment; otherwise inserts a marked synthetic assistant segment after the associated tool when possible.
 6. Deduplicates repeated evidence and keeps all state in memory.
 
-Accepted live evidence includes structured media fields such as `mediaUrl`, `mediaUrls`, nested `sourceReply` media, assistant media attachments, OpenClaw ACP tool output explicitly associated with the internal UI sink, and final Gateway assistant replies whose `image_generate:<task-id>:ok|error` run matches the recorded task. For a correlated `message` tool delivery, `sourceReply.text` is the authoritative visible caption or failure explanation. A task-correlated final assistant reply may also provide the authoritative caption or text-only failure explanation. Arbitrary prose, unrelated runs or tools, failed delivery attempts, and unscoped local paths are rejected.
+Accepted live evidence includes structured media fields such as `mediaUrl`, `mediaUrls`, nested `sourceReply` media, assistant media attachments, an ACP assistant `MEDIA:` line received while the same session has fresh `image_generate` task context, OpenClaw ACP tool output explicitly associated with the internal UI sink, and final Gateway assistant replies whose `image_generate:<task-id>:ok|error` run matches the recorded task. For a correlated `message` tool delivery, `sourceReply.text` is the authoritative visible caption or failure explanation. A task-correlated final assistant reply may also provide the authoritative caption or text-only failure explanation. Arbitrary prose, unrelated runs or tools, failed delivery attempts, and unscoped local paths are rejected.
 
 When trusted source-reply text exists, it is preserved whether or not media is present. If no source-reply text exists, successful media uses the localized generic caption; partial or failed thumbnail hydration uses the existing localized fallback. Raw `MEDIA:` paths are never displayed.
 

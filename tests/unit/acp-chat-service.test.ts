@@ -1574,8 +1574,21 @@ describe('AcpChatService', () => {
         message: 'Inspect attachments',
         messageId: 'msg-user-1',
         media: [
-          { filePath: imagePath, stagingId: 'staged-image', mimeType: 'image/png', fileName: 'image.png' },
-          { filePath, stagingId: 'staged-notes', mimeType: 'text/plain', fileName: 'notes.txt' },
+          {
+            filePath: imagePath,
+            stagingId: 'selected-image',
+            sourceKind: 'path',
+            mimeType: 'image/png',
+            fileName: 'image.png',
+          },
+          {
+            filePath: imagePath,
+            stagingId: 'pasted-image',
+            sourceKind: 'buffer',
+            mimeType: 'image/png',
+            fileName: 'clipboard.png',
+          },
+          { filePath, stagingId: 'staged-notes', sourceKind: 'path', mimeType: 'text/plain', fileName: 'notes.txt' },
         ],
       })).resolves.toEqual({ success: true, generation: 1 });
 
@@ -1584,11 +1597,18 @@ describe('AcpChatService', () => {
         prompt: [
           { type: 'text', text: 'Inspect attachments' },
           {
+            type: 'resource_link',
+            uri: imagePath,
+            name: 'image.png',
+            mimeType: 'image/png',
+            _meta: { clawx: { stagingId: 'selected-image' } },
+          },
+          {
             type: 'image',
             data: Buffer.from('fake-image').toString('base64'),
             mimeType: 'image/png',
             uri: imagePath,
-            _meta: { clawx: { stagingId: 'staged-image', fileName: 'image.png' } },
+            _meta: { clawx: { stagingId: 'pasted-image', fileName: 'clipboard.png' } },
           },
           {
             type: 'resource_link',

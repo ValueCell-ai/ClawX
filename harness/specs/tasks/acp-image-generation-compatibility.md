@@ -34,6 +34,7 @@ expectedUserBehavior:
   - ACP Chat first shows the image_generate background task start tool result.
   - After the normal thinking state ends, the composer shows a distinct image-generation indicator until the generated image or a failure reply is rendered, including after switching away from and back to the conversation; users may edit a draft while another send is prevented.
   - When OpenClaw later exposes a trusted internal-UI source reply through ACP or Gateway host events, ClawX preserves its exact user-facing text instead of replacing it with a generic caption.
+  - When live or replayed ACP assistant content carries the completion as a `MEDIA:` line after a matching image-generation start, ClawX removes the raw directive and hydrates the image in that assistant message.
   - Successful replies include the hydrated image preview, while text-only generation failures remain visible as assistant replies.
   - Arbitrary local paths and generic MEDIA: prose without approved image-generation context are not rendered as images.
   - Renderer continues to use host-api/host-events and does not call Gateway HTTP directly.
@@ -53,13 +54,14 @@ requiredRules:
   - docs-sync
 requiredTests:
   - pnpm exec vitest run tests/unit/acp-image-generation-compat.test.ts tests/unit/acp-reducer.test.ts tests/unit/acp-chat-store.test.ts
-  - pnpm exec playwright test tests/e2e/chat-run-state-events.spec.ts -g "projects OpenClaw image-generation"
+  - pnpm exec playwright test tests/e2e/chat-run-state-events.spec.ts -g "image-generation|MEDIA"
   - pnpm run typecheck
   - pnpm run comms:replay
   - pnpm run comms:compare
 acceptance:
   - ClawX records recent image_generate background task context from ACP tool output.
   - ClawX accepts only trusted ACP or Gateway completion evidence that matches the active ACP session and recent image-generation context.
+  - Live and replayed ACP assistant `MEDIA:` completions with that context render inline in the matching assistant segment without exposing the raw directive.
   - Internal-UI sourceReply text is authoritative for both successful media replies and text-only failure replies.
   - ClawX hydrates previews through hostApi.media.thumbnails before rendering images.
   - Duplicate completion records do not create duplicate assistant image replies.
