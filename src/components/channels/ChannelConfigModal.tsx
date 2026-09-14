@@ -55,6 +55,7 @@ interface ChannelConfigModalProps {
   allowEditAccountId?: boolean;
   existingAccountIds?: string[];
   initialConfigValues?: Record<string, string>;
+  openDingTalkWorkspaceAuth?: boolean;
   agentId?: string;
   accountId?: string;
   onClose: () => void;
@@ -74,6 +75,7 @@ export function ChannelConfigModal({
   allowEditAccountId = false,
   existingAccountIds = [],
   initialConfigValues,
+  openDingTalkWorkspaceAuth = false,
   agentId,
   accountId,
   onClose,
@@ -91,7 +93,9 @@ export function ChannelConfigModal({
   const [validating, setValidating] = useState(false);
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [isExistingConfig, setIsExistingConfig] = useState(false);
-  const [dingtalkWorkspaceAuth, setDingtalkWorkspaceAuth] = useState<DingTalkWorkspaceAuthResult | null>(null);
+  const [dingtalkWorkspaceAuth, setDingtalkWorkspaceAuth] = useState<DingTalkWorkspaceAuthResult | null>(
+    openDingTalkWorkspaceAuth ? { success: true, status: 'needs_auth' } : null,
+  );
   const dingtalkWorkspaceAuthActiveRef = useRef(false);
   const firstInputRef = useRef<HTMLInputElement>(null);
   const [validationResult, setValidationResult] = useState<{
@@ -226,6 +230,15 @@ export function ChannelConfigModal({
     translateRef.current = t;
   }, [t]);
 
+  const completeDingtalkWorkspaceAuth = useCallback(async () => {
+    dingtalkWorkspaceAuthActiveRef.current = false;
+    toast.success(translateRef.current('dialog.dingtalkWorkspaceAuthSuccess'));
+    // Refresh the configured channel view so the authorization reminder and
+    // its action disappear as soon as DWS reports success.
+    await finishSaveRef.current('dingtalk');
+    onCloseRef.current();
+  }, []);
+
   useEffect(() => () => {
     if (dingtalkWorkspaceAuthActiveRef.current) {
       void hostApi.channels.dingtalkWorkspaceAuthCancel(resolvedAccountId);
@@ -241,9 +254,7 @@ export function ChannelConfigModal({
         if (stopped) return;
         setDingtalkWorkspaceAuth(result);
         if (result.status === 'authorized') {
-          dingtalkWorkspaceAuthActiveRef.current = false;
-          toast.success(translateRef.current('dialog.dingtalkWorkspaceAuthSuccess'));
-          onCloseRef.current();
+          await completeDingtalkWorkspaceAuth();
         }
       } catch {
         // The active CLI process remains authoritative; retry on the next tick.
@@ -254,7 +265,7 @@ export function ChannelConfigModal({
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [dingtalkWorkspaceAuth?.status, resolvedAccountId]);
+  }, [completeDingtalkWorkspaceAuth, dingtalkWorkspaceAuth?.status, resolvedAccountId]);
 
   const startDingtalkWorkspaceAuth = useCallback(async () => {
     setDingtalkWorkspaceAuth({ success: true, status: 'starting' });
@@ -263,9 +274,7 @@ export function ChannelConfigModal({
       const result = await hostApi.channels.dingtalkWorkspaceAuthStart(resolvedAccountId);
       setDingtalkWorkspaceAuth(result);
       if (result.status === 'authorized') {
-        dingtalkWorkspaceAuthActiveRef.current = false;
-        toast.success(t('dialog.dingtalkWorkspaceAuthSuccess'));
-        onClose();
+        await completeDingtalkWorkspaceAuth();
         return;
       }
       // Device flow does not open a browser itself. Desktop loopback OAuth
@@ -276,7 +285,7 @@ export function ChannelConfigModal({
     } catch {
       setDingtalkWorkspaceAuth({ success: false, status: 'error', errorCode: 'authorization_failed' });
     }
-  }, [onClose, resolvedAccountId, t]);
+  }, [completeDingtalkWorkspaceAuth, resolvedAccountId]);
 
   const skipDingtalkWorkspaceAuth = useCallback(() => {
     dingtalkWorkspaceAuthActiveRef.current = false;
@@ -650,7 +659,7 @@ export function ChannelConfigModal({
                 </p>
               </div>
 
-              {(dingtalkWorkspaceAuth.status === 'starting' || dingtalkWorkspaceAuth.status === 'needs_auth') && (
+              {dingtalkWorkspaceAuth.status === 'starting' && (
                 <div className="flex items-center justify-center gap-2 rounded-2xl border border-black/10 dark:border-white/10 p-5 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   {t('dialog.dingtalkWorkspaceAuthStarting')}
@@ -694,6 +703,15 @@ export function ChannelConfigModal({
                 <Button variant="outline" className={outlineButtonClasses} onClick={skipDingtalkWorkspaceAuth}>
                   {t('dialog.dingtalkWorkspaceAuthSkip')}
                 </Button>
+                {dingtalkWorkspaceAuth.status === 'needs_auth' && (
+                  <Button
+                    className={primaryButtonClasses}
+                    data-testid="dingtalk-workspace-auth-start"
+                    onClick={() => void startDingtalkWorkspaceAuth()}
+                  >
+                    {t('dialog.dingtalkWorkspaceAuthStart')}
+                  </Button>
+                )}
                 {(dingtalkWorkspaceAuth.status === 'error' || dingtalkWorkspaceAuth.status === 'unavailable') && (
                   <Button className={primaryButtonClasses} onClick={() => void startDingtalkWorkspaceAuth()}>
                     {t('dialog.dingtalkWorkspaceAuthRetry')}

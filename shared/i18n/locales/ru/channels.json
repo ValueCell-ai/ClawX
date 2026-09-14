@@ -32,11 +32,17 @@
         "bindingUpdated": "Привязка учётной записи обновлена",
         "defaultUpdated": "Учётная запись по умолчанию обновлена",
         "accountDeleted": "Учётная запись удалена",
-        "channelDeleted": "Канал удалён"
+        "channelDeleted": "Канал удалён",
+        "dingtalkWorkspaceAuthReset": "Авторизация DingTalk Workspace отменена",
+        "dingtalkWorkspaceAuthResetFailed": "Не удалось отменить авторизацию DingTalk Workspace"
     },
     "account": {
         "add": "Добавить учётную запись",
         "edit": "Редактировать",
+        "authorizeWorkspace": "Авторизовать рабочее пространство",
+        "resetWorkspaceAuth": "Отменить авторизацию рабочего пространства",
+        "resetWorkspaceAuthConfirm": "Отменить локально сохранённую авторизацию DingTalk Workspace? Настроенные учётные записи DingTalk используют её совместно. Чат продолжит работать, но календарь, документы, задачи и другие функции потребуется авторизовать снова.",
+        "resetWorkspaceAuthConfirmAction": "Отменить авторизацию",
         "delete": "Удалить учётную запись",
         "deleteChannel": "Удалить канал",
         "deleteConfirm": "Вы уверены, что хотите удалить эту учётную запись?",
@@ -106,6 +112,7 @@
         "dingtalkWorkspaceAuthOpen": "Открыть авторизацию DingTalk",
         "dingtalkWorkspaceAuthWaiting": "Ожидание авторизации. Этот шаг можно пропустить и использовать только чат.",
         "dingtalkWorkspaceAuthSkip": "Не сейчас",
+        "dingtalkWorkspaceAuthStart": "Авторизовать сейчас",
         "dingtalkWorkspaceAuthRetry": "Повторить",
         "dingtalkWorkspaceAuthSuccess": "Авторизация рабочего пространства DingTalk завершена",
         "dingtalkWorkspaceAuthErrors": {

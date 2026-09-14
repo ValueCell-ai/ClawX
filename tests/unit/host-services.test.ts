@@ -55,6 +55,7 @@ const {
   getDingTalkDwsOAuthStatusMock,
   startDingTalkDwsOAuthMock,
   cancelDingTalkDwsOAuthMock,
+  resetDingTalkDwsOAuthMock,
 } = vi.hoisted(() => ({
   applyNativeThemeSettingMock: vi.fn(),
   applyProxySettingsMock: vi.fn(),
@@ -138,6 +139,7 @@ const {
   getDingTalkDwsOAuthStatusMock: vi.fn(() => ({ status: 'needs_auth' })),
   startDingTalkDwsOAuthMock: vi.fn(),
   cancelDingTalkDwsOAuthMock: vi.fn(() => ({ status: 'needs_auth' })),
+  resetDingTalkDwsOAuthMock: vi.fn(() => ({ status: 'needs_auth' })),
 }));
 
 vi.mock('@electron/utils/store', () => ({
@@ -219,6 +221,7 @@ vi.mock('@electron/utils/dingtalk-dws', () => ({
   getDingTalkDwsOAuthStatus: (...args: unknown[]) => getDingTalkDwsOAuthStatusMock(...args),
   startDingTalkDwsOAuth: (...args: unknown[]) => startDingTalkDwsOAuthMock(...args),
   cancelDingTalkDwsOAuth: (...args: unknown[]) => cancelDingTalkDwsOAuthMock(...args),
+  resetDingTalkDwsOAuth: (...args: unknown[]) => resetDingTalkDwsOAuthMock(...args),
 }));
 
 vi.mock('@electron/utils/plugin-install', () => ({
@@ -389,6 +392,7 @@ describe('host services', () => {
       expiresAt: Date.now() + 900_000,
     });
     cancelDingTalkDwsOAuthMock.mockReturnValue({ status: 'needs_auth' });
+    resetDingTalkDwsOAuthMock.mockReturnValue({ status: 'needs_auth' });
     rmSync(logDir, { recursive: true, force: true });
     rmSync(testOpenClawConfigDir, { recursive: true, force: true });
     mkdirSync(logDir, { recursive: true });
@@ -1916,6 +1920,21 @@ describe('host services', () => {
       userCode: 'TEST-CODE',
     });
     expect(JSON.stringify(result)).not.toContain('ding-client-secret');
+  });
+
+  it('resets DingTalk workspace OAuth through the typed Channels API', async () => {
+    const gatewayManager = {
+      getStatus: vi.fn(() => ({ state: 'stopped', gatewayReady: false })),
+      rpc: vi.fn(),
+    };
+    const { createChannelsApi } = await import('@electron/services/channels-api');
+    const channelsApi = createChannelsApi({ gatewayManager: gatewayManager as never });
+
+    await expect(channelsApi.dingtalkWorkspaceAuthReset({
+      channelType: 'dingtalk',
+      accountId: 'default',
+    })).resolves.toEqual({ success: true, status: 'needs_auth' });
+    expect(resetDingTalkDwsOAuthMock).toHaveBeenCalledTimes(1);
   });
 
   it('returns diagnostics snapshot with channel view and log tails', async () => {

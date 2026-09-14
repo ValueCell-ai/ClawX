@@ -348,6 +348,25 @@ export function cancelDingTalkDwsOAuth(): DingTalkDwsOAuthSnapshot {
   return result;
 }
 
+export function resetDingTalkDwsOAuth(): DingTalkDwsOAuthSnapshot {
+  cancelDingTalkDwsOAuth();
+  const resolved = resolveDwsExecutable();
+  if (!resolved) return { status: 'unavailable' };
+
+  try {
+    execFileSync(resolved.executable, ['auth', 'reset', '--yes', '--format', 'json'], {
+      encoding: 'utf8',
+      timeout: 8000,
+      env: buildDwsEnv(resolved.packageDir),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    statusNoteCache = null;
+    return { status: 'needs_auth' };
+  } catch {
+    return { status: 'error', error: 'authorization_reset_failed' };
+  }
+}
+
 export function getDingTalkDwsOAuthStatus(
   credentials?: DingTalkDwsOAuthCredentials,
 ): DingTalkDwsOAuthSnapshot {
@@ -366,7 +385,10 @@ export async function startDingTalkDwsOAuth(
   }
   const resolved = resolveDwsExecutable();
   if (!resolved) return { status: 'unavailable' };
-  if (probeDingTalkDwsAuth(credentials) === 'authorized') return { status: 'authorized' };
+  if (probeDingTalkDwsAuth(credentials) === 'authorized') {
+    statusNoteCache = null;
+    return { status: 'authorized' };
+  }
 
   activeOAuthSnapshot = { status: 'starting' };
   let output = '';

@@ -125,6 +125,8 @@ export function Channels() {
   const [initialConfigValuesForModal, setInitialConfigValuesForModal] = useState<Record<string, string> | undefined>(
     undefined,
   );
+  const [openDingTalkWorkspaceAuth, setOpenDingTalkWorkspaceAuth] = useState(false);
+  const [resetDingTalkWorkspaceAccountId, setResetDingTalkWorkspaceAccountId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const convergenceRefreshTimersRef = useRef<number[]>([]);
   const fetchInFlightRef = useRef(false);
@@ -353,6 +355,22 @@ export function Channels() {
 
   const handleRefresh = () => {
     void fetchPageData({ probe: true, forceAgentsRefresh: true });
+  };
+
+  const handleResetDingTalkWorkspaceAuth = async () => {
+    const accountId = resetDingTalkWorkspaceAccountId;
+    if (!accountId) return;
+    try {
+      const result = await hostApi.channels.dingtalkWorkspaceAuthReset(accountId);
+      if (!result.success || result.status !== 'needs_auth') {
+        throw new Error(result.errorCode || 'authorization_reset_failed');
+      }
+      setResetDingTalkWorkspaceAccountId(null);
+      toast.success(t('toast.dingtalkWorkspaceAuthReset'));
+      await fetchPageData({ configOnly: true });
+    } catch {
+      toast.error(t('toast.dingtalkWorkspaceAuthResetFailed'));
+    }
   };
 
   const fetchDiagnosticsSnapshot = useCallback(async (): Promise<GatewayDiagnosticSnapshot> => {
@@ -670,17 +688,50 @@ export function Channels() {
                             </span>
                           </div>
                           {group.statusNote && (
-                            <p
-                              className="text-xs text-yellow-700 dark:text-yellow-400 mt-1"
-                              data-testid={`channel-note-${group.channelType}`}
-                            >
-                              {t(`health.reasons.${group.statusNote}`)}
-                            </p>
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                              <p
+                                className="text-xs text-yellow-700 dark:text-yellow-400"
+                                data-testid={`channel-note-${group.channelType}`}
+                              >
+                                {t(`health.reasons.${group.statusNote}`)}
+                              </p>
+                              {group.channelType === 'dingtalk' && group.statusNote === 'dingtalk_dws_auth_required' && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 rounded-full px-3 text-xs"
+                                  data-testid="dingtalk-workspace-authorize"
+                                  onClick={() => {
+                                    setSelectedChannelType('dingtalk');
+                                    setSelectedAccountId(group.defaultAccountId);
+                                    setAllowExistingConfigInModal(false);
+                                    setAllowEditAccountIdInModal(false);
+                                    setExistingAccountIdsForModal([]);
+                                    setInitialConfigValuesForModal(undefined);
+                                    setOpenDingTalkWorkspaceAuth(true);
+                                    setShowConfigModal(true);
+                                  }}
+                                >
+                                  {t('account.authorizeWorkspace')}
+                                </Button>
+                              )}
+                            </div>
                           )}
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2">
+                        {group.channelType === 'dingtalk' && !group.statusNote && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-xs rounded-full"
+                            data-testid="dingtalk-workspace-reset"
+                            onClick={() => setResetDingTalkWorkspaceAccountId(group.defaultAccountId)}
+                          >
+                            {t('account.resetWorkspaceAuth')}
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="outline"
@@ -871,6 +922,7 @@ export function Channels() {
           allowEditAccountId={allowEditAccountIdInModal}
           existingAccountIds={existingAccountIdsForModal}
           initialConfigValues={initialConfigValuesForModal}
+          openDingTalkWorkspaceAuth={openDingTalkWorkspaceAuth}
           showChannelName={false}
           onClose={() => {
             setShowConfigModal(false);
@@ -880,6 +932,7 @@ export function Channels() {
             setAllowEditAccountIdInModal(false);
             setExistingAccountIdsForModal([]);
             setInitialConfigValuesForModal(undefined);
+            setOpenDingTalkWorkspaceAuth(false);
           }}
           onChannelSaved={async () => {
             // The host may still be restarting Gateway for plugin activation.
@@ -892,6 +945,19 @@ export function Channels() {
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={resetDingTalkWorkspaceAccountId !== null}
+        title={t('account.resetWorkspaceAuth')}
+        message={t('account.resetWorkspaceAuthConfirm')}
+        confirmLabel={t('account.resetWorkspaceAuthConfirmAction')}
+        cancelLabel={t('common.cancel', 'Cancel')}
+        variant="destructive"
+        onConfirm={() => {
+          void handleResetDingTalkWorkspaceAuth();
+        }}
+        onCancel={() => setResetDingTalkWorkspaceAccountId(null)}
+      />
 
       <ConfirmDialog
         open={!!deleteTarget}

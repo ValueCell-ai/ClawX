@@ -32,11 +32,17 @@
         "bindingUpdated": "Account binding updated",
         "defaultUpdated": "Default account updated",
         "accountDeleted": "Account deleted",
-        "channelDeleted": "Channel deleted"
+        "channelDeleted": "Channel deleted",
+        "dingtalkWorkspaceAuthReset": "DingTalk workspace authorization removed",
+        "dingtalkWorkspaceAuthResetFailed": "Could not remove DingTalk workspace authorization"
     },
     "account": {
         "add": "Add Account",
         "edit": "Edit",
+        "authorizeWorkspace": "Authorize workspace",
+        "resetWorkspaceAuth": "Remove workspace authorization",
+        "resetWorkspaceAuthConfirm": "Remove the locally saved DingTalk workspace authorization? Configured DingTalk accounts share this authorization. Chat will continue to work, but calendar, docs, tasks, and other workspace features will require authorization again.",
+        "resetWorkspaceAuthConfirmAction": "Remove authorization",
         "delete": "Delete Account",
         "deleteChannel": "Delete channel",
         "deleteConfirm": "Are you sure you want to delete this account?",
@@ -106,6 +112,7 @@
         "dingtalkWorkspaceAuthOpen": "Open DingTalk Authorization",
         "dingtalkWorkspaceAuthWaiting": "Waiting for authorization. You can safely skip this step and use chat only.",
         "dingtalkWorkspaceAuthSkip": "Not Now",
+        "dingtalkWorkspaceAuthStart": "Authorize Now",
         "dingtalkWorkspaceAuthRetry": "Try Again",
         "dingtalkWorkspaceAuthSuccess": "DingTalk workspace authorization completed",
         "dingtalkWorkspaceAuthErrors": {

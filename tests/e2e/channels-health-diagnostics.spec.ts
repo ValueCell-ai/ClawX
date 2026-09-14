@@ -60,6 +60,8 @@ test.describe('Channels health diagnostics', () => {
 
   test('shows the optional DingTalk workspace authorization note without degrading chat status', async ({ electronApp, page }) => {
     await electronApp.evaluate(({ ipcMain }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__clawxDingTalkWorkspaceAuthorized = false;
       const originalHostInvoke = (ipcMain as unknown as {
         _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
       })._invokeHandlers?.get('host:invoke');
@@ -67,6 +69,27 @@ test.describe('Channels health diagnostics', () => {
 
       ipcMain.removeHandler('host:invoke');
       ipcMain.handle('host:invoke', async (event, request: { id?: string; module?: string; action?: string }) => {
+        if (request?.module === 'channels' && request.action === 'dingtalkWorkspaceAuthStart') {
+          return respond(request.id, {
+            success: true,
+            status: 'pending',
+            verificationUriComplete: 'https://login.dingtalk.com/oauth2/auth?client_id=test',
+            expiresAt: Date.now() + 600_000,
+          });
+        }
+        if (request?.module === 'channels' && request.action === 'dingtalkWorkspaceAuthStatus') {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const authorized = (globalThis as any).__clawxDingTalkWorkspaceAuthorized === true;
+          return respond(request.id, { success: true, status: authorized ? 'authorized' : 'pending' });
+        }
+        if (request?.module === 'channels' && request.action === 'dingtalkWorkspaceAuthCancel') {
+          return respond(request.id, { success: true, status: 'needs_auth' });
+        }
+        if (request?.module === 'channels' && request.action === 'dingtalkWorkspaceAuthReset') {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (globalThis as any).__clawxDingTalkWorkspaceAuthorized = false;
+          return respond(request.id, { success: true, status: 'needs_auth' });
+        }
         if (request?.module === 'channels' && request.action === 'accounts') {
           return respond(request.id, {
             success: true,
@@ -76,7 +99,10 @@ test.describe('Channels health diagnostics', () => {
                 channelType: 'dingtalk',
                 defaultAccountId: 'default',
                 status: 'connected',
-                statusNote: 'dingtalk_dws_auth_required',
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                ...((globalThis as any).__clawxDingTalkWorkspaceAuthorized
+                  ? {}
+                  : { statusNote: 'dingtalk_dws_auth_required' }),
                 accounts: [
                   {
                     accountId: 'default',
@@ -105,6 +131,26 @@ test.describe('Channels health diagnostics', () => {
     await page.getByTestId('sidebar-nav-channels').click();
     await expect(page.getByTestId('channel-status-dingtalk')).toHaveText(/Connected|已连接|接続済み|Подключ/);
     await expect(page.getByTestId('channel-note-dingtalk')).toContainText(/authorization|授权|認可|авторизац/i);
+
+    await page.getByTestId('dingtalk-workspace-authorize').click();
+    await expect(page.getByTestId('dingtalk-workspace-auth')).toBeVisible();
+    await page.getByTestId('dingtalk-workspace-auth-start').click();
+    await expect(page.getByRole('button', {
+      name: /Open DingTalk Authorization|打开钉钉授权|DingTalk 認可を開く|Открыть авторизацию DingTalk/i,
+    })).toBeVisible();
+
+    await electronApp.evaluate(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__clawxDingTalkWorkspaceAuthorized = true;
+    });
+    await expect(page.getByTestId('dingtalk-workspace-auth')).not.toBeVisible({ timeout: 8_000 });
+    await expect(page.getByTestId('dingtalk-workspace-authorize')).toHaveCount(0);
+
+    await page.getByTestId('dingtalk-workspace-reset').click();
+    await page.getByRole('button', {
+      name: /Remove authorization|取消授权|認可を解除|Отменить авторизацию/i,
+    }).click();
+    await expect(page.getByTestId('dingtalk-workspace-authorize')).toBeVisible();
   });
 
   test('shows external Gateway unavailability, keeps manual restart, and copies diagnostics', async ({ electronApp, page }) => {

@@ -32,11 +32,17 @@
         "bindingUpdated": "アカウントの紐付けを保存しました",
         "defaultUpdated": "デフォルトアカウントを更新しました",
         "accountDeleted": "アカウントを削除しました",
-        "channelDeleted": "チャンネルを削除しました"
+        "channelDeleted": "チャンネルを削除しました",
+        "dingtalkWorkspaceAuthReset": "DingTalk ワークスペース認可を解除しました",
+        "dingtalkWorkspaceAuthResetFailed": "DingTalk ワークスペース認可を解除できませんでした"
     },
     "account": {
         "add": "アカウントを追加",
         "edit": "編集",
+        "authorizeWorkspace": "ワークスペースを認可",
+        "resetWorkspaceAuth": "ワークスペース認可を解除",
+        "resetWorkspaceAuthConfirm": "この端末に保存された DingTalk ワークスペース認可を解除しますか？設定済みの DingTalk アカウントはこの認可を共有しています。解除後もチャットは利用できますが、カレンダー、ドキュメント、タスクなどは再認可が必要です。",
+        "resetWorkspaceAuthConfirmAction": "認可を解除",
         "delete": "アカウントを削除",
         "deleteChannel": "チャンネルを削除",
         "deleteConfirm": "このアカウントを削除してもよろしいですか？",
@@ -106,6 +112,7 @@
         "dingtalkWorkspaceAuthOpen": "DingTalk 認可を開く",
         "dingtalkWorkspaceAuthWaiting": "認可を待っています。この手順をスキップしてチャットのみを利用することもできます。",
         "dingtalkWorkspaceAuthSkip": "後で",
+        "dingtalkWorkspaceAuthStart": "今すぐ認可",
         "dingtalkWorkspaceAuthRetry": "再試行",
         "dingtalkWorkspaceAuthSuccess": "DingTalk ワークスペースの認可が完了しました",
         "dingtalkWorkspaceAuthErrors": {

@@ -42,6 +42,7 @@ import {
   cancelDingTalkDwsOAuth,
   getDingTalkDwsOAuthStatus,
   getDingTalkDwsStatusNote,
+  resetDingTalkDwsOAuth,
   startDingTalkDwsOAuth,
   type DingTalkDwsOAuthCredentials,
   type DingTalkDwsOAuthSnapshot,
@@ -1519,6 +1520,15 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
       const accountId = optionalString(payload, 'accountId');
       await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
       return toDingTalkWorkspaceAuthResult(cancelDingTalkDwsOAuth());
+    },
+    dingtalkWorkspaceAuthReset: async (payload) => {
+      const channelType = requireString(payload, 'channelType');
+      if (resolveStoredChannelType(channelType) !== 'dingtalk') {
+        throw new Error('DingTalk workspace authorization only supports the dingtalk channel');
+      }
+      const accountId = optionalString(payload, 'accountId');
+      await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
+      return toDingTalkWorkspaceAuthResult(resetDingTalkDwsOAuth());
     },
   };
 }

@@ -254,6 +254,12 @@ export const hostApi = {
         ...(accountId ? { accountId } : {}),
       }) as Promise<DingTalkWorkspaceAuthResult>
     ),
+    dingtalkWorkspaceAuthReset: (accountId?: string) => (
+      invokeHost('channels', 'dingtalkWorkspaceAuthReset', {
+        channelType: 'dingtalk',
+        ...(accountId ? { accountId } : {}),
+      }) as Promise<DingTalkWorkspaceAuthResult>
+    ),
   },
   agents: {
     list: () => invokeHost('agents', 'list'),

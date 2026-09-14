@@ -996,6 +996,7 @@ export type HostApiContract = {
     dingtalkWorkspaceAuthStart: (payload: ChannelAccountPayload) => DingTalkWorkspaceAuthResult;
     dingtalkWorkspaceAuthStatus: (payload: ChannelAccountPayload) => DingTalkWorkspaceAuthResult;
     dingtalkWorkspaceAuthCancel: (payload: ChannelAccountPayload) => DingTalkWorkspaceAuthResult;
+    dingtalkWorkspaceAuthReset: (payload: ChannelAccountPayload) => DingTalkWorkspaceAuthResult;
   };
   agents: {
     list: () => AgentSnapshotResult;

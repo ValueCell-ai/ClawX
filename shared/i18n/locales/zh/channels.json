@@ -32,11 +32,17 @@
         "bindingUpdated": "账号绑定已更新",
         "defaultUpdated": "默认账号已更新",
         "accountDeleted": "账号已删除",
-        "channelDeleted": "频道已删除"
+        "channelDeleted": "频道已删除",
+        "dingtalkWorkspaceAuthReset": "已取消钉钉办公能力授权",
+        "dingtalkWorkspaceAuthResetFailed": "无法取消钉钉办公能力授权"
     },
     "account": {
         "add": "添加账号",
         "edit": "编辑",
+        "authorizeWorkspace": "授权办公能力",
+        "resetWorkspaceAuth": "取消办公授权",
+        "resetWorkspaceAuthConfirm": "确定取消本机保存的钉钉办公能力授权吗？此授权由已配置的钉钉账号共享；取消后基础聊天仍可使用，但日历、文档、待办等办公能力需要重新授权。",
+        "resetWorkspaceAuthConfirmAction": "取消授权",
         "delete": "删除账号",
         "deleteChannel": "删除频道",
         "deleteConfirm": "确定要删除该账号吗？",
@@ -106,6 +112,7 @@
         "dingtalkWorkspaceAuthOpen": "打开钉钉授权",
         "dingtalkWorkspaceAuthWaiting": "正在等待授权。你也可以暂时跳过，仅使用聊天功能。",
         "dingtalkWorkspaceAuthSkip": "暂不授权",
+        "dingtalkWorkspaceAuthStart": "立即授权",
         "dingtalkWorkspaceAuthRetry": "重试",
         "dingtalkWorkspaceAuthSuccess": "钉钉办公能力授权成功",
         "dingtalkWorkspaceAuthErrors": {

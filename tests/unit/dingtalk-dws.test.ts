@@ -204,6 +204,23 @@ describe('dingtalk dws helpers', () => {
     expect(mockChildKill).toHaveBeenCalledWith('SIGTERM');
   });
 
+  it('resets persisted workspace authorization without putting credentials in arguments', async () => {
+    mockExistsSync.mockImplementation((input: string) => {
+      const value = String(input);
+      return value.includes('/tools/dingtalk-workspace-cli/bin/dws.js')
+        || value.includes('/tools/dingtalk-workspace-cli/vendor/dws');
+    });
+    mockExecFileSync.mockReturnValue('认证信息已重置');
+
+    const { resetDingTalkDwsOAuth } = await import('@electron/utils/dingtalk-dws');
+    expect(resetDingTalkDwsOAuth()).toEqual({ status: 'needs_auth' });
+    expect(mockExecFileSync).toHaveBeenCalledWith(
+      '/home/test/.openclaw/tools/dingtalk-workspace-cli/vendor/dws',
+      ['auth', 'reset', '--yes', '--format', 'json'],
+      expect.objectContaining({ stdio: ['ignore', 'pipe', 'pipe'] }),
+    );
+  });
+
   it('treats unauthenticated dws as a non-fatal office-skill warning', async () => {
     mockExistsSync.mockImplementation((input: string) => {
       const value = String(input);
