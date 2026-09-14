@@ -7,7 +7,7 @@
  * never copies dws skills into every agent home directory.
  */
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, type Dirent } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { delimiter, dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { app } from 'electron';
@@ -20,6 +20,21 @@ export const DINGTALK_DWS_MISSING = 'dingtalk_dws_missing';
 export const DINGTALK_DWS_AUTH_REQUIRED = 'dingtalk_dws_auth_required';
 
 export type DingTalkDwsAuthState = 'authorized' | 'needs_auth' | 'unavailable';
+export type DingTalkDwsOAuthState = DingTalkDwsAuthState | 'starting' | 'pending' | 'error';
+
+export type DingTalkDwsOAuthSnapshot = {
+  status: DingTalkDwsOAuthState;
+  verificationUri?: string;
+  verificationUriComplete?: string;
+  userCode?: string;
+  expiresAt?: number;
+  error?: string;
+};
+
+export type DingTalkDwsOAuthCredentials = {
+  clientId: string;
+  clientSecret: string;
+};
 
 const DWS_PLATFORM_ARCHIVES: Record<string, string> = {
   'darwin-x64': 'dws-darwin-amd64.tar.gz',
@@ -31,7 +46,16 @@ const DWS_PLATFORM_ARCHIVES: Record<string, string> = {
 };
 
 const STATUS_CACHE_MS = 30_000;
+const OAUTH_START_WAIT_MS = 20_000;
+const DEVICE_AUTH_FALLBACK_EXPIRES_SECONDS = 900;
+const LOOPBACK_AUTH_FALLBACK_EXPIRES_SECONDS = 600;
+const DEVICE_AUTH_EXIT_GRACE_MS = 1_500;
+const DEVICE_AUTH_OUTPUT_LIMIT = 32 * 1024;
 let statusNoteCache: { at: number; note?: string } | null = null;
+let activeOAuthProcess: ChildProcess | null = null;
+let activeOAuthSnapshot: DingTalkDwsOAuthSnapshot | null = null;
+let activeOAuthStartResolver: ((snapshot: DingTalkDwsOAuthSnapshot) => void) | null = null;
+let activeOAuthExpiryTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function getDingTalkDwsInstallDir(): string {
   return join(homedir(), '.openclaw', 'tools', 'dingtalk-workspace-cli');
@@ -190,20 +214,35 @@ export function isDingTalkDwsAvailable(): boolean {
   return resolveDingTalkDwsBinDir() != null;
 }
 
-export function probeDingTalkDwsAuth(): DingTalkDwsAuthState {
+function resolveDwsExecutable(): { packageDir: string; executable: string } | null {
   const packageDir = resolveDwsPackageDir();
-  if (!packageDir) return 'unavailable';
-  const vendorBin = join(packageDir, 'vendor', vendorBinaryName());
-  if (!existsSync(vendorBin)) return 'unavailable';
+  if (!packageDir) return null;
+  const executable = join(packageDir, 'vendor', vendorBinaryName());
+  return existsSync(executable) ? { packageDir, executable } : null;
+}
+
+function buildDwsEnv(
+  packageDir: string,
+  credentials?: DingTalkDwsOAuthCredentials,
+): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    PATH: `${join(packageDir, 'bin')}${delimiter}${process.env.PATH ?? ''}`,
+    DINGTALK_AGENT: 'DING_DWS_CLAW',
+    ...(credentials?.clientId ? { DWS_CLIENT_ID: credentials.clientId } : {}),
+    ...(credentials?.clientSecret ? { DWS_CLIENT_SECRET: credentials.clientSecret } : {}),
+  };
+}
+
+export function probeDingTalkDwsAuth(credentials?: DingTalkDwsOAuthCredentials): DingTalkDwsAuthState {
+  const resolved = resolveDwsExecutable();
+  if (!resolved) return 'unavailable';
 
   try {
-    const output = execFileSync(vendorBin, ['auth', 'status'], {
+    const output = execFileSync(resolved.executable, ['auth', 'status', '--format', 'json'], {
       encoding: 'utf8',
       timeout: 8000,
-      env: {
-        ...process.env,
-        PATH: `${join(packageDir, 'bin')}${delimiter}${process.env.PATH ?? ''}`,
-      },
+      env: buildDwsEnv(resolved.packageDir, credentials),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const parsed = JSON.parse(output) as { authenticated?: boolean };
@@ -211,6 +250,206 @@ export function probeDingTalkDwsAuth(): DingTalkDwsAuthState {
   } catch {
     return 'needs_auth';
   }
+}
+
+function stripAnsi(value: string): string {
+  // eslint-disable-next-line no-control-regex
+  return value.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, '');
+}
+
+export function classifyDingTalkDwsOAuthError(output: string): string {
+  const normalized = stripAnsi(output).toLowerCase();
+  if (/user_not_allowed|user not allowed|用户不在.*范围|不在应用.*范围/.test(normalized)) {
+    return 'authorization_user_not_allowed';
+  }
+  if (/access_denied|authorization_denied|拒绝授权|取消授权|用户取消/.test(normalized)) {
+    return 'authorization_denied';
+  }
+  if (/invalid_client|invalid client|client[_ ]?secret.*(?:invalid|incorrect)|appkey.*(?:invalid|不存在)/.test(normalized)) {
+    return 'authorization_invalid_client';
+  }
+  if (/尚未开启.*cli.*数据访问权限|未开启.*允许成员通过.*cli|cli.*access.*(?:disabled|not enabled)/.test(normalized)) {
+    return 'authorization_org_cli_disabled';
+  }
+  if (/permission[_ ]?denied|forbidden|missing.*scope|scope.*(?:missing|invalid)|权限不足|缺少.*权限/.test(normalized)) {
+    return 'authorization_permission_denied';
+  }
+  if (/network_error|network is unreachable|connection (?:refused|reset)|i\/o timeout|context deadline exceeded|网络.*(?:失败|异常|不可用)/.test(normalized)) {
+    return 'authorization_network_error';
+  }
+  if (/expired_token|device code.*expired|授权码.*过期/.test(normalized)) {
+    return 'authorization_expired';
+  }
+  return 'authorization_failed';
+}
+
+export function parseDingTalkDwsDeviceOutput(output: string): DingTalkDwsOAuthSnapshot | null {
+  const clean = stripAnsi(output);
+  const urls = clean.match(/https?:\/\/[^\s│]+/g) ?? [];
+  const verificationUriComplete = urls.find((url) => /[?&]user_code=/i.test(url));
+  const verificationUri = urls.find((url) => !/[?&]user_code=/i.test(url))
+    ?? verificationUriComplete?.replace(/\?user_code=.*$/i, '');
+  const encodedCode = verificationUriComplete?.match(/[?&]user_code=([^&#\s]+)/i)?.[1];
+  const displayedCode = clean.match(/(?:授权码|user[_ ]?code)\s*[:：]\s*([A-Z0-9-]+)/i)?.[1];
+  const userCode = encodedCode ? decodeURIComponent(encodedCode) : displayedCode;
+  if (!verificationUri || !userCode) return null;
+
+  const expiresSeconds = Number(clean.match(/(?:将在|expires?\s+in)\s*(\d+)\s*(?:秒|seconds?)/i)?.[1]);
+  const expiresIn = Number.isFinite(expiresSeconds) && expiresSeconds > 0
+    ? expiresSeconds
+    : DEVICE_AUTH_FALLBACK_EXPIRES_SECONDS;
+  return {
+    status: 'pending',
+    verificationUri,
+    verificationUriComplete: verificationUriComplete ?? `${verificationUri}?user_code=${encodeURIComponent(userCode)}`,
+    userCode,
+    expiresAt: Date.now() + expiresIn * 1000,
+  };
+}
+
+export function parseDingTalkDwsLoginOutput(output: string): DingTalkDwsOAuthSnapshot | null {
+  const deviceFlow = parseDingTalkDwsDeviceOutput(output);
+  if (deviceFlow) return deviceFlow;
+
+  const clean = stripAnsi(output);
+  const authorizationUrl = (clean.match(/https?:\/\/[^\s│]+/g) ?? [])
+    .find((url) => /login\.dingtalk\.com\/oauth2\/auth(?:\?|$)/i.test(url));
+  if (!authorizationUrl) return null;
+  return {
+    status: 'pending',
+    verificationUriComplete: authorizationUrl,
+    expiresAt: Date.now() + LOOPBACK_AUTH_FALLBACK_EXPIRES_SECONDS * 1000,
+  };
+}
+
+function clearOAuthExpiryTimer(): void {
+  if (activeOAuthExpiryTimer) clearTimeout(activeOAuthExpiryTimer);
+  activeOAuthExpiryTimer = null;
+}
+
+function terminateOAuthProcess(): void {
+  const child = activeOAuthProcess;
+  activeOAuthProcess = null;
+  if (!child || child.killed) return;
+  child.kill('SIGTERM');
+  const forceTimer = setTimeout(() => {
+    if (child.exitCode == null) child.kill('SIGKILL');
+  }, DEVICE_AUTH_EXIT_GRACE_MS);
+  forceTimer.unref?.();
+}
+
+export function cancelDingTalkDwsOAuth(): DingTalkDwsOAuthSnapshot {
+  clearOAuthExpiryTimer();
+  terminateOAuthProcess();
+  activeOAuthSnapshot = null;
+  const result: DingTalkDwsOAuthSnapshot = { status: 'needs_auth' };
+  activeOAuthStartResolver?.(result);
+  activeOAuthStartResolver = null;
+  return result;
+}
+
+export function getDingTalkDwsOAuthStatus(
+  credentials?: DingTalkDwsOAuthCredentials,
+): DingTalkDwsOAuthSnapshot {
+  if (activeOAuthSnapshot) return { ...activeOAuthSnapshot };
+  return { status: probeDingTalkDwsAuth(credentials) };
+}
+
+export async function startDingTalkDwsOAuth(
+  credentials: DingTalkDwsOAuthCredentials,
+): Promise<DingTalkDwsOAuthSnapshot> {
+  if (activeOAuthProcess || activeOAuthStartResolver) {
+    cancelDingTalkDwsOAuth();
+  } else {
+    clearOAuthExpiryTimer();
+    activeOAuthSnapshot = null;
+  }
+  const resolved = resolveDwsExecutable();
+  if (!resolved) return { status: 'unavailable' };
+  if (probeDingTalkDwsAuth(credentials) === 'authorized') return { status: 'authorized' };
+
+  activeOAuthSnapshot = { status: 'starting' };
+  let output = '';
+
+  return await new Promise<DingTalkDwsOAuthSnapshot>((resolve) => {
+    let startSettled = false;
+    let codeTimer: ReturnType<typeof setTimeout> | null = null;
+    const settleStart = (snapshot: DingTalkDwsOAuthSnapshot) => {
+      if (startSettled) return;
+      startSettled = true;
+      if (codeTimer) clearTimeout(codeTimer);
+      activeOAuthStartResolver = null;
+      resolve({ ...snapshot });
+    };
+    activeOAuthStartResolver = settleStart;
+
+    let child: ChildProcess;
+    try {
+      // Desktop loopback OAuth is intentional here. Unlike device flow, DWS
+      // can redirect to its local approval page when the organization has not
+      // yet enabled CLI data access, allowing the user to request approval
+      // from a primary administrator without falling back to a terminal.
+      child = spawn(resolved.executable, ['auth', 'login', '--format', 'json'], {
+        cwd: homedir(),
+        env: buildDwsEnv(resolved.packageDir, credentials),
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      });
+    } catch {
+      activeOAuthSnapshot = { status: 'error', error: 'authorization_failed' };
+      settleStart(activeOAuthSnapshot);
+      return;
+    }
+
+    activeOAuthProcess = child;
+    const consumeOutput = (chunk: Buffer | string) => {
+      output = `${output}${String(chunk)}`.slice(-DEVICE_AUTH_OUTPUT_LIMIT);
+      const parsed = parseDingTalkDwsLoginOutput(output);
+      if (!parsed || activeOAuthProcess !== child) return;
+      activeOAuthSnapshot = parsed;
+      clearOAuthExpiryTimer();
+      activeOAuthExpiryTimer = setTimeout(() => {
+        if (activeOAuthProcess !== child) return;
+        activeOAuthSnapshot = { status: 'error', error: 'authorization_expired' };
+        terminateOAuthProcess();
+      }, Math.max(0, (parsed.expiresAt ?? Date.now()) - Date.now()));
+      activeOAuthExpiryTimer.unref?.();
+      settleStart(parsed);
+    };
+    child.stdout?.on('data', consumeOutput);
+    child.stderr?.on('data', consumeOutput);
+
+    codeTimer = setTimeout(() => {
+      if (activeOAuthProcess !== child) return;
+      activeOAuthSnapshot = { status: 'error', error: 'authorization_start_timeout' };
+      terminateOAuthProcess();
+      settleStart(activeOAuthSnapshot);
+    }, OAUTH_START_WAIT_MS);
+    codeTimer.unref?.();
+
+    child.once('error', (error) => {
+      if (activeOAuthProcess === child) activeOAuthProcess = null;
+      clearOAuthExpiryTimer();
+      activeOAuthSnapshot = { status: 'error', error: error.message || 'authorization_failed' };
+      settleStart(activeOAuthSnapshot);
+    });
+    child.once('close', (code) => {
+      if (activeOAuthProcess !== child) return;
+      activeOAuthProcess = null;
+      clearOAuthExpiryTimer();
+      const status = code === 0 ? probeDingTalkDwsAuth(credentials) : 'needs_auth';
+      const error = code === 0 ? 'authorization_not_completed' : classifyDingTalkDwsOAuthError(output);
+      activeOAuthSnapshot = status === 'authorized'
+        ? { status: 'authorized' }
+        : { status: 'error', error };
+      if (activeOAuthSnapshot.status === 'error') {
+        // Do not log raw CLI output: it can contain a one-time authorization code.
+        logger.warn(`[dingtalk-dws] Workspace authorization failed (exit=${code ?? 'unknown'}, reason=${error})`);
+      }
+      statusNoteCache = null;
+      settleStart(activeOAuthSnapshot);
+    });
+  });
 }
 
 export function getDingTalkDwsStatusNote(): string | undefined {

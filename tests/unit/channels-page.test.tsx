@@ -44,6 +44,12 @@ vi.mock('@/lib/host-api', () => ({
       deleteBinding: (input: unknown) => hostApiCallMock('channels.deleteBinding', input),
       startLogin: (channelType: string, input?: unknown) => hostApiCallMock('channels.startLogin', { channelType, input }),
       cancelLogin: (channelType: string, input?: unknown) => hostApiCallMock('channels.cancelLogin', { channelType, input }),
+      dingtalkWorkspaceAuthStart: (accountId?: string) => hostApiCallMock('channels.dingtalkWorkspaceAuthStart', { accountId }),
+      dingtalkWorkspaceAuthStatus: (accountId?: string) => hostApiCallMock('channels.dingtalkWorkspaceAuthStatus', { accountId }),
+      dingtalkWorkspaceAuthCancel: (accountId?: string) => hostApiCallMock('channels.dingtalkWorkspaceAuthCancel', { accountId }),
+    },
+    shell: {
+      openExternal: (url: string) => hostApiCallMock('shell.openExternal', { url }),
     },
     diagnostics: {
       gatewaySnapshot: () => hostApiCallMock('diagnostics.gatewaySnapshot'),
@@ -313,6 +319,53 @@ describe('Channels page status refresh', () => {
     expect(postSaveAccountCalls).toEqual([
       ['channels.accounts', expect.objectContaining({ mode: 'config', probe: false })],
     ]);
+  });
+
+  it('offers DingTalk workspace authorization after a new bot is saved', async () => {
+    subscribeHostEventMock.mockImplementation(() => vi.fn());
+    hostApiCallMock.mockImplementation(async (path: string) => {
+      if (path === 'channels.accounts') return { success: true, channels: [] };
+      if (path === 'agents.list') return { success: true, agents: [] };
+      if (path === 'channels.validateCredentials') return { success: true, valid: true, warnings: [] };
+      if (path === 'channels.saveConfig') return { success: true };
+      if (path === 'channels.dingtalkWorkspaceAuthStatus') return { success: true, status: 'needs_auth' };
+      if (path === 'channels.dingtalkWorkspaceAuthStart') {
+        return {
+          success: true,
+          status: 'pending',
+          verificationUri: 'https://login.dingtalk.com/oauth2/device/verify.htm',
+          verificationUriComplete: 'https://login.dingtalk.com/oauth2/device/verify.htm?user_code=TEST-CODE',
+          userCode: 'TEST-CODE',
+        };
+      }
+      if (path === 'shell.openExternal') return { success: true };
+      if (path === 'channels.dingtalkWorkspaceAuthCancel') return { success: true, status: 'needs_auth' };
+      throw new Error(`Unexpected host API path: ${path}`);
+    });
+
+    render(<Channels />);
+    fireEvent.click(await screen.findByRole('button', { name: /DingTalk/ }));
+    fireEvent.change(document.getElementById('clientId') as HTMLInputElement, {
+      target: { value: 'ding-client-id' },
+    });
+    fireEvent.change(document.getElementById('clientSecret') as HTMLInputElement, {
+      target: { value: 'ding-client-secret' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'dialog.saveAndConnect' }));
+
+    await waitFor(() => {
+      expect(hostApiCallMock).toHaveBeenCalledWith('channels.dingtalkWorkspaceAuthStart', { accountId: undefined });
+    });
+    expect(await screen.findByTestId('dingtalk-workspace-code')).toHaveTextContent('TEST-CODE');
+    expect(hostApiCallMock).toHaveBeenCalledWith('shell.openExternal', {
+      url: 'https://login.dingtalk.com/oauth2/device/verify.htm?user_code=TEST-CODE',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'dialog.dingtalkWorkspaceAuthSkip' }));
+    await waitFor(() => {
+      expect(screen.queryByTestId('dingtalk-workspace-auth')).not.toBeInTheDocument();
+    });
+    expect(hostApiCallMock).toHaveBeenCalledWith('channels.dingtalkWorkspaceAuthCancel', { accountId: undefined });
   });
 
   it('validates Feishu credentials before saving and shows the localized rejection', async () => {

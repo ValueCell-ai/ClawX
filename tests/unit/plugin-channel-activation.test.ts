@@ -56,6 +56,17 @@ describe('ensurePluginChannelRuntimeActivated', () => {
     expect(restart).toHaveBeenCalledTimes(1);
   });
 
+  it('treats the official DingTalk __default__ runtime account as the persisted default account', async () => {
+    const { gateway, restart } = createGateway({
+      status: liveStatus('dingtalk', '__default__'),
+    });
+
+    await expect(ensurePluginChannelRuntimeActivated(gateway, 'dingtalk', 'default', {
+      sleep: async () => undefined,
+    })).resolves.toBe('already-live');
+    expect(restart).not.toHaveBeenCalled();
+  });
+
   it('treats a single unnamed runtime account as the default account', async () => {
     const { gateway, restart } = createGateway({
       status: {

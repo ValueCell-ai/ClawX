@@ -288,6 +288,22 @@ export type ChannelSaveConfigResult = HostSuccess & {
   activationPending?: boolean;
   warning?: string;
 };
+export type DingTalkWorkspaceAuthStatus =
+  | 'authorized'
+  | 'needs_auth'
+  | 'unavailable'
+  | 'starting'
+  | 'pending'
+  | 'error';
+export type DingTalkWorkspaceAuthResult = HostSuccess & {
+  status: DingTalkWorkspaceAuthStatus;
+  verificationUri?: string;
+  verificationUriComplete?: string;
+  userCode?: string;
+  expiresAt?: number;
+  /** Stable Main-owned error code; Renderer localizes it. */
+  errorCode?: string;
+};
 export type ChannelConfiguredResult = HostSuccess & { channels?: Array<string | JsonRecord> };
 
 export type AgentSnapshotResult = AgentsSnapshot & OptionalHostSuccess;
@@ -977,6 +993,9 @@ export type HostApiContract = {
     deleteConfig: (payload: ChannelAccountPayload) => HostSuccess;
     startLogin: (payload: ChannelAccountPayload) => HostSuccess;
     cancelLogin: (payload: ChannelAccountPayload) => HostSuccess;
+    dingtalkWorkspaceAuthStart: (payload: ChannelAccountPayload) => DingTalkWorkspaceAuthResult;
+    dingtalkWorkspaceAuthStatus: (payload: ChannelAccountPayload) => DingTalkWorkspaceAuthResult;
+    dingtalkWorkspaceAuthCancel: (payload: ChannelAccountPayload) => DingTalkWorkspaceAuthResult;
   };
   agents: {
     list: () => AgentSnapshotResult;

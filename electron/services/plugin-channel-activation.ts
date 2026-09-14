@@ -65,6 +65,7 @@ function unnamedDefaultAccountFallback<T extends { accountId?: string }>(
 }
 
 function isAccountSnapshotLive(
+  channelType: string,
   accounts: Array<{
     accountId?: string;
     connected?: boolean;
@@ -79,7 +80,8 @@ function isAccountSnapshotLive(
   const requested = accountId.trim();
   const matched = accounts.find((account) => {
     const current = typeof account.accountId === 'string' ? account.accountId.trim() : '';
-    return current === requested;
+    if (current === requested) return true;
+    return channelType === 'dingtalk' && requested === 'default' && current === '__default__';
   }) ?? unnamedDefaultAccountFallback(accounts, requested);
   if (!matched) return false;
   const snapshot: ChannelRuntimeAccountSnapshot = {
@@ -108,7 +110,10 @@ async function readPluginChannelStatus(
       { probe: false },
       rpcTimeoutMs,
     );
-    return { ok: true, live: isAccountSnapshotLive(status?.channelAccounts?.[storedChannelType], accountId) };
+    return {
+      ok: true,
+      live: isAccountSnapshotLive(storedChannelType, status?.channelAccounts?.[storedChannelType], accountId),
+    };
   } catch {
     return { ok: false };
   }

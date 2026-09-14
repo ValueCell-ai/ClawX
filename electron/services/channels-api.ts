@@ -8,6 +8,7 @@ import {
   deleteChannelAccountConfig,
   deleteChannelConfig,
   getChannelFormValues,
+  getDurableChannelConfig,
   listConfiguredChannelAccountsFromConfig,
   listConfiguredChannels,
   listConfiguredChannelsFromConfig,
@@ -37,7 +38,14 @@ import {
   ensureWhatsAppPluginInstalled,
   type PluginInstallResult,
 } from '../utils/plugin-install';
-import { getDingTalkDwsStatusNote } from '../utils/dingtalk-dws';
+import {
+  cancelDingTalkDwsOAuth,
+  getDingTalkDwsOAuthStatus,
+  getDingTalkDwsStatusNote,
+  startDingTalkDwsOAuth,
+  type DingTalkDwsOAuthCredentials,
+  type DingTalkDwsOAuthSnapshot,
+} from '../utils/dingtalk-dws';
 import {
   applyPendingActivationStatus,
   computeChannelRuntimeStatus,
@@ -194,6 +202,38 @@ function buildQrLoginKey(channelType: string, accountId?: string): string {
   return `${toUiChannelType(channelType)}:${accountId?.trim() || '__new__'}`;
 }
 
+function toDingTalkWorkspaceAuthResult(snapshot: DingTalkDwsOAuthSnapshot) {
+  const knownErrorCodes = new Set([
+    'authorization_expired',
+    'authorization_failed',
+    'authorization_not_completed',
+    'authorization_start_timeout',
+  ]);
+  return {
+    success: snapshot.status !== 'error',
+    status: snapshot.status,
+    ...(snapshot.verificationUri ? { verificationUri: snapshot.verificationUri } : {}),
+    ...(snapshot.verificationUriComplete ? { verificationUriComplete: snapshot.verificationUriComplete } : {}),
+    ...(snapshot.userCode ? { userCode: snapshot.userCode } : {}),
+    ...(snapshot.expiresAt ? { expiresAt: snapshot.expiresAt } : {}),
+    ...(snapshot.error ? {
+      errorCode: knownErrorCodes.has(snapshot.error) ? snapshot.error : 'authorization_failed',
+    } : {}),
+  };
+}
+
+async function getDingTalkWorkspaceCredentials(accountId?: string): Promise<DingTalkDwsOAuthCredentials> {
+  // OAuth must use the durable file because config.get redacts secrets while
+  // Gateway is running. The secret stays in Main and is only passed via env.
+  const values = await getDurableChannelConfig('dingtalk', accountId);
+  const clientId = typeof values?.clientId === 'string' ? values.clientId.trim() : '';
+  const clientSecret = typeof values?.clientSecret === 'string' ? values.clientSecret.trim() : '';
+  if (!clientId || !clientSecret) {
+    throw new Error('DingTalk clientId and clientSecret are required before workspace authorization');
+  }
+  return { clientId, clientSecret };
+}
+
 async function isLegacyConfiguredAccountId(channelType: string, accountId: string): Promise<boolean> {
   const config = await readOpenClawConfig();
   const configuredAccounts = listConfiguredChannelAccountsFromConfig(config) ?? {};
@@ -270,11 +310,26 @@ function channelProbeFailureKey(channelType: string, accountId: string): string 
   return `${channelType}:${accountId}`;
 }
 
-function resolveRuntimeAccountId(account: GatewayChannelRuntimeAccount): string {
-  return typeof account.accountId === 'string' && account.accountId.trim() ? account.accountId.trim() : 'default';
+function normalizeRuntimeAccountId(channelType: string, accountId: string): string {
+  // The official DingTalk connector normalizes the literal "default" account
+  // to its internal "__default__" ID. Keep that runtime detail out of the UI
+  // and merge it back into ClawX's persisted default account.
+  return toUiChannelType(channelType) === 'dingtalk' && accountId === '__default__'
+    ? 'default'
+    : accountId;
+}
+
+function resolveRuntimeAccountId(channelType: string, account: GatewayChannelRuntimeAccount): string {
+  const accountId = typeof account.accountId === 'string' && account.accountId.trim()
+    ? account.accountId.trim()
+    : 'default';
+  return normalizeRuntimeAccountId(channelType, accountId);
 }
 
 function resolveProbeFailure(account: GatewayChannelRuntimeAccount): string | undefined {
+  // Some connectors retain lastError after reconnecting. A successful live
+  // probe is authoritative and must clear a remembered transient failure.
+  if (account.probe?.ok === true) return undefined;
   const lastError = typeof account.lastError === 'string' ? account.lastError.trim() : '';
   if (lastError) return lastError;
   if (account.probe && account.probe.ok === false) {
@@ -290,7 +345,7 @@ function rememberChannelProbeFailures(status: GatewayChannelStatusPayload | null
   const seen = new Set<string>();
   for (const [channelType, accounts] of Object.entries(status.channelAccounts)) {
     for (const account of accounts) {
-      const key = channelProbeFailureKey(channelType, resolveRuntimeAccountId(account));
+      const key = channelProbeFailureKey(channelType, resolveRuntimeAccountId(channelType, account));
       seen.add(key);
       const failure = resolveProbeFailure(account);
       if (failure) {
@@ -310,7 +365,7 @@ function overlayRememberedProbeFailures(status: GatewayChannelStatusPayload | nu
   if (!status?.channelAccounts || channelProbeFailures.size === 0) return;
   for (const [channelType, accounts] of Object.entries(status.channelAccounts)) {
     for (const account of accounts) {
-      const key = channelProbeFailureKey(channelType, resolveRuntimeAccountId(account));
+      const key = channelProbeFailureKey(channelType, resolveRuntimeAccountId(channelType, account));
       const remembered = channelProbeFailures.get(key);
       if (!remembered) continue;
       if (typeof account.lastError === 'string' && account.lastError.trim()) continue;
@@ -458,15 +513,19 @@ export async function buildChannelAccountsView(
       typeof channelSection?.defaultAccount === 'string' && channelSection.defaultAccount.trim()
         ? channelSection.defaultAccount
         : (sortedConfigAccountIds[0] || 'default');
+    const gatewayDefaultAccountId = gatewayStatus?.channelDefaultAccountId?.[rawChannelType];
     const defaultAccountId = configuredAccounts[rawChannelType]?.defaultAccountId
-      ?? gatewayStatus?.channelDefaultAccountId?.[rawChannelType]
+      ?? (gatewayDefaultAccountId
+        ? normalizeRuntimeAccountId(rawChannelType, gatewayDefaultAccountId)
+        : undefined)
       ?? fallbackDefault;
     const runtimeAccounts = gatewayStatus?.channelAccounts?.[rawChannelType] ?? [];
     const hasRuntimeConfigured = runtimeAccounts.some((account) => account.configured === true);
     if (!hasLocalConfig && !hasRuntimeConfigured) continue;
     const runtimeAccountIds = runtimeAccounts.reduce<string[]>((acc, account) => {
-      const accountId = typeof account.accountId === 'string' ? account.accountId.trim() : '';
-      if (!accountId) return acc;
+      const rawAccountId = typeof account.accountId === 'string' ? account.accountId.trim() : '';
+      if (!rawAccountId) return acc;
+      const accountId = normalizeRuntimeAccountId(rawChannelType, rawAccountId);
       if (!shouldIncludeRuntimeAccountId(accountId, configuredAccountIdSet, account)) return acc;
       acc.push(accountId);
       return acc;
@@ -474,10 +533,19 @@ export async function buildChannelAccountsView(
     const accountIds = Array.from(new Set([...channelAccountsFromConfig, ...runtimeAccountIds, defaultAccountId]));
 
     const accounts: ChannelAccountView[] = accountIds.map((accountId) => {
-      const runtime = runtimeAccounts.find((item) => item.accountId === accountId);
-      const runtimeSnapshot: ChannelRuntimeAccountSnapshot = runtime ?? {};
+      const runtime = runtimeAccounts.find(
+        (item) => resolveRuntimeAccountId(rawChannelType, item) === accountId,
+      );
+      const runtimeHealthy = runtime?.connected === true
+        || runtime?.linked === true
+        || runtime?.probe?.ok === true;
+      const lastError = !runtimeHealthy && typeof runtime?.lastError === 'string'
+        ? runtime.lastError
+        : undefined;
+      const runtimeSnapshot: ChannelRuntimeAccountSnapshot = runtime
+        ? { ...runtime, lastError }
+        : {};
       const configured = channelAccountsFromConfig.includes(accountId) || runtime?.configured === true;
-      const lastError = typeof runtime?.lastError === 'string' ? runtime.lastError : undefined;
       const expectedLive = (configured || hasLocalConfig)
         && isChannelAccountEnabledInConfig(openClawConfig, rawChannelType, accountId);
       const baseStatus = computeChannelRuntimeStatus(runtimeSnapshot, {
@@ -1404,6 +1472,35 @@ export function createChannelsApi(ctx: ChannelsApiContext): CompleteHostServiceR
         if (sessionKey) await cancelWeChatLoginSession(sessionKey);
       }
       return { success: true };
+    },
+    dingtalkWorkspaceAuthStart: async (payload) => {
+      const channelType = requireString(payload, 'channelType');
+      if (resolveStoredChannelType(channelType) !== 'dingtalk') {
+        throw new Error('DingTalk workspace authorization only supports the dingtalk channel');
+      }
+      const accountId = optionalString(payload, 'accountId');
+      await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
+      const credentials = await getDingTalkWorkspaceCredentials(accountId);
+      return toDingTalkWorkspaceAuthResult(await startDingTalkDwsOAuth(credentials));
+    },
+    dingtalkWorkspaceAuthStatus: async (payload) => {
+      const channelType = requireString(payload, 'channelType');
+      if (resolveStoredChannelType(channelType) !== 'dingtalk') {
+        throw new Error('DingTalk workspace authorization only supports the dingtalk channel');
+      }
+      const accountId = optionalString(payload, 'accountId');
+      await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
+      const credentials = await getDingTalkWorkspaceCredentials(accountId);
+      return toDingTalkWorkspaceAuthResult(getDingTalkDwsOAuthStatus(credentials));
+    },
+    dingtalkWorkspaceAuthCancel: async (payload) => {
+      const channelType = requireString(payload, 'channelType');
+      if (resolveStoredChannelType(channelType) !== 'dingtalk') {
+        throw new Error('DingTalk workspace authorization only supports the dingtalk channel');
+      }
+      const accountId = optionalString(payload, 'accountId');
+      await validateCanonicalAccountId(channelType, accountId, { allowLegacyConfiguredId: true });
+      return toDingTalkWorkspaceAuthResult(cancelDingTalkDwsOAuth());
     },
   };
 }

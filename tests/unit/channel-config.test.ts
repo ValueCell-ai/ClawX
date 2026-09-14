@@ -200,6 +200,20 @@ describe('WeCom plugin configuration', () => {
     expect(plugins.entries['dingtalk-connector']).toBeUndefined();
   });
 
+  it('reads unredacted DingTalk credentials from the durable account config for workspace OAuth', async () => {
+    const { getDurableChannelConfig, saveChannelConfig } = await import('@electron/utils/channel-config');
+
+    await saveChannelConfig('dingtalk', {
+      clientId: 'ding-client-id',
+      clientSecret: 'ding-client-secret',
+    }, 'ding-main');
+
+    await expect(getDurableChannelConfig('dingtalk', 'ding-main')).resolves.toMatchObject({
+      clientId: 'ding-client-id',
+      clientSecret: 'ding-client-secret',
+    });
+  });
+
   it('sets plugins.entries.wecom.enabled when saving wecom config', async () => {
     const { saveChannelConfig } = await import('@electron/utils/channel-config');
 

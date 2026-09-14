@@ -41,7 +41,7 @@ expectedUserBehavior:
   - Existing DingTalk users keep `channels.dingtalk` credentials, bindings, and session keys without re-pairing.
   - Channels UI still shows only `dingtalk`; `dingtalk-connector` is never a catalog type.
   - Community soimy and official connector never run at the same time on one `clientId`.
-  - Chat works after save even if `dws` workspace authorization is still pending.
+  - Chat works after save even if `dws` workspace authorization is skipped or still pending; new setups can complete optional device OAuth inside the ClawX channel modal.
 requiredProfiles:
   - fast
   - comms
@@ -59,6 +59,7 @@ acceptance:
   - Existing ClawX configurations preserve the community connector's open-group mention behavior, while configs imported from `dingtalk-connector` preserve the official default.
   - `plugins.allow` / `plugins.entries` keep a single `dingtalk` identity, and startup removes a leftover `extensions/dingtalk-connector` only after the canonical mirror is ready.
   - Lockfile does not retain `@soimy/dingtalk@3.6.10`.
+  - New DingTalk setups offer optional dws device OAuth after the channel config is durably saved, without exposing the client secret to Renderer.
 docs:
   required: true
 ---

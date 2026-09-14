@@ -49,6 +49,7 @@ function setupQuit(isE2EMode = false, hasAcpService = true) {
     app, gatewayManager, computerUseApi, logger, isE2EMode, setTimeout,
     getActiveAcpChatService: () => hasAcpService ? acpChatService : null,
     setQuitting: vi.fn(),
+    cancelDingTalkDwsOAuth: vi.fn(),
     extensionRegistry: { teardownAll: vi.fn() },
     quitLifecycleState: createQuitLifecycleState(),
     requestQuitLifecycleAction, markQuitCleanupCompleted,

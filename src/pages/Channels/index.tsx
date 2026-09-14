@@ -155,6 +155,8 @@ export function Channels() {
   channelGroupsRef.current = channelGroups;
   const agentsRef = useRef(agents);
   agentsRef.current = agents;
+  const showConfigModalRef = useRef(showConfigModal);
+  showConfigModalRef.current = showConfigModal;
 
   const ensureAgentsLoaded = useCallback(async () => {
     if (hasLoadedAgentsRef.current) return;
@@ -207,7 +209,11 @@ export function Channels() {
       const configOnly = options?.configOnly === true;
       console.info(`[channels-ui] fetch start mode=${configOnly ? 'config' : 'runtime'} probe=${probe ? '1' : '0'}`);
       // Only show loading spinner on first load (stale-while-revalidate).
-      const hasData = channelGroupsRef.current.length > 0 || agentsRef.current.length > 0;
+      // Keep the configuration modal mounted while its post-save OAuth flow
+      // is active, even when this is the first channel and the lists are empty.
+      const hasData = channelGroupsRef.current.length > 0
+        || agentsRef.current.length > 0
+        || showConfigModalRef.current;
       if (!hasData) {
         setLoading(true);
       }
@@ -879,15 +885,10 @@ export function Channels() {
             // The host may still be restarting Gateway for plugin activation.
             // Read the committed file-backed view immediately and let the
             // existing convergence loop refresh runtime status asynchronously.
+            // The modal owns closing so post-save flows (such as optional
+            // DingTalk workspace OAuth) can continue after this refresh.
             await fetchPageData({ configOnly: true });
             scheduleConvergenceRefresh();
-            setShowConfigModal(false);
-            setSelectedChannelType(null);
-            setSelectedAccountId(undefined);
-            setAllowExistingConfigInModal(true);
-            setAllowEditAccountIdInModal(false);
-            setExistingAccountIdsForModal([]);
-            setInitialConfigValuesForModal(undefined);
           }}
         />
       )}

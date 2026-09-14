@@ -10,6 +10,7 @@ import type {
   ChannelAccountsPayload,
   ChannelSaveConfigPayload,
   ChannelTargetsPayload,
+  DingTalkWorkspaceAuthResult,
   ClawHubSearchPayload,
   CronSessionHistoryPayload,
   DialogMessagePayload,
@@ -70,6 +71,7 @@ export type {
   ChannelSaveConfigResult,
   ChannelTargetOption,
   ChannelTargetsResult,
+  DingTalkWorkspaceAuthResult,
   ClawHubInstalledSkill,
   ClawHubListResult,
   ClawHubSearchResult,
@@ -233,6 +235,24 @@ export const hostApi = {
     ),
     cancelLogin: (channelType: string, input?: { accountId?: string }) => (
       invokeHost('channels', 'cancelLogin', { channelType, ...input })
+    ),
+    dingtalkWorkspaceAuthStart: (accountId?: string) => (
+      invokeHost('channels', 'dingtalkWorkspaceAuthStart', {
+        channelType: 'dingtalk',
+        ...(accountId ? { accountId } : {}),
+      }) as Promise<DingTalkWorkspaceAuthResult>
+    ),
+    dingtalkWorkspaceAuthStatus: (accountId?: string) => (
+      invokeHost('channels', 'dingtalkWorkspaceAuthStatus', {
+        channelType: 'dingtalk',
+        ...(accountId ? { accountId } : {}),
+      }) as Promise<DingTalkWorkspaceAuthResult>
+    ),
+    dingtalkWorkspaceAuthCancel: (accountId?: string) => (
+      invokeHost('channels', 'dingtalkWorkspaceAuthCancel', {
+        channelType: 'dingtalk',
+        ...(accountId ? { accountId } : {}),
+      }) as Promise<DingTalkWorkspaceAuthResult>
     ),
   },
   agents: {

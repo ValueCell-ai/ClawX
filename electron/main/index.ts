@@ -57,6 +57,7 @@ import { createComputerUseApi, type ComputerUseApi } from '../services/computer-
 import { deviceOAuthManager } from '../utils/device-oauth';
 import { browserOAuthManager } from '../utils/browser-oauth';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
+import { cancelDingTalkDwsOAuth } from '../utils/dingtalk-dws';
 import { syncAllProviderAuthToRuntime } from '../services/providers/provider-runtime-sync';
 
 const WINDOWS_APP_USER_MODEL_ID = 'app.clawx.desktop';
@@ -676,6 +677,7 @@ if (gotTheLock) {
 
   app.on('before-quit', (event) => {
     setQuitting();
+    cancelDingTalkDwsOAuth();
     const action = requestQuitLifecycleAction(quitLifecycleState);
 
     if (action === 'allow-quit') {

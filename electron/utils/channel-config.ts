@@ -962,6 +962,26 @@ export async function getChannelFormValues(channelType: string, accountId?: stri
     return Object.keys(values).length > 0 ? values : undefined;
 }
 
+/** Read an account directly from disk when Main needs an unredacted secret. */
+export async function getDurableChannelConfig(
+    channelType: string,
+    accountId?: string,
+): Promise<ChannelConfigData | undefined> {
+    const config = await readDurableOpenClawConfig();
+    const resolvedChannelType = resolveStoredChannelType(channelType);
+    const channels = config.channels && typeof config.channels === 'object' && !Array.isArray(config.channels)
+        ? config.channels as Record<string, ChannelConfigData>
+        : undefined;
+    const channelSection = channels?.[resolvedChannelType];
+    if (!channelSection) return undefined;
+
+    const resolvedAccountId = accountId || DEFAULT_ACCOUNT_ID;
+    const accounts = getChannelAccountsMap(channelSection);
+    if (accounts?.[resolvedAccountId]) return accounts[resolvedAccountId];
+    if (!accounts || Object.keys(accounts).length === 0) return channelSection;
+    return undefined;
+}
+
 export async function deleteChannelAccountConfig(channelType: string, accountId: string): Promise<void> {
     const resolvedChannelType = resolveStoredChannelType(channelType);
     let deleteWeChatAccount = false;
