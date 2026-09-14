@@ -605,7 +605,6 @@ function patchBrokenModules(nodeModulesDir) {
 
 const PLUGIN_ID_FIXES = {
   'wecom-openclaw-plugin': 'wecom',
-  'dingtalk-connector': 'dingtalk',
 };
 
 function patchPluginIds(pluginDir, expectedId) {
@@ -849,8 +848,14 @@ exports.default = async function afterPack(context) {
   const dwsOk = bundlePlugin(nodeModulesRoot, 'dingtalk-workspace-cli', dwsDestDir);
   if (dwsOk) {
     cleanupUnnecessaryFiles(dwsDestDir);
-    extractDingTalkDwsVendor(dwsDestDir, platform, arch);
-    console.log(`[after-pack] ✅ Bundled DingTalk workspace CLI to ${dwsDestDir}`);
+    if (extractDingTalkDwsVendor(dwsDestDir, platform, arch)) {
+      // The vendor binary is self-contained. Shipping all six platform
+      // archives adds roughly 26 MB to every platform build for no benefit.
+      rmSync(join(dwsDestDir, 'assets'), { recursive: true, force: true });
+      console.log(`[after-pack] ✅ Bundled DingTalk workspace CLI to ${dwsDestDir}`);
+    } else {
+      rmSync(dwsDestDir, { recursive: true, force: true });
+    }
   }
 
   // 1.2 Copy built-in extension node_modules that electron-builder skipped.

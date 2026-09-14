@@ -831,6 +831,7 @@ describe('sanitizeOpenClawConfig', () => {
     expect(dingtalk.enabled).toBe(true);
     expect(dingtalk.defaultAccount).toBe('default');
     expect(dingtalk.groupReplyMode).toBe('aicard');
+    expect(dingtalk.requireMention).toBe(false);
     expect(dingtalk.messageType).toBeUndefined();
     expect(dingtalk.cardStreamingMode).toBeUndefined();
     expect(channels['dingtalk-connector']).toBeUndefined();
@@ -839,6 +840,7 @@ describe('sanitizeOpenClawConfig', () => {
         clientId: 'dt-client-id-nested',
         clientSecret: 'dt-secret-nested',
         enabled: true,
+        requireMention: false,
       },
     });
     expect(dingtalk.clientId).toBe('dt-client-id');

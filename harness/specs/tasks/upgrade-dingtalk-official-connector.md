@@ -33,6 +33,7 @@ touchedAreas:
   - tests/unit/channel-config.test.ts
   - tests/unit/dingtalk-plugin-compat.test.ts
   - tests/unit/dingtalk-dws.test.ts
+  - tests/e2e/channels-health-diagnostics.spec.ts
   - harness/specs/rules/channel-plugin-migration-guards.md
   - harness/specs/tasks/upgrade-openclaw-2026-7-1-2-plugins.md
   - harness/specs/tasks/upgrade-dingtalk-official-connector.md
@@ -54,8 +55,9 @@ acceptance:
   - Official connector is pinned to 0.8.25 and remapped onto plugin/channel id `dingtalk`.
   - npm metadata stays `@dingtalk-real-ai/dingtalk-connector`; Gateway RPC names `dingtalk-connector.*` stay intact.
   - Dual `channels.dingtalk` + `channels.dingtalk-connector` collapses to `dingtalk`.
-  - Soimy-only fields are stripped; `messageType: card` maps to `groupReplyMode: aicard`; `defaultAccount` is kept.
-  - `plugins.allow` / `plugins.entries` keep a single `dingtalk` identity.
+  - Soimy-only fields are stripped; `messageType: card` maps to `groupReplyMode: aicard`; nested `groupAllowFrom` maps to `allowFrom`; `defaultAccount` is kept.
+  - Existing ClawX configurations preserve the community connector's open-group mention behavior, while configs imported from `dingtalk-connector` preserve the official default.
+  - `plugins.allow` / `plugins.entries` keep a single `dingtalk` identity, and startup removes a leftover `extensions/dingtalk-connector` only after the canonical mirror is ready.
   - Lockfile does not retain `@soimy/dingtalk@3.6.10`.
 docs:
   required: true

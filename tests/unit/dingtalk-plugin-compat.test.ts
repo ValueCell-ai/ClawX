@@ -35,14 +35,23 @@ describe('sanitizeDingTalkChannelConfig', () => {
       clientSecret: 'secret',
       defaultAccount: 'default',
       groupReplyMode: 'aicard',
+      requireMention: false,
     });
   });
 
   it('maps markdown messageType and sanitizes nested accounts', () => {
     const config = sanitizeDingTalkChannelConfig({
+      name: 'Legacy top-level name',
       messageType: 'markdown',
+      groups: {
+        conversation: {
+          requireMention: false,
+          groupAllowFrom: ['staff-1'],
+        },
+      },
       accounts: {
         default: {
+          name: 'Primary bot',
           clientId: 'nested',
           clientSecret: 'nested-secret',
           messageType: 'card',
@@ -51,12 +60,22 @@ describe('sanitizeDingTalkChannelConfig', () => {
       },
     });
 
+    expect(config.name).toBeUndefined();
     expect(config.groupReplyMode).toBe('markdown');
+    expect(config.requireMention).toBe(false);
+    expect(config.groups).toEqual({
+      conversation: {
+        requireMention: false,
+        allowFrom: ['staff-1'],
+      },
+    });
     expect(config.accounts).toEqual({
       default: {
+        name: 'Primary bot',
         clientId: 'nested',
         clientSecret: 'nested-secret',
         groupReplyMode: 'aicard',
+        requireMention: false,
       },
     });
   });
@@ -77,6 +96,7 @@ describe('migrateDingTalkChannelSection', () => {
     expect(config.channels.dingtalk).toEqual({
       enabled: true,
       clientId: 'from-official',
+      requireMention: true,
     });
     expect(config.channels['dingtalk-connector']).toBeUndefined();
   });
@@ -101,6 +121,7 @@ describe('migrateDingTalkChannelSection', () => {
       enabled: true,
       clientId: 'clawx',
       groupReplyMode: 'aicard',
+      requireMention: false,
     });
     expect(config.channels['dingtalk-connector']).toBeUndefined();
   });
@@ -159,7 +180,7 @@ describe('remapDingTalkOfficialManifest', () => {
     expect(manifest.id).toBe(DINGTALK_PLUGIN_ID);
     expect(manifest.channels).toEqual([DINGTALK_PLUGIN_ID]);
     expect(manifest.skills).toEqual(['./skills']);
-    expect(manifest.channelConfigs.dingtalk.schema.additionalProperties).toBe(true);
+    expect(manifest.channelConfigs.dingtalk.schema.additionalProperties).toBe(false);
     expect(manifest.channelConfigs[DINGTALK_OFFICIAL_PLUGIN_ID]).toBeUndefined();
   });
 

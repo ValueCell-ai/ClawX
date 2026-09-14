@@ -27,4 +27,4 @@ For DingTalk specifically:
 - only one DingTalk plugin identity may be active: remapped official `@dingtalk-real-ai/dingtalk-connector` under `dingtalk`. Never leave community `@soimy/dingtalk` and the official connector both enabled
 - `channels.dingtalk` is the source of truth. If `channels.dingtalk-connector` also exists, collapse it onto `dingtalk` and delete the official key so two Stream clients cannot share one `clientId`
 - leftover `~/.openclaw/extensions/dingtalk-connector` must be removed after the official package is mirrored to `~/.openclaw/extensions/dingtalk`
-- soimy-only config fields must be sanitized before write; `defaultAccount` is allowed on the official 0.8.25 schema
+- soimy-only config fields must be sanitized before write; preserve compatible settings by mapping nested `groupAllowFrom` to `allowFrom` and retaining the legacy open-group mention default; `defaultAccount` is allowed on the official 0.8.25 schema

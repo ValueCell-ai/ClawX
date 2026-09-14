@@ -278,6 +278,33 @@ describe('plugin installer diagnostics', () => {
     expect(mockCpSync).toHaveBeenCalled();
   });
 
+  it('removes a legacy official directory only after the remapped official mirror exists', async () => {
+    const targetDir = '/home/test/.openclaw/extensions/dingtalk';
+    const legacyDir = '/home/test/.openclaw/extensions/dingtalk-connector';
+    mockExistsSync.mockImplementation((input: string) => String(input) === legacyDir);
+
+    const { removeLegacyOfficialDingTalkExtension } = await import('@electron/utils/plugin-install');
+    removeLegacyOfficialDingTalkExtension({ requireCanonicalMirror: true });
+    expect(mockUnlinkSync).not.toHaveBeenCalled();
+
+    mockExistsSync.mockImplementation((input: string) => {
+      const value = String(input);
+      return value === legacyDir || value === `${targetDir}/package.json`;
+    });
+    mockReadFileSync.mockImplementation((input: string) => (
+      String(input) === `${targetDir}/package.json`
+        ? JSON.stringify({ name: '@dingtalk-real-ai/dingtalk-connector' })
+        : '{}'
+    ));
+    mockLstatSync.mockReturnValue({
+      isSymbolicLink: () => true,
+      isDirectory: () => false,
+    });
+
+    removeLegacyOfficialDingTalkExtension({ requireCanonicalMirror: true });
+    expect(mockUnlinkSync).toHaveBeenCalledWith(legacyDir);
+  });
+
   it('writes a path-owned DingTalk install record and removes the official legacy id', async () => {
     const targetDir = '/home/test/.openclaw/extensions/dingtalk';
     mockExistsSync.mockImplementation((input: string) => {

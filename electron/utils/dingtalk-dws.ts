@@ -144,18 +144,20 @@ function readPackageName(pkgPath: string): string | null {
 }
 
 function candidateDwsSources(): string[] {
-  const roots = app.isPackaged
-    ? [
+  if (app.isPackaged) {
+    return [
       join(process.resourcesPath, 'dingtalk-dws'),
       join(process.resourcesPath, 'resources', 'dingtalk-dws'),
       join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', DINGTALK_DWS_NPM),
-    ]
-    : [
-      join(process.cwd(), 'node_modules', DINGTALK_DWS_NPM),
-      join(app.getAppPath(), 'node_modules', DINGTALK_DWS_NPM),
-      join(__dirname, '../../node_modules', DINGTALK_DWS_NPM),
     ];
-  return roots;
+  }
+
+  const appPath = typeof app.getAppPath === 'function' ? app.getAppPath() : null;
+  return [
+    join(process.cwd(), 'node_modules', DINGTALK_DWS_NPM),
+    ...(appPath ? [join(appPath, 'node_modules', DINGTALK_DWS_NPM)] : []),
+    join(__dirname, '../../node_modules', DINGTALK_DWS_NPM),
+  ];
 }
 
 function resolveDwsSourceDir(): string | null {
@@ -249,6 +251,9 @@ export function ensureDingTalkDwsInstalled(): { installed: boolean; warning?: st
       refreshDingTalkDwsStatusNote();
       return { installed: false, warning: DINGTALK_DWS_MISSING };
     }
+    // The extracted vendor binary is self-contained. Do not retain archives
+    // for every other OS/architecture in the user's OpenClaw tools directory.
+    safeRmSync(join(targetDir, 'assets'));
     logger.info(`[plugin] Installed DingTalk workspace CLI ${DINGTALK_DWS_VERSION} at ${targetDir}`);
     const auth = probeDingTalkDwsAuth();
     refreshDingTalkDwsStatusNote();
@@ -262,16 +267,5 @@ export function ensureDingTalkDwsInstalled(): { installed: boolean; warning?: st
     logger.warn('[plugin] Failed to install DingTalk workspace CLI:', error);
     refreshDingTalkDwsStatusNote();
     return { installed: false, warning: DINGTALK_DWS_MISSING };
-  }
-}
-
-export function removeLegacyOfficialDingTalkExtension(): void {
-  const leftover = join(homedir(), '.openclaw', 'extensions', 'dingtalk-connector');
-  if (!existsSync(leftover)) return;
-  try {
-    safeRmSync(leftover);
-    logger.info('[plugin] Removed leftover official DingTalk extension at ~/.openclaw/extensions/dingtalk-connector');
-  } catch (error) {
-    logger.warn('[plugin] Failed to remove leftover dingtalk-connector extension:', error);
   }
 }

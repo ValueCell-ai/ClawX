@@ -213,7 +213,6 @@ function patchPluginId(pluginDir, expectedId) {
   // values are the correct ID (must match openclaw.plugin.json).
   const ID_FIXES = {
     'wecom-openclaw-plugin': 'wecom',
-    'dingtalk-connector': 'dingtalk',
   };
 
   for (const entry of entryFiles) {

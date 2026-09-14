@@ -22,7 +22,7 @@ import {
   remapDingTalkOfficialManifest,
   remapDingTalkOfficialPackageJson,
 } from './dingtalk-plugin-compat';
-import { ensureDingTalkDwsInstalled, removeLegacyOfficialDingTalkExtension } from './dingtalk-dws';
+import { ensureDingTalkDwsInstalled } from './dingtalk-dws';
 import { safeRmSync } from './safe-fs';
 import {
   upsertPluginInstallRecordsIntoSqlite,
@@ -774,6 +774,27 @@ function readPluginName(pkgJsonPath: string): string | null {
   }
 }
 
+export function removeLegacyOfficialDingTalkExtension(options: { requireCanonicalMirror?: boolean } = {}): void {
+  const extensionsDir = join(homedir(), '.openclaw', 'extensions');
+  const leftover = join(extensionsDir, DINGTALK_OFFICIAL_PLUGIN_ID);
+  if (!existsSync(fsPath(leftover))) return;
+
+  if (options.requireCanonicalMirror) {
+    const canonicalPackage = join(extensionsDir, DINGTALK_PLUGIN_ID, 'package.json');
+    if (readPluginName(canonicalPackage) !== DINGTALK_OFFICIAL_NPM) {
+      logger.warn('[plugin] Keeping dingtalk-connector extension until the canonical official mirror is installed');
+      return;
+    }
+  }
+
+  try {
+    safeRmSync(fsPath(leftover));
+    logger.info('[plugin] Removed leftover official DingTalk extension at ~/.openclaw/extensions/dingtalk-connector');
+  } catch (error) {
+    logger.warn('[plugin] Failed to remove leftover dingtalk-connector extension:', error);
+  }
+}
+
 // ── pnpm-aware node_modules copy helpers ─────────────────────────────────────
 
 /** Walk up from a path until we find a parent named node_modules. */
@@ -1049,7 +1070,7 @@ export async function ensureDingTalkPluginInstalled(): Promise<PluginInstallResu
   const result = await ensurePluginInstalled('dingtalk', buildCandidateSources('dingtalk'), 'DingTalk');
   if (result.installed) {
     const dws = ensureDingTalkDwsInstalled();
-    removeLegacyOfficialDingTalkExtension();
+    removeLegacyOfficialDingTalkExtension({ requireCanonicalMirror: true });
     if (dws.warning) {
       return { ...result, warning: dws.warning };
     }

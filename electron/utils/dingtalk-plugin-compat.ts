@@ -53,6 +53,8 @@ const OFFICIAL_GROUP_KEYS = new Set([
   'groupSessionScope',
 ]);
 
+export type DingTalkConfigScope = 'channel' | 'account';
+
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -73,6 +75,12 @@ function sanitizeDingTalkGroups(groups: unknown): void {
   if (!isPlainRecord(groups)) return;
   for (const group of Object.values(groups)) {
     if (!isPlainRecord(group)) continue;
+    // The community connector called the nested list `groupAllowFrom`;
+    // preserve it under the official schema's `allowFrom` field instead of
+    // silently discarding the user's configuration.
+    if (group.allowFrom == null && Array.isArray(group.groupAllowFrom)) {
+      group.allowFrom = group.groupAllowFrom;
+    }
     for (const key of Object.keys(group)) {
       if (!OFFICIAL_GROUP_KEYS.has(key)) {
         delete group[key];
@@ -83,13 +91,26 @@ function sanitizeDingTalkGroups(groups: unknown): void {
 
 export function sanitizeDingTalkChannelConfig(
   config: Record<string, unknown>,
+  scope: DingTalkConfigScope = 'channel',
+  preserveCommunityDefaults = true,
 ): Record<string, unknown> {
   mapSoimyMessageType(config);
 
   for (const key of Object.keys(config)) {
-    if (SOIMY_ONLY_KEYS.has(key)) {
+    if (SOIMY_ONLY_KEYS.has(key) || (scope === 'channel' && key === 'name')) {
       delete config[key];
     }
+  }
+
+  // The community connector allowed unmentioned messages when groupPolicy was
+  // open. Keep that behavior for existing ClawX configurations instead of
+  // silently adopting the official connector's requireMention=true default.
+  if (
+    preserveCommunityDefaults
+    && config.requireMention == null
+    && (config.groupPolicy == null || config.groupPolicy === 'open')
+  ) {
+    config.requireMention = false;
   }
 
   if (isPlainRecord(config.groups)) {
@@ -104,6 +125,13 @@ export function sanitizeDingTalkChannelConfig(
         if (SOIMY_ONLY_KEYS.has(key)) {
           delete account[key];
         }
+      }
+      if (
+        preserveCommunityDefaults
+        && account.requireMention == null
+        && (account.groupPolicy == null || account.groupPolicy === 'open')
+      ) {
+        account.requireMention = false;
       }
       if (isPlainRecord(account.groups)) {
         sanitizeDingTalkGroups(account.groups);
@@ -157,6 +185,11 @@ export function migrateDingTalkChannelSection(config: {
   const clawxSection = channels[DINGTALK_PLUGIN_ID];
 
   if (isPlainRecord(officialSection) && !isPlainRecord(clawxSection)) {
+    // Preserve the official connector's mention-gated default when adopting a
+    // config that was already authored under the official identity.
+    if (officialSection.requireMention == null) {
+      officialSection.requireMention = true;
+    }
     channels[DINGTALK_PLUGIN_ID] = officialSection;
     delete channels[DINGTALK_OFFICIAL_PLUGIN_ID];
     modified = true;
@@ -168,7 +201,7 @@ export function migrateDingTalkChannelSection(config: {
   const section = channels[DINGTALK_PLUGIN_ID];
   if (isPlainRecord(section)) {
     const before = JSON.stringify(section);
-    sanitizeDingTalkChannelConfig(section);
+    sanitizeDingTalkChannelConfig(section, 'channel', isPlainRecord(clawxSection));
     if (JSON.stringify(section) !== before) {
       modified = true;
     }
@@ -223,30 +256,6 @@ function remapChannelConfigsKey(manifest: Record<string, unknown>): boolean {
   return true;
 }
 
-function ensurePermissiveDingTalkChannelSchema(manifest: Record<string, unknown>): boolean {
-  if (!isPlainRecord(manifest.channelConfigs)) {
-    manifest.channelConfigs = {};
-  }
-  const channelConfigs = manifest.channelConfigs as Record<string, unknown>;
-  const existing = isPlainRecord(channelConfigs[DINGTALK_PLUGIN_ID])
-    ? channelConfigs[DINGTALK_PLUGIN_ID]
-    : {};
-  const schema = isPlainRecord(existing.schema) ? existing.schema : {};
-  if (schema.additionalProperties === true) {
-    channelConfigs[DINGTALK_PLUGIN_ID] = { ...existing, schema };
-    return false;
-  }
-  channelConfigs[DINGTALK_PLUGIN_ID] = {
-    ...existing,
-    schema: {
-      ...schema,
-      type: schema.type ?? 'object',
-      additionalProperties: true,
-    },
-  };
-  return true;
-}
-
 export function isOfficialDingTalkManifest(manifest: Record<string, unknown>): boolean {
   if (manifest.id === DINGTALK_OFFICIAL_PLUGIN_ID || manifest.id === DINGTALK_PLUGIN_ID) {
     return Array.isArray(manifest.channels)
@@ -277,9 +286,6 @@ export function remapDingTalkOfficialManifest(manifest: Record<string, unknown>)
     }
   }
   if (remapChannelConfigsKey(manifest)) {
-    modified = true;
-  }
-  if (ensurePermissiveDingTalkChannelSchema(manifest)) {
     modified = true;
   }
   return modified;

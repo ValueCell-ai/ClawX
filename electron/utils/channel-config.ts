@@ -694,7 +694,7 @@ function transformChannelConfig(
     }
 
     if (channelType === 'dingtalk') {
-        sanitizeDingTalkChannelConfig(transformedConfig);
+        sanitizeDingTalkChannelConfig(transformedConfig, 'account');
     }
 
     return transformedConfig;

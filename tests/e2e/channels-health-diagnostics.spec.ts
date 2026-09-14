@@ -58,6 +58,55 @@ test.describe('Channels health diagnostics', () => {
     await expect(page.getByText(/Gateway is not running|网关当前未运行|ゲートウェイは起動していません/)).toHaveCount(0);
   });
 
+  test('shows the optional DingTalk workspace authorization note without degrading chat status', async ({ electronApp, page }) => {
+    await electronApp.evaluate(({ ipcMain }) => {
+      const originalHostInvoke = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers?.get('host:invoke');
+      const respond = (id: unknown, data: unknown) => ({ id: typeof id === 'string' ? id : undefined, ok: true, data });
+
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', async (event, request: { id?: string; module?: string; action?: string }) => {
+        if (request?.module === 'channels' && request.action === 'accounts') {
+          return respond(request.id, {
+            success: true,
+            gatewayHealth: { state: 'healthy', reasons: [], consecutiveHeartbeatMisses: 0 },
+            channels: [
+              {
+                channelType: 'dingtalk',
+                defaultAccountId: 'default',
+                status: 'connected',
+                statusNote: 'dingtalk_dws_auth_required',
+                accounts: [
+                  {
+                    accountId: 'default',
+                    name: 'DingTalk',
+                    configured: true,
+                    status: 'connected',
+                    isDefault: true,
+                  },
+                ],
+              },
+            ],
+          });
+        }
+
+        if (request?.module === 'gateway' && request.action === 'status') {
+          return respond(request.id, { state: 'running', port: 18789 });
+        }
+        if (request?.module === 'agents' && request.action === 'list') {
+          return respond(request.id, { success: true, agents: [] });
+        }
+        return originalHostInvoke?.(event, request) ?? respond(request?.id, {});
+      });
+    });
+
+    await completeSetup(page);
+    await page.getByTestId('sidebar-nav-channels').click();
+    await expect(page.getByTestId('channel-status-dingtalk')).toHaveText(/Connected|已连接|接続済み|Подключ/);
+    await expect(page.getByTestId('channel-note-dingtalk')).toContainText(/authorization|授权|認可|авторизац/i);
+  });
+
   test('shows external Gateway unavailability, keeps manual restart, and copies diagnostics', async ({ electronApp, page }) => {
     await electronApp.evaluate(({ ipcMain }) => {
       const state = {
