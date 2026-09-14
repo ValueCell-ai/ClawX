@@ -31,8 +31,10 @@ test.describe('ClawX developer-mode gated UI', () => {
       window.location.hash = '#/';
     });
     await expect(page.getByTestId('chat-composer-input')).toBeVisible();
+    await expect(page.getByTestId('chat-composer-voice')).toHaveCount(0);
 
     await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('models-tab-voice')).toHaveCount(0);
     await page.getByTestId('providers-add-button').click();
     await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
     await page.getByTestId('add-provider-type-siliconflow').click();
@@ -59,7 +61,13 @@ test.describe('ClawX developer-mode gated UI', () => {
     await expect(page.getByTestId('sidebar-talk')).toHaveCount(0);
     await expect(page.getByTestId('talk-settings')).toHaveCount(0);
 
+    await page.evaluate(() => {
+      window.location.hash = '#/';
+    });
+    await expect(page.getByTestId('chat-composer-voice')).toBeVisible();
+
     await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('models-tab-voice')).toBeVisible();
     await expect(page.getByTestId('models-tab-image-generation')).toBeVisible();
     await expect(page.getByTestId('models-tab-realtime-talk')).toHaveCount(0);
     await page.getByTestId('models-tab-image-generation').click();

@@ -31,8 +31,9 @@ const HIDDEN_USAGE_MARKERS = ['gateway-injected', 'delivery-mirror'];
 type ModelsManagementTab = 'chat' | 'image-generation' | 'voice';
 
 function getModelsManagementTab(tab: string | null, devModeUnlocked: boolean): ModelsManagementTab {
-  if (tab === 'voice') return tab;
-  if (tab === 'image-generation') return devModeUnlocked ? tab : 'chat';
+  if (tab === 'voice' || tab === 'image-generation') {
+    return devModeUnlocked ? tab : 'chat';
+  }
   return 'chat';
 }
 
@@ -323,25 +324,29 @@ export function Models() {
               <TabsTrigger value="chat" data-testid="models-tab-chat">
                 {t('dashboard:models.tabs.chat')}
               </TabsTrigger>
-              <TabsTrigger value="voice" data-testid="models-tab-voice">
-                {t('dashboard:models.tabs.voice')}
-              </TabsTrigger>
               {devModeUnlocked && (
-                <TabsTrigger value="image-generation" data-testid="models-tab-image-generation">
-                  {t('dashboard:models.tabs.imageGeneration')}
-                </TabsTrigger>
+                <>
+                  <TabsTrigger value="voice" data-testid="models-tab-voice">
+                    {t('dashboard:models.tabs.voice')}
+                  </TabsTrigger>
+                  <TabsTrigger value="image-generation" data-testid="models-tab-image-generation">
+                    {t('dashboard:models.tabs.imageGeneration')}
+                  </TabsTrigger>
+                </>
               )}
             </TabsList>
             <TabsContent value="chat" className="mt-8">
               <ProvidersSettings />
             </TabsContent>
-            <TabsContent value="voice" className="mt-8">
-              <AsrSettings />
-            </TabsContent>
             {devModeUnlocked && (
-              <TabsContent value="image-generation" className="mt-8">
-                <ImageGenerationSettings />
-              </TabsContent>
+              <>
+                <TabsContent value="voice" className="mt-8">
+                  <AsrSettings />
+                </TabsContent>
+                <TabsContent value="image-generation" className="mt-8">
+                  <ImageGenerationSettings />
+                </TabsContent>
+              </>
             )}
           </Tabs>
 

@@ -117,7 +117,7 @@ describe('Models page auto refresh', () => {
     expect(hostApiFetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('shows chat and voice tabs for everyone and gates image settings behind developer mode', async () => {
+  it('gates voice and image settings behind developer mode', async () => {
     const { unmount } = renderModels();
 
     await act(async () => {
@@ -126,14 +126,11 @@ describe('Models page auto refresh', () => {
 
     expect(screen.getByTestId('models-management-tabs')).toBeInTheDocument();
     expect(screen.getByTestId('models-tab-chat')).toBeInTheDocument();
-    expect(screen.getByTestId('models-tab-voice')).toBeInTheDocument();
+    expect(screen.queryByTestId('models-tab-voice')).not.toBeInTheDocument();
     expect(screen.queryByTestId('models-tab-image-generation')).not.toBeInTheDocument();
     expect(screen.getByTestId('providers-settings-panel')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Token Usage History' })).toBeInTheDocument();
     expect(screen.queryByTestId('models-tab-realtime-talk')).not.toBeInTheDocument();
-
-    fireEvent.mouseDown(screen.getByTestId('models-tab-voice'), { button: 0 });
-    expect(screen.getByTestId('asr-settings-panel')).toBeInTheDocument();
 
     unmount();
     settingsState.devModeUnlocked = true;
@@ -146,12 +143,12 @@ describe('Models page auto refresh', () => {
     expect(screen.getByTestId('models-tab-voice')).toBeInTheDocument();
     expect(screen.getByTestId('models-tab-image-generation')).toBeInTheDocument();
 
-    fireEvent.mouseDown(screen.getByTestId('models-tab-image-generation'), { button: 0 });
-    expect(screen.getByTestId('image-generation-settings-panel')).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Token Usage History' })).not.toBeInTheDocument();
-
     fireEvent.mouseDown(screen.getByTestId('models-tab-voice'), { button: 0 });
     expect(screen.getByTestId('asr-settings-panel')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Token Usage History' })).not.toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByTestId('models-tab-image-generation'), { button: 0 });
+    expect(screen.getByTestId('image-generation-settings-panel')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Token Usage History' })).not.toBeInTheDocument();
 
     fireEvent.mouseDown(screen.getByTestId('models-tab-chat'), { button: 0 });
@@ -169,6 +166,18 @@ describe('Models page auto refresh', () => {
     expect(screen.queryByTestId('models-tab-realtime-talk')).not.toBeInTheDocument();
 
     unmount();
+    const lockedVoiceRender = renderModels('/models?tab=voice');
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('models-tab-chat')).toHaveAttribute('data-state', 'active');
+    expect(screen.queryByTestId('models-tab-voice')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('asr-settings-panel')).not.toBeInTheDocument();
+
+    lockedVoiceRender.unmount();
+    settingsState.devModeUnlocked = true;
     const voiceRender = renderModels('/models?tab=voice');
 
     await act(async () => {

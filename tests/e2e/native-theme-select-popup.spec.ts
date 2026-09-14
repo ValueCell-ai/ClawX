@@ -46,6 +46,9 @@ test.describe('native select theming', () => {
       // Switch the app to dark mode via Settings > Appearance.
       await page.getByTestId('sidebar-nav-settings').click();
       await expect(page.getByTestId('settings-page')).toBeVisible();
+      const devModeSwitch = page.getByTestId('settings-dev-mode-switch');
+      if (await devModeSwitch.getAttribute('data-state') !== 'checked') await devModeSwitch.click();
+      await expect(devModeSwitch).toHaveAttribute('data-state', 'checked');
       await page.getByRole('button', { name: 'Dark', exact: true }).click();
       await expect(page.evaluate(() => document.documentElement.classList.contains('dark'))).resolves.toBe(true);
 

@@ -41,7 +41,7 @@ vi.mock('@/hooks/useVoiceDictation', () => ({
   },
 }));
 
-const { agentsState, chatState, gatewayState, providersState, artifactPanelMocks } = vi.hoisted(() => ({
+const { agentsState, chatState, gatewayState, settingsState, providersState, artifactPanelMocks } = vi.hoisted(() => ({
   agentsState: {
     agents: [] as Array<Record<string, unknown>>,
     defaultModelRef: null as string | null,
@@ -54,6 +54,9 @@ const { agentsState, chatState, gatewayState, providersState, artifactPanelMocks
   },
   gatewayState: {
     status: { state: 'running', port: 18789 },
+  },
+  settingsState: {
+    devModeUnlocked: true,
   },
   providersState: {
     accounts: [] as Array<Record<string, unknown>>,
@@ -77,6 +80,10 @@ vi.mock('@/stores/chat', () => ({
 
 vi.mock('@/stores/gateway', () => ({
   useGatewayStore: (selector: (state: typeof gatewayState) => unknown) => selector(gatewayState),
+}));
+
+vi.mock('@/stores/settings', () => ({
+  useSettingsStore: (selector: (state: typeof settingsState) => unknown) => selector(settingsState),
 }));
 
 vi.mock('@/stores/providers', () => ({
@@ -369,6 +376,7 @@ describe('ChatInput voice dictation wiring', () => {
     chatState.currentSessionKey = 'agent:main:session-1';
     chatState.sessions = [{ key: 'agent:main:session-1' }];
     gatewayState.status = { state: 'running', port: 18789 };
+    settingsState.devModeUnlocked = true;
     providersState.accounts = [];
     providersState.statuses = [];
     providersState.defaultAccountId = null;
@@ -388,7 +396,16 @@ describe('ChatInput voice dictation wiring', () => {
     voiceMock.cancel.mockReset();
   });
 
-  it('renders the voice button after the attach button and toggles on click', () => {
+  it('hides the voice button outside developer mode', () => {
+    settingsState.devModeUnlocked = false;
+
+    renderChatInput();
+
+    expect(screen.queryByTestId('chat-composer-voice')).not.toBeInTheDocument();
+    expect(voiceMock.options?.disabled).toBe(true);
+  });
+
+  it('renders the voice button after the attach button and toggles on click in developer mode', () => {
     renderChatInput();
 
     const attach = screen.getByTitle('composer.attachFiles');

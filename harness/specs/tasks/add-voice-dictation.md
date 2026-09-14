@@ -3,7 +3,7 @@ id: add-voice-dictation
 title: Add speech-to-text voice dictation to the chat composer
 scenario: gateway-backend-communication
 taskType: runtime-bridge
-intent: Add push-to-talk voice dictation that records microphone audio in the renderer, transcribes it through a user-configured OpenAI-compatible endpoint via a new Main-owned `asr` host module, and inserts the text at the chat composer cursor, with configuration gated behind the Models page Speech-to-text tab.
+intent: Add Developer Mode-gated push-to-talk voice dictation that records microphone audio in the renderer, transcribes it through a user-configured OpenAI-compatible endpoint via a new Main-owned `asr` host module, and inserts the text at the chat composer cursor, with configuration under the Models page Speech-to-text tab.
 touchedAreas:
   - harness/specs/tasks/add-voice-dictation.md
   - harness/reference/voice-dictation.md
@@ -56,14 +56,17 @@ touchedAreas:
   - tests/unit/models-page.test.tsx
   - tests/unit/harness-specs.test.ts
   - tests/e2e/voice-dictation.spec.ts
+  - tests/e2e/developer-mode.spec.ts
+  - tests/e2e/native-theme-select-popup.spec.ts
   - electron-builder.yml
   - README.md
   - README.zh-CN.md
   - README.ja-JP.md
   - README.ru-RU.md
 expectedUserBehavior:
-  - With speech-to-text configured, the chat composer shows a mic button; clicking it starts recording with a visible elapsed timer, clicking again stops recording and inserts the transcribed text at the composer cursor.
-  - When speech-to-text is not configured, clicking the mic button shows a localized guidance toast and opens Settings instead of recording.
+  - With Developer Mode enabled and speech-to-text configured, the chat composer shows a mic button; clicking it starts recording with a visible elapsed timer, clicking again stops recording and inserts the transcribed text at the composer cursor.
+  - With Developer Mode disabled, the composer mic button and Models page Speech-to-text tab are hidden, and direct navigation to `/models?tab=voice` falls back to Chat models.
+  - When Developer Mode is enabled but speech-to-text is not configured, clicking the mic button shows a localized guidance toast and opens the Models page Speech-to-text tab instead of recording.
   - Recording is capped at 180 seconds with automatic stop, Escape cancels and discards a recording, and the composer textarea is not editable while recording or transcribing.
   - Microphone failures, HTTP errors, empty results, and network failures surface localized error toasts without breaking composer state.
   - Models page exposes a developer-gated Speech-to-text tab supporting OpenAI, Groq, SiliconFlow, and custom OpenAI-compatible presets, with the API key stored locally and never synced to OpenClaw.
@@ -86,7 +89,7 @@ requiredTests:
   - pnpm run typecheck
   - pnpm run lint:check
   - pnpm run build:vite
-  - pnpm exec playwright test tests/e2e/voice-dictation.spec.ts
+  - pnpm exec playwright test tests/e2e/voice-dictation.spec.ts tests/e2e/developer-mode.spec.ts
   - pnpm harness validate --spec harness/specs/tasks/add-voice-dictation.md
 acceptance:
   - The `asr` host module exposes `getConfig`, `saveConfig`, and `transcribe` through the existing typed `host:invoke` channel with no new ipcMain channel, and the renderer reaches it only through `hostApi.asr` in `src/lib/host-api.ts`.
@@ -94,10 +97,11 @@ acceptance:
   - Transcription requests are Main-owned multipart posts to `POST {baseUrl}/audio/transcriptions` with a 30 second timeout, and HTTP statuses map to stable error codes that survive the IPC boundary.
   - Renderer audio capture converts microphone input to 16 kHz mono PCM16 WAV, enforces a 300 ms minimum and a 180 second maximum, and discards cancelled or stale recordings.
   - Transcribed text is inserted at the composer cursor without clobbering surrounding text, and composer editing stays locked during recording and transcription.
+  - The composer microphone, Models page Speech-to-text tab, and direct voice-tab route are inaccessible until Developer Mode is enabled.
   - The mic button and every voice-dictation error or guidance message are localized in en, zh, ja, and ru with no hardcoded display strings.
   - macOS packaging declares `NSMicrophoneUsageDescription` under `mac.extendInfo` in `electron-builder.yml`.
-  - Electron E2E coverage proves the record-then-insert flow with mocked `asr` host actions and the unconfigured guidance path, without touching the real microphone or OS-global state.
-  - README documentation in en, zh, ja, and ru directs users to Models -> Speech-to-text for configuration and the composer mic button for input.
+  - Electron E2E coverage proves the Developer Mode gate, record-then-insert flow with mocked `asr` host actions, and unconfigured guidance path, without touching the real microphone or OS-global state.
+  - README documentation in en, zh, ja, and ru directs users to enable Developer Mode, then use Models -> Speech-to-text for configuration and the composer mic button for input.
 docs:
   required: true
 ---

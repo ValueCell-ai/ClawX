@@ -71,6 +71,20 @@ async function reloadRenderer(page: Page): Promise<void> {
   }
 }
 
+async function enableDeveloperMode(page: Page): Promise<void> {
+  await expect(page.getByTestId('main-layout')).toBeVisible();
+  await page.getByTestId('sidebar-nav-settings').click();
+  const devModeSwitch = page.getByTestId('settings-dev-mode-switch');
+  await expect(devModeSwitch).toBeVisible();
+  if (await devModeSwitch.getAttribute('data-state') !== 'checked') {
+    await devModeSwitch.click();
+  }
+  await expect(devModeSwitch).toHaveAttribute('data-state', 'checked');
+  await page.evaluate(() => {
+    window.location.hash = '#/';
+  });
+}
+
 test.describe('ClawX voice dictation', () => {
   test('inserts transcribed text at cursor after recording', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
@@ -95,6 +109,7 @@ test.describe('ClawX voice dictation', () => {
       const page = await getStableWindow(app);
       await stubMicrophoneCapture(page);
       await reloadRenderer(page);
+      await enableDeveloperMode(page);
 
       const composer = page.getByTestId('chat-composer-input');
       await expect(composer).toBeVisible({ timeout: 30_000 });
@@ -131,6 +146,7 @@ test.describe('ClawX voice dictation', () => {
 
       const page = await getStableWindow(app);
       await reloadRenderer(page);
+      await enableDeveloperMode(page);
 
       const composer = page.getByTestId('chat-composer-input');
       await expect(composer).toBeVisible({ timeout: 30_000 });

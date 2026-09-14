@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { hostApi } from '@/lib/host-api';
 import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
+import { useSettingsStore } from '@/stores/settings';
 import { useAgentsStore } from '@/stores/agents';
 import { useChatStore } from '@/stores/chat';
 import { useArtifactPanel } from '@/stores/artifact-panel';
@@ -357,6 +358,7 @@ export function ChatInput({
   const contextUsageSourceRef = useRef<{ value: unknown; modelRef: string | null } | undefined>(undefined);
   const isComposingRef = useRef(false);
   const gatewayStatus = useGatewayStore((s) => s.status);
+  const devModeUnlocked = useSettingsStore((s) => s.devModeUnlocked);
   const agents = useAgentsStore((s) => s.agents);
   const updateAgentModel = useAgentsStore((s) => s.updateAgentModel);
   const defaultModelRef = useAgentsStore((s) => s.defaultModelRef);
@@ -428,7 +430,7 @@ export function ChatInput({
     cancel: cancelVoiceDictation,
     getLevels: getVoiceLevels,
   } = useVoiceDictation({
-    disabled: inputDisabled || sending,
+    disabled: !devModeUnlocked || inputDisabled || sending,
     onUnconfigured: () => {
       toast.info(t('composer.voiceNotConfigured'));
       navigate('/models?tab=voice');
@@ -1489,14 +1491,16 @@ export function ChatInput({
             )}
 
             <div className="ml-auto flex items-center gap-1">
-              <VoiceDictationButton
-                status={voiceStatus}
-                elapsedSeconds={voiceElapsedSeconds}
-                disabled={inputDisabled || sending}
-                onToggle={toggleVoiceDictation}
-                onCancel={cancelVoiceDictation}
-                getLevels={getVoiceLevels}
-              />
+              {devModeUnlocked && (
+                <VoiceDictationButton
+                  status={voiceStatus}
+                  elapsedSeconds={voiceElapsedSeconds}
+                  disabled={inputDisabled || sending}
+                  onToggle={toggleVoiceDictation}
+                  onCancel={cancelVoiceDictation}
+                  getLevels={getVoiceLevels}
+                />
+              )}
 
               {/* Send Button */}
               <Button
