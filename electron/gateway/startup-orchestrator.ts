@@ -1,6 +1,7 @@
 import { logger } from '../utils/logger';
 import { LifecycleSupersededError } from './lifecycle-controller';
 import { connectGatewayWithStartupRetry, getGatewayStartupRecoveryAction } from './startup-recovery';
+import { archiveLegacyMemorySidecars, hasLegacyMemorySidecarConflict } from './legacy-memory-sidecar-recovery';
 
 export interface ExistingGatewayInfo {
   port: number;
@@ -132,6 +133,26 @@ export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<vo
           hooks.onDoctorRepairSuccess();
           continue;
         }
+
+        // If doctor --fix could not resolve the issue and stderr indicates a
+        // legacy memory sidecar conflict, attempt to archive the conflicting
+        // sidecar files so the next startup attempt can proceed cleanly.
+        const stderrLines = hooks.getStartupStderrLines();
+        if (hasLegacyMemorySidecarConflict(stderrLines)) {
+          logger.warn(
+            'Doctor repair did not resolve legacy memory sidecar conflict; attempting automatic sidecar archival',
+          );
+          const recoveryResult = await archiveLegacyMemorySidecars();
+          const totalChanged = recoveryResult.archivedSidecars.length + recoveryResult.removedLockFiles.length;
+          if (totalChanged > 0) {
+            logger.info(
+              `Legacy memory recovery: archived ${recoveryResult.archivedSidecars.length} sidecar(s), removed ${recoveryResult.removedLockFiles.length} lock file(s); retrying Gateway startup`,
+            );
+            hooks.onDoctorRepairSuccess();
+            continue;
+          }
+        }
+
         logger.error('OpenClaw doctor repair failed; not retrying Gateway startup');
       }
 
