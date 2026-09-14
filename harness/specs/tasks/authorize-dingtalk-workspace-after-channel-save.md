@@ -75,6 +75,7 @@ acceptance:
   - Workspace OAuth is optional and occurs only after DingTalk configuration has been durably saved; failure or cancellation never rolls back or marks basic chat unavailable.
   - Existing authorized dws installations do not prompt again.
   - The official connector's `__default__` runtime account is reconciled with ClawX's persisted `default` account without a false connection failure or redundant Gateway restart.
+  - A live DingTalk Stream remains connected when the connector's optional `/contact/users/me` health probe returns 403 because the app lacks `Contact.User.Read`; the probe failure must not overwrite explicit `connected: true` runtime state.
   - All new user-facing strings have en, zh, ja, and ru translations and the flow has Electron E2E coverage.
 docs:
   required: true

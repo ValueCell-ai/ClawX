@@ -326,7 +326,18 @@ function resolveRuntimeAccountId(channelType: string, account: GatewayChannelRun
   return normalizeRuntimeAccountId(channelType, accountId);
 }
 
-function resolveProbeFailure(account: GatewayChannelRuntimeAccount): string | undefined {
+function resolveProbeFailure(
+  channelType: string,
+  account: GatewayChannelRuntimeAccount,
+): string | undefined {
+  // DingTalk's official probe fetches /contact/users/me after opening the
+  // Stream connection. That auxiliary request can return 403 when the app has
+  // no Contact.User.Read scope even though basic bot chat is already live.
+  // Treat the connector's explicit Stream state as authoritative in that case.
+  if (
+    toUiChannelType(channelType) === 'dingtalk'
+    && (account.connected === true || account.linked === true)
+  ) return undefined;
   // Some connectors retain lastError after reconnecting. A successful live
   // probe is authoritative and must clear a remembered transient failure.
   if (account.probe?.ok === true) return undefined;
@@ -347,7 +358,7 @@ function rememberChannelProbeFailures(status: GatewayChannelStatusPayload | null
     for (const account of accounts) {
       const key = channelProbeFailureKey(channelType, resolveRuntimeAccountId(channelType, account));
       seen.add(key);
-      const failure = resolveProbeFailure(account);
+      const failure = resolveProbeFailure(channelType, account);
       if (failure) {
         channelProbeFailures.set(key, { lastError: failure, recordedAt: now });
       } else {
@@ -368,6 +379,13 @@ function overlayRememberedProbeFailures(status: GatewayChannelStatusPayload | nu
       const key = channelProbeFailureKey(channelType, resolveRuntimeAccountId(channelType, account));
       const remembered = channelProbeFailures.get(key);
       if (!remembered) continue;
+      if (
+        toUiChannelType(channelType) === 'dingtalk'
+        && (account.connected === true || account.linked === true)
+      ) {
+        channelProbeFailures.delete(key);
+        continue;
+      }
       if (typeof account.lastError === 'string' && account.lastError.trim()) continue;
       account.lastError = remembered.lastError;
       account.probe = { ok: false, error: remembered.lastError };

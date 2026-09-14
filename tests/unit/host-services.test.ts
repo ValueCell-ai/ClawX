@@ -942,6 +942,59 @@ describe('host services', () => {
     expect(dingtalk?.accounts[0]?.lastError).toBeUndefined();
   });
 
+  it('keeps a connected DingTalk Stream healthy when its optional contact probe returns 403', async () => {
+    readOpenClawConfigMock.mockResolvedValue({
+      channels: {
+        dingtalk: {
+          accounts: {
+            default: { clientId: 'ding-client' },
+          },
+        },
+      },
+    });
+    listConfiguredChannelsFromConfigMock.mockResolvedValue(['dingtalk']);
+    listConfiguredChannelAccountsFromConfigMock.mockReturnValue({
+      dingtalk: { defaultAccountId: 'default', accountIds: ['default'] },
+    });
+    const connectedWithForbiddenProbe = {
+      channelDefaultAccountId: { dingtalk: '__default__' },
+      channelAccounts: {
+        dingtalk: [{
+          accountId: '__default__',
+          configured: true,
+          running: true,
+          connected: true,
+          lastError: 'Request failed with status code 403',
+          probe: { ok: false, error: 'Request failed with status code 403' },
+        }],
+      },
+    };
+    const gatewayManager = {
+      rpc: vi.fn().mockResolvedValue(connectedWithForbiddenProbe),
+      getStatus: vi.fn(() => ({ state: 'running', port: 18789 })),
+      getDiagnostics: vi.fn(() => ({ consecutiveHeartbeatMisses: 0, consecutiveRpcFailures: 0 })),
+    };
+    const { createChannelsApi } = await import('@electron/services/channels-api');
+    const channelsApi = createChannelsApi({ gatewayManager: gatewayManager as never });
+
+    const probed = await channelsApi.accounts({ mode: 'runtime', probe: true });
+    const cached = await channelsApi.accounts({ mode: 'runtime' });
+
+    for (const result of [probed, cached]) {
+      const dingtalk = result.channels.find((channel) => channel.channelType === 'dingtalk');
+      expect(dingtalk).toMatchObject({
+        defaultAccountId: 'default',
+        status: 'connected',
+        accounts: [{
+          accountId: 'default',
+          connected: true,
+          status: 'connected',
+        }],
+      });
+      expect(dingtalk?.accounts[0]?.lastError).toBeUndefined();
+    }
+  });
+
   describe('remembered channel probe failures', () => {
     const feishuConfig = {
       channels: {
