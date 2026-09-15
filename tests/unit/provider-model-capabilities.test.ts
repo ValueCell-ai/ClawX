@@ -15,12 +15,24 @@ describe('inferCustomModelInputModalities', () => {
     'gpt-5.6-sol',
     'claude-opus-4-6',
     'claude-fable-5',
+    'claude-opus-5',
     'gemini-3-flash',
+    'gemini-3.8-flash',
     'qwen2.5-vl',
     'glm-4v',
+    'deepseek-flash',
+    'deepseek/deepseek-flash',
+    'deepseek-v4-flash',
+    'deepseek-v4-flash-vision-exp',
+    // OpenRouter's floating alias and its pinned equivalent.
+    '~deepseek/deepseek-flash-latest',
+    'deepseek/deepseek-v4.1-flash',
     'glm-5.3-flash',
     'zai/GLM-5.3-Flash',
+    'zai-org/GLM-5.3-Flash',
     'glm-5.3-flash:latest',
+    'kimi-k3',
+    'moonshotai/kimi-k3',
     'openai/gpt-5.6-sol',
   ])('marks known vision model %s as image-capable', (modelId) => {
     expect(inferCustomModelInputModalities(modelId)).toEqual(['text', 'image']);
@@ -28,10 +40,14 @@ describe('inferCustomModelInputModalities', () => {
 
   it.each([
     'deepseek-chat',
+    'deepseek-v4-pro',
+    'deepseek-flash-lite',
     'kimi-k2.6',
     'qwen3.6-plus',
     'unknown-private-model',
     'glm-5.3',
+    // The SiliconFlow default: 1M context, but text-only per the vendor docs.
+    'zai-org/GLM-5.3',
     'glm-5.3-flash-lite',
     'glm-5.4-flash',
   ])('uses conservative text-only input for %s', (modelId) => {
@@ -52,16 +68,19 @@ describe('inferCustomModelContextWindow', () => {
 
     // Anthropic
     ['claude-fable-5', 1_000_000],
+    ['claude-opus-5', 1_000_000],
     ['claude-opus-4-8', 1_000_000],
     ['claude-sonnet-4-6', 1_000_000],
     ['claude-opus-4-6', 200_000],
     ['claude-haiku-4-5', 200_000],
 
     // Google
+    ['gemini-3.8-flash', 1_048_576],
     ['gemini-3.1-pro-preview', 1_048_576],
     ['gemini-1.0-pro', 32_768],
 
-    // DeepSeek: V4 and its aliases are 1M, V3 is not.
+    // DeepSeek: V4/V4.1 and their aliases are 1M, V3 is not.
+    ['deepseek-flash', 1_000_000],
     ['deepseek-v4-flash', 1_000_000],
     ['deepseek-v4-pro', 1_000_000],
     ['deepseek-chat', 1_000_000],
@@ -78,6 +97,8 @@ describe('inferCustomModelContextWindow', () => {
     ['qwen3-next-80b', 262_144],
 
     // Z.AI GLM — mirrors the explicit rows in the provider registry.
+    ['glm-5.3-flash', 1_000_000],
+    ['glm-5.3', 1_000_000],
     ['glm-5.2', 1_000_000],
     ['glm-5.1', 200_000],
     ['glm-4.7', 200_000],
@@ -93,6 +114,9 @@ describe('inferCustomModelContextWindow', () => {
     ['openai/gpt-5.6-sol', 1_050_000],
     ['deepseek-ai/DeepSeek-V3', 128_000],
     ['moonshotai/kimi-k3', 1_000_000],
+    // OpenRouter tilde-prefixed floating alias.
+    ['~deepseek/deepseek-flash-latest', 1_000_000],
+    ['zai-org/GLM-5.3', 1_000_000],
   ])('resolves the family behind vendor-prefixed id %s', (modelId, expected) => {
     expect(inferCustomModelContextWindow(modelId)).toBe(expected);
   });

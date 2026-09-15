@@ -14,6 +14,7 @@ import {
 import {
   BUILTIN_PROVIDER_TYPES,
   getProviderConfig,
+  getProviderDefaultModel,
   getProviderEnvVar,
   getProviderEnvVars,
 } from '@electron/utils/provider-registry';
@@ -88,7 +89,7 @@ describe('provider metadata', () => {
     });
   });
 
-  it('includes Z.AI CN and Global with OpenClaw-aligned endpoints and glm-5.2 default', () => {
+  it('includes Z.AI CN and Global with OpenClaw-aligned endpoints and glm-5.3-flash default', () => {
     expect(PROVIDER_TYPES).toEqual(expect.arrayContaining(['zai', 'zai-global']));
     expect(BUILTIN_PROVIDER_TYPES).toEqual(expect.arrayContaining(['zai', 'zai-global']));
 
@@ -98,22 +99,22 @@ describe('provider metadata', () => {
           id: 'zai',
           name: 'Z.AI (CN)',
           defaultBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-          defaultModelId: 'glm-5.2',
+          defaultModelId: 'glm-5.3-flash',
           showBaseUrl: true,
           showModelId: true,
           codePlanPresetBaseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
-          codePlanPresetModelId: 'glm-5.2',
+          codePlanPresetModelId: 'glm-5.3-flash',
           codePlanDocsUrl: 'https://docs.bigmodel.cn/cn/coding-plan/quick-start',
         }),
         expect.objectContaining({
           id: 'zai-global',
           name: 'Z.AI (Global)',
           defaultBaseUrl: 'https://api.z.ai/api/paas/v4',
-          defaultModelId: 'glm-5.2',
+          defaultModelId: 'glm-5.3-flash',
           showBaseUrl: true,
           showModelId: true,
           codePlanPresetBaseUrl: 'https://api.z.ai/api/coding/paas/v4',
-          codePlanPresetModelId: 'glm-5.2',
+          codePlanPresetModelId: 'glm-5.3-flash',
           codePlanDocsUrl: 'https://docs.z.ai/devpack/quick-start',
         }),
       ]),
@@ -146,6 +147,48 @@ describe('provider metadata', () => {
         apiKeyEnv: 'MOONSHOT_API_KEY',
       })
     );
+  });
+
+  it('ships matching default models in the renderer and Main registries', () => {
+    for (const provider of PROVIDER_TYPE_INFO) {
+      if (provider.id === 'custom') continue;
+      expect(
+        { id: provider.id, defaultModelId: getProviderDefaultModel(provider.id) },
+        `renderer/Main default model drift for ${provider.id}`,
+      ).toEqual({ id: provider.id, defaultModelId: provider.defaultModelId });
+    }
+  });
+
+  it('declares image input on the million-token catalog rows and keeps GLM-5.3 text-only', () => {
+    for (const type of ['moonshot', 'moonshot-global']) {
+      expect(getProviderConfig(type)?.models).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'kimi-k3',
+            input: ['text', 'image'],
+            contextWindow: 1_000_000,
+          }),
+        ]),
+      );
+    }
+
+    for (const type of ['zai', 'zai-global']) {
+      expect(getProviderConfig(type)?.models).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'glm-5.3-flash',
+            input: ['text', 'image'],
+            contextWindow: 1_000_000,
+          }),
+          // Same 1M window, but the vendor serves GLM-5.3 as text-only.
+          expect.objectContaining({
+            id: 'glm-5.3',
+            input: ['text'],
+            contextWindow: 1_000_000,
+          }),
+        ]),
+      );
+    }
   });
 
   it('keeps builtin provider sources in sync', () => {
@@ -209,30 +252,33 @@ describe('provider metadata', () => {
 
     expect(anthropic).toMatchObject({
       showModelId: true,
-      defaultModelId: 'claude-opus-4-8',
-      modelIdPlaceholder: 'claude-opus-4-8',
+      defaultModelId: 'claude-opus-5',
+      modelIdPlaceholder: 'claude-opus-5',
     });
     expect(openrouter).toMatchObject({
       showModelId: true,
-      defaultModelId: 'openai/gpt-5.6-sol',
+      defaultModelId: '~deepseek/deepseek-flash-latest',
+      modelIdPlaceholder: '~deepseek/deepseek-flash-latest',
     });
     expect(siliconflow).toMatchObject({
       showModelId: true,
-      defaultModelId: 'deepseek-ai/DeepSeek-V3',
+      defaultModelId: 'zai-org/GLM-5.3',
+      modelIdPlaceholder: 'zai-org/GLM-5.3',
     });
     expect(deepseek).toMatchObject({
       showModelId: true,
-      defaultModelId: 'deepseek-v4-pro',
+      defaultModelId: 'deepseek-flash',
+      modelIdPlaceholder: 'deepseek-flash',
     });
     expect(moonshot).toMatchObject({
       showModelId: true,
-      defaultModelId: 'kimi-k2.6',
-      modelIdPlaceholder: 'kimi-k2.6',
+      defaultModelId: 'kimi-k3',
+      modelIdPlaceholder: 'kimi-k3',
     });
     expect(moonshotGlobal).toMatchObject({
       showModelId: true,
-      defaultModelId: 'kimi-k2.6',
-      modelIdPlaceholder: 'kimi-k2.6',
+      defaultModelId: 'kimi-k3',
+      modelIdPlaceholder: 'kimi-k3',
     });
 
     for (const provider of [anthropic, openrouter, siliconflow, deepseek, moonshot, moonshotGlobal]) {
@@ -255,7 +301,7 @@ describe('provider metadata', () => {
       supportsApiKey: true,
     });
     expect(openai?.hideOAuthUi).toBeUndefined();
-    expect(google).toMatchObject({ showModelId: true, defaultModelId: 'gemini-3.1-pro-preview' });
+    expect(google).toMatchObject({ showModelId: true, defaultModelId: 'gemini-3.8-flash' });
     expect(minimax).toMatchObject({ showModelId: true, defaultModelId: 'MiniMax-M3' });
     expect(minimaxCn).toMatchObject({ showModelId: true, defaultModelId: 'MiniMax-M3' });
 
@@ -266,7 +312,7 @@ describe('provider metadata', () => {
     }
 
     expect(resolveProviderModelForSave(openai, '   ', false)).toBe('gpt-5.6-sol');
-    expect(resolveProviderModelForSave(google, '   ', false)).toBe('gemini-3.1-pro-preview');
+    expect(resolveProviderModelForSave(google, '   ', false)).toBe('gemini-3.8-flash');
     expect(resolveProviderModelForSave(minimax, '   ', false)).toBe('MiniMax-M3');
     expect(resolveProviderModelForSave(minimaxCn, '   ', false)).toBe('MiniMax-M3');
   });
@@ -295,9 +341,9 @@ describe('provider metadata', () => {
       .toBe('Qwen/Qwen3-Coder-480B-A35B-Instruct');
     expect(resolveProviderModelForSave(anthropic, 'claude-sonnet-4-5', false)).toBe('claude-sonnet-4-5');
 
-    expect(resolveProviderModelForSave(openrouter, '   ', false)).toBe('openai/gpt-5.6-sol');
-    expect(resolveProviderModelForSave(siliconflow, '   ', false)).toBe('deepseek-ai/DeepSeek-V3');
-    expect(resolveProviderModelForSave(anthropic, '   ', false)).toBe('claude-opus-4-8');
+    expect(resolveProviderModelForSave(openrouter, '   ', false)).toBe('~deepseek/deepseek-flash-latest');
+    expect(resolveProviderModelForSave(siliconflow, '   ', false)).toBe('zai-org/GLM-5.3');
+    expect(resolveProviderModelForSave(anthropic, '   ', false)).toBe('claude-opus-5');
     expect(resolveProviderModelForSave(ark, '  ep-custom-model  ', false)).toBe('ep-custom-model');
   });
 
