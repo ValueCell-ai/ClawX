@@ -21,6 +21,11 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
     supportedAuthModes: ['api_key'],
     defaultAuthMode: 'api_key',
     supportsMultipleAccounts: true,
+    providerConfig: {
+      baseUrl: 'https://api.anthropic.com/v1',
+      api: 'anthropic-messages',
+      apiKeyEnv: 'ANTHROPIC_API_KEY',
+    },
   },
   {
     id: 'openai',
@@ -60,6 +65,11 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
     supportedAuthModes: ['api_key'],
     defaultAuthMode: 'api_key',
     supportsMultipleAccounts: true,
+    providerConfig: {
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      api: 'google-generative-ai',
+      apiKeyEnv: 'GEMINI_API_KEY',
+    },
   },
   {
     id: 'openrouter',

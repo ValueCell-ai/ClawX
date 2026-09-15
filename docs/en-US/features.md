@@ -76,7 +76,9 @@ DeepSeek maps to OpenClaw's built-in `deepseek` provider (`DEEPSEEK_API_KEY`). T
 
 The remaining built-in defaults also track the current million-token generation and accept images: Anthropic uses `claude-opus-5`, Google uses `gemini-3.8-flash`, Moonshot (CN / Global) uses `kimi-k3`, and OpenRouter uses `~deepseek/deepseek-flash-latest` — the `~` prefix is OpenRouter's marker for a floating "latest" alias, whose pinned equivalent is `deepseek/deepseek-v4.1-flash`. SiliconFlow defaults to `zai-org/GLM-5.3`, which shares the 1M context window but is text-only; choose `zai-org/GLM-5.3-Flash` there if you need image input.
 
-When a compatible gateway rejects `/models` for non-authentication reasons, ClawX automatically falls back to a lightweight `/chat/completions` or `/responses` probe using the configured model during API-key validation.
+Anthropic and Google register explicitly in the OpenClaw runtime configuration, the same way every other built-in provider does. Saving one of those accounts therefore delivers its key and its selected model immediately, and a model id newer than the bundled runtime's own catalog still resolves.
+
+When a compatible gateway rejects `/models` for non-authentication reasons, ClawX automatically falls back to a lightweight `/chat/completions` or `/responses` probe using the configured model during API-key validation. For Anthropic and Google keys, validation additionally compares the configured model against the vendor's model listing and names an unavailable model instead of saving a provider that would fail on its first turn. Compatible relays are exempt from that comparison, because their listings can advertise only part of what they serve.
 
 ### Adaptive Theming
 
