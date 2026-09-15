@@ -59,6 +59,7 @@ touchedAreas:
   - tests/e2e/developer-mode.spec.ts
   - tests/e2e/native-theme-select-popup.spec.ts
   - electron-builder.yml
+  - entitlements.mac.plist
   - README.md
   - README.zh-CN.md
   - README.ja-JP.md
@@ -99,7 +100,7 @@ acceptance:
   - Transcribed text is inserted at the composer cursor without clobbering surrounding text, and composer editing stays locked during recording and transcription.
   - The composer microphone, Models page Speech-to-text tab, and direct voice-tab route are inaccessible until Developer Mode is enabled.
   - The mic button and every voice-dictation error or guidance message are localized in en, zh, ja, and ru with no hardcoded display strings.
-  - macOS packaging declares `NSMicrophoneUsageDescription` under `mac.extendInfo` in `electron-builder.yml`.
+  - macOS packaging declares `NSMicrophoneUsageDescription` under `mac.extendInfo` in `electron-builder.yml` and enables `com.apple.security.device.audio-input` in both the app and inherited helper entitlements for Hardened Runtime audio capture.
   - Electron E2E coverage proves the Developer Mode gate, record-then-insert flow with mocked `asr` host actions, and unconfigured guidance path, without touching the real microphone or OS-global state.
   - README documentation in en, zh, ja, and ru directs users to enable Developer Mode, then use Models -> Speech-to-text for configuration and the composer mic button for input.
 docs:
