@@ -41,7 +41,7 @@ test.describe('ClawX provider lifecycle', () => {
           name: 'DeepSeek Replacement E2E',
           type: 'deepseek',
           baseUrl: 'https://api.deepseek.com/v1',
-          model: 'deepseek-v4-pro',
+          model: 'deepseek-flash',
           enabled: true,
           createdAt: now,
           updatedAt: new Date(Date.now() + 1_000).toISOString(),
@@ -501,12 +501,12 @@ test.describe('ClawX provider lifecycle', () => {
 
     await page.getByTestId('add-provider-type-zai').click();
     await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://open.bigmodel.cn/api/paas/v4');
-    await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('glm-5.2');
+    await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('glm-5.3-flash');
     await expect(page.getByTestId('add-provider-codeplan-mode-tab')).toBeVisible();
 
     await page.getByTestId('add-provider-codeplan-mode-tab').click();
     await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://open.bigmodel.cn/api/coding/paas/v4');
-    await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('glm-5.2');
+    await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('glm-5.3-flash');
 
     await page.getByTestId('add-provider-codeplan-apikey-tab').click();
     await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://open.bigmodel.cn/api/paas/v4');
@@ -516,5 +516,51 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://api.z.ai/api/paas/v4');
     await page.getByTestId('add-provider-codeplan-mode-tab').click();
     await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://api.z.ai/api/coding/paas/v4');
+  });
+
+  test('prefills the image-capable DeepSeek default model', async ({ page }) => {
+    await completeSetup(page);
+
+    await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('providers-settings')).toBeVisible();
+
+    await page.getByTestId('providers-add-button').click();
+    await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
+
+    await page.getByTestId('add-provider-type-deepseek').click();
+    const modelIdInput = page.getByTestId('add-provider-model-id-input');
+    await expect(modelIdInput).toHaveValue('deepseek-flash');
+    await expect(modelIdInput).toHaveAttribute('placeholder', 'deepseek-flash');
+  });
+
+  test('prefills the refreshed million-token default model per provider', async ({ page }) => {
+    await completeSetup(page);
+
+    await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('providers-settings')).toBeVisible();
+
+    await page.getByTestId('providers-add-button').click();
+    await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
+
+    const expectedDefaults: Array<[string, string]> = [
+      ['anthropic', 'claude-opus-5'],
+      ['google', 'gemini-3.8-flash'],
+      ['moonshot', 'kimi-k3'],
+      ['moonshot-global', 'kimi-k3'],
+      // OpenRouter floating aliases carry a `~` prefix in their catalog.
+      ['openrouter', '~deepseek/deepseek-flash-latest'],
+      // SiliconFlow's GLM-5.3 is 1M-context but text-only.
+      ['siliconflow', 'zai-org/GLM-5.3'],
+    ];
+
+    for (const [index, [providerId, expectedModelId]] of expectedDefaults.entries()) {
+      if (index > 0) {
+        await page.getByTestId('add-provider-change-type').click();
+      }
+      await page.getByTestId(`add-provider-type-${providerId}`).click();
+      const modelIdInput = page.getByTestId('add-provider-model-id-input');
+      await expect(modelIdInput).toHaveValue(expectedModelId);
+      await expect(modelIdInput).toHaveAttribute('placeholder', expectedModelId);
+    }
   });
 });
