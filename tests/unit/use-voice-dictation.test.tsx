@@ -4,6 +4,7 @@ import { useVoiceDictation, VOICE_MAX_RECORDING_MS, VOICE_TIMER_INTERVAL_MS } fr
 
 const hostApiMocks = vi.hoisted(() => ({
   getConfig: vi.fn(),
+  getMicrophoneAccess: vi.fn(),
   transcribe: vi.fn(),
 }));
 
@@ -13,6 +14,7 @@ vi.mock('@/lib/host-api', () => ({
   hostApi: {
     asr: {
       getConfig: hostApiMocks.getConfig,
+      getMicrophoneAccess: hostApiMocks.getMicrophoneAccess,
       transcribe: hostApiMocks.transcribe,
     },
   },
@@ -39,6 +41,7 @@ function setup(overrides?: Partial<Parameters<typeof useVoiceDictation>[0]>) {
   const session = makeSession();
   startVoiceRecordingMock.mockResolvedValue(session);
   hostApiMocks.getConfig.mockResolvedValue({ configured: true, config: null, hasApiKey: true });
+  hostApiMocks.getMicrophoneAccess.mockResolvedValue({ platform: 'darwin', status: 'granted', canOpenSettings: true });
   hostApiMocks.transcribe.mockResolvedValue({ text: 'hi' });
   const rendered = renderHook((props: Partial<Parameters<typeof useVoiceDictation>[0]> = {}) =>
     useVoiceDictation({
@@ -53,6 +56,67 @@ function setup(overrides?: Partial<Parameters<typeof useVoiceDictation>[0]>) {
 }
 
 describe('useVoiceDictation', () => {
+  it.each(['denied', 'restricted'])('blocks %s before capture', async (status) => {
+    const onPermissionBlocked = vi.fn();
+    const { result, onError } = setup({ onPermissionBlocked });
+    const access = { platform: 'darwin', status, canOpenSettings: true };
+    hostApiMocks.getMicrophoneAccess.mockResolvedValue(access);
+    await act(async () => { await result.current.toggle(); });
+    expect(startVoiceRecordingMock).not.toHaveBeenCalled();
+    expect(onPermissionBlocked).toHaveBeenCalledWith(access);
+    expect(onError).not.toHaveBeenCalled();
+    expect(result.current.status).toBe('idle');
+  });
+  it('rechecks first-use denial after capture failure', async () => {
+    const onPermissionBlocked = vi.fn();
+    const { result, onError } = setup({ onPermissionBlocked });
+    hostApiMocks.getMicrophoneAccess.mockResolvedValueOnce({ status: 'not-determined' }).mockResolvedValueOnce({ status: 'denied' });
+    startVoiceRecordingMock.mockRejectedValue({ code: 'MIC_UNAVAILABLE' });
+    await act(async () => { await result.current.toggle(); });
+    expect(onPermissionBlocked).toHaveBeenCalledWith({ status: 'denied' });
+    expect(onError).not.toHaveBeenCalled();
+  });
+  it('read failures do not block capture', async () => {
+    const { result } = setup();
+    hostApiMocks.getMicrophoneAccess.mockRejectedValue(new Error('bridge'));
+    await act(async () => { await result.current.toggle(); });
+    expect(result.current.status).toBe('recording');
+  });
+  it.each(['not-determined', 'unknown'])('allows capture for %s', async (status) => {
+    const { result } = setup();
+    hostApiMocks.getMicrophoneAccess.mockResolvedValue({ status });
+    await act(async () => { await result.current.toggle(); });
+    expect(result.current.status).toBe('recording');
+  });
+  it('disabling during a permission read abandons capture and guidance', async () => {
+    const onPermissionBlocked = vi.fn();
+    const { result, rerender } = setup({ onPermissionBlocked });
+    let resolve!: (value: unknown) => void;
+    hostApiMocks.getMicrophoneAccess.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+    await act(async () => { void result.current.toggle(); });
+    rerender({ disabled: true });
+    await act(async () => { resolve({ status: 'denied' }); });
+    expect(onPermissionBlocked).not.toHaveBeenCalled();
+    expect(startVoiceRecordingMock).not.toHaveBeenCalled();
+    expect(result.current.status).toBe('idle');
+  });
+  it.each([false, true])('cancels pending permission query (recheck=%s)', async (recheck) => {
+    const onPermissionBlocked = vi.fn();
+    const { result, onError } = setup({ onPermissionBlocked });
+    let resolve!: (value: unknown) => void;
+    if (recheck) {
+      hostApiMocks.getMicrophoneAccess.mockResolvedValueOnce({ status: 'not-determined' });
+      startVoiceRecordingMock.mockRejectedValue({ code: 'MIC_UNAVAILABLE' });
+    }
+    hostApiMocks.getMicrophoneAccess.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
+    await act(async () => { void result.current.toggle(); });
+    act(() => { result.current.cancel(); });
+    await act(async () => { resolve({ status: 'denied' }); });
+    expect(onPermissionBlocked).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(result.current.status).toBe('idle');
+    expect(startVoiceRecordingMock).toHaveBeenCalledTimes(recheck ? 1 : 0);
+  });
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -123,6 +187,7 @@ describe('useVoiceDictation', () => {
 
     expect(startVoiceRecordingMock).not.toHaveBeenCalled();
     expect(onUnconfigured).toHaveBeenCalledTimes(1);
+    expect(hostApiMocks.getMicrophoneAccess).not.toHaveBeenCalled();
     expect(result.current.status).toBe('idle');
   });
 

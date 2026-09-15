@@ -20,6 +20,8 @@ ownedPaths:
   - electron/utils/**
   - resources/skills/computer-use/**
   - src/pages/ComputerUse/**
+  - src/hooks/useVoiceDictation.ts
+  - src/components/voice/**
   - tests/e2e/computer-use*.spec.ts
   - electron/shared/providers/**
   - src/components/settings/ProvidersSettings.tsx
@@ -58,6 +60,7 @@ conditionalProfiles:
       - channels/agents/settings UI depends on new backend response shape
       - Web Browser guest, navigation, session, permission, or data policy changes
       - Computer Use management wording, opt-in, managed Skill installation or selection, or exec/read image behavior changes
+      - Voice dictation microphone permission detection or system-settings guidance changes
 requiredRules:
   - openclaw-config-delivery
   - renderer-main-boundary
@@ -78,6 +81,7 @@ requiredRules:
   - sidebar-session-attention-authority
   - web-browser-security-and-lifecycle
   - local-computer-use
+  - microphone-permission-guidance
   - e2e-parallel-isolation
   - comms-regression
   - docs-sync

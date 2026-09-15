@@ -17,6 +17,10 @@
     <!-- Network access for WebSocket/HTTP -->
     <key>com.apple.security.network.client</key>
     <true/>
+
+    <!-- Microphone capture under Hardened Runtime (app and inherited helpers) -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
     
     <!-- Allow spawning child processes (for Gateway) -->
     <key>com.apple.security.cs.allow-dyld-environment-variables</key>

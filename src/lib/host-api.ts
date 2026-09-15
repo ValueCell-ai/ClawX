@@ -464,6 +464,8 @@ export const hostApi = {
     ),
   },
   asr: {
+    getMicrophoneAccess: () => invokeHost('asr', 'getMicrophoneAccess'),
+    openMicrophoneSettings: () => invokeHost('asr', 'openMicrophoneSettings'),
     getConfig: () => invokeHost('asr', 'getConfig'),
     saveConfig: (config: AsrConfig, apiKey?: string) => (
       invokeHost('asr', 'saveConfig', { config, apiKey } satisfies AsrConfigPayload)

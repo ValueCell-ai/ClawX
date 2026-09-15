@@ -36,6 +36,8 @@ import { DEFAULT_WORKSPACE_CWD, isDefaultWorkspacePath, normalizeWorkspacePath }
 import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
 import { useVoiceDictation } from '@/hooks/useVoiceDictation';
 import { VoiceDictationButton } from '@/components/voice/VoiceDictationButton';
+import { MicrophonePermissionDialog } from '@/components/voice/MicrophonePermissionDialog';
+import type { AsrMicrophoneAccessResult } from '@shared/host-api/contract';
 import { ModelIcon } from '@/components/common/ModelIcon';
 import { AcpSessionPlan } from './AcpSessionPlan';
 import { AcpSubagentSessions, type AcpSubagentSession } from './AcpSubagentSessions';
@@ -423,6 +425,7 @@ export function ChatInput({
   const skillTokenRanges = useMemo(() => findSkillTokenRanges(input), [input]);
   const openArtifactPreview = useArtifactPanel((s) => s.openPreview);
   const navigate = useNavigate();
+  const [microphoneAccess, setMicrophoneAccess] = useState<AsrMicrophoneAccessResult | null>(null);
   const {
     status: voiceStatus,
     elapsedSeconds: voiceElapsedSeconds,
@@ -430,7 +433,8 @@ export function ChatInput({
     cancel: cancelVoiceDictation,
     getLevels: getVoiceLevels,
   } = useVoiceDictation({
-    disabled: !devModeUnlocked || inputDisabled || sending,
+    disabled: !devModeUnlocked || inputDisabled || sending || microphoneAccess !== null,
+    onPermissionBlocked: setMicrophoneAccess,
     onUnconfigured: () => {
       toast.info(t('composer.voiceNotConfigured'));
       navigate('/models?tab=voice');
@@ -1663,6 +1667,7 @@ export function ChatInput({
           </div>
         </div>
       </div>
+      {microphoneAccess && <MicrophonePermissionDialog access={microphoneAccess} onClose={() => setMicrophoneAccess(null)} />}
     </div>
   );
 }

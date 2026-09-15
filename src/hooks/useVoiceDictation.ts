@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { hostApi } from '@/lib/host-api';
+import type { AsrMicrophoneAccessResult } from '@shared/host-api/contract';
 import { parseAsrErrorCode, type AsrErrorCode } from '@shared/asr/errors';
 import {
   startVoiceRecording,
@@ -17,6 +18,7 @@ export interface UseVoiceDictationOptions {
   onError: (code: AsrErrorCode | VoiceRecorderErrorCode) => void;
   onTranscribed: (text: string) => void;
   onLevel?: (level: number) => void;
+  onPermissionBlocked?: (access: AsrMicrophoneAccessResult) => void;
 }
 
 export interface UseVoiceDictationResult {
@@ -44,19 +46,19 @@ const ASR_ERROR_CODES: ReadonlySet<string> = new Set<AsrErrorCode | VoiceRecorde
   'TOO_SHORT',
 ]);
 
-function resolveAsrErrorCode(error: unknown): AsrErrorCode {
+function resolveAsrErrorCode(error: unknown): AsrErrorCode | VoiceRecorderErrorCode {
   const message = error instanceof Error ? error.message : '';
   const parsed = message ? parseAsrErrorCode(message) : null;
   if (parsed) return parsed;
   const code = (error as { code?: unknown } | null)?.code;
   if (typeof code === 'string' && ASR_ERROR_CODES.has(code)) {
-    return code as AsrErrorCode;
+    return code as AsrErrorCode | VoiceRecorderErrorCode;
   }
   return 'REQUEST';
 }
 
 export function useVoiceDictation(options: UseVoiceDictationOptions): UseVoiceDictationResult {
-  const { disabled, onUnconfigured, onError, onTranscribed, onLevel } = options;
+  const { disabled, onUnconfigured, onError, onTranscribed, onLevel, onPermissionBlocked } = options;
   const [status, setStatus] = useState<VoiceDictationStatus>('idle');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
@@ -67,12 +69,12 @@ export function useVoiceDictation(options: UseVoiceDictationOptions): UseVoiceDi
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedAtRef = useRef(0);
   const disabledRef = useRef(disabled);
-  const callbacksRef = useRef({ onUnconfigured, onError, onTranscribed, onLevel });
+  const callbacksRef = useRef({ onUnconfigured, onError, onTranscribed, onLevel, onPermissionBlocked });
   const levelsRef = useRef<number[]>(new Array<number>(VOICE_LEVEL_HISTORY).fill(0));
 
   useEffect(() => {
     disabledRef.current = disabled;
-    callbacksRef.current = { onUnconfigured, onError, onTranscribed, onLevel };
+    callbacksRef.current = { onUnconfigured, onError, onTranscribed, onLevel, onPermissionBlocked };
   });
 
   const applyStatus = useCallback((next: VoiceDictationStatus) => {
@@ -147,6 +149,17 @@ export function useVoiceDictation(options: UseVoiceDictationOptions): UseVoiceDi
       const generation = ++generationRef.current;
       setElapsedSeconds(0);
       applyStatus('transcribing');
+      const checkPermission = async () => {
+        let access: AsrMicrophoneAccessResult;
+        try { access = await hostApi.asr.getMicrophoneAccess(); } catch { return false; }
+        if (generationRef.current !== generation) return false;
+        if (access.status !== 'denied' && access.status !== 'restricted') return false;
+        startingRef.current = false;
+        resetToIdle();
+        if (callbacksRef.current.onPermissionBlocked) callbacksRef.current.onPermissionBlocked(access);
+        else callbacksRef.current.onError('MIC_UNAVAILABLE');
+        return true;
+      };
       try {
         const readiness = await hostApi.asr.getConfig();
         if (generationRef.current !== generation) return;
@@ -156,6 +169,8 @@ export function useVoiceDictation(options: UseVoiceDictationOptions): UseVoiceDi
           callbacksRef.current.onUnconfigured();
           return;
         }
+        if (await checkPermission()) return;
+        if (generationRef.current !== generation) return;
         const session = await startVoiceRecording({ onLevel: handleLevel });
         if (generationRef.current !== generation) {
           session.cancel();
@@ -170,6 +185,10 @@ export function useVoiceDictation(options: UseVoiceDictationOptions): UseVoiceDi
         startTimer(generation);
       } catch (error) {
         if (generationRef.current !== generation) return;
+        if (resolveAsrErrorCode(error) === 'MIC_UNAVAILABLE') {
+          if (await checkPermission()) return;
+          if (generationRef.current !== generation) return;
+        }
         startingRef.current = false;
         resetToIdle();
         callbacksRef.current.onError(resolveAsrErrorCode(error));
@@ -193,6 +212,12 @@ export function useVoiceDictation(options: UseVoiceDictationOptions): UseVoiceDi
     clearLevels();
     resetToIdle();
   }, [clearLevels, resetToIdle]);
+
+  useEffect(() => {
+    // Disabling revokes the external recording session and invalidates pending OS reads.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (disabled) cancel();
+  }, [disabled, cancel]);
 
   useEffect(() => {
     return () => {

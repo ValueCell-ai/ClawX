@@ -624,6 +624,13 @@ export async function installIpcMocks(
             }
           }
 
+          // Never consult host OS microphone state or launch privacy settings in E2E.
+          if (request?.module === 'asr' && request.action === 'getMicrophoneAccess') {
+            return respond(request.id, { platform: 'darwin', status: 'granted', canOpenSettings: true });
+          }
+          if (request?.module === 'asr' && request.action === 'openMicrophoneSettings') {
+            return respond(request.id, { opened: true });
+          }
           if (request?.module === 'files') {
             const payload = request.payload ?? {};
             const path = typeof payload.path === 'string' ? payload.path : '';
