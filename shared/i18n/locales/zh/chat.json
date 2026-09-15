@@ -289,6 +289,14 @@
         "voiceInput": "语音输入",
         "voiceStop": "停止录音",
         "voiceNotConfigured": "语音转写尚未配置，请前往「模型」页设置。",
+        "microphonePermission": {
+            "title": "需要麦克风权限",
+            "denied": "麦克风访问已被拒绝。请在系统隐私设置中允许访问，以使用语音输入。",
+            "restricted": "麦克风访问受到管理员或设备策略限制。请联系管理员；仅修改隐私设置可能无法恢复访问。",
+            "openSettings": "打开系统设置",
+            "close": "关闭",
+            "openFailed": "无法打开系统设置。请手动打开麦克风隐私设置。"
+        },
         "voiceError": {
             "MIC_UNAVAILABLE": "麦克风不可用，请检查系统权限。",
             "TOO_SHORT": "未捕获到语音。",

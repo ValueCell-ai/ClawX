@@ -289,6 +289,14 @@
         "voiceInput": "Voice input",
         "voiceStop": "Stop recording",
         "voiceNotConfigured": "Voice transcription is not configured. Open Models to set it up.",
+        "microphonePermission": {
+            "title": "Microphone access needed",
+            "denied": "Microphone access was denied. Allow access in system privacy settings to use voice input.",
+            "restricted": "Microphone access is restricted by administrator or device policy. Contact your administrator; changing privacy settings alone may not enable access.",
+            "openSettings": "Open system settings",
+            "close": "Close",
+            "openFailed": "Could not open system settings. Please open microphone privacy settings manually."
+        },
         "voiceError": {
             "MIC_UNAVAILABLE": "Microphone unavailable. Check system permissions.",
             "TOO_SHORT": "No speech captured.",

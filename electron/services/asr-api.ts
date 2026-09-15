@@ -4,6 +4,7 @@ import { serializeAsrError } from '@shared/asr/errors';
 import { AsrClientError, transcribeWav, validateAsrConfig } from './asr/asr-client';
 import { getAsrApiKey, resolveAsrReadiness, setAsrApiKey, setAsrConfig } from './asr/config-store';
 import { isRecord } from './payload-utils';
+import { getMicrophoneAccess, openMicrophoneSettings } from './asr/microphone-access';
 
 const MIN_WAV_BYTES = 44;
 
@@ -13,6 +14,8 @@ function toSerializedAsrError(error: unknown): unknown {
 
 export function createAsrApi(): CompleteHostServiceRegistry['asr'] {
   return {
+    getMicrophoneAccess: async () => getMicrophoneAccess(),
+    openMicrophoneSettings: async () => openMicrophoneSettings(),
     getConfig: async () => resolveAsrReadiness(),
     saveConfig: async (payload) => {
       if (!isRecord(payload) || !isRecord(payload.config)) {

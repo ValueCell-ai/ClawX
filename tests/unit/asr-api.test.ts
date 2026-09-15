@@ -30,6 +30,8 @@ const { AsrMockStore, asrMockStoreInstances } = vi.hoisted(() => {
 });
 
 vi.mock('electron-store', () => ({ default: AsrMockStore }));
+const microphoneMocks = vi.hoisted(() => ({ getMicrophoneAccess: vi.fn(), openMicrophoneSettings: vi.fn() }));
+vi.mock('@electron/services/asr/microphone-access', () => microphoneMocks);
 
 vi.mock('@electron/services/secrets/secret-store', () => ({
   getProviderSecret: (...args: unknown[]) => getProviderSecretMock(...args),
@@ -64,6 +66,16 @@ describe('asr host api', () => {
       hasApiKey: false,
       configured: false,
     });
+  });
+
+  it('exposes permission reads and explicit settings actions', async () => {
+    const access = { platform: 'darwin', status: 'denied', canOpenSettings: true };
+    microphoneMocks.getMicrophoneAccess.mockReturnValue(access);
+    microphoneMocks.openMicrophoneSettings.mockResolvedValue({ opened: false });
+    const api = await loadApi();
+    await expect(api.getMicrophoneAccess()).resolves.toEqual(access);
+    expect(microphoneMocks.openMicrophoneSettings).not.toHaveBeenCalled();
+    await expect(api.openMicrophoneSettings()).resolves.toEqual({ opened: false });
   });
 
   it('persists a validated config and reports configured only once the key exists', async () => {

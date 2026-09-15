@@ -902,6 +902,11 @@ export type AsrConfig = {
   language?: string;
 };
 export type AsrConfigPayload = { config: AsrConfig; apiKey?: string };
+export type AsrMicrophoneAccessResult = {
+  platform: 'darwin' | 'win32' | 'other';
+  status: 'not-determined' | 'granted' | 'denied' | 'restricted' | 'unknown';
+  canOpenSettings: boolean;
+};
 export type AsrConfigResult = { configured: boolean; config: AsrConfig | null; hasApiKey: boolean };
 export type AsrTranscribePayload = { wav: Uint8Array };
 export type AsrTranscribeResult = { text: string };
@@ -1126,6 +1131,8 @@ export type HostApiContract = {
     recentTokenHistory: (payload?: UsageHistoryPayload) => UsageHistoryEntry[];
   };
   asr: {
+    getMicrophoneAccess: () => AsrMicrophoneAccessResult;
+    openMicrophoneSettings: () => { opened: boolean };
     getConfig: () => AsrConfigResult;
     saveConfig: (payload: AsrConfigPayload) => AsrConfigResult;
     transcribe: (payload: AsrTranscribePayload) => AsrTranscribeResult;

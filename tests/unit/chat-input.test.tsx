@@ -7,6 +7,7 @@ import type { AcpSubagentSession } from '@/pages/Chat/AcpSubagentSessions';
 const hostApiFetchMock = vi.hoisted(() => vi.fn());
 const hostApiDialogOpenMock = vi.hoisted(() => vi.fn());
 const toastErrorMock = vi.hoisted(() => vi.fn());
+const microphoneMocks = vi.hoisted(() => ({ getConfig: vi.fn(), getMicrophoneAccess: vi.fn(), openMicrophoneSettings: vi.fn() }));
 const { agentsState, chatState, gatewayState, settingsState, providersState, artifactPanelMocks } = vi.hoisted(() => ({
   agentsState: {
     agents: [] as Array<Record<string, unknown>>,
@@ -63,6 +64,7 @@ vi.mock('@/stores/artifact-panel', () => ({
 vi.mock('@/lib/host-api', () => ({
   hostApiFetch: hostApiFetchMock,
   hostApi: {
+    asr: microphoneMocks,
     files: {
       stagePaths: (input: unknown) => hostApiFetchMock('/api/files/stage-paths', {
         method: 'POST',
@@ -519,6 +521,26 @@ describe('ChatInput agent targeting', () => {
     const voice = screen.getByTestId('chat-composer-voice');
     const send = screen.getByTestId('chat-composer-send');
     expect(voice.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows restricted guidance, reports settings failure, and leaves the draft editable after dismissal', async () => {
+    microphoneMocks.getConfig.mockResolvedValue({ configured: true });
+    microphoneMocks.getMicrophoneAccess.mockResolvedValue({ platform: 'win32', status: 'restricted', canOpenSettings: true });
+    microphoneMocks.openMicrophoneSettings.mockRejectedValue(new Error('launch failed'));
+    render(<TooltipProvider><ChatInput onSend={vi.fn()} /></TooltipProvider>);
+    fireEvent.click(screen.getByTestId('chat-composer-voice'));
+    await screen.findByTestId('microphone-permission-dialog');
+    expect(screen.getByText('composer.microphonePermission.restricted')).toBeInTheDocument();
+    expect(screen.queryByText('composer.microphonePermission.win32')).not.toBeInTheDocument();
+    expect(microphoneMocks.openMicrophoneSettings).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('composer.microphonePermission.openSettings'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('composer.microphonePermission.openFailed');
+    fireEvent.click(screen.getByText('composer.microphonePermission.close'));
+    expect(screen.queryByTestId('microphone-permission-dialog')).not.toBeInTheDocument();
+    const input = screen.getByTestId('chat-composer-input');
+    expect(input).not.toBeDisabled();
+    fireEvent.change(input, { target: { value: 'still editable' } });
+    expect(input).toHaveValue('still editable');
   });
 
   it('keeps the existing thinking indicator while sending even when image generation has started', () => {

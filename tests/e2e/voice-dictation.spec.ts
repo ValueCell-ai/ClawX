@@ -12,13 +12,15 @@ function stableStringify(value: unknown): string {
   return `{${entries.join(',')}}`;
 }
 
-async function stubMicrophoneCapture(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+async function stubMicrophoneCapture(page: Page, denyFirst = false): Promise<void> {
+  await page.addInitScript((deny) => {
+    let first = deny;
     Object.defineProperty(navigator, 'mediaDevices', {
       configurable: true,
       value: {
         ...navigator.mediaDevices,
         getUserMedia: async () => {
+          if (first) { first = false; throw new DOMException('Denied', 'NotAllowedError'); }
           const context = new AudioContext();
           const oscillator = context.createOscillator();
           const destination = context.createMediaStreamDestination();
@@ -28,7 +30,7 @@ async function stubMicrophoneCapture(page: Page): Promise<void> {
         },
       },
     });
-  });
+  }, denyFirst);
 }
 
 // The transcribe payload embeds recording bytes, so its hostApi mock key is
@@ -86,6 +88,77 @@ async function enableDeveloperMode(page: Page): Promise<void> {
 }
 
 test.describe('ClawX voice dictation', () => {
+  for (const firstUse of [false, true]) {
+    test(`guides ${firstUse ? 'newly' : 'previously'} denied permission and recovers on explicit retry`, async ({ launchElectronApp }) => {
+      const app = await launchElectronApp({ skipSetup: true });
+      try {
+        await installIpcMocks(app, {
+          gatewayStatus: { state: 'running', port: 18789, pid: 12345 },
+          hostApi: { [stableStringify(['asr', 'getConfig', null])]: { configured: true, config: null, hasApiKey: true } },
+        });
+        await installAsrTranscribeMock(app, TRANSCRIBED_TEXT);
+        await app.evaluate(({ ipcMain }, first) => {
+          const state = { reads: 0, opens: 0, granted: false };
+          (globalThis as unknown as { micTest: typeof state }).micTest = state;
+          const handlers = (ipcMain as unknown as { _invokeHandlers: Map<string, (event: unknown, request: { module: string; action: string; id: string }) => unknown> })._invokeHandlers;
+          const previous = handlers.get('host:invoke')!;
+          ipcMain.removeHandler('host:invoke');
+          ipcMain.handle('host:invoke', (event, request) => {
+            if (request.module === 'asr' && request.action === 'getMicrophoneAccess') {
+              state.reads++;
+              return { id: request.id, ok: true, data: { platform: 'darwin', status: state.granted ? 'granted' : first && state.reads === 1 ? 'not-determined' : 'denied', canOpenSettings: true } };
+            }
+            if (request.module === 'asr' && request.action === 'openMicrophoneSettings') {
+              state.opens++;
+              return { id: request.id, ok: true, data: { opened: false } };
+            }
+            return previous(event, request);
+          });
+        }, firstUse);
+        const page = await getStableWindow(app);
+        await stubMicrophoneCapture(page, firstUse);
+        await reloadRenderer(page);
+        await enableDeveloperMode(page);
+        const composer = page.getByTestId('chat-composer-input');
+        const voice = page.getByTestId('chat-composer-voice');
+        await composer.fill('draft');
+        await voice.click();
+        const dialog = page.getByTestId('microphone-permission-dialog');
+        await expect(dialog).toBeVisible();
+        // DialogContent supplies positioning only; missing card styles otherwise
+        // produce a full-window white strip while all interaction tests still pass.
+        await expect.poll(() => dialog.evaluate((element) => {
+          const bounds = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return {
+            bounded: bounds.width <= 560 && bounds.width <= innerWidth - 32,
+            centered: Math.abs(bounds.x + bounds.width / 2 - innerWidth / 2) < 2
+              && Math.abs(bounds.y + bounds.height / 2 - innerHeight / 2) < 2,
+            withinViewport: bounds.top >= 16 && bounds.bottom <= innerHeight - 16,
+            padded: parseFloat(style.paddingLeft) >= 24 && parseFloat(style.paddingRight) >= 24
+              && parseFloat(style.paddingTop) >= 24 && parseFloat(style.paddingBottom) >= 24,
+            rounded: parseFloat(style.borderTopLeftRadius) >= 8,
+          };
+        })).toEqual({ bounded: true, centered: true, withinViewport: true, padded: true, rounded: true });
+        await expect(dialog).toContainText('Microphone access was denied.');
+        await expect(dialog).not.toContainText('IDE or terminal');
+        await expect(dialog).not.toContainText('restart ClawX');
+        await expect(dialog).not.toContainText('Recording will not start automatically.');
+        expect(await app.evaluate(() => (globalThis as unknown as { micTest: { opens: number } }).micTest.opens)).toBe(0);
+        await dialog.getByRole('button', { name: 'Open system settings' }).click();
+        await expect(dialog.getByRole('alert')).toContainText('Could not open');
+        await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+        await composer.fill('editable ');
+        await expect(voice).toHaveAttribute('title', 'Voice input');
+        await app.evaluate(() => { (globalThis as unknown as { micTest: { granted: boolean } }).micTest.granted = true; });
+        await voice.click();
+        await expect(voice).toHaveAttribute('title', 'Stop recording');
+        await expect(voice).toContainText('0:01');
+        await voice.click();
+        await expect(composer).toHaveValue(`editable ${TRANSCRIBED_TEXT}`);
+      } finally { await closeElectronApp(app); }
+    });
+  }
   test('inserts transcribed text at cursor after recording', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
