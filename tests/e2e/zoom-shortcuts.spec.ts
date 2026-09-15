@@ -8,18 +8,25 @@ async function getZoomLevel(app: ElectronApplication): Promise<number> {
   });
 }
 
-async function sendZoomShortcut(app: ElectronApplication, action: 'in' | 'out'): Promise<void> {
-  await app.evaluate(({ BrowserWindow }, zoomAction) => {
+async function sendZoomShortcut(
+  app: ElectronApplication,
+  action: 'in' | 'out',
+  type: 'keyDown' | 'keyUp' = 'keyDown',
+): Promise<void> {
+  await app.evaluate(({ BrowserWindow }, { zoomAction, inputType }) => {
     const win = BrowserWindow.getAllWindows()[0];
     const contents = win?.webContents;
     if (!contents) return;
 
+    const commandModifiers = process.platform === 'darwin'
+      ? { control: false, meta: true }
+      : { control: true, meta: false };
     const input = zoomAction === 'out'
-      ? { key: '-', code: 'Minus', control: true, meta: false, alt: false }
-      : { key: '=', code: 'Equal', control: true, meta: false, alt: false };
+      ? { type: inputType, key: '-', code: 'Minus', ...commandModifiers, alt: false }
+      : { type: inputType, key: '=', code: 'Equal', ...commandModifiers, alt: false };
 
     contents.emit('before-input-event', { preventDefault() {} }, input);
-  }, action);
+  }, { zoomAction: action, inputType: type });
 }
 
 test.describe('ClawX window zoom shortcuts', () => {
@@ -35,11 +42,37 @@ test.describe('ClawX window zoom shortcuts', () => {
       });
 
       await sendZoomShortcut(app, 'out');
+      await sendZoomShortcut(app, 'out', 'keyUp');
       await expect.poll(async () => await getZoomLevel(app)).toBe(-1);
 
       await sendZoomShortcut(app, 'in');
+      await sendZoomShortcut(app, 'in', 'keyUp');
       await expect.poll(async () => await getZoomLevel(app)).toBe(0);
     } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('preserves the page zoom when the window is minimized and restored', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      const page = await getStableWindow(app);
+      await expect(page.getByTestId('main-layout')).toBeVisible();
+
+      await app.evaluate(({ BrowserWindow }) => {
+        const win = BrowserWindow.getAllWindows()[0];
+        win?.webContents.setZoomLevel(1);
+        win?.emit('minimize');
+        win?.webContents.setZoomLevel(-1);
+        win?.emit('restore');
+      });
+
+      await expect.poll(async () => await getZoomLevel(app)).toBe(1);
+    } finally {
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.webContents.setZoomLevel(0);
+      });
       await closeElectronApp(app);
     }
   });
