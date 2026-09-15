@@ -60,14 +60,35 @@ test.describe('ClawX window zoom shortcuts', () => {
       const page = await getStableWindow(app);
       await expect(page.getByTestId('main-layout')).toBeVisible();
 
-      await app.evaluate(({ BrowserWindow }) => {
+      await app.evaluate(async ({ BrowserWindow }) => {
         const win = BrowserWindow.getAllWindows()[0];
-        win?.webContents.setZoomLevel(1);
-        win?.emit('minimize');
-        win?.webContents.setZoomLevel(-1);
-        win?.emit('restore');
-      });
+        if (!win) return;
 
+        win.webContents.setZoomLevel(1);
+        if (!win.isMinimized()) {
+          await new Promise<void>((resolve) => {
+            win.once('minimize', resolve);
+            win.minimize();
+          });
+        }
+      });
+      await expect.poll(async () => await app.evaluate(({ BrowserWindow }) => (
+        BrowserWindow.getAllWindows()[0]?.isMinimized() ?? false
+      ))).toBe(true);
+
+      await app.evaluate(async ({ BrowserWindow }) => {
+        const win = BrowserWindow.getAllWindows()[0];
+        if (!win) return;
+
+        await new Promise<void>((resolve) => {
+          win.once('restore', resolve);
+          win.restore();
+        });
+      });
+      await expect.poll(async () => await app.evaluate(({ BrowserWindow }) => (
+        BrowserWindow.getAllWindows()[0]?.isMinimized() ?? true
+      ))).toBe(false);
+      await expect(page.getByTestId('main-layout')).toBeVisible();
       await expect.poll(async () => await getZoomLevel(app)).toBe(1);
     } finally {
       await app.evaluate(({ BrowserWindow }) => {
