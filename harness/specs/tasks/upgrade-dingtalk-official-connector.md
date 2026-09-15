@@ -30,6 +30,7 @@ touchedAreas:
   - README.zh-CN.md
   - README.ja-JP.md
   - tests/unit/plugin-install.test.ts
+  - tests/unit/config-sync.test.ts
   - tests/unit/openclaw-bundle-config.test.ts
   - tests/unit/openclaw-auth.test.ts
   - tests/unit/channel-config.test.ts
@@ -47,6 +48,7 @@ touchedAreas:
   - harness/specs/tasks/upgrade-dingtalk-official-connector.md
 expectedUserBehavior:
   - Existing DingTalk users keep `channels.dingtalk` credentials, bindings, and session keys without re-pairing; the official connector's internal `__default__` account is normalized to ClawX's existing `default` identity at runtime.
+  - On upgrade, an already-configured DingTalk channel provisions or repairs the bundled dws CLI before Gateway launch without requiring the user to edit and resave credentials; an unauthenticated installation then exposes the workspace authorization action.
   - Channels UI still shows only `dingtalk`; `dingtalk-connector` is never a catalog type.
   - Community soimy and official connector never run at the same time on one `clientId`.
   - Chat works after save even if `dws` workspace authorization is skipped or still pending; new setups can complete optional desktop loopback OAuth from the ClawX channel modal.
@@ -55,6 +57,8 @@ requiredProfiles:
   - comms
 requiredTests:
   - tests/unit/plugin-install.test.ts
+  - tests/unit/config-sync.test.ts
+  - tests/unit/dingtalk-dws.test.ts
   - tests/unit/openclaw-bundle-config.test.ts
   - tests/unit/openclaw-auth.test.ts
   - tests/unit/channel-config.test.ts
@@ -68,6 +72,7 @@ acceptance:
   - `plugins.allow` / `plugins.entries` keep a single `dingtalk` identity, and startup removes a leftover `extensions/dingtalk-connector` only after the canonical mirror is ready.
   - Lockfile does not retain `@soimy/dingtalk@3.6.10`.
   - New DingTalk setups offer optional dws desktop loopback OAuth after the channel config is durably saved, without exposing the client secret to Renderer.
+  - Prelaunch provisioning also repairs dws for existing configured DingTalk channels, runs independently of the plugin-maintenance cache, is idempotent for the current bundled version, and never blocks basic chat when installation is unavailable.
 docs:
   required: true
 ---

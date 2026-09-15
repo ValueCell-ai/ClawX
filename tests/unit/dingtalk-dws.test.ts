@@ -113,6 +113,81 @@ describe('dingtalk dws helpers', () => {
     );
   });
 
+  it('reuses a current installed dws without blocking startup on an auth probe', async () => {
+    const installDir = '/home/test/.openclaw/tools/dingtalk-workspace-cli';
+    mockExistsSync.mockImplementation((input: string) => {
+      const value = String(input);
+      return value === `${installDir}/package.json`
+        || value === `${installDir}/bin/dws.js`
+        || value === `${installDir}/vendor/dws`;
+    });
+    mockReadFileSync.mockImplementation((input: string) => {
+      if (String(input) === `${installDir}/package.json`) {
+        return JSON.stringify({ name: 'dingtalk-workspace-cli', version: '1.0.30' });
+      }
+      return '';
+    });
+    mockExecFileSync.mockReturnValue(JSON.stringify({ authenticated: false }));
+
+    const { ensureDingTalkDwsInstalled } = await import('@electron/utils/dingtalk-dws');
+    expect(ensureDingTalkDwsInstalled({ probeAuth: false })).toEqual({ installed: true });
+    expect(mockExecFileSync).not.toHaveBeenCalled();
+    expect(mockCpSync).not.toHaveBeenCalled();
+    expect(mockSafeRmSync).not.toHaveBeenCalled();
+  });
+
+  it('installs and extracts dws when an existing channel upgrade has no tool installation', async () => {
+    const sourceDir = '/workspace/node_modules/dingtalk-workspace-cli';
+    const installDir = '/home/test/.openclaw/tools/dingtalk-workspace-cli';
+    const archiveName = process.platform === 'darwin'
+      ? `dws-darwin-${process.arch === 'arm64' ? 'arm64' : 'amd64'}.tar.gz`
+      : `dws-linux-${process.arch === 'arm64' ? 'arm64' : 'amd64'}.tar.gz`;
+    let packageCopied = false;
+    let vendorExtracted = false;
+    mockExistsSync.mockImplementation((input: string) => {
+      const value = String(input);
+      if (value === `${sourceDir}/package.json`) return true;
+      if (value === `${installDir}/package.json` || value === `${installDir}/bin/dws.js`) {
+        return packageCopied;
+      }
+      if (value === `${installDir}/assets/${archiveName}`) return packageCopied;
+      if (value === `${installDir}/vendor/dws`) return vendorExtracted;
+      return false;
+    });
+    mockReadFileSync.mockImplementation((input: string) => {
+      if (String(input).endsWith('/package.json')) {
+        return JSON.stringify({ name: 'dingtalk-workspace-cli', version: '1.0.30' });
+      }
+      return '';
+    });
+    mockCpSync.mockImplementation((source: string, destination: string) => {
+      if (source === sourceDir && destination === installDir) packageCopied = true;
+      if (destination === `${installDir}/vendor/dws`) vendorExtracted = true;
+    });
+    mockReaddirSync.mockReturnValue([
+      { name: 'dws', isDirectory: () => false },
+    ]);
+    mockExecFileSync.mockImplementation((_file: string, args: string[]) => (
+      args[0] === 'auth' ? JSON.stringify({ authenticated: false }) : ''
+    ));
+
+    const { DINGTALK_DWS_AUTH_REQUIRED, ensureDingTalkDwsInstalled } = await import('@electron/utils/dingtalk-dws');
+    expect(ensureDingTalkDwsInstalled()).toEqual({
+      installed: true,
+      warning: DINGTALK_DWS_AUTH_REQUIRED,
+    });
+    expect(mockCpSync).toHaveBeenCalledWith(
+      sourceDir,
+      installDir,
+      { recursive: true, dereference: true },
+    );
+    expect(mockExecFileSync).toHaveBeenCalledWith(
+      'tar',
+      ['-xzf', `${installDir}/assets/${archiveName}`, '-C', `${installDir}/.dws-extract-tmp`],
+      { stdio: 'ignore' },
+    );
+  });
+
   it('extracts the vendor binary from the platform archive', async () => {
     const packageDir = '/workspace/node_modules/dingtalk-workspace-cli';
     let extracted = false;

@@ -33,7 +33,7 @@ import { buildProxyEnv, resolveProxySettings } from '../utils/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
-import { resolveDingTalkDwsBinDir } from '../utils/dingtalk-dws';
+import { ensureDingTalkDwsInstalled, resolveDingTalkDwsBinDir } from '../utils/dingtalk-dws';
 import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, removeLegacyOfficialDingTalkExtension, resolvePluginNpmPackagePath } from '../utils/plugin-install';
 import { safeRmSync } from '../utils/safe-fs';
 import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
@@ -170,6 +170,15 @@ function appVersionForCache(): string {
   } catch {
     return 'unknown';
   }
+}
+
+export function provisionConfiguredDingTalkDws(configuredChannels: readonly string[]): boolean {
+  if (!configuredChannels.includes('dingtalk')) return true;
+  const result = ensureDingTalkDwsInstalled({ probeAuth: false });
+  if (!result.installed) {
+    logger.warn(`[plugin] DingTalk workspace CLI: ${result.warning ?? 'installation_failed'}`);
+  }
+  return result.installed;
 }
 
 /**
@@ -573,6 +582,16 @@ export async function syncGatewayConfigBeforeLaunch(
     });
   } catch (err) {
     logger.warn('Failed to auto-upgrade plugins:', err);
+  }
+
+  // Existing users do not pass through channels.saveConfig after an upgrade.
+  // Provision dws independently of the plugin-maintenance cache and plugin
+  // metadata repair so a failed attempt can be retried on the next launch.
+  try {
+    measureSync(timingsMs, 'dingtalkDwsMs', () => provisionConfiguredDingTalkDws(configuredChannels));
+  } catch (err) {
+    // dws powers optional office skills; its absence must not block chat.
+    logger.warn('[plugin] Failed to provision DingTalk workspace CLI:', err);
   }
 
   // Batch gateway token, browser config, and session idle into one read+write cycle.

@@ -158,13 +158,22 @@ export function extractDingTalkDwsVendor(
   }
 }
 
-function readPackageName(pkgPath: string): string | null {
+function readPackageMetadata(pkgPath: string): { name: string | null; version: string | null } {
   try {
-    const parsed = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { name?: string };
-    return parsed.name ?? null;
+    const parsed = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { name?: unknown; version?: unknown };
+    return {
+      name: typeof parsed.name === 'string' ? parsed.name : null,
+      version: typeof parsed.version === 'string' ? parsed.version : null,
+    };
   } catch {
-    return null;
+    return { name: null, version: null };
   }
+}
+
+function isCurrentDwsInstall(packageDir: string): boolean {
+  if (!hasDwsWrapper(packageDir) || !hasDwsVendorBinary(packageDir)) return false;
+  const metadata = readPackageMetadata(join(packageDir, 'package.json'));
+  return metadata.name === DINGTALK_DWS_NPM && metadata.version === DINGTALK_DWS_VERSION;
 }
 
 function candidateDwsSources(): string[] {
@@ -186,7 +195,7 @@ function candidateDwsSources(): string[] {
 
 function resolveDwsSourceDir(): string | null {
   for (const candidate of candidateDwsSources()) {
-    if (existsSync(join(candidate, 'package.json')) && readPackageName(join(candidate, 'package.json')) === DINGTALK_DWS_NPM) {
+    if (existsSync(join(candidate, 'package.json')) && readPackageMetadata(join(candidate, 'package.json')).name === DINGTALK_DWS_NPM) {
       return candidate;
     }
   }
@@ -500,14 +509,25 @@ export function resetDingTalkDwsStatusCacheForTests(): void {
   statusNoteCache = null;
 }
 
-export function ensureDingTalkDwsInstalled(): { installed: boolean; warning?: string } {
+export function ensureDingTalkDwsInstalled(
+  options: { probeAuth?: boolean } = {},
+): { installed: boolean; warning?: string } {
+  const shouldProbeAuth = options.probeAuth !== false;
+  const targetDir = getDingTalkDwsInstallDir();
+  if (isCurrentDwsInstall(targetDir)) {
+    statusNoteCache = null;
+    if (!shouldProbeAuth) return { installed: true };
+    return probeDingTalkDwsAuth() === 'authorized'
+      ? { installed: true }
+      : { installed: true, warning: DINGTALK_DWS_AUTH_REQUIRED };
+  }
+
   const sourceDir = resolveDwsSourceDir();
   if (!sourceDir) {
     refreshDingTalkDwsStatusNote();
     return { installed: false, warning: DINGTALK_DWS_MISSING };
   }
 
-  const targetDir = getDingTalkDwsInstallDir();
   try {
     mkdirSync(dirname(targetDir), { recursive: true });
     safeRmSync(targetDir);
@@ -520,9 +540,9 @@ export function ensureDingTalkDwsInstalled(): { installed: boolean; warning?: st
     // for every other OS/architecture in the user's OpenClaw tools directory.
     safeRmSync(join(targetDir, 'assets'));
     logger.info(`[plugin] Installed DingTalk workspace CLI ${DINGTALK_DWS_VERSION} at ${targetDir}`);
-    const auth = probeDingTalkDwsAuth();
-    refreshDingTalkDwsStatusNote();
-    if (auth !== 'authorized') {
+    statusNoteCache = null;
+    if (!shouldProbeAuth) return { installed: true };
+    if (probeDingTalkDwsAuth() !== 'authorized') {
       // Official connector injects DWS_CLIENT_ID / DWS_CLIENT_SECRET at spawn
       // time. Device login is interactive and must not block channel save.
       return { installed: true, warning: DINGTALK_DWS_AUTH_REQUIRED };
