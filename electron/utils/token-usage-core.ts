@@ -216,6 +216,10 @@ interface TranscriptLineShape {
   };
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function normalizeUsageContent(value: unknown): string | undefined {
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -257,6 +261,79 @@ function normalizeUsageContent(value: unknown): string | undefined {
   return undefined;
 }
 
+/**
+ * Read one transcript line, or return undefined when it carries no usage.
+ *
+ * Nothing about the on-disk shape is guaranteed: OpenClaw serializes
+ * `message.details` as raw text whenever a tool returns a plain string, so the
+ * record has to be narrowed rather than asserted. Probing such a value with
+ * `in` throws, and a throw here used to escape all the way to the per-file
+ * handler and discard every record in the transcript.
+ */
+function parseUsageEntryFromTranscriptLine(
+  line: string,
+  context: { sessionId: string; agentId: string },
+): TokenUsageHistoryEntry | undefined {
+  let parsedLine: unknown;
+  try {
+    parsedLine = JSON.parse(line);
+  } catch {
+    return undefined;
+  }
+
+  if (!isPlainRecord(parsedLine)) {
+    return undefined;
+  }
+
+  const parsed = parsedLine as TranscriptLineShape;
+  const message = isPlainRecord(parsed.message) ? parsed.message : undefined;
+  const timestamp = typeof parsed.timestamp === 'string' ? parsed.timestamp : undefined;
+  if (!message || !timestamp) {
+    return undefined;
+  }
+
+  if (message.role === 'assistant' && 'usage' in message) {
+    const usage = parseUsageFromShape(message.usage);
+    if (!usage) return undefined;
+
+    const contentText = normalizeUsageContent((message as Record<string, unknown>).content);
+    return {
+      timestamp,
+      sessionId: context.sessionId,
+      agentId: context.agentId,
+      model: message.model ?? message.modelRef,
+      provider: message.provider,
+      ...(contentText ? { content: contentText } : {}),
+      ...usage,
+    };
+  }
+
+  if (message.role !== 'toolResult') {
+    return undefined;
+  }
+
+  const details = isPlainRecord(message.details) ? message.details : undefined;
+  if (!details || !('usage' in details)) {
+    return undefined;
+  }
+
+  const usage = parseUsageFromShape(details.usage);
+  if (!usage) return undefined;
+
+  const contentText = normalizeUsageContent(details.content)
+    ?? normalizeUsageContent((message as Record<string, unknown>).content);
+
+  return {
+    timestamp,
+    sessionId: context.sessionId,
+    agentId: context.agentId,
+    model: details.model ?? message.model ?? message.modelRef,
+    provider: details.provider ?? details.externalContent?.provider ?? message.provider,
+    ...(contentText ? { content: contentText } : {}),
+    ...usage,
+  };
+}
+
 export function parseUsageEntriesFromJsonl(
   content: string,
   context: { sessionId: string; agentId: string },
@@ -269,61 +346,17 @@ export function parseUsageEntriesFromJsonl(
     : Number.POSITIVE_INFINITY;
 
   for (let i = lines.length - 1; i >= 0 && entries.length < maxEntries; i -= 1) {
-    let parsed: TranscriptLineShape;
+    let entry: TokenUsageHistoryEntry | undefined;
     try {
-      parsed = JSON.parse(lines[i]) as TranscriptLineShape;
+      entry = parseUsageEntryFromTranscriptLine(lines[i], context);
     } catch {
+      // A record whose shape drifts further must cost only itself, never the
+      // rest of the session's history.
       continue;
     }
-
-    const message = parsed.message;
-    if (!message || !parsed.timestamp) {
-      continue;
+    if (entry) {
+      entries.push(entry);
     }
-
-    if (message.role === 'assistant' && 'usage' in message) {
-      const usage = parseUsageFromShape(message.usage);
-      if (!usage) continue;
-
-      const contentText = normalizeUsageContent((message as Record<string, unknown>).content);
-      entries.push({
-        timestamp: parsed.timestamp,
-        sessionId: context.sessionId,
-        agentId: context.agentId,
-        model: message.model ?? message.modelRef,
-        provider: message.provider,
-        ...(contentText ? { content: contentText } : {}),
-        ...usage,
-      });
-      continue;
-    }
-
-    if (message.role !== 'toolResult') {
-      continue;
-    }
-
-    const details = message.details;
-    if (!details || !('usage' in details)) {
-      continue;
-    }
-
-    const usage = parseUsageFromShape(details.usage);
-    if (!usage) continue;
-
-    const provider = details.provider ?? details.externalContent?.provider ?? message.provider;
-    const model = details.model ?? message.model ?? message.modelRef;
-    const contentText = normalizeUsageContent(details.content)
-      ?? normalizeUsageContent((message as Record<string, unknown>).content);
-
-    entries.push({
-      timestamp: parsed.timestamp,
-      sessionId: context.sessionId,
-      agentId: context.agentId,
-      model,
-      provider,
-      ...(contentText ? { content: contentText } : {}),
-      ...usage,
-    });
   }
 
   return entries;

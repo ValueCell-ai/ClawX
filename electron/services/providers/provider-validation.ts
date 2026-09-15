@@ -141,11 +141,11 @@ function getValidationProfile(
   }
 }
 
-async function performProviderValidationRequest(
+async function requestProviderValidation(
   providerLabel: string,
   url: string,
   headers: Record<string, string>,
-): Promise<ClassifiedValidationResult> {
+): Promise<{ result: ClassifiedValidationResult; data: unknown }> {
   try {
     logValidationRequest(providerLabel, 'GET', url, headers);
     const response = await proxyAwareFetch(url, { headers });
@@ -153,16 +153,111 @@ async function performProviderValidationRequest(
     const data = await response.json().catch(() => ({}));
     const result = classifyAuthResponse(response.status, data);
     return {
-      ...result,
-      status: response.status,
-      recoveryAction: getTokenDanceRecoveryAction(response),
+      result: {
+        ...result,
+        status: response.status,
+        recoveryAction: getTokenDanceRecoveryAction(response),
+      },
+      data,
     };
   } catch (error) {
     return {
-      valid: false,
-      error: `Connection error: ${error instanceof Error ? error.message : String(error)}`,
+      result: {
+        valid: false,
+        error: `Connection error: ${error instanceof Error ? error.message : String(error)}`,
+      },
+      data: undefined,
     };
   }
+}
+
+async function performProviderValidationRequest(
+  providerLabel: string,
+  url: string,
+  headers: Record<string, string>,
+): Promise<ClassifiedValidationResult> {
+  const { result } = await requestProviderValidation(providerLabel, url, headers);
+  return result;
+}
+
+/**
+ * Hosts whose model listing enumerates everything the key can reach, so an
+ * absent model id proves the configuration is dead rather than merely unlisted.
+ *
+ * Restricted to the vendors' own endpoints on purpose: an Anthropic- or
+ * Gemini-compatible relay may advertise a subset of what it serves, and
+ * rejecting a working model there would be worse than the silent failure this
+ * check exists to catch.
+ */
+const AUTHORITATIVE_MODEL_LISTING_HOSTS = new Set([
+  'generativelanguage.googleapis.com',
+  'api.anthropic.com',
+]);
+
+function hasAuthoritativeModelListing(url: string): boolean {
+  try {
+    return AUTHORITATIVE_MODEL_LISTING_HOSTS.has(new URL(url).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Collect model ids from a listing response. Google returns fully qualified
+ * resource names (`models/gemini-3.5-flash`); Anthropic and OpenAI-compatible
+ * endpoints return bare ids under `data`.
+ */
+function extractListedModelIds(data: unknown): string[] {
+  if (!data || typeof data !== 'object') return [];
+  const rows = (data as { models?: unknown; data?: unknown }).models
+    ?? (data as { data?: unknown }).data;
+  if (!Array.isArray(rows)) return [];
+
+  const ids: string[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    const raw = (row as { name?: unknown; id?: unknown }).name
+      ?? (row as { id?: unknown }).id;
+    if (typeof raw !== 'string') continue;
+    const id = raw.trim().replace(/^models\//, '');
+    if (id) ids.push(id);
+  }
+  return ids;
+}
+
+/**
+ * Reject a model id the provider does not serve.
+ *
+ * A key that authenticates says nothing about whether the configured model
+ * exists, and OpenClaw cannot route a model it never resolves, so an unknown id
+ * would otherwise be saved as a healthy provider and fail at the first turn.
+ */
+function classifyConfiguredModel(
+  result: ClassifiedValidationResult,
+  listingUrl: string,
+  data: unknown,
+  modelId: string | undefined,
+): ClassifiedValidationResult {
+  const model = modelId?.trim();
+  if (!result.valid || !model || !hasAuthoritativeModelListing(listingUrl)) {
+    return result;
+  }
+
+  const listed = extractListedModelIds(data);
+  if (listed.length === 0) {
+    return result;
+  }
+
+  const normalized = model.toLowerCase();
+  if (listed.some((id) => id.toLowerCase() === normalized)) {
+    return result;
+  }
+
+  return {
+    ...result,
+    valid: false,
+    error: `Model "${model}" is not available for this API key. Choose one of the models this key can reach, for example ${listed.slice(0, 3).join(', ')}.`,
+  };
 }
 
 function classifyAuthResponse(
@@ -350,31 +445,40 @@ async function performAnthropicMessagesProbe(
   }
 }
 
+/**
+ * Page size is large enough to enumerate the vendor's whole catalog in one
+ * request, because a truncated listing cannot disprove a model's existence.
+ */
+const MODEL_LISTING_PAGE_SIZE = 1000;
+
 async function validateGoogleQueryKey(
   providerType: string,
   apiKey: string,
   baseUrl?: string,
+  modelId?: string,
 ): Promise<ValidationResult> {
   const base = normalizeBaseUrl(baseUrl || 'https://generativelanguage.googleapis.com/v1beta');
-  const url = `${base}/models?pageSize=1&key=${encodeURIComponent(apiKey)}`;
-  return await performProviderValidationRequest(providerType, url, {});
+  const url = `${base}/models?pageSize=${MODEL_LISTING_PAGE_SIZE}&key=${encodeURIComponent(apiKey)}`;
+  const { result, data } = await requestProviderValidation(providerType, url, {});
+  return classifyConfiguredModel(result, url, data, modelId);
 }
 
 async function validateAnthropicHeaderKey(
   providerType: string,
   apiKey: string,
   baseUrl?: string,
+  modelId?: string,
 ): Promise<ValidationResult> {
   const rawBase = normalizeBaseUrl(baseUrl || 'https://api.anthropic.com/v1');
   const base = rawBase.endsWith('/v1') ? rawBase : `${rawBase}/v1`;
-  const url = `${base}/models?limit=1`;
+  const url = `${base}/models?limit=${MODEL_LISTING_PAGE_SIZE}`;
   const headers = {
     ...getProviderHeaders(providerType),
     'x-api-key': apiKey,
     'anthropic-version': '2023-06-01',
   };
 
-  const modelsResult = await performProviderValidationRequest(providerType, url, headers);
+  const { result: modelsResult, data: modelsData } = await requestProviderValidation(providerType, url, headers);
 
   // If the endpoint doesn't implement /models (like Minimax Anthropic compatibility), fallback to a /messages probe.
   if (
@@ -390,7 +494,7 @@ async function validateAnthropicHeaderKey(
     return await performAnthropicMessagesProbe(providerType, messagesUrl, headers);
   }
 
-  return modelsResult;
+  return classifyConfiguredModel(modelsResult, url, modelsData, modelId);
 }
 
 async function validateOpenRouterKey(
@@ -441,9 +545,9 @@ export async function validateApiKeyWithProvider(
           options?.modelId,
         );
       case 'google-query-key':
-        return await validateGoogleQueryKey(providerType, trimmedKey, resolvedBaseUrl);
+        return await validateGoogleQueryKey(providerType, trimmedKey, resolvedBaseUrl, options?.modelId);
       case 'anthropic-header':
-        return await validateAnthropicHeaderKey(providerType, trimmedKey, resolvedBaseUrl);
+        return await validateAnthropicHeaderKey(providerType, trimmedKey, resolvedBaseUrl, options?.modelId);
       case 'openrouter':
         return await validateOpenRouterKey(providerType, trimmedKey);
       default:

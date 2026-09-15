@@ -145,6 +145,50 @@ describe('provider-runtime-sync config delivery', () => {
     mocks.listAgentsSnapshot.mockResolvedValue({ agents: [] });
   });
 
+  it('delivers a Google account to the runtime from its backend preset', async () => {
+    mocks.getProviderConfig.mockReturnValue({
+      api: 'google-generative-ai',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      apiKeyEnv: 'GEMINI_API_KEY',
+    });
+
+    await syncSavedProviderToRuntime(
+      createProvider({
+        id: 'google-02b76419',
+        name: 'Google',
+        type: 'google',
+        model: 'gemini-3.8-flash',
+      }),
+      'AIza-test',
+    );
+
+    expect(mocks.saveProviderKeyToOpenClaw).toHaveBeenCalledWith('google', 'AIza-test');
+    expect(mocks.syncProviderConfigToOpenClaw).toHaveBeenCalledWith(
+      'google',
+      'gemini-3.8-flash',
+      expect.objectContaining({
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        api: 'google-generative-ai',
+        apiKeyEnv: 'GEMINI_API_KEY',
+      }),
+    );
+  });
+
+  it('drops every runtime write for a hosted provider that ships no backend preset', async () => {
+    // The failure mode `providers.test.ts` guards against: with no preset there
+    // is no api protocol, so the account never reaches OpenClaw at all -- not
+    // even its key.
+    mocks.getProviderConfig.mockReturnValue(undefined);
+
+    await syncSavedProviderToRuntime(
+      createProvider({ id: 'google-1', type: 'google', model: 'gemini-3.8-flash' }),
+      'AIza-test',
+    );
+
+    expect(mocks.saveProviderKeyToOpenClaw).not.toHaveBeenCalled();
+    expect(mocks.syncProviderConfigToOpenClaw).not.toHaveBeenCalled();
+  });
+
   it('does not schedule an independent reload or restart after saving provider config', async () => {
     const gateway = createGateway('running');
     await syncSavedProviderToRuntime(createProvider(), undefined, gateway as GatewayManager);

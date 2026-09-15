@@ -1380,6 +1380,65 @@ describe('syncProviderConfigToOpenClaw', () => {
     ]);
   });
 
+  it('writes image input for the DeepSeek default model and keeps V4 Pro text-only', async () => {
+    await writeOpenClawJson({ models: { providers: {} } });
+
+    const { getProviderDefaultModel } = await import('@electron/shared/providers/registry');
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    const deepseekOverride = {
+      baseUrl: 'https://api.deepseek.com/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'DEEPSEEK_API_KEY',
+    };
+
+    await syncProviderConfigToOpenClaw('deepseek', getProviderDefaultModel('deepseek'), deepseekOverride);
+    await syncProviderConfigToOpenClaw('deepseek', 'deepseek-v4-pro', deepseekOverride);
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const entry = providers.deepseek as Record<string, unknown>;
+
+    expect(entry.models).toEqual([
+      expect.objectContaining({ id: 'deepseek-flash', input: ['text', 'image'] }),
+      expect.objectContaining({ id: 'deepseek-v4-pro', input: ['text'] }),
+    ]);
+  });
+
+  it('infers modalities for aggregator defaults that ship no catalog rows', async () => {
+    await writeOpenClawJson({ models: { providers: {} } });
+
+    const { getProviderDefaultModel } = await import('@electron/shared/providers/registry');
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+
+    await syncProviderConfigToOpenClaw('openrouter', getProviderDefaultModel('openrouter'), {
+      baseUrl: 'https://openrouter.ai/api/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'OPENROUTER_API_KEY',
+    });
+    await syncProviderConfigToOpenClaw('siliconflow', getProviderDefaultModel('siliconflow'), {
+      baseUrl: 'https://api.siliconflow.cn/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'SILICONFLOW_API_KEY',
+    });
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+
+    // The `~` prefix marks an OpenRouter floating alias; V4.1-Flash reads images.
+    expect((providers.openrouter as Record<string, unknown>).models).toEqual([
+      expect.objectContaining({
+        id: '~deepseek/deepseek-flash-latest',
+        input: ['text', 'image'],
+      }),
+    ]);
+    expect((providers.siliconflow as Record<string, unknown>).models).toEqual([
+      expect.objectContaining({
+        id: 'zai-org/GLM-5.3',
+        input: ['text'],
+      }),
+    ]);
+  });
+
   it.each([
     [undefined, ['text', 'image']],
     [['text'], ['text']],

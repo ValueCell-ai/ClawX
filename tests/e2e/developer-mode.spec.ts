@@ -40,7 +40,7 @@ test.describe('ClawX developer-mode gated UI', () => {
     await page.getByTestId('add-provider-type-siliconflow').click();
     const preDevModelInput = page.getByTestId('add-provider-model-id-input');
     await expect(preDevModelInput).toBeVisible();
-    await expect(preDevModelInput).toHaveValue('deepseek-ai/DeepSeek-V3');
+    await expect(preDevModelInput).toHaveValue('zai-org/GLM-5.3');
     await page.getByTestId('add-provider-close-button').click();
     await expect(page.getByTestId('add-provider-dialog')).toHaveCount(0);
 
@@ -80,6 +80,6 @@ test.describe('ClawX developer-mode gated UI', () => {
     await page.getByTestId('add-provider-type-siliconflow').click();
     const postDevModelInput = page.getByTestId('add-provider-model-id-input');
     await expect(postDevModelInput).toBeVisible();
-    await expect(postDevModelInput).toHaveValue('deepseek-ai/DeepSeek-V3');
+    await expect(postDevModelInput).toHaveValue('zai-org/GLM-5.3');
   });
 });

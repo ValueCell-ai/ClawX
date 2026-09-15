@@ -70,9 +70,15 @@ OpenAI互換ゲートウェイで **Custom** プロバイダーを使う場合�
 
 ClawXはプロバイダーのモデル行に明示された `contextWindow` または `contextTokens` を保持しますが、モデル名から不足しているコンテキスト上限を推定しません。コンパクション予約は明示された有効な上限がある場合のみその25%を使用し、未設定の場合は `reserveTokensFloor` に保守的な既定値50000トークンを設定します。圧縮設定がない場合、ClawXはさらに `agents.defaults.compaction.mode = "safeguard"`、`keepRecentTokens = 0`、`recentTurnsPreserve = 0`、`midTurnPrecheck.enabled = true` を初期設定します。起動時の同期ではこの2つの履歴保持値を常に `0` に設定し、完了済みターンを圧縮後に逐語的に再生するのではなく、すべて要約へ含めます。明示的な `midTurnPrecheck.enabled` の選択は維持されます。
 
-Z.AI（CN / Global）はOpenClaw組み込みの `zai` プロバイダー（`ZAI_API_KEY`）に対応し、既定モデルは `glm-5.2` です。Code PlanプリセットではCoding Planエンドポイント（`.../api/coding/paas/v4`）を、通常のAPIでは（`.../api/paas/v4`）を使います。CNとGlobalは同じOpenClawランタイムキーを共有するため相互排他的です。
+Z.AI（CN / Global）はOpenClaw組み込みの `zai` プロバイダー（`ZAI_API_KEY`）に対応し、既定モデルは `glm-5.3-flash` で、画像入力に対応しつつ100万トークンのコンテキストを維持します。`glm-5.3` はコンテキスト長は同じですがテキスト専用です。Code PlanプリセットではCoding Planエンドポイント（`.../api/coding/paas/v4`）を、通常のAPIでは（`.../api/paas/v4`）を使います。CNとGlobalは同じOpenClawランタイムキーを共有するため相互排他的です。
 
-互換ゲートウェイが認証以外の理由で`/models`を拒否した場合、ClawXはAPIキー検証時に設定済みモデルを使い、軽量な`/chat/completions`または`/responses`プローブへ自動フォールバックします。
+DeepSeekはOpenClaw組み込みの `deepseek` プロバイダー（`DEEPSEEK_API_KEY`）に対応し、既定モデルは `deepseek-flash`（DeepSeek-V4.1-Flash）です。画像入力対応として登録されるため、DeepSeekのチャットにスクリーンショットや画像を送信できます。提供終了した `deepseek-v4-flash` と `deepseek-v4-flash-vision-exp` もDeepSeek側でV4.1-Flashへルーティングされるため同様に扱い、`deepseek-v4-pro` はテキストのみのままです。
+
+その他の組み込みプロバイダーの既定モデルも現行の100万トークン世代に追随し、いずれも画像入力に対応します。Anthropicは `claude-opus-5`、Googleは `gemini-3.8-flash`、Moonshot（CN / Global）は `kimi-k3`、OpenRouterは `~deepseek/deepseek-flash-latest` です。先頭の `~` はOpenRouterが浮動的な「latest」エイリアスを示すための記法で、固定版は `deepseek/deepseek-v4.1-flash` に相当します。SiliconFlowの既定は `zai-org/GLM-5.3` で、コンテキストは同じ100万トークンながらテキスト専用です。画像入力が必要な場合は `zai-org/GLM-5.3-Flash` を選んでください。
+
+AnthropicとGoogleは、ほかの組み込みプロバイダーと同様にOpenClawランタイム設定へ明示的に登録されます。そのためこれらのアカウントを保存すると、キーと選択したモデルがその場で反映され、同梱ランタイム自身のモデルカタログより新しいモデルIDでも解決できます。
+
+互換ゲートウェイが認証以外の理由で`/models`を拒否した場合、ClawXはAPIキー検証時に設定済みモデルを使い、軽量な`/chat/completions`または`/responses`プローブへ自動フォールバックします。AnthropicとGoogleのキーについては、検証時に設定済みモデルをベンダーのモデル一覧と照合し、利用できないモデル名をその場で示します。初回のやり取りで失敗するプロバイダーをそのまま保存することはありません。互換中継サービスはこの照合の対象外です。実際に提供しているモデルの一部しか一覧に公開しない場合があるためです。
 
 ### アダプティブテーマ
 

@@ -43,8 +43,13 @@ Skills 页面可展示来自多个 OpenClaw 来源的技能（托管目录、wor
 如果你通过 **自定义（Custom）Provider** 对接 OpenAI-compatible 网关，可以在 **设置 → AI Providers → 编辑 Provider** 中配置自定义 `User-Agent`，以提高兼容性。
 编辑或切换 Provider 时，ClawX 会保留已有的模型级能力元数据，例如 `input: ["text", "image"]`。新选择的自定义 Provider 模型会使用与 OpenClaw onboarding 一致的图片输入能力推断；未知模型默认按纯文本模型处理。
 ClawX 会保留 Provider 模型行中显式设置的 `contextWindow` 或 `contextTokens`，但不会根据模型名称推断缺失的上下文上限。上下文压缩预留仅在存在显式有效上限时按其 25% 计算；未设置时，`reserveTokensFloor` 使用保守的 50000 token 默认值。当你没有配置 compaction 时，ClawX 还会默认写入 `agents.defaults.compaction.mode = "safeguard"`、`keepRecentTokens = 0`、`recentTurnsPreserve = 0` 和 `midTurnPrecheck.enabled = true`。启动同步始终会将这两个历史保留值设为 `0`，使所有已完成回合进入摘要，而不是在压缩后逐字重放；显式设置的 `midTurnPrecheck.enabled` 仍沿用现有策略。
-Z.AI（国内站 / 国际站）会映射到 OpenClaw 内置的 `zai` 供应商（`ZAI_API_KEY`），默认模型为 `glm-5.2`。可通过 Code Plan 预设切换到编码套餐端点（`…/api/coding/paas/v4`），或使用普通 API 端点（`…/api/paas/v4`）；国内站与国际站互斥，因为它们共享同一个 OpenClaw 运行时 key。
-如果兼容网关的 `/models` 因非鉴权原因不可用，ClawX 会在校验 API Key 时使用已配置的模型，自动降级为轻量的 `/chat/completions` 或 `/responses` 探测。
+Z.AI（国内站 / 国际站）会映射到 OpenClaw 内置的 `zai` 供应商（`ZAI_API_KEY`），默认模型为 `glm-5.3-flash`，支持图片输入并保留 100 万上下文；而 `glm-5.3` 虽然同为 100 万上下文，但仅支持纯文本。可通过 Code Plan 预设切换到编码套餐端点（`…/api/coding/paas/v4`），或使用普通 API 端点（`…/api/paas/v4`）；国内站与国际站互斥，因为它们共享同一个 OpenClaw 运行时 key。
+DeepSeek 会映射到 OpenClaw 内置的 `deepseek` 供应商（`DEEPSEEK_API_KEY`），默认模型为 `deepseek-flash`（DeepSeek-V4.1-Flash），并按支持图片输入登记，因此可以在 DeepSeek 会话中直接发送截图和图片。已下线的 `deepseek-v4-flash` 与 `deepseek-v4-flash-vision-exp` 仍由 DeepSeek 路由到 V4.1-Flash，因此同样按支持图片输入处理；`deepseek-v4-pro` 保持纯文本。
+
+其余内置供应商的默认模型同样跟进到当前的百万上下文代次，并均支持图片输入：Anthropic 为 `claude-opus-5`，Google 为 `gemini-3.8-flash`，Moonshot（国内站 / 国际站）为 `kimi-k3`，OpenRouter 为 `~deepseek/deepseek-flash-latest`——前缀 `~` 是 OpenRouter 用于标记浮动「latest」别名的写法，其固定版本对应 `deepseek/deepseek-v4.1-flash`。SiliconFlow 默认使用 `zai-org/GLM-5.3`，它同为 100 万上下文但仅支持纯文本；若需要图片输入，请在该供应商下改用 `zai-org/GLM-5.3-Flash`。
+Anthropic 与 Google 现在会像其他内置供应商一样，在 OpenClaw 运行时配置中显式注册。因此保存这两类账号时，密钥与所选模型会立即下发；即使模型 ID 比内置运行时自带的模型目录更新，也依然可以解析。
+
+如果兼容网关的 `/models` 因非鉴权原因不可用，ClawX 会在校验 API Key 时使用已配置的模型，自动降级为轻量的 `/chat/completions` 或 `/responses` 探测。对于 Anthropic 与 Google 的密钥，校验还会把已配置的模型与厂商的模型列表进行比对，直接指出不可用的模型名称，而不是保存一个会在首轮对话就失败的供应商。兼容中转服务不参与该比对，因为它们的模型列表可能只公开其实际可用模型的一部分。
 
 ### 🌙 自适应主题
 支持浅色模式、深色模式或跟随系统主题。ClawX 自动适应你的偏好设置。

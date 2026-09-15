@@ -41,7 +41,7 @@ test.describe('ClawX provider lifecycle', () => {
           name: 'DeepSeek Replacement E2E',
           type: 'deepseek',
           baseUrl: 'https://api.deepseek.com/v1',
-          model: 'deepseek-v4-pro',
+          model: 'deepseek-flash',
           enabled: true,
           createdAt: now,
           updatedAt: new Date(Date.now() + 1_000).toISOString(),
@@ -501,12 +501,12 @@ test.describe('ClawX provider lifecycle', () => {
 
     await page.getByTestId('add-provider-type-zai').click();
     await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://open.bigmodel.cn/api/paas/v4');
-    await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('glm-5.2');
+    await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('glm-5.3-flash');
     await expect(page.getByTestId('add-provider-codeplan-mode-tab')).toBeVisible();
 
     await page.getByTestId('add-provider-codeplan-mode-tab').click();
     await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://open.bigmodel.cn/api/coding/paas/v4');
-    await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('glm-5.2');
+    await expect(page.getByTestId('add-provider-model-id-input')).toHaveValue('glm-5.3-flash');
 
     await page.getByTestId('add-provider-codeplan-apikey-tab').click();
     await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://open.bigmodel.cn/api/paas/v4');
@@ -516,5 +516,103 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://api.z.ai/api/paas/v4');
     await page.getByTestId('add-provider-codeplan-mode-tab').click();
     await expect(page.getByTestId('add-provider-base-url-input')).toHaveValue('https://api.z.ai/api/coding/paas/v4');
+  });
+
+  test('prefills the image-capable DeepSeek default model', async ({ page }) => {
+    await completeSetup(page);
+
+    await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('providers-settings')).toBeVisible();
+
+    await page.getByTestId('providers-add-button').click();
+    await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
+
+    await page.getByTestId('add-provider-type-deepseek').click();
+    const modelIdInput = page.getByTestId('add-provider-model-id-input');
+    await expect(modelIdInput).toHaveValue('deepseek-flash');
+    await expect(modelIdInput).toHaveAttribute('placeholder', 'deepseek-flash');
+  });
+
+  test('prefills the refreshed million-token default model per provider', async ({ page }) => {
+    await completeSetup(page);
+
+    await page.getByTestId('sidebar-nav-models').click();
+    await expect(page.getByTestId('providers-settings')).toBeVisible();
+
+    await page.getByTestId('providers-add-button').click();
+    await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
+
+    const expectedDefaults: Array<[string, string]> = [
+      ['anthropic', 'claude-opus-5'],
+      ['google', 'gemini-3.8-flash'],
+      ['moonshot', 'kimi-k3'],
+      ['moonshot-global', 'kimi-k3'],
+      // OpenRouter floating aliases carry a `~` prefix in their catalog.
+      ['openrouter', '~deepseek/deepseek-flash-latest'],
+      // SiliconFlow's GLM-5.3 is 1M-context but text-only.
+      ['siliconflow', 'zai-org/GLM-5.3'],
+    ];
+
+    for (const [index, [providerId, expectedModelId]] of expectedDefaults.entries()) {
+      if (index > 0) {
+        await page.getByTestId('add-provider-change-type').click();
+      }
+      await page.getByTestId(`add-provider-type-${providerId}`).click();
+      const modelIdInput = page.getByTestId('add-provider-model-id-input');
+      await expect(modelIdInput).toHaveValue(expectedModelId);
+      await expect(modelIdInput).toHaveAttribute('placeholder', expectedModelId);
+    }
+  });
+
+  test('reports a Google model the API key cannot reach', async ({ electronApp, page }) => {
+    await completeSetup(page);
+
+    await electronApp.evaluate(async ({ app: _app }) => {
+      const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+      const handlers = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers;
+      const originalHostInvoke = handlers?.get('host:invoke');
+      if (!originalHostInvoke) throw new Error('host:invoke handler unavailable');
+
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', async (event: unknown, request: {
+        id?: string;
+        module?: string;
+        action?: string;
+        payload?: Record<string, unknown>;
+      }) => {
+        if (request.module === 'providers' && request.action === 'validateKey') {
+          const options = request.payload?.options as Record<string, unknown> | undefined;
+          // Main compares the prefilled model against Google's listing, so the
+          // form's model id has to reach validation for the check to exist.
+          if (options?.modelId !== 'gemini-3.8-flash') {
+            return {
+              id: request.id,
+              ok: true,
+              data: { valid: false, error: `unexpected validation model: ${String(options?.modelId)}` },
+            };
+          }
+          return {
+            id: request.id,
+            ok: true,
+            data: {
+              valid: false,
+              error: 'Model "gemini-3.8-flash" is not available for this API key. Choose one of the models this key can reach, for example gemini-3.5-flash.',
+            },
+          };
+        }
+        return originalHostInvoke(event, request);
+      });
+    });
+
+    await page.getByTestId('sidebar-nav-models').click();
+    await page.getByTestId('providers-add-button').click();
+    await page.getByTestId('add-provider-type-google').click();
+    await page.getByTestId('add-provider-api-key-input').fill('AIza-e2e-test');
+    await page.getByTestId('add-provider-submit-button').click();
+
+    await expect(page.getByText(/is not available for this API key/)).toBeVisible();
+    await expect(page.getByText(/gemini-3\.8-flash/)).toBeVisible();
   });
 });
