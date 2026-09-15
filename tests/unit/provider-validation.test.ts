@@ -24,7 +24,7 @@ describe('validateApiKeyWithProvider', () => {
 
     expect(result).toMatchObject({ valid: true });
     expect(proxyAwareFetch).toHaveBeenCalledWith(
-      'https://api.minimaxi.com/anthropic/v1/models?limit=1',
+      'https://api.minimaxi.com/anthropic/v1/models?limit=1000',
       expect.objectContaining({
         headers: expect.objectContaining({
           'x-api-key': 'sk-cn-test',
@@ -32,6 +32,91 @@ describe('validateApiKeyWithProvider', () => {
         }),
       })
     );
+  });
+
+  it('rejects a Google model the key cannot reach', async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          models: [
+            { name: 'models/gemini-3.5-flash' },
+            { name: 'models/gemini-3.1-pro-preview' },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('google', 'AIza-test', {
+      modelId: 'gemini-9.9-imaginary',
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('gemini-9.9-imaginary');
+    expect(result.error).toContain('gemini-3.5-flash');
+  });
+
+  it('accepts a Google model the listing reports, ignoring the resource-name prefix', async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ models: [{ name: 'models/gemini-3.5-flash' }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('google', 'AIza-test', {
+      modelId: 'gemini-3.5-flash',
+    });
+
+    expect(result).toMatchObject({ valid: true });
+    expect(proxyAwareFetch).toHaveBeenCalledWith(
+      'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000&key=AIza-test',
+      expect.anything(),
+    );
+  });
+
+  it('keeps a Google key valid when the listing returns no model names', async () => {
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('google', 'AIza-test', {
+      modelId: 'gemini-9.9-imaginary',
+    });
+
+    expect(result).toMatchObject({ valid: true });
+  });
+
+  it('does not police model ids on Anthropic-compatible relays', async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: [{ id: 'MiniMax-M3' }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('minimax-portal-cn', 'sk-cn-test', {
+      modelId: 'MiniMax-M3-unlisted-preview',
+    });
+
+    expect(result).toMatchObject({ valid: true });
+  });
+
+  it('rejects an Anthropic model the key cannot reach', async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ data: [{ id: 'claude-opus-4-8' }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('anthropic', 'sk-ant-test', {
+      modelId: 'claude-opus-99',
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('claude-opus-99');
   });
 
   it('still validates OpenAI-compatible providers with bearer auth', async () => {

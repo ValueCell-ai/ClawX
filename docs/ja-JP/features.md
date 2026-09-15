@@ -76,7 +76,9 @@ DeepSeekはOpenClaw組み込みの `deepseek` プロバイダー（`DEEPSEEK_API
 
 その他の組み込みプロバイダーの既定モデルも現行の100万トークン世代に追随し、いずれも画像入力に対応します。Anthropicは `claude-opus-5`、Googleは `gemini-3.8-flash`、Moonshot（CN / Global）は `kimi-k3`、OpenRouterは `~deepseek/deepseek-flash-latest` です。先頭の `~` はOpenRouterが浮動的な「latest」エイリアスを示すための記法で、固定版は `deepseek/deepseek-v4.1-flash` に相当します。SiliconFlowの既定は `zai-org/GLM-5.3` で、コンテキストは同じ100万トークンながらテキスト専用です。画像入力が必要な場合は `zai-org/GLM-5.3-Flash` を選んでください。
 
-互換ゲートウェイが認証以外の理由で`/models`を拒否した場合、ClawXはAPIキー検証時に設定済みモデルを使い、軽量な`/chat/completions`または`/responses`プローブへ自動フォールバックします。
+AnthropicとGoogleは、ほかの組み込みプロバイダーと同様にOpenClawランタイム設定へ明示的に登録されます。そのためこれらのアカウントを保存すると、キーと選択したモデルがその場で反映され、同梱ランタイム自身のモデルカタログより新しいモデルIDでも解決できます。
+
+互換ゲートウェイが認証以外の理由で`/models`を拒否した場合、ClawXはAPIキー検証時に設定済みモデルを使い、軽量な`/chat/completions`または`/responses`プローブへ自動フォールバックします。AnthropicとGoogleのキーについては、検証時に設定済みモデルをベンダーのモデル一覧と照合し、利用できないモデル名をその場で示します。初回のやり取りで失敗するプロバイダーをそのまま保存することはありません。互換中継サービスはこの照合の対象外です。実際に提供しているモデルの一部しか一覧に公開しない場合があるためです。
 
 ### アダプティブテーマ
 

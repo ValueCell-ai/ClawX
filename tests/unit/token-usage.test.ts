@@ -432,4 +432,51 @@ describe('parseUsageEntriesFromJsonl', () => {
     expect(entries).toHaveLength(2);
     expect(entries.map((entry) => entry.model)).toEqual(['m3', 'm2']);
   });
+
+  it('keeps sibling usage when a tool result stores its details as raw text', () => {
+    // OpenClaw writes `details` as a string whenever a tool returns plain
+    // output, and probing that with `in` used to throw and discard the file.
+    const jsonl = [
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-02-28T10:00:00.000Z',
+        message: { role: 'assistant', model: 'm1', usage: { total: 10 } },
+      }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-02-28T10:01:00.000Z',
+        message: {
+          role: 'toolResult',
+          details: 'Usage: wecom-cli cache <COMMAND>\n\nCommands:\n  status\n  clear\n',
+        },
+      }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-02-28T10:02:00.000Z',
+        message: { role: 'assistant', model: 'm2', usage: { total: 20 } },
+      }),
+    ].join('\n');
+
+    const entries = parseUsageEntriesFromJsonl(jsonl, { sessionId: 'abc', agentId: 'default' });
+    expect(entries.map((entry) => entry.model)).toEqual(['m2', 'm1']);
+  });
+
+  it('skips records whose line or message is not an object', () => {
+    const jsonl = [
+      'null',
+      '"just a string"',
+      '42',
+      '[]',
+      JSON.stringify({ timestamp: '2026-02-28T10:00:00.000Z', message: 'raw text' }),
+      JSON.stringify({ timestamp: 1_772_000_000_000, message: { role: 'assistant', usage: { total: 5 } } }),
+      JSON.stringify({
+        type: 'message',
+        timestamp: '2026-02-28T10:03:00.000Z',
+        message: { role: 'assistant', model: 'survivor', usage: { total: 30 } },
+      }),
+    ].join('\n');
+
+    const entries = parseUsageEntriesFromJsonl(jsonl, { sessionId: 'abc', agentId: 'default' });
+    expect(entries.map((entry) => entry.model)).toEqual(['survivor']);
+  });
 });

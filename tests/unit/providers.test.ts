@@ -18,6 +18,7 @@ import {
   getProviderEnvVar,
   getProviderEnvVars,
 } from '@electron/utils/provider-registry';
+import { OPENCLAW_API_PROTOCOLS } from '@electron/shared/providers/types';
 
 describe('provider metadata', () => {
   it('includes ark in the frontend provider registry', () => {
@@ -189,6 +190,37 @@ describe('provider metadata', () => {
         ]),
       );
     }
+  });
+
+  it('gives every hosted built-in provider the backend preset runtime sync needs', () => {
+    // `resolveRuntimeSyncContext` derives the api protocol from this preset and
+    // returns null without one, which silently skips the auth-profile write,
+    // the models.providers entry, and the agent model sync for that provider.
+    // `custom` and `ollama` are exempt: they carry a user-supplied base URL and
+    // default to openai-completions.
+    const exempt = new Set(['custom', 'ollama']);
+
+    for (const type of BUILTIN_PROVIDER_TYPES) {
+      if (exempt.has(type)) continue;
+      const config = getProviderConfig(type);
+      expect(config?.baseUrl, `${type} has no providerConfig.baseUrl`).toBeTruthy();
+      expect(OPENCLAW_API_PROTOCOLS, `${type} declares an api OpenClaw rejects`).toContain(
+        config?.api,
+      );
+    }
+  });
+
+  it('registers Anthropic and Google against their official endpoints', () => {
+    expect(getProviderConfig('anthropic')).toEqual({
+      baseUrl: 'https://api.anthropic.com/v1',
+      api: 'anthropic-messages',
+      apiKeyEnv: 'ANTHROPIC_API_KEY',
+    });
+    expect(getProviderConfig('google')).toEqual({
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      api: 'google-generative-ai',
+      apiKeyEnv: 'GEMINI_API_KEY',
+    });
   });
 
   it('keeps builtin provider sources in sync', () => {

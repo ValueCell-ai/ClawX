@@ -563,4 +563,56 @@ test.describe('ClawX provider lifecycle', () => {
       await expect(modelIdInput).toHaveAttribute('placeholder', expectedModelId);
     }
   });
+
+  test('reports a Google model the API key cannot reach', async ({ electronApp, page }) => {
+    await completeSetup(page);
+
+    await electronApp.evaluate(async ({ app: _app }) => {
+      const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+      const handlers = (ipcMain as unknown as {
+        _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
+      })._invokeHandlers;
+      const originalHostInvoke = handlers?.get('host:invoke');
+      if (!originalHostInvoke) throw new Error('host:invoke handler unavailable');
+
+      ipcMain.removeHandler('host:invoke');
+      ipcMain.handle('host:invoke', async (event: unknown, request: {
+        id?: string;
+        module?: string;
+        action?: string;
+        payload?: Record<string, unknown>;
+      }) => {
+        if (request.module === 'providers' && request.action === 'validateKey') {
+          const options = request.payload?.options as Record<string, unknown> | undefined;
+          // Main compares the prefilled model against Google's listing, so the
+          // form's model id has to reach validation for the check to exist.
+          if (options?.modelId !== 'gemini-3.8-flash') {
+            return {
+              id: request.id,
+              ok: true,
+              data: { valid: false, error: `unexpected validation model: ${String(options?.modelId)}` },
+            };
+          }
+          return {
+            id: request.id,
+            ok: true,
+            data: {
+              valid: false,
+              error: 'Model "gemini-3.8-flash" is not available for this API key. Choose one of the models this key can reach, for example gemini-3.5-flash.',
+            },
+          };
+        }
+        return originalHostInvoke(event, request);
+      });
+    });
+
+    await page.getByTestId('sidebar-nav-models').click();
+    await page.getByTestId('providers-add-button').click();
+    await page.getByTestId('add-provider-type-google').click();
+    await page.getByTestId('add-provider-api-key-input').fill('AIza-e2e-test');
+    await page.getByTestId('add-provider-submit-button').click();
+
+    await expect(page.getByText(/is not available for this API key/)).toBeVisible();
+    await expect(page.getByText(/gemini-3\.8-flash/)).toBeVisible();
+  });
 });

@@ -47,7 +47,9 @@ Z.AI（国内站 / 国际站）会映射到 OpenClaw 内置的 `zai` 供应商�
 DeepSeek 会映射到 OpenClaw 内置的 `deepseek` 供应商（`DEEPSEEK_API_KEY`），默认模型为 `deepseek-flash`（DeepSeek-V4.1-Flash），并按支持图片输入登记，因此可以在 DeepSeek 会话中直接发送截图和图片。已下线的 `deepseek-v4-flash` 与 `deepseek-v4-flash-vision-exp` 仍由 DeepSeek 路由到 V4.1-Flash，因此同样按支持图片输入处理；`deepseek-v4-pro` 保持纯文本。
 
 其余内置供应商的默认模型同样跟进到当前的百万上下文代次，并均支持图片输入：Anthropic 为 `claude-opus-5`，Google 为 `gemini-3.8-flash`，Moonshot（国内站 / 国际站）为 `kimi-k3`，OpenRouter 为 `~deepseek/deepseek-flash-latest`——前缀 `~` 是 OpenRouter 用于标记浮动「latest」别名的写法，其固定版本对应 `deepseek/deepseek-v4.1-flash`。SiliconFlow 默认使用 `zai-org/GLM-5.3`，它同为 100 万上下文但仅支持纯文本；若需要图片输入，请在该供应商下改用 `zai-org/GLM-5.3-Flash`。
-如果兼容网关的 `/models` 因非鉴权原因不可用，ClawX 会在校验 API Key 时使用已配置的模型，自动降级为轻量的 `/chat/completions` 或 `/responses` 探测。
+Anthropic 与 Google 现在会像其他内置供应商一样，在 OpenClaw 运行时配置中显式注册。因此保存这两类账号时，密钥与所选模型会立即下发；即使模型 ID 比内置运行时自带的模型目录更新，也依然可以解析。
+
+如果兼容网关的 `/models` 因非鉴权原因不可用，ClawX 会在校验 API Key 时使用已配置的模型，自动降级为轻量的 `/chat/completions` 或 `/responses` 探测。对于 Anthropic 与 Google 的密钥，校验还会把已配置的模型与厂商的模型列表进行比对，直接指出不可用的模型名称，而不是保存一个会在首轮对话就失败的供应商。兼容中转服务不参与该比对，因为它们的模型列表可能只公开其实际可用模型的一部分。
 
 ### 🌙 自适应主题
 支持浅色模式、深色模式或跟随系统主题。ClawX 自动适应你的偏好设置。

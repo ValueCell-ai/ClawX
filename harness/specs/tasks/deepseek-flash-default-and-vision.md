@@ -7,6 +7,7 @@ intent: Move the built-in DeepSeek provider default from deepseek-v4-pro to deep
 touchedAreas:
   - harness/specs/tasks/deepseek-flash-default-and-vision.md
   - harness/specs/tasks/refresh-million-token-provider-defaults.md
+  - harness/specs/tasks/deliver-catalog-free-provider-runtime-config.md
   - electron/shared/providers/registry.ts
   - electron/shared/providers/model-capabilities.ts
   - src/lib/providers.ts
@@ -15,6 +16,11 @@ touchedAreas:
   - tests/unit/openclaw-auth.test.ts
   - tests/e2e/provider-lifecycle.spec.ts
   - tests/e2e/developer-mode.spec.ts
+  # Shared with deliver-catalog-free-provider-runtime-config, which is still
+  # uncommitted in the same working tree.
+  - tests/unit/provider-runtime-sync.test.ts
+  - tests/unit/provider-validation.test.ts
+  - tests/unit/token-usage.test.ts
   - docs/en-US/features.md
   - docs/zh-CN/features.md
   - docs/ja-JP/features.md
