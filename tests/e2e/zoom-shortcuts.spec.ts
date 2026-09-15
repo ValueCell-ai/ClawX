@@ -54,6 +54,8 @@ test.describe('ClawX window zoom shortcuts', () => {
   });
 
   test('preserves the page zoom when the window is minimized and restored', async ({ launchElectronApp }) => {
+    test.skip(process.platform !== 'win32', 'Native minimize lifecycle regression is Windows-specific');
+
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
