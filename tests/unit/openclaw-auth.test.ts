@@ -790,6 +790,41 @@ describe('sanitizeOpenClawConfig', () => {
     expect(entries['openclaw-lark']).toBeUndefined();
   });
 
+  it('recovers an official DingTalk channel config when plugins metadata is absent', async () => {
+    await writeOpenClawJson({
+      channels: {
+        'dingtalk-connector': {
+          enabled: true,
+          clientId: 'dt-client-id',
+          clientSecret: 'dt-secret',
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const channels = result.channels as Record<string, Record<string, unknown>>;
+    const plugins = result.plugins as {
+      enabled?: boolean;
+      allow?: string[];
+      entries?: Record<string, { enabled?: boolean }>;
+    };
+    expect(channels['dingtalk-connector']).toBeUndefined();
+    expect(channels.dingtalk).toMatchObject({
+      enabled: true,
+      clientId: 'dt-client-id',
+      clientSecret: 'dt-secret',
+      requireMention: true,
+    });
+    expect(plugins).toMatchObject({
+      enabled: true,
+      allow: expect.arrayContaining(['dingtalk']),
+      entries: { dingtalk: { enabled: true } },
+    });
+  });
+
   it('keeps defaultAccount on official DingTalk schema and strips soimy-only fields', async () => {
     await writeOpenClawJson({
       channels: {

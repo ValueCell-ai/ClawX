@@ -101,6 +101,18 @@ describe('dingtalk dws helpers', () => {
     vi.resetModules();
   });
 
+  it('exposes vendor/dws.exe on PATH for bundled Windows installs', async () => {
+    mockExistsSync.mockImplementation((input: string) => {
+      const value = String(input);
+      return value.endsWith('/bin/dws.js') || value.endsWith('/vendor/dws.exe');
+    });
+
+    const { resolveDingTalkDwsBinDir } = await import('@electron/utils/dingtalk-dws');
+    expect(resolveDingTalkDwsBinDir('win32')).toBe(
+      '/home/test/.openclaw/tools/dingtalk-workspace-cli/vendor',
+    );
+  });
+
   it('extracts the vendor binary from the platform archive', async () => {
     const packageDir = '/workspace/node_modules/dingtalk-workspace-cli';
     let extracted = false;
@@ -196,6 +208,7 @@ describe('dingtalk dws helpers', () => {
         env: expect.objectContaining({
           DWS_CLIENT_ID: 'ding-id',
           DWS_CLIENT_SECRET: 'ding-secret',
+          PATH: expect.stringMatching(/^\/home\/test\/\.openclaw\/tools\/dingtalk-workspace-cli\/vendor:/),
         }),
       }),
     );

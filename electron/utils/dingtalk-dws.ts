@@ -193,21 +193,25 @@ function resolveDwsSourceDir(): string | null {
   return null;
 }
 
-function resolveDwsPackageDir(): string | null {
+function resolveDwsPackageDir(platform = process.platform): string | null {
   const installed = getDingTalkDwsInstallDir();
-  if (hasDwsWrapper(installed) && hasDwsVendorBinary(installed)) {
+  if (hasDwsWrapper(installed) && hasDwsVendorBinary(installed, platform)) {
     return installed;
   }
   const sourceDir = resolveDwsSourceDir();
-  if (sourceDir && hasDwsWrapper(sourceDir) && hasDwsVendorBinary(sourceDir)) {
+  if (sourceDir && hasDwsWrapper(sourceDir) && hasDwsVendorBinary(sourceDir, platform)) {
     return sourceDir;
   }
   return null;
 }
 
-export function resolveDingTalkDwsBinDir(): string | null {
-  const packageDir = resolveDwsPackageDir();
-  return packageDir ? join(packageDir, 'bin') : null;
+export function resolveDingTalkDwsBinDir(platform = process.platform): string | null {
+  const packageDir = resolveDwsPackageDir(platform);
+  // Expose the extracted native binary directly. On Windows the package's
+  // bin/dws.js wrapper has no copied node_modules/.bin/dws.cmd shim, so adding
+  // bin/ to PATH does not make the `dws` command discoverable. vendor/dws.exe
+  // works with normal Windows command lookup and also works on Unix.
+  return packageDir ? join(packageDir, 'vendor') : null;
 }
 
 export function isDingTalkDwsAvailable(): boolean {
@@ -227,7 +231,7 @@ function buildDwsEnv(
 ): NodeJS.ProcessEnv {
   return {
     ...process.env,
-    PATH: `${join(packageDir, 'bin')}${delimiter}${process.env.PATH ?? ''}`,
+    PATH: `${join(packageDir, 'vendor')}${delimiter}${join(packageDir, 'bin')}${delimiter}${process.env.PATH ?? ''}`,
     DINGTALK_AGENT: 'DING_DWS_CLAW',
     ...(credentials?.clientId ? { DWS_CLIENT_ID: credentials.clientId } : {}),
     ...(credentials?.clientSecret ? { DWS_CLIENT_SECRET: credentials.clientSecret } : {}),

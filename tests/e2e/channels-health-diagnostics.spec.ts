@@ -58,10 +58,12 @@ test.describe('Channels health diagnostics', () => {
     await expect(page.getByText(/Gateway is not running|网关当前未运行|ゲートウェイは起動していません/)).toHaveCount(0);
   });
 
-  test('shows the optional DingTalk workspace authorization note without degrading chat status', async ({ electronApp, page }) => {
+  test('shows localized DingTalk workspace status notes without degrading chat status', async ({ electronApp, page }) => {
     await electronApp.evaluate(({ ipcMain }) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).__clawxDingTalkWorkspaceAuthorized = false;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__clawxDingTalkWorkspaceNote = 'dingtalk_dws_missing';
       const originalHostInvoke = (ipcMain as unknown as {
         _invokeHandlers?: Map<string, (event: unknown, request: unknown) => Promise<unknown>>;
       })._invokeHandlers?.get('host:invoke');
@@ -102,7 +104,10 @@ test.describe('Channels health diagnostics', () => {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 ...((globalThis as any).__clawxDingTalkWorkspaceAuthorized
                   ? {}
-                  : { statusNote: 'dingtalk_dws_auth_required' }),
+                  : {
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      statusNote: (globalThis as any).__clawxDingTalkWorkspaceNote,
+                    }),
                 accounts: [
                   {
                     accountId: 'default',
@@ -130,6 +135,14 @@ test.describe('Channels health diagnostics', () => {
     await completeSetup(page);
     await page.getByTestId('sidebar-nav-channels').click();
     await expect(page.getByTestId('channel-status-dingtalk')).toHaveText(/Connected|已连接|接続済み|Подключ/);
+    await expect(page.getByTestId('channel-note-dingtalk')).toContainText(/bundled|随包|同梱|встроенн/i);
+    await expect(page.getByTestId('dingtalk-workspace-authorize')).toHaveCount(0);
+
+    await electronApp.evaluate(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (globalThis as any).__clawxDingTalkWorkspaceNote = 'dingtalk_dws_auth_required';
+    });
+    await page.getByRole('button', { name: /Refresh|刷新|更新|Обновить/i }).click();
     await expect(page.getByTestId('channel-note-dingtalk')).toContainText(/authorization|授权|認可|авторизац/i);
 
     await page.getByTestId('dingtalk-workspace-authorize').click();

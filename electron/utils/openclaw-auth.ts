@@ -3122,12 +3122,21 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     }
 
     // ── plugins section ──────────────────────────────────────────────
+    // Channel-key migration must run even when plugins metadata is absent.
+    // Otherwise an imported official-connector config remains under the
+    // unsupported channels.dingtalk-connector key and is omitted from plugin
+    // recovery and the Channels UI.
+    if (migrateDingTalkChannelSection(config)) {
+      modified = true;
+      console.log('[sanitize] Normalized DingTalk channel config onto channels.dingtalk');
+    }
+
     // OpenClaw 2026.7.1 moved these formerly bundled channels to external
     // plugins. Recover old channel-only configs before plugin sanitization.
     let plugins = config.plugins;
     if (!plugins && isPlainRecord(config.channels)) {
       const channels = config.channels as Record<string, unknown>;
-      const externalChannelIds = ['discord', 'whatsapp', 'qqbot'].filter((channelId) => {
+      const externalChannelIds = ['discord', 'whatsapp', 'qqbot', DINGTALK_PLUGIN_ID].filter((channelId) => {
         const section = channels[channelId];
         return isPlainRecord(section) && section.enabled !== false && Object.keys(section).length > 0;
       });
@@ -3645,10 +3654,6 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       }
 
       // ── official DingTalk connector → dingtalk identity ─────────
-      if (migrateDingTalkChannelSection(config)) {
-        modified = true;
-        console.log('[sanitize] Normalized DingTalk channel config onto channels.dingtalk');
-      }
       if (migrateDingTalkPluginRegistrations(config)) {
         modified = true;
         console.log('[sanitize] Normalized DingTalk plugin registration onto dingtalk');

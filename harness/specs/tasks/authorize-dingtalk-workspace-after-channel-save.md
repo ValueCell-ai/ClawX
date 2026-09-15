@@ -71,6 +71,7 @@ requiredTests:
 acceptance:
   - Renderer starts, polls, cancels, and resets DingTalk workspace OAuth only through typed hostApi.channels methods.
   - Main starts dws with argument arrays and DWS_CLIENT_ID / DWS_CLIENT_SECRET environment variables; secrets are not returned to Renderer or written to logs.
+  - The Gateway PATH exposes the extracted native `vendor/dws` or `vendor/dws.exe` executable directly, so bundled dws skills work on Windows without relying on an uncopied pnpm `dws.cmd` shim.
   - The loopback authorization URL (and a device code when emitted for compatibility) is parsed from bounded CLI output, authorization has a deadline, and closing, skipping, or quitting ClawX terminates the child process.
   - Workspace OAuth is optional and occurs only after DingTalk configuration has been durably saved; failure or cancellation never rolls back or marks basic chat unavailable.
   - Existing authorized dws installations do not prompt again.
