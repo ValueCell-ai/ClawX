@@ -302,7 +302,7 @@
             ]
         },
         "qqbot": {
-            "description": "Подключите канал QQ Bot (встроенный с OpenClaw 3.31)",
+            "description": "Подключите канал QQ Bot",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/KPIJwlyiGiupMrkiS9ice39Zn2c",
             "fields": {
                 "appId": {

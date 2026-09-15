@@ -302,7 +302,7 @@
             ]
         },
         "qqbot": {
-            "description": "Connect QQ Bot channel (built-in since OpenClaw 3.31)",
+            "description": "Connect QQ Bot channel",
             "docsUrl": "https://icnnp7d0dymg.feishu.cn/wiki/KPIJwlyiGiupMrkiS9ice39Zn2c",
             "fields": {
                 "appId": {
