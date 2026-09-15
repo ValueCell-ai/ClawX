@@ -209,9 +209,10 @@ describe('remapDingTalkOfficialPackageJson', () => {
 });
 
 describe('patchDingTalkChannelIdsInJs', () => {
-  it('rewrites exact channel ids but leaves Gateway RPC names intact', () => {
+  it('rewrites channel and default-account ids but leaves Gateway RPC names intact', () => {
     const source = [
       'const CHANNEL_ID = "dingtalk-connector";',
+      'const DEFAULT_ACCOUNT_ID = "__default__";',
       'api.registerGatewayMethod("dingtalk-connector.docs.create", handler);',
       "cfg.channels?.['dingtalk-connector']",
     ].join('\n');
@@ -219,6 +220,7 @@ describe('patchDingTalkChannelIdsInJs', () => {
     const { content, patched } = patchDingTalkChannelIdsInJs(source);
     expect(patched).toBe(true);
     expect(content).toContain('const CHANNEL_ID = "dingtalk";');
+    expect(content).toContain('const DEFAULT_ACCOUNT_ID = "default";');
     expect(content).toContain('api.registerGatewayMethod("dingtalk-connector.docs.create", handler);');
     expect(content).toContain("cfg.channels?.['dingtalk']");
   });
@@ -230,6 +232,7 @@ describe('patchDingTalkChannelIdsInJs', () => {
 
     let patchedAny = false;
     let keptRpc = false;
+    let foundOfficialDefaultAccountId = false;
     for (const name of files) {
       const source = readFileSync(resolve(distDir, name), 'utf8');
       const { content, patched } = patchDingTalkChannelIdsInJs(source);
@@ -238,10 +241,15 @@ describe('patchDingTalkChannelIdsInJs', () => {
         expect(content).toContain('dingtalk-connector.docs.create');
         keptRpc = true;
       }
+      if (source.includes('__default__')) {
+        foundOfficialDefaultAccountId = true;
+      }
       expect(content).not.toMatch(/(["'])dingtalk-connector\1/);
+      expect(content).not.toMatch(/(["'])__default__\1/);
     }
 
     expect(patchedAny).toBe(true);
     expect(keptRpc).toBe(true);
+    expect(foundOfficialDefaultAccountId).toBe(true);
   });
 });

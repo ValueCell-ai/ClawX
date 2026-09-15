@@ -319,6 +319,13 @@ export function remapDingTalkOfficialPackageJson(pkg: Record<string, unknown>): 
  * names such as `dingtalk-connector.docs.create` untouched.
  */
 export function patchDingTalkChannelIdsInJs(content: string): { content: string; patched: boolean } {
-  const next = content.replace(/(["'])dingtalk-connector\1/g, `$1${DINGTALK_PLUGIN_ID}$1`);
+  const next = content
+    .replace(/(["'])dingtalk-connector\1/g, `$1${DINGTALK_PLUGIN_ID}$1`)
+    // The official connector uses an internal "__default__" account id, while
+    // existing ClawX configs, bindings, and per-account session keys use
+    // "default". Normalize the connector runtime so upgrades keep resolving
+    // the same account instead of silently falling back to the main agent or a
+    // new session namespace.
+    .replace(/(["'])__default__\1/g, '$1default$1');
   return { content: next, patched: next !== content };
 }

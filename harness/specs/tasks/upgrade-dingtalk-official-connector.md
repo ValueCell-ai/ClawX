@@ -46,7 +46,7 @@ touchedAreas:
   - harness/specs/tasks/upgrade-openclaw-2026-7-1-2-plugins.md
   - harness/specs/tasks/upgrade-dingtalk-official-connector.md
 expectedUserBehavior:
-  - Existing DingTalk users keep `channels.dingtalk` credentials, bindings, and session keys without re-pairing.
+  - Existing DingTalk users keep `channels.dingtalk` credentials, bindings, and session keys without re-pairing; the official connector's internal `__default__` account is normalized to ClawX's existing `default` identity at runtime.
   - Channels UI still shows only `dingtalk`; `dingtalk-connector` is never a catalog type.
   - Community soimy and official connector never run at the same time on one `clientId`.
   - Chat works after save even if `dws` workspace authorization is skipped or still pending; new setups can complete optional desktop loopback OAuth from the ClawX channel modal.
