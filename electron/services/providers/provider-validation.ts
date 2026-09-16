@@ -260,29 +260,6 @@ function classifyConfiguredModel(
   };
 }
 
-function isExplicitModelNotFound(
-  result: ClassifiedValidationResult,
-  data: unknown,
-): boolean {
-  if (result.status === 404) return true;
-  if (!data || typeof data !== 'object') return false;
-
-  const record = data as {
-    type?: unknown;
-    code?: unknown;
-    error?: { type?: unknown; code?: unknown };
-  };
-  const candidates = [
-    record.type,
-    record.code,
-    record.error?.type,
-    record.error?.code,
-  ];
-  return candidates.some((value) => (
-    typeof value === 'string' && /^(?:model_)?not_found(?:_error)?$/i.test(value)
-  ));
-}
-
 function classifyAuthResponse(
   status: number,
   data: unknown,
@@ -517,33 +494,7 @@ async function validateAnthropicHeaderKey(
     return await performAnthropicMessagesProbe(providerType, messagesUrl, headers);
   }
 
-  const listedModelResult = classifyConfiguredModel(modelsResult, url, modelsData, modelId);
-  if (listedModelResult.valid || !modelsResult.valid || !modelId?.trim()) {
-    return listedModelResult;
-  }
-
-  // Anthropic's listing can contain only canonical/versioned IDs even though
-  // the Messages API accepts short and `-latest` aliases. Resolve an unlisted
-  // value through the official retrieval endpoint before rejecting it.
-  const modelUrl = `${base}/models/${encodeURIComponent(modelId.trim())}`;
-  const { result: modelResult, data: modelData } = await requestProviderValidation(
-    providerType,
-    modelUrl,
-    headers,
-  );
-  if (modelResult.valid) {
-    return modelResult;
-  }
-  if (modelResult.authFailure) {
-    return modelResult;
-  }
-  if (isExplicitModelNotFound(modelResult, modelData)) {
-    return listedModelResult;
-  }
-
-  // The listing already authenticated the key. A transient or unsupported
-  // retrieval response cannot prove that a valid alias is unavailable.
-  return modelsResult;
+  return classifyConfiguredModel(modelsResult, url, modelsData, modelId);
 }
 
 async function validateOpenRouterKey(

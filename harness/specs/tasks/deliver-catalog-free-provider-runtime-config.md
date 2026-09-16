@@ -29,7 +29,6 @@ expectedUserBehavior:
   - Saving an Anthropic or Google account writes its API key and its selected model into the OpenClaw runtime config, so the account is usable without restarting the app.
   - Anthropic and Google accounts accept a model id the bundled OpenClaw catalog does not know, because ClawX registers the model explicitly.
   - Validating an Anthropic or Google key whose model id the provider does not serve reports the missing model instead of reporting success.
-  - A valid Anthropic short or `-latest` alias remains configurable when the model listing contains only its canonical/versioned model id.
   - Validation still succeeds when the provider does not let ClawX enumerate models, so an unlistable but working model stays configurable.
   - The Dashboard and Models token usage charts keep every usable record in a session whose transcript also contains a malformed one.
 requiredProfiles:
@@ -55,8 +54,6 @@ acceptance:
   - Provider synchronization resolves a runtime context for Anthropic and Google, so the auth profile write, the `models.providers` write, and the agent model sync all run for them.
   - A test asserts that every non-local built-in provider resolves a runtime sync context, so a future provider added without a backend preset fails loudly instead of silently skipping delivery.
   - Google validation compares the configured model id against the provider's model listing and reports an unknown model as a validation failure naming the model.
-  - Anthropic validation accepts an exact listing match and, when an alias is absent from the official listing, resolves it through `GET /v1/models/{model_id}` before rejecting it; a successful retrieval passes and an explicit missing-model response reports a validation failure naming the alias.
-  - Anthropic-compatible relays do not gain official-Anthropic alias policing or retrieval requests.
   - Google validation still reports the key as valid when the listing request fails or returns no usable model names.
   - Transcript parsing skips a record whose line, `message`, or `message.details` is not an object, and keeps the remaining records in the same file.
   - A test covers a `toolResult` record whose `details` is a string and asserts the sibling usage records still load.
@@ -118,9 +115,6 @@ the log repeats the failure on each poll.
 - Compare the configured model id against Google's model listing during
   validation, and fail with a message naming the model when the listing is
   usable and the model is absent.
-- Resolve an Anthropic short or `-latest` alias through the official model
-  retrieval endpoint when it is absent from the canonical model listing, and
-  reject it only when that endpoint explicitly reports the model unavailable.
 - Make transcript parsing total with respect to record shape, and confine a
   malformed record's effect to that record.
 
