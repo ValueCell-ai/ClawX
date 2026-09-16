@@ -1804,42 +1804,49 @@ function ensureCustomAstraCompletionsReasoningEffort(
   provider: string,
   api: string | undefined,
   modelIds: string[],
-): void {
-  if (!provider.startsWith('custom-') || api !== 'openai-completions') return;
+): boolean {
+  if (!provider.startsWith('custom-') || api !== 'openai-completions') return false;
 
   const astraModelIds = modelIds.filter((modelId) => /astra/i.test(modelId));
-  if (astraModelIds.length === 0) return;
+  if (astraModelIds.length === 0) return false;
 
   const agents = isPlainRecord(config.agents) ? config.agents : {};
   const defaults = isPlainRecord(agents.defaults) ? agents.defaults : {};
   const defaultParams = isPlainRecord(defaults.params) ? defaults.params : {};
-  if (hasConfiguredReasoningEffort(defaultParams)) return;
+  const hasDefaultReasoningEffort = hasConfiguredReasoningEffort(defaultParams);
 
   const configuredModels = isPlainRecord(defaults.models) ? defaults.models : {};
+  let modified = false;
   for (const modelId of astraModelIds) {
     const modelRef = `${provider}/${modelId}`;
     const model = isPlainRecord(configuredModels[modelRef]) ? configuredModels[modelRef] : {};
     const params = isPlainRecord(model.params) ? model.params : {};
-    if (hasConfiguredReasoningEffort(params)) continue;
-
     const extraBody = isPlainRecord(params.extra_body)
       ? params.extra_body
       : (isPlainRecord(params.extraBody) ? params.extraBody : {});
+    const hasLegacyNone = extraBody.reasoning_effort === 'none';
+    if (!hasLegacyNone
+      && (hasDefaultReasoningEffort || hasConfiguredReasoningEffort(params))) continue;
+
     configuredModels[modelRef] = {
       ...model,
       params: {
         ...params,
         extra_body: {
           ...extraBody,
-          reasoning_effort: 'none',
+          reasoning_effort: 'low',
         },
       },
     };
+    modified = true;
   }
 
-  defaults.models = configuredModels;
-  agents.defaults = defaults;
-  config.agents = agents;
+  if (modified) {
+    defaults.models = configuredModels;
+    agents.defaults = defaults;
+    config.agents = agents;
+  }
+  return modified;
 }
 
 /**
@@ -3262,6 +3269,28 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     // plugins.entries.moonshot.config.webSearch. Migrate the old key and strip
     // any inline apiKey so auth-profiles/env remain the single source of truth.
     const providers = ((config.models as Record<string, unknown> | undefined)?.providers as Record<string, unknown> | undefined) || {};
+
+    // Older ClawX releases generated reasoning_effort="none" for custom Astra
+    // completions models. Astra no longer accepts that value, so repair those
+    // runtime entries before Gateway launch and seed the supported low default
+    // when an existing provider has no per-model effort yet.
+    for (const [providerKey, rawProvider] of Object.entries(providers)) {
+      if (!isPlainRecord(rawProvider)) continue;
+      const providerModels = Array.isArray(rawProvider.models) ? rawProvider.models : [];
+      const modelIds = providerModels.flatMap((model) => (
+        isPlainRecord(model) && typeof model.id === 'string' ? [model.id] : []
+      ));
+      if (ensureCustomAstraCompletionsReasoningEffort(
+        config,
+        providerKey,
+        typeof rawProvider.api === 'string' ? rawProvider.api : undefined,
+        modelIds,
+      )) {
+        modified = true;
+        console.log(`[sanitize] Set custom Astra reasoning effort to low for "${providerKey}"`);
+      }
+    }
+
     if (providers[OPENCLAW_PROVIDER_KEY_MOONSHOT]) {
       const tools = isPlainRecord(config.tools) ? config.tools : null;
       const web = tools && isPlainRecord(tools.web) ? tools.web : null;

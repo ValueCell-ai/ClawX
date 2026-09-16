@@ -35,12 +35,14 @@ absent and explicit values remain user-owned.
 One narrow compatibility default is ClawX-owned: an Astra model under a
 `custom-*` provider using `openai-completions` receives
 `agents.defaults.models["provider/model"].params.extra_body.reasoning_effort =
-"none"` when no reasoning effort is already configured. OpenClaw reads request
+"low"` when no reasoning effort is already configured. OpenClaw reads request
 parameters from this per-model runtime map, not provider-catalog rows in
-`models.providers.*.models` or per-Agent `models.json`. Never overwrite an
-explicit reasoning-effort value, and do not apply the default to other models,
-protocols, or providers. Provider deletion must remove matching entries from
-both default and per-Agent model catalogs so generated runtime parameters do
-not leave stale models behind. When deletion empties an `agents.*.models` map,
-keep an explicit empty object in the `config.set` payload: OpenClaw treats this
-as a protected map and preserves its old entries when the field is omitted.
+`models.providers.*.models` or per-Agent `models.json`. The exact legacy
+ClawX-generated value at that path, `"none"`, must migrate to `"low"` because
+Astra upstream no longer accepts it. Never overwrite any other explicit
+reasoning-effort value, and do not apply the default or migration to other
+models, protocols, or providers. Provider deletion must remove matching entries
+from both default and per-Agent model catalogs so generated runtime parameters
+do not leave stale models behind. When deletion empties an `agents.*.models`
+map, keep an explicit empty object in the `config.set` payload: OpenClaw treats
+this as a protected map and preserves its old entries when the field is omitted.

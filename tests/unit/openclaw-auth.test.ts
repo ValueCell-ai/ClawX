@@ -413,6 +413,44 @@ describe('sanitizeOpenClawConfig', () => {
     logSpy.mockRestore();
   });
 
+  it('migrates legacy custom Astra reasoning effort before Gateway launch', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          'custom-example': {
+            baseUrl: 'https://example.com/v1',
+            api: 'openai-completions',
+            models: [{ id: 'gpt-6-astra', name: 'Astra' }],
+          },
+        },
+      },
+      agents: {
+        defaults: {
+          models: {
+            'custom-example/gpt-6-astra': {
+              alias: 'astra',
+              params: { extra_body: { reasoning_effort: 'none', keep: true } },
+            },
+          },
+        },
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const agents = result.agents as Record<string, Record<string, unknown>>;
+    const configuredModels = agents.defaults.models as Record<string, Record<string, unknown>>;
+    expect(configuredModels['custom-example/gpt-6-astra']).toEqual({
+      alias: 'astra',
+      params: { extra_body: { reasoning_effort: 'low', keep: true } },
+    });
+    logSpy.mockRestore();
+  });
+
   it('sanitizes the running Gateway snapshot without replacing it from the fallback file', async () => {
     await writeOpenClawJson({ fallbackOnly: true });
     const rpc = vi.fn(async (method: string) => {
@@ -1304,7 +1342,7 @@ describe('syncProviderConfigToOpenClaw', () => {
     ]);
   });
 
-  it('defaults custom Astra completions runtime params to reasoning_effort none', async () => {
+  it('defaults custom Astra completions runtime params to reasoning_effort low', async () => {
     await writeOpenClawJson({ models: { providers: {} } });
 
     const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
@@ -1318,7 +1356,44 @@ describe('syncProviderConfigToOpenClaw', () => {
     const configuredModels = agents.defaults.models as Record<string, Record<string, unknown>>;
 
     expect(configuredModels['custom-example/gpt-6-astra'].params).toEqual({
-      extra_body: { reasoning_effort: 'none' },
+      extra_body: { reasoning_effort: 'low' },
+    });
+  });
+
+  it('migrates legacy Astra reasoning_effort none to low', async () => {
+    await writeOpenClawJson({
+      models: { providers: {} },
+      agents: {
+        defaults: {
+          models: {
+            'custom-example/gpt-6-astra': {
+              alias: 'astra',
+              params: {
+                keepAtParams: true,
+                extra_body: { reasoning_effort: 'none', keep: true },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await syncProviderConfigToOpenClaw('custom-example', 'gpt-6-astra', {
+      baseUrl: 'https://example.com/v1',
+      api: 'openai-completions',
+    });
+
+    const result = await readOpenClawJson();
+    const agents = result.agents as Record<string, Record<string, unknown>>;
+    const configuredModels = agents.defaults.models as Record<string, Record<string, unknown>>;
+
+    expect(configuredModels['custom-example/gpt-6-astra']).toEqual({
+      alias: 'astra',
+      params: {
+        keepAtParams: true,
+        extra_body: { reasoning_effort: 'low', keep: true },
+      },
     });
   });
 
