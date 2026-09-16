@@ -1399,8 +1399,16 @@ describe('syncProviderConfigToOpenClaw', () => {
     const entry = providers.deepseek as Record<string, unknown>;
 
     expect(entry.models).toEqual([
-      expect.objectContaining({ id: 'deepseek-flash', input: ['text', 'image'] }),
-      expect.objectContaining({ id: 'deepseek-v4-pro', input: ['text'] }),
+      expect.objectContaining({
+        id: 'deepseek-flash',
+        input: ['text', 'image'],
+        contextWindow: 1_000_000,
+      }),
+      expect.objectContaining({
+        id: 'deepseek-v4-pro',
+        input: ['text'],
+        contextWindow: 1_000_000,
+      }),
     ]);
   });
 
@@ -1429,12 +1437,73 @@ describe('syncProviderConfigToOpenClaw', () => {
       expect.objectContaining({
         id: '~deepseek/deepseek-flash-latest',
         input: ['text', 'image'],
+        contextWindow: 1_000_000,
       }),
     ]);
     expect((providers.siliconflow as Record<string, unknown>).models).toEqual([
       expect.objectContaining({
         id: 'zai-org/GLM-5.3',
         input: ['text'],
+        contextWindow: 1_000_000,
+      }),
+    ]);
+  });
+
+  it('copies registered model metadata into newly synchronized built-in rows', async () => {
+    await writeOpenClawJson({ models: { providers: {} } });
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await syncProviderConfigToOpenClaw('moonshot', 'kimi-k3', {
+      baseUrl: 'https://api.moonshot.cn/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'MOONSHOT_API_KEY',
+    });
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const entry = providers.moonshot as Record<string, unknown>;
+
+    expect(entry.models).toEqual([
+      expect.objectContaining({
+        id: 'kimi-k3',
+        name: 'Kimi K3',
+        reasoning: true,
+        input: ['text', 'image'],
+        contextWindow: 1_000_000,
+        maxTokens: 131_072,
+      }),
+    ]);
+  });
+
+  it('preserves explicit context metadata when synchronizing a known built-in model', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          deepseek: {
+            baseUrl: 'https://api.deepseek.com/v1',
+            api: 'openai-completions',
+            models: [{ id: 'deepseek-flash', name: 'Custom DeepSeek', contextWindow: 64000 }],
+          },
+        },
+      },
+    });
+
+    const { syncProviderConfigToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await syncProviderConfigToOpenClaw('deepseek', 'deepseek-flash', {
+      baseUrl: 'https://api.deepseek.com/v1',
+      api: 'openai-completions',
+      apiKeyEnv: 'DEEPSEEK_API_KEY',
+    });
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const entry = providers.deepseek as Record<string, unknown>;
+
+    expect(entry.models).toEqual([
+      expect.objectContaining({
+        id: 'deepseek-flash',
+        name: 'Custom DeepSeek',
+        contextWindow: 64000,
       }),
     ]);
   });
@@ -1739,6 +1808,71 @@ describe('setOpenClawDefaultModelWithOverride model metadata', () => {
     expect(newModel).not.toHaveProperty('customField');
     const defaults = (result.agents as Record<string, unknown>).defaults as Record<string, unknown>;
     expect((defaults.compaction as Record<string, unknown>).reserveTokensFloor).toBe(50_000);
+  });
+
+  it('preserves an explicitly configured context window over built-in metadata', async () => {
+    await writeOpenClawJson({
+      models: {
+        providers: {
+          deepseek: {
+            baseUrl: 'https://api.deepseek.com/v1',
+            api: 'openai-completions',
+            models: [{
+              id: 'deepseek-flash',
+              name: 'Custom DeepSeek',
+              contextTokens: 64_000,
+            }],
+          },
+        },
+      },
+    });
+
+    const { setOpenClawDefaultModel } = await import('@electron/utils/openclaw-auth');
+    await setOpenClawDefaultModel('deepseek', 'deepseek-flash');
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const entry = providers.deepseek as Record<string, unknown>;
+    const models = entry.models as Array<Record<string, unknown>>;
+    const selected = models.find((model) => model.id === 'deepseek-flash');
+    const defaults = (result.agents as Record<string, unknown>).defaults as Record<string, unknown>;
+
+    expect(selected).toEqual(expect.objectContaining({
+      name: 'Custom DeepSeek',
+      contextTokens: 64_000,
+    }));
+    expect(selected).not.toHaveProperty('contextWindow');
+    expect((defaults.compaction as Record<string, unknown>).reserveTokensFloor).toBe(16_000);
+  });
+
+  it('writes known built-in context metadata before calculating compaction reserve', async () => {
+    await writeOpenClawJson({ models: { providers: {} } });
+
+    const { setOpenClawDefaultModelWithOverride } = await import('@electron/utils/openclaw-auth');
+    await setOpenClawDefaultModelWithOverride(
+      'deepseek',
+      'deepseek/deepseek-flash',
+      {
+        baseUrl: 'https://api.deepseek.com/v1',
+        api: 'openai-completions',
+        apiKeyEnv: 'DEEPSEEK_API_KEY',
+      },
+    );
+
+    const result = await readOpenClawJson();
+    const providers = (result.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const entry = providers.deepseek as Record<string, unknown>;
+    const models = entry.models as Array<Record<string, unknown>>;
+    const defaults = (result.agents as Record<string, unknown>).defaults as Record<string, unknown>;
+
+    expect(models).toEqual([
+      expect.objectContaining({
+        id: 'deepseek-flash',
+        input: ['text', 'image'],
+        contextWindow: 1_000_000,
+      }),
+    ]);
+    expect((defaults.compaction as Record<string, unknown>).reserveTokensFloor).toBe(250_000);
   });
 
   it('preserves model input metadata after switching to another provider and back', async () => {

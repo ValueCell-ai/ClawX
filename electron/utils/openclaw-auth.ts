@@ -44,7 +44,10 @@ import {
   assertValidApiProtocol,
   normalizeOpenClawApiProtocol,
 } from '../shared/providers/types';
-import { inferCustomModelInputModalities } from '../shared/providers/model-capabilities';
+import {
+  inferCustomModelInputModalities,
+  inferKnownModelContextWindow,
+} from '../shared/providers/model-capabilities';
 import {
   applyModelAwareCompactionReserveTokensFloor,
   DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR,
@@ -1665,6 +1668,7 @@ export async function setOpenClawDefaultModel(
         modelIds: [modelId, ...fallbackModelIds],
         includeRegistryModels: true,
         mergeExistingModels: true,
+        inferRuntimeModelInputs: true,
       });
       console.log(`Configured models.providers.${provider} with baseUrl=${providerCfg.baseUrl}, model=${modelId}`);
     } else if (provider === 'openai-codex') {
@@ -1758,14 +1762,30 @@ function mergeProviderModels(
   ...groups: Array<Array<Record<string, unknown>>>
 ): Array<Record<string, unknown>> {
   const merged: Array<Record<string, unknown>> = [];
-  const seen = new Set<string>();
+  const indexes = new Map<string, number>();
 
+  // Groups are ordered from lowest to highest priority. This lets registry and
+  // inferred metadata fill gaps without replacing values explicitly persisted
+  // in the user's existing OpenClaw model row.
   for (const group of groups) {
     for (const item of group) {
       const id = typeof item?.id === 'string' ? item.id : '';
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
-      merged.push(item);
+      if (!id) continue;
+
+      const existingIndex = indexes.get(id);
+      if (existingIndex === undefined) {
+        indexes.set(id, merged.length);
+        merged.push({ ...item });
+        continue;
+      }
+
+      const next = { ...merged[existingIndex], ...item };
+      if (Object.hasOwn(item, 'contextTokens') && !Object.hasOwn(item, 'contextWindow')) {
+        delete next.contextWindow;
+      } else if (Object.hasOwn(item, 'contextWindow') && !Object.hasOwn(item, 'contextTokens')) {
+        delete next.contextTokens;
+      }
+      merged[existingIndex] = next;
     }
   }
   return merged;
@@ -2081,14 +2101,33 @@ function upsertOpenClawProviderEntry(
   const registryModels = options.includeRegistryModels
     ? ((getProviderConfig(provider)?.models ?? []).map((m) => ({ ...m })) as Array<Record<string, unknown>>)
     : [];
-  const runtimeModels = (options.modelIds ?? []).map((id) => ({
-    id,
-    name: id,
-    ...(options.inferRuntimeModelInputs
-      ? { input: inferCustomModelInputModalities(id) }
-      : {}),
-  }));
-  let mergedModels = mergeProviderModels(registryModels, existingModels, runtimeModels);
+  const registeredProvider = getProviderConfig(provider);
+  const runtimeModels = (options.modelIds ?? []).map((id) => {
+    const registeredModel = registeredProvider?.models?.find((model) => model.id === id);
+    const hasRegisteredContext = typeof registeredModel?.contextTokens === 'number'
+      || typeof registeredModel?.contextWindow === 'number';
+    const inferredContextWindow = registeredProvider && !hasRegisteredContext
+      ? inferKnownModelContextWindow(id, { providerKey: provider, apiProtocol: options.api })
+      : undefined;
+
+    return {
+      ...(registeredModel ? { ...registeredModel } : {}),
+      id,
+      name: registeredModel?.name ?? id,
+      ...(options.inferRuntimeModelInputs && !registeredModel?.input
+        ? { input: inferCustomModelInputModalities(id) }
+        : {}),
+      ...(inferredContextWindow === undefined ? {} : { contextWindow: inferredContextWindow }),
+    };
+  });
+  // Keep the established row ordering while reapplying persisted rows last so
+  // explicit user metadata wins over registry defaults and inferred values.
+  let mergedModels = mergeProviderModels(
+    registryModels,
+    existingModels,
+    runtimeModels,
+    existingModels,
+  );
   if (options.inferRuntimeModelInputs) {
     mergedModels = mergedModels.map((model) => ({
       ...model,

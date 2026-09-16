@@ -438,6 +438,44 @@ describe('provider-runtime-sync config delivery', () => {
     );
   });
 
+  it('writes registered context metadata to an agent model entry', async () => {
+    const moonshot = createProvider({ model: 'kimi-k3' });
+    mocks.getAllProviders.mockResolvedValue([moonshot]);
+    mocks.getProviderConfig.mockReturnValue({
+      api: 'openai-completions',
+      baseUrl: 'https://api.moonshot.cn/v1',
+      apiKeyEnv: 'MOONSHOT_API_KEY',
+      models: [{
+        id: 'kimi-k3',
+        name: 'Kimi K3',
+        reasoning: true,
+        input: ['text', 'image'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 1_000_000,
+        maxTokens: 131_072,
+      }],
+    });
+    mocks.listAgentsSnapshot.mockResolvedValue({
+      agents: [{ id: 'main', modelRef: 'moonshot/kimi-k3' }],
+    });
+
+    await syncSavedProviderToRuntime(moonshot, 'sk-test');
+
+    expect(mocks.updateSingleAgentModelProvider).toHaveBeenCalledWith(
+      'main',
+      'moonshot',
+      expect.objectContaining({
+        models: [expect.objectContaining({
+          id: 'kimi-k3',
+          reasoning: true,
+          input: ['text', 'image'],
+          contextWindow: 1_000_000,
+          maxTokens: 131_072,
+        })],
+      }),
+    );
+  });
+
   it('syncs Ollama provider config to runtime without adding model prefix', async () => {
     const ollamaProvider = createProvider({
       id: 'ollamafd',

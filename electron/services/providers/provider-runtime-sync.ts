@@ -27,6 +27,7 @@ import {
 } from '../../shared/pi-ai-model-cost';
 import { logger } from '../../utils/logger';
 import { listAgentsSnapshot } from '../../utils/agent-config';
+import { inferKnownModelContextWindow } from '../../shared/providers/model-capabilities';
 
 /** OpenClaw Codex OAuth hooks only apply to the canonical `openai` provider id. */
 const OPENAI_OAUTH_RUNTIME_PROVIDER = 'openai';
@@ -438,7 +439,7 @@ async function buildAgentModelProviderEntry(
 ): Promise<{
   baseUrl?: string;
   api?: string;
-  models?: Array<{ id: string; name: string; cost: PiAiModelCostRates }>;
+  models?: Array<Record<string, unknown> & { id: string; name: string; cost: PiAiModelCostRates }>;
   apiKey?: string;
   headers?: Record<string, string>;
   authHeader?: boolean;
@@ -465,10 +466,31 @@ async function buildAgentModelProviderEntry(
     }
   }
 
+  const registeredModel = meta?.models?.find((model) => model.id === modelId);
+  const model: Record<string, unknown> & {
+    id: string;
+    name: string;
+    cost: PiAiModelCostRates;
+  } = {
+    ...piAiModelsJsonModelEntry(modelId, registeredModel?.name ?? modelId),
+    ...(registeredModel ? { ...registeredModel } : {}),
+  };
+  if (!isUnregisteredProviderType(config.type)
+    && typeof registeredModel?.contextTokens !== 'number'
+    && typeof registeredModel?.contextWindow !== 'number') {
+    const contextWindow = inferKnownModelContextWindow(modelId, {
+      providerKey: getOpenClawProviderKey(config.type, config.id),
+      apiProtocol: api,
+    });
+    if (contextWindow !== undefined) {
+      model.contextWindow = contextWindow;
+    }
+  }
+
   return {
     baseUrl,
     api,
-    models: [piAiModelsJsonModelEntry(modelId)],
+    models: [model],
     apiKey,
     headers: resolveProviderHeaders(config, meta),
     authHeader,
