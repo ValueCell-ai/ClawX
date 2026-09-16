@@ -100,15 +100,86 @@ describe('validateApiKeyWithProvider', () => {
     });
 
     expect(result).toMatchObject({ valid: true });
+    expect(proxyAwareFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts an Anthropic alias resolved by the model retrieval endpoint', async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: [{ id: 'claude-opus-5-20260915' }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          id: 'claude-opus-5-20260915',
+          display_name: 'Claude Opus 5',
+          type: 'model',
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('anthropic', 'sk-ant-test', {
+      modelId: 'claude-opus-5',
+    });
+
+    expect(result).toMatchObject({ valid: true });
+    expect(proxyAwareFetch).toHaveBeenNthCalledWith(
+      2,
+      'https://api.anthropic.com/v1/models/claude-opus-5',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'x-api-key': 'sk-ant-test',
+          'anthropic-version': '2023-06-01',
+        }),
+      }),
+    );
+  });
+
+  it('does not reject an Anthropic alias when model retrieval is inconclusive', async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: [{ id: 'claude-sonnet-4-5-20250929' }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { type: 'api_error', message: 'Unavailable' } }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+
+    const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
+    const result = await validateApiKeyWithProvider('anthropic', 'sk-ant-test', {
+      modelId: 'claude-sonnet-4-5-latest',
+    });
+
+    expect(result).toMatchObject({ valid: true, status: 200 });
   });
 
   it('rejects an Anthropic model the key cannot reach', async () => {
-    proxyAwareFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ data: [{ id: 'claude-opus-4-8' }] }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    );
+    proxyAwareFetch
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: [{ id: 'claude-opus-4-8' }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          type: 'error',
+          error: { type: 'not_found_error', message: 'Model not found' },
+        }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
 
     const { validateApiKeyWithProvider } = await import('@electron/services/providers/provider-validation');
     const result = await validateApiKeyWithProvider('anthropic', 'sk-ant-test', {
@@ -117,6 +188,11 @@ describe('validateApiKeyWithProvider', () => {
 
     expect(result.valid).toBe(false);
     expect(result.error).toContain('claude-opus-99');
+    expect(proxyAwareFetch).toHaveBeenNthCalledWith(
+      2,
+      'https://api.anthropic.com/v1/models/claude-opus-99',
+      expect.anything(),
+    );
   });
 
   it('still validates OpenAI-compatible providers with bearer auth', async () => {
