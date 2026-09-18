@@ -1,6 +1,6 @@
 {
     "name": "clawx",
-    "version": "0.5.7",
+    "version": "0.5.8",
     "description": "ClawX - Graphical AI Assistant based on OpenClaw",
     "main": "dist-electron/main/index.js",
     "author": "ClawX Team",
