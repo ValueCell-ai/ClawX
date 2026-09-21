@@ -8,6 +8,7 @@ const SESSION_KEY = 'agent:main:main';
 const MAIN_WORKSPACE = '/workspace';
 const DEFAULT_WORKSPACE = '~/.openclaw/workspace';
 const CLOUD_ARTIFACT_PATH = '/opt/cursor/artifacts/chat_assistant_plain_markdown.png';
+const LONG_UNBROKEN_TEXT = '296bdab69b5e63143538fff2af4e5e70188e1874fdb7989cc4bf80fe37bfealaed8186184f495c20a9b360b2d8982dabe1b';
 
 type AcpSessionUpdate = Record<string, unknown> & { sessionUpdate: string };
 
@@ -40,6 +41,16 @@ const seededUpdates: AcpSessionUpdate[] = [
         '- Inline code: `worksToo()`',
       ].join('\n'),
     }],
+  },
+  {
+    sessionUpdate: 'user_message',
+    messageId: 'long-unbroken-user',
+    content: [{ type: 'text', text: LONG_UNBROKEN_TEXT }],
+  },
+  {
+    sessionUpdate: 'agent_message',
+    messageId: 'long-unbroken-assistant',
+    content: [{ type: 'text', text: LONG_UNBROKEN_TEXT }],
   },
 ];
 
@@ -170,6 +181,34 @@ test.describe('ClawX chat Markdown styling', () => {
       expect(assistantStyles.paddingTop).toBe('0px');
       expect(assistantStyles.parentBackgroundColor).toBe('rgba(0, 0, 0, 0)');
       expect(assistantStyles.parentBorderRadius).toBe('0px');
+
+      const longUserParagraph = page.getByTestId('acp-user-message')
+        .filter({ hasText: LONG_UNBROKEN_TEXT })
+        .locator('p');
+      const longAssistantParagraph = page.getByTestId('acp-assistant-message')
+        .filter({ hasText: LONG_UNBROKEN_TEXT })
+        .locator('.prose p');
+      await expect(longUserParagraph).toHaveCSS('overflow-wrap', 'anywhere');
+      await expect(longAssistantParagraph).toHaveCSS('overflow-wrap', 'anywhere');
+
+      for (const paragraph of [longUserParagraph, longAssistantParagraph]) {
+        const wrapping = await paragraph.evaluate((element) => {
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          const elementRect = element.getBoundingClientRect();
+          const messageRect = element.closest('[data-testid$="-message"]')?.getBoundingClientRect();
+          return {
+            lineCount: range.getClientRects().length,
+            left: elementRect.left,
+            right: elementRect.right,
+            messageLeft: messageRect?.left ?? 0,
+            messageRight: messageRect?.right ?? 0,
+          };
+        });
+        expect(wrapping.lineCount).toBeGreaterThan(1);
+        expect(wrapping.left).toBeGreaterThanOrEqual(wrapping.messageLeft - 1);
+        expect(wrapping.right).toBeLessThanOrEqual(wrapping.messageRight + 1);
+      }
 
       const screenshotPath = testInfo.outputPath('chat_assistant_plain_markdown.png');
       await assistantProse.screenshot({ path: screenshotPath });
