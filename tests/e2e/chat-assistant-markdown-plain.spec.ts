@@ -143,6 +143,10 @@ test.describe('ClawX chat Markdown styling', () => {
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
       await emitAcpSessionUpdates(app, seededUpdates);
 
+      // Keep the text column narrow enough that the fixture must wrap on every
+      // platform regardless of font metrics or the host window's default size.
+      await page.setViewportSize({ width: 720, height: 800 });
+
       await page.evaluate(() => {
         const root = document.documentElement;
         root.classList.remove('dark');
