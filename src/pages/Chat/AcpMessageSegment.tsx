@@ -95,7 +95,7 @@ function AcpMarkdownPart({ text, isAnimating = false }: { text: string; isAnimat
     <div ref={containerRef} className="contents">
       <Streamdown
         animated={isAnimating ? streamdownAnimation : false}
-        className="clawx-markdown clawx-streamdown prose prose-sm max-w-none break-words text-foreground dark:prose-invert"
+        className="clawx-markdown clawx-streamdown prose prose-sm min-w-0 max-w-none [overflow-wrap:anywhere] text-foreground dark:prose-invert"
         components={chatMarkdownComponents}
         controls={streamdownControls}
         isAnimating={isAnimating}
@@ -184,8 +184,8 @@ export const AcpRenderPart = memo(function AcpRenderPart({
   if (part.kind === 'markdown') {
     if (tone === 'user') {
       return (
-        <div className="rounded-2xl bg-brand px-4 py-3 text-white shadow-sm">
-          <p className="whitespace-pre-wrap break-words">{part.text}</p>
+        <div className="min-w-0 max-w-full rounded-2xl bg-brand px-4 py-3 text-white shadow-sm [overflow-wrap:anywhere]">
+          <p className="whitespace-pre-wrap">{part.text}</p>
         </div>
       );
     }
