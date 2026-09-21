@@ -785,6 +785,11 @@ index 6c7de7d60ac87a733632c36a744ada0e4e48d077..7ce666c231c0251d90d7de792ffcccb3
  			await this.handleDeltaEvent(pending.sessionId, messageData);
  			if (state === "delta") return;
  		}
+@@ -2545,2 +3004,2 @@
+-			const stopReason = payload.errorKind === "refusal" ? "refusal" : "end_turn";
+-			this.finishPrompt(pending.sessionId, pending, stopReason);
++			const errorMessage = typeof payload.errorMessage === "string" && payload.errorMessage.trim() ? payload.errorMessage : "Agent run failed";
++			this.rejectPendingPrompt(pending, new Error(errorMessage));
 @@ -2551,9 +3010,8 @@ var AcpGatewayAgent = class {
  		const pending = this.pendingPrompts.get(sessionId);
  		if (!pending) return;

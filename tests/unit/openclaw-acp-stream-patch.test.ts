@@ -30,6 +30,7 @@ type ChatHandler = (this: {
   ) => Promise<void>;
   handleDeltaEvent: (sessionId: string, messageData: Record<string, unknown>) => Promise<void>;
   finishPrompt: (sessionId: string, pending: Record<string, unknown>, stopReason: string) => Promise<void>;
+  rejectPendingPrompt?: (pending: Record<string, unknown>, error: Error) => void;
 }, event: { payload: Record<string, unknown> }) => Promise<void>;
 
 type GatewayRetryPreflight = (
@@ -875,6 +876,44 @@ describe('OpenClaw ACP assistant stream patch', () => {
     expect(calls.slice(0, 2)).toEqual(['flush', 'clear']);
     expect(calls[2]).toContain('"state":"aborted"');
     expect(calls[2]).toContain('"text":"complete buffered response"');
+  });
+
+  it('rejects true error terminals with the Gateway error instead of settling normally', async () => {
+    const bundle = await readFile(bundlePath, 'utf8');
+    const handleChatEvent = extractChatHandler(bundle);
+    const pending = {
+      sessionId: 'error-session',
+      sessionKey: 'agent:main:error-session',
+      idempotencyKey: 'error-run',
+    };
+    const calls: string[] = [];
+    const receiver = {
+      findPendingBySessionKey: () => pending,
+      findAmbientSession: () => undefined,
+      handleAmbientChatEvent: async () => undefined,
+      handleDeltaEvent: async () => calls.push('synthetic-error-message'),
+      finishPrompt: async (_sessionId: string, _pending: Record<string, unknown>, stopReason: string) => {
+        calls.push(`finish:${stopReason}`);
+      },
+      rejectPendingPrompt: (_pending: Record<string, unknown>, error: Error) => {
+        calls.push(`reject:${error.message}`);
+      },
+    };
+
+    await handleChatEvent.call(receiver, {
+      payload: {
+        sessionKey: pending.sessionKey,
+        runId: pending.idempotencyKey,
+        state: 'error',
+        errorMessage: 'Provider finish_reason: content_filter',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Synthetic provider error' }],
+        },
+      },
+    });
+
+    expect(calls).toEqual(['reject:Provider finish_reason: content_filter']);
   });
 
   it('records buffered text carried by an aborted terminal before settling', async () => {
