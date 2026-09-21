@@ -795,13 +795,16 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     );
   });
 
-  it('renders ACP load errors as inline timeline errors', async () => {
+  it('renders ACP errors after a non-empty timeline so interrupted output stays adjacent', async () => {
     acpState.error = '404 Resource not found';
     const { Chat } = await import('@/pages/Chat/index');
 
     render(<Chat />);
 
-    expect(screen.getByTestId('acp-error-banner')).toHaveTextContent('404 Resource not found');
+    const timeline = screen.getByTestId('acp-chat-timeline');
+    const errorBanner = screen.getByTestId('acp-error-banner');
+    expect(errorBanner).toHaveTextContent('404 Resource not found');
+    expect(timeline.compareDocumentPosition(errorBanner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
 
     expect(acpState.clearError).toHaveBeenCalledTimes(1);

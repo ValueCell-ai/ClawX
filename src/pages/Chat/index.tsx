@@ -795,24 +795,39 @@ export function Chat() {
                       onChooseWorkspace={effectiveWorkspace.readOnly ? undefined : () => void chooseReplacementWorkspace()}
                     />
                   )}
-                  {visibleAcpError && <AcpErrorBanner message={visibleAcpError} onDismiss={clearAcpError} />}
+                  {visibleAcpError && (acpPresentationPending || visibleAcpTimeline.itemOrder.length === 0) && (
+                    <AcpErrorBanner
+                      message={visibleAcpError}
+                      kind={hasAttemptedAcpPromptForCurrentSession ? 'prompt' : 'load'}
+                      onDismiss={clearAcpError}
+                    />
+                  )}
                   {acpPresentationPending ? (
                     <AcpLoadingState key={currentSessionKey} />
                   ) : visibleAcpTimeline.itemOrder.length === 0 ? (
                     <AcpEmptyState />
                   ) : (
-                    <AcpTimeline
-                      snapshot={visibleAcpTimeline}
-                      isStreaming={acpSending || acpCancelling || currentSubagentBusy}
-                      turnTimingsByUserMessageId={visibleTurnTimings}
-                      fileActivity={fileActivity}
-                      workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey
-                        ? resolvedWorkspaceContext.workspaceRoot
-                        : undefined}
-                      onPermissionSelect={(requestId, optionId) => {
-                        void respondAcpPermission(requestId, optionId);
-                      }}
-                    />
+                    <>
+                      <AcpTimeline
+                        snapshot={visibleAcpTimeline}
+                        isStreaming={acpSending || acpCancelling || currentSubagentBusy}
+                        turnTimingsByUserMessageId={visibleTurnTimings}
+                        fileActivity={fileActivity}
+                        workspaceRoot={resolvedWorkspaceContext?.key === workspaceContextKey
+                          ? resolvedWorkspaceContext.workspaceRoot
+                          : undefined}
+                        onPermissionSelect={(requestId, optionId) => {
+                          void respondAcpPermission(requestId, optionId);
+                        }}
+                      />
+                      {visibleAcpError && (
+                        <AcpErrorBanner
+                          message={visibleAcpError}
+                          kind={hasAttemptedAcpPromptForCurrentSession ? 'prompt' : 'load'}
+                          onDismiss={clearAcpError}
+                        />
+                      )}
+                    </>
                   )}
                 </div>
               </div>

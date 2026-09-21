@@ -331,20 +331,47 @@ async function installAcpPromptTimingMock(
   }, timing);
 }
 
-async function installAcpPromptFailureMock(app: ElectronApplication, error: string) {
-  await app.evaluate(async ({ app: _app }, promptError) => {
-    const { ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
-    type IpcInvokeHandler = (event: unknown, request: { id?: string; module?: string; action?: string }) => Promise<unknown>;
+async function installAcpPromptFailureMock(
+  app: ElectronApplication,
+  error: string,
+  partialReply?: string,
+) {
+  await app.evaluate(async ({ app: _app }, input) => {
+    const { BrowserWindow, ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
+    type IpcInvokeRequest = {
+      id?: string;
+      module?: string;
+      action?: string;
+      payload?: { sessionKey?: string };
+    };
+    type IpcInvokeHandler = (event: unknown, request: IpcInvokeRequest) => Promise<unknown>;
     const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
     const originalHostInvoke = handlers?.get('host:invoke');
     ipcMain.removeHandler('host:invoke');
-    ipcMain.handle('host:invoke', async (event: unknown, request: { id?: string; module?: string; action?: string }) => {
+    ipcMain.handle('host:invoke', async (event: unknown, request: IpcInvokeRequest) => {
       if (request?.module === 'chat' && request.action === 'sendAcpPrompt') {
-        return { id: request.id, ok: true, data: { success: false, error: promptError } };
+        if (input.partialReply && request.payload?.sessionKey) {
+          for (const window of BrowserWindow.getAllWindows()) {
+            window.webContents.send('chat:acp-session-update', {
+              sessionKey: request.payload.sessionKey,
+              generation: 1,
+              notification: {
+                sessionId: request.payload.sessionKey,
+                update: {
+                  sessionUpdate: 'agent_message_chunk',
+                  messageId: 'interrupted-assistant',
+                  content: { type: 'text', text: input.partialReply },
+                },
+              },
+            });
+          }
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        return { id: request.id, ok: true, data: { success: false, error: input.error } };
       }
       return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
     });
-  }, error);
+  }, { error, partialReply });
 }
 
 async function installSettledAcpHydrationMock(
@@ -1997,9 +2024,10 @@ test.describe('ClawX ACP inline timeline', () => {
     }
   });
 
-  test('keeps recoverable target-agent prompt failures visible after switching sessions', async ({ launchElectronApp }) => {
+  test('keeps partial output and places a provider prompt failure after the interrupted turn', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
-    const error = "Error invoking remote method 'host:invoke': reply was never sent";
+    const error = 'Provider finish_reason: content_filter';
+    const partialReply = 'The provider returned this partial result before filtering.';
 
     try {
       await installIpcMocks(app, {
@@ -2058,7 +2086,7 @@ test.describe('ClawX ACP inline timeline', () => {
           },
         },
       });
-      await installAcpPromptFailureMock(app, error);
+      await installAcpPromptFailureMock(app, error, partialReply);
 
       const page = await openChat(app);
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible({ timeout: 30_000 });
@@ -2069,8 +2097,13 @@ test.describe('ClawX ACP inline timeline', () => {
       await page.getByTestId('chat-composer-input').fill('Trigger target send failure');
       await page.getByTestId('chat-composer-send').click();
 
-      await expect(page.getByTestId('acp-error-banner')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByTestId('acp-error-banner')).toContainText(error);
+      const partialOutput = page.getByText(partialReply);
+      const errorBanner = page.getByTestId('acp-error-banner');
+      await expect(partialOutput).toBeVisible({ timeout: 30_000 });
+      await expect(errorBanner).toBeVisible({ timeout: 30_000 });
+      await expect(errorBanner).toContainText('Failed to send prompt');
+      await expect(errorBanner).toContainText(error);
+      await expect(page.locator('[data-testid="acp-chat-timeline"] + [data-testid="acp-error-banner"]')).toBeVisible();
     } finally {
       await closeElectronApp(app);
     }
