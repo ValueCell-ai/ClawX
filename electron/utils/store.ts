@@ -7,6 +7,7 @@ import { randomBytes } from 'crypto';
 import { app } from 'electron';
 import { resolveSupportedLanguage } from '@shared/language';
 import { DEFAULT_WORKSPACE_CWD } from '@shared/workspace';
+import { bomTolerantDeserialize } from './json-bom-deserialize';
 
 // Lazy-load electron-store (ESM module)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -140,6 +141,7 @@ async function getSettingsStore() {
     const Store = (await import('electron-store')).default;
     settingsStoreInstance = new Store<AppSettings>({
       name: 'settings',
+      deserialize: bomTolerantDeserialize,
       defaults: createDefaultSettings(),
     });
   }
