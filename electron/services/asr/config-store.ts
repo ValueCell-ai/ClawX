@@ -1,5 +1,6 @@
 import type { AsrConfig } from '@shared/host-api/contract';
 import { deleteProviderSecret, getProviderSecret, setProviderSecret } from '../secrets/secret-store';
+import { bomTolerantDeserialize } from '../../utils/json-bom-deserialize';
 
 export const ASR_SECRET_ACCOUNT_ID = 'asr';
 export const ASR_CONFIG_STORE_KEY = 'asrConfig';
@@ -13,6 +14,7 @@ async function getAsrStore() {
     const Store = (await import('electron-store')).default;
     asrStore = new Store({
       name: 'clawx-asr',
+      deserialize: bomTolerantDeserialize,
       defaults: {
         asrConfig: null as AsrConfig | null,
       },
