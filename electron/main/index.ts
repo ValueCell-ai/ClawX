@@ -31,6 +31,7 @@ import { autoInstallCliIfNeeded, generateCompletionCache, installCompletionToPro
 import { isQuitting, setQuitting } from './app-state';
 import { getMacTrafficLightPosition, syncMacTrafficLightPosition } from './traffic-light-layout';
 import { getSetting, registerComputerUsePreferenceHandler } from '../utils/store';
+import { repairUtf8BomJsonFiles } from '../utils/json-bom-recovery';
 import { applyProxySettings } from './proxy';
 import { syncLaunchAtStartupSettingFromStore } from './launch-at-startup';
 import { syncNativeThemeFromStore } from './native-theme';
@@ -312,6 +313,23 @@ async function initialize(): Promise<void> {
   logger.debug(
     `Runtime: platform=${process.platform}/${process.arch}, electron=${process.versions.electron}, node=${process.versions.node}, packaged=${app.isPackaged}, pid=${process.pid}, ppid=${process.ppid}`
   );
+
+  // Older or external Windows tooling can rewrite JSON as UTF-8 with BOM.
+  // Repair those files before settings, provider stores, or extensions parse them.
+  try {
+    const bomRepair = await repairUtf8BomJsonFiles(app.getPath('userData'));
+    if (bomRepair.repairedFiles.length > 0) {
+      logger.warn('Repaired UTF-8 BOM in local JSON files', {
+        files: bomRepair.repairedFiles,
+      });
+    }
+    for (const failure of bomRepair.failures) {
+      logger.warn(`Failed to repair UTF-8 BOM in ${failure.fileName}: ${failure.error}`);
+    }
+  } catch (error) {
+    // Local recovery is best-effort and must never make startup less reliable.
+    logger.warn('Failed to scan local JSON files for UTF-8 BOM:', error);
+  }
 
   webBrowserSession = configureWebBrowserSession({
     registry: webBrowserGuestRegistry,
