@@ -108,11 +108,16 @@ export async function isPythonReady(): Promise<boolean> {
 /**
  * Run `uv python install 3.12` once with the given environment.
  * Returns on success, throws with captured stderr on failure.
+ *
+ * A hard timeout is enforced so the process does not hang indefinitely in
+ * air-gapped or offline environments where uv waits on TCP timeouts before
+ * giving up on download servers.
  */
 async function runPythonInstall(
   uvBin: string,
   env: Record<string, string | undefined>,
   label: string,
+  timeoutMs = 180_000,
 ): Promise<void> {
   const useShell = needsWinShell(uvBin);
   return new Promise<void>((resolve, reject) => {
@@ -124,6 +129,21 @@ async function runPythonInstall(
       env,
       windowsHide: true,
     });
+
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { child.kill(); } catch { /* ignore */ }
+      reject(new Error(
+        `Python installation timed out after ${timeoutMs / 1000}s [${label}]\n` +
+        `  uv binary: ${uvBin}\n` +
+        `  platform: ${process.platform}/${process.arch}\n` +
+        `  This may indicate a network connectivity issue. Internet access is required\n` +
+        `  to download Python on first run. If you are in an offline environment,\n` +
+        `  ensure Python 3.12 is pre-installed and accessible via uv.`
+      ));
+    }, timeoutMs);
 
     child.stdout?.on('data', (data) => {
       const line = data.toString().trim();
@@ -142,22 +162,33 @@ async function runPythonInstall(
     });
 
     child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       if (code === 0) {
         resolve();
       } else {
         const stderr = stderrChunks.join('\n');
         const stdout = stdoutChunks.join('\n');
         const detail = stderr || stdout || '(no output captured)';
+        const isNetworkError = /connection.*refused|network.*unreachable|failed to fetch|download.*failed|timed? ?out|ECONNREFUSED|ENETUNREACH/i.test(detail);
         reject(new Error(
           `Python installation failed with code ${code} [${label}]\n` +
           `  uv binary: ${uvBin}\n` +
           `  platform: ${process.platform}/${process.arch}\n` +
-          `  output: ${detail}`
+          `  output: ${detail}` +
+          (isNetworkError
+            ? `\n  Note: This looks like a network error. Internet access is required to\n` +
+              `  download Python on first run. Check your connection and try again.`
+            : '')
         ));
       }
     });
 
     child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       reject(new Error(
         `Python installation spawn error [${label}]: ${err.message}\n` +
         `  uv binary: ${uvBin}\n` +
