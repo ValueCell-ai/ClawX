@@ -108,4 +108,4 @@ Empty ordinary chats center the heading, installed office skill shortcuts and co
 
 Skills management uses responsive cards with original names and descriptions, separate My skills / Discover views, named enable switches, keyboard-operable detail entry, and always-visible read-only files/path metadata. Unavailable marketplace capability hides discovery and Add skills without a marketplace request. Verify in `tests/e2e/skills-gateway-readiness.spec.ts`.
 
-Management page visual consistency is covered by `tests/e2e/management-page-style.spec.ts`: compact system-font headings, shared page padding and width, and contained scroll regions across Skills, Models, Agents, Channels and Cron in desktop and narrow dark layouts. Business controls remain unchanged.
+Management page visual consistency is covered by `tests/e2e/management-page-style.spec.ts`: compact system-font headings, shared page padding and width, and contained scroll regions across Skills, Models, Agents, Channels, Cron, Settings and Computer Use in desktop and narrow dark layouts. Business controls remain unchanged.

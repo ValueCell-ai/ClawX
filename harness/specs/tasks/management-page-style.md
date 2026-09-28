@@ -3,8 +3,10 @@ id: management-page-style
 title: Align management pages with the Skills visual style
 scenario: chat-workspace-and-navigation
 taskType: ui
-intent: Unify Models, Agents, Channels and Cron typography, gutters and cards using the accepted Skills page style.
+intent: Unify Models, Agents, Channels, Cron, Settings and Computer Use typography, gutters and cards using the accepted Skills page style.
 touchedAreas:
+  - src/pages/Settings/index.tsx
+  - src/pages/ComputerUse/index.tsx
   - src/pages/Models/index.tsx
   - src/pages/Agents/index.tsx
   - src/pages/Channels/index.tsx

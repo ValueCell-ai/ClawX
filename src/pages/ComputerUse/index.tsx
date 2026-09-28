@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { ComputerUseStatus } from '@shared/host-api/contract';
 import { hostApi } from '@/lib/host-api';
 import { Button } from '@/components/ui/button';
+import { RefreshCw } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 
 export function ComputerUse() {
@@ -44,13 +45,18 @@ export function ComputerUse() {
   const runtimeState = !status?.enabled ? 'off' : status.running ? 'running' : 'unavailable';
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6 p-4 sm:p-8" data-testid="computer-use-page">
-      <header className="space-y-2">
-        <h1 className="font-serif text-3xl font-normal tracking-tight">{t('computerUse.title')}</h1>
+    <div className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden" data-testid="computer-use-page">
+      <div className="w-full max-w-6xl mx-auto flex flex-col h-full p-6 md:p-8">
+      <header className="flex flex-col md:flex-row md:items-start justify-between mb-6 shrink-0 gap-4">
+        <div>
+        <h1 className="text-2xl font-sans text-foreground mb-1 font-medium tracking-normal">{t('computerUse.title')}</h1>
         <p className="text-sm text-muted-foreground">{t('computerUse.description')}</p>
+        </div>
+        <Button variant="outline" size="sm" className="md:mt-2 self-start" disabled={busy} onClick={() => void run(hostApi.computerUse.status)}><RefreshCw className="h-4 w-4 mr-2" />{t('actions.refresh')}</Button>
       </header>
+      <div className="flex-1 overflow-y-auto pr-2 min-h-0 -mr-2 space-y-4">
       {failed && <p role="alert" className="text-sm text-red-700 dark:text-red-400">{t('computerUse.error')}</p>}
-      <section className="space-y-4 rounded-xl border bg-surface-modal p-5" aria-busy={busy}>
+      <section className="space-y-4 rounded-xl border border-black/10 dark:border-white/10 bg-surface-modal p-4" aria-busy={busy}>
         <div className="flex items-center justify-between gap-4">
           <label htmlFor="computer-use-enabled" className="font-medium">{t('computerUse.enable')}</label>
           <Switch id="computer-use-enabled" data-testid="computer-use-toggle" checked={status?.enabled ?? false}
@@ -62,8 +68,8 @@ export function ComputerUse() {
         {status && !status.supported && <p className="text-sm text-muted-foreground">{t('computerUse.unsupported')}</p>}
       </section>
       {permissions && (
-        <section className="space-y-4 rounded-xl border bg-surface-modal p-5">
-          <h2 className="font-serif text-xl font-normal tracking-tight">{t('computerUse.permissions')}</h2>
+        <section className="space-y-4 rounded-xl border border-black/10 dark:border-white/10 bg-surface-modal p-4">
+          <h2 className="text-lg font-sans font-medium tracking-normal">{t('computerUse.permissions')}</h2>
           <dl className="space-y-3 text-sm">
             <div className="flex flex-wrap justify-between gap-2">
               <dt>{t('computerUse.accessibility')}</dt>
@@ -85,7 +91,8 @@ export function ComputerUse() {
           )}
         </section>
       )}
-      <Button variant="outline" disabled={busy} onClick={() => void run(hostApi.computerUse.status)}>{t('actions.refresh')}</Button>
+      </div>
+      </div>
     </div>
   );
 }

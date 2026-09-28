@@ -2,10 +2,13 @@ import { completeSetup, expect, test } from './fixtures/electron';
 
 test('management pages share compact headings, gutters and contained scrolling', async ({ page }, testInfo) => {
   await completeSetup(page);
+  await page.getByTestId('sidebar-nav-settings').click();
+  await page.getByTestId('settings-dev-mode-switch').click();
+  await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'checked');
   for (const viewport of [{ width: 1440, height: 900 }, { width: 900, height: 650 }]) {
     await page.setViewportSize(viewport);
     await page.evaluate((dark) => document.documentElement.classList.toggle('dark', dark), viewport.width === 900);
-    for (const name of ['skills', 'models', 'agents', 'channels', 'cron']) {
+    for (const name of ['skills', 'models', 'agents', 'channels', 'cron', 'settings', 'computer-use']) {
       await page.getByTestId(`sidebar-nav-${name}`).click();
       const surface = page.getByTestId(`${name}-page`);
       const heading = surface.locator('h1');

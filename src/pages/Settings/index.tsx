@@ -447,24 +447,24 @@ export function Settings() {
   return (
     <div
       data-testid="settings-page"
-      className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden"
+      className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden"
     >
-      <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16 pb-0">
+      <div className="w-full max-w-6xl mx-auto flex flex-col h-full p-6 md:p-8">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-start justify-between mb-12 shrink-0 gap-4">
+        <div className="flex flex-col md:flex-row md:items-start justify-between mb-6 shrink-0 gap-4">
           <div>
-            <h1 className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight">
+            <h1 className="text-2xl font-sans text-foreground mb-1 font-medium tracking-normal">
               {t('title')}
             </h1>
-            <p className="text-subtitle text-foreground/70 font-medium">{t('subtitle')}</p>
+            <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
           </div>
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2 space-y-12">
+        <div className="flex-1 overflow-y-auto pr-2 min-h-0 -mr-2 space-y-8">
           {/* Appearance */}
           <div>
-            <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight">
+            <h2 className="text-lg font-sans text-foreground mb-4 font-medium tracking-normal">
               {t('appearance.title')}
             </h2>
             <div className="space-y-6">
@@ -474,7 +474,7 @@ export function Settings() {
                   <Button
                     variant={theme === 'light' ? 'secondary' : 'outline'}
                     className={cn(
-                      'rounded-full px-5 h-10 border-black/10 dark:border-white/10',
+                      'rounded-md px-3 h-9 border-black/10 dark:border-white/10',
                       theme === 'light'
                         ? 'bg-black/5 dark:bg-white/10 text-foreground'
                         : 'bg-transparent text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5',
@@ -487,7 +487,7 @@ export function Settings() {
                   <Button
                     variant={theme === 'dark' ? 'secondary' : 'outline'}
                     className={cn(
-                      'rounded-full px-5 h-10 border-black/10 dark:border-white/10',
+                      'rounded-md px-3 h-9 border-black/10 dark:border-white/10',
                       theme === 'dark'
                         ? 'bg-black/5 dark:bg-white/10 text-foreground'
                         : 'bg-transparent text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5',
@@ -500,7 +500,7 @@ export function Settings() {
                   <Button
                     variant={theme === 'system' ? 'secondary' : 'outline'}
                     className={cn(
-                      'rounded-full px-5 h-10 border-black/10 dark:border-white/10',
+                      'rounded-md px-3 h-9 border-black/10 dark:border-white/10',
                       theme === 'system'
                         ? 'bg-black/5 dark:bg-white/10 text-foreground'
                         : 'bg-transparent text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5',
@@ -520,7 +520,7 @@ export function Settings() {
                       key={lang.code}
                       variant={language === lang.code ? 'secondary' : 'outline'}
                       className={cn(
-                        'rounded-full px-5 h-10 border-black/10 dark:border-white/10',
+                        'rounded-md px-3 h-9 border-black/10 dark:border-white/10',
                         language === lang.code
                           ? 'bg-black/5 dark:bg-white/10 text-foreground'
                           : 'bg-transparent text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5',
@@ -546,7 +546,7 @@ export function Settings() {
 
           {/* Gateway */}
           <div>
-            <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight">
+            <h2 className="text-lg font-sans text-foreground mb-4 font-medium tracking-normal">
               {t('gateway.title')}
             </h2>
             <div className="space-y-6">
@@ -659,7 +659,7 @@ export function Settings() {
 
           {/* Support */}
           <div data-testid="settings-support-section">
-            <h2 className="mb-6 font-serif text-3xl font-normal tracking-tight text-foreground">
+            <h2 className="mb-4 font-sans text-lg font-medium tracking-normal text-foreground">
               {t('support.title')}
             </h2>
             <IssueReportExport />
@@ -669,7 +669,7 @@ export function Settings() {
           <section id="developer" tabIndex={-1} data-testid="settings-developer-section" className="space-y-6 scroll-mt-6">
             <h2
               data-testid="settings-developer-title"
-              className="text-3xl font-serif text-foreground font-normal tracking-tight"
+              className="text-lg font-sans text-foreground font-medium tracking-normal"
             >
               {t('developer.title')}
             </h2>
@@ -908,7 +908,7 @@ export function Settings() {
                     </div>
 
                     {doctorResult && (
-                      <div className="space-y-3 rounded-2xl border border-black/10 dark:border-white/10 p-5 bg-black/5 dark:bg-white/5">
+                      <div className="space-y-3 rounded-xl border border-black/10 dark:border-white/10 p-4 bg-black/5 dark:bg-white/5">
                         <div className="flex flex-wrap gap-2 text-xs">
                           <Badge
                             variant={doctorResult.success ? 'secondary' : 'destructive'}
@@ -971,14 +971,14 @@ export function Settings() {
                         variant="outline"
                         size="sm"
                         onClick={() => setShowTelemetryViewer((prev) => !prev)}
-                        className="rounded-full px-5 h-9 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                        className="rounded-md px-3 h-9 bg-transparent border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
                       >
                         {showTelemetryViewer ? t('common:actions.hide') : t('common:actions.show')}
                       </Button>
                     </div>
 
                     {showTelemetryViewer && (
-                      <div className="space-y-4 rounded-2xl border border-black/10 dark:border-white/10 p-5 bg-black/5 dark:bg-white/5">
+                      <div className="space-y-4 rounded-xl border border-black/10 dark:border-white/10 p-4 bg-black/5 dark:bg-white/5">
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge
                             variant="secondary"
@@ -1094,7 +1094,7 @@ export function Settings() {
 
           {/* Updates */}
           <div>
-            <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight">
+            <h2 className="text-lg font-sans text-foreground mb-4 font-medium tracking-normal">
               {t('updates.title')}
             </h2>
             <div className="space-y-6">
@@ -1114,7 +1114,7 @@ export function Settings() {
 
           {/* About */}
           <div>
-            <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight">{t('about.title')}</h2>
+            <h2 className="text-lg font-sans text-foreground mb-4 font-medium tracking-normal">{t('about.title')}</h2>
             <div className="space-y-3 text-sm text-muted-foreground">
               <p>
                 <strong className="text-foreground font-semibold">{t('about.appName')}</strong> - {t('about.tagline')}
