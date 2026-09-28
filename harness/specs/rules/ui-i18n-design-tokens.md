@@ -11,7 +11,7 @@ appliesTo:
 
 Route every new user-visible string through `react-i18next` with matching English, Chinese, Japanese, and Russian locale coverage. Do not hardcode display text in pages or components.
 
-Use the semantic tokens and substitutions documented in `src/styles/globals.css`: raised cards and panels use `bg-surface-modal`, recessed inputs and code surfaces use `bg-surface-input`, selected state uses `bg-black/5 dark:bg-white/10`, hover state uses `hover:bg-black/5 dark:hover:bg-white/5`, status colors pair a light `-700` shade with dark `-400`, and page H1/H2 headings use `font-serif font-normal tracking-tight`. Do not add arbitrary colors or redundant dark surface companions when a named token exists.
+Use the semantic tokens and substitutions documented in `src/styles/globals.css`: raised cards and panels use `bg-surface-modal`, recessed inputs and code surfaces use `bg-surface-input`, selected state uses `bg-black/5 dark:bg-white/10`, hover state uses `hover:bg-black/5 dark:hover:bg-white/5`, status colors pair a light `-700` shade with dark `-400`, and page H1/H2 headings use `font-serif font-normal tracking-tight`. The Chat welcome greeting uses `font-sans font-medium tracking-normal` to match the surrounding UI and avoid serif fallback for CJK text. Do not add arbitrary colors or redundant dark surface companions when a named token exists.
 
 Interactive rows use semantic controls, keyboard activation, accessible names, visible focus styling, and disabled semantics where applicable. Attachment cards may show the decoded local path or normalized remote URL represented by explicit ACP resource or approved `MEDIA:` evidence; paths truncate visually and remain available in the title. Unavailable attachments remain basename-only, and unrelated UI or diagnostics must not expose sensitive absolute host paths.
 
@@ -24,3 +24,5 @@ Open With is eligible only for an available local assistant attachment whose pri
 The HTML Preview external-open, fullscreen, and recovery controls require localized accessible names and matching tooltips where applicable in English, Chinese, Japanese, and Russian. The hidden HTML guest is non-interactive and absent from the accessibility tree.
 
 Every content link is inert plain text. HTML Preview additionally removes guest anchor styling and pointer interaction while Main blocks all navigation. Local `.html` and `.htm` file cards open in the existing Preview tab by default.
+
+Home skill shortcuts must render in stable positions before the catalog resolves, enable only skills present in the enabled quick-access catalog, preserve unsent text, focus the composer, and never submit a task on selection. Repeated selection must not duplicate the same token. Keep model and footer controls usable at narrow widths and expose matching labels in all four locales.

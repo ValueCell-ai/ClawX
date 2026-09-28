@@ -3,12 +3,20 @@
     "gatewayRequired": "The OpenClaw Gateway needs to be running to use chat. It will start automatically, or you can start it from Settings.",
     "welcome": {
         "title": "ClawX Chat",
-        "subtitle": "What can I do for you?",
+        "subtitle": "What would you like to get done?",
         "askQuestions": "Handle Tasks",
         "askQuestionsDesc": "Work on task-oriented requests",
         "creativeTasks": "Continuous Execution",
         "creativeTasksDesc": "Keep running through multi-step work",
-        "brainstorming": "Multi-Agent Parallel"
+        "brainstorming": "Multi-Agent Parallel",
+        "skills": {
+            "docx": "Documents",
+            "xlsx": "Spreadsheets",
+            "pptx": "Presentations",
+            "pdf": "PDF tools"
+        },
+        "skillUnavailable": "Enable or install this skill in Skills.",
+        "skillsFailed": "Skills could not be loaded. Open the skill menu to retry."
     },
     "noLogs": "(No logs available yet)",
     "scrollToLatest": "Back to bottom",
@@ -308,7 +316,8 @@
             "NETWORK": "Cannot reach the speech service. Check network or Base URL.",
             "EMPTY_RESULT": "No speech recognized.",
             "INVALID_INPUT": "Invalid audio recording."
-        }
+        },
+        "placeholder": "Describe a task or add files to get started…"
     },
     "sessionList": {
         "title": "Sessions",

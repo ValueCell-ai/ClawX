@@ -156,7 +156,8 @@ vi.mock('@/pages/Chat/ChatToolbar', () => ({
 }));
 
 vi.mock('@/pages/Chat/ChatInput', () => ({
-  ChatInput: ({ disabled, sending, statusOnly, currentPlan, subagentSessions, onSelectSubagent }: {
+  ChatInput: ({ welcome, disabled, sending, statusOnly, currentPlan, subagentSessions, onSelectSubagent }: {
+    welcome?: boolean;
     disabled?: boolean;
     sending?: boolean;
     statusOnly?: boolean;
@@ -168,6 +169,7 @@ vi.mock('@/pages/Chat/ChatInput', () => ({
   ) : (
     <div
       data-testid="mock-chat-input"
+      data-welcome={welcome ? 'true' : 'false'}
       data-disabled={disabled ? 'true' : 'false'}
       data-sending={sending ? 'true' : 'false'}
       data-current-plan={currentPlan ? `${currentPlan.completedCount}/${currentPlan.totalCount}:${currentPlan.steps.map((step) => step.step).join('|')}` : ''}
@@ -824,13 +826,13 @@ describe('ACP Chat page inline timeline lifecycle', () => {
     expect(stickState.scrollToBottom).toHaveBeenCalledWith({ animation: 'smooth', ignoreEscapes: true });
   });
 
-  it('renders a nonblank ACP empty state', async () => {
+  it('delegates the empty welcome state to the composer', async () => {
     acpState.timeline = emptyTimeline();
     const { Chat } = await import('@/pages/Chat/index');
 
     render(<Chat />);
 
-    expect(screen.getByTestId('acp-chat-empty-state')).toHaveTextContent('What can I do for you?');
+    expect(screen.getByTestId('mock-chat-input')).toHaveAttribute('data-welcome', 'true');
     expect(screen.queryByTestId('acp-chat-timeline')).not.toBeInTheDocument();
   });
 });

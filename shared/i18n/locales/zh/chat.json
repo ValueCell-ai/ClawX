@@ -3,12 +3,20 @@
     "gatewayRequired": "OpenClaw 网关需要运行才能使用聊天。它将自动启动，或者您可以从设置中启动。",
     "welcome": {
         "title": "ClawX 聊天",
-        "subtitle": "我能为你做些什么？",
+        "subtitle": "今天想完成什么？",
         "askQuestions": "处理任务",
         "askQuestionsDesc": "处理面向任务的请求",
         "creativeTasks": "持续执行",
         "creativeTasksDesc": "持续推进多步骤工作",
-        "brainstorming": "多智能体并行"
+        "brainstorming": "多智能体并行",
+        "skills": {
+            "docx": "文档处理",
+            "xlsx": "表格分析",
+            "pptx": "演示文稿",
+            "pdf": "PDF 工具"
+        },
+        "skillUnavailable": "请前往技能页启用或安装此技能。",
+        "skillsFailed": "技能加载失败，请打开技能菜单重试。"
     },
     "noLogs": "（暂无日志）",
     "scrollToLatest": "回到底部",
@@ -308,7 +316,8 @@
             "NETWORK": "无法连接语音服务，请检查网络或 Base URL。",
             "EMPTY_RESULT": "未识别到语音内容。",
             "INVALID_INPUT": "录音文件无效。"
-        }
+        },
+        "placeholder": "描述你的任务，或添加文件开始…"
     },
     "sessionList": {
         "title": "会话列表",

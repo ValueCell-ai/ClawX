@@ -3,12 +3,20 @@
     "gatewayRequired": "チャットを利用するには OpenClaw ゲートウェイが実行されている必要があります。自動的に起動するか、設定から起動できます。",
     "welcome": {
         "title": "ClawX チャット",
-        "subtitle": "お手伝いできることはありますか？",
+        "subtitle": "今日は何を進めましょうか？",
         "askQuestions": "タスク対応",
         "askQuestionsDesc": "タスク指向の依頼に対応します",
         "creativeTasks": "連続実行",
         "creativeTasksDesc": "複数ステップの作業を継続して進めます",
-        "brainstorming": "マルチエージェント並列実行"
+        "brainstorming": "マルチエージェント並列実行",
+        "skills": {
+            "docx": "文書作成",
+            "xlsx": "表計算",
+            "pptx": "プレゼン資料",
+            "pdf": "PDF ツール"
+        },
+        "skillUnavailable": "スキル画面でこのスキルを有効化またはインストールしてください。",
+        "skillsFailed": "スキルを読み込めませんでした。スキルメニューを開いて再試行してください。"
     },
     "noLogs": "（ログはまだありません）",
     "scrollToLatest": "最下部に戻る",
@@ -308,7 +316,8 @@
             "NETWORK": "音声サービスに接続できません。ネットワークまたは Base URL を確認してください。",
             "EMPTY_RESULT": "音声を認識できませんでした。",
             "INVALID_INPUT": "録音データが無効です。"
-        }
+        },
+        "placeholder": "タスクを入力するか、ファイルを追加してください…"
     },
     "sessionList": {
         "title": "セッション一覧",

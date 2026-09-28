@@ -3,6 +3,9 @@ id: chat-workspace-and-navigation
 title: Chat Workspace And Navigation
 type: user-visible-flow
 ownedPaths:
+  - src/lib/quick-access-skills.ts
+  - src/stores/skills.ts
+  - tests/unit/quick-access-skills-cache.test.ts
   - shared/workspace.ts
   - shared/chat/session-title.ts
   - electron/services/sessions-api.ts
@@ -64,6 +67,7 @@ ownedPaths:
   - tests/unit/office-file-viewers.test.tsx
   - tests/unit/artifact-panel.test.tsx
   - tests/unit/acp-chat-components.test.tsx
+  - tests/e2e/chat-home-composer.spec.ts
   - tests/e2e/chat-workspace-context.spec.ts
   - tests/e2e/chat-new-session-date.spec.ts
   - tests/e2e/chat-acp-inline-timeline.spec.ts
@@ -99,3 +103,5 @@ This scenario covers inheriting the selected conversation's effective workspace 
 Workspace file browsing keeps the store value `browser`; local HTML uses the existing `preview` tab and has no independent browser tab or toolbar. Current workspace resolution, ordering, title normalization, and file-browser behavior are documented in `harness/reference/chat-workspace-and-navigation.md`; the HTML guest contract is documented in `harness/reference/web-browser.md`; static Markdown rendering and safety requirements are documented in `harness/reference/markdown-rendering.md`; desktop compositing and interaction profiling requirements are documented in `harness/reference/electron-rendering-performance.md`.
 
 DOCX and PPTX files are accepted as read-only inline previews only at or below the 20 MB compressed-input boundary. Scoped workspace and attachment references retain their authorized read route without naked-path fallback, while Workspace Browser retains its Host-validated absolute-path flow. PPTX visibility must preserve the single mounted PPTX viewer invariant across the kept-mounted Workspace and Preview surfaces. Workspace ownership remains in `harness/reference/chat-workspace-and-navigation.md`; the complete Office contract is `harness/reference/office-document-preview.md`.
+
+Empty ordinary chats center the heading, installed office skill shortcuts and composer. Four shortcuts render immediately, remaining disabled until availability is known. A short-lived context-scoped cache avoids repeated new-chat requests and invalidates on skill changes. Shortcuts use the existing enabled quick-access catalog and insert skill tokens without replacing drafts or sending. Workspace and connection state share an attached footer, and the model picker precedes dictation/send. Existing timelines retain the bottom composer. Verify localized, narrow-window and first-send behavior in `tests/e2e/chat-home-composer.spec.ts`.

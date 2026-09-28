@@ -10,7 +10,7 @@ import {
   useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo,
   type SetStateAction,
 } from 'react';
-import { SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Search, ChevronDown, Check } from 'lucide-react';
+import { Presentation, Table2, FileScan, SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Search, ChevronDown, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -31,7 +31,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { rendererExtensionRegistry } from '@/extensions/registry';
 import { collectDroppedFiles } from '@/lib/collect-dropped-files';
-import { fetchQuickAccessSkills } from '@/lib/quick-access-skills';
+import { fetchQuickAccessSkills, getCachedQuickAccessSkills } from '@/lib/quick-access-skills';
 import { DEFAULT_WORKSPACE_CWD, isDefaultWorkspacePath, normalizeWorkspacePath } from '@/lib/workspace-context';
 import type { AcpCurrentPlan } from '@/lib/acp/current-plan';
 import { useVoiceDictation } from '@/hooks/useVoiceDictation';
@@ -64,6 +64,7 @@ export interface ChatWorkspaceOption {
 type ComposerExpandedPanel = 'subagents' | 'plan' | null;
 
 interface ChatInputProps {
+  welcome?: boolean;
   onSend: (text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => void;
   onStop?: () => void;
   draft?: string;
@@ -307,6 +308,7 @@ function readFileAsBase64(file: globalThis.File): Promise<string> {
 // ── Component ────────────────────────────────────────────────────
 
 export function ChatInput({
+  welcome = false,
   onSend,
   onStop,
   draft,
@@ -342,6 +344,8 @@ export function ChatInput({
   const [skillQuery, setSkillQuery] = useState('');
   const [quickSkills, setQuickSkills] = useState<QuickAccessSkill[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
+  const [loadedSkillsScope, setLoadedSkillsScope] = useState('');
+  const skillsRequestRef = useRef(0);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<QuickAccessSkill | null>(null);
   const [switchingModelRef, setSwitchingModelRef] = useState<string | null>(null);
@@ -620,7 +624,6 @@ export function ChatInput({
     setSkillPickerOpen(false);
     setWorkspaceMenuOpen(false);
     setSkillQuery('');
-    setQuickSkills([]);
     setSkillsError(null);
   }, [currentAgentId, setInput]);
 
@@ -661,33 +664,46 @@ export function ChatInput({
     rememberDraftSelection(textarea);
   }, [moveCaretTo, rememberDraftSelection, skillTokenRanges]);
 
-  const loadQuickSkills = useCallback(async (): Promise<QuickAccessSkill[]> => {
+  const quickSkillsScope = JSON.stringify([currentAgent?.id, currentAgent?.workspace, currentAgent?.agentDir]);
+  const loadQuickSkills = useCallback(async (preferCache = false): Promise<QuickAccessSkill[]> => {
+    const requestId = ++skillsRequestRef.current;
     if (!currentAgent) {
       setQuickSkills([]);
+      setLoadedSkillsScope('');
+      setSkillsLoading(false);
       setSkillsError(null);
       return [];
     }
-    setSkillsLoading(true);
+    const context = { workspace: currentAgent.workspace, agentDir: currentAgent.agentDir };
+    const cached = preferCache ? getCachedQuickAccessSkills(context) : undefined;
     setSkillsError(null);
+    if (cached) {
+      setQuickSkills(cached);
+      setLoadedSkillsScope(quickSkillsScope);
+      setSkillsLoading(false);
+      return cached;
+    }
+    setSkillsLoading(true);
     try {
-      const result = await fetchQuickAccessSkills({
-        workspace: currentAgent.workspace,
-        agentDir: currentAgent.agentDir,
-      });
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to load skills');
-      }
+      const result = await fetchQuickAccessSkills(context, { preferCache });
+      if (!result.success) throw new Error(result.error || 'Failed to load skills');
       const list = result.skills || [];
-      setQuickSkills(list);
+      if (requestId === skillsRequestRef.current) {
+        setQuickSkills(list);
+        setLoadedSkillsScope(quickSkillsScope);
+      }
       return list;
     } catch (error) {
-      setQuickSkills([]);
-      setSkillsError(String(error));
+      if (requestId === skillsRequestRef.current) {
+        setQuickSkills([]);
+        setLoadedSkillsScope('');
+        setSkillsError(String(error));
+      }
       return [];
     } finally {
-      setSkillsLoading(false);
+      if (requestId === skillsRequestRef.current) setSkillsLoading(false);
     }
-  }, [currentAgent]);
+  }, [currentAgent, quickSkillsScope]);
 
   const handleSkillTokenPreview = useCallback(async (skillName: string) => {
     let list = quickSkills;
@@ -708,6 +724,21 @@ export function ChatInput({
     if (!skillPickerOpen) return;
     void loadQuickSkills();
   }, [skillPickerOpen, loadQuickSkills]);
+
+  useEffect(() => {
+    if (welcome) void loadQuickSkills(true);
+  }, [welcome, loadQuickSkills, draftKey]);
+
+  const selectWelcomeSkill = (name: string) => {
+    const token = getSkillPrefix(name);
+    // Keep the draft intact and make repeat clicks idempotent.
+    const nextValue = findSkillTokenRange(input, name) ? input : `${token}${input}`;
+    setInput(nextValue);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(nextValue.length, nextValue.length);
+    });
+  };
 
   const handleSelectModel = useCallback(async (modelRef: string) => {
     if (!currentAgent || switchingModelRef) return;
@@ -1128,12 +1159,41 @@ export function ChatInput({
   return (
     <div
       className={cn(
-        'relative mx-auto w-full max-w-3xl shrink-0 p-4 pb-6',
+        'relative mx-auto w-full max-w-3xl shrink-0 px-4',
+        welcome ? 'my-auto py-4' : 'pt-4 pb-3',
       )}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {welcome && (
+        <div data-testid="acp-chat-empty-state" className="mb-3 text-center">
+          <h1 className="mb-7 font-sans text-2xl font-medium tracking-normal text-foreground/90 sm:text-3xl">
+            {t('welcome.subtitle')}
+          </h1>
+          <div data-testid="chat-home-skills" className="flex min-h-8 flex-wrap justify-start gap-1.5">
+            {([
+              { name: 'docx', icon: FileText },
+              { name: 'xlsx', icon: Table2 },
+              { name: 'pptx', icon: Presentation },
+              { name: 'pdf', icon: FileScan },
+            ] as const).map(({ name, icon: Icon }) => (
+              <button
+                key={name}
+                type="button"
+                data-testid={`chat-home-skill-${name}`}
+                disabled={inputDisabled || sending || voiceStatus !== 'idle' || skillsLoading || loadedSkillsScope !== quickSkillsScope || !quickSkills.some((skill) => skill.name === name)}
+                title={skillsError ? t('welcome.skillsFailed') : skillsLoading || loadedSkillsScope !== quickSkillsScope ? t('composer.skillLoading') : !quickSkills.some((skill) => skill.name === name) ? t('welcome.skillUnavailable') : undefined}
+                onClick={() => selectWelcomeSkill(name)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-black/10 bg-surface-modal px-2.5 text-xs text-foreground/80 transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 dark:border-white/10 dark:hover:bg-white/5"
+              >
+                <Icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                {t(`welcome.skills.${name}`)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="w-full">
         {showStatusRow && (
           <div
@@ -1218,452 +1278,456 @@ export function ChatInput({
           </div>
         )}
 
-        {/* Input Container */}
-        <div
-          data-testid="chat-composer-box"
-          className={`relative bg-surface-modal rounded-2xl shadow-sm border px-3 pt-2.5 pb-1.5 transition-all ${dragOver ? 'border-primary ring-1 ring-primary' : 'border-black/10 dark:border-white/10'}`}
-        >
-          {selectedTarget && (
-            <div className="flex flex-wrap gap-2 pb-1.5">
-              <button
-                type="button"
-                onClick={() => setTargetAgentId(null)}
-                disabled={inputDisabled}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1 text-meta font-medium text-foreground transition-colors hover:bg-primary/10"
-                title={t('composer.clearTarget')}
-              >
-                <span>{t('composer.targetChip', { agent: selectedTarget.name })}</span>
-                <X className="h-3 w-3 text-muted-foreground" />
-              </button>
-            </div>
-          )}
-
-          {/* Text Row — flush-left */}
-          <div className="relative min-h-[48px]">
-            {skillTokenRanges.length > 0 && (
-              <div
-                aria-hidden="true"
-                data-testid="chat-composer-highlight"
-                className="pointer-events-none absolute inset-0 z-20 overflow-hidden whitespace-pre-wrap break-words text-sm leading-relaxed text-transparent"
-              >
-                {renderHighlightedComposerText(input, skillTokenRanges, {
-                  onPreviewSkill: (name) => {
-                    void handleSkillTokenPreview(name);
-                  },
-                  previewTooltip: t('composer.skillPreviewTooltip', 'Preview SKILL.md'),
-                })}
+        <div className="rounded-2xl border border-black/10 bg-surface-input shadow-sm dark:border-white/10">
+          {/* Input Container */}
+          <div
+            data-testid="chat-composer-box"
+            className={cn('relative rounded-t-2xl bg-surface-modal px-4 pt-4 pb-2 transition-all', dragOver && 'ring-1 ring-primary')}
+          >
+            {selectedTarget && (
+              <div className="flex flex-wrap gap-2 pb-1.5">
+                <button
+                  type="button"
+                  onClick={() => setTargetAgentId(null)}
+                  disabled={inputDisabled}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1 text-meta font-medium text-foreground transition-colors hover:bg-primary/10"
+                  title={t('composer.clearTarget')}
+                >
+                  <span>{t('composer.targetChip', { agent: selectedTarget.name })}</span>
+                  <X className="h-3 w-3 text-muted-foreground" />
+                </button>
               </div>
             )}
-            <Textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => {
-                handleInputChange(e.target.value);
-                rememberDraftSelection(e.currentTarget);
-              }}
-              onKeyDown={handleKeyDown}
-              onSelect={handleComposerSelection}
-              onClick={handleComposerSelection}
-              onBlur={(e) => rememberDraftSelection(e.currentTarget)}
-              onCompositionStart={() => {
-                isComposingRef.current = true;
-              }}
-              onCompositionEnd={() => {
-                isComposingRef.current = false;
-              }}
-              onPaste={handlePaste}
-              placeholder={inputDisabled && gatewayUnavailable ? t('composer.gatewayDisconnectedPlaceholder') : ''}
-              disabled={inputDisabled || voiceStatus !== 'idle'}
-              data-testid="chat-composer-input"
-              className={cn(
-                'relative z-10 min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted-foreground/60',
-                skillTokenRanges.length > 0 && 'selection:bg-primary/20',
+
+            {/* Text Row — flush-left */}
+            <div className="relative min-h-[48px]">
+              {skillTokenRanges.length > 0 && (
+                <div
+                  aria-hidden="true"
+                  data-testid="chat-composer-highlight"
+                  className="pointer-events-none absolute inset-0 z-20 overflow-hidden whitespace-pre-wrap break-words text-sm leading-relaxed text-transparent"
+                >
+                  {renderHighlightedComposerText(input, skillTokenRanges, {
+                    onPreviewSkill: (name) => {
+                      void handleSkillTokenPreview(name);
+                    },
+                    previewTooltip: t('composer.skillPreviewTooltip', 'Preview SKILL.md'),
+                  })}
+                </div>
               )}
-              rows={1}
-            />
-          </div>
+              <Textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => {
+                  handleInputChange(e.target.value);
+                  rememberDraftSelection(e.currentTarget);
+                }}
+                onKeyDown={handleKeyDown}
+                onSelect={handleComposerSelection}
+                onClick={handleComposerSelection}
+                onBlur={(e) => rememberDraftSelection(e.currentTarget)}
+                onCompositionStart={() => {
+                  isComposingRef.current = true;
+                }}
+                onCompositionEnd={() => {
+                  isComposingRef.current = false;
+                }}
+                onPaste={handlePaste}
+                placeholder={inputDisabled && gatewayUnavailable ? t('composer.gatewayDisconnectedPlaceholder') : t('composer.placeholder')}
+                aria-label={t('composer.placeholder')}
+                disabled={inputDisabled || voiceStatus !== 'idle'}
+                data-testid="chat-composer-input"
+                className={cn(
+                  'relative z-10 min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted-foreground/60',
+                  welcome && 'min-h-[88px]',
+                  skillTokenRanges.length > 0 && 'selection:bg-primary/20',
+                )}
+                rows={1}
+              />
+            </div>
 
-          {/* Action Row — icons on their own line */}
-          <div className="mt-1.5 flex items-center gap-1">
-            {/* Attach Button */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="shrink-0 h-8 w-8 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground transition-colors"
-              onClick={pickFiles}
-              disabled={inputDisabled || sending}
-              title={t('composer.attachFiles')}
-            >
-              <Paperclip className="h-3.5 w-3.5" />
-            </Button>
+            {/* Action Row — icons on their own line */}
+            <div className="mt-1.5 flex items-center gap-1">
+              {/* Attach Button */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="shrink-0 h-8 w-8 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground transition-colors"
+                onClick={pickFiles}
+                disabled={inputDisabled || sending}
+                title={t('composer.attachFiles')}
+              >
+                <Paperclip className="h-3.5 w-3.5" />
+              </Button>
 
-            {showAgentPicker && (
-              <div ref={pickerRef} className="relative shrink-0">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  data-testid="chat-composer-agent"
+              {showAgentPicker && (
+                <div ref={pickerRef} className="relative shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    data-testid="chat-composer-agent"
+                    className={cn(
+                      'h-8 w-8 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground transition-colors',
+                      (pickerOpen || selectedTarget) && 'bg-primary/10 text-primary hover:bg-primary/20'
+                    )}
+                    onClick={() => {
+                      setSkillPickerOpen(false);
+                      setModelPickerOpen(false);
+                      setWorkspaceMenuOpen(false);
+                      setPickerOpen((open) => !open);
+                    }}
+                    disabled={inputDisabled || sending}
+                    title={t('composer.pickAgent')}
+                  >
+                    <AtSign className="h-3.5 w-3.5" />
+                  </Button>
+                  {pickerOpen && (
+                    <div className="absolute left-0 bottom-full z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
+                      <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
+                        {t('composer.agentPickerTitle', { currentAgent: currentAgentName })}
+                      </div>
+                      <div className="max-h-64 overflow-y-auto">
+                        {mentionableAgents.map((agent) => (
+                          <AgentPickerItem
+                            key={agent.id}
+                            agent={agent}
+                            selected={agent.id === targetAgentId}
+                            onSelect={() => {
+                              setTargetAgentId(agent.id);
+                              setPickerOpen(false);
+                              textareaRef.current?.focus();
+                            }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div ref={skillPickerRef} className="relative shrink-0">
+                <button
+                  type="button"
+                  data-testid="chat-composer-skill"
                   className={cn(
-                    'h-8 w-8 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground transition-colors',
-                    (pickerOpen || selectedTarget) && 'bg-primary/10 text-primary hover:bg-primary/20'
+                    'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
+                    (skillPickerOpen || selectedSkill) && 'text-foreground',
                   )}
                   onClick={() => {
-                    setSkillPickerOpen(false);
+                    setPickerOpen(false);
                     setModelPickerOpen(false);
                     setWorkspaceMenuOpen(false);
-                    setPickerOpen((open) => !open);
+                    setSkillPickerOpen((open) => !open);
                   }}
                   disabled={inputDisabled || sending}
-                  title={t('composer.pickAgent')}
+                  title={t('composer.pickSkill')}
                 >
-                  <AtSign className="h-3.5 w-3.5" />
-                </Button>
-                {pickerOpen && (
-                  <div className="absolute left-0 bottom-full z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
-                    <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
-                      {t('composer.agentPickerTitle', { currentAgent: currentAgentName })}
+                  <span>{t('composer.skillButton')}</span>
+                  <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', skillPickerOpen && 'rotate-180')} />
+                </button>
+                {skillPickerOpen && (
+                  <div className="absolute left-0 bottom-full z-20 mb-2 w-80 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
+                    <div className="flex items-center gap-2 rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
+                      <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                      <input
+                        value={skillQuery}
+                        onChange={(event) => setSkillQuery(event.target.value)}
+                        placeholder={t('composer.skillSearchPlaceholder')}
+                        className="w-full bg-transparent text-meta outline-none placeholder:text-muted-foreground/70"
+                        autoFocus
+                      />
                     </div>
-                    <div className="max-h-64 overflow-y-auto">
-                      {mentionableAgents.map((agent) => (
-                        <AgentPickerItem
-                          key={agent.id}
-                          agent={agent}
-                          selected={agent.id === targetAgentId}
-                          onSelect={() => {
-                            setTargetAgentId(agent.id);
-                            setPickerOpen(false);
-                            textareaRef.current?.focus();
-                          }}
-                        />
-                      ))}
+                    <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
+                      {t('composer.skillPickerTitle', { agent: currentAgentName })}
+                    </div>
+                    <div className="max-h-72 overflow-y-auto">
+                      {skillsLoading ? (
+                        <div className="px-3 py-4 text-xs text-muted-foreground">
+                          {t('composer.skillLoading')}
+                        </div>
+                      ) : skillsError ? (
+                        <div className="px-3 py-4 text-xs text-destructive">
+                          {skillsError}
+                        </div>
+                      ) : filteredQuickSkills.length === 0 ? (
+                        <div className="px-3 py-4 text-xs text-muted-foreground">
+                          {t('composer.skillEmpty')}
+                        </div>
+                      ) : (
+                        filteredQuickSkills.map((skill) => (
+                          <SkillPickerItem
+                            key={`${skill.source}:${skill.name}`}
+                            skill={skill}
+                            selected={false}
+                            onSelect={() => {
+                              const textarea = textareaRef.current;
+                              const nextToken = getSkillPrefix(skill.name);
+                              const selectionStart = textarea?.selectionStart ?? input.length;
+                              const selectionEnd = textarea?.selectionEnd ?? input.length;
+                              let nextValue = input;
+                              let adjustedStart = selectionStart;
+                              let adjustedEnd = selectionEnd;
+
+                              const leadingSpace = needsLeadingSkillSpace(nextValue, adjustedStart) ? ' ' : '';
+                              nextValue = `${nextValue.slice(0, adjustedStart)}${leadingSpace}${nextToken}${nextValue.slice(adjustedEnd)}`;
+                              setSelectedSkill(null);
+                              setInput(nextValue);
+                              setSkillPickerOpen(false);
+                              setSkillQuery('');
+                              requestAnimationFrame(() => {
+                                textareaRef.current?.focus();
+                                const cursorPosition = adjustedStart + leadingSpace.length + nextToken.length;
+                                textareaRef.current?.setSelectionRange(cursorPosition, cursorPosition);
+                              });
+                            }}
+                          />
+                        ))
+                      )}
                     </div>
                   </div>
                 )}
               </div>
-            )}
 
-            <div ref={skillPickerRef} className="relative shrink-0">
-              <button
-                type="button"
-                data-testid="chat-composer-skill"
-                className={cn(
-                  'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:opacity-50',
-                  (skillPickerOpen || selectedSkill) && 'text-foreground',
+              <div data-testid="chat-composer-model-controls" className="ml-auto flex min-w-0 items-center gap-1">
+                {activeContextUsage && contextUsageLabel && contextUsagePercentage && (
+                  <ContextUsageIndicator
+                    usage={activeContextUsage}
+                    label={contextUsageLabel}
+                    percentageLabel={contextUsagePercentage}
+                  />
                 )}
-                onClick={() => {
-                  setPickerOpen(false);
-                  setModelPickerOpen(false);
-                  setWorkspaceMenuOpen(false);
-                  setSkillPickerOpen((open) => !open);
-                }}
-                disabled={inputDisabled || sending}
-                title={t('composer.pickSkill')}
-              >
-                <span>{t('composer.skillButton')}</span>
-                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', skillPickerOpen && 'rotate-180')} />
-              </button>
-              {skillPickerOpen && (
-                <div className="absolute left-0 bottom-full z-20 mb-2 w-80 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
-                  <div className="flex items-center gap-2 rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
-                    <Search className="h-3.5 w-3.5 text-muted-foreground" />
-                    <input
-                      value={skillQuery}
-                      onChange={(event) => setSkillQuery(event.target.value)}
-                      placeholder={t('composer.skillSearchPlaceholder')}
-                      className="w-full bg-transparent text-meta outline-none placeholder:text-muted-foreground/70"
-                      autoFocus
-                    />
-                  </div>
-                  <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
-                    {t('composer.skillPickerTitle', { agent: currentAgentName })}
-                  </div>
-                  <div className="max-h-72 overflow-y-auto">
-                    {skillsLoading ? (
-                      <div className="px-3 py-4 text-xs text-muted-foreground">
-                        {t('composer.skillLoading')}
+                {showModelPicker && (
+                  <div ref={modelPickerRef} className="relative min-w-0">
+                    <button
+                      type="button"
+                      data-testid="chat-model-picker-button"
+                      className={cn(
+                        'inline-flex h-8 max-w-[140px] sm:max-w-[220px] items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
+                        (modelPickerOpen || switchingModelRef) && 'text-foreground',
+                      )}
+                      onClick={() => {
+                        setPickerOpen(false);
+                        setSkillPickerOpen(false);
+                        setWorkspaceMenuOpen(false);
+                        setModelPickerOpen((open) => !open);
+                      }}
+                      disabled={inputDisabled || sending || !currentAgent || !!switchingModelRef}
+                      title={t('composer.pickModel')}
+                    >
+                      {switchingModelRef ? (
+                        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                      ) : (
+                        <ModelIcon modelName={currentModelLabel} testId="chat-model-picker-current-icon" />
+                      )}
+                      <span className="truncate">{currentModelLabel}</span>
+                      <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', modelPickerOpen && 'rotate-180')} />
+                    </button>
+                    {modelPickerOpen && (
+                      <div
+                        className="absolute right-0 bottom-full z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
+                        data-testid="chat-model-picker-menu"
+                      >
+                        <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
+                          {t('composer.modelPickerTitle')}
+                        </div>
+                        <div className="max-h-64 overflow-y-auto">
+                          {modelOptions.map((option) => (
+                            <button
+                              key={option.modelRef}
+                              type="button"
+                              onClick={() => void handleSelectModel(option.modelRef)}
+                              className={cn(
+                                'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors',
+                                option.modelRef === effectiveModelRef ? 'bg-primary/10 text-foreground' : 'hover:bg-black/5 dark:hover:bg-white/5'
+                              )}
+                              data-testid={`chat-model-picker-option-${option.label}`}
+                            >
+                              <span className="flex min-w-0 items-center gap-2">
+                                <ModelIcon modelName={option.modelId} testId="chat-model-picker-option-icon" />
+                                <span className="min-w-0 truncate">
+                                  <span>{option.modelId}</span>
+                                  {option.providerName ? (
+                                    <>
+                                      {' '}
+                                      <span className="font-normal text-muted-foreground">{option.providerName}</span>
+                                    </>
+                                  ) : null}
+                                </span>
+                              </span>
+                              {option.modelRef === effectiveModelRef && (
+                                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                              )}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    ) : skillsError ? (
-                      <div className="px-3 py-4 text-xs text-destructive">
-                        {skillsError}
-                      </div>
-                    ) : filteredQuickSkills.length === 0 ? (
-                      <div className="px-3 py-4 text-xs text-muted-foreground">
-                        {t('composer.skillEmpty')}
-                      </div>
-                    ) : (
-                      filteredQuickSkills.map((skill) => (
-                        <SkillPickerItem
-                          key={`${skill.source}:${skill.name}`}
-                          skill={skill}
-                          selected={false}
-                          onSelect={() => {
-                            const textarea = textareaRef.current;
-                            const nextToken = getSkillPrefix(skill.name);
-                            const selectionStart = textarea?.selectionStart ?? input.length;
-                            const selectionEnd = textarea?.selectionEnd ?? input.length;
-                            let nextValue = input;
-                            let adjustedStart = selectionStart;
-                            let adjustedEnd = selectionEnd;
-
-                            const leadingSpace = needsLeadingSkillSpace(nextValue, adjustedStart) ? ' ' : '';
-                            nextValue = `${nextValue.slice(0, adjustedStart)}${leadingSpace}${nextToken}${nextValue.slice(adjustedEnd)}`;
-                            setSelectedSkill(null);
-                            setInput(nextValue);
-                            setSkillPickerOpen(false);
-                            setSkillQuery('');
-                            requestAnimationFrame(() => {
-                              textareaRef.current?.focus();
-                              const cursorPosition = adjustedStart + leadingSpace.length + nextToken.length;
-                              textareaRef.current?.setSelectionRange(cursorPosition, cursorPosition);
-                            });
-                          }}
-                        />
-                      ))
                     )}
                   </div>
+                )}
+
+                {devModeUnlocked && (
+                  <VoiceDictationButton
+                    status={voiceStatus}
+                    elapsedSeconds={voiceElapsedSeconds}
+                    disabled={inputDisabled || sending}
+                    onToggle={toggleVoiceDictation}
+                    onCancel={cancelVoiceDictation}
+                    getLevels={getVoiceLevels}
+                  />
+                )}
+
+                {/* Send Button */}
+                <Button
+                  onClick={sending ? handleStop : handleSend}
+                  disabled={sending ? !canStop : !canSend}
+                  size="icon"
+                  data-testid="chat-composer-send"
+                  className={`shrink-0 h-8 w-8 rounded-lg transition-colors ${
+                    (sending || canSend)
+                      ? 'bg-black/5 dark:bg-white/10 text-foreground hover:bg-black/10 dark:hover:bg-white/20'
+                      : 'text-muted-foreground/50 hover:bg-transparent bg-transparent'
+                  }`}
+                  variant="ghost"
+                  title={sending ? t('composer.stop') : t('composer.send')}
+                >
+                  {sending ? (
+                    <Square className="h-3.5 w-3.5" fill="currentColor" />
+                  ) : (
+                    <SendHorizontal className="h-4 w-4" strokeWidth={2} />
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div
+            data-testid="chat-composer-footer"
+            className="flex min-w-0 items-center justify-between gap-2 rounded-b-2xl border-t border-black/5 bg-surface-input px-3 py-1 text-tiny text-muted-foreground dark:border-white/10"
+          >
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              {workspaceLabel && workspacePath && (
+                <div ref={workspaceMenuRef} className="relative min-w-0 shrink" onKeyDown={handleWorkspaceKeyDown}>
+                  <button
+                    type="button"
+                    data-testid="chat-workspace-selector"
+                    title={workspacePath}
+                    aria-disabled={workspaceSelectorDisabled ? 'true' : undefined}
+                    aria-expanded={!workspaceSelectorDisabled ? workspaceMenuOpen : undefined}
+                    tabIndex={workspaceSelectorDisabled ? -1 : undefined}
+                    onClick={workspaceSelectorDisabled ? undefined : handleWorkspaceButtonClick}
+                    className={cn(
+                      'inline-flex min-w-0 max-w-[260px] items-center gap-1 rounded-lg border border-transparent px-1.5 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      'text-tiny font-medium text-foreground/75 transition-colors',
+                      workspaceSelectorDisabled
+                        ? 'cursor-default border-transparent opacity-80'
+                        : 'hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
+                    )}
+                  >
+                    <FolderOpen className="h-3 w-3 shrink-0" />
+                    <span className="min-w-0 truncate">
+                      {t('composer.workspacePrefix', { workspace: workspaceLabel })}
+                    </span>
+                    {!workspaceSelectorDisabled && (
+                      <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform', workspaceMenuOpen && 'rotate-180')} />
+                    )}
+                  </button>
+                  {workspaceMenuOpen && !workspaceSelectorDisabled && (
+                    <div
+                      data-testid="chat-workspace-menu"
+                      className="absolute bottom-full left-0 z-20 mb-2 max-h-80 w-64 overflow-y-auto rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
+                    >
+                      <button
+                        type="button"
+                        data-testid="chat-workspace-default"
+                        aria-current={isDefaultWorkspacePath(workspacePath) ? 'true' : undefined}
+                        onClick={handleSelectDefaultWorkspace}
+                        className={cn(
+                          'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/10',
+                          isDefaultWorkspacePath(workspacePath) && 'bg-black/5 dark:bg-white/10',
+                        )}
+                      >
+                        <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate">{t('composer.defaultWorkspaceOption')}</span>
+                        {isDefaultWorkspacePath(workspacePath) && <Check className="h-3.5 w-3.5 shrink-0" />}
+                      </button>
+                      {workspaceOptions.map((option) => {
+                        const optionPath = normalizeWorkspacePath(option.path);
+                        if (!optionPath || isDefaultWorkspacePath(optionPath)) return null;
+                        const selected = optionPath === normalizeWorkspacePath(workspacePath);
+                        return (
+                          <button
+                            key={optionPath}
+                            type="button"
+                            data-testid={`chat-workspace-option-${encodeURIComponent(optionPath)}`}
+                            title={optionPath}
+                            aria-current={selected ? 'true' : undefined}
+                            onClick={() => handleSelectWorkspace(optionPath)}
+                            className={cn(
+                              'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/10',
+                              selected && 'bg-black/5 dark:bg-white/10',
+                            )}
+                          >
+                            <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                            {selected && <Check className="h-3.5 w-3.5 shrink-0" />}
+                          </button>
+                        );
+                      })}
+                      <div className="my-1 border-t border-black/5 dark:border-white/10" />
+                      <button
+                        type="button"
+                        data-testid="chat-workspace-choose-other"
+                        onClick={() => void handleChooseOtherWorkspace()}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                      >
+                        <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate">{t('composer.chooseOtherWorkspaceOption')}</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
-            {showModelPicker && (
-              <div ref={modelPickerRef} className="relative shrink-0">
-                <button
-                  type="button"
-                  data-testid="chat-model-picker-button"
-                  className={cn(
-                    'inline-flex h-8 max-w-[220px] items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:opacity-50',
-                    (modelPickerOpen || switchingModelRef) && 'text-foreground',
-                  )}
-                  onClick={() => {
-                    setPickerOpen(false);
-                    setSkillPickerOpen(false);
-                    setWorkspaceMenuOpen(false);
-                    setModelPickerOpen((open) => !open);
-                  }}
-                  disabled={inputDisabled || sending || !currentAgent || !!switchingModelRef}
-                  title={t('composer.pickModel')}
+            <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 overflow-hidden text-right">
+              <div className="flex min-w-0 items-center justify-end gap-2 overflow-hidden">
+                <div
+                  data-testid="chat-composer-gateway-status"
+                  className="flex min-w-0 items-center justify-end gap-1.5 overflow-hidden"
                 >
-                  {switchingModelRef ? (
-                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-                  ) : (
-                    <ModelIcon modelName={currentModelLabel} testId="chat-model-picker-current-icon" />
-                  )}
-                  <span className="truncate">{currentModelLabel}</span>
-                  <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', modelPickerOpen && 'rotate-180')} />
-                </button>
-                {modelPickerOpen && (
-                  <div
-                    className="absolute left-0 bottom-full z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
-                    data-testid="chat-model-picker-menu"
-                  >
-                    <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
-                      {t('composer.modelPickerTitle')}
-                    </div>
-                    <div className="max-h-64 overflow-y-auto">
-                      {modelOptions.map((option) => (
-                        <button
-                          key={option.modelRef}
-                          type="button"
-                          onClick={() => void handleSelectModel(option.modelRef)}
-                          className={cn(
-                            'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors',
-                            option.modelRef === effectiveModelRef ? 'bg-primary/10 text-foreground' : 'hover:bg-black/5 dark:hover:bg-white/5'
-                          )}
-                          data-testid={`chat-model-picker-option-${option.label}`}
-                        >
-                          <span className="flex min-w-0 items-center gap-2">
-                            <ModelIcon modelName={option.modelId} testId="chat-model-picker-option-icon" />
-                            <span className="min-w-0 truncate">
-                              <span>{option.modelId}</span>
-                              {option.providerName ? (
-                                <>
-                                  {' '}
-                                  <span className="font-normal text-muted-foreground">{option.providerName}</span>
-                                </>
-                              ) : null}
-                            </span>
-                          </span>
-                          {option.modelRef === effectiveModelRef && (
-                            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="ml-auto flex items-center gap-1">
-              {devModeUnlocked && (
-                <VoiceDictationButton
-                  status={voiceStatus}
-                  elapsedSeconds={voiceElapsedSeconds}
-                  disabled={inputDisabled || sending}
-                  onToggle={toggleVoiceDictation}
-                  onCancel={cancelVoiceDictation}
-                  getLevels={getVoiceLevels}
-                />
-              )}
-
-              {/* Send Button */}
-              <Button
-                onClick={sending ? handleStop : handleSend}
-                disabled={sending ? !canStop : !canSend}
-                size="icon"
-                data-testid="chat-composer-send"
-                className={`shrink-0 h-8 w-8 rounded-lg transition-colors ${
-                  (sending || canSend)
-                    ? 'bg-black/5 dark:bg-white/10 text-foreground hover:bg-black/10 dark:hover:bg-white/20'
-                    : 'text-muted-foreground/50 hover:bg-transparent bg-transparent'
-                }`}
-                variant="ghost"
-                title={sending ? t('composer.stop') : t('composer.send')}
-              >
-                {sending ? (
-                  <Square className="h-3.5 w-3.5" fill="currentColor" />
-                ) : (
-                  <SendHorizontal className="h-4 w-4" strokeWidth={2} />
-                )}
-              </Button>
-            </div>
-          </div>
-        </div>
-        <div
-          data-testid="chat-composer-footer"
-          className="mt-2.5 flex min-w-0 items-center justify-between gap-2 text-tiny text-muted-foreground/60"
-        >
-          <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            {workspaceLabel && workspacePath && (
-              <div ref={workspaceMenuRef} className="relative min-w-0 shrink" onKeyDown={handleWorkspaceKeyDown}>
-                <button
-                  type="button"
-                  data-testid="chat-workspace-selector"
-                  title={workspacePath}
-                  aria-disabled={workspaceSelectorDisabled ? 'true' : undefined}
-                  aria-expanded={!workspaceSelectorDisabled ? workspaceMenuOpen : undefined}
-                  tabIndex={workspaceSelectorDisabled ? -1 : undefined}
-                  onClick={workspaceSelectorDisabled ? undefined : handleWorkspaceButtonClick}
-                  className={cn(
-                    'inline-flex min-w-0 max-w-[260px] items-center gap-1 rounded-full border px-2 py-0.5',
-                    'bg-black/[0.02] text-tiny font-medium text-foreground/75 transition-colors dark:bg-white/[0.04]',
-                    workspaceSelectorDisabled
-                      ? 'cursor-default border-transparent opacity-80'
-                      : 'border-black/10 hover:bg-black/5 hover:text-foreground dark:border-white/10 dark:hover:bg-white/10',
-                  )}
-                >
-                  <FolderOpen className="h-3 w-3 shrink-0" />
+                  <div className={cn(
+                    'h-1.5 w-1.5 shrink-0 rounded-full',
+                    isGatewayUsable ? 'bg-green-500/80' : 'bg-red-500/80',
+                  )} />
                   <span className="min-w-0 truncate">
-                    {t('composer.workspacePrefix', { workspace: workspaceLabel })}
-                  </span>
-                  {!workspaceSelectorDisabled && (
-                    <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform', workspaceMenuOpen && 'rotate-180')} />
-                  )}
-                </button>
-                {workspaceMenuOpen && !workspaceSelectorDisabled && (
-                  <div
-                    data-testid="chat-workspace-menu"
-                    className="absolute bottom-full left-0 z-20 mb-2 max-h-80 w-64 overflow-y-auto rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
-                  >
-                    <button
-                      type="button"
-                      data-testid="chat-workspace-default"
-                      aria-current={isDefaultWorkspacePath(workspacePath) ? 'true' : undefined}
-                      onClick={handleSelectDefaultWorkspace}
-                      className={cn(
-                        'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/10',
-                        isDefaultWorkspacePath(workspacePath) && 'bg-black/5 dark:bg-white/10',
-                      )}
-                    >
-                      <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate">{t('composer.defaultWorkspaceOption')}</span>
-                      {isDefaultWorkspacePath(workspacePath) && <Check className="h-3.5 w-3.5 shrink-0" />}
-                    </button>
-                    {workspaceOptions.map((option) => {
-                      const optionPath = normalizeWorkspacePath(option.path);
-                      if (!optionPath || isDefaultWorkspacePath(optionPath)) return null;
-                      const selected = optionPath === normalizeWorkspacePath(workspacePath);
-                      return (
-                        <button
-                          key={optionPath}
-                          type="button"
-                          data-testid={`chat-workspace-option-${encodeURIComponent(optionPath)}`}
-                          title={optionPath}
-                          aria-current={selected ? 'true' : undefined}
-                          onClick={() => handleSelectWorkspace(optionPath)}
-                          className={cn(
-                            'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/10',
-                            selected && 'bg-black/5 dark:bg-white/10',
-                          )}
-                        >
-                          <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                          <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                          {selected && <Check className="h-3.5 w-3.5 shrink-0" />}
-                        </button>
-                      );
+                    {t('composer.gatewayStatus', {
+                      state: isGatewayUsable
+                        ? t('composer.gatewayConnected')
+                        : gatewayStatus.state === 'running'
+                          ? t('composer.gatewayStarting')
+                          : gatewayStatus.state,
                     })}
-                    <div className="my-1 border-t border-black/5 dark:border-white/10" />
-                    <button
-                      type="button"
-                      data-testid="chat-workspace-choose-other"
-                      onClick={() => void handleChooseOtherWorkspace()}
-                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/10"
-                    >
-                      <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate">{t('composer.chooseOtherWorkspaceOption')}</span>
-                    </button>
-                  </div>
-                )}
+                  </span>
+                  {chatComposerStatusComponents.map((Component, index) => (
+                    <Component key={`${index}`} gatewayStatus={gatewayStatus} />
+                  ))}
+                </div>
               </div>
-            )}
-          </div>
-
-          <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 overflow-hidden text-right">
-            <div className="flex min-w-0 items-center justify-end gap-2 overflow-hidden">
-              {activeContextUsage && contextUsageLabel && contextUsagePercentage && (
-                <ContextUsageIndicator
-                  usage={activeContextUsage}
-                  label={contextUsageLabel}
-                  percentageLabel={contextUsagePercentage}
-                />
+              {hasFailedAttachments && (
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="h-auto shrink-0 p-0 text-tiny"
+                  onClick={() => {
+                    if (attachmentsLocked) return;
+                    setAttachments((prev) => prev.filter((att) => att.status !== 'error'));
+                    void pickFiles();
+                  }}
+                  disabled={attachmentsLocked}
+                >
+                  {t('composer.retryFailedAttachments')}
+                </Button>
               )}
-              <div
-                data-testid="chat-composer-gateway-status"
-                className="flex min-w-0 items-center justify-end gap-1.5 overflow-hidden"
-              >
-                <div className={cn(
-                  'h-1.5 w-1.5 shrink-0 rounded-full',
-                  isGatewayUsable ? 'bg-green-500/80' : 'bg-red-500/80',
-                )} />
-                <span className="min-w-0 truncate">
-                  {t('composer.gatewayStatus', {
-                    state: isGatewayUsable
-                      ? t('composer.gatewayConnected')
-                      : gatewayStatus.state === 'running'
-                        ? t('composer.gatewayStarting')
-                        : gatewayStatus.state,
-                  })}
-                </span>
-                {chatComposerStatusComponents.map((Component, index) => (
-                  <Component key={`${index}`} gatewayStatus={gatewayStatus} />
-                ))}
-              </div>
             </div>
-            {hasFailedAttachments && (
-              <Button
-                variant="link"
-                size="sm"
-                className="h-auto shrink-0 p-0 text-tiny"
-                onClick={() => {
-                  if (attachmentsLocked) return;
-                  setAttachments((prev) => prev.filter((att) => att.status !== 'error'));
-                  void pickFiles();
-                }}
-                disabled={attachmentsLocked}
-              >
-                {t('composer.retryFailedAttachments')}
-              </Button>
-            )}
           </div>
         </div>
       </div>

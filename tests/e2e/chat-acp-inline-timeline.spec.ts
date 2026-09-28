@@ -653,15 +653,20 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(indicator).toHaveAttribute('data-testid', 'chat-composer-context-usage');
       await expect(indicator).toHaveAttribute('aria-valuenow', '25');
       await expect(indicator).toContainText('25%');
-      await expect(page.getByTestId('chat-composer-footer').getByTestId('chat-composer-context-usage')).toBeVisible();
-      await expect(page.getByTestId('chat-composer-box').getByTestId('chat-composer-context-usage')).toHaveCount(0);
+      await expect(page.getByTestId('chat-composer-footer').getByTestId('chat-composer-context-usage')).toHaveCount(0);
+      await expect(page.getByTestId('chat-composer-model-controls').getByTestId('chat-composer-context-usage')).toBeVisible();
+      await expect(page.getByTestId('chat-composer-model-controls').locator(':scope > *').first()).toHaveAttribute('data-testid', 'chat-composer-context-usage');
       const indicatorBox = await indicator.boundingBox();
-      const gatewayBox = await page.getByTestId('chat-composer-gateway-status').boundingBox();
+      const sendBox = await page.getByTestId('chat-composer-send').boundingBox();
       expect(indicatorBox).toBeTruthy();
-      expect(gatewayBox).toBeTruthy();
-      expect(indicatorBox!.x).toBeLessThan(gatewayBox!.x);
+      expect(sendBox).toBeTruthy();
+      expect(indicatorBox!.x).toBeLessThan(sendBox!.x);
+      expect(Math.abs(indicatorBox!.y + indicatorBox!.height / 2 - sendBox!.y - sendBox!.height / 2)).toBeLessThan(2);
       await indicator.focus();
       await expect(page.getByRole('tooltip')).toHaveText('25% context used: 25,000 / 100,000 tokens');
+      await page.setViewportSize({ width: 900, height: 650 });
+      await expect(indicator).toBeInViewport();
+      await expect(page.getByTestId('chat-composer-send')).toBeInViewport();
     } finally {
       await closeElectronApp(app);
     }
