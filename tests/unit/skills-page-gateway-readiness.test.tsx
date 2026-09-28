@@ -145,6 +145,8 @@ describe('Skills page gateway readiness', () => {
 
     expect(fetchSkillsMock).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('actions.installSkill')).not.toBeInTheDocument();
+    expect(screen.queryByText('tabs.marketplace')).not.toBeInTheDocument();
+    expect(searchSkillsMock).not.toHaveBeenCalled();
   });
 
   it('filters the list via enabled and disabled buttons', async () => {
@@ -244,8 +246,10 @@ describe('Skills page gateway readiness', () => {
       await vi.advanceTimersByTimeAsync(1_600);
     });
 
-    fireEvent.click(screen.getByText('Browser Automation'));
+    await act(async () => {
+      fireEvent.click(screen.getByText('Browser Automation'));
+    });
     expect(screen.queryByText('detail.uninstall')).not.toBeInTheDocument();
-    expect(screen.getByText('detail.disable')).toBeInTheDocument();
+    expect(screen.queryByText('detail.disable')).not.toBeInTheDocument();
   });
 });

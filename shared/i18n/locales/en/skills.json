@@ -6,8 +6,8 @@
     "gatewayWarning": "Gateway is not running. Local skills are still available, but runtime status is unavailable.",
     "gatewayStarting": "Gateway is starting. Local skills are available now; runtime status will appear once it is ready.",
     "tabs": {
-        "installed": "Installed",
-        "marketplace": "Marketplace"
+        "installed": "My skills",
+        "marketplace": "Discover skills"
     },
     "filter": {
         "all": "All ({{count}})",
@@ -22,7 +22,10 @@
     "actions": {
         "enableVisible": "Enable Visible",
         "disableVisible": "Disable Visible",
-        "installSkill": "Install Skills"
+        "installSkill": "Add skills",
+        "more": "More",
+        "toggle": "Enable {{name}}",
+        "clearSearch": "Clear search"
     },
     "noSkills": "No skills found",
     "noSkillsSearch": "Try a different search term",
@@ -71,7 +74,10 @@
             "assetsDesc": "Templates, references and static files",
             "empty": "This skill has no previewable files.",
             "scanFailed": "Failed to scan the skill directory"
-        }
+        },
+        "technical": "Files and technical details",
+        "close": "Close details",
+        "open": "View {{name}} details"
     },
     "source": {
         "badge": {
@@ -123,6 +129,7 @@
         "searching": "Searching ClawHub...",
         "noResults": "No skills found matching your search.",
         "emptyPrompt": "Search for new skills to expand your capabilities.",
-        "searchError": "ClawHub search failed. Check your connection or installation."
+        "searchError": "ClawHub search failed. Check your connection or installation.",
+        "unavailable": "The skill marketplace is unavailable in this environment. You can manage local skills or open the skills folder."
     }
 }

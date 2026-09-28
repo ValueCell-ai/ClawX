@@ -96,7 +96,7 @@
  *                                                               Cron, Models)
  *                         · wizard steps text-3xl / section H2 text-xl
  *                                                              (Setup)
- *     chat welcome H1 :  font-sans font-medium tracking-normal (UI-style greeting)
+ *     chat welcome / Skills headings :  font-sans font-medium tracking-normal (UI-style greeting)
  *     monospace        :  font-mono     (NOT `font-monospace` — dead class)
  *     pixel text       :  text-[13px] → text-meta
  *                         text-[10px] → text-2xs
