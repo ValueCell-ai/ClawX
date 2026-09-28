@@ -75,7 +75,12 @@
       "save": "保存",
       "customDoc": "查看文档",
       "validate": "验证",
-      "failed": "失败"
+      "failed": "失败",
+      "search": "搜索提供商…",
+      "close": "关闭",
+      "showKey": "显示 API 密钥",
+      "hideKey": "隐藏 API 密钥",
+      "noResults": "未找到匹配的提供商"
     },
     "card": {
       "default": "默认",
@@ -85,8 +90,9 @@
       "fallbacks_one": "回退：{{names}}",
       "fallbacks_other": "回退（{{count}} 个）：{{names}}",
       "setDefault": "设为默认",
-      "editKey": "编辑 API 密钥",
-      "delete": "删除提供商"
+      "editKey": "编辑配置",
+      "delete": "删除提供商",
+      "more": "更多操作"
     },
     "protocols": {
       "openai": "OpenAI 兼容",

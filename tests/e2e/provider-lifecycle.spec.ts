@@ -59,6 +59,7 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('provider-card-deepseek-replacement-e2e')).toBeVisible();
 
     await page.getByTestId('provider-card-moonshot-default-e2e').hover();
+    await page.getByTestId('provider-more-moonshot-default-e2e').click();
     await page.getByTestId('provider-delete-moonshot-default-e2e').click();
 
     await expect(page.getByTestId('provider-card-moonshot-default-e2e')).toHaveCount(0);
@@ -95,6 +96,7 @@ test.describe('ClawX provider lifecycle', () => {
     });
 
     await page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`).hover();
+    await page.getByTestId(`provider-more-${TEST_PROVIDER_ID}`).click();
     await page.getByTestId(`provider-delete-${TEST_PROVIDER_ID}`).click();
 
     await expect(page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`)).toHaveCount(0, { timeout: 500 });
@@ -110,6 +112,7 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`)).toContainText(TEST_PROVIDER_LABEL);
 
     await page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`).hover();
+    await page.getByTestId(`provider-more-${TEST_PROVIDER_ID}`).click();
     await page.getByTestId(`provider-delete-${TEST_PROVIDER_ID}`).click();
     await expect(page.getByTestId(`provider-card-${TEST_PROVIDER_ID}`)).toHaveCount(0);
 
@@ -615,4 +618,31 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByText(/is not available for this API key/)).toBeVisible();
     await expect(page.getByText(/gemini-3\.8-flash/)).toBeVisible();
   });
+});
+
+
+test('provider configuration stays discoverable and its submit action stays visible', async ({ page }, testInfo) => {
+  await completeSetup(page);
+  await seedTestProvider(page);
+  await page.getByTestId('sidebar-nav-models').click();
+  await expect(page.getByTestId(`provider-edit-${TEST_PROVIDER_ID}`)).toHaveText('Edit configuration');
+  await expect(page.getByTestId(`provider-model-${TEST_PROVIDER_ID}`)).toHaveText('kimi-k2.6');
+  await page.getByTestId(`provider-more-${TEST_PROVIDER_ID}`).click();
+  await expect(page.getByTestId(`provider-delete-${TEST_PROVIDER_ID}`)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByTestId('providers-add-button').click();
+  await page.getByTestId('provider-search').fill('no-such-provider');
+  await expect(page.getByRole('status').filter({ hasText: 'No matching providers' })).toBeVisible();
+  await page.getByTestId('provider-search').fill('custom');
+  await expect(page.getByTestId('add-provider-type-openai')).toHaveCount(0);
+  await page.getByTestId('add-provider-type-custom').click();
+  await page.setViewportSize({ width: 900, height: 650 });
+  await expect(page.getByTestId('add-provider-submit-button')).toBeInViewport();
+  await page.getByTestId('add-provider-model-id-input').scrollIntoViewIfNeeded();
+  await expect(page.getByTestId('add-provider-submit-button')).toBeInViewport();
+  await page.screenshot({ path: testInfo.outputPath('provider-form-narrow.png'), animations: 'disabled' });
+  await page.getByRole('button', { name: 'Show API key', exact: true }).click();
+  await expect(page.getByTestId('add-provider-api-key-input')).toHaveAttribute('type', 'text');
+  await page.getByTestId('add-provider-close-button').click();
+  await expect(page.getByTestId('add-provider-dialog')).toHaveCount(0);
 });

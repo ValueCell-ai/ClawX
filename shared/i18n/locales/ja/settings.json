@@ -75,7 +75,12 @@
       "save": "保存",
       "customDoc": "ドキュメント",
       "validate": "検証",
-      "failed": "失敗"
+      "failed": "失敗",
+      "search": "プロバイダーを検索…",
+      "close": "閉じる",
+      "showKey": "API キーを表示",
+      "hideKey": "API キーを非表示",
+      "noResults": "一致するプロバイダーがありません"
     },
     "card": {
       "default": "デフォルト",
@@ -85,8 +90,9 @@
       "fallbacks_one": "フォールバック: {{names}}",
       "fallbacks_other": "フォールバック ({{count}}): {{names}}",
       "setDefault": "デフォルトに設定",
-      "editKey": "API キーを編集",
-      "delete": "プロバイダーを削除"
+      "editKey": "設定を編集",
+      "delete": "プロバイダーを削除",
+      "more": "その他の操作"
     },
     "protocols": {
       "openai": "OpenAI 互換",

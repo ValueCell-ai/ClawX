@@ -75,7 +75,12 @@
       "save": "Save",
       "customDoc": "Documentation",
       "validate": "Validate",
-      "failed": "Failed"
+      "failed": "Failed",
+      "search": "Search providers…",
+      "close": "Close",
+      "showKey": "Show API key",
+      "hideKey": "Hide API key",
+      "noResults": "No matching providers"
     },
     "card": {
       "default": "Default",
@@ -85,8 +90,9 @@
       "fallbacks_one": "Fallback: {{names}}",
       "fallbacks_other": "Fallbacks ({{count}}): {{names}}",
       "setDefault": "Set as default",
-      "editKey": "Edit API key",
-      "delete": "Delete provider"
+      "editKey": "Edit configuration",
+      "delete": "Delete provider",
+      "more": "More actions"
     },
     "protocols": {
       "openai": "OpenAI Compatible",

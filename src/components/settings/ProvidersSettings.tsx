@@ -5,6 +5,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Plus,
+  MoreHorizontal,
   Trash2,
   Edit,
   Eye,
@@ -23,7 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { Separator } from '@/components/ui/separator';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
   useProviderStore,
   type ProviderAccount,
@@ -57,8 +58,8 @@ import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
 import type { OAuthCodeEvent, OAuthErrorEvent, OAuthSuccessEvent } from '@shared/host-events/contract';
 
-const inputClasses = 'h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
-const labelClasses = 'text-sm text-foreground/80 font-bold';
+const inputClasses = 'h-10 rounded-lg font-mono text-sm bg-surface-input border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
+const labelClasses = 'text-sm text-foreground/80 font-medium';
 type CodePlanMode = 'apikey' | 'codeplan';
 
 function isZaiProviderType(type: string | undefined): boolean {
@@ -546,8 +547,8 @@ function ProviderCard({
           : "bg-surface-modal border border-black/10 dark:border-white/10"
       )}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3 min-w-0 flex-1">
           <div className="h-[42px] w-[42px] shrink-0 flex items-center justify-center text-foreground border border-black/5 dark:border-white/10 rounded-full bg-black/5 dark:bg-white/5 shadow-sm group-hover:scale-105 transition-transform">
             {getProviderIconUrl(account.vendorId) ? (
               <img src={getProviderIconUrl(account.vendorId)} alt={typeInfo?.name || account.vendorId} className={cn('h-5 w-5', shouldInvertInDark(account.vendorId) && 'dark:invert')} />
@@ -555,9 +556,9 @@ function ProviderCard({
               <span className="text-xl">{vendor?.icon || typeInfo?.icon || '⚙️'}</span>
             )}
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-sm">{account.label}</span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-sm break-all">{account.label}</span>
               {isDefault && (
                 <span className="flex items-center gap-1 font-mono text-2xs font-medium px-2 py-0.5 rounded-full bg-black/[0.04] dark:bg-white/[0.08] border-0 shadow-none text-foreground/70">
                   <Check className="h-3 w-3" />
@@ -565,16 +566,11 @@ function ProviderCard({
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 mt-0.5 text-meta text-muted-foreground">
+            {account.model && <p data-testid={`provider-model-${account.id}`} className="mt-1 text-sm text-foreground/80 break-all">{account.model}</p>}
+            <div className="flex items-center flex-wrap gap-2 mt-2 text-xs text-muted-foreground">
               <span className="capitalize">{vendor?.name || account.vendorId}</span>
               <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
               <span>{getAuthModeLabel(account.authMode, t)}</span>
-              {account.model && (
-                <>
-                  <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
-                  <span className="truncate max-w-[200px]">{account.model}</span>
-                </>
-              )}
               <span className="w-1 h-1 rounded-full bg-black/20 dark:bg-white/20" />
               <span className="flex items-center gap-1">
                 {hasConfiguredCredentials(account, status) ? (
@@ -601,45 +597,27 @@ function ProviderCard({
         </div>
 
         {!isEditing && (
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            {!isDefault && (
-            <Button
-              data-testid={`provider-set-default-${account.id}`}
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 rounded-full text-muted-foreground hover:text-blue-600 hover:bg-surface-modal shadow-sm"
-                onClick={onSetDefault}
-                title={t('aiProviders.card.setDefault')}
-              >
-                <Check className="h-4 w-4" />
-              </Button>
-            )}
-            <Button
-              data-testid={`provider-edit-${account.id}`}
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-surface-modal shadow-sm"
-              onClick={onEdit}
-              title={t('aiProviders.card.editKey')}
-            >
-              <Edit className="h-4 w-4" />
+          <div className="flex items-center gap-1 shrink-0">
+            <Button data-testid={`provider-edit-${account.id}`} variant="outline" size="sm" onClick={onEdit}>
+              <Edit className="h-3.5 w-3.5 mr-2" />{t('aiProviders.card.editKey')}
             </Button>
-            <Button
-              data-testid={`provider-delete-${account.id}`}
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 rounded-full text-muted-foreground hover:text-destructive hover:bg-surface-modal shadow-sm"
-              onClick={onDelete}
-              title={t('aiProviders.card.delete')}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <Button data-testid={`provider-more-${account.id}`} variant="ghost" size="icon" className="h-9 w-9" aria-label={t('aiProviders.card.more')}><MoreHorizontal className="h-4 w-4" /></Button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content align="end" sideOffset={4} className="z-50 min-w-40 rounded-lg border border-black/10 dark:border-white/10 bg-surface-modal p-1 shadow-lg">
+                  {!isDefault && <DropdownMenu.Item data-testid={`provider-set-default-${account.id}`} onSelect={onSetDefault} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm outline-none cursor-pointer focus:bg-black/5 dark:focus:bg-white/10"><Check className="h-4 w-4" />{t('aiProviders.card.setDefault')}</DropdownMenu.Item>}
+                  <DropdownMenu.Item data-testid={`provider-delete-${account.id}`} onSelect={onDelete} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-destructive outline-none cursor-pointer focus:bg-black/5 dark:focus:bg-white/10"><Trash2 className="h-4 w-4" />{t('aiProviders.card.delete')}</DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
           </div>
         )}
       </div>
 
       {isEditing && (
-        <div className="space-y-6 mt-4 pt-4 border-t border-black/5 dark:border-white/5">
+        <div className="space-y-4 mt-4 pt-4 border-t border-black/5 dark:border-white/5">
           {effectiveDocsUrl && (
             <div className="flex justify-end -mt-2 mb-2">
               <a
@@ -879,7 +857,8 @@ function ProviderCard({
                   />
                   <button
                     type="button"
-                    onClick={() => setShowKey(!showKey)}
+                    aria-label={t(showKey ? 'aiProviders.dialog.hideKey' : 'aiProviders.dialog.showKey')}
+                        onClick={() => setShowKey(!showKey)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   >
                     {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -983,6 +962,7 @@ function AddProviderDialog({
   devModeUnlocked,
 }: AddProviderDialogProps) {
   const { t, i18n } = useTranslation('settings');
+  const [providerQuery, setProviderQuery] = useState('');
   const [selectedType, setSelectedType] = useState<ProviderType | null>(null);
   const [name, setName] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -1020,6 +1000,7 @@ function AddProviderDialog({
     setPrevOpen(open);
     if (open) {
       setSelectedType(null);
+      setProviderQuery('');
       setName('');
       setApiKey('');
       setBaseUrl('');
@@ -1256,6 +1237,8 @@ function AddProviderDialog({
     return vendor.supportsMultipleAccounts || !existingVendorIds.has(type.id);
   });
 
+  const filteredTypes = availableTypes.filter(type => `${type.name} ${type.id} ${type.id === 'custom' ? t('aiProviders.custom') : ''}`.toLowerCase().includes(providerQuery.trim().toLowerCase())).sort((a, b) => Number(b.id === 'custom') - Number(a.id === 'custom'));
+
   const handleAdd = async () => {
     if (!selectedType) return;
 
@@ -1327,11 +1310,11 @@ function AddProviderDialog({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent asChild className="w-[calc(100%-2rem)] max-w-2xl max-h-[90vh] flex flex-col rounded-3xl border-0 shadow-2xl bg-surface-modal overflow-hidden">
+      <DialogContent asChild className="w-[calc(100%-2rem)] max-w-2xl max-h-[85vh] flex flex-col rounded-xl border-0 shadow-2xl bg-surface-modal overflow-hidden">
         <Card data-testid="add-provider-dialog">
-        <CardHeader className="relative pb-2 shrink-0">
+        <CardHeader className="relative p-5 pb-4 shrink-0">
           <DialogTitle asChild>
-            <CardTitle className="text-2xl font-serif font-normal">{t('aiProviders.dialog.title')}</CardTitle>
+            <CardTitle className="text-xl font-sans font-medium tracking-normal">{t('aiProviders.dialog.title')}</CardTitle>
           </DialogTitle>
           <DialogDescription asChild>
             <CardDescription className="text-sm mt-1 text-foreground/70">
@@ -1340,6 +1323,7 @@ function AddProviderDialog({
           </DialogDescription>
           <Button
             data-testid="add-provider-close-button"
+            aria-label={t('aiProviders.dialog.close')}
             variant="ghost"
             size="icon"
             className="absolute right-4 top-4 rounded-full h-8 w-8 -mr-2 -mt-2 text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
@@ -1348,10 +1332,13 @@ function AddProviderDialog({
             <X className="h-4 w-4" />
           </Button>
         </CardHeader>
-        <CardContent className="overflow-y-auto flex-1 p-6">
+        <CardContent className="overflow-y-auto min-h-0 flex-1 px-5 pb-5">
           {!selectedType ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {availableTypes.map((type) => (
+            <div className="space-y-3">
+              <Input data-testid="provider-search" aria-label={t('aiProviders.dialog.search')} placeholder={t('aiProviders.dialog.search')} value={providerQuery} onChange={(event) => setProviderQuery(event.target.value)} className="h-10 bg-surface-input" />
+              {filteredTypes.length === 0 && <p role="status" className="py-8 text-center text-sm text-muted-foreground">{t('aiProviders.dialog.noResults')}</p>}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {filteredTypes.map((type) => (
                 <button
                   data-testid={`add-provider-type-${type.id}`}
                   key={type.id}
@@ -1364,9 +1351,9 @@ function AddProviderDialog({
                     setShowAdvancedConfig(false);
                     setCodePlanMode('apikey');
                   }}
-                  className="p-4 rounded-2xl border border-black/5 dark:border-white/5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-center group"
+                  className="flex items-center gap-3 p-3 rounded-lg border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-left group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <div className="h-12 w-12 mx-auto mb-3 flex items-center justify-center bg-black/5 dark:bg-white/5 rounded-xl shadow-sm border border-black/5 dark:border-white/5 group-hover:scale-105 transition-transform">
+                  <div className="h-9 w-9 shrink-0 flex items-center justify-center bg-black/5 dark:bg-white/5 rounded-xl shadow-sm border border-black/5 dark:border-white/5 group-hover:scale-105 transition-transform">
                     {getProviderIconUrl(type.id) ? (
                       <img src={getProviderIconUrl(type.id)} alt={type.name} className={cn('h-6 w-6', shouldInvertInDark(type.id) && 'dark:invert')} />
                     ) : (
@@ -1376,10 +1363,11 @@ function AddProviderDialog({
                   <p className="font-medium text-meta">{type.id === 'custom' ? t('aiProviders.custom') : type.name}</p>
                 </button>
               ))}
+              </div>
             </div>
           ) : (
-            <div className="space-y-6">
-              <div className="flex items-center gap-3 p-4 rounded-2xl bg-transparent border border-black/5 dark:border-white/5 shadow-sm">
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-transparent border border-black/5 dark:border-white/5 shadow-sm">
                 <div className="h-10 w-10 shrink-0 flex items-center justify-center bg-black/5 dark:bg-white/5 rounded-xl">
                   {getProviderIconUrl(selectedType!) ? (
                     <img src={getProviderIconUrl(selectedType!)} alt={typeInfo?.name} className={cn('h-6 w-6', shouldInvertInDark(selectedType!) && 'dark:invert')} />
@@ -1421,8 +1409,8 @@ function AddProviderDialog({
                 </div>
               </div>
 
-              <div className="space-y-6 bg-transparent p-0">
-                <div className="space-y-2.5">
+              <div className="space-y-4 bg-transparent p-0">
+                <div className="space-y-2">
                   <Label htmlFor="name" className={labelClasses}>{t('aiProviders.dialog.displayName')}</Label>
                   <Input
                     data-testid="add-provider-name-input"
@@ -1462,7 +1450,7 @@ function AddProviderDialog({
 
                 {/* API Key input — shown for non-OAuth providers or when apikey mode is selected */}
                 {(!isOAuth || (supportsApiKey && authMode === 'apikey')) && (
-                  <div className="space-y-2.5">
+                  <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label htmlFor="apiKey" className={labelClasses}>{t('aiProviders.dialog.apiKey')}</Label>
                       {typeInfo?.apiKeyUrl && (
@@ -1492,6 +1480,7 @@ function AddProviderDialog({
                       />
                       <button
                         type="button"
+                        aria-label={t(showKey ? 'aiProviders.dialog.hideKey' : 'aiProviders.dialog.showKey')}
                         onClick={() => setShowKey(!showKey)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                       >
@@ -1508,7 +1497,7 @@ function AddProviderDialog({
                 )}
 
                 {typeInfo?.showBaseUrl && (
-                  <div className="space-y-2.5">
+                  <div className="space-y-2">
                     <Label htmlFor="baseUrl" className={labelClasses}>{t('aiProviders.dialog.baseUrl')}</Label>
                     <Input
                       data-testid="add-provider-base-url-input"
@@ -1522,7 +1511,7 @@ function AddProviderDialog({
                 )}
 
                 {showModelIdField && (
-                  <div className="space-y-2.5">
+                  <div className="space-y-2">
                     <Label htmlFor="modelId" className={labelClasses}>{t('aiProviders.dialog.modelId')}</Label>
                     <Input
                       data-testid="add-provider-model-id-input"
@@ -1538,7 +1527,7 @@ function AddProviderDialog({
                   </div>
                 )}
                 {codePlanPreset && (
-                  <div className="space-y-2.5">
+                  <div className="space-y-2">
                     <div className="flex items-center justify-between gap-2">
                       <Label className={labelClasses}>{t('aiProviders.dialog.codePlanPreset')}</Label>
                       {typeInfo?.codePlanDocsUrl && (
@@ -1595,7 +1584,7 @@ function AddProviderDialog({
                   </div>
                 )}
                 {selectedType === 'custom' && (
-                <div className="space-y-2.5">
+                <div className="space-y-2">
                   <Label className={labelClasses}>{t('aiProviders.dialog.protocol', 'Protocol')}</Label>
                   <div className="flex gap-2 text-meta">
                     <button
@@ -1623,7 +1612,7 @@ function AddProviderDialog({
                   </div>
                 )}
                 {showUserAgentInAddDialog && (
-                  <div className="space-y-2.5">
+                  <div className="space-y-2">
                     <button
                       type="button"
                       onClick={() => setShowAdvancedConfig((value) => !value)}
@@ -1633,7 +1622,7 @@ function AddProviderDialog({
                       <ChevronDown className={cn("h-4 w-4 transition-transform", showAdvancedConfig && "rotate-180")} />
                     </button>
                     {showAdvancedConfig && (
-                      <div className="space-y-2.5 pt-1">
+                      <div className="space-y-2 pt-1">
                         <Label htmlFor="userAgent" className={labelClasses}>{t('aiProviders.dialog.userAgent')}</Label>
                         <Input
                           id="userAgent"
@@ -1779,13 +1768,17 @@ function AddProviderDialog({
                 )}
               </div>
 
-              <Separator className="bg-black/10 dark:bg-white/10" />
 
-              <div className="flex justify-end gap-3">
+            </div>
+          )}
+        </CardContent>
+        {selectedType && !useOAuthFlow && (
+              <div data-testid="add-provider-footer" className="flex justify-end gap-2 border-t border-black/10 dark:border-white/10 px-5 py-3 shrink-0">
+                <Button variant="outline" onClick={onClose}>{t('aiProviders.dialog.cancel')}</Button>
                 <Button
                   data-testid="add-provider-submit-button"
                   onClick={handleAdd}
-                  className={cn("rounded-full px-8 h-[42px] text-meta font-semibold shadow-sm", useOAuthFlow && "hidden")}
+                  className={cn("rounded-md px-4 h-9 text-sm font-medium shadow-none", useOAuthFlow && "hidden")}
                   disabled={!selectedType || saving || (showModelIdField && modelId.trim().length === 0)}
                 >
                   {saving ? (
@@ -1794,9 +1787,7 @@ function AddProviderDialog({
                   {t('aiProviders.dialog.add')}
                 </Button>
               </div>
-            </div>
-          )}
-        </CardContent>
+        )}
       </Card>
       </DialogContent>
     </Dialog>
