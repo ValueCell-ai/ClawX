@@ -509,7 +509,7 @@ export function Channels() {
 
   if (loading && !hasStableValue) {
     return (
-      <div className="flex flex-col -m-6 dark:bg-background min-h-[calc(100vh-2.5rem)] items-center justify-center">
+      <div className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] items-center justify-center">
         <LoadingSpinner size="lg" />
       </div>
     );
@@ -518,15 +518,15 @@ export function Channels() {
   return (
     <div
       data-testid="channels-page"
-      className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden"
+      className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden"
     >
-      <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16 pb-0">
-        <div className="flex flex-col md:flex-row md:items-start justify-between mb-12 shrink-0 gap-4">
+      <div className="w-full max-w-6xl mx-auto flex flex-col h-full p-6 md:p-8">
+        <div className="flex flex-col md:flex-row md:items-start justify-between mb-6 shrink-0 gap-4">
           <div>
-            <h1 className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight">
+            <h1 className="text-2xl font-sans text-foreground mb-1 font-medium tracking-normal">
               {t('title')}
             </h1>
-            <p className="text-subtitle text-foreground/70 font-medium">{t('subtitle')}</p>
+            <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
           </div>
 
           <div className="flex items-center gap-3 md:mt-2">
@@ -534,7 +534,7 @@ export function Channels() {
               variant="outline"
               onClick={handleRefresh}
               disabled={gatewayStatus.state !== 'running'}
-              className="h-9 text-meta font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors"
+              className="h-9 text-sm font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors"
             >
               <RefreshCw className={cn('h-3.5 w-3.5 mr-2', isUsingStableValue && 'animate-spin')} />
               {t('refresh')}
@@ -542,7 +542,7 @@ export function Channels() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2">
+        <div className="flex-1 overflow-y-auto pr-2 min-h-0 -mr-2">
           {isGatewayStopped(gatewayStatus) && (
             <div className="mb-8 p-4 rounded-xl border border-yellow-500/50 bg-yellow-500/10 flex items-center gap-3">
               <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
@@ -650,13 +650,13 @@ export function Channels() {
           )}
 
           {configuredGroups.length > 0 && (
-            <div className="mb-12">
-              <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight">{t('configured')}</h2>
+            <div className="mb-8">
+              <h2 className="text-lg font-sans text-foreground mb-4 font-medium tracking-normal">{t('configured')}</h2>
               <div className="space-y-4">
                 {configuredGroups.map((group) => (
                   <div
                     key={group.channelType}
-                    className="rounded-2xl border border-black/10 dark:border-white/10 p-4 bg-transparent"
+                    className="rounded-xl border border-black/10 dark:border-white/10 p-4 bg-surface-modal"
                   >
                     <div className="flex items-center justify-between gap-2 mb-3">
                       <div className="flex items-center gap-3 min-w-0">
@@ -863,7 +863,7 @@ export function Channels() {
           )}
 
           <div className="mb-8">
-            <h2 className="text-3xl font-serif text-foreground mb-6 font-normal tracking-tight">
+            <h2 className="text-lg font-sans text-foreground mb-4 font-medium tracking-normal">
               {t('supportedChannels')}
             </h2>
 
@@ -883,7 +883,7 @@ export function Channels() {
                       setShowConfigModal(true);
                     }}
                     className={cn(
-                      'group flex items-start gap-4 p-4 rounded-2xl transition-all text-left border relative overflow-hidden bg-transparent border-transparent hover:bg-black/5 dark:hover:bg-white/5',
+                      'group flex items-start gap-4 p-4 rounded-xl transition-all text-left border relative overflow-hidden bg-surface-modal border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5',
                     )}
                   >
                     <div className="h-[46px] w-[46px] shrink-0 flex items-center justify-center text-foreground bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 rounded-full shadow-sm mb-3">

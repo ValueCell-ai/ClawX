@@ -191,7 +191,7 @@ export function ImageGenerationSettings() {
         <div>
           <h2
             data-testid="image-generation-settings-title"
-            className="text-3xl font-serif text-foreground font-normal tracking-tight flex items-center gap-2"
+            className="text-lg font-sans text-foreground font-medium tracking-normal flex items-center gap-2"
           >
             <ImagePlus className="h-7 w-7 text-foreground/70" />
             {t('imageGeneration.title')}
@@ -213,7 +213,7 @@ export function ImageGenerationSettings() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-12 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-3xl border border-dashed border-transparent">
+        <div className="flex items-center justify-center py-12 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-xl border border-dashed border-black/10 dark:border-white/10">
           <Loader2 className="h-6 w-6 animate-spin" />
         </div>
       ) : (

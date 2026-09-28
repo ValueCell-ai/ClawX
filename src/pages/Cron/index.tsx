@@ -1031,7 +1031,7 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
           <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0">
             <div>
               <DialogTitle asChild>
-                <CardTitle className="text-2xl font-serif font-normal">
+                <CardTitle className="text-xl font-sans font-medium">
                   {job ? t('dialog.editTitle') : t('dialog.createTitle')}
                 </CardTitle>
               </DialogTitle>
@@ -1565,7 +1565,7 @@ function CronJobCard({ job, deliveryAccountName, onToggle, onEdit, onDelete, onT
   return (
     <div
       data-testid={`cron-job-card-${job.id}`}
-      className="group flex flex-col p-5 rounded-2xl bg-transparent border border-transparent hover:bg-black/5 dark:hover:bg-white/5 transition-all relative overflow-hidden cursor-pointer"
+      className="group flex flex-col p-4 rounded-xl bg-surface-modal border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-all relative overflow-hidden cursor-pointer"
       onClick={onEdit}
     >
       <div className="flex items-start justify-between gap-3 mb-4">
@@ -1757,7 +1757,7 @@ export function Cron() {
     return (
       <div
         data-testid="cron-page"
-        className="flex flex-col -m-6 dark:bg-background min-h-[calc(100vh-2.5rem)] items-center justify-center"
+        className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] items-center justify-center"
       >
         <LoadingSpinner size="lg" />
       </div>
@@ -1767,16 +1767,16 @@ export function Cron() {
   return (
     <div
       data-testid="cron-page"
-      className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden"
+      className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden"
     >
-      <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16 pb-0">
+      <div className="w-full max-w-6xl mx-auto flex flex-col h-full p-6 md:p-8">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-start justify-between mb-12 shrink-0 gap-4">
+        <div className="flex flex-col md:flex-row md:items-start justify-between mb-6 shrink-0 gap-4">
           <div>
-            <h1 className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight">
+            <h1 className="text-2xl font-sans text-foreground mb-1 font-medium tracking-normal">
               {t('title')}
             </h1>
-            <p className="text-subtitle text-foreground/70 font-medium">{t('subtitle')}</p>
+            <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
           </div>
           <div className="flex items-center gap-3 md:mt-2">
             <Button
@@ -1786,7 +1786,7 @@ export function Cron() {
                 void fetchConfiguredChannels();
               }}
               disabled={!isGatewayRunning}
-              className="h-9 text-meta font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors"
+              className="h-9 text-sm font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors"
             >
               <RefreshCw className="h-3.5 w-3.5 mr-2" />
               {t('refresh')}
@@ -1798,7 +1798,7 @@ export function Cron() {
                 setShowDialog(true);
               }}
               disabled={!isGatewayRunning}
-              className="h-9 text-meta font-medium rounded-full px-4 shadow-none"
+              className="h-9 text-sm font-medium rounded-md px-3 shadow-none"
             >
               <Plus className="h-3.5 w-3.5 mr-2" />
               {t('newTask')}
@@ -1807,7 +1807,7 @@ export function Cron() {
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2">
+        <div className="flex-1 overflow-y-auto pr-2 min-h-0 -mr-2">
           {/* Gateway Warning */}
           {showGatewayUnavailableWarning && (
             <div className="mb-8 p-4 rounded-xl border border-yellow-500/50 bg-yellow-500/10 flex items-center gap-3">
@@ -1826,50 +1826,50 @@ export function Cron() {
 
           {/* Statistics */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <div className="p-5 rounded-[24px] bg-black/5 dark:bg-white/5 border border-transparent flex flex-col justify-between min-h-[130px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
+            <div className="p-4 rounded-xl bg-surface-modal border border-black/10 dark:border-white/10 flex flex-col justify-between min-h-[112px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
               <div className="flex items-center justify-between">
                 <div className="h-11 w-11 rounded-full bg-primary/10 flex items-center justify-center">
                   <Clock className="h-5 w-5 text-primary" />
                 </div>
               </div>
               <div className="mt-4 flex items-baseline gap-3">
-                <p className="text-stat font-serif text-foreground">{safeJobs.length}</p>
+                <p className="text-2xl font-sans font-medium tabular-nums text-foreground">{safeJobs.length}</p>
                 <p className="text-sm font-medium text-muted-foreground">{t('stats.total')}</p>
               </div>
             </div>
 
-            <div className="p-5 rounded-[24px] bg-black/5 dark:bg-white/5 border border-transparent flex flex-col justify-between min-h-[130px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
+            <div className="p-4 rounded-xl bg-surface-modal border border-black/10 dark:border-white/10 flex flex-col justify-between min-h-[112px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
               <div className="flex items-center justify-between">
                 <div className="h-11 w-11 rounded-full bg-green-500/10 flex items-center justify-center">
                   <Play className="h-5 w-5 text-green-600 dark:text-green-500 ml-0.5" />
                 </div>
               </div>
               <div className="mt-4 flex items-baseline gap-3">
-                <p className="text-stat font-serif text-foreground">{activeJobs.length}</p>
+                <p className="text-2xl font-sans font-medium tabular-nums text-foreground">{activeJobs.length}</p>
                 <p className="text-sm font-medium text-muted-foreground">{t('stats.active')}</p>
               </div>
             </div>
 
-            <div className="p-5 rounded-[24px] bg-black/5 dark:bg-white/5 border border-transparent flex flex-col justify-between min-h-[130px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
+            <div className="p-4 rounded-xl bg-surface-modal border border-black/10 dark:border-white/10 flex flex-col justify-between min-h-[112px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
               <div className="flex items-center justify-between">
                 <div className="h-11 w-11 rounded-full bg-yellow-500/10 flex items-center justify-center">
                   <Pause className="h-5 w-5 text-yellow-600 dark:text-yellow-500" />
                 </div>
               </div>
               <div className="mt-4 flex items-baseline gap-3">
-                <p className="text-stat font-serif text-foreground">{pausedJobs.length}</p>
+                <p className="text-2xl font-sans font-medium tabular-nums text-foreground">{pausedJobs.length}</p>
                 <p className="text-sm font-medium text-muted-foreground">{t('stats.paused')}</p>
               </div>
             </div>
 
-            <div className="p-5 rounded-[24px] bg-black/5 dark:bg-white/5 border border-transparent flex flex-col justify-between min-h-[130px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
+            <div className="p-4 rounded-xl bg-surface-modal border border-black/10 dark:border-white/10 flex flex-col justify-between min-h-[112px] relative overflow-hidden group hover:bg-black/10 dark:hover:bg-white/10 transition-colors">
               <div className="flex items-center justify-between">
                 <div className="h-11 w-11 rounded-full bg-destructive/10 flex items-center justify-center">
                   <XCircle className="h-5 w-5 text-destructive" />
                 </div>
               </div>
               <div className="mt-4 flex items-baseline gap-3">
-                <p className="text-stat font-serif text-foreground">{failedJobs.length}</p>
+                <p className="text-2xl font-sans font-medium tabular-nums text-foreground">{failedJobs.length}</p>
                 <p className="text-sm font-medium text-muted-foreground">{t('stats.failed')}</p>
               </div>
             </div>
@@ -1877,7 +1877,7 @@ export function Cron() {
 
           {/* Jobs List */}
           {safeJobs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-3xl border border-transparent border-dashed">
+            <div className="flex flex-col items-center justify-center py-20 text-muted-foreground bg-black/5 dark:bg-white/5 rounded-xl border border-black/10 dark:border-white/10 border-dashed">
               <Clock className="h-10 w-10 mb-4 opacity-50" />
               <h3 className="text-lg font-medium mb-2 text-foreground">{t('empty.title')}</h3>
               <p className="text-sm text-center mb-6 max-w-md">{t('empty.description')}</p>
@@ -1894,7 +1894,7 @@ export function Cron() {
               </Button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {safeJobs.map((job) => {
                 const channelGroup = configuredChannels.find((group) => group.channelType === job.delivery?.channel);
                 const account = channelGroup?.accounts.find((item) => item.accountId === job.delivery?.accountId);

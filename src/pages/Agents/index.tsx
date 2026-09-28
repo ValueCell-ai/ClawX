@@ -100,7 +100,7 @@ export function Agents() {
 
   if (loading && !hasCompletedInitialLoad) {
     return (
-      <div className="flex flex-col -m-6 dark:bg-background min-h-[calc(100vh-2.5rem)] items-center justify-center">
+      <div className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] items-center justify-center">
         <LoadingSpinner size="lg" />
       </div>
     );
@@ -109,21 +109,21 @@ export function Agents() {
   return (
     <div
       data-testid="agents-page"
-      className="flex flex-col -m-6 dark:bg-background h-[calc(100vh-2.5rem)] overflow-hidden"
+      className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden"
     >
-      <div className="w-full max-w-5xl mx-auto flex flex-col h-full p-10 pt-16 pb-0">
-        <div className="flex flex-col md:flex-row md:items-start justify-between mb-12 shrink-0 gap-4">
+      <div className="w-full max-w-6xl mx-auto flex flex-col h-full p-6 md:p-8">
+        <div className="flex flex-col md:flex-row md:items-start justify-between mb-6 shrink-0 gap-4">
           <div>
-            <h1 className="text-5xl md:text-6xl font-serif text-foreground mb-3 font-normal tracking-tight">
+            <h1 className="text-2xl font-sans text-foreground mb-1 font-medium tracking-normal">
               {t('title')}
             </h1>
-            <p className="text-subtitle text-foreground/70 font-medium">{t('subtitle')}</p>
+            <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
           </div>
           <div className="flex items-center gap-3 md:mt-2">
             <Button
               variant="outline"
               onClick={handleRefresh}
-              className="h-9 text-meta font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors"
+              className="h-9 text-sm font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground transition-colors"
             >
               <RefreshCw className={cn('h-3.5 w-3.5 mr-2', isUsingStableValue && 'animate-spin')} />
               {t('refresh')}
@@ -131,7 +131,7 @@ export function Agents() {
             <Button
               data-testid="agents-add-button"
               onClick={() => setShowAddDialog(true)}
-              className="h-9 text-meta font-medium rounded-full px-4 shadow-none"
+              className="h-9 text-sm font-medium rounded-md px-3 shadow-none"
             >
               <Plus className="h-3.5 w-3.5 mr-2" />
               {t('addAgent')}
@@ -139,7 +139,7 @@ export function Agents() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto pr-2 pb-10 min-h-0 -mr-2">
+        <div className="flex-1 overflow-y-auto pr-2 min-h-0 -mr-2">
           {error && (
             <div className="mb-8 p-4 rounded-xl border border-destructive/50 bg-destructive/10 flex items-center gap-3">
               <AlertCircle className="h-5 w-5 text-destructive" />
@@ -238,7 +238,7 @@ function AgentCard({
     <div
       data-testid={`agent-card-${agent.id}`}
       className={cn(
-        'group flex items-start gap-4 p-4 rounded-2xl transition-all text-left border relative overflow-hidden bg-transparent border-transparent hover:bg-black/5 dark:hover:bg-white/5',
+        'group flex items-start gap-4 p-4 rounded-xl transition-all text-left border relative overflow-hidden bg-surface-modal border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5',
         agent.isDefault && 'bg-black/[0.04] dark:bg-white/[0.06]',
       )}
     >
@@ -375,7 +375,7 @@ function AddAgentDialog({
         <Card data-testid="add-agent-dialog">
           <CardHeader className="pb-2">
             <DialogTitle asChild>
-              <CardTitle className="text-2xl font-serif font-normal tracking-tight">
+              <CardTitle className="text-xl font-sans font-medium tracking-normal">
                 {t('createDialog.title')}
               </CardTitle>
             </DialogTitle>
@@ -411,14 +411,14 @@ function AddAgentDialog({
               <Button
                 variant="outline"
                 onClick={onClose}
-                className="h-9 text-meta font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
+                className="h-9 text-sm font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
               >
                 {t('common:actions.cancel')}
               </Button>
               <Button
                 onClick={() => void handleSubmit()}
                 disabled={saving || !name.trim()}
-                className="h-9 text-meta font-medium rounded-full px-4 shadow-none"
+                className="h-9 text-sm font-medium rounded-md px-3 shadow-none"
               >
                 {saving ? (
                   <>
@@ -513,7 +513,7 @@ function AgentSettingsModal({
           <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0">
             <div>
               <DialogTitle asChild>
-                <CardTitle className="text-2xl font-serif font-normal tracking-tight">
+                <CardTitle className="text-xl font-sans font-medium tracking-normal">
                   {t('settingsDialog.title', { name: agent.name })}
                 </CardTitle>
               </DialogTitle>
@@ -588,7 +588,7 @@ function AgentSettingsModal({
             <div className="space-y-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h3 className="text-xl font-serif text-foreground font-normal tracking-tight">
+                  <h3 className="text-lg font-sans text-foreground font-medium tracking-normal">
                     {t('settingsDialog.channelsTitle')}
                   </h3>
                   <p className="text-sm text-foreground/70 mt-1">{t('settingsDialog.channelsDescription')}</p>
@@ -763,7 +763,7 @@ function AgentModelModal({ open, agent, onClose }: { open: boolean; agent: Agent
           <CardHeader className="flex flex-row items-start justify-between pb-2">
             <div>
               <DialogTitle asChild>
-                <CardTitle className="text-2xl font-serif font-normal tracking-tight">
+                <CardTitle className="text-xl font-sans font-medium tracking-normal">
                   {t('settingsDialog.modelLabel')}
                 </CardTitle>
               </DialogTitle>
@@ -839,21 +839,21 @@ function AgentModelModal({ open, agent, onClose }: { open: boolean; agent: Agent
                 variant="outline"
                 onClick={handleUseDefaultModel}
                 disabled={savingModel || !normalizedDefaultModelRef || isUsingDefaultModelInForm}
-                className="h-9 text-meta font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
+                className="h-9 text-sm font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
               >
                 {t('settingsDialog.useDefaultModel')}
               </Button>
               <Button
                 variant="outline"
                 onClick={handleRequestClose}
-                className="h-9 text-meta font-medium rounded-full px-4 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
+                className="h-9 text-sm font-medium rounded-md px-3 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 shadow-none text-foreground/80 hover:text-foreground"
               >
                 {t('common:actions.cancel')}
               </Button>
               <Button
                 onClick={() => void handleSaveModel()}
                 disabled={savingModel || !selectedRuntimeProviderKey || !trimmedModelId || !modelChanged}
-                className="h-9 text-meta font-medium rounded-full px-4 shadow-none"
+                className="h-9 text-sm font-medium rounded-md px-3 shadow-none"
               >
                 {savingModel ? <RefreshCw className="h-4 w-4 animate-spin" /> : t('common:actions.save')}
               </Button>
