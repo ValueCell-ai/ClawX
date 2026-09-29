@@ -65,7 +65,18 @@
         "contentDialogTitle": "用量明细内容",
         "close": "关闭",
         "noUsage": "无用量数据",
-        "usageParseError": "用量解析失败"
+        "usageParseError": "用量解析失败",
+        "columns": {
+            "model": "模型 / 提供商",
+            "time": "时间",
+            "input": "输入",
+            "output": "输出",
+            "cacheRead": "缓存读取",
+            "cacheWrite": "缓存写入",
+            "total": "总量",
+            "cost": "费用（USD）",
+            "actions": "详情"
+        }
     },
     "imageGeneration": {
         "title": "图像生成",

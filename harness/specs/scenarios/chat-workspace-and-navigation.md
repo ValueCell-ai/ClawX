@@ -110,4 +110,6 @@ Skills management uses responsive cards with original names and descriptions, se
 
 Management page visual consistency is covered by `tests/e2e/management-page-style.spec.ts`: compact system-font headings, shared page padding and width, and contained scroll regions across Skills, Models, Agents, Channels, Cron, Settings and Computer Use in desktop and narrow dark layouts. Business controls remain unchanged.
 
-Provider configuration UI separates model and authentication metadata, keeps editing visible, and puts secondary actions in a keyboard-operable menu. Searchable provider selection and the fixed add footer are covered by `tests/e2e/provider-lifecycle.spec.ts`; no changes to validation or credential storage are implied.
+Provider configuration UI separates model and authentication metadata, keeps Set default visible, and puts editing and deletion in a keyboard-operable menu. Direct provider selection and the fixed add footer are covered by `tests/e2e/provider-lifecycle.spec.ts`; no changes to validation or credential storage are implied.
+
+Model configuration tabs use consistent compact headings, icons and forms. Token usage records use a semantic table with distinct cache read/write columns, status placeholders and horizontal overflow in narrow windows.

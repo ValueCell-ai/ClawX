@@ -49,7 +49,7 @@ test.describe('Image generation settings page', () => {
     await expect(page.getByTestId('image-generation-clear')).toBeDisabled();
   });
 
-  test('layers image generation settings on recessed and raised surfaces', async ({ page }) => {
+  test('uses consistent single-level model configuration cards', async ({ page }) => {
     await expect(page.getByTestId('setup-page')).toBeVisible();
     await page.getByTestId('setup-skip-button').click();
 
@@ -57,7 +57,7 @@ test.describe('Image generation settings page', () => {
     await unlockDeveloperMode(page);
 
     await expect(page.getByTestId('image-generation-settings-surface')).toBeVisible();
-    await expect(page.getByTestId('image-generation-settings-surface')).toHaveClass(/bg-surface-input/);
+    await expect(page.getByTestId('image-generation-settings-surface')).not.toHaveClass(/bg-surface-input/);
     for (const testId of [
       'image-generation-endpoint-card',
       'image-generation-runtime-card',

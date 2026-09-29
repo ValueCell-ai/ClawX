@@ -20,8 +20,8 @@ import {
 import { cn } from '@/lib/utils';
 
 const inputClasses =
-  'h-10 rounded-lg font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
-const labelClasses = 'text-sm text-foreground/80 font-bold';
+  'h-10 rounded-lg font-mono text-sm bg-surface-input border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
+const labelClasses = 'text-sm text-foreground/80 font-medium';
 
 function extractTestOutputPath(result: unknown): string | null {
   if (!result || typeof result !== 'object') return null;
@@ -186,27 +186,28 @@ export function ImageGenerationSettings() {
   };
 
   return (
-    <div data-testid="image-generation-settings" className="space-y-6">
+    <div data-testid="image-generation-settings" className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2
             data-testid="image-generation-settings-title"
             className="text-lg font-sans text-foreground font-medium tracking-normal flex items-center gap-2"
           >
-            <ImagePlus className="h-7 w-7 text-foreground/70" />
+            <ImagePlus className="h-5 w-5 text-muted-foreground" />
             {t('imageGeneration.title')}
           </h2>
-          <p className="text-meta text-muted-foreground mt-2 max-w-2xl">
+          <p className="text-sm text-muted-foreground mt-1">
             {t('imageGeneration.description')}
           </p>
         </div>
         <Button
           variant="outline"
           size="sm"
-          className="rounded-full shrink-0"
+          className="rounded-md h-8 w-8 p-0 shrink-0"
           onClick={() => void load()}
           disabled={loading}
           data-testid="image-generation-refresh"
+          aria-label={t('common:actions.refresh')}
         >
           <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
         </Button>
@@ -219,11 +220,11 @@ export function ImageGenerationSettings() {
       ) : (
         <div
           data-testid="image-generation-settings-surface"
-          className="space-y-5 rounded-2xl bg-surface-input p-1 dark:border-white/10 md:p-1"
+          className="space-y-3"
         >
           <div
             data-testid="image-generation-endpoint-card"
-            className="rounded-xl border border-black/10 bg-surface-modal p-4 shadow-sm dark:border-white/10"
+            className="rounded-xl border border-black/10 bg-surface-modal p-4 dark:border-white/10"
           >
           <div
             className="space-y-4"
@@ -284,7 +285,7 @@ export function ImageGenerationSettings() {
                       </p>
                     </div>
                     {snapshot?.openAiRelay?.apiKeyConfigured ? (
-                      <div className="flex items-center gap-1.5 text-tiny font-medium text-green-600 dark:text-green-500 bg-green-500/10 px-2 py-1 rounded-md">
+                      <div className="flex items-center gap-1.5 text-tiny font-medium text-green-700 dark:text-green-400 bg-green-500/10 px-2 py-1 rounded-md">
                         <div className="w-1.5 h-1.5 rounded-full bg-current" />
                         {t('settings:aiProviders.card.configured')}
                       </div>
@@ -308,6 +309,7 @@ export function ImageGenerationSettings() {
                     <button
                       type="button"
                       onClick={() => setShowRelayApiKey((value) => !value)}
+                      aria-label={t(showRelayApiKey ? 'settings:aiProviders.dialog.hideKey' : 'settings:aiProviders.dialog.showKey')}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     >
                       {showRelayApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -323,7 +325,7 @@ export function ImageGenerationSettings() {
 
           <div
             data-testid="image-generation-runtime-card"
-            className="space-y-5 rounded-xl border border-black/10 bg-surface-modal p-4 shadow-sm dark:border-white/10"
+            className="space-y-5 rounded-xl border border-black/10 bg-surface-modal p-4 dark:border-white/10"
           >
           <div className="space-y-2 max-w-xs">
             <Label htmlFor="image-gen-timeout" className={labelClasses}>
@@ -344,7 +346,7 @@ export function ImageGenerationSettings() {
           <div className="space-y-3">
             <Label className={labelClasses}>{t('imageGeneration.agentAuthTitle')}</Label>
             <p className="text-meta text-muted-foreground">{t('imageGeneration.agentAuthDesc')}</p>
-            <div className="rounded-2xl border border-black/10 dark:border-white/10 overflow-hidden">
+            <div className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden">
               <table className="w-full text-sm" data-testid="image-generation-agent-auth-table">
                 <thead>
                   <tr className="border-b border-black/10 dark:border-white/10 bg-black/5 dark:bg-white/5 text-left text-meta text-muted-foreground">
@@ -393,7 +395,7 @@ export function ImageGenerationSettings() {
 
           <div
             data-testid="image-generation-actions-card"
-            className="flex flex-wrap items-end gap-4 rounded-xl border border-black/10 bg-surface-modal p-4 shadow-sm dark:border-white/10"
+            className="flex flex-wrap items-end gap-4 rounded-xl border border-black/10 bg-surface-modal p-4 dark:border-white/10"
           >
             <div className="space-y-2 min-w-[200px]">
               <Label htmlFor="image-gen-test-agent" className={labelClasses}>
@@ -403,7 +405,7 @@ export function ImageGenerationSettings() {
                 id="image-gen-test-agent"
                 value={testAgentId}
                 onChange={(e) => setTestAgentId(e.target.value)}
-                className={cn(inputClasses, 'w-full bg-background')}
+                className={cn(inputClasses, 'w-full')}
                 data-testid="image-generation-test-agent"
               >
                 {(snapshot?.agents ?? []).map((agent) => (
@@ -416,7 +418,7 @@ export function ImageGenerationSettings() {
             </div>
             <Button
               variant="outline"
-              className="rounded-full h-10"
+              className="rounded-md h-9 text-sm"
               onClick={() => void handleTest()}
               disabled={testing || !hasConfiguredRelay || dirty}
               data-testid="image-generation-test-button"
@@ -429,7 +431,7 @@ export function ImageGenerationSettings() {
               {testing ? t('imageGeneration.testing') : t('imageGeneration.testButton')}
             </Button>
             <Button
-              className="rounded-full h-10"
+              className="rounded-md h-9 text-sm"
               onClick={() => void handleSave()}
               disabled={saving || !dirty}
               data-testid="image-generation-save"
@@ -439,7 +441,7 @@ export function ImageGenerationSettings() {
             </Button>
             <Button
               variant="outline"
-              className="rounded-full h-10 text-destructive hover:text-destructive"
+              className="rounded-md h-9 text-sm text-destructive hover:text-destructive"
               onClick={() => setClearConfirmOpen(true)}
               disabled={clearing || !hasConfiguredRelay}
               data-testid="image-generation-clear"

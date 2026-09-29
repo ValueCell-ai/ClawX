@@ -1,7 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, MessageSquare, Mic, ImagePlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useGatewayStore } from '@/stores/gateway';
 import { useSettingsStore } from '@/stores/settings';
@@ -282,7 +282,6 @@ export function Models() {
     safeUsagePage * usagePageSize,
   );
   const usageLoading = isGatewayRunning && fetchState.status === 'loading' && visibleUsageHistory.length === 0;
-  const usageRefreshing = isGatewayRunning && fetchState.status === 'loading' && visibleUsageHistory.length > 0;
 
   return (
     <div
@@ -322,15 +321,18 @@ export function Models() {
           >
             <TabsList className="bg-transparent p-0 gap-1">
               <TabsTrigger className="rounded-lg px-4 data-[state=active]:bg-black/5 dark:data-[state=active]:bg-white/10 data-[state=active]:shadow-none" value="chat" data-testid="models-tab-chat">
+                <MessageSquare aria-hidden="true" className="mr-2 h-4 w-4" />
                 {t('dashboard:models.tabs.chat')}
               </TabsTrigger>
               {devModeUnlocked && (
                 <>
                   <TabsTrigger className="rounded-lg px-4 data-[state=active]:bg-black/5 dark:data-[state=active]:bg-white/10 data-[state=active]:shadow-none" value="voice" data-testid="models-tab-voice">
-                    {t('dashboard:models.tabs.voice')}
+                    <Mic aria-hidden="true" className="mr-2 h-4 w-4" />
+                {t('dashboard:models.tabs.voice')}
                   </TabsTrigger>
                   <TabsTrigger className="rounded-lg px-4 data-[state=active]:bg-black/5 dark:data-[state=active]:bg-white/10 data-[state=active]:shadow-none" value="image-generation" data-testid="models-tab-image-generation">
-                    {t('dashboard:models.tabs.imageGeneration')}
+                    <ImagePlus aria-hidden="true" className="mr-2 h-4 w-4" />
+                {t('dashboard:models.tabs.imageGeneration')}
                   </TabsTrigger>
                 </>
               )}
@@ -368,10 +370,10 @@ export function Models() {
                   <FeedbackState state="empty" title={t('dashboard:recentTokenHistory.emptyForWindow')} />
                 </div>
               ) : (
-                <div className="space-y-6">
+                <div className="space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex flex-wrap items-center gap-3">
-                      <div className="flex rounded-xl bg-transparent p-1 border border-black/10 dark:border-white/10">
+                      <div className="flex gap-1 rounded-xl bg-transparent p-1 border border-black/10 dark:border-white/10">
                         <Button
                           variant={usageGroupBy === 'model' ? 'secondary' : 'ghost'}
                           size="sm"
@@ -403,7 +405,7 @@ export function Models() {
                           {t('dashboard:recentTokenHistory.groupByTime')}
                         </Button>
                       </div>
-                      <div className="flex rounded-xl bg-transparent p-1 border border-black/10 dark:border-white/10">
+                      <div className="flex gap-1 rounded-xl bg-transparent p-1 border border-black/10 dark:border-white/10">
                         <Button
                           variant={usageWindow === '7d' ? 'secondary' : 'ghost'}
                           size="sm"
@@ -452,9 +454,7 @@ export function Models() {
                       </div>
                     </div>
                     <p className="text-meta font-medium text-muted-foreground">
-                      {usageRefreshing
-                        ? t('dashboard:recentTokenHistory.loading')
-                        : t('dashboard:recentTokenHistory.showingLast', { count: filteredUsageHistory.length })}
+                      {t('dashboard:recentTokenHistory.showingLast', { count: filteredUsageHistory.length })}
                     </p>
                   </div>
 
@@ -467,98 +467,53 @@ export function Models() {
                     cacheLabel={t('dashboard:recentTokenHistory.cacheShort')}
                   />
 
-                  <div className="space-y-3 pt-2">
-                    {pagedUsageHistory.map((entry) => (
-                      <div
-                        key={`${entry.sessionId}-${entry.timestamp}`}
-                        data-testid="token-usage-entry"
-                        className="rounded-xl bg-surface-modal border border-black/10 dark:border-white/10 p-4 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="font-semibold text-sm text-foreground truncate">
-                              {entry.model || t('dashboard:recentTokenHistory.unknownModel')}
-                            </p>
-                            <p className="text-meta text-muted-foreground truncate mt-0.5">
-                              {[formatUsageSource(entry.provider), formatUsageSource(entry.agentId), entry.sessionId]
-                                .filter(Boolean)
-                                .join(' • ')}
-                            </p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className={getUsageTotalClass(entry)}>{formatUsageTotal(entry)}</p>
-                            {entry.usageStatus === 'missing' && (
-                              <p className="text-xs text-muted-foreground mt-0.5">
-                                {t('dashboard:recentTokenHistory.noUsage')}
-                              </p>
-                            )}
-                            {entry.usageStatus === 'error' && (
-                              <p className="text-xs text-red-500 dark:text-red-400 mt-0.5">
-                                {t('dashboard:recentTokenHistory.usageParseError')}
-                              </p>
-                            )}
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              {formatUsageTimestamp(entry.timestamp)}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-meta font-medium text-muted-foreground">
-                          {entry.usageStatus === 'available' || entry.usageStatus === undefined ? (
-                            <>
-                              <span className="flex items-center gap-1.5">
-                                <div className="w-2 h-2 rounded-full bg-usage-input"></div>
-                                {t('dashboard:recentTokenHistory.input', {
-                                  value: formatTokenCount(entry.inputTokens),
-                                })}
-                              </span>
-                              <span className="flex items-center gap-1.5">
-                                <div className="w-2 h-2 rounded-full bg-usage-output"></div>
-                                {t('dashboard:recentTokenHistory.output', {
-                                  value: formatTokenCount(entry.outputTokens),
-                                })}
-                              </span>
-                              {entry.cacheReadTokens > 0 && (
-                                <span className="flex items-center gap-1.5">
-                                  <div className="w-2 h-2 rounded-full bg-usage-cache"></div>
-                                  {t('dashboard:recentTokenHistory.cacheRead', {
-                                    value: formatTokenCount(entry.cacheReadTokens),
-                                  })}
-                                </span>
-                              )}
-                              {entry.cacheWriteTokens > 0 && (
-                                <span className="flex items-center gap-1.5">
-                                  <div className="w-2 h-2 rounded-full bg-usage-cache"></div>
-                                  {t('dashboard:recentTokenHistory.cacheWrite', {
-                                    value: formatTokenCount(entry.cacheWriteTokens),
-                                  })}
-                                </span>
-                              )}
-                            </>
-                          ) : (
-                            <span className="text-xs">
-                              {entry.usageStatus === 'missing'
-                                ? t('dashboard:recentTokenHistory.noUsage')
-                                : t('dashboard:recentTokenHistory.usageParseError')}
-                            </span>
-                          )}
-                          {typeof entry.costUsd === 'number' && Number.isFinite(entry.costUsd) && (
-                            <span className="flex items-center gap-1.5 ml-auto text-foreground/80 bg-black/5 dark:bg-white/5 px-2 py-0.5 rounded-md">
-                              {t('dashboard:recentTokenHistory.cost', { amount: entry.costUsd.toFixed(4) })}
-                            </span>
-                          )}
-                          {devModeUnlocked && entry.content && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-6 rounded-full px-2.5 text-tiny border-black/10 dark:border-white/10"
-                              onClick={() => setSelectedUsageEntry(entry)}
-                            >
-                              {t('dashboard:recentTokenHistory.viewContent')}
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                  <div className="overflow-x-auto rounded-xl border border-black/10 dark:border-white/10">
+                    <table data-testid="token-usage-table" className="w-full min-w-[760px] text-sm" aria-label={t('dashboard:recentTokenHistory.title')}>
+                      <thead className="bg-black/[0.025] dark:bg-white/5 text-xs text-muted-foreground">
+                        <tr>
+                          {['model', 'time', 'input', 'output', 'cacheRead', 'cacheWrite', 'total', 'cost', ...(devModeUnlocked ? ['actions'] : [])].map((column) => (
+                            <th key={column} scope="col" className={`px-3 py-2.5 font-medium whitespace-nowrap ${column === 'model' || column === 'time' ? 'text-left' : 'text-right'}`}>
+                              {t(`dashboard:recentTokenHistory.columns.${column}`)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-black/5 dark:divide-white/10">
+                        {pagedUsageHistory.map((entry) => {
+                          const hasUsage = !entry.usageStatus || entry.usageStatus === 'available';
+                          const statusLabel = entry.usageStatus === 'error'
+                            ? t('dashboard:recentTokenHistory.usageParseError')
+                            : entry.usageStatus === 'missing' ? t('dashboard:recentTokenHistory.noUsage') : undefined;
+                          return (
+                            <tr key={`${entry.sessionId}-${entry.timestamp}`} data-testid="token-usage-entry" className="hover:bg-black/[0.025] dark:hover:bg-white/5">
+                              <td className="px-3 py-2.5 max-w-[240px]">
+                                <p className="truncate font-medium" title={entry.model}>{entry.model || t('dashboard:recentTokenHistory.unknownModel')}</p>
+                                <p className="truncate text-xs text-muted-foreground mt-0.5" title={entry.sessionId}>
+                                  {[formatUsageSource(entry.provider), formatUsageSource(entry.agentId)].filter(Boolean).join(' · ')}
+                                </p>
+                                <span className="sr-only">{entry.sessionId}</span>
+                              </td>
+                              <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{formatUsageTimestamp(entry.timestamp)}</td>
+                              {[entry.inputTokens, entry.outputTokens, entry.cacheReadTokens, entry.cacheWriteTokens].map((value, index) => (
+                                <td key={index} className="px-3 py-2.5 text-right tabular-nums text-muted-foreground">{hasUsage ? formatTokenCount(value) : '—'}</td>
+                              ))}
+                              <td className="px-3 py-2.5 text-right tabular-nums" title={statusLabel}>
+                                <span className={getUsageTotalClass(entry)}>{formatUsageTotal(entry)}</span>
+                                {statusLabel && <span className="sr-only">{statusLabel}</span>}
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                                {typeof entry.costUsd === 'number' && Number.isFinite(entry.costUsd) ? `$${entry.costUsd.toFixed(4)}` : '—'}
+                              </td>
+                              {devModeUnlocked && <td className="px-3 py-2.5 text-right">
+                                {entry.content && <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground whitespace-nowrap" onClick={() => setSelectedUsageEntry(entry)}>
+                                  {t('dashboard:recentTokenHistory.viewContent')}
+                                </Button>}
+                              </td>}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
 
                   <div className="flex items-center justify-between gap-3 pt-2">
@@ -571,7 +526,7 @@ export function Models() {
                         size="sm"
                         onClick={() => setUsagePage((page) => Math.max(1, page - 1))}
                         disabled={safeUsagePage <= 1}
-                        className="rounded-full px-4 h-9 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5"
+                        className="rounded-md px-3 h-8 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5"
                       >
                         <ChevronLeft className="h-4 w-4 mr-1" />
                         {t('dashboard:recentTokenHistory.prev')}
@@ -581,7 +536,7 @@ export function Models() {
                         size="sm"
                         onClick={() => setUsagePage((page) => Math.min(usageTotalPages, page + 1))}
                         disabled={safeUsagePage >= usageTotalPages}
-                        className="rounded-full px-4 h-9 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5"
+                        className="rounded-md px-3 h-8 border-black/10 dark:border-white/10 bg-transparent hover:bg-black/5 dark:hover:bg-white/5"
                       >
                         {t('dashboard:recentTokenHistory.next')}
                         <ChevronRight className="h-4 w-4 ml-1" />
@@ -612,9 +567,9 @@ function formatTokenCount(value: number): string {
 }
 
 function getUsageTotalClass(entry: UsageHistoryEntry): string {
-  if (entry.usageStatus === 'error') return 'font-bold text-sm text-red-500 dark:text-red-400';
-  if (entry.usageStatus === 'missing') return 'font-bold text-sm text-muted-foreground';
-  return 'font-bold text-sm';
+  if (entry.usageStatus === 'error') return 'font-medium text-sm text-red-700 dark:text-red-400';
+  if (entry.usageStatus === 'missing') return 'font-medium text-sm text-muted-foreground';
+  return 'font-medium text-sm';
 }
 
 function formatUsageTotal(entry: UsageHistoryEntry): string {
@@ -666,7 +621,7 @@ function UsageBarChart({
   const maxTokens = Math.max(...groups.map((group) => group.totalTokens), 1);
 
   return (
-    <div className="space-y-4 bg-transparent p-5 rounded-2xl border border-black/10 dark:border-white/10">
+    <div className="space-y-3 bg-transparent p-4 rounded-xl border border-black/10 dark:border-white/10">
       <div className="flex flex-wrap gap-4 text-meta font-medium text-muted-foreground mb-2">
         <span className="inline-flex items-center gap-2">
           <span className="h-2.5 w-2.5 rounded-full bg-usage-input" />
@@ -689,7 +644,7 @@ function UsageBarChart({
               {totalLabel}: {formatTokenCount(group.totalTokens)}
             </span>
           </div>
-          <div className="h-3.5 overflow-hidden rounded-full bg-black/5 dark:bg-white/5">
+          <div className="h-2 overflow-hidden rounded-full bg-black/5 dark:bg-white/5">
             <div
               className="flex h-full overflow-hidden rounded-full"
               style={{

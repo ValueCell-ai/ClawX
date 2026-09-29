@@ -65,7 +65,18 @@
         "contentDialogTitle": "使用量詳細の内容",
         "close": "閉じる",
         "noUsage": "使用量なし",
-        "usageParseError": "使用量解析エラー"
+        "usageParseError": "使用量解析エラー",
+        "columns": {
+            "model": "モデル / プロバイダー",
+            "time": "日時",
+            "input": "入力",
+            "output": "出力",
+            "cacheRead": "キャッシュ読取",
+            "cacheWrite": "キャッシュ書込",
+            "total": "合計",
+            "cost": "費用（USD）",
+            "actions": "詳細"
+        }
     },
     "imageGeneration": {
         "title": "画像生成",

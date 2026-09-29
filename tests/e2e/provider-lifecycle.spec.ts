@@ -58,6 +58,9 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('provider-card-moonshot-default-e2e')).toContainText('Default');
     await expect(page.getByTestId('provider-card-deepseek-replacement-e2e')).toBeVisible();
 
+    await page.getByTestId('provider-set-default-deepseek-replacement-e2e').click();
+    await expect(page.getByTestId('provider-set-default-deepseek-replacement-e2e')).toHaveCount(0);
+    await page.getByTestId('provider-set-default-moonshot-default-e2e').click();
     await page.getByTestId('provider-card-moonshot-default-e2e').hover();
     await page.getByTestId('provider-more-moonshot-default-e2e').click();
     await page.getByTestId('provider-delete-moonshot-default-e2e').click();
@@ -472,6 +475,7 @@ test.describe('ClawX provider lifecycle', () => {
     await expect(page.getByTestId('provider-card-moonshot-edit')).toBeVisible();
 
     await page.getByTestId('provider-card-moonshot-edit').hover();
+    await page.getByTestId('provider-more-moonshot-edit').click();
     await page.getByTestId('provider-edit-moonshot-edit').click();
 
     await expect(page.getByTestId('provider-edit-model-id-moonshot-edit')).toBeDisabled();
@@ -625,16 +629,14 @@ test('provider configuration stays discoverable and its submit action stays visi
   await completeSetup(page);
   await seedTestProvider(page);
   await page.getByTestId('sidebar-nav-models').click();
-  await expect(page.getByTestId(`provider-edit-${TEST_PROVIDER_ID}`)).toHaveText('Edit configuration');
   await expect(page.getByTestId(`provider-model-${TEST_PROVIDER_ID}`)).toHaveText('kimi-k2.6');
   await page.getByTestId(`provider-more-${TEST_PROVIDER_ID}`).click();
+  await expect(page.getByTestId(`provider-edit-${TEST_PROVIDER_ID}`)).toHaveText('Edit configuration');
   await expect(page.getByTestId(`provider-delete-${TEST_PROVIDER_ID}`)).toBeVisible();
   await page.keyboard.press('Escape');
   await page.getByTestId('providers-add-button').click();
-  await page.getByTestId('provider-search').fill('no-such-provider');
-  await expect(page.getByRole('status').filter({ hasText: 'No matching providers' })).toBeVisible();
-  await page.getByTestId('provider-search').fill('custom');
-  await expect(page.getByTestId('add-provider-type-openai')).toHaveCount(0);
+  await expect(page.getByTestId('provider-search')).toHaveCount(0);
+  await expect(page.getByTestId('add-provider-type-openai')).toBeVisible();
   await page.getByTestId('add-provider-type-custom').click();
   await page.setViewportSize({ width: 900, height: 650 });
   await expect(page.getByTestId('add-provider-submit-button')).toBeInViewport();

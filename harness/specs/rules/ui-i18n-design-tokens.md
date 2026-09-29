@@ -29,4 +29,6 @@ Home skill shortcuts must render in stable positions before the catalog resolves
 
 Skills, Models, Agents, Channels, Cron, Settings and Computer Use management headings use compact system typography (`font-sans font-medium`) matching the chat welcome. Preserve original skill names and descriptions without product-specific aliases. Cards expose semantic detail buttons and named switches; paths and file previews belong in always-visible read-only details without enable/disable/uninstall actions. Hide discovery and Add skills when marketplace capability is unavailable, without invoking unsupported marketplace routes.
 
-Provider management preserves raw account labels and model IDs. Keep Edit configuration visible; secondary actions use an accessible menu. Provider search includes localized Custom, supports an empty state, and respects existing availability rules. Add-provider actions stay outside the scrolling form; preserve OAuth-specific flows and credential validation.
+Provider management preserves raw account labels and model IDs. Keep Set default visible on non-default cards; Edit configuration and deletion use an accessible menu. Provider selection directly lists available providers with Custom first. Add-provider actions stay outside the scrolling form; preserve OAuth-specific flows and credential validation.
+
+Model usage tables retain localized column headers, accessible missing/error status labels and separate input/output/cache metrics. Configuration tab icons are decorative and share a consistent size.

@@ -21,8 +21,8 @@ import type { AsrConfig, AsrPreset, AsrProtocol } from '@shared/host-api/contrac
 import { cn } from '@/lib/utils';
 
 const inputClasses =
-  'h-10 rounded-lg font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-[color,background-color,border-color,box-shadow] text-foreground placeholder:text-foreground/40';
-const labelClasses = 'text-sm text-foreground/80 font-bold';
+  'h-10 rounded-lg font-mono text-sm bg-surface-input border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-[color,background-color,border-color,box-shadow] text-foreground placeholder:text-foreground/40';
+const labelClasses = 'text-sm text-foreground/80 font-medium';
 
 const ASR_LANGUAGE_OPTIONS = ['zh', 'en'] as const;
 
@@ -147,16 +147,16 @@ export function AsrSettings() {
   const providerConsoleUrl = ASR_PROVIDER_CONSOLES[preset];
 
   return (
-    <div data-testid="asr-settings" className="space-y-6">
+    <div data-testid="asr-settings" className="space-y-4">
       <div>
         <h2
           data-testid="asr-settings-title"
           className="text-lg font-sans text-foreground font-medium tracking-normal flex items-center gap-2"
         >
-          <Mic className="h-7 w-7 text-foreground/70" />
+          <Mic className="h-5 w-5 text-muted-foreground" />
           {t('settings:asr.title')}
         </h2>
-        <p className="text-meta text-muted-foreground mt-2 max-w-2xl">
+        <p className="text-sm text-muted-foreground mt-1">
           {t('settings:asr.description')}
         </p>
       </div>
@@ -168,7 +168,7 @@ export function AsrSettings() {
       ) : (
         <div
           data-testid="asr-settings-surface"
-          className="space-y-4 rounded-xl border border-black/10 bg-surface-modal p-4 shadow-sm dark:border-white/10"
+          className="space-y-4 rounded-xl border border-black/10 bg-surface-modal p-4 dark:border-white/10"
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
@@ -179,7 +179,7 @@ export function AsrSettings() {
                 id="asr-protocol"
                 value={protocol}
                 onChange={(e) => handleProtocolChange(e.target.value as AsrProtocol)}
-                className={cn(inputClasses, 'w-full bg-background')}
+                className={cn(inputClasses, 'w-full')}
                 data-testid="asr-protocol-select"
               >
                 {ASR_PROTOCOLS.map((protocolKey) => (
@@ -197,7 +197,7 @@ export function AsrSettings() {
                 id="asr-preset"
                 value={preset}
                 onChange={(e) => handlePresetChange(e.target.value as AsrPreset)}
-                className={cn(inputClasses, 'w-full bg-background')}
+                className={cn(inputClasses, 'w-full')}
                 data-testid="asr-preset-select"
               >
                 {ASR_PRESETS_BY_PROTOCOL[protocol].map((presetKey) => (
@@ -287,7 +287,7 @@ export function AsrSettings() {
                   id="asr-language"
                   value={language}
                   onChange={(e) => setLanguage(e.target.value)}
-                  className={cn(inputClasses, 'w-full bg-background')}
+                  className={cn(inputClasses, 'w-full')}
                   data-testid="asr-language-input"
                 >
                   <option value="">{t('settings:asr.languageAuto')}</option>
@@ -332,7 +332,7 @@ export function AsrSettings() {
           </div>
           <div className="flex justify-end">
             <Button
-              className="rounded-full h-10"
+              className="rounded-md h-9 text-sm"
               onClick={() => void handleSave()}
               disabled={saving}
               data-testid="asr-save-button"

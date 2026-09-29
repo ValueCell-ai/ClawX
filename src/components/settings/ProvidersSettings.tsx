@@ -8,6 +8,7 @@ import {
   MoreHorizontal,
   Trash2,
   Edit,
+  MessageSquare,
   Eye,
   EyeOff,
   Check,
@@ -280,9 +281,10 @@ export function ProvidersSettings() {
   };
 
   return (
-    <div data-testid="providers-settings" className="space-y-6">
+    <div data-testid="providers-settings" className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 data-testid="providers-settings-title" className="text-lg font-sans text-foreground font-medium tracking-normal">
+        <h2 data-testid="providers-settings-title" className="flex items-center gap-2 text-lg font-sans text-foreground font-medium tracking-normal">
+          <MessageSquare aria-hidden="true" className="h-5 w-5 text-muted-foreground" />
           {t('aiProviders.title', 'AI Providers')}
         </h2>
         <Button data-testid="providers-add-button" onClick={() => setShowAddDialog(true)} className="rounded-md px-3 h-9 shadow-none font-medium text-meta">
@@ -598,16 +600,16 @@ function ProviderCard({
 
         {!isEditing && (
           <div className="flex items-center gap-1 shrink-0">
-            <Button data-testid={`provider-edit-${account.id}`} variant="outline" size="sm" onClick={onEdit}>
-              <Edit className="h-3.5 w-3.5 mr-2" />{t('aiProviders.card.editKey')}
-            </Button>
+            {!isDefault && <Button data-testid={`provider-set-default-${account.id}`} variant="ghost" size="sm" className="h-8 px-2 text-xs font-normal text-muted-foreground hover:text-foreground" onClick={onSetDefault}>
+              <Check className="h-3.5 w-3.5 mr-1.5" />{t('aiProviders.card.setDefault')}
+            </Button>}
             <DropdownMenu.Root>
               <DropdownMenu.Trigger asChild>
                 <Button data-testid={`provider-more-${account.id}`} variant="ghost" size="icon" className="h-9 w-9" aria-label={t('aiProviders.card.more')}><MoreHorizontal className="h-4 w-4" /></Button>
               </DropdownMenu.Trigger>
               <DropdownMenu.Portal>
                 <DropdownMenu.Content align="end" sideOffset={4} className="z-50 min-w-40 rounded-lg border border-black/10 dark:border-white/10 bg-surface-modal p-1 shadow-lg">
-                  {!isDefault && <DropdownMenu.Item data-testid={`provider-set-default-${account.id}`} onSelect={onSetDefault} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm outline-none cursor-pointer focus:bg-black/5 dark:focus:bg-white/10"><Check className="h-4 w-4" />{t('aiProviders.card.setDefault')}</DropdownMenu.Item>}
+                  <DropdownMenu.Item data-testid={`provider-edit-${account.id}`} onSelect={onEdit} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm outline-none cursor-pointer focus:bg-black/5 dark:focus:bg-white/10"><Edit className="h-4 w-4" />{t('aiProviders.card.editKey')}</DropdownMenu.Item>
                   <DropdownMenu.Item data-testid={`provider-delete-${account.id}`} onSelect={onDelete} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-destructive outline-none cursor-pointer focus:bg-black/5 dark:focus:bg-white/10"><Trash2 className="h-4 w-4" />{t('aiProviders.card.delete')}</DropdownMenu.Item>
                 </DropdownMenu.Content>
               </DropdownMenu.Portal>
@@ -962,7 +964,6 @@ function AddProviderDialog({
   devModeUnlocked,
 }: AddProviderDialogProps) {
   const { t, i18n } = useTranslation('settings');
-  const [providerQuery, setProviderQuery] = useState('');
   const [selectedType, setSelectedType] = useState<ProviderType | null>(null);
   const [name, setName] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -1000,7 +1001,6 @@ function AddProviderDialog({
     setPrevOpen(open);
     if (open) {
       setSelectedType(null);
-      setProviderQuery('');
       setName('');
       setApiKey('');
       setBaseUrl('');
@@ -1237,7 +1237,7 @@ function AddProviderDialog({
     return vendor.supportsMultipleAccounts || !existingVendorIds.has(type.id);
   });
 
-  const filteredTypes = availableTypes.filter(type => `${type.name} ${type.id} ${type.id === 'custom' ? t('aiProviders.custom') : ''}`.toLowerCase().includes(providerQuery.trim().toLowerCase())).sort((a, b) => Number(b.id === 'custom') - Number(a.id === 'custom'));
+  const sortedTypes = [...availableTypes].sort((a, b) => Number(b.id === 'custom') - Number(a.id === 'custom'));
 
   const handleAdd = async () => {
     if (!selectedType) return;
@@ -1335,10 +1335,8 @@ function AddProviderDialog({
         <CardContent className="overflow-y-auto min-h-0 flex-1 px-5 pb-5">
           {!selectedType ? (
             <div className="space-y-3">
-              <Input data-testid="provider-search" aria-label={t('aiProviders.dialog.search')} placeholder={t('aiProviders.dialog.search')} value={providerQuery} onChange={(event) => setProviderQuery(event.target.value)} className="h-10 bg-surface-input" />
-              {filteredTypes.length === 0 && <p role="status" className="py-8 text-center text-sm text-muted-foreground">{t('aiProviders.dialog.noResults')}</p>}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {filteredTypes.map((type) => (
+              {sortedTypes.map((type) => (
                 <button
                   data-testid={`add-provider-type-${type.id}`}
                   key={type.id}

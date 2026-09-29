@@ -91,7 +91,7 @@ The Skills page separates My skills and Discover skills, preserves original name
 
 Management pages share compact system-font headings, consistent page padding, and bordered cards across Skills, Models, Agents, Channels, Cron, Settings and Computer Use.
 
-Model provider cards separate model IDs from credential status and keep editing visible. Provider selection supports search, with Custom first; the compact configuration dialog keeps its submit action visible while scrolling.
+Model provider cards separate model IDs from credential status and expose Set default, with editing and deletion in the More menu. Provider selection lists available providers directly, with Custom first; the compact configuration dialog keeps its submit action visible while scrolling.
 - **🔐 Secure Provider Integration**: Connect OpenAI, Anthropic, Z.AI / GLM, and other providers with credentials stored in the native system keychain, alongside custom providers and compatibility fallbacks. When the interface language is Chinese, the provider catalog also offers TokenDance with browser OAuth, PKCE, and ClawX request attribution. In Developer Mode, configure image-generation endpoints in **Models -> Image Generation**; completed generated images render inline in Chat instead of exposing OpenClaw's raw `MEDIA:` path.
 - **💻 Local Computer Use**: On macOS 13+ (Intel or Apple silicon) and Windows x64, agents use the bundled native CUA CLI for window, accessibility, menu, verification, and desktop operations. Primary-display capture and input remain available. The driver runs locally without OpenClaw node pairing or a separate runtime download.
 - **🌙 Adaptive Theming**: Choose light mode, dark mode, or system-synchronized themes.
@@ -276,3 +276,5 @@ ClawX is released under the [MIT License](LICENSE). You're free to use, modify, 
 <p align="center">
   <sub>Built with ❤️ by the ValueCell Team</sub>
 </p>
+
+Model configuration tabs share compact icons, form controls and card styling. Recent Token Usage uses a compact table with separate input, output, cache read/write, total and USD cost columns; narrow windows can scroll the table horizontally.

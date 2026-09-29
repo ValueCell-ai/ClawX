@@ -65,7 +65,18 @@
         "contentDialogTitle": "Usage detail content",
         "close": "Close",
         "noUsage": "No usage",
-        "usageParseError": "Usage parse error"
+        "usageParseError": "Usage parse error",
+        "columns": {
+            "model": "Model / provider",
+            "time": "Time",
+            "input": "Input",
+            "output": "Output",
+            "cacheRead": "Cache read",
+            "cacheWrite": "Cache write",
+            "total": "Total",
+            "cost": "Cost (USD)",
+            "actions": "Details"
+        }
     },
     "imageGeneration": {
         "title": "Image Generation",

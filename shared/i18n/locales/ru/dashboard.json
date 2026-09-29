@@ -65,7 +65,18 @@
         "contentDialogTitle": "Детали использования",
         "close": "Закрыть",
         "noUsage": "Нет использования",
-        "usageParseError": "Ошибка解析 использования"
+        "usageParseError": "Ошибка解析 использования",
+        "columns": {
+            "model": "Модель / провайдер",
+            "time": "Время",
+            "input": "Ввод",
+            "output": "Вывод",
+            "cacheRead": "Чтение кэша",
+            "cacheWrite": "Запись кэша",
+            "total": "Всего",
+            "cost": "Стоимость (USD)",
+            "actions": "Подробности"
+        }
     },
     "imageGeneration": {
         "title": "Генерация изображений",
