@@ -3487,7 +3487,7 @@ describe('batchSyncConfigFields', () => {
     });
   });
 
-  it('overrides ClawX-managed compaction values while preserving unrelated settings', async () => {
+  it('overrides ClawX-managed compaction values while preserving explicit user tuning', async () => {
     await writeOpenClawJson({
       gateway: { auth: { mode: 'token', token: 'old' } },
       agents: {
@@ -3515,8 +3515,8 @@ describe('batchSyncConfigFields', () => {
     expect(defaults.compaction).toEqual({
       mode: 'default',
       qualityGuard: { enabled: false },
-      keepRecentTokens: 0,
-      recentTurnsPreserve: 0,
+      keepRecentTokens: 50_000,
+      recentTurnsPreserve: 9,
       identifierPolicy: 'custom',
       identifierInstructions: COMPACTION_IDENTIFIER_INSTRUCTIONS,
       reserveTokensFloor: 50_000,

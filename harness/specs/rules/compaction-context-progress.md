@@ -12,6 +12,10 @@ requiredTests:
 
 # Compaction Context Progress
 
+ClawX seeds `keepRecentTokens: 0` and `recentTurnsPreserve: 0` only when those
+fields are absent. Explicit user values are user tuning and must survive config
+sync and Gateway restarts; do not overwrite them to enforce this policy.
+
 When ClawX configures `keepRecentTokens: 0`, OpenClaw must summarize every
 completed pre-compaction turn and harden the persisted boundary to the new
 compaction entry. It must not replay a completed message merely because that

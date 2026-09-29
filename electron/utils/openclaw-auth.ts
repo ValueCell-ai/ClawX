@@ -919,7 +919,8 @@ function ensureCompactionSafeguardDefault(config: Record<string, unknown>): bool
 
 /**
  * Enforce ClawX's compaction quality policy and backfill missing safety fields.
- * Explicit reserveTokensFloor and midTurnPrecheck.enabled choices are preserved.
+ * Explicit keepRecentTokens, recentTurnsPreserve, reserveTokensFloor, and
+ * midTurnPrecheck.enabled choices are preserved.
  */
 function syncCompactionSafetyDefaults(config: Record<string, unknown>): boolean {
   const agents = (config.agents && typeof config.agents === 'object'
@@ -946,11 +947,11 @@ function syncCompactionSafetyDefaults(config: Record<string, unknown>): boolean 
     compaction.qualityGuard = { enabled: false };
     changed = true;
   }
-  if (compaction.recentTurnsPreserve !== CLAWX_COMPACTION_RECENT_TURNS_PRESERVE) {
+  if (compaction.recentTurnsPreserve === undefined) {
     compaction.recentTurnsPreserve = CLAWX_COMPACTION_RECENT_TURNS_PRESERVE;
     changed = true;
   }
-  if (compaction.keepRecentTokens !== CLAWX_COMPACTION_KEEP_RECENT_TOKENS) {
+  if (compaction.keepRecentTokens === undefined) {
     compaction.keepRecentTokens = CLAWX_COMPACTION_KEEP_RECENT_TOKENS;
     changed = true;
   }

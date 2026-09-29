@@ -57,7 +57,7 @@ expectedUserBehavior:
   - The chat context meter immediately uses the newly selected model's effective context window instead of retaining the previous model's ACP-reported limit.
   - Transport ceilings, including the 272k ChatGPT subscription limit, apply even when a configured model row advertises a larger native context window.
   - Startup configuration sync corrects stale local reserveTokensFloor values using the active default model's explicit context metadata, or resets the floor to 50000 when that metadata is absent.
-  - Startup configuration sync overwrites agents.defaults.compaction.recentTurnsPreserve and keepRecentTokens with 0 so completed turns are summarized instead of replayed verbatim after compaction.
+  - Startup configuration sync backfills missing agents.defaults.compaction.recentTurnsPreserve and keepRecentTokens with 0 so completed turns are summarized instead of replayed verbatim after compaction, and preserves explicit user values for both fields across saves and Gateway restarts.
   - Developer Mode displays the currently applied compaction reserve-token floor and explains the explicit-context 25% policy plus its 50000-token fallback.
   - ClawX does not restart an owned Gateway while its stderr confirms that an OpenClaw compaction is in progress; recovery resumes after compaction ends or after the bounded compaction grace period expires.
 requiredProfiles:
@@ -87,7 +87,7 @@ requiredTests:
 acceptance:
   - The applied reserveTokensFloor is floor(effectiveContextWindow * 0.25) only when the selected model row explicitly provides a valid contextWindow or contextTokens; otherwise it is 50000 and never preserves an older local floor value.
   - Agent snapshots expose that same effective context window, and the composer recomputes its displayed total and percentage after a model switch even before ACP emits another usage update.
-  - The applied recentTurnsPreserve and keepRecentTokens are always 0, including when the local OpenClaw config contains other explicit values.
+  - The applied recentTurnsPreserve and keepRecentTokens default to 0 when absent; explicit values in the local OpenClaw config are never overwritten by ClawX sync.
   - A zero retained-history budget summarizes every completed turn before the persisted compaction boundary is hardened to the compaction entry.
   - Rebuilding context from a zero-tail compaction checkpoint does not replay any completed pre-compaction message verbatim.
   - Missing model context metadata is never replaced by a model-name inference for compaction budgeting, and a missing or malformed model reference uses the 50000-token reserve fallback.
