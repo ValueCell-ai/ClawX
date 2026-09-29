@@ -137,7 +137,7 @@ export function IssueReportExport() {
           className="max-w-2xl overflow-hidden rounded-3xl border border-black/10 bg-surface-modal p-0 shadow-2xl dark:border-white/10"
         >
           <div className="space-y-1 border-b border-black/5 px-6 py-5 dark:border-white/5">
-            <DialogTitle className="font-serif text-2xl font-normal tracking-tight">
+            <DialogTitle className="font-sans text-xl font-medium tracking-normal">
               {exportedPath
                 ? t('settings:issueReport.completeTitle')
                 : t('settings:issueReport.dialogTitle')}

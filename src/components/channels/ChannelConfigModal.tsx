@@ -569,7 +569,7 @@ export function ChannelConfigModal({
       >
         <CardHeader className="flex flex-row items-start justify-between pb-2 shrink-0">
           <div>
-            <CardTitle className="text-2xl font-serif font-normal tracking-tight">
+            <CardTitle className="text-xl font-sans font-medium tracking-normal">
               {selectedType
                 ? isExistingConfig
                   ? t('dialog.updateTitle', { name: CHANNEL_NAMES[selectedType] })
@@ -651,7 +651,7 @@ export function ChannelConfigModal({
                     <ShieldCheck className="h-7 w-7" />
                   )}
                 </div>
-                <h3 className="text-xl font-serif font-normal tracking-tight">
+                <h3 className="text-xl font-sans font-medium tracking-normal">
                   {t('dialog.dingtalkWorkspaceAuthTitle')}
                 </h3>
                 <p className="text-sm text-muted-foreground max-w-lg mx-auto">

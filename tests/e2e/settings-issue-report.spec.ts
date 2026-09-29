@@ -101,6 +101,8 @@ test.describe('settings issue report export', () => {
       await page.getByTestId('settings-issue-report-open').click();
 
       const dialog = page.getByTestId('issue-report-dialog');
+      await expect(dialog.getByRole('heading', { level: 2 })).toHaveCSS('font-weight', '500');
+      await expect(dialog.getByRole('heading', { level: 2 })).toHaveCSS('font-size', '20px');
       await expect(dialog).toBeVisible();
       await expect(page.getByTestId('issue-report-contents')).toContainText('Conversation transcripts');
       await expect(page.getByTestId('issue-report-contents')).toContainText('OpenClaw configuration');

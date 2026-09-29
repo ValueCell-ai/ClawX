@@ -199,7 +199,7 @@ export function Setup() {
             className="mx-auto max-w-2xl p-8"
           >
             <div className="text-center mb-8">
-              <h1 className="text-3xl font-serif font-normal tracking-tight mb-2">{t(`steps.${step.id}.title`)}</h1>
+              <h1 className="text-2xl font-sans font-medium tracking-normal mb-2">{t(`steps.${step.id}.title`)}</h1>
               <p className="text-muted-foreground">{t(`steps.${step.id}.description`)}</p>
             </div>
 
@@ -269,7 +269,7 @@ function WelcomeContent() {
       <div className="mb-4 flex justify-center">
         <img src={clawxIcon} alt="ClawX" className="h-16 w-16" />
       </div>
-      <h2 className="text-xl font-serif font-normal tracking-tight">{t('welcome.title')}</h2>
+      <h2 className="text-xl font-sans font-medium tracking-normal">{t('welcome.title')}</h2>
       <p className="text-muted-foreground">
         {t('welcome.description')}
       </p>
@@ -554,7 +554,7 @@ function RuntimeContent({ onStatusChange }: RuntimeContentProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-serif font-normal tracking-tight">{t('runtime.title')}</h2>
+        <h2 className="text-xl font-sans font-medium tracking-normal">{t('runtime.title')}</h2>
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" onClick={handleShowLogs}>
             {t('runtime.viewLogs')}
@@ -731,7 +731,7 @@ function InstallingContent({ skills, onComplete, onSkip }: InstallingContentProp
     <div className="space-y-6">
       <div className="text-center">
         <div className="text-4xl mb-4">⚙️</div>
-        <h2 className="text-xl font-serif font-normal tracking-tight mb-2">{t('installing.title')}</h2>
+        <h2 className="text-xl font-sans font-medium tracking-normal mb-2">{t('installing.title')}</h2>
         <p className="text-muted-foreground">
           {t('installing.subtitle')}
         </p>
@@ -836,7 +836,7 @@ function CompleteContent({ installedSkills }: CompleteContentProps) {
   return (
     <div className="text-center space-y-6">
       <div className="text-6xl mb-4">🎉</div>
-      <h2 className="text-xl font-serif font-normal tracking-tight">{t('complete.title')}</h2>
+      <h2 className="text-xl font-sans font-medium tracking-normal">{t('complete.title')}</h2>
       <p className="text-muted-foreground">
         {t('complete.subtitle')}
       </p>

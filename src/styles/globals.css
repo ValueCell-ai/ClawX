@@ -91,7 +91,7 @@
  *
  *   TYPOGRAPHY
  *   ─────────────────────────────────────────────────────────────────────
- *     page H1 / H2     :  font-serif font-normal tracking-tight
+ *     page H1 / H2     :  font-sans font-medium tracking-normal
  *                         · hero pages   text-5xl md:text-6xl  (Settings,
  *                                                               Cron, Models)
  *                         · wizard steps text-3xl / section H2 text-xl

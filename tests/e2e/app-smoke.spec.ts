@@ -4,6 +4,10 @@ test.describe('ClawX Electron smoke flows', () => {
   test('shows the setup wizard on a fresh profile', async ({ page }) => {
     await expect(page.getByTestId('setup-page')).toBeVisible();
     await expect(page.getByTestId('setup-welcome-step')).toBeVisible();
+    for (const heading of await page.getByTestId('setup-page').getByRole('heading').all()) {
+      await expect(heading).toHaveCSS('font-weight', '500');
+      expect(await heading.evaluate(el => getComputedStyle(el).fontFamily)).not.toMatch(/Georgia|Times New Roman/);
+    }
     await expect(page.getByTestId('setup-skip-button')).toBeVisible();
   });
 

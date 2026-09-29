@@ -113,3 +113,5 @@ Management page visual consistency is covered by `tests/e2e/management-page-styl
 Provider configuration UI separates model and authentication metadata, keeps Set default visible, and puts editing and deletion in a keyboard-operable menu. Direct provider selection and the fixed add footer are covered by `tests/e2e/provider-lifecycle.spec.ts`; no changes to validation or credential storage are implied.
 
 Model configuration tabs use consistent compact headings, icons and forms. Token usage records use a semantic table with distinct cache read/write columns, status placeholders and horizontal overflow in narrow windows.
+
+Setup wizard, channel configuration and issue-report dialog headings use the same sans-serif medium-weight typography as management pages. Validate with app-smoke, channels-account-id-validation and settings-issue-report Electron specs.

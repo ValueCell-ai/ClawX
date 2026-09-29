@@ -6,7 +6,7 @@
  *
  * This config layers ClawX's own visual language on top of shadcn/ui:
  *
- *   1. fontFamily — All three stacks (sans / serif / mono) are pinned
+ *   1. fontFamily — Both stacks (sans / mono) are pinned
  *      explicitly so we never silently inherit Tailwind's evolving defaults.
  *      This locks the rendering on macOS, Windows, and Linux to the same
  *      glyph sources we ship to designers.
@@ -62,7 +62,7 @@ module.exports = {
        * fontFamily
        * ──────────────────────────────────────────────────────────────
        *
-       * All three stacks are pinned explicitly to remove dependency on
+       * Both stacks are pinned explicitly to remove dependency on
        * Tailwind's default fontFamily values. The intent:
        *
        *   - sans  : the everyday UI body / control font. Apple-first
@@ -71,14 +71,6 @@ module.exports = {
        *             Segoe UI for Windows, Roboto for Linux/Android,
        *             and finally the four Apple/Segoe/Noto color emoji
        *             fonts so emoji never fall back to a serif.
-       *
-       *   - serif : Georgia-first display stack used by all page H1/H2.
-       *             Previously written as inline `style={{ fontFamily }}`
-       *             in 17 places — that's been collapsed to this token,
-       *             so `font-serif` alone now reproduces the original
-       *             rendering exactly. (NOTE: deliberately omits
-       *             `ui-serif` — on macOS that resolves to "New York"
-       *             which we explicitly do not want.)
        *
        *   - mono  : standard developer-font stack. Used for IDs, paths,
        *             tokens, timestamps, code blocks, CLI output etc.
@@ -99,13 +91,6 @@ module.exports = {
           '"Segoe UI Emoji"',
           '"Segoe UI Symbol"',
           '"Noto Color Emoji"',
-        ],
-        serif: [
-          'Georgia',
-          'Cambria',
-          '"Times New Roman"',
-          'Times',
-          'serif',
         ],
         mono: [
           'ui-monospace',
@@ -141,7 +126,7 @@ module.exports = {
        *   │ lg    (TW)   │ 18px     │ 28px        │ Sheet / Confirm titles       │
        *   │ xl    (TW)   │ 20px     │ 28px        │ Setup steps, large emoji     │
        *   │ 2xl   (TW)   │ 24px     │ 32px        │ CardTitle                    │
-       *   │ 3xl   (TW)   │ 30px     │ 36px        │ section H2 (serif)           │
+       *   │ 3xl   (TW)   │ 30px     │ 36px        │ large display text           │
        *   │ 4xl   (TW)   │ 36px     │ 40px        │ Chat empty-state H1          │
        *   │ stat  (new)  │ 40px     │ 1           │ dashboard hero numbers       │
        *   │ 5xl   (TW)   │ 48px     │ 1           │ page H1 (narrow viewport)    │
