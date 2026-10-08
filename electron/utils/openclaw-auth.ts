@@ -355,7 +355,32 @@ interface OAuthProfileEntry {
   accountId?: string;
 }
 
+interface OAuthToken {
+  access: string;
+  refresh: string;
+  expires: number;
+  email?: string;
+  projectId?: string;
+  accountId?: string;
+}
+
 type AuthProfilesStore = PersistedAuthProfilesStore;
+
+function hasUsableProviderCredential(store: AuthProfilesStore, provider: string): boolean {
+  return Object.values(store.profiles).some((profile) => {
+    if (profile.provider !== provider) return false;
+    if (profile.type === 'api_key') {
+      return Boolean(profile.key?.trim()) || profile.keyRef != null;
+    }
+    if (profile.type === 'token') {
+      return (typeof profile.token === 'string' && profile.token.trim().length > 0)
+        || profile.tokenRef != null;
+    }
+    return profile.type === 'oauth'
+      && ((typeof profile.access === 'string' && profile.access.trim().length > 0)
+        || (typeof profile.refresh === 'string' && profile.refresh.trim().length > 0));
+  });
+}
 
 function removeProfilesForProvider(store: AuthProfilesStore, provider: string): boolean {
   const removedProfileIds = new Set<string>();
@@ -1008,24 +1033,22 @@ function getDefaultModelRef(config: Record<string, unknown>): string | undefined
 /**
  * Save an OAuth token to OpenClaw's auth-profiles.json.
  */
-export async function saveOAuthTokenToOpenClaw(
+async function persistOAuthTokenToOpenClaw(
   provider: string,
-  token: {
-    access: string;
-    refresh: string;
-    expires: number;
-    email?: string;
-    projectId?: string;
-    accountId?: string;
-  },
-  agentId?: string
+  token: OAuthToken,
+  agentId: string | undefined,
+  preserveExisting: boolean,
 ): Promise<void> {
   const agentIds = agentId ? [agentId] : await discoverAgentIds();
   if (agentIds.length === 0) agentIds.push('main');
+  const updatedAgentIds: string[] = [];
 
   for (const id of agentIds) {
     const store = await readAuthProfiles(id);
     const profileId = `${provider}:default`;
+    if (preserveExisting && hasUsableProviderCredential(store, provider)) {
+      continue;
+    }
 
     store.profiles[profileId] = {
       type: 'oauth',
@@ -1048,9 +1071,28 @@ export async function saveOAuthTokenToOpenClaw(
     store.lastGood[provider] = profileId;
 
     await writeAuthProfiles(store, id);
+    updatedAgentIds.push(id);
   }
-  await reloadOpenClawSecretsIfRunning();
-  console.log(`Saved OAuth token for provider "${provider}" to OpenClaw auth-profiles (agents: ${agentIds.join(', ')})`);
+  if (updatedAgentIds.length > 0) {
+    await reloadOpenClawSecretsIfRunning();
+  }
+  const action = preserveExisting ? 'Seeded' : 'Saved';
+  console.log(`${action} OAuth token for provider "${provider}" to OpenClaw auth-profiles (agents: ${updatedAgentIds.join(', ')})`);
+}
+
+export async function saveOAuthTokenToOpenClaw(
+  provider: string,
+  token: OAuthToken,
+  agentId = 'main',
+): Promise<void> {
+  await persistOAuthTokenToOpenClaw(provider, token, agentId, false);
+}
+
+export async function seedOAuthTokenToOpenClaw(
+  provider: string,
+  token: OAuthToken,
+): Promise<void> {
+  await persistOAuthTokenToOpenClaw(provider, token, 'main', true);
 }
 
 /**
@@ -1079,13 +1121,11 @@ export async function getOAuthTokenFromOpenClaw(
   return null;
 }
 
-/**
- * Save a provider API key to OpenClaw's auth-profiles.json
- */
-export async function saveProviderKeyToOpenClaw(
+async function persistProviderKeyToOpenClaw(
   provider: string,
   apiKey: string,
-  agentId?: string
+  agentId: string | undefined,
+  preserveExisting: boolean,
 ): Promise<void> {
   if (isOAuthProviderType(provider) && !apiKey) {
     console.log(`Skipping auth-profiles write for OAuth provider "${provider}" (no API key provided, using OAuth)`);
@@ -1093,10 +1133,14 @@ export async function saveProviderKeyToOpenClaw(
   }
   const agentIds = agentId ? [agentId] : await discoverAgentIds();
   if (agentIds.length === 0) agentIds.push('main');
+  const updatedAgentIds: string[] = [];
 
   for (const id of agentIds) {
     const store = await readAuthProfiles(id);
     const profileId = `${provider}:default`;
+    if (preserveExisting && hasUsableProviderCredential(store, provider)) {
+      continue;
+    }
 
     store.profiles[profileId] = { type: 'api_key', provider, key: apiKey };
 
@@ -1110,9 +1154,31 @@ export async function saveProviderKeyToOpenClaw(
     store.lastGood[provider] = profileId;
 
     await writeAuthProfiles(store, id);
+    updatedAgentIds.push(id);
   }
-  await reloadOpenClawSecretsIfRunning();
-  console.log(`Saved API key for provider "${provider}" to OpenClaw auth-profiles (agents: ${agentIds.join(', ')})`);
+  if (updatedAgentIds.length > 0) {
+    await reloadOpenClawSecretsIfRunning();
+  }
+  const action = preserveExisting ? 'Seeded' : 'Saved';
+  console.log(`${action} API key for provider "${provider}" to OpenClaw auth-profiles (agents: ${updatedAgentIds.join(', ')})`);
+}
+
+/**
+ * Save a provider API key to OpenClaw's auth-profiles.json.
+ */
+export async function saveProviderKeyToOpenClaw(
+  provider: string,
+  apiKey: string,
+  agentId?: string,
+): Promise<void> {
+  await persistProviderKeyToOpenClaw(provider, apiKey, agentId, false);
+}
+
+/**
+ * Seed a provider API key without replacing an existing agent-local profile.
+ */
+export async function seedProviderKeyToOpenClaw(provider: string, apiKey: string): Promise<void> {
+  await persistProviderKeyToOpenClaw(provider, apiKey, undefined, true);
 }
 
 /**
