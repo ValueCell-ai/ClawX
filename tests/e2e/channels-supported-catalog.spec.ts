@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import { completeSetup, expect, test } from './fixtures/electron';
 
 const unsupportedChannelTypes = [
@@ -63,7 +64,7 @@ test.describe('ClawX supported channel catalog', () => {
     }, channelsResponse);
 
     await completeSetup(page);
-    await page.getByTestId('sidebar-nav-channels').click();
+    await navigateToSection(page, 'channels');
 
     const channelsPage = page.getByTestId('channels-page');
     await expect(channelsPage).toBeVisible();

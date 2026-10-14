@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 test('model tabs share icon hierarchy and usage rows remain compact with pagination', async ({ launchElectronApp }, testInfo) => {
@@ -28,7 +29,7 @@ test('model tabs share icon hierarchy and usage rows remain compact with paginat
     });
     const page = await getStableWindow(app);
     await page.reload();
-    await page.getByTestId('sidebar-nav-models').click();
+    await navigateToSection(page, 'models');
     for (const tab of ['chat', 'voice', 'image-generation']) {
       await expect(page.getByTestId(`models-tab-${tab}`).locator('svg')).toBeVisible();
     }

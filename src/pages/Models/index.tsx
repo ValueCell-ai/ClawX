@@ -43,7 +43,7 @@ function isHiddenUsageSource(source?: string): boolean {
   return HIDDEN_USAGE_MARKERS.some((marker) => normalizedSource.includes(marker));
 }
 
-export function Models() {
+export function Models({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation(['dashboard', 'settings']);
   const [searchParams, setSearchParams] = useSearchParams();
   const gatewayStatus = useGatewayStore((state) => state.status);
@@ -286,7 +286,7 @@ export function Models() {
   return (
     <div
       data-testid="models-page"
-      className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden"
+      className={embedded ? "flex h-full min-h-0 flex-col overflow-hidden" : "flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden"}
     >
       <div className="w-full max-w-6xl mx-auto flex flex-col h-full p-6 md:p-8">
         {/* Header */}

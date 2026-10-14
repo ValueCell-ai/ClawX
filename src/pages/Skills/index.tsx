@@ -1,3 +1,4 @@
+import { CapabilitiesNavigation } from '@/components/layout/CapabilitiesNavigation';
 /**
  * Skills Page
  * Browse and manage AI skills
@@ -443,8 +444,12 @@ export function Skills() {
 
   if (loading) {
     return (
-      <div className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] items-center justify-center">
-        <LoadingSpinner size="lg" />
+      <div data-testid="skills-page" className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden">
+        <div className="mx-auto flex h-full w-full max-w-6xl flex-col p-6 md:p-8">
+          <h1 className="mb-6 font-sans text-2xl font-medium tracking-normal">{t('title')}</h1>
+          <CapabilitiesNavigation />
+          <div className="flex flex-1 items-center justify-center"><LoadingSpinner size="lg" /></div>
+        </div>
       </div>
     );
   }
@@ -481,6 +486,8 @@ export function Skills() {
             <span className="text-sm font-medium text-yellow-700 dark:text-yellow-400">{t('gatewayWarning')}</span>
           </div>
         )}
+
+        <CapabilitiesNavigation />
 
         <Tabs value={discoverOpen ? 'discover' : 'installed'} onValueChange={(value) => setDiscoverOpen(value === 'discover')} className="border-b border-black/10 dark:border-white/10 pb-3 mb-5">
           <TabsList aria-label={t('title')} className="bg-transparent p-0 gap-1">

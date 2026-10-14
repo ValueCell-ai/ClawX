@@ -2,7 +2,7 @@
   "title": "设置",
   "subtitle": "配置您的 ClawX 体验",
   "appearance": {
-    "title": "通用",
+    "title": "外观与启动",
     "description": "自定义外观和风格",
     "theme": "主题",
     "light": "浅色",
@@ -151,16 +151,16 @@
     }
   },
   "gateway": {
-    "title": "网关",
-    "description": "OpenClaw 网关设置",
+    "title": "本地服务",
+    "description": "管理 ClawX 在本机运行的服务",
     "status": "状态",
     "port": "端口",
     "logs": "日志",
     "appLogs": "应用日志",
     "openFolder": "打开文件夹",
-    "autoStart": "自动启动网关",
-    "autoStartDesc": "ClawX 启动时自动启动网关",
-    "proxyTitle": "代理",
+    "autoStart": "自动启动本地服务",
+    "autoStartDesc": "启动 ClawX 时自动启动本地服务",
+    "proxyTitle": "网络代理",
     "proxyDesc": "让 Electron 和 Gateway 的网络请求都走本地代理客户端。",
     "proxyServer": "代理服务器",
     "proxyServerHelp": "所有请求默认使用的代理。只填 host:port 时默认按 HTTP 处理。",
@@ -280,7 +280,8 @@
     "installCmdDesc": "安装 ~/.local/bin/openclaw（无需管理员权限）",
     "installTitle": "安装 OpenClaw 命令",
     "installMessage": "安装 \"openclaw\" 命令？",
-    "installDetail": "这将创建 ~/.local/bin/openclaw。确保 ~/.local/bin 在您的 PATH 中。"
+    "installDetail": "这将创建 ~/.local/bin/openclaw。确保 ~/.local/bin 在您的 PATH 中。",
+    "consoleUnavailable": "暂时无法打开 OpenClaw 控制台"
   },
   "support": {
     "title": "支持"
@@ -373,6 +374,35 @@
       "invalidBaseUrl": "API 地址必须以 http:// 或 https:// 开头。",
       "modelRequired": "请填写模型名称。",
       "request": "保存失败，请重试。"
+    }
+  },
+  "navigation": {
+    "label": "设置分类",
+    "openAdvanced": "前往高级设置",
+    "general": {
+      "title": "通用",
+      "description": "调整外观、语言和启动偏好。"
+    },
+    "models": {
+      "title": "AI 模型",
+      "description": "管理对话、语音和图像模型，查看使用情况。"
+    },
+    "channels": {
+      "title": "消息遥控",
+      "description": "通过微信、飞书等应用与 ClawX 对话，交办任务、接收结果。"
+    },
+    "computer-use": {
+      "title": "电脑操作",
+      "description": "允许助手查看屏幕并操作这台电脑，管理所需的系统权限。",
+      "developerHint": "电脑操作目前属于实验功能。请先在「高级」中开启开发者模式，再返回这里配置；系统权限需要单独授权。"
+    },
+    "advanced": {
+      "title": "高级",
+      "description": "管理本地服务、网络连接和开发者工具。"
+    },
+    "about": {
+      "title": "关于与帮助",
+      "description": "查看版本、检查更新，获取帮助或反馈问题。"
     }
   }
 }

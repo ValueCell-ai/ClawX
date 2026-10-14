@@ -10,8 +10,8 @@
     "sinceRestart": "前回の再起動から",
     "gatewayNotRunning": "ゲートウェイが停止中",
     "models": {
-        "title": "モデル",
-        "subtitle": "AI プロバイダーを管理し、トークン使用量を監視します",
+        "title": "AI モデル",
+        "subtitle": "チャット・音声・画像モデルを管理し、利用状況を確認します。",
         "tabs": {
             "chat": "チャットモデル",
             "imageGeneration": "画像生成",

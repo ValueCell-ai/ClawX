@@ -441,7 +441,7 @@ export function ChatInput({
     onPermissionBlocked: setMicrophoneAccess,
     onUnconfigured: () => {
       toast.info(t('composer.voiceNotConfigured'));
-      navigate('/models?tab=voice');
+      navigate('/settings/models?tab=voice');
     },
     onError: (code) => {
       toast.error(t(`composer.voiceError.${code}`, { defaultValue: t('composer.voiceError.REQUEST') }));

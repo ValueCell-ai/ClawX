@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import { completeSetup, expect, installIpcMocks, test } from './fixtures/electron';
 
 test.describe('Skills page gateway readiness', () => {
@@ -38,7 +39,7 @@ test.describe('Skills page gateway readiness', () => {
       },
     });
 
-    await page.getByTestId('sidebar-nav-skills').click();
+    await navigateToSection(page, 'skills');
     await expect(page.getByTestId('skills-page')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'PDF' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'XLSX' })).toBeVisible();
@@ -100,7 +101,7 @@ test.describe('Skills page gateway readiness', () => {
       },
     });
 
-    await page.getByTestId('sidebar-nav-skills').click();
+    await navigateToSection(page, 'skills');
     await expect(page.getByRole('heading', { name: 'Browser Automation' })).toBeVisible();
     await page.getByText('Browser Automation').click();
     await expect(page.getByRole('button', { name: /Uninstall|卸载|アンインストール|Удалить/i })).toHaveCount(0);
@@ -127,7 +128,7 @@ test.describe('Skills page gateway readiness', () => {
       },
     });
 
-    await page.getByTestId('sidebar-nav-skills').click();
+    await navigateToSection(page, 'skills');
     await expect(page.getByTestId('skills-page')).toBeVisible();
     await expect(page.getByTestId('skills-gateway-banner')).toHaveAttribute('data-state', 'stopped', { timeout: 3_500 });
 
@@ -184,7 +185,7 @@ test('discovers skills with an available marketplace and adapts to narrow dark w
       '["skills","clawhubSearch",{"query":"missing"}]': { success: true, results: [] },
     },
   });
-  await page.getByTestId('sidebar-nav-skills').click();
+  await navigateToSection(page, 'skills');
   await page.getByRole('tab', { name: 'Discover skills' }).click();
   await expect(page.getByRole('heading', { name: 'Catalog skill' })).toBeVisible();
   await expect(page.getByText('Original catalog description')).toBeVisible();

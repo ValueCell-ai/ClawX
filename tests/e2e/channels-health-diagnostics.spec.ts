@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import { completeSetup, expect, test } from './fixtures/electron';
 
 test.describe('Channels health diagnostics', () => {
@@ -50,7 +51,7 @@ test.describe('Channels health diagnostics', () => {
     });
 
     await completeSetup(page);
-    await page.getByTestId('sidebar-nav-channels').click();
+    await navigateToSection(page, 'channels');
     await expect(page.getByTestId('channels-page')).toBeVisible();
     await expect(page.getByText('Feishu / Lark')).toBeVisible();
     await expect(page.getByTestId('channels-health-banner')).toHaveCount(0);
@@ -133,7 +134,7 @@ test.describe('Channels health diagnostics', () => {
     });
 
     await completeSetup(page);
-    await page.getByTestId('sidebar-nav-channels').click();
+    await navigateToSection(page, 'channels');
     await expect(page.getByTestId('channel-status-dingtalk')).toHaveText(/Connected|已连接|接続済み|Подключ/);
     await expect(page.getByTestId('channel-note-dingtalk')).toContainText(/bundled|随包|同梱|встроенн/i);
     await expect(page.getByTestId('dingtalk-workspace-authorize')).toHaveCount(0);
@@ -284,12 +285,12 @@ test.describe('Channels health diagnostics', () => {
       });
     });
 
-    await page.getByTestId('sidebar-nav-channels').click();
+    await navigateToSection(page, 'channels');
     await expect(page.getByTestId('channels-page')).toBeVisible();
     await expect(page.getByTestId('channels-health-banner')).toBeVisible();
     await expect(page.getByText(/Gateway degraded|状态波动|ゲートウェイ劣化/)).toBeVisible();
     await expect(page.getByTestId('channels-recovery-status')).toContainText(/externally managed Gateway is unavailable|外部管理的网关当前不可用|外部管理のゲートウェイを利用できません/i);
-    await expect(page.locator('div.rounded-2xl').getByText(/Degraded|状态波动|劣化中/).first()).toBeVisible();
+    await expect(page.getByTestId('channel-status-feishu')).toBeVisible();
 
     await page.getByTestId('channels-restart-gateway').click();
     await page.getByTestId('channels-copy-diagnostics').click();
@@ -372,7 +373,7 @@ test.describe('Channels health diagnostics', () => {
     });
 
     await completeSetup(page);
-    await page.getByTestId('sidebar-nav-channels').click();
+    await navigateToSection(page, 'channels');
     await expect(page.getByTestId('channels-health-banner')).toBeVisible();
     await expect(page.getByTestId('channels-recovery-status')).toContainText(/verifying Gateway responsiveness|正在验证网关响应|ゲートウェイの応答を確認中/i);
 

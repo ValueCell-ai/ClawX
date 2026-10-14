@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 
-export function ComputerUse() {
+export function ComputerUse({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation('common');
   const [status, setStatus] = useState<ComputerUseStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -45,7 +45,7 @@ export function ComputerUse() {
   const runtimeState = !status?.enabled ? 'off' : status.running ? 'running' : 'unavailable';
 
   return (
-    <div className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden" data-testid="computer-use-page">
+    <div className={embedded ? "flex h-full min-h-0 flex-col overflow-hidden" : "flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden"} data-testid="computer-use-page">
       <div className="w-full max-w-6xl mx-auto flex flex-col h-full p-6 md:p-8">
       <header className="flex flex-col md:flex-row md:items-start justify-between mb-6 shrink-0 gap-4">
         <div>

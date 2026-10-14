@@ -10,8 +10,8 @@
     "sinceRestart": "Since last restart",
     "gatewayNotRunning": "Gateway not running",
     "models": {
-        "title": "Models",
-        "subtitle": "Manage your AI providers and monitor token usage.",
+        "title": "AI models",
+        "subtitle": "Manage chat, voice, and image models and review usage.",
         "tabs": {
             "chat": "Chat models",
             "imageGeneration": "Image generation",

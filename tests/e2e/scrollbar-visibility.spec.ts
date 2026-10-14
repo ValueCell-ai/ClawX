@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
 
 test.describe('hover-only scrollbar visibility', () => {
@@ -6,7 +7,7 @@ test.describe('hover-only scrollbar visibility', () => {
 
     try {
       const page = await getStableWindow(app);
-      await page.getByTestId('sidebar-nav-models').click();
+      await navigateToSection(page, 'models');
       await expect(page.getByTestId('models-page')).toBeVisible();
 
       const scrollContainer = page.locator('[data-testid="models-page"] .overflow-y-auto').first();

@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import { completeSetup, expect, test } from './fixtures/electron';
 
 const responses = {
@@ -56,7 +57,7 @@ test.describe('Feishu credential validation', () => {
     }, responses);
 
     await completeSetup(page);
-    await page.getByTestId('sidebar-nav-channels').click();
+    await navigateToSection(page, 'channels');
 
     const channelsPage = page.getByTestId('channels-page');
     await expect(channelsPage).toBeVisible();

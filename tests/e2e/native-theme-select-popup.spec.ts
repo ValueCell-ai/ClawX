@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
 
 /**
@@ -6,7 +7,7 @@ import { closeElectronApp, expect, getStableWindow, test } from './fixtures/elec
  * (e.g. shared `bg-transparent` input classes), the Windows popup shows a
  * white page background behind light option text in dark mode — unreadable.
  * These specs lock in the fix: every themed select must resolve the opaque
- * `--background` token in both schemes.
+ * `--surface-input` token in both schemes.
  */
 async function expectSelectThemed(page: import('@playwright/test').Page, testId: string): Promise<void> {
   await expect
@@ -14,7 +15,7 @@ async function expectSelectThemed(page: import('@playwright/test').Page, testId:
       const select = document.querySelector<HTMLSelectElement>(`[data-testid="${id}"]`);
       if (!select) return null;
       const probe = document.createElement('div');
-      probe.style.backgroundColor = 'hsl(var(--background))';
+      probe.style.backgroundColor = 'hsl(var(--surface-input))';
       document.body.appendChild(probe);
       const expected = getComputedStyle(probe).backgroundColor;
       probe.remove();
@@ -26,7 +27,7 @@ async function expectSelectThemed(page: import('@playwright/test').Page, testId:
   const colors = await page.evaluate((id) => {
     const select = document.querySelector<HTMLSelectElement>(`[data-testid="${id}"]`);
     const probe = document.createElement('div');
-    probe.style.backgroundColor = 'hsl(var(--background))';
+    probe.style.backgroundColor = 'hsl(var(--surface-input))';
     document.body.appendChild(probe);
     const expected = getComputedStyle(probe).backgroundColor;
     probe.remove();
@@ -46,15 +47,17 @@ test.describe('native select theming', () => {
       // Switch the app to dark mode via Settings > Appearance.
       await page.getByTestId('sidebar-nav-settings').click();
       await expect(page.getByTestId('settings-page')).toBeVisible();
+      await navigateToSection(page, 'advanced');
       const devModeSwitch = page.getByTestId('settings-dev-mode-switch');
       if (await devModeSwitch.getAttribute('data-state') !== 'checked') await devModeSwitch.click();
       await expect(devModeSwitch).toHaveAttribute('data-state', 'checked');
+      await navigateToSection(page, 'general');
       await page.getByRole('button', { name: 'Dark', exact: true }).click();
       await expect(page.evaluate(() => document.documentElement.classList.contains('dark'))).resolves.toBe(true);
 
-      // The Models > Voice (speech-to-text) provider select must resolve the
-      // dark opaque background so its popup options stay readable.
-      await page.getByTestId('sidebar-nav-models').click();
+      // The AI models > Voice (speech-to-text) provider select must resolve the
+      // dark opaque input surface so its popup options stay readable.
+      await navigateToSection(page, 'models');
       await page.getByTestId('models-tab-voice').click();
       await expect(page.getByTestId('asr-preset-select')).toBeVisible();
       await expectSelectThemed(page, 'asr-preset-select');
@@ -65,7 +68,7 @@ test.describe('native select theming', () => {
       await page.getByRole('button', { name: 'Light', exact: true }).click();
       await expect(page.evaluate(() => document.documentElement.classList.contains('light'))).resolves.toBe(true);
 
-      await page.getByTestId('sidebar-nav-models').click();
+      await navigateToSection(page, 'models');
       await page.getByTestId('models-tab-voice').click();
       await expect(page.getByTestId('asr-preset-select')).toBeVisible();
       await expectSelectThemed(page, 'asr-preset-select');
@@ -95,6 +98,7 @@ test.describe('native select theming', () => {
       await expect.poll(rootThemeClass).toBe('light');
 
       // Explicit selections ignore the OS scheme.
+      await navigateToSection(page, 'general');
       await page.getByRole('button', { name: 'Dark', exact: true }).click();
       await page.emulateMedia({ colorScheme: 'dark' });
       await expect.poll(rootThemeClass).toBe('dark');

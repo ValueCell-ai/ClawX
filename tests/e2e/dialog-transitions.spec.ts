@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import type { Locator } from '@playwright/test';
 import { closeElectronApp, completeSetup, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
@@ -123,7 +124,7 @@ test.describe('dialog transitions', () => {
 
     await completeSetup(page);
 
-    await page.getByTestId('sidebar-nav-models').click();
+    await navigateToSection(page, 'models');
     await page.getByTestId('providers-add-button').click();
     const providerDialog = page.getByTestId('add-provider-dialog');
     await expectSubtleDialogAnimation(providerDialog);
@@ -132,7 +133,7 @@ test.describe('dialog transitions', () => {
     await expect(providerDialog).toHaveAttribute('data-state', 'closed');
     await expect(providerDialog).toHaveCount(0);
 
-    await page.getByTestId('sidebar-nav-agents').click();
+    await navigateToSection(page, 'agents');
     await page.getByTestId('agents-add-button').click();
     const agentDialog = page.getByTestId('add-agent-dialog');
     await expectSubtleDialogAnimation(agentDialog);

@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import { completeSetup, expect, test } from './fixtures/electron';
 
 const configuredChannels = {
@@ -59,7 +60,7 @@ test.describe('Channel deletion responsiveness', () => {
     }, configuredChannels);
 
     await completeSetup(page);
-    await page.getByTestId('sidebar-nav-channels').click();
+    await navigateToSection(page, 'channels');
 
     const channelsPage = page.getByTestId('channels-page');
     await expect(channelsPage.getByTitle('Delete channel')).toBeVisible();

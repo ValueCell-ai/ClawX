@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import type { ElectronApplication, Page } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
@@ -96,7 +97,7 @@ test.describe('settings issue report export', () => {
       await installMocks(app);
       const page = await reloadStableWindow(app);
 
-      await page.getByTestId('sidebar-nav-settings').click();
+      await navigateToSection(page, 'about');
       await expect(page.getByTestId('settings-page')).toBeVisible();
       await page.getByTestId('settings-issue-report-open').click();
 
@@ -145,7 +146,7 @@ test.describe('settings issue report export', () => {
       await installMocks(app);
       const page = await reloadStableWindow(app);
 
-      await page.getByTestId('sidebar-nav-settings').click();
+      await navigateToSection(page, 'about');
       await page.getByTestId('settings-issue-report-open').click();
       await page.getByTestId(`issue-report-session-${FIRST_SESSION_KEY}`).uncheck();
       await expect(page.getByTestId('issue-report-selection-count')).toContainText('0');

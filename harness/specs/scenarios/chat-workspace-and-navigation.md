@@ -3,6 +3,18 @@ id: chat-workspace-and-navigation
 title: Chat Workspace And Navigation
 type: user-visible-flow
 ownedPaths:
+  - src/App.tsx
+  - src/pages/Settings/**
+  - src/pages/Models/index.tsx
+  - src/pages/Channels/index.tsx
+  - src/pages/ComputerUse/index.tsx
+  - src/pages/Agents/index.tsx
+  - src/pages/Skills/index.tsx
+  - src/components/layout/CapabilitiesNavigation.tsx
+  - shared/i18n/locales/*/common.json
+  - shared/i18n/locales/*/settings.json
+  - tests/e2e/settings-navigation.spec.ts
+  - tests/e2e/fixtures/navigation.ts
   - src/lib/quick-access-skills.ts
   - src/stores/skills.ts
   - tests/unit/quick-access-skills-cache.test.ts
@@ -87,6 +99,7 @@ conditionalProfiles:
     - workspace selection, binding, sidebar, browser, or question navigation changes
     - Markdown file-preview rendering or syntax highlighting changes
 requiredRules:
+  - settings-navigation
   - session-workspace-authority
   - renderer-main-boundary
   - ui-i18n-design-tokens
@@ -115,3 +128,5 @@ Provider configuration UI separates model and authentication metadata, keeps Set
 Model configuration tabs use consistent compact headings, icons and forms. Token usage records use a semantic table with distinct cache read/write columns, status placeholders and horizontal overflow in narrow windows.
 
 Setup wizard, channel configuration and issue-report dialog headings use the same sans-serif medium-weight typography as management pages. Validate with app-smoke, channels-account-id-validation and settings-issue-report Electron specs.
+
+Primary navigation focuses on tasks, assistants and skills, schedules, and conversations. Settings uses URL-addressable General / AI models / Messaging remote / Computer operation / Advanced / About & help categories. Legacy configuration routes retain queries, developer links retain focus, and developer-only controls remain gated. Skill names and descriptions and technical protocol identifiers are preserved. Validate with `tests/e2e/settings-navigation.spec.ts` and `tests/e2e/management-page-style.spec.ts`.

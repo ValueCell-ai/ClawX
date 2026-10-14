@@ -2,7 +2,7 @@
   "title": "設定",
   "subtitle": "ClawX の体験をカスタマイズ",
   "appearance": {
-    "title": "通用",
+    "title": "外観と起動",
     "description": "外観とスタイルをカスタマイズ",
     "theme": "テーマ",
     "light": "ライト",
@@ -151,16 +151,16 @@
     }
   },
   "gateway": {
-    "title": "ゲートウェイ",
+    "title": "ローカルサービス",
     "description": "OpenClaw ゲートウェイ設定",
     "status": "ステータス",
     "port": "ポート",
     "logs": "ログ",
     "appLogs": "アプリケーションログ",
     "openFolder": "フォルダーを開く",
-    "autoStart": "ゲートウェイ自動起動",
-    "autoStartDesc": "ClawX 起動時にゲートウェイを自動起動",
-    "proxyTitle": "プロキシ",
+    "autoStart": "ローカルサービスを自動起動",
+    "autoStartDesc": "ClawX の起動時にローカルサービスを起動します",
+    "proxyTitle": "ネットワークプロキシ",
     "proxyDesc": "Electron と Gateway の通信をローカルプロキシ経由にします。",
     "proxyServer": "プロキシサーバー",
     "proxyServerHelp": "すべてのリクエストで使う基本プロキシです。host:port のみの場合は HTTP 扱いです。",
@@ -280,7 +280,8 @@
     "installCmdDesc": "~/.local/bin/openclaw をインストール（管理者権限不要）",
     "installTitle": "OpenClaw コマンドをインストール",
     "installMessage": "\"openclaw\" コマンドをインストールしますか？",
-    "installDetail": "~/.local/bin/openclaw が作成されます。グローバルに実行するには ~/.local/bin が PATH に含まれていることを確認してください。"
+    "installDetail": "~/.local/bin/openclaw が作成されます。グローバルに実行するには ~/.local/bin が PATH に含まれていることを確認してください。",
+    "consoleUnavailable": "OpenClaw コンソールを開けません"
   },
   "support": {
     "title": "サポート"
@@ -373,6 +374,35 @@
       "invalidBaseUrl": "ベースURLは http:// または https:// で始まる必要があります。",
       "modelRequired": "モデル名を入力してください。",
       "request": "保存できませんでした。もう一度お試しください。"
+    }
+  },
+  "navigation": {
+    "label": "設定カテゴリ",
+    "openAdvanced": "詳細設定を開く",
+    "general": {
+      "title": "一般",
+      "description": "外観、言語、起動時の動作を設定します。"
+    },
+    "models": {
+      "title": "AI モデル",
+      "description": "チャット・音声・画像モデルを管理し、利用状況を確認します。"
+    },
+    "channels": {
+      "title": "メッセージ遠隔操作",
+      "description": "メッセージアプリで ClawX に依頼し、結果を受け取れます。"
+    },
+    "computer-use": {
+      "title": "コンピューター操作",
+      "description": "アシスタントによる画面の確認とコンピューター操作、および必要な権限を管理します。",
+      "developerHint": "コンピューター操作は実験的機能です。詳細設定で開発者モードを有効にしてから設定してください。システム権限は別途許可が必要です。"
+    },
+    "advanced": {
+      "title": "詳細設定",
+      "description": "ローカルサービス、ネットワーク、開発者ツールを管理します。"
+    },
+    "about": {
+      "title": "情報とヘルプ",
+      "description": "バージョンや更新を確認し、ヘルプや問題報告にアクセスします。"
     }
   }
 }

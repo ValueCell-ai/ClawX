@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import {
   closeElectronApp,
   expect,
@@ -114,13 +115,13 @@ test.describe('Agent deletion session reconciliation', () => {
       await expect(page.getByText('Deleted agent main')).toBeVisible({ timeout: 30_000 });
       await expect(page.getByText('Deleted agent chat')).toBeVisible();
 
-      await page.getByTestId('sidebar-nav-agents').click();
+      await navigateToSection(page, 'agents');
       const agentCard = page.getByTestId('agent-card-test1');
       await expect(agentCard).toBeVisible();
       await agentCard.hover();
       await page.getByTestId('agent-delete-test1').click();
 
-      await expect(page.getByText('Permanently delete Agent?')).toBeVisible();
+      await expect(page.getByText('Permanently delete Assistant?')).toBeVisible();
       await expect(page.getByText(/all associated chat history/i)).toBeVisible();
       await expect(page.getByText(/cannot be undone/i)).toBeVisible();
       await page.getByTestId('confirm-dialog-confirm-button').click();

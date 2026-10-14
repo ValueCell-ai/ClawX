@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import type { ElectronApplication } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
 
@@ -8,7 +9,7 @@ async function readNativeMenuLabels(app: ElectronApplication) {
     return {
       topLevel: menu?.items.map((item) => item.label) ?? [],
       file: fileMenu?.label,
-      newChat: fileMenu?.submenu?.items.find((item) => item.id === 'new-chat' || item.label === 'New Chat' || item.label === '新对话')?.label,
+      newChat: fileMenu?.submenu?.items.find((item) => item.id === 'new-chat' || item.label === 'New task' || item.label === '新任务')?.label,
     };
   });
 }
@@ -55,14 +56,14 @@ test.describe('ClawX main navigation without setup flow', () => {
       await expect(page.getByTestId('sidebar-resize-handle')).toBeVisible();
       await expect(page.getByTestId('main-content')).toHaveCSS('border-top-left-radius', '16px');
 
-      await page.getByTestId('sidebar-nav-models').click();
+      await navigateToSection(page, 'models');
       await expect(page.getByTestId('models-page')).toBeVisible();
       await expect(page.getByTestId('models-page-title')).toBeVisible();
 
-      await page.getByTestId('sidebar-nav-agents').click();
+      await navigateToSection(page, 'agents');
       await expect(page.getByTestId('agents-page')).toBeVisible();
 
-      await page.getByTestId('sidebar-nav-channels').click();
+      await navigateToSection(page, 'channels');
       await expect(page.getByTestId('channels-page')).toBeVisible();
     } finally {
       await closeElectronApp(app);
@@ -76,7 +77,7 @@ test.describe('ClawX main navigation without setup flow', () => {
       const page = await getStableWindow(app);
       await expect(page.getByTestId('chat-page')).toBeVisible();
 
-      await page.getByTestId('sidebar-nav-models').click();
+      await navigateToSection(page, 'models');
       await expect(page.getByTestId('models-page')).toBeVisible();
 
       await app.evaluate(({ BrowserWindow, Menu }) => {
@@ -113,7 +114,7 @@ test.describe('ClawX main navigation without setup flow', () => {
       await expect(page.getByText('菜单语言已更新')).toBeVisible();
       await expect.poll(() => readNativeMenuLabels(app)).toMatchObject({
         file: '文件',
-        newChat: '新对话',
+        newChat: '新任务',
       });
     } finally {
       await closeElectronApp(app);

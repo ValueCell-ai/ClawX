@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import { completeSetup, expect, test } from './fixtures/electron';
 
 const testConfigResponses = {
@@ -74,7 +75,7 @@ test.describe('Channels account ID validation', () => {
 
     await completeSetup(page);
 
-    await page.getByTestId('sidebar-nav-channels').click();
+    await navigateToSection(page, 'channels');
     await expect(page.getByTestId('channels-page')).toBeVisible();
     await expect(page.getByText('Feishu / Lark')).toBeVisible();
 

@@ -1,10 +1,11 @@
+import { navigateToSection } from './fixtures/navigation';
 import { completeSetup, expect, test } from './fixtures/electron';
 
 test.describe('ClawX developer-mode gated UI', () => {
   test('keeps developer-only configuration hidden until dev mode is enabled', async ({ page }) => {
     await completeSetup(page);
 
-    await page.getByTestId('sidebar-nav-settings').click();
+    await navigateToSection(page, 'advanced');
     await expect(page.getByTestId('settings-page')).toBeVisible();
     const devModeSwitch = page.getByTestId('settings-dev-mode-switch');
     if (await devModeSwitch.getAttribute('data-state') === 'checked') await devModeSwitch.click();
@@ -12,7 +13,7 @@ test.describe('ClawX developer-mode gated UI', () => {
     await expect(page.getByTestId('settings-developer-mode-desc')).toBeVisible();
     await expect(page.getByTestId('settings-developer-advanced')).toHaveCount(0);
     await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'unchecked');
-    await expect(page.getByTestId('sidebar-open-dev-console')).toHaveCount(0);
+    await expect(page.getByTestId('settings-open-dev-console')).toHaveCount(0);
     await expect(page.getByTestId('sidebar-nav-computer-use')).toHaveCount(0);
     await expect(page.getByTestId('sidebar-nav-dreams')).toHaveCount(0);
     await expect(page.getByTestId('sidebar-nav-image-generation')).toHaveCount(0);
@@ -33,7 +34,7 @@ test.describe('ClawX developer-mode gated UI', () => {
     await expect(page.getByTestId('chat-composer-input')).toBeVisible();
     await expect(page.getByTestId('chat-composer-voice')).toHaveCount(0);
 
-    await page.getByTestId('sidebar-nav-models').click();
+    await navigateToSection(page, 'models');
     await expect(page.getByTestId('models-tab-voice')).toHaveCount(0);
     await page.getByTestId('providers-add-button').click();
     await expect(page.getByTestId('add-provider-dialog')).toBeVisible();
@@ -44,7 +45,7 @@ test.describe('ClawX developer-mode gated UI', () => {
     await page.getByTestId('add-provider-close-button').click();
     await expect(page.getByTestId('add-provider-dialog')).toHaveCount(0);
 
-    await page.getByTestId('sidebar-nav-settings').click();
+    await navigateToSection(page, 'advanced');
     await page.getByTestId('settings-dev-mode-switch').click();
     await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'checked');
     await expect(page.getByTestId('settings-developer-section')).toBeVisible();
@@ -54,8 +55,8 @@ test.describe('ClawX developer-mode gated UI', () => {
     const compactionReserve = page.getByTestId('settings-developer-compaction-reserve');
     await expect(compactionReserve).toBeVisible();
     await expect(compactionReserve).toContainText('50,000 tokens when none is set');
-    await expect(page.getByTestId('sidebar-open-dev-console')).toBeVisible();
-    await expect(page.getByTestId('sidebar-nav-computer-use')).toBeVisible();
+    await expect(page.getByTestId('settings-open-dev-console')).toBeVisible();
+    await expect(page.getByTestId('settings-nav-computer-use')).toBeVisible();
     await expect(page.getByTestId('sidebar-nav-dreams')).toHaveCount(0);
     await expect(page.getByTestId('sidebar-nav-image-generation')).toHaveCount(0);
     await expect(page.getByTestId('sidebar-talk')).toHaveCount(0);
@@ -66,7 +67,7 @@ test.describe('ClawX developer-mode gated UI', () => {
     });
     await expect(page.getByTestId('chat-composer-voice')).toBeVisible();
 
-    await page.getByTestId('sidebar-nav-models').click();
+    await navigateToSection(page, 'models');
     await expect(page.getByTestId('models-tab-voice')).toBeVisible();
     await expect(page.getByTestId('models-tab-image-generation')).toBeVisible();
     await expect(page.getByTestId('models-tab-realtime-talk')).toHaveCount(0);

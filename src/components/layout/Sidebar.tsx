@@ -7,22 +7,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
-  Network,
-  Bot,
   Puzzle,
   Clock,
   Settings as SettingsIcon,
   PanelLeftClose,
   PanelLeft,
   Plus,
-  Terminal,
-  ExternalLink,
   Trash2,
   Pencil,
   Check,
   X,
-  Cpu,
-  Monitor,
   ChevronRight,
   ChevronsUpDown,
   ChevronsDownUp,
@@ -66,19 +60,25 @@ interface NavItemProps {
   collapsed?: boolean;
   onClick?: () => void;
   testId?: string;
+  activePaths?: string[];
 }
 
-function NavItem({ to, icon, label, badge, collapsed, onClick, testId }: NavItemProps) {
+function NavItem({ to, icon, label, badge, collapsed, onClick, testId, activePaths }: NavItemProps) {
+  const { pathname } = useLocation();
+  const matchesGroup = activePaths?.includes(pathname) ?? false;
   return (
     <NavLink
-      to={to}
+      to={matchesGroup ? pathname : to}
       onClick={onClick}
+      aria-current={matchesGroup ? 'page' : undefined}
+      title={collapsed ? label : undefined}
+      aria-label={label}
       data-testid={testId}
       className={({ isActive }) =>
         cn(
           'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
           'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
-          isActive ? 'bg-black/5 dark:bg-white/10 text-foreground' : '',
+          isActive || matchesGroup ? 'bg-black/5 dark:bg-white/10 text-foreground' : '',
           collapsed && 'justify-center px-0',
         )
       }
@@ -144,7 +144,6 @@ export function Sidebar() {
   const setSidebarCollapsed = useSettingsStore((state) => state.setSidebarCollapsed);
   const sidebarWidth = useSettingsStore((state) => state.sidebarWidth);
   const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth);
-  const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
   const chatWorkspacePath = useSettingsStore((state) => state.chatWorkspacePath);
   const recentWorkspacePaths = useSettingsStore((state) => state.recentWorkspacePaths);
   const workspaceLabels = useSettingsStore((state) => state.workspaceLabels);
@@ -185,23 +184,6 @@ export function Sidebar() {
 
   const navigate = useNavigate();
   const isOnChat = useLocation().pathname === '/';
-
-  const openControlUi = async (label = 'OpenClaw Page') => {
-    try {
-      const result = await hostApi.gateway.controlUi();
-      if (result.success && result.url) {
-        await window.electron.openExternal(result.url);
-      } else {
-        console.error(`Failed to get ${label} URL:`, result.error);
-      }
-    } catch (err) {
-      console.error(`Error opening ${label}:`, err);
-    }
-  };
-
-  const openDevConsole = async () => {
-    await openControlUi('OpenClaw Page');
-  };
 
   const { t, i18n } = useTranslation(['common', 'chat']);
   const [sessionToDelete, setSessionToDelete] = useState<{ key: string; label: string } | null>(null);
@@ -429,28 +411,11 @@ export function Sidebar() {
 
   const coreNavItems = [
     {
-      to: '/models',
-      icon: <Cpu className="h-4 w-4" strokeWidth={2} />,
-      label: t('sidebar.models'),
-      testId: 'sidebar-nav-models',
-    },
-    {
-      to: '/agents',
-      icon: <Bot className="h-4 w-4" strokeWidth={2} />,
-      label: t('sidebar.agents'),
-      testId: 'sidebar-nav-agents',
-    },
-    {
-      to: '/channels',
-      icon: <Network className="h-4 w-4" strokeWidth={2} />,
-      label: t('sidebar.channels'),
-      testId: 'sidebar-nav-channels',
-    },
-    {
       to: '/skills',
       icon: <Puzzle className="h-4 w-4" strokeWidth={2} />,
-      label: t('sidebar.skills'),
-      testId: 'sidebar-nav-skills',
+      label: t('sidebar.capabilities'),
+      testId: 'sidebar-nav-capabilities',
+      activePaths: ['/agents', '/skills'],
     },
     {
       to: '/cron',
@@ -458,12 +423,6 @@ export function Sidebar() {
       label: t('sidebar.cronTasks'),
       testId: 'sidebar-nav-cron',
     },
-    ...(devModeUnlocked ? [{
-      to: '/computer-use',
-      icon: <Monitor className="h-4 w-4" strokeWidth={2} />,
-      label: t('computerUse.title'),
-      testId: 'sidebar-nav-computer-use',
-    }] : []),
   ];
 
   const navItems = [
@@ -931,30 +890,7 @@ export function Sidebar() {
           </>
         </NavLink>
 
-        {devModeUnlocked && (
-          <Button
-            data-testid="sidebar-open-dev-console"
-            variant="ghost"
-            className={cn(
-              'sidebar-nav-text flex h-auto w-full items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
-              'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
-              sidebarCollapsed ? 'justify-center px-0' : 'justify-start',
-            )}
-            onClick={openDevConsole}
-          >
-            <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">
-              <Terminal className="h-4 w-4" strokeWidth={2} />
-            </div>
-            {!sidebarCollapsed && (
-              <>
-                <span className="flex-1 text-left overflow-hidden text-ellipsis whitespace-nowrap">
-                  {t('common:sidebar.openClawPage')}
-                </span>
-                <ExternalLink className="ml-auto h-3 w-3 shrink-0 opacity-50 text-current" />
-              </>
-            )}
-          </Button>
-        )}
+
       </div>
 
       {!sidebarCollapsed && (

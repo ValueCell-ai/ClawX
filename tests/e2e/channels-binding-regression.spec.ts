@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import { completeSetup, expect, test } from './fixtures/electron';
 
 test.describe('Channels binding regression', () => {
@@ -99,11 +100,11 @@ test.describe('Channels binding regression', () => {
 
     await completeSetup(page);
 
-    await page.getByTestId('sidebar-nav-channels').click();
+    await navigateToSection(page, 'channels');
     await expect(page.getByTestId('channels-page')).toBeVisible();
     await expect(page.getByText('Feishu / Lark')).toBeVisible();
 
-    const feishuGroupHeader = page.locator('div.rounded-2xl').filter({ hasText: 'Feishu / Lark' }).first();
+    const feishuGroupHeader = page.getByTestId('channel-group-feishu');
     await expect(feishuGroupHeader).toContainText(/Connected|已连接|接続済み|Подключён/);
 
     await page.getByRole('button', { name: /Add Account|添加账号|アカウントを追加/ }).click();
@@ -118,7 +119,7 @@ test.describe('Channels binding regression', () => {
     await page.getByRole('button', { name: /Save & Connect|dialog\.saveAndConnect/ }).click();
     await expect(page.getByText(/Configure Feishu \/ Lark|dialog\.configureTitle/)).toBeHidden();
 
-    const newAccountRow = page.locator('div.rounded-xl').filter({ hasText: newAccountId }).first();
+    const newAccountRow = page.getByTestId(`channel-account-feishu-${newAccountId}`);
     await expect(newAccountRow).toBeVisible();
     const bindingSelect = newAccountRow.locator('select');
     await expect(bindingSelect).toHaveValue('');

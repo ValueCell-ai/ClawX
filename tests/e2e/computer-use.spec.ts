@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import type { ElectronApplication, Page } from '@playwright/test';
 import { expect, installIpcMocks, test } from './fixtures/electron';
 
@@ -30,7 +31,7 @@ async function installComputerFixture(electronApp: ElectronApplication, supporte
 }
 
 async function enableDeveloperMode(page: Page) {
-  await page.getByTestId('sidebar-nav-settings').click();
+  await navigateToSection(page, 'advanced');
   await page.getByTestId('settings-dev-mode-switch').click();
   await expect(page.getByTestId('settings-dev-mode-switch')).toHaveAttribute('data-state', 'checked');
 }
@@ -39,6 +40,7 @@ test.afterEach(async ({ page }) => {
   const settingsLink = page.getByTestId('sidebar-nav-settings');
   if (await settingsLink.count() === 0) return;
   await settingsLink.click();
+  await page.getByTestId('settings-nav-advanced').click();
   const devModeSwitch = page.getByTestId('settings-dev-mode-switch');
   if (await devModeSwitch.getAttribute('data-state') === 'checked') await devModeSwitch.click();
 });
@@ -47,9 +49,9 @@ test('Computer Use is default off and only the explicit button requests permissi
   await installComputerFixture(electronApp);
   await page.getByTestId('setup-skip-button').click();
   await enableDeveloperMode(page);
-  await page.getByTestId('sidebar-nav-computer-use').click();
+  await navigateToSection(page, 'computer-use');
   await expect(page.getByTestId('computer-use-page')).toBeVisible();
-  await expect(page.getByTestId('computer-use-page')).toContainText('Let agents inspect windows, accessibility elements, and menus, verify results, and operate this computer through the bundled native CUA CLI.');
+  await expect(page.getByTestId('computer-use-page')).toContainText('Let assistants view the screen and operate this computer. Manage the required system permissions.');
   await expect(page.getByTestId('computer-use-page')).toContainText('Once enabled, it is recommended to use the /computer-use skill to guide AI in operating your computer.');
   await expect(page.getByTestId('computer-use-page')).not.toContainText('computer tool');
   await expect(page.getByTestId('computer-use-runtime')).toHaveText('Disabled. The ClawX-managed CUA service is stopped.');
@@ -78,7 +80,7 @@ test('unsupported platforms cannot opt in and non-macOS does not show macOS perm
   await installComputerFixture(electronApp, false, false);
   await page.getByTestId('setup-skip-button').click();
   await enableDeveloperMode(page);
-  await page.getByTestId('sidebar-nav-computer-use').click();
+  await navigateToSection(page, 'computer-use');
   await expect(page.getByTestId('computer-use-toggle')).toBeDisabled();
   await expect(page.getByTestId('computer-use-request-permissions')).toHaveCount(0);
 });
@@ -87,7 +89,7 @@ test('an unchanged permission request shows guidance without implicitly re-promp
   await installComputerFixture(electronApp, true, true, false);
   await page.getByTestId('setup-skip-button').click();
   await enableDeveloperMode(page);
-  await page.getByTestId('sidebar-nav-computer-use').click();
+  await navigateToSection(page, 'computer-use');
   const feedback = page.getByTestId('computer-use-permission-feedback');
   await expect(feedback).toHaveCount(0);
   await page.getByTestId('computer-use-toggle').click();
@@ -124,7 +126,7 @@ test('failed opt-in displays an error and retains the safe host state', async ({
   } });
   await page.getByTestId('setup-skip-button').click();
   await enableDeveloperMode(page);
-  await page.getByTestId('sidebar-nav-computer-use').click();
+  await navigateToSection(page, 'computer-use');
   await page.getByTestId('computer-use-toggle').click();
   await expect(page.getByRole('alert')).toBeVisible();
   await expect(page.getByTestId('computer-use-toggle')).not.toBeChecked();

@@ -1,7 +1,7 @@
 {
     "computerUse": {
-        "title": "Computer Use",
-        "description": "Let agents inspect windows, accessibility elements, and menus, verify results, and operate this computer through the bundled native CUA CLI.",
+        "title": "Computer operation",
+        "description": "Let assistants view the screen and operate this computer. Manage the required system permissions.",
         "enable": "Enable Computer Use",
         "warning": "Once enabled, it is recommended to use the /computer-use skill to guide AI in operating your computer.",
         "off": "Disabled. The ClawX-managed CUA service is stopped.",
@@ -20,23 +20,24 @@
     },
     "sidebar": {
         "chat": "Chat",
-        "newChat": "New Chat",
+        "newChat": "New task",
         "cronTasks": "Cron Tasks",
         "skills": "Skills",
-        "agents": "Agents",
-        "channels": "Channels",
+        "agents": "Assistants",
+        "channels": "Messaging remote",
         "dashboard": "Dashboard",
         "settings": "Settings",
         "devConsole": "Developer Console",
         "models": "Models",
         "deleteSessionConfirm": "Delete \"{{label}}\"?",
-        "openClawPage": "OpenClaw Page",
+        "openClawPage": "OpenClaw console",
         "renameSession": "Rename",
         "deleteSession": "Delete",
         "renameSessionPlaceholder": "Session title",
         "saveSessionRename": "Save session title",
         "cancelSessionRename": "Cancel renaming",
-        "imageGeneration": "Image Generation"
+        "imageGeneration": "Image Generation",
+        "capabilities": "Assistants & skills"
     },
     "actions": {
         "save": "Save",
@@ -80,9 +81,9 @@
         "saving": "Saving..."
     },
     "gateway": {
-        "notRunning": "Gateway Not Running",
-        "notRunningDesc": "The OpenClaw Gateway needs to be running to use this feature. It will start automatically, or you can start it from Settings.",
-        "restarting": "Gateway restarting",
-        "warning": "Gateway is not running."
+        "notRunning": "Local service is not running",
+        "notRunningDesc": "This feature needs the local service. It starts automatically, or you can manage it in Settings → Advanced.",
+        "restarting": "Local service restarting",
+        "warning": "Local service is not running"
     }
 }

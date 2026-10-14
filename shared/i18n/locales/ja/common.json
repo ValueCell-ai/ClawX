@@ -1,7 +1,7 @@
 {
     "computerUse": {
         "title": "コンピューター操作",
-        "description": "内蔵のネイティブ CUA CLI を使い、Agent がウィンドウ、アクセシビリティ要素、メニューを調べ、結果を検証してこのコンピューターを操作できるようにします。",
+        "description": "アシスタントによる画面の確認とコンピューター操作、および必要な権限を管理します。",
         "enable": "コンピューター操作を有効にする",
         "warning": "有効化後、/computer-use スキルで AI によるコンピューター操作をガイドすることをおすすめします。",
         "off": "無効です。ClawX が管理する CUA サービスは停止しています。",
@@ -20,23 +20,24 @@
     },
     "sidebar": {
         "chat": "チャット",
-        "newChat": "新しいチャット",
+        "newChat": "新しいタスク",
         "cronTasks": "定期タスク",
         "skills": "スキル",
-        "agents": "Agents",
-        "channels": "チャンネル",
+        "agents": "アシスタント",
+        "channels": "メッセージ遠隔操作",
         "dashboard": "ダッシュボード",
         "settings": "設定",
         "devConsole": "開発者コンソール",
         "models": "モデル",
         "deleteSessionConfirm": "「{{label}}」を削除しますか？",
-        "openClawPage": "OpenClaw ページ",
+        "openClawPage": "OpenClaw コンソール",
         "renameSession": "名前を変更",
         "deleteSession": "削除",
         "renameSessionPlaceholder": "セッションタイトル",
         "saveSessionRename": "セッションタイトルを保存",
         "cancelSessionRename": "名前変更をキャンセル",
-        "imageGeneration": "画像生成"
+        "imageGeneration": "画像生成",
+        "capabilities": "アシスタントとスキル"
     },
     "actions": {
         "save": "保存",
@@ -80,9 +81,9 @@
         "saving": "保存中..."
     },
     "gateway": {
-        "notRunning": "ゲートウェイが停止中",
-        "notRunningDesc": "この機能を使用するには OpenClaw ゲートウェイが実行されている必要があります。自動的に起動するか、設定から起動できます。",
-        "restarting": "ゲートウェイを再起動中",
-        "warning": "ゲートウェイが停止中です。"
+        "notRunning": "ローカルサービスが停止中",
+        "notRunningDesc": "この機能にはローカルサービスが必要です。自動起動するか、設定 → 詳細設定で管理できます。",
+        "restarting": "ローカルサービスを再起動中",
+        "warning": "ローカルサービスが停止中"
     }
 }

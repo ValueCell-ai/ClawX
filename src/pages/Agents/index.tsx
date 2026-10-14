@@ -1,3 +1,4 @@
+import { CapabilitiesNavigation } from '@/components/layout/CapabilitiesNavigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Bot, Check, Plus, RefreshCw, Settings2, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -100,8 +101,12 @@ export function Agents() {
 
   if (loading && !hasCompletedInitialLoad) {
     return (
-      <div className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] items-center justify-center">
-        <LoadingSpinner size="lg" />
+      <div data-testid="agents-page" className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden">
+        <div className="mx-auto flex h-full w-full max-w-6xl flex-col p-6 md:p-8">
+          <h1 className="mb-6 font-sans text-2xl font-medium tracking-normal">{t('title')}</h1>
+          <CapabilitiesNavigation />
+          <div className="flex flex-1 items-center justify-center"><LoadingSpinner size="lg" /></div>
+        </div>
       </div>
     );
   }
@@ -138,6 +143,8 @@ export function Agents() {
             </Button>
           </div>
         </div>
+
+        <CapabilitiesNavigation />
 
         <div className="flex-1 overflow-y-auto pr-2 min-h-0 -mr-2">
           {error && (

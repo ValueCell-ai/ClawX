@@ -103,7 +103,7 @@ function isStaleNotRunningHealthForRunningGateway(gatewayHealth: GatewayHealthSu
   );
 }
 
-export function Channels() {
+export function Channels({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation('channels');
   const gatewayStatus = useGatewayStore((state) => state.status);
   const lastGatewayStateRef = useRef(gatewayStatus.state);
@@ -509,7 +509,7 @@ export function Channels() {
 
   if (loading && !hasStableValue) {
     return (
-      <div className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] items-center justify-center">
+      <div className={embedded ? "flex h-full min-h-0 flex-col items-center justify-center" : "flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] items-center justify-center"}>
         <LoadingSpinner size="lg" />
       </div>
     );
@@ -518,7 +518,7 @@ export function Channels() {
   return (
     <div
       data-testid="channels-page"
-      className="flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden"
+      className={embedded ? "flex h-full min-h-0 flex-col overflow-hidden" : "flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden"}
     >
       <div className="w-full max-w-6xl mx-auto flex flex-col h-full p-6 md:p-8">
         <div className="flex flex-col md:flex-row md:items-start justify-between mb-6 shrink-0 gap-4">
@@ -656,6 +656,7 @@ export function Channels() {
                 {configuredGroups.map((group) => (
                   <div
                     key={group.channelType}
+                    data-testid={`channel-group-${group.channelType}`}
                     className="rounded-xl border border-black/10 dark:border-white/10 p-4 bg-surface-modal"
                   >
                     <div className="flex items-center justify-between gap-2 mb-3">
@@ -777,6 +778,7 @@ export function Channels() {
                         return (
                           <div
                             key={`${group.channelType}-${account.accountId}`}
+                            data-testid={`channel-account-${group.channelType}-${account.accountId}`}
                             className="rounded-xl bg-black/5 dark:bg-white/5 px-3 py-2"
                           >
                             <div className="flex items-center justify-between gap-3">

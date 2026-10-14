@@ -1,12 +1,13 @@
+import { navigateToSection } from './fixtures/navigation';
 import { expect, installIpcMocks, test } from './fixtures/electron';
 
 test.describe('Image generation settings page', () => {
   async function unlockDeveloperMode(page: import('@playwright/test').Page) {
-    await page.getByTestId('sidebar-nav-settings').click();
+    await navigateToSection(page, 'advanced');
     await expect(page.getByTestId('settings-page')).toBeVisible();
     await page.getByTestId('settings-dev-mode-switch').click();
     await expect(page.getByTestId('sidebar-nav-image-generation')).toHaveCount(0);
-    await page.getByTestId('sidebar-nav-models').click();
+    await navigateToSection(page, 'models');
     await expect(page.getByTestId('models-page')).toBeVisible();
     await page.getByTestId('models-tab-image-generation').click();
   }
@@ -16,7 +17,7 @@ test.describe('Image generation settings page', () => {
     await page.getByTestId('setup-skip-button').click();
 
     await expect(page.getByTestId('main-layout')).toBeVisible();
-    await page.getByTestId('sidebar-nav-models').click();
+    await navigateToSection(page, 'models');
 
     await expect(page.getByTestId('models-page')).toBeVisible();
     await expect(page.getByTestId('providers-settings')).toBeVisible();
@@ -24,7 +25,7 @@ test.describe('Image generation settings page', () => {
     await expect(page.getByTestId('sidebar-nav-image-generation')).toHaveCount(0);
     await expect(page.getByTestId('models-tab-image-generation')).toHaveCount(0);
 
-    await page.getByTestId('sidebar-nav-settings').click();
+    await navigateToSection(page, 'advanced');
     await page.getByTestId('settings-dev-mode-switch').click();
     await page.evaluate(() => {
       window.location.hash = '#/image-generation';

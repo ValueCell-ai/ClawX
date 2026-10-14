@@ -2,7 +2,7 @@
   "title": "Settings",
   "subtitle": "Configure your ClawX experience",
   "appearance": {
-    "title": "General",
+    "title": "Appearance & startup",
     "description": "Customize the look and feel",
     "theme": "Theme",
     "light": "Light",
@@ -151,16 +151,16 @@
     }
   },
   "gateway": {
-    "title": "Gateway",
+    "title": "Local service",
     "description": "OpenClaw Gateway settings",
     "status": "Status",
     "port": "Port",
     "logs": "Logs",
     "appLogs": "Application Logs",
     "openFolder": "Open Folder",
-    "autoStart": "Auto-start Gateway",
-    "autoStartDesc": "Start Gateway when ClawX launches",
-    "proxyTitle": "Proxy",
+    "autoStart": "Start local service automatically",
+    "autoStartDesc": "Start the local service when ClawX launches",
+    "proxyTitle": "Network proxy",
     "proxyDesc": "Route Electron and Gateway traffic through your local proxy client.",
     "proxyServer": "Proxy Server",
     "proxyServerHelp": "The default proxy for all requests. Bare host:port values default to HTTP.",
@@ -228,7 +228,7 @@
   "developer": {
     "title": "Developer",
     "description": "Advanced options for developers",
-    "console": "OpenClaw Console",
+    "console": "OpenClaw console",
     "consoleDesc": "Access the native OpenClaw management interface",
     "openConsole": "Open Developer Console",
     "consoleNote": "Opens the Control UI with gateway token injected",
@@ -280,7 +280,8 @@
     "installCmdDesc": "Installs ~/.local/bin/openclaw (no admin required)",
     "installTitle": "Install OpenClaw Command",
     "installMessage": "Install the \"openclaw\" command?",
-    "installDetail": "This will create ~/.local/bin/openclaw. Ensure ~/.local/bin is on your PATH if you want to run it globally."
+    "installDetail": "This will create ~/.local/bin/openclaw. Ensure ~/.local/bin is on your PATH if you want to run it globally.",
+    "consoleUnavailable": "Unable to open the OpenClaw console"
   },
   "support": {
     "title": "Support"
@@ -373,6 +374,35 @@
       "invalidBaseUrl": "The base URL must start with http:// or https://.",
       "modelRequired": "Enter a model name.",
       "request": "Saving failed. Please try again."
+    }
+  },
+  "navigation": {
+    "label": "Settings categories",
+    "openAdvanced": "Open advanced settings",
+    "general": {
+      "title": "General",
+      "description": "Personalize appearance, language, and startup preferences."
+    },
+    "models": {
+      "title": "AI models",
+      "description": "Manage chat, voice, and image models and review usage."
+    },
+    "channels": {
+      "title": "Messaging remote",
+      "description": "Talk to ClawX through messaging apps to assign tasks and receive results."
+    },
+    "computer-use": {
+      "title": "Computer operation",
+      "description": "Let assistants view the screen and operate this computer. Manage the required system permissions.",
+      "developerHint": "Computer operation is experimental. Enable developer mode in Advanced, then return here to configure it. System permissions require separate authorization."
+    },
+    "advanced": {
+      "title": "Advanced",
+      "description": "Manage local services, network connections, and developer tools."
+    },
+    "about": {
+      "title": "About & help",
+      "description": "Check your version and updates, get help, or report a problem."
     }
   }
 }

@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import { completeSetup, expect, installIpcMocks, test } from './fixtures/electron';
 
 function stableStringify(value: unknown): string {
@@ -24,13 +25,13 @@ test.describe('ClawX gateway lifecycle resilience', () => {
 
     // Navigate through all major pages to verify nothing crashes
     // when the gateway is not running.
-    await page.getByTestId('sidebar-nav-models').click();
+    await navigateToSection(page, 'models');
     await expect(page.getByTestId('models-page')).toBeVisible();
 
-    await page.getByTestId('sidebar-nav-agents').click();
+    await navigateToSection(page, 'agents');
     await expect(page.getByTestId('agents-page')).toBeVisible();
 
-    await page.getByTestId('sidebar-nav-channels').click();
+    await navigateToSection(page, 'channels');
     await expect(page.getByTestId('channels-page')).toBeVisible();
 
     await page.getByTestId('sidebar-nav-settings').click();
@@ -77,7 +78,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
     await page.waitForTimeout(500);
 
     // Verify navigation still works after status transitions
-    await page.getByTestId('sidebar-nav-models').click();
+    await navigateToSection(page, 'models');
     await expect(page.getByTestId('models-page')).toBeVisible();
 
     // Transition 3: running → error (simulates the bug scenario where
@@ -93,7 +94,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
     await page.waitForTimeout(500);
 
     // App should still be functional in error state
-    await page.getByTestId('sidebar-nav-agents').click();
+    await navigateToSection(page, 'agents');
     await expect(page.getByTestId('agents-page')).toBeVisible();
 
     // Transition 4: error → reconnecting → running (the recovery path)
@@ -217,7 +218,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
 
     await completeSetup(page);
 
-    await page.getByTestId('sidebar-nav-channels').click();
+    await navigateToSection(page, 'channels');
     await expect(page.getByTestId('channels-health-banner')).toBeVisible();
     await expect(page.getByTestId('channels-recovery-status')).toContainText(/ClawX is restarting its Gateway/i);
     await expect(page.getByText('Gateway control plane appears unresponsive.')).toBeVisible();
@@ -235,15 +236,15 @@ test.describe('ClawX gateway lifecycle resilience', () => {
 
     const restartIndicator = page.getByTestId('sidebar-gateway-restarting');
     await expect(restartIndicator).toHaveAttribute('data-state', 'visible');
-    await expect(restartIndicator).toContainText(/gateway.*restart|重启中/i);
+    await expect(restartIndicator).toContainText(/Local service restarting|本地服务重启中/i);
 
-    const oldWarningCopy = /Gateway service is not running|Gateway is not running\.|Gateway 服务未运行|Agent 或频道变更|网关未运行。|没有活跃的网关|Scheduled tasks cannot be managed|无法管理定时任务|Channels cannot connect|无法管理频道/i;
+    const oldWarningCopy = /Local service is not running|Start the local service|本地服务尚未启动|本地服务暂不可用|Gateway service is not running|Gateway is not running\.|Gateway 服务未运行|Agent 或频道变更|网关未运行。|没有活跃的网关|Scheduled tasks cannot be managed|无法管理定时任务|Channels cannot connect|无法管理频道/i;
 
-    await page.getByTestId('sidebar-nav-agents').click();
+    await navigateToSection(page, 'agents');
     await expect(page.getByTestId('agents-page')).toBeVisible();
     await expect(page.getByText(oldWarningCopy)).toHaveCount(0);
 
-    await page.getByTestId('sidebar-nav-channels').click();
+    await navigateToSection(page, 'channels');
     await expect(page.getByTestId('channels-page')).toBeVisible();
     await expect(page.getByText(oldWarningCopy)).toHaveCount(0);
 
@@ -251,7 +252,7 @@ test.describe('ClawX gateway lifecycle resilience', () => {
     await expect(page.getByTestId('cron-page')).toBeVisible();
     await expect(page.getByText(oldWarningCopy)).toHaveCount(0);
 
-    await page.getByTestId('sidebar-nav-skills').click();
+    await navigateToSection(page, 'skills');
     await expect(page.getByTestId('skills-page')).toBeVisible();
     await expect(page.getByTestId('skills-gateway-banner')).toHaveCount(0);
 

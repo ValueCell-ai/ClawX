@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import { closeElectronApp, expect, test } from './fixtures/electron';
 
 test.describe('ClawX Electron smoke flows', () => {
@@ -17,7 +18,7 @@ test.describe('ClawX Electron smoke flows', () => {
 
     await expect(page.getByTestId('main-layout')).toBeVisible();
     await expect(page.getByTestId('chat-toolbar-actions').getByRole('button', { name: 'Refresh chat' })).toHaveCount(0);
-    await page.getByTestId('sidebar-nav-models').click();
+    await navigateToSection(page, 'models');
 
     await expect(page.getByTestId('models-page')).toBeVisible();
     await expect(page.getByTestId('models-page-title')).toBeVisible();

@@ -1,3 +1,4 @@
+import { navigateToSection } from './fixtures/navigation';
 import type { ElectronApplication, Page } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
@@ -75,7 +76,7 @@ async function reloadRenderer(page: Page): Promise<void> {
 
 async function enableDeveloperMode(page: Page): Promise<void> {
   await expect(page.getByTestId('main-layout')).toBeVisible();
-  await page.getByTestId('sidebar-nav-settings').click();
+  await navigateToSection(page, 'advanced');
   const devModeSwitch = page.getByTestId('settings-dev-mode-switch');
   await expect(devModeSwitch).toBeVisible();
   if (await devModeSwitch.getAttribute('data-state') !== 'checked') {
