@@ -182,3 +182,64 @@
 - n8n Lark 节点：<https://www.npmjs.com/package/@tjnhpro/n8n-nodes-lark>
 - Coze 飞书使用文档：<https://docs.coze.cn/cozespace_using-coze-in-feishu.md>
 - 飞书 aily：<https://aily.feishu.cn/hc/1u7kleqg/2t3efrzi>
+
+
+## 追加：网易有道 LobsterAI 怎么做（git 深挖）
+
+LobsterAI 是“龙虾类”里最直接的对照：它本身 Built on OpenClaw，但**没有升级到
+OpenClaw 2026.10.5**，而是把内核锁在 **v2026.8.1**，继续使用
+**@larksuite/openclaw-lark@2026.7.16**，再用构建期补丁把旧插件修到可加载。
+
+证据（`netease-youdao/LobsterAI`，main，应用版本 2026.10.16）：
+
+- `package.json` 的 `openclaw.version` 是 `v2026.8.1`，插件列表里
+  `openclaw-lark` 固定 `@larksuite/openclaw-lark@2026.7.16`。
+- `src/main/im/imGatewayManager.ts` 明确写 “Feishu now runs via OpenClaw”，
+  飞书没有走自研直连网关。
+- `src/renderer/types/im.ts` 的 Feishu 配置仍包含 `streaming: boolean`、
+  `replyMode`、`blockStreaming`、`footer` 等旧插件字段。
+- `scripts/openclaw-plugin-patches/lark.cjs` 是核心：在插件复制进 runtime 后打补丁，
+  并在包名/版本不符时直接构建失败（防止补丁漂移）。
+
+### 补丁做了什么
+
+| 补丁 | 内容 | 目的 |
+| --- | --- | --- |
+| `patchNativeModuleCompatibility` | 把 `src/core/version.js` 的 `fileURLToPath(import.meta.url)` 改成 `module.filename`；`token-store.js` 的 `createRequire(... import.meta.url)` 改成 `createRequire(__filename)` | 解决 CJS 包残留 ESM 语法导致的 `ReferenceError: exports is not defined in ES module scope` |
+| `patchSdkCompatibility` | `openclaw/plugin-sdk` → `plugin-entry`；`channel-runtime` → `channel-reply-pipeline`；`config-runtime` → `session-store-runtime`；`runtime.config.loadConfig()` → `current()` | 适配 OpenClaw 2026.8.1 移除旧 SDK 入口 |
+| `patchDeferredStartup` | 生成轻量 `setup-entry.js`，设置 `openclaw.setupEntry` 和 `startup.deferConfiguredChannelFullLoadUntilAfterListen=true` | 延迟完整插件加载，降低启动耗时 |
+| `patchToolContracts` | 在 `openclaw.plugin.json` 补 `contracts.tools`，含 `feishu_calendar_calendar/event/attendee/freebusy`、`feishu_sheet`、`feishu_auth` 等（实测补到 40 个） | 新版 loader 要求先声明契约才允许注册 agent tools |
+| `patchFilenameEncoding` | 修 `Content-Disposition` 中文文件名的 Latin-1 乱码 | 附件体验 |
+
+另外，旧插件的 `channelConfigs.feishu.schema` 只是 `{"type": "object"}`（宽松），
+所以 `streaming`/`replyMode`/`footer` 这些旧字段在正常 manifest 路径下不会被严格校验；
+只有 manifest 被拒、core 退回内置严格 schema 时才会报错（他们另有硬链接/启动自愈修复）。
+
+### 结果
+
+- 旧插件在 2026.8.1 上注册了 **39 个工具、4 个聊天指令**（native loading 修复文档实测），
+  日历 4 个工具、电子表格 `feishu_sheet` 全部保留，OAuth/UAT、footer 也保留。
+- 代价是：内核停在 2026.8.1；插件补丁与具体版本强绑定；每次升级插件都要重新审查；
+  官方 issue #627 / PR #626 已确认上游不会修 2026.7.16 的 8.1 兼容问题。
+
+### 为什么不能直接把这套补丁搬到 2026.10.5
+
+我把 LobsterAI 的 `lark.cjs` 原样应用到旧插件，再在 OpenClaw 2026.10.5 上启动，结果：
+
+```text
+Plugin openclaw-lark cannot import openclaw/plugin-sdk/command-auth
+(built with OpenClaw unknown; running core 2026.10.5)
+```
+
+2026.10.5 比 8.1 又删了更多东西：
+
+- `plugin-sdk/command-auth` 不存在；`resolveSenderCommandAuthorization` 没有直接替代
+  （社区兼容版为此重写了 command-auth 兼容层）。
+- LobsterAI 映射的 `channel-reply-pipeline` 在 2026.10.5 也不存在；
+  对应能力在 `channel-outbound`（`createReplyPrefixContext` / `createTypingCallbacks`）。
+- `config-runtime` 的 `loadSessionStore` / `resolveSessionStoreEntry` 在
+  `session-store-runtime` 中也没有了；`/verbose` 读取需要改用 `getSessionEntry` 等。
+- 旧插件还依赖 `feishu_oauth` / UAT；新官方插件已经把这条链路整体移除。
+
+结论：**NetEase 的做法是“锁内核 + 打补丁保旧插件”，不是“把旧插件前向移植到 2026.10.5”。**
+两者只能选一个；想在 2026.10.5 上恢复日历/表格，CLI/MCP 补充包仍是成本最低的路径。
