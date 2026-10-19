@@ -160,3 +160,91 @@ by @m1heng，MIT），直接解决了上述不兼容：
 
 CLI + skill 方案（`lark-cli`）不再是当前升级所必需，保留为未来在官方插件再次
 失配时的备选路径；本文上面的分析仍然有效。
+
+
+## 能力差异审计：@larksuite/openclaw-lark 2026.7.16 → @openclaw/feishu 2026.10.5
+
+### 结论
+
+**有明确的能力衰退**，主要集中在 agent 工具/技能、卡片脚注指标、用户身份（OAuth）和旧配置兼容性；
+渠道消息收发、流式卡片、线程、媒体、多账号、allowlist 策略等核心通道能力保留。
+
+### 工具面
+
+| 项目 | 旧插件 2026.7.16 | 新插件 2026.10.5 |
+| --- | --- | --- |
+| manifest `contracts.tools` | 39 个细粒度工具 | 14 个领域级工具 |
+| 运行时 `feishu_*` 工具名 | 42 个（含 39 个契约工具） | 14 个 |
+| 文档 | create/fetch/update/doc_comments/doc_media | `feishu_doc` 合并 create/read/write/append/insert/block/table/media |
+| 云盘 | drive_file | `feishu_drive` list/info/folder/move/delete/comments |
+| 权限 | perm | `feishu_perm` list/add/remove |
+| 知识库 | wiki_space / wiki_space_node / search_doc_wiki | `feishu_wiki` spaces/nodes/get/create/move/rename（**无搜索**） |
+| 多维表格 | app/table/field/record/view 全系 | app/field/record 基本 CRUD（**无 view**） |
+| 日历 | calendar/event/attendee/freebusy | **无** |
+| 任务 | task/tasklist/subtask/comment/agent/attachment/section | **无** |
+| 电子表格 | feishu_sheet | **无** |
+| IM 读取/搜索/主动发送 | im_user_get_messages/search/thread/fetch_resource/im_user_message 等 | **无**（仅通道自动收发） |
+| 用户/身份 | get_user / search_user / oauth / oauth_batch_auth / auth | **无**（仅 bot 身份） |
+| 交互提问 | ask_user_question | **无** |
+| 诊断 | doctor / diagnose | 由 manifest `doctorContract` 取代 |
+
+### 技能面
+
+| 旧插件（9 个） | 新插件（4 个） |
+| --- | --- |
+| feishu-bitable、feishu-calendar、feishu-channel-rules、feishu-create-doc、feishu-fetch-doc、feishu-im-read、feishu-task、feishu-troubleshoot、feishu-update-doc | feishu-doc、feishu-drive、feishu-perm、feishu-wiki |
+
+### 卡片/消息体验
+
+- **保留**：WebSocket/Webhook、DM/群聊、@ 提及、线程回复、reaction 通知、媒体收发、多账号、
+  dmPolicy/groupPolicy/allowlist、流式预览与卡片更新、reasoning 预览。
+- **丢失**：卡片 footer（status/elapsed/model/tokens/cache/context 六项开关与指标）、
+  卡片内的 tool-use 进度展示、`ask_user_question` 交互卡片、用户 OAuth 授权卡片。
+
+### 配置兼容性风险（需要处理）
+
+新插件 `channelConfigs.feishu.schema` 是 `additionalProperties: false` 的严格 schema。
+旧插件的以下字段会被判为非法：
+
+- `footer`、`replyMode`、`blockStreaming`、`blockStreamingCoalesce`、`chunkMode`（顶层）、
+  `heartbeat`、`toolUseDisplay`、`dedup`、`threadSession`、`uat`、`webhookPort`、
+  `respondToMentionAll`；
+- `markdown.tables`（旧值 off/bullets/code，新 schema 只接受 mode/tableMode）；
+- `tools` 下的旧细粒度工具开关（新 schema 只接受 doc/chat/wiki/drive/perm/scopes/bitable）；
+- group 级的 `groupPolicy` / `respondToMentionAll` / `allowBots`。
+
+实测：
+
+```text
+$ openclaw config validate
+- channels.feishu: invalid config for plugin feishu:
+  must not have additional properties: "footer", "replyMode"
+- channels.feishu.streaming: invalid config for plugin feishu: must be object
+```
+
+`openclaw doctor --fix` 会把 `streaming: true` 迁移为 `{mode:"partial"}`，但 **不会** 删除
+`footer` / `replyMode`，所以仍有用户会在升级后遇到 Gateway 配置无效。
+
+ClawX 当前 UI 只写 `appId` / `appSecret` / `enabled`，新装用户不受影响；手工配置过旧插件
+高级字段的用户需要迁移。建议在 ClawX 的 `sanitizeOpenClawConfig` 中增加：
+删除 `footer`/`replyMode` 等旧字段，把布尔 `streaming` 转成对象，按新 schema 过滤
+`markdown`/`tools`/`groups`，并保留 `appId`/`appSecret`/账号/策略配置。
+
+### 社区兼容版评测
+
+`@hotwvpyym/openclaw-lark@2026.10.6` 保留 9 个 skills、37 个工具和 footer 代码，
+但该版本在 2026.10.5 上移除了 manifest `contracts.tools`，Gateway 会逐条报：
+
+```text
+plugin must declare contracts.tools before registering agent tools
+```
+
+实测插件通道仍能启动 WebSocket，但 `toolNames` 为 **0**，即工具全部不可用。若要采用该版本，
+必须补回 `contracts.tools`，且需接受第三方维护与供应链风险；不建议作为默认方案。
+
+### 建议
+
+1. **保留官方 `@openclaw/feishu`**（通道稳定、官方目录、2026.10 兼容）。
+2. 对能力缺口，用 **`lark-cli` + skills 作为补充能力包**（类似 WeCom 的 `wecom-cli` + skills），
+   优先补 calendar / task / sheets / IM 读取搜索 / 用户查询；这样无需自己维护通道插件。
+3. 发布前增加旧 Feishu 配置迁移（见上），避免升级用户 Gateway 启动失败。
