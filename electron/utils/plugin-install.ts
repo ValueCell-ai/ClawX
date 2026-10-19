@@ -378,7 +378,7 @@ function collectJsFiles(rootDir: string): string[] {
 const PLUGIN_NPM_NAMES: Record<string, string> = {
   dingtalk: DINGTALK_OFFICIAL_NPM,
   wecom: '@wecom/wecom-openclaw-plugin',
-  'feishu-openclaw-plugin': '@larksuite/openclaw-lark',
+  'feishu-openclaw-plugin': '@openclaw/feishu',
   discord: '@openclaw/discord',
   qqbot: '@openclaw/qqbot',
   whatsapp: '@openclaw/whatsapp',
@@ -417,15 +417,15 @@ const TRUSTED_OFFICIAL_EXTENSION_PLUGINS: Record<string, TrustedOfficialExtensio
     recordSource: 'path',
     legacyPluginIds: ['wecom-openclaw-plugin'],
   },
-  // @larksuite/openclaw-lark 2026.7.16 still declares ./dist/index.js as
-  // `main`, but publishes its runtime entry as ./index.js. OpenClaw 2026.7.1
-  // rejects old managed npm records during its post-core smoke check. Make
-  // ClawX's complete mirror the canonical path-owned payload instead.
+  // OpenClaw 2026.10.5 ships the official successor @openclaw/feishu under the
+  // `feishu` plugin id. It publishes a valid runtimeExtensions entry, so the
+  // ClawX mirror can stay the canonical path-owned payload without the legacy
+  // @larksuite/openclaw-lark main-entry workaround.
   'feishu-openclaw-plugin': {
-    npmName: '@larksuite/openclaw-lark',
-    pluginId: 'openclaw-lark',
+    npmName: '@openclaw/feishu',
+    pluginId: 'feishu',
     recordSource: 'path',
-    legacyPluginIds: ['feishu-openclaw-plugin', 'feishu'],
+    legacyPluginIds: ['openclaw-lark', 'feishu-openclaw-plugin'],
   },
   whatsapp: { npmName: '@openclaw/whatsapp' },
   discord: { npmName: '@openclaw/discord' },

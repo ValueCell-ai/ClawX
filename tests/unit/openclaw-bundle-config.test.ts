@@ -24,7 +24,7 @@ describe('openclaw bundle config', () => {
       '@dingtalk-real-ai/dingtalk-connector': '0.8.26',
       'dingtalk-workspace-cli': '1.0.30',
       '@wecom/wecom-openclaw-plugin': '2026.9.15',
-      '@larksuite/openclaw-lark': '2026.7.16',
+      '@openclaw/feishu': '2026.10.5',
       '@tencent-weixin/openclaw-weixin': '2.4.10',
     });
 
@@ -65,8 +65,8 @@ describe('openclaw bundle config', () => {
       id: 'wecom-openclaw-plugin',
       channels: ['wecom'],
     });
-    expect(readManifest('@larksuite/openclaw-lark')).toMatchObject({
-      id: 'openclaw-lark',
+    expect(readManifest('@openclaw/feishu')).toMatchObject({
+      id: 'feishu',
       channels: ['feishu'],
     });
     expect(readManifest('@dingtalk-real-ai/dingtalk-connector')).toMatchObject({
@@ -85,6 +85,8 @@ describe('openclaw bundle config', () => {
     expect(lockfile).not.toContain("'@wecom/wecom-openclaw-plugin@2026.8.17':");
     expect(lockfile).not.toContain("'@larksuite/openclaw-lark@2026.6.10':");
     expect(lockfile).not.toContain("'@larksuite/openclaw-lark@2026.7.9':");
+    expect(lockfile).not.toContain("'@larksuite/openclaw-lark@2026.7.16':");
+    expect(lockfile).toContain("'@openclaw/feishu@2026.10.5':");
     expect(lockfile).not.toContain("'@tencent-weixin/openclaw-weixin@2.4.6':");
     expect(lockfile).not.toContain("'@openclaw/ai@2026.7.1-2':");
     expect(lockfile).toContain("'@openclaw/ai@2026.10.5':");

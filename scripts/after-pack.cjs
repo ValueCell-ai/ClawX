@@ -814,7 +814,7 @@ exports.default = async function afterPack(context) {
   const BUNDLED_PLUGINS = [
     { npmName: '@dingtalk-real-ai/dingtalk-connector', pluginId: 'dingtalk' },
     { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' },
-    { npmName: '@larksuite/openclaw-lark', pluginId: 'feishu-openclaw-plugin' },
+    { npmName: '@openclaw/feishu', pluginId: 'feishu-openclaw-plugin' },
     { npmName: '@openclaw/discord', pluginId: 'discord' },
     { npmName: '@openclaw/qqbot', pluginId: 'qqbot' },
     { npmName: '@openclaw/whatsapp', pluginId: 'whatsapp' },
@@ -869,7 +869,7 @@ exports.default = async function afterPack(context) {
   //     the top-level node_modules/ as well.
   const buildExtDir = join(__dirname, '..', 'build', 'openclaw', 'dist', 'extensions');
   const packExtDir = join(openclawRoot, 'dist', 'extensions');
-  // ClawX always uses the official @larksuite/openclaw-lark plugin for Feishu.
+  // ClawX always uses the official @openclaw/feishu plugin for Feishu.
   // The built-in openclaw dist/extensions/feishu tree is redundant, and on macOS
   // its mirrored runtime deps significantly increase codesign file pressure.
   rmSync(join(packExtDir, 'feishu'), { recursive: true, force: true });

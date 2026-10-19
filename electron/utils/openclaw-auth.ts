@@ -569,7 +569,12 @@ async function discoverAgentIds(): Promise<string[]> {
 
 // ── OpenClaw Config Helpers ──────────────────────────────────────
 
-const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
+// OpenClaw 2026.10.5 replaced @larksuite/openclaw-lark with the official
+// @openclaw/feishu plugin, whose manifest id is `feishu`. Legacy ids remain
+// only for allow/entry cleanup and migration.
+const FEISHU_PLUGIN_DIR_CANDIDATES = ['feishu-openclaw-plugin', 'openclaw-lark'] as const;
+const FEISHU_PLUGIN_ID_CANDIDATES = ['feishu', 'openclaw-lark', 'feishu-openclaw-plugin'] as const;
+const DEFAULT_FEISHU_PLUGIN_ID = 'feishu';
 const VALID_COMPACTION_MODES = new Set(['default', 'safeguard']);
 const CLAWX_COMPACTION_IDENTIFIER_INSTRUCTIONS = 'Preserve only identifiers referenced by unresolved asks, active constraints, modified files, or pending next steps.';
 const CLAWX_COMPACTION_KEEP_RECENT_TOKENS = 0;
@@ -775,7 +780,7 @@ async function readOpenClawJson(): Promise<Record<string, unknown>> {
 
 async function resolveInstalledFeishuPluginId(): Promise<string | null> {
   const extensionRoot = join(homedir(), '.openclaw', 'extensions');
-  for (const dirName of FEISHU_PLUGIN_ID_CANDIDATES) {
+  for (const dirName of FEISHU_PLUGIN_DIR_CANDIDATES) {
     const manifestPath = join(extensionRoot, dirName, 'openclaw.plugin.json');
     const manifest = await readJsonFile<{ id?: unknown }>(manifestPath);
     if (typeof manifest?.id === 'string' && manifest.id.trim()) {
@@ -3542,9 +3547,10 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
     }
 
     // ── plugins.entries.feishu cleanup ──────────────────────────────
-    // Normalize feishu plugin ids dynamically based on installed manifest.
-    // Different environments may report either "openclaw-lark" or
-    // "feishu-openclaw-plugin" as the runtime plugin id.
+    // Normalize feishu plugin ids dynamically based on the installed manifest.
+    // OpenClaw 2026.10.5 uses the official @openclaw/feishu plugin (id
+    // "feishu"); legacy installs may still report "openclaw-lark" or
+    // "feishu-openclaw-plugin".
     if (typeof plugins === 'object' && !Array.isArray(plugins)) {
       const pluginsObj = plugins as Record<string, unknown>;
       const pEntries = (
@@ -3638,7 +3644,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       const configuredFeishuId =
         FEISHU_PLUGIN_ID_CANDIDATES.find((id) => allowArr.includes(id))
         || FEISHU_PLUGIN_ID_CANDIDATES.find((id) => Boolean(pEntries[id]));
-      const canonicalFeishuId = installedFeishuId || configuredFeishuId || FEISHU_PLUGIN_ID_CANDIDATES[0];
+      const canonicalFeishuId = installedFeishuId || configuredFeishuId || DEFAULT_FEISHU_PLUGIN_ID;
 
       // Only add feishu plugin to plugins.allow and plugins.entries when the
       // feishu channel is actually configured.  If not configured, remove all
@@ -3655,7 +3661,7 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
           || pEntries.feishu;
 
         const normalizedAllow = allowArr.filter(
-          (id) => id !== 'feishu' && !FEISHU_PLUGIN_ID_CANDIDATES.includes(id as typeof FEISHU_PLUGIN_ID_CANDIDATES[number]),
+          (id) => !FEISHU_PLUGIN_ID_CANDIDATES.includes(id as typeof FEISHU_PLUGIN_ID_CANDIDATES[number]),
         );
         normalizedAllow.push(canonicalFeishuId);
         if (JSON.stringify(normalizedAllow) !== JSON.stringify(allowArr)) {
@@ -3681,14 +3687,14 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       } else {
         // Feishu channel not configured — remove all feishu plugin entries
         const normalizedAllow = allowArr.filter(
-          (id) => id !== 'feishu' && !FEISHU_PLUGIN_ID_CANDIDATES.includes(id as typeof FEISHU_PLUGIN_ID_CANDIDATES[number]),
+          (id) => !FEISHU_PLUGIN_ID_CANDIDATES.includes(id as typeof FEISHU_PLUGIN_ID_CANDIDATES[number]),
         );
         if (normalizedAllow.length !== allowArr.length) {
           pluginsObj.allow = normalizedAllow;
           modified = true;
           console.log('[sanitize] Removed unconfigured feishu plugin from plugins.allow');
         }
-        for (const id of [...FEISHU_PLUGIN_ID_CANDIDATES, 'feishu'] as const) {
+        for (const id of FEISHU_PLUGIN_ID_CANDIDATES) {
           if (pEntries[id]) {
             delete pEntries[id];
             modified = true;
@@ -3895,11 +3901,10 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
 
 
       // ── Remove legacy built-in 'feishu' registration ───────────────
-      // ClawX bundles Feishu via the official @larksuite/openclaw-lark
-      // plugin and removes the old built-in dist/extensions/feishu tree.
-      // Keeping plugins.entries.feishu={enabled:false} looks harmless, but
-      // OpenClaw's channel startup planner treats it as an explicit blocker
-      // for the feishu channel owner and skips openclaw-lark at runtime.
+      // ClawX bundles Feishu via the official @openclaw/feishu plugin. On
+      // hosts that still resolve the legacy @larksuite/openclaw-lark id, a
+      // bare plugins.entries.feishu={enabled:false} record would block the
+      // feishu channel owner, so drop it in favor of the resolved plugin id.
       const allowArr2 = Array.isArray(pluginsObj.allow) ? pluginsObj.allow as string[] : [];
       if (isFeishuConfigured) {
         const hasCanonicalFeishu = allowArr2.includes(canonicalFeishuId) || !!pEntries[canonicalFeishuId];
@@ -3907,12 +3912,12 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
           const bareFeishuIdx = allowArr2.indexOf('feishu');
           if (bareFeishuIdx !== -1) {
             allowArr2.splice(bareFeishuIdx, 1);
-            console.log('[sanitize] Removed bare "feishu" from plugins.allow (openclaw-lark plugin is configured)');
+            console.log('[sanitize] Removed bare "feishu" from plugins.allow (legacy Lark plugin is configured)');
             modified = true;
           }
           if (pEntries.feishu) {
             delete pEntries.feishu;
-            console.log('[sanitize] Removed legacy plugins.entries.feishu (openclaw-lark plugin is configured)');
+            console.log('[sanitize] Removed legacy plugins.entries.feishu (legacy Lark plugin is configured)');
             modified = true;
           }
         }
