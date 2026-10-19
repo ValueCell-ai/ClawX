@@ -77,9 +77,6 @@ importers:
       '@grammyjs/transformer-throttler':
         specifier: ^1.2.1
         version: 1.2.1(grammy@1.42.0(encoding@0.1.13))
-      '@larksuite/openclaw-lark':
-        specifier: 2026.7.16
-        version: 2026.7.16(openclaw@2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13))
       '@larksuiteoapi/node-sdk':
         specifier: ^1.61.1
         version: 1.62.0
@@ -87,6 +84,9 @@ importers:
         specifier: ^4.7.0
         version: 4.7.0(monaco-editor@0.55.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@openclaw/discord':
+        specifier: 2026.10.5
+        version: 2026.10.5(openclaw@2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13))
+      '@openclaw/feishu':
         specifier: 2026.10.5
         version: 2026.10.5(openclaw@2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13))
       '@openclaw/qqbot':
@@ -1501,21 +1501,8 @@ packages:
   '@kurkle/color@0.3.4':
     resolution: {integrity: sha512-M5UknZPHRu3DEDWoipU6sE8PdkZ6Z/S+v4dD+Ke8IaNlpdSQah50lz1KtcFBa2vsdOnwbbnxJwVM4wty6udA5w==}
 
-  '@larksuite/openclaw-lark@2026.7.16':
-    resolution: {integrity: sha512-D3LNGy+Nk9QZnMi0ir0AvMSyaVc0xaU+0U5psRgwGRlvmgXLjsa5ayrko4zD1Es2DNutLCrYBRIu3yOY5DI+zw==}
-    engines: {node: '>=22'}
-    hasBin: true
-    peerDependencies:
-      openclaw: '>=2026.5.4'
-    peerDependenciesMeta:
-      openclaw:
-        optional: true
-
   '@larksuiteoapi/node-sdk@1.62.0':
     resolution: {integrity: sha512-ZITiuAkiVgphn6OPO8MHeWV1q7+UNByLmNiYVDIAxF5+HJ8USl4xPinDOq9AMJSEUqdBJtiLdz7UltV5jP+EDg==}
-
-  '@larksuiteoapi/node-sdk@1.66.1':
-    resolution: {integrity: sha512-W1rIAs/8Oc/rEYuWc0sxGvR8iLwd8p5D2RS4ODMqs8htIxK8yIa8sb22EDv/OEBqUpKXZaNLydTz7Oq8HOQROg==}
 
   '@lydell/node-pty-darwin-arm64@1.2.0-beta.15':
     resolution: {integrity: sha512-6TSBbzdcLiNTHl1mTuzflqXrkmcC36USVGvERoDgvHk2ItEDaMaFZuAJ1CqPmwYj0DyhCS16TVS8OGK9xZnjyQ==}
@@ -1655,6 +1642,22 @@ packages:
       - typebox
       - undici
       - ws
+      - zod
+
+  '@openclaw/feishu@2026.10.5':
+    resolution: {integrity: sha512-vhpoXathiYAlOsAyhk4hmZFnScAtL5JKlAPAkIvmllkQK0gqfuR0ayQUoYe5YrDIfqdd7TWSlNTjNOpSo/WHCQ==}
+    peerDependencies:
+      openclaw: '>=2026.10.5'
+    peerDependenciesMeta:
+      openclaw:
+        optional: true
+    bundledDependencies:
+      - '@larksuiteoapi/node-sdk'
+      - '@openclaw/fs-safe'
+      - mdast-util-from-markdown
+      - mdast-util-gfm-table
+      - micromark-extension-gfm-table
+      - typebox
       - zod
 
   '@openclaw/fs-safe-darwin-arm64@0.25.0':
@@ -2394,9 +2397,6 @@ packages:
 
   '@silvia-odwyer/photon-node@0.3.4':
     resolution: {integrity: sha512-bnly4BKB3KDTFxrUIcgCLbaeVVS8lrAkri1pEzskpmxu9MdfGQTy8b8EgcD83ywD3RPMsIulY8xJH5Awa+t9fA==}
-
-  '@sinclair/typebox@0.34.49':
-    resolution: {integrity: sha512-brySQQs7Jtn0joV8Xh9ZV/hZb9Ozb0pmazDIASBkYKCjXrXU3mpcFahmK/z4YDhGkQvP9mWJbVyahdtU5wQA+A==}
 
   '@sindresorhus/is@4.6.0':
     resolution: {integrity: sha512-t09vSN3MdfsyCHoFcTRCH/iUtG7OJ0CsjzB8cjAmKc/va/kIgeDI/TxsigdncE/4be734m0cvIYwNaV4i2XqAw==}
@@ -4730,11 +4730,6 @@ packages:
   image-q@4.0.0:
     resolution: {integrity: sha512-PfJGVgIfKQJuq3s0tTDOKtztksibuUEbJQIYT3by6wctQo+Rdlh7ef4evJ5NCdxY4CfMbvFkocEwbl4BF8RlJw==}
 
-  image-size@2.0.2:
-    resolution: {integrity: sha512-IRqXKlaXwgSMAMtpNzZa1ZAe8m+Sa1770Dhk8VkSsP9LS+iHD62Zd8FQKs8fbPiagBE7BzoFX23cxFnwshpV6w==}
-    engines: {node: '>=16.x'}
-    hasBin: true
-
   immediate@3.0.6:
     resolution: {integrity: sha512-XXOFtyqDjNDAQxVfYxuF7g9Il/IbWmmlQg2MYKOH8ExIT1qg6xc4zyS3HaEEATgs1btfzxq15ciUiY7gjSXRGQ==}
 
@@ -6848,9 +6843,6 @@ packages:
   undici-types@7.19.2:
     resolution: {integrity: sha512-qYVnV5OEm2AW8cJMCpdV20CDyaN3g0AjDlOGf1OW4iaDEx8MwdtChUp4zu4H0VP3nDRF/8RKWH+IPp9uW0YGZg==}
 
-  undici-types@8.3.0:
-    resolution: {integrity: sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ==}
-
   undici@6.28.1:
     resolution: {integrity: sha512-zWpdTVD54H48CIybL0rWQ3ukpb9d23wM7eH5RtfdmeP70cWHNjtfo7P4vZX+5CoDcO53J4Pu5uXp7lNfjc6DRA==}
     engines: {node: '>=18.17'}
@@ -8517,20 +8509,6 @@ snapshots:
   '@kurkle/color@0.3.4':
     optional: true
 
-  '@larksuite/openclaw-lark@2026.7.16(openclaw@2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13))':
-    dependencies:
-      '@larksuiteoapi/node-sdk': 1.66.1
-      '@sinclair/typebox': 0.34.49
-      image-size: 2.0.2
-      undici-types: 8.3.0
-      zod: 4.4.3
-    optionalDependencies:
-      openclaw: 2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13)
-    transitivePeerDependencies:
-      - bufferutil
-      - debug
-      - utf-8-validate
-
   '@larksuiteoapi/node-sdk@1.62.0':
     dependencies:
       axios: 1.13.6
@@ -8540,20 +8518,6 @@ snapshots:
       protobufjs: 7.5.4
       qs: 6.15.0
       ws: 8.20.0
-    transitivePeerDependencies:
-      - bufferutil
-      - debug
-      - utf-8-validate
-
-  '@larksuiteoapi/node-sdk@1.66.1':
-    dependencies:
-      axios: 1.13.6
-      lodash.identity: 3.0.0
-      lodash.merge: 4.6.2
-      lodash.pickby: 4.6.0
-      protobufjs: 7.5.8
-      qs: 6.15.0
-      ws: 8.21.0
     transitivePeerDependencies:
       - bufferutil
       - debug
@@ -8701,6 +8665,10 @@ snapshots:
       - zod
 
   '@openclaw/discord@2026.10.5(openclaw@2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13))':
+    optionalDependencies:
+      openclaw: 2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13)
+
+  '@openclaw/feishu@2026.10.5(openclaw@2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13))':
     optionalDependencies:
       openclaw: 2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13)
 
@@ -9308,8 +9276,6 @@ snapshots:
   '@shikijs/vscode-textmate@10.0.2': {}
 
   '@silvia-odwyer/photon-node@0.3.4': {}
-
-  '@sinclair/typebox@0.34.49': {}
 
   '@sindresorhus/is@4.6.0': {}
 
@@ -12064,8 +12030,6 @@ snapshots:
       '@types/node': 16.9.1
     optional: true
 
-  image-size@2.0.2: {}
-
   immediate@3.0.6: {}
 
   import-meta-resolve@4.2.0: {}
@@ -14624,8 +14588,6 @@ snapshots:
   undici-types@7.18.2: {}
 
   undici-types@7.19.2: {}
-
-  undici-types@8.3.0: {}
 
   undici@6.28.1: {}
 

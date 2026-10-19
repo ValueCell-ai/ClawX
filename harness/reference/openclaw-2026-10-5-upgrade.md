@@ -15,7 +15,7 @@ Durable, non-executable reference for the ClawX kernel upgrade from
 | @wecom/wecom-openclaw-plugin | 2026.8.17 | 2026.9.15 | local compatibility patch regenerated |
 | @tencent-weixin/openclaw-weixin | 2.4.8 | 2.4.10 | |
 | @dingtalk-real-ai/dingtalk-connector | 0.8.25 | 0.8.26 | |
-| @larksuite/openclaw-lark | 2026.7.16 | 2026.7.16 | no newer published release |
+| Feishu/Lark plugin | @larksuite/openclaw-lark 2026.7.16 | **@openclaw/feishu 2026.10.5** | official successor; old plugin fails on >=2026.8.1 |
 | electron | 40.10.6 (Node 24.15.0, SQLite 3.51.3) | 41.10.7 (Node 24.18.0, SQLite 3.53.1) | Node floor |
 | bundled Windows Node | 22.22.3 | 24.18.1 | Node floor |
 | @agentclientprotocol/sdk | 1.1.0 | 1.7.0 | matches openclaw 2026.10.5 |

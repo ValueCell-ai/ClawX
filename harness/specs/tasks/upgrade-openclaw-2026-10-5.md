@@ -5,6 +5,19 @@ scenario: gateway-backend-communication
 taskType: runtime-bridge
 intent: Move ClawX from the OpenClaw 2026.7.1 CJS runtime to the 2026.10.5 ESM runtime, including its Node 24.16 floor, regenerated ClawX runtime patch, and forward/backward/cross-platform compatibility evidence.
 touchedAreas:
+  - tests/unit/config-sync.test.ts
+  - tests/unit/plugin-install.test.ts
+  - tests/unit/channel-config.test.ts
+  - tests/unit/openclaw-auth.test.ts
+  - tests/unit/provider-model-sync.test.ts
+  - tests/unit/acp-subagent-lineage.test.ts
+  - src/lib/acp/subagent-lineage.ts
+  - scripts/bundle-openclaw-plugins.mjs
+  - scripts/after-pack.cjs
+  - harness/reference/openclaw-official-client-comparison.md
+  - electron/utils/plugin-install.ts
+  - electron/gateway/config-sync.ts
+  - electron/main/provider-model-sync.ts
   - AGENTS.md
   - tests/unit/openclaw-acp-ambient-stream.test.ts
   - package.json
@@ -50,7 +63,7 @@ expectedUserBehavior:
   - Interrupted ACP turns recover across a managed Gateway restart, including accepted-prompt recovery, resumed-run lineage, and transcript/ledger replay without duplicate text.
   - Compaction keeps ClawX's no-retained-tail mode (`keepRecentTokens: 0`), aggregate tool-result pressure targets, and mid-turn progress continuation behavior.
   - TokenDance provider errors still surface documented `TokenDance-Recovery-Action` hints.
-  - Official channel plugins resolve against 2026.10.5 without peer conflicts; QQ Bot stays on its latest published 2026.7.1 because no newer release exists.
+  - Official channel plugins resolve against 2026.10.5 without peer conflicts; QQ Bot stays on its latest published 2026.7.1 because no newer release exists. Feishu uses the official successor @openclaw/feishu 2026.10.5 (channel id `feishu`), while legacy @larksuite/openclaw-lark ids migrate cleanly.
 requiredProfiles:
   - fast
   - comms

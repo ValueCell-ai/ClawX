@@ -725,7 +725,7 @@ describe('plugin installer diagnostics', () => {
     });
     mockReadFileSync.mockImplementation((input: string) => {
       if (String(input) === `${targetDir}/package.json`) {
-        return JSON.stringify({ version: '2026.7.16' });
+        return JSON.stringify({ version: '2026.10.5' });
       }
       return '{}';
     });
@@ -738,14 +738,14 @@ describe('plugin installer diagnostics', () => {
     expect(mockWriteFileSync).not.toHaveBeenCalled();
     expect(mockRemovePluginInstallRecordsFromSqlite).toHaveBeenCalledWith([
       'feishu-openclaw-plugin',
-      'feishu',
+      'openclaw-lark',
     ]);
     expect(mockUpsertPluginInstallRecordsIntoSqlite).toHaveBeenCalledWith({
-      'openclaw-lark': expect.objectContaining({
+      feishu: expect.objectContaining({
         source: 'path',
         sourcePath: targetDir,
         installPath: targetDir,
-        version: '2026.7.16',
+        version: '2026.10.5',
       }),
     });
   });

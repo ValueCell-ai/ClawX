@@ -135,3 +135,28 @@ ReferenceError: exports is not defined in ES module scope
 
 本次仅完成兼容性确认与方案评估，未实现 CLI 桥接或新插件。上述实测均在本地
 macOS arm64 + OpenClaw 2026.10.5 + `@larksuite/openclaw-lark@2026.7.16` 上完成。
+
+
+## 后续：官方继任插件（2026-10-19 复核）
+
+调研 OpenClaw 2026.10.5 的官方外部渠道目录后发现，OpenClaw 已提供官方继任插件
+**`@openclaw/feishu@2026.10.5`**（官方目录条目 `source: official`，社区维护
+by @m1heng，MIT），直接解决了上述不兼容：
+
+- manifest id 为 `feishu`，channel id 为 `feishu`，配置仍在 `channels.feishu`；
+- peerDependencies `openclaw >=2026.10.5`，`compat.pluginApi >=2026.10.5`；
+- 使用 ESM `dist/index.js` + `runtimeExtensions`，不再依赖被删除的
+  `openclaw/plugin-sdk*` 旧入口；
+- 内置 `feishu-doc` / `feishu-drive` / `feishu-perm` / `feishu-wiki` skills 与
+  feishu_* 工具族；支持 accounts 多账号、WebSocket/Webhook、卡片与 footer 配置；
+- 已在本地 OpenClaw 2026.10.5 Gateway 实测：插件加载成功，Feishu channel 启动
+  WebSocket（`feishu[default]: WebSocket client started`）。
+
+因此 ClawX 采用**最轻量方案**：把原 `@larksuite/openclaw-lark@2026.7.16`
+替换为 `@openclaw/feishu@2026.10.5`，并保留 `feishu-openclaw-plugin` 镜像目录、
+`channels.feishu` 配置路径和 `feishu` 渠道 UI；安装记录、allow/entries 清理与
+镜像升级逻辑同步迁移到新插件 id `feishu`，旧 id `openclaw-lark` /
+`feishu-openclaw-plugin` 只用于兼容清理。
+
+CLI + skill 方案（`lark-cli`）不再是当前升级所必需，保留为未来在官方插件再次
+失配时的备选路径；本文上面的分析仍然有效。

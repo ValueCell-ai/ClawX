@@ -41,7 +41,8 @@ function normWin(p) {
 const PLUGINS = [
   { npmName: '@dingtalk-real-ai/dingtalk-connector', pluginId: 'dingtalk' },
   { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' },
-  { npmName: '@larksuite/openclaw-lark', pluginId: 'feishu-openclaw-plugin' },
+  // Official successor to @larksuite/openclaw-lark for OpenClaw >=2026.10.5.
+  { npmName: '@openclaw/feishu', pluginId: 'feishu-openclaw-plugin' },
   { npmName: '@openclaw/discord', pluginId: 'discord' },
   { npmName: '@openclaw/qqbot', pluginId: 'qqbot' },
   { npmName: '@openclaw/whatsapp', pluginId: 'whatsapp' },

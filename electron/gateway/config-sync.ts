@@ -77,7 +77,7 @@ export interface GatewayPrelaunchSyncSummary {
 const CHANNEL_PLUGIN_MAP: Record<string, { dirName: string; npmName: string }> = {
   dingtalk: { dirName: 'dingtalk', npmName: '@dingtalk-real-ai/dingtalk-connector' },
   wecom: { dirName: 'wecom', npmName: '@wecom/wecom-openclaw-plugin' },
-  feishu: { dirName: 'feishu-openclaw-plugin', npmName: '@larksuite/openclaw-lark' },
+  feishu: { dirName: 'feishu-openclaw-plugin', npmName: '@openclaw/feishu' },
   discord: { dirName: 'discord', npmName: '@openclaw/discord' },
   qqbot: { dirName: 'qqbot', npmName: '@openclaw/qqbot' },
   whatsapp: { dirName: 'whatsapp', npmName: '@openclaw/whatsapp' },
