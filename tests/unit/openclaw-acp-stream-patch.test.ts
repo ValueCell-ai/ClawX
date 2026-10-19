@@ -10,10 +10,10 @@ const root = path.resolve(import.meta.dirname, '../..');
 const dist = path.join(root, 'node_modules/openclaw/dist');
 const execFileAsync = promisify(execFile);
 
-// The ambient subagent session-subscription/replay layer is still being ported
-// to the 2026.10.5 translator classes; this suite guards the pieces that are
-// already live: snapshot-aware deltas, commentary routing, compaction/session
-// operation routing, tool replay, and true-error terminal settlement.
+// Guards the ACP prompt-stream pieces ported onto the 2026.10.5 translator
+// classes: snapshot-aware deltas, commentary routing, compaction/session
+// operation routing, tool replay, and true-error terminal settlement. Ambient
+// subagent streaming is covered by openclaw-acp-ambient-stream.test.ts.
 describe('OpenClaw ACP assistant stream patch', () => {
   let bundle: string;
 
