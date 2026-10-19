@@ -106,3 +106,20 @@ generated-dist patches for every OpenClaw version change.
   `ELECTRON_RUN_AS_NODE`; Windows uses `resources/bin/win32-*/node.exe`; Linux
   uses either the packaged wrapper or Electron's Node. All three must satisfy
   the Node 24.16 floor.
+
+
+## Packaging evidence (2026.10.5)
+
+Local packaging was exercised for every desktop target on a macOS arm64 host:
+
+| Target | Result | Evidence |
+| --- | --- | --- |
+| macOS arm64 directory build | pass | `release/mac/ClawX.app` assembled; signed with the local Developer ID; Playwright smoke reports `main-layout` visible and Electron `41.10.7`; packaged `openclaw.mjs` booted through the `ClawX Helper` (Node 24.18.0 / SQLite 3.53.1) and `/health` returned `{"ok":true,"status":"live"}` |
+| macOS dmg/zip + notarization | blocked by credentials | builder stops at `APPLE_APP_SPECIFIC_PASSWORD env var needs to be set`; release CI supplies it |
+| Linux arm64 directory build | pass | `release/linux-arm64-unpacked/resources/openclaw` is 2026.10.5 with the ClawX patch; all 7 plugin mirrors present |
+| Windows arm64 directory build | pass | `release/win-arm64-unpacked/resources/openclaw` is 2026.10.5 with the ClawX patch; `resources/bin/node.exe` is `PE32+ Aarch64` Node `v24.18.1`; all 7 plugin mirrors present |
+| Windows NSIS installer | not run on macOS | requires the Windows CI runner (`package-win-manual.yml`) |
+
+The Windows directory build cannot extract the DingTalk `dws` payload on a
+non-Windows host (`spawnSync powershell.exe ENOENT`); the Windows CI runner
+performs that step natively.
