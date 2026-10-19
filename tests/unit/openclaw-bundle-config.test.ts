@@ -8,31 +8,31 @@ import { describe, expect, it } from 'vitest';
 const require = createRequire(import.meta.url);
 
 describe('openclaw bundle config', () => {
-  it('pins the OpenClaw 2026.7.1-2 runtime compatibility matrix', () => {
+  it('pins the OpenClaw 2026.10.5 runtime compatibility matrix', () => {
     const packageJson = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
     };
-    expect(packageJson.dependencies?.['@agentclientprotocol/sdk']).toBe('1.1.0');
+    expect(packageJson.dependencies?.['@agentclientprotocol/sdk']).toBe('1.7.0');
     expect(packageJson.dependencies?.['@trycua/cua-driver']).toBe('0.37.0');
     expect(packageJson.devDependencies).toMatchObject({
-      openclaw: '2026.7.1-2',
-      electron: '40.10.6',
-      '@openclaw/discord': '2026.7.1',
+      openclaw: '2026.10.5',
+      electron: '41.10.7',
+      '@openclaw/discord': '2026.10.5',
       '@openclaw/qqbot': '2026.7.1',
-      '@openclaw/whatsapp': '2026.7.1',
-      '@dingtalk-real-ai/dingtalk-connector': '0.8.25',
+      '@openclaw/whatsapp': '2026.10.5',
+      '@dingtalk-real-ai/dingtalk-connector': '0.8.26',
       'dingtalk-workspace-cli': '1.0.30',
-      '@wecom/wecom-openclaw-plugin': '2026.8.17',
+      '@wecom/wecom-openclaw-plugin': '2026.9.15',
       '@larksuite/openclaw-lark': '2026.7.16',
-      '@tencent-weixin/openclaw-weixin': '2.4.8',
+      '@tencent-weixin/openclaw-weixin': '2.4.10',
     });
 
     const nodeDownloadScript = readFileSync(
       resolve(process.cwd(), 'scripts/download-bundled-node.mjs'),
       'utf8',
     );
-    expect(nodeDownloadScript).toContain("const NODE_VERSION = '22.22.3'");
+    expect(nodeDownloadScript).toContain("const NODE_VERSION = '24.18.1'");
   });
 
   it('unpacks every native CUA SDK library required by Electron Main', () => {
@@ -52,7 +52,7 @@ describe('openclaw bundle config', () => {
         env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
       },
     );
-    expect(JSON.parse(raw.trim())).toEqual({ node: '24.15.0', sqlite: '3.51.3' });
+    expect(JSON.parse(raw.trim())).toEqual({ node: '24.18.0', sqlite: '3.53.1' });
   });
 
   it('keeps upstream WeCom and Open Lark manifest identities unchanged across the version bump', () => {
@@ -80,14 +80,14 @@ describe('openclaw bundle config', () => {
     expect(lockfile).not.toContain("'@soimy/dingtalk@3.6.4':");
     expect(lockfile).not.toContain("'@soimy/dingtalk@3.6.6':");
     expect(lockfile).not.toContain("'@soimy/dingtalk@3.6.10':");
-    expect(lockfile).toContain("'@dingtalk-real-ai/dingtalk-connector@0.8.25':");
+    expect(lockfile).toContain("'@dingtalk-real-ai/dingtalk-connector@0.8.26':");
     expect(lockfile).not.toContain("'@wecom/wecom-openclaw-plugin@2026.6.23':");
-    expect(lockfile).not.toContain("'@wecom/wecom-openclaw-plugin@2026.7.2':");
+    expect(lockfile).not.toContain("'@wecom/wecom-openclaw-plugin@2026.8.17':");
     expect(lockfile).not.toContain("'@larksuite/openclaw-lark@2026.6.10':");
     expect(lockfile).not.toContain("'@larksuite/openclaw-lark@2026.7.9':");
     expect(lockfile).not.toContain("'@tencent-weixin/openclaw-weixin@2.4.6':");
-    expect(lockfile).not.toContain("'@openclaw/ai@2026.7.1':");
-    expect(lockfile).toContain("'@openclaw/ai@2026.7.1-2':");
+    expect(lockfile).not.toContain("'@openclaw/ai@2026.7.1-2':");
+    expect(lockfile).toContain("'@openclaw/ai@2026.10.5':");
   });
 
   it('includes Electron runtime-only packages needed in packaged builds', async () => {

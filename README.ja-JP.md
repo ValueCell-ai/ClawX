@@ -190,7 +190,7 @@ ClawXは **Host API統一レイヤーを備えたデュアルプロセスアー�
 
 ### 前提条件
 
-- **Node.js**：対応するメジャー系列の22.22.3以上、24.15.0以上、または25.9.0以上（Node 24 LTS推奨）
+- **Node.js**：24.16.0 以上（Node 24 LTS）または 26.1.0 以上（Node 26 推奨）。Node 22 / 23 / 25 は非対応
 - **パッケージマネージャー**：pnpm 9以上（npmも対応）
 - **Linux（Ubuntu/Debian）**：Electronの実行前に必要なシステムライブラリをインストールしてください。詳細は [docs/ja-JP/development.md](docs/ja-JP/development.md) を参照してください。
 

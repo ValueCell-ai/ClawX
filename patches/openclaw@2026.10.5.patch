@@ -1,0 +1,324 @@
+diff --git a/dist/error-coercion-W9BtigRm.mjs b/dist/error-coercion-W9BtigRm.mjs
+--- a/dist/error-coercion-W9BtigRm.mjs
++++ b/dist/error-coercion-W9BtigRm.mjs
+@@ -115,8 +115,19 @@
+ 		} else if (typeof cause === "string") appendCauseMessage(cause);
+ 		else appendCauseMessage(formatStatusAndCode(cause) ?? stringifyUnknown(cause));
+ 	} else formatted = formatStatusAndCode(value) ?? stringifyUnknown(value);
++	// ClawX: surface documented TokenDance recovery actions from provider headers.
++	const tokenDanceRecoveryAction = extractTokenDanceRecoveryAction(value);
++	if (tokenDanceRecoveryAction) formatted += ` [TokenDance-Recovery-Action:${tokenDanceRecoveryAction}]`;
+ 	return options.redact(formatted);
+ }
++const TOKENDANCE_RECOVERY_ACTIONS = /* @__PURE__ */ new Set(["top_up_balance", "reauthorize_api_key", "api_key_quota"]);
++function extractTokenDanceRecoveryAction(err) {
++	if (!err || typeof err !== "object") return;
++	const headers = err.headers;
++	if (!headers || typeof headers.get !== "function") return;
++	const action = headers.get("TokenDance-Recovery-Action")?.trim();
++	return TOKENDANCE_RECOVERY_ACTIONS.has(action) ? action : void 0;
++}
+ /**
+ * Normalizes an unknown thrown value into an Error. Non-Error objects become
+ * the `cause` and have their enumerable fields copied so structured details
+diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
+--- a/dist/server-DkfYuk25.mjs
++++ b/dist/server-DkfYuk25.mjs
+@@ -6,6 +6,7 @@
+ import { r as truncateUtf16Safe } from "./utf16-slice-D_ngcYKd.mjs";
+ import { p as shortenHomePath } from "./utils-CitNzLyF.mjs";
+ import { t as formatErrorMessage } from "./errors-J9olDZqH.mjs";
++import { c as resolveAssistantEventPhase } from "./chat-message-content-C-d0FKNG.mjs";
+ import { t as finalizeActiveDebugProxyCaptures } from "./runtime-cleanup-AyeSBMlV.mjs";
+ import { a as executeSqliteQueryTakeFirstSync, i as executeSqliteQuerySync, l as prepareSqliteQuerySync, n as createSqliteQueryCache, o as getNodeSqliteKysely } from "./kysely-sync-_Jx0TluS.mjs";
+ import { i as routeLogsToStderr } from "./console-Dzm4OzJw.mjs";
+@@ -903,6 +904,45 @@
+ 				sessionKey,
+ 				runId,
+ 				approvalEvent
++			});
++			return;
++		}
++		if (stream === "compaction") {
++			const compactionPending = this.findPendingBySessionKey(sessionKey, runId);
++			if (!compactionPending) return;
++			const compactionUpdate = buildAcpCompactionUpdate(data, runId);
++			if (!compactionUpdate) return;
++			await this.sessionUpdates.emit({
++				sessionId: compactionPending.sessionId,
++				sessionKey: compactionPending.sessionKey,
++				...compactionPending.ledgerSessionId ? { ledgerSessionId: compactionPending.ledgerSessionId } : {},
++				runId: compactionPending.idempotencyKey,
++				record: true,
++				update: compactionUpdate
++			});
++			return;
++		}
++		if (stream === "assistant") {
++			if (resolveAssistantEventPhase(data) !== "commentary") return;
++			const commentaryPending = this.findPendingBySessionKey(sessionKey, runId);
++			if (!commentaryPending) return;
++			const fullThought = resolveAcpEventTextSnapshot(commentaryPending.sentThought ?? "", data);
++			const thoughtDelta = resolveAcpTextDelta(commentaryPending.sentThought ?? "", fullThought);
++			if (!thoughtDelta) return;
++			commentaryPending.sentThought = fullThought;
++			await this.sessionUpdates.emit({
++				sessionId: commentaryPending.sessionId,
++				sessionKey: commentaryPending.sessionKey,
++				...commentaryPending.ledgerSessionId ? { ledgerSessionId: commentaryPending.ledgerSessionId } : {},
++				runId: commentaryPending.idempotencyKey,
++				record: true,
++				update: {
++					sessionUpdate: "agent_thought_chunk",
++					content: {
++						type: "text",
++						text: thoughtDelta
++					}
++				}
+ 			});
+ 			return;
+ 		}
+@@ -1226,6 +1266,10 @@
+ 		this.disconnects.handleGatewayDisconnect(reason);
+ 	}
+ 	async handleGatewayEvent(evt) {
++		if (evt.event === "session.operation") {
++			await this.handleSessionOperationEvent(evt);
++			return;
++		}
+ 		if (evt.event === "chat") {
+ 			await this.handleChatEvent(evt);
+ 			return;
+@@ -1234,7 +1278,26 @@
+ 			this.agentEvents.handleExecApprovalRequestEvent(evt);
+ 			return;
+ 		}
+-		if (evt.event === "agent") await this.agentEvents.handleAgentEvent(evt);
++		if (evt.event === "agent" || evt.event === "session.tool") await this.agentEvents.handleAgentEvent(evt);
++	}
++	async handleSessionOperationEvent(evt) {
++		const payload = evt.payload;
++		if (!payload || payload.operation !== "compact") return;
++		const sessionKey = normalizeOptionalString(payload.sessionKey);
++		if (!sessionKey) return;
++		const operationRunId = normalizeOptionalString(payload.runId);
++		const pending = operationRunId ? this.findPendingBySessionKey(sessionKey, operationRunId) : this.findUniquePendingBySessionKey(sessionKey);
++		if (!pending) return;
++		const update = buildAcpCompactionUpdate(payload, operationRunId);
++		if (!update) return;
++		await this.sessionUpdates.emit({
++			sessionId: pending.sessionId,
++			sessionKey: pending.sessionKey,
++			...pending.ledgerSessionId ? { ledgerSessionId: pending.ledgerSessionId } : {},
++			runId: pending.idempotencyKey,
++			record: true,
++			update
++		});
+ 	}
+ 	async prompt(params) {
+ 		const session = this.sessionStore.getSession(params.sessionId);
+@@ -1562,7 +1625,17 @@
+ 			if (pending.idempotencyKey !== runId) continue;
+ 			this.reconcilePendingSessionKey(pending, sessionKey);
+ 			return pending;
++		}
++	}
++	/** ClawX: resolve an operation event without a run id only when unambiguous. */
++	findUniquePendingBySessionKey(sessionKey) {
++		let found;
++		for (const pending of this.pendingPrompts.values()) {
++			if (pending.sessionKey !== sessionKey) continue;
++			if (found && found !== pending) return;
++			found = pending;
+ 		}
++		return found;
+ 	}
+ 	reconcilePendingSessionKey(pending, sessionKey) {
+ 		if (pending.sessionKey === sessionKey) return;
+@@ -1590,8 +1663,89 @@
+ };
+ //#endregion
+ //#region src/acp/translator.replay.ts
++// ClawX: snapshot-aware deltas. Provider snapshots may be cumulative, may
++// repeat a stale prefix, or may rewrite a shorter tail after a retry.
++function resolveAcpEventTextSnapshot(previousText, data) {
++	const nextText = typeof data?.text === "string" ? data.text : "";
++	const nextDelta = typeof data?.delta === "string" ? data.delta : "";
++	if (nextText && previousText) {
++		if (nextText.startsWith(previousText) && nextText.length > previousText.length) return nextText;
++		if (previousText.startsWith(nextText) && !nextDelta) return previousText;
++	}
++	if (nextDelta) return previousText + nextDelta;
++	if (nextText) return nextText;
++	return previousText;
++}
++function resolveAcpTextDelta(previousText, nextText) {
++	if (!nextText || nextText === previousText) return "";
++	if (!previousText) return nextText;
++	if (nextText.startsWith(previousText)) return nextText.slice(previousText.length);
++	if (previousText.startsWith(nextText)) return "";
++	return nextText;
++}
++// ClawX: replay tool results so a loaded ACP session shows completed tools.
++function extractToolResultReplay(message) {
++	const toolCallId = normalizeOptionalString(message.toolCallId);
++	if (!toolCallId) return [];
++	const rawOutput = {
++		content: message.content,
++		...message.details === void 0 ? {} : { details: message.details }
++	};
++	return [{
++		sessionUpdate: "tool_call_update",
++		toolCallId,
++		status: message.isError === true ? "failed" : "completed",
++		rawOutput,
++		content: extractToolCallContent(message.content) ?? extractToolCallContent(rawOutput),
++		locations: extractToolCallLocations(rawOutput)
++	}];
++}
++const ACP_COMPACTION_SOURCES = /* @__PURE__ */ new Set([
++	"threshold",
++	"overflow",
++	"preflight",
++	"manual"
++]);
++const MAX_ACP_COMPACTION_REASON_CODE_CHARS = 100;
++const MAX_ACP_COMPACTION_REASON_CHARS = 500;
++function buildAcpCompactionUpdate(data, runId) {
++	const phase = data.phase;
++	const compactionId = normalizeOptionalString(data.compactionId);
++	const source = normalizeOptionalString(data.source) ?? normalizeOptionalString(data.reason);
++	if ((phase !== "start" && phase !== "end") || !compactionId || !source || !ACP_COMPACTION_SOURCES.has(source)) return;
++	const timestamp = normalizeOptionalString(data.timestamp) ?? timestampMsToIsoString(data.ts);
++	const status = phase === "start" ? "in_progress" : data.aborted === true ? "cancelled" : data.completed === true ? "completed" : "failed";
++	const reasonCode = status === "failed" ? normalizeOptionalString(data.reasonCode)?.slice(0, MAX_ACP_COMPACTION_REASON_CODE_CHARS) : void 0;
++	const reason = status === "failed" ? normalizeOptionalString(data.failureReason)?.slice(0, MAX_ACP_COMPACTION_REASON_CHARS) : void 0;
++	return {
++		sessionUpdate: "session_info_update",
++		_meta: { "openclaw.ai/compaction": {
++			version: 1,
++			compactionId,
++			status,
++			source,
++			...normalizeOptionalString(runId) ? { runId: normalizeOptionalString(runId) } : {},
++			...typeof data.willRetry === "boolean" ? { willRetry: data.willRetry } : {},
++			...timestamp ? { timestamp } : {},
++			...reasonCode ? { reasonCode } : {},
++			...reason ? { reason } : {}
++		} }
++	};
++}
+ function extractReplayChunks(message) {
++	const compaction = message.__openclaw;
++	if (compaction?.kind === "compaction" && typeof compaction.id === "string" && compaction.id.trim()) return [{
++		sessionUpdate: "session_info_update",
++		_meta: { "openclaw.ai/compaction": {
++			version: 1,
++			compactionId: compaction.id,
++			status: "completed",
++			source: "transcript",
++			...timestampMsToIsoString(message.timestamp) ? { timestamp: timestampMsToIsoString(message.timestamp) } : {}
++		} }
++	}];
+ 	const role = typeof message.role === "string" ? message.role : "";
++	if (role === "toolResult") return extractToolResultReplay(message);
+ 	if (role !== "user" && role !== "assistant") return [];
+ 	if (typeof message.content === "string") return message.content.length > 0 ? [{
+ 		sessionUpdate: role === "user" ? "user_message_chunk" : "agent_message_chunk",
+@@ -1613,6 +1767,21 @@
+ 			sessionUpdate: "agent_thought_chunk",
+ 			text: typedBlock.thinking
+ 		});
++		if (role === "assistant" && typedBlock.type === "toolCall") {
++			const toolCallId = normalizeOptionalString(typedBlock.id);
++			const name = normalizeOptionalString(typedBlock.name);
++			if (!toolCallId) continue;
++			const args = asOptionalRecord(typedBlock.arguments);
++			replayChunks.push({
++				sessionUpdate: "tool_call",
++				toolCallId,
++				title: formatToolTitle(name, args),
++				status: "in_progress",
++				rawInput: args,
++				kind: inferToolKind(name),
++				locations: extractToolCallLocations(args)
++			});
++		}
+ 	}
+ 	return replayChunks;
+ }
+diff --git a/dist/sessions-compact-BHqjQkq-.mjs b/dist/sessions-compact-BHqjQkq-.mjs
+--- a/dist/sessions-compact-BHqjQkq-.mjs
++++ b/dist/sessions-compact-BHqjQkq-.mjs
+@@ -45,6 +45,7 @@
+ import { o as requireSessionKey, t as emitSessionOperation } from "./sessions-shared-Dr0eLQJX.mjs";
+ import { t as waitForTerminalSessionRunSettlement } from "./session-run-settlement-Bkcbqzad.mjs";
+ import { randomUUID } from "node:crypto";
++import { i as classifyCompactionReason } from "./request-error-facts-3oWuPbKO.mjs";
+ //#region src/gateway/server-methods/sessions-compaction-runner.ts
+ /** Returns only definitive legacy-runtime no-op verdicts; other runtimes decide for themselves. */
+ async function preflightGatewaySessionCompaction(params) {
+@@ -354,22 +355,45 @@
+ 					respondNotCompacted({ reason: "no transcript" });
+ 					return;
+ 				}
++				// ClawX: carry a stable compaction identity and outcome metadata so ACP
++				// clients can project the full compaction lifecycle.
++				const compactionId = randomUUID();
+ 				emitSessionOperation(context, {
+ 					operationId,
++					compactionId,
+ 					operation: "compact",
+ 					phase: "start",
+-					sessionKey: target.canonicalKey,
+-					agentId: target.agentId
+-				});
+-				const emitCompactionEnd = (completed, reason) => emitSessionOperation(context, {
+-					operationId,
+-					operation: "compact",
+-					phase: "end",
+ 					sessionKey: target.canonicalKey,
+ 					agentId: target.agentId,
+-					completed,
+-					reason
++					source: "manual",
++					reason: "manual",
++					timestamp: new Date().toISOString(),
++					aborted: false,
++					completed: false
+ 				});
++				const emitCompactionEnd = (completed, detail) => {
++					const detailText = detail == null ? void 0 : formatErrorMessage(detail);
++					const aborted = !completed && (detail instanceof Error && detail.name === "AbortError" || detailText?.toLowerCase() === "aborted" || detailText?.toLowerCase() === "operation aborted");
++					emitSessionOperation(context, {
++						operationId,
++						compactionId,
++						operation: "compact",
++						phase: "end",
++						sessionKey: target.canonicalKey,
++						agentId: target.agentId,
++						source: "manual",
++						reason: "manual",
++						timestamp: new Date().toISOString(),
++						aborted,
++						completed: completed && !aborted,
++						willRetry: false,
++						...!completed && !aborted && detailText ? {
++							reasonCode: classifyCompactionReason(detailText),
++							failureReason: detailText
++						} : {},
++						detail: detailText
++					});
++				};
+ 				let result;
+ 				let persisted = false;
+ 				let expectedEntry = latestEntry;
+@@ -420,7 +444,7 @@
+ 						}
+ 					})).ok;
+ 				} catch (err) {
+-					emitCompactionEnd(false, formatErrorMessage(err));
++					emitCompactionEnd(false, err);
+ 					throw err;
+ 				}
+ 				if (result.ok && result.compacted) {

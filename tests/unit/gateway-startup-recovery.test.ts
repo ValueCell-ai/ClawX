@@ -56,6 +56,11 @@ describe('gateway startup recovery heuristics', () => {
       'OpenClaw startup migrations did not complete cleanly; refusing to report the gateway ready.',
     )).toBe(true);
     expect(isInvalidConfigSignal('Run: openclaw doctor --fix')).toBe(true);
+    // OpenClaw 2026.10.5 requires a one-time state-schema migration before the
+    // Gateway will start, and points the operator at doctor --fix.
+    expect(isInvalidConfigSignal(
+      'OpenClaw state database schema migration required (audit-events-v2) at /tmp/openclaw/state/openclaw.sqlite; run openclaw doctor --fix to migrate it.',
+    )).toBe(true);
     expect(isInvalidConfigSignal('Gateway ready after 3 attempts')).toBe(false);
   });
 
@@ -74,6 +79,16 @@ describe('gateway startup recovery heuristics', () => {
       new Error('System Node 23.11.0 is outside the supported range'),
       [],
     )).toBe(true);
+    // OpenClaw 2026.9.3+ Node floor diagnostics.
+    expect(hasFatalRuntimeFailureSignal(undefined, [
+      'openclaw: Node 22.22.3 is unsupported; OpenClaw requires >=24.16.0 <25, or >=26.1.0 (Node 26 recommended).',
+    ])).toBe(true);
+    expect(hasFatalRuntimeFailureSignal(undefined, [
+      '[openclaw] error: this OpenClaw release requires Node >=24.16.0 <25 || >=26.1.0.',
+    ])).toBe(true);
+    expect(hasFatalRuntimeFailureSignal(undefined, [
+      'Node 24.15.0: node:sqlite truncates TEXT at embedded NUL (nodejs/node#61954); use 24.16+/26.1+ or a build with the fix',
+    ])).toBe(true);
     expect(hasFatalRuntimeFailureSignal(new Error('Config invalid'), [])).toBe(false);
   });
 });

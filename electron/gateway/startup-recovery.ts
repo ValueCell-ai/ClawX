@@ -20,6 +20,12 @@ const FATAL_RUNTIME_PATTERNS: RegExp[] = [
   /\buses SQLite\b.*\bnot WAL-reset-safe\b/i,
   /\bSQLite\b.*\bWAL-reset-safe runtime required\b/i,
   /\bInstall Node 24\.15\+.*\bNode 22\.22\.3\+\b/i,
+  // OpenClaw 2026.9.3+ raised the Node floor to >=24.16.0 <25 || >=26.1.0.
+  // The launcher (openclaw.mjs) and install precheck emit these diagnostics;
+  // retrying or running doctor cannot repair them.
+  /\bNode \S+ is unsupported; OpenClaw requires\b/i,
+  /\bthis OpenClaw release requires Node\b/i,
+  /\bnode:sqlite truncates TEXT\b/i,
 ];
 
 const STARTUP_MIGRATION_LOCK_PATTERNS: RegExp[] = [
