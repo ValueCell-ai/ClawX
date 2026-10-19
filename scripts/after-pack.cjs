@@ -241,6 +241,8 @@ const PLATFORM_NATIVE_SCOPES = {
   '@node-llama-cpp': /^(mac|linux|win)-(arm64|x64|armv7l)(-metal|-cuda|-cuda-ext|-vulkan)?$/,
   '@esbuild': /^(darwin|linux|win32|android|freebsd|netbsd|openbsd|sunos|aix|openharmony)-(x64|arm64|arm|ia32|loong64|mips64el|ppc64|riscv64|s390x)/,
   '@openai': /^codex-(darwin|linux|win32)-(x64|arm64)$/,
+  // CUA native SDK ships one package per OS/arch. Keep only the target.
+  '@trycua': /^cua-driver-(darwin|linux|win32)-(x64|arm64)/,
 };
 
 // Unscoped packages that follow a <name>-<platform>-<arch> convention.
@@ -1017,6 +1019,14 @@ exports.default = async function afterPack(context) {
   // Electron's transparent asar fs layer serves the fixed version at runtime.
   const asarUnpackedDir = join(resourcesDir, 'app.asar.unpacked');
   assertCuaPackagedRuntime(resourcesDir, platform, arch);
+  // The asar-unpacked copy of the CUA SDK also contains every supported arch
+  // (pnpm installs all optional platform packages). Keep the target only.
+  if (existsSync(asarUnpackedDir)) {
+    const asarNativeRemoved = cleanupNativePlatformPackages(join(asarUnpackedDir, 'node_modules'), platform, arch);
+    if (asarNativeRemoved > 0) {
+      console.log(`[after-pack] ✅ Removed ${asarNativeRemoved} non-target native package(s) from app.asar.unpacked.`);
+    }
+  }
   if (existsSync(asarUnpackedDir)) {
     const { readFileSync: readFS, writeFileSync: writeFS } = require('fs');
     let asarLruCount = 0;

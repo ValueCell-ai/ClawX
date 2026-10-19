@@ -5,7 +5,7 @@ import {
   isNativeAcpSubagentSessionId,
   parseAcpSessionParentId,
   projectAcpSessionFamily,
-} from '@/lib/acp/subagent-lineage';
+} from '@shared/acp-chat/subagent-lineage';
 import type {
   AcpSessionFamilyMember,
   AcpSessionFamilyPayload,
