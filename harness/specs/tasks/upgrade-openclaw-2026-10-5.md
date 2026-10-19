@@ -38,6 +38,7 @@ touchedAreas:
   - docs/ja-JP/development.md
   - docs/ru-RU/development.md
   - harness/reference/openclaw-2026-10-5-upgrade.md
+  - harness/reference/lark-openclaw-compatibility.md
   - harness/specs/tasks/upgrade-openclaw-2026-10-5.md
 expectedUserBehavior:
   - Existing ClawX-managed OpenClaw 2026.7.1 configuration, authentication profiles, SQLite session state, selected provider models, channel credentials, and managed channel plugin identities remain usable after upgrading to OpenClaw 2026.10.5.
