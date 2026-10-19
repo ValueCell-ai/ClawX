@@ -248,3 +248,5 @@ plugin must declare contracts.tools before registering agent tools
 2. 对能力缺口，用 **`lark-cli` + skills 作为补充能力包**（类似 WeCom 的 `wecom-cli` + skills），
    优先补 calendar / task / sheets / IM 读取搜索 / 用户查询；这样无需自己维护通道插件。
 3. 发布前增加旧 Feishu 配置迁移（见上），避免升级用户 Gateway 启动失败。
+
+同类产品的日历/电子表格实现调研见 [feishu-calendar-sheets-integrations.md](./feishu-calendar-sheets-integrations.md)。
