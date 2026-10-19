@@ -5,6 +5,8 @@ scenario: gateway-backend-communication
 taskType: runtime-bridge
 intent: Move ClawX from the OpenClaw 2026.7.1 CJS runtime to the 2026.10.5 ESM runtime, including its Node 24.16 floor, regenerated ClawX runtime patch, and forward/backward/cross-platform compatibility evidence.
 touchedAreas:
+  - AGENTS.md
+  - tests/unit/openclaw-acp-ambient-stream.test.ts
   - package.json
   - pnpm-lock.yaml
   - pnpm-workspace.yaml
