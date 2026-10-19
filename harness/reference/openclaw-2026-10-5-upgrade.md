@@ -80,14 +80,14 @@ The 2026.7.1-2 patch touched 30 generated files. New homes and port status:
 | Settings keepRecentTokens=0 | `agent-settings-*.js` | `agent-settings-*.mjs` | ported |
 | No-tail boundary hardening | `compact-*.js` | upstream removed `hardenManualCompactionBoundary` | obsolete |
 | Compaction ids/timestamps | `selection-*.js` | `builtin-openclaw-*.mjs` | ported |
-| ACP ambient/subagent streaming | `acp-cli-*.js` | `server-*.mjs` new prompt stream | **pending** (session message subscriptions/replay) |
+| ACP ambient/subagent streaming | `acp-cli-*.js` | `server-*.mjs` new prompt stream | ported (session message subscriptions, replay buffer, ambient tool/thought/chat) |
 | Restart-recovery run lineage | `agent-*.js`, `agent-events-*.js` | upstream 2026.10.5 | upstreamed, patch dropped |
 | Main-session restart recovery | `main-session-restart-recovery-*.js` | upstream `main-session-restart-recovery-*.mjs` | upstreamed |
 | `session.operation` broadcast | `sessions-*.js` | `sessions-compact-*.mjs` | manual compaction metadata ported |
 | Chat `resumedFromRunId` projection | `server-chat-*.js` | upstream recovery lineage | obsolete |
-| Approval run/tool identity | `exec-approval-*.js`, `schema-*.js` | `exec-approval-*.mjs`, schema chunk | pending (low risk) |
+| Approval run/tool identity | `exec-approval-*.js`, `schema-*.js` | upstream approval records | upstreamed |
 | Aggregate tool-result pressure target | `attempt.tool-run-context-*.js`, `selection-*.js` | upstream pressure rework | obsolete |
-| bash tool run/tool ids | `bash-tools-*.js` | `bash-tools-*.mjs` | pending (low risk) |
+| bash tool run/tool ids | `bash-tools-*.js` | upstream tool-run context | upstreamed |
 | Provider terminal error text | `server-chat-*.js`, `agent-*.js` | `server-*.mjs` ACP error terminal | ported |
 
 ClawX must not carry the 2026.7.1-2 patch forward by filename: the task spec

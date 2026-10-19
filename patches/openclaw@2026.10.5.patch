@@ -171,10 +171,46 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  			});
  			return;
  		}
-@@ -1226,6 +1266,10 @@
+@@ -1191,7 +1231,7 @@
+ 	return (err instanceof Error ? err.message : String(err)).startsWith("gateway closed (");
+ }
+ var AcpTranslatorPromptStream = class {
+-	constructor(connection, gateway, opts, sessionStore, sessionUpdates, sessionState, approvalRelays, log) {
++	constructor(connection, gateway, opts, sessionStore, sessionUpdates, sessionState, approvalRelays, log, ambient) {
+ 		this.gateway = gateway;
+ 		this.opts = opts;
+ 		this.sessionStore = sessionStore;
+@@ -1199,6 +1239,8 @@
+ 		this.sessionState = sessionState;
+ 		this.approvalRelays = approvalRelays;
+ 		this.log = log;
++		this.ambient = ambient ?? new AcpTranslatorAmbient(gateway, sessionUpdates, sessionState, log);
++		this.ambient.dispatchEvent = (event) => this.dispatchGatewayEvent(event);
+ 		this.pendingPrompts = /* @__PURE__ */ new Map();
+ 		this.pendingPromptAdmissions = /* @__PURE__ */ new Map();
+ 		this.settlingPromptKeys = /* @__PURE__ */ new Set();
+@@ -1209,6 +1251,7 @@
+ 	async shutdown() {
+ 		this.stopped = true;
+ 		this.disconnects.shutdown();
++		await this.ambient.deactivate();
+ 		const sessions = /* @__PURE__ */ new Map();
+ 		for (const pending of this.pendingPrompts.values()) sessions.set(pending.sessionId, {
+ 			sessionId: pending.sessionId,
+@@ -1221,11 +1264,20 @@
+ 	handleGatewayReconnect() {
+ 		this.agentEvents.replayApprovalDecisionsOnReconnect();
+ 		this.disconnects.handleGatewayReconnect();
++		void this.ambient.recoverSubscriptions();
+ 	}
+ 	handleGatewayDisconnect(reason) {
  		this.disconnects.handleGatewayDisconnect(reason);
  	}
  	async handleGatewayEvent(evt) {
++		if (this.ambient.isReplayBuffered(evt)) return;
++		await this.dispatchGatewayEvent(evt);
++	}
++	async dispatchGatewayEvent(evt) {
 +		if (evt.event === "session.operation") {
 +			await this.handleSessionOperationEvent(evt);
 +			return;
@@ -182,12 +218,17 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  		if (evt.event === "chat") {
  			await this.handleChatEvent(evt);
  			return;
-@@ -1234,8 +1278,27 @@
+@@ -1234,8 +1286,32 @@
  			this.agentEvents.handleExecApprovalRequestEvent(evt);
  			return;
  		}
 -		if (evt.event === "agent") await this.agentEvents.handleAgentEvent(evt);
-+		if (evt.event === "agent" || evt.event === "session.tool") await this.agentEvents.handleAgentEvent(evt);
++		if (evt.event === "agent" || evt.event === "session.tool") {
++			const payload = evt.payload;
++			const hasPending = payload?.sessionKey ? this.findPendingBySessionKey(payload.sessionKey, payload.runId) : void 0;
++			if (!hasPending && await this.ambient.handleAgentEvent(evt)) return;
++			await this.agentEvents.handleAgentEvent(evt);
++		}
  	}
 +	async handleSessionOperationEvent(evt) {
 +		const payload = evt.payload;
@@ -211,7 +252,19 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  	async prompt(params) {
  		const session = this.sessionStore.getSession(params.sessionId);
  		if (!session) throw new Error(`Session ${params.sessionId} not found`);
-@@ -1450,8 +1513,10 @@
+@@ -1433,7 +1509,10 @@
+ 		const runId = payload.runId;
+ 		if (!sessionKey || !state) return;
+ 		const pending = this.findPendingBySessionKey(sessionKey, runId);
+-		if (!pending) return;
++		if (!pending) {
++			await this.ambient.handleChatEvent(evt);
++			return;
++		}
+ 		const messageData = state === "delta" ? mergeChatStreamMessage(pending.streamMessage, payload) : payload.message;
+ 		if (isRecord(messageData) && (state === "delta" || state === "final")) {
+ 			pending.streamMessage = messageData;
+@@ -1450,8 +1529,10 @@
  			return;
  		}
  		if (state === "error") {
@@ -224,7 +277,7 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  		}
  	}
  	async handleDeltaEvent(pending, messageData) {
-@@ -1470,10 +1535,12 @@
+@@ -1470,10 +1551,12 @@
  			"agent_message_chunk"
  		]]) {
  			const fullText = content?.filter((block) => block?.type === blockType).map((block) => block[field] ?? "").join("\n").trimEnd();
@@ -241,7 +294,7 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  			if (this.getPendingPrompt(sessionId, pending.idempotencyKey) !== pending) return false;
  		}
  		return true;
-@@ -1564,6 +1631,16 @@
+@@ -1564,6 +1647,16 @@
  			return pending;
  		}
  	}
@@ -258,7 +311,7 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  	reconcilePendingSessionKey(pending, sessionKey) {
  		if (pending.sessionKey === sessionKey) return;
  		this.log(`session key reconciled: ${pending.sessionKey} -> ${sessionKey}`);
-@@ -1590,8 +1667,89 @@
+@@ -1590,8 +1683,89 @@
  };
  //#endregion
  //#region src/acp/translator.replay.ts
@@ -348,7 +401,7 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  	if (role !== "user" && role !== "assistant") return [];
  	if (typeof message.content === "string") return message.content.length > 0 ? [{
  		sessionUpdate: role === "user" ? "user_message_chunk" : "agent_message_chunk",
-@@ -1613,6 +1771,21 @@
+@@ -1613,6 +1787,21 @@
  			sessionUpdate: "agent_thought_chunk",
  			text: typedBlock.thinking
  		});
@@ -370,6 +423,523 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  	}
  	return replayChunks;
  }
+@@ -1660,10 +1849,424 @@
+ 	return Math.min(ACP_LIST_SESSIONS_MAX_PAGE_SIZE, Math.max(1, Math.floor(requested)));
+ }
+ //#endregion
++//#region src/acp/translator.ambient.ts
++/** ClawX: replay baseline so a loaded session does not duplicate replayed text. */
++function resolveAmbientReplayBaseline(ledgerEvents, transcript) {
++	let sentText = "";
++	let sentThought = "";
++	const applyUpdate = (update) => {
++		const sessionUpdate = update?.sessionUpdate;
++		if (sessionUpdate === "user_message_chunk") {
++			sentText = "";
++			sentThought = "";
++			return;
++		}
++		const text = typeof update?.text === "string" ? update.text : typeof update?.content?.text === "string" ? update.content.text : "";
++		if (sessionUpdate === "agent_message") sentText = text;
++		else if (sessionUpdate === "agent_message_chunk") sentText += text;
++		else if (sessionUpdate === "agent_thought_chunk") sentThought += text;
++	};
++	for (const event of ledgerEvents) applyUpdate(event?.update);
++	for (const message of transcript) for (const chunk of extractReplayChunks(message)) applyUpdate(chunk);
++	return {
++		...sentText ? { sentText } : {},
++		...sentThought ? { sentThought } : {}
++	};
++}
++/** ClawX: keep text replay chunks in the ACP content shape and pass others through. */
++function toAcpReplayUpdate(chunk) {
++	if (chunk.sessionUpdate === "agent_message_chunk" || chunk.sessionUpdate === "agent_thought_chunk" || chunk.sessionUpdate === "user_message_chunk") return {
++		sessionUpdate: chunk.sessionUpdate,
++		content: {
++			type: "text",
++			text: chunk.text ?? ""
++		}
++	};
++	return chunk;
++}
++/** ClawX: keep a loaded ACP session streaming subagent/ambient runs without a pending prompt. */
++var AcpTranslatorAmbient = class {
++	constructor(gateway, sessionUpdates, sessionState, log) {
++		this.gateway = gateway;
++		this.sessionUpdates = sessionUpdates;
++		this.sessionState = sessionState;
++		this.log = log;
++		this.ambientSession = void 0;
++		this.ambientChatRuns = /* @__PURE__ */ new Map();
++		this.sessionMessageSubscriptions = /* @__PURE__ */ new Map();
++		this.dispatchEvent = void 0;
++	}
++	async ensureSessionMessageSubscription(sessionKey, entry) {
++		if (entry.subscribed || entry.acquirePromise) return await entry.acquirePromise;
++		entry.acquirePromise = (async () => {
++			let finalError;
++			for (let attempt = 1; attempt <= 2; attempt++) try {
++				await this.gateway.request("sessions.messages.subscribe", { key: sessionKey });
++				if (this.sessionMessageSubscriptions.get(sessionKey) === entry && entry.refCount > 0) entry.subscribed = true;
++				else await this.gateway.request("sessions.messages.unsubscribe", { key: sessionKey }).catch((err) => {
++					this.log(`stale session message unsubscribe failed for ${sessionKey}: ${String(err)}`);
++				});
++				return;
++			} catch (err) {
++				finalError = err;
++				this.log(`session message subscription attempt ${attempt} failed for ${sessionKey}: ${String(err)}`);
++			}
++			throw finalError;
++		})();
++		try {
++			await entry.acquirePromise;
++		} finally {
++			entry.acquirePromise = void 0;
++		}
++	}
++	async acquireSessionMessageSubscription(sessionKey) {
++		let entry = this.sessionMessageSubscriptions.get(sessionKey);
++		if (!entry) {
++			entry = {
++				refCount: 0,
++				subscribed: false,
++				acquirePromise: void 0
++			};
++			this.sessionMessageSubscriptions.set(sessionKey, entry);
++		}
++		entry.refCount += 1;
++		try {
++			await this.ensureSessionMessageSubscription(sessionKey, entry);
++		} catch (err) {
++			entry.refCount = Math.max(0, entry.refCount - 1);
++			if (entry.refCount === 0 && this.sessionMessageSubscriptions.get(sessionKey) === entry) this.sessionMessageSubscriptions.delete(sessionKey);
++			throw err;
++		}
++	}
++	async releaseSessionMessageSubscription(sessionKey) {
++		const entry = this.sessionMessageSubscriptions.get(sessionKey);
++		if (!entry) return;
++		entry.refCount = Math.max(0, entry.refCount - 1);
++		if (entry.refCount > 0) return;
++		this.sessionMessageSubscriptions.delete(sessionKey);
++		if (entry.acquirePromise) try {
++			await entry.acquirePromise;
++		} catch (err) {
++			this.log(`session message subscription cleanup failed for ${sessionKey}: ${String(err)}`);
++		}
++		if (!entry.subscribed) return;
++		entry.subscribed = false;
++		await this.gateway.request("sessions.messages.unsubscribe", { key: sessionKey }).catch((err) => {
++			this.log(`session message unsubscribe failed for ${sessionKey}: ${String(err)}`);
++		});
++	}
++	async activateSession(session) {
++		// Ambient streaming is best-effort: a Gateway that does not expose
++		// sessions.messages.subscribe must not fail session load/resume.
++		try {
++			await this.activateAmbientSession(session);
++		} catch (err) {
++			this.log(`ambient session activation failed for ${session.sessionId}: ${String(err)}`);
++		}
++	}
++	async beginReplay(session) {
++		try {
++			await this.activateAmbientSession(session, void 0, { replayPending: true });
++		} catch (err) {
++			this.log(`ambient session replay activation failed for ${session.sessionId}: ${String(err)}`);
++		}
++	}
++	async activateAmbientSession(session, replayBaseline, opts = {}) {
++		const currentSession = this.ambientSession;
++		const nextSession = {
++			sessionId: session.sessionId,
++			sessionKey: session.sessionKey,
++			...session.ledgerSessionId ? { ledgerSessionId: session.ledgerSessionId } : {},
++			...replayBaseline,
++			...opts.replayPending ? {
++				replayPending: true,
++				pendingEvents: [],
++				previousAmbientSession: currentSession,
++				replaySubscriptionAcquired: false
++			} : {}
++		};
++		if (currentSession?.sessionId === nextSession.sessionId && currentSession.sessionKey === nextSession.sessionKey) {
++			this.ambientSession = nextSession;
++			if (opts.replayPending) this.ambientChatRuns.clear();
++			return;
++		}
++		this.ambientSession = nextSession;
++		this.ambientChatRuns.clear();
++		try {
++			await this.acquireSessionMessageSubscription(nextSession.sessionKey);
++			if (opts.replayPending) nextSession.replaySubscriptionAcquired = true;
++		} catch (err) {
++			if (this.ambientSession === nextSession) this.ambientSession = currentSession;
++			throw err;
++		}
++		if (this.ambientSession !== nextSession) {
++			await this.releaseSessionMessageSubscription(nextSession.sessionKey);
++			return;
++		}
++		if (currentSession && !opts.replayPending) await this.releaseSessionMessageSubscription(currentSession.sessionKey);
++	}
++	async completeReplay(session, replayBaseline) {
++		const currentSession = this.ambientSession;
++		if (!currentSession || currentSession.sessionId !== session.sessionId || currentSession.sessionKey !== session.sessionKey || !currentSession.replayPending) return;
++		delete currentSession.sentText;
++		delete currentSession.sentThought;
++		Object.assign(currentSession, replayBaseline);
++		const pendingEvents = currentSession.pendingEvents ?? [];
++		while (this.ambientSession === currentSession && pendingEvents.length > 0) {
++			const event = pendingEvents.shift();
++			if (event) await this.dispatchEvent?.(event);
++		}
++		if (this.ambientSession !== currentSession) return;
++		currentSession.replayPending = false;
++		delete currentSession.pendingEvents;
++		const previousSession = currentSession.previousAmbientSession;
++		const releasePrevious = Boolean(previousSession && currentSession.replaySubscriptionAcquired);
++		delete currentSession.previousAmbientSession;
++		delete currentSession.replaySubscriptionAcquired;
++		if (releasePrevious) await this.releaseSessionMessageSubscription(previousSession.sessionKey);
++	}
++	async rollbackReplay(session) {
++		const currentSession = this.ambientSession;
++		if (!currentSession || currentSession.sessionId !== session.sessionId || currentSession.sessionKey !== session.sessionKey || !currentSession.replayPending) return;
++		this.ambientSession = currentSession.previousAmbientSession;
++		this.ambientChatRuns.clear();
++		if (currentSession.replaySubscriptionAcquired) await this.releaseSessionMessageSubscription(currentSession.sessionKey);
++	}
++	async deactivate(sessionId) {
++		const currentSession = this.ambientSession;
++		if (!currentSession || sessionId && currentSession.sessionId !== sessionId) return;
++		this.ambientSession = void 0;
++		this.ambientChatRuns.clear();
++		await this.releaseSessionMessageSubscription(currentSession.sessionKey);
++		if (currentSession.replaySubscriptionAcquired && currentSession.previousAmbientSession) await this.releaseSessionMessageSubscription(currentSession.previousAmbientSession.sessionKey);
++	}
++	async recoverSubscriptions() {
++		await Promise.all([...this.sessionMessageSubscriptions].map(async ([sessionKey, entry]) => {
++			if (entry.acquirePromise) try {
++				await entry.acquirePromise;
++			} catch (err) {
++				this.log(`session message subscription recovery failed for ${sessionKey}: ${String(err)}`);
++			}
++			entry.acquirePromise = void 0;
++			if (this.sessionMessageSubscriptions.get(sessionKey) !== entry || entry.refCount === 0) return;
++			entry.subscribed = false;
++			try {
++				await this.ensureSessionMessageSubscription(sessionKey, entry);
++			} catch (err) {
++				this.log(`session message subscription recovery failed for ${sessionKey}: ${String(err)}`);
++			}
++		}));
++	}
++	isReplayBuffered(evt) {
++		const ambientSession = this.ambientSession;
++		const isAmbientEvent = evt.event === "chat" || evt.event === "agent" || evt.event === "session.tool";
++		if (!ambientSession?.replayPending || !isAmbientEvent || evt.payload?.sessionKey !== ambientSession.sessionKey) return false;
++		ambientSession.pendingEvents?.push(evt);
++		return true;
++	}
++	findAmbientSession(sessionKey, runId) {
++		const ambientSession = this.ambientSession;
++		const sessionKeyParts = typeof sessionKey === "string" ? sessionKey.split(":") : [];
++		const isNativeSubagentSession = sessionKeyParts.length === 4 && sessionKeyParts[0] === "agent" && Boolean(sessionKeyParts[1]) && sessionKeyParts[2] === "subagent" && Boolean(sessionKeyParts[3]);
++		const normalizedRunId = normalizeOptionalString(runId);
++		const isAmbientRun = Boolean(normalizedRunId) && (normalizedRunId.startsWith("announce:v1:") || isNativeSubagentSession);
++		if (!ambientSession || ambientSession.sessionKey !== sessionKey || !isAmbientRun) return;
++		return ambientSession;
++	}
++	getOrCreateAmbientChatRun(session, runId) {
++		let ambientRun = this.ambientChatRuns.get(runId);
++		if (ambientRun?.settled) return;
++		if (!ambientRun) {
++			if (this.ambientChatRuns.size >= 100) {
++				let evictionKey;
++				for (const [candidateKey, candidate] of this.ambientChatRuns) {
++					evictionKey ??= candidateKey;
++					if (candidate.settled) {
++						evictionKey = candidateKey;
++						break;
++					}
++				}
++				if (evictionKey) this.ambientChatRuns.delete(evictionKey);
++			}
++			const useReplayBaseline = !runId.startsWith("announce:v1:");
++			ambientRun = {
++				settled: false,
++				...useReplayBaseline && session.sentText ? { sentText: session.sentText } : {},
++				...useReplayBaseline && session.sentThought ? { sentThought: session.sentThought } : {}
++			};
++			if (useReplayBaseline) {
++				delete session.sentText;
++				delete session.sentThought;
++			}
++			this.ambientChatRuns.set(runId, ambientRun);
++		}
++		return ambientRun;
++	}
++	async handleChatEvent(evt) {
++		const payload = evt.payload;
++		if (!payload) return;
++		const ambientSession = this.findAmbientSession(payload.sessionKey, payload.runId);
++		if (!ambientSession) return;
++		await this.handleAmbientChatEvent(ambientSession, payload.runId, payload.state, payload.message);
++	}
++	async handleAgentEvent(evt) {
++		const payload = evt.payload;
++		if (!payload) return false;
++		const stream = payload.stream;
++		const runId = payload.runId;
++		const data = payload.data;
++		const sessionKey = payload.sessionKey;
++		if (!stream || !data || !sessionKey) return false;
++		const ambientSession = this.findAmbientSession(sessionKey, runId);
++		if (!ambientSession) return false;
++		if (stream === "assistant") {
++			if (resolveAssistantEventPhase(data) !== "commentary") return false;
++			const ambientRun = this.getOrCreateAmbientChatRun(ambientSession, runId);
++			if (!ambientRun) return false;
++			const fullThought = resolveAcpEventTextSnapshot(ambientRun.sentThought ?? "", data);
++			const delta = resolveAcpTextDelta(ambientRun.sentThought ?? "", fullThought);
++			if (!delta) return true;
++			ambientRun.sentThought = fullThought;
++			await this.sessionUpdates.emit({
++				sessionId: ambientSession.sessionId,
++				sessionKey: ambientSession.sessionKey,
++				...ambientSession.ledgerSessionId ? { ledgerSessionId: ambientSession.ledgerSessionId } : {},
++				runId,
++				record: true,
++				update: {
++					sessionUpdate: "agent_thought_chunk",
++					content: {
++						type: "text",
++						text: delta
++					}
++				}
++			});
++			return true;
++		}
++		if (stream !== "tool") return false;
++		const phase = data.phase;
++		const toolCallId = data.toolCallId;
++		if (!toolCallId) return false;
++		const ambientRun = this.getOrCreateAmbientChatRun(ambientSession, runId);
++		if (!ambientRun) return false;
++		const toolCalls = ambientRun.toolCalls ??= /* @__PURE__ */ new Map();
++		if (phase === "start") {
++			if (toolCalls.has(toolCallId)) return true;
++			const args = data.args;
++			const title = formatToolTitle(data.name, args);
++			const kind = inferToolKind(data.name);
++			const locations = extractToolCallLocations(args);
++			toolCalls.set(toolCallId, {
++				title,
++				kind,
++				locations
++			});
++			await this.sessionUpdates.emit({
++				sessionId: ambientSession.sessionId,
++				sessionKey: ambientSession.sessionKey,
++				...ambientSession.ledgerSessionId ? { ledgerSessionId: ambientSession.ledgerSessionId } : {},
++				runId,
++				record: true,
++				update: {
++					sessionUpdate: "tool_call",
++					toolCallId,
++					title,
++					status: "in_progress",
++					rawInput: args,
++					kind,
++					locations
++				}
++			});
++			return true;
++		}
++		if (phase === "update" || phase === "result") {
++			const toolState = toolCalls.get(toolCallId);
++			const result = phase === "update" ? data.partialResult : data.result;
++			if (phase === "result") toolCalls.delete(toolCallId);
++			await this.sessionUpdates.emit({
++				sessionId: ambientSession.sessionId,
++				sessionKey: ambientSession.sessionKey,
++				...ambientSession.ledgerSessionId ? { ledgerSessionId: ambientSession.ledgerSessionId } : {},
++				runId,
++				record: true,
++				update: {
++					sessionUpdate: "tool_call_update",
++					toolCallId,
++					status: phase === "update" ? "in_progress" : data.isError ? "failed" : "completed",
++					rawOutput: result,
++					content: extractToolCallContent(result),
++					locations: extractToolCallLocations(toolState?.locations, result)
++				}
++			});
++			return true;
++		}
++		return false;
++	}
++	async handleAmbientChatEvent(session, runId, state, messageData) {
++		if (state !== "delta" && state !== "final" && state !== "aborted" && state !== "error") return;
++		const ambientRun = this.getOrCreateAmbientChatRun(session, runId);
++		if (!ambientRun) return;
++		const content = messageData?.content;
++		const fullThought = content?.filter((block) => block?.type === "thinking").map((block) => block.thinking ?? "").join("\n").trimEnd();
++		const newThought = resolveAcpTextDelta(ambientRun.sentThought ?? "", fullThought);
++		if (newThought) {
++			ambientRun.sentThought = fullThought;
++			await this.sessionUpdates.emit({
++				sessionId: session.sessionId,
++				sessionKey: session.sessionKey,
++				...session.ledgerSessionId ? { ledgerSessionId: session.ledgerSessionId } : {},
++				runId,
++				record: true,
++				update: {
++					sessionUpdate: "agent_thought_chunk",
++					content: {
++						type: "text",
++						text: newThought
++					}
++				}
++			});
++		}
++		const fullText = content?.filter((block) => block?.type === "text").map((block) => block.text ?? "").join("\n").trimEnd();
++		const newText = resolveAcpTextDelta(ambientRun.sentText ?? "", fullText);
++		if (newText) {
++			ambientRun.sentText = fullText;
++			await this.sessionUpdates.emit({
++				sessionId: session.sessionId,
++				sessionKey: session.sessionKey,
++				...session.ledgerSessionId ? { ledgerSessionId: session.ledgerSessionId } : {},
++				runId,
++				record: true,
++				update: {
++					sessionUpdate: "agent_message_chunk",
++					content: {
++						type: "text",
++						text: newText
++					}
++				}
++			});
++		}
++		if (state === "delta") return;
++		ambientRun.settled = true;
++		this.ambientChatRuns.delete(runId);
++		this.ambientChatRuns.set(runId, ambientRun);
++		try {
++			if (!this.sessionState) return;
++			const sessionSnapshot = await this.sessionState.getSnapshot(session.sessionKey);
++			await this.sessionState.sendSnapshotUpdate(session, sessionSnapshot, {
++				includeControls: false,
++				record: true,
++				runId
++			});
++		} catch (err) {
++			this.log(`ambient session snapshot update failed for ${session.sessionId}: ${String(err)}`);
++		}
++	}
++};
++//#endregion
+ //#region src/acp/translator.session-lifecycle.ts
+ const ACP_LOAD_SESSION_REPLAY_LIMIT = 1e6;
+ var AcpTranslatorSessionLifecycle = class {
+-	constructor(gateway, opts, sessionStore, sessionUpdates, sessionState, sessionCreateRateLimiter, cancelSessionWork, log) {
++	constructor(gateway, opts, sessionStore, sessionUpdates, sessionState, sessionCreateRateLimiter, cancelSessionWork, log, ambient) {
+ 		this.gateway = gateway;
+ 		this.opts = opts;
+ 		this.sessionStore = sessionStore;
+@@ -1672,6 +2275,7 @@
+ 		this.sessionCreateRateLimiter = sessionCreateRateLimiter;
+ 		this.cancelSessionWork = cancelSessionWork;
+ 		this.log = log;
++		this.ambient = ambient;
+ 	}
+ 	async newSession(params) {
+ 		this.assertSupportedSessionSetup(params.mcpServers);
+@@ -1729,27 +2333,31 @@
+ 		});
+ 		await this.sessionUpdates.startLedgerSession(session, { complete: ledgerReplay.complete });
+ 		this.log(`loadSession: ${session.sessionId} -> ${session.sessionKey}`);
+-		const [sessionSnapshot, transcript] = await Promise.all([this.sessionState.getSnapshot(session.sessionKey), ledgerReplay.complete ? Promise.resolve([]) : this.getSessionTranscript(session.sessionKey).catch((err) => {
+-			this.log(`session transcript fallback for ${session.sessionKey}: ${String(err)}`);
+-			return [];
+-		})]);
+-		const replaySessionId = session.sessionId;
+-		if (ledgerReplay.complete) for (const event of ledgerReplay.events) await this.sessionUpdates.emit({
+-			sessionId: replaySessionId,
+-			update: event.update,
+-			record: false
+-		});
+-		else for (const message of transcript) for (const chunk of extractReplayChunks(message)) await this.sessionUpdates.emit({
+-			sessionId: replaySessionId,
+-			update: {
+-				sessionUpdate: chunk.sessionUpdate,
+-				content: {
+-					type: "text",
+-					text: chunk.text
+-				}
+-			}
+-		});
+-		return await this.publishSessionSnapshot(session, sessionSnapshot, false);
++		await this.ambient?.beginReplay(session);
++		try {
++			const [sessionSnapshot, transcript] = await Promise.all([this.sessionState.getSnapshot(session.sessionKey), ledgerReplay.complete ? Promise.resolve([]) : this.getSessionTranscript(session.sessionKey).catch((err) => {
++				this.log(`session transcript fallback for ${session.sessionKey}: ${String(err)}`);
++				return [];
++			})]);
++			const replaySessionId = session.sessionId;
++			if (ledgerReplay.complete) for (const event of ledgerReplay.events) await this.sessionUpdates.emit({
++				sessionId: replaySessionId,
++				update: event.update,
++				record: false
++			});
++			else for (const message of transcript) for (const chunk of extractReplayChunks(message)) await this.sessionUpdates.emit({
++				sessionId: replaySessionId,
++				update: toAcpReplayUpdate(chunk),
++				record: false
++			});
++			const replayBaseline = resolveAmbientReplayBaseline(ledgerReplay.complete ? ledgerReplay.events : [], ledgerReplay.complete ? [] : transcript);
++			const result = await this.publishSessionSnapshot(session, sessionSnapshot, false);
++			await this.ambient?.completeReplay(session, replayBaseline);
++			return result;
++		} catch (err) {
++			await this.ambient?.rollbackReplay(session);
++			throw err;
++		}
+ 	}
+ 	async listSessions(params) {
+ 		const requestedCwd = normalizeOptionalString(params.cwd);
+@@ -1801,11 +2409,13 @@
+ 			cwd: params.cwd
+ 		});
+ 		await this.sessionUpdates.startLedgerSession(session, { complete: false });
++		await this.ambient?.activateSession(session);
+ 		this.log(`resumeSession: ${session.sessionId} -> ${session.sessionKey}`);
+ 		return await this.publishSessionSnapshot(session, sessionSnapshot, false);
+ 	}
+ 	async closeSession(params) {
+ 		const session = this.requireSession(params.sessionId);
++		await this.ambient?.deactivate(params.sessionId);
+ 		await this.cancelSessionWork(session);
+ 		this.sessionStore.deleteSession(params.sessionId);
+ 		this.log(`closeSession: ${params.sessionId}`);
+@@ -2426,12 +3036,13 @@
+ 			log: this.log
+ 		});
+ 		const sessionState = new AcpTranslatorSessionState(gateway, this.sessionUpdates, this.log);
+-		this.promptStream = new AcpTranslatorPromptStream(connection, gateway, opts, sessionStore, this.sessionUpdates, sessionState, this.approvalRelays, this.log);
++		const ambient = new AcpTranslatorAmbient(gateway, this.sessionUpdates, sessionState, this.log);
++		this.promptStream = new AcpTranslatorPromptStream(connection, gateway, opts, sessionStore, this.sessionUpdates, sessionState, this.approvalRelays, this.log, ambient);
+ 		const sessionCreateRateLimiter = createFixedWindowBudget({
+ 			maxRequests: resolveIntegerOption(opts.sessionCreateRateLimit?.maxRequests, SESSION_CREATE_RATE_LIMIT_DEFAULT_MAX_REQUESTS, { min: 1 }),
+ 			windowMs: resolveIntegerOption(opts.sessionCreateRateLimit?.windowMs, SESSION_CREATE_RATE_LIMIT_DEFAULT_WINDOW_MS, { min: 1e3 })
+ 		});
+-		const sessionLifecycle = new AcpTranslatorSessionLifecycle(gateway, opts, sessionStore, this.sessionUpdates, sessionState, sessionCreateRateLimiter, (session) => this.promptStream.cancelSessionWork(session), this.log);
++		const sessionLifecycle = new AcpTranslatorSessionLifecycle(gateway, opts, sessionStore, this.sessionUpdates, sessionState, sessionCreateRateLimiter, (session) => this.promptStream.cancelSessionWork(session), this.log, ambient);
+ 		this.newSession = sessionLifecycle.newSession.bind(sessionLifecycle);
+ 		this.loadSession = sessionLifecycle.loadSession.bind(sessionLifecycle);
+ 		this.listSessions = sessionLifecycle.listSessions.bind(sessionLifecycle);
 diff --git a/dist/sessions-compact-BHqjQkq-.mjs b/dist/sessions-compact-BHqjQkq-.mjs
 --- a/dist/sessions-compact-BHqjQkq-.mjs
 +++ b/dist/sessions-compact-BHqjQkq-.mjs
