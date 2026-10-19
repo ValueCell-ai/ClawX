@@ -182,7 +182,7 @@
 | --- | --- | --- |
 | `electron/utils/openrouter-headers-preload.cjs` | 全仓零引用；`process-launcher.ts` 已有同样的内联 fetch patch | 删除 |
 | `electron/main/provider-model-sync.ts` | 仅 `tests/unit/provider-model-sync.test.ts` 引用；生产路径使用 `provider-runtime-sync.ts` | 删除模块与对应测试 |
-| `src/lib/acp/subagent-lineage.ts` | 5 行重复 re-export，零引用；实际使用 `shared/acp-chat/subagent-lineage.ts` | 删除 |
+| `src/lib/acp/subagent-lineage.ts` | 5 行重复 re-export；生产代码零引用，仅 `tests/unit/acp-subagent-lineage.test.ts` 引用 | 删除，测试改为直接引用 shared |
 | `src/extensions/index.ts` | 未被任何入口引用（消费者直接 import `registry`/`types`） | 可删；如作为公共 API 则保留 |
 | `electron/extensions/index.ts` | 同上 | 可删；如作为公共 API 则保留 |
 | `shared/acp-chat/contract-assertions.ts` | 仅测试引用 | 移到 `tests/fixtures/` 或 `tests/unit` 辅助目录 |
