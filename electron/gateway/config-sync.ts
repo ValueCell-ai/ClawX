@@ -692,12 +692,12 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     try {
       const snapshot = await ensureOpenClaw2026_7_1UpgradeSnapshot();
       if (snapshot.status === 'created') {
-        logger.info(`[upgrade] Created OpenClaw 2026.7.1 pre-migration snapshot (${snapshot.files.length} files): ${snapshot.snapshotDir}`);
+        logger.info(`[upgrade] Created OpenClaw pre-migration snapshot (${snapshot.files.length} files): ${snapshot.snapshotDir}`);
       }
     } catch (error) {
       // OpenClaw also maintains migration-specific backups. Keep startup
       // available if the additional ClawX safety snapshot cannot be written.
-      logger.warn('[upgrade] Failed to create OpenClaw 2026.7.1 pre-migration snapshot:', error);
+      logger.warn('[upgrade] Failed to create OpenClaw pre-migration snapshot:', error);
     }
   });
 

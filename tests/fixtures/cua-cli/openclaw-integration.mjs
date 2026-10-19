@@ -6,7 +6,9 @@ import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createOpenClawCodingTools, OPENCLAW_VERSION } from 'openclaw/plugin-sdk/agent-harness';
+import { createOpenClawCodingTools } from 'openclaw/plugin-sdk/agent-harness';
+// OpenClaw 2026.10 moved the runtime version export out of the harness facade.
+import { OPENCLAW_VERSION } from 'openclaw/plugin-sdk/agent-harness-runtime';
 
 const root = process.env.HOME;
 assert.equal(process.env.OPENCLAW_STATE_DIR, join(root, '.openclaw'));

@@ -28,8 +28,13 @@ describe('CUA SDK entrypoints', () => {
       expect(lock.packages[`${name}@0.25.0`].resolution.integrity).toMatch(/^sha512-/);
       expect(lock.snapshots['@trycua/cua-driver@0.25.0'].optionalDependencies[name]).toBe('0.25.0');
     }
-    expect(Object.keys(lock.packages).filter(name => name.startsWith('@trycua/cua-driver')))
+    // OpenClaw 2026.10.5 vendors its own @trycua/cua-driver 0.32.0 graph; ClawX
+    // keeps the independently downloaded 0.25.0 CLI/SDK pin for its computer-use
+    // skill, so scope the assertion to ClawX's own version and prove the newer
+    // transitive copy stays separate.
+    expect(Object.keys(lock.packages).filter(name => name.startsWith('@trycua/cua-driver') && name.includes('@0.25.0')))
       .toHaveLength(7);
+    expect(Object.keys(lock.packages).some(name => name.startsWith('@trycua/cua-driver') && name.includes('@0.32.0'))).toBe(true);
   });
 
   it.skipIf(

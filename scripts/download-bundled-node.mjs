@@ -3,7 +3,9 @@
 import 'zx/globals';
 
 const ROOT_DIR = path.resolve(__dirname, '..');
-const NODE_VERSION = '22.22.3';
+// OpenClaw 2026.10.x requires Node >=24.16.0 (<25) or >=26.1.0; keep the Windows
+// packaged runtime on the same Node 24.18 line as Electron 41.
+const NODE_VERSION = '24.18.1';
 const BASE_URL = `https://nodejs.org/dist/v${NODE_VERSION}`;
 const OUTPUT_BASE = path.join(ROOT_DIR, 'resources', 'bin');
 
