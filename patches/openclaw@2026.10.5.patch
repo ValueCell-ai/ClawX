@@ -1,3 +1,96 @@
+diff --git a/dist/agent-core-B94tJ7dr.mjs b/dist/agent-core-B94tJ7dr.mjs
+--- a/dist/agent-core-B94tJ7dr.mjs
++++ b/dist/agent-core-B94tJ7dr.mjs
+@@ -2983,15 +2983,23 @@
+ 	const triggerUnitScale = !constraints?.budget && totalEstimatedTokens > 0 && Number.isFinite(totalEstimatedTokens) && Number.isFinite(contextUsage.usageTokens) ? Math.min(Math.max(1, settings.keepRecentTokens), Math.max(1, contextUsage.usageTokens / totalEstimatedTokens)) : 1;
+ 	const resetPreludeTokens = resetPreludeMessages.reduce((total, message) => total + estimateTokens(message), 0);
+ 	const keepRecentTokens = Math.min(Number.MAX_SAFE_INTEGER, settings.keepRecentTokens / triggerUnitScale + resetPreludeTokens);
+-	const cutPoint = findCutPoint(effectiveEntries, boundaryStart, boundaryEnd, keepRecentTokens, constraints);
+-	if (cutPoint.firstKeptEntryIndex === boundaryEnd) return err(new CompactionError("summarization_failed", "No complete recent message fits beside the foreground prompt, tools, and summary. Reduce the request or select a larger context window."));
++	// ClawX: keepRecentTokens=0 means "do not retain a recent tail"; summarize the
++	// whole completed turn and keep only its final entry as the new leaf.
++	const dropsCompletedTail = keepRecentTokens === 0;
++	const cutPoint = dropsCompletedTail ? {
++		firstKeptEntryIndex: boundaryEnd - 1,
++		turnStartIndex: -1,
++		isSplitTurn: false
++	} : findCutPoint(effectiveEntries, boundaryStart, boundaryEnd, keepRecentTokens, constraints);
++	if (!dropsCompletedTail && cutPoint.firstKeptEntryIndex === boundaryEnd) return err(new CompactionError("summarization_failed", "No complete recent message fits beside the foreground prompt, tools, and summary. Reduce the request or select a larger context window."));
+ 	const firstKeptEntry = effectiveEntries[cutPoint.firstKeptEntryIndex];
+ 	if (!firstKeptEntry?.id) return err(new CompactionError("invalid_session", "First kept entry has no UUID - session may need migration"));
+ 	const firstKeptEntryId = firstKeptEntry.id;
+-	const historyEnd = cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
++	const historyEnd = dropsCompletedTail ? boundaryEnd : cutPoint.isSplitTurn ? cutPoint.turnStartIndex : cutPoint.firstKeptEntryIndex;
+ 	const messagesToSummarize = [...resetPreludeMessages];
+ 	const turnPrefixMessages = [];
+-	for (let i = boundaryStart; i < cutPoint.firstKeptEntryIndex; i++) {
++	const summarizeEnd = dropsCompletedTail ? historyEnd : cutPoint.firstKeptEntryIndex;
++	for (let i = boundaryStart; i < summarizeEnd; i++) {
+ 		const entry = effectiveEntries.at(i);
+ 		const msg = entry ? getMessageFromEntryForCompaction(entry) : void 0;
+ 		if (msg) (i < historyEnd ? messagesToSummarize : turnPrefixMessages).push(msg);
+diff --git a/dist/agent-settings-CZ8x5-4D.mjs b/dist/agent-settings-CZ8x5-4D.mjs
+--- a/dist/agent-settings-CZ8x5-4D.mjs
++++ b/dist/agent-settings-CZ8x5-4D.mjs
+@@ -8,13 +8,17 @@
+ 	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return;
+ 	return Math.floor(value);
+ }
++function toNonNegativeInt(value) {
++	const parsed = typeof value === "number" ? value : parseFloat(value);
++	return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : void 0;
++}
+ /** Applies configured compaction reserve/keep-recent settings to an agent settings manager. */
+ function applyAgentCompactionSettingsFromConfig(params) {
+ 	const currentReserveTokens = params.settingsManager.getCompactionReserveTokens();
+ 	const currentKeepRecentTokens = params.settingsManager.getCompactionKeepRecentTokens();
+ 	const compactionCfg = params.cfg?.agents?.defaults?.compaction;
+ 	const configuredEnabled = compactionCfg?.enabled;
+-	const configuredKeepRecentTokens = toPositiveInt(compactionCfg?.keepRecentTokens);
++	const configuredKeepRecentTokens = toNonNegativeInt(compactionCfg?.keepRecentTokens);
+ 	const contextTokenBudget = toPositiveInt(params.contextTokenBudget);
+ 	const requestedReserveTokens = Math.max(currentReserveTokens, DEFAULT_AGENT_COMPACTION_RESERVE_TOKENS_FLOOR);
+ 	const targetReserveTokens = contextTokenBudget === void 0 ? requestedReserveTokens : resolveEffectiveCompactionReserveTokens({
+diff --git a/dist/builtin-openclaw-CLelpwAr.mjs b/dist/builtin-openclaw-CLelpwAr.mjs
+--- a/dist/builtin-openclaw-CLelpwAr.mjs
++++ b/dist/builtin-openclaw-CLelpwAr.mjs
+@@ -4892,8 +4892,19 @@
+ 		reason,
+ 		consoleMessage: `embedded run ${kind} start: runId=${ctx.params.runId} reason=${reason}`
+ 	});
++	// ClawX: a stable compaction identity lets ACP clients project the full
++	// lifecycle as session_info_update metadata.
++	const compactionId = `cmp-${Date.now().toString(36)}-${randomUUID().replace(/-/g, "").slice(0, 16)}`;
++	ctx.state.activeCompactionId = compactionId;
++	const timestamp = new Date().toISOString();
+ 	emitCompactionAgentEvent(ctx, {
+ 		phase: "start",
++		compactionId,
++		source: reason,
++		reason,
++		timestamp,
++		aborted: false,
++		completed: false,
+ 		...evt.itemId ? { itemId: evt.itemId } : {}
+ 	});
+ 	runBestEffortCompactionHook(ctx, "before");
+@@ -4966,9 +4977,15 @@
+ 		const benign = outcome.status === "aborted" || outcome.status === "skipped" && (reasonClass === "no_compactable_entries" || reasonClass === "below_threshold" || reasonClass === "already_compacted");
+ 		ctx.log[benign ? "info" : "warn"](`embedded run ${kind} ${outcome.status}`, metadata);
+ 	}
++	const compactionId = ctx.state.activeCompactionId;
++	ctx.state.activeCompactionId = void 0;
+ 	emitCompactionAgentEvent(ctx, {
+ 		phase: "end",
+-		...evt.itemId ? { itemId: evt.itemId } : {},
++		...compactionId ? { compactionId } : {},
++		source: reason,
++		reason: outcomeReason ?? reason,
++		timestamp: new Date().toISOString(),
++		aborted: outcome.status === "aborted",
+ 		completed,
+ 		willRetry,
+ 		outcome: outcome.status,
 diff --git a/dist/error-coercion-W9BtigRm.mjs b/dist/error-coercion-W9BtigRm.mjs
 --- a/dist/error-coercion-W9BtigRm.mjs
 +++ b/dist/error-coercion-W9BtigRm.mjs
@@ -89,13 +182,13 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  		if (evt.event === "chat") {
  			await this.handleChatEvent(evt);
  			return;
-@@ -1234,7 +1278,26 @@
+@@ -1234,8 +1278,27 @@
  			this.agentEvents.handleExecApprovalRequestEvent(evt);
  			return;
  		}
 -		if (evt.event === "agent") await this.agentEvents.handleAgentEvent(evt);
 +		if (evt.event === "agent" || evt.event === "session.tool") await this.agentEvents.handleAgentEvent(evt);
-+	}
+ 	}
 +	async handleSessionOperationEvent(evt) {
 +		const payload = evt.payload;
 +		if (!payload || payload.operation !== "compact") return;
@@ -114,15 +207,44 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
 +			record: true,
 +			update
 +		});
- 	}
++	}
  	async prompt(params) {
  		const session = this.sessionStore.getSession(params.sessionId);
-@@ -1562,7 +1625,17 @@
- 			if (pending.idempotencyKey !== runId) continue;
- 			this.reconcilePendingSessionKey(pending, sessionKey);
+ 		if (!session) throw new Error(`Session ${params.sessionId} not found`);
+@@ -1450,8 +1513,10 @@
+ 			return;
+ 		}
+ 		if (state === "error") {
+-			const stopReason = payload.errorKind === "refusal" ? "refusal" : "end_turn";
+-			this.finishPrompt(pending.sessionId, pending, stopReason);
++			// ClawX: settle a true provider error with the Gateway error instead of
++			// reporting a normal end_turn.
++			const errorMessage = typeof payload.errorMessage === "string" && payload.errorMessage.trim() ? payload.errorMessage : "Agent run failed";
++			await this.rejectPendingPrompt(pending, new Error(errorMessage));
+ 		}
+ 	}
+ 	async handleDeltaEvent(pending, messageData) {
+@@ -1470,10 +1535,12 @@
+ 			"agent_message_chunk"
+ 		]]) {
+ 			const fullText = content?.filter((block) => block?.type === blockType).map((block) => block[field] ?? "").join("\n").trimEnd();
+-			const sentSoFar = pending[sentField]?.length ?? 0;
+-			if (!fullText || fullText.length <= sentSoFar) continue;
+-			pending[sentField] = fullText;
+-			await this.emitPromptChunk(pending, kind, fullText.slice(sentSoFar));
++			const previousText = pending[sentField] ?? "";
++			const nextText = resolveAcpEventTextSnapshot(previousText, { text: fullText });
++			const delta = resolveAcpTextDelta(previousText, nextText);
++			if (!delta) continue;
++			pending[sentField] = nextText;
++			await this.emitPromptChunk(pending, kind, delta);
+ 			if (this.getPendingPrompt(sessionId, pending.idempotencyKey) !== pending) return false;
+ 		}
+ 		return true;
+@@ -1564,6 +1631,16 @@
  			return pending;
-+		}
-+	}
+ 		}
+ 	}
 +	/** ClawX: resolve an operation event without a run id only when unambiguous. */
 +	findUniquePendingBySessionKey(sessionKey) {
 +		let found;
@@ -130,12 +252,13 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
 +			if (pending.sessionKey !== sessionKey) continue;
 +			if (found && found !== pending) return;
 +			found = pending;
- 		}
++		}
 +		return found;
- 	}
++	}
  	reconcilePendingSessionKey(pending, sessionKey) {
  		if (pending.sessionKey === sessionKey) return;
-@@ -1590,8 +1663,89 @@
+ 		this.log(`session key reconciled: ${pending.sessionKey} -> ${sessionKey}`);
+@@ -1590,8 +1667,89 @@
  };
  //#endregion
  //#region src/acp/translator.replay.ts
@@ -225,7 +348,7 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  	if (role !== "user" && role !== "assistant") return [];
  	if (typeof message.content === "string") return message.content.length > 0 ? [{
  		sessionUpdate: role === "user" ? "user_message_chunk" : "agent_message_chunk",
-@@ -1613,6 +1767,21 @@
+@@ -1613,6 +1771,21 @@
  			sessionUpdate: "agent_thought_chunk",
  			text: typedBlock.thinking
  		});
@@ -322,3 +445,15 @@ diff --git a/dist/sessions-compact-BHqjQkq-.mjs b/dist/sessions-compact-BHqjQkq-
  					throw err;
  				}
  				if (result.ok && result.compacted) {
+diff --git a/dist/zod-schema-BVpLKnmq.mjs b/dist/zod-schema-BVpLKnmq.mjs
+--- a/dist/zod-schema-BVpLKnmq.mjs
++++ b/dist/zod-schema-BVpLKnmq.mjs
+@@ -135,7 +135,7 @@
+ 		/** Thinking level for embedded OpenClaw compaction summaries. Default: low. */
+ 		thinkingLevel: union([AgentThinkingLevelSchema, literal("inherit")]).optional(),
+ 		/** Embedded OpenClaw keepRecentTokens budget used for cut-point selection. */
+-		keepRecentTokens: number().int().positive().optional(),
++		keepRecentTokens: number().int().min(0).optional(),
+ 		/** Identifier-preservation instruction policy for compaction summaries. */
+ 		identifierPolicy: union([literal("strict"), literal("off")]).optional(),
+ 		/** Preserve this many most-recent user/assistant turns verbatim in compaction summary context. */

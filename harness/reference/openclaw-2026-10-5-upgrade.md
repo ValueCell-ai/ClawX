@@ -73,22 +73,22 @@ The 2026.7.1-2 patch touched 30 generated files. New homes and port status:
 | TokenDance recovery header | `errors-sMD712F3.js` | `error-coercion-*.mjs` | ported |
 | ACP compaction update projection | `acp-cli-*.js` | `server-*.mjs` | ported (function + agent stream + session.operation) |
 | ACP tool/toolCall/compaction replay | `acp-cli-*.js` | `server-*.mjs` `extractReplayChunks` | ported |
-| ACP snapshot-aware delta/text snapshot | `acp-cli-*.js` | `server-*.mjs` | helpers ported; delta call sites pending |
+| ACP snapshot-aware delta/text snapshot | `acp-cli-*.js` | `server-*.mjs` | ported |
 | Manual compaction operation metadata | `sessions-*.js` | `sessions-compact-*.mjs` | ported |
-| Compaction cut point (`keepRecentTokens: 0`) | `proxy-*.js` | `agent-core-*.mjs` `prepareCompaction` | pending |
-| Compaction config schema | `zod-schema-*.js` | `zod-schema-*.mjs` | pending |
-| Settings keepRecentTokens=0 | `agent-settings-*.js` | `agent-settings-*.mjs` | pending |
-| No-tail boundary hardening | `compact-*.js` | `compact-*.mjs` | pending |
-| Compaction ids/timestamps | `selection-*.js` | `builtin-openclaw-*.mjs` | pending |
-| ACP ambient/subagent streaming | `acp-cli-*.js` | `server-*.mjs` new prompt stream | pending |
-| Restart-recovery run lineage | `agent-*.js`, `agent-events-*.js` | `agent-*.mjs`, `agent-events-*.mjs` | pending |
-| Main-session restart recovery | `main-session-restart-recovery-*.js` | same name `.mjs` | pending |
-| `session.operation` broadcast | `sessions-*.js` | `sessions-*.mjs` | pending |
-| Chat `resumedFromRunId` projection | `server-chat-*.js` | `server-chat-*.mjs` | pending |
-| Approval run/tool identity | `exec-approval-*.js`, `schema-*.js` | `exec-approval-*.mjs`, schema chunk | pending |
-| Aggregate tool-result pressure target | `attempt.tool-run-context-*.js`, `selection-*.js` | `attempt.tool-run-context-*.mjs` etc. | pending |
-| bash tool run/tool ids | `bash-tools-*.js` | `bash-tools-*.mjs` | pending |
-| Provider terminal error text | `server-chat-*.js`, `agent-*.js` | `server-chat-*.mjs` | pending |
+| Compaction cut point (`keepRecentTokens: 0`) | `proxy-*.js` | `agent-core-*.mjs` `prepareCompaction` | ported |
+| Compaction config schema | `zod-schema-*.js` | `zod-schema-*.mjs` | ported (`.min(0)`) |
+| Settings keepRecentTokens=0 | `agent-settings-*.js` | `agent-settings-*.mjs` | ported |
+| No-tail boundary hardening | `compact-*.js` | upstream removed `hardenManualCompactionBoundary` | obsolete |
+| Compaction ids/timestamps | `selection-*.js` | `builtin-openclaw-*.mjs` | ported |
+| ACP ambient/subagent streaming | `acp-cli-*.js` | `server-*.mjs` new prompt stream | **pending** (session message subscriptions/replay) |
+| Restart-recovery run lineage | `agent-*.js`, `agent-events-*.js` | upstream 2026.10.5 | upstreamed, patch dropped |
+| Main-session restart recovery | `main-session-restart-recovery-*.js` | upstream `main-session-restart-recovery-*.mjs` | upstreamed |
+| `session.operation` broadcast | `sessions-*.js` | `sessions-compact-*.mjs` | manual compaction metadata ported |
+| Chat `resumedFromRunId` projection | `server-chat-*.js` | upstream recovery lineage | obsolete |
+| Approval run/tool identity | `exec-approval-*.js`, `schema-*.js` | `exec-approval-*.mjs`, schema chunk | pending (low risk) |
+| Aggregate tool-result pressure target | `attempt.tool-run-context-*.js`, `selection-*.js` | upstream pressure rework | obsolete |
+| bash tool run/tool ids | `bash-tools-*.js` | `bash-tools-*.mjs` | pending (low risk) |
+| Provider terminal error text | `server-chat-*.js`, `agent-*.js` | `server-*.mjs` ACP error terminal | ported |
 
 ClawX must not carry the 2026.7.1-2 patch forward by filename: the task spec
 `recover-acp-session-after-gateway-restart.md` explicitly requires regenerating
