@@ -57,6 +57,7 @@ import { isDefaultWorkspacePath } from '@/lib/workspace-context';
 import { useWorkspaceAvailability } from '@/hooks/use-workspace-availability';
 import { projectSessionRunState } from '@/stores/chat/session-status';
 import { getSessionDisplayTitle } from '@shared/chat/session-title';
+import { IssueReportExport } from '@/components/settings/IssueReportExport';
 
 interface NavItemProps {
   to: string;
@@ -930,6 +931,8 @@ export function Sidebar() {
             )}
           </>
         </NavLink>
+
+        <IssueReportExport trigger="sidebar" sidebarCollapsed={sidebarCollapsed} />
 
         {devModeUnlocked && (
           <Button

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   Archive,
+  Bug,
   Check,
   ExternalLink,
   FileJson,
@@ -23,8 +24,17 @@ import {
 import { hostApi } from '@/lib/host-api';
 import { useChatStore } from '@/stores/chat';
 import { shouldRetainSessionInCatalog } from '@/stores/chat/session-key-utils';
+import { cn } from '@/lib/utils';
 
-export function IssueReportExport() {
+interface IssueReportExportProps {
+  trigger?: 'settings' | 'sidebar';
+  sidebarCollapsed?: boolean;
+}
+
+export function IssueReportExport({
+  trigger = 'settings',
+  sidebarCollapsed = false,
+}: IssueReportExportProps) {
   const { t } = useTranslation(['settings', 'common']);
   const sessions = useChatStore((state) => state.sessions);
   const sessionLabels = useChatStore((state) => state.sessionLabels);
@@ -114,22 +124,47 @@ export function IssueReportExport() {
 
   return (
     <>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-sm font-medium text-foreground">{t('settings:issueReport.actionTitle')}</p>
-          <p className="mt-1 text-meta text-muted-foreground">{t('settings:issueReport.actionDescription')}</p>
-        </div>
+      {trigger === 'sidebar' ? (
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           onClick={handleOpen}
-          data-testid="settings-issue-report-open"
-          className="shrink-0 rounded-xl border-black/10 bg-transparent dark:border-white/10"
+          data-testid="sidebar-issue-report-open"
+          aria-label={t('settings:issueReport.actionTitle')}
+          title={t('settings:issueReport.actionTitle')}
+          className={cn(
+            'sidebar-nav-text flex h-auto w-full items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
+            'text-foreground/80 hover:bg-black/5 dark:hover:bg-white/5',
+            sidebarCollapsed ? 'justify-center px-0' : 'justify-start',
+          )}
         >
-          <Archive className="mr-2 h-4 w-4" />
-          {t('settings:issueReport.open')}
+          <div className="flex shrink-0 items-center justify-center text-current [&_svg]:size-4">
+            <Bug data-testid="sidebar-issue-report-icon" className="h-4 w-4" strokeWidth={2} />
+          </div>
+          {!sidebarCollapsed && (
+            <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-left">
+              {t('settings:issueReport.actionTitle')}
+            </span>
+          )}
         </Button>
-      </div>
+      ) : (
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium text-foreground">{t('settings:issueReport.actionTitle')}</p>
+            <p className="mt-1 text-meta text-muted-foreground">{t('settings:issueReport.actionDescription')}</p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleOpen}
+            data-testid="settings-issue-report-open"
+            className="shrink-0 rounded-xl border-black/10 bg-transparent dark:border-white/10"
+          >
+            <Archive className="mr-2 h-4 w-4" />
+            {t('settings:issueReport.open')}
+          </Button>
+        </div>
+      )}
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent
