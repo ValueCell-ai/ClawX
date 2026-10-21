@@ -35,6 +35,24 @@ describe('IssueReportExport', () => {
     await waitFor(() => expect(exportIssueReport).toHaveBeenCalledWith({ sessionKeys: [] }));
   });
 
+  it('opens the same export dialog from the sidebar shortcut', () => {
+    useChatStore.setState({
+      sessions: [],
+      sessionLabels: {},
+      currentSessionKey: null,
+      loadSessions: vi.fn().mockResolvedValue(undefined),
+    });
+
+    render(<IssueReportExport trigger="sidebar" sidebarCollapsed />);
+
+    const shortcut = screen.getByTestId('sidebar-issue-report-open');
+    expect(shortcut).toHaveAccessibleName('settings:issueReport.actionTitle');
+    expect(shortcut).not.toHaveTextContent('settings:issueReport.actionTitle');
+    expect(screen.getByTestId('sidebar-issue-report-icon')).toBeInTheDocument();
+    fireEvent.click(shortcut);
+    expect(screen.getByTestId('issue-report-dialog')).toBeInTheDocument();
+  });
+
   it('keeps retained native subagent transcripts selectable for export', () => {
     const parentKey = 'agent:main:main';
     const childKey = 'agent:main:subagent:export-child';
