@@ -389,6 +389,7 @@ async function initialize(): Promise<void> {
     status: computerUseApi.status,
     setEnabled: computerUseApi.setEnabled,
     requestPermissions: computerUseApi.requestPermissions,
+    retry: computerUseApi.retry,
   } });
   registerIpcHandlers(
     gatewayManager,
@@ -561,11 +562,10 @@ async function initialize(): Promise<void> {
   });
 
   if (!isE2EMode) {
-    try {
-      await computerUseApi.initialize();
-    } catch (error) {
-      logger.warn('Local CUA runtime failed to start; continuing with Gateway startup:', error);
-    }
+    // CUA is optional. Its native readiness handshake must not delay chat startup.
+    void computerUseApi.initialize().catch((error) => {
+      logger.warn('Local CUA runtime failed to start:', error);
+    });
   }
 
   // Start Gateway automatically (this seeds missing bootstrap files with full templates)

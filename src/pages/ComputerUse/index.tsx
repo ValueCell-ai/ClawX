@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ComputerUseStatus } from '@shared/host-api/contract';
 import { hostApi } from '@/lib/host-api';
@@ -11,17 +11,25 @@ export function ComputerUse() {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [permissionRequestCompleted, setPermissionRequestCompleted] = useState(false);
+  const snapshotVersion = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
+    let pending = false;
     const refresh = () => {
+      if (pending) return;
+      pending = true;
+      const version = ++snapshotVersion.current;
       void hostApi.computerUse.status().then((next) => {
-        if (!cancelled) setStatus(next);
-      }).catch(() => { if (!cancelled) setFailed(true); });
+        if (!cancelled && version === snapshotVersion.current) setStatus(next);
+      }).catch(() => {
+        if (!cancelled && version === snapshotVersion.current) setFailed(true);
+      }).finally(() => { pending = false; });
     };
     refresh();
+    const timer = window.setInterval(refresh, 2000);
     window.addEventListener('focus', refresh);
-    return () => { cancelled = true; window.removeEventListener('focus', refresh); };
+    return () => { cancelled = true; window.clearInterval(timer); window.removeEventListener('focus', refresh); };
   }, []);
 
   const run = async (operation: () => Promise<ComputerUseStatus>, requestingPermissions = false) => {
@@ -29,19 +37,27 @@ export function ComputerUse() {
     setFailed(false);
     setPermissionRequestCompleted(false);
     try {
-      setStatus(await operation());
+      const next = await operation();
+      ++snapshotVersion.current;
+      setStatus(next);
       setPermissionRequestCompleted(requestingPermissions);
     } catch {
       setFailed(true);
       // A failed reconciliation may still have persisted a safe disabled state.
-      try { setStatus(await hostApi.computerUse.status()); } catch { /* Keep the last snapshot. */ }
+      try {
+        const next = await hostApi.computerUse.status();
+        ++snapshotVersion.current;
+        setStatus(next);
+      } catch { /* Keep the last snapshot. */ }
     } finally {
       setBusy(false);
     }
   };
   const permissions = status?.permissions;
   const granted = permissions?.accessibility && permissions.screenRecording === 'granted';
-  const runtimeState = !status?.enabled ? 'off' : status.running ? 'running' : 'unavailable';
+  const transitioning = status?.state === 'starting' || status?.state === 'stopping';
+  const runtimeState = !status ? 'loading' : transitioning ? status.state
+    : !status.enabled ? 'off' : status.running ? 'running' : 'unavailable';
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 p-4 sm:p-8" data-testid="computer-use-page">
@@ -59,7 +75,12 @@ export function ComputerUse() {
         </div>
         <p className="text-sm text-muted-foreground">{t('computerUse.warning')}</p>
         <p className="text-sm" data-testid="computer-use-runtime" role="status">{t(`computerUse.${runtimeState}`)}</p>
-        {status && !status.supported && <p className="text-sm text-muted-foreground">{t('computerUse.unsupported')}</p>}
+        {status?.reason && <p data-testid="computer-use-reason" className="text-sm text-muted-foreground">{t(`computerUse.reasons.${status.reason}`)}</p>}
+        {status && !status.supported && !status.reason && <p className="text-sm text-muted-foreground">{t('computerUse.unsupported')}</p>}
+        {status?.enabled && status.supported && !status.running && !transitioning && (
+          <Button data-testid="computer-use-retry" variant="outline" disabled={busy}
+            onClick={() => void run(hostApi.computerUse.retry)}>{t('computerUse.retry')}</Button>
+        )}
       </section>
       {permissions && (
         <section className="space-y-4 rounded-xl border bg-surface-modal p-5">

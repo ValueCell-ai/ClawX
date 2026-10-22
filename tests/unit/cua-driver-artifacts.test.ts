@@ -47,14 +47,14 @@ afterEach(async () => {
 });
 
 describe('CUA driver artifacts', () => {
-  it('pins the 0.25.0 macOS universal archive for both mac architectures', () => {
-    expect(CUA_DRIVER_VERSION).toBe('0.25.0');
-    expect(CUA_DRIVER_RELEASE_TAG).toBe('cua-driver-rs-v0.25.0');
+  it('pins the 0.37.0 macOS universal archive for both mac architectures', () => {
+    expect(CUA_DRIVER_VERSION).toBe('0.37.0');
+    expect(CUA_DRIVER_RELEASE_TAG).toBe('cua-driver-rs-v0.37.0');
 
     for (const target of ['darwin-x64', 'darwin-arm64']) {
       expect(resolveCuaDriverArtifact(target)).toMatchObject({
-        asset: 'cua-driver-rs-0.25.0-darwin-universal-binary.tar.gz',
-        sha256: '29984f5363c12d9901588e814a3a519b8015a1255d7a59d658fbf2d3e51f8983',
+        asset: 'cua-driver-rs-0.37.0-darwin-universal-binary.tar.gz',
+        sha256: '7d491f67f54be5f3b380ffd85c64b242eaefd05dad6df78012cde227c95aee2a',
         binName: 'cua-driver',
         archiveEntry: 'cua-driver',
       });
@@ -63,8 +63,8 @@ describe('CUA driver artifacts', () => {
 
   it('pins only the Windows x64 binary archive', () => {
     expect(resolveCuaDriverArtifact('win32-x64')).toMatchObject({
-      asset: 'cua-driver-rs-0.25.0-windows-x86_64-binary.zip',
-      sha256: '314f5df05933810499deaa61022c714341aff64f8e45157a589df6a4b1724fa4',
+      asset: 'cua-driver-rs-0.37.0-windows-x86_64-binary.zip',
+      sha256: '40481b55073f1225b0010235b30217bd640ef1f323e982aec0a5f6131d3e4a99',
       binName: 'cua-driver.exe',
       archiveEntry: 'cua-driver.exe',
     });

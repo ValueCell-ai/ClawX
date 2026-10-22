@@ -56,6 +56,7 @@ requiredTests:
 acceptance:
   - After explicit opt-in, Electron Main starts the bundled cua-driver executable as a direct child through @trycua/cua-driver EmbeddedCuaDriverHost and stops it concurrently with Gateway during orderly quit.
   - Main atomically publishes the private v 2 descriptor with generation, driverVersion, binaryPath, and socketPath in ClawX user data; existing exec uses the absolute bundled binary and explicit endpoint.
+  - Main waits for the returned Unix socket or Windows named pipe to accept a connection before publishing the descriptor; a bounded readiness failure stops the host and removes the descriptor.
   - The computer-use Skill reads CLAWX_CUA_CONNECTION_FILE; no ClawX computer tool, OpenClaw plugin, MCP proxy, or action wrapper is registered.
   - CLI workflows use named sessions, bounded observations, semantic result verification, and image-capable read; unknown-completion input is not blindly replayed and no global serialization or native cancellation guarantee is claimed.
   - The daemon is enabled only after explicit local opt-in, without adding gateway.nodes allowCommands, node.invoke policies, node-host startup, pairing, remote node discovery, or renderer-owned backend transport.

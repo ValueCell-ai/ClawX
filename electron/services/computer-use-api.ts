@@ -25,7 +25,13 @@ export function createComputerUseApi(runtime: CuaRuntimeManager) {
     else await runtime.start();
   };
   return {
-    status: () => serialize(status),
+    // Read snapshots without waiting behind startup, shutdown or permission UI.
+    status,
+    retry: () => serialize(async () => {
+      if (closing || await getSetting('computerUseEnabled') !== true) throw new Error('Computer Use is disabled');
+      await runtime.refreshPermissions();
+      return status();
+    }),
     setEnabled: (payload: { enabled: boolean }) => serialize(async () => {
       if (closing) throw new Error('Computer Use is shutting down');
       if (typeof payload?.enabled !== 'boolean') throw new Error('Invalid Computer Use preference');
@@ -56,7 +62,9 @@ export function createComputerUseApi(runtime: CuaRuntimeManager) {
     }),
     stop: () => {
       closing = true;
-      return serialize(() => runtime.stop());
+      // Cancel a native start now; queued work observes closing before starting.
+      const stopping = runtime.stop();
+      return Promise.all([tail.catch(() => undefined), stopping]).then(() => undefined);
     },
   };
 }

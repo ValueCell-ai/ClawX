@@ -20,22 +20,22 @@ describe('computer-use CLI guidance contract (no native driver)', () => {
     ]) expect(content).toContain(term);
     expect(content).toMatch(/\{\s*"v":\s*2,/);
     const descriptor = JSON.parse(content.match(/`(\{"v":2,.*?\})`/)![1]);
-    expect(descriptor.driverVersion).toBe('0.25.0');
+    expect(descriptor.driverVersion).toBe('0.37.0');
     expect(descriptor.generation).toEqual(expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/));
     expect(content).toMatch(/reread the descriptor/i);
     expect(content).toMatch(/not.*before every (action|command)/i);
   });
 
-  it('overrides recording shorthand with session-scoped calls and verified cleanup', () => {
+  it('blocks recording without an owning persistent connection and bounds native batches', () => {
     const content = skill();
-    for (const tool of ['start_recording', 'get_recording_state', 'stop_recording']) {
-      expect(content).toContain(`call ${tool}`);
-    }
+    expect(content).toContain('Recording is unavailable');
+    expect(content).toContain('`get_recording_state` and `stop_recording` do not accept a public `session`');
     expect(content).toContain('Do not use `recording start/status/stop`');
-    expect(content).toContain('0.25.0 shorthand omits the named session');
-    expect(content).toMatch(/recording[\s\S]*explicit workflow `session`/);
-    expect(content).toMatch(/stop_recording[\s\S]*verify recording is disabled before `end_session`/);
-    expect(content).toContain('may outlive named-session cleanup');
+    expect(content).toContain('report this limitation instead of adding MCP');
+    expect(content).toContain('`run_steps` with `observe:{}`');
+    expect(content).toContain('failed_step');
+    expect(content).toContain('timeout_ms/max_calls');
+    expect(content).toContain('never enable\n  `foreground_fallback` implicitly');
   });
 
   it('uses the full native surface and explicit sessions across separate exec calls', () => {
@@ -69,7 +69,7 @@ describe('computer-use CLI guidance contract (no native driver)', () => {
     expect(bootstrap).not.toMatch(/\bjq\b|\bpython\b|\bnode\b/);
     const root = mkdtempSync(join(tmpdir(), 'cua CLI bootstrap '));
     try {
-      const descriptor = { v: 2, generation: '550e8400-e29b-41d4-a716-446655440000', driverVersion: '0.25.0', binaryPath: '/App With Spaces/cua-driver', socketPath: '/private/host endpoint.sock' };
+      const descriptor = { v: 2, generation: '550e8400-e29b-41d4-a716-446655440000', driverVersion: '0.37.0', binaryPath: '/App With Spaces/cua-driver', socketPath: '/private/host endpoint.sock' };
       const file = join(root, 'connection descriptor.json');
       writeFileSync(file, JSON.stringify(descriptor));
       const result = spawnSync('/bin/sh', ['-c', bootstrap], { encoding: 'utf8', env: { ...process.env, CLAWX_CUA_CONNECTION_FILE: file } });

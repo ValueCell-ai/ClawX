@@ -63,7 +63,7 @@ jobs:
           git config --global --add "url.https://github.com/.insteadOf" "ssh://git@github.com/"
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Download uv binaries for macOS
         if: matrix.platform == 'mac'
@@ -124,10 +124,28 @@ jobs:
           echo "File descriptor limit: $(ulimit -n)"
           pnpm run package:mac
 
+      # Exercise the packaged app's CUA import path on the native arm64
+      # runner. afterPack validates both macOS architectures; this smoke test
+      # additionally launches the packaged Electron host and verifies that
+      # the SDK loads its physical native library from app.asar.unpacked.
+      - name: Smoke test packaged CUA native imports (macOS arm64)
+        if: matrix.platform == 'mac'
+        run: pnpm exec node scripts/smoke-cua-asar.mjs --artifact release/mac-arm64/ClawX.app/Contents/Resources
+
       # Windows specific steps
       - name: Build Windows
         if: matrix.platform == 'win'
         run: pnpm run package:win
+
+      - name: Smoke test packaged CUA native imports (Windows x64)
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $resources = "release/win-unpacked/resources"
+          if (-not (Test-Path $resources)) {
+            throw "Packaged Windows resources directory is missing: $resources"
+          }
+          pnpm exec node scripts/smoke-cua-asar.mjs --artifact $resources
 
       # Detect release channel from tag to skip code signing for alpha/beta builds
       - name: Detect Windows release channel
@@ -290,6 +308,7 @@ jobs:
             release/*.rpm
             release/*.yml
             !release/builder-debug.yml
+          if-no-files-found: error
           retention-days: 7
 
   # ──────────────────────────────────────────────────────────────
