@@ -458,17 +458,39 @@ describe('CUA cancellation and recovery', () => {
   it('cancels native startup before waiting for it, without publishing a generation', async () => {
     const harness = await createHarness();
     let rejectStart!: (error: Error) => void;
-    harness.host.start.mockImplementationOnce(() => new Promise((_, reject) => { rejectStart = reject; }));
+    let startSignal!: AbortSignal;
+    harness.host.start.mockImplementationOnce((options) => new Promise((_, reject) => {
+      startSignal = options!.signal!;
+      rejectStart = reject;
+    }));
     harness.host.stop.mockImplementationOnce(async () => { rejectStart(new Error('StartupCancelled')); });
     const manager = new CuaRuntimeManager(harness.dependencies);
     const start = manager.start();
     await vi.waitFor(() => expect(harness.host.start).toHaveBeenCalledOnce());
+    expect(startSignal.aborted).toBe(false);
     await manager.stop();
+    expect(startSignal.aborted).toBe(true);
     await expect(start).resolves.toBe(false);
     expect(harness.renameFile).not.toHaveBeenCalled();
     expect(harness.host.stop).toHaveBeenCalledOnce();
     expect(harness.host.uniffiDestroy).toHaveBeenCalledOnce();
     expect(manager.getStatus()).toMatchObject({ running: false, state: 'stopped', reason: null });
+  });
+
+  it('cancels the exit observer before destroying a stopped native host', async () => {
+    const harness = await createHarness();
+    let exitSignal!: AbortSignal;
+    harness.host.waitForExit.mockImplementationOnce((_generation, options) => new Promise<void>((resolve) => {
+      exitSignal = options!.signal!;
+      options!.signal!.addEventListener('abort', () => resolve(), { once: true });
+    }));
+    const manager = new CuaRuntimeManager(harness.dependencies);
+    await manager.start();
+    await vi.waitFor(() => expect(harness.host.waitForExit).toHaveBeenCalledOnce());
+    expect(exitSignal.aborted).toBe(false);
+    await manager.stop();
+    expect(exitSignal.aborted).toBe(true);
+    expect(harness.host.uniffiDestroy).toHaveBeenCalledOnce();
   });
 
   it('does not create a host after cancellation during SDK loading', async () => {

@@ -19,9 +19,9 @@ interface CuaConnection {
 }
 
 interface CuaHost {
-  start(): Promise<CuaConnection>;
-  stop(): Promise<void>;
-  waitForExit(generation: string): Promise<unknown>;
+  start(options?: { signal?: AbortSignal }): Promise<CuaConnection>;
+  stop(options?: { signal?: AbortSignal }): Promise<void>;
+  waitForExit(generation: string, options?: { signal?: AbortSignal }): Promise<unknown>;
   uniffiDestroy?: () => void;
 }
 
@@ -106,6 +106,8 @@ export class CuaRuntimeManager {
   private state: ComputerUseRuntimeState = 'stopped';
   private reason: ComputerUseUnavailableReason | null = null;
   private stopRequested = false;
+  private startAbortController: AbortController | null = null;
+  private exitAbortController: AbortController | null = null;
   private startPromise: Promise<boolean> | null = null;
   private stopPromise: Promise<void> | null = null;
 
@@ -118,13 +120,20 @@ export class CuaRuntimeManager {
     this.stopRequested = false;
     this.state = 'starting';
     this.reason = null;
-    this.startPromise = this.startInternal().finally(() => { this.startPromise = null; });
+    const startAbortController = new AbortController();
+    this.startAbortController = startAbortController;
+    this.startPromise = this.startInternal(startAbortController.signal).finally(() => {
+      if (this.startAbortController === startAbortController) this.startAbortController = null;
+      this.startPromise = null;
+    });
     return this.startPromise;
   }
 
   stop(): Promise<void> {
     if (this.stopPromise) return this.stopPromise;
     this.stopRequested = true;
+    this.startAbortController?.abort();
+    this.exitAbortController?.abort();
     this.state = 'stopping';
     this.started = false;
     this.stopPromise = this.stopInternal().then(() => {
@@ -143,7 +152,7 @@ export class CuaRuntimeManager {
     return false;
   }
 
-  private async startInternal(): Promise<boolean> {
+  private async startInternal(startSignal: AbortSignal): Promise<boolean> {
     let host: CuaHost | null = null;
     try {
       await this.removeDescriptor();
@@ -177,7 +186,7 @@ export class CuaRuntimeManager {
       this.host = host;
       // The SDK waits for a metadata handshake and checks the child identity and
       // protocol before resolving. A second bare socket probe adds no readiness proof.
-      const connection = await host.start();
+      const connection = await host.start({ signal: startSignal });
       if (this.stopRequested) return false;
       await this.publishDescriptor({
         v: 2,
@@ -189,7 +198,9 @@ export class CuaRuntimeManager {
       if (this.stopRequested) return false;
       this.started = true;
       this.state = 'running';
-      void this.monitorHostExit(host, connection.generation).catch(() => undefined);
+      const exitAbortController = new AbortController();
+      this.exitAbortController = exitAbortController;
+      void this.monitorHostExit(host, connection.generation, exitAbortController.signal).catch(() => undefined);
       return true;
     } catch (error) {
       // stopInternal owns cancellation cleanup and awaits this startup before
@@ -216,6 +227,7 @@ export class CuaRuntimeManager {
     if (starting) await starting.catch(() => false);
     const host = this.host;
     this.host = null;
+    this.exitAbortController = null;
     try {
       await this.removeDescriptor();
     } finally {
@@ -256,13 +268,14 @@ export class CuaRuntimeManager {
     return this.started ? true : this.start();
   }
 
-  private async monitorHostExit(host: CuaHost, generation: string): Promise<void> {
-    try { await host.waitForExit(generation); } catch {
+  private async monitorHostExit(host: CuaHost, generation: string, signal: AbortSignal): Promise<void> {
+    try { await host.waitForExit(generation, { signal }); } catch {
       // A failed exit observer cannot prove that the published endpoint is alive.
     }
     if (this.host !== host || !this.started) return;
     this.host = null;
     this.started = false;
+    if (this.exitAbortController?.signal === signal) this.exitAbortController = null;
     this.unavailable('exited');
     try { host.uniffiDestroy?.(); } finally { await this.removeDescriptor(); }
   }
