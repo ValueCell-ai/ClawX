@@ -90,6 +90,9 @@ describe('computer-use CLI guidance contract (no native driver)', () => {
     expect(examples).toContain('$OutputEncoding');
     expect(examples).toContain('| & $c.binaryPath --socket $c.socketPath call list_windows');
     expect(skill()).toContain('omit the positional JSON argument');
+    expect(skill()).toContain('Never nest `powershell -Command');
+    expect(skill()).toContain('parse_visual_regions');
+    expect(skill()).toContain('not_installed');
   });
 
   it('separates semantic success and fresh image read from process exit or screenshot flags', () => {

@@ -39,6 +39,8 @@ requiredTests:
   - tests/unit/cua-driver-artifacts.test.ts
   - tests/unit/cua-cli-contract.test.ts
   - tests/unit/cua-cli-exec.test.ts
+  - tests/unit/gateway-ws-client.test.ts
+  - tests/unit/acp-chat-service.test.ts
   - tests/unit/builtin-computer-use-skill.test.ts
   - tests/e2e/computer-use.spec.ts
   - tests/e2e/computer-use-skill.spec.ts
@@ -51,6 +53,8 @@ acceptance:
   - Update the ClawX Skill for the new upstream document layout and bounded run_steps/run_script workflows without blind input replay, global policy changes or permission-dialog automation.
   - Cover management changes with Electron E2E and all four locales; run communication replay/compare, harness checks, typecheck, lint, unit and packaged-native import checks.
   - Release workflows use the frozen lockfile, run packaged CUA native-import smoke checks on macOS and Windows, and fail when a platform upload has no release artifacts.
+  - Managed Gateway readiness has a finite cold-start deadline; a stale owned process is reclaimed after the deadline so startup retries do not wait on the same PID indefinitely.
+  - ACP session-family refreshes are single-flight, time-bounded, and briefly cooled down after transient Gateway failures so a long-running native tool call cannot create an error/request storm.
   - Record actual native and package checks separately from mocks; do not claim Windows execution, signed attribution or model task success without respective evidence.
 docs:
   required: true

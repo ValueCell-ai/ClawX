@@ -443,14 +443,26 @@ export class GatewayManager extends EventEmitter {
           const recoveringOwnedProcess = tSpawned === 0
             && this.process?.pid != null
             && this.ownsProcess;
-          await waitForGatewayReady({
-            port,
-            getProcessExitCode: () => this.processExitCode,
-            // A code-1012 in-process reload normally returns within seconds.
-            // Do not hold the lifecycle lock for the general 2400-attempt cold
-            // startup budget when the owned process is alive but no longer serves WS.
-            ...(recoveringOwnedProcess ? { retries: 50 } : {}),
-          });
+          try {
+            await waitForGatewayReady({
+              port,
+              getProcessExitCode: () => this.processExitCode,
+              // A code-1012 in-process reload normally returns within seconds.
+              // Use a smaller bounded retry budget for an owned process that
+              // stopped serving WS, while cold startup uses the explicit
+              // readiness deadline in waitForGatewayReady.
+              ...(recoveringOwnedProcess ? { retries: 50 } : {}),
+            });
+          } catch (error) {
+            // A process that remains alive but never emits a challenge is
+            // stale. Reclaim it before the outer startup recovery schedules a
+            // new attempt; otherwise every retry would wait on the same PID.
+            if (this.process?.pid != null && this.ownsProcess && this.processExitCode === null) {
+              logger.warn('Gateway readiness timed out; terminating the stale owned process');
+              await this.forceTerminateOwnedProcessForQuit();
+            }
+            throw error;
+          }
           tReady = Date.now();
         },
         terminateStaleOwnedProcess: async () => {

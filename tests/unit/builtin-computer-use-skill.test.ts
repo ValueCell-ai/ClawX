@@ -76,7 +76,7 @@ describe('built-in computer-use resource', () => {
     expect(Object.keys(frontmatter).sort()).toEqual(['description', 'name']);
     expect(frontmatter.name).toBe('computer-use');
     expect(frontmatter.description).toContain('/computer-use');
-    expect(content.split('\n').length).toBeLessThanOrEqual(165);
+    expect(content.split('\n').length).toBeLessThanOrEqual(180);
     expect(content).toContain('official CUA 0.37.0');
     expect(content).not.toContain('0.21.0');
     expect(content).toContain('takes precedence');

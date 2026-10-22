@@ -65,6 +65,7 @@ import {
   GATEWAY_CONNECT_HANDSHAKE_TIMEOUT_MS,
   connectGatewaySocket,
   probeGatewayReady,
+  waitForGatewayReady,
 } from '@electron/gateway/ws-client';
 
 async function flushMicrotasks(): Promise<void> {
@@ -361,5 +362,43 @@ describe('probeGatewayReady', () => {
 
     await vi.advanceTimersByTimeAsync(1001);
     await expect(probePromise).resolves.toBe(false);
+  });
+});
+
+describe('waitForGatewayReady', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    wsState.sockets.length = 0;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+    wsState.sockets.length = 0;
+  });
+
+  it('fails immediately when the managed process has already exited', async () => {
+    await expect(waitForGatewayReady({
+      port: 18789,
+      getProcessExitCode: () => 1,
+      timeoutMs: 100,
+    })).rejects.toThrow('Gateway process exited before becoming ready (code=1)');
+    expect(wsState.sockets).toHaveLength(0);
+  });
+
+  it('honors a short readiness deadline instead of waiting for every retry', async () => {
+    const ready = waitForGatewayReady({
+      port: 18789,
+      getProcessExitCode: () => null,
+      timeoutMs: 100,
+      intervalMs: 10,
+    });
+    const error = ready.then(() => null, (value) => value);
+
+    await vi.advanceTimersByTimeAsync(101);
+    await expect(error).resolves.toEqual(expect.objectContaining({
+      message: expect.stringMatching(/Gateway failed to start after .*readiness probes/),
+    }));
+    expect(wsState.sockets.length).toBeGreaterThan(0);
   });
 });

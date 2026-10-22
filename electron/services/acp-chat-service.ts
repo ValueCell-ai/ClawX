@@ -76,6 +76,11 @@ type AcpInitializationFlight = {
 };
 
 const ACP_SESSION_LIST_MAX_PAGES = 128;
+// Session-family metadata is auxiliary UI data. It must not wait forever on a
+// Gateway that is busy with a native tool call, nor should a failed refresh
+// fan out one ACP request per Renderer retry.
+export const ACP_SESSION_FAMILY_TIMEOUT_MS = 15_000;
+const ACP_SESSION_FAMILY_FAILURE_COOLDOWN_MS = 5_000;
 // The ACP child only shuts down on SIGINT/SIGTERM and deliberately survives
 // Gateway loss by reconnecting, so quit cleanup must signal it explicitly.
 const ACP_STOP_SIGTERM_GRACE_MS = 3_000;
@@ -100,6 +105,17 @@ function failSessionFamily(error: unknown): AcpSessionFamilyResult {
     children: [],
     error: error instanceof Error ? error.message : String(error),
   };
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  return new Promise<T>((resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    timer.unref?.();
+    promise.then(resolve, reject);
+  }).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
 }
 
 function cancelledPermissionResponse(): RequestPermissionResponse {
@@ -195,6 +211,11 @@ export class AcpChatService {
   private sessionListSupported = false;
   private loadQueue: Promise<void> | null = null;
   private activeLoadBatch: AcpSessionLoadBatch | null = null;
+  private readonly sessionFamilyFlights = new Map<string, Promise<AcpSessionFamilyResult>>();
+  private readonly sessionFamilyFailures = new Map<string, {
+    result: AcpSessionFamilyResult;
+    expiresAt: number;
+  }>();
   private readonly livePrompts = new Map<string, AcpLivePromptContext>();
   private permissionSeq = 0;
   private readonly permissionWaiters = new Map<string, PermissionWaiter>();
@@ -260,6 +281,47 @@ export class AcpChatService {
       return failSessionFamily('Invalid ACP session family payload');
     }
 
+    const sessionKey = payload.sessionKey;
+    const cachedFailure = this.sessionFamilyFailures.get(sessionKey);
+    if (cachedFailure) {
+      if (cachedFailure.expiresAt > Date.now()) return cachedFailure.result;
+      this.sessionFamilyFailures.delete(sessionKey);
+    }
+
+    const existingFlight = this.sessionFamilyFlights.get(sessionKey);
+    if (existingFlight) return existingFlight;
+
+    let flight!: Promise<AcpSessionFamilyResult>;
+    flight = withTimeout(
+      this.fetchSessionFamily(sessionKey),
+      ACP_SESSION_FAMILY_TIMEOUT_MS,
+      `ACP session/list timed out after ${ACP_SESSION_FAMILY_TIMEOUT_MS}ms`,
+    ).catch((error) => {
+      return failSessionFamily(error);
+    }).then((result) => {
+      if (!result.success) {
+        const message = result.error ?? 'unknown ACP session/list failure';
+        if (/Internal error|connection closed|ECONNREFUSED|timed out/i.test(message)) {
+          logger.warn(`[acp-chat] getSessionFamily unavailable: ${message}`);
+        } else {
+          logger.error(`[acp-chat] getSessionFamily failed: ${message}`);
+        }
+        this.sessionFamilyFailures.set(sessionKey, {
+          result,
+          expiresAt: Date.now() + ACP_SESSION_FAMILY_FAILURE_COOLDOWN_MS,
+        });
+      }
+      return result;
+    }).finally(() => {
+      if (this.sessionFamilyFlights.get(sessionKey) === flight) {
+        this.sessionFamilyFlights.delete(sessionKey);
+      }
+    });
+    this.sessionFamilyFlights.set(sessionKey, flight);
+    return flight;
+  }
+
+  private async fetchSessionFamily(sessionKey: string): Promise<AcpSessionFamilyResult> {
     try {
       const connection = await this.ensureConnection();
       if (!this.sessionListSupported) {
@@ -276,7 +338,7 @@ export class AcpChatService {
 
         const nextCursor = result.nextCursor;
         if (nextCursor == null) {
-          return projectAcpSessionFamily(payload.sessionKey, sessions);
+          return projectAcpSessionFamily(sessionKey, sessions);
         }
         if (typeof nextCursor !== 'string' || !nextCursor.trim() || seenCursors.has(nextCursor)) {
           return failSessionFamily('Invalid ACP session/list cursor');
@@ -287,7 +349,6 @@ export class AcpChatService {
 
       return failSessionFamily(`ACP session/list exceeded ${ACP_SESSION_LIST_MAX_PAGES} pages`);
     } catch (error) {
-      logger.error(`[acp-chat] getSessionFamily failed: ${String(error)}`);
       return failSessionFamily(error);
     }
   }
@@ -754,6 +815,8 @@ export class AcpChatService {
     this.historicalGeneration = null;
     this.permissionsEnabled = false;
     this.sessionListSupported = false;
+    this.sessionFamilyFlights.clear();
+    this.sessionFamilyFailures.clear();
     this.livePrompts.clear();
   }
 

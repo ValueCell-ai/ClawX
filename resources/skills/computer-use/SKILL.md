@@ -74,6 +74,15 @@ Exec may use new shells: restore inspected literal paths/session or repeat boots
 do not assume `$c` survives. After unavailability/restart, reread the descriptor and invalidate
 observations, tokens, browser refs and session assumptions even if the endpoint is unchanged.
 
+On Windows, `exec` may already run PowerShell. Never nest `powershell -Command "..."`
+around `$env:...` or `$c...`: the outer shell expands those variables and produces parser
+errors. Write a UTF-8 `.ps1` or JSON file and invoke it with `powershell -File`; keep request
+JSON on stdin with no positional JSON argument. Bound observation commands (30s is enough for
+state/screenshot; reserve 120s for bounded scripts). For Chromium/Electron screenshot-only
+checks use `include_accessibility_tree:false` and a small `max_elements`; if
+`parse_visual_regions` returns `code: "not_installed"`, use screenshot plus `read` or UIA once,
+then stop instead of retrying an unavailable extension.
+
 ## Native Observe, Act, Verify
 
 - Name the app, goal and postcondition. Read [UPSTREAM-SKILL.md](UPSTREAM-SKILL.md) and
