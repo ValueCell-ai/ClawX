@@ -195,6 +195,16 @@ type SqliteDatabaseLike = {
   };
 };
 
+type SqliteStatement = {
+  get: (...params: unknown[]) => unknown;
+  all: (...params: unknown[]) => unknown[];
+};
+
+type ClosableSqliteDatabase = {
+  prepare: (sql: string) => SqliteStatement;
+  close: () => void;
+};
+
 function normalizeCwdValue(value: unknown): string | null {
   const cwd = typeof value === 'string' ? value.trim() : '';
   return cwd || null;
@@ -460,25 +470,143 @@ function resolveSessionTranscriptPathByKey(
   return resolvedSrcPath ?? null;
 }
 
-async function loadSessionSummary(sessionKey: string, workspacePath: string | null): Promise<SessionSummary> {
-  const parsed = parseSessionKey(sessionKey);
-  if (!parsed) {
-    return { sessionKey, firstUserText: null, lastTimestamp: null, workspacePath };
-  }
-
+async function readJsonlTranscriptMessages(
+  agentId: string,
+  sessionKey: string,
+): Promise<TranscriptMessage[] | null> {
   try {
-    const sessionsDir = join(resolveOpenClawStateDir(), 'agents', parsed.agentId, 'sessions');
-    const sessionsJson = await readSessionsJson(parsed.agentId);
+    const sessionsDir = join(resolveOpenClawStateDir(), 'agents', agentId, 'sessions');
+    const sessionsJson = await readSessionsJson(agentId);
     const transcriptPath = resolveSessionTranscriptPathByKey(sessionKey, sessionsDir, sessionsJson);
-    if (!transcriptPath) {
-      return { sessionKey, firstUserText: null, lastTimestamp: null, workspacePath };
-    }
-
+    if (!transcriptPath) return null;
     const messages = await readAllTranscriptMessages(transcriptPath);
-    return summarizeTranscriptMessages(sessionKey, messages, workspacePath);
+    return messages.length > 0 ? messages : null;
   } catch {
-    return { sessionKey, firstUserText: null, lastTimestamp: null, workspacePath };
+    return null;
   }
+}
+
+function readEventJsonText(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) return value;
+  if (value instanceof Uint8Array) {
+    const text = Buffer.from(value).toString('utf8').trim();
+    return text || null;
+  }
+  return null;
+}
+
+const SQLITE_USER_MESSAGE_PROBE_LIMIT = 100;
+
+function parseTranscriptMessageRow(row: unknown): TranscriptMessage | null {
+  if (!isRecord(row)) return null;
+  const text = readEventJsonText(row.event_json);
+  return text ? parseMessageLine(text) : null;
+}
+
+/**
+ * OpenClaw 2026.10 migrates conversation transcripts into
+ * `agents/<agent>/agent/openclaw-agent.sqlite` and stops writing sessions.json.
+ * The first user message still lives in `transcript_events`.
+ */
+function readSqliteTranscriptMessages(
+  db: ClosableSqliteDatabase,
+  sessionKey: string,
+): TranscriptMessage[] | null {
+  try {
+    const node = db.prepare(
+      'SELECT current_session_id FROM session_nodes WHERE session_key = ?',
+    ).get(sessionKey) as { current_session_id?: unknown } | undefined;
+    const sessionId = typeof node?.current_session_id === 'string' ? node.current_session_id.trim() : '';
+    if (!sessionId) return null;
+
+    const userRows = db.prepare(
+      `SELECT event_json
+       FROM transcript_events
+       WHERE session_id = ?
+         AND json_extract(event_json, '$.type') = 'message'
+         AND json_extract(event_json, '$.message.role') = 'user'
+       ORDER BY seq ASC
+       LIMIT ?`,
+    ).all(sessionId, SQLITE_USER_MESSAGE_PROBE_LIMIT);
+    const lastRow = db.prepare(
+      `SELECT event_json
+       FROM transcript_events
+       WHERE session_id = ?
+         AND json_extract(event_json, '$.type') = 'message'
+       ORDER BY seq DESC
+       LIMIT 1`,
+    ).get(sessionId);
+
+    const messages = userRows.flatMap((row) => {
+      const message = parseTranscriptMessageRow(row);
+      return message ? [message] : [];
+    });
+    const lastMessage = parseTranscriptMessageRow(lastRow);
+    if (lastMessage && lastMessage.role !== 'user') messages.push(lastMessage);
+    return messages.length > 0 ? messages : null;
+  } catch {
+    return null;
+  }
+}
+
+async function openAgentTranscriptDatabase(agentId: string): Promise<ClosableSqliteDatabase | null> {
+  if (!SAFE_SESSION_SEGMENT.test(agentId)) return null;
+  const databasePath = join(resolveOpenClawStateDir(), 'agents', agentId, 'agent', 'openclaw-agent.sqlite');
+  try {
+    await access(databasePath);
+    const sqliteSpecifier = 'node:sqlite';
+    const { DatabaseSync } = await import(/* @vite-ignore */ sqliteSpecifier);
+    return new DatabaseSync(databasePath, { readOnly: true }) as ClosableSqliteDatabase;
+  } catch {
+    return null;
+  }
+}
+
+function createSqliteTranscriptReader(): {
+  read: (sessionKey: string) => Promise<TranscriptMessage[] | null>;
+  close: () => Promise<void>;
+} {
+  const databases = new Map<string, Promise<ClosableSqliteDatabase | null>>();
+
+  return {
+    read: async (sessionKey: string) => {
+      const parsed = parseSessionKey(sessionKey);
+      if (!parsed) return null;
+      let pending = databases.get(parsed.agentId);
+      if (!pending) {
+        pending = openAgentTranscriptDatabase(parsed.agentId);
+        databases.set(parsed.agentId, pending);
+      }
+      const db = await pending;
+      if (!db) return null;
+      return readSqliteTranscriptMessages(db, sessionKey);
+    },
+    close: async () => {
+      const opened = await Promise.all(databases.values());
+      for (const db of opened) {
+        try {
+          db?.close();
+        } catch {
+          // The title read already finished or the handle was already closed.
+        }
+      }
+    },
+  };
+}
+
+async function loadSessionSummary(
+  sessionKey: string,
+  workspacePath: string | null,
+  readSqliteMessages: (sessionKey: string) => Promise<TranscriptMessage[] | null>,
+): Promise<SessionSummary> {
+  const empty = { sessionKey, firstUserText: null, lastTimestamp: null, workspacePath };
+  const parsed = parseSessionKey(sessionKey);
+  if (!parsed) return empty;
+
+  const jsonlMessages = await readJsonlTranscriptMessages(parsed.agentId, sessionKey);
+  const messages = jsonlMessages ?? await readSqliteMessages(sessionKey).catch(() => null);
+  if (!messages || messages.length === 0) return empty;
+  return summarizeTranscriptMessages(sessionKey, messages, workspacePath);
 }
 
 export async function loadSessionTranscriptByKey(sessionKey: string, limit: number): Promise<RawMessage[] | null> {
@@ -652,12 +780,21 @@ export function createSessionsApi(): CompleteHostServiceRegistry['sessions'] {
         : [];
       if (sessionKeys.length === 0) return { success: true, summaries: [] };
       const workspaceByKey = await readOpenClawAcpSessionCwds(sessionKeys);
-      return {
-        success: true,
-        summaries: await Promise.all(sessionKeys.map((sessionKey) => (
-          loadSessionSummary(sessionKey, workspaceByKey.get(sessionKey.trim()) ?? null)
-        ))),
-      };
+      const sqliteTranscripts = createSqliteTranscriptReader();
+      try {
+        return {
+          success: true,
+          summaries: await Promise.all(sessionKeys.map((sessionKey) => (
+            loadSessionSummary(
+              sessionKey,
+              workspaceByKey.get(sessionKey.trim()) ?? null,
+              sqliteTranscripts.read,
+            )
+          ))),
+        };
+      } finally {
+        await sqliteTranscripts.close();
+      }
     },
     history: async (payload) => {
       const body = isRecord(payload) ? payload as SessionPayload : {};

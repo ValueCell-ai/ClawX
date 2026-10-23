@@ -64,6 +64,36 @@ function seedTranscript(sessionKey: string, messages: unknown[]) {
   );
 }
 
+function seedSqliteTranscript(sessionKey: string, sessionId: string, events: unknown[]) {
+  const agentDir = join(testOpenClawDir, 'agents', 'main', 'agent');
+  mkdirSync(agentDir, { recursive: true });
+  const db = new DatabaseSync(join(agentDir, 'openclaw-agent.sqlite'));
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS session_nodes (
+        session_key TEXT PRIMARY KEY,
+        current_session_id TEXT
+      );
+      CREATE TABLE IF NOT EXISTS transcript_events (
+        session_id TEXT,
+        seq INTEGER,
+        event_json TEXT
+      );
+    `);
+    db.prepare(
+      'INSERT INTO session_nodes (session_key, current_session_id) VALUES (?, ?) ON CONFLICT(session_key) DO UPDATE SET current_session_id = excluded.current_session_id',
+    ).run(sessionKey, sessionId);
+    const insert = db.prepare(
+      'INSERT INTO transcript_events (session_id, seq, event_json) VALUES (?, ?, ?)',
+    );
+    events.forEach((event, index) => {
+      insert.run(sessionId, index + 1, JSON.stringify(event));
+    });
+  } finally {
+    db.close();
+  }
+}
+
 function seedTranscriptRecords(sessionKey: string, records: unknown[]) {
   const sessionsDir = join(testOpenClawDir, 'agents', 'main', 'sessions');
   mkdirSync(sessionsDir, { recursive: true });
@@ -368,5 +398,137 @@ describe('sessions API workspace summaries', () => {
       lastTimestamp: 9_001_000,
     });
     expect(result.summaries?.[0]?.heartbeatOnly).toBeUndefined();
+  });
+
+  it('derives historical titles from sqlite transcripts after sessions.json is gone', async () => {
+    const sessionKey = 'agent:main:session-1791888271979';
+    seedSqliteTranscript(sessionKey, '8d5062a3-d11b-4101-a00a-e3028eb5195d', [
+      { type: 'session', id: '8d5062a3-d11b-4101-a00a-e3028eb5195d' },
+      {
+        type: 'message',
+        timestamp: '2026-10-13T10:44:54.997Z',
+        message: {
+          role: 'user',
+          content: '[Working directory: ~/.openclaw/workspace]\n\n你给我检查一下你的模型型号和供应商',
+          timestamp: 1_791_888_294_706,
+        },
+      },
+      {
+        type: 'message',
+        timestamp: '2026-10-13T10:45:10.508Z',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: '当前运行的模型信息' }],
+          timestamp: 1_791_888_310_508,
+        },
+      },
+    ]);
+    const { createSessionsApi } = await import('@electron/services/sessions-api');
+
+    const result = await createSessionsApi().summaries({ sessionKeys: [sessionKey] });
+
+    expect(result.success).toBe(true);
+    expect(result.summaries?.[0]).toMatchObject({
+      sessionKey,
+      firstUserText: '你给我检查一下你的模型型号和供应商',
+      lastTimestamp: 1_791_888_310_508,
+    });
+  });
+
+  it('reads sqlite titles for every requested session through one database', async () => {
+    seedSqliteTranscript('agent:main:session-alpha', 'alpha-id', [
+      {
+        type: 'message',
+        message: { role: 'user', content: 'Alpha prompt', timestamp: 1_700_000_000_100 },
+      },
+    ]);
+    seedSqliteTranscript('agent:main:session-beta', 'beta-id', [
+      {
+        type: 'message',
+        message: { role: 'user', content: 'Beta prompt', timestamp: 1_700_000_000_200 },
+      },
+    ]);
+    const { createSessionsApi } = await import('@electron/services/sessions-api');
+
+    const result = await createSessionsApi().summaries({
+      sessionKeys: ['agent:main:session-alpha', 'agent:main:session-missing', 'agent:main:session-beta'],
+    });
+
+    expect(result.summaries).toEqual([
+      expect.objectContaining({ sessionKey: 'agent:main:session-alpha', firstUserText: 'Alpha prompt' }),
+      expect.objectContaining({ sessionKey: 'agent:main:session-missing', firstUserText: null }),
+      expect.objectContaining({ sessionKey: 'agent:main:session-beta', firstUserText: 'Beta prompt' }),
+    ]);
+  });
+
+  it('keeps a slash-command prompt as the sqlite transcript title', async () => {
+    const sessionKey = 'agent:main:session-1791784248045';
+    seedSqliteTranscript(sessionKey, 'c7414436-8ee4-4714-8449-db52b3324c89', [
+      {
+        type: 'message',
+        message: {
+          role: 'user',
+          content: '/月末发票整理  做9月报销单，阿里云这次的发票记到公司而非是郭宇梁本人',
+          timestamp: 1_791_796_001_153,
+        },
+      },
+    ]);
+    const { createSessionsApi } = await import('@electron/services/sessions-api');
+
+    const result = await createSessionsApi().summaries({ sessionKeys: [sessionKey] });
+
+    expect(result.summaries?.[0]).toMatchObject({
+      sessionKey,
+      firstUserText: '/月末发票整理  做9月报销单，阿里云这次的发票记到公司而非是郭宇梁本人',
+      lastTimestamp: 1_791_796_001_153,
+    });
+  });
+
+  it('prefers the legacy sessions.json transcript when it still exists', async () => {
+    const sessionKey = 'agent:main:session-both';
+    seedTranscript(sessionKey, [{
+      role: 'user',
+      content: 'Title from jsonl',
+      timestamp: 5_000,
+    }]);
+    seedSqliteTranscript(sessionKey, 'session-both-id', [
+      {
+        type: 'message',
+        message: { role: 'user', content: 'Title from sqlite', timestamp: 9_000 },
+      },
+    ]);
+    const { createSessionsApi } = await import('@electron/services/sessions-api');
+
+    const result = await createSessionsApi().summaries({ sessionKeys: [sessionKey] });
+
+    expect(result.summaries?.[0]).toMatchObject({
+      sessionKey,
+      firstUserText: 'Title from jsonl',
+      lastTimestamp: 5_000_000,
+    });
+  });
+
+  it('still marks heartbeat-only sqlite transcripts without using them as titles', async () => {
+    const sessionKey = 'agent:main:session-sqlite-heartbeat';
+    seedSqliteTranscript(sessionKey, 'heartbeat-session-id', [
+      {
+        type: 'message',
+        message: {
+          role: 'user',
+          content: '[OpenClaw heartbeat poll]',
+          timestamp: 9_000,
+        },
+      },
+    ]);
+    const { createSessionsApi } = await import('@electron/services/sessions-api');
+
+    const result = await createSessionsApi().summaries({ sessionKeys: [sessionKey] });
+
+    expect(result.summaries?.[0]).toMatchObject({
+      sessionKey,
+      firstUserText: null,
+      lastTimestamp: 9_000_000,
+      heartbeatOnly: true,
+    });
   });
 });

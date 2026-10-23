@@ -7,6 +7,7 @@
  */
 import { app } from 'electron';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { existsSync, cpSync, copyFileSync, statSync, lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync, readdirSync, realpathSync, symlinkSync, unlinkSync, type Dirent } from 'node:fs';
 import { readdir, stat, copyFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -18,6 +19,7 @@ import {
   DINGTALK_OFFICIAL_NPM,
   DINGTALK_OFFICIAL_PLUGIN_ID,
   DINGTALK_PLUGIN_ID,
+  ensureDingTalkWsDirectDependency,
   patchDingTalkChannelIdsInJs,
   remapDingTalkOfficialManifest,
   remapDingTalkOfficialPackageJson,
@@ -137,6 +139,46 @@ const MANIFEST_ID_FIXES: Record<string, string> = {
   'dingtalk-connector': 'dingtalk',
 };
 
+function resolveHostPackageDir(packageName: string): string | null {
+  const roots = [app.getAppPath(), process.cwd()];
+  for (const root of roots) {
+    try {
+      const require = createRequire(path.join(root, 'package.json'));
+      return path.dirname(require.resolve(`${packageName}/package.json`));
+    } catch {
+      // Try the next root. A packaged app resolves from app.asar; dev resolves
+      // from the repository working directory.
+    }
+  }
+  return null;
+}
+
+/**
+ * The flattened DingTalk mirror already contains `ws` as a transitive copy.
+ * Older mirrors that skipped it can still be repaired from ClawX's own `ws`
+ * dependency. Returns the installed version only when the package is readable.
+ */
+function ensureDingTalkWsPackage(targetDir: string): string | null {
+  const manifestPath = join(targetDir, 'node_modules', 'ws', 'package.json');
+  if (!existsSync(fsPath(manifestPath))) {
+    const hostDir = resolveHostPackageDir('ws');
+    if (!hostDir) {
+      logger.warn(`[plugin] DingTalk mirror is missing ws and no host copy was found at ${targetDir}`);
+      return null;
+    }
+    try {
+      mkdirSync(fsPath(join(targetDir, 'node_modules')), { recursive: true });
+      cpSyncSafe(hostDir, join(targetDir, 'node_modules', 'ws'));
+      logger.info(`[plugin] Copied ws into the DingTalk plugin mirror at ${targetDir}`);
+    } catch (error) {
+      logger.warn(`[plugin] Failed to copy ws into the DingTalk plugin mirror at ${targetDir}:`, error);
+      return null;
+    }
+  }
+  if (!existsSync(fsPath(manifestPath))) return null;
+  return readPluginVersion(manifestPath);
+}
+
 /**
  * After a plugin has been copied to ~/.openclaw/extensions/<dir>, fix any
  * known manifest-ID mismatches so the Gateway can load the plugin.
@@ -212,6 +254,14 @@ export function fixupPluginManifest(targetDir: string): void {
     if (remapDingTalkOfficialPackageJson(pkg)) {
       modified = true;
       logger.info(`[plugin] Remapped official DingTalk package channel id in ${targetDir}`);
+    }
+
+    if (pkg.name === DINGTALK_OFFICIAL_NPM) {
+      const wsVersion = ensureDingTalkWsPackage(targetDir);
+      if (wsVersion && ensureDingTalkWsDirectDependency(pkg, wsVersion)) {
+        modified = true;
+        logger.info(`[plugin] Declared ws ${wsVersion} as a direct DingTalk runtime dependency`);
+      }
     }
 
     if (modified) {
