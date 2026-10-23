@@ -167,6 +167,16 @@ first path to the end of the line; the structured OpenClaw file log
 | `agents.defaults.mediaGenerationAutoProviderFallback` | retired; an explicit `mediaModels.image` disables auto fallback |
 | `agents.list[]` with `default: true` | keyed `agents.entries`; two or more agents also set `agents.ownership: "explicit"` and `agents.defaults.systemAgent.agentId` |
 
+ClawX's auth sync opens `agents/<id>/agent/openclaw-agent.sqlite` before
+every Gateway start. That database is OpenClaw's agent database, and
+2026.10.5 admits it only at `user_version` 25 with `schema_meta.schema_version`
+25. Stamping ClawX's historical version 1 over an OpenClaw-owned database
+(one whose `schema_meta.app_version` is set) makes the Gateway exit 78 with
+`uses schema version 1`, after which doctor refuses to migrate a database
+that was already migrated. Auth sync must keep or restore version 25 for
+those databases and may still create a version 1 database only when ClawX
+itself creates the file.
+
 Readers accept both shapes until doctor migrates user-owned legacy keys
 (`meta.lastTouchedAt`, `plugins.bundledDiscovery`, `commands.ownerDisplay`,
 `tools.media.image.models`, user-authored `agents.defaults.memorySearch`).

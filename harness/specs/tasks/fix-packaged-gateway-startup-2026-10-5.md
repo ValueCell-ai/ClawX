@@ -13,6 +13,8 @@ touchedAreas:
   - electron/utils/openclaw-doctor.ts
   - electron/utils/control-ui-device-pairing.ts
   - electron/utils/openclaw-auth.ts
+  - electron/utils/openclaw-auth-sqlite.ts
+  - tests/unit/openclaw-auth-sqlite.test.ts
   - electron/utils/openclaw-compaction.ts
   - electron/utils/openclaw-memory-search.ts
   - electron/utils/openclaw-media-models.ts

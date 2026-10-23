@@ -13,6 +13,10 @@ const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
 const AUTH_SQLITE_FILENAME = 'openclaw-agent.sqlite';
 const PRIMARY_ROW_KEY = 'primary';
 const SCHEMA_VERSION = 1;
+// OpenClaw 2026.10.5 admits an agent database only at this user_version.
+// ClawX used to stamp its own version over that, which made a migrated
+// database look unmigrated and caused doctor to refuse it.
+const OPENCLAW_OWNED_AGENT_SCHEMA_VERSION = 25;
 
 const OPENCLAW_AGENT_SCHEMA_SQL = `CREATE TABLE IF NOT EXISTS schema_meta (
   meta_key TEXT NOT NULL PRIMARY KEY,
@@ -91,9 +95,49 @@ function ensureAgentAuthDir(agentId: string): void {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
 }
 
+function readUserVersion(db: DatabaseSync): number {
+  const row = db.prepare('PRAGMA user_version').get() as { user_version?: number } | undefined;
+  return typeof row?.user_version === 'number' ? row.user_version : 0;
+}
+
+function readOpenClawOwnedSchema(db: DatabaseSync): boolean {
+  try {
+    const row = db.prepare(
+      'SELECT app_version FROM schema_meta WHERE meta_key = ?',
+    ).get(PRIMARY_ROW_KEY) as { app_version?: string | null } | undefined;
+    return typeof row?.app_version === 'string' && row.app_version.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
 function ensureDatabaseSchema(db: DatabaseSync, agentId: string): void {
+  const userVersion = readUserVersion(db);
+  const ownedByOpenClaw = userVersion > 0 && readOpenClawOwnedSchema(db);
   db.exec(OPENCLAW_AGENT_SCHEMA_SQL);
-  db.exec(`PRAGMA user_version = ${SCHEMA_VERSION};`);
+
+  if (ownedByOpenClaw) {
+    if (userVersion !== OPENCLAW_OWNED_AGENT_SCHEMA_VERSION) {
+      db.exec(`PRAGMA user_version = ${OPENCLAW_OWNED_AGENT_SCHEMA_VERSION};`);
+    }
+    db.prepare(`
+      UPDATE schema_meta
+      SET schema_version = ?, updated_at = ?
+      WHERE meta_key = ? AND schema_version != ?
+    `).run(
+      OPENCLAW_OWNED_AGENT_SCHEMA_VERSION,
+      Date.now(),
+      PRIMARY_ROW_KEY,
+      OPENCLAW_OWNED_AGENT_SCHEMA_VERSION,
+    );
+    return;
+  }
+
+  if (userVersion > SCHEMA_VERSION) return;
+
+  if (userVersion === 0) {
+    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION};`);
+  }
   const now = Date.now();
   db.prepare(`
     INSERT INTO schema_meta (
@@ -276,6 +320,15 @@ export async function readAuthProfilesJson(agentId: string): Promise<PersistedAu
   } catch {
     return null;
   }
+}
+
+/** Re-apply OpenClaw's schema version when a previous ClawX auth write stamped it back to 1. */
+export function repairOpenClawOwnedAgentSchema(agentId: string): void {
+  const sqlitePath = getAuthProfilesSqlitePath(agentId);
+  if (!existsSync(sqlitePath)) return;
+  const db = openAgentDatabase(agentId, sqlitePath);
+  db.close();
+  tightenDatabasePermissions(sqlitePath);
 }
 
 export async function migrateAuthProfilesJsonToSqliteIfNeeded(agentId: string): Promise<boolean> {

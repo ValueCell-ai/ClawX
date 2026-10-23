@@ -60,6 +60,7 @@ import { listOpenClawAgentEntryRecords } from './openclaw-agent-roster';
 import {
   migrateAuthProfilesJsonToSqliteIfNeeded,
   readAuthProfilesFromSqlite,
+  repairOpenClawOwnedAgentSchema,
   readAuthProfilesJson,
   writeAuthProfilesToSqlite,
   type PersistedAuthProfilesStore,
@@ -495,6 +496,7 @@ export async function migrateAllAgentAuthProfilesToSqlite(): Promise<void> {
   let migrated = false;
   for (const agentId of agentIds) {
     try {
+      repairOpenClawOwnedAgentSchema(agentId);
       migrated = await migrateAuthProfilesJsonToSqliteIfNeeded(agentId) || migrated;
     } catch (error) {
       console.warn(`Failed to migrate auth profiles to SQLite for agent "${agentId}":`, error);
