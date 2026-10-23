@@ -682,7 +682,7 @@ function cleanupBundle(outputDir) {
     'node_modules/koffi/src',
     'node_modules/koffi/vendor',
     'node_modules/koffi/doc',
-    'dist/extensions/feishu', // Removed in favor of official @larksuite/openclaw-lark plugin
+    'dist/extensions/feishu', // Removed in favor of the external @openclaw/feishu plugin
   ];
   for (const rel of LARGE_REMOVALS) {
     if (rmSafe(path.join(outputDir, rel))) removedCount++;
@@ -898,38 +898,39 @@ function patchBundledRuntime(outputDir) {
     echo`   🩹 Patched ${count} bundled runtime spawn site(s)`;
   }
 
+  // OpenClaw 2026.10 ships ESM chunks (.mjs); 2026.7 shipped CJS (.js).
   const ptyTargets = findFilesByName(
     path.join(outputDir, 'dist'),
-    /^(supervisor|bash-tools)-.*\.js$/,
+    /^(supervisor|bash-tools|terminal-pty)-.*\.(?:js|mjs)$/,
   );
   const ptyPatches = [
     {
       label: 'pty launcher windowsHide',
-      search: `\tconst pty = spawn(preparedSpawn.command, preparedSpawn.args, {
-\t\tcwd: params.cwd,
-\t\tenv: preparedSpawn.env ? toStringEnv(preparedSpawn.env) : void 0,
-\t\tname: params.name ?? process.env.TERM ?? "xterm-256color",
-\t\tcols: params.cols ?? 120,
-\t\trows: params.rows ?? 30
-\t});`,
-      replace: `\tconst pty = spawn(preparedSpawn.command, preparedSpawn.args, {
-\t\tcwd: params.cwd,
-\t\tenv: preparedSpawn.env ? toStringEnv(preparedSpawn.env) : void 0,
-\t\tname: params.name ?? process.env.TERM ?? "xterm-256color",
-\t\tcols: params.cols ?? 120,
-\t\trows: params.rows ?? 30,
-\t\twindowsHide: true
-\t});`,
+      search: `\t\tconst pty = spawn(invocation.file, invocation.args, {
+\t\t\tname: terminalName,
+\t\t\tcols: params.cols,
+\t\t\trows: params.rows,
+\t\t\tcwd: params.cwd,
+\t\t\tenv
+\t\t});`,
+      replace: `\t\tconst pty = spawn(invocation.file, invocation.args, {
+\t\t\tname: terminalName,
+\t\t\tcols: params.cols,
+\t\t\trows: params.rows,
+\t\t\tcwd: params.cwd,
+\t\t\tenv,
+\t\t\twindowsHide: true
+\t\t});`,
     },
     {
       label: 'disable pty on windows',
-      search: `\t\t\tconst usePty = params.pty === true && !sandbox;`,
-      replace: `\t\t\tconst usePty = params.pty === true && !sandbox && process.platform !== "win32";`,
+      search: `\t\t\t\tconst usePty = params.pty === true && !sandbox;`,
+      replace: `\t\t\t\tconst usePty = params.pty === true && !sandbox && process.platform !== "win32";`,
     },
     {
       label: 'disable approval pty on windows',
-      search: `\t\t\t\t\tpty: params.pty === true && !sandbox,`,
-      replace: `\t\t\t\t\tpty: params.pty === true && !sandbox && process.platform !== "win32",`,
+      search: `\t\t\t\t\t\tpty: params.pty === true && !sandbox,`,
+      replace: `\t\t\t\t\t\tpty: params.pty === true && !sandbox && process.platform !== "win32",`,
     },
   ];
 
@@ -971,7 +972,8 @@ function patchBundledRuntime(outputDir) {
   let hintCount = 0;
   if (fs.existsSync(distDir)) {
     for (const file of fs.readdirSync(distDir)) {
-      if (!file.endsWith('.js')) continue;
+      // 2026.10 emits ESM chunks; keep .js for older bundled layouts.
+      if (!file.endsWith('.js') && !file.endsWith('.mjs')) continue;
       const filePath = path.join(distDir, file);
       try {
         const content = fs.readFileSync(filePath, 'utf8');

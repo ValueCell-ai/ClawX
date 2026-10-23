@@ -37,6 +37,7 @@ import { ensureDingTalkDwsInstalled, resolveDingTalkDwsBinDir } from '../utils/d
 import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, removeLegacyOfficialDingTalkExtension, resolvePluginNpmPackagePath } from '../utils/plugin-install';
 import { safeRmSync } from '../utils/safe-fs';
 import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
+import { readImageGenerationModelValue } from '../utils/openclaw-media-models';
 import {
   ensureOpenClaw2026_7_1UpgradeSnapshot,
   quarantineLegacyUpdateCheckState,
@@ -77,7 +78,7 @@ export interface GatewayPrelaunchSyncSummary {
 const CHANNEL_PLUGIN_MAP: Record<string, { dirName: string; npmName: string }> = {
   dingtalk: { dirName: 'dingtalk', npmName: '@dingtalk-real-ai/dingtalk-connector' },
   wecom: { dirName: 'wecom', npmName: '@wecom/wecom-openclaw-plugin' },
-  feishu: { dirName: 'feishu-openclaw-plugin', npmName: '@larksuite/openclaw-lark' },
+  feishu: { dirName: 'feishu-openclaw-plugin', npmName: '@openclaw/feishu' },
   discord: { dirName: 'discord', npmName: '@openclaw/discord' },
   qqbot: { dirName: 'qqbot', npmName: '@openclaw/qqbot' },
   whatsapp: { dirName: 'whatsapp', npmName: '@openclaw/whatsapp' },
@@ -312,7 +313,7 @@ function resolveImageGenerationPrimary(config: unknown): string | null {
   if (!agents || typeof agents !== 'object') return null;
   const defaults = (agents as { defaults?: unknown }).defaults;
   if (!defaults || typeof defaults !== 'object') return null;
-  const imageGenerationModel = (defaults as { imageGenerationModel?: unknown }).imageGenerationModel;
+  const imageGenerationModel = readImageGenerationModelValue(defaults as Record<string, unknown>);
   if (typeof imageGenerationModel === 'string') return imageGenerationModel.trim() || null;
   if (imageGenerationModel && typeof imageGenerationModel === 'object') {
     const primary = (imageGenerationModel as { primary?: unknown }).primary;
@@ -692,12 +693,12 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
     try {
       const snapshot = await ensureOpenClaw2026_7_1UpgradeSnapshot();
       if (snapshot.status === 'created') {
-        logger.info(`[upgrade] Created OpenClaw 2026.7.1 pre-migration snapshot (${snapshot.files.length} files): ${snapshot.snapshotDir}`);
+        logger.info(`[upgrade] Created OpenClaw pre-migration snapshot (${snapshot.files.length} files): ${snapshot.snapshotDir}`);
       }
     } catch (error) {
       // OpenClaw also maintains migration-specific backups. Keep startup
       // available if the additional ClawX safety snapshot cannot be written.
-      logger.warn('[upgrade] Failed to create OpenClaw 2026.7.1 pre-migration snapshot:', error);
+      logger.warn('[upgrade] Failed to create OpenClaw pre-migration snapshot:', error);
     }
   });
 

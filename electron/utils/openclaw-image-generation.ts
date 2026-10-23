@@ -1,5 +1,5 @@
 /**
- * Read/write agents.defaults.imageGenerationModel and per-agent auth readiness.
+ * Read/write agents.defaults.mediaModels.image and per-agent auth readiness.
  */
 import { mutateOpenClawConfig } from '../gateway/config-delivery';
 import { readOpenClawConfig } from './channel-config';
@@ -25,6 +25,10 @@ import {
   CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
 } from './openclaw-image-relay-constants';
+import {
+  readImageGenerationModelValue,
+  writeImageGenerationModelValue,
+} from './openclaw-media-models';
 
 export interface ImageGenerationModelConfig {
   primary: string | null;
@@ -197,7 +201,7 @@ export async function readImageGenerationConfig(): Promise<ImageGenerationModelC
   if (!defaults) {
     return { primary: null, fallbacks: [], timeoutMs: null };
   }
-  return parseImageGenerationModelConfig(defaults.imageGenerationModel);
+  return parseImageGenerationModelConfig(readImageGenerationModelValue(defaults));
 }
 
 export async function setImageGenerationConfig(
@@ -225,21 +229,16 @@ export async function setImageGenerationConfig(
       primary: next.primary,
       fallbacks: [...new Set(next.fallbacks.map((ref) => ref.trim()).filter(Boolean))],
       timeoutMs: next.timeoutMs,
-    }, defaults.imageGenerationModel);
+    }, readImageGenerationModelValue(defaults));
 
-    if (writeValue) {
-      defaults.imageGenerationModel = writeValue;
-    } else {
-      delete defaults.imageGenerationModel;
-    }
-    // ClawX image generation is configured as one explicit custom endpoint.
-    // Keep OpenClaw from appending other authenticated image providers such as
-    // minimax-portal/image-01 after the configured ClawX image provider.
-    defaults.mediaGenerationAutoProviderFallback = false;
+    writeImageGenerationModelValue(defaults, writeValue);
+    // OpenClaw 2026.10 retired this flag; an explicit mediaModels.image config
+    // now disables automatic provider fallback on its own.
+    delete defaults.mediaGenerationAutoProviderFallback;
 
     agents.defaults = defaults;
     config.agents = agents;
-    savedConfig = parseImageGenerationModelConfig(defaults.imageGenerationModel);
+    savedConfig = parseImageGenerationModelConfig(readImageGenerationModelValue(defaults));
   });
   return savedConfig!;
 }
@@ -322,9 +321,9 @@ function resolveOpenAiImageRelayModelId(
 export async function getImageGenerationSettingsSnapshot(): Promise<ImageGenerationSettingsSnapshot> {
   const openclawConfig = await readOpenClawConfig();
   const defaults = getAgentsDefaults(openclawConfig);
-  const config = parseImageGenerationModelConfig(defaults?.imageGenerationModel);
+  const config = parseImageGenerationModelConfig(readImageGenerationModelValue(defaults));
   const snapshot = await listAgentsSnapshotFromConfig(openclawConfig);
-  const autoProviderFallback = defaults?.mediaGenerationAutoProviderFallback !== false;
+  const autoProviderFallback = !config.primary && config.fallbacks.length === 0;
 
   const providerKey = config.primary ? parseProviderFromModelRef(config.primary) : null;
   const relayState = readOpenAiCompatibleImageRelayState(openclawConfig as Record<string, unknown>);

@@ -40,7 +40,7 @@
 
 无论是自动化工作流、连接通讯软件，还是调度智能定时任务，ClawX 都能提供高效易用的图形界面，帮助你充分发挥 AI 智能体的能力。
 
-ClawX 预置了最佳实践的模型供应商配置，原生支持 Windows 平台以及多语言设置。上下文压缩预留仅在模型显式配置上下文窗口时按其 25% 计算，缺少该元数据时使用保守的 50000 token 默认值；已完成的回合会通过摘要延续，而不会在压缩后逐字重放。开发者模式会显示实际应用的预留值。当然，你也可以通过 **设置 → 高级 → 开发者模式** 来进行精细的高级配置。
+ClawX 预置了最佳实践的模型供应商配置，原生支持 Windows 平台以及多语言设置。上下文压缩预留由 OpenClaw 自行计算；已完成的回合会通过摘要延续，而不会在压缩后逐字重放。当然，你也可以通过 **设置 → 高级 → 开发者模式** 来进行精细的高级配置。
 
 <p align="center"><strong style="font-size:1.1em; text-decoration: underline;">如需完整的企业版、专属服务支持或面向您业务场景的定制化落地辅导，请联系 <a href="mailto:public@valuecell.ai">public@valuecell.ai</a>。</strong></p>
 
@@ -191,7 +191,7 @@ ClawX 采用 **双进程 + Host API 统一接入架构**：React 渲染进程只
 
 ### 前置要求
 
-- **Node.js**：22.22.3+ / 24.15.0+（推荐） / 25.9.0+
+- **Node.js**：24.16.0+（Node 24 LTS）或 26.1.0+（推荐 Node 26）；不支持 Node 22 / 23 / 25
 - **包管理器**：pnpm 9+
 - **Linux（Ubuntu/Debian）**：运行 Electron 前需先安装系统库，见 [docs/zh-CN/development.md](docs/zh-CN/development.md)
 

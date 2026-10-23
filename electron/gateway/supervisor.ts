@@ -1,4 +1,4 @@
-import { app, utilityProcess } from 'electron';
+import { app } from 'electron';
 import path from 'path';
 import { existsSync } from 'fs';
 import { getOpenClawDir, getOpenClawEntryPath } from '../utils/paths';
@@ -6,7 +6,12 @@ import { getUvMirrorEnv } from '../utils/uv-env';
 import { isPythonReady, setupManagedPython } from '../utils/uv-setup';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
+import { forkOpenClawUtilityProcess } from '../utils/openclaw-utility-process';
 import { probeGatewayReady } from './ws-client';
+
+// Doctor runs OpenClaw's offline state and agent database migrations, whose
+// duration scales with the size of the existing state tree.
+export const OPENCLAW_DOCTOR_REPAIR_TIMEOUT_MS = 10 * 60_000;
 
 export function warmupManagedPythonReadiness(): void {
   void isPythonReady().then((pythonReady) => {
@@ -295,7 +300,7 @@ export async function runOpenClawDoctorRepair(): Promise<boolean> {
       OPENCLAW_NO_RESPAWN: '1',
     };
 
-    const child = utilityProcess.fork(entryScript, doctorArgs, {
+    const child = forkOpenClawUtilityProcess(entryScript, doctorArgs, {
       cwd: openclawDir,
       stdio: 'pipe',
       env: forkEnv as NodeJS.ProcessEnv,
@@ -309,14 +314,14 @@ export async function runOpenClawDoctorRepair(): Promise<boolean> {
     };
 
     const timeout = setTimeout(() => {
-      logger.error('OpenClaw doctor repair timed out after 120000ms');
+      logger.error(`OpenClaw doctor repair timed out after ${OPENCLAW_DOCTOR_REPAIR_TIMEOUT_MS}ms`);
       try {
         child.kill();
       } catch {
         // ignore
       }
       finish(false);
-    }, 120000);
+    }, OPENCLAW_DOCTOR_REPAIR_TIMEOUT_MS);
 
     child.on('error', (err) => {
       clearTimeout(timeout);

@@ -4,7 +4,7 @@ This document provides the detailed version of the Development section in the RE
 
 ### Prerequisites
 
-- **Node.js**: 22.22.3+, 24.15.0+, or 25.9.0+ within the corresponding supported major line (Node 24 LTS recommended)
+- **Node.js**: 24.16.0+ (Node 24 LTS) or 26.1.0+ (Node 26 recommended); Node 22, 23, and 25 are unsupported
 - **Package Manager**: pnpm 9+ (npm is also supported)
 - **Linux (Ubuntu/Debian)**: Install the required system libraries before running Electron:
   ```bash

@@ -1324,10 +1324,10 @@ export class GatewayManager extends EventEmitter {
     try {
       const result = await removeOpenClaw2026_7_1UpgradeSnapshot();
       if (result.status === 'removed') {
-        logger.info(`[upgrade] Removed OpenClaw 2026.7.1 pre-migration snapshot: ${result.snapshotDir}`);
+        logger.info(`[upgrade] Removed OpenClaw pre-migration snapshot: ${result.snapshotDir}`);
       }
     } catch (error) {
-      logger.warn('[upgrade] Failed to remove OpenClaw 2026.7.1 pre-migration snapshot:', error);
+      logger.warn('[upgrade] Failed to remove OpenClaw pre-migration snapshot:', error);
     }
   }
 

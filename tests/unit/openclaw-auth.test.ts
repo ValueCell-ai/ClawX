@@ -496,15 +496,34 @@ describe('sanitizeOpenClawConfig', () => {
     const tools = result.tools as Record<string, unknown>;
     expect(tools.profile).toBe('full');
     expect(tools.deny).toEqual(CLAWX_DESKTOP_TOOL_DENY);
+    expect(tools.exec).toEqual({ mode: 'full' });
     const gateway = result.gateway as Record<string, unknown>;
     const gatewayTools = gateway.tools as Record<string, unknown>;
     expect(gatewayTools.deny).toEqual(CLAWX_DESKTOP_TOOL_DENY);
     const skills = result.skills as Record<string, unknown>;
     const workshop = skills.workshop as Record<string, unknown>;
-    const autonomous = workshop.autonomous as Record<string, unknown>;
-    expect(autonomous.enabled).toBe(false);
+    expect(workshop.autonomous).toEqual({ mode: 'off' });
     const entries = skills.entries as Record<string, Record<string, unknown>>;
     expect(entries['skill-creator'].enabled).toBe(true);
+
+    logSpy.mockRestore();
+  });
+
+  it('replaces exec approval and Skill Workshop keys retired by OpenClaw 2026.10', async () => {
+    await writeOpenClawJson({
+      tools: { exec: { security: 'full', ask: 'off', timeoutSec: 30 } },
+      skills: { workshop: { autonomous: { enabled: false } } },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    expect((result.tools as Record<string, unknown>).exec).toEqual({ mode: 'full', timeoutSec: 30 });
+    expect(((result.skills as Record<string, unknown>).workshop as Record<string, unknown>).autonomous)
+      .toEqual({ mode: 'off' });
 
     logSpy.mockRestore();
   });
@@ -537,7 +556,7 @@ describe('sanitizeOpenClawConfig', () => {
     const gateway = result.gateway as Record<string, unknown>;
     expect((gateway.tools as Record<string, unknown>).deny).toEqual(CLAWX_DESKTOP_TOOL_DENY);
     const skills = result.skills as Record<string, unknown>;
-    expect(((skills.workshop as Record<string, unknown>).autonomous as Record<string, unknown>).enabled).toBe(false);
+    expect((skills.workshop as Record<string, unknown>).autonomous).toEqual({ mode: 'off' });
     expect((skills.entries as Record<string, Record<string, unknown>>)['skill-creator'].enabled).toBe(true);
 
     logSpy.mockRestore();
@@ -1882,7 +1901,7 @@ describe('setOpenClawDefaultModelWithOverride model metadata', () => {
     expect(newModel).not.toHaveProperty('contextWindow');
     expect(newModel).not.toHaveProperty('customField');
     const defaults = (result.agents as Record<string, unknown>).defaults as Record<string, unknown>;
-    expect((defaults.compaction as Record<string, unknown>).reserveTokensFloor).toBe(50_000);
+    expect(defaults).not.toHaveProperty('compaction');
   });
 
   it('preserves an explicitly configured context window over built-in metadata', async () => {
@@ -1917,10 +1936,10 @@ describe('setOpenClawDefaultModelWithOverride model metadata', () => {
       contextTokens: 64_000,
     }));
     expect(selected).not.toHaveProperty('contextWindow');
-    expect((defaults.compaction as Record<string, unknown>).reserveTokensFloor).toBe(16_000);
+    expect(defaults).not.toHaveProperty('compaction');
   });
 
-  it('writes known built-in context metadata before calculating compaction reserve', async () => {
+  it('writes known built-in context metadata for the selected model', async () => {
     await writeOpenClawJson({ models: { providers: {} } });
 
     const { setOpenClawDefaultModelWithOverride } = await import('@electron/utils/openclaw-auth');
@@ -1947,7 +1966,7 @@ describe('setOpenClawDefaultModelWithOverride model metadata', () => {
         contextWindow: 1_000_000,
       }),
     ]);
-    expect((defaults.compaction as Record<string, unknown>).reserveTokensFloor).toBe(250_000);
+    expect(defaults).not.toHaveProperty('compaction');
   });
 
   it('preserves model input metadata after switching to another provider and back', async () => {
@@ -3071,11 +3090,15 @@ describe('syncOpenAiCompatibleImageRelay', () => {
     expect(providers.openai).toEqual({ baseUrl: 'https://api.openai.com/v1', api: 'openai-responses', models: [] });
     expect(providers['clawx-openai-image']).toBeUndefined();
     const defaults = (result.agents as Record<string, unknown>).defaults as Record<string, unknown>;
-    expect(defaults.imageGenerationModel).toEqual({
-      primary: 'google/gemini-3.1-flash-image-preview',
-      fallbacks: [],
-      timeoutMs: 180000,
-      maxPixels: 4194304,
+    expect(defaults).toEqual({
+      mediaModels: {
+        image: {
+          primary: 'google/gemini-3.1-flash-image-preview',
+          fallbacks: [],
+          timeoutMs: 180000,
+          maxPixels: 4194304,
+        },
+      },
     });
     expect(result.plugins).toBeUndefined();
   });
@@ -3367,14 +3390,11 @@ describe('batchSyncConfigFields', () => {
       qualityGuard: { enabled: false },
       keepRecentTokens: 0,
       recentTurnsPreserve: 0,
-      identifierPolicy: 'custom',
-      identifierInstructions: COMPACTION_IDENTIFIER_INSTRUCTIONS,
-      reserveTokensFloor: 50_000,
       midTurnPrecheck: { enabled: true },
     });
   });
 
-  it('uses 25% of an explicitly configured model context window', async () => {
+  it('drops compaction keys that OpenClaw 2026.10 retired from earlier ClawX seeds', async () => {
     await writeOpenClawJson({
       gateway: { auth: { mode: 'token', token: 'old' } },
       models: {
@@ -3387,57 +3407,16 @@ describe('batchSyncConfigFields', () => {
       agents: {
         defaults: {
           model: { primary: 'openai/gpt-5.6-luna' },
-          compaction: { mode: 'safeguard', reserveTokensFloor: 50_000 },
-        },
-      },
-    });
-
-    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
-    await batchSyncConfigFields('new-token');
-
-    const config = await readOpenClawJson();
-    const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
-    const compaction = defaults.compaction as Record<string, unknown>;
-    expect(compaction.reserveTokensFloor).toBe(68_000);
-  });
-
-  it('resets a stale inferred reserve floor when the model row has no explicit context', async () => {
-    await writeOpenClawJson({
-      gateway: { auth: { mode: 'token', token: 'old' } },
-      models: {
-        providers: {
-          deepseek: {
-            models: [{ id: 'deepseek-v4-pro', name: 'deepseek-v4-pro' }],
+          compaction: {
+            mode: 'safeguard',
+            qualityGuard: { enabled: false },
+            keepRecentTokens: 0,
+            recentTurnsPreserve: 0,
+            identifierPolicy: 'custom',
+            identifierInstructions: COMPACTION_IDENTIFIER_INSTRUCTIONS,
+            reserveTokensFloor: 68_000,
+            midTurnPrecheck: { enabled: true },
           },
-        },
-      },
-      agents: {
-        defaults: {
-          model: { primary: 'deepseek/deepseek-v4-pro' },
-          compaction: { mode: 'safeguard', reserveTokensFloor: 250_000 },
-        },
-      },
-    });
-
-    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
-    await batchSyncConfigFields('new-token');
-
-    const config = await readOpenClawJson();
-    const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
-    const compaction = defaults.compaction as Record<string, unknown>;
-    const providers = (config.models as Record<string, unknown>).providers as Record<string, unknown>;
-    const deepseekModels = (providers.deepseek as Record<string, unknown>).models as Array<Record<string, unknown>>;
-
-    expect(compaction.reserveTokensFloor).toBe(50_000);
-    expect(deepseekModels[0]?.contextWindow).toBeUndefined();
-  });
-
-  it('enables mid-turn precheck while retaining an already-correct fallback floor', async () => {
-    await writeOpenClawJson({
-      gateway: { auth: { mode: 'token', token: 'old' } },
-      agents: {
-        defaults: {
-          compaction: { mode: 'safeguard', reserveTokensFloor: 50_000 },
         },
       },
     });
@@ -3452,9 +3431,62 @@ describe('batchSyncConfigFields', () => {
       qualityGuard: { enabled: false },
       keepRecentTokens: 0,
       recentTurnsPreserve: 0,
-      identifierPolicy: 'custom',
-      identifierInstructions: COMPACTION_IDENTIFIER_INSTRUCTIONS,
-      reserveTokensFloor: 50_000,
+      identifierPolicy: 'strict',
+      midTurnPrecheck: { enabled: true },
+    });
+  });
+
+  it('does not infer a context window or reserve floor from a known model name', async () => {
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      models: {
+        providers: {
+          deepseek: {
+            models: [{ id: 'deepseek-v4-pro', name: 'deepseek-v4-pro' }],
+          },
+        },
+      },
+      agents: {
+        defaults: {
+          model: { primary: 'deepseek/deepseek-v4-pro' },
+          compaction: { mode: 'safeguard' },
+        },
+      },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
+    const compaction = defaults.compaction as Record<string, unknown>;
+    const providers = (config.models as Record<string, unknown>).providers as Record<string, unknown>;
+    const deepseekModels = (providers.deepseek as Record<string, unknown>).models as Array<Record<string, unknown>>;
+
+    expect(compaction).not.toHaveProperty('reserveTokensFloor');
+    expect(deepseekModels[0]?.contextWindow).toBeUndefined();
+  });
+
+  it('enables mid-turn precheck on an existing safeguard config', async () => {
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      agents: {
+        defaults: {
+          compaction: { mode: 'safeguard' },
+        },
+      },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
+    expect(defaults.compaction).toEqual({
+      mode: 'safeguard',
+      qualityGuard: { enabled: false },
+      keepRecentTokens: 0,
+      recentTurnsPreserve: 0,
       midTurnPrecheck: { enabled: true },
     });
   });
@@ -3480,9 +3512,6 @@ describe('batchSyncConfigFields', () => {
       qualityGuard: { enabled: false },
       keepRecentTokens: 0,
       recentTurnsPreserve: 0,
-      identifierPolicy: 'custom',
-      identifierInstructions: COMPACTION_IDENTIFIER_INSTRUCTIONS,
-      reserveTokensFloor: 50_000,
       midTurnPrecheck: { enabled: true },
     });
   });
@@ -3517,11 +3546,48 @@ describe('batchSyncConfigFields', () => {
       qualityGuard: { enabled: false },
       keepRecentTokens: 50_000,
       recentTurnsPreserve: 9,
-      identifierPolicy: 'custom',
-      identifierInstructions: COMPACTION_IDENTIFIER_INSTRUCTIONS,
-      reserveTokensFloor: 50_000,
+      identifierPolicy: 'off',
       midTurnPrecheck: { enabled: false },
     });
+  });
+
+  it('seeds an idle-only session reset when no session lifecycle is configured', async () => {
+    await writeOpenClawJson({ gateway: { auth: { mode: 'token', token: 'old' } } });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    expect(config.session).toEqual({ reset: { mode: 'idle', idleMinutes: 10_080 } });
+  });
+
+  it('moves a legacy session.idleMinutes under session.reset', async () => {
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      session: { dmScope: 'per-channel-peer', idleMinutes: 720 },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    expect(config.session).toEqual({
+      dmScope: 'per-channel-peer',
+      reset: { mode: 'idle', idleMinutes: 720 },
+    });
+  });
+
+  it('leaves an explicit session reset policy untouched', async () => {
+    await writeOpenClawJson({
+      gateway: { auth: { mode: 'token', token: 'old' } },
+      session: { reset: { mode: 'daily', atHour: 4 } },
+    });
+
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+
+    const config = await readOpenClawJson();
+    expect(config.session).toEqual({ reset: { mode: 'daily', atHour: 4 } });
   });
 
   it('seeds FTS-only memory search when no OpenAI embedding key exists', async () => {
@@ -3532,7 +3598,8 @@ describe('batchSyncConfigFields', () => {
 
     const config = await readOpenClawJson();
     const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
-    expect(defaults.memorySearch).toEqual({ enabled: true, provider: 'none' });
+    expect(config.memory).toEqual({ search: { enabled: true, provider: 'none' } });
+    expect(defaults).not.toHaveProperty('memorySearch');
     expect(setSettingMock).toHaveBeenCalledWith('memorySearchFtsMigrationVersion', 1);
   });
 
@@ -3555,6 +3622,7 @@ describe('batchSyncConfigFields', () => {
 
     const config = await readOpenClawJson();
     const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
+    expect(config.memory).toBeUndefined();
     expect(defaults.memorySearch).toBeUndefined();
     expect(setSettingMock).toHaveBeenCalledWith('memorySearchFtsMigrationVersion', 1);
   });
@@ -3570,7 +3638,8 @@ describe('batchSyncConfigFields', () => {
 
     const config = await readOpenClawJson();
     const defaults = ((config.agents as Record<string, unknown>).defaults as Record<string, unknown>);
-    expect(defaults.memorySearch).toEqual({ enabled: true, provider: 'none' });
+    expect(config.memory).toEqual({ search: { enabled: true, provider: 'none' } });
+    expect(defaults).not.toHaveProperty('memorySearch');
     expect(setSettingMock).toHaveBeenCalledWith('memorySearchFtsMigrationVersion', 1);
   });
 

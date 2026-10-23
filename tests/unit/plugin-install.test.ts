@@ -243,6 +243,39 @@ describe('plugin installer diagnostics', () => {
     expect(jsWrite?.[1]).toContain('id: "dingtalk"');
   });
 
+  it('declares the installed ws package as a direct DingTalk dependency', async () => {
+    const targetDir = '/home/test/.openclaw/extensions/dingtalk';
+    const wsManifest = `${targetDir}/node_modules/ws/package.json`;
+    mockExistsSync.mockImplementation((input: string) => {
+      const value = String(input);
+      return value === `${targetDir}/package.json` || value === wsManifest;
+    });
+    mockReadFileSync.mockImplementation((input: string) => {
+      const value = String(input);
+      if (value === wsManifest) return JSON.stringify({ name: 'ws', version: '8.21.0' });
+      if (value === `${targetDir}/package.json`) {
+        return JSON.stringify({
+          name: '@dingtalk-real-ai/dingtalk-connector',
+          version: '0.8.26',
+          dependencies: {
+            axios: '1.14.0',
+            'dingtalk-stream': '2.1.4',
+          },
+        });
+      }
+      return '{}';
+    });
+
+    const { fixupPluginManifest } = await import('@electron/utils/plugin-install');
+    fixupPluginManifest(targetDir);
+
+    const pkgWrite = mockWriteFileSync.mock.calls.find((call) => String(call[0]) === `${targetDir}/package.json`);
+    const written = JSON.parse(String(pkgWrite?.[1])) as { dependencies: Record<string, string> };
+    expect(written.dependencies.ws).toBe('8.21.0');
+    expect(written.dependencies['dingtalk-stream']).toBe('2.1.4');
+    expect(mockCpSync).not.toHaveBeenCalled();
+  });
+
   it('replaces a community DingTalk mirror even when versions look equal', async () => {
     const targetDir = '/home/test/.openclaw/extensions/dingtalk';
     const sourceDir = '/bundle/dingtalk';
@@ -725,7 +758,7 @@ describe('plugin installer diagnostics', () => {
     });
     mockReadFileSync.mockImplementation((input: string) => {
       if (String(input) === `${targetDir}/package.json`) {
-        return JSON.stringify({ version: '2026.7.16' });
+        return JSON.stringify({ version: '2026.10.5' });
       }
       return '{}';
     });
@@ -738,14 +771,14 @@ describe('plugin installer diagnostics', () => {
     expect(mockWriteFileSync).not.toHaveBeenCalled();
     expect(mockRemovePluginInstallRecordsFromSqlite).toHaveBeenCalledWith([
       'feishu-openclaw-plugin',
-      'feishu',
+      'openclaw-lark',
     ]);
     expect(mockUpsertPluginInstallRecordsIntoSqlite).toHaveBeenCalledWith({
-      'openclaw-lark': expect.objectContaining({
+      feishu: expect.objectContaining({
         source: 'path',
         sourcePath: targetDir,
         installPath: targetDir,
-        version: '2026.7.16',
+        version: '2026.10.5',
       }),
     });
   });

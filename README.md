@@ -40,7 +40,7 @@
 
 Whether you're automating workflows, managing AI-powered channels, or scheduling intelligent tasks, ClawX provides the interface you need to harness AI agents effectively.
 
-ClawX comes pre-configured with best-practice model providers and natively supports Windows as well as multi-language settings. Compaction reserves use 25% of an explicitly configured model context window, or a conservative 50000-token fallback when that metadata is absent; completed turns continue through the summary instead of being replayed verbatim after compaction. Developer Mode shows the applied reserve value. You can also fine-tune advanced configurations via **Settings -> Advanced -> Developer Mode**.
+ClawX comes pre-configured with best-practice model providers and natively supports Windows as well as multi-language settings. OpenClaw sizes the compaction reserve itself; completed turns continue through the summary instead of being replayed verbatim after compaction. You can also fine-tune advanced configurations via **Settings -> Advanced -> Developer Mode**.
 
 <p align="center"><strong style="font-size:1.1em; text-decoration: underline;">For a full enterprise edition, dedicated service support, or tailored deployment guidance for your business scenario, contact us at <a href="mailto:public@valuecell.ai">public@valuecell.ai</a>.</strong></p>
 
@@ -190,7 +190,7 @@ ClawX uses a **dual-process architecture with a unified Host API layer**: the Re
 
 ### Prerequisites
 
-- **Node.js**: 22.22.3+, 24.15.0+, or 25.9.0+ within the corresponding supported major line (Node 24 LTS recommended)
+- **Node.js**: 24.16.0+ (Node 24 LTS) or 26.1.0+ (Node 26 recommended); Node 22, 23, and 25 are unsupported
 - **Package Manager**: pnpm 9+ (npm is also supported)
 - **Linux (Ubuntu/Debian)**: Install required system libraries before running Electron; see [docs/en-US/development.md](docs/en-US/development.md)
 

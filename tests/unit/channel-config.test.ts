@@ -226,7 +226,7 @@ describe('WeCom plugin configuration', () => {
     expect(plugins.entries['wecom'].enabled).toBe(true);
   });
 
-  it('normalizes feishu plugin registration to openclaw-lark and removes built-in feishu on save', async () => {
+  it('normalizes feishu plugin registration to the official feishu plugin on save', async () => {
     const { saveChannelConfig } = await import('@electron/utils/channel-config');
 
     await writeOpenClawJson({
@@ -247,11 +247,11 @@ describe('WeCom plugin configuration', () => {
     const plugins = config.plugins as { allow: string[]; entries: Record<string, { enabled?: boolean }> };
 
     expect(plugins.allow).toContain('custom-plugin');
-    expect(plugins.allow).toContain('openclaw-lark');
-    expect(plugins.allow).not.toContain('feishu');
+    expect(plugins.allow).toContain('feishu');
+    expect(plugins.allow).not.toContain('openclaw-lark');
     expect(plugins.allow).not.toContain('feishu-openclaw-plugin');
-    expect(plugins.entries['openclaw-lark']).toEqual({ enabled: true });
-    expect(plugins.entries.feishu).toBeUndefined();
+    expect(plugins.entries.feishu).toEqual({ enabled: true });
+    expect(plugins.entries['openclaw-lark']).toBeUndefined();
     expect(plugins.entries['feishu-openclaw-plugin']).toBeUndefined();
   });
 

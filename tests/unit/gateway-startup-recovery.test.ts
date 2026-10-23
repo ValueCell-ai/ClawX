@@ -56,7 +56,40 @@ describe('gateway startup recovery heuristics', () => {
       'OpenClaw startup migrations did not complete cleanly; refusing to report the gateway ready.',
     )).toBe(true);
     expect(isInvalidConfigSignal('Run: openclaw doctor --fix')).toBe(true);
+    // OpenClaw 2026.10.5 requires a one-time state-schema migration before the
+    // Gateway will start, and points the operator at doctor --fix.
+    expect(isInvalidConfigSignal(
+      'OpenClaw state database schema migration required (audit-events-v2) at /tmp/openclaw/state/openclaw.sqlite; run openclaw doctor --fix to migrate it.',
+    )).toBe(true);
     expect(isInvalidConfigSignal('Gateway ready after 3 attempts')).toBe(false);
+  });
+
+  it('matches OpenClaw 2026.10.5 retired-key and offline-migration admission failures', () => {
+    expect(isInvalidConfigSignal('OpenClaw config is invalid')).toBe(true);
+    expect(isInvalidConfigSignal('Config needs correction: ~/.openclaw/openclaw.json')).toBe(true);
+    expect(isInvalidConfigSignal('Legacy config keys detected:')).toBe(true);
+    expect(isInvalidConfigSignal(
+      'Sessions remain unavailable. Stop the Gateway, run "openclaw doctor --fix" to inspect and repair this agent database, and restart. | gateway.maintenance_required',
+    )).toBe(true);
+    expect(isInvalidConfigSignal('[openclaw] For help, run `openclaw doctor`.')).toBe(false);
+    expect(isInvalidConfigSignal('[openclaw] The CLI command failed.')).toBe(false);
+  });
+
+  it('repairs the 2026.10.5 agent-roster migration that only reports a legacy key', () => {
+    const lines = [
+      'File: ~/.openclaw/openclaw.json',
+      'Problem:',
+      '  - agents.list: agents.list moved to keyed agents.entries. Run "openclaw doctor --fix".',
+      'Legacy config keys detected:',
+      '  - agents.list: agents.list moved to keyed agents.entries. Run "openclaw doctor --fix".',
+    ];
+    expect(getGatewayStartupRecoveryAction({
+      startupError: new Error('Gateway process exited before becoming ready (code=78)'),
+      startupStderrLines: lines,
+      configRepairAttempted: false,
+      attempt: 1,
+      maxAttempts: 3,
+    })).toBe('repair');
   });
 
   it('detects an active startup-migration lease that must not be restart-looped', () => {
@@ -74,6 +107,16 @@ describe('gateway startup recovery heuristics', () => {
       new Error('System Node 23.11.0 is outside the supported range'),
       [],
     )).toBe(true);
+    // OpenClaw 2026.9.3+ Node floor diagnostics.
+    expect(hasFatalRuntimeFailureSignal(undefined, [
+      'openclaw: Node 22.22.3 is unsupported; OpenClaw requires >=24.16.0 <25, or >=26.1.0 (Node 26 recommended).',
+    ])).toBe(true);
+    expect(hasFatalRuntimeFailureSignal(undefined, [
+      '[openclaw] error: this OpenClaw release requires Node >=24.16.0 <25 || >=26.1.0.',
+    ])).toBe(true);
+    expect(hasFatalRuntimeFailureSignal(undefined, [
+      'Node 24.15.0: node:sqlite truncates TEXT at embedded NUL (nodejs/node#61954); use 24.16+/26.1+ or a build with the fix',
+    ])).toBe(true);
     expect(hasFatalRuntimeFailureSignal(new Error('Config invalid'), [])).toBe(false);
   });
 });

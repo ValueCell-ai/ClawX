@@ -35,7 +35,12 @@ import {
 const OPENCLAW_DIR = join(homedir(), '.openclaw');
 const WECOM_PLUGIN_ID = 'wecom';
 const WECHAT_PLUGIN_ID = OPENCLAW_WECHAT_CHANNEL_TYPE;
-const FEISHU_PLUGIN_ID_CANDIDATES = ['openclaw-lark', 'feishu-openclaw-plugin'] as const;
+// OpenClaw 2026.10.5 replaced @larksuite/openclaw-lark with the official
+// @openclaw/feishu plugin, whose manifest id is `feishu`. Keep the legacy ids
+// only for config cleanup and migration.
+const FEISHU_PLUGIN_DIR_CANDIDATES = ['feishu-openclaw-plugin', 'openclaw-lark'] as const;
+const FEISHU_PLUGIN_ID_CANDIDATES = ['feishu', 'openclaw-lark', 'feishu-openclaw-plugin'] as const;
+const DEFAULT_FEISHU_PLUGIN_ID = 'feishu';
 const DEFAULT_ACCOUNT_ID = 'default';
 // Channels whose top-level schema (additionalProperties:false) does NOT
 // include `defaultAccount`. Official DingTalk 0.8.25 accepts it, so the
@@ -196,7 +201,7 @@ function normalizeCredentialValue(value: string): string {
 
 async function resolveFeishuPluginId(): Promise<string> {
     const extensionRoot = join(homedir(), '.openclaw', 'extensions');
-    for (const dirName of FEISHU_PLUGIN_ID_CANDIDATES) {
+    for (const dirName of FEISHU_PLUGIN_DIR_CANDIDATES) {
         const manifestPath = join(extensionRoot, dirName, 'openclaw.plugin.json');
         try {
             const raw = await readFile(manifestPath, 'utf-8');
@@ -209,7 +214,7 @@ async function resolveFeishuPluginId(): Promise<string> {
         }
     }
     // Fallback to the modern id when extension manifests are not available yet.
-    return FEISHU_PLUGIN_ID_CANDIDATES[0];
+    return DEFAULT_FEISHU_PLUGIN_ID;
 }
 
 function resolveStoredChannelType(channelType: string): string {
@@ -515,7 +520,7 @@ async function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType:
                 : [];
             // Keep only one active feishu plugin id to avoid doctor validation conflicts.
             const normalizedAllow = allow.filter(
-                (pluginId) => pluginId !== 'feishu' && !FEISHU_PLUGIN_ID_CANDIDATES.includes(pluginId as typeof FEISHU_PLUGIN_ID_CANDIDATES[number])
+                (pluginId) => !FEISHU_PLUGIN_ID_CANDIDATES.includes(pluginId as typeof FEISHU_PLUGIN_ID_CANDIDATES[number])
             );
             if (!normalizedAllow.includes(feishuPluginId)) {
                 currentConfig.plugins.allow = [...normalizedAllow, feishuPluginId];
@@ -527,9 +532,8 @@ async function ensurePluginAllowlist(currentConfig: OpenClawConfig, channelType:
                 currentConfig.plugins.entries = {};
             }
             // Remove conflicting feishu plugin entries; keep only the resolved
-            // external plugin id. A disabled plugins.entries.feishu record
-            // blocks openclaw-lark in OpenClaw's gateway startup planner.
-            delete currentConfig.plugins.entries['feishu'];
+            // external plugin id. A stale record for another feishu id would
+            // compete for channel ownership in OpenClaw's startup planner.
             for (const candidateId of FEISHU_PLUGIN_ID_CANDIDATES) {
                 if (candidateId !== feishuPluginId) {
                     delete currentConfig.plugins.entries[candidateId];
@@ -1655,7 +1659,7 @@ async function requestFeishuTenantAccessToken(
 }
 
 /**
- * The openclaw-lark plugin keeps its account "running" even when Feishu rejects
+ * The Feishu plugin keeps its account "running" even when Feishu rejects
  * the credentials (it only logs `app_id or app_secret is invalid`), so the
  * Channels view would show Connected for a bot that can never receive events.
  * Request a tenant_access_token before persisting so bad credentials are

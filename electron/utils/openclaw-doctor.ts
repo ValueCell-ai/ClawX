@@ -1,11 +1,14 @@
-import { app, utilityProcess } from 'electron';
+import { app } from 'electron';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { getOpenClawDir, getOpenClawEntryPath } from './paths';
 import { logger } from './logger';
+import { forkOpenClawUtilityProcess } from './openclaw-utility-process';
 import { getUvMirrorEnv } from './uv-env';
 
 const OPENCLAW_DOCTOR_TIMEOUT_MS = 60_000;
+// `doctor --fix` performs offline state and agent database migrations.
+const OPENCLAW_DOCTOR_FIX_TIMEOUT_MS = 10 * 60_000;
 const MAX_DOCTOR_OUTPUT_BYTES = 10 * 1024 * 1024;
 const OPENCLAW_DOCTOR_ARGS = ['doctor'];
 const OPENCLAW_DOCTOR_FIX_ARGS = ['doctor', '--fix', '--yes', '--non-interactive'];
@@ -73,6 +76,7 @@ async function runDoctorCommandWithArgs(
   const entryScript = getOpenClawEntryPath();
   const command = `openclaw ${args.join(' ')}`;
   const startedAt = Date.now();
+  const timeoutMs = mode === 'fix' ? OPENCLAW_DOCTOR_FIX_TIMEOUT_MS : OPENCLAW_DOCTOR_TIMEOUT_MS;
 
   if (!existsSync(entryScript)) {
     const error = `OpenClaw entry script not found at ${entryScript}`;
@@ -102,7 +106,7 @@ async function runDoctorCommandWithArgs(
   );
 
   return await new Promise<OpenClawDoctorResult>((resolve) => {
-    const child = utilityProcess.fork(entryScript, args, {
+    const child = forkOpenClawUtilityProcess(entryScript, args, {
       cwd: openclawDir,
       stdio: 'pipe',
       env: {
@@ -131,7 +135,7 @@ async function runDoctorCommandWithArgs(
     };
 
     const timeout = setTimeout(() => {
-      logger.error(`OpenClaw doctor timed out after ${OPENCLAW_DOCTOR_TIMEOUT_MS}ms`);
+      logger.error(`OpenClaw doctor timed out after ${timeoutMs}ms`);
       try {
         child.kill();
       } catch {
@@ -146,9 +150,9 @@ async function runDoctorCommandWithArgs(
         command,
         cwd: openclawDir,
         timedOut: true,
-        error: `Timed out after ${OPENCLAW_DOCTOR_TIMEOUT_MS}ms`,
+        error: `Timed out after ${timeoutMs}ms`,
       });
-    }, OPENCLAW_DOCTOR_TIMEOUT_MS);
+    }, timeoutMs);
 
     child.stdout?.on('data', (data) => {
       const next = appendDoctorOutput(stdout, stdoutBytes, data, 'stdout', stdoutTruncated);
