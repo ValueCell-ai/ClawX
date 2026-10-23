@@ -1,6 +1,10 @@
-import { mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from 'node:fs/promises';
+// @vitest-environment node
+
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { zstdCompressSync } from 'node:zlib';
 import JSZip from 'jszip';
 import { afterEach, describe, expect, it } from 'vitest';
 import { exportIssueReport, redactDiagnosticText, redactOpenClawConfig } from '@electron/services/issue-report-api';
@@ -161,6 +165,131 @@ describe('issue report export', () => {
       },
     )).rejects.toThrow('outside its session directory');
     await expect(readdir(fixture.outputDir)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('exports SQLite transcripts when sessions.json no longer points at a JSONL file', async () => {
+    const fixture = await makeFixture();
+    const plain = JSON.stringify({ type: 'session', id: 'sess-1' });
+    const compressedText = JSON.stringify({
+      type: 'message',
+      message: { role: 'user', content: 'sqlite transcript verbatim' },
+    });
+    const older = JSON.stringify({
+      type: 'message',
+      message: { role: 'user', content: 'older window' },
+    });
+    const dbPath = join(fixture.stateDir, 'agents', 'main', 'agent', 'openclaw-agent.sqlite');
+    await mkdir(join(fixture.stateDir, 'agents', 'main', 'agent'), { recursive: true });
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE session_nodes (
+        session_key TEXT PRIMARY KEY,
+        current_session_id TEXT NOT NULL
+      );
+      CREATE TABLE session_windows (
+        session_id TEXT PRIMARY KEY,
+        session_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE transcript_events (
+        session_id TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        event_json TEXT,
+        event_zstd BLOB,
+        event_utf8_bytes INTEGER,
+        PRIMARY KEY (session_id, seq)
+      );
+    `);
+    db.prepare('INSERT INTO session_nodes (session_key, current_session_id) VALUES (?, ?)').run(
+      'agent:main:session-sqlite',
+      'sess-2',
+    );
+    const insertWindow = db.prepare(
+      'INSERT INTO session_windows (session_id, session_key, created_at) VALUES (?, ?, ?)',
+    );
+    insertWindow.run('sess-1', 'agent:main:session-sqlite', 1);
+    insertWindow.run('sess-2', 'agent:main:session-sqlite', 2);
+    const insertEvent = db.prepare(
+      'INSERT INTO transcript_events (session_id, seq, event_json, event_zstd, event_utf8_bytes) VALUES (?, ?, ?, ?, ?)',
+    );
+    insertEvent.run('sess-1', 1, older, null, null);
+    insertEvent.run('sess-2', 1, plain, null, null);
+    insertEvent.run(
+      'sess-2',
+      2,
+      null,
+      zstdCompressSync(Buffer.from(compressedText, 'utf8')),
+      Buffer.byteLength(compressedText),
+    );
+    db.close();
+    await rm(join(fixture.sessionsDir, 'sessions.json'));
+
+    const result = await exportIssueReport(
+      { sessionKeys: ['agent:main:session-sqlite'] },
+      {
+        stateDir: fixture.stateDir,
+        configPath: fixture.configPath,
+        clawxLogDir: fixture.clawxLogDir,
+        openClawLogDir: fixture.openClawLogDir,
+        outputDir: fixture.outputDir,
+      },
+    );
+
+    expect(result.skippedSessionKeys).toEqual([]);
+    const zip = await JSZip.loadAsync(await readFile(result.path!));
+    await expect(zip.file('conversations/main/sess-1.jsonl')!.async('string')).resolves.toBe(`${older}\n`);
+    const current = await zip.file('conversations/main/sess-2.jsonl')!.async('string');
+    expect(current).toBe(`${plain}\n${compressedText}\n`);
+    expect(current).toContain('sqlite transcript verbatim');
+    const manifest = JSON.parse(await zip.file('manifest.json')!.async('string'));
+    expect(manifest.sessionKeys).toEqual(['agent:main:session-sqlite']);
+    expect(JSON.stringify(manifest)).not.toContain(fixture.root);
+  });
+
+  it('still rejects an escaping transcript symlink when a SQLite copy exists', async () => {
+    const fixture = await makeFixture();
+    const outsideTranscript = join(fixture.root, 'outside.jsonl');
+    await writeFile(outsideTranscript, '{}\n');
+    await writeFile(join(fixture.sessionsDir, 'sessions.json'), JSON.stringify({
+      'agent:main:session-escape': 'escape.jsonl',
+    }));
+    await symlink(outsideTranscript, join(fixture.sessionsDir, 'escape.jsonl'));
+    const dbPath = join(fixture.stateDir, 'agents', 'main', 'agent', 'openclaw-agent.sqlite');
+    await mkdir(join(fixture.stateDir, 'agents', 'main', 'agent'), { recursive: true });
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE session_nodes (
+        session_key TEXT PRIMARY KEY,
+        current_session_id TEXT NOT NULL
+      );
+      CREATE TABLE transcript_events (
+        session_id TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        event_json TEXT,
+        PRIMARY KEY (session_id, seq)
+      );
+    `);
+    db.prepare('INSERT INTO session_nodes (session_key, current_session_id) VALUES (?, ?)').run(
+      'agent:main:session-escape',
+      'sess-escape',
+    );
+    db.prepare('INSERT INTO transcript_events (session_id, seq, event_json) VALUES (?, ?, ?)').run(
+      'sess-escape',
+      1,
+      '{"type":"message","message":{"role":"user","content":"should not export"}}',
+    );
+    db.close();
+
+    await expect(exportIssueReport(
+      { sessionKeys: ['agent:main:session-escape'] },
+      {
+        stateDir: fixture.stateDir,
+        configPath: fixture.configPath,
+        clawxLogDir: fixture.clawxLogDir,
+        openClawLogDir: fixture.openClawLogDir,
+        outputDir: fixture.outputDir,
+      },
+    )).rejects.toThrow('outside its session directory');
   });
 
   it('exports diagnostics when none of the selected conversations has an available transcript', async () => {
