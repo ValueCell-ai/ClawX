@@ -2,7 +2,7 @@
 // Import-only native regression: never construct a host or call permission APIs.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -23,17 +23,30 @@ try {
   const input = join(temp, 'input');
   mkdirSync(input);
   // Use the actual packaged dependency bytes, not workspace node_modules mocks.
+  // The CUA packages match asarUnpack, so electron-builder puts them under
+  // app.asar.unpacked rather than listing their files in app.asar. Copy that
+  // physical tree first, then fill any gaps from the archive for compatibility
+  // with layouts where only part of a dependency was unpacked.
+  const unpackedModules = join(sourceResources, 'app.asar.unpacked', 'node_modules');
+  for (const scope of ['@trycua', '@ubjs']) {
+    const source = join(unpackedModules, scope);
+    if (!existsSync(source)) continue;
+    cpSync(source, join(input, 'node_modules', scope), { recursive: true, dereference: true });
+  }
   for (const name of asar.listPackage(sourceAsar)) {
     const relative = name.replace(/^[/\\]/, '').replaceAll('\\', '/');
     if (!/^node_modules\/(?:@trycua|@ubjs)\//.test(relative)) continue;
+    const destination = join(input, relative);
+    if (existsSync(destination)) continue;
     const info = asar.statFile(sourceAsar, relative);
     if (info.files) continue;
     assert(!info.link, `Unexpected packaged symlink: ${relative}`);
-    const destination = join(input, relative);
     mkdirSync(dirname(destination), { recursive: true });
     writeFileSync(destination, asar.extractFile(sourceAsar, relative));
   }
-  const sdkPackage = JSON.parse(readFileSync(join(input, 'node_modules/@trycua/cua-driver/package.json'), 'utf8'));
+  const sdkPackagePath = join(input, 'node_modules/@trycua/cua-driver/package.json');
+  assert(existsSync(sdkPackagePath), `Packaged CUA SDK was not found in ${sourceResources}`);
+  const sdkPackage = JSON.parse(readFileSync(sdkPackagePath, 'utf8'));
   assert.equal(sdkPackage.version, '0.37.0');
   for (const entry of ['electron', 'embedded']) {
     assert.equal(sdkPackage.exports[`./${entry}`].import, `./dist/${entry}.js`);
