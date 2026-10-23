@@ -36,10 +36,10 @@ for (const language of ['en', 'zh', 'ja', 'ru']) {
       expect(existsSync(join(target, 'local-extras'))).toBe(false);
       expect(directoryContents(custom)).toEqual(customContents);
       const content = readFileSync(join(target, 'SKILL.md'), 'utf8');
-      expect(content).toContain('official CUA 0.25.0');
+      expect(content).toContain('official CUA 0.37.0');
       expect(content).not.toContain('0.21.0');
       expect(JSON.parse(readFileSync(join(target, 'UPSTREAM.json'), 'utf8'))).toMatchObject({
-        version: '0.25.0', commit: '45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f',
+        version: '0.37.0', commit: '2d2f99228d4d2508dc6fcc84c176b296e146714a',
       });
       expect(content).toContain('CLAWX_CUA_CONNECTION_FILE');
       expect(content).toContain('--socket');

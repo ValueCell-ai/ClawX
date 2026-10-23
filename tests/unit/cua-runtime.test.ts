@@ -47,7 +47,7 @@ async function createHarness(overrides: Partial<CuaRuntimeDependencies> = {}) {
 
   const connection = {
     generation: 'generation-1',
-    driverVersion: '0.25.0',
+    driverVersion: '0.37.0',
     socketPath: '/private/cua host/generation-1.sock',
     mcpProtocolVersion: '2025-06-18',
     mcp: {
@@ -226,6 +226,8 @@ describe('CuaRuntimeManager', () => {
     expect(harness.createOptions).toHaveBeenCalledWith({
       binaryPath: join(harness.dependencies.resourcesPath, 'bin', 'cua-driver.exe'),
       hostBundleId: 'app.clawx.desktop',
+      startupTimeoutMs: 8_000n,
+      shutdownTimeoutMs: 2_000n,
       permissionMode: 'unrestricted',
       dangerouslyBypassApprovals: true,
       approveCapabilityManifest: false,
@@ -238,7 +240,7 @@ describe('CuaRuntimeManager', () => {
     expect(JSON.parse(await readFile(getCuaConnectionFilePath(harness.userDataPath), 'utf8'))).toEqual({
       v: 2,
       generation: harness.connection.generation,
-      driverVersion: '0.25.0',
+      driverVersion: '0.37.0',
       binaryPath: join(harness.dependencies.resourcesPath, 'bin', 'cua-driver.exe'),
       socketPath: harness.connection.socketPath,
     });
@@ -287,6 +289,9 @@ describe('CuaRuntimeManager', () => {
     await mkdir(join(binaryPath, '..'), { recursive: true });
     await writeFile(binaryPath, 'driver');
     await expect(new CuaRuntimeManager(harness.dependencies).start()).resolves.toBe(true);
+    expect(harness.createOptions).toHaveBeenCalledWith(expect.objectContaining({
+      hostBundleId: 'com.github.Electron',
+    }));
     expect(JSON.parse(await readFile(getCuaConnectionFilePath(harness.userDataPath), 'utf8'))).toEqual({
       v: 2,
       generation: harness.connection.generation,
@@ -326,6 +331,41 @@ describe('CuaRuntimeManager', () => {
     await expect(Promise.all([manager.stop(), manager.stop()])).resolves.toEqual([undefined, undefined]);
     expect(harness.host.stop).toHaveBeenCalledOnce();
     expect(harness.host.uniffiDestroy).toHaveBeenCalledOnce();
+    await expect(access(connectionFile)).rejects.toThrow();
+  });
+
+  it('waits for the SDK handshake before publishing a running generation', async () => {
+    const harness = await createHarness();
+    let release!: () => void;
+    harness.host.start.mockImplementationOnce(() => new Promise((resolve) => {
+      release = () => resolve(harness.connection);
+    }));
+    const manager = new CuaRuntimeManager(harness.dependencies);
+    const connectionFile = getCuaConnectionFilePath(harness.userDataPath);
+
+    const start = manager.start();
+    await vi.waitFor(() => expect(harness.host.start).toHaveBeenCalledOnce());
+    await expect(access(connectionFile)).rejects.toThrow();
+    expect(manager.getStatus().running).toBe(false);
+    expect(manager.getStatus().state).toBe('starting');
+
+    release();
+    await expect(start).resolves.toBe(true);
+    await expect(access(connectionFile)).resolves.toBeUndefined();
+    expect(manager.getStatus().running).toBe(true);
+  });
+
+  it('stops the native host and removes its descriptor when the SDK handshake fails', async () => {
+    const harness = await createHarness();
+    harness.host.start.mockRejectedValueOnce(new Error('endpoint timeout'));
+    const manager = new CuaRuntimeManager(harness.dependencies);
+    const connectionFile = getCuaConnectionFilePath(harness.userDataPath);
+
+    await expect(manager.start()).rejects.toThrow('endpoint timeout');
+
+    expect(harness.host.stop).toHaveBeenCalledOnce();
+    expect(harness.host.uniffiDestroy).toHaveBeenCalledOnce();
+    expect(manager.getStatus().running).toBe(false);
     await expect(access(connectionFile)).rejects.toThrow();
   });
 
@@ -411,5 +451,82 @@ describe('CuaRuntimeManager', () => {
 
     await expect(access(connectionFile)).rejects.toThrow();
     expect(harness.host.stop).toHaveBeenCalledOnce();
+  });
+});
+
+describe('CUA cancellation and recovery', () => {
+  it('cancels native startup before waiting for it, without publishing a generation', async () => {
+    const harness = await createHarness();
+    let rejectStart!: (error: Error) => void;
+    let startSignal!: AbortSignal;
+    harness.host.start.mockImplementationOnce((options) => new Promise((_, reject) => {
+      startSignal = options!.signal!;
+      rejectStart = reject;
+    }));
+    harness.host.stop.mockImplementationOnce(async () => { rejectStart(new Error('StartupCancelled')); });
+    const manager = new CuaRuntimeManager(harness.dependencies);
+    const start = manager.start();
+    await vi.waitFor(() => expect(harness.host.start).toHaveBeenCalledOnce());
+    expect(startSignal.aborted).toBe(false);
+    await manager.stop();
+    expect(startSignal.aborted).toBe(true);
+    await expect(start).resolves.toBe(false);
+    expect(harness.renameFile).not.toHaveBeenCalled();
+    expect(harness.host.stop).toHaveBeenCalledOnce();
+    expect(harness.host.uniffiDestroy).toHaveBeenCalledOnce();
+    expect(manager.getStatus()).toMatchObject({ running: false, state: 'stopped', reason: null });
+  });
+
+  it('cancels the exit observer before destroying a stopped native host', async () => {
+    const harness = await createHarness();
+    let exitSignal!: AbortSignal;
+    harness.host.waitForExit.mockImplementationOnce((_generation, options) => new Promise<void>((resolve) => {
+      exitSignal = options!.signal!;
+      options!.signal!.addEventListener('abort', () => resolve(), { once: true });
+    }));
+    const manager = new CuaRuntimeManager(harness.dependencies);
+    await manager.start();
+    await vi.waitFor(() => expect(harness.host.waitForExit).toHaveBeenCalledOnce());
+    expect(exitSignal.aborted).toBe(false);
+    await manager.stop();
+    expect(exitSignal.aborted).toBe(true);
+    expect(harness.host.uniffiDestroy).toHaveBeenCalledOnce();
+  });
+
+  it('does not create a host after cancellation during SDK loading', async () => {
+    const harness = await createHarness();
+    const sdk = await harness.dependencies.loadEmbeddedSdk();
+    let release!: () => void;
+    harness.dependencies.loadEmbeddedSdk = vi.fn(() => new Promise((resolve) => { release = () => resolve(sdk); }));
+    const manager = new CuaRuntimeManager(harness.dependencies);
+    const start = manager.start();
+    await vi.waitFor(() => expect(harness.dependencies.loadEmbeddedSdk).toHaveBeenCalledOnce());
+    const stop = manager.stop();
+    release();
+    await stop;
+    await expect(start).resolves.toBe(false);
+    expect(harness.withOptions).not.toHaveBeenCalled();
+    expect(manager.getStatus().state).toBe('stopped');
+  });
+
+  it('reports native SDK load failures and allows a later retry', async () => {
+    const harness = await createHarness();
+    const load = harness.dependencies.loadEmbeddedSdk;
+    harness.dependencies.loadEmbeddedSdk = vi.fn().mockRejectedValueOnce(new Error('load failed')).mockImplementation(load);
+    const manager = new CuaRuntimeManager(harness.dependencies);
+    await expect(manager.start()).rejects.toThrow('load failed');
+    expect(manager.getStatus()).toMatchObject({ state: 'unavailable', reason: 'startupFailed' });
+    await expect(manager.start()).resolves.toBe(true);
+    expect(manager.getStatus()).toMatchObject({ state: 'running', reason: null });
+    await manager.stop();
+  });
+
+  it('recovers an unavailable Windows driver on refresh without permission calls', async () => {
+    const harness = await createHarness({ platform: 'win32', arch: 'x64' });
+    const manager = new CuaRuntimeManager(harness.dependencies);
+    await expect(manager.refreshPermissions()).resolves.toBe(true);
+    expect(harness.host.start).toHaveBeenCalledOnce();
+    expect(harness.dependencies.loadMacOSPermissions).not.toHaveBeenCalled();
+    await manager.stop();
   });
 });

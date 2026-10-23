@@ -1,11 +1,13 @@
 # Computer Use CLI Validation
 
-## Current 0.25.0 Contract and Gaps
+## Historical 0.25.0 CLI Validation
 
-The current upgrade is `harness/specs/tasks/cua-025-upgrade.md`: SDK, native
-driver, and official Skill 0.25.0, tag `cua-driver-rs-v0.25.0`, commit
-`45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f`. The 0.21.0 observations below are
-historical, superseded-version evidence, not 0.25.0 test results.
+This document records the earlier `harness/specs/tasks/cua-025-upgrade.md`
+validation: SDK, native driver, and official Skill 0.25.0, tag
+`cua-driver-rs-v0.25.0`, commit `45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f`.
+The 0.21.0 observations below are historical, superseded-version evidence, not
+0.25.0 test results. Current 0.37.0 contracts and evidence belong in
+`harness/specs/tasks/cua-037-upgrade.md` and the linked Computer Use references.
 
 The installation ownership contract is now
 `harness/specs/tasks/managed-computer-use-skill.md`: ClawX replaces any differing
@@ -14,8 +16,8 @@ local edits and extra files/directories, and skips matching content. It compares
 current paths/content without historical installation hashes, retains staged
 publication/rollback, and replaces a target symlink without following or deleting
 its external referent. Other-named Skills and settings remain unchanged; custom
-variants must use another name. Official 0.25.0 bytes and provenance/license
-verification remain unchanged. The updated four-locale E2E covers edited-bundle
+variants must use another name. Official 0.25.0 bytes and provenance/license verification remained unchanged for
+that validation. The updated four-locale E2E covers edited-bundle
 restoration, extra removal, custom-Skill preservation and default-off selection in
 isolated homes. After this ownership change, `pnpm test` passed 204 suites with
 2399 passing tests and three skipped; the focused installer suite passed 25 tests.

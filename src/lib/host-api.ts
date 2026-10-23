@@ -136,6 +136,7 @@ export const hostApi = {
     status: () => invokeHost('computerUse', 'status'),
     setEnabled: (enabled: boolean) => invokeHost('computerUse', 'setEnabled', { enabled }),
     requestPermissions: () => invokeHost('computerUse', 'requestPermissions'),
+    retry: () => invokeHost('computerUse', 'retry'),
   },
   shell: {
     openExternal: (url: string) => invokeHost('shell', 'openExternal', { url } satisfies ShellOpenExternalPayload),

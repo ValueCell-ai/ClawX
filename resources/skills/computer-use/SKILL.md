@@ -5,13 +5,12 @@ description: Operate a local app or desktop UI through ClawX's bundled native CU
 
 # Computer Use in ClawX
 
-Based on the official CUA 0.25.0 accompanying Skill. **This entrypoint takes precedence
-over every upstream document and standalone command example.** Keep these host rules
-when reading the unmodified [UPSTREAM-SKILL.md](UPSTREAM-SKILL.md).
+Based on the official CUA 0.37.0 accompanying Skill. **This entrypoint takes precedence
+over every upstream document and example**, including [UPSTREAM-SKILL.md](UPSTREAM-SKILL.md).
 
 ## Host Boundary
 
-- Electron Main owns the 0.25.0 SDK daemon, restarts, OS grants, permission-policy and
+- Electron Main owns the 0.37.0 SDK daemon, restarts, OS grants, permission-policy and
   telemetry configuration. Selecting this Skill does not enable Computer Use. Never
   install/update a driver, run `serve`, daemon `stop`, `autostart`, `permissions grant`,
   MCP setup, config/telemetry changes, or `--permission-mode`/`--capability-manifest` flags.
@@ -31,8 +30,8 @@ when reading the unmodified [UPSTREAM-SKILL.md](UPSTREAM-SKILL.md).
 ## Bootstrap Once Per Workflow
 
 Read the live file named by `CLAWX_CUA_CONNECTION_FILE` at task start, not before every action.
-Its shape is `{"v":2,"generation":"550e8400-e29b-41d4-a716-446655440000","driverVersion":"0.25.0","binaryPath":"...","socketPath":"..."}`.
-Require v=2, driverVersion=0.25.0, a UUID generation, absolute bundled executable and explicit
+Its shape is `{"v":2,"generation":"550e8400-e29b-41d4-a716-446655440000","driverVersion":"0.37.0","binaryPath":"...","socketPath":"..."}`.
+Require v=2, driverVersion=0.37.0, a UUID generation, absolute bundled executable and explicit
 absolute socket path (Windows: named pipe). Missing/malformed/incompatible descriptors block
 the workflow. Never guess paths, use PATH's driver, or source/eval this data as shell code.
 
@@ -46,9 +45,9 @@ cat < "$CLAWX_CUA_CONNECTION_FILE"
 Replace the two placeholder paths below with the descriptor's values, shell-quoted as
 single arguments (escape any embedded apostrophe). Choose a unique public workflow label,
 not `default`, and repeat the same label on every call that accepts `session`, including
-observations, actions, verification, and cleanup. In 0.25.0 `cli.rs` uses `cli-explicit` for
-named CLI sessions across separate exec calls; anonymous calls are disposable. Despite
-upstream transport advice, do not switch to persistent MCP. Labels confer no authorization
+observations, actions, verification, and cleanup. In 0.37.0 `cli.rs` uses `cli-explicit` for
+named CLI sessions across separate exec calls; anonymous calls are disposable. Keep this
+host-owned CLI path; do not switch to persistent MCP. Labels confer no authorization
 and cannot adopt another daemon generation or transport kind. Never set reserved session fields.
 
 ```sh
@@ -62,7 +61,7 @@ PowerShell: parse, validate, invoke via `&`, then inspect discovery before choos
 $ErrorActionPreference = 'Stop'
 if (-not $env:CLAWX_CUA_CONNECTION_FILE) { throw 'Computer Use connection unavailable; check ClawX' }
 $c = Get-Content -LiteralPath $env:CLAWX_CUA_CONNECTION_FILE -Raw | ConvertFrom-Json
-if ($c.v -ne 2 -or $c.driverVersion -ne '0.25.0' -or $c.generation -notmatch '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' -or $c.binaryPath -notmatch '^[A-Za-z]:\\' -or $c.socketPath -notlike '\\.\pipe\*') { throw 'Invalid ClawX CUA descriptor' }
+if ($c.v -ne 2 -or $c.driverVersion -ne '0.37.0' -or $c.generation -notmatch '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' -or $c.binaryPath -notmatch '^[A-Za-z]:\\' -or $c.socketPath -notlike '\\.\pipe\*') { throw 'Invalid ClawX CUA descriptor' }
 if (-not (Test-Path -LiteralPath $c.binaryPath -PathType Leaf)) { throw 'Bundled CUA executable unavailable' }
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 @{ session = 'clawx-review-20260909-01' } | ConvertTo-Json -Compress -Depth 10 | & $c.binaryPath --socket $c.socketPath call list_windows
@@ -75,6 +74,15 @@ Exec may use new shells: restore inspected literal paths/session or repeat boots
 do not assume `$c` survives. After unavailability/restart, reread the descriptor and invalidate
 observations, tokens, browser refs and session assumptions even if the endpoint is unchanged.
 
+On Windows, `exec` may already run PowerShell. Never nest `powershell -Command "..."`
+around `$env:...` or `$c...`: the outer shell expands those variables and produces parser
+errors. Write a UTF-8 `.ps1` or JSON file and invoke it with `powershell -File`; keep request
+JSON on stdin with no positional JSON argument. Bound observation commands (30s is enough for
+state/screenshot; reserve 120s for bounded scripts). For Chromium/Electron screenshot-only
+checks use `include_accessibility_tree:false` and a small `max_elements`; if
+`parse_visual_regions` returns `code: "not_installed"`, use screenshot plus `read` or UIA once,
+then stop instead of retrying an unavailable extension.
+
 ## Native Observe, Act, Verify
 
 - Name the app, goal and postcondition. Read [UPSTREAM-SKILL.md](UPSTREAM-SKILL.md) and
@@ -85,30 +93,34 @@ observations, tokens, browser refs and session assumptions even if the endpoint 
   Select exact `(pid, window_id)` from `list_windows`/`launch_app`; get fresh `get_window_state`.
   Prefer snapshot-bound `element_token`, native menus (`invoke_menu`) and exact geometry.
   Foreground delivery needs user authorization; even menus may change focus on some platforms.
-- Select a window or desktop `target` per action. `capture_scope` is retired, session scope
-  helpers are deprecated, and there is no `deescalate_session`. The standalone `screenshot` was removed:
+- Select a window or desktop `target` per action. `capture_scope` is retired; there is no
+  `deescalate_session`. The standalone `screenshot` was removed:
   use `get_window_state` or explicitly authorized `get_desktop_state`, then read its image.
   Cursor themes no longer accept `cursor_id`/legacy artwork; leave host configuration alone.
 - For browser page tasks only, load [BROWSER.md](BROWSER.md): bind the exact native window,
   prepare only when needed/authorized, use `get_browser_state` and typed page operations,
   and refresh stale refs. `end_session` now restores owned Chromium debugging/consent state;
-  inspect cleanup failures rather than assume restoration. Read [RECORDING.md](RECORDING.md)
-  only for requested recording/replay tasks; never enable recording or replay automatically.
-- Do not use `recording start/status/stop`: the 0.25.0 shorthand omits the named session;
-  its recording may outlive named-session cleanup. Use `call start_recording`,
-  `call get_recording_state`, and `call stop_recording` on the descriptor endpoint,
-  each with the explicit workflow `session` in JSON (plus requested recording options).
-  Stop and verify recording is disabled before `end_session`; if cleanup cannot be verified,
-  alert the user to stop Computer Use in ClawX rather than assume capture has ended.
+  inspect cleanup failures rather than assume restoration. Never enable recording or replay automatically.
+- Recording is unavailable through ClawX's one-shot CLI workflow: in 0.37.0
+  `get_recording_state` and `stop_recording` do not accept a public `session` and need
+  the owning persistent connection. Do not use `recording start/status/stop` or start
+  recording through `call start_recording`; report this limitation instead of adding MCP.
+  [RECORDING.md](RECORDING.md) is reference only, not a supported ClawX recording recipe.
 - Only for continuation/recall, use advertised `history_status` then a bounded `history_query`;
   denied/absent/unhealthy history is optional, never a reason to change host settings.
 - Use bounded trees and `verify_state` predicates; schema-check filters and read large results from files.
   `effect`, `route`, `evidence`, and `escalation` describe action facts, not task success.
   Verify `satisfied` against the intended postcondition; `unsatisfied` and `unknown` are
   not success. Where predicates cannot prove it, inspect fresh state/images yourself.
-- Serialize input; grounded action plus read-only verification may share exec without a new decision.
-  Never use a blind multi-action loop, fixed sleeps, or shell `&&` as semantic branching.
-  Stop and re-ground after user takeover, focus changes, scrolling, or resizing.
+- Read [WORKFLOW.md](WORKFLOW.md) for `run_steps` and `run_script`, [RUNTIME.md](RUNTIME.md)
+  for session semantics, and [VISUAL.md](VISUAL.md) only for advertised visual parsing.
+  Prefer query/max_elements, tree_markdown and since:"latest"; use each new snapshot_id.
+  Use bounded `run_steps` with `observe:{}` for already-grounded actions; inspect each
+  step's result and failed_step. Split at decisions or target changes; never enable
+  `foreground_fallback` implicitly. Use `run_script` only with fresh-state branching,
+  explicit timeout_ms/max_calls, and no retry of partial or unknown-completion input.
+  Serialize input. Never use blind loops, fixed sleeps, or shell `&&` as semantic branching.
+  Keep one controller per shared desktop; stop after takeover, focus changes or resizing.
 
 ## Screenshot Files and Model Vision
 
@@ -158,4 +170,4 @@ input; never assume file bytes imply displayed dimensions or blindly apply DPI t
 - This Skill is workflow guidance, not a sandbox or an exclusive/emergency-stop guarantee.
   Provenance and hashes: `UPSTREAM.json`; upstream MIT license: [LICENSE.md](LICENSE.md).
   The upstream out-of-directory `../../../docs/action-result-contract.md` reference maps to
-  [the pinned action-result contract](https://github.com/trycua/cua/blob/45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f/libs/cua-driver/docs/action-result-contract.md).
+  [the pinned action-result contract](https://github.com/trycua/cua/blob/2d2f99228d4d2508dc6fcc84c176b296e146714a/libs/cua-driver/docs/action-result-contract.md).
