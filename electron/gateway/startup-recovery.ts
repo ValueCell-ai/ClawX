@@ -13,6 +13,12 @@ const INVALID_CONFIG_PATTERNS: RegExp[] = [
   /\bstartup migration(?:s)?\b.*\b(?:blocked|failed|did not complete cleanly)\b/i,
   /\bmigration\b.*\bopenclaw doctor --fix\b/i,
   /\brun:\s*openclaw doctor --fix\b/i,
+  // OpenClaw 2026.10.5 wording for retired config keys and offline state
+  // database migrations that block Gateway admission until doctor runs.
+  /\bconfig is invalid\b/i,
+  /\bconfig needs correction\b/i,
+  /\blegacy config keys detected\b/i,
+  /\bgateway\.maintenance_required\b/i,
 ];
 
 const FATAL_RUNTIME_PATTERNS: RegExp[] = [

@@ -37,6 +37,7 @@ import { ensureDingTalkDwsInstalled, resolveDingTalkDwsBinDir } from '../utils/d
 import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, removeLegacyOfficialDingTalkExtension, resolvePluginNpmPackagePath } from '../utils/plugin-install';
 import { safeRmSync } from '../utils/safe-fs';
 import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
+import { readImageGenerationModelValue } from '../utils/openclaw-media-models';
 import {
   ensureOpenClaw2026_7_1UpgradeSnapshot,
   quarantineLegacyUpdateCheckState,
@@ -312,7 +313,7 @@ function resolveImageGenerationPrimary(config: unknown): string | null {
   if (!agents || typeof agents !== 'object') return null;
   const defaults = (agents as { defaults?: unknown }).defaults;
   if (!defaults || typeof defaults !== 'object') return null;
-  const imageGenerationModel = (defaults as { imageGenerationModel?: unknown }).imageGenerationModel;
+  const imageGenerationModel = readImageGenerationModelValue(defaults as Record<string, unknown>);
   if (typeof imageGenerationModel === 'string') return imageGenerationModel.trim() || null;
   if (imageGenerationModel && typeof imageGenerationModel === 'object') {
     const primary = (imageGenerationModel as { primary?: unknown }).primary;

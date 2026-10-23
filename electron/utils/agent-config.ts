@@ -8,10 +8,7 @@ import { expandPath, getOpenClawConfigDir } from './paths';
 import * as logger from './logger';
 import { toUiChannelType } from './channel-alias';
 import { ensureClawXIdentityFile } from './openclaw-workspace';
-import {
-  applyModelAwareCompactionReserveTokensFloor,
-  resolveModelContextWindow,
-} from './openclaw-compaction';
+import { resolveModelContextWindow } from './openclaw-compaction';
 
 const MAIN_AGENT_ID = 'main';
 const MAIN_AGENT_NAME = 'Main Agent';
@@ -51,9 +48,16 @@ interface AgentListEntry extends Record<string, unknown> {
   model?: string | AgentModelConfig;
 }
 
+/**
+ * OpenClaw 2026.10 stores the roster as keyed `agents.entries` and rejects the
+ * legacy `agents.list` array and per-entry `default` markers. Multi-agent
+ * rosters name their ambient owner through `agents.defaults.systemAgent`.
+ */
 interface AgentsConfig extends Record<string, unknown> {
   defaults?: AgentDefaultsConfig;
+  entries?: Record<string, Record<string, unknown>>;
   list?: AgentListEntry[];
+  ownership?: string;
 }
 
 interface BindingMatch extends Record<string, unknown> {
@@ -85,6 +89,7 @@ interface AgentConfigDocument extends Record<string, unknown> {
     mainKey?: string;
     [key: string]: unknown;
   };
+  talk?: Record<string, unknown>;
 }
 
 export interface AgentSummary {
@@ -193,6 +198,37 @@ function createImplicitMainEntry(config: AgentConfigDocument): AgentListEntry {
   };
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readOwnerAgentId(value: unknown): string | undefined {
+  if (!isPlainObject(value) || typeof value.agentId !== 'string') return undefined;
+  return value.agentId.trim() || undefined;
+}
+
+function readRosterEntries(agentsConfig: AgentsConfig): AgentListEntry[] {
+  if (isPlainObject(agentsConfig.entries)) {
+    return Object.entries(agentsConfig.entries)
+      .filter(([id, entry]) => id.trim().length > 0 && isPlainObject(entry))
+      .map(([id, entry]) => ({ ...entry, id }));
+  }
+  if (Array.isArray(agentsConfig.list)) {
+    return agentsConfig.list
+      .filter((entry): entry is AgentListEntry => (
+        Boolean(entry) && typeof entry === 'object' && typeof entry.id === 'string' && entry.id.trim().length > 0
+      ))
+      .map((entry) => ({ ...entry }));
+  }
+  return [];
+}
+
+function findRosterEntryId(entries: AgentListEntry[], agentId: string | undefined): string | undefined {
+  if (!agentId) return undefined;
+  const normalized = normalizeAgentIdForBinding(agentId);
+  return entries.find((entry) => normalizeAgentIdForBinding(entry.id) === normalized)?.id;
+}
+
 function normalizeAgentsConfig(config: AgentConfigDocument): {
   agentsConfig: AgentsConfig;
   entries: AgentListEntry[];
@@ -202,11 +238,7 @@ function normalizeAgentsConfig(config: AgentConfigDocument): {
   const agentsConfig = (config.agents && typeof config.agents === 'object'
     ? { ...(config.agents as AgentsConfig) }
     : {}) as AgentsConfig;
-  const rawEntries = Array.isArray(agentsConfig.list)
-    ? agentsConfig.list.filter((entry): entry is AgentListEntry => (
-      Boolean(entry) && typeof entry === 'object' && typeof entry.id === 'string' && entry.id.trim().length > 0
-    ))
-    : [];
+  const rawEntries = readRosterEntries(agentsConfig);
 
   if (rawEntries.length === 0) {
     const main = createImplicitMainEntry(config);
@@ -218,12 +250,73 @@ function normalizeAgentsConfig(config: AgentConfigDocument): {
     };
   }
 
-  const defaultEntry = rawEntries.find((entry) => entry.default) ?? rawEntries[0];
+  const defaultAgentId = findRosterEntryId(rawEntries, readOwnerAgentId(agentsConfig.defaults?.systemAgent))
+    ?? (rawEntries.find((entry) => entry.default) ?? rawEntries[0]).id;
   return {
     agentsConfig,
-    entries: rawEntries.map((entry) => ({ ...entry })),
-    defaultAgentId: defaultEntry.id,
+    entries: rawEntries,
+    defaultAgentId,
     syntheticMain: false,
+  };
+}
+
+function withoutDanglingOwner(
+  value: unknown,
+  entries: AgentListEntry[],
+): Record<string, unknown> | undefined {
+  if (!isPlainObject(value)) return undefined;
+  const owner = readOwnerAgentId(value);
+  if (!owner || findRosterEntryId(entries, owner)) return value;
+  const { agentId: _agentId, ...rest } = value;
+  return Object.keys(rest).length > 0 ? rest : undefined;
+}
+
+/**
+ * Write the roster in OpenClaw 2026.10's keyed shape. Rosters with more than
+ * one agent are stamped for explicit ownership with `defaultAgentId` as the
+ * system agent, mirroring `openclaw agents add`; owner references to agents
+ * that no longer exist are cleared.
+ */
+function writeAgentRoster(
+  config: AgentConfigDocument,
+  agentsConfig: AgentsConfig,
+  entries: AgentListEntry[],
+  defaultAgentId: string,
+): void {
+  const {
+    list: _legacyList,
+    ownership: _ownership,
+    entries: _entries,
+    defaults: existingDefaults,
+    ...rest
+  } = agentsConfig;
+  const defaults: AgentDefaultsConfig = { ...(existingDefaults ?? {}) };
+  for (const key of ['systemAgent', 'heartbeat'] as const) {
+    if (defaults[key] === undefined) continue;
+    const next = withoutDanglingOwner(defaults[key], entries);
+    if (next === undefined) delete defaults[key];
+    else defaults[key] = next;
+  }
+  if (entries.length > 1 && !readOwnerAgentId(defaults.systemAgent)) {
+    defaults.systemAgent = {
+      ...(isPlainObject(defaults.systemAgent) ? defaults.systemAgent : {}),
+      agentId: findRosterEntryId(entries, defaultAgentId) ?? entries[0].id,
+    };
+  }
+  if (config.talk !== undefined) {
+    const talk = withoutDanglingOwner(config.talk, entries);
+    if (talk === undefined) delete config.talk;
+    else config.talk = talk;
+  }
+
+  config.agents = {
+    ...rest,
+    ...(existingDefaults !== undefined || Object.keys(defaults).length > 0 ? { defaults } : {}),
+    ...(entries.length > 1 ? { ownership: 'explicit' } : {}),
+    entries: Object.fromEntries(entries.map((entry) => {
+      const { id, default: _marker, ...entryConfig } = entry;
+      return [id, entryConfig];
+    })),
   };
 }
 
@@ -617,7 +710,7 @@ export async function createAgent(
   let provisioningConfig: AgentConfigDocument | undefined;
   await mutateOpenClawConfig(async (configSnapshot) => {
     const config = configSnapshot as AgentConfigDocument;
-    const { agentsConfig, entries, syntheticMain } = normalizeAgentsConfig(config);
+    const { agentsConfig, entries, defaultAgentId, syntheticMain } = normalizeAgentsConfig(config);
     const normalizedName = normalizeAgentName(name);
     const existingIds = new Set(entries.map((entry) => entry.id));
     const diskIds = await listExistingAgentIdsOnDisk();
@@ -642,10 +735,7 @@ export async function createAgent(
     }
     nextEntries.push(newAgent);
 
-    config.agents = {
-      ...agentsConfig,
-      list: nextEntries,
-    };
+    writeAgentRoster(config, agentsConfig, nextEntries, defaultAgentId);
 
     createdAgentId = nextId;
     agentToProvision = newAgent;
@@ -663,15 +753,17 @@ export async function createAgent(
     try {
       await mutateOpenClawConfig((configSnapshot) => {
         const config = configSnapshot as AgentConfigDocument;
-        const { agentsConfig, entries } = normalizeAgentsConfig(config);
+        const { agentsConfig, entries, defaultAgentId } = normalizeAgentsConfig(config);
         const createdIndex = entries.findIndex((entry) => (
           entry.id === createdAgent.id && isDeepStrictEqual(entry, createdAgent)
         ));
         if (createdIndex === -1) return;
-        config.agents = {
-          ...agentsConfig,
-          list: entries.filter((_, index) => index !== createdIndex),
-        };
+        writeAgentRoster(
+          config,
+          agentsConfig,
+          entries.filter((_, index) => index !== createdIndex),
+          defaultAgentId,
+        );
       });
     } catch (error) {
       rollbackError = error;
@@ -701,7 +793,7 @@ export async function updateAgentName(agentId: string, name: string): Promise<Ag
   const normalizedName = normalizeAgentName(name);
   await mutateOpenClawConfig(async (configSnapshot) => {
     const config = configSnapshot as AgentConfigDocument;
-    const { agentsConfig, entries } = normalizeAgentsConfig(config);
+    const { agentsConfig, entries, defaultAgentId } = normalizeAgentsConfig(config);
     const index = entries.findIndex((entry) => entry.id === agentId);
     if (index === -1) {
       throw new Error(`Agent "${agentId}" not found`);
@@ -712,10 +804,7 @@ export async function updateAgentName(agentId: string, name: string): Promise<Ag
       name: normalizedName,
     };
 
-    config.agents = {
-      ...agentsConfig,
-      list: entries,
-    };
+    writeAgentRoster(config, agentsConfig, entries, defaultAgentId);
 
     snapshot = await buildSnapshotFromConfig(config);
   });
@@ -733,7 +822,7 @@ export async function updateAgentModel(agentId: string, modelRef: string | null)
   let snapshot: AgentsSnapshot | undefined;
   await mutateOpenClawConfig(async (configSnapshot) => {
     const config = configSnapshot as AgentConfigDocument;
-    const { agentsConfig, entries } = normalizeAgentsConfig(config);
+    const { agentsConfig, entries, defaultAgentId } = normalizeAgentsConfig(config);
     const index = entries.findIndex((entry) => entry.id === agentId);
     if (index === -1) {
       throw new Error(`Agent "${agentId}" not found`);
@@ -773,14 +862,7 @@ export async function updateAgentModel(agentId: string, modelRef: string | null)
     }
 
     entries[index] = nextEntry;
-    config.agents = {
-      ...agentsConfig,
-      list: entries,
-    };
-    applyModelAwareCompactionReserveTokensFloor(
-      config,
-      resolveModelRef(nextEntry.model) ?? resolveModelRef(agentsConfig.defaults?.model),
-    );
+    writeAgentRoster(config, agentsConfig, entries, defaultAgentId);
 
     snapshot = await buildSnapshotFromConfig(config);
   });
@@ -806,20 +888,15 @@ export async function deleteAgentConfig(agentId: string): Promise<{ snapshot: Ag
       throw new Error(`Agent "${agentId}" not found`);
     }
 
-    config.agents = {
-      ...agentsConfig,
-      list: nextEntries,
-    };
+    writeAgentRoster(
+      config,
+      agentsConfig,
+      nextEntries,
+      defaultAgentId === agentId ? nextEntries[0]?.id ?? MAIN_AGENT_ID : defaultAgentId,
+    );
     config.bindings = Array.isArray(config.bindings)
       ? config.bindings.filter((binding) => !(isChannelBinding(binding) && binding.agentId === agentId))
       : undefined;
-
-    if (defaultAgentId === agentId && nextEntries.length > 0) {
-      nextEntries[0] = {
-        ...nextEntries[0],
-        default: true,
-      };
-    }
 
     const normalizedAgentId = normalizeAgentIdForBinding(agentId);
     const legacyAccountId = resolveAccountIdForAgent(agentId);

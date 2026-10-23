@@ -1,9 +1,10 @@
-import { app, utilityProcess } from 'electron';
+import { app } from 'electron';
 import { existsSync, writeFileSync } from 'fs';
 import path from 'path';
 import type { GatewayLaunchContext } from './config-sync';
 import type { GatewayLifecycleState } from './process-policy';
 import { logger } from '../utils/logger';
+import { forkOpenClawUtilityProcess } from '../utils/openclaw-utility-process';
 import { appendNodeRequireToNodeOptions } from '../utils/paths';
 
 const GATEWAY_FETCH_PRELOAD_SOURCE = `'use strict';
@@ -172,7 +173,7 @@ export async function launchGatewayProcess(options: {
   }
 
   return await new Promise<{ child: Electron.UtilityProcess; lastSpawnSummary: string }>((resolve, reject) => {
-    const child = utilityProcess.fork(entryScript, gatewayArgs, {
+    const child = forkOpenClawUtilityProcess(entryScript, gatewayArgs, {
       cwd: openclawDir,
       stdio: 'pipe',
       env: runtimeEnv as NodeJS.ProcessEnv,

@@ -3,9 +3,6 @@ import {
   type ModelCapabilityContext,
 } from '../shared/providers/model-capabilities';
 
-export const COMPACTION_RESERVE_TOKENS_FLOOR_RATIO = 0.25;
-export const DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR = 50_000;
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -47,29 +44,4 @@ export function resolveModelContextWindow(
   // Model-name inference can disagree with OpenClaw's own fallback and leave no
   // usable prompt budget, so missing metadata intentionally remains unknown.
   return undefined;
-}
-
-/**
- * Reserve one quarter of an explicitly configured context window. When the
- * selected model has no explicit context metadata, use the conservative 50k
- * fallback instead of guessing a window from its name.
- */
-export function applyModelAwareCompactionReserveTokensFloor(
-  config: Record<string, unknown>,
-  modelRef: string | null | undefined,
-): boolean {
-  const contextWindow = resolveModelContextWindow(config, modelRef);
-  const reserveTokensFloor = contextWindow === undefined
-    ? DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR
-    : Math.floor(contextWindow * COMPACTION_RESERVE_TOKENS_FLOOR_RATIO);
-  const agents = isRecord(config.agents) ? config.agents : {};
-  const defaults = isRecord(agents.defaults) ? agents.defaults : {};
-  const compaction = isRecord(defaults.compaction) ? defaults.compaction : {};
-  if (compaction.reserveTokensFloor === reserveTokensFloor) return false;
-
-  compaction.reserveTokensFloor = reserveTokensFloor;
-  defaults.compaction = compaction;
-  agents.defaults = defaults;
-  config.agents = agents;
-  return true;
 }

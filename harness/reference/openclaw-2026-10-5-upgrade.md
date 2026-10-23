@@ -102,10 +102,74 @@ generated-dist patches for every OpenClaw version change.
   `openclaw.json`, `state/`, per-agent `auth-profiles.json` and SQLite files.
 - **Forward:** state written by a newer OpenClaw release must be reported, not
   rewritten. Unknown config keys are preserved by the sanitizer.
-- **Cross-platform:** macOS uses the packaged Helper with
-  `ELECTRON_RUN_AS_NODE`; Windows uses `resources/bin/win32-*/node.exe`; Linux
-  uses either the packaged wrapper or Electron's Node. All three must satisfy
-  the Node 24.16 floor.
+- **Cross-platform:** every platform forks `openclaw.mjs` in an Electron
+  `utilityProcess` through the ClawX bootstrap described below; Windows also
+  prepends `resources/bin/win32-*` (bundled `node.exe`) to `PATH` for tools.
+  The embedded and bundled Node runtimes must satisfy the Node 24.16 floor.
+
+## Utility-process bootstrap
+
+OpenClaw 2026.10 re-executes its own runtime (`process.execPath`) with
+`spawn`, `spawnSync`, `execFile`, and `execFileSync` for SQLite readers,
+state/database preflight, migrations, and tool hosts. Inside an Electron
+`utilityProcess` that binary is the ClawX Helper, and Electron only rewrites
+`child_process.fork()` to run as Node. Every other re-exec booted a second
+ClawX app, so the Gateway failed at `cli.bootstrap.admission.state-snapshot`
+with the generic `The CLI command failed.` (exit 1) instead of OpenClaw's real
+diagnostic. Electron's own `fork()` rewrite (set `ELECTRON_RUN_AS_NODE=1`, use
+`process.helperExecPath` on macOS) only applies when the module path is a
+string, while OpenClaw forks its SQLite integrity, preflight, and verify
+workers from `file:` URL objects. Those workers also booted ClawX, so
+`doctor --fix` skipped every agent database (`media-persistence
+(step-refused)`) after migrating only the state database. Setting
+`ELECTRON_RUN_AS_NODE` on the utility process itself breaks the utility
+process, so it is not an option.
+
+`electron/utils/openclaw-utility-process.ts` writes
+`<userData>/openclaw-utility-bootstrap.mjs` and forks it instead of the entry.
+The bootstrap reads the entry from `CLAWX_OPENCLAW_ENTRY`, injects
+`ELECTRON_RUN_AS_NODE=1` only into re-execs whose command is
+`process.execPath` (including `promisify.custom` variants), converts `file:`
+URL module paths passed to `fork()` into paths so Electron's rewrite applies,
+calls `syncBuiltinESMExports()`, restores `process.argv[1]`, and imports the
+entry.
+The Gateway, the startup doctor repair, Settings → Run Doctor, and Control UI
+device pairing all launch through `forkOpenClawUtilityProcess`.
+
+## First launch on 2026.7.1 state
+
+OpenClaw 2026.10.5 refuses to admit a 2026.7.1 state tree until an offline
+`doctor --fix` migrates the state database, every agent database, and legacy
+config keys. The Gateway exits with code 78 and `OpenClaw config is invalid`,
+`Legacy config keys detected`, `config needs correction`, or
+`gateway.maintenance_required`; `startup-recovery.ts` treats these as
+config-invalid signals, so the orchestrator runs one doctor repair (10-minute
+timeout for large agent databases) and relaunches. Pre-2026.10 agent registries
+store absolute paths, so doctor writes `.bak` copies next to the original
+agent databases; sandboxed reproductions must not copy that state without
+accounting for it. Legacy managed outgoing image records also store absolute
+`original.path` values that must sit under `<stateDir>/media/outgoing/originals`,
+so a relocated copy fails `managed-outgoing-images` unless those records are
+rewritten to the copy's location. Doctor's console summary redacts from the
+first path to the end of the line; the structured OpenClaw file log
+(`/tmp/openclaw/openclaw-<date>.log`) keeps per-step progress.
+
+## 2026.10 config shape written by ClawX
+
+| 2026.7.1 key | 2026.10.5 shape |
+| --- | --- |
+| `tools.exec.security` / `tools.exec.ask` | `tools.exec.mode: "full"` |
+| `skills.workshop.autonomous.enabled` | `skills.workshop.autonomous.mode: "off"` |
+| `agents.defaults.compaction.identifierPolicy: "custom"` | `"strict"`; `identifierInstructions` and `reserveTokensFloor` are retired |
+| `session.idleMinutes` | `session.reset: { mode: "idle", idleMinutes }` |
+| `agents.defaults.memorySearch` | root `memory.search` (per agent: `agents.entries.<id>.memory.search`) |
+| `agents.defaults.imageGenerationModel` | `agents.defaults.mediaModels.image` |
+| `agents.defaults.mediaGenerationAutoProviderFallback` | retired; an explicit `mediaModels.image` disables auto fallback |
+| `agents.list[]` with `default: true` | keyed `agents.entries`; two or more agents also set `agents.ownership: "explicit"` and `agents.defaults.systemAgent.agentId` |
+
+Readers accept both shapes until doctor migrates user-owned legacy keys
+(`meta.lastTouchedAt`, `plugins.bundledDiscovery`, `commands.ownerDisplay`,
+`tools.media.image.models`, user-authored `agents.defaults.memorySearch`).
 
 
 ## Packaging evidence (2026.10.5)
@@ -119,6 +183,12 @@ Local packaging was exercised for every desktop target on a macOS arm64 host:
 | Linux arm64 directory build | pass | `release/linux-arm64-unpacked/resources/openclaw` is 2026.10.5 with the ClawX patch; all 7 plugin mirrors present |
 | Windows arm64 directory build | pass | `release/win-arm64-unpacked/resources/openclaw` is 2026.10.5 with the ClawX patch; `resources/bin/node.exe` is `PE32+ Aarch64` Node `v24.18.1`; all 7 plugin mirrors present |
 | Windows NSIS installer | not run on macOS | requires the Windows CI runner (`package-win-manual.yml`) |
+| Gateway under Electron `utilityProcess` | pass with bootstrap | dev Electron `41.10.7` forked the packaged 2026.10.5 `openclaw.mjs` against a migrated state copy: without the bootstrap it exits 1 with `The CLI command failed.` after `state-snapshot`; with the bootstrap `/health` returned `{"ok":true,"status":"live"}` and `doctor --json` returned a structured report |
+| `doctor --fix` under Electron `utilityProcess` | pass with bootstrap | `fork(fileURL)` crashes the child without the URL conversion; with it, doctor migrated a partially migrated 2026.7.1 state copy (all four agent databases v1 → v25, exit 0) and the packaged Gateway then reported `/health` live |
+
+The Helper-direct row above ran `openclaw.mjs` with `ELECTRON_RUN_AS_NODE=1` set
+on the Helper itself, which bypasses ClawX's `utilityProcess` launch path and
+therefore did not catch the re-exec failure.
 
 The Windows directory build cannot extract the DingTalk `dws` payload on a
 non-Windows host (`spawnSync powershell.exe ENOENT`); the Windows CI runner

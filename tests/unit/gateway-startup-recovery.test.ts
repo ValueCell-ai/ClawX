@@ -64,6 +64,34 @@ describe('gateway startup recovery heuristics', () => {
     expect(isInvalidConfigSignal('Gateway ready after 3 attempts')).toBe(false);
   });
 
+  it('matches OpenClaw 2026.10.5 retired-key and offline-migration admission failures', () => {
+    expect(isInvalidConfigSignal('OpenClaw config is invalid')).toBe(true);
+    expect(isInvalidConfigSignal('Config needs correction: ~/.openclaw/openclaw.json')).toBe(true);
+    expect(isInvalidConfigSignal('Legacy config keys detected:')).toBe(true);
+    expect(isInvalidConfigSignal(
+      'Sessions remain unavailable. Stop the Gateway, run "openclaw doctor --fix" to inspect and repair this agent database, and restart. | gateway.maintenance_required',
+    )).toBe(true);
+    expect(isInvalidConfigSignal('[openclaw] For help, run `openclaw doctor`.')).toBe(false);
+    expect(isInvalidConfigSignal('[openclaw] The CLI command failed.')).toBe(false);
+  });
+
+  it('repairs the 2026.10.5 agent-roster migration that only reports a legacy key', () => {
+    const lines = [
+      'File: ~/.openclaw/openclaw.json',
+      'Problem:',
+      '  - agents.list: agents.list moved to keyed agents.entries. Run "openclaw doctor --fix".',
+      'Legacy config keys detected:',
+      '  - agents.list: agents.list moved to keyed agents.entries. Run "openclaw doctor --fix".',
+    ];
+    expect(getGatewayStartupRecoveryAction({
+      startupError: new Error('Gateway process exited before becoming ready (code=78)'),
+      startupStderrLines: lines,
+      configRepairAttempted: false,
+      attempt: 1,
+      maxAttempts: 3,
+    })).toBe('repair');
+  });
+
   it('detects an active startup-migration lease that must not be restart-looped', () => {
     expect(hasStartupMigrationLockSignal(undefined, [
       'OpenClaw startup migrations are already running for this state directory; retry after the other gateway finishes or after 2026-07-21T03:02:57.489Z.',

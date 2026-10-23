@@ -14,9 +14,9 @@ describe('openclaw-memory-search', () => {
       agents: {
         defaults: {
           model: { primary: 'custom-customfc/gpt-5.5' },
-          memorySearch: { enabled: true, provider: 'none' },
         },
       },
+      memory: { search: { enabled: true, provider: 'none' } },
     });
   });
 
@@ -24,10 +24,33 @@ describe('openclaw-memory-search', () => {
     const config: Record<string, unknown> = {};
     expect(ensureMemorySearchFtsDefault(config)).toBe('seeded');
     expect(config).toEqual({
-      agents: {
-        defaults: { memorySearch: { enabled: true, provider: 'none' } },
-      },
+      memory: { search: { enabled: true, provider: 'none' } },
     });
+  });
+
+  it('never touches existing memory.search config', () => {
+    const config: Record<string, unknown> = {
+      memory: { search: { provider: 'openai', model: 'text-embedding-3-small' } },
+    };
+    const before = JSON.parse(JSON.stringify(config));
+    expect(hasUserMemorySearchConfig(config)).toBe(true);
+    expect(ensureMemorySearchFtsDefault(config, true)).toBe('unchanged');
+    expect(config).toEqual(before);
+  });
+
+  it('never seeds when a keyed per-agent memory.search override exists', () => {
+    const config: Record<string, unknown> = {
+      agents: {
+        entries: {
+          main: {},
+          research: { memory: { search: { provider: 'openai' } } },
+        },
+      },
+    };
+    const before = JSON.parse(JSON.stringify(config));
+    expect(hasUserMemorySearchConfig(config)).toBe(true);
+    expect(ensureMemorySearchFtsDefault(config, true)).toBe('unchanged');
+    expect(config).toEqual(before);
   });
 
   it('never touches existing defaults.memorySearch config', () => {
@@ -86,9 +109,18 @@ describe('openclaw-memory-search', () => {
     };
     expect(ensureMemorySearchFtsDefault(config, true)).toBe('migrated');
     expect(config).toEqual({
-      agents: {
-        defaults: { memorySearch: { enabled: true, provider: 'none' } },
-      },
+      agents: { defaults: {} },
+      memory: { search: { enabled: true, provider: 'none' } },
+    });
+  });
+
+  it('migrates the exact legacy disabled default after doctor moved it to memory.search', () => {
+    const config: Record<string, unknown> = {
+      memory: { search: { enabled: false } },
+    };
+    expect(ensureMemorySearchFtsDefault(config, true)).toBe('migrated');
+    expect(config).toEqual({
+      memory: { search: { enabled: true, provider: 'none' } },
     });
   });
 

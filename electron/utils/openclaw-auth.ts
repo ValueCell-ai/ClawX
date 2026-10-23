@@ -49,13 +49,14 @@ import {
   inferKnownModelContextWindow,
 } from '../shared/providers/model-capabilities';
 import {
-  applyModelAwareCompactionReserveTokensFloor,
-  DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR,
-} from './openclaw-compaction';
-import {
   CLAWX_OPENAI_IMAGE_DEFAULT_MODEL,
   CLAWX_OPENAI_IMAGE_PROVIDER_KEY,
 } from './openclaw-image-relay-constants';
+import {
+  readImageGenerationModelValue,
+  writeImageGenerationModelValue,
+} from './openclaw-media-models';
+import { listOpenClawAgentEntryRecords } from './openclaw-agent-roster';
 import {
   migrateAuthProfilesJsonToSqliteIfNeeded,
   readAuthProfilesFromSqlite,
@@ -576,7 +577,9 @@ const FEISHU_PLUGIN_DIR_CANDIDATES = ['feishu-openclaw-plugin', 'openclaw-lark']
 const FEISHU_PLUGIN_ID_CANDIDATES = ['feishu', 'openclaw-lark', 'feishu-openclaw-plugin'] as const;
 const DEFAULT_FEISHU_PLUGIN_ID = 'feishu';
 const VALID_COMPACTION_MODES = new Set(['default', 'safeguard']);
-const CLAWX_COMPACTION_IDENTIFIER_INSTRUCTIONS = 'Preserve only identifiers referenced by unresolved asks, active constraints, modified files, or pending next steps.';
+// OpenClaw 2026.10 rejects these compaction keys that earlier ClawX releases
+// seeded; built-in defaults replace them.
+const RETIRED_CLAWX_COMPACTION_KEYS = ['identifierInstructions', 'reserveTokensFloor'] as const;
 const CLAWX_COMPACTION_KEEP_RECENT_TOKENS = 0;
 const CLAWX_COMPACTION_RECENT_TURNS_PRESERVE = 0;
 // OpenClaw 2026.7.1 bundles these channel extensions. Discord, WhatsApp,
@@ -895,8 +898,7 @@ function normalizeAgentsDefaultsCompactionMode(config: Record<string, unknown>):
 /**
  * Seed `agents.defaults.compaction.mode = "safeguard"` when the user has no
  * compaction config at all, so long sessions are compacted before they hit the
- * provider's context limit. The reserve floor is applied separately from
- * explicit model context metadata or the conservative 50000-token fallback.
+ * provider's context limit.
  */
 function ensureCompactionSafeguardDefault(config: Record<string, unknown>): boolean {
   const agents = (config.agents && typeof config.agents === 'object'
@@ -912,9 +914,6 @@ function ensureCompactionSafeguardDefault(config: Record<string, unknown>): bool
     qualityGuard: { enabled: false },
     keepRecentTokens: CLAWX_COMPACTION_KEEP_RECENT_TOKENS,
     recentTurnsPreserve: CLAWX_COMPACTION_RECENT_TURNS_PRESERVE,
-    identifierPolicy: 'custom',
-    identifierInstructions: CLAWX_COMPACTION_IDENTIFIER_INSTRUCTIONS,
-    reserveTokensFloor: DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR,
     midTurnPrecheck: { enabled: true },
   };
   agents.defaults = defaults;
@@ -924,8 +923,8 @@ function ensureCompactionSafeguardDefault(config: Record<string, unknown>): bool
 
 /**
  * Enforce ClawX's compaction quality policy and backfill missing safety fields.
- * Explicit keepRecentTokens, recentTurnsPreserve, reserveTokensFloor, and
- * midTurnPrecheck.enabled choices are preserved.
+ * Explicit keepRecentTokens, recentTurnsPreserve, and midTurnPrecheck.enabled
+ * choices are preserved.
  */
 function syncCompactionSafetyDefaults(config: Record<string, unknown>): boolean {
   const agents = (config.agents && typeof config.agents === 'object'
@@ -960,18 +959,16 @@ function syncCompactionSafetyDefaults(config: Record<string, unknown>): boolean 
     compaction.keepRecentTokens = CLAWX_COMPACTION_KEEP_RECENT_TOKENS;
     changed = true;
   }
-  if (compaction.identifierPolicy !== 'custom') {
-    compaction.identifierPolicy = 'custom';
+  // OpenClaw 2026.10 only accepts "strict" or "off".
+  if (compaction.identifierPolicy === 'custom') {
+    compaction.identifierPolicy = 'strict';
     changed = true;
   }
-  if (compaction.identifierInstructions !== CLAWX_COMPACTION_IDENTIFIER_INSTRUCTIONS) {
-    compaction.identifierInstructions = CLAWX_COMPACTION_IDENTIFIER_INSTRUCTIONS;
-    changed = true;
-  }
-
-  if (compaction.reserveTokensFloor === undefined) {
-    compaction.reserveTokensFloor = DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR;
-    changed = true;
+  for (const key of RETIRED_CLAWX_COMPACTION_KEYS) {
+    if (Object.hasOwn(compaction, key)) {
+      delete compaction[key];
+      changed = true;
+    }
   }
 
   if (compaction.midTurnPrecheck === undefined) {
@@ -990,22 +987,6 @@ function syncCompactionSafetyDefaults(config: Record<string, unknown>): boolean 
   agents.defaults = defaults;
   config.agents = agents;
   return true;
-}
-
-function getDefaultModelRef(config: Record<string, unknown>): string | undefined {
-  const agents = config.agents;
-  const defaults = agents && typeof agents === 'object'
-    ? (agents as Record<string, unknown>).defaults
-    : undefined;
-  const model = defaults && typeof defaults === 'object'
-    ? (defaults as Record<string, unknown>).model
-    : undefined;
-  if (typeof model === 'string' && model.trim()) return model.trim();
-  if (model && typeof model === 'object') {
-    const primary = (model as Record<string, unknown>).primary;
-    if (typeof primary === 'string' && primary.trim()) return primary.trim();
-  }
-  return undefined;
 }
 
 // ── Exported Functions (all async) ───────────────────────────────
@@ -1222,11 +1203,9 @@ function removeProviderEntriesFromAgentModelCatalogs(
     && removeProviderEntriesFromModelCatalog(agents.defaults, providerKeys)) {
     modified = true;
   }
-  if (Array.isArray(agents.list)) {
-    for (const entry of agents.list) {
-      if (isPlainRecord(entry) && removeProviderEntriesFromModelCatalog(entry, providerKeys)) {
-        modified = true;
-      }
+  for (const entry of listOpenClawAgentEntryRecords(agents)) {
+    if (removeProviderEntriesFromModelCatalog(entry, providerKeys)) {
+      modified = true;
     }
   }
   return modified;
@@ -1296,13 +1275,11 @@ export async function pruneStaleRuntimeAgentModelRefs(
     }
   }
 
-  if (Array.isArray(agents.list)) {
-    for (const entry of agents.list) {
-      if (!isPlainRecord(entry) || !isPlainRecord(entry.model)) continue;
-      if (pruneStaleRuntimeModelConfig(entry.model, activeProviders)) {
-        deleteModelConfigIfEmpty(entry);
-        modified = true;
-      }
+  for (const entry of listOpenClawAgentEntryRecords(agents)) {
+    if (!isPlainRecord(entry.model)) continue;
+    if (pruneStaleRuntimeModelConfig(entry.model, activeProviders)) {
+      deleteModelConfigIfEmpty(entry);
+      modified = true;
     }
   }
 
@@ -1372,14 +1349,11 @@ export async function removeProviderFromOpenClaw(provider: string): Promise<void
         }
       }
 
-      const agentList = agents?.list;
-      if (Array.isArray(agentList)) {
-        for (const entry of agentList) {
-          if (!isPlainRecord(entry) || !isPlainRecord(entry.model)) continue;
-          if (removeProviderPrefixFromModelConfig(entry.model, providerPrefix)) {
-            deleteModelConfigIfEmpty(entry);
-            modified = true;
-          }
+      for (const entry of listOpenClawAgentEntryRecords(agents)) {
+        if (!isPlainRecord(entry.model)) continue;
+        if (removeProviderPrefixFromModelConfig(entry.model, providerPrefix)) {
+          deleteModelConfigIfEmpty(entry);
+          modified = true;
         }
       }
 
@@ -1721,7 +1695,6 @@ export async function setOpenClawDefaultModel(
     if (!gateway.mode) gateway.mode = 'local';
     config.gateway = gateway;
 
-    applyModelAwareCompactionReserveTokensFloor(config, getDefaultModelRef(config));
     normalizeAgentsDefaultsCompactionMode(config);
     console.log(`Set OpenClaw default model to "${model}" for provider "${provider}"`);
   });
@@ -2409,8 +2382,9 @@ export async function syncOpenAiCompatibleImageRelay(params: {
       }
       const agents = isPlainRecord(config.agents) ? config.agents : null;
       const defaults = agents && isPlainRecord(agents.defaults) ? agents.defaults : null;
-      const imageGenerationModel = defaults && isPlainRecord(defaults.imageGenerationModel)
-        ? defaults.imageGenerationModel
+      const storedImageGenerationModel = readImageGenerationModelValue(defaults);
+      const imageGenerationModel = isPlainRecord(storedImageGenerationModel)
+        ? { ...storedImageGenerationModel }
         : null;
       const primary = typeof imageGenerationModel?.primary === 'string'
         ? imageGenerationModel.primary.trim().toLowerCase()
@@ -2430,6 +2404,7 @@ export async function syncOpenAiCompatibleImageRelay(params: {
         if (Array.isArray(imageGenerationModel.fallbacks)) {
           imageGenerationModel.fallbacks = remainingFallbacks;
         }
+        writeImageGenerationModelValue(defaults, imageGenerationModel);
       }
       removePluginRegistrations(config, [CLAWX_OPENAI_IMAGE_PROVIDER_KEY]);
       normalizeAgentsDefaultsCompactionMode(config);
@@ -2548,7 +2523,6 @@ export async function setOpenClawDefaultModelWithOverride(
       ensureOAuthPluginEnabled(config, provider);
     }
 
-    applyModelAwareCompactionReserveTokensFloor(config, getDefaultModelRef(config));
     normalizeAgentsDefaultsCompactionMode(config);
     console.log(
       `Set OpenClaw default model to "${model}" for provider "${provider}" (runtime override)`
@@ -2776,19 +2750,41 @@ export async function syncBrowserConfigToOpenClaw(): Promise<void> {
   });
 }
 
+const DEFAULT_SESSION_IDLE_MINUTES = 10_080; // 7 days
+
+/**
+ * OpenClaw 2026.10 moved `session.idleMinutes` to `session.reset.idleMinutes`.
+ * Carry a legacy value forward, otherwise seed ClawX's idle-only reset unless
+ * the user already manages session lifecycle through reset / resetByType /
+ * resetByChannel.
+ */
+function ensureSessionIdleResetDefault(session: Record<string, unknown>): boolean {
+  if (Object.hasOwn(session, 'idleMinutes')) {
+    const reset: Record<string, unknown> = isPlainRecord(session.reset)
+      ? { ...session.reset }
+      : { mode: 'idle' };
+    if (reset.idleMinutes === undefined) reset.idleMinutes = session.idleMinutes;
+    session.reset = reset;
+    delete session.idleMinutes;
+    return true;
+  }
+  if (session.reset !== undefined
+    || session.resetByType !== undefined
+    || session.resetByChannel !== undefined) return false;
+  session.reset = { mode: 'idle', idleMinutes: DEFAULT_SESSION_IDLE_MINUTES };
+  return true;
+}
+
 /**
  * Ensure session idle-reset is configured in ~/.openclaw/openclaw.json.
  *
  * By default OpenClaw resets the "main" session daily at 04:00 local time,
  * which means conversations disappear after roughly one day.  ClawX sets
- * `session.idleMinutes` to 10 080 (7 days) so that conversations are
- * preserved for a week unless the user has explicitly configured their own
- * value.  When `idleMinutes` is set without `session.reset` /
- * `session.resetByType`, OpenClaw stays in idle-only mode (no daily reset).
+ * `session.reset` to idle mode with 10 080 minutes (7 days) so that
+ * conversations are preserved for a week unless the user has explicitly
+ * configured their own session lifecycle.
  */
 export async function syncSessionIdleMinutesToOpenClaw(): Promise<void> {
-  const DEFAULT_IDLE_MINUTES = 10_080; // 7 days
-
   await mutateOpenClawConfig((config) => {
     const session = (
       config.session && typeof config.session === 'object'
@@ -2796,20 +2792,11 @@ export async function syncSessionIdleMinutesToOpenClaw(): Promise<void> {
         : {}
     ) as Record<string, unknown>;
 
-    // Only set idleMinutes if the user has not configured it yet.
-    if (session.idleMinutes !== undefined) return;
-
-    // If the user has explicit reset / resetByType / resetByChannel config,
-    // they are actively managing session lifecycle — don't interfere.
-    if (session.reset !== undefined
-      || session.resetByType !== undefined
-      || session.resetByChannel !== undefined) return;
-
-    session.idleMinutes = DEFAULT_IDLE_MINUTES;
+    if (!ensureSessionIdleResetDefault(session)) return;
     config.session = session;
 
     normalizeAgentsDefaultsCompactionMode(config);
-    console.log(`Synced session.idleMinutes=${DEFAULT_IDLE_MINUTES} (7d) to openclaw.json`);
+    console.log(`Synced session.reset idle mode (${DEFAULT_SESSION_IDLE_MINUTES} min) to openclaw.json`);
   });
 }
 
@@ -2819,7 +2806,6 @@ export async function syncSessionIdleMinutesToOpenClaw(): Promise<void> {
  * during pre-launch sync.
  */
 export async function batchSyncConfigFields(token: string): Promise<void> {
-  const DEFAULT_IDLE_MINUTES = 10_080; // 7 days
   const gatewayPort = (await getSetting('gatewayPort')) || PORTS.OPENCLAW_GATEWAY;
   const memorySearchMigrationVersion = Number(
     await getSetting('memorySearchFtsMigrationVersion'),
@@ -2909,12 +2895,7 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
         ? { ...(config.session as Record<string, unknown>) }
         : {}
     ) as Record<string, unknown>;
-    const hasExplicitSessionConfig = session.idleMinutes !== undefined
-      || session.reset !== undefined
-      || session.resetByType !== undefined
-      || session.resetByChannel !== undefined;
-    if (!hasExplicitSessionConfig) {
-      session.idleMinutes = DEFAULT_IDLE_MINUTES;
+    if (ensureSessionIdleResetDefault(session)) {
       config.session = session;
       modified = true;
     }
@@ -2922,20 +2903,16 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
     // ── Compaction safeguard default ──
     if (ensureCompactionSafeguardDefault(config)) {
       modified = true;
-      compactionLog = `[batch-sync] Seeded agents.defaults.compaction.mode=safeguard qualityGuard.enabled=false keepRecentTokens=${CLAWX_COMPACTION_KEEP_RECENT_TOKENS} recentTurnsPreserve=${CLAWX_COMPACTION_RECENT_TURNS_PRESERVE} identifierPolicy=custom reserveTokensFloor=${DEFAULT_COMPACTION_RESERVE_TOKENS_FLOOR} midTurnPrecheck.enabled=true`;
+      compactionLog = `[batch-sync] Seeded agents.defaults.compaction.mode=safeguard qualityGuard.enabled=false keepRecentTokens=${CLAWX_COMPACTION_KEEP_RECENT_TOKENS} recentTurnsPreserve=${CLAWX_COMPACTION_RECENT_TURNS_PRESERVE} midTurnPrecheck.enabled=true`;
     } else if (syncCompactionSafetyDefaults(config)) {
       modified = true;
       compactionLog = '[batch-sync] Synchronized ClawX-managed agents.defaults.compaction settings';
     }
-    if (applyModelAwareCompactionReserveTokensFloor(config, getDefaultModelRef(config))) {
-      modified = true;
-      compactionLog = '[batch-sync] Applied agents.defaults.compaction.reserveTokensFloor from explicit model context metadata or the 50000-token fallback';
-    }
 
     // ── Memory search default ──
-    // OpenClaw 2026.7.1 supports provider=none as an explicit FTS-only mode.
+    // OpenClaw supports provider=none as an explicit FTS-only mode.
     // Migrate ClawX's exact legacy disabled default once, and otherwise seed
-    // FTS only when the user has no memorySearch config or OpenAI embedding key.
+    // FTS only when the user has no memory search config or OpenAI embedding key.
     memorySearchDefaultResult = shouldMigrateLegacyMemorySearch
       && hasUserMemorySearchConfig(config)
       ? ensureMemorySearchFtsDefault(config, true)
@@ -2964,7 +2941,7 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
   if (memorySearchDefaultResult !== 'unchanged') {
     console.log(
       `[batch-sync] ${memorySearchDefaultResult === 'migrated' ? 'Migrated' : 'Seeded'} `
-      + 'agents.defaults.memorySearch to FTS-only mode',
+      + 'memory.search to FTS-only mode',
     );
   }
   if (changed) {
@@ -3401,19 +3378,21 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
       toolsModified = true;
     }
 
-    // ── tools.exec approvals (OpenClaw 3.28+) ──────────────────────
+    // ── tools.exec approvals ───────────────────────────────────────
     // ClawX is a local desktop app where the user is the trusted operator.
     // Exec approval prompts add unnecessary friction in this context, so we
-    // set security="full" (allow all commands) and ask="off" (never prompt).
-    // If a user has manually configured a stricter ~/.openclaw/exec-approvals.json,
-    // OpenClaw's minSecurity/maxAsk merge will still respect their intent.
+    // set mode="full" (allow all commands, never prompt). OpenClaw 2026.10
+    // replaced the security/ask pair with tools.exec.mode. If a user has
+    // manually configured a stricter ~/.openclaw/exec-approvals.json,
+    // OpenClaw's approval merge will still respect their intent.
     const execConfig = (toolsConfig.exec as Record<string, unknown> | undefined) || {};
-    if (execConfig.security !== 'full' || execConfig.ask !== 'off') {
-      execConfig.security = 'full';
-      execConfig.ask = 'off';
+    if (execConfig.mode !== 'full' || 'security' in execConfig || 'ask' in execConfig) {
+      execConfig.mode = 'full';
+      delete execConfig.security;
+      delete execConfig.ask;
       toolsConfig.exec = execConfig;
       toolsModified = true;
-      console.log('[sanitize] Set tools.exec.security="full" and tools.exec.ask="off" to disable exec approvals for ClawX desktop');
+      console.log('[sanitize] Set tools.exec.mode="full" to disable exec approvals for ClawX desktop');
     }
 
     if (toolsModified) {
@@ -3517,8 +3496,10 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         ? { ...(workshop.autonomous as Record<string, unknown>) }
         : {}
     ) as Record<string, unknown>;
-    if (autonomous.enabled !== false) {
-      autonomous.enabled = false;
+    // OpenClaw 2026.10 retired autonomous.enabled in favor of autonomous.mode.
+    if (autonomous.mode !== 'off' || 'enabled' in autonomous) {
+      autonomous.mode = 'off';
+      delete autonomous.enabled;
       workshop.autonomous = autonomous;
       skillsObj.workshop = workshop;
       skillsModified = true;
