@@ -15,6 +15,8 @@ Use the semantic tokens and substitutions documented in `src/styles/globals.css`
 
 Interactive rows use semantic controls, keyboard activation, accessible names, visible focus styling, and disabled semantics where applicable. Attachment cards may show the decoded local path or normalized remote URL represented by explicit ACP resource or approved `MEDIA:` evidence; paths truncate visually and remain available in the title. Unavailable attachments remain basename-only, and unrelated UI or diagnostics must not expose sensitive absolute host paths.
 
+Text-entry fields and native selects use the neutral focus convention in `globals.css`: a subtly stronger foreground border and a one-pixel low-opacity foreground ring with no offset. Composite text fields place that treatment on the outer container and suppress duplicate rings on their inner textarea. Do not restore hardcoded blue focus borders or thick halos on form fields; preserve visible keyboard focus on buttons and other controls.
+
 ACP whole-turn timing uses localized unit formatting and localized running/completed labels in all four locales. It renders as persistent muted metadata in the assistant-turn footer; copy remains the hover-only action.
 
 Multi-view file previews keep their localized segmented view switcher in the trailing side of the file name/path header instead of allocating a separate content row. The Chat Preview surface exposes a localized, icon-only fullscreen toggle in that header; fullscreen uses the whole Renderer viewport, preserves the selected target and viewer position, exits through the same control or Escape, and closes when Preview becomes inactive. HTML preview retains the `Preview` then `Source` order and defaults to the rendered preview.

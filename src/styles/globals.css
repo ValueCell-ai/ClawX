@@ -65,6 +65,16 @@
  *     Reference: components/layout/Sidebar.tsx, pages/Settings/index.tsx
  *     (theme + language picker).
  *
+ *   FIELD FOCUS
+ *   ─────────────────────────────────────────────────────────────────────
+ *     Inputs, textareas and selects use a quiet neutral focus treatment:
+ *       focus-visible:border-foreground/30 focus-visible:ring-1
+ *       focus-visible:ring-foreground/10 focus-visible:ring-offset-0
+ *     Composite fields use the equivalent focus-within variants on their
+ *     outer container; inner borderless textareas keep ring-0. Avoid blue
+ *     borders, thick halos and offset rings on text-entry surfaces.
+ *     Buttons and other keyboard controls retain their visible focus rings.
+ *
  *   MODAL / SCRIM BACKDROPS
  *   ─────────────────────────────────────────────────────────────────────
  *     bg-black/30 dark:bg-black/60      (canonical: components/ui/sheet.tsx)
@@ -703,8 +713,8 @@
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 .clawx-composer:focus-within {
-  border-color: hsl(var(--primary) / .4);
-  box-shadow: 0 8px 32px -12px hsl(var(--primary) / .2), 0 0 0 3px hsl(var(--primary) / .055);
+  border-color: hsl(var(--foreground) / .25);
+  box-shadow: 0 8px 30px -12px hsl(var(--foreground) / .16), 0 0 0 1px hsl(var(--foreground) / .04);
 }
 .clawx-home-mark { animation: clawx-home-arrive 280ms ease-out both; }
 @keyframes clawx-home-arrive {

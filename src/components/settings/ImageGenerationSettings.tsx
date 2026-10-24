@@ -20,7 +20,7 @@ import {
 import { cn } from '@/lib/utils';
 
 const inputClasses =
-  'h-10 rounded-lg font-mono text-sm bg-surface-input border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
+  'h-10 rounded-lg font-mono text-sm bg-surface-input border-black/10 dark:border-white/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:border-foreground/30 focus-visible:ring-offset-0 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const labelClasses = 'text-sm text-foreground/80 font-medium';
 
 function extractTestOutputPath(result: unknown): string | null {

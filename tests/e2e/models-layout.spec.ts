@@ -1,4 +1,5 @@
 import { navigateToSection } from './fixtures/navigation';
+import { expectQuietFieldFocus } from './fixtures/field-focus';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
 test('model tabs share icon hierarchy and usage rows remain compact with pagination', async ({ launchElectronApp }, testInfo) => {
@@ -56,6 +57,13 @@ test('model tabs share icon hierarchy and usage rows remain compact with paginat
       await page.getByTestId(`models-tab-${tab}`).click();
       await expect(page.getByTestId(title).locator('svg')).toBeVisible();
       await expect(page.getByTestId(field)).toBeVisible();
+      await page.getByTestId(field).focus();
+      await expectQuietFieldFocus(page.getByTestId(field));
+      if (tab === 'voice') {
+        const select = page.getByTestId('asr-protocol-select');
+        await select.focus();
+        await expectQuietFieldFocus(select);
+      }
       await expect(table).toHaveCount(0);
     }
     await page.setViewportSize({ width: 900, height: 650 });

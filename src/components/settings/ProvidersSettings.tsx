@@ -59,7 +59,7 @@ import { hostApi } from '@/lib/host-api';
 import { hostEvents } from '@/lib/host-events';
 import type { OAuthCodeEvent, OAuthErrorEvent, OAuthSuccessEvent } from '@shared/host-events/contract';
 
-const inputClasses = 'h-10 rounded-lg font-mono text-sm bg-surface-input border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
+const inputClasses = 'h-10 rounded-lg font-mono text-sm bg-surface-input border-black/10 dark:border-white/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:border-foreground/30 focus-visible:ring-offset-0 shadow-sm transition-all text-foreground placeholder:text-foreground/40';
 const labelClasses = 'text-sm text-foreground/80 font-medium';
 type CodePlanMode = 'apikey' | 'codeplan';
 
@@ -533,7 +533,7 @@ function ProviderCard({
   };
 
   const currentInputClasses = isDefault
-    ? "h-[40px] rounded-xl font-mono text-meta bg-surface-modal border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
+    ? "h-[40px] rounded-xl font-mono text-meta bg-surface-modal border-black/10 dark:border-white/10 focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:border-foreground/30 focus-visible:ring-offset-0 shadow-sm"
     : inputClasses;
 
   const currentLabelClasses = isDefault ? "text-meta text-muted-foreground" : labelClasses;
@@ -779,8 +779,8 @@ function ProviderCard({
                     onChange={(e) => setFallbackModelsText(e.target.value)}
                     placeholder={t('aiProviders.dialog.fallbackModelIdsPlaceholder')}
                     className={isDefault
-                      ? "min-h-24 w-full rounded-xl border border-black/10 dark:border-white/10 bg-surface-modal px-3 py-2 text-meta font-mono outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 shadow-sm"
-                      : "min-h-24 w-full rounded-xl border border-black/10 dark:border-white/10 bg-transparent px-3 py-2 text-meta font-mono outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 focus-visible:border-blue-500 shadow-sm transition-all text-foreground placeholder:text-foreground/40"}
+                      ? "min-h-24 w-full rounded-xl border border-black/10 dark:border-white/10 bg-surface-modal px-3 py-2 text-meta font-mono outline-none focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:border-foreground/30 focus-visible:ring-offset-0 shadow-sm"
+                      : "min-h-24 w-full rounded-xl border border-black/10 dark:border-white/10 bg-transparent px-3 py-2 text-meta font-mono outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:border-foreground/30 focus-visible:ring-offset-0 shadow-sm transition-all text-foreground placeholder:text-foreground/40"}
                   />
                   <p className="text-xs text-muted-foreground">
                     {t('aiProviders.dialog.fallbackModelIdsHelp')}

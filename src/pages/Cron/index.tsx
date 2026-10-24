@@ -1059,7 +1059,7 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                 placeholder={t('dialog.taskNamePlaceholder')}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+                className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:border-foreground/30 focus-visible:ring-offset-0 shadow-sm transition-all text-foreground placeholder:text-foreground/40"
               />
             </div>
 
@@ -1068,7 +1068,7 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
               <Label htmlFor="message" className="text-sm text-foreground/80 font-bold">
                 {t('dialog.message')}
               </Label>
-              <div className="relative rounded-xl border border-black/10 dark:border-white/10 bg-transparent px-3 pt-2.5 pb-1.5 shadow-sm transition-all focus-within:ring-2 focus-within:ring-primary/50 focus-within:border-primary">
+              <div className="relative rounded-xl border border-black/10 dark:border-white/10 bg-transparent px-3 pt-2.5 pb-1.5 shadow-sm transition-all focus-within:ring-1 focus-within:ring-foreground/10 focus-within:border-foreground/30">
                 {/* Text Row */}
                 <div className="relative">
                   {skillTokenRanges.length > 0 && (
@@ -1247,7 +1247,7 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                             hourlyMinute: Math.min(59, Math.max(0, Math.floor(Number(e.target.value) || 0))),
                           })
                         }
-                        className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+                        className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:border-foreground/30 focus-visible:ring-offset-0 shadow-sm transition-all text-foreground placeholder:text-foreground/40"
                       />
                     </div>
                   )}
@@ -1303,7 +1303,7 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                       placeholder={t('dialog.cronPlaceholder')}
                       value={scheduleForm.customCron}
                       onChange={(e) => updateSchedule({ customCron: e.target.value })}
-                      className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+                      className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:border-foreground/30 focus-visible:ring-offset-0 shadow-sm transition-all text-foreground placeholder:text-foreground/40"
                     />
                   )}
                 </div>
@@ -1330,7 +1330,7 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                       min={toDateInputValue(new Date())}
                       value={scheduleForm.onceDate}
                       onChange={(e) => updateSchedule({ onceDate: e.target.value })}
-                      className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:border-primary shadow-sm transition-all text-foreground placeholder:text-foreground/40"
+                      className="h-[44px] rounded-xl font-mono text-meta bg-transparent border-black/10 dark:border-white/10 focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:border-foreground/30 focus-visible:ring-offset-0 shadow-sm transition-all text-foreground placeholder:text-foreground/40"
                     />
                   </div>
                 </div>

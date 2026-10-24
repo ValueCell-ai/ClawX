@@ -1,6 +1,7 @@
 import type { ElectronApplication } from '@playwright/test';
 
 import { completeSetup, expect, installIpcMocks, test } from './fixtures/electron';
+import { expectQuietFieldFocus } from './fixtures/field-focus';
 
 function stableStringify(value: unknown): string {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -90,9 +91,13 @@ test.describe('cron skill picker', () => {
     await page.getByTestId('cron-new-task-button').click();
     await expect(page.getByTestId('cron-task-dialog')).toBeVisible();
 
+    const name = page.locator('#name');
+    await name.focus();
+    await expectQuietFieldFocus(name);
     const message = page.locator('#message');
     await message.click();
     await message.fill('Draft a new helper');
+    await expectQuietFieldFocus(message.locator('..').locator('..'));
 
     await page.getByTestId('cron-skill-button').click();
     const skillOption = page.getByTestId('cron-skill-option-create-skill');

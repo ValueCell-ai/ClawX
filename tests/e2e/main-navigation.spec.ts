@@ -1,4 +1,5 @@
 import { navigateToSection } from './fixtures/navigation';
+import { expectQuietFieldFocus } from './fixtures/field-focus';
 import type { ElectronApplication } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
 
@@ -42,6 +43,7 @@ test.describe('ClawX main navigation without setup flow', () => {
         await page.getByTestId('sidebar-search-toggle').click();
         const search = page.getByTestId('sidebar-task-search');
         await expect(search).toBeFocused();
+        await expectQuietFieldFocus(search);
         const searchBounds = await search.boundingBox();
         const sidebarBounds = await sidebar.boundingBox();
         expect(searchBounds!.height).toBeLessThanOrEqual(28);

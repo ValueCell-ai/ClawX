@@ -30,6 +30,7 @@ touchedAreas:
   - README.zh-CN.md
   - README.ja-JP.md
 expectedUserBehavior:
+  - Search and form fields share a subtle neutral focus border and one-pixel halo without an offset; composite chat and scheduled-task inputs avoid duplicate blue focus rings.
   - The sidebar keeps its original blue icon and approved compact wordmark asset; collapsed branding retains a keyboard-accessible expand control in both themes.
   - AI models, messaging remote control, and computer operation are direct sidebar pages; old settings capability URLs redirect while retaining query parameters.
   - Home presents an identifiable blue brand, clear invitation, colored skill shortcuts and a softly elevated composer with its compact footer.

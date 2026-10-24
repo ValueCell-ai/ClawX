@@ -1,4 +1,5 @@
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
+import { expectQuietFieldFocus } from './fixtures/field-focus';
 
 const skillNames = ['docx', 'xlsx', 'pptx', 'pdf'];
 const locales = [
@@ -101,6 +102,8 @@ for (const locale of locales) {
         await expect(input).toHaveValue(`/${name}  Keep my draft`);
       }
       expect(await app.evaluate(() => (globalThis as unknown as { homeTestPrompts: unknown[] }).homeTestPrompts)).toEqual([]);
+      await input.focus();
+      await expectQuietFieldFocus(page.locator('.clawx-composer'));
       const box = await page.getByTestId('chat-composer-box').boundingBox();
       const footer = await page.getByTestId('chat-composer-footer').boundingBox();
       const firstShortcut = await page.getByTestId('chat-home-skill-docx').boundingBox();
