@@ -10,6 +10,7 @@ import {
   OPENCLAW_HEARTBEAT_POLL_SENTINEL,
 } from '@shared/chat/openclaw-internal';
 import { useGatewayStore } from './gateway';
+import { useSettingsStore } from './settings';
 import { pickStartupSessionFallback } from './chat/session-selection';
 import {
   applyGatewaySessionsChanged,
@@ -1308,6 +1309,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       return { success: false, error: String(error) };
     }
 
+    void useSettingsStore.getState().removePinnedSessions([key]).catch((error) => console.warn('[pins] Cleanup failed:', error));
     clearSessionLabelHydrationTracking(key);
     localDraftSessionKeys.delete(key);
     useComposerDraftStore.getState().clearDraft(key);
@@ -1352,6 +1354,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
     if (deletedKeys.length === 0) return { deletedKeys, failedKeys };
 
+    void useSettingsStore.getState().removePinnedSessions(deletedKeys).catch((error) => console.warn('[pins] Cleanup failed:', error));
     const deletedSet = new Set(deletedKeys);
     for (const key of deletedKeys) {
       clearSessionLabelHydrationTracking(key);
@@ -1401,11 +1404,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ...Object.keys(state.sessionLastActivity),
       ...Object.keys(composerDrafts),
       ...attentionKeys,
+      ...useSettingsStore.getState().pinnedSessionKeys,
       ...localDraftSessionKeys,
       ...pendingCatalogConfirmationSessionKeys,
       state.currentSessionKey,
     ].filter(belongsToAgent));
 
+    void useSettingsStore.getState().removePinnedSessions([...removedKeys]).catch((error) => console.warn('[pins] Cleanup failed:', error));
     for (const key of removedKeys) {
       clearSessionLabelHydrationTracking(key);
       localDraftSessionKeys.delete(key);

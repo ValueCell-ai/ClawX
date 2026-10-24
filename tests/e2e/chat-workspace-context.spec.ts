@@ -435,7 +435,8 @@ test.describe('ClawX chat workspace context', () => {
 
       const sidebarSession = page.getByTestId(`sidebar-session-${SESSION_KEY}`);
       await sidebarSession.hover();
-      await page.getByRole('button', { name: 'Rename' }).click();
+      await page.getByTestId(`sidebar-session-menu-${SESSION_KEY}`).click();
+      await page.getByRole('menuitem', { name: 'Rename', exact: true }).click();
       await page.getByRole('textbox', { name: 'Session title' }).fill('Renamed conversation');
       await page.getByRole('button', { name: 'Save session title' }).click();
 

@@ -38,6 +38,7 @@ import { useVoiceDictation } from '@/hooks/useVoiceDictation';
 import { VoiceDictationButton } from '@/components/voice/VoiceDictationButton';
 import { MicrophonePermissionDialog } from '@/components/voice/MicrophonePermissionDialog';
 import type { AsrMicrophoneAccessResult } from '@shared/host-api/contract';
+import logoSvg from '@/assets/logo.svg';
 import { ModelIcon } from '@/components/common/ModelIcon';
 import { AcpSessionPlan } from './AcpSessionPlan';
 import { AcpSubagentSessions, type AcpSubagentSession } from './AcpSubagentSessions';
@@ -441,7 +442,7 @@ export function ChatInput({
     onPermissionBlocked: setMicrophoneAccess,
     onUnconfigured: () => {
       toast.info(t('composer.voiceNotConfigured'));
-      navigate('/settings/models?tab=voice');
+      navigate('/models?tab=voice');
     },
     onError: (code) => {
       toast.error(t(`composer.voiceError.${code}`, { defaultValue: t('composer.voiceError.REQUEST') }));
@@ -1168,16 +1169,23 @@ export function ChatInput({
     >
       {welcome && (
         <div data-testid="acp-chat-empty-state" className="mb-3 text-center">
-          <h1 className="mb-7 font-sans text-2xl font-medium tracking-normal text-foreground/90 sm:text-3xl">
+          <div className="clawx-home-mark mb-4 flex items-center justify-center gap-2.5" aria-hidden="true">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/[0.07] ring-1 ring-primary/10 dark:bg-primary/10">
+              <img src={logoSvg} alt="" className="h-8 w-8" />
+            </span>
+            <span className="text-lg font-semibold tracking-tight text-foreground/85">ClawX</span>
+          </div>
+          <h1 className="mb-2 font-sans text-2xl font-medium tracking-normal text-foreground sm:text-[26px]">
             {t('welcome.subtitle')}
           </h1>
+          <p className="mb-7 text-meta leading-relaxed text-muted-foreground">{t('welcome.invitation')}</p>
           <div data-testid="chat-home-skills" className="flex min-h-8 flex-wrap justify-start gap-1.5">
             {([
-              { name: 'docx', icon: FileText },
-              { name: 'xlsx', icon: Table2 },
-              { name: 'pptx', icon: Presentation },
-              { name: 'pdf', icon: FileScan },
-            ] as const).map(({ name, icon: Icon }) => (
+              { name: 'docx', icon: FileText, color: 'text-blue-700 dark:text-blue-400', background: 'bg-blue-500/10' },
+              { name: 'xlsx', icon: Table2, color: 'text-emerald-700 dark:text-emerald-400', background: 'bg-emerald-500/10' },
+              { name: 'pptx', icon: Presentation, color: 'text-orange-700 dark:text-orange-400', background: 'bg-orange-500/10' },
+              { name: 'pdf', icon: FileScan, color: 'text-rose-700 dark:text-rose-400', background: 'bg-rose-500/10' },
+            ] as const).map(({ name, icon: Icon, color, background }) => (
               <button
                 key={name}
                 type="button"
@@ -1185,9 +1193,9 @@ export function ChatInput({
                 disabled={inputDisabled || sending || voiceStatus !== 'idle' || skillsLoading || loadedSkillsScope !== quickSkillsScope || !quickSkills.some((skill) => skill.name === name)}
                 title={skillsError ? t('welcome.skillsFailed') : skillsLoading || loadedSkillsScope !== quickSkillsScope ? t('composer.skillLoading') : !quickSkills.some((skill) => skill.name === name) ? t('welcome.skillUnavailable') : undefined}
                 onClick={() => selectWelcomeSkill(name)}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-black/10 bg-surface-modal px-2.5 text-xs text-foreground/80 transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 dark:border-white/10 dark:hover:bg-white/5"
+                className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-border/70 bg-surface-modal px-2 text-xs text-foreground/80 shadow-sm transition-colors hover:border-primary/25 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 motion-reduce:transition-none"
               >
-                <Icon className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                <span className={cn("flex h-5 w-5 items-center justify-center rounded-md", background, color)}><Icon className="h-3.5 w-3.5" aria-hidden="true" /></span>
                 {t(`welcome.skills.${name}`)}
               </button>
             ))}
@@ -1278,11 +1286,11 @@ export function ChatInput({
           </div>
         )}
 
-        <div className="rounded-2xl border border-black/10 bg-surface-input shadow-sm dark:border-white/10">
+        <div className="clawx-composer rounded-3xl border bg-surface-input">
           {/* Input Container */}
           <div
             data-testid="chat-composer-box"
-            className={cn('relative rounded-t-2xl bg-surface-modal px-4 pt-4 pb-2 transition-all', dragOver && 'ring-1 ring-primary')}
+            className={cn('relative rounded-t-3xl bg-surface-modal px-4 pt-4 pb-2 transition-colors motion-reduce:transition-none', dragOver && 'ring-1 ring-primary')}
           >
             {selectedTarget && (
               <div className="flex flex-wrap gap-2 pb-1.5">
@@ -1338,7 +1346,7 @@ export function ChatInput({
                 disabled={inputDisabled || voiceStatus !== 'idle'}
                 data-testid="chat-composer-input"
                 className={cn(
-                  'relative z-10 min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted-foreground/60',
+                  'relative z-10 min-h-[48px] max-h-[240px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none bg-transparent p-0 text-sm leading-relaxed placeholder:text-muted-foreground/80',
                   welcome && 'min-h-[88px]',
                   skillTokenRanges.length > 0 && 'selection:bg-primary/20',
                 )}
@@ -1582,9 +1590,9 @@ export function ChatInput({
                   disabled={sending ? !canStop : !canSend}
                   size="icon"
                   data-testid="chat-composer-send"
-                  className={`shrink-0 h-8 w-8 rounded-lg transition-colors ${
+                  className={`shrink-0 h-8 w-8 rounded-full transition-colors motion-reduce:transition-none ${
                     (sending || canSend)
-                      ? 'bg-black/5 dark:bg-white/10 text-foreground hover:bg-black/10 dark:hover:bg-white/20'
+                      ? 'bg-primary text-primary-foreground shadow-sm hover:bg-primary/90'
                       : 'text-muted-foreground/50 hover:bg-transparent bg-transparent'
                   }`}
                   variant="ghost"
@@ -1601,7 +1609,7 @@ export function ChatInput({
           </div>
           <div
             data-testid="chat-composer-footer"
-            className="flex min-w-0 items-center justify-between gap-2 rounded-b-2xl border-t border-black/5 bg-surface-input px-3 py-1 text-tiny text-muted-foreground dark:border-white/10"
+            className="flex min-w-0 items-center justify-between gap-2 rounded-b-3xl border-t border-border/40 bg-surface-input px-3 py-1 text-tiny text-muted-foreground dark:border-white/10"
           >
             <div className="flex min-w-0 flex-1 items-center gap-1.5">
               {workspaceLabel && workspacePath && (

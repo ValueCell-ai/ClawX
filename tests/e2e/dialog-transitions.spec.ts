@@ -193,6 +193,7 @@ test.describe('dialog transitions', () => {
       const sessionRow = page.getByTestId(defaultWorkspaceSessionGroupTestId()).getByText('Preserved session');
       await expect(sessionRow).toBeVisible();
       await sessionRow.hover();
+      await page.getByTestId(`sidebar-session-menu-${MAIN_SESSION_KEY}`).click();
       await page.getByTestId(`sidebar-session-delete-${MAIN_SESSION_KEY}`).click();
 
       const confirmDialog = page.getByRole('dialog');
@@ -205,6 +206,7 @@ test.describe('dialog transitions', () => {
 
       await expect(sessionRow).toBeVisible();
       await sessionRow.hover();
+      await page.getByTestId(`sidebar-session-menu-${MAIN_SESSION_KEY}`).click();
       await page.getByTestId(`sidebar-session-delete-${MAIN_SESSION_KEY}`).click();
 
       await expect(confirmDialog).toContainText('Preserved session');

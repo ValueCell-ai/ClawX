@@ -22,8 +22,8 @@ touchedAreas:
   - README.zh-CN.md
   - README.ja-JP.md
 expectedUserBehavior:
-  - The sidebar offers new tasks, assistants and skills, scheduled tasks, conversations, and settings.
-  - Settings separates general preferences, AI models, messaging remote control, computer operation, advanced tools, and help/about.
+  - The sidebar offers new tasks, assistants and skills, AI models, messaging remote control, scheduled tasks, computer operation, conversations, and settings.
+  - App settings separates general preferences, advanced tools, and help/about; capability configuration is accessed directly in the sidebar.
   - Legacy model/channel/computer routes and developer section links remain usable, including model tab query parameters.
   - Developer-only controls stay gated; moving a control never grants permissions or enables it.
 requiredProfiles:

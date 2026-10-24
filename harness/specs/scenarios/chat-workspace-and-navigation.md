@@ -3,6 +3,9 @@ id: chat-workspace-and-navigation
 title: Chat Workspace And Navigation
 type: user-visible-flow
 ownedPaths:
+  - src/components/layout/task-search.ts
+  - tests/e2e/task-sidebar-search-and-pins.spec.ts
+  - tests/unit/sidebar-task-search.test.ts
   - src/App.tsx
   - src/pages/Settings/**
   - src/pages/Models/index.tsx
@@ -31,6 +34,8 @@ ownedPaths:
   - src/stores/session-attention.ts
   - src/stores/chat/session-status.ts
   - src/components/layout/Sidebar.tsx
+  - src/components/layout/BrandWordmark.tsx
+  - src/assets/brand/**
   - src/components/layout/session-buckets.ts
   - src/components/file-preview/ArtifactPanel.tsx
   - src/components/file-preview/WorkspaceBrowserBody.tsx
@@ -99,6 +104,7 @@ conditionalProfiles:
     - workspace selection, binding, sidebar, browser, or question navigation changes
     - Markdown file-preview rendering or syntax highlighting changes
 requiredRules:
+  - task-sidebar-search-and-pins
   - settings-navigation
   - session-workspace-authority
   - renderer-main-boundary
@@ -129,4 +135,6 @@ Model configuration tabs use consistent compact headings, icons and forms. Token
 
 Setup wizard, channel configuration and issue-report dialog headings use the same sans-serif medium-weight typography as management pages. Validate with app-smoke, channels-account-id-validation and settings-issue-report Electron specs.
 
-Primary navigation focuses on tasks, assistants and skills, schedules, and conversations. Settings uses URL-addressable General / AI models / Messaging remote / Computer operation / Advanced / About & help categories. Legacy configuration routes retain queries, developer links retain focus, and developer-only controls remain gated. Skill names and descriptions and technical protocol identifiers are preserved. Validate with `tests/e2e/settings-navigation.spec.ts` and `tests/e2e/management-page-style.spec.ts`.
+Primary navigation exposes tasks, assistants and skills, AI models, messaging remote control, schedules, computer operation, and conversations. App settings uses URL-addressable General / Advanced / About & help categories. Old settings capability URLs redirect to the standalone sidebar pages. Legacy configuration routes retain queries, developer links retain focus, and developer-only controls remain gated. Skill names and descriptions and technical protocol identifiers are preserved. Validate with `tests/e2e/settings-navigation.spec.ts` and `tests/e2e/management-page-style.spec.ts`.
+
+Task catalog search filters eligible rows before pagination/collapse and matches display titles, assistants and workspaces. Pins are exact session keys persisted through existing Main-owned settings; pinned rows render once, missing catalog rows do not prune pins, and successful exact/bulk/assistant deletion removes their pins. Task menus retain keyboard access; canonical busy/unread projections retain priority, with failure status displayed from terminal Gateway catalog state. Validate through `tests/e2e/task-sidebar-search-and-pins.spec.ts` and the session-attention and home-composer specs.

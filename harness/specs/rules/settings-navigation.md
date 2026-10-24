@@ -6,9 +6,10 @@ appliesTo:
   - chat-workspace-and-navigation
 ---
 
-Primary navigation MUST prioritize tasks and reusable capabilities. Model configuration,
-messaging integrations, computer-operation permissions, and developer tools MUST be
-reachable through categorized settings without duplicate sidebar entries.
+Primary navigation MUST expose tasks, assistants and skills, AI models, messaging remote
+control, schedules, and computer operation. App settings MUST group General, Advanced,
+and About/help preferences. Developer tools remain inside Advanced settings; capability
+configuration MUST NOT be duplicated as settings categories.
 
 Settings categories MUST be URL-addressable, keyboard-accessible, and separately
 scrollable. Legacy routes and developer deep links MUST preserve intent and query

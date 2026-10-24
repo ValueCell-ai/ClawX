@@ -1,18 +1,11 @@
-import { Cpu, Info, MessageCircle, Monitor, Settings2, SlidersHorizontal } from 'lucide-react';
-import { Link, useLocation } from 'react-router-dom';
+import { Info, Settings2, SlidersHorizontal } from 'lucide-react';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Models } from '@/pages/Models';
-import { Channels } from '@/pages/Channels';
-import { ComputerUse } from '@/pages/ComputerUse';
-import { useSettingsStore } from '@/stores/settings';
 import { cn } from '@/lib/utils';
 import { SettingsPreferences } from './Preferences';
 
 const categories = [
   { id: 'general', icon: Settings2 },
-  { id: 'models', icon: Cpu },
-  { id: 'channels', icon: MessageCircle },
-  { id: 'computer-use', icon: Monitor },
   { id: 'advanced', icon: SlidersHorizontal },
   { id: 'about', icon: Info },
 ] as const;
@@ -21,11 +14,14 @@ type SettingsCategory = typeof categories[number]['id'];
 export function Settings() {
   const { t } = useTranslation('settings');
   const { pathname, search } = useLocation();
-  const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
   const requested = pathname.split('/')[2];
   const legacyDeveloper = !requested && new URLSearchParams(search).get('section') === 'developer';
   const active: SettingsCategory = legacyDeveloper ? 'advanced'
     : categories.find(({ id }) => id === requested)?.id ?? 'general';
+
+  if (requested && ['models', 'channels', 'computer-use'].includes(requested)) {
+    return <Navigate replace to={`/${requested}${search}`} />;
+  }
 
   return (
     <div data-testid="settings-page" className="-m-6 flex h-[calc(100%+3rem)] min-w-0 flex-col overflow-hidden lg:flex-row">
@@ -44,18 +40,7 @@ export function Settings() {
         </nav>
       </aside>
       <div data-testid="settings-category-content" className="min-h-0 min-w-0 flex-1">
-        {active === 'models' ? <Models embedded />
-          : active === 'channels' ? <Channels embedded />
-          : active === 'computer-use' ? (devModeUnlocked ? <ComputerUse embedded /> : (
-            <div className="mx-auto flex h-full max-w-6xl flex-col p-6 md:p-8">
-              <h1 className="mb-1 font-sans text-2xl font-medium tracking-normal">{t('navigation.computer-use.title')}</h1>
-              <p className="text-sm text-muted-foreground">{t('navigation.computer-use.description')}</p>
-              <div className="mt-6 rounded-xl border border-border/70 bg-surface-modal p-5">
-                <p className="text-sm text-muted-foreground">{t('navigation.computer-use.developerHint')}</p>
-                <Link to="/settings/advanced" className="mt-3 inline-flex text-sm font-medium text-blue-700 underline-offset-4 hover:underline dark:text-blue-400">{t('navigation.openAdvanced')}</Link>
-              </div>
-            </div>
-          )) : <SettingsPreferences section={active} />}
+        <SettingsPreferences section={active} />
       </div>
     </div>
   );

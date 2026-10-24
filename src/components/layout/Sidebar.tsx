@@ -7,6 +7,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
+  Cpu,
+  MessageCircle,
+  Monitor,
+  Search,
+  Pin,
+  PinOff,
+  MoreHorizontal,
+  CircleAlert,
+  Bot,
   Puzzle,
   Clock,
   Settings as SettingsIcon,
@@ -31,7 +40,10 @@ import { useChatStore } from '@/stores/chat';
 import { useSessionAttentionStore } from '@/stores/session-attention';
 import { useGatewayStore } from '@/stores/gateway';
 import { useAgentsStore } from '@/stores/agents';
-import { groupSessionsByWorkspace } from './session-buckets';
+import { groupSessionsByWorkspace, type WorkspaceSessionEntry } from './session-buckets';
+import { matchesTaskSearch } from './task-search';
+import type { ChatSession } from '@/stores/chat';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import {
   shouldIncludeSessionInSidebarList,
   shouldIncludeSessionInWorkspaceDeletion,
@@ -46,6 +58,7 @@ import { formatSessionRelativeTime } from '@/lib/relative-time';
 import { SIDEBAR_COLLAPSED_WIDTH, MAC_SIDEBAR_CHROME_HEIGHT } from '@shared/sidebar-layout';
 import { useTranslation } from 'react-i18next';
 import logoSvg from '@/assets/logo.svg';
+import { BrandWordmark } from './BrandWordmark';
 import { useNewChatAction } from './use-new-chat-action';
 import { isDefaultWorkspacePath } from '@/lib/workspace-context';
 import { useWorkspaceAvailability } from '@/hooks/use-workspace-availability';
@@ -100,6 +113,8 @@ function NavItem({ to, icon, label, badge, collapsed, onClick, testId, activePat
   );
 }
 
+const taskMenuItemClass = 'flex cursor-pointer items-center rounded-lg px-3 py-2 text-sm outline-none focus:bg-black/5 dark:focus:bg-white/10';
+
 const INITIAL_NOW_MS = Date.now();
 const INITIAL_WORKSPACE_SESSION_LIMIT = 5;
 const WORKSPACE_SESSION_LIMIT_INCREMENT = 5;
@@ -144,6 +159,12 @@ export function Sidebar() {
   const setSidebarCollapsed = useSettingsStore((state) => state.setSidebarCollapsed);
   const sidebarWidth = useSettingsStore((state) => state.sidebarWidth);
   const setSidebarWidth = useSettingsStore((state) => state.setSidebarWidth);
+  const pinnedSessionKeys = useSettingsStore((state) => state.pinnedSessionKeys);
+  const toggleSessionPin = useSettingsStore((state) => state.toggleSessionPin);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+  const searchToggleRef = useRef<HTMLButtonElement>(null);
   const chatWorkspacePath = useSettingsStore((state) => state.chatWorkspacePath);
   const recentWorkspacePaths = useSettingsStore((state) => state.recentWorkspacePaths);
   const workspaceLabels = useSettingsStore((state) => state.workspaceLabels);
@@ -151,6 +172,24 @@ export function Sidebar() {
   const removeWorkspace = useSettingsStore((state) => state.removeWorkspace);
   const [isResizing, setIsResizing] = useState(false);
   const stopResizeRef = useRef<(() => void) | null>(null);
+
+  const closeSearch = () => {
+    setSearchQuery('');
+    setSearchOpen(false);
+    searchToggleRef.current?.focus();
+  };
+  useEffect(() => {
+    const searchShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'k') return;
+      if (document.querySelector('[role="dialog"]')) return;
+      event.preventDefault();
+      setSidebarCollapsed(false);
+      setSearchOpen(true);
+      requestAnimationFrame(() => searchRef.current?.focus());
+    };
+    window.addEventListener('keydown', searchShortcut);
+    return () => window.removeEventListener('keydown', searchShortcut);
+  }, [setSidebarCollapsed]);
 
   const sessions = useChatStore((s) => s.sessions);
   const currentSessionKey = useChatStore((s) => s.currentSessionKey);
@@ -385,13 +424,26 @@ export function Sidebar() {
   const workspaceAvailability = useWorkspaceAvailability(
     workspaceSessionGroups.map((group) => group.workspacePath),
   );
-  const displayedWorkspaceSessionGroups = workspaceSessionGroups.filter((group) => (
-    group.sessions.length > 0
-    || (
-      workspaceAvailability[group.workspacePath] === 'unavailable'
-      && !isDefaultWorkspacePath(group.workspacePath)
-    )
-  ));
+  const searchActive = searchQuery.trim().length > 0;
+  const pinnedKeys = new Set(pinnedSessionKeys);
+  const eligibleEntries = workspaceSessionGroups.flatMap((group) => group.sessions.map((entry) => ({ ...entry, group })));
+  const matchesSearch = (entry: typeof eligibleEntries[number]) => matchesTaskSearch(
+    searchQuery, entry.session, sessionLabels,
+    agentNameById[getAgentIdFromSessionKey(entry.session.key)] || getAgentIdFromSessionKey(entry.session.key),
+    entry.group.label, entry.group.workspacePath,
+  );
+  const entriesByKey = new Map(eligibleEntries.map((entry) => [entry.session.key, entry]));
+  const pinnedEntries = pinnedSessionKeys.flatMap((key) => {
+    const entry = entriesByKey.get(key);
+    return entry && matchesSearch(entry) ? [entry] : [];
+  });
+  const displayedWorkspaceSessionGroups = workspaceSessionGroups.map((group) => ({
+    ...group,
+    sessions: group.sessions.filter((entry) => !pinnedKeys.has(entry.session.key) && matchesSearch({ ...entry, group })),
+  })).filter((group) => group.sessions.length > 0 || (!searchActive
+    && workspaceAvailability[group.workspacePath] === 'unavailable'
+    && !isDefaultWorkspacePath(group.workspacePath)));
+  const searchResultCount = pinnedEntries.length + displayedWorkspaceSessionGroups.reduce((total, group) => total + group.sessions.length, 0);
   const allWorkspaceGroupsCollapsed = displayedWorkspaceSessionGroups.length > 0
     && displayedWorkspaceSessionGroups.every((group) => collapsedWorkspaceGroups[getWorkspaceGroupStateKey(group.workspacePath)] ?? false);
 
@@ -406,6 +458,181 @@ export function Sidebar() {
     });
   };
 
+  const focusTaskActions = (key: string) => requestAnimationFrame(() => {
+    const target = document.getElementById(`task-actions-${key}`);
+    if (target) target.focus();
+    else searchToggleRef.current?.focus();
+  });
+  const handleTogglePin = (key: string) => {
+    void toggleSessionPin(key).catch(() => {
+      toast.error(t('chat:sessionList.pinFailed'));
+      focusTaskActions(key);
+    });
+    focusTaskActions(key);
+  };
+
+  const renderSessionRow = ({ session: s, activityMs }: WorkspaceSessionEntry<ChatSession>, workspaceLabel: string, pinned = false) => {
+    const agentId = getAgentIdFromSessionKey(s.key);
+    const agentName = agentNameById[agentId] || agentId;
+    const isEditing = editingSessionKey === s.key;
+    const isCurrentSession = isOnChat && currentSessionKey === s.key;
+    const sessionLabel = getSessionDisplayTitle(s, sessionLabels);
+    const relativeTime = formatSessionRelativeTime(activityMs, nowMs, i18n.language);
+    const runState = projectSessionRunState(s);
+    const attention = sessionAttentionByKey[s.key];
+    const isBusy = runState === 'busy'
+      || (runState === 'unknown' && attention?.observedBusy === true);
+    const isUnread = !isBusy && attention?.unread === true;
+    const lastRunFailed = !isBusy && ['failed', 'error', 'timeout'].includes(s.status?.trim().toLowerCase() ?? '');
+    const channelType = s.channel && s.channel !== 'webchat' ? s.channel : null;
+    const channelName = channelType
+      ? (CHANNEL_NAMES[channelType as keyof typeof CHANNEL_NAMES] ?? channelType)
+      : null;
+
+    return (
+      <div
+        key={s.key}
+        className={cn(
+          'group relative flex items-center rounded-xl transition-colors motion-reduce:transition-none',
+          'hover:bg-black/5 focus-within:bg-black/5 dark:hover:bg-white/5 dark:focus-within:bg-white/5',
+          !isEditing && isCurrentSession
+            ? 'bg-black/5 dark:bg-white/10'
+            : '',
+        )}
+      >
+        {isEditing ? (
+          <div className="flex w-full items-center gap-1 px-1.5 py-1" onBlur={handleRenameBlur}>
+            <Input
+              autoFocus
+              value={editingLabel}
+              onChange={(e) => setEditingLabel(e.target.value)}
+              onKeyDown={handleRenameKeyDown}
+              className="h-7 min-w-0 flex-1 text-meta"
+              aria-label={t('common:sidebar.renameSessionPlaceholder')}
+            />
+            <button
+              type="button"
+              aria-label={t('common:sidebar.saveSessionRename')}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => void handleRenameSubmit()}
+              className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground"
+            >
+              <Check className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              aria-label={t('common:sidebar.cancelSessionRename')}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={handleRenameCancel}
+              className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-destructive"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : (
+          <>
+            <button
+              data-testid={`sidebar-session-${s.key}`}
+              title={[sessionLabel, agentName, workspaceLabel].filter(Boolean).join(' · ')}
+              aria-current={isCurrentSession ? 'page' : undefined}
+              onClick={() => {
+                markRead(s.key);
+                if (currentSessionKey !== s.key) {
+                  switchSession(s.key);
+                }
+                navigate('/');
+              }}
+              onDoubleClick={() => handleStartRename(s.key, sessionLabel)}
+              className={cn(
+                'flex-1 min-w-0 rounded-xl text-left px-2.5 py-2 text-meta focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring group-hover:pr-9 group-focus-within:pr-9 group-has-[[data-state=open]]:pr-9',
+                isCurrentSession
+                  ? 'text-foreground font-medium'
+                  : 'text-foreground/75',
+              )}
+            >
+              <div className="flex min-w-0 items-center gap-1.5">
+                {agentId !== 'main' && (
+                  <Bot aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                )}
+                {channelType && channelName && (
+                  <span
+                    title={channelName}
+                    aria-label={channelName}
+                    className="shrink-0 truncate rounded-full bg-blue-500/10 px-2 py-0.5 text-2xs font-medium text-blue-700 dark:bg-blue-400/10 dark:text-blue-400"
+                  >
+                    {channelName}
+                  </span>
+                )}
+                <span className="min-w-0 flex-1 truncate">{sessionLabel}</span>
+              </div>
+              {pinned && <span className="mt-0.5 block truncate text-2xs text-muted-foreground">{workspaceLabel}</span>}
+            </button>
+            {isBusy ? (
+              <span
+                role="status"
+                data-testid={`sidebar-session-busy-${s.key}`}
+                aria-label={t('chat:sessionList.aiReplying')}
+                title={t('chat:sessionList.aiReplying')}
+                className="shrink-0 pr-2 text-blue-700 group-hover:hidden group-focus-within:hidden group-has-[[data-state=open]]:hidden dark:text-blue-400"
+              >
+                <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
+              </span>
+            ) : isUnread ? (
+              <span
+                role="status"
+                data-testid={`sidebar-session-unread-${s.key}`}
+                aria-label={t('chat:sessionList.unreadReply')}
+                title={t('chat:sessionList.unreadReply')}
+                className="shrink-0 pr-2 group-hover:hidden group-focus-within:hidden group-has-[[data-state=open]]:hidden"
+              >
+                <span aria-hidden="true" className="block h-2 w-2 rounded-full bg-blue-500" />
+              </span>
+            ) : lastRunFailed ? (
+              <span role="status" data-testid={`sidebar-session-failed-${s.key}`} aria-label={t('chat:sessionList.lastRunFailed')} title={t('chat:sessionList.lastRunFailed')}
+                className="shrink-0 pr-2 text-orange-700 group-hover:hidden group-focus-within:hidden group-has-[[data-state=open]]:hidden dark:text-orange-400">
+                <CircleAlert aria-hidden="true" className="h-3.5 w-3.5" />
+              </span>
+            ) : relativeTime ? (
+              <span
+                data-testid={`sidebar-session-time-${s.key}`}
+                title={new Date(activityMs).toLocaleString()}
+                className="shrink-0 pr-2 text-2xs font-medium text-muted-foreground/55 group-hover:hidden group-focus-within:hidden group-has-[[data-state=open]]:hidden"
+              >
+                {relativeTime}
+              </span>
+            ) : null}
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button type="button" id={`task-actions-${s.key}`} data-testid={`sidebar-session-menu-${s.key}`}
+                  aria-label={t('chat:sessionList.taskActions', { title: sessionLabel })}
+                  className="pointer-events-none absolute right-1 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-black/5 focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 data-[state=open]:pointer-events-auto data-[state=open]:opacity-100 dark:hover:bg-white/10">
+                  <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal><DropdownMenu.Content align="start" side="right" sideOffset={4} className="z-50 min-w-36 rounded-xl border border-border bg-surface-modal p-1 shadow-lg">
+                <DropdownMenu.Item className={taskMenuItemClass} data-testid={`sidebar-session-pin-${s.key}`} onSelect={() => {
+                  handleTogglePin(s.key);
+                }}>
+                  {pinned ? <PinOff className="mr-2 h-4 w-4" /> : <Pin className="mr-2 h-4 w-4" />}
+                  {t(pinned ? 'chat:sessionList.unpin' : 'chat:sessionList.pin')}
+                </DropdownMenu.Item>
+                <DropdownMenu.Item className={taskMenuItemClass} onSelect={() => handleStartRename(s.key, sessionLabel)}>
+                  <Pencil className="mr-2 h-4 w-4" />{t('common:sidebar.renameSession')}
+                </DropdownMenu.Item>
+                <DropdownMenu.Item data-testid={`sidebar-session-delete-${s.key}`} className={cn(taskMenuItemClass, "text-destructive focus:text-destructive")} onSelect={() => {
+                  setSessionToDelete({ key: s.key, label: sessionLabel });
+                  setDeleteDialogOpen(true);
+                }}>
+                  <Trash2 className="mr-2 h-4 w-4" />{t('common:sidebar.deleteSession')}
+                </DropdownMenu.Item>
+              </DropdownMenu.Content></DropdownMenu.Portal>
+            </DropdownMenu.Root>
+          </>
+        )}
+      </div>
+    );
+  };
+
   const hiddenRoutes = rendererExtensionRegistry.getHiddenRoutes();
   const extraNavItems = rendererExtensionRegistry.getExtraNavItems();
 
@@ -417,12 +644,15 @@ export function Sidebar() {
       testId: 'sidebar-nav-capabilities',
       activePaths: ['/agents', '/skills'],
     },
+    { to: '/models', icon: <Cpu className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.models'), testId: 'sidebar-nav-models' },
+    { to: '/channels', icon: <MessageCircle className="h-4 w-4" strokeWidth={2} />, label: t('sidebar.channels'), testId: 'sidebar-nav-channels' },
     {
       to: '/cron',
       icon: <Clock className="h-4 w-4" strokeWidth={2} />,
       label: t('sidebar.cronTasks'),
       testId: 'sidebar-nav-cron',
     },
+    { to: '/computer-use', icon: <Monitor className="h-4 w-4" strokeWidth={2} />, label: t('computerUse.title'), testId: 'sidebar-nav-computer-use' },
   ];
 
   const navItems = [
@@ -455,28 +685,36 @@ export function Sidebar() {
 
       {/* Top Header Toggle */}
       <div
-        className={cn('flex shrink-0 items-center p-2 h-8', sidebarCollapsed ? 'justify-center' : 'justify-between')}
+        data-testid="sidebar-brand-header"
+        className={cn('flex h-14 shrink-0 items-center px-3 py-2', sidebarCollapsed ? 'justify-center' : 'justify-between')}
       >
         {!sidebarCollapsed && (
-          <div className="flex items-center gap-2 px-2 overflow-hidden">
-            <img src={logoSvg} alt="ClawX" className="h-5 w-auto shrink-0" />
-            <span className="text-sm font-semibold truncate whitespace-nowrap text-foreground/90">ClawX</span>
+          <div role="img" aria-label="ClawX" data-testid="sidebar-brand" className="flex min-w-0 items-center gap-[9px] overflow-hidden pl-1.5 text-foreground">
+            <img src={logoSvg} alt="" className="h-[25.2px] w-auto shrink-0" />
+            <BrandWordmark className="h-[17.1px] w-[68.4px] shrink-0" />
           </div>
         )}
         <Button
           data-testid="sidebar-collapse-toggle"
+          aria-label={t(sidebarCollapsed ? 'sidebar.expandSidebar' : 'sidebar.collapseSidebar')}
+          title={t(sidebarCollapsed ? 'sidebar.expandSidebar' : 'sidebar.collapseSidebar')}
+          aria-expanded={!sidebarCollapsed}
           variant="ghost"
           size="icon"
           className={cn(
-            'no-drag h-8 w-8 shrink-0 rounded-lg text-foreground/80',
-            'hover:bg-black/5 hover:text-foreground/80 dark:hover:bg-white/5',
+            'no-drag group relative h-8 w-8 shrink-0 rounded-lg text-muted-foreground/60',
+            'hover:bg-black/5 hover:text-foreground focus-visible:text-foreground dark:hover:bg-white/5',
+            sidebarCollapsed && 'h-9 w-10',
           )}
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
         >
           {sidebarCollapsed ? (
-            <PanelLeft className="h-[18px] w-[18px]" />
+            <>
+              <img data-testid="sidebar-collapsed-logo" src={logoSvg} alt="" className="h-[25.2px] w-auto transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0 motion-reduce:transition-none" />
+              <PanelLeft aria-hidden="true" className="absolute h-[18px] w-[18px] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none" />
+            </>
           ) : (
-            <PanelLeftClose className="h-[18px] w-[18px]" />
+            <PanelLeftClose aria-hidden="true" className="h-4 w-4" />
           )}
         </Button>
       </div>
@@ -486,10 +724,12 @@ export function Sidebar() {
         <button
           type="button"
           data-testid="sidebar-new-chat"
+          aria-label={t('sidebar.newChat')}
+          title={sidebarCollapsed ? t('sidebar.newChat') : undefined}
           onClick={handleNewChat}
           className={cn(
             'sidebar-nav-text flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors',
-            'hover:bg-black/5 dark:hover:bg-white/5 text-foreground/80',
+            'text-foreground/80 hover:bg-black/5 dark:hover:bg-white/5',
             sidebarCollapsed && 'justify-center px-0',
           )}
         >
@@ -509,15 +749,23 @@ export function Sidebar() {
       </nav>
 
       {/* Session list — below Settings, only when expanded */}
-      {!sidebarCollapsed && displayedWorkspaceSessionGroups.length > 0 && (
-        <div className="mt-4 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2">
+      {!sidebarCollapsed && (
+        <div className="mt-5 min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2">
           <div className="mb-1 flex items-center justify-between gap-2 pl-2.5">
-            <span className="text-tiny font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
+            <span className="text-tiny font-medium text-muted-foreground">
               {t('chat:sessionList.title')}
             </span>
+            <div className="flex items-center gap-0.5">
+            <button type="button" data-testid="sidebar-search-toggle" ref={searchToggleRef} title={`${t('chat:sessionList.search')} (${isMac ? '⌘K' : 'Ctrl+K'})`}
+              aria-label={t('chat:sessionList.search')} aria-expanded={searchOpen}
+              onClick={() => { setSearchOpen((open) => !open); setSearchQuery(''); }}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:hover:bg-white/10">
+              <Search aria-hidden="true" className="h-3.5 w-3.5" />
+            </button>
             <button
               type="button"
               data-testid="session-list-toggle-all"
+              disabled={searchActive || displayedWorkspaceSessionGroups.length === 0}
               aria-label={allWorkspaceGroupsCollapsed ? t('chat:sessionList.expandAll') : t('chat:sessionList.collapseAll')}
               title={allWorkspaceGroupsCollapsed ? t('chat:sessionList.expandAll') : t('chat:sessionList.collapseAll')}
               onClick={toggleAllWorkspaceGroups}
@@ -531,14 +779,41 @@ export function Sidebar() {
                 )}
               </span>
             </button>
+            </div>
           </div>
 
+          {searchOpen && (
+            <div className="relative mx-2.5 mb-2 mt-1.5" role="search">
+              <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+              <Input autoFocus ref={searchRef} data-testid="sidebar-task-search" value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder={t('chat:sessionList.searchPlaceholder')} aria-label={t('chat:sessionList.search')}
+                onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeSearch(); } }}
+                className="h-7 rounded-lg bg-surface-modal py-1 pl-7 pr-7 text-xs shadow-none" />
+              <button type="button" aria-label={t('chat:sessionList.closeSearch')}
+                onClick={closeSearch}
+                className="absolute right-0.5 top-0.5 flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10">
+                <X aria-hidden="true" className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+          {searchActive && <p role="status" data-testid="sidebar-search-count" className="mb-2 px-2.5 text-tiny text-muted-foreground">{t('chat:sessionList.results', { count: searchResultCount })}</p>}
+          {searchActive && searchResultCount === 0 && <p className="px-3 py-6 text-center text-xs text-muted-foreground">{t('chat:sessionList.noResults')}</p>}
+          {!searchActive && eligibleEntries.length === 0 && <p className="px-2.5 py-3 text-xs leading-relaxed text-muted-foreground">{t('chat:sessionList.emptyHint')}</p>}
+          {pinnedEntries.length > 0 && (
+            <section data-testid="sidebar-pinned-tasks" aria-label={t('chat:sessionList.pinned')} className="mb-4 space-y-0.5">
+              <div className="flex items-center gap-1.5 px-2.5 pb-1.5 pt-2 text-tiny font-medium text-muted-foreground">
+                <Pin aria-hidden="true" className="h-3 w-3" />{t('chat:sessionList.pinned')}
+              </div>
+              {pinnedEntries.map((entry) => renderSessionRow(entry, entry.group.label, true))}
+            </section>
+          )}
           <div className="space-y-1.5">
             {displayedWorkspaceSessionGroups.map((workspaceGroup) => {
               const workspaceStateKey = getWorkspaceGroupStateKey(workspaceGroup.workspacePath);
-              const collapsed = collapsedWorkspaceGroups[workspaceStateKey] ?? false;
+              const collapsed = !searchActive && (collapsedWorkspaceGroups[workspaceStateKey] ?? false);
               const visibleCount = workspaceVisibleSessionCounts[workspaceStateKey] ?? INITIAL_WORKSPACE_SESSION_LIMIT;
-              const visibleSessions = workspaceGroup.sessions.slice(0, visibleCount);
+              const visibleSessions = searchActive ? workspaceGroup.sessions : workspaceGroup.sessions.slice(0, visibleCount);
               const hiddenCount = Math.max(0, workspaceGroup.sessions.length - visibleSessions.length);
               const loadMoreCount = Math.min(WORKSPACE_SESSION_LIMIT_INCREMENT, hiddenCount);
               const workspaceUnavailable = workspaceAvailability[workspaceGroup.workspacePath] === 'unavailable'
@@ -595,7 +870,7 @@ export function Sidebar() {
                             handleStartWorkspaceRename(workspaceGroup.workspacePath, workspaceGroup.label);
                           }
                         }}
-                        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-meta font-semibold text-foreground/75 transition-colors hover:text-foreground"
+                        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-foreground/65 transition-colors hover:text-foreground"
                         title={workspaceGroup.workspacePath}
                       >
                         <ChevronRight
@@ -660,160 +935,7 @@ export function Sidebar() {
 
                   {!collapsed && (
                     <div className="space-y-0.5">
-                      {visibleSessions.map(({ session: s, activityMs }) => {
-                        const agentId = getAgentIdFromSessionKey(s.key);
-                        const agentName = agentNameById[agentId] || agentId;
-                        const isEditing = editingSessionKey === s.key;
-                        const isCurrentSession = isOnChat && currentSessionKey === s.key;
-                        const sessionLabel = getSessionDisplayTitle(s, sessionLabels);
-                        const relativeTime = formatSessionRelativeTime(activityMs, nowMs, i18n.language);
-                        const runState = projectSessionRunState(s);
-                        const attention = sessionAttentionByKey[s.key];
-                        const isBusy = runState === 'busy'
-                          || (runState === 'unknown' && attention?.observedBusy === true);
-                        const isUnread = !isBusy && attention?.unread === true;
-                        const channelType = s.channel && s.channel !== 'webchat' ? s.channel : null;
-                        const channelName = channelType
-                          ? (CHANNEL_NAMES[channelType as keyof typeof CHANNEL_NAMES] ?? channelType)
-                          : null;
-
-                        return (
-                          <div
-                            key={s.key}
-                            className={cn(
-                              'group flex items-center rounded-lg transition-colors',
-                              'hover:bg-black/5 focus-within:bg-black/5 dark:hover:bg-white/5 dark:focus-within:bg-white/5',
-                              !isEditing && isCurrentSession
-                                ? 'bg-black/5 dark:bg-white/10'
-                                : '',
-                            )}
-                          >
-                            {isEditing ? (
-                              <div className="flex w-full items-center gap-1 px-1.5 py-1" onBlur={handleRenameBlur}>
-                                <Input
-                                  autoFocus
-                                  value={editingLabel}
-                                  onChange={(e) => setEditingLabel(e.target.value)}
-                                  onKeyDown={handleRenameKeyDown}
-                                  className="h-7 min-w-0 flex-1 text-meta"
-                                  aria-label={t('common:sidebar.renameSessionPlaceholder')}
-                                />
-                                <button
-                                  type="button"
-                                  aria-label={t('common:sidebar.saveSessionRename')}
-                                  onMouseDown={(e) => e.preventDefault()}
-                                  onClick={() => void handleRenameSubmit()}
-                                  className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground"
-                                >
-                                  <Check className="h-3.5 w-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  aria-label={t('common:sidebar.cancelSessionRename')}
-                                  onMouseDown={(e) => e.preventDefault()}
-                                  onClick={handleRenameCancel}
-                                  className="flex shrink-0 items-center justify-center rounded p-0.5 text-muted-foreground hover:text-destructive"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            ) : (
-                              <>
-                                <button
-                                  data-testid={`sidebar-session-${s.key}`}
-                                  aria-current={isCurrentSession ? 'page' : undefined}
-                                  onClick={() => {
-                                    markRead(s.key);
-                                    if (currentSessionKey !== s.key) {
-                                      switchSession(s.key);
-                                    }
-                                    navigate('/');
-                                  }}
-                                  onDoubleClick={() => handleStartRename(s.key, sessionLabel)}
-                                  className={cn(
-                                    'flex-1 min-w-0 text-left px-2.5 py-1.5 text-meta',
-                                    isCurrentSession
-                                      ? 'text-foreground font-medium'
-                                      : 'text-foreground/75',
-                                  )}
-                                >
-                                  <div className="flex min-w-0 items-center gap-2">
-                                    <span className="shrink-0 rounded-full bg-black/[0.04] px-2 py-0.5 text-2xs font-medium text-foreground/70 dark:bg-white/[0.08]">
-                                      {agentName}
-                                    </span>
-                                    {channelType && channelName && (
-                                      <span
-                                        title={channelName}
-                                        aria-label={channelName}
-                                        className="shrink-0 truncate rounded-full bg-blue-500/10 px-2 py-0.5 text-2xs font-medium text-blue-700 dark:bg-blue-400/10 dark:text-blue-400"
-                                      >
-                                        {channelName}
-                                      </span>
-                                    )}
-                                    <span className="truncate">{sessionLabel}</span>
-                                  </div>
-                                </button>
-                                {isBusy ? (
-                                  <span
-                                    role="status"
-                                    data-testid={`sidebar-session-busy-${s.key}`}
-                                    aria-label={t('chat:sessionList.aiReplying')}
-                                    title={t('chat:sessionList.aiReplying')}
-                                    className="shrink-0 pr-2 text-blue-700 group-hover:hidden group-focus-within:hidden dark:text-blue-400"
-                                  >
-                                    <LoaderCircle aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
-                                  </span>
-                                ) : isUnread ? (
-                                  <span
-                                    role="status"
-                                    data-testid={`sidebar-session-unread-${s.key}`}
-                                    aria-label={t('chat:sessionList.unreadReply')}
-                                    title={t('chat:sessionList.unreadReply')}
-                                    className="shrink-0 pr-2 group-hover:hidden group-focus-within:hidden"
-                                  >
-                                    <span aria-hidden="true" className="block h-2 w-2 rounded-full bg-blue-500" />
-                                  </span>
-                                ) : relativeTime ? (
-                                  <span
-                                    data-testid={`sidebar-session-time-${s.key}`}
-                                    title={new Date(activityMs).toLocaleString()}
-                                    className="shrink-0 pr-2 text-2xs font-medium text-muted-foreground/55 group-hover:hidden group-focus-within:hidden"
-                                  >
-                                    {relativeTime}
-                                  </span>
-                                ) : null}
-                                <div className="hidden items-center gap-0.5 pr-1.5 group-hover:flex group-focus-within:flex">
-                                  <button
-                                    aria-label={t('common:sidebar.renameSession')}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleStartRename(s.key, sessionLabel);
-                                    }}
-                                    className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
-                                  >
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button
-                                    data-testid={`sidebar-session-delete-${s.key}`}
-                                    aria-label={t('common:sidebar.deleteSession')}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSessionToDelete({
-                                        key: s.key,
-                                        label: sessionLabel,
-                                      });
-                                      setDeleteDialogOpen(true);
-                                    }}
-                                    className="flex items-center justify-center rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        );
-                      })}
+                      {visibleSessions.map((entry) => renderSessionRow(entry, workspaceGroup.label))}
 
                       {hiddenCount > 0 && (
                         <button

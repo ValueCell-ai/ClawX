@@ -65,6 +65,7 @@ export interface AppSettings {
 
   // UI State
   sidebarCollapsed: boolean;
+  pinnedSessionKeys: string[];
   devModeUnlocked: boolean;
   chatWorkspacePath: string;
   recentWorkspacePaths: string[];
@@ -121,6 +122,7 @@ function createDefaultSettings(): AppSettings {
 
     // UI State
     sidebarCollapsed: false,
+    pinnedSessionKeys: [],
     devModeUnlocked: false,
     chatWorkspacePath: DEFAULT_WORKSPACE_CWD,
     recentWorkspacePaths: [DEFAULT_WORKSPACE_CWD],

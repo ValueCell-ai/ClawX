@@ -19,6 +19,8 @@
         "error": "Could not complete the operation. Refresh the status and retry; see application logs for details."
     },
     "sidebar": {
+        "collapseSidebar": "Collapse sidebar",
+        "expandSidebar": "Expand sidebar",
         "chat": "Chat",
         "newChat": "New task",
         "cronTasks": "Cron Tasks",
@@ -28,7 +30,7 @@
         "dashboard": "Dashboard",
         "settings": "Settings",
         "devConsole": "Developer Console",
-        "models": "Models",
+        "models": "AI models",
         "deleteSessionConfirm": "Delete \"{{label}}\"?",
         "openClawPage": "OpenClaw console",
         "renameSession": "Rename",

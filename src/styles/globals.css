@@ -132,9 +132,9 @@
     color-scheme: light;
 
     /* ── shadcn semantic tokens (light) ─────────────────────────── */
-    /* Clean neutral page background matching the white/gray light theme. */
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Soft warm neutrals give task surfaces a quieter, more approachable shell. */
+    --background: 40 20% 98.5%;
+    --foreground: 225 23% 15%;
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
@@ -144,20 +144,20 @@
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
     --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted-foreground: 220 10% 44%;
     --accent: 210 40% 96.1%;
     --accent-foreground: 222.2 47.4% 11.2%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
+    --border: 220 13% 89%;
     --input: 214.3 31.8% 91.4%;
     --ring: 221.2 83.2% 53.3%;
     --radius: 0.5rem;
 
     /* ── ClawX neutral surfaces (light) ───────────────────────────
      *
-     * Three stacked neutral layers. The app shell stays white while
-     * recessed controls and the sidebar use subtle gray contrast.
+     * Three stacked neutral layers. The shell uses warm near-white;
+     * white lifted surfaces and recessed controls provide subtle contrast.
      *
      *   --surface-modal   = lifted neutral panels, dialogs, popovers,
      *                       composer, cards
@@ -165,8 +165,8 @@
      *   --surface-sidebar = sidebar neutral navigation rail (often /60)
      * ─────────────────────────────────────────────────────────── */
     --surface-modal: 0 0% 100%;
-    --surface-input: 0 0% 96.5%;
-    --surface-sidebar: 0 0% 96%;
+    --surface-input: 35 14% 96%;
+    --surface-sidebar: 35 12% 95%;
 
     /* ── ClawX usage accents (light) ─────────────────────────────
      *
@@ -694,4 +694,24 @@
   30% {
     transform: translateY(-4px);
   }
+}
+
+/* Composer elevation and focus share the same semantic tokens in both themes. */
+.clawx-composer {
+  border-color: hsl(var(--border) / .85);
+  box-shadow: 0 8px 30px -12px hsl(var(--foreground) / .15), 0 2px 6px -3px hsl(var(--foreground) / .08);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.clawx-composer:focus-within {
+  border-color: hsl(var(--primary) / .4);
+  box-shadow: 0 8px 32px -12px hsl(var(--primary) / .2), 0 0 0 3px hsl(var(--primary) / .055);
+}
+.clawx-home-mark { animation: clawx-home-arrive 280ms ease-out both; }
+@keyframes clawx-home-arrive {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .clawx-home-mark { animation: none; }
+  .clawx-composer { transition: none; }
 }

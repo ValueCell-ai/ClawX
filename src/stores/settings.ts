@@ -42,6 +42,7 @@ interface SettingsState {
   // UI State
   sidebarCollapsed: boolean;
   sidebarWidth: number;
+  pinnedSessionKeys: string[];
   devModeUnlocked: boolean;
   chatWorkspacePath: string;
   recentWorkspacePaths: string[];
@@ -69,6 +70,8 @@ interface SettingsState {
   setAutoCheckUpdate: (value: boolean) => void;
   setSidebarCollapsed: (value: boolean) => void;
   setSidebarWidth: (value: number) => void;
+  toggleSessionPin: (key: string) => Promise<void>;
+  removePinnedSessions: (keys: readonly string[]) => Promise<void>;
   setDevModeUnlocked: (value: boolean) => void;
   setChatWorkspacePath: (workspacePath: string) => void;
   setWorkspaceLabel: (workspacePath: string, label: string) => void;
@@ -95,6 +98,7 @@ const defaultSettings = {
   autoCheckUpdate: true,
   sidebarCollapsed: false,
   sidebarWidth: 280,
+  pinnedSessionKeys: [] as string[],
   devModeUnlocked: false,
   chatWorkspacePath: DEFAULT_WORKSPACE_CWD,
   recentWorkspacePaths: [DEFAULT_WORKSPACE_CWD],
@@ -103,6 +107,14 @@ const defaultSettings = {
 };
 
 const clampSidebarWidth = (value: number) => Math.min(420, Math.max(220, Math.round(value)));
+
+// Serialize only pin writes so rapid pin/unpin actions cannot persist out of order.
+let pinWrites: Promise<unknown> = Promise.resolve();
+function savePins(keys: string[]): Promise<unknown> {
+  const write = pinWrites.catch(() => {}).then(() => hostApi.settings.set('pinnedSessionKeys', keys));
+  pinWrites = write;
+  return write;
+}
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
@@ -118,6 +130,9 @@ export const useSettingsStore = create<SettingsState>()(
           set((state) => ({
             ...state,
             ...settings,
+            ...(Array.isArray(settings.pinnedSessionKeys)
+              ? { pinnedSessionKeys: [...new Set(settings.pinnedSessionKeys.filter((key): key is string => typeof key === 'string' && key.length > 0))] }
+              : { pinnedSessionKeys: state.pinnedSessionKeys }),
             ...(resolvedLanguage ? { language: resolvedLanguage } : {}),
             ...(typeof settings.sidebarWidth === 'number'
               ? { sidebarWidth: clampSidebarWidth(settings.sidebarWidth) }
@@ -171,6 +186,27 @@ export const useSettingsStore = create<SettingsState>()(
         void hostApi.settings.set('autoCheckUpdate', autoCheckUpdate).catch(() => { });
       },
 
+      toggleSessionPin: async (key) => {
+        if (!key.trim()) return;
+        const previous = useSettingsStore.getState().pinnedSessionKeys;
+        const next = previous.includes(key) ? previous.filter((value) => value !== key) : [key, ...previous];
+        set({ pinnedSessionKeys: next });
+        try {
+          await savePins(next);
+        } catch (error) {
+          // A later action owns its newer state and must never be rolled back here.
+          if (useSettingsStore.getState().pinnedSessionKeys === next) set({ pinnedSessionKeys: previous });
+          throw error;
+        }
+      },
+      removePinnedSessions: async (keys) => {
+        const removed = new Set(keys);
+        const previous = useSettingsStore.getState().pinnedSessionKeys;
+        const next = previous.filter((key) => !removed.has(key));
+        if (next.length === previous.length) return;
+        set({ pinnedSessionKeys: next });
+        await savePins(next);
+      },
       setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       setSidebarWidth: (sidebarWidth) => set({ sidebarWidth: clampSidebarWidth(sidebarWidth) }),
       setDevModeUnlocked: (devModeUnlocked) => {

@@ -16,7 +16,8 @@
             "pdf": "PDF 工具"
         },
         "skillUnavailable": "请前往技能页启用或安装此技能。",
-        "skillsFailed": "技能加载失败，请打开技能菜单重试。"
+        "skillsFailed": "技能加载失败，请打开技能菜单重试。",
+        "invitation": "从一份文档、一个问题，或一个新想法开始。"
     },
     "noLogs": "（暂无日志）",
     "scrollToLatest": "回到底部",
@@ -339,7 +340,19 @@
         "deleteWorkspaceCleanupFailed": "会话已删除，但无法清理保存的工作空间记录。",
         "workspaceName": "工作空间名称",
         "saveWorkspaceRename": "保存工作空间名称",
-        "cancelWorkspaceRename": "取消重命名工作空间"
+        "cancelWorkspaceRename": "取消重命名工作空间",
+        "search": "搜索全部任务",
+        "searchPlaceholder": "标题、助手或工作空间",
+        "closeSearch": "关闭搜索",
+        "results": "搜索结果：{{count}}",
+        "noResults": "没有找到匹配的任务",
+        "emptyHint": "开始一个新任务，它会出现在这里。",
+        "pinned": "置顶",
+        "pin": "置顶任务",
+        "unpin": "取消置顶",
+        "pinFailed": "无法保存置顶，请重试。",
+        "taskActions": "「{{title}}」的操作",
+        "lastRunFailed": "上次执行未完成"
     },
     "historyBuckets": {
         "today": "今天",

@@ -16,7 +16,8 @@
             "pdf": "PDF tools"
         },
         "skillUnavailable": "Enable or install this skill in Skills.",
-        "skillsFailed": "Skills could not be loaded. Open the skill menu to retry."
+        "skillsFailed": "Skills could not be loaded. Open the skill menu to retry.",
+        "invitation": "Start with a document, a question, or a new idea."
     },
     "noLogs": "(No logs available yet)",
     "scrollToLatest": "Back to bottom",
@@ -320,7 +321,7 @@
         "placeholder": "Describe a task or add files to get started…"
     },
     "sessionList": {
-        "title": "Sessions",
+        "title": "Recent tasks",
         "collapseAll": "Collapse all",
         "expandAll": "Expand all",
         "loadMore": "Load more",
@@ -339,7 +340,19 @@
         "deleteWorkspaceCleanupFailed": "Sessions were deleted, but the saved workspace entry could not be cleaned up.",
         "workspaceName": "Workspace name",
         "saveWorkspaceRename": "Save workspace name",
-        "cancelWorkspaceRename": "Cancel workspace rename"
+        "cancelWorkspaceRename": "Cancel workspace rename",
+        "search": "Search all tasks",
+        "searchPlaceholder": "Title, assistant, or workspace",
+        "closeSearch": "Close search",
+        "results": "Results: {{count}}",
+        "noResults": "No matching tasks",
+        "emptyHint": "Start a task and find it here.",
+        "pinned": "Pinned",
+        "pin": "Pin task",
+        "unpin": "Unpin task",
+        "pinFailed": "Could not save pinned tasks. Please try again.",
+        "taskActions": "Actions for {{title}}",
+        "lastRunFailed": "Last run did not complete"
     },
     "historyBuckets": {
         "today": "Today",

@@ -127,6 +127,7 @@ export type SettingsSnapshot = Partial<{
   autoCheckUpdate: boolean;
   sidebarCollapsed: boolean;
   sidebarWidth: number;
+  pinnedSessionKeys: string[];
   devModeUnlocked: boolean;
   setupComplete: boolean;
   chatWorkspacePath: string;

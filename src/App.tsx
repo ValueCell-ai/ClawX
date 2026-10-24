@@ -2,7 +2,7 @@
  * Root Application Component
  * Handles routing and global providers
  */
-import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { Component, useEffect } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { Toaster } from 'sonner';
@@ -13,6 +13,9 @@ import { Chat } from './pages/Chat';
 import { Agents } from './pages/Agents';
 import { Skills } from './pages/Skills';
 import { Cron } from './pages/Cron';
+import { Models } from './pages/Models';
+import { Channels } from './pages/Channels';
+import { ComputerUse } from './pages/ComputerUse';
 import { Settings } from './pages/Settings';
 import { Setup } from './pages/Setup';
 import { useSettingsStore } from './stores/settings';
@@ -26,11 +29,6 @@ import { useNewChatAction } from './components/layout/use-new-chat-action';
 import { hostEvents } from './lib/host-events';
 import { useResolvedTheme } from './lib/use-resolved-theme';
 
-
-function LegacySettingsRedirect({ section }: { section: string }) {
-  const { search } = useLocation();
-  return <Navigate replace to={`/settings/${section}${search}`} />;
-}
 
 /**
  * Error Boundary to catch and display React rendering errors
@@ -199,12 +197,12 @@ function App() {
           {/* Main application routes */}
           <Route element={<MainLayout />}>
             <Route path="/" element={<Chat />} />
-            <Route path="/models" element={<LegacySettingsRedirect section="models" />} />
+            <Route path="/models" element={<Models />} />
             <Route path="/agents" element={<Agents />} />
-            <Route path="/channels" element={<LegacySettingsRedirect section="channels" />} />
+            <Route path="/channels" element={<Channels />} />
             <Route path="/skills" element={<Skills />} />
             <Route path="/cron" element={<Cron />} />
-            <Route path="/computer-use" element={<LegacySettingsRedirect section="computer-use" />} />
+            <Route path="/computer-use" element={<ComputerUse />} />
             <Route path="/settings/*" element={<Settings />} />
             {extraRoutes.map((r) => (
               <Route key={r.path} path={r.path} element={<r.component />} />

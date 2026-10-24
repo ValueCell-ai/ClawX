@@ -16,7 +16,8 @@
             "pdf": "PDF ツール"
         },
         "skillUnavailable": "スキル画面でこのスキルを有効化またはインストールしてください。",
-        "skillsFailed": "スキルを読み込めませんでした。スキルメニューを開いて再試行してください。"
+        "skillsFailed": "スキルを読み込めませんでした。スキルメニューを開いて再試行してください。",
+        "invitation": "文書、質問、新しいアイデアから始めましょう。"
     },
     "noLogs": "（ログはまだありません）",
     "scrollToLatest": "最下部に戻る",
@@ -320,7 +321,7 @@
         "placeholder": "タスクを入力するか、ファイルを追加してください…"
     },
     "sessionList": {
-        "title": "セッション一覧",
+        "title": "最近のタスク",
         "collapseAll": "すべて折りたたむ",
         "expandAll": "すべて展開",
         "loadMore": "もっと読み込む",
@@ -339,7 +340,19 @@
         "deleteWorkspaceCleanupFailed": "セッションは削除されましたが、保存済みワークスペースの記録を消去できませんでした。",
         "workspaceName": "ワークスペース名",
         "saveWorkspaceRename": "ワークスペース名を保存",
-        "cancelWorkspaceRename": "ワークスペース名の変更をキャンセル"
+        "cancelWorkspaceRename": "ワークスペース名の変更をキャンセル",
+        "search": "すべてのタスクを検索",
+        "searchPlaceholder": "タイトル、アシスタント、ワークスペース",
+        "closeSearch": "検索を閉じる",
+        "results": "検索結果：{{count}}",
+        "noResults": "一致するタスクはありません",
+        "emptyHint": "新しいタスクを始めると、ここに表示されます。",
+        "pinned": "ピン留め",
+        "pin": "タスクをピン留め",
+        "unpin": "ピン留めを解除",
+        "pinFailed": "ピン留めを保存できませんでした。もう一度お試しください。",
+        "taskActions": "{{title}} の操作",
+        "lastRunFailed": "前回の実行は完了していません"
     },
     "historyBuckets": {
         "today": "今日",

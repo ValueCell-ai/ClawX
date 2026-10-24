@@ -19,6 +19,8 @@
         "error": "操作を完了できませんでした。状態を更新して再試行してください。詳細はアプリのログをご確認ください。"
     },
     "sidebar": {
+        "collapseSidebar": "サイドバーを折りたたむ",
+        "expandSidebar": "サイドバーを展開する",
         "chat": "チャット",
         "newChat": "新しいタスク",
         "cronTasks": "定期タスク",
@@ -28,7 +30,7 @@
         "dashboard": "ダッシュボード",
         "settings": "設定",
         "devConsole": "開発者コンソール",
-        "models": "モデル",
+        "models": "AI モデル",
         "deleteSessionConfirm": "「{{label}}」を削除しますか？",
         "openClawPage": "OpenClaw コンソール",
         "renameSession": "名前を変更",

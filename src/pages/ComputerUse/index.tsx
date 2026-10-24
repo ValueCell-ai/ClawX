@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useSettingsStore } from '@/stores/settings';
 import { useTranslation } from 'react-i18next';
 import type { ComputerUseStatus } from '@shared/host-api/contract';
 import { hostApi } from '@/lib/host-api';
@@ -7,13 +9,15 @@ import { RefreshCw } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 
 export function ComputerUse({ embedded = false }: { embedded?: boolean }) {
-  const { t } = useTranslation('common');
+  const { t } = useTranslation(['common', 'settings']);
+  const devModeUnlocked = useSettingsStore((state) => state.devModeUnlocked);
   const [status, setStatus] = useState<ComputerUseStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [permissionRequestCompleted, setPermissionRequestCompleted] = useState(false);
 
   useEffect(() => {
+    if (!devModeUnlocked) return;
     let cancelled = false;
     const refresh = () => {
       void hostApi.computerUse.status().then((next) => {
@@ -23,7 +27,7 @@ export function ComputerUse({ embedded = false }: { embedded?: boolean }) {
     refresh();
     window.addEventListener('focus', refresh);
     return () => { cancelled = true; window.removeEventListener('focus', refresh); };
-  }, []);
+  }, [devModeUnlocked]);
 
   const run = async (operation: () => Promise<ComputerUseStatus>, requestingPermissions = false) => {
     setBusy(true);
@@ -43,6 +47,19 @@ export function ComputerUse({ embedded = false }: { embedded?: boolean }) {
   const permissions = status?.permissions;
   const granted = permissions?.accessibility && permissions.screenRecording === 'granted';
   const runtimeState = !status?.enabled ? 'off' : status.running ? 'running' : 'unavailable';
+
+  if (!devModeUnlocked) return (
+    <div data-testid="computer-use-page" className={embedded ? 'flex h-full min-h-0 flex-col overflow-hidden' : 'flex flex-col -m-6 h-[calc(100%+3rem)] overflow-hidden'}>
+      <div className="mx-auto flex h-full w-full max-w-6xl flex-col p-6 md:p-8">
+        <h1 className="mb-1 font-sans text-2xl font-medium tracking-normal">{t('computerUse.title')}</h1>
+        <p className="text-sm text-muted-foreground">{t('computerUse.description')}</p>
+        <div className="mt-6 rounded-xl border border-border/70 bg-surface-modal p-5">
+          <p className="text-sm text-muted-foreground">{t('settings:navigation.computer-use.developerHint')}</p>
+          <Link to="/settings/advanced" className="mt-3 inline-flex text-sm font-medium text-blue-700 underline-offset-4 hover:underline dark:text-blue-400">{t('settings:navigation.openAdvanced')}</Link>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className={embedded ? "flex h-full min-h-0 flex-col overflow-hidden" : "flex flex-col -m-6 dark:bg-background h-[calc(100%+3rem)] overflow-hidden"} data-testid="computer-use-page">

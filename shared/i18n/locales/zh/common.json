@@ -19,6 +19,8 @@
         "error": "操作未能完成。请刷新状态后重试，详情请查看应用日志。"
     },
     "sidebar": {
+        "collapseSidebar": "收起侧栏",
+        "expandSidebar": "展开侧栏",
         "chat": "聊天",
         "newChat": "新任务",
         "cronTasks": "定时任务",
@@ -28,7 +30,7 @@
         "dashboard": "仪表盘",
         "settings": "设置",
         "devConsole": "开发者控制台",
-        "models": "模型",
+        "models": "AI 模型",
         "deleteSessionConfirm": "删除「{{label}}」？",
         "openClawPage": "OpenClaw 控制台",
         "renameSession": "重命名",

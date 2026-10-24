@@ -15,6 +15,84 @@ async function readNativeMenuLabels(app: ElectronApplication) {
 }
 
 test.describe('ClawX main navigation without setup flow', () => {
+  test('keeps the brand readable and sidebar controls accessible in both themes', async ({ launchElectronApp }, testInfo) => {
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      const page = await getStableWindow(app);
+      const sidebar = page.getByTestId('sidebar');
+      const brand = page.getByTestId('sidebar-brand');
+      const wordmark = page.getByTestId('sidebar-wordmark');
+      const toggle = page.getByTestId('sidebar-collapse-toggle');
+      const brandColors: string[] = [];
+
+      for (const theme of ['Light', 'Dark']) {
+        await navigateToSection(page, 'general');
+        await page.getByRole('button', { name: theme, exact: true }).click();
+        await page.setViewportSize({ width: theme === 'Light' ? 1280 : 900, height: 800 });
+        await page.getByTestId('sidebar-new-chat').click();
+        await page.mouse.move(400, 400);
+        const newTask = page.getByTestId('sidebar-new-chat');
+        await expect(newTask).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+        const idleNavigation = page.getByTestId('sidebar-nav-models');
+        for (const property of ['border-top-width', 'border-radius', 'padding-top', 'color']) {
+          const expected = await idleNavigation.evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property);
+          await expect(newTask).toHaveCSS(property, expected);
+        }
+        await page.getByTestId('sidebar-search-toggle').click();
+        const search = page.getByTestId('sidebar-task-search');
+        await expect(search).toBeFocused();
+        const searchBounds = await search.boundingBox();
+        const sidebarBounds = await sidebar.boundingBox();
+        expect(searchBounds!.height).toBeLessThanOrEqual(28);
+        expect(searchBounds!.width).toBeLessThanOrEqual(sidebarBounds!.width - 32);
+        await search.press('Escape');
+
+        await expect(brand).toHaveAccessibleName('ClawX');
+        await expect(wordmark).toBeVisible();
+        // A visible mask container can still be blank if its shipped asset fails
+        // to load. Check the actual asset in the Electron renderer too.
+        expect(await wordmark.evaluate(async element => {
+          const source = getComputedStyle(element).maskImage.match(/url\(["']?([^"')]+)["']?\)/)?.[1];
+          if (!source) return false;
+          const image = new Image();
+          image.src = source;
+          await image.decode();
+          return image.naturalWidth >= 304 && image.naturalHeight > 0;
+        })).toBe(true);
+        await expect(toggle).toHaveAccessibleName('Collapse sidebar');
+        const brandBox = await brand.boundingBox();
+        const toggleBox = await toggle.boundingBox();
+        expect(brandBox!.x + brandBox!.width).toBeLessThanOrEqual(toggleBox!.x);
+        brandColors.push(await wordmark.evaluate(element => getComputedStyle(element).color));
+        await page.getByTestId('sidebar-brand-header').screenshot({ path: testInfo.outputPath(`brand-${theme.toLowerCase()}.png`) });
+
+        // Keyboard users can still find the expansion control when the logo
+        // visually replaces the icon in the collapsed rail.
+        await toggle.focus();
+        await page.keyboard.press('Enter');
+        await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        await expect(toggle).toHaveAccessibleName('Expand sidebar');
+        await expect(brand).toHaveCount(0);
+        await expect(page.getByTestId('sidebar-collapsed-logo')).toBeAttached();
+        await expect(sidebar).toHaveCSS('width', '68px');
+        await page.keyboard.press('Tab');
+        await page.mouse.move(400, 400);
+        await expect(page.getByTestId('sidebar-collapsed-logo')).toHaveCSS('opacity', '1');
+        await sidebar.screenshot({ path: testInfo.outputPath(`brand-${theme.toLowerCase()}-collapsed.png`), animations: 'disabled' });
+
+        await toggle.focus();
+        await page.keyboard.press('Enter');
+        await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+        await expect(wordmark).toBeVisible();
+        await expect(page).toHaveURL(/#\/$/);
+      }
+      expect(brandColors[0]).not.toBe(brandColors[1]);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
   test('keeps reload menu commands without application accelerators', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 

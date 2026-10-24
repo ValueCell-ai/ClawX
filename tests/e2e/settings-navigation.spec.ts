@@ -1,13 +1,14 @@
 import { completeSetup, expect, test } from './fixtures/electron';
 import { navigateToSection } from './fixtures/navigation';
 
-test('keeps task navigation concise and separates settings categories', async ({ page }, testInfo) => {
+test('exposes core capabilities in the sidebar and separates app preferences', async ({ page }, testInfo) => {
   await completeSetup(page);
   const sidebar = page.getByTestId('sidebar');
   await expect(sidebar.getByTestId('sidebar-nav-capabilities')).toBeVisible();
-  for (const moved of ['models', 'channels', 'agents', 'skills', 'computer-use']) {
-    await expect(sidebar.getByTestId(`sidebar-nav-${moved}`)).toHaveCount(0);
+  for (const name of ['models', 'channels', 'computer-use']) {
+    await expect(sidebar.getByTestId(`sidebar-nav-${name}`)).toBeVisible();
   }
+  for (const name of ['agents', 'skills']) await expect(sidebar.getByTestId(`sidebar-nav-${name}`)).toHaveCount(0);
   await expect(sidebar.getByTestId('sidebar-open-dev-console')).toHaveCount(0);
 
   await navigateToSection(page, 'agents');
@@ -22,17 +23,19 @@ test('keeps task navigation concise and separates settings categories', async ({
   await expect(page.getByTestId('settings-nav-general')).toHaveAttribute('aria-current', 'page');
   await page.screenshot({ path: testInfo.outputPath('settings-general.png'), animations: 'disabled' });
 
-  await page.getByTestId('settings-nav-models').click();
+  for (const name of ['models', 'channels', 'computer-use']) await expect(page.getByTestId(`settings-nav-${name}`)).toHaveCount(0);
+  await navigateToSection(page, 'models');
   await expect(page.getByTestId('providers-settings')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Light', exact: true })).toHaveCount(0);
-  await expect(page.getByTestId('settings-nav-models')).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByTestId('sidebar-nav-models')).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByTestId('settings-page')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('settings-models.png'), animations: 'disabled' });
 
-  await page.getByTestId('settings-nav-channels').click();
+  await navigateToSection(page, 'channels');
   await expect(page.getByRole('heading', { name: 'Messaging remote', exact: true })).toBeVisible();
   await expect(page.getByTestId('providers-settings')).toHaveCount(0);
 
-  await page.getByTestId('settings-nav-computer-use').click();
+  await navigateToSection(page, 'computer-use');
   await expect(page.getByText(/Computer operation is experimental/)).toBeVisible();
   await expect(page.getByTestId('computer-use-toggle')).toHaveCount(0);
   await page.getByRole('link', { name: 'Open advanced settings' }).click();
@@ -52,19 +55,19 @@ test('preserves legacy links, selected model tabs, browser history and developer
   await completeSetup(page);
   await navigateToSection(page, 'advanced');
   await page.getByTestId('settings-dev-mode-switch').click();
-  await page.evaluate(() => { window.location.hash = '#/models?tab=voice'; });
-  await expect(page).toHaveURL(/#\/settings\/models\?tab=voice$/);
+  await page.evaluate(() => { window.location.hash = '#/settings/models?tab=voice'; });
+  await expect(page).toHaveURL(/#\/models\?tab=voice$/);
   await expect(page.getByTestId('asr-settings')).toBeVisible();
 
-  await page.getByTestId('settings-nav-general').click();
+  await page.getByTestId('sidebar-nav-settings').click();
   await page.goBack();
   await expect(page.getByTestId('models-tab-voice')).toHaveAttribute('data-state', 'active');
   for (const [legacy, destination, testId] of [
     ['channels', 'channels', 'channels-page'],
     ['computer-use', 'computer-use', 'computer-use-page'],
   ]) {
-    await page.evaluate((path) => { window.location.hash = `#/${path}`; }, legacy);
-    await expect(page).toHaveURL(new RegExp(`#/settings/${destination}$`));
+    await page.evaluate((path) => { window.location.hash = `#/settings/${path}`; }, legacy);
+    await expect(page).toHaveURL(new RegExp(`#/${destination}$`));
     await expect(page.getByTestId(testId)).toBeVisible();
   }
   await page.evaluate(() => { window.location.hash = '#/settings?section=developer'; });
@@ -76,12 +79,12 @@ test('localizes categories and keeps settings usable in narrow windows', async (
   await completeSetup(page);
   await navigateToSection(page, 'general');
   for (const [language, heading] of [['中文', '消息遥控'], ['日本語', 'メッセージ遠隔操作'], ['Русский', 'Управление через мессенджеры']]) {
-    await page.getByTestId('settings-nav-general').click();
+    await navigateToSection(page, 'general');
     await page.getByRole('button', { name: language, exact: true }).click();
     await expect(page.getByRole('button', { name: language, exact: true })).toHaveClass(/(?:^|\s)bg-black\/5(?:\s|$)/);
-    await expect(page.getByTestId('settings-nav-channels')).toHaveText(heading);
+    await expect(page.getByTestId('sidebar-nav-channels')).toHaveText(heading);
     if (language === '中文') await page.screenshot({ path: testInfo.outputPath('settings-chinese-general.png'), animations: 'disabled' });
-    await page.getByTestId('settings-nav-channels').focus();
+    await page.getByTestId('sidebar-nav-channels').focus();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
     if (language === '中文') await page.screenshot({ path: testInfo.outputPath('settings-chinese.png'), animations: 'disabled' });
@@ -91,7 +94,7 @@ test('localizes categories and keeps settings usable in narrow windows', async (
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     }
   }
-  await page.getByTestId('settings-nav-general').click();
+  await navigateToSection(page, 'general');
   await page.getByRole('button', { name: '中文', exact: true }).click();
   await page.setViewportSize({ width: 900, height: 650 });
   await page.getByRole('button', { name: '深色', exact: true }).click();

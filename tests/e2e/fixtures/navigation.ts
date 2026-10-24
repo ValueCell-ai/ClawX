@@ -7,7 +7,7 @@ export async function navigateToSection(page: Page, section: string): Promise<vo
     await page.getByTestId(`capabilities-tab-${section}`).click();
     return;
   }
-  if (['models', 'channels', 'computer-use', 'general', 'advanced', 'about', 'settings'].includes(section)) {
+  if (['general', 'advanced', 'about', 'settings'].includes(section)) {
     await page.getByTestId('sidebar-nav-settings').click();
     if (section !== 'settings') await page.getByTestId(`settings-nav-${section}`).click();
     return;

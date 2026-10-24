@@ -627,16 +627,17 @@ describe('ChatInput agent targeting', () => {
     expect(workspaceSelector.compareDocumentPosition(gatewayStatus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('places context usage before the gateway status in the composer footer', () => {
+  it('keeps context usage in model controls and workspace status in the compact footer', () => {
     renderChatInput(vi.fn(), { used: 25_000, size: 100_000 });
 
     const indicator = screen.getByTestId('chat-composer-context-usage');
     const footer = screen.getByTestId('chat-composer-footer');
     const gatewayStatus = screen.getByTestId('chat-composer-gateway-status');
 
-    expect(footer).toContainElement(indicator);
+    expect(screen.getByTestId('chat-composer-model-controls')).toContainElement(indicator);
+    expect(footer).not.toContainElement(indicator);
     expect(footer).toContainElement(gatewayStatus);
-    expect(screen.getByTestId('chat-composer-box')).not.toContainElement(indicator);
+    expect(screen.getByTestId('chat-composer-box')).toContainElement(indicator);
     expect(indicator.compareDocumentPosition(gatewayStatus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
