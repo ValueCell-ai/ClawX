@@ -1,3 +1,4 @@
+import { selectValue } from './fixtures/radix-select';
 import { navigateToSection } from './fixtures/navigation';
 import type { ElectronApplication, Page } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
@@ -231,10 +232,10 @@ test.describe('ClawX voice dictation', () => {
       await expect(page).toHaveURL(/tab=voice/);
       await expect(page.getByTestId('asr-settings')).toBeVisible();
 
-      await expect(page.getByTestId('asr-protocol-select')).toHaveValue('transcriptions');
+      await expect(page.getByTestId('asr-protocol-select')).toHaveAttribute('value', 'transcriptions');
       await expect(page.getByTestId('asr-base-url-suffix')).toBeVisible();
 
-      await page.getByTestId('asr-protocol-select').selectOption('chat');
+      await selectValue(page.getByTestId('asr-protocol-select'), 'chat');
       await expect(page.getByTestId('asr-preset-select')).toContainText('Alibaba Cloud Model Studio');
       await expect(page.getByTestId('asr-base-url-input')).toHaveValue(
         'https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',

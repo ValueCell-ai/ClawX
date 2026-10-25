@@ -1,3 +1,4 @@
+import { selectValue } from './fixtures/radix-select';
 import { navigateToSection } from './fixtures/navigation';
 import { completeSetup, expect, test } from './fixtures/electron';
 
@@ -121,11 +122,11 @@ test.describe('Channels binding regression', () => {
 
     const newAccountRow = page.getByTestId(`channel-account-feishu-${newAccountId}`);
     await expect(newAccountRow).toBeVisible();
-    const bindingSelect = newAccountRow.locator('select');
-    await expect(bindingSelect).toHaveValue('');
+    const bindingSelect = newAccountRow.getByRole('combobox');
+    await expect(bindingSelect).toHaveAttribute('value', '');
 
-    await bindingSelect.selectOption('code');
-    await expect(bindingSelect).toHaveValue('code');
+    await selectValue(bindingSelect, 'code');
+    await expect(bindingSelect).toHaveAttribute('value', 'code');
 
     const counters = await electronApp.evaluate(() => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

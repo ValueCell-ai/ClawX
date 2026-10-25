@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
+import { Select, SelectItem } from '@/components/ui/select';
 import { hostApi } from '@/lib/host-api';
 import { parseAsrErrorCode, type AsrErrorCode } from '@shared/asr/errors';
 import {
@@ -178,14 +178,14 @@ export function AsrSettings() {
               <Select
                 id="asr-protocol"
                 value={protocol}
-                onChange={(e) => handleProtocolChange(e.target.value as AsrProtocol)}
+                onValueChange={(value) => handleProtocolChange(value as AsrProtocol)}
                 className={cn(inputClasses, 'w-full')}
                 data-testid="asr-protocol-select"
               >
                 {ASR_PROTOCOLS.map((protocolKey) => (
-                  <option key={protocolKey} value={protocolKey}>
+                  <SelectItem key={protocolKey} value={protocolKey}>
                     {t(`settings:asr.protocol.${protocolKey}`)}
-                  </option>
+                  </SelectItem>
                 ))}
               </Select>
             </div>
@@ -196,14 +196,14 @@ export function AsrSettings() {
               <Select
                 id="asr-preset"
                 value={preset}
-                onChange={(e) => handlePresetChange(e.target.value as AsrPreset)}
+                onValueChange={(value) => handlePresetChange(value as AsrPreset)}
                 className={cn(inputClasses, 'w-full')}
                 data-testid="asr-preset-select"
               >
                 {ASR_PRESETS_BY_PROTOCOL[protocol].map((presetKey) => (
-                  <option key={presetKey} value={presetKey}>
+                  <SelectItem key={presetKey} value={presetKey}>
                     {t(`settings:asr.presets.${presetKey}`)}
-                  </option>
+                  </SelectItem>
                 ))}
               </Select>
               {preset === 'bailian' ? (
@@ -286,15 +286,15 @@ export function AsrSettings() {
                 <Select
                   id="asr-language"
                   value={language}
-                  onChange={(e) => setLanguage(e.target.value)}
+                  onValueChange={(value) => setLanguage(value)}
                   className={cn(inputClasses, 'w-full')}
                   data-testid="asr-language-input"
                 >
-                  <option value="">{t('settings:asr.languageAuto')}</option>
+                  <SelectItem value="">{t('settings:asr.languageAuto')}</SelectItem>
                   {ASR_LANGUAGE_OPTIONS.map((code) => (
-                    <option key={code} value={code}>
+                    <SelectItem key={code} value={code}>
                       {code}
-                    </option>
+                    </SelectItem>
                   ))}
                 </Select>
               </div>

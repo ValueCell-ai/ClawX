@@ -95,7 +95,7 @@ for (const language of ['zh', 'en', 'ja', 'ru']) {
       await selector.click();
       await expect(page.getByTestId('chat-agent-option-coder')).toHaveAttribute('aria-current', 'true');
       await expect(page.getByTestId('chat-agent-open-main')).toHaveCount(0);
-      await expect(page.getByTestId('chat-agent-picker-menu').getByRole('button')).toHaveCount(2);
+      await expect(page.getByTestId('chat-agent-picker-menu').getByRole('menuitemradio')).toHaveCount(2);
       const menuLabels = { zh: ['选择 Agent', '默认模型：model-coder'], en: ['Choose Agent', 'Default model: model-coder'], ja: ['Agent を選択', '既定のモデル：model-coder'], ru: ['Выбрать агента', 'Модель по умолчанию: model-coder'] };
       const [menuTitle, modelLabel] = menuLabels[language as keyof typeof menuLabels];
       await expect(page.getByTestId('chat-agent-picker-menu').getByText(menuTitle, { exact: true })).toBeVisible();

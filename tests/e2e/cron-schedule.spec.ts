@@ -1,3 +1,4 @@
+import { selectValue } from './fixtures/radix-select';
 import { expectMenuSelection } from './fixtures/menu-selection';
 import { completeSetup, expect, installIpcMocks, test } from './fixtures/electron';
 
@@ -74,11 +75,11 @@ test.describe('cron schedule builder', () => {
     await expect(recurrenceSelect).toBeVisible();
 
     // Weekly recurrence reveals the weekday selector.
-    await recurrenceSelect.selectOption('weekly');
+    await selectValue(recurrenceSelect, 'weekly');
     await expect(page.getByTestId('cron-weekday-select')).toBeVisible();
 
     // Custom recurrence reveals the cron expression field.
-    await recurrenceSelect.selectOption('custom');
+    await selectValue(recurrenceSelect, 'custom');
     await expect(page.getByTestId('cron-custom-input')).toBeVisible();
 
     // Switching to the Once tab reveals date + time inputs.
@@ -89,7 +90,7 @@ test.describe('cron schedule builder', () => {
 
     // The custom 24h time picker exposes hours 0-23 and no AM/PM controls.
     await page.locator('#cron-once-time').click();
-    const timePicker = page.locator('#cron-once-time').locator('..');
+    const timePicker = page.getByTestId('cron-once-time-menu');
     const selectedTimeCells = timePicker.locator('[aria-current="true"]');
     await expect(selectedTimeCells).toHaveCount(2);
     await expect(selectedTimeCells.nth(0)).toHaveCSS('height', '28px');

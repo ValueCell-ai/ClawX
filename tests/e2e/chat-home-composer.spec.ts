@@ -1,3 +1,4 @@
+import { settleFloatingSurface } from './fixtures/floating-ui';
 import { expectMenuSelection } from './fixtures/menu-selection';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 import { expectQuietFieldFocus } from './fixtures/field-focus';
@@ -92,6 +93,7 @@ for (const locale of locales) {
       await expect(page.getByTestId('chat-home-skill-docx')).toBeEnabled();
       expect(await page.getByTestId('chat-home-skills').boundingBox()).toEqual(loadingBounds);
       await page.getByTestId('chat-composer-skill').click();
+      await settleFloatingSurface(page.getByTestId('chat-skill-picker-menu'));
       const docxOption = page.getByTestId('chat-composer-skill-option-docx');
       const legacyOption = page.getByTestId('chat-composer-skill-option-legacy-report');
       await expect(docxOption.getByText('OpenClaw', { exact: true })).toHaveCount(1);

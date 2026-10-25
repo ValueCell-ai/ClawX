@@ -124,16 +124,12 @@
  *     where a divergent Apple-blue is explicitly desired (rare).
  *     Reference: pages/Models "+ Add Provider" trigger.
  *
- *   NATIVE <select> BACKGROUNDS
+ *   DROPDOWNS / SELECTS
  *   ─────────────────────────────────────────────────────────────────────
- *     Native selects MUST keep an opaque themed background
- *     (`bg-background` or `bg-surface-input`) — never `bg-transparent`.
- *     Chromium paints the dropdown popup with the select's own computed
- *     background/color, so a transparent select renders a white popup
- *     behind light option text in dark mode (Windows especially).
- *     When sharing `inputClasses` (which use `bg-transparent`) with a
- *     select, append `bg-background` to the select's className.
- *     Reference: components/ui/select.tsx, components/settings/AsrSettings.tsx.
+ *     Use shared Radix wrappers and clawx-floating-surface motion.
+ *     Popup surfaces use bg-surface-modal; triggers use semantic tokens.
+ *     Keep Content mounted for exit and respect prefers-reduced-motion.
+ *     Radix owns portals, keyboard focus, dismissal and collisions.
  * ────────────────────────────────────────────────────────────────────────── */
 
 @layer base {
@@ -267,6 +263,31 @@
   /* 28px single-line rows; description rows grow with their content. */
   .clawx-menu-item {
     @apply min-h-7 rounded-lg px-3 py-1;
+  }
+
+  /* Shared Radix wrappers keep closing surfaces mounted until the exit ends. */
+  .clawx-floating-surface {
+    transform-origin: var(--clawx-floating-origin, center);
+    animation: clawx-floating-in 140ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .clawx-popover-surface { --clawx-floating-origin: var(--radix-popover-content-transform-origin); }
+  .clawx-dropdown-surface { --clawx-floating-origin: var(--radix-dropdown-menu-content-transform-origin); }
+  .clawx-select-surface { --clawx-floating-origin: var(--radix-select-content-transform-origin); }
+  .clawx-floating-surface[data-state='closed'] {
+    /* Override the inline pointer-events used by modal Radix layers. */
+    pointer-events: none !important;
+    animation: clawx-floating-out 90ms ease-in;
+  }
+  @keyframes clawx-floating-in {
+    from { opacity: 0; transform: scale(0.98); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  @keyframes clawx-floating-out {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0; transform: scale(0.98); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .clawx-floating-surface[data-state] { animation: none; }
   }
 
   .sidebar-nav-text.sidebar-nav-text {

@@ -12,6 +12,9 @@ import {
 } from 'react';
 import { Presentation, Table2, FileScan, SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, Bot, Search, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import * as DropdownMenu from '@/components/ui/dropdown-menu';
+import { hasFloatingSurface } from '@/components/ui/floating-ui';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { MenuSelectionIndicator } from '@/components/ui/menu-selection';
 import { menuOptionStateClass } from '@/components/ui/menu-selection-styles';
 import { Textarea } from '@/components/ui/textarea';
@@ -362,10 +365,6 @@ export function ChatInput({
     end: number;
     direction: 'forward' | 'backward' | 'none';
   }>());
-  const pickerRef = useRef<HTMLDivElement>(null);
-  const skillPickerRef = useRef<HTMLDivElement>(null);
-  const modelPickerRef = useRef<HTMLDivElement>(null);
-  const workspaceMenuRef = useRef<HTMLDivElement>(null);
   const contextUsageSourceRef = useRef<{ value: unknown; modelRef: string | null } | undefined>(undefined);
   const isComposingRef = useRef(false);
   const gatewayStatus = useGatewayStore((s) => s.status);
@@ -569,7 +568,7 @@ export function ChatInput({
   useLayoutEffect(() => {
     if (inputDisabled || !textareaRef.current) return;
     const textarea = textareaRef.current;
-    textarea.focus();
+    if (!hasFloatingSurface()) textarea.focus();
     if (!draftKey) return;
 
     const savedSelection = draftSelectionsRef.current.get(draftKey);
@@ -579,41 +578,24 @@ export function ChatInput({
     textarea.setSelectionRange(start, end, savedSelection?.direction ?? 'none');
   }, [draftKey, inputDisabled]);
 
-  useEffect(() => {
-    if (!pickerOpen && !skillPickerOpen && !modelPickerOpen && !workspaceMenuOpen) return;
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      const insideAgentPicker = pickerRef.current?.contains(target);
-      const insideSkillPicker = skillPickerRef.current?.contains(target);
-      const insideModelPicker = modelPickerRef.current?.contains(target);
-      const insideWorkspaceMenu = workspaceMenuRef.current?.contains(target);
-      if (!insideAgentPicker && !insideSkillPicker && !insideModelPicker && !insideWorkspaceMenu) {
-        setPickerOpen(false);
-        setSkillPickerOpen(false);
-        setModelPickerOpen(false);
-        setWorkspaceMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-    };
-  }, [modelPickerOpen, pickerOpen, skillPickerOpen, workspaceMenuOpen]);
+  const handlePickerOpenChange = useCallback((picker: 'agent' | 'skill' | 'model' | 'workspace', open: boolean) => {
+    if (picker === 'workspace' && open && workspaceSelectorDisabled) return;
+    const setters = { agent: setPickerOpen, skill: setSkillPickerOpen, model: setModelPickerOpen, workspace: setWorkspaceMenuOpen };
+    if (open) {
+      for (const [name, setOpen] of Object.entries(setters)) setOpen(name === picker);
+    } else {
+      setters[picker](false);
+    }
+  }, [workspaceSelectorDisabled]);
 
-  useEffect(() => {
-    if (!pickerOpen && !skillPickerOpen && !modelPickerOpen && !workspaceMenuOpen) return;
-    const handleDocumentKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      setPickerOpen(false);
-      setSkillPickerOpen(false);
-      setModelPickerOpen(false);
-      setWorkspaceMenuOpen(false);
-    };
-    document.addEventListener('keydown', handleDocumentKeyDown, true);
-    return () => {
-      document.removeEventListener('keydown', handleDocumentKeyDown, true);
-    };
-  }, [modelPickerOpen, pickerOpen, skillPickerOpen, workspaceMenuOpen]);
+  const handlePickerCloseAutoFocus = useCallback((event: Event) => {
+    event.preventDefault();
+    if (hasFloatingSurface('open')) return;
+    const active = document.activeElement;
+    if (!active || active === document.body || active.closest('[data-slot="dropdown-menu-content"], [data-slot="popover-content"]')) {
+      textareaRef.current?.focus();
+    }
+  }, []);
 
   useEffect(() => {
     setSelectedSkill((prev) => {
@@ -745,7 +727,6 @@ export function ChatInput({
     if (!currentAgent || switchingModelRef) return;
     if (modelRef === effectiveModelRef) {
       setModelPickerOpen(false);
-      textareaRef.current?.focus();
       return;
     }
 
@@ -761,29 +742,14 @@ export function ChatInput({
       toast.error(t('composer.modelSwitchFailed', { error: String(error) }));
     } finally {
       setSwitchingModelRef(null);
-      textareaRef.current?.focus();
+      if (!hasFloatingSurface()) textareaRef.current?.focus();
     }
   }, [currentAgent, defaultModelRef, effectiveModelRef, switchingModelRef, t, updateAgentModel]);
-
-  const handleWorkspaceButtonClick = useCallback(() => {
-    if (workspaceSelectorDisabled) return;
-    setPickerOpen(false);
-    setSkillPickerOpen(false);
-    setModelPickerOpen(false);
-    setWorkspaceMenuOpen((open) => !open);
-  }, [workspaceSelectorDisabled]);
-
-  const handleWorkspaceKeyDown = useCallback((event: React.KeyboardEvent) => {
-    if (event.key !== 'Escape') return;
-    setWorkspaceMenuOpen(false);
-    event.stopPropagation();
-  }, []);
 
   const handleSelectWorkspace = useCallback((path: string) => {
     if (workspaceSelectorDisabled || !onSelectWorkspace) return;
     onSelectWorkspace(path);
     setWorkspaceMenuOpen(false);
-    textareaRef.current?.focus();
   }, [onSelectWorkspace, workspaceSelectorDisabled]);
 
   const handleSelectDefaultWorkspace = useCallback(() => {
@@ -1344,7 +1310,9 @@ export function ChatInput({
               </Button>
 
               {showAgentPicker && (
-                <div ref={pickerRef} className="shrink-0">
+                <div className="shrink-0">
+                  <DropdownMenu.Root open={pickerOpen} onOpenChange={(open) => handlePickerOpenChange('agent', open)} modal={false}>
+                  <DropdownMenu.Trigger asChild>
                   <Button
                     variant="ghost"
                     data-testid="chat-composer-agent"
@@ -1352,12 +1320,6 @@ export function ChatInput({
                       'h-8 gap-1.5 rounded-lg px-1.5 text-meta text-foreground/80 hover:bg-black/5 dark:hover:bg-white/10 transition-colors',
                       pickerOpen && 'bg-black/5 dark:bg-white/10'
                     )}
-                    onClick={() => {
-                      setSkillPickerOpen(false);
-                      setModelPickerOpen(false);
-                      setWorkspaceMenuOpen(false);
-                      setPickerOpen((open) => !open);
-                    }}
                     disabled={sending || imageGenerating || !!switchingModelRef}
                     title={t('composer.executionAgent', { agent: currentAgentName })}
                     aria-label={t('composer.executionAgent', { agent: currentAgentName })}
@@ -1367,12 +1329,12 @@ export function ChatInput({
                     <span className="max-w-[120px] truncate">{currentAgentName}</span>
                     <ChevronDown className="h-3 w-3 shrink-0" />
                   </Button>
-                  {pickerOpen && (
-                    <div data-testid="chat-agent-picker-menu" className="absolute left-0 bottom-full z-20 mb-2 w-96 max-w-full overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Portal><DropdownMenu.Content side="top" align="start" sideOffset={8} onCloseAutoFocus={handlePickerCloseAutoFocus} data-testid="chat-agent-picker-menu" className="w-96 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
                       <div className="px-3 py-1.5 text-tiny font-medium text-muted-foreground/80">
                         {t('composer.executionAgentTitle')}
                       </div>
-                      <div className="clawx-menu-list max-h-64 overflow-y-auto">
+                      <DropdownMenu.RadioGroup value={currentAgentId} className="clawx-menu-list max-h-64 overflow-y-auto">
                         {agents.map((agent) => (
                           <AgentPickerItem
                             key={agent.id}
@@ -1381,17 +1343,18 @@ export function ChatInput({
                             onSelect={() => {
                               if (agent.id !== currentAgentId) onSelectAgent?.(agent.id);
                               setPickerOpen(false);
-                              textareaRef.current?.focus();
                             }}
                           />
                         ))}
-                      </div>
-                    </div>
-                  )}
+                      </DropdownMenu.RadioGroup>
+                    </DropdownMenu.Content></DropdownMenu.Portal>
+                  </DropdownMenu.Root>
                 </div>
               )}
 
-              <div ref={skillPickerRef} className="shrink-0">
+              <div className="shrink-0">
+                  <Popover open={skillPickerOpen} onOpenChange={(open) => handlePickerOpenChange('skill', open)}>
+                  <PopoverTrigger asChild>
                 <button
                   type="button"
                   data-testid="chat-composer-skill"
@@ -1399,20 +1362,14 @@ export function ChatInput({
                     'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
                     (skillPickerOpen || selectedSkill) && 'text-foreground',
                   )}
-                  onClick={() => {
-                    setPickerOpen(false);
-                    setModelPickerOpen(false);
-                    setWorkspaceMenuOpen(false);
-                    setSkillPickerOpen((open) => !open);
-                  }}
                   disabled={inputDisabled || sending}
                   title={t('composer.pickSkill')}
                 >
                   <span>{t('composer.skillButton')}</span>
                   <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', skillPickerOpen && 'rotate-180')} />
                 </button>
-                {skillPickerOpen && (
-                  <div data-testid="chat-skill-picker-menu" className="absolute left-0 bottom-full z-20 mb-2 w-96 max-w-full overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
+                </PopoverTrigger>
+                  <PopoverContent side="top" align="start" onCloseAutoFocus={handlePickerCloseAutoFocus} data-testid="chat-skill-picker-menu" className="w-96 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
                     <div className="flex items-center gap-2 rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
                       <Search className="h-3.5 w-3.5 text-muted-foreground" />
                       <input
@@ -1462,7 +1419,7 @@ export function ChatInput({
                               setSkillPickerOpen(false);
                               setSkillQuery('');
                               requestAnimationFrame(() => {
-                                textareaRef.current?.focus();
+                                if (!hasFloatingSurface()) textareaRef.current?.focus();
                                 const cursorPosition = adjustedStart + leadingSpace.length + nextToken.length;
                                 textareaRef.current?.setSelectionRange(cursorPosition, cursorPosition);
                               });
@@ -1471,8 +1428,8 @@ export function ChatInput({
                         ))
                       )}
                     </div>
-                  </div>
-                )}
+                  </PopoverContent>
+                </Popover>
               </div>
 
               <div data-testid="chat-composer-model-controls" className="ml-auto flex min-w-0 items-center gap-1">
@@ -1484,7 +1441,9 @@ export function ChatInput({
                   />
                 )}
                 {showModelPicker && (
-                  <div ref={modelPickerRef} className="relative min-w-0">
+                  <div className="relative min-w-0">
+                  <DropdownMenu.Root open={modelPickerOpen} onOpenChange={(open) => handlePickerOpenChange('model', open)} modal={false}>
+                  <DropdownMenu.Trigger asChild>
                     <button
                       type="button"
                       data-testid="chat-model-picker-button"
@@ -1492,12 +1451,6 @@ export function ChatInput({
                         'inline-flex h-8 max-w-[140px] sm:max-w-[220px] items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',
                         (modelPickerOpen || switchingModelRef) && 'text-foreground',
                       )}
-                      onClick={() => {
-                        setPickerOpen(false);
-                        setSkillPickerOpen(false);
-                        setWorkspaceMenuOpen(false);
-                        setModelPickerOpen((open) => !open);
-                      }}
                       disabled={inputDisabled || sending || !currentAgent || !!switchingModelRef}
                       title={t('composer.pickModel')}
                     >
@@ -1509,15 +1462,15 @@ export function ChatInput({
                       <span className="truncate">{currentModelLabel}</span>
                       <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', modelPickerOpen && 'rotate-180')} />
                     </button>
-                    {modelPickerOpen && (
-                      <div
-                        className="absolute right-0 bottom-full z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
+                    </DropdownMenu.Trigger>
+                  <DropdownMenu.Portal><DropdownMenu.Content side="top" align="end" sideOffset={8} onCloseAutoFocus={handlePickerCloseAutoFocus}
+                        className="w-72 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
                         data-testid="chat-model-picker-menu"
                       >
                         <div className="px-3 py-1.5 text-tiny font-medium text-muted-foreground/80">
                           {t('composer.modelPickerTitle')}
                         </div>
-                        <div className="max-h-64 space-y-1 overflow-y-auto">
+                        <DropdownMenu.RadioGroup value={effectiveModelRef || ""} className="max-h-64 space-y-1 overflow-y-auto">
                           {modelGroups.map((group) => (
                             <div key={group.providerKey} role="group" aria-label={group.providerName}
                               data-testid={`chat-model-provider-group-${group.providerKey}`}>
@@ -1526,8 +1479,8 @@ export function ChatInput({
                               </div>
                               <div className="clawx-menu-list">
                                 {group.options.map((option) => (
+                                  <DropdownMenu.RadioItem key={option.modelRef} value={option.modelRef} asChild>
                                   <button
-                                    key={option.modelRef}
                                     type="button"
                                     onClick={() => void handleSelectModel(option.modelRef)}
                                     className={cn(
@@ -1544,14 +1497,15 @@ export function ChatInput({
                                     </span>
                                     <MenuSelectionIndicator selected={option.modelRef === effectiveModelRef} />
                                   </button>
+                                  </DropdownMenu.RadioItem>
                                 ))}
                               </div>
                             </div>
                           ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                        </DropdownMenu.RadioGroup>
+                      </DropdownMenu.Content></DropdownMenu.Portal>
+                    </DropdownMenu.Root>
+                </div>
                 )}
 
                 {devModeUnlocked && (
@@ -1594,15 +1548,17 @@ export function ChatInput({
           >
             <div className="flex min-w-0 flex-1 items-center gap-1.5">
               {workspaceLabel && workspacePath && (
-                <div ref={workspaceMenuRef} className="relative min-w-0 shrink" onKeyDown={handleWorkspaceKeyDown}>
+                <div className="relative min-w-0 shrink">
+                  <DropdownMenu.Root open={workspaceMenuOpen} onOpenChange={(open) => handlePickerOpenChange('workspace', open)} modal={false}>
+                  <DropdownMenu.Trigger asChild>
                   <button
                     type="button"
                     data-testid="chat-workspace-selector"
                     title={workspacePath}
+                    disabled={workspaceSelectorDisabled}
                     aria-disabled={workspaceSelectorDisabled ? 'true' : undefined}
                     aria-expanded={!workspaceSelectorDisabled ? workspaceMenuOpen : undefined}
                     tabIndex={workspaceSelectorDisabled ? -1 : undefined}
-                    onClick={workspaceSelectorDisabled ? undefined : handleWorkspaceButtonClick}
                     className={cn(
                       'inline-flex min-w-0 max-w-[260px] items-center gap-1 rounded-lg border border-transparent px-1.5 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                       'text-tiny font-medium text-foreground/75 transition-colors',
@@ -1619,11 +1575,13 @@ export function ChatInput({
                       <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform', workspaceMenuOpen && 'rotate-180')} />
                     )}
                   </button>
-                  {workspaceMenuOpen && !workspaceSelectorDisabled && (
-                    <div
+                  </DropdownMenu.Trigger>
+                  <DropdownMenu.Portal><DropdownMenu.Content side="top" align="start" sideOffset={8} onCloseAutoFocus={handlePickerCloseAutoFocus}
                       data-testid="chat-workspace-menu"
-                      className="clawx-menu-list absolute bottom-full left-0 z-20 mb-2 max-h-80 w-64 overflow-y-auto rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
+                      className="clawx-menu-list max-h-80 w-64 overflow-y-auto rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
                     >
+                      <DropdownMenu.RadioGroup value={isDefaultWorkspacePath(workspacePath) ? "default" : normalizeWorkspacePath(workspacePath) || ""}>
+                      <DropdownMenu.RadioItem value="default" asChild>
                       <button
                         type="button"
                         data-testid="chat-workspace-default"
@@ -1638,11 +1596,13 @@ export function ChatInput({
                         <span className="min-w-0 flex-1 truncate">{t('composer.defaultWorkspaceOption')}</span>
                         <MenuSelectionIndicator selected={isDefaultWorkspacePath(workspacePath)} />
                       </button>
+                      </DropdownMenu.RadioItem>
                       {workspaceOptions.map((option) => {
                         const optionPath = normalizeWorkspacePath(option.path);
                         if (!optionPath || isDefaultWorkspacePath(optionPath)) return null;
                         const selected = optionPath === normalizeWorkspacePath(workspacePath);
                         return (
+                          <DropdownMenu.RadioItem key={optionPath} value={optionPath} asChild>
                           <button
                             key={optionPath}
                             type="button"
@@ -1659,9 +1619,12 @@ export function ChatInput({
                             <span className="min-w-0 flex-1 truncate">{option.label}</span>
                             <MenuSelectionIndicator selected={selected} />
                           </button>
+                          </DropdownMenu.RadioItem>
                         );
                       })}
                       <div className="my-1 border-t border-black/5 dark:border-white/10" />
+                      </DropdownMenu.RadioGroup>
+                      <DropdownMenu.Item asChild>
                       <button
                         type="button"
                         data-testid="chat-workspace-choose-other"
@@ -1671,8 +1634,9 @@ export function ChatInput({
                         <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         <span className="min-w-0 flex-1 truncate">{t('composer.chooseOtherWorkspaceOption')}</span>
                       </button>
-                    </div>
-                  )}
+                      </DropdownMenu.Item>
+                    </DropdownMenu.Content></DropdownMenu.Portal>
+                  </DropdownMenu.Root>
                 </div>
               )}
             </div>
@@ -1808,6 +1772,7 @@ function AgentPickerItem({
 }) {
   const { t } = useTranslation('chat');
   return (
+    <DropdownMenu.RadioItem value={agent.id} asChild>
     <button
       type="button"
       onClick={onSelect}
@@ -1826,5 +1791,6 @@ function AgentPickerItem({
       </span>
       <MenuSelectionIndicator selected={selected} />
     </button>
+    </DropdownMenu.RadioItem>
   );
 }

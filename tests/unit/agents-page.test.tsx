@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router-dom';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -121,7 +122,7 @@ describe('Agents page status refresh', () => {
       return vi.fn();
     });
 
-    render(<Agents />);
+    render(<AgentsWithRouter />);
 
     await waitFor(() => {
       expect(fetchAgentsMock).toHaveBeenCalledTimes(1);
@@ -141,7 +142,7 @@ describe('Agents page status refresh', () => {
   it('refetches channel accounts when the gateway transitions to running after mount', async () => {
     gatewayState.status = { state: 'starting', port: 18789 };
 
-    const { rerender } = render(<Agents />);
+    const { rerender } = render(<AgentsWithRouter />);
 
     await waitFor(() => {
       expect(fetchAgentsMock).toHaveBeenCalledTimes(1);
@@ -150,7 +151,7 @@ describe('Agents page status refresh', () => {
 
     gatewayState.status = { state: 'running', port: 18789 };
     await act(async () => {
-      rerender(<Agents />);
+      rerender(<AgentsWithRouter />);
     });
 
     await waitFor(() => {
@@ -161,7 +162,7 @@ describe('Agents page status refresh', () => {
   it('does not render the legacy gateway warning during transient stopped status', async () => {
     gatewayState.status = { state: 'stopped', port: 18789 };
 
-    render(<Agents />);
+    render(<AgentsWithRouter />);
 
     await waitFor(() => {
       expect(fetchAgentsMock).toHaveBeenCalledTimes(1);
@@ -205,7 +206,7 @@ describe('Agents page status refresh', () => {
     ];
     providersState.defaultAccountId = 'openrouter-default';
 
-    render(<Agents />);
+    render(<AgentsWithRouter />);
 
     await waitFor(() => {
       expect(fetchAgentsMock).toHaveBeenCalledTimes(1);
@@ -248,13 +249,13 @@ describe('Agents page status refresh', () => {
       },
     ];
 
-    const { rerender } = render(<Agents />);
+    const { rerender } = render(<AgentsWithRouter />);
 
     expect(await screen.findByText('Main')).toBeInTheDocument();
 
     agentsState.loading = true;
     await act(async () => {
-      rerender(<Agents />);
+      rerender(<AgentsWithRouter />);
     });
 
     expect(screen.getByText('Main')).toBeInTheDocument();
@@ -267,9 +268,11 @@ describe('Agents page status refresh', () => {
     refreshProviderSnapshotMock.mockImplementation(() => new Promise(() => {}));
     channelsAccountsMock.mockImplementation(() => new Promise(() => {}));
 
-    const { container } = render(<Agents />);
+    const { container } = render(<AgentsWithRouter />);
 
     expect(container.querySelector('svg.animate-spin')).toBeTruthy();
-    expect(screen.queryByText('title')).not.toBeInTheDocument();
+    expect(screen.getByText('title')).toBeInTheDocument();
   });
 });
+
+function AgentsWithRouter() { return <MemoryRouter><Agents /></MemoryRouter>; }

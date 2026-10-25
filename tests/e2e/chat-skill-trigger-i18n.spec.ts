@@ -1,3 +1,4 @@
+import { settleFloatingSurface } from './fixtures/floating-ui';
 import { expectMenuSelection } from './fixtures/menu-selection';
 import type { ElectronApplication } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
@@ -127,6 +128,7 @@ test.describe('ClawX chat skill trigger', () => {
           await page.getByTestId(trigger).click();
           const popup = page.getByTestId(menu);
           await expect(popup).toBeVisible();
+          await settleFloatingSurface(popup);
           if (menu === 'chat-agent-picker-menu') {
             await expect(popup.locator('[aria-current="true"]')).toHaveCSS('height', '44px');
             await expectMenuSelection(popup.locator('[aria-current="true"]'));

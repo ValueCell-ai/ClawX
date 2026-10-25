@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import * as DropdownMenu from '@/components/ui/dropdown-menu';
 import { AppWindow, ChevronDown, ExternalLink, FolderOpen, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';

@@ -158,10 +158,10 @@ describe('AsrSettings', () => {
     fireEvent.click(link);
     expect(openExternalMock).toHaveBeenCalledWith('https://cloud.siliconflow.cn/me/account/ak');
 
-    fireEvent.change(screen.getByTestId('asr-preset-select'), { target: { value: 'openai' } });
+    await selectChoice(screen.getByTestId('asr-preset-select'), 'openai');
     expect(screen.queryByTestId('asr-api-key-link')).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByTestId('asr-protocol-select'), { target: { value: 'chat' } });
+    await selectChoice(screen.getByTestId('asr-protocol-select'), 'chat');
     fireEvent.click(screen.getByTestId('asr-api-key-link'));
     expect(openExternalMock).toHaveBeenCalledWith('https://bailian.console.aliyun.com/?apiKey=1');
   });
@@ -173,10 +173,9 @@ describe('AsrSettings', () => {
 
     const languageSelect = await screen.findByTestId('asr-language-input');
     expect(languageSelect).toHaveValue('');
-    expect(languageSelect.children).toHaveLength(3);
-    expect(languageSelect.children[0]).toHaveTextContent('Auto-detect (recommended)');
-    expect(languageSelect.children[1]).toHaveTextContent('zh');
-    expect(languageSelect.children[2]).toHaveTextContent('en');
+    fireEvent.keyDown(languageSelect, { key: 'ArrowDown' });
+    expect((await screen.findAllByRole('option')).map(option => option.textContent)).toEqual(['Auto-detect (recommended)', 'zh', 'en']);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
   });
 
   it('overwrites base URL and model with the preset defaults when switching presets', async () => {
@@ -185,12 +184,12 @@ describe('AsrSettings', () => {
     renderAsrSettings();
     await screen.findByTestId('asr-base-url-input');
 
-    fireEvent.change(screen.getByTestId('asr-preset-select'), { target: { value: 'siliconflow' } });
+    await selectChoice(screen.getByTestId('asr-preset-select'), 'siliconflow');
 
     expect(screen.getByTestId('asr-base-url-input')).toHaveValue(ASR_PRESET_DEFAULTS.siliconflow.baseUrl);
     expect(screen.getByTestId('asr-model-input')).toHaveValue(ASR_PRESET_DEFAULTS.siliconflow.model);
 
-    fireEvent.change(screen.getByTestId('asr-preset-select'), { target: { value: 'groq' } });
+    await selectChoice(screen.getByTestId('asr-preset-select'), 'groq');
 
     expect(screen.getByTestId('asr-base-url-input')).toHaveValue(ASR_PRESET_DEFAULTS.groq.baseUrl);
     expect(screen.getByTestId('asr-model-input')).toHaveValue(ASR_PRESET_DEFAULTS.groq.model);
@@ -204,7 +203,7 @@ describe('AsrSettings', () => {
 
     expect(screen.getByTestId('asr-base-url-suffix')).toHaveTextContent('/audio/transcriptions');
 
-    fireEvent.change(screen.getByTestId('asr-preset-select'), { target: { value: 'custom' } });
+    await selectChoice(screen.getByTestId('asr-preset-select'), 'custom');
 
     expect(screen.queryByTestId('asr-base-url-suffix')).not.toBeInTheDocument();
     expect(screen.getByTestId('asr-base-url-input')).toHaveAttribute(
@@ -212,7 +211,7 @@ describe('AsrSettings', () => {
       'https://api.example.com/v1/audio/transcriptions',
     );
 
-    fireEvent.change(screen.getByTestId('asr-preset-select'), { target: { value: 'openai' } });
+    await selectChoice(screen.getByTestId('asr-preset-select'), 'openai');
 
     expect(screen.getByTestId('asr-base-url-suffix')).toBeInTheDocument();
   });
@@ -225,12 +224,13 @@ describe('AsrSettings', () => {
 
     expect(screen.getByTestId('asr-protocol-select')).toHaveValue('transcriptions');
 
-    fireEvent.change(screen.getByTestId('asr-protocol-select'), { target: { value: 'chat' } });
+    await selectChoice(screen.getByTestId('asr-protocol-select'), 'chat');
 
     const presetSelect = screen.getByTestId('asr-preset-select');
     expect(presetSelect).toHaveValue('bailian');
-    expect(Array.from(presetSelect.children).map((option) => option.getAttribute('value')))
-      .toEqual(['bailian', 'custom']);
+    fireEvent.keyDown(presetSelect, { key: 'ArrowDown' });
+    expect((await screen.findAllByRole('option')).map(option => option.getAttribute('data-value'))).toEqual(['bailian', 'custom']);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
     expect(screen.getByTestId('asr-base-url-input')).toHaveValue(
       'https://<WorkspaceId>.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
     );
@@ -241,7 +241,7 @@ describe('AsrSettings', () => {
     expect(screen.getByTestId('asr-bailian-workspace-hint')).toBeInTheDocument();
     expect(screen.getByTestId('asr-api-key-link')).toHaveAttribute('title', 'Open the provider console to get an API key');
 
-    fireEvent.change(presetSelect, { target: { value: 'custom' } });
+    await selectChoice(presetSelect, 'custom');
 
     expect(screen.queryByTestId('asr-bailian-dialect-hint')).not.toBeInTheDocument();
     expect(screen.queryByTestId('asr-bailian-workspace-hint')).not.toBeInTheDocument();
@@ -315,7 +315,7 @@ describe('AsrSettings', () => {
 
     fireEvent.change(screen.getByTestId('asr-base-url-input'), { target: { value: 'https://example.com/v1' } });
     fireEvent.change(screen.getByTestId('asr-model-input'), { target: { value: 'whisper-1' } });
-    fireEvent.change(screen.getByTestId('asr-language-input'), { target: { value: 'zh' } });
+    await selectChoice(screen.getByTestId('asr-language-input'), 'zh');
     fireEvent.click(screen.getByTestId('asr-save-button'));
 
     await waitFor(() => {
@@ -379,3 +379,11 @@ describe('AsrSettings', () => {
     expect(toastSuccessMock).not.toHaveBeenCalled();
   });
 });
+
+async function selectChoice(trigger: HTMLElement, value: string) {
+  fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+  const options = await screen.findAllByRole('option');
+  const option = options.find(item => item.getAttribute('data-value') === value);
+  if (!option) throw new Error(`Missing option ${value}`);
+  fireEvent.keyDown(option, { key: 'Enter' });
+}

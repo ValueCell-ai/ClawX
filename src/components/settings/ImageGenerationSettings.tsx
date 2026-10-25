@@ -1,3 +1,4 @@
+import { Select, SelectItem } from '@/components/ui/select';
 /**
  * Global image generation settings (agents.defaults.imageGenerationModel).
  */
@@ -401,20 +402,20 @@ export function ImageGenerationSettings() {
               <Label htmlFor="image-gen-test-agent" className={labelClasses}>
                 {t('imageGeneration.testAgent')}
               </Label>
-              <select
+              <Select
                 id="image-gen-test-agent"
                 value={testAgentId}
-                onChange={(e) => setTestAgentId(e.target.value)}
+                onValueChange={(value) => setTestAgentId(value)}
                 className={cn(inputClasses, 'w-full')}
                 data-testid="image-generation-test-agent"
               >
                 {(snapshot?.agents ?? []).map((agent) => (
-                  <option key={agent.id} value={agent.id}>
+                  <SelectItem key={agent.id} value={agent.id}>
                     {agent.name}
                     {agent.isDefault ? ` (${t('imageGeneration.defaultAgent')})` : ''}
-                  </option>
+                  </SelectItem>
                 ))}
-              </select>
+              </Select>
             </div>
             <Button
               variant="outline"

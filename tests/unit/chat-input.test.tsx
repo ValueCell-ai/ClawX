@@ -318,8 +318,8 @@ describe('ChatInput execution agent and composer', () => {
       name: '17% context used: 68,000 / 400,000 tokens',
     })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('chat-model-picker-button'));
-    fireEvent.click(screen.getByRole('button', { name: 'gpt-b', exact: true }));
+    fireEvent.keyDown(screen.getByTestId('chat-model-picker-button'), { key: 'ArrowDown' });
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true }));
     await waitFor(() => {
       expect(agentsState.updateAgentModel).toHaveBeenCalledWith('main', 'custom-bbbbbbbb/gpt-b');
     });
@@ -660,7 +660,7 @@ describe('ChatInput execution agent and composer', () => {
     expect(button).toHaveClass('border-transparent');
     expect(button).not.toHaveClass('border-black/10');
 
-    fireEvent.click(button);
+    fireEvent.keyDown(button, { key: 'ArrowDown' });
 
     expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
   });
@@ -684,7 +684,7 @@ describe('ChatInput execution agent and composer', () => {
       </TooltipProvider>,
     );
 
-    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.keyDown(screen.getByTestId('chat-workspace-selector'), { key: 'ArrowDown' });
     expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('chat-workspace-choose-other'));
 
@@ -699,7 +699,7 @@ describe('ChatInput execution agent and composer', () => {
     expect(onSelectWorkspace).toHaveBeenCalledWith('/Users/alex/next-project');
   });
 
-  it('uses disclosure semantics for workspace options instead of menu roles', () => {
+  it('uses Radix menu and radio semantics for workspace options', () => {
     render(
       <TooltipProvider>
         <ChatInput
@@ -713,13 +713,13 @@ describe('ChatInput execution agent and composer', () => {
     );
 
     const button = screen.getByTestId('chat-workspace-selector');
-    fireEvent.click(button);
+    fireEvent.keyDown(button, { key: 'ArrowDown' });
 
     expect(button).toHaveAttribute('aria-expanded', 'true');
-    expect(button).not.toHaveAttribute('aria-haspopup', 'menu');
-    expect(screen.getByTestId('chat-workspace-menu')).not.toHaveAttribute('role', 'menu');
-    expect(screen.getByTestId('chat-workspace-default')).not.toHaveAttribute('role', 'menuitem');
-    expect(screen.getByTestId('chat-workspace-choose-other')).not.toHaveAttribute('role', 'menuitem');
+    expect(button).toHaveAttribute('aria-haspopup', 'menu');
+    expect(screen.getByTestId('chat-workspace-menu')).toHaveAttribute('role', 'menu');
+    expect(screen.getByTestId('chat-workspace-default')).toHaveAttribute('role', 'menuitemradio');
+    expect(screen.getByTestId('chat-workspace-choose-other')).toHaveAttribute('role', 'menuitem');
   });
 
   it('closes the workspace menu with Escape', () => {
@@ -736,7 +736,7 @@ describe('ChatInput execution agent and composer', () => {
     );
 
     const button = screen.getByTestId('chat-workspace-selector');
-    fireEvent.click(button);
+    fireEvent.keyDown(button, { key: 'ArrowDown' });
     expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
 
     fireEvent.keyDown(button, { key: 'Escape' });
@@ -759,7 +759,7 @@ describe('ChatInput execution agent and composer', () => {
     );
 
     const button = screen.getByTestId('chat-workspace-selector');
-    fireEvent.click(button);
+    fireEvent.keyDown(button, { key: 'ArrowDown' });
     expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
 
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -781,7 +781,7 @@ describe('ChatInput execution agent and composer', () => {
       </TooltipProvider>,
     );
 
-    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.keyDown(screen.getByTestId('chat-workspace-selector'), { key: 'ArrowDown' });
 
     const ancestorClasses: string[] = [];
     let element = screen.getByTestId('chat-workspace-menu').parentElement;
@@ -807,7 +807,7 @@ describe('ChatInput execution agent and composer', () => {
       </TooltipProvider>,
     );
 
-    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.keyDown(screen.getByTestId('chat-workspace-selector'), { key: 'ArrowDown' });
     expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
 
     rerender(
@@ -855,7 +855,7 @@ describe('ChatInput execution agent and composer', () => {
       </TooltipProvider>,
     );
 
-    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.keyDown(screen.getByTestId('chat-workspace-selector'), { key: 'ArrowDown' });
     fireEvent.click(screen.getByTestId('chat-workspace-default'));
 
     expect(onSelectWorkspace).toHaveBeenCalledWith('~/.openclaw/workspace');
@@ -863,7 +863,7 @@ describe('ChatInput execution agent and composer', () => {
     expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
   });
 
-  it('closes the workspace menu on outside click', () => {
+  it('closes the workspace menu on outside click', async () => {
     render(
       <TooltipProvider>
         <ChatInput
@@ -876,12 +876,13 @@ describe('ChatInput execution agent and composer', () => {
       </TooltipProvider>,
     );
 
-    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.keyDown(screen.getByTestId('chat-workspace-selector'), { key: 'ArrowDown' });
     expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
 
-    fireEvent.mouseDown(document.body);
-
-    expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
+    await waitFor(() => {
+      fireEvent.pointerDown(document.body);
+      expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
+    });
   });
 
   it('keeps composer popovers from overlapping the workspace menu', async () => {
@@ -923,14 +924,14 @@ describe('ChatInput execution agent and composer', () => {
       </TooltipProvider>,
     );
 
-    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.keyDown(screen.getByTestId('chat-workspace-selector'), { key: 'ArrowDown' });
     expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('chat-composer-agent'));
+    fireEvent.keyDown(screen.getByTestId('chat-composer-agent'), { key: 'ArrowDown' });
     expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
     expect(screen.getByText('Research')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.keyDown(screen.getByTestId('chat-workspace-selector'), { key: 'ArrowDown' });
     expect(screen.queryByText('Research')).not.toBeInTheDocument();
     expect(screen.getByTestId('chat-workspace-menu')).toBeInTheDocument();
 
@@ -950,8 +951,8 @@ describe('ChatInput execution agent and composer', () => {
     expect(pickerButton).not.toHaveTextContent('Alpha');
     expect(pickerButton).not.toHaveTextContent('(');
 
-    fireEvent.click(pickerButton);
-    const option = screen.getByRole('button', { name: 'gpt-b', exact: true });
+    fireEvent.keyDown(pickerButton, { key: 'ArrowDown' });
+    const option = screen.getByRole('menuitemradio', { name: 'gpt-b', exact: true });
     expect(option).toHaveTextContent('gpt-b');
     expect(option).not.toHaveTextContent('Beta');
     expect(screen.getByRole('group', { name: 'Beta' })).toContainElement(option);
@@ -964,10 +965,10 @@ describe('ChatInput execution agent and composer', () => {
 
     renderChatInput();
 
-    fireEvent.click(screen.getByTestId('chat-model-picker-button'));
+    fireEvent.keyDown(screen.getByTestId('chat-model-picker-button'), { key: 'ArrowDown' });
     expect(screen.getByTestId('chat-model-picker-menu')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('chat-composer-agent'));
+    fireEvent.keyDown(screen.getByTestId('chat-composer-agent'), { key: 'ArrowDown' });
 
     expect(screen.queryByTestId('chat-model-picker-menu')).not.toBeInTheDocument();
     expect(screen.getByText('Research')).toBeInTheDocument();
@@ -978,7 +979,7 @@ describe('ChatInput execution agent and composer', () => {
 
     renderChatInput();
 
-    fireEvent.click(screen.getByTestId('chat-model-picker-button'));
+    fireEvent.keyDown(screen.getByTestId('chat-model-picker-button'), { key: 'ArrowDown' });
     expect(screen.getByTestId('chat-model-picker-menu')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('chat-composer-skill'));
@@ -1019,7 +1020,7 @@ describe('ChatInput execution agent and composer', () => {
       </TooltipProvider>,
     );
 
-    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.keyDown(screen.getByTestId('chat-workspace-selector'), { key: 'ArrowDown' });
 
     expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
     expect(hostApiDialogOpenMock).not.toHaveBeenCalled();
@@ -1045,7 +1046,7 @@ describe('ChatInput execution agent and composer', () => {
     const button = screen.getByTestId('chat-workspace-selector');
     expect(button).toHaveAttribute('aria-disabled', 'true');
 
-    fireEvent.click(button);
+    fireEvent.keyDown(button, { key: 'ArrowDown' });
 
     expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
     expect(hostApiDialogOpenMock).not.toHaveBeenCalled();
@@ -1071,7 +1072,7 @@ describe('ChatInput execution agent and composer', () => {
     const button = screen.getByTestId('chat-workspace-selector');
     expect(button).toHaveAttribute('aria-disabled', 'true');
 
-    fireEvent.click(button);
+    fireEvent.keyDown(button, { key: 'ArrowDown' });
 
     expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
     expect(hostApiDialogOpenMock).not.toHaveBeenCalled();
@@ -1093,7 +1094,7 @@ describe('ChatInput execution agent and composer', () => {
     const button = screen.getByTestId('chat-workspace-selector');
     expect(button).toHaveAttribute('aria-disabled', 'true');
 
-    fireEvent.click(button);
+    fireEvent.keyDown(button, { key: 'ArrowDown' });
 
     expect(screen.queryByTestId('chat-workspace-menu')).not.toBeInTheDocument();
     expect(hostApiDialogOpenMock).not.toHaveBeenCalled();
@@ -1115,7 +1116,7 @@ describe('ChatInput execution agent and composer', () => {
       </TooltipProvider>,
     );
 
-    fireEvent.click(screen.getByTestId('chat-workspace-selector'));
+    fireEvent.keyDown(screen.getByTestId('chat-workspace-selector'), { key: 'ArrowDown' });
     fireEvent.click(screen.getByTestId('chat-workspace-choose-other'));
 
     await waitFor(() => {
@@ -1199,7 +1200,7 @@ describe('ChatInput execution agent and composer', () => {
     const onSelectAgent = vi.fn();
     renderChatInput(onSend, undefined, onSelectAgent);
 
-    fireEvent.click(screen.getByTestId('chat-composer-agent'));
+    fireEvent.keyDown(screen.getByTestId('chat-composer-agent'), { key: 'ArrowDown' });
     fireEvent.click(screen.getByText('Research'));
 
     expect(onSelectAgent).toHaveBeenCalledWith('research');
@@ -1557,6 +1558,7 @@ describe('ChatInput execution agent and composer', () => {
     fireEvent.click(screen.getByTitle('Choose skill'));
     fireEvent.click(await screen.findByTestId('chat-composer-skill-option-create-rule'));
 
+    await waitFor(() => expect(screen.queryByTestId('chat-skill-picker-menu')).not.toBeInTheDocument());
     textbox.setSelectionRange(textbox.value.length, textbox.value.length);
     fireEvent.click(screen.getByTitle('Choose skill'));
     fireEvent.click(await screen.findByTestId('chat-composer-skill-option-create-rule'));

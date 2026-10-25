@@ -10,7 +10,6 @@ import {
   useMemo,
   useRef,
   type ReactNode,
-  type SelectHTMLAttributes,
 } from 'react';
 import {
   Plus,
@@ -33,13 +32,15 @@ import {
   Search,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { hasFloatingSurface } from '@/components/ui/floating-ui';
 import { MenuSelectionIndicator } from '@/components/ui/menu-selection';
 import { menuOptionStateClass } from '@/components/ui/menu-selection-styles';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
+import { Select, SelectItem, type SelectProps } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
@@ -305,7 +306,7 @@ function isSupportedCronDeliveryChannel(channelType: string): boolean {
   return TESTED_CRON_DELIVERY_CHANNELS.has(channelType);
 }
 
-interface SelectFieldProps extends SelectHTMLAttributes<HTMLSelectElement> {
+interface SelectFieldProps extends SelectProps {
   children: ReactNode;
 }
 
@@ -314,14 +315,13 @@ function SelectField({ className, children, ...props }: SelectFieldProps) {
     <div className="relative">
       <Select
         className={cn(
-          'h-[44px] rounded-xl border-black/10 dark:border-white/10 bg-background text-meta pr-10 [background-image:none] appearance-none',
+          'h-[44px] rounded-xl border-black/10 dark:border-white/10 bg-background text-meta',
           className,
         )}
         {...props}
       >
         {children}
       </Select>
-      <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
     </div>
   );
 }
@@ -509,24 +509,12 @@ interface ScheduleTimePickerProps {
 function ScheduleTimePicker({ id, value, onChange, 'data-testid': testId }: ScheduleTimePickerProps) {
   const { t } = useTranslation('cron');
   const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
   const hourListRef = useRef<HTMLDivElement>(null);
   const minuteListRef = useRef<HTMLDivElement>(null);
 
   const [hourRaw, minuteRaw] = (value || '09:00').split(':');
   const selectedHour = Math.min(23, Math.max(0, Math.floor(Number(hourRaw) || 0)));
   const selectedMinute = Math.min(59, Math.max(0, Math.floor(Number(minuteRaw) || 0)));
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const handlePointerDown = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -542,12 +530,12 @@ function ScheduleTimePicker({ id, value, onChange, 'data-testid': testId }: Sche
     );
 
   return (
-    <div ref={containerRef} className="relative">
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
       <button
         id={id}
         type="button"
         data-testid={testId}
-        onClick={() => setOpen((prev) => !prev)}
         className="flex h-[44px] w-full items-center justify-between rounded-xl border border-black/10 dark:border-white/10 bg-transparent px-3 font-mono text-meta text-foreground shadow-sm transition-colors hover:bg-black/5 dark:hover:bg-white/5"
       >
         <span>
@@ -555,8 +543,10 @@ function ScheduleTimePicker({ id, value, onChange, 'data-testid': testId }: Sche
         </span>
         <Clock className="h-4 w-4 opacity-50" />
       </button>
-      {open && (
-        <div className="absolute left-0 top-full z-30 mt-1.5 w-full overflow-hidden rounded-xl border border-black/10 dark:border-white/10 bg-surface-modal shadow-lg">
+      </PopoverTrigger>
+      <PopoverContent data-testid={`${id}-menu`} align="start" side="bottom"
+        onOpenAutoFocus={event => { event.preventDefault(); (hourListRef.current?.querySelector('[data-selected="true"]') as HTMLElement | null)?.focus({ preventScroll: true }); }}
+        className="w-[var(--radix-popover-trigger-width)] overflow-hidden rounded-xl border border-black/10 bg-surface-modal shadow-lg dark:border-white/10">
           <div className="grid grid-cols-2 text-center text-meta font-medium text-muted-foreground">
             <div className="border-r border-black/5 dark:border-white/5 py-1.5">{t('dialog.hourColumn')}</div>
             <div className="py-1.5">{t('dialog.minuteColumn')}</div>
@@ -596,9 +586,8 @@ function ScheduleTimePicker({ id, value, onChange, 'data-testid': testId }: Sche
               ))}
             </div>
           </div>
-        </div>
-      )}
-    </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -627,7 +616,6 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const messageOverlayRef = useRef<HTMLDivElement>(null);
-  const skillPickerRef = useRef<HTMLDivElement>(null);
   const [prevOpen, setPrevOpen] = useState(open);
 
   if (prevOpen !== open) {
@@ -708,19 +696,6 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
     if (!skillPickerOpen) return;
     void loadQuickSkills();
   }, [skillPickerOpen, loadQuickSkills]);
-
-  useEffect(() => {
-    if (!skillPickerOpen) return;
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!skillPickerRef.current?.contains(event.target as Node)) {
-        setSkillPickerOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-    };
-  }, [skillPickerOpen]);
 
   // The highlight overlay is absolutely positioned on top of the textarea and is
   // the only visible copy of the text once a skill token exists, so it has to
@@ -1112,11 +1087,12 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
 
                 {/* Action Row */}
                 <div className="mt-1.5 flex items-center gap-1">
-                  <div ref={skillPickerRef} className="relative shrink-0">
+                  <div className="shrink-0">
+                    <Popover open={skillPickerOpen} onOpenChange={setSkillPickerOpen}>
+                    <PopoverTrigger asChild>
                     <button
                       type="button"
                       data-testid="cron-skill-button"
-                      onClick={() => setSkillPickerOpen((isOpen) => !isOpen)}
                       title={t('dialog.pickSkill')}
                       className={cn(
                         'inline-flex h-8 items-center gap-1 rounded-lg px-1.5 text-meta font-medium text-muted-foreground transition-colors hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-0',
@@ -1128,8 +1104,10 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                         className={cn('h-3.5 w-3.5 transition-transform', skillPickerOpen && 'rotate-180')}
                       />
                     </button>
-                    {skillPickerOpen && (
-                      <div data-testid="cron-skill-picker-menu" className="absolute left-0 top-full z-30 mt-2 w-96 max-w-[calc(100vw-4rem)] overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
+                    </PopoverTrigger>
+                      <PopoverContent side="bottom" align="start" data-testid="cron-skill-picker-menu"
+                        onCloseAutoFocus={event => { event.preventDefault(); if (hasFloatingSurface('open')) return; const active = document.activeElement; if (!active || active === document.body || active.closest('[data-slot="popover-content"]')) messageRef.current?.focus(); }}
+                        className="w-96 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
                         <div className="flex items-center gap-2 rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
                           <Search className="h-3.5 w-3.5 text-muted-foreground" />
                           <input
@@ -1161,8 +1139,8 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                             ))
                           )}
                         </div>
-                      </div>
-                    )}
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 </div>
               </div>
@@ -1176,15 +1154,15 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
               <SelectField
                 id="agent"
                 value={selectedAgentId}
-                onChange={(e) => {
-                  setSelectedAgentId(e.target.value);
+                onValueChange={(value) => {
+                  setSelectedAgentId(value);
                 }}
                 className="h-[44px] rounded-xl border-black/10 dark:border-white/10 bg-transparent text-meta"
               >
                 {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
+                  <SelectItem key={agent.id} value={agent.id}>
                     {agent.name}
-                  </option>
+                  </SelectItem>
                 ))}
               </SelectField>
             </div>
@@ -1218,12 +1196,12 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                   <SelectField
                     data-testid="cron-recurrence-select"
                     value={scheduleForm.recurrence}
-                    onChange={(e) => updateSchedule({ recurrence: e.target.value as RecurrenceKind })}
+                    onValueChange={(value) => updateSchedule({ recurrence: value as RecurrenceKind })}
                   >
                     {RECURRENCE_KINDS.map((kind) => (
-                      <option key={kind} value={kind}>
+                      <SelectItem key={kind} value={kind}>
                         {t(`dialog.recurrence.${kind}` as const)}
-                      </option>
+                      </SelectItem>
                     ))}
                   </SelectField>
 
@@ -1270,13 +1248,13 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                         <SelectField
                           id="cron-weekday"
                           data-testid="cron-weekday-select"
-                          value={scheduleForm.weekday}
-                          onChange={(e) => updateSchedule({ weekday: Number(e.target.value) })}
+                          value={String(scheduleForm.weekday)}
+                          onValueChange={(value) => updateSchedule({ weekday: Number(value) })}
                         >
                           {WEEKDAY_KEYS.map((key, index) => (
-                            <option key={key} value={index}>
+                            <SelectItem key={key} value={String(index)}>
                               {t(`weekdays.${key}` as const)}
-                            </option>
+                            </SelectItem>
                           ))}
                         </SelectField>
                       </div>
@@ -1390,19 +1368,19 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                     <SelectField
                       id="delivery-channel"
                       value={effectiveDeliveryChannel}
-                      onChange={(event) => {
-                        setDeliveryChannel(event.target.value);
+                      onValueChange={(value) => {
+                        setDeliveryChannel(value);
                         setSelectedDeliveryAccountId('');
                         setDeliveryTarget('');
                       }}
                     >
-                      <option value="">{t('dialog.selectChannel')}</option>
+                      <SelectItem value="">{t('dialog.selectChannel')}</SelectItem>
                       {availableChannels.map((group) => (
-                        <option key={group.channelType} value={group.channelType}>
+                        <SelectItem key={group.channelType} value={group.channelType}>
                           {!isSupportedCronDeliveryChannel(group.channelType)
                             ? `${getChannelDisplayName(group.channelType)} (${t('dialog.channelUnsupportedTag')})`
                             : getChannelDisplayName(group.channelType)}
-                        </option>
+                        </SelectItem>
                       ))}
                     </SelectField>
                     {availableChannels.length === 0 && (
@@ -1430,17 +1408,17 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                       <SelectField
                         id="delivery-account"
                         value={effectiveDeliveryAccountId}
-                        onChange={(event) => {
-                          setSelectedDeliveryAccountId(event.target.value);
+                        onValueChange={(value) => {
+                          setSelectedDeliveryAccountId(value);
                           setDeliveryTarget('');
                         }}
                         disabled={deliveryAccountOptions.length === 0}
                       >
-                        <option value="">{t('dialog.selectDeliveryAccount')}</option>
+                        <SelectItem value="">{t('dialog.selectDeliveryAccount')}</SelectItem>
                         {deliveryAccountOptions.map((option) => (
-                          <option key={option.accountId} value={option.accountId}>
+                          <SelectItem key={option.accountId} value={option.accountId}>
                             {option.displayName}
-                          </option>
+                          </SelectItem>
                         ))}
                       </SelectField>
                       <p className="text-xs text-muted-foreground">{t('dialog.deliveryAccountDesc')}</p>
@@ -1454,16 +1432,16 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                     <SelectField
                       id="delivery-target-select"
                       value={deliveryTarget}
-                      onChange={(event) => setDeliveryTarget(event.target.value)}
+                      onValueChange={(value) => setDeliveryTarget(value)}
                       disabled={loadingChannelTargets || availableTargetOptions.length === 0}
                     >
-                      <option value="">
+                      <SelectItem value="">
                         {loadingChannelTargets ? t('dialog.loadingTargets') : t('dialog.selectDeliveryTarget')}
-                      </option>
+                      </SelectItem>
                       {availableTargetOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
+                        <SelectItem key={option.value} value={option.value}>
                           {option.label}
-                        </option>
+                        </SelectItem>
                       ))}
                     </SelectField>
                     <p className="text-xs text-muted-foreground">

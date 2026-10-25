@@ -1,39 +1,121 @@
-/**
- * Select Component
- * Styled native select matching shadcn/ui conventions
- *
- * IMPORTANT: keep an OPAQUE background (`bg-background`) on this element.
- * Chromium paints the dropdown popup using the <select>'s computed
- * background-color and text color. If a caller overrides it with
- * `bg-transparent` (e.g. shared input classes), the popup on Windows
- * renders with a white page background while option text stays light in
- * dark mode — white-on-white. When customizing, pass an opaque themed
- * background (e.g. `bg-background` / `bg-surface-input`), never a
- * transparent one.
- */
 import * as React from 'react';
+import * as Primitive from '@radix-ui/react-select';
+import { ChevronDown } from 'lucide-react';
+import { MenuSelectionIndicator } from './menu-selection';
 import { cn } from '@/lib/utils';
 
-export type SelectProps = React.SelectHTMLAttributes<HTMLSelectElement>;
+// Radix reserves the empty string for clearing its value. Keep public empty
+// choices (for example automatic language / unassigned agent) selectable.
+const EMPTY_VALUE = '__clawx_select_empty__';
+const encodeValue = (value: string) => value === '' ? EMPTY_VALUE : value;
 
-const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
-  ({ className, children, ...props }, ref) => {
+export interface SelectProps extends Omit<React.ComponentPropsWithoutRef<typeof Primitive.Trigger>, 'children' | 'value' | 'defaultValue' | 'onChange'> {
+  children: React.ReactNode;
+  value?: string;
+  defaultValue?: string;
+  onValueChange?: (value: string) => void;
+  placeholder?: string;
+  required?: boolean;
+  'data-testid'?: string;
+}
+
+export const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
+  ({ className, children, value, defaultValue, onValueChange, disabled, name, required, placeholder, ...props }, ref) => {
+    const [uncontrolledValue, setUncontrolledValue] = React.useState(defaultValue ?? '');
+    const [open, setOpen] = React.useState(false);
+    const [closing, setClosing] = React.useState(false);
+    const contentRef = React.useRef<React.ComponentRef<typeof Primitive.Content>>(null);
+    const selectedValue = value === undefined ? uncontrolledValue : value;
+    const finishClose = React.useCallback(() => {
+      setOpen(false);
+      setClosing(false);
+    }, []);
+    const changeOpen = (next: boolean) => {
+      if (next) {
+        setClosing(false);
+        setOpen(true);
+      } else if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        finishClose();
+      } else {
+        setClosing(true);
+      }
+    };
+    // This installed Radix Select moves closed content into a DocumentFragment
+    // immediately. Keep its context open through the shared CSS exit, and finish
+    // on animationend rather than duplicating the motion duration in a timer.
+    React.useLayoutEffect(() => {
+      if (!closing) return;
+      const content = contentRef.current;
+      const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+      if (!content || media.matches || ['', 'none'].includes(getComputedStyle(content).animationName)) {
+        finishClose();
+        return;
+      }
+      const handleMotionChange = () => {
+        if (media.matches) finishClose();
+      };
+      media.addEventListener('change', handleMotionChange);
+      return () => media.removeEventListener('change', handleMotionChange);
+    }, [closing, finishClose]);
     return (
-      <select
-        className={cn(
-          'flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:border-foreground/30 focus-visible:ring-1 focus-visible:ring-foreground/10 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-[length:16px_16px] bg-[position:right_12px_center] bg-no-repeat',
-          'bg-[url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23888%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22/%3E%3C/svg%3E")]',
-          'pr-10',
-          className
-        )}
-        ref={ref}
-        {...props}
+      <Primitive.Root
+        open={open}
+        onOpenChange={changeOpen}
+        value={encodeValue(selectedValue)}
+        onValueChange={next => {
+          const decoded = next === EMPTY_VALUE ? '' : next;
+          if (value === undefined) setUncontrolledValue(decoded);
+          onValueChange?.(decoded);
+        }}
+        disabled={disabled}
+        name={name}
+        required={required}
       >
-        {children}
-      </select>
+        <Primitive.Trigger
+          ref={ref}
+          value={selectedValue}
+          aria-expanded={open && !closing}
+          className={cn('flex h-10 w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-left text-sm focus-visible:outline-none focus-visible:border-foreground/30 focus-visible:ring-1 focus-visible:ring-foreground/10 disabled:cursor-not-allowed disabled:opacity-50 [&>span:first-child]:min-w-0 [&>span:first-child]:truncate', className)}
+          {...props}
+        >
+          <Primitive.Value placeholder={placeholder} />
+          <Primitive.Icon asChild>
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </Primitive.Icon>
+        </Primitive.Trigger>
+        <Primitive.Portal>
+          <Primitive.Content
+            ref={contentRef}
+            data-state={closing ? 'closed' : 'open'}
+            aria-hidden={closing || undefined}
+            inert={closing || undefined}
+            onAnimationEnd={event => {
+              if (closing && event.target === event.currentTarget) finishClose();
+            }}
+            position="popper"
+            sideOffset={6}
+            collisionPadding={12}
+            data-slot="select-content"
+            className="clawx-floating-surface clawx-select-surface z-[80] max-h-[min(320px,var(--radix-select-content-available-height))] min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-24px)] overflow-hidden rounded-xl border border-border bg-surface-modal p-1.5 text-foreground shadow-xl"
+          >
+            <Primitive.Viewport className="clawx-menu-list max-h-[min(308px,var(--radix-select-content-available-height))]">
+              {children}
+            </Primitive.Viewport>
+          </Primitive.Content>
+        </Primitive.Portal>
+      </Primitive.Root>
     );
-  }
+  },
 );
 Select.displayName = 'Select';
 
-export { Select };
+export const SelectItem = React.forwardRef<React.ComponentRef<typeof Primitive.Item>, React.ComponentPropsWithoutRef<typeof Primitive.Item>>(
+  ({ children, className, value, ...props }, ref) => (
+    <Primitive.Item ref={ref} value={encodeValue(value)} data-value={value}
+      className={cn('clawx-menu-item relative flex cursor-default select-none items-center justify-between gap-3 text-sm outline-none data-[highlighted]:bg-black/5 dark:data-[highlighted]:bg-white/5 data-[state=checked]:bg-primary/10 data-[disabled]:pointer-events-none data-[disabled]:opacity-40', className)} {...props}>
+      <Primitive.ItemText>{children}</Primitive.ItemText>
+      <Primitive.ItemIndicator><MenuSelectionIndicator selected /></Primitive.ItemIndicator>
+    </Primitive.Item>
+  ),
+);
+SelectItem.displayName = 'SelectItem';

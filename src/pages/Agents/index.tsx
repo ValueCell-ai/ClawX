@@ -1,3 +1,4 @@
+import { Select, SelectItem } from '@/components/ui/select';
 import { CapabilitiesNavigation } from '@/components/layout/CapabilitiesNavigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Bot, Check, Plus, RefreshCw, Settings2, Trash2, X } from 'lucide-react';
@@ -794,11 +795,11 @@ function AgentModelModal({ open, agent, onClose }: { open: boolean; agent: Agent
               <Label htmlFor="agent-model-provider" className="text-xs text-foreground/70">
                 {t('settingsDialog.modelProviderLabel')}
               </Label>
-              <select
+              <Select
                 id="agent-model-provider"
                 value={selectedRuntimeProviderKey}
-                onChange={(event) => {
-                  const nextProvider = event.target.value;
+                onValueChange={(value) => {
+                  const nextProvider = value;
                   setSelectedRuntimeProviderKey(nextProvider);
                   if (!modelIdInput.trim()) {
                     const option = runtimeProviderOptions.find(
@@ -809,13 +810,13 @@ function AgentModelModal({ open, agent, onClose }: { open: boolean; agent: Agent
                 }}
                 className={selectClasses}
               >
-                <option value="">{t('settingsDialog.modelProviderPlaceholder')}</option>
+                <SelectItem value="">{t('settingsDialog.modelProviderPlaceholder')}</SelectItem>
                 {runtimeProviderOptions.map((option) => (
-                  <option key={option.runtimeProviderKey} value={option.runtimeProviderKey}>
+                  <SelectItem key={option.runtimeProviderKey} value={option.runtimeProviderKey}>
                     {option.label}
-                  </option>
+                  </SelectItem>
                 ))}
-              </select>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="agent-model-id" className="text-xs text-foreground/70">

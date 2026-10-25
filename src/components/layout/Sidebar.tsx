@@ -42,7 +42,7 @@ import { useAgentsStore } from '@/stores/agents';
 import { groupSessionsByWorkspace, type WorkspaceSessionEntry } from './session-buckets';
 import { matchesTaskSearch } from './task-search';
 import type { ChatSession } from '@/stores/chat';
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import * as DropdownMenu from '@/components/ui/dropdown-menu';
 import {
   shouldIncludeSessionInSidebarList,
   shouldIncludeSessionInWorkspaceDeletion,

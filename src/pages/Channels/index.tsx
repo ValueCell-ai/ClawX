@@ -1,3 +1,4 @@
+import { Select, SelectItem } from '@/components/ui/select';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { RefreshCw, Trash2, AlertCircle, Plus, Copy, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -798,20 +799,20 @@ export function Channels({ embedded = false }: { embedded?: boolean }) {
 
                               <div className="flex items-center gap-2">
                                 <span className="text-xs text-muted-foreground">{t('account.bindAgentLabel')}</span>
-                                <select
-                                  className="h-8 rounded-lg border border-black/10 dark:border-white/10 bg-background px-2 text-xs"
+                                <Select
+                                  className="h-8 w-auto min-w-28 max-w-48 rounded-lg border border-black/10 dark:border-white/10 bg-background px-2 text-xs"
                                   value={account.agentId || ''}
-                                  onChange={(event) => {
-                                    void handleBindAgent(group.channelType, account.accountId, event.target.value);
+                                  onValueChange={(value) => {
+                                    void handleBindAgent(group.channelType, account.accountId, value);
                                   }}
                                 >
-                                  <option value="">{t('account.unassigned')}</option>
+                                  <SelectItem value="">{t('account.unassigned')}</SelectItem>
                                   {visibleAgents.map((agent) => (
-                                    <option key={agent.id} value={agent.id}>
+                                    <SelectItem key={agent.id} value={agent.id}>
                                       {agent.name}
-                                    </option>
+                                    </SelectItem>
                                   ))}
-                                </select>
+                                </Select>
                                 <Button
                                   size="sm"
                                   variant="outline"
