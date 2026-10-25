@@ -508,6 +508,58 @@ describe('AcpChatService', () => {
     });
   });
 
+  it('coalesces concurrent family reads and cools down transient failures', async () => {
+    const connection = createConnection();
+    connection.listSessions.mockRejectedValue(new Error('Internal error'));
+    const { service } = await createService(connection);
+
+    const first = service.getSessionFamily({ sessionKey: 'agent:main:parent' });
+    const second = service.getSessionFamily({ sessionKey: 'agent:main:parent' });
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      {
+        success: false,
+        current: null,
+        children: [],
+        error: 'Internal error',
+      },
+      {
+        success: false,
+        current: null,
+        children: [],
+        error: 'Internal error',
+      },
+    ]);
+    expect(connection.listSessions).toHaveBeenCalledTimes(1);
+
+    await expect(service.getSessionFamily({ sessionKey: 'agent:main:parent' })).resolves.toEqual({
+      success: false,
+      current: null,
+      children: [],
+      error: 'Internal error',
+    });
+    expect(connection.listSessions).toHaveBeenCalledTimes(1);
+    expect(loggerMock.warn).toHaveBeenCalledWith('[acp-chat] getSessionFamily unavailable: Internal error');
+  });
+
+  it('returns a bounded failure when ACP session/list never settles', async () => {
+    vi.useFakeTimers();
+    try {
+      const connection = createConnection();
+      connection.listSessions.mockImplementation(() => new Promise(() => {}));
+      const { service } = await createService(connection);
+      const result = service.getSessionFamily({ sessionKey: 'agent:main:parent' });
+      const settled = result.then((value) => value);
+
+      await vi.advanceTimersByTimeAsync(15_000);
+      await expect(settled).resolves.toMatchObject({
+        success: false,
+        error: 'ACP session/list timed out after 15000ms',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('creates fresh generated sessions with ACP session/new so replay ledgers are complete', async () => {
     const { service, connection } = await createService();
 

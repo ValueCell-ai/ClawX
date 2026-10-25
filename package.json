@@ -1,6 +1,6 @@
 {
     "name": "clawx",
-    "version": "0.6.0",
+    "version": "0.6.1",
     "description": "ClawX - Graphical AI Assistant based on OpenClaw",
     "main": "dist-electron/main/index.js",
     "author": "ClawX Team",
@@ -69,7 +69,7 @@
     },
     "dependencies": {
         "@agentclientprotocol/sdk": "1.1.0",
-        "@trycua/cua-driver": "0.25.0",
+        "@trycua/cua-driver": "0.37.0",
         "electron-store": "^11.0.2",
         "electron-updater": "^6.8.3",
         "json5": "2.2.3",

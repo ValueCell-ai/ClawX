@@ -30,7 +30,7 @@ unchanged.
 
 ## Native CLI Contract
 
-Electron Main retains the pinned `@trycua/cua-driver` 0.25.0 SDK and
+Electron Main retains the pinned `@trycua/cua-driver` 0.37.0 SDK and
 `EmbeddedCuaDriverHost`. Main is the direct parent of the bundled
 `cua-driver serve --embedded` daemon and owns its permission policy, exit
 monitoring, shutdown, and parent-liveness behavior. Supported hosts remain macOS
@@ -38,26 +38,26 @@ monitoring, shutdown, and parent-liveness behavior. Supported hosts remain macOS
 documentation does not expand ClawX support. Binaries remain version-pinned,
 SHA256-verified, outside ASAR, and signed with the enclosing macOS app.
 
-SDK, native driver, and official Skill are aligned to 0.25.0, from tag
-`cua-driver-rs-v0.25.0`, commit `45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f`.
-The current upgrade contract is `harness/specs/tasks/cua-025-upgrade.md`.
+SDK, native driver, and official Skill are aligned to 0.37.0, from tag
+`cua-driver-rs-v0.37.0`, commit `2d2f99228d4d2508dc6fcc84c176b296e146714a`.
+The current upgrade contract is `harness/specs/tasks/cua-037-upgrade.md`.
 
 On macOS and Windows, Main passes `CUA_DRIVER_RS_TELEMETRY_ENABLED=false` in
 `EmbeddedDriverHostOptions.environment`; Gateway supplies the same override to
 its CLI children. The native SDK safe allowlist admits telemetry variables since
-0.22.0 and still does in 0.25.0. Explicit overrides survive `env_clear()` and
+0.22.0 and still does in 0.37.0. Explicit overrides survive `env_clear()` and
 `safe_environment`, without mutating Main's parent environment, persistent CUA
 settings, or ClawX's telemetry preference. Validate actual manager-produced
 options with the real native constructor separately from mocked daemon I/O;
 construction must not start a daemon or request OS grants.
 
 Keep the Windows executable's console-to-GUI PE subsystem patch after archive
-checksum verification. The 0.25.0 telemetry source still spawns `cmd /c ver`
+checksum verification. The 0.37.0 telemetry source still spawns `cmd /c ver`
 without a no-window flag; the SDK allowlist change is not an automatic upstream
 no-window fix. Telemetry suppression and the PE patch address different process
 paths. The 0.21.0 Configuration failure and CLI-only workaround are superseded,
 not erased; see `harness/reference/computer-use-cli-validation.md` for their
-evidence and pending rebuilt-Windows 0.25.0 acceptance.
+evidence and pending rebuilt-Windows 0.37.0 acceptance.
 
 `CLAWX_CUA_CONNECTION_FILE` is the stable discovery path under ClawX user data.
 Main atomically publishes an owner-private descriptor with exactly this shape:
@@ -85,11 +85,11 @@ element, and menu operations, using bounded/filtered observations. This is not a
 primary-display-only ClawX action subset and does not promise every command works
 on every target or preserves foreground focus.
 
-Pinned 0.25.0 `cli.rs::run_call` routes explicit non-default named sessions through
+Pinned 0.37.0 `cli.rs::run_call` routes explicit non-default named sessions through
 the daemon-scoped `cli-explicit` namespace and skips disposable cleanup for them;
 anonymous calls use per-process sessions with `session_end`. This source-level
 contract differs from the official Skill's broad disposable-CLI wording and is
-not new live 0.25.0 continuity evidence. Repeat a unique workflow label on every
+not new live 0.37.0 continuity evidence. Repeat a unique workflow label on every
 accepting call and use `end_session` for cleanup,
 not daemon shutdown. Discard old observations and element tokens after generation
 changes. Interpret actual action, effect, and verification results: nested tool
@@ -98,8 +98,8 @@ acknowledgment nor shell `&&` proves semantic success. Do not blindly replay inp
 when completion is unknown.
 
 The `computer-use` Skill keeps `/computer-use` in the existing picker and is based
-on the official CUA 0.25.0 accompanying Skill, fixed at tag
-`cua-driver-rs-v0.25.0`, commit `45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f`.
+on the official CUA 0.37.0 accompanying Skill, fixed at tag
+`cua-driver-rs-v0.37.0`, commit `2d2f99228d4d2508dc6fcc84c176b296e146714a`.
 MIT-licensed upstream documents and the repository-root license ship offline,
 with a short ClawX integration entrypoint. Selecting it never enables the service
 or grants permissions. See `harness/reference/computer-use-skill.md` for provenance
@@ -115,7 +115,7 @@ Fresh and replacement installs stage the full bundle outside Skill discovery;
 publication retains rollback and cleanup, preserving the prior installation where
 possible on failure for a later retry. A target symlink is replaced itself without
 following or deleting its external referent. This is not a general Skill updater
-and does not change the official 0.25.0 bytes or provenance/license verification.
+and does not change the official 0.37.0 bytes or provenance/license verification.
 The ownership contract in `harness/specs/tasks/managed-computer-use-skill.md`
 supersedes the earlier known-pristine-bundle preservation policy.
 
@@ -169,8 +169,8 @@ request OS grants or control the user's desktop.
 They do not prove packaged Windows CLI stdio/cancellation, signed macOS permission
 attribution, live named-session continuity, model obedience, or desktop success.
 Those remain separate acceptance checks under
-`harness/specs/tasks/cua-025-upgrade.md`; the earlier CLI task and validation
-record contain 0.21.0 evidence, not 0.25.0 results. Browser/recording workflows and
+`harness/specs/tasks/cua-037-upgrade.md`; the earlier CLI task and validation
+record contain 0.21.0 evidence, not 0.37.0 results. Browser/recording workflows and
 cleanup guarantees have not been established by these synthetic fixtures.
 Native checks need explicit task authorization and grants for the current host
 identity; a denied development-host grant is a blocker, not a reason to start a
@@ -211,7 +211,7 @@ and `dist/embedded.js` using physical `app.asar.unpacked` file URLs. Unpack
 `@ubjs/core` and `@ubjs/node` too; physical ESM imports cannot find JS dependencies
 that exist only inside the adjacent archive. Development keeps bare package
 imports. There are no dependency patches, signing changes, or TCC workarounds.
-This physical-path requirement remains active for 0.25.0. Its export map,
+This physical-path requirement remains active for 0.37.0. Its export map,
 library layout, and rebuilt-package initialization require upgraded-byte checks;
 the 0.21.0 results below do not validate the new package.
 
@@ -280,7 +280,7 @@ universal required reset or a promise of re-prompting. The app must never delete
 entries, reset TCC, or bypass authorization to reproduce it. Guide users to the
 actual listed app and let them manage grants, then restart and refresh.
 
-Historical permission sources (not 0.25.0 native validation):
+Historical permission sources (not 0.37.0 native validation):
 
 - https://github.com/trycua/cua/blob/cua-driver-rs-v0.21.0/libs/cua-driver/rust/Skills/cua-driver/EMBEDDING.md
 - https://github.com/trycua/cua/blob/cua-driver-rs-v0.21.0/libs/cua-driver/rust/crates/platform-macos/src/permissions/status.rs

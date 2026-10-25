@@ -8,10 +8,11 @@ async function installComputerFixture(electronApp: ElectronApplication, supporte
     const original = (ipcMain as unknown as { _invokeHandlers: Map<string, (event: unknown, request: Request) => unknown> })._invokeHandlers.get('host:invoke')!;
     const state = {
       enabled: false, supported: options.supported, running: false,
+      state: 'stopped', reason: null as string | null,
       permissions: options.mac ? { accessibility: false, screenRecording: 'denied' } : null,
     };
     const calls: string[] = [];
-    Object.assign(globalThis, { computerUseCalls: calls });
+    Object.assign(globalThis, { computerUseCalls: calls, computerUseFixtureState: state });
     ipcMain.removeHandler('host:invoke');
     ipcMain.handle('host:invoke', async (event, request: Request) => {
       if (request.module !== 'computerUse') return original(event, request);
@@ -24,7 +25,12 @@ async function installComputerFixture(electronApp: ElectronApplication, supporte
           state.running = true;
         }
       }
-      if (!state.enabled) state.running = false;
+      if (request.action === 'retry') {
+        state.running = true;
+        state.state = 'running';
+        state.reason = null;
+      }
+      if (!state.enabled) { state.running = false; state.state = 'stopped'; }
       return { id: request.id, ok: true, data: state };
     });
   }, { supported, mac, grantPermissions });
@@ -117,6 +123,33 @@ test('the real host defaults off and rejects permission requests without loading
     return report.sharedObjects.filter((file) => /cua_driver_(sdk|node_runtime)/.test(file));
   });
   expect(nativeLibraries).toEqual([]);
+});
+
+test('polls lifecycle changes and retries an exited driver without toggling or prompting', async ({ electronApp, page }) => {
+  await installComputerFixture(electronApp, true, false);
+  await page.getByTestId('setup-skip-button').click();
+  await enableDeveloperMode(page);
+  await page.getByTestId('sidebar-nav-computer-use').click();
+  await page.getByTestId('computer-use-toggle').click();
+  await electronApp.evaluate(() => {
+    const state = (globalThis as unknown as { computerUseFixtureState: Record<string, unknown> }).computerUseFixtureState;
+    Object.assign(state, { state: 'starting', reason: null });
+  });
+  await expect(page.getByTestId('computer-use-runtime')).toHaveText('Starting the local driver…');
+  await expect(page.getByTestId('computer-use-retry')).toHaveCount(0);
+  await electronApp.evaluate(() => {
+    const state = (globalThis as unknown as { computerUseFixtureState: Record<string, unknown> }).computerUseFixtureState;
+    Object.assign(state, { state: 'unavailable', reason: 'exited' });
+  });
+  await expect(page.getByTestId('computer-use-reason')).toContainText('stopped unexpectedly');
+  await page.getByTestId('computer-use-retry').click();
+  await expect(page.getByTestId('computer-use-runtime')).toHaveText('The local driver is running.');
+  await expect(page.getByTestId('computer-use-reason')).toHaveCount(0);
+  await expect(page.getByTestId('computer-use-toggle')).toBeChecked();
+  const calls = await electronApp.evaluate(() => (globalThis as unknown as { computerUseCalls: string[] }).computerUseCalls);
+  expect(calls.filter((call) => call === 'setEnabled')).toHaveLength(1);
+  expect(calls.filter((call) => call === 'retry')).toHaveLength(1);
+  expect(calls).not.toContain('requestPermissions');
 });
 
 test('failed opt-in displays an error and retains the safe host state', async ({ electronApp, page }) => {

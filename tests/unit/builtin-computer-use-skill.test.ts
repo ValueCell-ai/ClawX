@@ -27,18 +27,21 @@ vi.mock('@electron/gateway/config-delivery', () => ({
 }));
 
 const resources = resolve('resources');
-const upstreamCommit = '45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f';
+const upstreamCommit = '2d2f99228d4d2508dc6fcc84c176b296e146714a';
 const upstreamPath = 'libs/cua-driver/rust/Skills/cua-driver';
 // Independent Git blob IDs verify vendored provenance, not installed-version ownership.
 const upstreamBlobs: Record<string, string> = {
-  'UPSTREAM-SKILL.md': '08bb4acaeffc2c57e08386189e8929661613fad5',
-  'MACOS.md': '2e4424190da51b1d61f9d0b8f13efdf7d4a80693',
-  'WINDOWS.md': '504b5f427c05ed092dcdf05e19a2b54b921906fb',
-  'LINUX.md': '5a84eb0024df5f2012bdb0b3879aea9258e36e99',
-  'BROWSER.md': '35e652fb61bd3c528387b6aba22fbf1bc51ec5c1',
-  'RECORDING.md': 'c3bbea99a6e2b88e3340ed1cf74b36db40326014',
-  'EMBEDDING.md': 'f21d82cbffce3d2b9a3dcc69debbfd4087ea0ded',
-  'README.md': 'ca550f708d2f3806c5a0ad8512a9f53d4dc0a8da',
+  'UPSTREAM-SKILL.md': 'f93dc10bc4ef629a6ae7a50f38d6eaae96d35a02',
+  'MACOS.md': 'b502b6f557d0cc36b2d21bd05b222e03cb4092ec',
+  'WINDOWS.md': '3f1a1012ed92a74b5b89f0f9fb0a01f2e1f21b35',
+  'LINUX.md': '5364943c211c5dfd269594625bae56f32feda460',
+  'BROWSER.md': '85166d4d40e68d893dccc5bdad2f29ec591bacfe',
+  'RECORDING.md': '1090ef5929585101526add0cf3697dcd00cd4002',
+  'EMBEDDING.md': '8ab682382fa1089298cd301b247828ff7d8043af',
+  'README.md': '006ea54d79085ec2f31bc29d5da73218f40ef188',
+  'RUNTIME.md': 'd999b0ab794dd7d749fd1861908454ff0e2970c9',
+  'VISUAL.md': 'e3d3a430e942137a66d60a4ba5def7e4318f0b83',
+  'WORKFLOW.md': '41f39f8314ca2ad91d310db1de8ae20a82d47161',
   'LICENSE.md': 'b8b198ce3ebaa22c9f59588a80f9f1875d85b34a',
 };
 let root: string;
@@ -73,8 +76,8 @@ describe('built-in computer-use resource', () => {
     expect(Object.keys(frontmatter).sort()).toEqual(['description', 'name']);
     expect(frontmatter.name).toBe('computer-use');
     expect(frontmatter.description).toContain('/computer-use');
-    expect(content.split('\n').length).toBeLessThanOrEqual(165);
-    expect(content).toContain('official CUA 0.25.0');
+    expect(content.split('\n').length).toBeLessThanOrEqual(180);
+    expect(content).toContain('official CUA 0.37.0');
     expect(content).not.toContain('0.21.0');
     expect(content).toContain('takes precedence');
     expect(content).not.toContain('Use only the available `computer` tool');
@@ -82,12 +85,12 @@ describe('built-in computer-use resource', () => {
     expect(content).toContain(`https://github.com/trycua/cua/blob/${upstreamCommit}/libs/cua-driver/docs/action-result-contract.md`);
   });
 
-  it('vendors all eight unchanged documents and the root MIT license with verifiable provenance', () => {
+  it('vendors all eleven unchanged documents and the root MIT license with verifiable provenance', () => {
     expect(readFileSync(join(sourceDir(), '.gitattributes'), 'utf8')).toContain('*.md -text');
     const provenance = JSON.parse(readFileSync(join(sourceDir(), 'UPSTREAM.json'), 'utf8'));
     expect(provenance).toMatchObject({
       repository: 'https://github.com/trycua/cua',
-      tag: 'cua-driver-rs-v0.25.0', commit: upstreamCommit, version: '0.25.0',
+      tag: 'cua-driver-rs-v0.37.0', commit: upstreamCommit, version: '0.37.0',
     });
     expect(provenance.files.map((file: { destination: string }) => file.destination).sort()).toEqual(Object.keys(upstreamBlobs).sort());
     for (const file of provenance.files) {
@@ -96,7 +99,7 @@ describe('built-in computer-use resource', () => {
       expect(createHash('sha256').update(bytes).digest('hex')).toBe(file.sha256);
       expect(createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex')).toBe(upstreamBlobs[file.destination]);
     }
-    expect(YAML.parse(readFileSync(join(sourceDir(), 'UPSTREAM-SKILL.md'), 'utf8').split('---')[1]).version).toBe('0.25.0');
+    expect(YAML.parse(readFileSync(join(sourceDir(), 'UPSTREAM-SKILL.md'), 'utf8').split('---')[1]).version).toBe('0.37.0');
     expect(readFileSync(join(sourceDir(), 'LICENSE.md'), 'utf8')).toContain('MIT License');
   });
 

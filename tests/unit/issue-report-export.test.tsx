@@ -1,10 +1,15 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import i18n from '@/i18n';
 import { IssueReportExport } from '@/components/settings/IssueReportExport';
 import { hostApi } from '@/lib/host-api';
 import { useChatStore } from '@/stores/chat';
 
 const initialChatState = useChatStore.getState();
+
+beforeEach(async () => {
+  await i18n.changeLanguage('en');
+});
 
 afterEach(() => {
   cleanup();
@@ -33,6 +38,24 @@ describe('IssueReportExport', () => {
     expect(screen.getByTestId('issue-report-export')).toBeEnabled();
     fireEvent.click(screen.getByTestId('issue-report-export'));
     await waitFor(() => expect(exportIssueReport).toHaveBeenCalledWith({ sessionKeys: [] }));
+  });
+
+  it('opens the same export dialog from the sidebar shortcut', () => {
+    useChatStore.setState({
+      sessions: [],
+      sessionLabels: {},
+      currentSessionKey: null,
+      loadSessions: vi.fn().mockResolvedValue(undefined),
+    });
+
+    render(<IssueReportExport trigger="sidebar" sidebarCollapsed />);
+
+    const shortcut = screen.getByTestId('sidebar-issue-report-open');
+    expect(shortcut).toHaveAccessibleName('Export issue report');
+    expect(shortcut).not.toHaveTextContent('Export issue report');
+    expect(screen.getByTestId('sidebar-issue-report-icon')).toBeInTheDocument();
+    fireEvent.click(shortcut);
+    expect(screen.getByTestId('issue-report-dialog')).toBeInTheDocument();
   });
 
   it('keeps retained native subagent transcripts selectable for export', () => {

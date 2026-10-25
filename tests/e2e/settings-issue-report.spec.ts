@@ -97,9 +97,16 @@ test.describe('settings issue report export', () => {
       await installMocks(app);
       const page = await reloadStableWindow(app);
 
-      await navigateToSection(page, 'about');
-      await expect(page.getByTestId('settings-page')).toBeVisible();
-      await page.getByTestId('settings-issue-report-open').click();
+      const shortcut = page.getByTestId('sidebar-issue-report-open');
+      await expect(shortcut).toBeVisible();
+      await expect(shortcut).toHaveAccessibleName('Export issue report');
+      await expect(page.getByTestId('sidebar-issue-report-icon')).toBeVisible();
+      await expect(page.getByTestId('sidebar-nav-settings')).toBeVisible();
+      const footerOrder = await page
+        .locator('[data-testid="sidebar-nav-settings"], [data-testid="sidebar-issue-report-open"]')
+        .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-testid')));
+      expect(footerOrder).toEqual(['sidebar-nav-settings', 'sidebar-issue-report-open']);
+      await shortcut.click();
 
       const dialog = page.getByTestId('issue-report-dialog');
       await expect(dialog.getByRole('heading', { level: 2 })).toHaveCSS('font-weight', '500');

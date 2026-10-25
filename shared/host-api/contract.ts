@@ -141,10 +141,15 @@ export type SettingsSetPayload = { key: SettingsKey; value: SettingsValue };
 export type SettingsSetManyPayload = { patch: Partial<SettingsSnapshot> };
 export type SettingsResetResult = HostSuccess & { settings: SettingsSnapshot };
 
+export type ComputerUseRuntimeState = 'stopped' | 'starting' | 'running' | 'stopping' | 'unavailable';
+export type ComputerUseUnavailableReason = 'unsupported' | 'missingBinary' | 'permissions' | 'startupFailed' | 'exited' | 'stopFailed';
+
 export interface ComputerUseStatus {
   enabled: boolean;
   supported: boolean;
   running: boolean;
+  state: ComputerUseRuntimeState;
+  reason: ComputerUseUnavailableReason | null;
   permissions: { accessibility: boolean; screenRecording: string } | null;
 }
 
@@ -967,6 +972,7 @@ export type HostApiContract = {
     status: () => ComputerUseStatus;
     setEnabled: (payload: { enabled: boolean }) => ComputerUseStatus;
     requestPermissions: () => ComputerUseStatus;
+    retry: () => ComputerUseStatus;
   };
   gateway: {
     status: () => GatewayStatus;

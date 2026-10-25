@@ -152,6 +152,33 @@ describe('Computer Use management', () => {
     expect(runtime.start).not.toHaveBeenCalled();
   });
 
+  it('reads status and cancels native startup while initialization is pending', async () => {
+    const { api, runtime } = harness();
+    mocks.enabled = true;
+    let finish!: () => void;
+    runtime.start.mockImplementationOnce(() => new Promise<boolean>((resolve) => { finish = () => resolve(false); }));
+    runtime.stop.mockImplementationOnce(async () => { finish(); });
+    const initialize = api.initialize();
+    await vi.waitFor(() => expect(runtime.start).toHaveBeenCalledOnce());
+    await expect(api.status()).resolves.toMatchObject({ enabled: true });
+    await api.stop();
+    await initialize;
+    expect(runtime.stop).toHaveBeenCalledOnce();
+  });
+
+  it('retries only an enabled runtime without requesting permissions or rewriting preferences', async () => {
+    const { api, runtime } = harness();
+    await expect(api.retry()).rejects.toThrow('disabled');
+    expect(runtime.refreshPermissions).not.toHaveBeenCalled();
+    mocks.enabled = true;
+    await api.retry();
+    expect(runtime.refreshPermissions).toHaveBeenCalledOnce();
+    expect(runtime.requestPermissions).not.toHaveBeenCalled();
+    expect(mocks.enabled).toBe(true);
+    await api.stop();
+    await expect(api.retry()).rejects.toThrow('disabled');
+  });
+
   it('rejects malformed and unsupported enable requests', async () => {
     const { api, runtime } = harness();
     await expect(api.setEnabled({ enabled: 'true' } as never)).rejects.toThrow();

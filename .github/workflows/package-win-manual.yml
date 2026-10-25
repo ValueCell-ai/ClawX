@@ -49,7 +49,7 @@ jobs:
           git config --global --add "url.https://github.com/.insteadOf" "ssh://git@github.com/"
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Download uv binaries for Windows
         run: pnpm run uv:download:win

@@ -4,15 +4,15 @@
 
 The bundled `computer-use` Skill keeps the name and `/computer-use` picker
 command. Its native-operation guidance comes from the **official Skill
-accompanying CUA 0.25.0**, not a new ClawX action adapter or an independently
+accompanying CUA 0.37.0**, not a new ClawX action adapter or an independently
 invented computer-tool schema.
 
 - Repository: https://github.com/trycua/cua
-- Release tag: `cua-driver-rs-v0.25.0`
-- Commit: `45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f`
-- Source directory: https://github.com/trycua/cua/tree/45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f/libs/cua-driver/rust/Skills/cua-driver
-- MIT license: https://github.com/trycua/cua/blob/45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f/LICENSE.md
-- Pinned CLI dispatch: https://github.com/trycua/cua/blob/45d78fedcf2c7033ba33f10dd30f8af8ba31ec3f/libs/cua-driver/rust/crates/cua-driver/src/cli.rs
+- Release tag: `cua-driver-rs-v0.37.0`
+- Commit: `2d2f99228d4d2508dc6fcc84c176b296e146714a`
+- Source directory: https://github.com/trycua/cua/tree/2d2f99228d4d2508dc6fcc84c176b296e146714a/libs/cua-driver/rust/Skills/cua-driver
+- MIT license: https://github.com/trycua/cua/blob/2d2f99228d4d2508dc6fcc84c176b296e146714a/LICENSE.md
+- Pinned CLI dispatch: https://github.com/trycua/cua/blob/2d2f99228d4d2508dc6fcc84c176b296e146714a/libs/cua-driver/rust/crates/cua-driver/src/cli.rs
 
 The eight upstream Markdown documents are preserved locally: upstream `SKILL.md`
 is renamed to `UPSTREAM-SKILL.md`, alongside `MACOS.md`, `WINDOWS.md`, `LINUX.md`,
@@ -27,7 +27,7 @@ Historical, superseded source selection: the previous 0.21.0 bundle used tag
 `cua-driver-rs-v0.21.0`, commit `70db98d1bcd92890d778f4978e0eb107a4b66c1b`.
 Upstream `main` inspected during that planning at
 `00678fa8ec8f0f371716993ae4a207df812ef667` advertised Skill 0.24.0 with changed
-session and operation guidance. Neither is the authority for the current 0.25.0
+session and operation guidance. Neither is the authority for the current 0.37.0
 bundle. Do not mix moving source or OpenClaw's separate CUA adapter contract
 with the fixed release snapshot. The original ClawX screenshot-only synthesis and its
 Anthropic/OpenAI research are historical, superseded by this official source.
@@ -52,10 +52,10 @@ native-operation reference, not permission to install or manage another service.
   exec/read or filesystem contexts must report their limitations, not weaken
   shell approvals, sandbox policy, or global image settings.
 - Use a unique explicit non-default workflow session on every accepting CLI
-  call. Pinned 0.25.0 `run_call` uses the shared daemon-scoped `cli-explicit`
+  call. Pinned 0.37.0 `run_call` uses the shared daemon-scoped `cli-explicit`
   namespace for these labels, while anonymous calls are disposable. This is a
   source-level override of the official Skill's broad disposable-CLI statement,
-  not proof of live 0.25.0 continuity or permission to add persistent MCP. Labels
+  not proof of live 0.37.0 continuity or permission to add persistent MCP. Labels
   do not grant authority or survive daemon generations. Use `end_session` when
   finished; it is not daemon shutdown.
 - Route native tasks through windows, accessibility trees/element tokens, menus,
@@ -64,7 +64,7 @@ native-operation reference, not permission to install or manage another service.
   surface is available on supported hosts; primary-display screenshot/input is
   still supported, not the feature's exclusive scope. Neither all menu commands
   preserving foreground focus nor newer browser cleanup guarantees are promised.
-  The 0.25.0 upstream browser preparation, session-scoped refs, and cleanup
+  The 0.37.0 upstream browser preparation, session-scoped refs, and cleanup
   guidance is not evidence of a working ClawX browser workflow. Observe exact
   targets, require authorization for foreground takeover, and stop on unavailable
   routes rather than assuming the upgrade repaired them.
@@ -122,7 +122,7 @@ preserves the previous installation where possible and remains retryable; fresh
 installs must not expose a partial copy. Replace a same-name symlink itself without
 following or deleting its external referent. This narrowly scoped ownership policy
 does not introduce a general Skill updater or legacy migration framework. The
-official 0.25.0 document bytes and provenance/license checks, including the source
+official 0.37.0 document bytes and provenance/license checks, including the source
 file hashes in `UPSTREAM.json`, remain unchanged; those hashes verify provenance,
 not eligibility to replace an installation.
 Third-party preparation skip flags and
@@ -132,7 +132,7 @@ configuration, or prompt for OS permissions.
 
 ## Validation Boundaries
 
-`harness/specs/tasks/cua-025-upgrade.md` remains the version/source contract;
+`harness/specs/tasks/cua-037-upgrade.md` remains the version/source contract;
 `harness/specs/tasks/managed-computer-use-skill.md` supersedes its known-pristine
 installation policy with authoritative same-name replacement.
 `harness/specs/tasks/cua-driver-cli.md` superseded the original plugin-based Skill

@@ -63,7 +63,7 @@ jobs:
           git config --global --add "url.https://github.com/.insteadOf" "ssh://git@github.com/"
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Download uv binaries for macOS
         if: matrix.platform == 'mac'
@@ -290,6 +290,7 @@ jobs:
             release/*.rpm
             release/*.yml
             !release/builder-debug.yml
+          if-no-files-found: error
           retention-days: 7
 
   # ──────────────────────────────────────────────────────────────

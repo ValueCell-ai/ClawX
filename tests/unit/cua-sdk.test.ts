@@ -9,10 +9,10 @@ const state = vi.hoisted(() => ({ isPackaged: true, appPath: '/Applications/Claw
 vi.mock('electron', () => ({ app: { get isPackaged() { return state.isPackaged; }, getAppPath: () => state.appPath } }));
 
 describe('CUA SDK entrypoints', () => {
-  it('pins the installed SDK and native lock dependencies to 0.25.0 with physical entrypoints', async () => {
+  it('pins the installed SDK and native lock dependencies to 0.37.0 with physical entrypoints', async () => {
     const root = resolve('node_modules/@trycua/cua-driver');
     const sdkPackage = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
-    expect(sdkPackage.version).toBe('0.25.0');
+    expect(sdkPackage.version).toBe('0.37.0');
     for (const entry of ['electron', 'embedded']) {
       expect(sdkPackage.exports[`./${entry}`].import).toBe(`./dist/${entry}.js`);
       await access(join(root, 'dist', `${entry}.js`));
@@ -20,13 +20,13 @@ describe('CUA SDK entrypoints', () => {
     await access(join(root, 'dist/native/cua_driver_sdk.js'));
     const lock = parse(await readFile(resolve('pnpm-lock.yaml'), 'utf8'));
     expect(lock.importers['.'].dependencies['@trycua/cua-driver']).toEqual({
-      specifier: '0.25.0', version: '0.25.0',
+      specifier: '0.37.0', version: '0.37.0',
     });
     expect(Object.keys(sdkPackage.optionalDependencies)).toHaveLength(6);
     for (const [name, version] of Object.entries(sdkPackage.optionalDependencies)) {
-      expect(version).toBe('0.25.0');
-      expect(lock.packages[`${name}@0.25.0`].resolution.integrity).toMatch(/^sha512-/);
-      expect(lock.snapshots['@trycua/cua-driver@0.25.0'].optionalDependencies[name]).toBe('0.25.0');
+      expect(version).toBe('0.37.0');
+      expect(lock.packages[`${name}@0.37.0`].resolution.integrity).toMatch(/^sha512-/);
+      expect(lock.snapshots['@trycua/cua-driver@0.37.0'].optionalDependencies[name]).toBe('0.37.0');
     }
     expect(Object.keys(lock.packages).filter(name => name.startsWith('@trycua/cua-driver')))
       .toHaveLength(7);
