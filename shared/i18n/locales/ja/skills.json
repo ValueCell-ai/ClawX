@@ -80,6 +80,12 @@
         "open": "{{name}} の詳細を表示"
     },
     "source": {
+        "quickAccess": {
+            "workspace": "ワークスペース",
+            "openclaw": "OpenClaw",
+            "agents": ".agents フォルダー",
+            "legacy": "組み込み・拡張"
+        },
         "badge": {
             "bundled": "内蔵ディレクトリ",
             "managed": "管理ディレクトリ",

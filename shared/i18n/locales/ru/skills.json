@@ -80,6 +80,12 @@
         "open": "Подробнее о {{name}}"
     },
     "source": {
+        "quickAccess": {
+            "workspace": "Рабочая область",
+            "openclaw": "OpenClaw",
+            "agents": "Каталог .agents",
+            "legacy": "Встроенные и расширения"
+        },
         "badge": {
             "bundled": "Встроенный каталог",
             "managed": "Управляемый",

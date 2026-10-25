@@ -1,3 +1,4 @@
+import { expectMenuSelection } from './fixtures/menu-selection';
 import { completeSetup, expect, installIpcMocks, test } from './fixtures/electron';
 
 function stableStringify(value: unknown): string {
@@ -88,6 +89,17 @@ test.describe('cron schedule builder', () => {
 
     // The custom 24h time picker exposes hours 0-23 and no AM/PM controls.
     await page.locator('#cron-once-time').click();
+    const timePicker = page.locator('#cron-once-time').locator('..');
+    const selectedTimeCells = timePicker.locator('[aria-current="true"]');
+    await expect(selectedTimeCells).toHaveCount(2);
+    await expect(selectedTimeCells.nth(0)).toHaveCSS('height', '28px');
+    await expect(selectedTimeCells.nth(1)).toHaveCSS('height', '28px');
+    const selectedBackground = await expectMenuSelection(selectedTimeCells.nth(0));
+    expect(await expectMenuSelection(selectedTimeCells.nth(1))).toBe(selectedBackground);
+    await page.getByRole('button', { name: '23', exact: true }).first().click();
+    await expect(page.locator('#cron-once-time')).toHaveText(/^23:/);
+    await expectMenuSelection(timePicker.getByRole('button', { name: '23', exact: true }).first());
+    await expect(timePicker.locator('button[data-selected="false"] [data-slot="menu-selection-indicator"]')).toHaveCount(0);
     await expect(page.getByRole('button', { name: '23', exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'AM' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'PM' })).toHaveCount(0);

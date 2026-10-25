@@ -62,6 +62,9 @@
  *     hover      :  hover:bg-black/5 dark:hover:bg-white/5
  *     idle text  :  text-muted-foreground (or text-foreground/80 / 70)
  *
+ *     Custom dropdown selections: menuOptionStateClass + MenuSelectionIndicator
+ *     (bg-primary/10 with a trailing primary dot).
+ *
  *     Reference: components/layout/Sidebar.tsx, pages/Settings/index.tsx
  *     (theme + language picker).
  *
@@ -256,6 +259,16 @@
 }
 
 @layer components {
+  /* Shared option spacing for custom dropdowns and popup lists. */
+  .clawx-menu-list {
+    @apply space-y-1;
+  }
+
+  /* 28px single-line rows; description rows grow with their content. */
+  .clawx-menu-item {
+    @apply min-h-7 rounded-lg px-3 py-1;
+  }
+
   .sidebar-nav-text.sidebar-nav-text {
     @apply text-sm font-normal leading-4;
   }
@@ -415,35 +428,56 @@
   }
 }
 
-/* Custom scrollbar: keep scrollbars visually quiet until the user hovers a scroll area. */
+/* Quiet scrollbars: fixed narrow geometry avoids reflow when a thumb appears. */
 * {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
 }
 
 *:hover {
-  scrollbar-color: hsl(var(--border)) transparent;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.22) transparent;
+}
+
+/* In Chromium, non-auto standard properties override ::-webkit-scrollbar.
+ * Let the pixel-sized rules below own Electron's scrollbar geometry. */
+@supports selector(::-webkit-scrollbar) {
+  *,
+  *:hover {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
-::-webkit-scrollbar-track {
-  @apply bg-transparent;
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-transparent rounded-full;
+  min-height: 24px;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  background-color: transparent;
+  background-clip: padding-box;
 }
 
 *:hover::-webkit-scrollbar-thumb {
-  @apply bg-border;
+  background-color: hsl(var(--muted-foreground) / 0.22);
 }
 
 *:hover::-webkit-scrollbar-thumb:hover {
-  @apply bg-muted-foreground/30;
+  background-color: hsl(var(--muted-foreground) / 0.4);
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 /* Monaco's default light diff theme is pure white; keep it aligned with ClawX's light app background. */
@@ -716,12 +750,6 @@
   border-color: hsl(var(--foreground) / .25);
   box-shadow: 0 8px 30px -12px hsl(var(--foreground) / .16), 0 0 0 1px hsl(var(--foreground) / .04);
 }
-.clawx-home-mark { animation: clawx-home-arrive 280ms ease-out both; }
-@keyframes clawx-home-arrive {
-  from { opacity: 0; transform: translateY(5px); }
-  to { opacity: 1; transform: translateY(0); }
-}
 @media (prefers-reduced-motion: reduce) {
-  .clawx-home-mark { animation: none; }
   .clawx-composer { transition: none; }
 }

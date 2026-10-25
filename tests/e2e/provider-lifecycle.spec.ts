@@ -634,6 +634,8 @@ test('provider configuration stays discoverable and its submit action stays visi
   await page.getByTestId(`provider-more-${TEST_PROVIDER_ID}`).click();
   await expect(page.getByTestId(`provider-edit-${TEST_PROVIDER_ID}`)).toHaveText('Edit configuration');
   await expect(page.getByTestId(`provider-delete-${TEST_PROVIDER_ID}`)).toBeVisible();
+  await expect(page.getByTestId(`provider-edit-${TEST_PROVIDER_ID}`)).toHaveCSS('height', '28px');
+  await expect(page.getByTestId(`provider-delete-${TEST_PROVIDER_ID}`)).toHaveCSS('height', '28px');
   await page.keyboard.press('Escape');
   await page.getByTestId('providers-add-button').click();
   await expect(page.getByTestId('provider-search')).toHaveCount(0);

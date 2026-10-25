@@ -141,6 +141,7 @@ test.describe('ClawX chat model picker', () => {
                 authMode: 'api_key',
                 baseUrl: 'http://127.0.0.1:2222/v1',
                 model: refs.betaModelRef,
+                metadata: { customModels: [refs.betaModelRef, 'model-beta-lite', 'model-alpha'] },
                 enabled: true,
                 isDefault: false,
                 createdAt: now,
@@ -233,7 +234,37 @@ test.describe('ClawX chat model picker', () => {
       await page.getByTestId('chat-model-picker-button').click();
       await expect(page.getByTestId('chat-model-picker-menu')).toBeVisible();
       await expect(page.getByTestId('chat-model-picker-menu')).toContainText('provider/model-beta');
-      await expect(page.getByTestId('chat-model-picker-menu')).toContainText('Beta');
+      const modelMenu = page.getByTestId('chat-model-picker-menu');
+      const modelScroll = modelMenu.locator('.overflow-y-auto');
+      const scrollGeometry = await modelScroll.evaluate(element => ({
+        gutter: element.offsetWidth - element.clientWidth,
+        overflows: element.scrollHeight > element.clientHeight,
+        clientWidth: element.clientWidth,
+      }));
+      expect(scrollGeometry.overflows).toBe(true);
+      expect(scrollGeometry.gutter).toBeLessThanOrEqual(6);
+      await modelScroll.hover();
+      expect(await modelScroll.evaluate(element => element.clientWidth)).toBe(scrollGeometry.clientWidth);
+      await page.mouse.wheel(0, 160);
+      await expect.poll(() => modelScroll.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+      await modelScroll.evaluate(element => { element.scrollTop = 0; });
+      const alphaGroup = modelMenu.getByRole('group', { name: 'Alpha', exact: true });
+      const betaGroup = modelMenu.getByRole('group', { name: 'Beta', exact: true });
+      await expect(modelMenu.getByRole('group')).toHaveCount(4);
+      await expect(modelMenu.getByText('Beta', { exact: true })).toHaveCount(1);
+      await expect(betaGroup.getByRole('button')).toHaveText(['provider/model-beta', 'model-beta-lite', 'model-alpha']);
+      await expect(alphaGroup.getByRole('button', { name: 'model-alpha', exact: true })).toBeVisible();
+      await expect(betaGroup.getByRole('button', { name: 'model-alpha', exact: true })).toBeVisible();
+      await expect(betaGroup.getByRole('button')).not.toContainText(['Beta', 'Beta', 'Beta']);
+      const betaOptions = betaGroup.getByRole('button');
+      const firstBeta = await betaOptions.nth(0).boundingBox();
+      const secondBeta = await betaOptions.nth(1).boundingBox();
+      expect(firstBeta!.height).toBe(28);
+      expect(secondBeta!.height).toBe(28);
+      expect(secondBeta!.y - firstBeta!.y - firstBeta!.height).toBeCloseTo(4, 0);
+      const alphaBounds = await alphaGroup.boundingBox();
+      const betaBounds = await betaGroup.boundingBox();
+      expect(betaBounds!.y - alphaBounds!.y - alphaBounds!.height).toBeCloseTo(4, 0);
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('provider/model-beta (Beta)');
       await expect(page.getByTestId('chat-model-picker-menu')).toContainText('gpt-5.6');
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('gpt-5.5');
@@ -241,15 +272,20 @@ test.describe('ClawX chat model picker', () => {
       await expect(page.getByTestId('chat-model-picker-menu')).toContainText('kimi-k2.7');
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('kimi-k2.6');
       await expect(page.getByTestId('chat-model-picker-menu')).not.toContainText('moonshot/kimi-k2.7');
-      const gptOption = page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'gpt-5.6 OpenAI' });
+      const gptOption = page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'gpt-5.6', exact: true });
       await expect(gptOption.getByTestId('chat-model-picker-option-icon')).toHaveAttribute('data-model-icon', 'openai');
-      const kimiOption = page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'kimi-k2.7 Moonshot' });
+      const kimiOption = page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'kimi-k2.7', exact: true });
       await expect(kimiOption.getByTestId('chat-model-picker-option-icon')).toHaveAttribute('data-model-icon', 'kimi');
       await gptOption.click();
       await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/gpt-5.6/);
       await expect(page.getByTestId('chat-model-picker-current-icon')).toHaveAttribute('data-model-icon', 'openai');
       await page.getByTestId('chat-model-picker-button').click();
-      await page.getByTestId('chat-model-picker-menu').getByRole('button', { name: 'provider/model-beta Beta' }).click();
+      await betaGroup.getByRole('button', { name: 'model-alpha', exact: true }).click();
+      await expect(page.getByTestId('chat-model-picker-button')).toHaveText('model-alpha');
+      await page.getByTestId('chat-model-picker-button').click();
+      await expect(betaGroup.getByRole('button', { name: 'model-alpha', exact: true })).toHaveAttribute('aria-current', 'true');
+      await expect(alphaGroup.getByRole('button', { name: 'model-alpha', exact: true })).not.toHaveAttribute('aria-current', 'true');
+      await betaGroup.getByRole('button', { name: 'provider/model-beta', exact: true }).click();
       await expect(page.getByTestId('chat-model-picker-button')).toHaveText(/provider\/model-beta/);
       await expect(page.getByTestId('chat-model-picker-button')).not.toContainText('Beta');
       await expect(page.getByTestId('chat-model-picker-current-icon')).toHaveAttribute('data-model-icon', 'fallback');
@@ -257,6 +293,11 @@ test.describe('ClawX chat model picker', () => {
       const requests = await app.evaluate(() => (
         (globalThis as typeof globalThis & { __chatModelPickerRequests?: Array<{ path: string; method: string; body: unknown }> }).__chatModelPickerRequests ?? []
       ));
+      expect(requests).toContainEqual({
+        path: '/api/agents/main/model',
+        method: 'PUT',
+        body: { modelRef: 'custom-beta5678/model-alpha' },
+      });
       expect(requests).toContainEqual({
         path: '/api/agents/main/model',
         method: 'PUT',

@@ -80,6 +80,12 @@
         "open": "查看 {{name}} 详情"
     },
     "source": {
+        "quickAccess": {
+            "workspace": "工作区",
+            "openclaw": "OpenClaw",
+            "agents": ".agents 目录",
+            "legacy": "内置与扩展"
+        },
         "badge": {
             "bundled": "内置目录",
             "managed": "托管目录",

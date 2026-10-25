@@ -87,6 +87,7 @@ test('searches beyond pagination and collapsed workspaces, persists pins through
     await ordinaryRow.screenshot({ path: testInfo.outputPath('task-row-hover.png') });
     await ordinaryActions.click();
     await expect(page.getByRole('menuitem', { name: 'Pin task', exact: true })).toBeVisible();
+    for (const item of await page.getByRole('menuitem').all()) await expect(item).toHaveCSS('height', '28px');
     await page.mouse.move(600, 80);
     await expect(ordinaryActions).toHaveCSS('opacity', '1');
     await expect(ordinaryTime).toBeHidden();

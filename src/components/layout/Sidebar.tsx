@@ -114,7 +114,7 @@ function NavItem({ to, icon, label, badge, collapsed, onClick, testId, activePat
   );
 }
 
-const taskMenuItemClass = 'flex cursor-pointer items-center rounded-lg px-3 py-2 text-sm outline-none focus:bg-black/5 dark:focus:bg-white/10';
+const taskMenuItemClass = 'clawx-menu-item flex cursor-pointer items-center text-sm outline-none focus:bg-black/5 dark:focus:bg-white/10';
 
 const INITIAL_NOW_MS = Date.now();
 const INITIAL_WORKSPACE_SESSION_LIMIT = 5;
@@ -610,7 +610,7 @@ export function Sidebar() {
                   <MoreHorizontal aria-hidden="true" className="h-4 w-4" />
                 </button>
               </DropdownMenu.Trigger>
-              <DropdownMenu.Portal><DropdownMenu.Content align="start" side="right" sideOffset={4} className="z-50 min-w-36 rounded-xl border border-border bg-surface-modal p-1 shadow-lg">
+              <DropdownMenu.Portal><DropdownMenu.Content align="start" side="right" sideOffset={4} className="clawx-menu-list z-50 min-w-36 rounded-xl border border-border bg-surface-modal p-1 shadow-lg">
                 <DropdownMenu.Item className={taskMenuItemClass} data-testid={`sidebar-session-pin-${s.key}`} onSelect={() => {
                   handleTogglePin(s.key);
                 }}>

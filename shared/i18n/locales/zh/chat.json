@@ -16,8 +16,7 @@
             "pdf": "PDF 工具"
         },
         "skillUnavailable": "请前往技能页启用或安装此技能。",
-        "skillsFailed": "技能加载失败，请打开技能菜单重试。",
-        "invitation": "从一份文档、一个问题，或一个新想法开始。"
+        "skillsFailed": "技能加载失败，请打开技能菜单重试。"
     },
     "noLogs": "（暂无日志）",
     "scrollToLatest": "回到底部",

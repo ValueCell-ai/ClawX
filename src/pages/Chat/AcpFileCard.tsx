@@ -212,7 +212,7 @@ export function AcpFileOpenWith({
       : t('fileCard.showInFileManager');
   const hasApplicationSection = loading || handlers.length > 0;
   const itemClassName = cn(
-    'flex cursor-default select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none',
+    'clawx-menu-item flex cursor-default select-none items-center gap-2 text-sm outline-none',
     'data-[highlighted]:bg-black/5 data-[highlighted]:text-foreground dark:data-[highlighted]:bg-white/10',
   );
 
@@ -238,7 +238,7 @@ export function AcpFileOpenWith({
           data-testid="acp-attachment-open-with-menu"
           align="end"
           sideOffset={4}
-          className="z-50 max-h-72 min-w-48 overflow-y-auto rounded-lg border border-black/10 bg-surface-modal p-1 text-foreground shadow-lg dark:border-white/10"
+          className="clawx-menu-list z-50 max-h-72 min-w-48 overflow-y-auto rounded-lg border border-black/10 bg-surface-modal p-1 text-foreground shadow-lg dark:border-white/10"
         >
           {browserUrl && (
             <>

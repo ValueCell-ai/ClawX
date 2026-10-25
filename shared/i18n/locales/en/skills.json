@@ -80,6 +80,12 @@
         "open": "View {{name}} details"
     },
     "source": {
+        "quickAccess": {
+            "workspace": "Workspace",
+            "openclaw": "OpenClaw",
+            "agents": ".agents folder",
+            "legacy": "Built-in & extensions"
+        },
         "badge": {
             "bundled": "Bundled dir",
             "managed": "Managed",

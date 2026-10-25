@@ -10,10 +10,14 @@ import {
   useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo,
   type SetStateAction,
 } from 'react';
-import { Presentation, Table2, FileScan, SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Search, ChevronDown, Check } from 'lucide-react';
+import { Presentation, Table2, FileScan, SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Search, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { MenuSelectionIndicator } from '@/components/ui/menu-selection';
+import { menuOptionStateClass } from '@/components/ui/menu-selection-styles';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { QuickSkillOption } from '@/components/skills/QuickSkillOption';
+import { getQuickSkillSourceLabel } from '@/lib/skill-source-label';
 import { hostApi } from '@/lib/host-api';
 import { cn } from '@/lib/utils';
 import { useGatewayStore } from '@/stores/gateway';
@@ -38,7 +42,6 @@ import { useVoiceDictation } from '@/hooks/useVoiceDictation';
 import { VoiceDictationButton } from '@/components/voice/VoiceDictationButton';
 import { MicrophonePermissionDialog } from '@/components/voice/MicrophonePermissionDialog';
 import type { AsrMicrophoneAccessResult } from '@shared/host-api/contract';
-import logoSvg from '@/assets/logo.svg';
 import { ModelIcon } from '@/components/common/ModelIcon';
 import { AcpSessionPlan } from './AcpSessionPlan';
 import { AcpSubagentSessions, type AcpSubagentSession } from './AcpSubagentSessions';
@@ -329,7 +332,7 @@ export function ChatInput({
   subagentSessions = [],
   onSelectSubagent,
 }: ChatInputProps) {
-  const { t, i18n } = useTranslation('chat');
+  const { t, i18n } = useTranslation(['chat', 'skills']);
   const [uncontrolledInput, setUncontrolledInput] = useState('');
   const input = onDraftChange ? (draft ?? '') : uncontrolledInput;
   const setInput = useCallback((update: SetStateAction<string>) => {
@@ -393,6 +396,22 @@ export function ChatInput({
     ),
     [providerAccounts, providerDefaultAccountId, providerStatuses, providerVendors],
   );
+  const modelGroups = useMemo(() => {
+    const groups = new Map<string, { providerKey: string; providerName: string; options: typeof modelOptions }>();
+    for (const option of modelOptions) {
+      const group = groups.get(option.runtimeProviderKey);
+      if (group) {
+        group.options.push(option);
+      } else {
+        groups.set(option.runtimeProviderKey, {
+          providerKey: option.runtimeProviderKey,
+          providerName: option.providerName,
+          options: [option],
+        });
+      }
+    }
+    return [...groups.values()];
+  }, [modelOptions]);
   const configuredModelRef = useMemo(
     () => resolveConfiguredModelRef(currentAgent?.modelRef, defaultModelRef, modelOptions),
     [currentAgent?.modelRef, defaultModelRef, modelOptions],
@@ -416,9 +435,10 @@ export function ChatInput({
     return quickSkills.filter((skill) =>
       skill.name.toLowerCase().includes(query)
       || skill.description.toLowerCase().includes(query)
+      || getQuickSkillSourceLabel(skill.source, t).toLowerCase().includes(query)
       || skill.sourceLabel.toLowerCase().includes(query),
     );
-  }, [quickSkills, skillQuery]);
+  }, [quickSkills, skillQuery, t]);
   const showAgentPicker = mentionableAgents.length > 0;
   const showModelPicker = modelOptions.length > 1;
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
@@ -1160,7 +1180,7 @@ export function ChatInput({
   return (
     <div
       className={cn(
-        'relative mx-auto w-full max-w-3xl shrink-0 px-4',
+        'relative mx-auto w-full max-w-3xl shrink-0 px-4 [container-type:inline-size]',
         welcome ? 'my-auto py-4' : 'pt-4 pb-3',
       )}
       onDragOver={handleDragOver}
@@ -1169,16 +1189,9 @@ export function ChatInput({
     >
       {welcome && (
         <div data-testid="acp-chat-empty-state" className="mb-3 text-center">
-          <div className="clawx-home-mark mb-4 flex items-center justify-center gap-2.5" aria-hidden="true">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/[0.07] ring-1 ring-primary/10 dark:bg-primary/10">
-              <img src={logoSvg} alt="" className="h-8 w-8" />
-            </span>
-            <span className="text-lg font-semibold tracking-tight text-foreground/85">ClawX</span>
-          </div>
-          <h1 className="mb-2 font-sans text-2xl font-medium tracking-normal text-foreground sm:text-[26px]">
+          <h1 className="mb-6 font-sans text-2xl font-medium tracking-normal text-foreground sm:text-[26px]">
             {t('welcome.subtitle')}
           </h1>
-          <p className="mb-7 text-meta leading-relaxed text-muted-foreground">{t('welcome.invitation')}</p>
           <div data-testid="chat-home-skills" className="flex min-h-8 flex-wrap justify-start gap-1.5">
             {([
               { name: 'docx', icon: FileText, color: 'text-blue-700 dark:text-blue-400', background: 'bg-blue-500/10' },
@@ -1390,11 +1403,11 @@ export function ChatInput({
                     <AtSign className="h-3.5 w-3.5" />
                   </Button>
                   {pickerOpen && (
-                    <div className="absolute left-0 bottom-full z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
-                      <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
+                    <div data-testid="chat-agent-picker-menu" className="absolute left-0 bottom-full z-20 mb-2 w-96 max-w-[calc(100cqw-7rem)] overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
+                      <div className="px-3 py-1.5 text-tiny font-medium text-muted-foreground/80">
                         {t('composer.agentPickerTitle', { currentAgent: currentAgentName })}
                       </div>
-                      <div className="max-h-64 overflow-y-auto">
+                      <div className="clawx-menu-list max-h-64 overflow-y-auto">
                         {mentionableAgents.map((agent) => (
                           <AgentPickerItem
                             key={agent.id}
@@ -1434,7 +1447,7 @@ export function ChatInput({
                   <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', skillPickerOpen && 'rotate-180')} />
                 </button>
                 {skillPickerOpen && (
-                  <div className="absolute left-0 bottom-full z-20 mb-2 w-80 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
+                  <div data-testid="chat-skill-picker-menu" className="absolute left-0 bottom-full z-20 mb-2 w-96 max-w-[calc(100cqw-7rem)] overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
                     <div className="flex items-center gap-2 rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
                       <Search className="h-3.5 w-3.5 text-muted-foreground" />
                       <input
@@ -1445,10 +1458,10 @@ export function ChatInput({
                         autoFocus
                       />
                     </div>
-                    <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
+                    <div className="px-3 py-1.5 text-tiny font-medium text-muted-foreground/80">
                       {t('composer.skillPickerTitle', { agent: currentAgentName })}
                     </div>
-                    <div className="max-h-72 overflow-y-auto">
+                    <div className="clawx-menu-list max-h-72 overflow-y-auto">
                       {skillsLoading ? (
                         <div className="px-3 py-4 text-xs text-muted-foreground">
                           {t('composer.skillLoading')}
@@ -1463,8 +1476,9 @@ export function ChatInput({
                         </div>
                       ) : (
                         filteredQuickSkills.map((skill) => (
-                          <SkillPickerItem
+                          <QuickSkillOption
                             key={`${skill.source}:${skill.name}`}
+                            testId={`chat-composer-skill-option-${skill.name}`}
                             skill={skill}
                             selected={false}
                             onSelect={() => {
@@ -1535,37 +1549,39 @@ export function ChatInput({
                         className="absolute right-0 bottom-full z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
                         data-testid="chat-model-picker-menu"
                       >
-                        <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
+                        <div className="px-3 py-1.5 text-tiny font-medium text-muted-foreground/80">
                           {t('composer.modelPickerTitle')}
                         </div>
-                        <div className="max-h-64 overflow-y-auto">
-                          {modelOptions.map((option) => (
-                            <button
-                              key={option.modelRef}
-                              type="button"
-                              onClick={() => void handleSelectModel(option.modelRef)}
-                              className={cn(
-                                'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors',
-                                option.modelRef === effectiveModelRef ? 'bg-primary/10 text-foreground' : 'hover:bg-black/5 dark:hover:bg-white/5'
-                              )}
-                              data-testid={`chat-model-picker-option-${option.label}`}
-                            >
-                              <span className="flex min-w-0 items-center gap-2">
-                                <ModelIcon modelName={option.modelId} testId="chat-model-picker-option-icon" />
-                                <span className="min-w-0 truncate">
-                                  <span>{option.modelId}</span>
-                                  {option.providerName ? (
-                                    <>
-                                      {' '}
-                                      <span className="font-normal text-muted-foreground">{option.providerName}</span>
-                                    </>
-                                  ) : null}
-                                </span>
-                              </span>
-                              {option.modelRef === effectiveModelRef && (
-                                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                              )}
-                            </button>
+                        <div className="max-h-64 space-y-1 overflow-y-auto">
+                          {modelGroups.map((group) => (
+                            <div key={group.providerKey} role="group" aria-label={group.providerName}
+                              data-testid={`chat-model-provider-group-${group.providerKey}`}>
+                              <div title={group.providerName} className="truncate px-3 pb-0.5 pt-1 text-tiny font-medium text-muted-foreground">
+                                {group.providerName}
+                              </div>
+                              <div className="clawx-menu-list">
+                                {group.options.map((option) => (
+                                  <button
+                                    key={option.modelRef}
+                                    type="button"
+                                    onClick={() => void handleSelectModel(option.modelRef)}
+                                    className={cn(
+                                      'clawx-menu-item flex w-full items-center justify-between gap-3 text-left text-sm font-medium transition-colors',
+                                      menuOptionStateClass(option.modelRef === effectiveModelRef)
+                                    )}
+                                    data-testid={`chat-model-picker-option-${option.label}`}
+                                    title={option.label}
+                                    aria-current={option.modelRef === effectiveModelRef ? 'true' : undefined}
+                                  >
+                                    <span className="flex min-w-0 items-center gap-2">
+                                      <ModelIcon modelName={option.modelId} testId="chat-model-picker-option-icon" />
+                                      <span className="min-w-0 truncate">{option.modelId}</span>
+                                    </span>
+                                    <MenuSelectionIndicator selected={option.modelRef === effectiveModelRef} />
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
                           ))}
                         </div>
                       </div>
@@ -1641,7 +1657,7 @@ export function ChatInput({
                   {workspaceMenuOpen && !workspaceSelectorDisabled && (
                     <div
                       data-testid="chat-workspace-menu"
-                      className="absolute bottom-full left-0 z-20 mb-2 max-h-80 w-64 overflow-y-auto rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
+                      className="clawx-menu-list absolute bottom-full left-0 z-20 mb-2 max-h-80 w-64 overflow-y-auto rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10"
                     >
                       <button
                         type="button"
@@ -1649,13 +1665,13 @@ export function ChatInput({
                         aria-current={isDefaultWorkspacePath(workspacePath) ? 'true' : undefined}
                         onClick={handleSelectDefaultWorkspace}
                         className={cn(
-                          'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/10',
-                          isDefaultWorkspacePath(workspacePath) && 'bg-black/5 dark:bg-white/10',
+                          'clawx-menu-item flex w-full items-center gap-2 text-left text-sm font-medium text-foreground transition-colors',
+                          menuOptionStateClass(isDefaultWorkspacePath(workspacePath)),
                         )}
                       >
                         <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         <span className="min-w-0 flex-1 truncate">{t('composer.defaultWorkspaceOption')}</span>
-                        {isDefaultWorkspacePath(workspacePath) && <Check className="h-3.5 w-3.5 shrink-0" />}
+                        <MenuSelectionIndicator selected={isDefaultWorkspacePath(workspacePath)} />
                       </button>
                       {workspaceOptions.map((option) => {
                         const optionPath = normalizeWorkspacePath(option.path);
@@ -1670,13 +1686,13 @@ export function ChatInput({
                             aria-current={selected ? 'true' : undefined}
                             onClick={() => handleSelectWorkspace(optionPath)}
                             className={cn(
-                              'flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/10',
-                              selected && 'bg-black/5 dark:bg-white/10',
+                              'clawx-menu-item flex w-full items-center gap-2 text-left text-sm font-medium text-foreground transition-colors',
+                              menuOptionStateClass(selected),
                             )}
                           >
                             <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                             <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                            {selected && <Check className="h-3.5 w-3.5 shrink-0" />}
+                            <MenuSelectionIndicator selected={selected} />
                           </button>
                         );
                       })}
@@ -1685,7 +1701,7 @@ export function ChatInput({
                         type="button"
                         data-testid="chat-workspace-choose-other"
                         onClick={() => void handleChooseOtherWorkspace()}
-                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                        className="clawx-menu-item flex w-full items-center gap-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-black/5 dark:hover:bg-white/10"
                       >
                         <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         <span className="min-w-0 flex-1 truncate">{t('composer.chooseOtherWorkspaceOption')}</span>
@@ -1827,56 +1843,17 @@ function AgentPickerItem({
     <button
       type="button"
       onClick={onSelect}
+      aria-current={selected ? 'true' : undefined}
       className={cn(
-        'flex w-full flex-col items-start rounded-xl px-3 py-2 text-left transition-colors',
-        selected ? 'bg-primary/10 text-foreground' : 'hover:bg-black/5 dark:hover:bg-white/5'
+        'clawx-menu-item flex w-full items-center justify-between gap-3 text-left transition-colors',
+        menuOptionStateClass(selected)
       )}
     >
-      <span className="text-sm font-medium text-foreground">{agent.name}</span>
-      <span className="text-tiny text-muted-foreground">
-        {agent.modelDisplay}
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium text-foreground">{agent.name}</span>
+        <span className="block truncate text-tiny text-muted-foreground">{agent.modelDisplay}</span>
       </span>
+      <MenuSelectionIndicator selected={selected} />
     </button>
-  );
-}
-
-function SkillPickerItem({
-  skill,
-  selected,
-  onSelect,
-}: {
-  skill: QuickAccessSkill;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          data-testid={`chat-composer-skill-option-${skill.name}`}
-          onClick={onSelect}
-          className={cn(
-            'flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors',
-            selected ? 'bg-primary/10 text-foreground' : 'hover:bg-black/5 dark:hover:bg-white/5',
-          )}
-        >
-          <div className="min-w-0">
-            <div className="truncate text-meta font-semibold text-foreground">
-              <span className="font-mono">/{skill.name}</span>
-            </div>
-            <div className="truncate text-tiny text-muted-foreground">
-              {skill.sourceLabel}
-            </div>
-          </div>
-          <span className="rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-2xs font-medium text-muted-foreground dark:border-white/10 dark:bg-white/[0.04]">
-            {skill.sourceLabel}
-          </span>
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="right" className="max-w-xs text-xs leading-relaxed">
-        {skill.description}
-      </TooltipContent>
-    </Tooltip>
   );
 }

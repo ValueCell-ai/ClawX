@@ -608,9 +608,9 @@ function ProviderCard({
                 <Button data-testid={`provider-more-${account.id}`} variant="ghost" size="icon" className="h-9 w-9" aria-label={t('aiProviders.card.more')}><MoreHorizontal className="h-4 w-4" /></Button>
               </DropdownMenu.Trigger>
               <DropdownMenu.Portal>
-                <DropdownMenu.Content align="end" sideOffset={4} className="z-50 min-w-40 rounded-lg border border-black/10 dark:border-white/10 bg-surface-modal p-1 shadow-lg">
-                  <DropdownMenu.Item data-testid={`provider-edit-${account.id}`} onSelect={onEdit} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm outline-none cursor-pointer focus:bg-black/5 dark:focus:bg-white/10"><Edit className="h-4 w-4" />{t('aiProviders.card.editKey')}</DropdownMenu.Item>
-                  <DropdownMenu.Item data-testid={`provider-delete-${account.id}`} onSelect={onDelete} className="flex items-center gap-2 rounded-md px-3 py-2 text-sm text-destructive outline-none cursor-pointer focus:bg-black/5 dark:focus:bg-white/10"><Trash2 className="h-4 w-4" />{t('aiProviders.card.delete')}</DropdownMenu.Item>
+                <DropdownMenu.Content align="end" sideOffset={4} className="clawx-menu-list z-50 min-w-40 rounded-lg border border-black/10 dark:border-white/10 bg-surface-modal p-1 shadow-lg">
+                  <DropdownMenu.Item data-testid={`provider-edit-${account.id}`} onSelect={onEdit} className="clawx-menu-item flex items-center gap-2 text-sm outline-none cursor-pointer focus:bg-black/5 dark:focus:bg-white/10"><Edit className="h-4 w-4" />{t('aiProviders.card.editKey')}</DropdownMenu.Item>
+                  <DropdownMenu.Item data-testid={`provider-delete-${account.id}`} onSelect={onDelete} className="clawx-menu-item flex items-center gap-2 text-sm text-destructive outline-none cursor-pointer focus:bg-black/5 dark:focus:bg-white/10"><Trash2 className="h-4 w-4" />{t('aiProviders.card.delete')}</DropdownMenu.Item>
                 </DropdownMenu.Content>
               </DropdownMenu.Portal>
             </DropdownMenu.Root>

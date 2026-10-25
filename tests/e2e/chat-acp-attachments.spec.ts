@@ -300,6 +300,7 @@ test.describe('ACP media attachments', () => {
           ? 'Show in File Explorer'
           : 'Show in file manager';
       await expect(page.getByRole('menuitem', { name: revealLabel, exact: true })).toBeVisible();
+      await expect(page.getByRole('menuitem', { name: revealLabel, exact: true })).toHaveCSS('height', '28px');
 
       if (process.platform === 'darwin' || process.platform === 'win32') {
         await expect.poll(async () => filesActionCalls(
@@ -318,6 +319,8 @@ test.describe('ACP media attachments', () => {
         expect(resolvedAttachmentRefs(await fixture.getHostInvocations())).toContainEqual(openWithRef);
         const appRows = page.getByTestId('acp-attachment-open-with-app');
         await expect(appRows).toHaveCount(2);
+        await expect(appRows.nth(0)).toHaveCSS('height', '28px');
+        await expect(appRows.nth(1)).toHaveCSS('height', '28px');
         await expect(appRows.nth(0)).toHaveText('Zulu Sheets');
         await expect(appRows.nth(1)).toHaveText('Alpha Sheets');
         await expect(appRows.nth(0).getByTestId('acp-attachment-open-with-native-icon')).toHaveAttribute('src', nativeIcon);

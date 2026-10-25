@@ -1,3 +1,4 @@
+import { expectMenuSelection } from './fixtures/menu-selection';
 import type { ElectronApplication } from '@playwright/test';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 
@@ -67,7 +68,7 @@ test.describe('ClawX chat skill trigger', () => {
                 success: true,
                 agents: [
                   { id: 'main', name: 'main' },
-                  { id: 'research', name: 'research' },
+                  { id: 'research', name: 'research', modelDisplay: 'Research Model' },
                 ],
               },
             },
@@ -112,6 +113,34 @@ test.describe('ClawX chat skill trigger', () => {
       });
 
       expect(isSkillAfterAgent).toBe(true);
+      await page.getByTestId('chat-composer-agent').click();
+      const agentMenu = page.getByTestId('chat-agent-picker-menu');
+      await expect(agentMenu.locator('[data-slot="menu-selection-indicator"]')).toHaveCount(0);
+      await agentMenu.getByRole('button', { name: 'research Research Model', exact: true }).click();
+
+      for (const width of [1280, 900, 700]) {
+        await page.setViewportSize({ width, height: 800 });
+        for (const [trigger, menu] of [
+          ['chat-composer-agent', 'chat-agent-picker-menu'],
+          ['chat-composer-skill', 'chat-skill-picker-menu'],
+        ]) {
+          await page.getByTestId(trigger).click();
+          const popup = page.getByTestId(menu);
+          await expect(popup).toBeVisible();
+          if (menu === 'chat-agent-picker-menu') {
+            await expect(popup.locator('[aria-current="true"]')).toHaveCSS('height', '44px');
+            await expectMenuSelection(popup.locator('[aria-current="true"]'));
+            await expect(popup.locator('button:not([aria-current]) [data-slot="menu-selection-indicator"]')).toHaveCount(0);
+          }
+          const bounds = await popup.boundingBox();
+          if (width >= 900) expect(bounds!.width).toBe(384);
+          expect(bounds!.x).toBeGreaterThanOrEqual(0);
+          expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+          await page.keyboard.press('Escape');
+          await expect(popup).toHaveCount(0);
+        }
+      }
+      await page.setViewportSize({ width: 1280, height: 800 });
 
       await page.getByTestId('chat-composer-input').fill('Draft a new helper');
       await page.getByTestId('chat-composer-input').evaluate((element) => {

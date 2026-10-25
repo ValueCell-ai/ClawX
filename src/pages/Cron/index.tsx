@@ -33,6 +33,8 @@ import {
   Search,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { MenuSelectionIndicator } from '@/components/ui/menu-selection';
+import { menuOptionStateClass } from '@/components/ui/menu-selection-styles';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
@@ -54,6 +56,8 @@ import { useChatStore } from '@/stores/chat';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { formatRelativeTime, cn } from '@/lib/utils';
 import { fetchQuickAccessSkills } from '@/lib/quick-access-skills';
+import { getQuickSkillSourceLabel } from '@/lib/skill-source-label';
+import { QuickSkillOption } from '@/components/skills/QuickSkillOption';
 import { toast } from 'sonner';
 import type { CronJob, CronJobCreateInput, CronSchedule, ScheduleType } from '@/types/cron';
 import type { QuickAccessSkill } from '@/types/skill';
@@ -532,10 +536,9 @@ function ScheduleTimePicker({ id, value, onChange, 'data-testid': testId }: Sche
 
   const cellClass = (active: boolean) =>
     cn(
-      'block w-full rounded-md py-1.5 text-center font-mono text-meta transition-colors',
-      active
-        ? 'bg-black/5 dark:bg-white/10 text-foreground font-semibold'
-        : 'text-foreground/70 hover:bg-black/5 dark:hover:bg-white/5',
+      'clawx-menu-item relative block w-full px-6 text-center font-mono text-meta transition-colors',
+      menuOptionStateClass(active),
+      active ? 'font-semibold' : 'text-foreground/70',
     );
 
   return (
@@ -561,30 +564,34 @@ function ScheduleTimePicker({ id, value, onChange, 'data-testid': testId }: Sche
           <div className="grid grid-cols-2">
             <div
               ref={hourListRef}
-              className="max-h-[200px] overflow-y-auto border-r border-black/5 dark:border-white/5 px-1 pb-1"
+              className="clawx-menu-list max-h-[200px] overflow-y-auto border-r border-black/5 dark:border-white/5 px-1 pb-1"
             >
               {Array.from({ length: 24 }, (_, hour) => (
                 <button
                   key={hour}
                   type="button"
                   data-selected={hour === selectedHour}
+                  aria-current={hour === selectedHour ? 'true' : undefined}
                   onClick={() => onChange(`${pad2(hour)}:${pad2(selectedMinute)}`)}
                   className={cellClass(hour === selectedHour)}
                 >
                   {pad2(hour)}
+                  <MenuSelectionIndicator selected={hour === selectedHour} className="absolute right-3 top-1/2 -translate-y-1/2" />
                 </button>
               ))}
             </div>
-            <div ref={minuteListRef} className="max-h-[200px] overflow-y-auto px-1 pb-1">
+            <div ref={minuteListRef} className="clawx-menu-list max-h-[200px] overflow-y-auto px-1 pb-1">
               {Array.from({ length: 60 }, (_, minute) => (
                 <button
                   key={minute}
                   type="button"
                   data-selected={minute === selectedMinute}
+                  aria-current={minute === selectedMinute ? 'true' : undefined}
                   onClick={() => onChange(`${pad2(selectedHour)}:${pad2(minute)}`)}
                   className={cellClass(minute === selectedMinute)}
                 >
                   {pad2(minute)}
+                  <MenuSelectionIndicator selected={minute === selectedMinute} className="absolute right-3 top-1/2 -translate-y-1/2" />
                 </button>
               ))}
             </div>
@@ -596,7 +603,7 @@ function ScheduleTimePicker({ id, value, onChange, 'data-testid': testId }: Sche
 }
 
 function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDialogProps) {
-  const { t } = useTranslation('cron');
+  const { t } = useTranslation(['cron', 'skills']);
   const [saving, setSaving] = useState(false);
   const agents = useAgentsStore((s) => s.agents);
 
@@ -658,9 +665,10 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
       (skill) =>
         skill.name.toLowerCase().includes(query) ||
         skill.description.toLowerCase().includes(query) ||
+        getQuickSkillSourceLabel(skill.source, t).toLowerCase().includes(query) ||
         skill.sourceLabel.toLowerCase().includes(query),
     );
-  }, [quickSkills, skillQuery]);
+  }, [quickSkills, skillQuery, t]);
 
   const loadQuickSkills = useCallback(async () => {
     if (!selectedAgent) {
@@ -1121,7 +1129,7 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                       />
                     </button>
                     {skillPickerOpen && (
-                      <div className="absolute left-0 top-full z-30 mt-2 w-80 overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
+                      <div data-testid="cron-skill-picker-menu" className="absolute left-0 top-full z-30 mt-2 w-96 max-w-[calc(100vw-4rem)] overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
                         <div className="flex items-center gap-2 rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
                           <Search className="h-3.5 w-3.5 text-muted-foreground" />
                           <input
@@ -1132,10 +1140,10 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                             autoFocus
                           />
                         </div>
-                        <div className="px-3 py-2 text-tiny font-medium text-muted-foreground/80">
+                        <div className="px-3 py-1.5 text-tiny font-medium text-muted-foreground/80">
                           {t('dialog.skillPickerTitle', { agent: selectedAgent?.name ?? '' })}
                         </div>
-                        <div className="max-h-64 overflow-y-auto">
+                        <div className="clawx-menu-list max-h-64 overflow-y-auto">
                           {skillsLoading ? (
                             <div className="px-3 py-4 text-xs text-muted-foreground">{t('dialog.skillLoading')}</div>
                           ) : skillsError ? (
@@ -1144,24 +1152,12 @@ function TaskDialog({ open, job, configuredChannels, onClose, onSave }: TaskDial
                             <div className="px-3 py-4 text-xs text-muted-foreground">{t('dialog.skillEmpty')}</div>
                           ) : (
                             filteredQuickSkills.map((skill) => (
-                              <button
+                              <QuickSkillOption
                                 key={`${skill.source}:${skill.name}`}
-                                type="button"
-                                data-testid={`cron-skill-option-${skill.name}`}
-                                onClick={() => handleInsertSkill(skill)}
-                                title={skill.description}
-                                className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                              >
-                                <div className="min-w-0">
-                                  <div className="truncate text-meta font-semibold text-foreground">
-                                    <span className="font-mono">/{skill.name}</span>
-                                  </div>
-                                  <div className="truncate text-tiny text-muted-foreground">{skill.sourceLabel}</div>
-                                </div>
-                                <span className="rounded-full border border-black/10 bg-black/[0.03] px-2 py-0.5 text-2xs font-medium text-muted-foreground dark:border-white/10 dark:bg-white/[0.04]">
-                                  {skill.sourceLabel}
-                                </span>
-                              </button>
+                                skill={skill}
+                                testId={`cron-skill-option-${skill.name}`}
+                                onSelect={() => handleInsertSkill(skill)}
+                              />
                             ))
                           )}
                         </div>

@@ -16,8 +16,7 @@
             "pdf": "PDF tools"
         },
         "skillUnavailable": "Enable or install this skill in Skills.",
-        "skillsFailed": "Skills could not be loaded. Open the skill menu to retry.",
-        "invitation": "Start with a document, a question, or a new idea."
+        "skillsFailed": "Skills could not be loaded. Open the skill menu to retry."
     },
     "noLogs": "(No logs available yet)",
     "scrollToLatest": "Back to bottom",

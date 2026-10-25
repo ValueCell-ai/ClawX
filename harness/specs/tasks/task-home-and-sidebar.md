@@ -13,6 +13,8 @@ touchedAreas:
   - src/components/ui/**
   - src/components/settings/**
   - src/components/channels/**
+  - src/components/skills/**
+  - src/lib/skill-source-label.ts
   - src/pages/Agents/**
   - src/pages/Cron/**
   - src/assets/brand/**
@@ -30,10 +32,16 @@ touchedAreas:
   - README.zh-CN.md
   - README.ja-JP.md
 expectedUserBehavior:
+  - The task greeting shows its heading without a repeated brand icon or helper paragraph; skill shortcuts retain their existing token insertion behavior.
+  - Chat and scheduled-task skill menus show original names and descriptions plus one localized source badge, including the internal legacy scan category.
+  - The chat model picker groups options by runtime provider identity, shows each provider label once per group with compact 28-pixel model rows and four-pixel group gaps, and preserves full model references when switching.
+  - Workspace, model, assistant and time dropdown selections share a light primary background and trailing primary dot, retained on hover.
+  - All custom dropdown rows share compact density, with 28-pixel single-line options, natural-height descriptions, and four-pixel vertical gaps without changing selection, insertion, keyboard behavior or native select semantics.
+  - Global scrollbars reserve at most six pixels, reveal a subtle inset thumb only on hover, and preserve scrolling without content-width shifts.
   - Search and form fields share a subtle neutral focus border and one-pixel halo without an offset; composite chat and scheduled-task inputs avoid duplicate blue focus rings.
   - The sidebar keeps its original blue icon and approved compact wordmark asset; collapsed branding retains a keyboard-accessible expand control in both themes.
   - AI models, messaging remote control, and computer operation are direct sidebar pages; old settings capability URLs redirect while retaining query parameters.
-  - Home presents an identifiable blue brand, clear invitation, colored skill shortcuts and a softly elevated composer with its compact footer.
+  - Home presents a concise task heading, colored skill shortcuts and a softly elevated composer with its compact footer.
   - Sidebar search spans the entire synchronized task catalog across workspaces and assistants, independently of row pagination and collapsed groups.
   - Exact session keys persist in pinnedSessionKeys through the existing typed settings API and Main-owned electron-store; pinned rows appear once in their own section.
   - Failed deletions and temporary catalog gaps preserve pins; successful session and assistant deletion cleans their pins.
@@ -49,6 +57,7 @@ requiredRules:
   - ui-i18n-design-tokens
   - docs-sync
 requiredTests:
+  - tests/e2e/scrollbar-visibility.spec.ts
   - tests/e2e/task-sidebar-search-and-pins.spec.ts
   - tests/e2e/chat-home-composer.spec.ts
   - tests/e2e/chat-sidebar-session-attention.spec.ts

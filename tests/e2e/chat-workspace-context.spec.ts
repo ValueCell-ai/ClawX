@@ -1,3 +1,4 @@
+import { expectMenuSelection } from './fixtures/menu-selection';
 import type { ElectronApplication } from '@playwright/test';
 import {
   closeElectronApp,
@@ -480,11 +481,17 @@ test.describe('ClawX chat workspace context', () => {
         `chat-workspace-option-${encodeURIComponent(GLOBAL_WORKSPACE)}`,
       );
       await expect(globalWorkspaceOption).toHaveText('Global project');
+      await expectMenuSelection(workspaceMenu.locator('[aria-current="true"]'));
+      await expect(globalWorkspaceOption.locator('[data-slot="menu-selection-indicator"]')).toHaveCount(0);
       await expect(workspaceMenu.getByTestId('chat-workspace-choose-other')).toBeVisible();
 
       await globalWorkspaceOption.click();
       await expect(workspaceSelector).toHaveText('Global project');
       await expect(workspaceSelector).toHaveAttribute('title', GLOBAL_WORKSPACE);
+      await workspaceSelector.click();
+      await expectMenuSelection(globalWorkspaceOption);
+      await expect(workspaceMenu.locator('[aria-current="true"]')).toHaveCount(1);
+      await page.keyboard.press('Escape');
       await expect.poll(async () => {
         const invocations = await getRecordedHostInvocations(app);
         return invocations.some((entry) => (
