@@ -13,7 +13,9 @@
             "docx": "文档处理",
             "xlsx": "表格分析",
             "pptx": "演示文稿",
-            "pdf": "PDF 工具"
+            "pdf": "PDF 工具",
+            "computer-use": "电脑操作",
+            "skill-creator": "创建技能"
         },
         "skillUnavailable": "请前往技能页启用或安装此技能。",
         "skillsFailed": "技能加载失败，请打开技能菜单重试。"
@@ -135,7 +137,7 @@
     },
     "artifactPanel": {
         "tabs": {
-            "changes": "变更",
+            "changes": "本次改动",
             "preview": "预览",
             "browser": "工作空间"
         },
@@ -143,15 +145,16 @@
             "back": "返回列表"
         },
         "changes": {
-            "heading": "文件变更（{{count}} 个）",
-            "empty": "此会话尚无文件变更。",
+            "heading": "本次改动（{{count}}）",
+            "empty": "本次对话暂无文件改动",
             "selectFileHint": "请点击对话中的文件卡片，或「查看文件变更」打开 diff。",
             "changeRecord": "变更 {{number}}",
-            "diffUnavailable": "此变更无法显示差异。"
+            "diffUnavailable": "此变更无法显示差异。",
+            "emptyHint": "本次对话创建、修改或删除的文件会显示在这里。"
         },
         "preview": {
             "emptyTitle": "尚未选择文件",
-            "emptyHint": "请先点击对话里的文件卡片，侧栏会选中该文件后在此预览。",
+            "emptyHint": "选择工作空间中的文件，或点击对话里的文件卡片，即可在此预览。",
             "fullscreenLabel": "全屏文件预览"
         }
     },
@@ -251,6 +254,28 @@
         "actions": {
             "refresh": "刷新",
             "openRootInFinder": "在文件管理器中显示根目录"
+        },
+        "search": "搜索文件",
+        "clearSearch": "清空文件搜索",
+        "showHidden": "显示隐藏文件",
+        "collapseAll": "收起全部目录",
+        "browseFiles": "浏览文件",
+        "fileActions": "文件操作",
+        "copyPath": "复制路径",
+        "pathCopied": "已复制路径",
+        "copyFailed": "复制路径失败",
+        "resizeFiles": "调整文件列表宽度",
+        "resizePanel": "调整工作空间面板宽度",
+        "noResults": "没有匹配的文件",
+        "noFiles": "此目录下没有可见文件",
+        "taskEmpty": "本次对话创建或修改的文件会显示在这里。",
+        "recentEmpty": "在此工作空间打开过的文件会显示在这里。",
+        "searchLimited": "部分文件未加载，搜索仅覆盖已加载目录。",
+        "searchScope": "搜索范围：已加载目录",
+        "views": {
+            "all": "全部",
+            "task": "本次任务",
+            "recent": "最近"
         }
     },
     "imageGeneration": {

@@ -173,6 +173,7 @@ test.describe('real Office document previews', () => {
       await fixture.setTranscriptResponses(MAIN_SESSION_KEY, [[]]);
 
       const page = await openChat(app);
+      await page.setViewportSize({ width: 1600, height: 1000 });
       await page.evaluate(() => {
         const trackedWindow = window as typeof window & {
           __officePptxChartCompletions?: number;
@@ -247,13 +248,14 @@ test.describe('real Office document previews', () => {
       const deckBActivity = page.getByTestId('acp-file-button').filter({ hasText: 'slides-b.pptx' });
       await expect(deckBActivity).toHaveAccessibleName('Created slides-b.pptx');
       await deckBActivity.click();
-      await expect(panel.getByTestId('artifact-panel-tab-preview')).toHaveAttribute('class', /bg-foreground\/10/);
+      await expect(panel.getByTestId('artifact-panel-tab-preview')).toHaveAttribute('aria-selected', 'true');
       await expect(panel.getByText('1 / 2', { exact: true })).toBeVisible({ timeout: 30_000 });
       await assertSinglePptxViewer(page);
       await waitForStableCanvas(canvas);
 
       await panel.getByTestId('artifact-panel-tab-browser').click();
-      await expect(panel.getByText('2 / 2', { exact: true })).toBeVisible({ timeout: 30_000 });
+      await expect(panel.getByTestId('file-preview-header').getByRole('heading', { name: 'slides-b.pptx' })).toBeVisible();
+      await expect(panel.getByText('1 / 2', { exact: true })).toBeVisible({ timeout: 30_000 });
       await assertSinglePptxViewer(page);
       await waitForStableCanvas(canvas);
 
@@ -276,7 +278,7 @@ test.describe('real Office document previews', () => {
 
       const beforeResize = await canvasFingerprint(canvas);
       const beforeResizeBacking = { width: beforeResize.width, height: beforeResize.height };
-      const divider = page.getByRole('separator', { name: 'Drag to resize width' });
+      const divider = page.getByRole('separator', { name: 'Resize workspace panel' });
       const [dividerBounds, panelBounds] = await Promise.all([
         divider.boundingBox(),
         page.getByTestId('artifact-panel-aside').boundingBox(),
@@ -325,13 +327,13 @@ test.describe('real Office document previews', () => {
       expect(hostCalls).toEqual(expect.arrayContaining([
         expect.objectContaining({
           module: 'files',
-          action: 'readBinary',
-          payload: expect.objectContaining({ path: paths.docxPath }),
+          action: 'readWorkspaceBinary',
+          payload: expect.objectContaining({ workspaceRoot: fixture.workspaceDir, relativePath: 'sample.docx' }),
         }),
         expect.objectContaining({
           module: 'files',
-          action: 'readBinary',
-          payload: expect.objectContaining({ path: paths.deckAPath }),
+          action: 'readWorkspaceBinary',
+          payload: expect.objectContaining({ workspaceRoot: fixture.workspaceDir, relativePath: 'slides-a.pptx' }),
         }),
         expect.objectContaining({
           module: 'files',

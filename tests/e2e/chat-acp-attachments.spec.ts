@@ -227,7 +227,7 @@ test.describe('ACP media attachments', () => {
       const expectedUrl = pathToFileURL(htmlPath).href;
       const panel = page.getByTestId('artifact-panel');
       await expect(panel).toBeVisible();
-      await expect(panel.getByTestId('artifact-panel-tab-preview')).toHaveClass(/bg-foreground\/10/);
+      await expect(panel.getByTestId('artifact-panel-tab-preview')).toHaveAttribute('aria-selected', 'true');
       await expect(panel.getByTestId('artifact-panel-tab-web-browser')).toHaveCount(0);
       await expect(page.getByTestId('html-preview-host')).toHaveAttribute('aria-hidden', 'false');
       await expect(panel.getByTestId('html-preview-open-external')).toBeVisible();

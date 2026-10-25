@@ -1,312 +1,60 @@
-/**
- * Right-side artifact panel — the WorkBuddy-style split-pane sidebar
- * shown next to the Chat conversation. Normally hosts three top-level tabs:
- *
- *   - Workspace (browser): read-only workspace tree + file preview,
- *     scoped to the effective chat workspace.
- *   - Preview: rendered preview of whichever file is currently focused.
- *   - Changes: projected ACP file activity grouped by workspace path.
- *
- * Open/close + tab + focused-file state lives in the
- * `useArtifactPanel` zustand store so any part of the page (file cards,
- * toolbar buttons, "View file changes →" links) can drive it.
- */
-import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { cn } from '@/lib/utils';
-import { ExternalLink, Eye, FileEdit, FolderOpen, FolderTree, Maximize2, Minimize2, X } from 'lucide-react';
+/** Shared workspace, preview and current-session file-activity panel. */
+import { Eye, FileEdit, FolderTree, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { isHtmlPreviewExt, supportsRichDocumentPreview } from '@/lib/generated-files';
-import { hostApi } from '@/lib/host-api';
-import { htmlPreviewFileUrl } from '@/lib/local-html-browser';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { AcpSessionFileGroup } from '@/lib/acp/openclaw-file-activities';
 import type { AgentSummary } from '@/types/agent';
-import { useArtifactPanel } from '@/stores/artifact-panel';
-import { getFilePreviewTargetIdentity, type FilePreviewTarget } from './types';
-import { FilePreviewBody } from './FilePreviewBody';
+import { useArtifactPanel, type ArtifactTab } from '@/stores/artifact-panel';
 import { WorkspaceBrowserBody } from './WorkspaceBrowserBody';
+import { FilePreviewSurface } from './FilePreviewSurface';
 import { WORKSPACE_BROWSER_ENABLED } from './workspace-browser-config';
 import { AcpSessionChangesView } from './AcpSessionChangesView';
-import { MAC_TRAFFIC_LIGHT_SAFE_INSET } from '@shared/sidebar-layout';
 
 export interface ArtifactPanelProps {
   fileGroups: AcpSessionFileGroup[];
   uniqueFileCount: number;
-  /** Currently selected agent (drives the workspace tab). */
   agent: AgentSummary | null;
-  /** Effective chat workspace path resolved from OpenClaw session cwd or global selection. */
   workspacePath?: string | null;
-  /** Display label for the effective workspace path. */
   workspaceLabel?: string;
-  /** Used to mark "Added this run" badges on the workspace tree. */
   runStartedAt?: number | null;
-  /** Bumping this number triggers a workspace tree reload. */
   refreshSignal?: number;
 }
 
 export function ArtifactPanel({ fileGroups, uniqueFileCount, agent, workspacePath, workspaceLabel, runStartedAt, refreshSignal }: ArtifactPanelProps) {
   const { t } = useTranslation('chat');
+  const tab = useArtifactPanel(state => state.tab);
+  const setTab = useArtifactPanel(state => state.setTab);
+  const focusedFile = useArtifactPanel(state => state.focusedFile);
+  const focusedChange = useArtifactPanel(state => state.focusedChange);
+  const close = useArtifactPanel(state => state.close);
+  const visibleTab = !WORKSPACE_BROWSER_ENABLED && tab === 'browser' ? 'changes' : tab;
   const isMac = window.electron?.platform === 'darwin';
-  const tab = useArtifactPanel((s) => s.tab);
-  const setTab = useArtifactPanel((s) => s.setTab);
-  const focusedFile = useArtifactPanel((s) => s.focusedFile);
-  const focusedChange = useArtifactPanel((s) => s.focusedChange);
-  const close = useArtifactPanel((s) => s.close);
-  const richFocusedFile = !!focusedFile
-    && !focusedFile.attachmentFileRef
-    && !focusedFile.workspaceFileRef
-    && supportsRichDocumentPreview(focusedFile.ext);
-  const requestedTab = !WORKSPACE_BROWSER_ENABLED && tab === 'browser' ? 'changes' : tab;
-  const visibleTab = requestedTab;
-  const handleRevealFocusedFile = () => {
-    if (!focusedFile || focusedFile.attachmentFileRef) return;
-    hostApi.shell.showItemInFolder(focusedFile.filePath).catch(() => {
-      toast.error(t('filePreview.errors.openInFinderFailed', 'Could not reveal in file manager'));
-    });
-  };
-
   return (
-    <div data-testid="artifact-panel" className={cn('flex h-full min-h-0 flex-col bg-background', isMac && 'no-drag')}>
-      <div className="relative z-30 flex shrink-0 items-center justify-between gap-2 border-b border-black/5 bg-background px-3 py-2 dark:border-white/10">
-        {isMac && (
-          <div
-            data-testid="artifact-panel-drag-region"
-            className="drag-region absolute inset-0 z-0"
-            aria-hidden="true"
-          />
-        )}
-        <div
-          data-testid="artifact-panel-tabs"
-          className={cn('flex min-w-0 items-center gap-1 overflow-x-auto', isMac && 'no-drag relative z-10')}
-        >
-          {WORKSPACE_BROWSER_ENABLED && (
-            <PanelTabButton
-              testId="artifact-panel-tab-browser"
-              icon={<FolderTree className="h-3.5 w-3.5" />}
-              label={t('artifactPanel.tabs.browser', 'Workspace')}
-              active={visibleTab === 'browser'}
-              onClick={() => setTab('browser')}
-            />
-          )}
-          <PanelTabButton
-            testId="artifact-panel-tab-preview"
-            icon={<Eye className="h-3.5 w-3.5" />}
-            label={t('artifactPanel.tabs.preview', 'Preview')}
-            active={visibleTab === 'preview'}
-            onClick={() => setTab('preview')}
-          />
-          <PanelTabButton
-            testId="artifact-panel-tab-changes"
-            icon={<FileEdit className="h-3.5 w-3.5" />}
-            label={t('artifactPanel.tabs.changes', 'Changes')}
-            active={visibleTab === 'changes'}
-            onClick={() => setTab('changes')}
-          />
-          {richFocusedFile && (
-            <PanelTabButton
-              testId="artifact-panel-action-open-folder"
-              icon={<FolderOpen className="h-3.5 w-3.5" />}
-              label={t('generatedFiles.openFolder', 'Open folder')}
-              active={false}
-              onClick={handleRevealFocusedFile}
-            />
-          )}
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className={cn('h-7 w-7 shrink-0', isMac && 'no-drag relative z-10')}
-          onClick={close}
-          aria-label={t('filePreview.actions.close', 'Close')}
-        >
-          <X className="h-4 w-4 pointer-events-none" />
-        </Button>
+    <Tabs value={visibleTab} onValueChange={value => setTab(value as ArtifactTab)} data-testid="artifact-panel" className={cn('flex h-full min-h-0 flex-col bg-background', isMac && 'no-drag')}>
+      <div className="relative z-30 flex shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
+        {isMac && <div data-testid="artifact-panel-drag-region" className="drag-region absolute inset-0 z-0" aria-hidden />}
+        <TabsList data-testid="artifact-panel-tabs" aria-label={t('workspace.title')} className="no-drag relative z-10 h-8 min-w-0 justify-start gap-0.5 overflow-x-auto rounded-lg bg-transparent p-0">
+          {WORKSPACE_BROWSER_ENABLED && <TabsTrigger value="browser" id="artifact-tab-browser" aria-controls="artifact-files-panel" data-testid="artifact-panel-tab-browser" className="h-7 shrink-0 gap-1.5 rounded-lg px-2 py-1 text-xs data-[state=active]:bg-black/5 data-[state=active]:shadow-none dark:data-[state=active]:bg-white/10"><FolderTree className="h-3.5 w-3.5" />{t('artifactPanel.tabs.browser')}</TabsTrigger>}
+          <TabsTrigger value="preview" id="artifact-tab-preview" aria-controls="artifact-files-panel" data-testid="artifact-panel-tab-preview" className="h-7 shrink-0 gap-1.5 rounded-lg px-2 py-1 text-xs data-[state=active]:bg-black/5 data-[state=active]:shadow-none dark:data-[state=active]:bg-white/10"><Eye className="h-3.5 w-3.5" />{t('artifactPanel.tabs.preview')}</TabsTrigger>
+          <TabsTrigger value="changes" id="artifact-tab-changes" aria-controls="artifact-changes-panel" data-testid="artifact-panel-tab-changes" className="h-7 shrink-0 gap-1.5 rounded-lg px-2 py-1 text-xs data-[state=active]:bg-black/5 data-[state=active]:shadow-none dark:data-[state=active]:bg-white/10"><FileEdit className="h-3.5 w-3.5" />{t('artifactPanel.tabs.changes')}<span className="rounded-md bg-black/5 px-1.5 text-2xs tabular-nums text-muted-foreground dark:bg-white/10" data-testid="artifact-panel-changes-count">{uniqueFileCount}</span></TabsTrigger>
+        </TabsList>
+        <Button variant="ghost" size="icon" className="no-drag relative z-10 h-7 w-7 shrink-0" onClick={close} aria-label={t('filePreview.actions.close')} title={t('filePreview.actions.close')}><X className="h-4 w-4" /></Button>
       </div>
-
-      <div className={cn('relative z-0 min-h-0 flex-1 overflow-hidden', isMac && 'no-drag')}>
-        {WORKSPACE_BROWSER_ENABLED && (
-          <div className={cn('h-full min-h-0', visibleTab !== 'browser' && 'hidden')}>
-            <WorkspaceBrowserBody
-              agent={agent}
-              workspacePath={workspacePath}
-              workspaceLabel={workspaceLabel}
-              runStartedAt={runStartedAt}
-              refreshSignal={refreshSignal}
-              active={visibleTab === 'browser'}
-              compact
-            />
+      <div className="no-drag relative z-0 min-h-0 flex-1 overflow-hidden">
+        {WORKSPACE_BROWSER_ENABLED ? (
+          <div id="artifact-files-panel" hidden={visibleTab === 'changes'} role="tabpanel" aria-labelledby={visibleTab === 'browser' ? 'artifact-tab-browser' : 'artifact-tab-preview'} className={cn('h-full min-h-0', visibleTab === 'changes' && 'hidden')}>
+            <WorkspaceBrowserBody agent={agent} workspacePath={workspacePath} workspaceLabel={workspaceLabel} runStartedAt={runStartedAt} refreshSignal={refreshSignal} active={visibleTab !== 'changes'} previewOnly={visibleTab === 'preview'} fileGroups={fileGroups} compact />
           </div>
+        ) : (
+          <div className={cn('h-full min-h-0', visibleTab !== 'preview' && 'hidden')}><FilePreviewSurface file={focusedFile} active={visibleTab === 'preview'} /></div>
         )}
-        <div className={cn('h-full min-h-0', visibleTab !== 'preview' && 'hidden')}>
-          <PreviewTab focusedFile={focusedFile} active={visibleTab === 'preview'} />
-        </div>
-        <div className={cn('h-full min-h-0', visibleTab !== 'changes' && 'hidden')}>
-          <AcpSessionChangesView fileGroups={fileGroups} uniqueFileCount={uniqueFileCount} focus={focusedChange} />
+        <div id="artifact-changes-panel" role="tabpanel" aria-labelledby="artifact-tab-changes" hidden={visibleTab !== 'changes'} className="m-0 h-full">
+          <AcpSessionChangesView fileGroups={fileGroups} uniqueFileCount={uniqueFileCount} focus={focusedChange} onBrowse={WORKSPACE_BROWSER_ENABLED ? () => setTab('browser') : undefined} />
         </div>
       </div>
-    </div>
+    </Tabs>
   );
 }
-
-interface PanelTabButtonProps {
-  testId?: string;
-  icon: React.ReactNode;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}
-
-function PanelTabButton({ testId, icon, label, active, onClick }: PanelTabButtonProps) {
-  const pointerActivated = useRef(false);
-
-  return (
-    <button
-      data-testid={testId}
-      type="button"
-      onPointerDown={(event) => {
-        if (event.button !== 0) return;
-        pointerActivated.current = true;
-        event.preventDefault();
-        onClick();
-      }}
-      onClick={() => {
-        if (pointerActivated.current) {
-          pointerActivated.current = false;
-          return;
-        }
-        onClick();
-      }}
-      className={cn(
-        'relative z-40 flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-        active
-          ? 'bg-foreground/10 text-foreground'
-          : 'text-muted-foreground hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10',
-      )}
-    >
-      {icon}
-      <span>{label}</span>
-    </button>
-  );
-}
-
-interface PreviewTabProps {
-  focusedFile: FilePreviewTarget | null;
-  active: boolean;
-}
-
-function PreviewTab({ focusedFile, active }: PreviewTabProps) {
-  const { t } = useTranslation('chat');
-  const isMac = window.electron?.platform === 'darwin';
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [pptxSlidePositions] = useState(() => new Map<string, number>());
-  const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!isFullscreen) return;
-    fullscreenButtonRef.current?.focus();
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsFullscreen(false);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isFullscreen]);
-
-  useEffect(() => useArtifactPanel.subscribe((state) => {
-    if (state.tab !== 'preview') setIsFullscreen(false);
-  }), []);
-
-  if (!focusedFile) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
-        <p className="text-sm font-medium text-foreground">
-          {t('artifactPanel.preview.emptyTitle', 'No file selected')}
-        </p>
-        <p className="max-w-md text-xs text-muted-foreground">
-          {t(
-            'artifactPanel.preview.emptyHint',
-            'Click a file card in the conversation to open the sidebar and select a file first.',
-          )}
-        </p>
-      </div>
-    );
-  }
-  const identity = getFilePreviewTargetIdentity(focusedFile);
-  const toggleLabel = isFullscreen
-    ? t('filePreview.actions.exitFullscreen', 'Exit fullscreen')
-    : t('filePreview.actions.enterFullscreen', 'Enter fullscreen');
-  const isHtml = isHtmlPreviewExt(focusedFile.ext);
-  const htmlExternalUrl = isHtml ? htmlPreviewFileUrl(focusedFile) : null;
-  const openExternalLabel = t(
-    'filePreview.actions.openHtmlExternally',
-    'Open HTML in system browser',
-  );
-  const preview = (
-    <div
-      data-testid={isFullscreen ? 'file-preview-fullscreen-layer' : undefined}
-      role={isFullscreen ? 'dialog' : undefined}
-      aria-modal={isFullscreen ? true : undefined}
-      aria-label={isFullscreen ? t('artifactPanel.preview.fullscreenLabel', 'Fullscreen file preview') : undefined}
-      className={cn(
-        'h-full min-h-0 bg-background',
-        isFullscreen && 'fixed inset-0 z-[100]',
-      )}
-    >
-      <FilePreviewBody
-        key={identity}
-        file={focusedFile}
-        compact={!isFullscreen}
-        headerLeftInset={isFullscreen && isMac ? MAC_TRAFFIC_LIGHT_SAFE_INSET : undefined}
-        mode="preview"
-        active={active}
-        initialPptxSlideIndex={pptxSlidePositions.get(identity) ?? 0}
-        onPptxSlideIndexChange={(index) => pptxSlidePositions.set(identity, index)}
-        trailingHeader={(
-          <>
-            {htmlExternalUrl && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 shrink-0"
-                onClick={() => {
-                  hostApi.webBrowser.openExternal(htmlExternalUrl).catch(() => {
-                    toast.error(t(
-                      'filePreview.errors.openHtmlExternallyFailed',
-                      'Could not open HTML in system browser',
-                    ));
-                  });
-                }}
-                aria-label={openExternalLabel}
-                title={openExternalLabel}
-                data-testid="html-preview-open-external"
-              >
-                <ExternalLink className="h-4 w-4 pointer-events-none" />
-              </Button>
-            )}
-            <Button
-              ref={fullscreenButtonRef}
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0"
-              onClick={() => setIsFullscreen((value) => !value)}
-              aria-label={toggleLabel}
-              title={toggleLabel}
-              data-testid="file-preview-fullscreen-toggle"
-            >
-              {isFullscreen
-                ? <Minimize2 className="h-4 w-4 pointer-events-none" />
-                : <Maximize2 className="h-4 w-4 pointer-events-none" />}
-            </Button>
-          </>
-        )}
-      />
-    </div>
-  );
-  return isFullscreen ? createPortal(preview, document.body) : preview;
-}
-
 export default ArtifactPanel;

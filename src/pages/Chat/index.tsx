@@ -46,12 +46,7 @@ import { projectSessionRunState } from '@/stores/chat/session-status';
 import { formatSubagentSessionTitle, isNativeSubagentSessionKey } from '@/stores/chat/session-key-utils';
 import type { AcpSubagentSession } from './AcpSubagentSessions';
 
-const ArtifactPanelLazy = lazy(() =>
-  import('@/components/file-preview/ArtifactPanel').then((m) => ({ default: m.ArtifactPanel })),
-);
-const PanelResizeDividerLazy = lazy(() =>
-  import('@/components/file-preview/PanelResizeDivider').then((m) => ({ default: m.PanelResizeDivider })),
-);
+const ResponsiveArtifactPanelLazy = lazy(() => import('@/components/file-preview/ResponsiveArtifactPanel'));
 
 const EMPTY_FILE_ACTIVITY: AcpFileActivityProjection = {
   activities: [],
@@ -371,7 +366,6 @@ export function Chat() {
   const respondAcpPermission = useAcpChatSessionStore((s) => s.respondPermission);
   const clearAcpError = useAcpChatSessionStore((s) => s.clearError);
   const panelOpen = useArtifactPanel((s) => s.open);
-  const panelWidthPct = useArtifactPanel((s) => s.widthPct);
   const closeArtifactPanel = useArtifactPanel((s) => s.close);
   const splitContainerRef = useRef<HTMLDivElement | null>(null);
   const acpLoadInFlightKeyRef = useRef<string | null>(null);
@@ -933,36 +927,18 @@ export function Chat() {
       </div>
 
       {panelOpen && (
-        <>
-          <Suspense fallback={null}>
-            <PanelResizeDividerLazy containerRef={splitContainerRef} />
-          </Suspense>
-          <aside
-            data-testid="artifact-panel-aside"
-            className={cn(
-              'relative z-20 hidden shrink-0 border-l border-black/5 dark:border-white/10 lg:flex lg:flex-col',
-              isMac && 'no-drag',
-            )}
-            style={{ width: `${panelWidthPct}%` }}
-          >
-            <Suspense
-              fallback={(
-                <div className="flex h-full items-center justify-center">
-                  <LoadingSpinner size="md" />
-                </div>
-              )}
-            >
-              <ArtifactPanelLazy
-                fileGroups={fileActivity.fileGroups}
-                uniqueFileCount={fileActivity.uniqueFileCount}
-                agent={currentAgent}
-                workspacePath={cwd}
-                workspaceLabel={workspaceLabel}
-                runStartedAt={null}
-              />
-            </Suspense>
-          </aside>
-        </>
+        <Suspense fallback={null}>
+          <ResponsiveArtifactPanelLazy
+            containerRef={splitContainerRef}
+            fileGroups={fileActivity.fileGroups}
+            uniqueFileCount={fileActivity.uniqueFileCount}
+            agent={currentAgent}
+            workspacePath={cwd}
+            workspaceLabel={workspaceLabel}
+            runStartedAt={null}
+            refreshSignal={fileActivity.activities.length}
+          />
+        </Suspense>
       )}
     </div>
   );

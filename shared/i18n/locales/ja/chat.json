@@ -13,7 +13,9 @@
             "docx": "文書作成",
             "xlsx": "表計算",
             "pptx": "プレゼン資料",
-            "pdf": "PDF ツール"
+            "pdf": "PDF ツール",
+            "computer-use": "パソコン操作",
+            "skill-creator": "スキル作成"
         },
         "skillUnavailable": "スキル画面でこのスキルを有効化またはインストールしてください。",
         "skillsFailed": "スキルを読み込めませんでした。スキルメニューを開いて再試行してください。"
@@ -135,7 +137,7 @@
     },
     "artifactPanel": {
         "tabs": {
-            "changes": "変更",
+            "changes": "今回の変更",
             "preview": "プレビュー",
             "browser": "ワークスペース"
         },
@@ -143,15 +145,16 @@
             "back": "一覧に戻る"
         },
         "changes": {
-            "heading": "ファイルの変更（{{count}} 件）",
-            "empty": "このセッションにはまだファイルの変更がありません。",
+            "heading": "今回の変更（{{count}}）",
+            "empty": "この会話には変更がありません",
             "selectFileHint": "会話内のファイルカード、または「変更を表示」をクリックして diff を開きます。",
             "changeRecord": "変更 {{number}}",
-            "diffUnavailable": "この変更の差分は利用できません。"
+            "diffUnavailable": "この変更の差分は利用できません。",
+            "emptyHint": "この会話で作成・変更・削除したファイルがここに表示されます。"
         },
         "preview": {
             "emptyTitle": "ファイルが選択されていません",
-            "emptyHint": "まず会話内のファイルカードをクリックしてファイルを選択すると、ここにプレビューが表示されます。",
+            "emptyHint": "ワークスペースのファイル、または会話内のファイルカードを選択してください。",
             "fullscreenLabel": "ファイルの全画面プレビュー"
         }
     },
@@ -251,6 +254,28 @@
         "actions": {
             "refresh": "更新",
             "openRootInFinder": "ルートをファイルマネージャーで表示"
+        },
+        "search": "ファイルを検索",
+        "clearSearch": "ファイル検索をクリア",
+        "showHidden": "隠しファイルを表示",
+        "collapseAll": "すべてのフォルダーを閉じる",
+        "browseFiles": "ファイルを参照",
+        "fileActions": "ファイル操作",
+        "copyPath": "パスをコピー",
+        "pathCopied": "パスをコピーしました",
+        "copyFailed": "パスをコピーできませんでした",
+        "resizeFiles": "ファイル一覧の幅を変更",
+        "resizePanel": "ワークスペースパネルの幅を変更",
+        "noResults": "一致するファイルがありません",
+        "noFiles": "表示できるファイルがありません。",
+        "taskEmpty": "この会話で作成・更新したファイルがここに表示されます。",
+        "recentEmpty": "このワークスペースで開いたファイルがここに表示されます。",
+        "searchLimited": "一部のファイルは未読込です。検索対象は読込済みのフォルダーです。",
+        "searchScope": "検索範囲：読込済みフォルダー",
+        "views": {
+            "all": "すべて",
+            "task": "今回",
+            "recent": "最近"
         }
     },
     "imageGeneration": {

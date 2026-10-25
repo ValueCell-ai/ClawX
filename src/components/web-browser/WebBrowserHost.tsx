@@ -25,6 +25,7 @@ interface HostGeometry {
   width: number;
   height: number;
   fullscreen: boolean;
+  overlay: boolean;
 }
 
 interface DidFailLoadEvent extends Event {
@@ -43,6 +44,7 @@ function readGeometry(anchor: HTMLElement): HostGeometry | null {
     top: bounds.top,
     width: bounds.width,
     height: bounds.height,
+    overlay: anchor.closest('[role="dialog"]') !== null,
     fullscreen: anchor.closest('[data-testid="file-preview-fullscreen-layer"]') !== null,
   };
 }
@@ -50,8 +52,8 @@ function readGeometry(anchor: HTMLElement): HostGeometry | null {
 /**
  * Route-stable host for the local HTML preview webview.
  *
- * The guest has no browser chrome and is visible only over the Preview
- * tab's HTML anchor. Main owns URL validation and blocks every navigation
+ * The guest has no browser chrome and is visible only over the shared file
+ * preview's HTML anchor. Main owns URL validation and blocks every navigation
  * initiated by the loaded document.
  */
 export function WebBrowserHost(): React.ReactElement | null {
@@ -111,12 +113,16 @@ export function WebBrowserHost(): React.ReactElement | null {
     observer.observe(anchor);
     window.addEventListener('resize', scheduleMeasure);
     window.addEventListener('scroll', scheduleMeasure, true);
+    document.addEventListener('animationend', scheduleMeasure, true);
+    document.addEventListener('transitionend', scheduleMeasure, true);
     window.visualViewport?.addEventListener('resize', scheduleMeasure);
 
     return () => {
       observer.disconnect();
       window.removeEventListener('resize', scheduleMeasure);
       window.removeEventListener('scroll', scheduleMeasure, true);
+      document.removeEventListener('animationend', scheduleMeasure, true);
+      document.removeEventListener('transitionend', scheduleMeasure, true);
       window.visualViewport?.removeEventListener('resize', scheduleMeasure);
       if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
     };
@@ -174,14 +180,14 @@ export function WebBrowserHost(): React.ReactElement | null {
 
   if (!previewUrl) return null;
 
-  const visible = panelOpen && activeTab === 'preview' && anchor !== null && geometry !== null;
+  const visible = panelOpen && (activeTab === 'preview' || activeTab === 'browser') && anchor !== null && geometry !== null;
   const style: CSSProperties = {
     position: 'fixed',
     left: geometry?.left ?? 0,
     top: geometry?.top ?? 0,
     width: geometry?.width ?? 0,
     height: geometry?.height ?? 0,
-    zIndex: geometry?.fullscreen ? 110 : 20,
+    zIndex: geometry?.fullscreen ? 110 : geometry?.overlay ? 70 : 20,
     visibility: visible ? 'visible' : 'hidden',
     pointerEvents: visible ? 'auto' : 'none',
   };

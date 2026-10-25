@@ -10,7 +10,7 @@ import {
   useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo,
   type SetStateAction,
 } from 'react';
-import { Presentation, Table2, FileScan, SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, Bot, Search, ChevronDown } from 'lucide-react';
+import { Presentation, Table2, FileScan, Monitor, WandSparkles, SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, Bot, Search, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import * as DropdownMenu from '@/components/ui/dropdown-menu';
 import { hasFloatingSurface } from '@/components/ui/floating-ui';
@@ -1142,6 +1142,8 @@ export function ChatInput({
               { name: 'xlsx', icon: Table2, color: 'text-emerald-700 dark:text-emerald-400', background: 'bg-emerald-500/10' },
               { name: 'pptx', icon: Presentation, color: 'text-orange-700 dark:text-orange-400', background: 'bg-orange-500/10' },
               { name: 'pdf', icon: FileScan, color: 'text-rose-700 dark:text-rose-400', background: 'bg-rose-500/10' },
+              { name: 'computer-use', icon: Monitor, color: 'text-cyan-700 dark:text-cyan-400', background: 'bg-cyan-500/10' },
+              { name: 'skill-creator', icon: WandSparkles, color: 'text-violet-700 dark:text-violet-400', background: 'bg-violet-500/10' },
             ] as const).map(({ name, icon: Icon, color, background }) => (
               <button
                 key={name}

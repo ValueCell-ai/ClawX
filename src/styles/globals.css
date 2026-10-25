@@ -774,3 +774,20 @@
 @media (prefers-reduced-motion: reduce) {
   .clawx-composer { transition: none; }
 }
+
+/* A file preview uses the viewport while retaining Radix focus/Escape ownership. */
+.clawx-dialog-content.clawx-preview-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  display: block;
+  transform: none;
+  animation: none;
+}

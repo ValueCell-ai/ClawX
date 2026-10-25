@@ -44,11 +44,11 @@ Each viewer selects exactly one existing binary route and passes the 20 MB maxim
 
 | Target authority | Read route |
 | --- | --- |
-| Ordinary local path, including Workspace Browser's already validated absolute path | `readBinaryFile(filePath, { maxBytes })` |
+| Ordinary local path | `readBinaryFile(filePath, { maxBytes })` |
 | Explicit `WorkspaceFileRef` | `readWorkspaceBinary({ ...workspaceFileRef, maxBytes })` |
 | Explicit `AttachmentFileRef` | `readAttachmentBinary(attachmentFileRef, maxBytes)` |
 
-A target containing both scoped reference types is invalid and fails before any read. A scoped target never retries through `filePath`, another scope, or a naked-path API. Workspace Browser deliberately retains its existing Host-validated absolute-path route; other workspace-derived file activity enters Preview with its `WorkspaceFileRef`. Remote attachments do not enter preview and no preview-specific download flow exists.
+A target containing both scoped reference types is invalid and fails before any read. A scoped target never retries through `filePath`, another scope, or a naked-path API. Workspace tree and file-activity selections both enter the shared preview with a `WorkspaceFileRef`; neither retries through an absolute-path read. Remote attachments do not enter preview and no preview-specific download flow exists.
 
 Document bytes remain inside the existing Renderer/Main Host API boundary. The Renderer passes `Uint8Array` to parser APIs and does not use direct filesystem access, document `fetch()`, parser URL loaders, temporary files, uploads, Gateway endpoints, or a Main-process or external conversion service.
 
@@ -59,7 +59,7 @@ Over-limit behavior follows the target's authority rather than the display surfa
 | Target | Behavior |
 | --- | --- |
 | Ordinary local Preview target | Show the too-large/direct-open surface with confirmed system open and reveal actions. |
-| Workspace Browser validated absolute path | Show the same confirmed direct-open and reveal actions. |
+| Workspace Browser WorkspaceFileRef | Use the same scoped size/error state; user-initiated reveal uses revealWorkspaceFile, never a raw shell fallback. |
 | Local authorized attachment known to be over limit | `attachmentOpenMode()` chooses the existing scoped `hostApi.files.openAttachment()` system-open flow. |
 | Remote attachment | Keep the existing scoped system-open flow; do not preview or download for preview. |
 | `WorkspaceFileRef` Preview target | Show `tooLarge` without naked-path shell actions. |
@@ -131,15 +131,15 @@ The `ResizeObserver` uses a 100 ms trailing debounce. The callback does not rend
 
 `pptxviewjs@1.1.9` stores presentation chart and ZIP state in Renderer globals including `window.currentProcessor` and `window.currentZipData`. At most one `PptxViewer` may therefore be mounted in the shared Electron Renderer. This is a correctness requirement, not a performance preference: concurrent decks could resolve chart or package data from the wrong presentation.
 
-Workspace and Preview surfaces remain mounted to preserve surrounding UI state, but each conditionally mounts its PPTX child only while its artifact tab is active. CSS-only hiding is insufficient. A development assertion rejects a second concurrent viewer. The owning Workspace and Preview surfaces retain slide positions in maps keyed by target identity; switching away destroys and unmounts the viewer, and switching back reparses the deck and restores the clamped position.
+Workspace and Preview share one mounted file surface. Its PPTX child is mounted only while that surface is active. CSS-only hiding is insufficient. A development assertion rejects a second concurrent viewer. Bounded, non-persisted panel state retains slide positions keyed by target identity across tab, drawer and fullscreen transitions; switching away destroys and unmounts the viewer, and switching back reparses the deck and restores the clamped position.
 
 Cleanup queues the active instance's public `destroy()` exactly once after preceding dependency work. ClawX removes all listeners, observers, timers, animation frames, queued request references, and its direct instance and Canvas ownership. The dependency limitations below mean this does not claim full internal reclamation.
 
 ## Fullscreen Preview Surface
 
-The Chat Preview header exposes a localized icon control that moves the selected `FilePreviewBody` into a portal filling the Renderer viewport. This is an application overlay, not Electron window fullscreen, and applies consistently to every file format supported by the Preview surface. It preserves target identity and target-keyed PPTX slide position while switching between compact panel layout and full layout.
+The Chat Preview header exposes a localized icon control that moves the selected `FilePreviewBody` into a Radix dialog portal filling the Renderer viewport. This is an application overlay, not Electron window fullscreen, and applies consistently to every file format supported by the Preview surface. It preserves target identity and target-keyed PPTX slide position while switching between compact panel layout and full layout.
 
-The same header control exits fullscreen, and Escape provides a keyboard exit. Switching away from the Preview artifact tab also closes the overlay. Portal transitions may remount a viewer, but the previous PPTX lifecycle is torn down before the replacement becomes active so the single-mounted-viewer invariant remains intact.
+The same header control exits fullscreen, and Escape provides a keyboard exit. Making the shared preview inactive closes the overlay; Workspace and Preview otherwise keep the same file and slide position. Portal transitions may remount a viewer, but the previous PPTX lifecycle is torn down before the replacement becomes active so the single-mounted-viewer invariant remains intact.
 
 ## States And Errors
 

@@ -3,19 +3,19 @@ import { expectMenuSelection } from './fixtures/menu-selection';
 import { closeElectronApp, expect, getStableWindow, installIpcMocks, test } from './fixtures/electron';
 import { expectQuietFieldFocus } from './fixtures/field-focus';
 
-const skillNames = ['docx', 'xlsx', 'pptx', 'pdf'];
+const skillNames = ['docx', 'xlsx', 'pptx', 'pdf', 'computer-use', 'skill-creator'];
 const locales = [
-  { language: 'zh', heading: '今天想完成什么？', legacy: '内置与扩展', labels: ['文档处理', '表格分析', '演示文稿', 'PDF 工具'] },
-  { language: 'en', heading: 'What would you like to get done?', legacy: 'Built-in & extensions', labels: ['Documents', 'Spreadsheets', 'Presentations', 'PDF tools'] },
-  { language: 'ja', heading: '今日は何を進めましょうか？', legacy: '組み込み・拡張', labels: ['文書作成', '表計算', 'プレゼン資料', 'PDF ツール'] },
-  { language: 'ru', heading: 'Что хотите сделать сегодня?', legacy: 'Встроенные и расширения', labels: ['Документы', 'Таблицы', 'Презентации', 'PDF'] },
+  { language: 'zh', heading: '今天想完成什么？', legacy: '内置与扩展', labels: ['文档处理', '表格分析', '演示文稿', 'PDF 工具', '电脑操作', '创建技能'] },
+  { language: 'en', heading: 'What would you like to get done?', legacy: 'Built-in & extensions', labels: ['Documents', 'Spreadsheets', 'Presentations', 'PDF tools', 'Computer use', 'Create skills'] },
+  { language: 'ja', heading: '今日は何を進めましょうか？', legacy: '組み込み・拡張', labels: ['文書作成', '表計算', 'プレゼン資料', 'PDF ツール', 'パソコン操作', 'スキル作成'] },
+  { language: 'ru', heading: 'Что хотите сделать сегодня?', legacy: 'Встроенные и расширения', labels: ['Документы', 'Таблицы', 'Презентации', 'PDF', 'Управление ПК', 'Создание навыков'] },
 ];
 
 for (const locale of locales) {
   test(`home composer supports skill drafts and layout in ${locale.language}`, async ({ launchElectronApp }, testInfo) => {
     const app = await launchElectronApp({ skipSetup: true });
     try {
-      const availableSkills = locale.language === 'ru' ? ['docx', 'xlsx', 'pdf'] : skillNames;
+      const availableSkills = locale.language === 'ru' ? skillNames.filter(name => name !== 'pptx' && name !== 'computer-use') : skillNames;
       await installIpcMocks(app, {
         gatewayStatus: { state: 'running', gatewayReady: true, port: 18789 },
         gatewayRpc: { '["sessions.list",{}]': { success: true, result: { sessions: [] } } },
@@ -118,8 +118,8 @@ for (const locale of locales) {
       expect(await app.evaluate(() => (globalThis as unknown as { homeSkillGate: { requests: number } }).homeSkillGate.requests)).toBe(requestsBeforeNewChat);
       for (const [index, name] of skillNames.entries()) {
         const shortcut = page.getByTestId(`chat-home-skill-${name}`);
-        if (!availableSkills.includes(name)) { await expect(shortcut).toBeVisible(); await expect(shortcut).toBeDisabled(); continue; }
         await expect(shortcut).toHaveText(locale.labels[index]);
+        if (!availableSkills.includes(name)) { await expect(shortcut).toBeVisible(); await expect(shortcut).toBeDisabled(); continue; }
         await input.fill('Keep my draft');
         await shortcut.click();
         await expect(input).toHaveValue(`/${name}  Keep my draft`);
@@ -169,11 +169,15 @@ for (const locale of locales) {
       await page.keyboard.press('Escape');
       await page.screenshot({ path: testInfo.outputPath('home.png') });
       // Narrow windows must retain the skill controls, model, dictation and footer.
-      await page.setViewportSize({ width: 900, height: 650 });
-      await expect(page.getByTestId('chat-home-skill-docx')).toBeInViewport();
-      await expect(page.getByTestId('chat-composer-send')).toBeInViewport();
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-      await page.screenshot({ path: testInfo.outputPath('home-narrow.png') });
+      for (const width of [900, 700]) {
+        await page.setViewportSize({ width, height: 650 });
+        for (const name of skillNames) {
+          await expect(page.getByTestId(`chat-home-skill-${name}`)).toBeInViewport();
+        }
+        await expect(page.getByTestId('chat-composer-send')).toBeInViewport();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+        await page.screenshot({ path: testInfo.outputPath(`home-narrow-${width}.png`) });
+      }
       await input.fill('A test task');
       await page.getByTestId('chat-composer-send').click();
       await expect(page.getByTestId('acp-chat-empty-state')).toHaveCount(0);

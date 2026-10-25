@@ -13,7 +13,9 @@
             "docx": "Documents",
             "xlsx": "Spreadsheets",
             "pptx": "Presentations",
-            "pdf": "PDF tools"
+            "pdf": "PDF tools",
+            "computer-use": "Computer use",
+            "skill-creator": "Create skills"
         },
         "skillUnavailable": "Enable or install this skill in Skills.",
         "skillsFailed": "Skills could not be loaded. Open the skill menu to retry."
@@ -135,7 +137,7 @@
     },
     "artifactPanel": {
         "tabs": {
-            "changes": "Changes",
+            "changes": "Task changes",
             "preview": "Preview",
             "browser": "Workspace"
         },
@@ -143,15 +145,16 @@
             "back": "Back to list"
         },
         "changes": {
-            "heading": "File changes ({{count}})",
-            "empty": "This session has no file changes yet.",
+            "heading": "Task changes ({{count}})",
+            "empty": "No changes in this conversation",
             "selectFileHint": "Click a file card in the chat or “View changes” to open a diff.",
             "changeRecord": "Change {{number}}",
-            "diffUnavailable": "Diff unavailable for this change."
+            "diffUnavailable": "Diff unavailable for this change.",
+            "emptyHint": "Files created, modified or deleted during this conversation will appear here."
         },
         "preview": {
             "emptyTitle": "No file selected",
-            "emptyHint": "Click a file card in the chat first; the selected file will preview here.",
+            "emptyHint": "Choose a workspace file or a file card in the conversation to preview it here.",
             "fullscreenLabel": "Fullscreen file preview"
         }
     },
@@ -251,6 +254,28 @@
         "actions": {
             "refresh": "Refresh",
             "openRootInFinder": "Reveal workspace in file manager"
+        },
+        "search": "Search files",
+        "clearSearch": "Clear file search",
+        "showHidden": "Show hidden files",
+        "collapseAll": "Collapse all folders",
+        "browseFiles": "Browse files",
+        "fileActions": "File actions",
+        "copyPath": "Copy path",
+        "pathCopied": "Path copied",
+        "copyFailed": "Could not copy path",
+        "resizeFiles": "Resize file list",
+        "resizePanel": "Resize workspace panel",
+        "noResults": "No matching files",
+        "noFiles": "No visible files in this folder.",
+        "taskEmpty": "Files created or updated in this conversation appear here.",
+        "recentEmpty": "Files you open in this workspace appear here.",
+        "searchLimited": "Some files are not loaded. Search covers the loaded directory only.",
+        "searchScope": "Search scope: loaded folders",
+        "views": {
+            "all": "All files",
+            "task": "This task",
+            "recent": "Recent"
         }
     },
     "imageGeneration": {

@@ -326,14 +326,12 @@ test.describe('ClawX chat workspace context', () => {
       await sidePanel.getByTestId('artifact-panel-tab-browser').click();
 
       const workspaceHeader = sidePanel.getByTestId('workspace-header-title');
-      const expectedWorkspaceHeader = 'Agent: Main Agent · Directory: Renamed workspace';
-      await expect(workspaceHeader).toHaveAttribute('title', expectedWorkspaceHeader);
-      await expect(workspaceHeader).toHaveAttribute('aria-label', expectedWorkspaceHeader);
+      await expect(workspaceHeader).toHaveAccessibleName('Renamed workspace');
       await expect(sidePanel.getByTestId('workspace-agent-tag')).toHaveText('Main Agent');
       await expect(sidePanel.getByTestId('workspace-agent-tag')).toHaveAttribute('title', 'Main Agent');
       await expect(sidePanel.getByTestId('workspace-path-tag')).toHaveText('Renamed workspace');
       await expect(sidePanel.getByTestId('workspace-path-tag')).toHaveAttribute('title', SESSION_WORKSPACE);
-      await expect(sidePanel.getByTestId('workspace-path-final-segment')).toHaveText('Renamed workspace');
+      await expect(sidePanel.getByTestId('workspace-header-title')).toHaveText('Renamed workspace');
       await expect(sidePanel.getByTestId('workspace-tree')).toBeVisible({ timeout: 30_000 });
       await expect(sidePanel.getByText('README.md')).toBeVisible();
 

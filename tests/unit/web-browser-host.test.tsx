@@ -162,6 +162,19 @@ describe('HTML preview host', () => {
     expect(screen.getByTestId('html-preview-host')).toHaveAttribute('aria-hidden', 'true');
   });
 
+  it('shows the same guest for a workspace HTML selection inside the narrow drawer', () => {
+    const drawer = document.createElement('div');
+    drawer.setAttribute('role', 'dialog');
+    document.body.append(drawer);
+    const anchor = makeAnchor();
+    drawer.append(anchor);
+    useArtifactPanel.setState({ open: true, tab: 'browser', focusedFile: htmlFile(), htmlPreviewAnchor: anchor });
+    render(<WebBrowserHost />);
+    expect(screen.getByTestId('html-preview-host')).toHaveAttribute('aria-hidden', 'false');
+    expect(screen.getByTestId('html-preview-host')).toHaveStyle({ zIndex: '70' });
+    drawer.remove();
+  });
+
   it('raises the guest above the fullscreen preview layer', () => {
     const fullscreenLayer = document.createElement('div');
     fullscreenLayer.dataset.testid = 'file-preview-fullscreen-layer';

@@ -615,12 +615,12 @@ export function FilePreviewBody({
         data-testid="file-preview-header"
         className={
           compact
-            ? 'flex items-center justify-between gap-3 border-b border-black/5 px-4 py-2 dark:border-white/10'
-            : 'flex items-center justify-between gap-3 border-b border-black/5 px-5 py-3 dark:border-white/10'
+            ? 'flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-black/5 px-3 py-2 dark:border-white/10'
+            : 'flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-black/5 px-5 py-3 dark:border-white/10'
         }
         style={headerLeftInset == null ? undefined : { paddingLeft: headerLeftInset }}
       >
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 flex-1 basis-40 items-center gap-2">
           {leadingHeader}
           <FilePreviewIcon
             contentType={file.contentType}
@@ -633,7 +633,7 @@ export function FilePreviewBody({
             <p className="truncate text-2xs text-muted-foreground" title={previewDisplayPath(file)}>{previewDisplayPath(file)}</p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex max-w-full shrink-0 items-center gap-1 overflow-x-auto">
           {state.status === 'ready' && tabs.length > 1 && (
             <TabsList className="h-8 shrink-0" data-testid="file-preview-view-tabs">
               {tabs.map((id) => (
