@@ -317,7 +317,10 @@
             "EMPTY_RESULT": "No speech recognized.",
             "INVALID_INPUT": "Invalid audio recording."
         },
-        "placeholder": "Describe a task or add files to get started…"
+        "placeholder": "Describe a task or add files to get started…",
+        "executionAgent": "Choose Agent: {{agent}}",
+        "executionAgentTitle": "Choose Agent",
+        "agentDefaultModel": "Default model: {{model}}"
     },
     "sessionList": {
         "title": "Recent tasks",

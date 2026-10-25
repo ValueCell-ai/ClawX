@@ -317,7 +317,10 @@
             "EMPTY_RESULT": "Речь не распознана.",
             "INVALID_INPUT": "Недопустимая аудиозапись."
         },
-        "placeholder": "Опишите задачу или добавьте файлы…"
+        "placeholder": "Опишите задачу или добавьте файлы…",
+        "executionAgent": "Выбрать агента: {{agent}}",
+        "executionAgentTitle": "Выбрать агента",
+        "agentDefaultModel": "Модель по умолчанию: {{model}}"
     },
     "sessionList": {
         "title": "Недавние задачи",

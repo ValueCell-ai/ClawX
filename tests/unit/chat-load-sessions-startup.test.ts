@@ -68,6 +68,29 @@ describe('chat session catalog startup', () => {
     vi.restoreAllMocks();
   });
 
+  it('starts a distinct task for another agent and carries the unsent draft without replacing main history', async () => {
+    const { useChatStore } = await import('@/stores/chat');
+    const { useComposerDraftStore } = await import('@/stores/composer-drafts');
+    const originalKey = 'agent:main:main';
+    const coderMain = 'agent:coder:main';
+    vi.spyOn(Date, 'now').mockReturnValue(1_711_111_111_111);
+    useChatStore.setState({
+      currentSessionKey: originalKey, currentAgentId: 'main',
+      sessions: [{ key: originalKey }, { key: coderMain }],
+    });
+    useComposerDraftStore.getState().setDraft(originalKey, 'Unsent work');
+    useChatStore.getState().newSession({ agentId: 'coder', preserveDraft: true });
+    const first = useChatStore.getState().currentSessionKey;
+    expect(first).toBe('agent:coder:session-1711111111111');
+    expect(useChatStore.getState().currentAgentId).toBe('coder');
+    expect(useComposerDraftStore.getState().drafts[first]).toBe('Unsent work');
+    expect(useChatStore.getState().sessions.find(session => session.key === coderMain)).toEqual({ key: coderMain });
+    useChatStore.getState().newSession({ agentId: 'coder', preserveDraft: true });
+    expect(useChatStore.getState().currentSessionKey).not.toBe(first);
+    expect(useComposerDraftStore.getState().drafts[useChatStore.getState().currentSessionKey]).toBe('Unsent work');
+    expect(gatewayRpcMock).not.toHaveBeenCalled();
+  });
+
   it('exposes only session catalog and selection state', async () => {
     const { useChatStore } = await import('@/stores/chat');
     const state = useChatStore.getState();

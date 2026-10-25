@@ -317,7 +317,10 @@
             "EMPTY_RESULT": "音声を認識できませんでした。",
             "INVALID_INPUT": "録音データが無効です。"
         },
-        "placeholder": "タスクを入力するか、ファイルを追加してください…"
+        "placeholder": "タスクを入力するか、ファイルを追加してください…",
+        "executionAgent": "Agent を選択：{{agent}}",
+        "executionAgentTitle": "Agent を選択",
+        "agentDefaultModel": "既定のモデル：{{model}}"
     },
     "sessionList": {
         "title": "最近のタスク",

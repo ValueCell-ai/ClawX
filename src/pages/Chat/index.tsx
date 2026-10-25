@@ -849,17 +849,18 @@ export function Chat() {
             draft={composerDraft}
             draftKey={currentSessionKey}
             onDraftChange={handleComposerDraftChange}
-            onSend={(text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => {
+            onSelectAgent={(agentId) => {
+              const agent = agents.find((candidate) => candidate.id === agentId);
+              if (!agent || agent.id === currentAgentId) return;
+              setChatWorkspacePath(agent.workspace || cwd);
+              useChatStore.getState().newSession({ agentId: agent.id, preserveDraft: true });
+            }}
+            onSend={(text: string, attachments?: FileAttachment[]) => {
               if (!currentSessionKey || !cwd || !workspaceContextAvailable) return;
-              const targetAgent = targetAgentId
-                ? agents.find((agent) => agent.id === targetAgentId) ?? null
-                : null;
-              const sessionKey = targetAgent
-                ? targetAgent.mainSessionKey || `agent:${targetAgent.id}:main`
-                : currentSessionKey;
+              const sessionKey = currentSessionKey;
               const existingSession = sessions.find((session) => session.key === sessionKey);
               setLastPromptAttemptSessionKey(sessionKey);
-              const promptCwd = targetAgent?.workspace || cwd;
+              const promptCwd = cwd;
               const media = attachments
                 ?.filter((file) => file.status === 'ready')
                 .map((file) => ({
@@ -869,17 +870,10 @@ export function Chat() {
                   fileName: file.fileName,
                   mimeType: file.mimeType,
                 }));
-              if (targetAgent || !existingSession) {
+              if (!existingSession) {
                 selectAcpSession(sessionKey, promptCwd);
               }
               void (async () => {
-                if (promptCwd !== cwd) {
-                  const promptWorkspace = await hostApi.files.resolveWorkspaceContext({
-                    workspaceRoot: promptCwd,
-                    executionCwd: promptCwd,
-                  }).catch(() => ({ ok: false }));
-                  if (!promptWorkspace.ok) return;
-                }
                 const createIfMissing = !existingSession || !!existingSession.createdLocally;
                 if (
                   createIfMissing

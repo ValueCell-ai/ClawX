@@ -142,7 +142,7 @@ export interface ChatState {
   handleSessionsChanged: (payload: GatewaySessionsChangedPayload) => void;
   switchSession: (key: string) => void;
   selectAcpSession: (key: string, workspacePath?: string) => void;
-  newSession: () => void;
+  newSession: (options?: { agentId: string; preserveDraft?: boolean }) => void;
   acknowledgeAcpSessionCreated: (key: string, workspacePath?: string, initialPrompt?: string) => void;
   deleteSession: (key: string) => Promise<DeleteSessionResult>;
   deleteSessions: (keys: string[]) => Promise<DeleteSessionsResult>;

@@ -317,7 +317,10 @@
             "EMPTY_RESULT": "未识别到语音内容。",
             "INVALID_INPUT": "录音文件无效。"
         },
-        "placeholder": "描述你的任务，或添加文件开始…"
+        "placeholder": "描述你的任务，或添加文件开始…",
+        "executionAgent": "选择 Agent：{{agent}}",
+        "executionAgentTitle": "选择 Agent",
+        "agentDefaultModel": "默认模型：{{model}}"
     },
     "sessionList": {
         "title": "最近任务",

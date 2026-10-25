@@ -10,7 +10,7 @@ import {
   useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo,
   type SetStateAction,
 } from 'react';
-import { Presentation, Table2, FileScan, SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, AtSign, Search, ChevronDown } from 'lucide-react';
+import { Presentation, Table2, FileScan, SendHorizontal, Square, X, Paperclip, FileText, Film, Music, FileArchive, File, FolderOpen, Loader2, Bot, Search, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MenuSelectionIndicator } from '@/components/ui/menu-selection';
 import { menuOptionStateClass } from '@/components/ui/menu-selection-styles';
@@ -69,7 +69,8 @@ type ComposerExpandedPanel = 'subagents' | 'plan' | null;
 
 interface ChatInputProps {
   welcome?: boolean;
-  onSend: (text: string, attachments?: FileAttachment[], targetAgentId?: string | null) => void;
+  onSend: (text: string, attachments?: FileAttachment[]) => void;
+  onSelectAgent?: (agentId: string) => void;
   onStop?: () => void;
   draft?: string;
   draftKey?: string;
@@ -314,6 +315,7 @@ function readFileAsBase64(file: globalThis.File): Promise<string> {
 export function ChatInput({
   welcome = false,
   onSend,
+  onSelectAgent,
   onStop,
   draft,
   draftKey,
@@ -340,7 +342,6 @@ export function ChatInput({
     else setUncontrolledInput(update);
   }, [onDraftChange]);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
-  const [targetAgentId, setTargetAgentId] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
@@ -421,14 +422,6 @@ export function ChatInput({
     const matchedOption = modelOptions.find((option) => option.modelRef === effectiveModelRef);
     return matchedOption?.modelId || formatModelRefLabel(effectiveModelRef);
   }, [effectiveModelRef, modelOptions]);
-  const mentionableAgents = useMemo(
-    () => (agents ?? []).filter((agent) => agent.id !== currentAgentId),
-    [agents, currentAgentId],
-  );
-  const selectedTarget = useMemo(
-    () => (agents ?? []).find((agent) => agent.id === targetAgentId) ?? null,
-    [agents, targetAgentId],
-  );
   const filteredQuickSkills = useMemo(() => {
     const query = skillQuery.trim().toLowerCase();
     if (!query) return quickSkills;
@@ -439,7 +432,7 @@ export function ChatInput({
       || skill.sourceLabel.toLowerCase().includes(query),
     );
   }, [quickSkills, skillQuery, t]);
-  const showAgentPicker = mentionableAgents.length > 0;
+  const showAgentPicker = !!currentAgent;
   const showModelPicker = modelOptions.length > 1;
   const chatComposerStatusComponents = rendererExtensionRegistry.getChatComposerStatusComponents();
   const isGatewayUsable = gatewayStatus.state === 'running' && gatewayStatus.gatewayReady !== false;
@@ -585,19 +578,6 @@ export function ChatInput({
     const end = Math.max(start, Math.min(savedSelection?.end ?? start, fallbackPosition));
     textarea.setSelectionRange(start, end, savedSelection?.direction ?? 'none');
   }, [draftKey, inputDisabled]);
-
-  useEffect(() => {
-    if (!targetAgentId) return;
-    if (targetAgentId === currentAgentId) {
-      setTargetAgentId(null);
-      setPickerOpen(false);
-      return;
-    }
-    if (!(agents ?? []).some((agent) => agent.id === targetAgentId)) {
-      setTargetAgentId(null);
-      setPickerOpen(false);
-    }
-  }, [agents, currentAgentId, targetAgentId]);
 
   useEffect(() => {
     if (!pickerOpen && !skillPickerOpen && !modelPickerOpen && !workspaceMenuOpen) return;
@@ -968,7 +948,7 @@ export function ChatInput({
       const guard = await rendererExtensionRegistry.runChatBeforeSend({
         text: textToSend,
         attachments: attachmentsToSend,
-        targetAgentId,
+        targetAgentId: null,
       });
       if (!guard.ok) {
         if (guard.message) {
@@ -994,12 +974,11 @@ export function ChatInput({
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-    onSend(textToSend, attachmentsToSend, targetAgentId);
-    setTargetAgentId(null);
+    onSend(textToSend, attachmentsToSend);
     setPickerOpen(false);
     setSkillPickerOpen(false);
     setWorkspaceMenuOpen(false);
-  }, [input, attachments, canSend, onSend, setInput, targetAgentId]);
+  }, [input, attachments, canSend, onSend, setInput]);
 
   const handleStop = useCallback(() => {
     if (!canStop) return;
@@ -1034,7 +1013,6 @@ export function ChatInput({
             setSelectedSkill(null);
             return;
           }
-          setTargetAgentId(null);
           return;
         }
       }
@@ -1285,38 +1263,22 @@ export function ChatInput({
           </div>
         )}
 
-        {/* Attachment Previews */}
-        {attachments.length > 0 && (
-          <div className="flex gap-2 mb-3 flex-wrap">
-            {attachments.map((att) => (
-              <AttachmentPreview
-                key={att.id}
-                attachment={att}
-                onRemove={() => removeAttachment(att.id)}
-                disabled={attachmentsLocked}
-              />
-            ))}
-          </div>
-        )}
-
         <div className="clawx-composer rounded-3xl border bg-surface-input">
           {/* Input Container */}
           <div
             data-testid="chat-composer-box"
             className={cn('relative rounded-t-3xl bg-surface-modal px-4 pt-4 pb-2 transition-colors motion-reduce:transition-none', dragOver && 'ring-1 ring-primary')}
           >
-            {selectedTarget && (
-              <div className="flex flex-wrap gap-2 pb-1.5">
-                <button
-                  type="button"
-                  onClick={() => setTargetAgentId(null)}
-                  disabled={inputDisabled}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-1 text-meta font-medium text-foreground transition-colors hover:bg-primary/10"
-                  title={t('composer.clearTarget')}
-                >
-                  <span>{t('composer.targetChip', { agent: selectedTarget.name })}</span>
-                  <X className="h-3 w-3 text-muted-foreground" />
-                </button>
+            {attachments.length > 0 && (
+              <div data-testid="chat-composer-attachments" className="mb-3 flex flex-wrap gap-2">
+                {attachments.map((att) => (
+                  <AttachmentPreview
+                    key={att.id}
+                    attachment={att}
+                    onRemove={() => removeAttachment(att.id)}
+                    disabled={attachmentsLocked}
+                  />
+                ))}
               </div>
             )}
 
@@ -1368,7 +1330,7 @@ export function ChatInput({
             </div>
 
             {/* Action Row — icons on their own line */}
-            <div className="mt-1.5 flex items-center gap-1">
+            <div className="relative mt-1.5 flex flex-wrap items-center gap-1">
               {/* Attach Button */}
               <Button
                 variant="ghost"
@@ -1382,14 +1344,13 @@ export function ChatInput({
               </Button>
 
               {showAgentPicker && (
-                <div ref={pickerRef} className="relative shrink-0">
+                <div ref={pickerRef} className="shrink-0">
                   <Button
                     variant="ghost"
-                    size="icon"
                     data-testid="chat-composer-agent"
                     className={cn(
-                      'h-8 w-8 rounded-lg text-muted-foreground hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground transition-colors',
-                      (pickerOpen || selectedTarget) && 'bg-primary/10 text-primary hover:bg-primary/20'
+                      'h-8 gap-1.5 rounded-lg px-1.5 text-meta text-foreground/80 hover:bg-black/5 dark:hover:bg-white/10 transition-colors',
+                      pickerOpen && 'bg-black/5 dark:bg-white/10'
                     )}
                     onClick={() => {
                       setSkillPickerOpen(false);
@@ -1397,24 +1358,28 @@ export function ChatInput({
                       setWorkspaceMenuOpen(false);
                       setPickerOpen((open) => !open);
                     }}
-                    disabled={inputDisabled || sending}
-                    title={t('composer.pickAgent')}
+                    disabled={sending || imageGenerating || !!switchingModelRef}
+                    title={t('composer.executionAgent', { agent: currentAgentName })}
+                    aria-label={t('composer.executionAgent', { agent: currentAgentName })}
+                    aria-expanded={pickerOpen}
                   >
-                    <AtSign className="h-3.5 w-3.5" />
+                    <Bot className="h-3.5 w-3.5 shrink-0" />
+                    <span className="max-w-[120px] truncate">{currentAgentName}</span>
+                    <ChevronDown className="h-3 w-3 shrink-0" />
                   </Button>
                   {pickerOpen && (
-                    <div data-testid="chat-agent-picker-menu" className="absolute left-0 bottom-full z-20 mb-2 w-96 max-w-[calc(100cqw-7rem)] overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
+                    <div data-testid="chat-agent-picker-menu" className="absolute left-0 bottom-full z-20 mb-2 w-96 max-w-full overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
                       <div className="px-3 py-1.5 text-tiny font-medium text-muted-foreground/80">
-                        {t('composer.agentPickerTitle', { currentAgent: currentAgentName })}
+                        {t('composer.executionAgentTitle')}
                       </div>
                       <div className="clawx-menu-list max-h-64 overflow-y-auto">
-                        {mentionableAgents.map((agent) => (
+                        {agents.map((agent) => (
                           <AgentPickerItem
                             key={agent.id}
                             agent={agent}
-                            selected={agent.id === targetAgentId}
+                            selected={agent.id === currentAgentId}
                             onSelect={() => {
-                              setTargetAgentId(agent.id);
+                              if (agent.id !== currentAgentId) onSelectAgent?.(agent.id);
                               setPickerOpen(false);
                               textareaRef.current?.focus();
                             }}
@@ -1426,7 +1391,7 @@ export function ChatInput({
                 </div>
               )}
 
-              <div ref={skillPickerRef} className="relative shrink-0">
+              <div ref={skillPickerRef} className="shrink-0">
                 <button
                   type="button"
                   data-testid="chat-composer-skill"
@@ -1447,7 +1412,7 @@ export function ChatInput({
                   <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', skillPickerOpen && 'rotate-180')} />
                 </button>
                 {skillPickerOpen && (
-                  <div data-testid="chat-skill-picker-menu" className="absolute left-0 bottom-full z-20 mb-2 w-96 max-w-[calc(100cqw-7rem)] overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
+                  <div data-testid="chat-skill-picker-menu" className="absolute left-0 bottom-full z-20 mb-2 w-96 max-w-full overflow-hidden rounded-2xl border border-black/10 bg-surface-modal p-1.5 shadow-xl dark:border-white/10">
                     <div className="flex items-center gap-2 rounded-xl border border-black/10 bg-black/[0.03] px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]">
                       <Search className="h-3.5 w-3.5 text-muted-foreground" />
                       <input
@@ -1787,7 +1752,7 @@ function AttachmentPreview({
         </div>
       ) : (
         // Generic file card
-        <div className="flex items-center gap-2 px-3 py-2 bg-surface-input/50 max-w-[200px]">
+        <div className="flex items-center gap-2 py-2 pl-3 pr-8 bg-surface-input/50 max-w-[200px]">
           <FileIcon mimeType={attachment.mimeType} className="h-5 w-5 shrink-0 text-muted-foreground" />
           <div className="min-w-0 overflow-hidden">
             <p className="text-xs font-medium truncate">{attachment.fileName}</p>
@@ -1820,9 +1785,11 @@ function AttachmentPreview({
       <button
         type="button"
         data-testid="chat-attachment-remove"
+        aria-label={`${t('common:actions.delete')} ${attachment.fileName}`}
+        title={`${t('common:actions.delete')} ${attachment.fileName}`}
         onClick={onRemove}
         disabled={disabled}
-        className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="pointer-events-none absolute right-1 top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-destructive-foreground/60"
       >
         <X className="h-3 w-3" />
       </button>
@@ -1839,10 +1806,12 @@ function AgentPickerItem({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const { t } = useTranslation('chat');
   return (
     <button
       type="button"
       onClick={onSelect}
+      data-testid={`chat-agent-option-${agent.id}`}
       aria-current={selected ? 'true' : undefined}
       className={cn(
         'clawx-menu-item flex w-full items-center justify-between gap-3 text-left transition-colors',
@@ -1851,7 +1820,9 @@ function AgentPickerItem({
     >
       <span className="min-w-0">
         <span className="block truncate text-sm font-medium text-foreground">{agent.name}</span>
-        <span className="block truncate text-tiny text-muted-foreground">{agent.modelDisplay}</span>
+        {agent.modelDisplay && (
+          <span className="block truncate text-tiny text-muted-foreground">{t('composer.agentDefaultModel', { model: agent.modelDisplay })}</span>
+        )}
       </span>
       <MenuSelectionIndicator selected={selected} />
     </button>

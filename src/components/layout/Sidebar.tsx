@@ -15,7 +15,6 @@ import {
   PinOff,
   MoreHorizontal,
   CircleAlert,
-  Bot,
   Puzzle,
   Clock,
   Settings as SettingsIcon,
@@ -215,6 +214,7 @@ export function Sidebar() {
     void loadSessions();
   }, [gatewayRuntimeKey, isGatewayReady, loadSessions]);
   const agents = useAgentsStore((s) => s.agents);
+  const defaultAgentId = useAgentsStore((s) => s.defaultAgentId);
   const fetchAgents = useAgentsStore((s) => s.fetchAgents);
 
   useEffect(() => {
@@ -552,8 +552,11 @@ export function Sidebar() {
               )}
             >
               <div className="flex min-w-0 items-center gap-1.5">
-                {agentId !== 'main' && (
-                  <Bot aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                {agentId !== defaultAgentId && (
+                  <span data-testid={`sidebar-session-agent-${s.key}`} title={agentName}
+                    className="max-w-16 shrink-0 truncate rounded-md bg-black/[0.04] px-1 text-2xs font-medium text-muted-foreground dark:bg-white/5">
+                    {agentName}
+                  </span>
                 )}
                 {channelType && channelName && (
                   <span

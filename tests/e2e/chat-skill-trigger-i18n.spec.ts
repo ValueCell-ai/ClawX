@@ -25,7 +25,7 @@ async function openChatWithInstalledMocks(app: ElectronApplication) {
 }
 
 test.describe('ClawX chat skill trigger', () => {
-  test('renders the localized Chinese skill label after the @ trigger', async ({ launchElectronApp }) => {
+  test('renders the localized Chinese skill label after the execution-agent selector', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 
     try {
@@ -115,8 +115,8 @@ test.describe('ClawX chat skill trigger', () => {
       expect(isSkillAfterAgent).toBe(true);
       await page.getByTestId('chat-composer-agent').click();
       const agentMenu = page.getByTestId('chat-agent-picker-menu');
-      await expect(agentMenu.locator('[data-slot="menu-selection-indicator"]')).toHaveCount(0);
-      await agentMenu.getByRole('button', { name: 'research Research Model', exact: true }).click();
+      await expect(agentMenu.getByTestId('chat-agent-option-main')).toHaveAttribute('aria-current', 'true');
+      await agentMenu.getByTestId('chat-agent-option-research').click();
 
       for (const width of [1280, 900, 700]) {
         await page.setViewportSize({ width, height: 800 });

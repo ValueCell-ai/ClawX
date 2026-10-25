@@ -1243,12 +1243,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set((state) => buildSessionSwitchPatch(state, key, { createdLocally: true, workspacePath }));
   },
 
-  newSession: () => {
+  newSession: (options) => {
     const { currentSessionKey, sessions } = get();
-    const prefix = getCanonicalPrefixFromSessionKey(currentSessionKey)
-      ?? getCanonicalPrefixFromSessions(sessions)
-      ?? DEFAULT_CANONICAL_PREFIX;
-    const sessionKey = `${prefix}:session-${Date.now()}`;
+    const draft = options?.preserveDraft ? useComposerDraftStore.getState().drafts[currentSessionKey] : undefined;
+    const prefix = options?.agentId
+      ? `agent:${options.agentId}`
+      : getCanonicalPrefixFromSessionKey(currentSessionKey)
+        ?? getCanonicalPrefixFromSessions(sessions)
+        ?? DEFAULT_CANONICAL_PREFIX;
+    let timestamp = Date.now();
+    let sessionKey = `${prefix}:session-${timestamp}`;
+    while (sessions.some((session) => session.key === sessionKey)) {
+      sessionKey = `${prefix}:session-${++timestamp}`;
+    }
     if (sessions.some((session) => session.key === currentSessionKey && session.createdLocally)) {
       localDraftSessionKeys.delete(currentSessionKey);
       useComposerDraftStore.getState().clearDraft(currentSessionKey);
@@ -1260,6 +1267,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       sessionKey,
       { createdLocally: true },
     ));
+    if (draft) useComposerDraftStore.getState().setDraft(sessionKey, draft);
   },
 
   acknowledgeAcpSessionCreated: (key, workspacePath, initialPrompt) => {

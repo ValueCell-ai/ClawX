@@ -53,7 +53,9 @@ async function pinnedKeys(page: Page) {
 }
 async function menu(page: Page, key: string) {
   await page.getByTestId(`sidebar-session-${key}`).hover();
-  await page.getByTestId(`sidebar-session-menu-${key}`).click();
+  const trigger = page.getByTestId(`sidebar-session-menu-${key}`);
+  await trigger.focus();
+  await trigger.click();
 }
 
 test('searches beyond pagination and collapsed workspaces, persists pins through relaunch and cleans deletion', async ({ launchElectronApp, homeDir }, testInfo) => {
@@ -85,6 +87,8 @@ test('searches beyond pagination and collapsed workspaces, persists pins through
     await expect(ordinaryActions).toHaveCSS('opacity', '1');
     await expect(ordinaryTime).toBeHidden();
     await ordinaryRow.screenshot({ path: testInfo.outputPath('task-row-hover.png') });
+    // Native Electron screenshots can reset pointer hover; focus keeps the accessible overlay exposed.
+    await ordinaryActions.focus();
     await ordinaryActions.click();
     await expect(page.getByRole('menuitem', { name: 'Pin task', exact: true })).toBeVisible();
     for (const item of await page.getByRole('menuitem').all()) await expect(item).toHaveCSS('height', '28px');

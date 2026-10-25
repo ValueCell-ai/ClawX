@@ -113,8 +113,8 @@ function translate(key: string, vars?: Record<string, unknown>): string {
       return 'Loading skills...';
     case 'composer.skillEmpty':
       return 'No matching skills found';
-    case 'composer.pickAgent':
-      return 'Choose agent';
+    case 'composer.executionAgent':
+      return `Execution agent: ${String(vars?.agent ?? '')}`;
     case 'composer.clearTarget':
       return 'Clear target agent';
     case 'composer.targetChip':
@@ -192,10 +192,10 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-function renderChatInput(onSend = vi.fn(), contextUsage?: unknown) {
+function renderChatInput(onSend = vi.fn(), contextUsage?: unknown, onSelectAgent = vi.fn()) {
   return render(
     <TooltipProvider delayDuration={0}>
-      <ChatInput onSend={onSend} contextUsage={contextUsage} />
+      <ChatInput onSend={onSend} contextUsage={contextUsage} onSelectAgent={onSelectAgent} />
     </TooltipProvider>,
   );
 }
@@ -264,7 +264,7 @@ function configureAgentAndModelPickers() {
   vi.mocked(hostApiFetchMock).mockResolvedValue({ success: true, skills: [] });
 }
 
-describe('ChatInput agent targeting', () => {
+describe('ChatInput execution agent and composer', () => {
   beforeEach(() => {
     agentsState.agents = [];
     agentsState.defaultModelRef = null;
@@ -319,7 +319,7 @@ describe('ChatInput agent targeting', () => {
     })).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('chat-model-picker-button'));
-    fireEvent.click(screen.getByRole('button', { name: 'gpt-b Beta' }));
+    fireEvent.click(screen.getByRole('button', { name: 'gpt-b', exact: true }));
     await waitFor(() => {
       expect(agentsState.updateAgentModel).toHaveBeenCalledWith('main', 'custom-bbbbbbbb/gpt-b');
     });
@@ -940,7 +940,7 @@ describe('ChatInput agent targeting', () => {
     expect(await screen.findByText('No matching skills found')).toBeInTheDocument();
   });
 
-  it('shows only the model id on the composer and a muted provider name in the menu', () => {
+  it('shows provider headings once and only model ids in their rows', () => {
     configureAgentAndModelPickers();
 
     renderChatInput();
@@ -951,11 +951,12 @@ describe('ChatInput agent targeting', () => {
     expect(pickerButton).not.toHaveTextContent('(');
 
     fireEvent.click(pickerButton);
-    const option = screen.getByRole('button', { name: 'gpt-b Beta' });
+    const option = screen.getByRole('button', { name: 'gpt-b', exact: true });
     expect(option).toHaveTextContent('gpt-b');
-    expect(option).toHaveTextContent('Beta');
+    expect(option).not.toHaveTextContent('Beta');
+    expect(screen.getByRole('group', { name: 'Beta' })).toContainElement(option);
     expect(option).not.toHaveTextContent('(');
-    expect(option.querySelector('.text-muted-foreground')).toHaveTextContent('Beta');
+    expect(screen.getByRole('group', { name: 'Beta' }).querySelector('.text-muted-foreground')).toHaveTextContent('Beta');
   });
 
   it('closes an open model picker when opening the agent picker', () => {
@@ -1123,7 +1124,7 @@ describe('ChatInput agent targeting', () => {
     expect(onSelectWorkspace).not.toHaveBeenCalled();
   });
 
-  it('hides the @agent picker when only one agent is configured', () => {
+  it('names the execution agent even when only one agent is configured', () => {
     agentsState.agents = [
       {
         id: 'main',
@@ -1140,7 +1141,7 @@ describe('ChatInput agent targeting', () => {
 
     renderChatInput();
 
-    expect(screen.queryByTitle('Choose agent')).not.toBeInTheDocument();
+    expect(screen.getByTestId('chat-composer-agent')).toHaveTextContent('Main');
   });
 
   it('uses native textarea rendering when no skill token is present', () => {
@@ -1168,7 +1169,7 @@ describe('ChatInput agent targeting', () => {
     expect(textbox.className).not.toContain('text-transparent');
   });
 
-  it('lets the user select an agent target and sends it with the message', () => {
+  it('selects an execution agent before sending instead of adding a next-message target', () => {
     const onSend = vi.fn();
     agentsState.agents = [
       {
@@ -1195,17 +1196,20 @@ describe('ChatInput agent targeting', () => {
       },
     ];
 
-    renderChatInput(onSend);
+    const onSelectAgent = vi.fn();
+    renderChatInput(onSend, undefined, onSelectAgent);
 
-    fireEvent.click(screen.getByTitle('Choose agent'));
+    fireEvent.click(screen.getByTestId('chat-composer-agent'));
     fireEvent.click(screen.getByText('Research'));
 
-    expect(screen.getByText('@Research')).toBeInTheDocument();
+    expect(onSelectAgent).toHaveBeenCalledWith('research');
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.queryByText('@Research')).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Hello direct agent' } });
     fireEvent.click(screen.getByTitle('Send'));
 
-    expect(onSend).toHaveBeenCalledWith('Hello direct agent', undefined, 'research');
+    expect(onSend).toHaveBeenCalledWith('Hello direct agent', undefined);
   });
 
   it('keeps the ACP composer enabled while gateway is running but not yet ready', () => {
@@ -1268,7 +1272,7 @@ describe('ChatInput agent targeting', () => {
     fireEvent.change(input, { target: { value: 'Send through ACP' } });
     fireEvent.click(screen.getByTitle('Send'));
 
-    expect(onSend).toHaveBeenCalledWith('Send through ACP', undefined, null);
+    expect(onSend).toHaveBeenCalledWith('Send through ACP', undefined);
   });
 
   it('shows starting status while gateway is running but not yet ready', () => {
@@ -1375,7 +1379,7 @@ describe('ChatInput agent targeting', () => {
 
     fireEvent.click(screen.getByTitle('Send'));
 
-    expect(onSend).toHaveBeenCalledWith('Draft /create-skill  a new helper', undefined, null);
+    expect(onSend).toHaveBeenCalledWith('Draft /create-skill  a new helper', undefined);
     expect(hostApiFetchMock).toHaveBeenCalledWith(
       '/api/skills/quick-access',
       expect.objectContaining({
