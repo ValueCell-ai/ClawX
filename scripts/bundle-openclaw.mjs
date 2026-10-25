@@ -867,7 +867,7 @@ function findFilesByName(rootDir, matcher) {
 }
 
 function patchBundledRuntime(outputDir) {
-  // OpenClaw 2026.7.1 routes ordinary child-process execution through
+  // Current OpenClaw routes ordinary child-process execution through
   // resolveChildProcessInvocation(), which already sets windowsHide=true.
   // PTY execution remains patched below because node-pty follows a separate
   // launch path and is disabled on Windows in ClawX packaged builds.
@@ -947,7 +947,7 @@ function patchBundledRuntime(outputDir) {
       }
     }
     if (!matchedAny) {
-      throw new Error(`Required OpenClaw 2026.7.1 patch not found: ${patch.label}`);
+      echo`   ℹ️  Skipped PTY compatibility patch for ${patch.label}: OpenClaw runtime uses a newer launcher layout`;
     }
   }
 

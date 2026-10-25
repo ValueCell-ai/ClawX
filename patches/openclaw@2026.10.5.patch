@@ -1,0 +1,25 @@
+diff --git a/dist/errors-J9olDZqH.mjs b/dist/errors-J9olDZqH.mjs
+index 25e4f48937b8bd898c455a4558f1b1326455c710..01269636d8df9112cf5d6fd4d70166409d44655c 100644
+--- a/dist/errors-J9olDZqH.mjs
++++ b/dist/errors-J9olDZqH.mjs
+@@ -6,8 +6,19 @@ function readErrorCause(error) {
+ 	if (!error || typeof error !== "object") return;
+ 	return error.cause;
+ }
++const TOKENDANCE_RECOVERY_ACTIONS = /* @__PURE__ */ new Set(["top_up_balance", "reauthorize_api_key", "api_key_quota"]);
++function extractTokenDanceRecoveryAction(err) {
++	if (!err || typeof err !== "object") return;
++	const headers = err.headers;
++	if (!headers || typeof headers.get !== "function") return;
++	const action = headers.get("TokenDance-Recovery-Action")?.trim();
++	return TOKENDANCE_RECOVERY_ACTIONS.has(action) ? action : void 0;
++}
+ function formatErrorMessage(err) {
+-	return formatErrorMessage$1(err, { redact: redactSensitiveText });
++	let formatted = formatErrorMessage$1(err, { redact: redactSensitiveText });
++	const tokenDanceRecoveryAction = extractTokenDanceRecoveryAction(err);
++	if (tokenDanceRecoveryAction) formatted += ` [TokenDance-Recovery-Action:${tokenDanceRecoveryAction}]`;
++	return formatted;
+ }
+ function formatErrorMessageWithCode(err) {
+ 	return formatErrorMessage$1(err, {
