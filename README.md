@@ -142,7 +142,7 @@ The wizard preselects your system language when it is supported, and falls back 
 
 ### Upgrading existing OpenClaw data
 
-Before startup writes, ClawX retains a private `backups/clawx-openclaw-2026.10.5-pre-migration` snapshot under the OpenClaw state directory. It includes legacy session files, credentials and media, and uses SQLite online backups to include committed WAL data. Startup stops if the snapshot cannot be completed; Gateway readiness does not delete it. Keep it until you have verified the upgrade, then remove it manually to reclaim space. It contains secrets: do not share it. Runtime binaries, symlink targets and external workspaces are not included; back these up separately before a manual rollback.
+Before startup writes, ClawX retains a private `backups/clawx-openclaw-2026.10.5-pre-migration` snapshot under the OpenClaw state directory. It includes legacy session files, credentials and media, and uses SQLite online backups to include committed WAL data. Startup stops if the snapshot cannot be completed; Gateway readiness does not delete it. OpenClaw owns pending schema and legacy-auth migrations before ClawX synchronizes provider credentials, so an interrupted migration can be retried without ClawX rewriting its source files first. Keep the snapshot until you have verified the upgrade, then remove it manually to reclaim space. It contains secrets: do not share it. Runtime binaries, symlink targets and external workspaces are not included; back these up separately before a manual rollback.
 
 ### Local Computer Use
 

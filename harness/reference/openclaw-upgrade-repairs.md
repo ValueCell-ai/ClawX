@@ -46,5 +46,9 @@ certification. The SQLite reader also checks optional
 `session_transcript_archives` and `session_transcript_cold_archives` rows when the
 hot transcript is reclaimed; issue-report export decodes the same archive blobs.
 Corrupt cold rows are skipped without hiding readable hot rows. This does not claim
-external file archives are present. The three README upgrade sections remain
-accurate; these repairs do not add a new user workflow.
+external file archives are present. Gateway auto-start also defers ClawX
+provider-auth synchronization until OpenClaw reaches ready. When an agent database
+is below the bundled schema, auth writes are deferred and the legacy JSON source
+remains available for OpenClaw Doctor; future schemas are rejected rather than
+shadowed. The three README upgrade sections remain accurate; these repairs do not
+add a new user workflow.
