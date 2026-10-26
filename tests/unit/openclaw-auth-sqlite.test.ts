@@ -1,207 +1,98 @@
 // @vitest-environment node
-
-import { existsSync } from 'fs';
-import { mkdir, readFile, rm, writeFile } from 'fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
-import { join } from 'path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-const { testHome } = vi.hoisted(() => ({
-  testHome: `/tmp/clawx-auth-sqlite-${Math.random().toString(36).slice(2)}`,
-}));
-
+import { join } from 'node:path';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getBundledAgentSchema } from '@electron/utils/openclaw-persistence-runtime';
+const { testHome } = vi.hoisted(() => ({ testHome: `/tmp/clawx-auth-sqlite-${Math.random().toString(36).slice(2)}` }));
 vi.mock('os', async () => {
   const actual = await vi.importActual<typeof import('os')>('os');
-  const mocked = {
-    ...actual,
-    homedir: () => testHome,
-  };
-  return {
-    ...mocked,
-    default: mocked,
-  };
+  const mocked = { ...actual, homedir: () => testHome };
+  return { ...mocked, default: mocked };
 });
-
-async function writeJsonStore(agentId: string, store: Record<string, unknown>): Promise<void> {
-  const dir = join(testHome, '.openclaw', 'agents', agentId, 'agent');
-  await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, 'auth-profiles.json'), JSON.stringify(store, null, 2), 'utf8');
+const store = { version: 1, profiles: { 'custom:default': { type: 'api_key', provider: 'custom', key: 'synthetic-key' } } };
+const dbPath = () => join(testHome, '.openclaw/agents/main/agent/openclaw-agent.sqlite');
+async function seed(version: number, marker = version, appVersion = '2026.10.5') {
+  await mkdir(join(dbPath(), '..'), { recursive: true });
+  const db = new DatabaseSync(dbPath());
+  db.exec(getBundledAgentSchema(version));
+  db.prepare("INSERT INTO schema_meta VALUES ('primary', 'agent', ?, 'main', ?, 1, 1)").run(marker, appVersion);
+  db.exec(`PRAGMA user_version = ${marker}`);
+  db.prepare("INSERT INTO auth_profile_store VALUES ('primary', ?, 1)").run(JSON.stringify(store));
+  db.close();
 }
-
-describe('openclaw-auth-sqlite', () => {
-  beforeEach(async () => {
-    vi.resetModules();
-    await rm(testHome, { recursive: true, force: true });
+function inspect(file = dbPath()) {
+  const db = new DatabaseSync(file, { readOnly: true });
+  try { return { version: db.prepare('PRAGMA user_version').get()?.user_version, meta: db.prepare("SELECT * FROM schema_meta WHERE meta_key='primary'").get() }; }
+  finally { db.close(); }
+}
+describe('OpenClaw auth SQLite ownership', () => {
+  beforeEach(async () => { vi.resetModules(); await rm(testHome, { recursive: true, force: true }); });
+  afterAll(async () => { await rm(testHome, { recursive: true, force: true }); });
+  it('imports legacy JSON credentials and preserves state references', async () => {
+    const dir = join(dbPath(), '..');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'auth-profiles.json'), JSON.stringify({ ...store, order: { custom: ['custom:default'] } }));
+    const api = await import('@electron/utils/openclaw-auth-sqlite');
+    expect(await api.migrateAuthProfilesJsonToSqliteIfNeeded('main')).toBe(true);
+    expect(api.readAuthProfilesFromSqlite('main')?.order).toEqual({ custom: ['custom:default'] });
+    expect(await api.migrateAuthProfilesJsonToSqliteIfNeeded('main')).toBe(false);
   });
-
-  it('migrates auth-profiles.json into openclaw-agent.sqlite when sqlite is empty', async () => {
-    await writeJsonStore('main', {
-      version: 1,
-      profiles: {
-        'custom-customc7:default': {
-          type: 'api_key',
-          provider: 'custom-customc7',
-          key: 'sk-test-key',
-        },
-      },
-      order: { 'custom-customc7': ['custom-customc7:default'] },
-      lastGood: { 'custom-customc7': 'custom-customc7:default' },
-    });
-
-    const {
-      migrateAuthProfilesJsonToSqliteIfNeeded,
-      readAuthProfilesFromSqlite,
-      getAuthProfilesSqlitePath,
-    } = await import('@electron/utils/openclaw-auth-sqlite');
-
-    const migrated = await migrateAuthProfilesJsonToSqliteIfNeeded('main');
-    expect(migrated).toBe(true);
-    expect(existsSync(getAuthProfilesSqlitePath('main'))).toBe(true);
-
-    const sqliteStore = readAuthProfilesFromSqlite('main');
-    expect(sqliteStore?.profiles['custom-customc7:default']).toMatchObject({
-      type: 'api_key',
-      provider: 'custom-customc7',
-      key: 'sk-test-key',
-    });
-    expect(sqliteStore?.order?.['custom-customc7']).toEqual(['custom-customc7:default']);
-    expect(sqliteStore?.lastGood?.['custom-customc7']).toBe('custom-customc7:default');
-  });
-
-  it('saveProviderKeyToOpenClaw writes credentials readable from sqlite', async () => {
+  it('saves credentials readable by SQLite and JSON consumers', async () => {
     const { saveProviderKeyToOpenClaw } = await import('@electron/utils/openclaw-auth');
-    const {
-      readAuthProfilesFromSqlite,
-      getAuthProfilesSqlitePath,
-    } = await import('@electron/utils/openclaw-auth-sqlite');
-
-    await saveProviderKeyToOpenClaw('custom-customc7', 'sk-runtime-key', 'main');
-
-    expect(existsSync(getAuthProfilesSqlitePath('main'))).toBe(true);
-    const sqliteStore = readAuthProfilesFromSqlite('main');
-    expect(sqliteStore?.profiles['custom-customc7:default']).toMatchObject({
-      type: 'api_key',
-      provider: 'custom-customc7',
-      key: 'sk-runtime-key',
-    });
-
-    const json = JSON.parse(
-      await readFile(join(testHome, '.openclaw', 'agents', 'main', 'agent', 'auth-profiles.json'), 'utf8'),
-    ) as Record<string, unknown>;
-    expect((json.profiles as Record<string, unknown>)['custom-customc7:default']).toMatchObject({
-      key: 'sk-runtime-key',
-    });
+    const { readAuthProfilesFromSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
+    await saveProviderKeyToOpenClaw('custom', 'synthetic-key', 'main');
+    expect(readAuthProfilesFromSqlite('main')?.profiles['custom:default'].key).toBe('synthetic-key');
+    expect(JSON.parse(await readFile(join(dbPath(), '../auth-profiles.json'), 'utf8')).profiles['custom:default'].key).toBe('synthetic-key');
   });
-
-  it('keeps an OpenClaw-owned agent database at schema version 25 while saving auth', async () => {
-    const sqlitePath = join(testHome, '.openclaw', 'agents', 'main', 'agent', 'openclaw-agent.sqlite');
-    await mkdir(join(testHome, '.openclaw', 'agents', 'main', 'agent'), { recursive: true });
-    const seeded = new DatabaseSync(sqlitePath);
-    seeded.exec(`
-      CREATE TABLE schema_meta (
-        meta_key TEXT NOT NULL PRIMARY KEY,
-        role TEXT NOT NULL,
-        schema_version INTEGER NOT NULL,
-        agent_id TEXT,
-        app_version TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-      INSERT INTO schema_meta (
-        meta_key, role, schema_version, agent_id, app_version, created_at, updated_at
-      ) VALUES ('primary', 'agent', 25, 'main', '2026.10.5', 1, 1);
-      PRAGMA user_version = 25;
-    `);
-    seeded.close();
-
+  it('does not modify schema metadata while writing to a current database', async () => {
+    await seed(25);
+    const before = inspect();
     const { writeAuthProfilesToSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
-    writeAuthProfilesToSqlite({
-      version: 1,
-      profiles: { 'custom:default': { type: 'api_key', provider: 'custom', key: 'sk-owned' } },
-    }, 'main');
-
-    const db = new DatabaseSync(sqlitePath, { readOnly: true });
-    const version = db.prepare('PRAGMA user_version').get() as { user_version: number };
-    const meta = db.prepare(
-      'SELECT schema_version, app_version FROM schema_meta WHERE meta_key = ?',
-    ).get('primary') as { schema_version: number; app_version: string };
-    db.close();
-    expect(version.user_version).toBe(25);
-    expect(meta).toEqual({ schema_version: 25, app_version: '2026.10.5' });
+    writeAuthProfilesToSqlite(store, 'main');
+    expect(inspect()).toEqual(before);
   });
-
-  it('restores schema version 25 after ClawX stamped an OpenClaw-owned database back to 1', async () => {
-    const sqlitePath = join(testHome, '.openclaw', 'agents', 'main', 'agent', 'openclaw-agent.sqlite');
-    await mkdir(join(testHome, '.openclaw', 'agents', 'main', 'agent'), { recursive: true });
-    const seeded = new DatabaseSync(sqlitePath);
-    seeded.exec(`
-      CREATE TABLE schema_meta (
-        meta_key TEXT NOT NULL PRIMARY KEY,
-        role TEXT NOT NULL,
-        schema_version INTEGER NOT NULL,
-        agent_id TEXT,
-        app_version TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-      INSERT INTO schema_meta (
-        meta_key, role, schema_version, agent_id, app_version, created_at, updated_at
-      ) VALUES ('primary', 'agent', 1, 'main', '2026.10.5', 1, 1);
-      PRAGMA user_version = 1;
-    `);
-    seeded.close();
-
-    const { writeAuthProfilesToSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
-    writeAuthProfilesToSqlite({
-      version: 1,
-      profiles: { 'custom:default': { type: 'api_key', provider: 'custom', key: 'sk-restored' } },
-    }, 'main');
-
-    const db = new DatabaseSync(sqlitePath, { readOnly: true });
-    const version = db.prepare('PRAGMA user_version').get() as { user_version: number };
-    const meta = db.prepare(
-      'SELECT schema_version, app_version FROM schema_meta WHERE meta_key = ?',
-    ).get('primary') as { schema_version: number; app_version: string };
-    db.close();
-    expect(version.user_version).toBe(25);
-    expect(meta).toEqual({ schema_version: 25, app_version: '2026.10.5' });
+  it('preserves a genuine interrupted v16 structure and both version markers', async () => {
+    await seed(16);
+    const before = inspect();
+    const { repairOpenClawOwnedAgentSchema, writeAuthProfilesToSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
+    repairOpenClawOwnedAgentSchema('main');
+    writeAuthProfilesToSqlite(store, 'main');
+    expect(inspect()).toEqual(before);
   });
-
-  it('repairs a clobbered schema before startup without rewriting stored credentials', async () => {
-    const sqlitePath = join(testHome, '.openclaw', 'agents', 'main', 'agent', 'openclaw-agent.sqlite');
-    await mkdir(join(testHome, '.openclaw', 'agents', 'main', 'agent'), { recursive: true });
-    const seeded = new DatabaseSync(sqlitePath);
-    seeded.exec(`
-      CREATE TABLE schema_meta (
-        meta_key TEXT NOT NULL PRIMARY KEY,
-        role TEXT NOT NULL,
-        schema_version INTEGER NOT NULL,
-        agent_id TEXT,
-        app_version TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-      CREATE TABLE auth_profile_store (
-        store_key TEXT NOT NULL PRIMARY KEY,
-        store_json TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-      INSERT INTO schema_meta (
-        meta_key, role, schema_version, agent_id, app_version, created_at, updated_at
-      ) VALUES ('primary', 'agent', 1, 'main', '2026.10.5', 1, 1);
-      INSERT INTO auth_profile_store (store_key, store_json, updated_at)
-      VALUES ('primary', '{"version":1,"profiles":{"custom:default":{"type":"api_key","provider":"custom","key":"sk-keep"}}}', 1);
-      PRAGMA user_version = 1;
-    `);
-    seeded.close();
-
+  it('does not mistake a v16 structure clobbered to v1 for a completed migration', async () => {
+    await seed(16, 1);
+    const { repairOpenClawOwnedAgentSchema } = await import('@electron/utils/openclaw-auth-sqlite');
+    repairOpenClawOwnedAgentSchema('main');
+    expect(inspect().version).toBe(1);
+    expect(existsSync(`${dbPath()}.clawx-before-schema-repair`)).toBe(false);
+  });
+  it('repairs only verified v25 structure clobbered to v1, with a recoverable copy', async () => {
+    await seed(25, 1);
     const { repairOpenClawOwnedAgentSchema, readAuthProfilesFromSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
     repairOpenClawOwnedAgentSchema('main');
-
-    const db = new DatabaseSync(sqlitePath, { readOnly: true });
-    const version = db.prepare('PRAGMA user_version').get() as { user_version: number };
+    expect(inspect().version).toBe(25);
+    expect(inspect().meta?.schema_version).toBe(25);
+    expect(inspect(`${dbPath()}.clawx-before-schema-repair`).version).toBe(1);
+    expect(readAuthProfilesFromSqlite('main')?.profiles).toEqual(store.profiles);
+    repairOpenClawOwnedAgentSchema('main');
+    expect(inspect(`${dbPath()}.clawx-before-schema-repair`).version).toBe(1);
+  });
+  it('preserves future schema markers during repair and rejects auth writes', async () => {
+    await seed(25, 26, '2026.10.10');
+    const before = await readFile(dbPath());
+    const { repairOpenClawOwnedAgentSchema, writeAuthProfilesToSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
+    repairOpenClawOwnedAgentSchema('main');
+    expect(() => writeAuthProfilesToSqlite(store, 'main')).toThrow('newer OpenClaw');
+    expect(await readFile(dbPath())).toEqual(before);
+  });
+  it('refuses cross-agent writes', async () => {
+    await seed(25);
+    const db = new DatabaseSync(dbPath());
+    db.exec("UPDATE schema_meta SET agent_id='other' WHERE meta_key='primary'");
     db.close();
-    expect(version.user_version).toBe(25);
-    expect(readAuthProfilesFromSqlite('main')?.profiles['custom:default']).toMatchObject({ key: 'sk-keep' });
+    const { writeAuthProfilesToSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
+    expect(() => writeAuthProfilesToSqlite(store, 'main')).toThrow('owner mismatch');
   });
 });

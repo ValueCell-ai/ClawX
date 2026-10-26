@@ -49,4 +49,4 @@ docs:
   required: true
 ---
 
-Follow the review and independent reproduction under `artifacts/review/recheck/` (local evidence, not a production migration tool). This task covers the accumulated upgrade branch and the repair commits. Durable requirements are in `harness/specs/rules/openclaw-upgrade-persistence.md`. Full real-device and cross-platform release certification is separate from mocked UI and unit coverage.
+Follow the review and independent reproduction under `artifacts/review/recheck/` (local evidence, not a production migration tool). This task covers the accumulated upgrade branch and the repair commits. Durable requirements are in `harness/specs/rules/openclaw-upgrade-persistence.md`. Full real-device and cross-platform release certification is separate from mocked UI and unit coverage. Implementation and validation details are maintained in `harness/reference/openclaw-upgrade-repairs.md`.
