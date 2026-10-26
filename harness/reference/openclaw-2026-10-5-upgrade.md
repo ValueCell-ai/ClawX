@@ -177,9 +177,12 @@ that was already migrated. Auth sync must keep or restore version 25 for
 those databases and may still create a version 1 database only when ClawX
 itself creates the file.
 
-Readers accept both shapes until doctor migrates user-owned legacy keys
-(`meta.lastTouchedAt`, `plugins.bundledDiscovery`, `commands.ownerDisplay`,
-`tools.media.image.models`, user-authored `agents.defaults.memorySearch`).
+Before Gateway launch, ClawX migrates the known schema-preserving legacy keys
+(`agents.list`, `meta.lastTouchedAt`, and the legacy memory-search locations) and
+removes the retired `mediaGenerationAutoProviderFallback` flag. OpenClaw Doctor
+continues to handle state/database migration and any legacy or user-authored
+keys outside this safe prelaunch set, including `plugins.bundledDiscovery`,
+`commands.ownerDisplay`, and `tools.media.image.models`.
 
 
 ## Packaging evidence (2026.10.5)

@@ -66,6 +66,22 @@ describe('agent config lifecycle', () => {
     await expect(listConfiguredAgentIds()).resolves.toEqual(['main', 'test3']);
   });
 
+  it('does not migrate ambiguous legacy rosters with duplicate ids', async () => {
+    const { migrateLegacyAgentRosterInConfig } = await import('@electron/utils/agent-config');
+    const config = {
+      agents: {
+        list: [
+          { id: 'main', name: 'First' },
+          { id: 'main', name: 'Second' },
+        ],
+      },
+    };
+
+    expect(migrateLegacyAgentRosterInConfig(config)).toBe(false);
+    expect(config.agents.list).toHaveLength(2);
+    expect(config.agents).not.toHaveProperty('entries');
+  });
+
   it('falls back to the implicit main agent when no list exists', async () => {
     await writeOpenClawJson({});
 

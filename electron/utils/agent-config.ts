@@ -321,6 +321,37 @@ function writeAgentRoster(
   };
 }
 
+/**
+ * Migrate the legacy OpenClaw 2026.7 agent roster before Gateway launch.
+ *
+ * OpenClaw 2026.10 rejects `agents.list`, while older ClawX/OpenClaw
+ * installations may still have it on disk. Reuse the same roster normalizer
+ * as the agent CRUD paths so names, workspaces, agent directories, model
+ * overrides, and the default owner are preserved. Invalid legacy entries are
+ * left untouched for OpenClaw Doctor rather than being silently discarded.
+ */
+export function migrateLegacyAgentRosterInConfig(config: Record<string, unknown>): boolean {
+  const agentConfig = config as AgentConfigDocument;
+  const agents = agentConfig.agents;
+  if (!isPlainObject(agents) || !Array.isArray(agents.list)) return false;
+
+  const legacyList = agents.list;
+  const validEntries = legacyList.filter((entry): entry is AgentListEntry => (
+    isPlainObject(entry)
+      && typeof entry.id === 'string'
+      && entry.id.trim().length > 0
+  ));
+
+  // Do not turn a malformed, empty, or ambiguous roster into a synthetic one.
+  // Doctor can report and repair those cases with the full OpenClaw context.
+  if (validEntries.length === 0 || validEntries.length !== legacyList.length) return false;
+  if (new Set(validEntries.map((entry) => entry.id)).size !== validEntries.length) return false;
+
+  const { agentsConfig, entries, defaultAgentId } = normalizeAgentsConfig(agentConfig);
+  writeAgentRoster(agentConfig, agentsConfig, entries, defaultAgentId);
+  return true;
+}
+
 function isChannelBinding(binding: unknown): binding is ChannelBindingConfig {
   if (!binding || typeof binding !== 'object') return false;
   const candidate = binding as BindingConfig;

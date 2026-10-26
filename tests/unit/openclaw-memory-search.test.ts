@@ -2,9 +2,60 @@ import { describe, expect, it } from 'vitest';
 import {
   ensureMemorySearchFtsDefault,
   hasUserMemorySearchConfig,
+  migrateLegacyMemorySearchConfig,
 } from '@electron/utils/openclaw-memory-search';
 
 describe('openclaw-memory-search', () => {
+  it('moves legacy default and per-agent memorySearch values without changing them', () => {
+    const config: Record<string, unknown> = {
+      agents: {
+        defaults: {
+          memorySearch: { enabled: true, provider: 'none' },
+        },
+        entries: {
+          main: {
+            memorySearch: { provider: 'openai', model: 'text-embedding-3-small' },
+          },
+          researcher: {
+            memory: { search: { provider: 'custom' } },
+            memorySearch: { provider: 'ignored' },
+          },
+        },
+      },
+      memory: { flush: { enabled: true } },
+    };
+
+    expect(migrateLegacyMemorySearchConfig(config)).toBe(true);
+    expect(config).toEqual({
+      agents: {
+        defaults: {},
+        entries: {
+          main: {
+            memory: { search: { provider: 'openai', model: 'text-embedding-3-small' } },
+          },
+          researcher: {
+            memory: { search: { provider: 'custom' } },
+          },
+        },
+      },
+      memory: {
+        flush: { enabled: true },
+        search: { enabled: true, provider: 'none' },
+      },
+    });
+  });
+
+  it('leaves malformed legacy memorySearch values for OpenClaw Doctor', () => {
+    const config: Record<string, unknown> = {
+      agents: { defaults: { memorySearch: 'invalid' } },
+    };
+
+    expect(migrateLegacyMemorySearchConfig(config)).toBe(false);
+    expect(config).toEqual({
+      agents: { defaults: { memorySearch: 'invalid' } },
+    });
+  });
+
   it('seeds FTS-only memory search when no memorySearch config exists', () => {
     const config: Record<string, unknown> = {
       agents: { defaults: { model: { primary: 'custom-customfc/gpt-5.5' } } },

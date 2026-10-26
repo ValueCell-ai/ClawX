@@ -13,7 +13,7 @@ import { access, mkdir, readFile, readdir, writeFile } from 'fs/promises';
 import { constants, readdirSync, readFileSync, existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { homedir } from 'os';
-import { listConfiguredAgentIds } from './agent-config';
+import { listConfiguredAgentIds, migrateLegacyAgentRosterInConfig } from './agent-config';
 import { getOpenClawResolvedDir } from './paths';
 import {
   getProviderEnvVar,
@@ -36,6 +36,7 @@ import {
 import {
   ensureMemorySearchFtsDefault,
   hasUserMemorySearchConfig,
+  migrateLegacyMemorySearchConfig,
   MEMORY_SEARCH_FTS_MIGRATION_VERSION,
 } from './openclaw-memory-search';
 import { PORTS } from './config';
@@ -3156,6 +3157,40 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
 
   await mutateOpenClawConfig(async (config) => {
     let modified = false;
+
+    // OpenClaw 2026.10 rejects the legacy 2026.7 `agents.list` roster before
+    // the Gateway can emit a detailed validation error. Migrate this exact
+    // known shape locally so old ClawX users do not enter a generic exit=1
+    // restart loop. Malformed rosters remain for OpenClaw Doctor to repair.
+    if (migrateLegacyAgentRosterInConfig(config)) {
+      modified = true;
+      console.log('[sanitize] Migrated legacy "agents.list" to keyed "agents.entries"');
+    }
+
+    if (migrateLegacyMemorySearchConfig(config)) {
+      modified = true;
+      console.log('[sanitize] Migrated legacy memory-search keys to OpenClaw 2026.10 locations');
+    }
+
+    // OpenClaw 2026.10 no longer accepts the timestamp ClawX 0.6.x wrote
+    // under config.meta. Preserve the supported version marker, if present.
+    if (isPlainRecord(config.meta) && Object.hasOwn(config.meta, 'lastTouchedAt')) {
+      delete config.meta.lastTouchedAt;
+      if (Object.keys(config.meta).length === 0) delete config.meta;
+      modified = true;
+      console.log('[sanitize] Removed retired config metadata "meta.lastTouchedAt"');
+    }
+
+    // OpenClaw 2026.10 owns media-provider fallback selection and rejects the
+    // legacy ClawX flag. Removing it keeps the new runtime default intact.
+    const agentDefaults = isPlainRecord(config.agents) && isPlainRecord(config.agents.defaults)
+      ? config.agents.defaults
+      : null;
+    if (agentDefaults && Object.hasOwn(agentDefaults, 'mediaGenerationAutoProviderFallback')) {
+      delete agentDefaults.mediaGenerationAutoProviderFallback;
+      modified = true;
+      console.log('[sanitize] Removed retired config key "agents.defaults.mediaGenerationAutoProviderFallback"');
+    }
 
     // ── skills section ──────────────────────────────────────────────
     // OpenClaw's Zod schema uses .strict() on the skills object, accepting

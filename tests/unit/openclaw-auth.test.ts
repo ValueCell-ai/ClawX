@@ -427,6 +427,121 @@ describe('sanitizeOpenClawConfig', () => {
     logSpy.mockRestore();
   });
 
+  it('migrates legacy agents.list to keyed agents.entries before Gateway launch', async () => {
+    await writeOpenClawJson({
+      agents: {
+        defaults: {
+          workspace: '~/.openclaw/workspace',
+        },
+        list: [
+          {
+            id: 'main',
+            name: 'Main Agent',
+            default: true,
+            workspace: '~/.openclaw/workspace',
+            agentDir: '~/.openclaw/agents/main/agent',
+            model: { primary: 'openai/gpt-5' },
+          },
+          {
+            id: 'coder',
+            name: 'Coder',
+            workspace: '~/.openclaw/workspace-coder',
+            agentDir: '~/.openclaw/agents/coder/agent',
+          },
+        ],
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    const agents = result.agents as Record<string, unknown>;
+    expect(agents).not.toHaveProperty('list');
+    expect(agents.ownership).toBe('explicit');
+    expect(agents.defaults).toEqual({
+      workspace: '~/.openclaw/workspace',
+      systemAgent: { agentId: 'main' },
+    });
+    expect(agents.entries).toEqual({
+      main: {
+        name: 'Main Agent',
+        workspace: '~/.openclaw/workspace',
+        agentDir: '~/.openclaw/agents/main/agent',
+        model: { primary: 'openai/gpt-5' },
+      },
+      coder: {
+        name: 'Coder',
+        workspace: '~/.openclaw/workspace-coder',
+        agentDir: '~/.openclaw/agents/coder/agent',
+      },
+    });
+    expect(logSpy).toHaveBeenCalledWith(
+      '[sanitize] Migrated legacy "agents.list" to keyed "agents.entries"',
+    );
+
+    logSpy.mockRestore();
+  });
+
+  it('repairs additional legacy config keys rejected by OpenClaw 2026.10', async () => {
+    await writeOpenClawJson({
+      agents: {
+        defaults: {
+          memorySearch: { enabled: true, provider: 'none' },
+          mediaGenerationAutoProviderFallback: false,
+        },
+        entries: {
+          main: {
+            memorySearch: { provider: 'openai' },
+          },
+        },
+      },
+      meta: {
+        lastTouchedVersion: '2026.7.1-2',
+        lastTouchedAt: '2026-10-26T08:30:27.881Z',
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    expect(result).toMatchObject({
+      memory: { search: { enabled: true, provider: 'none' } },
+      meta: { lastTouchedVersion: '2026.7.1-2' },
+      agents: {
+        defaults: {},
+        entries: {
+          main: { memory: { search: { provider: 'openai' } } },
+        },
+      },
+    });
+    expect(result).not.toHaveProperty('meta.lastTouchedAt');
+    expect(result).not.toHaveProperty('agents.defaults.memorySearch');
+    expect(result).not.toHaveProperty('agents.defaults.mediaGenerationAutoProviderFallback');
+    expect(result).not.toHaveProperty('agents.entries.main.memorySearch');
+  });
+
+  it('leaves malformed legacy agent rosters for OpenClaw Doctor', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [{ id: 'main' }, { name: 'missing-id' }],
+      },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    expect((result.agents as Record<string, unknown>).list).toEqual([
+      { id: 'main' },
+      { name: 'missing-id' },
+    ]);
+    expect(result.agents).not.toHaveProperty('entries');
+  });
+
   it('migrates legacy custom Astra reasoning effort before Gateway launch', async () => {
     await writeOpenClawJson({
       models: {
