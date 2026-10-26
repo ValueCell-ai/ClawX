@@ -33,7 +33,7 @@ export function ArtifactPanel({ fileGroups, uniqueFileCount, agent, workspacePat
   const isMac = window.electron?.platform === 'darwin';
   return (
     <Tabs value={visibleTab} onValueChange={value => setTab(value as ArtifactTab)} data-testid="artifact-panel" className={cn('flex h-full min-h-0 flex-col bg-background', isMac && 'no-drag')}>
-      <div className="relative z-30 flex shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
+      <div className="relative z-30 flex shrink-0 items-center justify-between gap-2 border-b border-border/40 px-3 py-2">
         {isMac && <div data-testid="artifact-panel-drag-region" className="drag-region absolute inset-0 z-0" aria-hidden />}
         <TabsList data-testid="artifact-panel-tabs" aria-label={t('workspace.title')} className="no-drag relative z-10 h-8 min-w-0 justify-start gap-0.5 overflow-x-auto rounded-lg bg-transparent p-0">
           {WORKSPACE_BROWSER_ENABLED && <TabsTrigger value="browser" id="artifact-tab-browser" aria-controls="artifact-files-panel" data-testid="artifact-panel-tab-browser" className="h-7 shrink-0 gap-1.5 rounded-lg px-2 py-1 text-xs data-[state=active]:bg-black/5 data-[state=active]:shadow-none dark:data-[state=active]:bg-white/10"><FolderTree className="h-3.5 w-3.5" />{t('artifactPanel.tabs.browser')}</TabsTrigger>}
@@ -45,13 +45,13 @@ export function ArtifactPanel({ fileGroups, uniqueFileCount, agent, workspacePat
       <div className="no-drag relative z-0 min-h-0 flex-1 overflow-hidden">
         {WORKSPACE_BROWSER_ENABLED ? (
           <div id="artifact-files-panel" hidden={visibleTab === 'changes'} role="tabpanel" aria-labelledby={visibleTab === 'browser' ? 'artifact-tab-browser' : 'artifact-tab-preview'} className={cn('h-full min-h-0', visibleTab === 'changes' && 'hidden')}>
-            <WorkspaceBrowserBody agent={agent} workspacePath={workspacePath} workspaceLabel={workspaceLabel} runStartedAt={runStartedAt} refreshSignal={refreshSignal} active={visibleTab !== 'changes'} previewOnly={visibleTab === 'preview'} fileGroups={fileGroups} compact />
+            <WorkspaceBrowserBody agent={agent} workspacePath={workspacePath} workspaceLabel={workspaceLabel} runStartedAt={runStartedAt} refreshSignal={refreshSignal} active={visibleTab !== 'changes'} previewOnly={visibleTab === 'preview'} compact />
           </div>
         ) : (
           <div className={cn('h-full min-h-0', visibleTab !== 'preview' && 'hidden')}><FilePreviewSurface file={focusedFile} active={visibleTab === 'preview'} /></div>
         )}
         <div id="artifact-changes-panel" role="tabpanel" aria-labelledby="artifact-tab-changes" hidden={visibleTab !== 'changes'} className="m-0 h-full">
-          <AcpSessionChangesView fileGroups={fileGroups} uniqueFileCount={uniqueFileCount} focus={focusedChange} onBrowse={WORKSPACE_BROWSER_ENABLED ? () => setTab('browser') : undefined} />
+          <AcpSessionChangesView fileGroups={fileGroups} uniqueFileCount={uniqueFileCount} focus={focusedChange} />
         </div>
       </div>
     </Tabs>

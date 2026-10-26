@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { buildAcpTurnFileChanges, type AcpSessionFileGroup } from '@/lib/acp/openclaw-file-activities';
 import type { ArtifactChangeNavigation } from '@/stores/artifact-panel';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 import { MaterialFileIcon } from './MaterialFileIcon';
 import MonacoDiffViewer from './MonacoDiffViewer';
 
@@ -20,12 +19,10 @@ export function AcpSessionChangesView({
   fileGroups,
   uniqueFileCount,
   focus,
-  onBrowse,
 }: {
   fileGroups: AcpSessionFileGroup[];
   uniqueFileCount: number;
   focus: ArtifactChangeNavigation | null;
-  onBrowse?: () => void;
 }) {
   const { t } = useTranslation('chat');
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() => new Set());
@@ -66,7 +63,6 @@ export function AcpSessionChangesView({
         <span className="rounded-2xl bg-primary/5 p-3 text-primary/70"><FileEdit className="h-6 w-6" /></span>
         <p className="text-sm font-medium">{t('artifactPanel.changes.empty')}</p>
         <p className="max-w-xs text-xs leading-relaxed text-muted-foreground">{t('artifactPanel.changes.emptyHint')}</p>
-        {onBrowse && <Button variant="outline" size="sm" onClick={onBrowse}>{t('workspace.browseFiles')}</Button>}
       </div>
     );
   }

@@ -4,7 +4,6 @@ import { FilePreviewSurface } from '@/components/file-preview/FilePreviewSurface
 import { ArtifactPanel } from '@/components/file-preview/ArtifactPanel';
 import { ARTIFACT_PANEL_DEFAULT_WIDTH, useArtifactPanel } from '@/stores/artifact-panel';
 import type { AcpSessionFileGroup } from '@/lib/acp/openclaw-file-activities';
-import { MAC_TRAFFIC_LIGHT_SAFE_INSET } from '@shared/sidebar-layout';
 
 const shellShowItemInFolder = vi.fn(async () => undefined);
 const openHtmlExternal = vi.fn(async () => undefined);
@@ -28,11 +27,8 @@ vi.mock('react-i18next', () => ({
         'artifactPanel.changes.empty': 'This session has no file changes yet.',
         'artifactPanel.changes.diffUnavailable': 'Diff unavailable',
         'artifactPanel.changes.changeRecord': `Change ${String(options?.number ?? '')}`,
-        'artifactPanel.preview.fullscreenLabel': 'Fullscreen file preview',
         'filePreview.actions.close': 'Close',
         'filePreview.actions.openInFinder': 'Reveal in file manager',
-        'filePreview.actions.enterFullscreen': 'Enter fullscreen',
-        'filePreview.actions.exitFullscreen': 'Exit fullscreen',
         'filePreview.actions.openHtmlExternally': 'Open HTML in system browser',
       };
       return labels[key] ?? String(options?.defaultValue ?? key);
@@ -192,65 +188,13 @@ describe('ArtifactPanel', () => {
     expect(screen.getAllByTestId('pptx-viewer')).toHaveLength(1);
   });
 
-  it('opens the selected file in a fullscreen layer and exits with Escape', () => {
-    useArtifactPanel.setState({
-      open: true,
-      tab: 'preview',
-      focusedFile: {
-        filePath: '/tmp/report.pdf', fileName: 'report.pdf', ext: '.pdf',
-        mimeType: 'application/pdf', contentType: 'document',
-      },
-    });
-    render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
-
-    expect(filePreviewBodyProps.at(-1)).toMatchObject({
-      compact: true,
-      headerLeftInset: undefined,
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Enter fullscreen' }));
-
-    expect(screen.getByRole('dialog', { name: 'Fullscreen file preview' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toHaveFocus();
-    expect(filePreviewBodyProps.at(-1)).toMatchObject({
-      compact: false,
-      headerLeftInset: MAC_TRAFFIC_LIGHT_SAFE_INSET,
-    });
-
-    fireEvent.keyDown(document, { key: 'Escape' });
-
-    expect(screen.queryByTestId('file-preview-fullscreen-layer')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Enter fullscreen' })).toBeInTheDocument();
+  it('keeps previews compact without a maximize action or redundant empty-state buttons', () => {
+    const view = render(<FilePreviewSurface file={null} active />);
+    expect(screen.getByTestId('workspace-preview-empty').querySelector('button')).toBeNull();
+    view.rerender(<FilePreviewSurface file={{ filePath: '/tmp/report.pdf', fileName: 'report.pdf', ext: '.pdf', mimeType: 'application/pdf', contentType: 'document' }} active />);
     expect(filePreviewBodyProps.at(-1)).toMatchObject({ compact: true });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Enter fullscreen' }));
-    act(() => useArtifactPanel.getState().setTab('changes'));
-    expect(screen.queryByTestId('file-preview-fullscreen-layer')).not.toBeInTheDocument();
-  });
-
-  it('does not reserve traffic-light space for fullscreen previews off macOS', () => {
-    const originalPlatform = window.electron.platform;
-    window.electron.platform = 'linux';
-    try {
-      useArtifactPanel.setState({
-        open: true,
-        tab: 'preview',
-        focusedFile: {
-          filePath: '/tmp/report.pdf', fileName: 'report.pdf', ext: '.pdf',
-          mimeType: 'application/pdf', contentType: 'document',
-        },
-      });
-      render(<ArtifactPanel fileGroups={[]} uniqueFileCount={0} agent={null} />);
-
-      fireEvent.click(screen.getByRole('button', { name: 'Enter fullscreen' }));
-
-      expect(filePreviewBodyProps.at(-1)).toMatchObject({
-        compact: false,
-        headerLeftInset: undefined,
-      });
-    } finally {
-      window.electron.platform = originalPlatform;
-    }
+    expect(screen.queryByTestId('file-preview-fullscreen-toggle')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('preserves the viewer-reported PowerPoint position for each preview target', () => {

@@ -104,6 +104,21 @@ describe('FilePreviewBody', () => {
     });
   });
 
+  it.each([
+    { filePath: '/tmp/docs/large-report.pdf', directory: '/tmp/docs/' },
+    { filePath: String.raw`C:\Users\docs\large-report.pdf`, directory: String.raw`C:\Users\docs` + '\\' },
+    { filePath: 'large-report.pdf', directory: '' },
+  ])('separates directory and filename in the single-line heading for $filePath', ({ filePath, directory }) => {
+    render(<FilePreviewBody file={makePreviewTarget({ filePath })} compact singleLineHeader />);
+    const header = screen.getByTestId('file-preview-header');
+    expect(header.querySelector('p')).toBeNull();
+    expect(within(header).getByRole('heading', { name: 'large-report.pdf' })).toHaveAttribute('aria-description', filePath);
+    expect(screen.getByTestId('file-preview-filename')).toHaveTextContent('large-report.pdf');
+    if (directory) expect(screen.getByTestId('file-preview-directory')).toHaveTextContent(directory);
+    else expect(screen.queryByTestId('file-preview-directory')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+  });
+
   it('renders HTML through the dedicated Preview anchor instead of an iframe', async () => {
     readTextFile.mockResolvedValueOnce({
       ok: true,

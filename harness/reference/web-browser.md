@@ -22,7 +22,7 @@ All links are inert:
 
 HTML entry points build a scope-specific `FilePreviewTarget`. Conversation entries call `useArtifactPanel.openPreview`; workspace navigation changes the shared focused file without changing the tab. `FilePreviewBody` renders one active HTML anchor in either Workspace or Preview. The route-stable host in `MainLayout` overlays one webview on that anchor and asks `hostApi.webBrowser.navigate` to load the selected file.
 
-The host has no browser chrome. It exists only for an HTML `focusedFile`, remains hidden and inert when the shared preview anchor is not visible, and can recover a crashed guest without restoring browsing state. Because the guest is route-stable and positioned over a Renderer anchor, it raises its stacking level above the drawer or fullscreen Preview layer whenever that anchor is portaled to the fullscreen surface.
+The host has no browser chrome. It exists only for an HTML `focusedFile`, remains hidden and inert when the shared preview anchor is not visible, and can recover a crashed guest without restoring browsing state. Because the guest is route-stable and positioned over a Renderer anchor, it raises its stacking level above the narrow-window drawer when that anchor is inside the drawer.
 
 ## Main boundary
 

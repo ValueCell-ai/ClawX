@@ -154,8 +154,7 @@
         },
         "preview": {
             "emptyTitle": "尚未选择文件",
-            "emptyHint": "选择工作空间中的文件，或点击对话里的文件卡片，即可在此预览。",
-            "fullscreenLabel": "全屏文件预览"
+            "emptyHint": "选择工作空间中的文件，或点击对话里的文件卡片，即可在此预览。"
         }
     },
     "filePreview": {
@@ -170,8 +169,6 @@
             "openInFinder": "在文件管理器中显示",
             "openDirectly": "直接打开",
             "close": "关闭",
-            "enterFullscreen": "全屏预览",
-            "exitFullscreen": "退出全屏",
             "openHtmlExternally": "在系统浏览器中打开 HTML",
             "retry": "重试"
         },
@@ -268,15 +265,8 @@
         "resizePanel": "调整工作空间面板宽度",
         "noResults": "没有匹配的文件",
         "noFiles": "此目录下没有可见文件",
-        "taskEmpty": "本次对话创建或修改的文件会显示在这里。",
-        "recentEmpty": "在此工作空间打开过的文件会显示在这里。",
         "searchLimited": "部分文件未加载，搜索仅覆盖已加载目录。",
-        "searchScope": "搜索范围：已加载目录",
-        "views": {
-            "all": "全部",
-            "task": "本次任务",
-            "recent": "最近"
-        }
+        "searchScope": "搜索范围：已加载目录"
     },
     "imageGeneration": {
         "generating": "图片生成中，请稍候…",

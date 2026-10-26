@@ -10,7 +10,6 @@ import {
   test,
   type AttachmentHostFixture,
 } from './fixtures/electron';
-import { MAC_TRAFFIC_LIGHT_SAFE_INSET } from '../../shared/sidebar-layout';
 
 const MAIN_SESSION_KEY = 'agent:main:main';
 const OFFICE_FIXTURE_DIR = resolve(process.cwd(), 'tests/e2e/fixtures/office');
@@ -303,23 +302,7 @@ test.describe('real Office document previews', () => {
       expect(panelWidthPct).toBeLessThanOrEqual(28.5);
       await assertSinglePptxViewer(page);
 
-      const constrainedCanvas = await waitForStableCanvas(canvas);
-      await page.getByTestId('file-preview-fullscreen-toggle').click();
-      const fullscreenLayer = page.getByTestId('file-preview-fullscreen-layer');
-      await expect(fullscreenLayer).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Exit fullscreen' })).toBeVisible();
-      await expect(page.getByTestId('file-preview-header')).toHaveCSS(
-        'padding-left',
-        process.platform === 'darwin' ? `${MAC_TRAFFIC_LIGHT_SAFE_INSET}px` : '20px',
-      );
-      const fullscreenCanvas = await waitForStableCanvas(canvas);
-      expect(fullscreenCanvas.clientWidth).toBeGreaterThan(constrainedCanvas.clientWidth);
-      expect(fullscreenCanvas.clientHeight).toBeGreaterThan(constrainedCanvas.clientHeight);
-      await assertSinglePptxViewer(page);
-
-      await page.getByRole('button', { name: 'Exit fullscreen' }).click();
-      await expect(fullscreenLayer).not.toBeAttached();
-      await expect(page.getByRole('button', { name: 'Enter fullscreen' })).toBeVisible();
+      await expect(page.getByTestId('file-preview-fullscreen-toggle')).toHaveCount(0);
       await waitForStableCanvas(canvas);
       await assertSinglePptxViewer(page);
 

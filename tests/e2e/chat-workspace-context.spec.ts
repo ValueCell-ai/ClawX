@@ -327,8 +327,7 @@ test.describe('ClawX chat workspace context', () => {
 
       const workspaceHeader = sidePanel.getByTestId('workspace-header-title');
       await expect(workspaceHeader).toHaveAccessibleName('Renamed workspace');
-      await expect(sidePanel.getByTestId('workspace-agent-tag')).toHaveText('Main Agent');
-      await expect(sidePanel.getByTestId('workspace-agent-tag')).toHaveAttribute('title', 'Main Agent');
+      await expect(sidePanel.getByTestId('workspace-agent-tag')).toHaveCount(0);
       await expect(sidePanel.getByTestId('workspace-path-tag')).toHaveText('Renamed workspace');
       await expect(sidePanel.getByTestId('workspace-path-tag')).toHaveAttribute('title', SESSION_WORKSPACE);
       await expect(sidePanel.getByTestId('workspace-header-title')).toHaveText('Renamed workspace');

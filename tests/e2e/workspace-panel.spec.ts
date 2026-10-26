@@ -6,13 +6,13 @@ const localeCases = [
   { language: 'en', source: 'Source' },
   { language: 'zh', source: '源码' },
   { language: 'ja', source: 'ソース' },
-  { language: 'ru', source: 'Исходный код' },
+  { language: 'ru', source: 'Исходник' },
 ];
 
 // This flow exercises Copy path using the real system clipboard.
 test.describe('Workspace panel refinement', { tag: E2E_EXCLUSIVE_TAG }, () => {
   for (const locale of localeCases) {
-    test(`shares file focus, finds task files and adapts to narrow windows in ${locale.language}`, async ({ launchElectronApp }, testInfo) => {
+    test(`shares file focus, simplifies browsing and adapts to narrow windows in ${locale.language}`, async ({ launchElectronApp }, testInfo) => {
       const app = await launchElectronApp({ skipSetup: true });
       try {
         const fixture = await installAttachmentHostFixture(app, { sessions: [{ key: SESSION, title: 'Workspace panel test' }] });
@@ -44,18 +44,67 @@ test.describe('Workspace panel refinement', { tag: E2E_EXCLUSIVE_TAG }, () => {
         }, locale.language);
         const page = await getStableWindow(app);
         await page.reload();
+        await page.bringToFront();
         await page.setViewportSize({ width: 1600, height: 900 });
         await page.getByTestId('chat-toolbar-workspace').click();
         const panel = page.getByTestId('artifact-panel');
         const tree = panel.getByTestId('workspace-tree');
         const search = panel.getByTestId('workspace-file-search');
         await expect(tree).toBeVisible();
+        await expect(panel.getByTestId('workspace-agent-tag')).toHaveCount(0);
+        await expect(panel.getByTestId('workspace-navigation').getByTestId('workspace-header-title')).toBeVisible();
+        await expect(panel.locator('[data-testid^="workspace-view-"]')).toHaveCount(0);
+        await expect(panel.getByTestId('workspace-preview-empty').getByRole('button')).toHaveCount(0);
+        const headerBounds = await panel.getByTestId('workspace-header-title').evaluate(element => element.closest('header')!.getBoundingClientRect().height);
+        expect(headerBounds).toBeLessThanOrEqual(48);
+        for (const id of ['workspace-show-hidden', 'workspace-collapse-all']) {
+          const button = panel.getByTestId(id);
+          await button.hover();
+          await expect(page.getByRole('tooltip')).toHaveText((await button.getAttribute('aria-label'))!);
+          await search.hover();
+          await expect(page.getByRole('tooltip')).toHaveCount(0);
+        }
+
         await expect(tree.getByTitle('nested/summary.md', { exact: true })).toHaveCount(0);
         await expect(tree.getByTitle('.hidden-note.txt', { exact: true })).toHaveCount(0);
+        const expectRowGutters = async (path: string) => {
+          const row = tree.getByTitle(path, { exact: true });
+          await row.hover();
+          const gutters = await row.evaluate(element => {
+            const row = element.getBoundingClientRect();
+            const tree = element.closest('[data-testid="workspace-tree"]')!.getBoundingClientRect();
+            return { left: row.left - tree.left, right: tree.right - row.right };
+          });
+          expect(gutters.left).toBeGreaterThanOrEqual(8);
+          expect(gutters.right).toBeGreaterThanOrEqual(8);
+        };
+        await expectRowGutters('readme.txt');
+
         await search.fill('summary');
         await tree.getByTitle('nested/summary.md', { exact: true }).click();
         await expect(panel.getByRole('heading', { name: 'Workspace summary', exact: true })).toBeVisible();
         await expect(tree.getByTitle('nested/summary.md', { exact: true })).toHaveClass(/bg-primary\/10/);
+        await expectRowGutters('nested/summary.md');
+        const fileHeader = panel.getByTestId('file-preview-header');
+        const fileName = fileHeader.getByTestId('file-preview-filename');
+        await expect(fileHeader.locator('p')).toHaveCount(0);
+        const alignment = await fileHeader.evaluate(header => {
+          const navigation = document.querySelector('[data-testid="workspace-header-title"]')!.closest('header')!;
+          return { top: header.getBoundingClientRect().top - navigation.getBoundingClientRect().top, height: header.getBoundingClientRect().height };
+        });
+        expect(Math.abs(alignment.top)).toBeLessThanOrEqual(1);
+        expect(alignment.height).toBeLessThanOrEqual(44);
+        await expect(fileHeader.getByTestId('file-preview-directory')).toHaveText(`${fixture.workspaceDir}/nested/`);
+        await expect(fileName).toHaveText('summary.md');
+        const pathLayout = await fileHeader.evaluate(header => {
+          const directory = header.querySelector('[data-testid="file-preview-directory"]')!;
+          const name = header.querySelector('[data-testid="file-preview-filename"]')!;
+          return { directoryClipped: directory.scrollWidth > directory.clientWidth, filenameClipped: name.scrollWidth > name.clientWidth, directoryColor: getComputedStyle(directory).color, filenameColor: getComputedStyle(name).color };
+        });
+        expect(pathLayout.directoryClipped).toBe(true);
+        expect(pathLayout.filenameClipped).toBe(false);
+        expect(pathLayout.directoryColor).not.toBe(pathLayout.filenameColor);
+
         await panel.getByTestId('artifact-panel-tab-preview').click();
         await expect(panel.getByRole('heading', { name: 'Workspace summary', exact: true })).toBeVisible();
         await expect(panel.getByTestId('file-preview-header')).toHaveCount(1);
@@ -64,23 +113,21 @@ test.describe('Workspace panel refinement', { tag: E2E_EXCLUSIVE_TAG }, () => {
         await tree.getByTitle('sample.html', { exact: true }).click();
         await expect(panel.getByTestId('artifact-panel-tab-browser')).toHaveAttribute('aria-selected', 'true');
         await expect(panel.getByTestId('file-preview-header').getByRole('heading', { name: 'sample.html', exact: true })).toBeVisible();
+        const htmlHeader = panel.getByTestId('file-preview-header');
+        expect(await htmlHeader.evaluate(element => element.getBoundingClientRect().height)).toBeLessThanOrEqual(44);
+        await expect(htmlHeader.getByRole('heading', { name: 'sample.html', exact: true })).not.toHaveJSProperty('clientWidth', 0);
         await expect(page.getByTestId('html-preview-host')).toHaveAttribute('aria-hidden', 'false');
+        await htmlHeader.getByRole('tab', { name: locale.source, exact: true }).click();
+        await expect(page.getByTestId('html-preview-host')).toHaveAttribute('aria-hidden', 'true');
         // Native guest navigation restrictions are also covered by the dedicated E2E suite.
         await search.fill('readme');
         await tree.getByTitle('readme.txt', { exact: true }).click();
         await expect(panel.getByTestId('file-preview-header').getByRole('heading', { name: 'readme.txt', exact: true })).toBeVisible();
         await search.fill('');
-        await panel.getByTestId('workspace-view-recent').click();
-        await expect(panel.getByTestId('workspace-quick-file-readme.txt')).toBeVisible();
-        await expect(panel.getByTestId('workspace-quick-file-nested/summary.md')).toBeVisible();
-        await panel.getByTestId('workspace-view-task').click();
-        await expect(panel.getByTestId('workspace-quick-file-nested/summary.md')).toBeVisible();
-        await expect(panel.getByTestId('workspace-quick-file-readme.txt')).toHaveCount(0);
         await expect(panel.getByTestId('artifact-panel-changes-count')).toHaveText('1');
         await panel.getByTestId('artifact-panel-tab-changes').click();
         await expect(panel.getByTestId('acp-change-file-group')).toHaveCount(1);
         await panel.getByTestId('artifact-panel-tab-browser').click();
-        await panel.getByTestId('workspace-view-all').click();
         await panel.getByTestId('workspace-show-hidden').click();
         await expect(tree.getByTitle('.hidden-note.txt', { exact: true })).toBeVisible();
         await search.fill('no-such-fixture');
@@ -100,11 +147,7 @@ test.describe('Workspace panel refinement', { tag: E2E_EXCLUSIVE_TAG }, () => {
         await expect.poll(async () => Number(await divider.getAttribute('aria-valuenow'))).toBeGreaterThan(originalWidth + 24);
         await panel.getByTestId('workspace-collapse-all').click();
         await expect(tree.getByTitle('nested/summary.md', { exact: true })).toHaveCount(0);
-        await panel.getByTestId('file-preview-fullscreen-toggle').click();
-        await expect(page.getByTestId('file-preview-fullscreen-layer')).toBeVisible();
-        await expect(page.getByTestId('file-preview-header')).toHaveCount(1);
-        await page.keyboard.press('Escape');
-        await expect(page.getByTestId('file-preview-fullscreen-layer')).toHaveCount(0);
+        await expect(panel.getByTestId('file-preview-fullscreen-toggle')).toHaveCount(0);
         if (locale.language === 'en') {
           await panel.getByTestId('file-preview-actions').click();
           await page.getByRole('menuitem', { name: 'Copy path', exact: true }).click();
@@ -119,17 +162,14 @@ test.describe('Workspace panel refinement', { tag: E2E_EXCLUSIVE_TAG }, () => {
         await page.setViewportSize({ width: 900, height: 700 });
         await expect(page.getByTestId('artifact-panel-aside')).toBeVisible();
         await expect(page.getByTestId('artifact-panel-aside')).toHaveAttribute('role', 'dialog');
-        await panel.getByTestId('file-preview-fullscreen-toggle').click();
-        await expect(page.getByTestId('file-preview-fullscreen-layer')).toBeVisible();
-        await page.keyboard.press('Escape');
-        await expect(page.getByTestId('file-preview-fullscreen-layer')).toHaveCount(0);
-        await expect(panel).toBeVisible();
+        await expect(panel.getByTestId('file-preview-fullscreen-toggle')).toHaveCount(0);
         await page.setViewportSize({ width: 480, height: 700 });
         await panel.getByTestId('workspace-back-to-files').click();
         await expect(search).toBeVisible();
         await search.fill('readme');
         await tree.getByTitle('readme.txt', { exact: true }).click();
         await expect(panel.getByTestId('file-preview-header').getByRole('heading', { name: 'readme.txt', exact: true })).toBeVisible();
+        expect(await panel.getByTestId('file-preview-filename').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.screenshot({ path: testInfo.outputPath('workspace-narrow.png') });
         await page.keyboard.press('Escape');

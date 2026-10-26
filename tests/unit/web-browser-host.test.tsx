@@ -175,22 +175,6 @@ describe('HTML preview host', () => {
     drawer.remove();
   });
 
-  it('raises the guest above the fullscreen preview layer', () => {
-    const fullscreenLayer = document.createElement('div');
-    fullscreenLayer.dataset.testid = 'file-preview-fullscreen-layer';
-    document.body.append(fullscreenLayer);
-    useArtifactPanel.setState({
-      open: true,
-      tab: 'preview',
-      focusedFile: htmlFile(),
-      htmlPreviewAnchor: makeAnchor(fullscreenLayer),
-    });
-
-    render(<WebBrowserHost />);
-
-    expect(screen.getByTestId('html-preview-host')).toHaveStyle({ zIndex: '110' });
-  });
-
   it('recreates a crashed guest without adding browser controls', () => {
     useArtifactPanel.setState({
       open: true,

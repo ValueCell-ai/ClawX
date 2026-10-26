@@ -154,8 +154,7 @@
         },
         "preview": {
             "emptyTitle": "No file selected",
-            "emptyHint": "Choose a workspace file or a file card in the conversation to preview it here.",
-            "fullscreenLabel": "Fullscreen file preview"
+            "emptyHint": "Choose a workspace file or a file card in the conversation to preview it here."
         }
     },
     "filePreview": {
@@ -170,8 +169,6 @@
             "openInFinder": "Reveal in file manager",
             "openDirectly": "Open directly",
             "close": "Close",
-            "enterFullscreen": "Enter fullscreen",
-            "exitFullscreen": "Exit fullscreen",
             "openHtmlExternally": "Open HTML in system browser",
             "retry": "Retry"
         },
@@ -268,15 +265,8 @@
         "resizePanel": "Resize workspace panel",
         "noResults": "No matching files",
         "noFiles": "No visible files in this folder.",
-        "taskEmpty": "Files created or updated in this conversation appear here.",
-        "recentEmpty": "Files you open in this workspace appear here.",
         "searchLimited": "Some files are not loaded. Search covers the loaded directory only.",
-        "searchScope": "Search scope: loaded folders",
-        "views": {
-            "all": "All files",
-            "task": "This task",
-            "recent": "Recent"
-        }
+        "searchScope": "Search scope: loaded folders"
     },
     "imageGeneration": {
         "generating": "Generating image, please wait…",

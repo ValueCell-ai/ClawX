@@ -24,7 +24,6 @@ interface HostGeometry {
   top: number;
   width: number;
   height: number;
-  fullscreen: boolean;
   overlay: boolean;
 }
 
@@ -45,7 +44,6 @@ function readGeometry(anchor: HTMLElement): HostGeometry | null {
     width: bounds.width,
     height: bounds.height,
     overlay: anchor.closest('[role="dialog"]') !== null,
-    fullscreen: anchor.closest('[data-testid="file-preview-fullscreen-layer"]') !== null,
   };
 }
 
@@ -187,7 +185,7 @@ export function WebBrowserHost(): React.ReactElement | null {
     top: geometry?.top ?? 0,
     width: geometry?.width ?? 0,
     height: geometry?.height ?? 0,
-    zIndex: geometry?.fullscreen ? 110 : geometry?.overlay ? 70 : 20,
+    zIndex: geometry?.overlay ? 70 : 20,
     visibility: visible ? 'visible' : 'hidden',
     pointerEvents: visible ? 'auto' : 'none',
   };

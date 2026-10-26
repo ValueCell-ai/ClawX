@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render as renderBase, screen, waitFor, within } from '@testing-library/react';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { WorkspaceBrowserBody } from '@/components/file-preview/WorkspaceBrowserBody';
 import { useArtifactPanel } from '@/stores/artifact-panel';
 import { useWorkspaceBrowser } from '@/stores/workspace-browser';
 import type { WorkspaceTreeNode } from '@/lib/workspace-tree';
+
+const render: typeof renderBase = (ui, options) => renderBase(ui, { wrapper: TooltipProvider, ...options });
 
 const { loadWorkspaceTree, previewProps } = vi.hoisted(() => ({
   loadWorkspaceTree: vi.fn(),
@@ -44,12 +47,14 @@ beforeEach(() => {
 async function ready() { await waitFor(() => expect(screen.getByRole('tree')).toBeVisible()); }
 
 describe('WorkspaceBrowserBody', () => {
-  it('loads the effective workspace while showing a title and secondary agent name', async () => {
+  it('loads the effective workspace with a single-line directory title', async () => {
     render(<WorkspaceBrowserBody agent={agent} workspacePath="/session/workspace" workspaceLabel="Task folder" />);
     await ready();
     expect(loadWorkspaceTree).toHaveBeenCalledWith('/session/workspace', expect.objectContaining({ includeHidden: true }));
     expect(screen.getByTestId('workspace-header-title')).toHaveTextContent('Task folder');
-    expect(screen.getByTestId('workspace-agent-tag')).toHaveTextContent('Main Agent');
+    expect(screen.getByTestId('workspace-navigation')).toContainElement(screen.getByTestId('workspace-header-title'));
+    expect(screen.queryByTestId('workspace-agent-tag')).not.toBeInTheDocument();
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
     expect(screen.getByTestId('workspace-path-tag')).toHaveAttribute('title', '/workspace');
   });
 
@@ -96,25 +101,13 @@ describe('WorkspaceBrowserBody', () => {
     expect(screen.getByTitle('page.html')).toHaveClass('bg-primary/10');
   });
 
-  it('keeps scoped recent files without creating history in another workspace', async () => {
-    const view = render(<WorkspaceBrowserBody agent={agent} />); await ready();
+  it('always shows the directory tree and uses the directory basename without a custom label', async () => {
+    render(<WorkspaceBrowserBody agent={agent} />); await ready();
+    expect(screen.getByTestId('workspace-header-title')).toHaveTextContent('workspace');
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTitle('readme.txt'));
-    fireEvent.mouseDown(screen.getByTestId('workspace-view-recent'), { button: 0 });
-    expect(await screen.findByTestId('workspace-quick-file-readme.txt')).toBeVisible();
-    view.rerender(<WorkspaceBrowserBody agent={{ ...agent, workspace: '/other' }} />);
-    await ready();
-    fireEvent.mouseDown(screen.getByTestId('workspace-view-recent'), { button: 0 });
-    expect(screen.queryByTestId('workspace-quick-file-readme.txt')).not.toBeInTheDocument();
-  });
-
-  it('uses session activity for task files, omits deleted files and handles empty search', async () => {
-    render(<WorkspaceBrowserBody agent={agent} fileGroups={[
-      { relativePath: 'docs/summary.md', activities: [{ relativePath: 'docs/summary.md', action: 'created', sequence: 1, turnId: 'one', toolCallId: 'write', toolName: 'write', fragments: [] }] },
-      { relativePath: 'gone.txt', activities: [{ relativePath: 'gone.txt', action: 'deleted', sequence: 2, turnId: 'two', toolCallId: 'patch', toolName: 'apply_patch', fragments: [] }] },
-    ]} />); await ready();
-    fireEvent.mouseDown(screen.getByTestId('workspace-view-task'), { button: 0 });
-    expect(await screen.findByTestId('workspace-quick-file-docs/summary.md')).toBeVisible();
-    expect(screen.queryByTestId('workspace-quick-file-gone.txt')).not.toBeInTheDocument();
+    expect(screen.getByRole('tree')).toBeVisible();
+    expect(screen.getByTitle('page.html')).toBeVisible();
     fireEvent.change(screen.getByTestId('workspace-file-search'), { target: { value: 'missing' } });
     expect(screen.getByText('workspace.noResults')).toBeVisible();
   });

@@ -131,15 +131,9 @@ The `ResizeObserver` uses a 100 ms trailing debounce. The callback does not rend
 
 `pptxviewjs@1.1.9` stores presentation chart and ZIP state in Renderer globals including `window.currentProcessor` and `window.currentZipData`. At most one `PptxViewer` may therefore be mounted in the shared Electron Renderer. This is a correctness requirement, not a performance preference: concurrent decks could resolve chart or package data from the wrong presentation.
 
-Workspace and Preview share one mounted file surface. Its PPTX child is mounted only while that surface is active. CSS-only hiding is insufficient. A development assertion rejects a second concurrent viewer. Bounded, non-persisted panel state retains slide positions keyed by target identity across tab, drawer and fullscreen transitions; switching away destroys and unmounts the viewer, and switching back reparses the deck and restores the clamped position.
+Workspace and Preview share one mounted file surface. Its PPTX child is mounted only while that surface is active. CSS-only hiding is insufficient. A development assertion rejects a second concurrent viewer. Bounded, non-persisted panel state retains slide positions keyed by target identity across tab and drawer transitions; switching away destroys and unmounts the viewer, and switching back reparses the deck and restores the clamped position.
 
 Cleanup queues the active instance's public `destroy()` exactly once after preceding dependency work. ClawX removes all listeners, observers, timers, animation frames, queued request references, and its direct instance and Canvas ownership. The dependency limitations below mean this does not claim full internal reclamation.
-
-## Fullscreen Preview Surface
-
-The Chat Preview header exposes a localized icon control that moves the selected `FilePreviewBody` into a Radix dialog portal filling the Renderer viewport. This is an application overlay, not Electron window fullscreen, and applies consistently to every file format supported by the Preview surface. It preserves target identity and target-keyed PPTX slide position while switching between compact panel layout and full layout.
-
-The same header control exits fullscreen, and Escape provides a keyboard exit. Making the shared preview inactive closes the overlay; Workspace and Preview otherwise keep the same file and slide position. Portal transitions may remount a viewer, but the previous PPTX lifecycle is torn down before the replacement becomes active so the single-mounted-viewer invariant remains intact.
 
 ## States And Errors
 
@@ -158,7 +152,7 @@ Errors use localized format-specific generic messages and never show parser exce
 - Editing, saving, comments, tracked changes, Word search, or table-of-contents tooling.
 - Pixel-identical Microsoft Word or PowerPoint layout.
 - DOCX link opening or application-window navigation from generated content.
-- PPTX thumbnails, slide-navigation keyboard shortcuts, animation, transitions, media playback, presenter mode, or automatic slide shows. The generic Preview surface can fill the application viewport, but it does not implement PowerPoint presenter behavior or native Electron fullscreen.
+- PPTX thumbnails, slide-navigation keyboard shortcuts, animation, transitions, media playback, presenter mode, or automatic slide shows. Preview stays inside its panel or narrow-window drawer.
 - Remote-attachment downloading for preview.
 - Main-process, server, cloud, or external-service conversion.
 - Changes to existing PDF, spreadsheet, image, HTML, Markdown, source, or diff behavior.

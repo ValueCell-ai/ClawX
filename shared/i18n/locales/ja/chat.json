@@ -154,8 +154,7 @@
         },
         "preview": {
             "emptyTitle": "ファイルが選択されていません",
-            "emptyHint": "ワークスペースのファイル、または会話内のファイルカードを選択してください。",
-            "fullscreenLabel": "ファイルの全画面プレビュー"
+            "emptyHint": "ワークスペースのファイル、または会話内のファイルカードを選択してください。"
         }
     },
     "filePreview": {
@@ -170,8 +169,6 @@
             "openInFinder": "ファイルマネージャーで表示",
             "openDirectly": "直接開く",
             "close": "閉じる",
-            "enterFullscreen": "全画面表示",
-            "exitFullscreen": "全画面表示を終了",
             "openHtmlExternally": "HTML をシステムブラウザで開く",
             "retry": "再試行"
         },
@@ -268,15 +265,8 @@
         "resizePanel": "ワークスペースパネルの幅を変更",
         "noResults": "一致するファイルがありません",
         "noFiles": "表示できるファイルがありません。",
-        "taskEmpty": "この会話で作成・更新したファイルがここに表示されます。",
-        "recentEmpty": "このワークスペースで開いたファイルがここに表示されます。",
         "searchLimited": "一部のファイルは未読込です。検索対象は読込済みのフォルダーです。",
-        "searchScope": "検索範囲：読込済みフォルダー",
-        "views": {
-            "all": "すべて",
-            "task": "今回",
-            "recent": "最近"
-        }
+        "searchScope": "検索範囲：読込済みフォルダー"
     },
     "imageGeneration": {
         "generating": "画像を生成しています。しばらくお待ちください…",
