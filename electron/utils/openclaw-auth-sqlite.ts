@@ -281,7 +281,7 @@ export function writeAuthProfilesToSqlite(
   const db = openAgentDatabase(agentId, sqlitePath);
   try {
     db.exec('BEGIN IMMEDIATE');
-    assertAuthWriteVersion(db, agentId);
+    assertAuthWriteVersion(db, agentId, sqlitePath);
     const now = Date.now();
     const secretsPayload = JSON.stringify(buildSecretsPayload(store));
     db.prepare(`
