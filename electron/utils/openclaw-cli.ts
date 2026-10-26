@@ -212,9 +212,7 @@ function getOpenClawEmbeddedExecPath(): { execPath: string; electronRunAsNode: b
   if (!app.isPackaged) {
     const nodeExecPath = getDevNodeExecPath();
     if (nodeExecPath) return { execPath: nodeExecPath, electronRunAsNode: false };
-    if (process.versions?.electron) {
-      throw new Error('Supported Node executable not found on PATH for embedded OpenClaw launch');
-    }
+    throw new Error('Supported Node executable not found on PATH for embedded OpenClaw launch');
   }
 
   if (app.isPackaged && process.platform === 'win32') {
