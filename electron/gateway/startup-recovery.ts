@@ -186,6 +186,7 @@ export type GatewayStartupRecoveryAction = 'repair' | 'retry' | 'fail';
 export function getGatewayStartupRecoveryAction(options: {
   startupError: unknown;
   startupStderrLines: string[];
+  processExitCode?: number | null;
   configRepairAttempted: boolean;
   attempt: number;
   maxAttempts: number;
@@ -197,10 +198,13 @@ export function getGatewayStartupRecoveryAction(options: {
     return 'fail';
   }
 
-  if (hasInvalidConfigFailureSignal(options.startupError, options.startupStderrLines)) {
-    // One doctor pass is the only automated repair. If the same migration or
-    // config failure remains afterward, stop instead of treating the generic
-    // process-exited error as transient.
+  const hasGenericConfigExit = options.processExitCode === 1;
+  if (hasInvalidConfigFailureSignal(options.startupError, options.startupStderrLines)
+    || hasGenericConfigExit) {
+    // Some packaged OpenClaw 2026.10 builds print only "The CLI command
+    // failed" and exit 1 for plugin-owned legacy config admission failures.
+    // Treat that startup-only exit as a bounded doctor opportunity instead of
+    // retrying the same invalid configuration indefinitely.
     return options.configRepairAttempted ? 'fail' : 'repair';
   }
 

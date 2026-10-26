@@ -16,6 +16,7 @@ type StartupHooks = {
   hasOwnedProcess: () => boolean;
   resetStartupStderrLines: () => void;
   getStartupStderrLines: () => string[];
+  getProcessExitCode: () => number | null;
   assertLifecycle: (phase: string) => void;
   findExistingGateway: (port: number) => Promise<ExistingGatewayInfo | null>;
   connect: (port: number, externalToken?: string) => Promise<void>;
@@ -116,6 +117,7 @@ export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<vo
       const recoveryAction = getGatewayStartupRecoveryAction({
         startupError: error,
         startupStderrLines: hooks.getStartupStderrLines(),
+        processExitCode: hooks.getProcessExitCode(),
         configRepairAttempted,
         attempt: startAttempts,
         maxAttempts: maxStartAttempts,

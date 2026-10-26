@@ -27,6 +27,7 @@ function createMockHooks(overrides: Partial<Parameters<typeof runGatewayStartupS
     hasOwnedProcess: vi.fn().mockReturnValue(false),
     resetStartupStderrLines: vi.fn(),
     getStartupStderrLines: vi.fn().mockReturnValue([]),
+    getProcessExitCode: vi.fn().mockReturnValue(null),
     assertLifecycle: vi.fn(),
     findExistingGateway: vi.fn().mockResolvedValue(null),
     connect: vi.fn().mockResolvedValue(undefined),
@@ -146,6 +147,27 @@ describe('runGatewayStartupSequence', () => {
     // First attempt fails with transient error, second succeeds
     expect(hooks.connect).toHaveBeenCalledTimes(2);
     expect(hooks.delay).toHaveBeenCalledWith(1000);
+    expect(hooks.onConnectedToManagedGateway).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs doctor repair when packaged OpenClaw exits 1 without config diagnostics', async () => {
+    let readyCalls = 0;
+    const hooks = createMockHooks({
+      findExistingGateway: vi.fn().mockResolvedValue(null),
+      hasOwnedProcess: vi.fn().mockReturnValue(false),
+      waitForReady: vi.fn().mockImplementation(async () => {
+        readyCalls++;
+        if (readyCalls === 1) throw new Error('Gateway process exited before becoming ready (code=1)');
+      }),
+      getProcessExitCode: vi.fn().mockReturnValue(1),
+      runDoctorRepair: vi.fn().mockResolvedValue(true),
+      maxStartAttempts: 3,
+    });
+
+    await runGatewayStartupSequence(hooks);
+
+    expect(hooks.runDoctorRepair).toHaveBeenCalledTimes(1);
+    expect(hooks.onDoctorRepairSuccess).toHaveBeenCalledTimes(1);
     expect(hooks.onConnectedToManagedGateway).toHaveBeenCalledTimes(1);
   });
 

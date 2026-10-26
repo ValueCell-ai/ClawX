@@ -125,6 +125,18 @@ describe('getGatewayStartupRecoveryAction', () => {
   const configInvalidStderr = ['Config invalid', 'Run: openclaw doctor --fix'];
   const transientError = new Error('Gateway process exited before becoming ready (code=1)');
 
+  it('returns repair on a packaged OpenClaw code 1 startup exit', () => {
+    const action = getGatewayStartupRecoveryAction({
+      startupError: transientError,
+      startupStderrLines: ['[openclaw] The CLI command failed.'],
+      processExitCode: 1,
+      configRepairAttempted: false,
+      attempt: 1,
+      maxAttempts: 3,
+    });
+    expect(action).toBe('repair');
+  });
+
   it('returns repair on first config-invalid failure', () => {
     const action = getGatewayStartupRecoveryAction({
       startupError: transientError,

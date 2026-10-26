@@ -140,11 +140,12 @@ device pairing all launch through `forkOpenClawUtilityProcess`.
 
 OpenClaw 2026.10.5 refuses to admit a 2026.7.1 state tree until an offline
 `doctor --fix` migrates the state database, every agent database, and legacy
-config keys. The Gateway exits with code 78 and `OpenClaw config is invalid`,
-`Legacy config keys detected`, `config needs correction`, or
-`gateway.maintenance_required`; `startup-recovery.ts` treats these as
-config-invalid signals, so the orchestrator runs one doctor repair (10-minute
-timeout for large agent databases) and relaunches. Pre-2026.10 agent registries
+config keys. The Gateway may exit with code 78 or, in packaged utility-process
+launches, collapse the same admission failure to a generic code 1 with
+`The CLI command failed`. `startup-recovery.ts` treats the explicit diagnostics
+and the startup-only code 1 as a bounded config-repair opportunity, so the
+orchestrator runs one doctor repair (10-minute timeout for large agent
+databases) and relaunches. Pre-2026.10 agent registries
 store absolute paths, so doctor writes `.bak` copies next to the original
 agent databases; sandboxed reproductions must not copy that state without
 accounting for it. Legacy managed outgoing image records also store absolute

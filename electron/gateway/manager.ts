@@ -394,6 +394,7 @@ export class GatewayManager extends EventEmitter {
           this.recentStartupStderrLines = [];
         },
         getStartupStderrLines: () => this.recentStartupStderrLines,
+        getProcessExitCode: () => this.processExitCode,
         assertLifecycle: (phase) => {
           this.lifecycleController.assert(startEpoch, phase);
         },
@@ -511,6 +512,7 @@ export class GatewayManager extends EventEmitter {
       );
       this.setStatus({ state: 'error', error: String(error) });
       const fatalStartupFailure = isOpenClawFatalConfigExitCode(this.processExitCode)
+        || this.processExitCode === 1
         || hasFatalRuntimeFailureSignal(error, this.recentStartupStderrLines)
         || hasStartupMigrationLockSignal(error, this.recentStartupStderrLines)
         || hasInvalidConfigFailureSignal(error, this.recentStartupStderrLines);
@@ -1055,6 +1057,7 @@ export class GatewayManager extends EventEmitter {
         }
 
         const orchestratedStartupFailure = isOpenClawFatalConfigExitCode(code)
+          || (this.status.state === 'starting' && code === 1)
           || hasFatalRuntimeFailureSignal(undefined, this.recentStartupStderrLines)
           || hasStartupMigrationLockSignal(undefined, this.recentStartupStderrLines)
           || hasInvalidConfigFailureSignal(undefined, this.recentStartupStderrLines);
