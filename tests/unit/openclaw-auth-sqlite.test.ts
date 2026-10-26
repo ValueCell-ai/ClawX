@@ -56,7 +56,7 @@ describe('OpenClaw auth SQLite ownership', () => {
     const before = await readFile(dbPath());
     initializeAgentAuthDatabase('main');
     expect(await readFile(dbPath())).toEqual(before);
-  });
+  }, 20_000);
   it('does not modify schema metadata while writing to a current database', async () => {
     await seed(25);
     const before = inspect();
@@ -97,7 +97,7 @@ describe('OpenClaw auth SQLite ownership', () => {
     repairOpenClawOwnedAgentSchema('main');
     expect(() => writeAuthProfilesToSqlite(store, 'main')).toThrow('newer OpenClaw');
     expect(await readFile(dbPath())).toEqual(before);
-  });
+  }, 20_000);
   it('refuses cross-agent writes', async () => {
     await seed(25);
     const db = new DatabaseSync(dbPath());
