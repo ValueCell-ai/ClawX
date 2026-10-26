@@ -23,6 +23,7 @@ const childProcessMock = vi.hoisted(() => {
     state,
     spawn: vi.fn(() => state.child),
     fork: vi.fn(() => state.child),
+    execFileSync: vi.fn(() => 'v24.21.0\n'),
   };
 });
 
@@ -51,9 +52,14 @@ vi.mock('@agentclientprotocol/sdk', () => ({
 }));
 
 vi.mock('node:child_process', () => ({
-  default: { spawn: childProcessMock.spawn, fork: childProcessMock.fork },
+  default: {
+    spawn: childProcessMock.spawn,
+    fork: childProcessMock.fork,
+    execFileSync: childProcessMock.execFileSync,
+  },
   spawn: childProcessMock.spawn,
   fork: childProcessMock.fork,
+  execFileSync: childProcessMock.execFileSync,
 }));
 
 function createConnection() {
