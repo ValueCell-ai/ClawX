@@ -11,7 +11,7 @@ import {
   symlinkSync,
   unlinkSync,
 } from 'node:fs';
-import { spawn, type ForkOptions } from 'node:child_process';
+import { execFileSync, spawn, type ForkOptions } from 'node:child_process';
 import { homedir } from 'node:os';
 import { delimiter, join, dirname } from 'node:path';
 import { getOpenClawDir, getOpenClawEntryPath } from './paths';
@@ -134,14 +134,39 @@ function getExecutableFromPath(command: string): string | null {
   return null;
 }
 
+function isSupportedOpenClawNodeVersion(version: string): boolean {
+  const match = /^(\d+)\.(\d+)\./.exec(version.trim().replace(/^v/, ''));
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return (major === 24 && minor >= 16) || (major === 26 && minor >= 1) || major > 26;
+}
+
 function getDevNodeExecPath(): string | null {
   const nodeCommand = process.platform === 'win32' ? 'node.exe' : 'node';
-  return getExecutableFromPath(nodeCommand);
+  const candidate = getExecutableFromPath(nodeCommand);
+  if (!candidate) return null;
+  try {
+    const version = execFileSync(candidate, ['--version'], { encoding: 'utf8', timeout: 1000 });
+    if (isSupportedOpenClawNodeVersion(version)) return candidate;
+    logger.warn(`[openclaw] Ignoring unsupported development Node runtime (${version.trim()}); using Electron's embedded Node instead`);
+  } catch (error) {
+    logger.warn('[openclaw] Failed to inspect development Node runtime; using Electron\'s embedded Node instead:', error);
+  }
+  return null;
 }
 
 export function getOpenClawCliSpawnSpec(): OpenClawCliSpawnSpec {
   const entryPath = getOpenClawEntryPath();
   const platform = process.platform;
+
+  if (!app.isPackaged && process.versions?.electron && !getDevNodeExecPath()) {
+    return {
+      command: process.execPath,
+      args: [entryPath],
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    };
+  }
 
   if (platform === 'darwin' || platform === 'linux') {
     const localBinPath = join(homedir(), '.local', 'bin', 'openclaw');
@@ -200,9 +225,9 @@ function getOpenClawEmbeddedExecPath(): { execPath: string; electronRunAsNode: b
   if (!app.isPackaged) {
     const nodeExecPath = getDevNodeExecPath();
     if (nodeExecPath) return { execPath: nodeExecPath, electronRunAsNode: false };
-    if (process.versions?.electron) {
-      throw new Error('Node executable not found on PATH for embedded OpenClaw launch');
-    }
+    // Electron 41 embeds a supported Node 24 runtime. This is safer than
+    // selecting an unsupported PATH Node such as 26.0.x in developer shells.
+    if (process.versions?.electron) return { execPath: process.execPath, electronRunAsNode: true };
   }
 
   if (app.isPackaged && process.platform === 'win32') {

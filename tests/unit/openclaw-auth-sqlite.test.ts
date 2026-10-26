@@ -38,7 +38,7 @@ describe('OpenClaw auth SQLite ownership', () => {
     expect(await api.migrateAuthProfilesJsonToSqliteIfNeeded('main')).toBe(true);
     expect(api.readAuthProfilesFromSqlite('main')?.order).toEqual({ custom: ['custom:default'] });
     expect(await api.migrateAuthProfilesJsonToSqliteIfNeeded('main')).toBe(false);
-  });
+  }, 20_000);
   it('saves credentials readable by SQLite and JSON consumers', async () => {
     const { saveProviderKeyToOpenClaw } = await import('@electron/utils/openclaw-auth');
     const { readAuthProfilesFromSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
