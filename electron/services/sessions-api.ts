@@ -595,7 +595,11 @@ async function loadSessionTurnTimingsByKey(
 
   try {
     const sqliteRecords = await readSqliteTranscriptRecordsForAgent(parsed.agentId, sessionKey);
-    if (sqliteRecords) return extractTranscriptTurnTimings(sqliteRecords.slice(-limit));
+    if (sqliteRecords) {
+      return extractTranscriptTurnTimings(sqliteRecords.slice(-limit).flatMap(record => (
+        record.message ? [{ timestamp: record.timestamp, message: record.message }] : []
+      )));
+    }
     const sessionsDir = join(resolveOpenClawStateDir(), 'agents', parsed.agentId, 'sessions');
     const sessionsJson = await readSessionsJson(parsed.agentId);
     const transcriptPath = resolveSessionTranscriptPathByKey(sessionKey, sessionsDir, sessionsJson);
@@ -627,7 +631,7 @@ async function mutateMigratedSessionDirectly(sessionKey: string, mutation: 'dele
         db.exec('ROLLBACK'); return { handled: true, success: true };
       }
       if (mutation === 'delete') db.prepare('DELETE FROM session_nodes WHERE session_key = ?').run(sessionKey);
-      else db.prepare('UPDATE session_nodes SET label = ?, updated_at = ? WHERE session_key = ?').run(label, Date.now(), sessionKey);
+      else db.prepare('UPDATE session_nodes SET label = ?, updated_at = ? WHERE session_key = ?').run(label ?? '', Date.now(), sessionKey);
       db.exec('COMMIT'); return { handled: true, success: true };
     } catch (error) {
       try { db.exec('ROLLBACK'); } catch { /* ignore */ }
