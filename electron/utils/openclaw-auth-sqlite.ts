@@ -9,13 +9,20 @@ import { constants } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { DatabaseSync } from 'node:sqlite';
-import { assertBundledAgentStructure, initializeBundledAgentDatabase } from './openclaw-persistence-runtime';
+import * as persistenceRuntime from './openclaw-persistence-runtime';
 
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
 const AUTH_SQLITE_FILENAME = 'openclaw-agent.sqlite';
 const PRIMARY_ROW_KEY = 'primary';
 // Admission ceiling, never a substitute for migrating a database's structure.
 const OPENCLAW_OWNED_AGENT_SCHEMA_VERSION = 25;
+
+export class OpenClawAgentSchemaMigrationPendingError extends Error {
+  constructor(version: number) {
+    super(`OpenClaw agent schema migration is pending (current schema ${version}); refusing auth write`);
+    this.name = 'OpenClawAgentSchemaMigrationPendingError';
+  }
+}
 
 export interface PersistedAuthProfileCredential {
   type: string;
@@ -64,14 +71,17 @@ function readSchemaMetadata(db: DatabaseSync): { app_version?: string; schema_ve
     .get(PRIMARY_ROW_KEY) as { app_version?: string; schema_version?: number; agent_id?: string } | undefined;
 }
 
-function assertAuthWriteVersion(db: DatabaseSync, agentId: string): void {
+function assertAuthWriteVersion(db: DatabaseSync, agentId: string, sqlitePath: string): void {
   const version = readUserVersion(db);
-  if (version === 0) return;
   const meta = readSchemaMetadata(db);
   if (version > OPENCLAW_OWNED_AGENT_SCHEMA_VERSION || (meta?.schema_version ?? 0) > OPENCLAW_OWNED_AGENT_SCHEMA_VERSION) {
     throw new Error(`Refusing auth write to newer OpenClaw agent schema (${version})`);
   }
   if (meta?.agent_id && meta.agent_id !== agentId) throw new Error('OpenClaw agent schema owner mismatch');
+  if (version !== OPENCLAW_OWNED_AGENT_SCHEMA_VERSION || meta?.schema_version !== OPENCLAW_OWNED_AGENT_SCHEMA_VERSION) {
+    throw new OpenClawAgentSchemaMigrationPendingError(version);
+  }
+  persistenceRuntime.assertBundledAgentStructure(db, sqlitePath, OPENCLAW_OWNED_AGENT_SCHEMA_VERSION);
 }
 
 function repairKnownClobberedSchema(db: DatabaseSync, agentId: string, sqlitePath: string): void {
@@ -81,7 +91,7 @@ function repairKnownClobberedSchema(db: DatabaseSync, agentId: string, sqlitePat
   const meta = readSchemaMetadata(db);
   if (meta?.app_version !== '2026.10.5' || meta.schema_version !== 1 || meta.agent_id !== agentId) return;
   try {
-    assertBundledAgentStructure(db, sqlitePath, OPENCLAW_OWNED_AGENT_SCHEMA_VERSION);
+    persistenceRuntime.assertBundledAgentStructure(db, sqlitePath, OPENCLAW_OWNED_AGENT_SCHEMA_VERSION);
   } catch {
     return; // Not a fully migrated v25 structure: never pretend otherwise.
   }
@@ -97,7 +107,7 @@ function repairKnownClobberedSchema(db: DatabaseSync, agentId: string, sqlitePat
     if (readUserVersion(db) !== 1 || current?.schema_version !== 1 || current.app_version !== '2026.10.5') {
       throw new Error('Agent schema changed during repair');
     }
-    assertBundledAgentStructure(db, sqlitePath, OPENCLAW_OWNED_AGENT_SCHEMA_VERSION);
+    persistenceRuntime.assertBundledAgentStructure(db, sqlitePath, OPENCLAW_OWNED_AGENT_SCHEMA_VERSION);
     db.exec(`PRAGMA user_version = ${OPENCLAW_OWNED_AGENT_SCHEMA_VERSION}`);
     db.prepare('UPDATE schema_meta SET schema_version = ? WHERE meta_key = ?')
       .run(OPENCLAW_OWNED_AGENT_SCHEMA_VERSION, PRIMARY_ROW_KEY);
@@ -117,7 +127,7 @@ export function initializeAgentAuthDatabase(agentId: string): void {
   try {
     const db = new DatabaseSync(staged);
     try {
-      initializeBundledAgentDatabase(db, staged, agentId);
+      persistenceRuntime.initializeBundledAgentDatabase(db, staged, agentId);
     } finally {
       db.close(); // checkpoint WAL before publishing the standalone file
     }
@@ -229,7 +239,7 @@ function openAgentDatabase(agentId: string, sqlitePath: string): DatabaseSync {
   db.exec('PRAGMA foreign_keys = ON;');
   try {
     repairKnownClobberedSchema(db, agentId, sqlitePath);
-    assertAuthWriteVersion(db, agentId);
+    assertAuthWriteVersion(db, agentId, sqlitePath);
     return db;
   } catch (error) {
     db.close();
@@ -329,6 +339,22 @@ export function repairOpenClawOwnedAgentSchema(agentId: string): void {
 }
 
 export async function migrateAuthProfilesJsonToSqliteIfNeeded(agentId: string): Promise<boolean> {
+  const sqlitePath = getAuthProfilesSqlitePath(agentId);
+  if (existsSync(sqlitePath)) {
+    try {
+      repairOpenClawOwnedAgentSchema(agentId);
+      const db = new DatabaseSync(sqlitePath, { readOnly: true });
+      try {
+        assertAuthWriteVersion(db, agentId, sqlitePath);
+      } finally {
+        db.close();
+      }
+    } catch (error) {
+      if (error instanceof OpenClawAgentSchemaMigrationPendingError) return false;
+      throw error;
+    }
+  }
+
   const sqliteStore = readAuthProfilesFromSqlite(agentId);
   if (hasPersistedProfiles(sqliteStore)) {
     return false;

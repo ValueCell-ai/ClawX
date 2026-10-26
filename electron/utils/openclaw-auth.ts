@@ -59,6 +59,7 @@ import {
 import { listOpenClawAgentEntryRecords } from './openclaw-agent-roster';
 import {
   migrateAuthProfilesJsonToSqliteIfNeeded,
+  OpenClawAgentSchemaMigrationPendingError,
   readAuthProfilesFromSqlite,
   repairOpenClawOwnedAgentSchema,
   readAuthProfilesJson,
@@ -482,7 +483,16 @@ async function readAuthProfiles(agentId = 'main'): Promise<AuthProfilesStore> {
 }
 
 async function writeAuthProfiles(store: AuthProfilesStore, agentId = 'main'): Promise<void> {
-  writeAuthProfilesToSqlite(store, agentId);
+  try {
+    writeAuthProfilesToSqlite(store, agentId);
+  } catch (error) {
+    // Do not write into a v1/v16 database before OpenClaw doctor owns the
+    // migration. Keeping the legacy JSON source intact lets doctor import it
+    // and verify the resulting SQLite target. Future schemas remain hard
+    // failures and are never shadowed by a compatibility write.
+    if (!(error instanceof OpenClawAgentSchemaMigrationPendingError)) throw error;
+    console.warn(`[auth-sync] Deferred SQLite auth write for agent "${agentId}" until OpenClaw schema migration completes`);
+  }
   try {
     await writeJsonFile(getAuthProfilesPath(agentId), store);
   } catch (error) {

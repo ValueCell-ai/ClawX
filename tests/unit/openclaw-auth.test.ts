@@ -60,6 +60,7 @@ vi.mock('@electron/utils/openclaw-persistence-runtime', async () => {
     initializeBundledAgentDatabase: (db: unknown, pathname: string, agentId: string) => {
       sdk.ensureOpenClawAgentDatabaseSchema(db, { agentId, path: pathname, register: false, env: { OPENCLAW_STATE_DIR: resolve(pathname, '../../../..') } });
     },
+    assertBundledAgentStructure: () => {},
   };
 });
 

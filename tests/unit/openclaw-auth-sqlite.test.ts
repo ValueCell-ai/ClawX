@@ -64,12 +64,12 @@ describe('OpenClaw auth SQLite ownership', () => {
     writeAuthProfilesToSqlite(store, 'main');
     expect(inspect()).toEqual(before);
   });
-  it('preserves a genuine interrupted v16 structure and both version markers', async () => {
+  it('preserves a genuine interrupted v16 structure and refuses pre-migration auth writes', async () => {
     await seed(16);
     const before = inspect();
     const { repairOpenClawOwnedAgentSchema, writeAuthProfilesToSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
     repairOpenClawOwnedAgentSchema('main');
-    writeAuthProfilesToSqlite(store, 'main');
+    expect(() => writeAuthProfilesToSqlite(store, 'main')).toThrow('schema migration is pending');
     expect(inspect()).toEqual(before);
   });
   it('does not mistake a v16 structure clobbered to v1 for a completed migration', async () => {

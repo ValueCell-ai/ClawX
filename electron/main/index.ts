@@ -577,9 +577,16 @@ async function initialize(): Promise<void> {
   const gatewayAutoStart = await getSetting('gatewayAutoStart');
   if (!isE2EMode && gatewayAutoStart) {
     try {
-      await syncAllProviderAuthToRuntime();
+      // Let OpenClaw own any pending agent/auth migrations before ClawX writes
+      // provider credentials. Writing legacy auth JSON or v1 SQLite rows before
+      // doctor runs can invalidate OpenClaw's migration receipts.
       logger.debug('Auto-starting Gateway...');
       await gatewayManager.start();
+      try {
+        await syncAllProviderAuthToRuntime();
+      } catch (error) {
+        logger.warn('Post-start Gateway provider auth sync failed:', error);
+      }
       logger.info('Gateway auto-start succeeded');
     } catch (error) {
       logger.error('Gateway auto-start failed:', error);
