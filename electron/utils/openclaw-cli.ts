@@ -124,16 +124,6 @@ function getWindowsCmdWrapperSpawnSpec(cmdPath: string): OpenClawCliSpawnSpec {
   };
 }
 
-function getExecutableFromPath(command: string): string | null {
-  const pathEnv = process.env.PATH || '';
-  for (const dir of pathEnv.split(delimiter)) {
-    if (!dir) continue;
-    const candidate = join(dir, command);
-    if (fileExists(candidate)) return candidate;
-  }
-  return null;
-}
-
 function isSupportedOpenClawNodeVersion(version: string): boolean {
   const match = /^(\d+)\.(\d+)\./.exec(version.trim().replace(/^v/, ''));
   if (!match) return false;
