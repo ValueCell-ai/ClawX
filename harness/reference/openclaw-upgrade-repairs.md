@@ -42,5 +42,9 @@ Validation: focused snapshot/readiness tests (14); auth, agent configuration and
 host-service suites (209); consumer suites (39); review migration consumers (15);
 real Electron UI agent creation verifies schema 25, inherited credentials and
 SQLite integrity (1). These do not replace live-model chat or platform upgrade
-certification. The three README upgrade sections remain accurate; this repair does
-not add a new user workflow.
+certification. The SQLite reader also checks optional
+`session_transcript_archives` and `session_transcript_cold_archives` rows when the
+hot transcript is reclaimed; issue-report export decodes the same archive blobs.
+Corrupt cold rows are skipped without hiding readable hot rows. This does not claim
+external file archives are present. The three README upgrade sections remain
+accurate; these repairs do not add a new user workflow.

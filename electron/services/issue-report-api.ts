@@ -265,6 +265,16 @@ function readTranscriptLines(db: TranscriptDatabase, sessionId: string): string[
     }
     lines.push(line);
   }
+  if (lines.length === 0) {
+    try {
+      const archives = db.prepare('SELECT archive_blob, encoding FROM session_transcript_archives WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as Array<{ archive_blob?: unknown; encoding?: unknown }>;
+      for (const archive of archives) {
+        if (!(archive.archive_blob instanceof Uint8Array)) continue;
+        const bytes = archive.encoding === 'zstd' ? zstdDecompressSync(archive.archive_blob) : Buffer.from(archive.archive_blob);
+        lines.push(...bytes.toString('utf8').split(/\r?\n/).filter(Boolean));
+      }
+    } catch { /* archive tables are optional on runtimes without cold storage */ }
+  }
   return lines;
 }
 

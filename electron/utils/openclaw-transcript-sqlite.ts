@@ -46,6 +46,28 @@ export function readSqliteTranscriptRecords(db: SqliteDb, sessionKey: string): S
   if (sessionIds.size === 0) return [];
   const records: SqliteTranscriptRecord[] = [];
   for (const sessionId of sessionIds) {
+    const archiveRows = (() => {
+      try {
+        return db.prepare('SELECT archive_blob, encoding FROM session_transcript_archives WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as Array<{ archive_blob?: unknown; encoding?: unknown }>;
+      } catch { return []; }
+    })();
+    const coldRows = (() => {
+      try {
+        return db.prepare('SELECT archive_blob, archive_name FROM session_transcript_cold_archives WHERE session_id = ? ORDER BY archived_at ASC').all(sessionId) as Array<{ archive_blob?: unknown; archive_name?: unknown }>;
+      } catch { return []; }
+    })();
+    for (const archive of [...archiveRows, ...coldRows]) {
+      if (!(archive.archive_blob instanceof Uint8Array)) continue;
+      try {
+        const compressed = archive.encoding === 'zstd' || (typeof archive.archive_name === 'string' && archive.archive_name.endsWith('.zst'));
+        const text = (compressed ? zstdDecompressSync(archive.archive_blob) : Buffer.from(archive.archive_blob)).toString('utf8');
+        for (const line of text.split(/\r?\n/)) {
+          if (!line.trim()) continue;
+          const record = decodeRow({ event_json: line, session_id: sessionId });
+          if (record?.message) records.push(record);
+        }
+      } catch { /* corrupt cold rows are skipped; hot rows remain readable */ }
+    }
     const columns = (db.prepare('PRAGMA table_info(transcript_events)').all() as Array<{ name?: unknown }>)
       .map(row => row.name).filter((name): name is string => typeof name === 'string');
     const selected = ['event_json', ...(columns.includes('event_zstd') ? ['event_zstd'] : [])];
