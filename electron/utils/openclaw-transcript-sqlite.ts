@@ -16,6 +16,12 @@ type SqliteDb = {
   prepare: (sql: string) => { all: (...params: unknown[]) => unknown[]; get: (...params: unknown[]) => unknown };
 };
 
+type TranscriptArchiveRow = {
+  archive_blob?: unknown;
+  encoding?: unknown;
+  archive_name?: unknown;
+};
+
 function decodeRow(row: Record<string, unknown>): SqliteTranscriptRecord | null {
   let raw: string | null = typeof row.event_json === 'string' ? row.event_json : null;
   if (!raw && row.event_json instanceof Uint8Array) raw = Buffer.from(row.event_json).toString('utf8');
@@ -48,12 +54,12 @@ export function readSqliteTranscriptRecords(db: SqliteDb, sessionKey: string): S
   for (const sessionId of sessionIds) {
     const archiveRows = (() => {
       try {
-        return db.prepare('SELECT archive_blob, encoding FROM session_transcript_archives WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as Array<{ archive_blob?: unknown; encoding?: unknown }>;
+        return db.prepare('SELECT archive_blob, encoding FROM session_transcript_archives WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as TranscriptArchiveRow[];
       } catch { return []; }
     })();
     const coldRows = (() => {
       try {
-        return db.prepare('SELECT archive_blob, archive_name FROM session_transcript_cold_archives WHERE session_id = ? ORDER BY archived_at ASC').all(sessionId) as Array<{ archive_blob?: unknown; archive_name?: unknown }>;
+        return db.prepare('SELECT archive_blob, archive_name FROM session_transcript_cold_archives WHERE session_id = ? ORDER BY archived_at ASC').all(sessionId) as TranscriptArchiveRow[];
       } catch { return []; }
     })();
     for (const archive of [...archiveRows, ...coldRows]) {
