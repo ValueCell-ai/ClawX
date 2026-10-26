@@ -111,6 +111,24 @@ describe('sessions API workspace summaries', () => {
     rmSync(testOpenClawConfigDir, { recursive: true, force: true });
   });
 
+  it('deletes and renames migrated SQLite sessions persistently without sessions.json', async () => {
+    const agentDir = join(testOpenClawDir, 'agents/main/agent');
+    mkdirSync(agentDir, { recursive: true });
+    const db = new DatabaseSync(join(agentDir, 'openclaw-agent.sqlite'));
+    db.exec('CREATE TABLE session_nodes(session_key TEXT PRIMARY KEY, current_session_id TEXT, label TEXT, updated_at INTEGER); CREATE TABLE transcript_events(session_id TEXT, seq INTEGER, event_json TEXT, PRIMARY KEY(session_id, seq));');
+    db.prepare('INSERT INTO session_nodes VALUES (?, ?, ?, ?)').run('agent:main:session-mutate', 'mutate-id', 'old', 1);
+    db.close();
+    const { createSessionsApi } = await import('@electron/services/sessions-api');
+    await expect(createSessionsApi().rename({ sessionKey: 'agent:main:session-mutate', label: 'new' })).resolves.toEqual({ success: true });
+    const renamed = new DatabaseSync(join(agentDir, 'openclaw-agent.sqlite'), { readOnly: true });
+    expect(renamed.prepare('SELECT label FROM session_nodes WHERE session_key=?').get('agent:main:session-mutate')?.label).toBe('new');
+    renamed.close();
+    await expect(createSessionsApi().delete({ sessionKey: 'agent:main:session-mutate' })).resolves.toEqual({ success: true });
+    const deleted = new DatabaseSync(join(agentDir, 'openclaw-agent.sqlite'), { readOnly: true });
+    expect(deleted.prepare('SELECT count(*) AS n FROM session_nodes WHERE session_key=?').get('agent:main:session-mutate')?.n).toBe(0);
+    deleted.close();
+  });
+
   it('loads transcript history from the state dir when the config path is elsewhere', async () => {
     seedTranscript('agent:main:session-state', [{
       role: 'assistant',
@@ -484,7 +502,7 @@ describe('sessions API workspace summaries', () => {
     });
   });
 
-  it('prefers the legacy sessions.json transcript when it still exists', async () => {
+  it('prefers authoritative SQLite over stale sessions.json when both exist', async () => {
     const sessionKey = 'agent:main:session-both';
     seedTranscript(sessionKey, [{
       role: 'user',
@@ -503,8 +521,8 @@ describe('sessions API workspace summaries', () => {
 
     expect(result.summaries?.[0]).toMatchObject({
       sessionKey,
-      firstUserText: 'Title from jsonl',
-      lastTimestamp: 5_000_000,
+      firstUserText: 'Title from sqlite',
+      lastTimestamp: 9_000_000,
     });
   });
 

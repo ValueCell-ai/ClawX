@@ -14,6 +14,7 @@ import {
   sweepSessionArtefacts,
 } from '../utils/session-files';
 import { isRecord } from './payload-utils';
+import { readSqliteTranscriptRecords, readSqliteTranscriptRecordsForAgent } from '../utils/openclaw-transcript-sqlite';
 
 const SAFE_SESSION_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const RECENT_TRANSCRIPT_INITIAL_READ_BYTES = 256 * 1024;
@@ -486,23 +487,6 @@ async function readJsonlTranscriptMessages(
   }
 }
 
-function readEventJsonText(value: unknown): string | null {
-  if (typeof value === 'string' && value.trim()) return value;
-  if (value instanceof Uint8Array) {
-    const text = Buffer.from(value).toString('utf8').trim();
-    return text || null;
-  }
-  return null;
-}
-
-const SQLITE_USER_MESSAGE_PROBE_LIMIT = 100;
-
-function parseTranscriptMessageRow(row: unknown): TranscriptMessage | null {
-  if (!isRecord(row)) return null;
-  const text = readEventJsonText(row.event_json);
-  return text ? parseMessageLine(text) : null;
-}
-
 /**
  * OpenClaw 2026.10 migrates conversation transcripts into
  * `agents/<agent>/agent/openclaw-agent.sqlite` and stops writing sessions.json.
@@ -513,36 +497,8 @@ function readSqliteTranscriptMessages(
   sessionKey: string,
 ): TranscriptMessage[] | null {
   try {
-    const node = db.prepare(
-      'SELECT current_session_id FROM session_nodes WHERE session_key = ?',
-    ).get(sessionKey) as { current_session_id?: unknown } | undefined;
-    const sessionId = typeof node?.current_session_id === 'string' ? node.current_session_id.trim() : '';
-    if (!sessionId) return null;
-
-    const userRows = db.prepare(
-      `SELECT event_json
-       FROM transcript_events
-       WHERE session_id = ?
-         AND json_extract(event_json, '$.type') = 'message'
-         AND json_extract(event_json, '$.message.role') = 'user'
-       ORDER BY seq ASC
-       LIMIT ?`,
-    ).all(sessionId, SQLITE_USER_MESSAGE_PROBE_LIMIT);
-    const lastRow = db.prepare(
-      `SELECT event_json
-       FROM transcript_events
-       WHERE session_id = ?
-         AND json_extract(event_json, '$.type') = 'message'
-       ORDER BY seq DESC
-       LIMIT 1`,
-    ).get(sessionId);
-
-    const messages = userRows.flatMap((row) => {
-      const message = parseTranscriptMessageRow(row);
-      return message ? [message] : [];
-    });
-    const lastMessage = parseTranscriptMessageRow(lastRow);
-    if (lastMessage && lastMessage.role !== 'user') messages.push(lastMessage);
+    const rows = readSqliteTranscriptRecords(db, sessionKey);
+    const messages = rows.flatMap((row) => row.type === 'message' && row.message ? [row.message] : []);
     return messages.length > 0 ? messages : null;
   } catch {
     return null;
@@ -603,8 +559,9 @@ async function loadSessionSummary(
   const parsed = parseSessionKey(sessionKey);
   if (!parsed) return empty;
 
-  const jsonlMessages = await readJsonlTranscriptMessages(parsed.agentId, sessionKey);
-  const messages = jsonlMessages ?? await readSqliteMessages(sessionKey).catch(() => null);
+  const sqliteMessages = await readSqliteMessages(sessionKey).catch(() => null);
+  const jsonlMessages = sqliteMessages ? null : await readJsonlTranscriptMessages(parsed.agentId, sessionKey);
+  const messages = sqliteMessages ?? jsonlMessages;
   if (!messages || messages.length === 0) return empty;
   return summarizeTranscriptMessages(sessionKey, messages, workspacePath);
 }
@@ -614,6 +571,10 @@ export async function loadSessionTranscriptByKey(sessionKey: string, limit: numb
   if (!parsed) return null;
 
   try {
+    const sqliteRecords = await readSqliteTranscriptRecordsForAgent(parsed.agentId, sessionKey);
+    if (sqliteRecords) {
+      return sqliteRecords.filter((record) => record.type === 'message' && record.message).slice(-limit).map((record) => record.message!);
+    }
     const sessionsDir = join(resolveOpenClawStateDir(), 'agents', parsed.agentId, 'sessions');
     const sessionsJson = await readSessionsJson(parsed.agentId);
     const transcriptPath = resolveSessionTranscriptPathByKey(sessionKey, sessionsDir, sessionsJson);
@@ -633,6 +594,8 @@ async function loadSessionTurnTimingsByKey(
   if (!parsed) return null;
 
   try {
+    const sqliteRecords = await readSqliteTranscriptRecordsForAgent(parsed.agentId, sessionKey);
+    if (sqliteRecords) return extractTranscriptTurnTimings(sqliteRecords.slice(-limit));
     const sessionsDir = join(resolveOpenClawStateDir(), 'agents', parsed.agentId, 'sessions');
     const sessionsJson = await readSessionsJson(parsed.agentId);
     const transcriptPath = resolveSessionTranscriptPathByKey(sessionKey, sessionsDir, sessionsJson);
@@ -642,12 +605,38 @@ async function loadSessionTurnTimingsByKey(
     // original timestamps needed to calculate a whole-turn duration. Read only bounded
     // transcript timing metadata here; this must never become a second history source.
     return extractTranscriptTurnTimings(readRecentTranscriptRecords(transcriptPath, limit));
-  } catch {
+  } catch (error) {
+    logger.debug(`[session:turnTimings] SQLite read failed: ${String(error)}`);
     return null;
   }
 }
 
-async function deleteSession(sessionKey: string): Promise<{ success: boolean; error?: string }> {
+type SessionsApiContext = { gatewayManager?: { rpc: <T>(method: string, params?: unknown, timeoutMs?: number) => Promise<T> } };
+
+async function mutateMigratedSessionDirectly(sessionKey: string, mutation: 'delete' | 'rename', label?: string): Promise<{ handled: boolean; success: boolean; error?: string }> {
+  const parsed = parseSessionKey(sessionKey);
+  if (!parsed) return { handled: false, success: false };
+  const databasePath = join(resolveOpenClawStateDir(), 'agents', parsed.agentId, 'agent', 'openclaw-agent.sqlite');
+  try { await access(databasePath); } catch { return { handled: false, success: false }; }
+  try {
+    const { DatabaseSync } = await import(/* @vite-ignore */ 'node:sqlite');
+    const db = new DatabaseSync(databasePath);
+    try {
+      db.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; BEGIN IMMEDIATE');
+      if (!db.prepare('SELECT session_key FROM session_nodes WHERE session_key = ?').get(sessionKey)) {
+        db.exec('ROLLBACK'); return { handled: true, success: true };
+      }
+      if (mutation === 'delete') db.prepare('DELETE FROM session_nodes WHERE session_key = ?').run(sessionKey);
+      else db.prepare('UPDATE session_nodes SET label = ?, updated_at = ? WHERE session_key = ?').run(label, Date.now(), sessionKey);
+      db.exec('COMMIT'); return { handled: true, success: true };
+    } catch (error) {
+      try { db.exec('ROLLBACK'); } catch { /* ignore */ }
+      return { handled: true, success: false, error: String(error) };
+    } finally { db.close(); }
+  } catch (error) { return { handled: true, success: false, error: String(error) }; }
+}
+
+async function deleteSession(sessionKey: string, ctx?: SessionsApiContext): Promise<{ success: boolean; error?: string }> {
   if (!sessionKey || !sessionKey.startsWith('agent:')) {
     return { success: false, error: `Invalid sessionKey: ${sessionKey}` };
   }
@@ -659,6 +648,18 @@ async function deleteSession(sessionKey: string): Promise<{ success: boolean; er
   if (!SAFE_SESSION_SEGMENT.test(agentId)) {
     return { success: false, error: `Invalid agentId: ${agentId}` };
   }
+
+  if (ctx?.gatewayManager) {
+    try {
+      const result = await ctx.gatewayManager.rpc<{ ok?: boolean; success?: boolean; error?: string }>('sessions.delete', { key: sessionKey, deleteTranscript: true });
+      if (result?.ok === true || result?.success === true) return { success: true };
+      return { success: false, error: result?.error || 'Gateway rejected session deletion' };
+    } catch (error) {
+      logger.warn(`[session:delete] Gateway mutation unavailable, using SQLite fallback: ${String(error)}`);
+    }
+  }
+  const migrated = await mutateMigratedSessionDirectly(sessionKey, 'delete');
+  if (migrated.handled) return { success: migrated.success, ...(migrated.error ? { error: migrated.error } : {}) };
 
   const sessionsDir = join(resolveOpenClawStateDir(), 'agents', agentId, 'sessions');
   const sessionsJsonPath = join(sessionsDir, 'sessions.json');
@@ -716,7 +717,7 @@ async function deleteSession(sessionKey: string): Promise<{ success: boolean; er
   return { success: true };
 }
 
-async function renameSession(sessionKey: string, label: string): Promise<{ success: boolean; error?: string }> {
+async function renameSession(sessionKey: string, label: string, ctx?: SessionsApiContext): Promise<{ success: boolean; error?: string }> {
   if (!sessionKey || !sessionKey.startsWith('agent:')) {
     return { success: false, error: `Invalid sessionKey: ${sessionKey}` };
   }
@@ -731,6 +732,18 @@ async function renameSession(sessionKey: string, label: string): Promise<{ succe
   if (!SAFE_SESSION_SEGMENT.test(agentId)) {
     return { success: false, error: `Invalid agentId in sessionKey: ${agentId}` };
   }
+
+  if (ctx?.gatewayManager) {
+    try {
+      const result = await ctx.gatewayManager.rpc<{ ok?: boolean; success?: boolean; error?: string }>('sessions.patch', { key: sessionKey, label: label.trim() });
+      if (result?.ok === true || result?.success === true) return { success: true };
+      return { success: false, error: result?.error || 'Gateway rejected session rename' };
+    } catch (error) {
+      logger.warn(`[session:rename] Gateway mutation unavailable, using SQLite fallback: ${String(error)}`);
+    }
+  }
+  const migrated = await mutateMigratedSessionDirectly(sessionKey, 'rename', label.trim());
+  if (migrated.handled) return { success: migrated.success, ...(migrated.error ? { error: migrated.error } : {}) };
 
   const sessionsJsonPath = join(resolveOpenClawStateDir(), 'agents', agentId, 'sessions', 'sessions.json');
   const fsP = await import('node:fs/promises');
@@ -761,9 +774,9 @@ async function renameSession(sessionKey: string, label: string): Promise<{ succe
   return { success: true };
 }
 
-export function createSessionsApi(): CompleteHostServiceRegistry['sessions'] {
+export function createSessionsApi(ctx: SessionsApiContext = {}): CompleteHostServiceRegistry['sessions'] {
   return {
-    delete: async (payload) => deleteSession(getSessionKey(payload)),
+    delete: async (payload) => deleteSession(getSessionKey(payload), ctx),
     rename: async (payload) => {
       const body = isRecord(payload) ? payload as SessionPayload : {};
       const sessionKey = getSessionKey(payload);
@@ -771,7 +784,7 @@ export function createSessionsApi(): CompleteHostServiceRegistry['sessions'] {
       if (typeof label !== 'string') {
         throw new Error('Label cannot be empty');
       }
-      return renameSession(sessionKey, label);
+      return renameSession(sessionKey, label, ctx);
     },
     summaries: async (payload) => {
       const body = isRecord(payload) ? payload as SessionPayload : {};

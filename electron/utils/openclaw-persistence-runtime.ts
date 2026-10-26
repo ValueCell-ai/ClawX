@@ -7,10 +7,12 @@ import { createRequire } from 'node:module';
 import { readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { getOpenClawResolvedDir } from './paths';
+import * as paths from './paths';
 
 function loadSchemaHelper<T>(name: string): T {
-  const root = getOpenClawResolvedDir();
+  const root = typeof paths.getOpenClawResolvedDir === 'function'
+    ? paths.getOpenClawResolvedDir()
+    : join(process.cwd(), 'node_modules/openclaw');
   const requireRuntime = createRequire(join(root, 'package.json'));
   const candidates = readdirSync(join(root, 'dist'))
     .filter(file => /^openclaw-agent-db-schema-helpers-.*\.mjs$/.test(file));
@@ -24,7 +26,9 @@ function loadSchemaHelper<T>(name: string): T {
 
 /** Public SDK initializer; only called for a fresh, unpublished database. */
 export function initializeBundledAgentDatabase(db: DatabaseSync, pathname: string, agentId: string): void {
-  const root = getOpenClawResolvedDir();
+  const root = typeof paths.getOpenClawResolvedDir === 'function'
+    ? paths.getOpenClawResolvedDir()
+    : join(process.cwd(), 'node_modules/openclaw');
   const requireRuntime = createRequire(join(root, 'package.json'));
   const sdk = requireRuntime('openclaw/plugin-sdk/sqlite-runtime') as {
     ensureOpenClawAgentDatabaseSchema: (db: DatabaseSync, options: Record<string, unknown>) => void;

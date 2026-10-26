@@ -27,8 +27,20 @@ A concurrently runtime-created database is never overwritten. No hand-written v1
 schema is created. Agent provisioning imports inherited credentials, and the host
 create request awaits provider sync instead of acknowledging before auth is ready.
 
+## SQLite consumers
+
+`electron/utils/openclaw-transcript-sqlite.ts` is the single bounded reader used by
+session summaries, history supplements, turn timings and token usage. It decodes
+`event_zstd`, uses the current SQLite session mapping first, and only falls back to
+JSONL when no SQLite database exists. Session deletion/rename uses Gateway
+`sessions.delete`/`sessions.patch` when connected and a guarded SQLite fallback for
+offline maintenance/tests; it does not claim success after a failed mutation.
+Channel target discovery and Cron account recovery likewise prefer SQLite
+`entry_json` and do not let stale JSONL override a migrated agent.
+
 Validation: focused snapshot/readiness tests (14); auth, agent configuration and
-host-service suites (209); real Electron UI agent creation verifies schema 25,
-inherited credentials and SQLite integrity (1). These do not replace live-model
-chat or platform upgrade certification. The three README upgrade sections remain
-accurate; this repair does not add a new user workflow.
+host-service suites (209); consumer suites (39); review migration consumers (15);
+real Electron UI agent creation verifies schema 25, inherited credentials and
+SQLite integrity (1). These do not replace live-model chat or platform upgrade
+certification. The three README upgrade sections remain accurate; this repair does
+not add a new user workflow.

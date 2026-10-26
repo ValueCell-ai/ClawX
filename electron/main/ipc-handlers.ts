@@ -176,7 +176,7 @@ function registerTypedHostHandlers(
       stagedAttachments,
     }),
     media: createMediaApi({ attachmentAccess }),
-    sessions: createSessionsApi(),
+    sessions: createSessionsApi({ gatewayManager }),
     chat: createChatApi({ gatewayManager, mainWindow, acpSessionAccessRegistry }),
     cron: createCronApi({ gatewayManager }),
     skills: createSkillsApi({ clawHubService, gatewayManager }),

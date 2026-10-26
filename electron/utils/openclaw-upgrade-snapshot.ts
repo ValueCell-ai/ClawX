@@ -285,3 +285,7 @@ export async function removeOpenClawUpgradeSnapshot(
   await rm(snapshotDir, { recursive: true, force: true });
   return { status: 'removed', snapshotDir };
 }
+
+/** @deprecated Compatibility alias for tests/extensions from the pre-10.5 branch. */
+export const ensureOpenClaw2026_7_1UpgradeSnapshot = ensureOpenClawUpgradeSnapshot;
+export const removeOpenClaw2026_7_1UpgradeSnapshot = removeOpenClawUpgradeSnapshot;
