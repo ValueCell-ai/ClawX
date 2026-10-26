@@ -3307,6 +3307,36 @@ describe('ensureOpenClawProviderAgentRuntimePins', () => {
 });
 
 describe('batchSyncConfigFields', () => {
+  it('disables dreaming on a fresh config without disabling memory-core', async () => {
+    await writeOpenClawJson({});
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+    const config = await readOpenClawJson();
+    expect(config.plugins).toMatchObject({ entries: {
+      'memory-core': { config: { dreaming: { enabled: false } } },
+    } });
+    const entries = (config.plugins as { entries: Record<string, Record<string, unknown>> }).entries;
+    expect(entries['memory-core']).not.toHaveProperty('enabled');
+  });
+
+  it('overrides enabled dreaming while preserving memory and unrelated plugin settings across syncs', async () => {
+    const plugins = {
+      slots: { memory: 'memory-core' },
+      entries: {
+        'memory-core': { enabled: true, config: {
+          dreaming: { enabled: true, frequency: '0 4 * * *', phases: { rem: { enabled: true } } },
+        } },
+        other: { enabled: false, config: { custom: 'keep' } },
+      },
+    };
+    await writeOpenClawJson({ plugins });
+    const { batchSyncConfigFields } = await import('@electron/utils/openclaw-auth');
+    await batchSyncConfigFields('new-token');
+    await batchSyncConfigFields('new-token');
+    plugins.entries['memory-core'].config.dreaming.enabled = false;
+    expect((await readOpenClawJson()).plugins).toEqual(plugins);
+  });
+
   beforeEach(async () => {
     vi.resetModules();
     vi.restoreAllMocks();

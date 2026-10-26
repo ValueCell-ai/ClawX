@@ -64,6 +64,7 @@ conditionalProfiles:
 requiredRules:
   - openclaw-config-delivery
   - openclaw-upgrade-persistence
+  - clawx-system-automations
   - renderer-main-boundary
   - backend-communication-boundary
   - api-client-transport-policy
@@ -115,6 +116,8 @@ Typed generic Gateway RPC requests are validated by `electron/services/gateway-a
 Channel/plugin migration behavior is also part of this scenario when ClawX rewrites OpenClaw config before Gateway launch. Upgrades must preserve single-owner channel registration for migrated plugin-backed channels such as Feishu/Lark. A desktop Chat session has no channel account context; a bundled WeCom business tool may fall back only when exactly one WeCom account is configured and must reject an ambiguous multi-account selection.
 
 ClawX's prelaunch config sanitizer also owns desktop tool policy. It must keep `web_search` in both the agent-level and Gateway-level deny lists without replacing existing deny entries or disabling managed browser automation and `web_fetch`. It must also deny the agent-facing `gateway`, `nodes`, `create_goal`, `get_goal`, and `update_goal` tools at both layers while preserving application-owned Gateway RPCs. Messaging, session orchestration, and agent discovery tools remain available unless another explicit policy denies them.
+
+ClawX disables memory-core dreaming during prelaunch config synchronization while preserving memory search and existing memory data. Main excludes system-owned heartbeat and managed dreaming jobs from the user scheduled-task list before repairs and projection; same-name user jobs remain visible. Heartbeat execution is not disabled. See `harness/specs/rules/clawx-system-automations.md`.
 
 Scheduled-task history is Main-owned backend data. Current OpenClaw versions must be queried through the Gateway `cron.runs` RPC; direct run-log file reads are allowed only as a compatibility fallback for older file-backed runtimes. When a run's bounded summary ends with OpenClaw's truncation ellipsis, Main may recover the complete final assistant reply from the run transcript identified by that `cron.runs` entry, but only when the transcript reply is longer and shares the entire summary prefix. When a cron base session has no ACP replay, Renderer may project that typed host result into a generation-scoped, in-memory historical ACP timeline, but must not replace or duplicate non-empty ACP replay.
 

@@ -2921,6 +2921,20 @@ export async function batchSyncConfigFields(token: string): Promise<void> {
       compactionLog = '[batch-sync] Synchronized ClawX-managed agents.defaults.compaction settings';
     }
 
+    // ── ClawX policy: no background dreaming ──
+    // Keep memory search and existing memory files intact. The bundled runtime
+    // reconciles/removes its managed dreaming job when this switch is false.
+    const plugins = isPlainRecord(config.plugins) ? config.plugins : {};
+    const entries = isPlainRecord(plugins.entries) ? plugins.entries : {};
+    const memoryCore = isPlainRecord(entries['memory-core']) ? entries['memory-core'] : {};
+    const memoryConfig = isPlainRecord(memoryCore.config) ? memoryCore.config : {};
+    const dreaming = isPlainRecord(memoryConfig.dreaming) ? memoryConfig.dreaming : {};
+    memoryConfig.dreaming = { ...dreaming, enabled: false };
+    memoryCore.config = memoryConfig;
+    entries['memory-core'] = memoryCore;
+    plugins.entries = entries;
+    config.plugins = plugins;
+
     // ── Memory search default ──
     // OpenClaw supports provider=none as an explicit FTS-only mode.
     // Migrate ClawX's exact legacy disabled default once, and otherwise seed
