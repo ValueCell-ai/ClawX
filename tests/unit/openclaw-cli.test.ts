@@ -255,18 +255,15 @@ describe('getOpenClawEmbeddedForkSpec', () => {
     });
   });
 
-  it('falls back to Electron embedded Node when PATH Node cannot be validated', async () => {
+  it('does not launch Electron when no supported development Node is available', async () => {
     const execPath = '/Users/zhuoxu/workspace/ClawX/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron';
     setPlatform('darwin');
     setExecPath(execPath);
     process.env.PATH = '/opt/node/bin:/usr/bin';
-    process.env.ELECTRON_RUN_AS_NODE = '1';
     mockExistsSync.mockImplementation((p: string) => p === '/opt/node/bin/node');
 
     const { getOpenClawEmbeddedForkSpec } = await import('@electron/utils/openclaw-cli');
-    const spec = getOpenClawEmbeddedForkSpec(['acp']);
-
-    expect(spec.options.execPath).toBe(execPath);
+    expect(() => getOpenClawEmbeddedForkSpec(['acp'])).toThrow('Supported Node executable not found');
   });
 
   it('fails packaged macOS embedded launch when the Helper executable is missing', async () => {
