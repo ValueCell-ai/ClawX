@@ -60,6 +60,7 @@ import { browserOAuthManager } from '../utils/browser-oauth';
 import { whatsAppLoginManager } from '../utils/whatsapp-login';
 import { cancelDingTalkDwsOAuth } from '../utils/dingtalk-dws';
 import { syncAllProviderAuthToRuntime } from '../services/providers/provider-runtime-sync';
+import { ensureOpenClawUpgradeSnapshot } from '../utils/openclaw-upgrade-snapshot';
 
 const WINDOWS_APP_USER_MODEL_ID = 'app.clawx.desktop';
 const isE2EMode = process.env.CLAWX_E2E === '1';
@@ -313,6 +314,10 @@ async function initialize(): Promise<void> {
   logger.debug(
     `Runtime: platform=${process.platform}/${process.arch}, electron=${process.versions.electron}, node=${process.versions.node}, packaged=${app.isPackaged}, pid=${process.pid}, ppid=${process.ppid}`
   );
+
+  // Before extensions, auth sync, bootstrap repairs or any Gateway startup writes.
+  // Failure aborts initialization: never migrate without a recoverable snapshot.
+  if (!isE2EMode) await ensureOpenClawUpgradeSnapshot();
 
   // Older or external Windows tooling can rewrite JSON as UTF-8 with BOM.
   // Repair those files before settings, provider stores, or extensions parse them.

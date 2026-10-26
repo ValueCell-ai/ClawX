@@ -136,6 +136,10 @@ pnpm dev
 3. **技能包** – 选择适用于常见场景的预配置技能
 4. **验证** – 在进入主界面前测试你的配置
 
+### 升级已有 OpenClaw 数据
+
+ClawX 会在启动写入前，在 OpenClaw 状态目录下保留私有快照 `backups/clawx-openclaw-2026.10.5-pre-migration`。快照包含旧会话文件、认证和媒体，并通过 SQLite 在线备份纳入已提交的 WAL 数据。无法完成快照时停止启动；Gateway 就绪不会自动删除快照。请在确认升级正常后再手动删除以回收空间。快照包含密钥，请勿分享。运行时二进制、符号链接目标和外部工作区不在快照范围内，手动回退前请另行备份。
+
 ### 本机 Computer Use
 
 ClawX 内置 CUA SDK 和 Driver **0.37.0**。在 macOS 和 Windows 上，Main 的嵌入式 daemon 选项和 Gateway 启动的 CLI 环境均设置 `CUA_DRIVER_RS_TELEMETRY_ENABLED=false`，关闭 CUA 产品遥测。SDK 从 0.22.0 起允许此环境变量，取代了 0.21.0 仅关闭 CLI 遥测的临时方案。此设置不会修改系统环境变量、独立 CUA 安装的设置或 ClawX 自身的遥测偏好。

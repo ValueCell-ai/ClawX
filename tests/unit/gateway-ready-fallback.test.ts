@@ -28,7 +28,7 @@ vi.mock('@electron/utils/config', () => ({
 }));
 
 vi.mock('@electron/utils/openclaw-upgrade-snapshot', () => ({
-  removeOpenClaw2026_7_1UpgradeSnapshot: removeUpgradeSnapshotMock,
+  removeOpenClawUpgradeSnapshot: removeUpgradeSnapshotMock,
 }));
 
 vi.mock('@electron/gateway/startup-orchestrator', () => ({
@@ -111,7 +111,7 @@ describe('GatewayManager gatewayReady fallback', () => {
     const readyUpdate = statusUpdates.find((u) => u.gatewayReady === true);
     expect(readyUpdate).toBeDefined();
     expect(rpcSpy).toHaveBeenCalledWith('system-presence', {}, 5_000);
-    expect(removeUpgradeSnapshotMock).toHaveBeenCalledOnce();
+    expect(removeUpgradeSnapshotMock).not.toHaveBeenCalled();
   });
 
   it('keeps gatewayReady=false when fallback RPC router probe fails', async () => {

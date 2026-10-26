@@ -63,6 +63,7 @@ conditionalProfiles:
       - Voice dictation microphone permission detection or system-settings guidance changes
 requiredRules:
   - openclaw-config-delivery
+  - openclaw-upgrade-persistence
   - renderer-main-boundary
   - backend-communication-boundary
   - api-client-transport-policy

@@ -39,7 +39,7 @@ import { safeRmSync } from '../utils/safe-fs';
 import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
 import { readImageGenerationModelValue } from '../utils/openclaw-media-models';
 import {
-  ensureOpenClaw2026_7_1UpgradeSnapshot,
+  ensureOpenClawUpgradeSnapshot,
   quarantineLegacyUpdateCheckState,
 } from '../utils/openclaw-upgrade-snapshot';
 import { stripSystemdSupervisorEnv, withCuaConnectionFileEnv } from './config-sync-env';
@@ -690,15 +690,9 @@ export async function prepareGatewayLaunchContext(port: number): Promise<Gateway
   }
 
   await measureAsync(timingsMs, 'upgradeSnapshotMs', async () => {
-    try {
-      const snapshot = await ensureOpenClaw2026_7_1UpgradeSnapshot();
-      if (snapshot.status === 'created') {
-        logger.info(`[upgrade] Created OpenClaw pre-migration snapshot (${snapshot.files.length} files): ${snapshot.snapshotDir}`);
-      }
-    } catch (error) {
-      // OpenClaw also maintains migration-specific backups. Keep startup
-      // available if the additional ClawX safety snapshot cannot be written.
-      logger.warn('[upgrade] Failed to create OpenClaw pre-migration snapshot:', error);
+    const snapshot = await ensureOpenClawUpgradeSnapshot();
+    if (snapshot.status === 'created') {
+      logger.info(`[upgrade] Created OpenClaw pre-migration snapshot (${snapshot.files.length} files): ${snapshot.snapshotDir}`);
     }
   });
 

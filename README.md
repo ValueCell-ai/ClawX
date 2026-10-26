@@ -140,6 +140,10 @@ When you launch ClawX for the first time, the **Setup Wizard** will guide you th
 
 The wizard preselects your system language when it is supported, and falls back to English otherwise.
 
+### Upgrading existing OpenClaw data
+
+Before startup writes, ClawX retains a private `backups/clawx-openclaw-2026.10.5-pre-migration` snapshot under the OpenClaw state directory. It includes legacy session files, credentials and media, and uses SQLite online backups to include committed WAL data. Startup stops if the snapshot cannot be completed; Gateway readiness does not delete it. Keep it until you have verified the upgrade, then remove it manually to reclaim space. It contains secrets: do not share it. Runtime binaries, symlink targets and external workspaces are not included; back these up separately before a manual rollback.
+
 ### Local Computer Use
 
 ClawX bundles CUA SDK and Driver **0.37.0**. On macOS and Windows, it disables CUA product telemetry with `CUA_DRIVER_RS_TELEMETRY_ENABLED=false` in both Main's embedded daemon options and Gateway-launched CLI environments. The SDK allowlist supports this override since 0.22.0, superseding the 0.21.0 CLI-only workaround. This does not change system-wide environment variables, standalone CUA settings, or ClawX's own telemetry preference.
