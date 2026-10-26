@@ -50,6 +50,19 @@ vi.mock('@electron/utils/paths', async () => {
   };
 });
 
+// These config tests intentionally point paths at fake runtime package manifests.
+// Persistence still uses the real pinned SDK; its full contract has dedicated tests.
+vi.mock('@electron/utils/openclaw-persistence-runtime', async () => {
+  const { createRequire } = await import('node:module');
+  const { resolve } = await import('node:path');
+  const sdk = createRequire(import.meta.url)('openclaw/plugin-sdk/sqlite-runtime');
+  return {
+    initializeBundledAgentDatabase: (db: unknown, pathname: string, agentId: string) => {
+      sdk.ensureOpenClawAgentDatabaseSchema(db, { agentId, path: pathname, register: false, env: { OPENCLAW_STATE_DIR: resolve(pathname, '../../../..') } });
+    },
+  };
+});
+
 const CLAWX_DESKTOP_TOOL_DENY = [
   'skill_workshop',
   'web_search',

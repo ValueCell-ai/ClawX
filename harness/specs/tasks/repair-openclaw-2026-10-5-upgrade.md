@@ -38,6 +38,7 @@ requiredTests:
   - tests/unit/openclaw-auth-sqlite.test.ts
   - tests/unit/sessions-api-workspace.test.ts
   - tests/unit/host-services.test.ts
+  - tests/e2e/agent-creation-upgrade.spec.ts
 acceptance:
   - Snapshot precedes startup writes, uses SQLite online backup including committed WAL, includes legacy sessions and migration assets, fails closed, and survives Gateway readiness.
   - Schema ownership stays with OpenClaw; reject future writes and preserve intermediate migration states.

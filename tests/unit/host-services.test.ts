@@ -1636,6 +1636,23 @@ describe('host services', () => {
     expect(gatewayManager.restart).not.toHaveBeenCalled();
   });
 
+  it('does not report agent creation success before credentials finish syncing', async () => {
+    createAgentMock.mockResolvedValue({ agents: [{ id: 'writer' }] });
+    const sync = await import('@electron/services/providers/provider-runtime-sync');
+    let finish!: () => void;
+    vi.mocked(sync.syncAllProviderAuthToRuntime).mockReturnValueOnce(new Promise<void>(resolve => { finish = resolve; }));
+    const { createAgentsApi } = await import('@electron/services/agents-api');
+    let completed = false;
+    const request = createAgentsApi({ gatewayManager: {} as never }).create({ name: 'Writer' }).then(() => { completed = true; });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(completed).toBe(false);
+    finish();
+    await request;
+    expect(completed).toBe(true);
+    vi.mocked(sync.syncAllProviderAuthToRuntime).mockRejectedValueOnce(new Error('credential sync failed'));
+    await expect(createAgentsApi({ gatewayManager: {} as never }).create({ name: 'Writer' })).rejects.toThrow('credential sync failed');
+  });
+
   it('removes agent channel bindings without scheduling lifecycle work', async () => {
     listAgentsSnapshotMock
       .mockResolvedValueOnce({

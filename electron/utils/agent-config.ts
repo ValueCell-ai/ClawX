@@ -9,6 +9,7 @@ import * as logger from './logger';
 import { toUiChannelType } from './channel-alias';
 import { ensureClawXIdentityFile } from './openclaw-workspace';
 import { resolveModelContextWindow } from './openclaw-compaction';
+import { initializeAgentAuthDatabase, migrateAuthProfilesJsonToSqliteIfNeeded } from './openclaw-auth-sqlite';
 
 const MAIN_AGENT_ID = 'main';
 const MAIN_AGENT_NAME = 'Main Agent';
@@ -539,6 +540,8 @@ async function provisionAgentFilesystem(
   if (targetAgentDir !== sourceAgentDir) {
     await copyRuntimeFiles(sourceAgentDir, targetAgentDir);
   }
+  initializeAgentAuthDatabase(agent.id);
+  await migrateAuthProfilesJsonToSqliteIfNeeded(agent.id);
 }
 
 export function resolveAccountIdForAgent(agentId: string): string {

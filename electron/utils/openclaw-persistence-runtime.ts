@@ -5,7 +5,7 @@
  */
 import { createRequire } from 'node:module';
 import { readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { getOpenClawResolvedDir } from './paths';
 
@@ -20,6 +20,19 @@ function loadSchemaHelper<T>(name: string): T {
     if (fn) return fn as T;
   }
   throw new Error(`Bundled OpenClaw persistence contract missing: ${name}`);
+}
+
+/** Public SDK initializer; only called for a fresh, unpublished database. */
+export function initializeBundledAgentDatabase(db: DatabaseSync, pathname: string, agentId: string): void {
+  const root = getOpenClawResolvedDir();
+  const requireRuntime = createRequire(join(root, 'package.json'));
+  const sdk = requireRuntime('openclaw/plugin-sdk/sqlite-runtime') as {
+    ensureOpenClawAgentDatabaseSchema: (db: DatabaseSync, options: Record<string, unknown>) => void;
+  };
+  sdk.ensureOpenClawAgentDatabaseSchema(db, {
+    agentId, path: pathname, register: false,
+    env: { ...process.env, OPENCLAW_STATE_DIR: resolve(pathname, '../../../..') },
+  });
 }
 
 export function getBundledAgentSchema(version: number): string {

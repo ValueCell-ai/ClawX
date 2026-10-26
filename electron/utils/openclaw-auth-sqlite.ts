@@ -2,60 +2,20 @@
  * OpenClaw 2026.6+ persists agent auth in openclaw-agent.sqlite.
  * ClawX historically wrote auth-profiles.json only; gateway runtime reads SQLite.
  */
-import { chmodSync, existsSync, mkdirSync } from 'fs';
+import { chmodSync, existsSync, linkSync, mkdirSync, rmSync } from 'fs';
+import { randomUUID } from 'node:crypto';
 import { access, readFile } from 'fs/promises';
 import { constants } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { DatabaseSync } from 'node:sqlite';
-import { assertBundledAgentStructure } from './openclaw-persistence-runtime';
+import { assertBundledAgentStructure, initializeBundledAgentDatabase } from './openclaw-persistence-runtime';
 
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
 const AUTH_SQLITE_FILENAME = 'openclaw-agent.sqlite';
 const PRIMARY_ROW_KEY = 'primary';
-const SCHEMA_VERSION = 1;
 // Admission ceiling, never a substitute for migrating a database's structure.
 const OPENCLAW_OWNED_AGENT_SCHEMA_VERSION = 25;
-
-const OPENCLAW_AGENT_SCHEMA_SQL = `CREATE TABLE IF NOT EXISTS schema_meta (
-  meta_key TEXT NOT NULL PRIMARY KEY,
-  role TEXT NOT NULL,
-  schema_version INTEGER NOT NULL,
-  agent_id TEXT,
-  app_version TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS cache_entries (
-  scope TEXT NOT NULL,
-  key TEXT NOT NULL,
-  value_json TEXT,
-  blob BLOB,
-  expires_at INTEGER,
-  updated_at INTEGER NOT NULL,
-  PRIMARY KEY (scope, key)
-);
-
-CREATE INDEX IF NOT EXISTS idx_agent_cache_expiry
-  ON cache_entries(scope, expires_at, key)
-  WHERE expires_at IS NOT NULL;
-
-CREATE INDEX IF NOT EXISTS idx_agent_cache_updated
-  ON cache_entries(scope, updated_at DESC, key);
-
-CREATE TABLE IF NOT EXISTS auth_profile_store (
-  store_key TEXT NOT NULL PRIMARY KEY,
-  store_json TEXT NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS auth_profile_state (
-  state_key TEXT NOT NULL PRIMARY KEY,
-  state_json TEXT NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-`;
 
 export interface PersistedAuthProfileCredential {
   type: string;
@@ -148,28 +108,28 @@ function repairKnownClobberedSchema(db: DatabaseSync, agentId: string, sqlitePat
   }
 }
 
-function ensureDatabaseSchema(db: DatabaseSync, agentId: string): void {
-  const userVersion = readUserVersion(db);
-  if (userVersion > 0) {
-    assertAuthWriteVersion(db, agentId);
-    return; // Existing schemas, metadata and indexes belong to OpenClaw.
+/** Publish a complete runtime-owned schema atomically, never a skeletal v1 DB. */
+export function initializeAgentAuthDatabase(agentId: string): void {
+  const sqlitePath = getAuthProfilesSqlitePath(agentId);
+  if (existsSync(sqlitePath)) return;
+  ensureAgentAuthDir(agentId);
+  const staged = `${sqlitePath}.init-${randomUUID()}.sqlite`;
+  try {
+    const db = new DatabaseSync(staged);
+    try {
+      initializeBundledAgentDatabase(db, staged, agentId);
+    } finally {
+      db.close(); // checkpoint WAL before publishing the standalone file
+    }
+    tightenDatabasePermissions(staged);
+    try {
+      linkSync(staged, sqlitePath); // exclusive publication; do not replace a runtime-created DB
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    }
+  } finally {
+    for (const suffix of ['', '-wal', '-shm']) rmSync(`${staged}${suffix}`, { force: true });
   }
-  db.exec(OPENCLAW_AGENT_SCHEMA_SQL);
-
-  if (userVersion === 0) {
-    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION};`);
-  }
-  const now = Date.now();
-  db.prepare(`
-    INSERT INTO schema_meta (
-      meta_key, role, schema_version, agent_id, app_version, created_at, updated_at
-    ) VALUES (?, 'agent', ?, ?, NULL, ?, ?)
-    ON CONFLICT(meta_key) DO UPDATE SET
-      role = excluded.role,
-      schema_version = excluded.schema_version,
-      agent_id = excluded.agent_id,
-      updated_at = excluded.updated_at
-  `).run(PRIMARY_ROW_KEY, SCHEMA_VERSION, agentId, now, now);
 }
 
 function tightenDatabasePermissions(sqlitePath: string): void {
@@ -262,14 +222,14 @@ function hasPersistedProfiles(store: PersistedAuthProfilesStore | null | undefin
 }
 
 function openAgentDatabase(agentId: string, sqlitePath: string): DatabaseSync {
-  ensureAgentAuthDir(agentId);
+  initializeAgentAuthDatabase(agentId);
   const db = new DatabaseSync(sqlitePath);
   db.exec('PRAGMA synchronous = NORMAL;');
   db.exec('PRAGMA busy_timeout = 5000;');
   db.exec('PRAGMA foreign_keys = ON;');
   try {
     repairKnownClobberedSchema(db, agentId, sqlitePath);
-    ensureDatabaseSchema(db, agentId);
+    assertAuthWriteVersion(db, agentId);
     return db;
   } catch (error) {
     db.close();

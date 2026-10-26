@@ -19,5 +19,16 @@ The private upstream structural helper is isolated in
 `electron/utils/openclaw-persistence-runtime.ts` and tested against the installed
 pinned runtime, rather than duplicating its schema or relying on hashed filenames.
 
-Validation: focused snapshot/readiness tests (14), auth ownership tests using
-upstream v16/v25 schemas (8). These do not replace platform upgrade certification.
+## Fresh agent initialization
+
+New databases are initialized by the public bundled `plugin-sdk/sqlite-runtime`
+initializer in a private staging file, then published with an exclusive hard link.
+A concurrently runtime-created database is never overwritten. No hand-written v1
+schema is created. Agent provisioning imports inherited credentials, and the host
+create request awaits provider sync instead of acknowledging before auth is ready.
+
+Validation: focused snapshot/readiness tests (14); auth, agent configuration and
+host-service suites (209); real Electron UI agent creation verifies schema 25,
+inherited credentials and SQLite integrity (1). These do not replace live-model
+chat or platform upgrade certification. The three README upgrade sections remain
+accurate; this repair does not add a new user workflow.

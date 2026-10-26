@@ -4,7 +4,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getBundledAgentSchema } from '@electron/utils/openclaw-persistence-runtime';
+import { assertBundledAgentStructure, getBundledAgentSchema } from '@electron/utils/openclaw-persistence-runtime';
 const { testHome } = vi.hoisted(() => ({ testHome: `/tmp/clawx-auth-sqlite-${Math.random().toString(36).slice(2)}` }));
 vi.mock('os', async () => {
   const actual = await vi.importActual<typeof import('os')>('os');
@@ -45,6 +45,17 @@ describe('OpenClaw auth SQLite ownership', () => {
     await saveProviderKeyToOpenClaw('custom', 'synthetic-key', 'main');
     expect(readAuthProfilesFromSqlite('main')?.profiles['custom:default'].key).toBe('synthetic-key');
     expect(JSON.parse(await readFile(join(dbPath(), '../auth-profiles.json'), 'utf8')).profiles['custom:default'].key).toBe('synthetic-key');
+  });
+  it('creates a complete current schema immediately usable by the bundled runtime', async () => {
+    const { writeAuthProfilesToSqlite, initializeAgentAuthDatabase } = await import('@electron/utils/openclaw-auth-sqlite');
+    writeAuthProfilesToSqlite(store, 'main');
+    expect(inspect().version).toBe(25);
+    const db = new DatabaseSync(dbPath(), { readOnly: true });
+    try { expect(() => assertBundledAgentStructure(db, dbPath(), 25)).not.toThrow(); }
+    finally { db.close(); }
+    const before = await readFile(dbPath());
+    initializeAgentAuthDatabase('main');
+    expect(await readFile(dbPath())).toEqual(before);
   });
   it('does not modify schema metadata while writing to a current database', async () => {
     await seed(25);
