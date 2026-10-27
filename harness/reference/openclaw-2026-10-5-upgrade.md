@@ -240,11 +240,55 @@ Records that differ only in `installedAt` are not rewritten. Existing
 `acceptedSurface*` capability consent is preserved, because OpenClaw
 re-checks it against the declared surface hash.
 
+## Capability consent for ClawX mirrors
+
 Path-owned ClawX mirrors (DingTalk, WeCom, Feishu, QQ Bot, the OpenAI image
-relay) are never `trustedOfficialInstall`. `openclaw plugins list` therefore
-reports a `requires capability consent` warning for them until the user
-accepts with `openclaw plugins enable <id> --accept-capabilities`. The warning
-comes from the status snapshot only, and the Gateway still loads the plugin.
+relay) are never `trustedOfficialInstall`. Without an accepted surface,
+`openclaw plugins list` reports `requires capability consent` for each of them.
+The warning comes from the status snapshot only, and the Gateway still loads
+the plugin. The npm-recorded official mirrors (Discord, WhatsApp, Weixin) are
+trusted and never warn.
+
+The accepted surface hash is computed from OpenClaw's normalized manifest
+metadata, not from the raw `openclaw.plugin.json`. For example, WeCom's
+accepted tools include `wecom_mcp`, which its manifest does not declare. No
+public OpenClaw export or read-only CLI output reproduces that surface:
+`plugins list --json` is a display projection without skills, and
+`plugins inspect --json` takes about 60s. ClawX therefore never writes the
+acceptance fields itself.
+
+`electron/utils/plugin-capability-consent.ts` runs
+`openclaw plugins enable <ids...> --accept-capabilities` in prelaunch, after
+install records are final and before Gateway start. A running Gateway would
+apply the change through `plugins.setEnabled` and its runtime lifecycle, which
+can restart the channel.
+
+- **Scope.** The CLI runs only for ClawX path-owned mirrors that are installed,
+  recorded at the ClawX mirror path, and explicitly enabled and allowed in
+  config. `plugins enable` must never turn on a plugin the user left off.
+- **Cost.** Each id costs a full metadata scan, config write, and registry
+  refresh, about 9s on Apple Silicon (46s for all five). ClawX caches a
+  per-plugin fingerprint (OpenClaw version plus record version, install path,
+  and `installedAt`) in `plugin-capability-consent-cache.json` under userData.
+  The CLI runs again only when a mirror is installed or upgraded, or when the
+  runtime changes. The cached path takes about 10ms.
+- **Failures.** The CLI stops at the first failing id, so a non-zero batch is
+  retried one id at a time. A timeout is not retried. Each fingerprint is
+  attempted once, so a persistent failure leaves only the status warning and
+  does not slow every launch.
+- **Config side effects.** OpenClaw rewrites `openclaw.json` through its own
+  writer. It moves the accepted `plugins.entries` keys to the end, adds `meta`,
+  and rotates `.bak` files. Allowlists are preserved in CLI mode.
+
+Evidence from a synthetic OpenClaw 2026.10.5 home with all ClawX mirrors
+installed through ClawX's own install code:
+
+1. The five path-owned plugins reported consent warnings.
+2. One prelaunch call recorded acceptance for all five in 46s, and the second
+   launch was a cache hit.
+3. A ClawX relaunch that re-synced records kept the acceptance.
+4. `config validate` stayed valid, and the Gateway reached `ready` with no
+   consent diagnostics.
 
 ## Channel plugin migration for 0.6.1 upgrades
 

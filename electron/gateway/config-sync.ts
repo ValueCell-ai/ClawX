@@ -39,6 +39,7 @@ import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
 import { ensureDingTalkDwsInstalled, resolveDingTalkDwsBinDir } from '../utils/dingtalk-dws';
 import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, removeLegacyOfficialDingTalkExtension, resolvePluginNpmPackagePath } from '../utils/plugin-install';
+import { ensureClawXPluginCapabilityConsent } from '../utils/plugin-capability-consent';
 import { safeRmSync } from '../utils/safe-fs';
 import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
 import { readImageGenerationModelValue } from '../utils/openclaw-media-models';
@@ -591,6 +592,17 @@ export async function syncGatewayConfigBeforeLaunch(
     });
   } catch (err) {
     logger.warn('Failed to auto-upgrade plugins:', err);
+  }
+
+  // Runs offline before Gateway start: with a Gateway up, the CLI would apply
+  // the change through the running runtime and restart the channel.
+  try {
+    await measureAsync(timingsMs, 'pluginCapabilityConsentMs', async () => {
+      const config = await readOpenClawConfig() as Record<string, unknown>;
+      await ensureClawXPluginCapabilityConsent(config);
+    });
+  } catch (err) {
+    logger.warn('[plugin] Failed to record capability consent for ClawX plugins:', err);
   }
 
   // Existing users do not pass through channels.saveConfig after an upgrade.

@@ -330,5 +330,34 @@ describe('plugin install index sqlite persistence', () => {
       expect(row.value_json).toBe('{"revision":"broken"}');
       expect(mockLoggerWarn).toHaveBeenCalledWith(expect.stringContaining('run OpenClaw Doctor'));
     });
+
+    it('reads install records from plugins.installedIndex', async () => {
+      await seedModernStateDatabase();
+      const { readPluginInstallRecordsFromSqlite } = await import('@electron/utils/plugin-install-index');
+
+      expect(readPluginInstallRecordsFromSqlite()).toEqual({
+        qqbot: legacyQQBotRecord,
+        'feishu-openclaw-plugin': feishuRecord,
+      });
+    });
+
+    it('reads no records from an invalid index row', async () => {
+      await seedModernStateDatabase({ valueJson: '{"revision":"broken"}' });
+      const { readPluginInstallRecordsFromSqlite } = await import('@electron/utils/plugin-install-index');
+
+      expect(readPluginInstallRecordsFromSqlite()).toEqual({});
+    });
+  });
+
+  it('reads install records from the legacy table and from a missing database', async () => {
+    const {
+      readPluginInstallRecordsFromSqlite,
+      upsertPluginInstallRecordsIntoSqlite,
+    } = await import('@electron/utils/plugin-install-index');
+    expect(readPluginInstallRecordsFromSqlite()).toEqual({});
+
+    const record = { source: 'path', installPath: '/home/test/.openclaw/extensions/wecom', version: '2026.9.15' };
+    upsertPluginInstallRecordsIntoSqlite({ wecom: record });
+    expect(readPluginInstallRecordsFromSqlite()).toEqual({ wecom: record });
   });
 });

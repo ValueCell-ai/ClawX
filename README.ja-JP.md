@@ -146,6 +146,8 @@ ClawXは起動時の書き込み前に、OpenClaw状態ディレクトリの `ba
 
 OpenClaw 2026.10.5 では 2 つのチャネルプラグインの提供元が変わり、ClawX は最初の Gateway 起動前に両方を移行します。QQ ボットは `@openclaw/qqbot` から Tencent QQBot 2.0（`@tencent-connect/openclaw-qqbot`、プラグイン id `openclaw-qqbot`）に切り替わり、デフォルトアカウントは `channels.qqbot` の最上位に移動します。開放されていた DM は承認マーカー `openclaw:approval-disabled` を使って開放のまま維持されます。承認、シークレットファイル、グループコマンドのポリシーを含む QQ ボット設定は OpenClaw Doctor に任せます。Feishu は `@larksuite/openclaw-lark` から公式の `@openclaw/feishu` に切り替わり、アプリの認証情報はそのまま使えます。公式プラグインの Feishu ツールは 39 個から 14 個になり、カレンダー、タスク、ユーザー OAuth、シート、検索のツールは使えなくなります。
 
+OpenClaw 2026.10 は、公式インストールではないプラグインの機能について同意を求めます。ClawX は同梱プラグイン（DingTalk、WeCom、Feishu、QQ ボット、OpenAI 画像リレー）が有効な場合、Gateway 起動前に `openclaw plugins enable --accept-capabilities` を実行して同意を記録します。これはこれらのプラグインのインストールまたはアップグレード後にのみ行われ、その起動はプラグインごとに約 10 秒長くなります。ClawX は無効にしたプラグインを有効にせず、ユーザーが自分でインストールしたプラグインの機能には同意しません。
+
 ### ローカルComputer Use
 
 ClawX は CUA SDK と Driver **0.37.0** を同梱します。macOS と Windows では、Main の組み込み daemon オプションと Gateway 経由の CLI 環境の両方に `CUA_DRIVER_RS_TELEMETRY_ENABLED=false` を設定し、CUA の製品テレメトリを無効にします。SDK は 0.22.0 からこの変数を許可しており、0.21.0 の CLI のみを対象とした暫定対応に代わるものです。システム環境変数、単独の CUA インストールの設定、ClawX 自体のテレメトリ設定は変更しません。

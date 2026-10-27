@@ -23,6 +23,12 @@ For Feishu/Lark specifically:
 
 - the Feishu plugin id must follow the installed mirror manifest after prelaunch plugin maintenance. Sanitize runs before the mirror upgrade, so an in-place upgrade must re-point `openclaw-lark` activation at `feishu` once the official mirror is installed, and must leave it untouched if the upgrade fails
 
+For OpenClaw capability consent:
+
+- ClawX records consent only for its own path-owned mirrors, and only for ids that are already explicitly enabled and allowed; consent must never enable a plugin
+- consent must go through OpenClaw (`openclaw plugins enable <ids...> --accept-capabilities`) offline before Gateway start. ClawX must not compute or write `acceptedSurface*` fields itself, because the hash covers OpenClaw's normalized manifest metadata
+- the consent CLI must be cached per install-record fingerprint and attempted once per fingerprint, so its per-plugin cost (about 9s) is paid only after an install, upgrade, or runtime change
+
 For QQ Bot specifically:
 
 - OpenClaw 2026.10.5 serves the `qqbot` channel from Tencent QQBot 2.0 under plugin id `openclaw-qqbot`. Only `openclaw-qqbot` may be active in `plugins.allow` / `plugins.entries`, and legacy `qqbot` activation must migrate with its entry settings

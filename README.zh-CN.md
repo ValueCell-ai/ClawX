@@ -142,6 +142,8 @@ ClawX 会在启动写入前，在 OpenClaw 状态目录下保留私有快照 `ba
 
 OpenClaw 2026.10.5 更换了两个渠道插件，ClawX 会在首次启动 Gateway 前完成迁移。QQ 机器人从 `@openclaw/qqbot` 切换到腾讯 QQBot 2.0（`@tencent-connect/openclaw-qqbot`，插件 id `openclaw-qqbot`），默认账号移到 `channels.qqbot` 顶层，原本开放的私聊保持开放（使用审批标记 `openclaw:approval-disabled`）。带审批、密钥文件或群命令策略的 QQ 机器人配置交给 OpenClaw Doctor 处理。飞书从 `@larksuite/openclaw-lark` 切换到官方 `@openclaw/feishu`，应用凭据保持不变；官方插件提供 14 个飞书工具（原为 39 个），不再提供日历、任务、用户 OAuth、表格和搜索类工具。
 
+OpenClaw 2026.10 要求对非官方安装的插件授权其能力。对于 ClawX 自带且已启用的插件（钉钉、企业微信、飞书、QQ 机器人和 OpenAI 图片中转），ClawX 会在 Gateway 启动前执行 `openclaw plugins enable --accept-capabilities` 完成授权。这只在这些插件安装或升级后发生，当次启动每个插件约多花 10 秒。ClawX 不会启用你关闭的插件，也不会替你自己安装的插件授权。
+
 ### 本机 Computer Use
 
 ClawX 内置 CUA SDK 和 Driver **0.37.0**。在 macOS 和 Windows 上，Main 的嵌入式 daemon 选项和 Gateway 启动的 CLI 环境均设置 `CUA_DRIVER_RS_TELEMETRY_ENABLED=false`，关闭 CUA 产品遥测。SDK 从 0.22.0 起允许此环境变量，取代了 0.21.0 仅关闭 CLI 遥测的临时方案。此设置不会修改系统环境变量、独立 CUA 安装的设置或 ClawX 自身的遥测偏好。

@@ -382,6 +382,34 @@ export function removePluginInstallRecordsFromSqlite(pluginIds: string[]): boole
   return changed;
 }
 
+/** Read the install records OpenClaw currently sees, from either index format. */
+export function readPluginInstallRecordsFromSqlite(): InstallRecords {
+  const sqlitePath = resolveOpenClawStateSqlitePath();
+  if (!existsSync(sqlitePath)) return {};
+
+  try {
+    const db = new DatabaseSync(sqlitePath, { readOnly: true });
+    try {
+      db.exec(`PRAGMA busy_timeout = ${STATE_BUSY_TIMEOUT_MS};`);
+      if (usesMachineStateIndex(db)) {
+        const current = readMachineStateIndex(db);
+        return current && current !== 'invalid'
+          ? parseInstallRecords(current.index.installRecords ?? {}) ?? {}
+          : {};
+      }
+      if (!tableExists(db, 'installed_plugin_index')) return {};
+      const row = db.prepare('SELECT install_records_json FROM installed_plugin_index WHERE index_key = ?')
+        .get(INSTALLED_PLUGIN_INDEX_KEY) as { install_records_json?: string } | undefined;
+      return parseInstallRecords(row?.install_records_json) ?? {};
+    } finally {
+      db.close();
+    }
+  } catch (error) {
+    logger.warn('[plugin] Failed to read install metadata from SQLite:', error);
+    return {};
+  }
+}
+
 /** Ensure ~/.openclaw exists before first config write in fresh installs. */
 export function ensureOpenClawStateDirExists(): void {
   const stateDir = resolveOpenClawStateDir();

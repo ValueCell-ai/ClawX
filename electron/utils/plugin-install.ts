@@ -787,6 +787,23 @@ export async function removeTrustedOfficialPluginInstallRecord(pluginDirName: st
   return jsonChanged || sqliteChanged;
 }
 
+export interface ClawXPathOwnedPluginMirror {
+  pluginDirName: string;
+  pluginId: string;
+  targetDir: string;
+}
+
+/** Mirrors recorded as path installs, which OpenClaw never treats as trusted official installs. */
+export function listClawXPathOwnedPluginMirrors(): ClawXPathOwnedPluginMirror[] {
+  return Object.entries(TRUSTED_OFFICIAL_EXTENSION_PLUGINS)
+    .filter(([, definition]) => definition.recordSource === 'path')
+    .map(([pluginDirName, definition]) => ({
+      pluginDirName,
+      pluginId: definition.pluginId ?? pluginDirName,
+      targetDir: join(homedir(), '.openclaw', 'extensions', pluginDirName),
+    }));
+}
+
 /** Repair managed install metadata and host peer links for all mirrors on disk. */
 export async function repairTrustedOfficialPluginInstallRecords(): Promise<void> {
   for (const pluginDirName of Object.keys(TRUSTED_OFFICIAL_EXTENSION_PLUGINS)) {
