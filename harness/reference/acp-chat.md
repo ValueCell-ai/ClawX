@@ -8,6 +8,11 @@ Related rules: `acp-chat-state-and-history`, `attachment-access-safety`, `render
 
 Related tasks: `acp-native-chat`, `acp-media-attachments`, `filter-openclaw-heartbeat-session`, `recover-acp-session-after-gateway-restart`, `show-acp-compaction-lifecycle`, `recover-compaction-tool-pressure`, `embed-subagent-sessions-in-parent-chat`
 
+Known upgrade follow-ups: [tool-card coverage and intermediate assistant text
+missing from ACP replay](openclaw-2026-10-5-upgrade.md#chat-compatibility-follow-ups).
+The latter is an observed protocol-content discrepancy, distinct from the
+structured composer plan projection described below.
+
 ## Ownership
 
 Electron Main owns the reusable `openclaw acp` child process, ACP SDK connection, stdio lifecycle, typed host operations, permission responses, and routing envelopes. Renderer owns ACP semantic reduction and presentation. Main must not translate ordinary text, thought, tool, permission, plan, or media updates into a second ClawX Chat protocol.

@@ -40,3 +40,6 @@ docs:
 
 Presentation-only follow-up to the OpenClaw 2026.10.5 upgrade. The existing
 gateway-backend-communication routing and ACP reducer are unchanged.
+
+Remaining tool coverage and semantic UI work are deferred and tracked in
+[CHAT-UI-01](../../reference/openclaw-2026-10-5-upgrade.md#chat-ui-01-tool-presentation-coverage).

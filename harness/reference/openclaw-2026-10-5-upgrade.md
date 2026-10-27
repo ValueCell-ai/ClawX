@@ -3,6 +3,10 @@
 Durable, non-executable reference for the ClawX kernel upgrade from
 `openclaw@2026.7.1-2` to `openclaw@2026.10.5`.
 
+Outstanding Chat presentation and ACP content discrepancies are tracked in
+[Chat compatibility follow-ups](#chat-compatibility-follow-ups). These are
+recorded observations and deferred work, not a claim of full WebUI parity.
+
 ## Runtime matrix
 
 | Component | Before | After | Constraint |
@@ -488,3 +492,149 @@ therefore did not catch the re-exec failure.
 The Windows directory build cannot extract the DingTalk `dws` payload on a
 non-Windows host (`spawnSync powershell.exe ENOENT`); the Windows CI runner
 performs that step natively.
+
+## Chat compatibility follow-ups
+
+Recorded 2026-10-28 (Asia/Shanghai), against the pinned OpenClaw 2026.10.5
+runtime and the ClawX upgrade branch. UI coverage and missing protocol content
+are separate issues: a generic tool card does not mean the tool cannot execute,
+while absent ACP content cannot be repaired by changing its React presentation.
+
+### CHAT-UI-01: tool presentation coverage
+
+**Status:** `exec(code)` and `ls` specialization is implemented on the upgrade
+branch; extending coverage to the remaining tools is deferred at the
+user's request. This is not a claim that all OpenClaw tools have specialized UI.
+
+ClawX maintains its own label/icon mapping in
+[`AcpToolCallCard.tsx`](../../src/pages/Chat/AcpToolCallCard.tsx). OpenClaw's tool
+catalog and WebUI display metadata do not automatically populate that mapping.
+The implemented follow-up is described in
+[`chat-code-and-list-tools`](../specs/tasks/chat-code-and-list-tools.md):
+
+- Non-empty structured `exec.code` shows Run code / 执行代码 with a code icon;
+  shell-command `exec` keeps Run command / 执行命令. Structured input wins over
+  title-only hints, with `code:` / `command:` title hints supporting replay that
+  omits the input.
+- `ls` shows List files / 列出文件 with a file-list icon.
+- Existing mappings cover `update_plan`, `web_fetch`, `browser`, `computer`,
+  `read`, `write`, `sessions_spawn`, and `memory_search`. Labels cover en, zh,
+  ja and ru. Full arguments, output and expansion behavior remain unchanged.
+- Component tests, locale-parity checks and the Electron replay/group-expansion
+  test cover the new presentations. See `tests/unit/acp-chat-components.test.tsx`,
+  `tests/unit/i18n-locale-parity.test.ts`, and
+  `tests/e2e/chat-acp-inline-timeline.spec.ts`.
+
+The following is a snapshot of remaining presentation candidates, not an
+effective inventory for every agent or a list of tools newly introduced by
+this upgrade. Availability depends on model/provider, configuration, plugins
+and the active tool policy. Recheck the pinned runtime's `tool-catalog` and
+`core-tool-factory-descriptors` modules before implementing further mappings.
+
+| Area | Candidates still using generic presentation | Suggested labels |
+| --- | --- | --- |
+| File editing | `edit`, `apply_patch` | Edit file, Apply patch |
+| Execution control | `wait`, `process` | Wait for execution, Manage process |
+| Memory and reading | `memory_get`, `view_image`, `pdf` | Read memory, View image, Read PDF |
+| Media generation | `image_generate`, `music_generate`, `video_generate`, `tts` | Generate image/music/video/speech |
+| Sessions | `sessions`, `sessions_list`, `sessions_history`, `sessions_search`, `sessions_send`, `session_status` | Manage/list/read/search/send/status |
+| Agents | `agents_list`, `agents_wait`, `subagents`, `sessions_yield` | List/wait/manage agents, Yield for results |
+| Messages and automation | `message`, `conversations_list`, `conversations_send`, `conversations_turn`, `automations` | Send messages, Manage automations |
+| Provider and runtime capabilities | `code_execution`, `plugins`, `openclaw` | Remote code analysis, Manage plugins, Configure/repair OpenClaw |
+
+Code Mode's `wait` and optional Tool Search tools (`tool_search`,
+`tool_describe`, `tool_call`) also need an inventory check: helpers invoked
+inside Code Mode do not necessarily produce independent ACP tool cards.
+`code_execution` is provider-backed remote analysis, distinct from local
+`exec(code)`.
+
+Some capabilities need semantic UI integration rather than just a label/icon:
+`ask_user` needs questions, options and answer submission; `secrets` needs
+protected credential entry; `show_widget` needs an isolated widget surface;
+`progress_card` needs a progress view. WebUI-oriented `screen`, `theme`,
+`dashboard`, `terminal` and `portal` also require an explicit ClawX product
+decision. Do not treat these as supported interactions merely because their
+generic tool card can render.
+
+The current ClawX sanitizer explicitly denies `web_search`, `skill_workshop`,
+`gateway`, `nodes`, `create_goal`, `get_goal` and `update_goal`. These are not
+priority presentation gaps unless that policy changes. Additional plugin tools
+must be assessed against the installed plugin set.
+
+### CHAT-ACP-01: assistant text before a tool call is absent from ACP replay
+
+**Status:** open, evidence recorded; no repair implemented. The missing content
+is ordinary assistant Markdown, not a missing `update_plan` tool or a missing
+plan widget.
+
+In a local synthetic financial-report conversation, OpenClaw WebUI displayed
+an assistant execution-plan paragraph before the tool calls. ClawX displayed
+the tools and final answer but omitted that paragraph. Inspection used
+read-only SQLite access; no manual database repair or replay-ledger rewrite
+was performed.
+Private session identifiers, credentials and full transcripts are intentionally
+not copied into this reference.
+
+Confirmed observations:
+
+1. The agent database's `transcript_events` contains an assistant record with
+   a text block headed `**执行计划**`, followed by a tool-call block; its stop
+   reason is `toolUse`. A later assistant record contains the final answer.
+2. The shared state database has an ACP replay session marked `complete = 1`.
+   Its 16 stored updates include five `tool_call` events, five
+   `tool_call_update` events, one `agent_message_chunk` containing the final
+   answer, and no `agent_thought_chunk`. The assistant execution-plan text is
+   absent. A search for the words “执行计划” alone is insufficient because the
+   user's request contains those words too; compare assistant events only.
+3. The current ACP `AcpTranslatorSessionLifecycle.loadSession` chooses the
+   complete ledger for this session, so the transcript-fallback projection
+   does not supply the earlier omitted text. Reloading repeats the omission.
+4. ClawX's normal flow consumes ACP updates. Its reducer can represent text
+   segments before and after tools, but it cannot render a segment that is
+   absent from the replay it receives.
+
+This locates the confirmed discrepancy in the OpenClaw-to-ACP projection and
+replay path, including the ClawX-maintained runtime patch. It does **not** yet
+prove whether the first live execution never emitted the text, emitted it
+without recording it, or lost it at another adapter boundary. No live capture
+from that first run was retained; do not label it a pure upstream defect or a
+confirmed React filtering bug.
+
+Relevant code and existing validation anchors:
+
+- `patches/openclaw@2026.10.5.patch` and the pinned runtime's
+  `dist/server-*.mjs`: `AcpTranslatorAgentEvents.handleAgentEvent`,
+  `AcpTranslatorPromptStream.handleChatEvent` / `handleDeltaEvent`,
+  `AcpTranslatorSessionLifecycle.loadSession`, `extractReplayChunks`,
+  and SQLite ACP ledger writes/reads.
+- `electron/services/acp-chat-service.ts` for Main routing;
+  `src/lib/acp/reducer.ts` and `src/lib/acp/timeline-groups.ts` for reduction
+  and presentation boundaries.
+- `tests/unit/openclaw-acp-stream-patch.test.ts`,
+  `tests/unit/openclaw-acp-ambient-stream.test.ts`, and
+  `tests/e2e/chat-acp-inline-timeline.spec.ts`. Existing commentary-to-thought
+  and synthetic text/tool ordering tests do not establish end-to-end parity
+  for this intermediate ordinary assistant-text case.
+
+When this work is resumed:
+
+1. Start a task spec referencing `gateway-backend-communication` and capture a
+   minimal isolated run that emits assistant text, calls a tool, then emits a
+   final answer. Compare original transcript blocks, Gateway events, emitted
+   ACP updates, persisted ACP replay and the Renderer timeline. Preserve
+   message/run identity, event phase and ordering; use synthetic fixtures
+   instead of copying a real user home.
+2. Repair the responsible projection/ledger boundary. Specify how already
+   affected sessions with a complete-but-missing-text ledger will recover;
+   fixing only future live events is insufficient. Do not silently rewrite
+   real user ledgers or add a parallel Renderer transcript-history pipeline.
+3. Verify text -> tool -> text ordering without duplication in live output,
+   post-prompt hydration, reload and session switching. Cover cancellation,
+   provider errors and restart recovery with the existing session/generation
+   guards, plus runtime-patch tests, Electron E2E and comms replay/compare.
+
+Do not special-case the literal heading “执行计划”, reinterpret ordinary
+assistant prose as structured plan data, or reconstruct a missing plan from
+tool arguments/results. Keep any proposed exception consistent with
+[`acp-chat-state-and-history`](../specs/rules/acp-chat-state-and-history.md) and
+[`ACP semantic authority`](acp-chat.md#acp-semantic-authority).

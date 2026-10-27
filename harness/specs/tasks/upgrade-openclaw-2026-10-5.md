@@ -107,3 +107,8 @@ was refactored into separate event/prompt/session classes. The ClawX runtime
 patch must therefore be re-derived against the new bundle rather than replayed
 as a text patch. Channel plugin identities remain stable, but WeCom, Weixin, and
 DingTalk are advanced to their newest compatible releases.
+
+Known Chat discrepancies and deferred UI coverage are recorded in
+[Chat compatibility follow-ups](../../reference/openclaw-2026-10-5-upgrade.md#chat-compatibility-follow-ups).
+In particular, CHAT-ACP-01 documents an intermediate assistant-text omission
+in a complete ACP replay ledger; its live-event cause remains unverified.
