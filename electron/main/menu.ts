@@ -24,10 +24,24 @@ function getMenuTargetWindow(): BrowserWindow | null {
   return BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows().find((win) => !win.isDestroyed()) ?? null;
 }
 
+// Keep the provider across language rebuilds and resolve it on each click so
+// New Chat also targets the singleton after main-window recreation.
+let getMainWindow: () => BrowserWindow | null = () => null;
+
+export function openNewChat(): void {
+  const win = getMainWindow();
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  win.webContents.send('new-chat');
+}
+
 /**
  * Create application menu
  */
-export async function createMenu(language?: string): Promise<void> {
+export async function createMenu(language?: string, mainWindowProvider?: () => BrowserWindow | null): Promise<void> {
+  if (mainWindowProvider) getMainWindow = mainWindowProvider;
   const isMac = process.platform === 'darwin';
   const labels = MENU_LABELS[await resolveMenuLanguage(language)];
   
@@ -69,10 +83,7 @@ export async function createMenu(language?: string): Promise<void> {
           id: 'new-chat',
           label: labels.file.newChat,
           accelerator: 'CmdOrCtrl+N',
-          click: () => {
-            const win = getMenuTargetWindow();
-            win?.webContents.send('new-chat');
-          },
+          click: openNewChat,
         },
         { type: 'separator' },
         isMac
