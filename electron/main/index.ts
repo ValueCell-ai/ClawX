@@ -9,8 +9,9 @@ import { registerOpenClawConfigCoordinator } from '../gateway/config-delivery';
 import { registerIpcHandlers } from './ipc-handlers';
 import { HostApiRegistry } from './ipc/host-invoke';
 import { createTray } from './tray';
-import { createMenu } from './menu';
+import { createMenu, openNewChat } from './menu';
 import { registerZoomShortcuts } from './zoom-shortcuts';
+import { registerNewChatShortcut } from './new-chat-shortcut';
 import { registerMainWindowGuard } from './main-window-guard';
 
 import { appUpdater, registerUpdateHandlers } from './updater';
@@ -201,6 +202,7 @@ function createWindow(): BrowserWindow {
   });
 
   registerZoomShortcuts(win);
+  registerNewChatShortcut(win, openNewChat);
 
   // Handle external links — only allow safe protocols to prevent arbitrary
   // command execution via shell.openExternal() (e.g. file://, ms-msdt:, etc.)

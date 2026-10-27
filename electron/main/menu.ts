@@ -28,6 +28,15 @@ function getMenuTargetWindow(): BrowserWindow | null {
 // New Chat also targets the singleton after main-window recreation.
 let getMainWindow: () => BrowserWindow | null = () => null;
 
+export function openNewChat(): void {
+  const win = getMainWindow();
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  win.webContents.send('new-chat');
+}
+
 /**
  * Create application menu
  */
@@ -74,14 +83,7 @@ export async function createMenu(language?: string, mainWindowProvider?: () => B
           id: 'new-chat',
           label: labels.file.newChat,
           accelerator: 'CmdOrCtrl+N',
-          click: () => {
-            const win = getMainWindow();
-            if (!win || win.isDestroyed()) return;
-            if (win.isMinimized()) win.restore();
-            win.show();
-            win.focus();
-            win.webContents.send('new-chat');
-          },
+          click: openNewChat,
         },
         { type: 'separator' },
         isMac

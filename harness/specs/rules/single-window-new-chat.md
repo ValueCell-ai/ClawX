@@ -11,6 +11,11 @@ File New Chat and CmdOrCtrl+N send the existing `new-chat` host event to the liv
 main-window singleton. They reuse the sidebar's `useNewChatAction` for session
 creation and navigation. Focused guests or secondary windows never receive it.
 
+Handle platform CmdOrCtrl+N keydown in before-input-event as well as the menu.
+Call preventDefault before invoking the same singleton action explicitly:
+preventDefault also cancels the menu accelerator (Electron #19279). Ignore keyup,
+extra modifiers, and unrelated keys so one shortcut creates one new chat.
+
 Keep renderer and guest window-open requests denied. Close unexpected secondary
 app windows and focus main without claiming them as the main window. Preserve
 initial creation, main-window recreation, and developer tools.
@@ -20,3 +25,6 @@ accelerator, a fresh chat session, and one usable main window. Where Playwright'
 CDP keyboard bypasses native menus, use OS key input or drive Electron's
 `sendInputEvent` through Playwright instead of calling the menu click or emitting
 a synthetic input event. OS key injection requires the exclusive E2E tag.
+
+Delivery and macOS compatibility details:
+[Chat Workspace And Navigation](../../reference/chat-workspace-and-navigation.md#new-chat-shortcut).
