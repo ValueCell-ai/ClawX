@@ -154,6 +154,104 @@ describe('OpenClaw utility-process bootstrap', () => {
     expect(JSON.parse(result.stdout)).toEqual({ url: '1', path: '1' });
   }, 30_000);
 
+  it('keeps broker grandchildren in Node mode with captured environments and IPC', async () => {
+    const { ensureOpenClawUtilityBootstrap } = await import('@electron/utils/openclaw-utility-process');
+    const bootstrapPath = ensureOpenClawUtilityBootstrap(workDir);
+    const entryPath = join(workDir, 'broker-entry.mjs');
+    writeFileSync(join(workDir, 'broker-child.mjs'), `
+      import { spawnSync } from 'node:child_process';
+      process.send({
+        mode: process.env.ELECTRON_RUN_AS_NODE,
+        entry: process.env.CLAWX_OPENCLAW_ENTRY ?? null,
+        nested: spawnSync(process.execPath, ['-e', 'process.stdout.write(process.env.ELECTRON_RUN_AS_NODE ?? "unset")'], {
+          env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined }, encoding: 'utf8', timeout: 5000,
+        }).stdout,
+      }, () => process.disconnect());
+    `);
+    writeFileSync(join(workDir, 'broker.mjs'), `
+      import { spawn, fork, execFile } from 'node:child_process';
+      import { promisify } from 'node:util';
+      import { fileURLToPath } from 'node:url';
+      const env = { ...process.env, ELECTRON_RUN_AS_NODE: undefined };
+      const childEntry = new URL('./broker-child.mjs', import.meta.url);
+      const message = (child) => new Promise((resolve, reject) => {
+        let result;
+        child.on('message', value => { result = value; });
+        child.on('error', reject);
+        child.on('exit', code => code === 0 && result ? resolve(result) : reject(new Error('child exit=' + code)));
+      });
+      const args = ['-e', 'process.stdout.write(process.env.ELECTRON_RUN_AS_NODE ?? "unset")'];
+      console.log(JSON.stringify({
+        spawn: await message(spawn(process.execPath, [fileURLToPath(childEntry)], { env, stdio: ['ignore', 'ignore', 'inherit', 'ipc'] })),
+        fork: await message(fork(childEntry, { env, execArgv: [], stdio: ['ignore', 'ignore', 'inherit', 'ipc'] })),
+        promisified: (await promisify(execFile)(process.execPath, args, { env })).stdout,
+        capturedEnvUnchanged: env.ELECTRON_RUN_AS_NODE === undefined,
+      }));
+    `);
+    writeFileSync(entryPath, `
+      import { spawnSync } from 'node:child_process';
+      import { fileURLToPath } from 'node:url';
+      const result = spawnSync(process.execPath, [fileURLToPath(new URL('./broker.mjs', import.meta.url))], {
+        env: { ...process.env }, encoding: 'utf8', timeout: 15000,
+      });
+      process.stdout.write(result.stdout);
+      process.stderr.write(result.stderr);
+      process.exit(result.status ?? 1);
+    `);
+    const result = spawnSync(process.execPath, [bootstrapPath], {
+      encoding: 'utf8', timeout: 20000,
+      env: envWithoutRunAsNode({ CLAWX_OPENCLAW_ENTRY: entryPath }),
+    });
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      spawn: { mode: '1', entry: null, nested: '1' },
+      fork: { mode: '1', entry: null, nested: '1' },
+      promisified: '1',
+      capturedEnvUnchanged: true,
+    });
+  }, 30000);
+
+  it('preloads nested Worker threads even with explicit empty execArgv', async () => {
+    const { ensureOpenClawUtilityBootstrap } = await import('@electron/utils/openclaw-utility-process');
+    const bootstrapPath = ensureOpenClawUtilityBootstrap(workDir);
+    const entryPath = join(workDir, 'worker-entry.mjs');
+    writeFileSync(join(workDir, 'nested-worker.mjs'), `
+      import { parentPort } from 'node:worker_threads';
+      import { spawnSync } from 'node:child_process';
+      const result = spawnSync(process.execPath, ['-e', 'process.stdout.write(process.env.ELECTRON_RUN_AS_NODE ?? "unset")'], {
+        encoding: 'utf8', env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined }, timeout: 5000,
+      });
+      parentPort.postMessage({ output: result.stdout, parentMode: process.env.ELECTRON_RUN_AS_NODE ?? null });
+    `);
+    writeFileSync(join(workDir, 'worker.mjs'), `
+      import { Worker, parentPort } from 'node:worker_threads';
+      new Worker(new URL('./nested-worker.mjs', import.meta.url), { execArgv: [] })
+        .on('message', value => parentPort.postMessage(value));
+    `);
+    writeFileSync(entryPath, `
+      import { Worker, SHARE_ENV } from 'node:worker_threads';
+      const results = [];
+      for (const env of [{ ...process.env }, SHARE_ENV]) {
+        const worker = new Worker(new URL('./worker.mjs', import.meta.url), { execArgv: [], env });
+        results.push(await new Promise((resolve, reject) => {
+          worker.on('message', resolve); worker.on('error', reject);
+        }));
+      }
+      console.log(JSON.stringify({ results, parentMode: process.env.ELECTRON_RUN_AS_NODE ?? null }));
+    `);
+    const result = spawnSync(process.execPath, [bootstrapPath], {
+      encoding: 'utf8', timeout: 20000,
+      env: envWithoutRunAsNode({ CLAWX_OPENCLAW_ENTRY: entryPath }),
+    });
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({
+      results: [{ output: '1', parentMode: null }, { output: '1', parentMode: null }],
+      parentMode: null,
+    });
+  }, 30000);
+
   it('refuses to start without an entry script', async () => {
     const { ensureOpenClawUtilityBootstrap } = await import('@electron/utils/openclaw-utility-process');
     const bootstrapPath = ensureOpenClawUtilityBootstrap(workDir);
@@ -171,6 +269,8 @@ describe('OpenClaw utility-process bootstrap', () => {
     const {
       ensureOpenClawUtilityBootstrap,
       OPENCLAW_UTILITY_BOOTSTRAP_SOURCE,
+      OPENCLAW_RUNTIME_COMPAT_FILE,
+      OPENCLAW_RUNTIME_COMPAT_SOURCE,
     } = await import('@electron/utils/openclaw-utility-process');
     const bootstrapPath = ensureOpenClawUtilityBootstrap(workDir);
     const firstWrite = statSync(bootstrapPath).mtimeMs;
@@ -181,6 +281,14 @@ describe('OpenClaw utility-process bootstrap', () => {
     writeFileSync(bootstrapPath, 'stale', 'utf8');
     ensureOpenClawUtilityBootstrap(workDir);
     expect(readFileSync(bootstrapPath, 'utf8')).toBe(OPENCLAW_UTILITY_BOOTSTRAP_SOURCE);
+    const compatPath = join(workDir, OPENCLAW_RUNTIME_COMPAT_FILE);
+    expect(readFileSync(compatPath, 'utf8')).toBe(OPENCLAW_RUNTIME_COMPAT_SOURCE);
+    const compatWrite = statSync(compatPath).mtimeMs;
+    ensureOpenClawUtilityBootstrap(workDir);
+    expect(statSync(compatPath).mtimeMs).toBe(compatWrite);
+    rmSync(compatPath);
+    ensureOpenClawUtilityBootstrap(workDir);
+    expect(readFileSync(compatPath, 'utf8')).toBe(OPENCLAW_RUNTIME_COMPAT_SOURCE);
   });
 
   it('forks the bootstrap with the OpenClaw entry passed through the environment', async () => {

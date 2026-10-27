@@ -126,13 +126,19 @@ workers from `file:` URL objects. Those workers also booted ClawX, so
 process, so it is not an option.
 
 `electron/utils/openclaw-utility-process.ts` writes
-`<userData>/openclaw-utility-bootstrap.mjs` and forks it instead of the entry.
-The bootstrap reads the entry from `CLAWX_OPENCLAW_ENTRY`, injects
-`ELECTRON_RUN_AS_NODE=1` only into re-execs whose command is
-`process.execPath` (including `promisify.custom` variants), converts `file:`
-URL module paths passed to `fork()` into paths so Electron's rewrite applies,
-calls `syncBuiltinESMExports()`, restores `process.argv[1]`, and imports the
-entry.
+`<userData>/openclaw-utility-bootstrap.mjs` and
+`<userData>/openclaw-runtime-compat.mjs`, then forks the bootstrap instead of
+the entry. The bootstrap imports the compatibility module before loading the
+entry. The compatibility module injects `ELECTRON_RUN_AS_NODE=1` and its own
+`--import` preload into re-execs whose command is `process.execPath`, including
+callback and `promisify.custom` variants. It also patches `fork()` and
+`worker_threads.Worker`, so OpenClaw's spawn-broker children and nested SQLite
+workers remain in Node mode even when they pass an explicit environment or
+`execArgv: []`. File-URL module paths passed to `fork()` are converted to
+paths so Electron's rewrite applies. `syncBuiltinESMExports()` keeps ESM named
+imports aligned with the patched builtins, while the parent utility process
+itself remains a normal Electron utility process.
+
 The Gateway, the startup doctor repair, Settings → Run Doctor, and Control UI
 device pairing all launch through `forkOpenClawUtilityProcess`.
 

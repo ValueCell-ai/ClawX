@@ -5,91 +5,118 @@ import path from 'node:path';
 export const OPENCLAW_UTILITY_ENTRY_ENV = 'CLAWX_OPENCLAW_ENTRY';
 
 const OPENCLAW_UTILITY_BOOTSTRAP_FILE = 'openclaw-utility-bootstrap.mjs';
+export const OPENCLAW_RUNTIME_COMPAT_FILE = 'openclaw-runtime-compat.mjs';
 
 /**
- * OpenClaw re-executes its own runtime (`process.execPath`) through spawn,
- * spawnSync, execFile, and execFileSync for SQLite readers, schema/database
- * preflight, migrations, and tool hosts. Inside an Electron utilityProcess that
- * binary is the ClawX Helper, and Electron only rewrites `fork()` to run as
- * Node; the other calls boot a second ClawX app instead. Electron's `fork()`
- * rewrite also only applies to string module paths, while OpenClaw forks its
- * SQLite integrity and preflight workers from `file:` URLs. Setting
- * ELECTRON_RUN_AS_NODE on the utilityProcess itself breaks it, so the
- * bootstrap marks only re-execs of the runtime binary and hands `fork()` a
- * path before importing the OpenClaw entry.
+ * OpenClaw re-executes process.execPath for SQLite readers and migrations.
+ * Patching only the utility process is insufficient: spawn-broker starts its
+ * own children with captured environments that omit ELECTRON_RUN_AS_NODE.
+ * Preload this shim in each runtime child and Worker (even with execArgv: []).
+ * Do not set RUN_AS_NODE on utilityProcess.fork itself or use NODE_OPTIONS:
+ * the former breaks Electron's utility startup; packaged apps reject the latter.
  */
+export const OPENCLAW_RUNTIME_COMPAT_SOURCE = String.raw`
+import childProcess from 'node:child_process';
+import workerThreads from 'node:worker_threads';
+import { syncBuiltinESMExports } from 'node:module';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+
+const compatUrl = import.meta.url;
+const normalize = (value) => {
+  const resolved = path.resolve(value);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+};
+const isRuntime = (command) => typeof command === 'string' && normalize(command) === normalize(process.execPath);
+const withPreload = (args) => args.some((arg, i) =>
+  arg === '--import=' + compatUrl || (arg === '--import' && args[i + 1] === compatUrl)
+) ? [...args] : ['--import', compatUrl, ...args];
+const nodeEnv = (env) => ({ ...(env ?? process.env), ELECTRON_RUN_AS_NODE: '1' });
+
+function withRuntime(args) {
+  if (!isRuntime(args[0])) return args;
+  const next = [...args];
+  if (!Array.isArray(next[1])) {
+    if (next[1] == null && next.length > 2) next[1] = [];
+    else next.splice(1, 0, []);
+  }
+  next[1] = withPreload(next[1]);
+  const options = next[2];
+  if (typeof options === 'function') next.splice(2, 0, { env: nodeEnv() });
+  else next[2] = { ...options, env: nodeEnv(options?.env) };
+  return next;
+}
+
+for (const method of ['spawn', 'spawnSync', 'execFile', 'execFileSync']) {
+  const original = childProcess[method];
+  const patched = function (...args) {
+    return original.apply(this, withRuntime(args));
+  };
+  const custom = original[promisify.custom];
+  if (typeof custom === 'function') {
+    Object.defineProperty(patched, promisify.custom, {
+      value: (...args) => custom(...withRuntime(args)),
+    });
+  }
+  childProcess[method] = patched;
+}
+const originalFork = childProcess.fork;
+childProcess.fork = function (modulePath, args, options) {
+  if (!Array.isArray(args)) {
+    options = args ?? options;
+    args = [];
+  }
+  if (!options?.execPath || isRuntime(options.execPath)) {
+    options = {
+      ...options,
+      env: nodeEnv(options?.env),
+      execArgv: withPreload(options?.execArgv ?? process.execArgv),
+    };
+  }
+  return originalFork.call(this, modulePath instanceof URL ? fileURLToPath(modulePath) : modulePath, args, options);
+};
+const OriginalWorker = workerThreads.Worker;
+workerThreads.Worker = class extends OriginalWorker {
+  constructor(filename, options) {
+    super(filename, { ...options, execArgv: withPreload(options?.execArgv ?? process.execArgv) });
+  }
+};
+syncBuiltinESMExports();
+`;
+
 export const OPENCLAW_UTILITY_BOOTSTRAP_SOURCE = [
-  "import childProcess from 'node:child_process';",
-  "import { syncBuiltinESMExports } from 'node:module';",
-  "import path from 'node:path';",
-  "import { fileURLToPath, pathToFileURL } from 'node:url';",
-  "import { promisify } from 'node:util';",
-  '',
-  `const ENTRY_ENV = '${OPENCLAW_UTILITY_ENTRY_ENV}';`,
-  "const RUN_AS_NODE_ENV = 'ELECTRON_RUN_AS_NODE';",
-  '',
-  'const entry = process.env[ENTRY_ENV];',
-  'delete process.env[ENTRY_ENV];',
+  `import './${OPENCLAW_RUNTIME_COMPAT_FILE}';`,
+  "import { pathToFileURL } from 'node:url';",
+  `const entry = process.env.${OPENCLAW_UTILITY_ENTRY_ENV};`,
+  `delete process.env.${OPENCLAW_UTILITY_ENTRY_ENV};`,
   'if (!entry) {',
-  "  console.error('[clawx] ' + ENTRY_ENV + ' is required to launch OpenClaw');",
+  `  console.error('[clawx] ${OPENCLAW_UTILITY_ENTRY_ENV} is required to launch OpenClaw');`,
   '  process.exit(1);',
   '}',
-  '',
-  'const runtimePath = path.resolve(process.execPath);',
-  '',
-  'function withRunAsNode(args) {',
-  "  if (typeof args[0] !== 'string' || path.resolve(args[0]) !== runtimePath) return args;",
-  '  const next = [...args];',
-  '  const optionsIndex = Array.isArray(next[1]) || (next[1] == null && next.length > 2) ? 2 : 1;',
-  '  const options = next[optionsIndex];',
-  "  if (typeof options === 'function') {",
-  '    next.splice(optionsIndex, 0, { env: { ...process.env, [RUN_AS_NODE_ENV]: \'1\' } });',
-  '    return next;',
-  '  }',
-  '  next[optionsIndex] = { ...options, env: { ...(options?.env ?? process.env), [RUN_AS_NODE_ENV]: \'1\' } };',
-  '  return next;',
-  '}',
-  '',
-  "for (const method of ['spawn', 'spawnSync', 'execFile', 'execFileSync']) {",
-  '  const original = childProcess[method];',
-  '  const patched = function (...args) {',
-  '    return original.apply(this, withRunAsNode(args));',
-  '  };',
-  '  const custom = original[promisify.custom];',
-  "  if (typeof custom === 'function') {",
-  '    Object.defineProperty(patched, promisify.custom, {',
-  '      value: (...args) => custom(...withRunAsNode(args)),',
-  '    });',
-  '  }',
-  '  childProcess[method] = patched;',
-  '}',
-  'const originalFork = childProcess.fork;',
-  'childProcess.fork = function (modulePath, ...rest) {',
-  '  return originalFork.call(this, modulePath instanceof URL ? fileURLToPath(modulePath) : modulePath, ...rest);',
-  '};',
-  'syncBuiltinESMExports();',
-  '',
   'process.argv[1] = entry;',
   'await import(pathToFileURL(entry).href);',
   '',
 ].join('\n');
 
-export function ensureOpenClawUtilityBootstrap(directory: string = app.getPath('userData')): string {
-  const bootstrapPath = path.join(directory, OPENCLAW_UTILITY_BOOTSTRAP_FILE);
-  let current: string | undefined;
+function ensureSource(filePath: string, source: string): void {
   try {
-    current = readFileSync(bootstrapPath, 'utf8');
+    if (readFileSync(filePath, 'utf8') === source) return;
   } catch {
-    current = undefined;
+    // Missing or unreadable generated source must be written before launch.
   }
-  if (current !== OPENCLAW_UTILITY_BOOTSTRAP_SOURCE) {
-    mkdirSync(directory, { recursive: true });
-    writeFileSync(bootstrapPath, OPENCLAW_UTILITY_BOOTSTRAP_SOURCE, 'utf8');
-  }
+  mkdirSync(path.dirname(filePath), { recursive: true });
+  writeFileSync(filePath, source, 'utf8');
+}
+
+export function ensureOpenClawUtilityBootstrap(directory: string = app.getPath('userData')): string {
+  ensureSource(path.join(directory, OPENCLAW_RUNTIME_COMPAT_FILE), OPENCLAW_RUNTIME_COMPAT_SOURCE);
+  const bootstrapPath = path.join(directory, OPENCLAW_UTILITY_BOOTSTRAP_FILE);
+  ensureSource(bootstrapPath, OPENCLAW_UTILITY_BOOTSTRAP_SOURCE);
   return bootstrapPath;
 }
 
-/** Fork an OpenClaw CLI entry in a utilityProcess whose runtime re-execs run as Node. */
+/** Fork OpenClaw with Node-mode compatibility throughout its runtime process tree. */
 export function forkOpenClawUtilityProcess(
   entryScript: string,
   args: string[],
