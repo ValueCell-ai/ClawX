@@ -1,5 +1,10 @@
 import type { ElectronApplication } from '@playwright/test';
+import { execFile } from 'node:child_process';
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { closeElectronApp, expect, getStableWindow, test } from './fixtures/electron';
+import { E2E_EXCLUSIVE_TAG } from './parallel-policy';
 
 async function readNativeMenuLabels(app: ElectronApplication) {
   return await app.evaluate(({ Menu }) => {
@@ -10,6 +15,31 @@ async function readNativeMenuLabels(app: ElectronApplication) {
       file: fileMenu?.label,
       newChat: fileMenu?.submenu?.items.find((item) => item.id === 'new-chat' || item.label === 'New Chat' || item.label === '新对话')?.label,
     };
+  });
+}
+
+async function pressNativeNewChatShortcut(app: ElectronApplication) {
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].focus());
+  if (process.platform === 'linux') {
+    try {
+      await promisify(execFile)('xdotool', ['key', '--clearmodifiers', 'ctrl+n']);
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
+  await pressElectronNewChatShortcut(app);
+}
+
+async function pressElectronNewChatShortcut(app: ElectronApplication) {
+  // CDP keyboard dispatch bypasses Electron's before-input-event. Electron key
+  // input reaches that handler even on macOS, where it may bypass NSMenu.
+  await app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    win.focus();
+    const modifiers = [process.platform === 'darwin' ? 'meta' : 'control'];
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'N', modifiers });
+    win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'N', modifiers });
   });
 }
 
@@ -95,6 +125,74 @@ test.describe('ClawX main navigation without setup flow', () => {
 
       await expect(page.getByTestId('chat-page')).toBeVisible();
       await expect(page).toHaveURL(/#\/$/);
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('New Chat keyboard shortcut keeps one usable main window', { tag: E2E_EXCLUSIVE_TAG }, async ({ launchElectronApp, homeDir }) => {
+    await mkdir(join(homeDir, '.openclaw', 'workspace'), { recursive: true });
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      const page = await getStableWindow(app);
+      await expect(page.getByTestId('chat-page')).toBeVisible();
+      const mainWindowId = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].id);
+      const composer = page.getByTestId('chat-composer-input');
+      await composer.fill('Draft before the shortcut');
+
+      await page.getByTestId('sidebar-nav-models').click();
+      await expect(page.getByTestId('models-page')).toBeVisible();
+      await pressNativeNewChatShortcut(app);
+
+      await expect(page.getByTestId('chat-page')).toBeVisible();
+      await expect(page).toHaveURL(/#\/$/);
+      await expect(composer).toHaveValue('');
+      expect(await page.evaluate(() => window.open('about:blank') === null)).toBe(true);
+      expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((win) => win.id))).toEqual([mainWindowId]);
+
+      await composer.fill('Draft before recovering a blank window');
+      await app.evaluate(({ BrowserWindow }) => {
+        // Exercise recovery if a native path bypasses the popup deny handlers.
+        new BrowserWindow({ show: false });
+      });
+      await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((win) => win.id))).toEqual([mainWindowId]);
+      await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getFocusedWindow()?.id)).toBe(mainWindowId);
+      await expect(composer).toHaveValue('Draft before recovering a blank window');
+      await composer.click();
+      await pressNativeNewChatShortcut(app);
+      await expect(composer).toHaveValue('');
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((win) => win.id))).toEqual([mainWindowId]);
+      await page.getByTestId('sidebar-nav-models').click();
+      await expect(page.getByTestId('models-page')).toBeVisible();
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('Electron key input opens New Chat without the menu accelerator', async ({ launchElectronApp, homeDir }) => {
+    await mkdir(join(homeDir, '.openclaw', 'workspace'), { recursive: true });
+    const app = await launchElectronApp({ skipSetup: true });
+
+    try {
+      const page = await getStableWindow(app);
+      await expect(page.getByTestId('chat-page')).toBeVisible();
+      const composer = page.getByTestId('chat-composer-input');
+      await composer.fill('Draft before Electron key input');
+      await page.getByTestId('sidebar-nav-models').click();
+      await expect(page.getByTestId('models-page')).toBeVisible();
+
+      // Isolate the before-input-event path from native menu acceleration.
+      await app.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0].webContents.setIgnoreMenuShortcuts(true);
+      });
+      await pressElectronNewChatShortcut(app);
+
+      await expect(page.getByTestId('chat-page')).toBeVisible();
+      await expect(page).toHaveURL(/#\/$/);
+      await expect(composer).toHaveValue('');
+      expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
     } finally {
       await closeElectronApp(app);
     }

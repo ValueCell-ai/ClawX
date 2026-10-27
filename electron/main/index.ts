@@ -9,8 +9,10 @@ import { registerOpenClawConfigCoordinator } from '../gateway/config-delivery';
 import { registerIpcHandlers } from './ipc-handlers';
 import { HostApiRegistry } from './ipc/host-invoke';
 import { createTray } from './tray';
-import { createMenu } from './menu';
+import { createMenu, openNewChat } from './menu';
 import { registerZoomShortcuts } from './zoom-shortcuts';
+import { registerNewChatShortcut } from './new-chat-shortcut';
+import { registerMainWindowGuard } from './main-window-guard';
 
 import { appUpdater, registerUpdateHandlers } from './updater';
 import { logger } from '../utils/logger';
@@ -200,6 +202,7 @@ function createWindow(): BrowserWindow {
   });
 
   registerZoomShortcuts(win);
+  registerNewChatShortcut(win, openNewChat);
 
   // Handle external links — only allow safe protocols to prevent arbitrary
   // command execution via shell.openExternal() (e.g. file://, ms-msdt:, etc.)
@@ -264,6 +267,10 @@ function focusMainWindow(): void {
 }
 
 function createMainWindow(): BrowserWindow {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    focusMainWindow();
+    return mainWindow;
+  }
   const win = createWindow();
 
   win.once('ready-to-show', () => {
@@ -351,7 +358,8 @@ async function initialize(): Promise<void> {
   }
 
   // Set application menu
-  await createMenu();
+  await createMenu(undefined, () => mainWindow);
+  registerMainWindowGuard(() => mainWindow, focusMainWindow);
 
   // Align native widget rendering (select popups, scrollbars, dialogs) with
   // the persisted theme before the window is created so the window and its
@@ -679,7 +687,7 @@ if (gotTheLock) {
           logger.warn('Failed to refresh local CUA permissions:', error);
         });
       }
-      if (BrowserWindow.getAllWindows().length === 0) {
+      if (!mainWindow || mainWindow.isDestroyed()) {
         loadMainWindow(createMainWindow());
       } else {
         focusMainWindow();

@@ -42,7 +42,9 @@ function accessPath(expression: ts.Expression): string[] | null {
 function isGlobalClipboardCall(node: ts.CallExpression): boolean {
   const pathParts = accessPath(node.expression);
   if (!pathParts) return false;
-  if (pathParts.length === 1) return pathParts[0] === 'installWebBrowserPolicyInstrumentation';
+  if (pathParts.length === 1) {
+    return ['installWebBrowserPolicyInstrumentation', 'pressNativeNewChatShortcut'].includes(pathParts[0]);
+  }
 
   const method = pathParts.at(-1) ?? '';
   return pathParts.at(-2) === 'clipboard' && /^(?:clear|read\w*|write\w*)$/.test(method);
@@ -155,6 +157,16 @@ describe('Electron E2E parallel policy', () => {
     ].join('\n');
     const untagged = untaggedGlobalClipboardCalls(path.join(e2eDir, 'access-forms.spec.ts'), source);
     expect(untagged).toHaveLength(2);
+  });
+
+  it('requires exclusive execution for OS keyboard shortcuts', () => {
+    const source = [
+      "test('untagged', async () => pressNativeNewChatShortcut(app));",
+      "test('tagged', { tag: E2E_EXCLUSIVE_TAG }, async () => pressNativeNewChatShortcut(app));",
+    ].join('\n');
+    const untagged = untaggedGlobalClipboardCalls(path.join(e2eDir, 'keyboard.spec.ts'), source);
+    expect(untagged).toHaveLength(1);
+    expect(untagged[0]).toMatch(/^keyboard\.spec\.ts:1:/);
   });
 
   it('keeps renderer performance profiles in the performance project', async () => {
