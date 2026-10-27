@@ -45,6 +45,10 @@ vi.mock('@electron/utils/store', () => ({
   getSetting: storeMock.getSetting,
 }));
 
+vi.mock('@electron/utils/control-ui-device-pairing', () => ({
+  approvePendingLocalDeviceRequests: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock('@agentclientprotocol/sdk', () => ({
   ClientSideConnection: acpSdkMock.ClientSideConnection,
   ndJsonStream: acpSdkMock.ndJsonStream,
@@ -126,7 +130,10 @@ function createFakeChild() {
   return child;
 }
 
-async function createSpawnedService(connection = createConnection()) {
+async function createSpawnedService(
+  connection = createConnection(),
+  gateway?: { isConnected: () => boolean; rpc: ReturnType<typeof vi.fn> },
+) {
   const send = vi.fn();
   const child = createFakeChild();
   acpSdkMock.state.connectionForSpawn = connection;
@@ -136,7 +143,7 @@ async function createSpawnedService(connection = createConnection()) {
     { webContents: { send } } as never,
     createPassthroughAccessRegistry() as never,
     undefined,
-    undefined,
+    gateway as never,
   );
   return { service, connection, send, child };
 }
@@ -214,10 +221,52 @@ describe('AcpChatService', () => {
       expect.objectContaining({
         env: expect.objectContaining({
           OPENCLAW_GATEWAY_TOKEN: 'clawx-test-gateway-token',
+          OPENCLAW_DEBUG: '1',
           OPENCLAW_ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS: '480000',
         }),
       }),
     );
+  });
+
+  it('does not fork ACP until the injected Gateway is connected', async () => {
+    let connected = false;
+    const { service } = await createSpawnedService(createConnection(), {
+      isConnected: () => connected,
+      rpc: vi.fn(),
+    });
+    vi.useFakeTimers();
+    try {
+      const loading = service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(childProcessMock.fork).not.toHaveBeenCalled();
+
+      connected = true;
+      await vi.advanceTimersByTimeAsync(500);
+      await expect(loading).resolves.toEqual({ success: true, generation: 1 });
+      expect(childProcessMock.fork).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('fails without forking ACP when the Gateway never connects', async () => {
+    const { ACP_GATEWAY_READY_TIMEOUT_MS } = await import('../../electron/services/acp-chat-service');
+    const { service } = await createSpawnedService(createConnection(), {
+      isConnected: () => false,
+      rpc: vi.fn(),
+    });
+    vi.useFakeTimers();
+    try {
+      const loading = service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
+      await vi.advanceTimersByTimeAsync(ACP_GATEWAY_READY_TIMEOUT_MS + 1_000);
+      await expect(loading).resolves.toEqual({
+        success: false,
+        error: expect.stringContaining('ACP was not started'),
+      });
+      expect(childProcessMock.fork).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('filters non-JSON stdout diagnostics before the ACP SDK parser sees them', async () => {

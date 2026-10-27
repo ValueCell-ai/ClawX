@@ -83,6 +83,71 @@ workerThreads.Worker = class extends OriginalWorker {
   }
 };
 syncBuiltinESMExports();
+
+if (process.env.OPENCLAW_DEBUG === '1') {
+  const previousPrepare = Error.prepareStackTrace;
+  const MAX_CHAIN_DEPTH = 4;
+  const MAX_CHAIN_ERRORS = 8;
+  // V8 does not re-enter prepareStackTrace for stacks read while formatting,
+  // so nested errors are expanded here rather than by their own stack hook.
+  const expanded = new WeakSet();
+  const active = new Set();
+  const indent = (text) => String(text).split('\n').join('\n    ');
+  const header = (error) => {
+    try {
+      return Error.prototype.toString.call(error);
+    } catch {
+      return 'Error';
+    }
+  };
+  const describe = (value, depth) => {
+    try {
+      if (!(value instanceof Error)) {
+        return typeof value === 'string' ? value : String(JSON.stringify(value) ?? value);
+      }
+      if (active.has(value)) return header(value) + ' [circular]';
+      const text = String(value.stack || header(value));
+      return expanded.has(value) ? text : text + chain(value, depth);
+    } catch {
+      return Object.prototype.toString.call(value);
+    }
+  };
+  const chain = (error, depth) => {
+    if (!error || typeof error !== 'object' || depth >= MAX_CHAIN_DEPTH) return '';
+    let errors;
+    let cause;
+    try {
+      errors = Array.isArray(error.errors) ? error.errors : undefined;
+      cause = error.cause;
+    } catch {
+      return '';
+    }
+    active.add(error);
+    try {
+      const parts = [];
+      for (const [index, entry] of (errors ?? []).slice(0, MAX_CHAIN_ERRORS).entries()) {
+        parts.push('\n  [errors[' + index + ']] ' + indent(describe(entry, depth + 1)));
+      }
+      if (errors && errors.length > MAX_CHAIN_ERRORS) {
+        parts.push('\n  [errors] ' + (errors.length - MAX_CHAIN_ERRORS) + ' more');
+      }
+      if (cause !== undefined && !errors?.includes(cause)) {
+        parts.push('\n  [cause] ' + indent(describe(cause, depth + 1)));
+      }
+      return parts.join('');
+    } finally {
+      active.delete(error);
+    }
+  };
+  Error.prepareStackTrace = (error, frames) => {
+    const stack = typeof previousPrepare === 'function'
+      ? previousPrepare(error, frames)
+      : header(error) + frames.map((frame) => '\n    at ' + frame).join('');
+    if (typeof stack !== 'string' || active.has(error)) return stack;
+    expanded.add(error);
+    return stack + chain(error, 0);
+  };
+}
 `;
 
 export const OPENCLAW_UTILITY_BOOTSTRAP_SOURCE = [
@@ -116,7 +181,11 @@ export function ensureOpenClawUtilityBootstrap(directory: string = app.getPath('
   return bootstrapPath;
 }
 
-/** Fork OpenClaw with Node-mode compatibility throughout its runtime process tree. */
+/**
+ * Fork OpenClaw with Node-mode compatibility throughout its runtime process tree.
+ * OPENCLAW_DEBUG only changes OpenClaw's CLI failure output: without it a
+ * startup failure prints "The CLI command failed." with no reason or stack.
+ */
 export function forkOpenClawUtilityProcess(
   entryScript: string,
   args: string[],
@@ -126,6 +195,7 @@ export function forkOpenClawUtilityProcess(
     ...options,
     env: {
       ...(options.env ?? process.env),
+      OPENCLAW_DEBUG: '1',
       [OPENCLAW_UTILITY_ENTRY_ENV]: entryScript,
     },
   });

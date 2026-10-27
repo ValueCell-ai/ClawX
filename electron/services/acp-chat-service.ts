@@ -85,6 +85,10 @@ const ACP_SESSION_FAMILY_FAILURE_COOLDOWN_MS = 5_000;
 // Gateway loss by reconnecting, so quit cleanup must signal it explicitly.
 const ACP_STOP_SIGTERM_GRACE_MS = 3_000;
 const ACP_STOP_SIGKILL_WAIT_MS = 1_000;
+// ACP opens the OpenClaw state database too; forking it while the Gateway is
+// still starting or Doctor is repairing state adds a concurrent reader.
+export const ACP_GATEWAY_READY_TIMEOUT_MS = 5 * 60_000;
+const ACP_GATEWAY_READY_POLL_MS = 250;
 
 function ok(generation?: number, sessionUpdates?: AcpSessionUpdateEnvelope[]): AcpChatOperationResult {
   return {
@@ -680,6 +684,7 @@ export class AcpChatService {
   }
 
   private async initializeConnection(flight: AcpInitializationFlight): Promise<AcpConnection> {
+    if (!this.connection) await this.waitForGatewayConnection();
     await this.approveLocalDeviceRequests();
 
     for (let attempt = 1; attempt <= 2; attempt++) {
@@ -705,7 +710,10 @@ export class AcpChatService {
   }
 
   private async initializeConnectionOnce(attempt: number): Promise<AcpConnection> {
-    if (!this.connection) this.connection = await this.spawnConnection();
+    if (!this.connection) {
+      await this.waitForGatewayConnection();
+      this.connection = await this.spawnConnection();
+    }
     const connection = this.connection;
     const child = this.child;
 
@@ -747,6 +755,26 @@ export class AcpChatService {
     }
   }
 
+  private async waitForGatewayConnection(): Promise<void> {
+    const gateway = this.gateway;
+    if (!gateway || gateway.isConnected()) return;
+
+    this.trace('connection/gateway-wait:start', { details: { timeoutMs: ACP_GATEWAY_READY_TIMEOUT_MS } });
+    const startedAt = Date.now();
+    while (!gateway.isConnected()) {
+      if (Date.now() - startedAt >= ACP_GATEWAY_READY_TIMEOUT_MS) {
+        this.trace('connection/gateway-wait:timeout', { details: { timeoutMs: ACP_GATEWAY_READY_TIMEOUT_MS } });
+        throw new Error(
+          `Gateway did not connect within ${Math.round(ACP_GATEWAY_READY_TIMEOUT_MS / 1000)}s; ACP was not started`,
+        );
+      }
+      await new Promise((resolve) => {
+        setTimeout(resolve, ACP_GATEWAY_READY_POLL_MS).unref?.();
+      });
+    }
+    this.trace('connection/gateway-wait:ready', { details: { waitedMs: Date.now() - startedAt } });
+  }
+
   private waitForChildExit(child: AcpChildProcess | null): Promise<number | null> {
     if (!child) return Promise.resolve(null);
     if (child.exitCode !== null) return Promise.resolve(child.exitCode);
@@ -771,6 +799,7 @@ export class AcpChatService {
       env: {
         ...spec.options.env,
         OPENCLAW_GATEWAY_TOKEN: gatewayToken,
+        OPENCLAW_DEBUG: '1',
         [OPENCLAW_ACP_RECOVERY_GRACE_ENV]: String(ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS),
       },
     });

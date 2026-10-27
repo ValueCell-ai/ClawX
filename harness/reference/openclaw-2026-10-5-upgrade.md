@@ -159,7 +159,28 @@ accounting for it. Legacy managed outgoing image records also store absolute
 so a relocated copy fails `managed-outgoing-images` unless those records are
 rewritten to the copy's location. Doctor's console summary redacts from the
 first path to the end of the line; the structured OpenClaw file log
-(`/tmp/openclaw/openclaw-<date>.log`) keeps per-step progress.
+(`/tmp/openclaw/openclaw-<date>.log`, `%TEMP%\openclaw\` on Windows) keeps
+per-step progress and is exported under `logs/openclaw-runtime/` in issue
+reports.
+
+### Windows: koffi and the state snapshot
+
+On Windows, OpenClaw stages state-database read snapshots under a private
+directory (`%LOCALAPPDATA%\openclaw`) created through koffi
+(`dist/windows-private-directory-*.mjs`). If koffi cannot load, both the
+Gateway admission snapshot and Doctor's maintenance entry fail. The Gateway
+prints only `The CLI command failed.` and exits 1, which ClawX treats as a
+config-repair opportunity. Doctor then reports `Doctor could not enter
+maintenance. AggregateError: Shared-state read and cleanup failed`. The
+actual cause is visible only as `DoctorUnreadableStateDatabaseError ...
+Cannot find module './src/koffi/index.cjs'` in the runtime log. The 2026-10-27
+0.6.1 → 2026.10.5 Windows in-place upgrade failure was this: the bundle
+cleanup deleted `koffi/src`, which koffi 3.x uses for its JavaScript entry.
+macOS does not take this path, so it cannot reproduce the failure. ClawX runs
+OpenClaw children with `OPENCLAW_DEBUG=1`, and the compatibility shim
+expands `AggregateError` entries and causes, so this class of failure now
+appears in the ClawX log as `[Gateway stderr]` / `[Gateway doctor stderr]`
+`Reason:` and stack lines.
 
 ## 2026.10 config shape written by ClawX
 

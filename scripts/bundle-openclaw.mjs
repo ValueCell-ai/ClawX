@@ -17,6 +17,7 @@
  */
 
 import 'zx/globals';
+import { spawnSync } from 'node:child_process';
 import { ELECTRON_MAIN_RUNTIME_PACKAGES, EXTRA_BUNDLED_PACKAGES } from './openclaw-bundle-config.mjs';
 import { patchExtensionOpenClawSelfImports } from './openclaw-self-import-patch.mjs';
 
@@ -679,7 +680,8 @@ function cleanupBundle(outputDir) {
     'node_modules/pdfjs-dist/legacy',
     'node_modules/pdfjs-dist/types',
     'node_modules/node-llama-cpp/llama',
-    'node_modules/koffi/src',
+    // koffi 3.x loads its JS entry from koffi/src/koffi/index.cjs, so only
+    // the vendored headers and docs are safe to drop.
     'node_modules/koffi/vendor',
     'node_modules/koffi/doc',
     'dist/extensions/feishu', // Removed in favor of the external @openclaw/feishu plugin
@@ -1032,4 +1034,20 @@ if (missingRuntimePackages.length > 0) {
     echo`   - ${pkgName}`;
   }
   process.exit(1);
+}
+
+// OpenClaw's Windows state-database snapshot staging loads koffi; a pruned
+// koffi makes Gateway startup and Doctor fail with an opaque AggregateError.
+// The bundle is built on the target platform, so the host can load it.
+const koffiDir = path.join(outputNodeModules, 'koffi');
+if (fs.existsSync(path.join(koffiDir, 'package.json'))) {
+  const koffiLoad = spawnSync(process.execPath, ['-e', 'require(process.argv[1]).sizeof("int")', koffiDir], {
+    encoding: 'utf8',
+  });
+  if (koffiLoad.status !== 0) {
+    echo`❌ Bundle verification failed: bundled koffi cannot be loaded:`;
+    echo`${(koffiLoad.stderr || koffiLoad.stdout || String(koffiLoad.error ?? '')).trim()}`;
+    process.exit(1);
+  }
+  echo`   koffi: ✓`;
 }

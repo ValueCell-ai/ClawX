@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -33,6 +33,17 @@ describe('openclaw bundle config', () => {
       'utf8',
     );
     expect(nodeDownloadScript).toContain("const NODE_VERSION = '24.18.1'");
+  });
+
+  it('keeps the koffi JavaScript entry that OpenClaw loads for Windows state snapshots', () => {
+    const koffiEntry = require.resolve('koffi', {
+      paths: [realpathSync(resolve(process.cwd(), 'node_modules/openclaw'))],
+    });
+    expect(readFileSync(koffiEntry, 'utf8')).toContain('./src/koffi/index.cjs');
+
+    const bundleScript = readFileSync(resolve(process.cwd(), 'scripts/bundle-openclaw.mjs'), 'utf8');
+    expect(bundleScript).not.toContain("'node_modules/koffi/src'");
+    expect(bundleScript).toContain('bundled koffi cannot be loaded');
   });
 
   it('unpacks every native CUA SDK library required by Electron Main', () => {

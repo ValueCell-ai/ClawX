@@ -1,4 +1,5 @@
-import { access, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { access, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { zstdDecompressSync } from 'node:zlib';
 import JSZip from 'jszip';
@@ -19,6 +20,7 @@ type IssueReportDependencies = {
   configPath?: string;
   clawxLogDir?: string | null;
   openClawLogDir?: string;
+  openClawRuntimeLogDirs?: string[];
   outputDir?: string;
   now?: () => Date;
 };
@@ -476,6 +478,79 @@ async function addLogDirectory(
   }
 }
 
+const MAX_RUNTIME_LOG_FILES = 3;
+const MAX_RUNTIME_LOG_BYTES = 8 * 1024 * 1024;
+const RUNTIME_LOG_ARCHIVE_DIR = 'logs/openclaw-runtime';
+
+/**
+ * OpenClaw writes its runtime log (openclaw-YYYY-MM-DD.log) to a secure temp
+ * root rather than the state directory: %TEMP%\openclaw on Windows, and
+ * /tmp/openclaw with an os.tmpdir()/openclaw-<uid> fallback elsewhere.
+ */
+export function resolveOpenClawRuntimeLogDirs(): string[] {
+  if (process.platform === 'win32') return [join(tmpdir(), 'openclaw')];
+  const uid = process.getuid?.();
+  return ['/tmp/openclaw', ...(uid == null ? [] : [join(tmpdir(), `openclaw-${uid}`)])];
+}
+
+async function readLogTail(path: string, size: number): Promise<string> {
+  if (size <= MAX_RUNTIME_LOG_BYTES) return readFile(path, 'utf8');
+  const handle = await open(path, 'r');
+  try {
+    const buffer = Buffer.alloc(MAX_RUNTIME_LOG_BYTES);
+    const { bytesRead } = await handle.read(buffer, 0, MAX_RUNTIME_LOG_BYTES, size - MAX_RUNTIME_LOG_BYTES);
+    const text = buffer.subarray(0, bytesRead).toString('utf8');
+    const firstLineEnd = text.indexOf('\n');
+    return `[clawx] truncated: kept the last ${bytesRead} of ${size} bytes\n${text.slice(firstLineEnd + 1)}`;
+  } finally {
+    await handle.close();
+  }
+}
+
+async function addRuntimeLogs(zip: JSZip, sourceDirs: string[], manifest: IssueReportManifest): Promise<void> {
+  const candidates: Array<{ path: string; name: string; size: number; mtimeMs: number }> = [];
+  for (const sourceDir of new Set(sourceDirs.map((dir) => resolve(dir)))) {
+    let entries;
+    try {
+      entries = await readdir(sourceDir, { withFileTypes: true });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        logger.warn(`[issue-report] Failed to list ${RUNTIME_LOG_ARCHIVE_DIR}: ${String(error)}`);
+      }
+      continue;
+    }
+    for (const entry of entries) {
+      const name = entry.name;
+      if (!entry.isFile() || !/^openclaw.*\.log$/i.test(name)) continue;
+      try {
+        const stat = await lstat(join(sourceDir, name));
+        if (stat.isFile()) candidates.push({ path: join(sourceDir, name), name, size: stat.size, mtimeMs: stat.mtimeMs });
+      } catch {
+        // The runtime rotates logs; a file removed between listing and stat is skipped.
+      }
+    }
+  }
+
+  const newest = candidates.sort((left, right) => right.mtimeMs - left.mtimeMs).slice(0, MAX_RUNTIME_LOG_FILES);
+  if (newest.length === 0) manifest.missingFiles.push(`${RUNTIME_LOG_ARCHIVE_DIR}/`);
+  const usedNames = new Set<string>();
+  for (const candidate of newest) {
+    let archiveName = candidate.name;
+    for (let suffix = 2; usedNames.has(archiveName); suffix += 1) {
+      archiveName = candidate.name.replace(/\.log$/i, `-${suffix}.log`);
+    }
+    usedNames.add(archiveName);
+    const archivePath = `${RUNTIME_LOG_ARCHIVE_DIR}/${archiveName}`;
+    try {
+      zip.file(archivePath, redactDiagnosticText(await readLogTail(candidate.path, candidate.size)));
+      manifest.includedFiles.push(archivePath);
+    } catch (error) {
+      logger.warn(`[issue-report] Failed to add ${archivePath}: ${String(error)}`);
+      manifest.missingFiles.push(archivePath);
+    }
+  }
+}
+
 function archiveTimestamp(now: Date): string {
   return now.toISOString().replace(/[-:]/g, '').replace('T', '-').replace(/\.\d{3}Z$/, 'Z');
 }
@@ -561,6 +636,7 @@ async function exportIssueReportInternal(
       'logs/openclaw',
       manifest,
     );
+    await addRuntimeLogs(zip, dependencies.openClawRuntimeLogDirs ?? resolveOpenClawRuntimeLogDirs(), manifest);
 
     manifest.includedFiles.push('manifest.json');
     zip.file('manifest.json', `${JSON.stringify(manifest, null, 2)}\n`);

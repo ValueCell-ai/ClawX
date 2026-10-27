@@ -267,6 +267,20 @@ export async function findExistingGatewayProcess(options: {
   }
 }
 
+// Doctor migrates the state database; an ACP child left over from a previous
+// Gateway would keep reading it during the repair.
+async function stopAcpBeforeDoctorRepair(): Promise<void> {
+  try {
+    const { getActiveAcpChatService } = await import('../services/acp-chat-service');
+    const acp = getActiveAcpChatService();
+    if (!acp) return;
+    logger.info('Stopping ACP chat process before OpenClaw doctor repair');
+    await acp.stop();
+  } catch (error) {
+    logger.warn(`Failed to stop ACP chat process before OpenClaw doctor repair: ${String(error)}`);
+  }
+}
+
 export async function runOpenClawDoctorRepair(): Promise<boolean> {
   const openclawDir = getOpenClawDir();
   const entryScript = getOpenClawEntryPath();
@@ -287,6 +301,7 @@ export async function runOpenClawDoctorRepair(): Promise<boolean> {
     ? prependPathEntry(baseProcessEnv, binPath).env
     : baseProcessEnv;
 
+  await stopAcpBeforeDoctorRepair();
   const uvEnv = await getUvMirrorEnv();
   const doctorArgs = ['doctor', '--fix', '--yes', '--non-interactive'];
   logger.info(

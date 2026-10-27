@@ -252,6 +252,71 @@ describe('OpenClaw utility-process bootstrap', () => {
     });
   }, 30000);
 
+  it('expands AggregateError entries and causes in stacks only under OPENCLAW_DEBUG', async () => {
+    const { ensureOpenClawUtilityBootstrap } = await import('@electron/utils/openclaw-utility-process');
+    const bootstrapPath = ensureOpenClawUtilityBootstrap(workDir);
+    const entryPath = join(workDir, 'error-entry.mjs');
+    writeFileSync(join(workDir, 'error-worker.mjs'), `
+      import { parentPort } from 'node:worker_threads';
+      const failure = new AggregateError(
+        [new Error('worker snapshot copy failed'), new Error('worker cleanup EBUSY')],
+        'Shared-state read and cleanup failed',
+      );
+      parentPort.postMessage(failure.stack);
+    `);
+    writeFileSync(entryPath, `
+      import { Worker } from 'node:worker_threads';
+      const first = new Error('snapshot copy failed');
+      const aggregate = new AggregateError(
+        [first, new Error('cleanup EBUSY'), 'plain reason'],
+        'Shared-state read and cleanup failed',
+        { cause: first },
+      );
+      const wrapped = new Error('Doctor could not enter maintenance', { cause: aggregate });
+      const loopA = new Error('loop a');
+      const loopB = new Error('loop b', { cause: loopA });
+      loopA.cause = loopB;
+      const worker = await new Promise((resolve, reject) => {
+        new Worker(new URL('./error-worker.mjs', import.meta.url), { execArgv: [] })
+          .on('message', resolve).on('error', reject);
+      });
+      console.log(JSON.stringify({
+        wrapped: wrapped.stack,
+        loop: loopA.stack,
+        worker,
+      }));
+    `);
+
+    const run = (debug: boolean) => {
+      const result = spawnSync(process.execPath, [bootstrapPath], {
+        encoding: 'utf8',
+        timeout: 20000,
+        env: envWithoutRunAsNode({
+          CLAWX_OPENCLAW_ENTRY: entryPath,
+          ...(debug ? { OPENCLAW_DEBUG: '1' } : {}),
+        }),
+      });
+      expect(result.stderr).toBe('');
+      expect(result.status).toBe(0);
+      return JSON.parse(result.stdout) as { wrapped: string; loop: string; worker: string };
+    };
+
+    const debug = run(true);
+    expect(debug.wrapped.split('\n')[0]).toBe('Error: Doctor could not enter maintenance');
+    expect(debug.wrapped).toContain('[cause] AggregateError: Shared-state read and cleanup failed');
+    expect(debug.wrapped).toContain('[errors[0]] Error: snapshot copy failed');
+    expect(debug.wrapped).toContain('[errors[1]] Error: cleanup EBUSY');
+    expect(debug.wrapped).toContain('[errors[2]] plain reason');
+    expect(debug.wrapped.match(/\[cause\]/g)).toHaveLength(1);
+    expect(debug.loop).toContain('[cause] Error: loop b');
+    expect(debug.loop).toContain('[cause] Error: loop a [circular]');
+    expect(debug.worker).toContain('[errors[1]] Error: worker cleanup EBUSY');
+
+    const plain = run(false);
+    expect(plain.wrapped).not.toContain('[cause]');
+    expect(plain.worker).not.toContain('[errors[');
+  }, 30000);
+
   it('refuses to start without an entry script', async () => {
     const { ensureOpenClawUtilityBootstrap } = await import('@electron/utils/openclaw-utility-process');
     const bootstrapPath = ensureOpenClawUtilityBootstrap(workDir);
@@ -313,6 +378,7 @@ describe('OpenClaw utility-process bootstrap', () => {
         env: {
           PATH: '/usr/bin',
           OPENCLAW_NO_RESPAWN: '1',
+          OPENCLAW_DEBUG: '1',
           CLAWX_OPENCLAW_ENTRY: '/opt/openclaw/openclaw.mjs',
         },
         serviceName: 'OpenClaw Gateway',
