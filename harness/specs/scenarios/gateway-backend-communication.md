@@ -64,6 +64,7 @@ conditionalProfiles:
 requiredRules:
   - openclaw-config-delivery
   - openclaw-upgrade-persistence
+  - openclaw-runtime-child-processes
   - clawx-system-automations
   - renderer-main-boundary
   - backend-communication-boundary

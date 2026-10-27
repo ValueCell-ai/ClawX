@@ -84,6 +84,49 @@ process.stdout.write(JSON.stringify({
 }));
 `;
 
+const WINDOWS_HIDE_RECORDER_SOURCE = `
+import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
+import { promisify } from 'node:util';
+
+globalThis.__windowsHide = [];
+for (const method of ['spawn', 'spawnSync', 'execFile', 'execFileSync', 'exec', 'execSync', 'fork']) {
+  const original = childProcess[method];
+  const record = (args) => {
+    const options = args.find((arg) => arg && typeof arg === 'object' && !Array.isArray(arg));
+    globalThis.__windowsHide.push(method + ':' + String(options?.windowsHide));
+  };
+  const recorder = function (...args) {
+    record(args);
+    return original.apply(this, args);
+  };
+  const custom = original[promisify.custom];
+  if (typeof custom === 'function') {
+    Object.defineProperty(recorder, promisify.custom, { value: (...args) => { record(args); return custom(...args); } });
+  }
+  childProcess[method] = recorder;
+}
+syncBuiltinESMExports();
+`;
+
+const WINDOWS_HIDE_ENTRY_SOURCE = `
+import { exec, execFile, execFileSync, execSync, fork, spawn, spawnSync } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const quiet = ['-e', ''];
+const closed = (child) => new Promise((resolve) => child.on('close', resolve));
+await closed(spawn(process.execPath, quiet));
+spawnSync(process.execPath, quiet, { windowsHide: false });
+spawnSync('node', quiet);
+await new Promise((resolve) => execFile(process.execPath, quiet, resolve));
+await promisify(execFile)(process.execPath, quiet);
+execFileSync(process.execPath, quiet);
+await new Promise((resolve) => exec('exit 0', resolve));
+execSync('exit 0');
+await closed(fork(new URL('./hide-child.mjs', import.meta.url), { stdio: 'ignore' }));
+process.stdout.write(JSON.stringify(globalThis.__windowsHide));
+`;
+
 function envWithoutRunAsNode(extra: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, ...extra };
   delete env.ELECTRON_RUN_AS_NODE;
@@ -129,6 +172,37 @@ describe('OpenClaw utility-process bootstrap', () => {
       otherCommand: 'unset',
       parentEnv: 'unset',
     });
+  }, 30_000);
+
+  it('hides Windows consoles for every child unless the caller opts out', async () => {
+    const { ensureOpenClawUtilityBootstrap } = await import('@electron/utils/openclaw-utility-process');
+    const bootstrapPath = ensureOpenClawUtilityBootstrap(workDir);
+    const recorderPath = join(workDir, 'windows-hide-recorder.mjs');
+    const entryPath = join(workDir, 'windows-hide-entry.mjs');
+    writeFileSync(recorderPath, WINDOWS_HIDE_RECORDER_SOURCE, 'utf8');
+    writeFileSync(entryPath, WINDOWS_HIDE_ENTRY_SOURCE, 'utf8');
+    writeFileSync(join(workDir, 'hide-child.mjs'), '', 'utf8');
+
+    const result = spawnSync(process.execPath, ['--import', pathToFileURL(recorderPath).href, bootstrapPath], {
+      encoding: 'utf8',
+      timeout: 20000,
+      env: envWithoutRunAsNode({ CLAWX_OPENCLAW_ENTRY: entryPath }),
+    });
+
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual([
+      'spawn:true',
+      'spawnSync:false',
+      'spawnSync:true',
+      'execFile:true',
+      'execFile:true',
+      'execFileSync:true',
+      'exec:true',
+      'execFile:true',
+      'execSync:true',
+      'fork:true',
+    ]);
   }, 30_000);
 
   it('hands Electron fork() a path when OpenClaw forks a worker from a file URL', async () => {

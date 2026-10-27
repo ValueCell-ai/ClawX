@@ -14,8 +14,10 @@ import {
 import { execFileSync, spawn, type ForkOptions } from 'node:child_process';
 import { homedir } from 'node:os';
 import { delimiter, join, dirname } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { getOpenClawDir, getOpenClawEntryPath } from './paths';
 import { logger } from './logger';
+import { ensureOpenClawRuntimeCompat } from './openclaw-utility-process';
 
 // ── Quoting helpers ──────────────────────────────────────────────────────────
 
@@ -253,7 +255,7 @@ export function getOpenClawEmbeddedForkSpec(args: string[] = []): OpenClawEmbedd
       cwd: getOpenClawDir(),
       env,
       execPath,
-      execArgv: [],
+      execArgv: ['--import', pathToFileURL(ensureOpenClawRuntimeCompat()).href],
       stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
       windowsHide: true,
     },

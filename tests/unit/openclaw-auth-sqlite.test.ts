@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -22,6 +22,23 @@ async function seed(version: number, marker = version, appVersion = '2026.10.5')
   db.prepare("INSERT INTO auth_profile_store VALUES ('primary', ?, 1)").run(JSON.stringify(store));
   db.close();
 }
+const statePath = () => join(testHome, '.openclaw/state/openclaw.sqlite');
+async function seedSharedState(owner: unknown, cells: Record<string, unknown> = {}) {
+  await mkdir(join(statePath(), '..'), { recursive: true });
+  const db = new DatabaseSync(statePath());
+  db.exec('CREATE TABLE config_machine_state (state_key TEXT NOT NULL PRIMARY KEY, value_json TEXT NOT NULL, updated_at_ms INTEGER NOT NULL)');
+  const insert = db.prepare('INSERT INTO config_machine_state VALUES (?, ?, 1)');
+  insert.run('auth.sharedStore', JSON.stringify(owner));
+  for (const [key, value] of Object.entries(cells)) insert.run(key, JSON.stringify(value));
+  db.close();
+}
+function sharedCell(key: string) {
+  const db = new DatabaseSync(statePath(), { readOnly: true });
+  try {
+    const row = db.prepare('SELECT value_json FROM config_machine_state WHERE state_key = ?').get(key) as { value_json?: string } | undefined;
+    return row?.value_json ? JSON.parse(row.value_json) : undefined;
+  } finally { db.close(); }
+}
 function inspect(file = dbPath()) {
   const db = new DatabaseSync(file, { readOnly: true });
   try { return { version: db.prepare('PRAGMA user_version').get()?.user_version, meta: db.prepare("SELECT * FROM schema_meta WHERE meta_key='primary'").get() }; }
@@ -39,12 +56,18 @@ describe('OpenClaw auth SQLite ownership', () => {
     expect(api.readAuthProfilesFromSqlite('main')?.order).toEqual({ custom: ['custom:default'] });
     expect(await api.migrateAuthProfilesJsonToSqliteIfNeeded('main')).toBe(false);
   }, 20_000);
-  it('saves credentials readable by SQLite and JSON consumers', async () => {
+  it('saves credentials to SQLite without leaving a retired JSON source behind', async () => {
     const { saveProviderKeyToOpenClaw } = await import('@electron/utils/openclaw-auth');
     const { readAuthProfilesFromSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
     await saveProviderKeyToOpenClaw('custom', 'synthetic-key', 'main');
     expect(readAuthProfilesFromSqlite('main')?.profiles['custom:default'].key).toBe('synthetic-key');
-    expect(JSON.parse(await readFile(join(dbPath(), '../auth-profiles.json'), 'utf8')).profiles['custom:default'].key).toBe('synthetic-key');
+    expect(existsSync(join(dbPath(), '../auth-profiles.json'))).toBe(false);
+  });
+  it('keeps JSON as the Doctor import source while the agent schema migration is pending', async () => {
+    await seed(16);
+    const { saveProviderKeyToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await saveProviderKeyToOpenClaw('custom', 'pending-key', 'main');
+    expect(JSON.parse(await readFile(join(dbPath(), '../auth-profiles.json'), 'utf8')).profiles['custom:default'].key).toBe('pending-key');
   });
   it('creates a complete current schema immediately usable by the bundled runtime', async () => {
     const { writeAuthProfilesToSqlite, initializeAgentAuthDatabase } = await import('@electron/utils/openclaw-auth-sqlite');
@@ -98,6 +121,65 @@ describe('OpenClaw auth SQLite ownership', () => {
     expect(() => writeAuthProfilesToSqlite(store, 'main')).toThrow('newer OpenClaw');
     expect(await readFile(dbPath())).toEqual(before);
   }, 20_000);
+  it('reads main credentials relocated by OpenClaw Doctor into shared state', async () => {
+    await seed(25);
+    const db = new DatabaseSync(dbPath());
+    db.exec('DELETE FROM auth_profile_store');
+    db.close();
+    await seedSharedState({ location: 'state-db' }, {
+      'authProfiles.store': store,
+      'authProfiles.state': { version: 1, lastGood: { custom: 'custom:default' } },
+    });
+    const { getProviderApiKeyFromOpenClaw } = await import('@electron/utils/openclaw-auth');
+    const { readAuthProfilesFromSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
+    expect(readAuthProfilesFromSqlite('main')?.lastGood).toEqual({ custom: 'custom:default' });
+    expect(await getProviderApiKeyFromOpenClaw('custom', 'main')).toBe('synthetic-key');
+  });
+  it('writes main credentials to shared state and retires the JSON that would block them', async () => {
+    await seedSharedState({ location: 'state-db' });
+    const jsonPath = join(dbPath(), '../auth-profiles.json');
+    await mkdir(join(jsonPath, '..'), { recursive: true });
+    await writeFile(jsonPath, JSON.stringify(store));
+    const { saveProviderKeyToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await saveProviderKeyToOpenClaw('custom', 'rotated-key', 'main');
+    expect(sharedCell('authProfiles.store').profiles['custom:default'].key).toBe('rotated-key');
+    expect(existsSync(dbPath())).toBe(false);
+    expect(existsSync(jsonPath)).toBe(false);
+    expect((await readdir(join(jsonPath, '..'))).some((name) => name.startsWith('auth-profiles.json.clawx-retired-'))).toBe(true);
+  });
+  it('imports credentials missing from shared state before retiring a leftover JSON', async () => {
+    const kept = { type: 'api_key', provider: 'kept', key: 'shared-key' };
+    await seedSharedState({ location: 'state-db' }, {
+      'authProfiles.store': { version: 1, profiles: { 'kept:default': kept, 'custom:default': { ...store.profiles['custom:default'], key: 'shared-wins' } } },
+    });
+    const jsonPath = join(dbPath(), '../auth-profiles.json');
+    await mkdir(join(jsonPath, '..'), { recursive: true });
+    const added = { type: 'api_key', provider: 'added', key: 'json-only-key' };
+    await writeFile(jsonPath, JSON.stringify({ version: 1, profiles: { ...store.profiles, 'added:default': added } }));
+    const { migrateAuthProfilesJsonToSqliteIfNeeded } = await import('@electron/utils/openclaw-auth-sqlite');
+    expect(await migrateAuthProfilesJsonToSqliteIfNeeded('main')).toBe(true);
+    const profiles = sharedCell('authProfiles.store').profiles;
+    expect(profiles['custom:default'].key).toBe('shared-wins');
+    expect(profiles['added:default']).toEqual(added);
+    expect(profiles['kept:default']).toEqual(kept);
+    expect(existsSync(jsonPath)).toBe(false);
+    expect(await migrateAuthProfilesJsonToSqliteIfNeeded('main')).toBe(false);
+  });
+  it('keeps main credentials in the agent database until OpenClaw relocates them', async () => {
+    await seed(25);
+    await seedSharedState({ location: 'legacy-main' });
+    const { writeAuthProfilesToSqlite, readAuthProfilesFromSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
+    writeAuthProfilesToSqlite(store, 'main');
+    expect(sharedCell('authProfiles.store')).toBeUndefined();
+    expect(readAuthProfilesFromSqlite('main')?.profiles).toEqual(store.profiles);
+  });
+  it('refuses auth writes when the shared owner marker is invalid', async () => {
+    await seedSharedState({ location: 'elsewhere' });
+    const { writeAuthProfilesToSqlite, readAuthProfilesFromSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
+    expect(() => writeAuthProfilesToSqlite(store, 'main')).toThrow('Invalid auth.sharedStore owner');
+    expect(readAuthProfilesFromSqlite('main')).toBeNull();
+    expect(existsSync(dbPath())).toBe(false);
+  });
   it('refuses cross-agent writes', async () => {
     await seed(25);
     const db = new DatabaseSync(dbPath());

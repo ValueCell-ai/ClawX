@@ -34,6 +34,8 @@ const withPreload = (args) => args.some((arg, i) =>
 ) ? [...args] : ['--import', compatUrl, ...args];
 const nodeEnv = (env) => ({ ...(env ?? process.env), ELECTRON_RUN_AS_NODE: '1' });
 
+const hidden = (options) => options?.windowsHide === undefined ? { ...options, windowsHide: true } : options;
+
 function withRuntime(args) {
   if (!isRuntime(args[0])) return args;
   const next = [...args];
@@ -48,15 +50,34 @@ function withRuntime(args) {
   return next;
 }
 
-for (const method of ['spawn', 'spawnSync', 'execFile', 'execFileSync']) {
+// Windows gives every console child of a console-less parent (utility process,
+// windowsHide-forked node.exe) its own visible console unless it is hidden.
+function withHiddenWindow(args, hasArgs) {
+  const next = [...args];
+  const index = hasArgs && (Array.isArray(next[1]) || (next[1] == null && next.length > 2)) ? 2 : 1;
+  const options = next[index];
+  if (typeof options === 'function') next.splice(index, 0, hidden());
+  else if (options == null || typeof options === 'object') next[index] = hidden(options ?? undefined);
+  return next;
+}
+
+for (const [method, hasArgs] of [
+  ['spawn', true],
+  ['spawnSync', true],
+  ['execFile', true],
+  ['execFileSync', true],
+  ['exec', false],
+  ['execSync', false],
+]) {
   const original = childProcess[method];
+  const prepare = (args) => withHiddenWindow(hasArgs ? withRuntime(args) : args, hasArgs);
   const patched = function (...args) {
-    return original.apply(this, withRuntime(args));
+    return original.apply(this, prepare(args));
   };
   const custom = original[promisify.custom];
   if (typeof custom === 'function') {
     Object.defineProperty(patched, promisify.custom, {
-      value: (...args) => custom(...withRuntime(args)),
+      value: (...args) => custom(...prepare(args)),
     });
   }
   childProcess[method] = patched;
@@ -74,7 +95,7 @@ childProcess.fork = function (modulePath, args, options) {
       execArgv: withPreload(options?.execArgv ?? process.execArgv),
     };
   }
-  return originalFork.call(this, modulePath instanceof URL ? fileURLToPath(modulePath) : modulePath, args, options);
+  return originalFork.call(this, modulePath instanceof URL ? fileURLToPath(modulePath) : modulePath, args, hidden(options));
 };
 const OriginalWorker = workerThreads.Worker;
 workerThreads.Worker = class extends OriginalWorker {
@@ -174,8 +195,15 @@ function ensureSource(filePath: string, source: string): void {
   writeFileSync(filePath, source, 'utf8');
 }
 
+/** Write the runtime compat shim for direct `--import` preloads; returns its path. */
+export function ensureOpenClawRuntimeCompat(directory: string = app.getPath('userData')): string {
+  const compatPath = path.join(directory, OPENCLAW_RUNTIME_COMPAT_FILE);
+  ensureSource(compatPath, OPENCLAW_RUNTIME_COMPAT_SOURCE);
+  return compatPath;
+}
+
 export function ensureOpenClawUtilityBootstrap(directory: string = app.getPath('userData')): string {
-  ensureSource(path.join(directory, OPENCLAW_RUNTIME_COMPAT_FILE), OPENCLAW_RUNTIME_COMPAT_SOURCE);
+  ensureOpenClawRuntimeCompat(directory);
   const bootstrapPath = path.join(directory, OPENCLAW_UTILITY_BOOTSTRAP_FILE);
   ensureSource(bootstrapPath, OPENCLAW_UTILITY_BOOTSTRAP_SOURCE);
   return bootstrapPath;

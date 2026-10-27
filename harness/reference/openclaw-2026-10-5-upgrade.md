@@ -101,6 +101,8 @@ generated-dist patches for every OpenClaw version change.
   profiles, session SQLite files plus WAL/SHM, channel credentials, and
   ClawX-managed model selections. The pre-migration snapshot covers
   `openclaw.json`, `state/`, per-agent `auth-profiles.json` and SQLite files.
+  Main agent credentials move to the shared state database (see
+  [Shared auth profile store in 2026.10](#shared-auth-profile-store-in-202610)).
 - **Forward:** state written by a newer OpenClaw release must be reported, not
   rewritten. Unknown config keys are preserved by the sanitizer.
 - **Cross-platform:** every platform forks `openclaw.mjs` in an Electron
@@ -141,7 +143,9 @@ imports aligned with the patched builtins, while the parent utility process
 itself remains a normal Electron utility process.
 
 The Gateway, the startup doctor repair, Settings → Run Doctor, and Control UI
-device pairing all launch through `forkOpenClawUtilityProcess`.
+device pairing all launch through `forkOpenClawUtilityProcess`. The ACP chat
+process is a `child_process.fork` of `openclaw.mjs` and loads the
+compatibility module with `--import` instead.
 
 ## First launch on 2026.7.1 state
 
@@ -230,6 +234,35 @@ symlinked `node_modules/openclaw` also fails with
 That is a dev-layout artifact; Doctor from the real `build/openclaw`
 directory completes.
 
+On the same machine, the failed Doctor runs never imported the legacy
+`agents/main/sessions/sessions.json`. A later Gateway start then admitted the
+main agent database as degraded (`Sessions remain unavailable`). Cron
+maintenance, memory-core dreaming cleanup, and session reads failed every
+minute with `Legacy session store requires migration`. A Doctor run that
+completes imports the store, so this failure needs the junction fix and does
+not need a separate session-store repair.
+
+### Windows: console windows from runtime re-execs
+
+OpenClaw re-executes `process.execPath` without `windowsHide`, for example in
+the SQLite read-only workers (`sqlite-readonly-worker-*.mjs`,
+`sqlite-readonly-worker-session-*.mjs`) and the agent database verify
+(`openclaw-agent-db-readonly-open-*.mjs`). On packaged Windows, the ACP
+process runs on the bundled console-subsystem `node.exe` and is forked with
+`windowsHide: true`. Windows does not attach a console to it, so each console
+child it starts without `windowsHide` gets a new visible console. Loading
+history spawns those readers, so a black window appeared every time a
+conversation opened. The Gateway and Doctor run in an Electron utility process
+(GUI subsystem), and their console children (`node.exe`, `git`, `cmd`) have
+the same exposure.
+
+The runtime compatibility shim defaults `windowsHide: true` on `spawn`,
+`spawnSync`, `execFile`, `execFileSync`, `exec`, `execSync`, and `fork`
+(including the `promisify.custom` variants). An explicit `windowsHide: false`
+is kept. `getOpenClawEmbeddedForkSpec` preloads the same shim into the ACP
+fork with `--import`, so ACP's children inherit both the hidden-window default
+and the preload. The option has no effect on macOS and Linux.
+
 ## 2026.10 config shape written by ClawX
 
 | 2026.7.1 key | 2026.10.5 shape |
@@ -286,6 +319,59 @@ a migrated database has no effect.
 Records that differ only in `installedAt` are not rewritten. Existing
 `acceptedSurface*` capability consent is preserved, because OpenClaw
 re-checks it against the declared surface hash.
+
+## Shared auth profile store in 2026.10
+
+OpenClaw 2026.10 moves the main agent's credentials (the shared store that
+every agent merges with) out of `agents/main/agent/openclaw-agent.sqlite`.
+They go into `config_machine_state` in `state/openclaw.sqlite`, under the rows
+`authProfiles.store` and `authProfiles.state`. Their `value_json` has the same
+JSON as the agent database's `store_json` / `state_json`. The owner marker
+`auth.sharedStore` is `{"location":"state-db"}` after relocation. With no row,
+or with `legacy-main`, the store is still in the main agent database. Doctor
+relocates an upgraded store and reports `Relocated shared auth profiles into
+shared SQLite state`. A fresh 2026.10 home is `state-db` from the start. Once
+the owner is `state-db`, OpenClaw ignores the main agent database rows.
+
+OpenClaw also treats an exact-named `auth-profiles.json` (or `auth-state.json`
+/ `auth.json`) next to an auth store as an unmigrated source. For the shared
+main directory, it checks that file against the main agent database. With
+`state-db`, the file therefore blocks every provider it names, even when the
+shared store has the key: `AUTH_PROFILE_MIGRATION_REQUIRED ... affected
+providers: ...; run openclaw doctor --fix`. Earlier ClawX builds wrote the main
+agent database and a JSON compatibility copy on every key save. After the
+2026-10-27 0.6.1 upgrade, OpenClaw saw custom provider keys as missing, and
+the UI reported that no API key was configured.
+
+`electron/utils/openclaw-auth-sqlite.ts` follows the owner marker for `main`:
+
+- **`state-db`:** read and write the two shared-state cells inside
+  `BEGIN IMMEDIATE`, and recheck the owner inside the transaction.
+- **No row or `legacy-main`:** keep using the main agent database, which
+  Doctor relocates later.
+- **Invalid marker:** refuse auth writes and leave the marker for Doctor.
+
+After a successful SQLite write, ClawX renames `auth-profiles.json` to
+`auth-profiles.json.clawx-retired-<ms>`. That keeps a stale copy from blocking
+OpenClaw or bringing a deleted key back. While the agent database still waits
+for OpenClaw's schema migration, ClawX keeps writing the JSON, which Doctor
+imports. At startup, a leftover JSON next to a `state-db` store is merged
+into the shared cells. Only profiles and `order` / `lastGood` entries missing
+from the shared store are added, so a newer shared key wins. The JSON is then
+retired.
+
+Evidence on synthetic homes with OpenClaw 2026.10.5 under Electron's Node
+24.18.0:
+
+1. **Fresh home:** a ClawX key save wrote only the shared cells, and
+   `models auth list` listed the profile.
+2. **Pre-2026.10 owner (marker removed):** ClawX saved to the main agent
+   database. Doctor relocated the store and archived a 0.6.1-style JSON. ClawX
+   then read the key from the shared store, and a rotation reached OpenClaw.
+3. **Stale JSON after relocation:** OpenClaw failed with
+   `AUTH_PROFILE_MIGRATION_REQUIRED` for both named providers. After ClawX's
+   startup migration, the shared key kept its rotated value, the JSON-only
+   provider was imported, and `models auth list` succeeded.
 
 ## Capability consent for ClawX mirrors
 

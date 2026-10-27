@@ -49,6 +49,10 @@ vi.mock('@electron/utils/control-ui-device-pairing', () => ({
   approvePendingLocalDeviceRequests: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock('@electron/utils/openclaw-utility-process', () => ({
+  ensureOpenClawRuntimeCompat: () => '/tmp/clawx-user-data/openclaw-runtime-compat.mjs',
+}));
+
 vi.mock('@agentclientprotocol/sdk', () => ({
   ClientSideConnection: acpSdkMock.ClientSideConnection,
   ndJsonStream: acpSdkMock.ndJsonStream,
@@ -194,7 +198,7 @@ describe('AcpChatService', () => {
       ['acp'],
       expect.objectContaining({
         cwd: expect.stringContaining('openclaw'),
-        execArgv: [],
+        execArgv: ['--import', 'file:///tmp/clawx-user-data/openclaw-runtime-compat.mjs'],
         stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
         windowsHide: true,
         env: expect.objectContaining({

@@ -86,6 +86,9 @@ async function readOpenClawJson(): Promise<Record<string, unknown>> {
 }
 
 async function readAuthProfiles(agentId: string): Promise<Record<string, unknown>> {
+  const { readAuthProfilesFromSqlite } = await import('@electron/utils/openclaw-auth-sqlite');
+  const stored = readAuthProfilesFromSqlite(agentId);
+  if (stored) return stored as unknown as Record<string, unknown>;
   const content = await readFile(join(testHome, '.openclaw', 'agents', agentId, 'agent', 'auth-profiles.json'), 'utf8');
   return JSON.parse(content) as Record<string, unknown>;
 }

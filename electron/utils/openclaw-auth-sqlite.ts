@@ -1,8 +1,9 @@
 /**
- * OpenClaw 2026.6+ persists agent auth in openclaw-agent.sqlite.
+ * OpenClaw 2026.6+ persists agent auth in openclaw-agent.sqlite, and 2026.10
+ * relocates main's shared credentials into state/openclaw.sqlite.
  * ClawX historically wrote auth-profiles.json only; gateway runtime reads SQLite.
  */
-import { chmodSync, existsSync, linkSync, mkdirSync, rmSync } from 'fs';
+import { chmodSync, existsSync, linkSync, mkdirSync, renameSync, rmSync } from 'fs';
 import { randomUUID } from 'node:crypto';
 import { access, readFile } from 'fs/promises';
 import { constants } from 'fs';
@@ -14,6 +15,14 @@ import * as persistenceRuntime from './openclaw-persistence-runtime';
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
 const AUTH_SQLITE_FILENAME = 'openclaw-agent.sqlite';
 const PRIMARY_ROW_KEY = 'primary';
+// OpenClaw 2026.10 Doctor relocates main's shared credentials into
+// state/openclaw.sqlite and records the new owner under this key. Once it
+// says "state-db", the runtime ignores main's agent-database auth rows.
+const SHARED_AUTH_AGENT_ID = 'main';
+const SHARED_AUTH_STORE_STATE_KEY = 'auth.sharedStore';
+const SHARED_AUTH_STORE_CELL_KEY = 'authProfiles.store';
+const SHARED_AUTH_STATE_CELL_KEY = 'authProfiles.state';
+const STATE_BUSY_TIMEOUT_MS = 5_000;
 // Admission ceiling, never a substitute for migrating a database's structure.
 const OPENCLAW_OWNED_AGENT_SCHEMA_VERSION = 25;
 
@@ -54,6 +63,10 @@ export function getAuthProfilesJsonPath(agentId: string): string {
 
 export function getAuthProfilesSqlitePath(agentId: string): string {
   return join(getAgentAuthDir(agentId), AUTH_SQLITE_FILENAME);
+}
+
+export function getOpenClawStateSqlitePath(): string {
+  return join(homedir(), '.openclaw', 'state', 'openclaw.sqlite');
 }
 
 function ensureAgentAuthDir(agentId: string): void {
@@ -231,6 +244,82 @@ function hasPersistedProfiles(store: PersistedAuthProfilesStore | null | undefin
   return !!store && Object.keys(store.profiles).length > 0;
 }
 
+function readConfigMachineStateCell(db: DatabaseSync, stateKey: string): string | undefined {
+  const table = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'config_machine_state'").get();
+  if (!table) return undefined;
+  const row = db.prepare('SELECT value_json FROM config_machine_state WHERE state_key = ?')
+    .get(stateKey) as { value_json?: string } | undefined;
+  return row?.value_json;
+}
+
+function readsSharedStateAuthStore(db: DatabaseSync, sqlitePath: string): boolean {
+  const raw = readConfigMachineStateCell(db, SHARED_AUTH_STORE_STATE_KEY);
+  if (raw === undefined) return false;
+  const ownership = parseJsonCell(raw);
+  if (ownership?.location === 'state-db') return true;
+  if (ownership?.location === 'legacy-main') return false;
+  throw new Error(`Invalid ${SHARED_AUTH_STORE_STATE_KEY} owner in ${sqlitePath}; run OpenClaw Doctor to repair it`);
+}
+
+/** Whether OpenClaw serves this agent's credentials from the shared state database. */
+export function usesSharedStateAuthStore(agentId: string): boolean {
+  if (agentId !== SHARED_AUTH_AGENT_ID) return false;
+  const sqlitePath = getOpenClawStateSqlitePath();
+  if (!existsSync(sqlitePath)) return false;
+  const db = new DatabaseSync(sqlitePath, { readOnly: true });
+  try {
+    return readsSharedStateAuthStore(db, sqlitePath);
+  } finally {
+    db.close();
+  }
+}
+
+function readSharedStateAuthProfiles(): PersistedAuthProfilesStore | null {
+  const sqlitePath = getOpenClawStateSqlitePath();
+  const db = new DatabaseSync(sqlitePath, { readOnly: true });
+  try {
+    return mergeStoreAndState(
+      parseJsonCell(readConfigMachineStateCell(db, SHARED_AUTH_STORE_CELL_KEY)),
+      parseJsonCell(readConfigMachineStateCell(db, SHARED_AUTH_STATE_CELL_KEY)),
+    );
+  } finally {
+    db.close();
+  }
+}
+
+function writeSharedStateAuthProfiles(store: PersistedAuthProfilesStore): void {
+  const sqlitePath = getOpenClawStateSqlitePath();
+  const db = new DatabaseSync(sqlitePath);
+  db.exec(`PRAGMA busy_timeout = ${STATE_BUSY_TIMEOUT_MS};`);
+  let committed = false;
+  try {
+    db.exec('BEGIN IMMEDIATE');
+    if (!readsSharedStateAuthStore(db, sqlitePath)) {
+      throw new Error(`OpenClaw shared auth store moved out of ${sqlitePath} during write; retry the auth update`);
+    }
+    const upsert = db.prepare(`
+      INSERT INTO config_machine_state (state_key, value_json, updated_at_ms)
+      VALUES (?, ?, ?)
+      ON CONFLICT(state_key) DO UPDATE SET
+        value_json = excluded.value_json,
+        updated_at_ms = excluded.updated_at_ms
+    `);
+    const now = Date.now();
+    upsert.run(SHARED_AUTH_STORE_CELL_KEY, JSON.stringify(buildSecretsPayload(store)), now);
+    const statePayload = buildStatePayload(store);
+    if (statePayload) {
+      upsert.run(SHARED_AUTH_STATE_CELL_KEY, JSON.stringify(statePayload), now);
+    } else {
+      db.prepare('DELETE FROM config_machine_state WHERE state_key = ?').run(SHARED_AUTH_STATE_CELL_KEY);
+    }
+    db.exec('COMMIT');
+    committed = true;
+  } finally {
+    if (!committed && db.isTransaction) db.exec('ROLLBACK');
+    db.close();
+  }
+}
+
 function openAgentDatabase(agentId: string, sqlitePath: string): DatabaseSync {
   initializeAgentAuthDatabase(agentId);
   const db = new DatabaseSync(sqlitePath);
@@ -248,6 +337,13 @@ function openAgentDatabase(agentId: string, sqlitePath: string): DatabaseSync {
 }
 
 export function readAuthProfilesFromSqlite(agentId: string): PersistedAuthProfilesStore | null {
+  try {
+    if (usesSharedStateAuthStore(agentId)) return readSharedStateAuthProfiles();
+  } catch (error) {
+    console.warn(`Failed to read shared auth profiles from SQLite (${getOpenClawStateSqlitePath()}):`, error);
+    return null;
+  }
+
   const sqlitePath = getAuthProfilesSqlitePath(agentId);
   if (!existsSync(sqlitePath)) {
     return null;
@@ -277,6 +373,12 @@ export function writeAuthProfilesToSqlite(
   store: PersistedAuthProfilesStore,
   agentId: string,
 ): void {
+  if (usesSharedStateAuthStore(agentId)) {
+    writeSharedStateAuthProfiles(store);
+    retireAuthProfilesJson(agentId);
+    return;
+  }
+
   const sqlitePath = getAuthProfilesSqlitePath(agentId);
   const db = openAgentDatabase(agentId, sqlitePath);
   try {
@@ -312,6 +414,7 @@ export function writeAuthProfilesToSqlite(
     db.close();
     tightenDatabasePermissions(sqlitePath);
   }
+  retireAuthProfilesJson(agentId);
 }
 
 export async function readAuthProfilesJson(agentId: string): Promise<PersistedAuthProfilesStore | null> {
@@ -338,7 +441,59 @@ export function repairOpenClawOwnedAgentSchema(agentId: string): void {
   }
 }
 
+/**
+ * Once SQLite holds the credentials, auth-profiles.json is a stale copy:
+ * ClawX would resurrect deleted keys from it, and OpenClaw blocks every
+ * provider listed in main's file once credentials live in shared state.
+ * The suffix avoids OpenClaw's `.migrated-` / `.sqlite-import.` archive names.
+ */
+function retireAuthProfilesJson(agentId: string): void {
+  const jsonPath = getAuthProfilesJsonPath(agentId);
+  if (!existsSync(jsonPath)) return;
+  renameSync(jsonPath, `${jsonPath}.clawx-retired-${Date.now()}`);
+}
+
+function mergeMissingProfiles(
+  target: PersistedAuthProfilesStore,
+  source: PersistedAuthProfilesStore,
+): boolean {
+  let changed = false;
+  for (const [profileId, credential] of Object.entries(source.profiles)) {
+    if (Object.hasOwn(target.profiles, profileId)) continue;
+    target.profiles[profileId] = credential;
+    changed = true;
+  }
+  for (const field of ['order', 'lastGood'] as const) {
+    for (const [provider, value] of Object.entries(source[field] ?? {})) {
+      if (target[field] && Object.hasOwn(target[field], provider)) continue;
+      target[field] = { ...target[field], [provider]: value } as never;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+async function migrateSharedAuthProfilesJson(): Promise<boolean> {
+  const jsonStore = await readAuthProfilesJson(SHARED_AUTH_AGENT_ID);
+  if (!jsonStore) {
+    retireAuthProfilesJson(SHARED_AUTH_AGENT_ID);
+    return false;
+  }
+  const sharedStore = readSharedStateAuthProfiles() ?? { version: jsonStore.version, profiles: {} };
+  const changed = mergeMissingProfiles(sharedStore, jsonStore);
+  if (changed) writeSharedStateAuthProfiles(sharedStore);
+  retireAuthProfilesJson(SHARED_AUTH_AGENT_ID);
+  if (changed) {
+    console.log('[auth-sync] Imported retired auth-profiles.json into OpenClaw shared auth state');
+  }
+  return changed;
+}
+
 export async function migrateAuthProfilesJsonToSqliteIfNeeded(agentId: string): Promise<boolean> {
+  if (usesSharedStateAuthStore(agentId)) {
+    return migrateSharedAuthProfilesJson();
+  }
+
   const sqlitePath = getAuthProfilesSqlitePath(agentId);
   if (existsSync(sqlitePath)) {
     try {

@@ -46,6 +46,10 @@ vi.mock('@electron/utils/paths', () => ({
   getOpenClawEntryPath: () => mockedEntryPath,
 }));
 
+vi.mock('@electron/utils/openclaw-utility-process', () => ({
+  ensureOpenClawRuntimeCompat: () => '/tmp/clawx-user-data/openclaw-runtime-compat.mjs',
+}));
+
 function setResourcesPath(resourcesPath: string | undefined) {
   Object.defineProperty(process, 'resourcesPath', {
     value: resourcesPath,
@@ -242,7 +246,7 @@ describe('getOpenClawEmbeddedForkSpec', () => {
       options: {
         cwd: '/tmp/openclaw',
         execPath: helperPath,
-        execArgv: [],
+        execArgv: ['--import', 'file:///tmp/clawx-user-data/openclaw-runtime-compat.mjs'],
         stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
         windowsHide: true,
         env: expect.objectContaining({

@@ -1,8 +1,9 @@
 /**
  * OpenClaw Auth Profiles Utility
- * Writes API keys to OpenClaw agent auth storage (SQLite primary since 2026.6+,
- * with auth-profiles.json kept for migration compatibility) so the Gateway can
- * load them for AI provider calls.
+ * Writes API keys to OpenClaw agent auth storage (SQLite since 2026.6+; main's
+ * credentials move to shared state once OpenClaw 2026.10 relocates them, and
+ * auth-profiles.json is written only while a schema migration is pending) so
+ * the Gateway can load them for AI provider calls.
  *
  * All file I/O is asynchronous (fs/promises) to avoid blocking the
  * Electron main thread.  On Windows + NTFS + Defender the synchronous
@@ -492,6 +493,9 @@ async function readAuthProfiles(agentId = 'main'): Promise<AuthProfilesStore> {
 async function writeAuthProfiles(store: AuthProfilesStore, agentId = 'main'): Promise<void> {
   try {
     writeAuthProfilesToSqlite(store, agentId);
+    // OpenClaw 2026.10 treats auth-profiles.json as an unmigrated source and
+    // can refuse its providers, so the file is only Doctor's import input.
+    return;
   } catch (error) {
     // Do not write into a v1/v16 database before OpenClaw doctor owns the
     // migration. Keeping the legacy JSON source intact lets doctor import it
