@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   removeProviderKeyFromOpenClaw: vi.fn(),
   saveOAuthTokenToOpenClaw: vi.fn(),
   saveProviderKeyToOpenClaw: vi.fn(),
+  seedOAuthTokenToOpenClaw: vi.fn(),
+  seedProviderKeyToOpenClaw: vi.fn(),
   setOpenClawDefaultModel: vi.fn(),
   setOpenClawDefaultModelWithOverride: vi.fn(),
   syncProviderConfigToOpenClaw: vi.fn(),
@@ -55,6 +57,8 @@ vi.mock('@electron/utils/openclaw-auth', () => ({
   removeProviderKeyFromOpenClaw: mocks.removeProviderKeyFromOpenClaw,
   saveOAuthTokenToOpenClaw: mocks.saveOAuthTokenToOpenClaw,
   saveProviderKeyToOpenClaw: mocks.saveProviderKeyToOpenClaw,
+  seedOAuthTokenToOpenClaw: mocks.seedOAuthTokenToOpenClaw,
+  seedProviderKeyToOpenClaw: mocks.seedProviderKeyToOpenClaw,
   OPENAI_CODEX_OAUTH_PROVIDER_CONFIG: {
     baseUrl: 'https://chatgpt.com/backend-api/codex',
     api: 'openai-chatgpt-responses',
@@ -85,6 +89,7 @@ import {
   syncDefaultProviderToRuntime,
   syncDeletedProviderApiKeyToRuntime,
   syncDeletedProviderToRuntime,
+  syncAllProviderAuthToRuntime,
   syncSavedProviderToRuntime,
   syncUpdatedProviderToRuntime,
 } from '@electron/services/providers/provider-runtime-sync';
@@ -136,6 +141,8 @@ describe('provider-runtime-sync config delivery', () => {
     mocks.setOpenClawDefaultModel.mockResolvedValue(undefined);
     mocks.setOpenClawDefaultModelWithOverride.mockResolvedValue(undefined);
     mocks.saveProviderKeyToOpenClaw.mockResolvedValue(undefined);
+    mocks.seedOAuthTokenToOpenClaw.mockResolvedValue(undefined);
+    mocks.seedProviderKeyToOpenClaw.mockResolvedValue(undefined);
     mocks.removeProviderFromOpenClaw.mockResolvedValue(undefined);
     mocks.removeProviderKeyFromOpenClaw.mockResolvedValue(undefined);
     mocks.updateAgentModelProvider.mockResolvedValue(undefined);
@@ -143,6 +150,90 @@ describe('provider-runtime-sync config delivery', () => {
     mocks.getProviderApiKeyFromOpenClaw.mockResolvedValue(null);
     mocks.listProviderAccounts.mockResolvedValue([]);
     mocks.listAgentsSnapshot.mockResolvedValue({ agents: [] });
+  });
+
+  it('seeds startup API keys without replacing existing agent-local profiles', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([
+      {
+        id: 'openrouter-primary',
+        label: 'OpenRouter',
+        vendorId: 'openrouter',
+        enabled: true,
+        createdAt: '2026-03-14T00:00:00.000Z',
+        updatedAt: '2026-03-14T00:00:00.000Z',
+      },
+    ]);
+    mocks.getProviderSecret.mockResolvedValue({ type: 'api_key', apiKey: 'sk-main' });
+
+    await syncAllProviderAuthToRuntime();
+
+    expect(mocks.seedProviderKeyToOpenClaw).toHaveBeenCalledWith('openrouter', 'sk-main');
+    expect(mocks.saveProviderKeyToOpenClaw).not.toHaveBeenCalled();
+  });
+
+  it('seeds startup OAuth tokens without replacing existing agent-local profiles', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([
+      {
+        id: 'openai-primary',
+        label: 'OpenAI',
+        vendorId: 'openai',
+        enabled: true,
+        createdAt: '2026-03-14T00:00:00.000Z',
+        updatedAt: '2026-03-14T00:00:00.000Z',
+      },
+    ]);
+    mocks.getProviderSecret.mockResolvedValue({
+      type: 'oauth',
+      accessToken: 'startup-access',
+      refreshToken: 'startup-refresh',
+      expiresAt: 123456,
+      email: 'main@example.com',
+      subject: 'main-account',
+    });
+
+    await syncAllProviderAuthToRuntime();
+
+    expect(mocks.seedOAuthTokenToOpenClaw).toHaveBeenCalledWith('openai', {
+      access: 'startup-access',
+      refresh: 'startup-refresh',
+      expires: 123456,
+      email: 'main@example.com',
+      projectId: 'main-account',
+    });
+    expect(mocks.saveOAuthTokenToOpenClaw).not.toHaveBeenCalled();
+  });
+
+  it('uses the enabled default account when multiple accounts share a runtime provider', async () => {
+    mocks.listProviderAccounts.mockResolvedValue([
+      {
+        id: 'openrouter-secondary',
+        label: 'OpenRouter Secondary',
+        vendorId: 'openrouter',
+        enabled: true,
+        isDefault: false,
+        createdAt: '2026-03-14T00:00:00.000Z',
+        updatedAt: '2026-03-14T00:00:00.000Z',
+      },
+      {
+        id: 'openrouter-primary',
+        label: 'OpenRouter Primary',
+        vendorId: 'openrouter',
+        enabled: true,
+        isDefault: true,
+        createdAt: '2026-03-14T00:00:00.000Z',
+        updatedAt: '2026-03-14T00:00:00.000Z',
+      },
+    ]);
+    mocks.getProviderSecret.mockImplementation(async (accountId: string) => ({
+      type: 'api_key',
+      apiKey: accountId === 'openrouter-primary' ? 'sk-primary' : 'sk-secondary',
+    }));
+
+    await syncAllProviderAuthToRuntime();
+
+    expect(mocks.getProviderSecret).toHaveBeenCalledOnce();
+    expect(mocks.getProviderSecret).toHaveBeenCalledWith('openrouter-primary');
+    expect(mocks.seedProviderKeyToOpenClaw).toHaveBeenCalledWith('openrouter', 'sk-primary');
   });
 
   it('delivers a Google account to the runtime from its backend preset', async () => {

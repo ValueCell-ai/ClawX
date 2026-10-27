@@ -169,6 +169,240 @@ describe('saveProviderKeyToOpenClaw', () => {
     expect(manager.rpc).toHaveBeenCalledOnce();
     expect(manager.rpc).toHaveBeenCalledWith('secrets.reload', {});
   });
+
+  it('seeds missing profiles without overwriting an agent-local key', async () => {
+    await writeOpenClawJson({
+      agents: {
+        list: [
+          { id: 'main', default: true },
+          { id: 'secondary' },
+        ],
+      },
+    });
+    await writeAgentAuthProfiles('secondary', {
+      version: 1,
+      profiles: {
+        'openrouter:default': {
+          type: 'api_key',
+          provider: 'openrouter',
+          key: 'sk-secondary',
+        },
+      },
+      order: { openrouter: ['openrouter:default'] },
+      lastGood: { openrouter: 'openrouter:default' },
+    });
+
+    const { seedProviderKeyToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await seedProviderKeyToOpenClaw('openrouter', 'sk-main');
+
+    const mainProfiles = await readAuthProfiles('main');
+    const secondaryProfiles = await readAuthProfiles('secondary');
+    expect((mainProfiles.profiles as Record<string, { key: string }>)['openrouter:default'].key).toBe('sk-main');
+    expect((secondaryProfiles.profiles as Record<string, { key: string }>)['openrouter:default'].key).toBe('sk-secondary');
+  });
+
+  it('preserves a named agent-local API key profile during seeding', async () => {
+    await writeOpenClawJson({ agents: { list: [{ id: 'main', default: true }, { id: 'secondary' }] } });
+    await writeAgentAuthProfiles('secondary', {
+      version: 1,
+      profiles: {
+        'openrouter:manual': {
+          type: 'api_key',
+          provider: 'openrouter',
+          key: 'sk-secondary',
+        },
+      },
+      order: { openrouter: ['openrouter:manual'] },
+      lastGood: { openrouter: 'openrouter:manual' },
+    });
+
+    const { seedProviderKeyToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await seedProviderKeyToOpenClaw('openrouter', 'sk-main');
+
+    const secondaryProfiles = await readAuthProfiles('secondary');
+    expect(secondaryProfiles.profiles).toEqual({
+      'openrouter:manual': {
+        type: 'api_key',
+        provider: 'openrouter',
+        key: 'sk-secondary',
+      },
+    });
+    expect(secondaryProfiles.order).toEqual({ openrouter: ['openrouter:manual'] });
+    expect(secondaryProfiles.lastGood).toEqual({ openrouter: 'openrouter:manual' });
+  });
+
+  it('preserves a named token SecretRef when seeding an API key', async () => {
+    await writeOpenClawJson({ agents: { list: [{ id: 'main', default: true }, { id: 'secondary' }] } });
+    const tokenRef = { source: 'env', provider: 'default', id: 'OPENROUTER_TOKEN' };
+    await writeAgentAuthProfiles('secondary', {
+      version: 1,
+      profiles: {
+        'openrouter:managed': {
+          type: 'token',
+          provider: 'openrouter',
+          tokenRef,
+        },
+      },
+      order: { openrouter: ['openrouter:managed'] },
+      lastGood: { openrouter: 'openrouter:managed' },
+    });
+
+    const { seedProviderKeyToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await seedProviderKeyToOpenClaw('openrouter', 'sk-main');
+
+    const secondaryProfiles = await readAuthProfiles('secondary');
+    expect(secondaryProfiles.profiles).toEqual({
+      'openrouter:managed': {
+        type: 'token',
+        provider: 'openrouter',
+        tokenRef,
+      },
+    });
+    expect(secondaryProfiles.lastGood).toEqual({ openrouter: 'openrouter:managed' });
+  });
+
+  it('seeds OAuth for main without replacing a secondary agent token', async () => {
+    await writeOpenClawJson({ agents: { list: [{ id: 'main', default: true }, { id: 'secondary' }] } });
+    await writeAgentAuthProfiles('secondary', {
+      version: 1,
+      profiles: {
+        'openai:manual': {
+          type: 'oauth',
+          provider: 'openai',
+          access: 'secondary-access',
+          refresh: 'secondary-refresh',
+          expires: 999999,
+        },
+      },
+      order: { openai: ['openai:manual'] },
+      lastGood: { openai: 'openai:manual' },
+    });
+
+    const { seedOAuthTokenToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await seedOAuthTokenToOpenClaw('openai', {
+      access: 'main-access',
+      refresh: 'main-refresh',
+      expires: 123456,
+    });
+
+    const mainProfiles = await readAuthProfiles('main');
+    const secondaryProfiles = await readAuthProfiles('secondary');
+    expect((mainProfiles.profiles as Record<string, { access: string }>)['openai:default'].access).toBe('main-access');
+    expect(secondaryProfiles.profiles).toEqual({
+      'openai:manual': {
+        type: 'oauth',
+        provider: 'openai',
+        access: 'secondary-access',
+        refresh: 'secondary-refresh',
+        expires: 999999,
+      },
+    });
+    expect(secondaryProfiles.order).toEqual({ openai: ['openai:manual'] });
+    expect(secondaryProfiles.lastGood).toEqual({ openai: 'openai:manual' });
+  });
+
+  it('does not copy startup OAuth refresh tokens into secondary agent stores', async () => {
+    await writeOpenClawJson({ agents: { list: [{ id: 'main', default: true }, { id: 'secondary' }] } });
+    await writeAgentAuthProfiles('secondary', { version: 1, profiles: {} });
+
+    const { seedOAuthTokenToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await seedOAuthTokenToOpenClaw('openai', {
+      access: 'main-access',
+      refresh: 'main-refresh',
+      expires: 123456,
+    });
+
+    const mainProfiles = await readAuthProfiles('main');
+    const secondaryProfiles = await readAuthProfiles('secondary');
+    expect((mainProfiles.profiles as Record<string, { refresh: string }>)['openai:default'].refresh).toBe('main-refresh');
+    expect(secondaryProfiles.profiles).toEqual({});
+  });
+
+  it('preserves a refresh-only OAuth profile in the main agent store', async () => {
+    await writeAgentAuthProfiles('main', {
+      version: 1,
+      profiles: {
+        'openai:manual': {
+          type: 'oauth',
+          provider: 'openai',
+          access: '',
+          refresh: 'existing-refresh',
+          expires: 0,
+        },
+      },
+      order: { openai: ['openai:manual'] },
+      lastGood: { openai: 'openai:manual' },
+    });
+
+    const { seedOAuthTokenToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await seedOAuthTokenToOpenClaw('openai', {
+      access: 'startup-access',
+      refresh: 'startup-refresh',
+      expires: 123456,
+    });
+
+    const mainProfiles = await readAuthProfiles('main');
+    expect(mainProfiles.profiles).toEqual({
+      'openai:manual': {
+        type: 'oauth',
+        provider: 'openai',
+        access: '',
+        refresh: 'existing-refresh',
+        expires: 0,
+      },
+    });
+    expect(mainProfiles.lastGood).toEqual({ openai: 'openai:manual' });
+  });
+
+  it('saves OAuth to main unless an agent is explicitly selected', async () => {
+    await writeOpenClawJson({ agents: { list: [{ id: 'main', default: true }, { id: 'secondary' }] } });
+    await writeAgentAuthProfiles('secondary', { version: 1, profiles: {} });
+
+    const { saveOAuthTokenToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await saveOAuthTokenToOpenClaw('openai', {
+      access: 'main-access',
+      refresh: 'main-refresh',
+      expires: 123456,
+    });
+
+    const mainProfiles = await readAuthProfiles('main');
+    const secondaryProfiles = await readAuthProfiles('secondary');
+    expect((mainProfiles.profiles as Record<string, { refresh: string }>)['openai:default'].refresh).toBe('main-refresh');
+    expect(secondaryProfiles.profiles).toEqual({});
+  });
+
+  it('preserves an API-key SecretRef when seeding OAuth', async () => {
+    const keyRef = { source: 'file', provider: 'default', id: 'openai' };
+    await writeAgentAuthProfiles('main', {
+      version: 1,
+      profiles: {
+        'openai:managed': {
+          type: 'api_key',
+          provider: 'openai',
+          keyRef,
+        },
+      },
+      order: { openai: ['openai:managed'] },
+      lastGood: { openai: 'openai:managed' },
+    });
+
+    const { seedOAuthTokenToOpenClaw } = await import('@electron/utils/openclaw-auth');
+    await seedOAuthTokenToOpenClaw('openai', {
+      access: 'main-access',
+      refresh: 'main-refresh',
+      expires: 123456,
+    });
+
+    const mainProfiles = await readAuthProfiles('main');
+    expect(mainProfiles.profiles).toEqual({
+      'openai:managed': {
+        type: 'api_key',
+        provider: 'openai',
+        keyRef,
+      },
+    });
+    expect(mainProfiles.lastGood).toEqual({ openai: 'openai:managed' });
+  });
 });
 
 describe('removeProviderKeyFromOpenClaw', () => {
