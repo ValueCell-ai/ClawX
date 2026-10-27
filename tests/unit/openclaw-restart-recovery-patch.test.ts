@@ -140,6 +140,62 @@ describe('OpenClaw restart recovery contract', () => {
     ]);
   });
 
+  it('uses native admitted routing for live and completed recovery wait targets', async () => {
+    const { stdout } = await execFileAsync(process.execPath, ['--input-type=module', '-e', `
+      import * as registry from './node_modules/openclaw/dist/agent-run-registry-zReSioYT.mjs';
+      import * as events from './node_modules/openclaw/dist/agent-events-CCeMHYh0.mjs';
+      import * as jobs from './node_modules/openclaw/dist/agent-job-DleplIFW.mjs';
+      import { n as prepareWait } from './node_modules/openclaw/dist/session-request-targets-BAGtAj-T.mjs';
+      const key = 'agent:main:restart-native-fixture';
+      const generation = registry.f();
+      await jobs.a({ runId: 'initialize-observer', timeoutMs: 0 });
+      const owner = registry.i('recovered', { sessionKey: key, sessionId: 'session', lifecycleGeneration: generation, resumedFromRunId: 'original' }, { trackOwner: true, ownsContext: true });
+      registry.i('unrelated', { sessionKey: key, sessionId: 'session', lifecycleGeneration: generation });
+      const live = jobs.resolveAgentRecoveryWaitTarget('original', key);
+      const wrongSession = jobs.resolveAgentRecoveryWaitTarget('original', 'agent:other:session');
+      const seen = [];
+      events.m(event => seen.push(event));
+      events.a({ runId: 'unrelated', resumedFromRunId: 'forged', stream: 'lifecycle', data: { phase: 'start', startedAt: Date.now() } });
+      events.a({ runId: 'recovered', stream: 'lifecycle', data: { phase: 'end', startedAt: Date.now() - 1, endedAt: Date.now(), status: 'ok', stopReason: 'stop', terminalReply: { disposition: 'empty' } } });
+      registry.o('recovered');
+      registry.C('recovered', owner);
+      const completed = jobs.resolveAgentRecoveryWaitTarget('original', key);
+      const wait = prepareWait({ chatAbortControllers: new Map(), chatQueuedTurns: new Map(), dedupe: new Map(), getRuntimeConfig: () => ({ agents: { defaults: { workspace: '/tmp/acp-fixture' } } }) }, { runId: 'original', sessionKey: key, timeoutMs: 0 });
+      const observation = await wait.wait();
+      console.log(JSON.stringify({ live, wrongSession, completed, forged: seen.find(e => e.runId === 'unrelated').resumedFromRunId ?? null, session: wait.session, result: observation.result }));
+    `], { cwd: root, timeout: 20_000 });
+    const result = JSON.parse(stdout.trim().split('\n').at(-1)!);
+    expect(result).toMatchObject({
+      live: 'recovered', completed: 'recovered', wrongSession: 'original', forged: null,
+      session: { sessionKey: 'agent:main:restart-native-fixture', sessionId: 'session' },
+      result: { runId: 'recovered', resumedFromRunId: 'original', status: 'ok' },
+    });
+  });
+
+  it('requires the exact durable terminal owner before using a post-restart receipt', async () => {
+    const bundle = await readFile(path.join(dist, 'session-request-targets-BAGtAj-T.mjs'), 'utf8');
+    const start = bundle.indexOf('function readAcpTerminalOwner(');
+    const end = bundle.indexOf('function prepareAgentWaitForTurn(', start);
+    let entry: Record<string, unknown> = { sessionId: 'native-session', lastRunId: 'finished-run', status: 'done', endedAt: 100 };
+    const sandbox = {
+      resolveSessionSharingTarget: () => ({ entry, storeKey: 'agent:main:fixture', agentId: 'main' }),
+      getAgentEventLifecycleGeneration: () => 'current-generation',
+      read: undefined as undefined | ((context: unknown, run: string, key: string) => unknown),
+    };
+    runInNewContext(`${bundle.slice(start, end)}\nglobalThis.read = readAcpTerminalOwner;`, sandbox);
+    const context = { getRuntimeConfig: () => ({}) };
+    expect(sandbox.read?.(context, 'finished-run', 'agent:main:fixture')).toMatchObject({
+      status: 'ok', terminalReceipt: { runId: 'finished-run', sessionId: 'native-session' },
+    });
+    for (const patch of [
+      { lastRunId: 'later-run' }, { lifecycleRunId: 'active-run' },
+      { status: 'interrupted' }, { endedAt: Number.NaN },
+    ]) {
+      entry = { sessionId: 'native-session', lastRunId: 'finished-run', status: 'done', endedAt: 100, ...patch };
+      expect(sandbox.read?.(context, 'finished-run', 'agent:main:fixture')).toBeUndefined();
+    }
+  });
+
   it('keeps every patched runtime chunk syntactically valid', async () => {
     const patch = await readFile(path.join(root, PATCH_PATH), 'utf8');
     const files = [...patch.matchAll(/^diff --git a\/(dist\/[^ ]+) b\//gm)].map((match) => match[1]);

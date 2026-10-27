@@ -71,13 +71,16 @@ Development mode uses the developer's `node` from `PATH`; it must be
 
 ## ClawX runtime patch port map (2026.7.1-2 → 2026.10.5)
 
-The 2026.7.1-2 patch touched 30 generated files. New homes and port status:
+The 2026.7.1-2 patch touched 30 generated files. The initial static port map
+overstated some guarantees. [Live ClawX verification](openclaw-patch-live-verification.md)
+on 2026-10-28 distinguishes reproduced gaps from current producer/ClawX
+compensations. New homes and the corrected status follow:
 
 | Feature | Old chunk | 2026.10.5 target | Status |
 | --- | --- | --- | --- |
 | TokenDance recovery header | `errors-sMD712F3.js` | `error-coercion-*.mjs` | ported |
-| ACP compaction update projection | `acp-cli-*.js` | `server-*.mjs` | ported (function + agent stream + session.operation) |
-| ACP tool/toolCall/compaction replay | `acp-cli-*.js` | `server-*.mjs` `extractReplayChunks` | ported |
+| ACP compaction update projection | `acp-cli-*.js` | `server-*.mjs` | partial: helpers exist; real manual/direct-recovery lifecycle delivery is incomplete |
+| ACP tool/toolCall/compaction replay | `acp-cli-*.js` | `server-*.mjs` `extractReplayChunks` | transcript fallback ported; complete ledgers omit newer out-of-band transcript tails |
 | ACP snapshot-aware delta/text snapshot | `acp-cli-*.js` | `server-*.mjs` | ported |
 | Manual compaction operation metadata | `sessions-*.js` | `sessions-compact-*.mjs` | ported |
 | Compaction cut point (`keepRecentTokens: 0`) | `proxy-*.js` | `agent-core-*.mjs` `prepareCompaction` | ported |
@@ -85,13 +88,13 @@ The 2026.7.1-2 patch touched 30 generated files. New homes and port status:
 | Settings keepRecentTokens=0 | `agent-settings-*.js` | `agent-settings-*.mjs` | ported |
 | No-tail boundary hardening | `compact-*.js` | upstream removed `hardenManualCompactionBoundary` | obsolete |
 | Compaction ids/timestamps | `selection-*.js` | `builtin-openclaw-*.mjs` | ported |
-| ACP ambient/subagent streaming | `acp-cli-*.js` | `server-*.mjs` new prompt stream | ported (session message subscriptions, replay buffer, ambient tool/thought/chat) |
-| Restart-recovery run lineage | `agent-*.js`, `agent-events-*.js` | upstream 2026.10.5 | upstreamed, patch dropped |
-| Main-session restart recovery | `main-session-restart-recovery-*.js` | upstream `main-session-restart-recovery-*.mjs` | upstreamed |
-| `session.operation` broadcast | `sessions-*.js` | `sessions-compact-*.mjs` | manual compaction metadata ported |
-| Chat `resumedFromRunId` projection | `server-chat-*.js` | upstream recovery lineage | obsolete |
-| Approval run/tool identity | `exec-approval-*.js`, `schema-*.js` | upstream approval records | upstreamed |
-| Aggregate tool-result pressure target | `attempt.tool-run-context-*.js`, `selection-*.js` | upstream pressure rework | obsolete |
+| ACP ambient/subagent streaming | `acp-cli-*.js` | `server-*.mjs` new prompt stream | fresh-session completion passes via ClawX's settled-prompt reload; out-of-band reload coverage remains incomplete |
+| Restart-recovery run lineage | `agent-*.js`, `agent-events-*.js` | upstream core and ACP translator | repaired after live confirmation: admitted lineage, finite ACP waiting and recovered-run adoption are ported |
+| Main-session restart recovery | `main-session-restart-recovery-*.js` | upstream `main-session-restart-recovery-*.mjs` | native scheduler retained; ACP/UI now receive and settle the linked recovery run |
+| `session.operation` broadcast | `sessions-*.js` | `sessions-compact-*.mjs`, `sessions-shared-*.mjs` | metadata ported; exact message-only subscriber missed real start/end events |
+| Chat `resumedFromRunId` projection | `server-chat-*.js` | current trusted recovery lineage | ported from validated native admission through Chat, tools, approvals and retained routing |
+| Approval run/tool identity | `exec-approval-*.js`, `schema-*.js` | upstream approval records | normal fields retained; recovery lineage is included for ACP relay binding |
+| Aggregate tool-result pressure target | `attempt.tool-run-context-*.js`, `selection-*.js` | upstream pressure rework | old target absent; real pressure completed through two compactions; old stuck-run failure not reproduced |
 | bash tool run/tool ids | `bash-tools-*.js` | upstream tool-run context | upstreamed |
 | Provider terminal error text | `server-chat-*.js`, `agent-*.js` | `server-*.mjs` ACP error terminal | ported |
 
@@ -638,3 +641,15 @@ assistant prose as structured plan data, or reconstruct a missing plan from
 tool arguments/results. Keep any proposed exception consistent with
 [`acp-chat-state-and-history`](../specs/rules/acp-chat-state-and-history.md) and
 [`ACP semantic authority`](acp-chat.md#acp-semantic-authority).
+
+
+### Restart continuation repair (2026-10-28)
+
+After the user confirmed the live regression, the current patch reconnects ACP to
+native-admitted recovery runs. It carries the verified predecessor through routing,
+Chat/tool/approval delivery and bounded job observations; retains Main's 480000 ms
+accepted-prompt budget and the 5000 ms unacknowledged-send deadline; and guards
+terminal reconciliation by exact run/session ownership. The Renderer retains a
+running conversation while a reconnect catalog is incomplete. See
+[ACP architecture](acp-chat.md) and [live verification](openclaw-patch-live-verification.md).
+Offline transcript-tail replay and compaction lifecycle delivery are separate repairs.

@@ -612,6 +612,48 @@ async function openChat(app: ElectronApplication) {
 }
 
 test.describe('ClawX ACP inline timeline', () => {
+  test('keeps the live turn visible through Gateway restart and shows recovered tools and completion', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    try {
+      await installAcpChatMocks(app);
+      await installAcpPromptDeferredMock(app);
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      await page.getByTestId('chat-composer-input').fill('Continue through Gateway restart');
+      await page.getByTestId('chat-composer-send').click();
+      await emitAcpSessionUpdates(app, [{ sessionUpdate: 'tool_call', toolCallId: 'interrupted-tool', title: 'Before restart', kind: 'execute', status: 'in_progress' }]);
+      await app.evaluate(async () => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) window.webContents.send('gateway:status-changed', { state: 'starting', port: 18789, gatewayReady: false });
+      });
+      // The reconnect catalog briefly contains another conversation only.
+      await installIpcMocks(app, {
+        gatewayRpc: {
+          [stableStringify(['sessions.list', {}])]: { success: true, result: { sessions: [{ key: REVIEWER_SESSION_KEY, displayName: 'reviewer', workspacePath: REVIEWER_WORKSPACE }] } },
+        },
+      });
+      await app.evaluate(async () => {
+        const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
+        for (const window of BrowserWindow.getAllWindows()) window.webContents.send('gateway:status-changed', { state: 'running', port: 18789, gatewayReady: true, connectedAt: Date.now(), pid: 54321 });
+      });
+      await expect(page.getByTestId('chat-composer-send')).toHaveAttribute('title', 'Stop');
+      await emitAcpSessionUpdates(app, [
+        { sessionUpdate: 'tool_call_update', toolCallId: 'interrupted-tool', status: 'failed' },
+        { sessionUpdate: 'tool_call', toolCallId: 'recovered-tool', title: 'Recovered execution', kind: 'execute', status: 'in_progress' },
+        { sessionUpdate: 'tool_call_update', toolCallId: 'recovered-tool', status: 'completed' },
+        { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Gateway restarted; the task continued and completed.' } },
+      ]);
+      await resolveDeferredAcpPrompt(app);
+      await expect(page.getByTestId('acp-assistant-message')).toContainText('Gateway restarted; the task continued and completed.');
+      await expect(page.getByTestId('chat-composer-send')).toHaveAttribute('title', 'Send');
+      await expect(page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`)).toBeVisible();
+      await expect(page.getByTestId('acp-chat-timeline')).not.toContainText('[OpenClaw interruption]');
+    } finally {
+      await resolveDeferredAcpPrompt(app);
+      await closeElectronApp(app);
+    }
+  });
+
   test('does not use legacy history on startup or current-session clicks', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
 

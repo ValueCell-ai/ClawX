@@ -75,4 +75,6 @@ Explicit local file links in assistant Markdown are clickable in live and replay
 
 Known OpenClaw 2026.10.5 follow-ups (deferred tool UI coverage and intermediate assistant text absent from ACP replay) are recorded in [Chat compatibility follow-ups](../../reference/openclaw-2026-10-5-upgrade.md#chat-compatibility-follow-ups). That observation record distinguishes proven replay omissions from unverified live-event causes and does not authorize a parallel transcript-based Chat history.
 
+[Live patch verification](../../reference/openclaw-patch-live-verification.md) records real-model restart, replay, cancellation, subagent and compaction observations on the 2026.10.5 port. Reproduced failures and existing compensations refine the static port map; pending repairs are not implemented by that evidence record.
+
 The durable architecture, exceptions, access boundary, file-activity separation, Office preview behavior, Markdown rendering, Electron rendering performance policy, and validation anchors are documented in `harness/reference/acp-chat.md`, `harness/reference/acp-generated-media-and-diagnostics.md`, `harness/reference/acp-attachment-access-control.md`, `harness/reference/openclaw-file-activity.md`, `harness/reference/office-document-preview.md`, `harness/reference/markdown-rendering.md`, and `harness/reference/electron-rendering-performance.md`.

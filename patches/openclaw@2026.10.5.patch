@@ -1,7 +1,8 @@
 diff --git a/dist/agent-core-B94tJ7dr.mjs b/dist/agent-core-B94tJ7dr.mjs
+index 2a53cb90fe7b096afa825c2086dfc4d38b247b57..d6b7c68038521b42e723109358cc29979dd13309 100644
 --- a/dist/agent-core-B94tJ7dr.mjs
 +++ b/dist/agent-core-B94tJ7dr.mjs
-@@ -2983,15 +2983,23 @@
+@@ -2983,15 +2983,23 @@ function prepareCompaction(pathEntries, settings, requestState, constraints) {
  	const triggerUnitScale = !constraints?.budget && totalEstimatedTokens > 0 && Number.isFinite(totalEstimatedTokens) && Number.isFinite(contextUsage.usageTokens) ? Math.min(Math.max(1, settings.keepRecentTokens), Math.max(1, contextUsage.usageTokens / totalEstimatedTokens)) : 1;
  	const resetPreludeTokens = resetPreludeMessages.reduce((total, message) => total + estimateTokens(message), 0);
  	const keepRecentTokens = Math.min(Number.MAX_SAFE_INTEGER, settings.keepRecentTokens / triggerUnitScale + resetPreludeTokens);
@@ -29,10 +30,117 @@ diff --git a/dist/agent-core-B94tJ7dr.mjs b/dist/agent-core-B94tJ7dr.mjs
  		const entry = effectiveEntries.at(i);
  		const msg = entry ? getMessageFromEntryForCompaction(entry) : void 0;
  		if (msg) (i < historyEnd ? messagesToSummarize : turnPrefixMessages).push(msg);
+diff --git a/dist/agent-events-CCeMHYh0.mjs b/dist/agent-events-CCeMHYh0.mjs
+index bce202b4e7f0d3f9e08104586ad31254f88aa738..b264108d35b99cc88a7f51f4744488de51e651f5 100644
+--- a/dist/agent-events-CCeMHYh0.mjs
++++ b/dist/agent-events-CCeMHYh0.mjs
+@@ -297,6 +297,8 @@ function enrichAgentEvent(state, event, claimId, expectedContext, reservedPublic
+ 	const agentId = event.agentId ?? routing?.agentId;
+ 	const enriched = {
+ 		...event,
++		// Producer-owned recovery admission is the sole source of this field.
++		resumedFromRunId: routing?.resumedFromRunId,
+ 		data,
+ 		sessionKey,
+ 		...sessionId ? { sessionId } : {},
+diff --git a/dist/agent-job-DleplIFW.mjs b/dist/agent-job-DleplIFW.mjs
+index b449c635637822c59a4ec9464986704f81e24731..6161a5d2fe2cbb7bee045f59911ba4a81ac2eb56 100644
+--- a/dist/agent-job-DleplIFW.mjs
++++ b/dist/agent-job-DleplIFW.mjs
+@@ -5,7 +5,7 @@ import { r as getAsyncWorkSignal } from "./async-work-scope-DDiH0P7W.mjs";
+ import { a as asOptionalRecord } from "./record-coerce-TIsquoVR.mjs";
+ import { t as setSafeTimeout } from "./timer-delay-D9eb6vIQ.mjs";
+ import { a as hasExecutionSettlement } from "./agent-run-terminal-outcome-Ccvy5spR.mjs";
+-import { f as getAgentRunLifecycleGeneration } from "./agent-run-registry-zReSioYT.mjs";
++import { h as listLiveAgentRunIds, u as getAgentRunContext, f as getAgentRunLifecycleGeneration } from "./agent-run-registry-zReSioYT.mjs";
+ import { m as onAgentEvent } from "./agent-events-CCeMHYh0.mjs";
+ import { H as normalizeAgentRunTerminalReceipt, L as mergeAgentRunTerminalReplySnapshot, R as normalizeAgentRunTerminalReplySnapshot } from "./subagent-session-read-scope-BxmKFZMd.mjs";
+ import { r as formatErrorMessageForDisplay } from "./error-diagnostics-BHdMc4ot.mjs";
+@@ -102,6 +102,7 @@ function mergeSnapshot(existing, incoming) {
+ 	const terminalReceipt = incoming.terminalReceipt ?? existing.terminalReceipt;
+ 	return {
+ 		...canonical,
++		resumedFromRunId: incoming.resumedFromRunId ?? existing.resumedFromRunId,
+ 		...terminalDelivery ? { terminalDelivery } : {},
+ 		...terminalReceipt ? { terminalReceipt } : {},
+ 		...terminalReply ? { terminalReply } : {},
+@@ -201,6 +202,7 @@ function createSnapshotFromLifecycleEvent(params) {
+ 	const terminalReceipt = normalizedTerminalReceipt?.runId === runId ? normalizedTerminalReceipt : void 0;
+ 	return {
+ 		runId,
++		resumedFromRunId: params.resumedFromRunId,
+ 		source: "lifecycle",
+ 		session: params.session,
+ 		recordedAt: Date.now(),
+@@ -235,6 +237,7 @@ function ensureAgentRunListener() {
+ 			runId: evt.runId,
+ 			phase,
+ 			data: evt.data,
++			resumedFromRunId: evt.resumedFromRunId,
+ 			session: captureAgentJobSession(evt)
+ 		});
+ 		agentRunStarts.delete(evt.runId);
+@@ -372,6 +375,27 @@ function addAgentRunWaiter(runId, waiter) {
+ 		}
+ 	};
+ }
++// ClawX: locate only explicit admitted successors, including already-finished runs.
++function resolveAgentRecoveryWaitTarget(runId, sessionKey) {
++	if (!sessionKey) return runId;
++	pruneAgentRunCache();
++	const candidates = new Map();
++	for (const id of listLiveAgentRunIds()) {
++		const context = getAgentRunContext(id);
++		if (context?.sessionKey === sessionKey && context.resumedFromRunId) candidates.set(id, context.resumedFromRunId);
++	}
++	for (const [id, job] of agentJobs) for (const snapshot of job.snapshotsBySource.values()) {
++		if (snapshot.session?.sessionKey === sessionKey && snapshot.session.lifecycleGeneration === getAgentRunLifecycleGeneration() && snapshot.resumedFromRunId) candidates.set(id, snapshot.resumedFromRunId);
++	}
++	const seen = new Set([runId]);
++	for (let hops = 0; hops < 32; hops++) {
++		const successors = [...candidates].filter(([, source]) => source === runId);
++		if (successors.length !== 1 || seen.has(successors[0][0])) break;
++		runId = successors[0][0];
++		seen.add(runId);
++	}
++	return runId;
++}
+ function projectAgentJobObservation(snapshot) {
+ 	return {
+ 		session: snapshot.session,
+@@ -448,4 +472,4 @@ async function waitForAgentJob(params) {
+ }
+ ensureAgentRunListener();
+ //#endregion
+-export { waitForAgentJob as a, setGatewayDedupeEntry as i, getAgentJobSession as n, projectAgentJobObservation as r, captureAgentJobSession as t };
++export { resolveAgentRecoveryWaitTarget, waitForAgentJob as a, setGatewayDedupeEntry as i, getAgentJobSession as n, projectAgentJobObservation as r, captureAgentJobSession as t };
+diff --git a/dist/agent-run-registry-zReSioYT.mjs b/dist/agent-run-registry-zReSioYT.mjs
+index b2e5a2e78ba9d9d75a909c17e609c612192524f8..66ba81fe69718ecba6a6698ddca3abb299ee4ff7 100644
+--- a/dist/agent-run-registry-zReSioYT.mjs
++++ b/dist/agent-run-registry-zReSioYT.mjs
+@@ -24,6 +24,7 @@ function recordAgentEventRouting(runId, context, predecessor) {
+ 		projectSessionLifecycle: context.projectSessionLifecycle,
+ 		projectSessionMessages: context.projectSessionMessages,
+ 		mainSessionRestartRecovery: context.mainSessionRestartRecovery,
++		resumedFromRunId: context.resumedFromRunId,
+ 		lifecycleStartedAt: context.lifecycleStartedAt,
+ 		lifecycleGeneration: context.lifecycleGeneration,
+ 		isHeartbeat: context.isHeartbeat,
+@@ -353,7 +354,8 @@ function registerAgentRunContext(runId, context, claimId) {
+ 	for (const key of [
+ 		"sessionKey",
+ 		"sessionId",
+-		"agentId"
++		"agentId",
++		"resumedFromRunId"
+ 	]) if (context[key] && existing[key] !== context[key]) existing[key] = context[key];
+ 	if (context.verboseLevel && existing.verboseLevel !== context.verboseLevel) existing.verboseLevel = context.verboseLevel;
+ 	existing.completionSource ??= context.completionSource;
 diff --git a/dist/agent-settings-CZ8x5-4D.mjs b/dist/agent-settings-CZ8x5-4D.mjs
+index 2869acd0aca88e2affbbee97965b9524f6693586..a1d6ab97e24e38e564e86ceb88a8c0379b086978 100644
 --- a/dist/agent-settings-CZ8x5-4D.mjs
 +++ b/dist/agent-settings-CZ8x5-4D.mjs
-@@ -8,13 +8,17 @@
+@@ -8,13 +8,17 @@ function toPositiveInt(value) {
  	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return;
  	return Math.floor(value);
  }
@@ -51,10 +159,39 @@ diff --git a/dist/agent-settings-CZ8x5-4D.mjs b/dist/agent-settings-CZ8x5-4D.mjs
  	const contextTokenBudget = toPositiveInt(params.contextTokenBudget);
  	const requestedReserveTokens = Math.max(currentReserveTokens, DEFAULT_AGENT_COMPACTION_RESERVE_TOKENS_FLOOR);
  	const targetReserveTokens = contextTokenBudget === void 0 ? requestedReserveTokens : resolveEffectiveCompactionReserveTokens({
+diff --git a/dist/agent-turn-service-C_6ZJjkm.mjs b/dist/agent-turn-service-C_6ZJjkm.mjs
+index ea3f85d096ec999230b508b9596f8d5745020166..46cc255e4df802dbc71ac358abecffc009f0100d 100644
+--- a/dist/agent-turn-service-C_6ZJjkm.mjs
++++ b/dist/agent-turn-service-C_6ZJjkm.mjs
+@@ -20,7 +20,7 @@ import { i as resolveProviderIdForAuth } from "./provider-auth-aliases-K2SVB2uU.
+ import "./gateway-request-scope-CiCNcBL9.mjs";
+ import { t as bindGatewayContextResolver } from "./gateway-context-binding-VqB7gkMe.mjs";
+ import { c as normalizeAgentRunTimeoutPhase, i as classifyAgentRunTerminalOutcome, n as AGENT_RUN_RESTART_ABORT_STOP_REASON } from "./agent-run-terminal-outcome-Ccvy5spR.mjs";
+-import { i as claimAgentRunContext, j as validateAgentRunDelegatedAuthority, o as clearAgentRunContext } from "./agent-run-registry-zReSioYT.mjs";
++import { b as registerAgentRunContext, i as claimAgentRunContext, j as validateAgentRunDelegatedAuthority, o as clearAgentRunContext } from "./agent-run-registry-zReSioYT.mjs";
+ import { d as getAgentEventLifecycleGeneration, f as isAgentEventLifecycleGenerationCurrent, t as assertAgentRunLifecycleGenerationCurrent } from "./agent-events-CCeMHYh0.mjs";
+ import { a as composeSessionSourceAssertion } from "./session-source-authority-h1UO3u0I.mjs";
+ import { d as hasGatewayAdminScope, t as ADMIN_SCOPE } from "./operator-scopes-BO7_XQCg.mjs";
+@@ -2083,6 +2083,14 @@ async function admitAgentRestartRecovery(params) {
+ 	if (admission.transition.kind !== "admitted_recovery") throw new Error(`Session "${params.sessionKey}" restart recovery reservation is stale; recovery was skipped.`);
+ 	const sessionKey = admission.sessionKey ?? params.sessionKey;
+ 	const admittedAttempt = admission.transition.admission;
++	// ClawX: expose lineage only after the native reservation/session fence admitted it.
++	const sourceRunId = normalizeOptionalString(admission.entry?.restartRecoveryDeliverySourceRunId);
++	if (admission.entry?.sessionId === params.sessionId && admission.entry?.restartRecoveryDeliveryRunId === params.runId && sourceRunId && sourceRunId !== params.runId) registerAgentRunContext(params.runId, {
++		sessionKey,
++		sessionId: params.sessionId,
++		lifecycleGeneration: params.lifecycleGeneration,
++		resumedFromRunId: sourceRunId
++	});
+ 	let restored = false;
+ 	return async () => {
+ 		if (restored) return;
 diff --git a/dist/builtin-openclaw-CLelpwAr.mjs b/dist/builtin-openclaw-CLelpwAr.mjs
+index 12e2cacc6c8159530178d84bd44765ee8f7babc2..be3c140e975a10a184df7570e0047b58b916bd3c 100644
 --- a/dist/builtin-openclaw-CLelpwAr.mjs
 +++ b/dist/builtin-openclaw-CLelpwAr.mjs
-@@ -4892,8 +4892,19 @@
+@@ -4892,8 +4892,19 @@ function handleCompactionStart(ctx, evt) {
  		reason,
  		consoleMessage: `embedded run ${kind} start: runId=${ctx.params.runId} reason=${reason}`
  	});
@@ -74,7 +211,7 @@ diff --git a/dist/builtin-openclaw-CLelpwAr.mjs b/dist/builtin-openclaw-CLelpwAr
  		...evt.itemId ? { itemId: evt.itemId } : {}
  	});
  	runBestEffortCompactionHook(ctx, "before");
-@@ -4966,9 +4977,15 @@
+@@ -4966,9 +4977,15 @@ function handleCompactionEnd(ctx, evt) {
  		const benign = outcome.status === "aborted" || outcome.status === "skipped" && (reasonClass === "no_compactable_entries" || reasonClass === "below_threshold" || reasonClass === "already_compacted");
  		ctx.log[benign ? "info" : "warn"](`embedded run ${kind} ${outcome.status}`, metadata);
  	}
@@ -92,9 +229,10 @@ diff --git a/dist/builtin-openclaw-CLelpwAr.mjs b/dist/builtin-openclaw-CLelpwAr
  		willRetry,
  		outcome: outcome.status,
 diff --git a/dist/error-coercion-W9BtigRm.mjs b/dist/error-coercion-W9BtigRm.mjs
+index 12fddaf22c215a45b11765098fa42da4d213c478..4fa229fbed16ed248cd742410212f1a3777351df 100644
 --- a/dist/error-coercion-W9BtigRm.mjs
 +++ b/dist/error-coercion-W9BtigRm.mjs
-@@ -115,8 +115,19 @@
+@@ -115,8 +115,19 @@ function formatErrorMessage(value, options) {
  		} else if (typeof cause === "string") appendCauseMessage(cause);
  		else appendCauseMessage(formatStatusAndCode(cause) ?? stringifyUnknown(cause));
  	} else formatted = formatStatusAndCode(value) ?? stringifyUnknown(value);
@@ -114,10 +252,31 @@ diff --git a/dist/error-coercion-W9BtigRm.mjs b/dist/error-coercion-W9BtigRm.mjs
  /**
  * Normalizes an unknown thrown value into an Error. Non-Error objects become
  * the `cause` and have their enumerable fields copied so structured details
+diff --git a/dist/exec-approval-DbnOAIQO.mjs b/dist/exec-approval-DbnOAIQO.mjs
+index 2f891103a260a63465790be0bb057b809f816372..708a8fb319af11d56beed05b333d646483b5359b 100644
+--- a/dist/exec-approval-DbnOAIQO.mjs
++++ b/dist/exec-approval-DbnOAIQO.mjs
+@@ -27,6 +27,7 @@ import { t as handlePendingApprovalRequestWithDelivery } from "./approval-reques
+ import { t as InvalidApprovalIdError } from "./exec-approval-registration-BaE9pc8t.mjs";
+ import { t as createApprovalRequestAuthority } from "./approval-request-authority-l05pcSPy.mjs";
+ import { t as resolveGrantExpiryDaysConfig } from "./standing-grant-expiry-config-CqUe6ux8.mjs";
++import { u as getAgentRunContext } from "./agent-run-registry-zReSioYT.mjs";
+ //#region src/infra/command-analysis/explain.ts
+ function riskLabel(risk) {
+ 	switch (risk.kind) {
+@@ -299,6 +300,7 @@ function createExecApprovalHandlers(manager, opts) {
+ 				sessionKey: effectiveSessionKey ?? null,
+ 				sessionId: trustedAgentRuntime ? null : normalizeOptionalString(p.sessionId) ?? null,
+ 				runId: requestRunId ?? null,
++				resumedFromRunId: requestRunId ? getAgentRunContext(requestRunId)?.resumedFromRunId : void 0,
+ 				toolCallId: normalizeOptionalString(p.toolCallId) ?? null,
+ 				turnSourceChannel: trustedAgentRuntime ? trustedAgentRuntime.turnSourceChannel ?? null : normalizeOptionalString(p.turnSourceChannel) ?? null,
+ 				turnSourceTo: trustedAgentRuntime ? trustedAgentRuntime.turnSourceTo ?? null : normalizeOptionalString(p.turnSourceTo) ?? null,
 diff --git a/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs b/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs
+index 19956c366dfa4a3c3037e2d2e6b42905e31014a0..478781584ccf12f8faa70a4e1ac21a8da7790dc2 100644
 --- a/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs
 +++ b/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs
-@@ -3,7 +3,7 @@
+@@ -3,7 +3,7 @@ import { k as PluginSourceRecoveryUnavailableError, o as getPluginCache } from "
  import { a as asOptionalRecord } from "./record-coerce-TIsquoVR.mjs";
  import { o as openRootFileSync$1 } from "./boundary-file-read-CCth2Hwg.mjs";
  import { t as hasErrnoCode } from "./errno-FR4CRyya.mjs";
@@ -126,7 +285,7 @@ diff --git a/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs b/dist/plugin-gen
  import { t as escapeRegExp } from "./regexp-BZyMFTlj.mjs";
  import { t as formatErrorMessage } from "./errors-J9olDZqH.mjs";
  import { a as createSqliteLifecycleAggregateError } from "./sqlite-lifecycle-errors-DuOygjcn.mjs";
-@@ -1145,6 +1145,17 @@
+@@ -1145,6 +1145,17 @@ function createRecoverySourceResolver(rootDir, sourceRoot, sources) {
  		return captured;
  	};
  }
@@ -144,7 +303,7 @@ diff --git a/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs b/dist/plugin-gen
  function copyRecoverySource({ rootDir, sourceRoot, capturedRoot, boundaryRoot, sources, native: suppliedNative }) {
  	let native = suppliedNative;
  	let recovery;
-@@ -1156,7 +1167,7 @@
+@@ -1156,7 +1167,7 @@ function copyRecoverySource({ rootDir, sourceRoot, capturedRoot, boundaryRoot, s
  			verbatimSymlinks: true,
  			filter: (from, to) => {
  				const fact = native?.references.get(from);
@@ -154,9 +313,10 @@ diff --git a/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs b/dist/plugin-gen
  					...fact,
  					sourceIdentity: fact.capturedIdentity
 diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
+index 543e336a26fb1b13b08fe2ee745cc6123f95364a..febdaa9b653f7fb880b924bbbf3ddfb75b4ec19d 100644
 --- a/dist/server-DkfYuk25.mjs
 +++ b/dist/server-DkfYuk25.mjs
-@@ -6,6 +6,7 @@
+@@ -6,6 +6,7 @@ import { a as asOptionalRecord, c as isRecord, o as asRecord } from "./record-co
  import { r as truncateUtf16Safe } from "./utf16-slice-D_ngcYKd.mjs";
  import { p as shortenHomePath } from "./utils-CitNzLyF.mjs";
  import { t as formatErrorMessage } from "./errors-J9olDZqH.mjs";
@@ -164,15 +324,17 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  import { t as finalizeActiveDebugProxyCaptures } from "./runtime-cleanup-AyeSBMlV.mjs";
  import { a as executeSqliteQueryTakeFirstSync, i as executeSqliteQuerySync, l as prepareSqliteQuerySync, n as createSqliteQueryCache, o as getNodeSqliteKysely } from "./kysely-sync-_Jx0TluS.mjs";
  import { i as routeLogsToStderr } from "./console-Dzm4OzJw.mjs";
-@@ -903,6 +904,45 @@
+@@ -902,16 +903,56 @@ var AcpTranslatorAgentEvents = class {
+ 			if (approvalEvent) this.startApprovalRelay({
  				sessionKey,
  				runId,
++				resumedFromRunId: payload.resumedFromRunId,
  				approvalEvent
-+			});
-+			return;
-+		}
+ 			});
+ 			return;
+ 		}
 +		if (stream === "compaction") {
-+			const compactionPending = this.findPendingBySessionKey(sessionKey, runId);
++			const compactionPending = this.findPendingBySessionKey(sessionKey, runId, payload.resumedFromRunId);
 +			if (!compactionPending) return;
 +			const compactionUpdate = buildAcpCompactionUpdate(data, runId);
 +			if (!compactionUpdate) return;
@@ -188,7 +350,7 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
 +		}
 +		if (stream === "assistant") {
 +			if (resolveAssistantEventPhase(data) !== "commentary") return;
-+			const commentaryPending = this.findPendingBySessionKey(sessionKey, runId);
++			const commentaryPending = this.findPendingBySessionKey(sessionKey, runId, payload.resumedFromRunId);
 +			if (!commentaryPending) return;
 +			const fullThought = resolveAcpEventTextSnapshot(commentaryPending.sentThought ?? "", data);
 +			const thoughtDelta = resolveAcpTextDelta(commentaryPending.sentThought ?? "", fullThought);
@@ -207,10 +369,202 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
 +						text: thoughtDelta
 +					}
 +				}
- 			});
++			});
++			return;
++		}
+ 		if (stream !== "tool") return;
+ 		const phase = data.phase;
+ 		const name = data.name;
+ 		const toolCallId = data.toolCallId;
+ 		if (!toolCallId) return;
+-		const pending = this.findPendingBySessionKey(sessionKey, runId);
++		const pending = this.findPendingBySessionKey(sessionKey, runId, payload.resumedFromRunId);
+ 		if (!pending) return;
+ 		let update;
+ 		if (phase === "start") {
+@@ -967,6 +1008,8 @@ var AcpTranslatorAgentEvents = class {
+ 		if (!sessionKey) return;
+ 		this.startApprovalRelay({
+ 			sessionKey,
++			runId: normalizeOptionalString(request?.runId),
++			resumedFromRunId: normalizeOptionalString(request?.resumedFromRunId),
+ 			approvalEvent
+ 		});
+ 	}
+@@ -1001,7 +1044,7 @@ var AcpTranslatorAgentEvents = class {
+ 		this.runApprovalRelay(relay, correlatedApprovalEvent);
+ 	}
+ 	findPendingForApproval(params) {
+-		if (params.runId) return this.findPendingBySessionKey(params.sessionKey, params.runId);
++		if (params.runId) return this.findPendingBySessionKey(params.sessionKey, params.runId, params.resumedFromRunId);
+ 		const toolCallId = params.approvalEvent.toolCallId;
+ 		let match;
+ 		for (const pending of this.pendingPrompts.values()) {
+@@ -1078,106 +1121,94 @@ var AcpTranslatorAgentEvents = class {
+ //#endregion
+ //#region src/acp/translator.disconnects.ts
+ const ACP_GATEWAY_DISCONNECT_GRACE_MS = 5e3;
++// Main computes this from its complete managed-restart/readiness budget.
++const ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS = (() => {
++	const configured = Number(process.env.OPENCLAW_ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS);
++	return Number.isSafeInteger(configured) && configured >= ACP_GATEWAY_DISCONNECT_GRACE_MS && configured <= 36e5 ? configured : 48e4;
++})();
+ var AcpTranslatorDisconnects = class {
+-	constructor(gateway, pendingPrompts, getPendingPrompt, settleRecoveredPrompt, rejectPendingPrompt, log) {
+-		this.gateway = gateway;
+-		this.pendingPrompts = pendingPrompts;
+-		this.getPendingPrompt = getPendingPrompt;
+-		this.settleRecoveredPrompt = settleRecoveredPrompt;
+-		this.rejectPendingPrompt = rejectPendingPrompt;
+-		this.log = log;
++	constructor(gateway, pendingPrompts, getPendingPrompt, settleRecoveredPrompt, rejectPendingPrompt, log, findPendingBySessionKey, retrySubscription) {
++		Object.assign(this, { gateway, pendingPrompts, getPendingPrompt, settleRecoveredPrompt, rejectPendingPrompt, log, findPendingBySessionKey, retrySubscription });
+ 		this.disconnectTimer = null;
+ 		this.activeDisconnectContext = null;
+ 		this.disconnectGeneration = 0;
+ 	}
+-	get activeContext() {
+-		return this.activeDisconnectContext;
+-	}
++	get activeContext() { return this.activeDisconnectContext; }
+ 	shutdown() {
++		this.disconnectGeneration++;
+ 		this.activeDisconnectContext = null;
+ 		this.clearDisconnectTimer();
+ 	}
+ 	handleGatewayReconnect() {
+ 		this.log("gateway reconnected");
+-		const disconnectContext = this.activeDisconnectContext;
+ 		this.activeDisconnectContext = null;
+-		if (!disconnectContext) return;
+-		this.reconcilePendingPrompts(disconnectContext.generation, false);
++		this.armDisconnectTimer();
+ 	}
+ 	handleGatewayDisconnect(reason) {
+ 		this.log(`gateway disconnected: ${reason}`);
+-		const disconnectContext = {
+-			generation: this.disconnectGeneration + 1,
+-			reason
+-		};
+-		this.disconnectGeneration = disconnectContext.generation;
+-		this.activeDisconnectContext = disconnectContext;
+-		if (this.pendingPrompts.size === 0) return;
+-		for (const pending of this.pendingPrompts.values()) pending.disconnectContext = disconnectContext;
+-		this.armDisconnectTimer(disconnectContext);
+-	}
+-	armForActiveContext() {
+-		if (this.activeDisconnectContext && !this.disconnectTimer) this.armDisconnectTimer(this.activeDisconnectContext);
+-	}
+-	clearWhenIdle() {
+-		if (this.pendingPrompts.size === 0) this.clearDisconnectTimer();
+-	}
++		// Failed reconnect handshakes are the same outage, not a fresh grace budget.
++		if (this.activeDisconnectContext) { this.armDisconnectTimer(); return; }
++		const context = { generation: ++this.disconnectGeneration, reason, startedAt: Date.now() };
++		this.activeDisconnectContext = context;
++		for (const pending of this.pendingPrompts.values()) pending.disconnectContext = context;
++		this.armDisconnectTimer();
++	}
++	armForActiveContext() { this.armDisconnectTimer(); }
++	clearWhenIdle() { if (this.pendingPrompts.size === 0) this.clearDisconnectTimer(); }
+ 	clearDisconnectTimer() {
+-		if (!this.disconnectTimer) return;
+ 		clearTimeout(this.disconnectTimer);
+ 		this.disconnectTimer = null;
+ 	}
+-	armDisconnectTimer(disconnectContext) {
++	deadline(pending) {
++		return pending.disconnectContext.startedAt + (pending.sendAccepted ? ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS : ACP_GATEWAY_DISCONNECT_GRACE_MS);
++	}
++	armDisconnectTimer() {
+ 		this.clearDisconnectTimer();
+-		this.disconnectTimer = setTimeout(() => {
++		const pending = [...this.pendingPrompts.values()].filter((p) => p.disconnectContext);
++		if (!pending.length) return;
++		const generation = this.disconnectGeneration;
++		const delay = Math.max(1, Math.min(1000, ...pending.map((p) => this.deadline(p) - Date.now())));
++		this.disconnectTimer = setTimeout(async () => {
+ 			this.disconnectTimer = null;
+-			this.reconcilePendingPrompts(disconnectContext.generation, true);
+-		}, ACP_GATEWAY_DISCONNECT_GRACE_MS);
++			try { await this.reconcilePendingPrompts(generation); }
++			catch (err) { this.log(`restart reconciliation failed: ${String(err)}`); }
++			finally { if (generation === this.disconnectGeneration) this.armDisconnectTimer(); }
++		}, delay);
+ 		this.disconnectTimer.unref?.();
+ 	}
+-	async expirePendingPrompt(pending, disconnectContext) {
+-		if (pending.disconnectContext !== disconnectContext) return false;
+-		if (!pending.sendAccepted || this.activeDisconnectContext?.generation === disconnectContext.generation) await this.rejectPendingPrompt(pending, /* @__PURE__ */ new Error(`Gateway disconnected: ${disconnectContext.reason}`), { recordDisconnectNotice: true });
+-		else pending.disconnectContext = void 0;
+-		return false;
+-	}
+-	async reconcilePendingPrompts(observedDisconnectGeneration, deadlineExpired) {
+-		if (this.pendingPrompts.size === 0) {
+-			if (this.disconnectGeneration === observedDisconnectGeneration) this.clearDisconnectTimer();
++	async reconcilePendingPrompts(generation) {
++		for (const [sessionId, pending] of [...this.pendingPrompts]) {
++			if (generation !== this.disconnectGeneration) return;
++			if (this.pendingPrompts.get(sessionId) !== pending || !pending.disconnectContext) continue;
++			await this.reconcilePendingPrompt(sessionId, pending);
++		}
++	}
++	async reconcilePendingPrompt(sessionId, pending) {
++		const context = pending.disconnectContext;
++		const observedRunId = pending.idempotencyKey;
++		const isCurrent = () => this.getPendingPrompt(sessionId, observedRunId) === pending && pending.disconnectContext === context;
++		if (!context) return;
++		// Never leave an accepted prompt hanging indefinitely, even after reconnect.
++		if (Date.now() >= this.deadline(pending)) {
++			if (isCurrent()) await this.rejectPendingPrompt(pending, new Error(`Gateway disconnected: ${context.reason}`), { recordDisconnectNotice: true });
  			return;
  		}
-@@ -1191,7 +1231,7 @@
+-		const pendingEntries = [...this.pendingPrompts.entries()];
+-		let keepDisconnectTimer = false;
+-		for (const [sessionId, pending] of pendingEntries) {
+-			if (this.pendingPrompts.get(sessionId) !== pending) continue;
+-			if (pending.disconnectContext?.generation !== observedDisconnectGeneration) continue;
+-			if (await this.reconcilePendingPrompt(sessionId, pending, deadlineExpired)) keepDisconnectTimer = true;
+-		}
+-		if (!keepDisconnectTimer && this.disconnectGeneration === observedDisconnectGeneration) this.clearDisconnectTimer();
+-	}
+-	async reconcilePendingPrompt(sessionId, pending, deadlineExpired) {
+-		const disconnectContext = pending.disconnectContext;
+-		if (!disconnectContext) return false;
++		if (this.activeDisconnectContext) return;
++		if (pending.sendAccepted) void this.retrySubscription(pending.sessionKey).catch((err) => this.log(`restart subscription retry failed: ${String(err)}`));
+ 		let result;
+ 		try {
+ 			result = await this.gateway.request("agent.wait", {
+-				runId: pending.idempotencyKey,
+-				timeoutMs: 0
+-			}, { timeoutMs: null });
++				runId: observedRunId, sessionKey: pending.sessionKey, timeoutMs: 0
++			}, { timeoutMs: 1000 });
+ 		} catch (err) {
+-			this.log(`agent.wait reconcile failed for ${pending.idempotencyKey}: ${String(err)}`);
+-			if (deadlineExpired) return await this.expirePendingPrompt(pending, disconnectContext);
+-			return true;
++			this.log(`agent.wait reconcile failed for ${observedRunId}: ${String(err)}`);
++			return;
+ 		}
+-		const currentPending = this.getPendingPrompt(sessionId, pending.idempotencyKey);
+-		if (!currentPending) return false;
+-		const hasVisibleReply = result?.terminalReply?.disposition === "visible";
+-		if (result?.status === "ok" || result?.status === "error" || result?.status === "timeout" && hasVisibleReply) {
+-			await this.settleRecoveredPrompt(sessionId, currentPending, result);
+-			return false;
++		if (!isCurrent()) return;
++		if (result?.runId && result.runId !== observedRunId) {
++			if (result.resumedFromRunId !== observedRunId || this.findPendingBySessionKey(pending.sessionKey, result.runId, result.resumedFromRunId) !== pending) return;
+ 		}
+-		if (deadlineExpired) return await this.expirePendingPrompt(currentPending, disconnectContext);
+-		return true;
++		if (result?.status === "ok" || result?.status === "error" || result?.status === "timeout" && result?.terminalReply?.disposition === "visible") await this.settleRecoveredPrompt(sessionId, pending, result);
+ 	}
+ };
+ //#endregion
+@@ -1191,7 +1222,7 @@ function isGatewayCloseError(err) {
  	return (err instanceof Error ? err.message : String(err)).startsWith("gateway closed (");
  }
  var AcpTranslatorPromptStream = class {
@@ -219,7 +573,7 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  		this.gateway = gateway;
  		this.opts = opts;
  		this.sessionStore = sessionStore;
-@@ -1199,6 +1239,8 @@
+@@ -1199,16 +1230,19 @@ var AcpTranslatorPromptStream = class {
  		this.sessionState = sessionState;
  		this.approvalRelays = approvalRelays;
  		this.log = log;
@@ -228,7 +582,12 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  		this.pendingPrompts = /* @__PURE__ */ new Map();
  		this.pendingPromptAdmissions = /* @__PURE__ */ new Map();
  		this.settlingPromptKeys = /* @__PURE__ */ new Set();
-@@ -1209,6 +1251,7 @@
+ 		this.stopped = false;
+-		this.agentEvents = new AcpTranslatorAgentEvents(connection, gateway, sessionUpdates, this.pendingPrompts, this.approvalRelays, (sessionId, runId) => this.getPendingPrompt(sessionId, runId), (sessionKey, runId) => this.findPendingBySessionKey(sessionKey, runId), log);
+-		this.disconnects = new AcpTranslatorDisconnects(gateway, this.pendingPrompts, (sessionId, runId) => this.getPendingPrompt(sessionId, runId), (sessionId, pending, result) => this.settleRecoveredPrompt(sessionId, pending, result), (pending, error, options) => this.rejectPendingPrompt(pending, error, options), log);
++		this.agentEvents = new AcpTranslatorAgentEvents(connection, gateway, sessionUpdates, this.pendingPrompts, this.approvalRelays, (sessionId, runId) => this.getPendingPrompt(sessionId, runId), (sessionKey, runId, sourceRunId) => this.findPendingBySessionKey(sessionKey, runId, sourceRunId), log);
++		this.disconnects = new AcpTranslatorDisconnects(gateway, this.pendingPrompts, (sessionId, runId) => this.getPendingPrompt(sessionId, runId), (sessionId, pending, result) => this.settleRecoveredPrompt(sessionId, pending, result), (pending, error, options) => this.rejectPendingPrompt(pending, error, options), log, (sessionKey, runId, sourceRunId) => this.findPendingBySessionKey(sessionKey, runId, sourceRunId), (sessionKey) => this.ambient.retrySessionMessageSubscription(sessionKey));
+ 	}
  	async shutdown() {
  		this.stopped = true;
  		this.disconnects.shutdown();
@@ -236,11 +595,16 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  		const sessions = /* @__PURE__ */ new Map();
  		for (const pending of this.pendingPrompts.values()) sessions.set(pending.sessionId, {
  			sessionId: pending.sessionId,
-@@ -1221,11 +1264,20 @@
- 	handleGatewayReconnect() {
+@@ -1218,14 +1252,24 @@ var AcpTranslatorPromptStream = class {
+ 		for (const admission of this.pendingPromptAdmissions.values()) sessions.set(admission.session.sessionId, admission.session);
+ 		await Promise.all([...sessions.values()].map((session) => this.cancelSessionWork(session, ACP_SHUTDOWN_ABORT_TIMEOUT_MS)));
+ 	}
+-	handleGatewayReconnect() {
++	async handleGatewayReconnect() {
  		this.agentEvents.replayApprovalDecisionsOnReconnect();
++		try { await this.ambient.recoverSubscriptions(); }
++		catch (err) { this.log(`restart subscription recovery failed: ${String(err)}`); }
  		this.disconnects.handleGatewayReconnect();
-+		void this.ambient.recoverSubscriptions();
  	}
  	handleGatewayDisconnect(reason) {
  		this.disconnects.handleGatewayDisconnect(reason);
@@ -257,18 +621,18 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  		if (evt.event === "chat") {
  			await this.handleChatEvent(evt);
  			return;
-@@ -1234,8 +1286,32 @@
+@@ -1234,7 +1278,31 @@ var AcpTranslatorPromptStream = class {
  			this.agentEvents.handleExecApprovalRequestEvent(evt);
  			return;
  		}
 -		if (evt.event === "agent") await this.agentEvents.handleAgentEvent(evt);
 +		if (evt.event === "agent" || evt.event === "session.tool") {
 +			const payload = evt.payload;
-+			const hasPending = payload?.sessionKey ? this.findPendingBySessionKey(payload.sessionKey, payload.runId) : void 0;
++			const hasPending = payload?.sessionKey ? this.findPendingBySessionKey(payload.sessionKey, payload.runId, payload.resumedFromRunId) : void 0;
 +			if (!hasPending && await this.ambient.handleAgentEvent(evt)) return;
 +			await this.agentEvents.handleAgentEvent(evt);
 +		}
- 	}
++	}
 +	async handleSessionOperationEvent(evt) {
 +		const payload = evt.payload;
 +		if (!payload || payload.operation !== "compact") return;
@@ -287,15 +651,48 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
 +			record: true,
 +			update
 +		});
-+	}
+ 	}
  	async prompt(params) {
  		const session = this.sessionStore.getSession(params.sessionId);
- 		if (!session) throw new Error(`Session ${params.sessionId} not found`);
-@@ -1433,7 +1509,10 @@
+@@ -1248,6 +1316,7 @@ var AcpTranslatorPromptStream = class {
+ 		};
+ 		this.pendingPromptAdmissions.set(params.sessionId, admission);
+ 		if (admission.previous) admission.previous.closed = true;
++		let subscriptionKey;
+ 		try {
+ 			if (!this.ownsPromptAdmission(admission)) return { stopReason: "cancelled" };
+ 			if (session.abortController || this.pendingPrompts.has(params.sessionId)) {
+@@ -1259,8 +1328,14 @@ var AcpTranslatorPromptStream = class {
+ 				if (!this.ownsPromptAdmission(admission)) return { stopReason: "cancelled" };
+ 				admission.previous = void 0;
+ 			}
++			try {
++				subscriptionKey = session.sessionKey;
++				await this.ambient.acquireSessionMessageSubscription(subscriptionKey, true);
++			} catch (err) { this.log(`prompt subscription failed: ${String(err)}`); }
++			if (!this.ownsPromptAdmission(admission)) return { stopReason: "cancelled" };
+ 			return await Promise.race([this.submitPrompt(params, session), admission.closure.promise.then(() => ({ stopReason: "cancelled" }))]);
+ 		} finally {
++			if (subscriptionKey) await this.ambient.releaseSessionMessageSubscription(subscriptionKey);
+ 			admission.settled.resolve();
+ 			if (this.pendingPromptAdmissions.get(params.sessionId) === admission) this.pendingPromptAdmissions.delete(params.sessionId);
+ 		}
+@@ -1318,6 +1393,8 @@ var AcpTranslatorPromptStream = class {
+ 					const pending = this.getPendingPrompt(params.sessionId, runId);
+ 					if (!pending) return false;
+ 					pending.sendAccepted = true;
++					// New ACP sessions may not exist in the native catalog until send acceptance.
++					void this.ambient.retrySessionMessageSubscription(pending.sessionKey).catch((err) => this.log(`accepted prompt subscription failed: ${String(err)}`));
+ 					return true;
+ 				};
+ 				const applyTerminalAck = async (ack) => {
+@@ -1432,8 +1509,11 @@ var AcpTranslatorPromptStream = class {
+ 		const state = payload.state;
  		const runId = payload.runId;
  		if (!sessionKey || !state) return;
- 		const pending = this.findPendingBySessionKey(sessionKey, runId);
+-		const pending = this.findPendingBySessionKey(sessionKey, runId);
 -		if (!pending) return;
++		const pending = this.findPendingBySessionKey(sessionKey, runId, payload.resumedFromRunId);
 +		if (!pending) {
 +			await this.ambient.handleChatEvent(evt);
 +			return;
@@ -303,7 +700,7 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  		const messageData = state === "delta" ? mergeChatStreamMessage(pending.streamMessage, payload) : payload.message;
  		if (isRecord(messageData) && (state === "delta" || state === "final")) {
  			pending.streamMessage = messageData;
-@@ -1450,8 +1529,10 @@
+@@ -1450,8 +1530,10 @@ var AcpTranslatorPromptStream = class {
  			return;
  		}
  		if (state === "error") {
@@ -316,7 +713,7 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  		}
  	}
  	async handleDeltaEvent(pending, messageData) {
-@@ -1470,10 +1551,12 @@
+@@ -1470,10 +1552,12 @@ var AcpTranslatorPromptStream = class {
  			"agent_message_chunk"
  		]]) {
  			const fullText = content?.filter((block) => block?.type === blockType).map((block) => block[field] ?? "").join("\n").trimEnd();
@@ -333,7 +730,53 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  			if (this.getPendingPrompt(sessionId, pending.idempotencyKey) !== pending) return false;
  		}
  		return true;
-@@ -1564,6 +1647,16 @@
+@@ -1521,6 +1605,7 @@ var AcpTranslatorPromptStream = class {
+ 		});
+ 	}
+ 	async settleRecoveredPrompt(sessionId, pending, result) {
++		const observedRunId = pending.idempotencyKey;
+ 		const signal = this.sessionStore.getSession(sessionId)?.abortController?.signal ?? new AbortController().signal;
+ 		const reply = await recoverTerminalReply({
+ 			runId: pending.idempotencyKey,
+@@ -1532,7 +1617,7 @@ var AcpTranslatorPromptStream = class {
+ 			outputText: void 0,
+ 			unavailable: "recovery-cancelled"
+ 		}));
+-		if (!this.claimPendingPrompt(pending)) return;
++		if (this.getPendingPrompt(sessionId, observedRunId) !== pending || !this.claimPendingPrompt(pending)) return;
+ 		const sentText = pending.sentText ?? "";
+ 		const outputText = reply.outputText;
+ 		const unavailable = reply.unavailable ?? (outputText?.startsWith(sentText) === false ? "reply-rewritten" : void 0);
+@@ -1552,7 +1637,27 @@ var AcpTranslatorPromptStream = class {
+ 		await this.emitPromptChunk(pending, "agent_message_chunk", `[OpenClaw interruption] ${message}`, false);
+ 		await this.rejectPendingPrompt(pending, new Error(message), { claimed: true });
+ 	}
+-	findPendingBySessionKey(sessionKey, runId) {
++	findPendingBySessionKey(sessionKey, runId, resumedFromRunId) {
++		if (runId && resumedFromRunId && runId !== resumedFromRunId) {
++			for (const pending of this.pendingPrompts.values()) {
++				if (!pending.sendAccepted || pending.sessionKey !== sessionKey || pending.idempotencyKey !== resumedFromRunId) continue;
++				this.agentEvents.clearApprovalRelaysForPrompt(pending.sessionId, pending.idempotencyKey);
++				for (const toolCallId of pending.toolCalls?.keys() ?? []) void this.sessionUpdates.emit({
++					sessionId: pending.sessionId, sessionKey, ledgerSessionId: pending.ledgerSessionId,
++					runId: resumedFromRunId, record: true, waitForDelivery: false,
++					update: { sessionUpdate: "tool_call_update", toolCallId, status: "failed" }
++				});
++				pending.toolCalls?.clear();
++				pending.idempotencyKey = runId;
++				pending.sentText = "";
++				pending.sentThought = "";
++				pending.streamMessage = void 0;
++				const session = this.sessionStore.getSession(pending.sessionId);
++				if (session) this.sessionStore.setActiveRun(pending.sessionId, runId, session.abortController);
++				this.log(`restart recovery adopted: ${resumedFromRunId} -> ${runId}`);
++				return pending;
++			}
++		}
+ 		for (const pending of this.pendingPrompts.values()) {
+ 			if (pending.sessionKey !== sessionKey) continue;
+ 			if (runId && pending.idempotencyKey !== runId) continue;
+@@ -1564,6 +1669,16 @@ var AcpTranslatorPromptStream = class {
  			return pending;
  		}
  	}
@@ -350,7 +793,7 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  	reconcilePendingSessionKey(pending, sessionKey) {
  		if (pending.sessionKey === sessionKey) return;
  		this.log(`session key reconciled: ${pending.sessionKey} -> ${sessionKey}`);
-@@ -1590,8 +1683,89 @@
+@@ -1590,8 +1705,89 @@ var AcpTranslatorPromptStream = class {
  };
  //#endregion
  //#region src/acp/translator.replay.ts
@@ -440,7 +883,7 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  	if (role !== "user" && role !== "assistant") return [];
  	if (typeof message.content === "string") return message.content.length > 0 ? [{
  		sessionUpdate: role === "user" ? "user_message_chunk" : "agent_message_chunk",
-@@ -1613,6 +1787,21 @@
+@@ -1613,6 +1809,21 @@ function extractReplayChunks(message) {
  			sessionUpdate: "agent_thought_chunk",
  			text: typedBlock.thinking
  		});
@@ -462,7 +905,7 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  	}
  	return replayChunks;
  }
-@@ -1660,10 +1849,424 @@
+@@ -1660,10 +1871,429 @@ function resolveListSessionsPageSize(meta) {
  	return Math.min(ACP_LIST_SESSIONS_MAX_PAGE_SIZE, Math.max(1, Math.floor(requested)));
  }
  //#endregion
@@ -536,7 +979,11 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
 +			entry.acquirePromise = void 0;
 +		}
 +	}
-+	async acquireSessionMessageSubscription(sessionKey) {
++	async retrySessionMessageSubscription(sessionKey) {
++		const entry = this.sessionMessageSubscriptions.get(sessionKey);
++		if (entry?.refCount > 0) await this.ensureSessionMessageSubscription(sessionKey, entry);
++	}
++	async acquireSessionMessageSubscription(sessionKey, retainOnFailure = false) {
 +		let entry = this.sessionMessageSubscriptions.get(sessionKey);
 +		if (!entry) {
 +			entry = {
@@ -550,6 +997,7 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
 +		try {
 +			await this.ensureSessionMessageSubscription(sessionKey, entry);
 +		} catch (err) {
++			if (retainOnFailure) throw err;
 +			entry.refCount = Math.max(0, entry.refCount - 1);
 +			if (entry.refCount === 0 && this.sessionMessageSubscriptions.get(sessionKey) === entry) this.sessionMessageSubscriptions.delete(sessionKey);
 +			throw err;
@@ -888,7 +1336,7 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  		this.gateway = gateway;
  		this.opts = opts;
  		this.sessionStore = sessionStore;
-@@ -1672,6 +2275,7 @@
+@@ -1672,6 +2302,7 @@ var AcpTranslatorSessionLifecycle = class {
  		this.sessionCreateRateLimiter = sessionCreateRateLimiter;
  		this.cancelSessionWork = cancelSessionWork;
  		this.log = log;
@@ -896,7 +1344,7 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  	}
  	async newSession(params) {
  		this.assertSupportedSessionSetup(params.mcpServers);
-@@ -1729,27 +2333,31 @@
+@@ -1729,27 +2360,31 @@ var AcpTranslatorSessionLifecycle = class {
  		});
  		await this.sessionUpdates.startLedgerSession(session, { complete: ledgerReplay.complete });
  		this.log(`loadSession: ${session.sessionId} -> ${session.sessionKey}`);
@@ -949,7 +1397,7 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  	}
  	async listSessions(params) {
  		const requestedCwd = normalizeOptionalString(params.cwd);
-@@ -1801,11 +2409,13 @@
+@@ -1801,11 +2436,13 @@ var AcpTranslatorSessionLifecycle = class {
  			cwd: params.cwd
  		});
  		await this.sessionUpdates.startLedgerSession(session, { complete: false });
@@ -963,7 +1411,7 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  		await this.cancelSessionWork(session);
  		this.sessionStore.deleteSession(params.sessionId);
  		this.log(`closeSession: ${params.sessionId}`);
-@@ -2426,12 +3036,13 @@
+@@ -2426,12 +3063,13 @@ var AcpGatewayAgent = class {
  			log: this.log
  		});
  		const sessionState = new AcpTranslatorSessionState(gateway, this.sessionUpdates, this.log);
@@ -979,10 +1427,130 @@ diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
  		this.newSession = sessionLifecycle.newSession.bind(sessionLifecycle);
  		this.loadSession = sessionLifecycle.loadSession.bind(sessionLifecycle);
  		this.listSessions = sessionLifecycle.listSessions.bind(sessionLifecycle);
+diff --git a/dist/server-chat-M7FtQZJ3.mjs b/dist/server-chat-M7FtQZJ3.mjs
+index c15a706d139ffaae89c5742a5d8c6d9090926a95..0834dac02ec60680e3d46e3bf0eeada3aa37866b 100644
+--- a/dist/server-chat-M7FtQZJ3.mjs
++++ b/dist/server-chat-M7FtQZJ3.mjs
+@@ -742,6 +742,7 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
+ 		sendLivePayload("chat", sessionKey, payload, {
+ 			agentId,
+ 			controlUiVisible: delivery.controlUiVisible ?? true,
++			resumedFromRunId: delivery.resumedFromRunId,
+ 			dropIfSlow: true,
+ 			liveText: liveTextDelivery(chatRunState, clientRunId, broadcastDelta.replace ? void 0 : {
+ 				key: deliveryKey,
+@@ -805,6 +806,8 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
+ 		})
+ 	});
+ 	const sendLivePayload = (event, sessionKey, payload, opts) => {
++		const resumedFromRunId = opts?.resumedFromRunId ?? getAgentRunContext(opts?.sourceRunId ?? payload.runId)?.resumedFromRunId;
++		if (resumedFromRunId) payload = { ...payload, resumedFromRunId };
+ 		if (event === "chat" && "state" in payload && (payload.state === "final" || payload.state === "error" || payload.state === "aborted") && transcriptPublication.holdTerminal(payload.runId, () => sendLivePayload(event, sessionKey, payload, opts))) return;
+ 		const visible = opts?.controlUiVisible ?? true;
+ 		const deliverySessionKeys = sessionKey ? resolveSessionDeliveryKeys(sessionKey, opts?.agentId) : void 0;
+@@ -1041,6 +1044,7 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
+ 			agentId: sessionAgentId,
+ 			clientRunId,
+ 			sourceRunId: evt.runId,
++			resumedFromRunId: evt.resumedFromRunId,
+ 			seq: evt.seq,
+ 			controlUiVisible: isControlUiVisible
+ 		} : void 0;
+@@ -1192,6 +1196,20 @@ function createAgentEventHandler({ broadcast, broadcastToConnIds, nodeSendToSess
+ 					dropIfSlow: true,
+ 					liveText: liveTextDelivery(chatRunState, clientRunId)
+ 				});
++				const deliveryKeys = resolveSessionDeliveryKeys(sessionKey, sessionAgentId);
++				const scopedSubscribers = new Set();
++				for (const key of deliveryKeys) for (const connId of sessionMessageSubscribers.get(key)) {
++					if (!sessionSubscribers.has(connId) && !runToolRecipients?.has(connId)) scopedSubscribers.add(connId);
++				}
++				if (scopedSubscribers.size > 0) broadcastToConnIds("session.tool", {
++					...agentPayload,
++					...buildSessionEventSnapshot(sessionKey, void 0, sessionAgentId)
++				}, scopedSubscribers, {
++					dropIfSlow: true,
++					sessionKeys: deliveryKeys,
++					sessionSubscriptionVerified: true,
++					liveText: liveTextDelivery(chatRunState, clientRunId)
++				});
+ 			}
+ 		} else {
+ 			const itemPhase = isItemEvent && typeof evt.data?.phase === "string" ? evt.data.phase : "";
+diff --git a/dist/session-request-targets-BAGtAj-T.mjs b/dist/session-request-targets-BAGtAj-T.mjs
+index 91d059287a8e37e382d0be7510868a7885aaba12..cc17db8fad643cc1d0742ecd286b4020e1ec2604 100644
+--- a/dist/session-request-targets-BAGtAj-T.mjs
++++ b/dist/session-request-targets-BAGtAj-T.mjs
+@@ -5,11 +5,30 @@ import { d as getAgentEventLifecycleGeneration } from "./agent-events-CCeMHYh0.m
+ import { r as validateAgentWaitParams } from "./src-yRoHchex.mjs";
+ import { r as isDirectSessionReadMethod } from "./session-method-policy-B7o-3I76.mjs";
+ import { d as resolveTalkSessionTargetInput, l as resolveDirectSessionTargets, u as resolveSessionMutationTargets } from "./session-sharing-target-read-xGVQqwEk.mjs";
+-import { a as waitForAgentJob, n as getAgentJobSession, r as projectAgentJobObservation, t as captureAgentJobSession } from "./agent-job-DleplIFW.mjs";
++import { resolveAgentRecoveryWaitTarget, a as waitForAgentJob, n as getAgentJobSession, r as projectAgentJobObservation, t as captureAgentJobSession } from "./agent-job-DleplIFW.mjs";
+ import { c as resolveAgentWaitSource } from "./agent-dedupe-BdNZwCMG.mjs";
++import { _ as resolveSessionSharingTarget } from "./session-sharing-policy-CMWQKtE0.mjs";
+ //#region src/gateway/agent-turn/agent-wait.ts
++// ClawX: after another process restart, only the durable terminal owner can
++// vouch for the requested run. Never settle from session-wide status alone.
++function readAcpTerminalOwner(context, runId, sessionKey) {
++	if (!sessionKey) return;
++	const target = resolveSessionSharingTarget({ cfg: context.getRuntimeConfig(), sessionKey });
++	const entry = target?.entry;
++	if (!entry || entry.lastRunId !== runId || entry.lifecycleRunId || !Number.isFinite(entry.endedAt) || !["done", "error", "aborted"].includes(entry.status)) return;
++	return {
++		session: { sessionKey: target.storeKey, sessionId: entry.sessionId, agentId: target.agentId, lifecycleGeneration: getAgentEventLifecycleGeneration() },
++		status: entry.status === "done" ? "ok" : "error",
++		startedAt: entry.startedAt,
++		endedAt: entry.endedAt,
++		error: entry.status === "done" ? void 0 : entry.lastRunError ?? `Agent run ${entry.status}`,
++		terminalReply: { disposition: "visible" },
++		terminalReceipt: { runId, sessionId: entry.sessionId }
++	};
++}
+ function prepareAgentWaitForTurn(context, params) {
+-	const runId = params.runId.trim();
++	const requestedRunId = params.runId.trim();
++	const runId = resolveAgentRecoveryWaitTarget(requestedRunId, normalizeOptionalString(params.sessionKey));
+ 	const timeoutMs = params.timeoutMs ?? 3e4;
+ 	const source = resolveAgentWaitSource(context, runId);
+ 	const lifecycleGeneration = getAgentEventLifecycleGeneration();
+@@ -30,11 +49,11 @@ function prepareAgentWaitForTurn(context, params) {
+ 	};
+ 	const queuedBeforeWait = queuedResult();
+ 	const runContext = getAgentRunContext(runId);
+-	const initialSession = queuedBeforeWait?.session ?? getAgentJobSession(runId, source === "chat" ? "chat" : void 0) ?? captureAgentJobSession(runContext);
++	const initialSession = queuedBeforeWait?.session ?? getAgentJobSession(runId, source === "chat" ? "chat" : void 0) ?? captureAgentJobSession(runContext) ?? readAcpTerminalOwner(context, runId, normalizeOptionalString(params.sessionKey))?.session;
+ 	const wait = async () => {
+ 		if (queuedBeforeWait) return queuedBeforeWait;
+ 		let queuedDuringWait;
+-		const snapshot = await waitForAgentJob({
++		const snapshot = readAcpTerminalOwner(context, runId, normalizeOptionalString(params.sessionKey)) ?? await waitForAgentJob({
+ 			runId,
+ 			timeoutMs,
+ 			source,
+@@ -48,6 +67,7 @@ function prepareAgentWaitForTurn(context, params) {
+ 		if (!snapshot) return {
+ 			result: {
+ 				runId,
++				...runId !== requestedRunId ? { resumedFromRunId: requestedRunId } : {},
+ 				status: "timeout"
+ 			},
+ 			session: captureAgentJobSession(runContext) ?? initialSession
+@@ -57,7 +77,8 @@ function prepareAgentWaitForTurn(context, params) {
+ 			session,
+ 			result: {
+ 				runId,
+-				...result
++				...result,
++				...runId !== requestedRunId ? { resumedFromRunId: requestedRunId } : {}
+ 			}
+ 		};
+ 	};
 diff --git a/dist/sessions-compact-BHqjQkq-.mjs b/dist/sessions-compact-BHqjQkq-.mjs
+index 8ea14aae3da0f6480841ce7108e83b94733ceedc..bc83a578989124a41fd7fa34b969b02cb7301095 100644
 --- a/dist/sessions-compact-BHqjQkq-.mjs
 +++ b/dist/sessions-compact-BHqjQkq-.mjs
-@@ -45,6 +45,7 @@
+@@ -45,6 +45,7 @@ import { t as assertValidParams } from "./validation-CX4u4B7f.mjs";
  import { o as requireSessionKey, t as emitSessionOperation } from "./sessions-shared-Dr0eLQJX.mjs";
  import { t as waitForTerminalSessionRunSettlement } from "./session-run-settlement-Bkcbqzad.mjs";
  import { randomUUID } from "node:crypto";
@@ -990,7 +1558,7 @@ diff --git a/dist/sessions-compact-BHqjQkq-.mjs b/dist/sessions-compact-BHqjQkq-
  //#region src/gateway/server-methods/sessions-compaction-runner.ts
  /** Returns only definitive legacy-runtime no-op verdicts; other runtimes decide for themselves. */
  async function preflightGatewaySessionCompaction(params) {
-@@ -354,22 +355,45 @@
+@@ -354,22 +355,45 @@ const sessionCompactHandlers = { "sessions.compact": async (options) => {
  					respondNotCompacted({ reason: "no transcript" });
  					return;
  				}
@@ -1002,14 +1570,14 @@ diff --git a/dist/sessions-compact-BHqjQkq-.mjs b/dist/sessions-compact-BHqjQkq-
 +					compactionId,
  					operation: "compact",
  					phase: "start",
--					sessionKey: target.canonicalKey,
+ 					sessionKey: target.canonicalKey,
 -					agentId: target.agentId
 -				});
 -				const emitCompactionEnd = (completed, reason) => emitSessionOperation(context, {
 -					operationId,
 -					operation: "compact",
 -					phase: "end",
- 					sessionKey: target.canonicalKey,
+-					sessionKey: target.canonicalKey,
  					agentId: target.agentId,
 -					completed,
 -					reason
@@ -1045,7 +1613,7 @@ diff --git a/dist/sessions-compact-BHqjQkq-.mjs b/dist/sessions-compact-BHqjQkq-
  				let result;
  				let persisted = false;
  				let expectedEntry = latestEntry;
-@@ -420,7 +444,7 @@
+@@ -420,7 +444,7 @@ const sessionCompactHandlers = { "sessions.compact": async (options) => {
  						}
  					})).ok;
  				} catch (err) {
@@ -1054,10 +1622,31 @@ diff --git a/dist/sessions-compact-BHqjQkq-.mjs b/dist/sessions-compact-BHqjQkq-
  					throw err;
  				}
  				if (result.ok && result.compacted) {
+diff --git a/dist/src-yRoHchex.mjs b/dist/src-yRoHchex.mjs
+index e0465d9952603588ad8e666f2361c6d545cd0eca..95edf06fe3b153296dc38add5ebd0ba9a2c6d42c 100644
+--- a/dist/src-yRoHchex.mjs
++++ b/dist/src-yRoHchex.mjs
+@@ -2486,6 +2486,7 @@ const AgentInternalEventSchema = closedObject({
+ /** Stream event emitted by the agent runtime over the gateway protocol. */
+ const AgentEventSchema = closedObject({
+ 	runId: NonEmptyString,
++	resumedFromRunId: Type.Optional(NonEmptyString),
+ 	seq: Type.Integer({ minimum: 0 }),
+ 	stream: NonEmptyString,
+ 	ts: Type.Integer({ minimum: 0 }),
+@@ -2790,6 +2791,7 @@ const AgentIdentityResultSchema = closedObject({
+ /** Waits for a submitted agent run to complete or time out. */
+ const AgentWaitParamsSchema = closedObject({
+ 	runId: NonEmptyString,
++	sessionKey: Type.Optional(NonEmptyString),
+ 	timeoutMs: Type.Optional(Type.Integer({ minimum: 0 }))
+ });
+ /** Wake request from external schedulers or devices into an agent session. */
 diff --git a/dist/zod-schema-BVpLKnmq.mjs b/dist/zod-schema-BVpLKnmq.mjs
+index 65b5da005ee3290812423c1d898ba88c4db1d6f0..05ed281c3774a8389b67166d8cda3a3064145272 100644
 --- a/dist/zod-schema-BVpLKnmq.mjs
 +++ b/dist/zod-schema-BVpLKnmq.mjs
-@@ -135,7 +135,7 @@
+@@ -135,7 +135,7 @@ const AgentDefaultsSchema = strictObject({
  		/** Thinking level for embedded OpenClaw compaction summaries. Default: low. */
  		thinkingLevel: union([AgentThinkingLevelSchema, literal("inherit")]).optional(),
  		/** Embedded OpenClaw keepRecentTokens budget used for cut-point selection. */
