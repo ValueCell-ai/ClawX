@@ -307,12 +307,74 @@ describe('WeCom plugin configuration', () => {
     const plugins = config.plugins as { allow?: string[]; entries?: Record<string, Record<string, unknown>> };
 
     expect(channels.discord.accounts?.default).toBeDefined();
-    expect(channels.qqbot.accounts?.default).toBeDefined();
+    // Tencent QQBot 2.0 keeps the default account at the channel root.
+    expect(channels.qqbot).toMatchObject({ appId: 'qq-app', allowFrom: ['openclaw:approval-disabled'], dmPolicy: 'open' });
+    expect(channels.qqbot).not.toHaveProperty('accounts');
+    expect(channels.qqbot).not.toHaveProperty('defaultAccount');
     expect(channels.whatsapp.accounts?.default).toBeDefined();
-    expect(plugins.allow).toEqual(expect.arrayContaining(['discord', 'qqbot', 'whatsapp']));
+    expect(plugins.allow).toEqual(expect.arrayContaining(['discord', 'openclaw-qqbot', 'whatsapp']));
+    expect(plugins.allow).not.toContain('qqbot');
     expect(plugins.entries?.discord).toEqual({ enabled: true });
-    expect(plugins.entries?.qqbot).toEqual({ enabled: true });
+    expect(plugins.entries?.['openclaw-qqbot']).toEqual({ enabled: true });
+    expect(plugins.entries?.qqbot).toBeUndefined();
     expect(plugins.entries?.whatsapp).toEqual({ enabled: true });
+  });
+
+  it('keeps QQBot accounts in the Tencent QQBot 2.0 shape across account changes', async () => {
+    const {
+      deleteChannelAccountConfig,
+      getChannelConfig,
+      listConfiguredChannelAccountsFromConfig,
+      saveChannelConfig,
+    } = await import('@electron/utils/channel-config');
+
+    await saveChannelConfig('qqbot', { appId: 'app-main', clientSecret: 'secret-main' }, 'default');
+    await saveChannelConfig('qqbot', { appId: 'app-agent', clientSecret: 'secret-agent' }, 'agent-a');
+
+    let config = await readOpenClawJson();
+    let qqbot = (config.channels as Record<string, Record<string, unknown>>).qqbot;
+    expect(qqbot).toMatchObject({ appId: 'app-main', clientSecret: 'secret-main' });
+    expect(qqbot).not.toHaveProperty('defaultAccount');
+    expect(Object.keys(qqbot.accounts as object)).toEqual(['agent-a']);
+    expect(listConfiguredChannelAccountsFromConfig(config).qqbot).toEqual({
+      defaultAccountId: 'default',
+      accountIds: ['default', 'agent-a'],
+    });
+    expect(await getChannelConfig('qqbot', 'default')).toMatchObject({ appId: 'app-main' });
+    expect(await getChannelConfig('qqbot', 'agent-a')).toMatchObject({ appId: 'app-agent' });
+
+    await deleteChannelAccountConfig('qqbot', 'default');
+
+    config = await readOpenClawJson();
+    qqbot = (config.channels as Record<string, Record<string, unknown>>).qqbot;
+    expect(qqbot).not.toHaveProperty('appId');
+    expect(qqbot).not.toHaveProperty('defaultAccount');
+    expect(qqbot.allowFrom).toEqual(['openclaw:approval-disabled']);
+    expect(qqbot.accounts).toEqual({
+      'agent-a': expect.objectContaining({ appId: 'app-agent', allowFrom: ['openclaw:approval-disabled'] }),
+    });
+    expect(listConfiguredChannelAccountsFromConfig(config).qqbot).toEqual({
+      defaultAccountId: 'agent-a',
+      accountIds: ['agent-a'],
+    });
+    expect(await getChannelConfig('qqbot', 'default')).toBeUndefined();
+
+    await deleteChannelAccountConfig('qqbot', 'agent-a');
+
+    config = await readOpenClawJson();
+    expect((config.channels as Record<string, unknown> | undefined)?.qqbot).toBeUndefined();
+    const plugins = config.plugins as { allow?: string[]; entries?: Record<string, unknown> } | undefined;
+    expect(plugins?.allow ?? []).not.toContain('openclaw-qqbot');
+    expect(plugins?.entries?.['openclaw-qqbot']).toBeUndefined();
+  });
+
+  it('rejects a QQBot named default while the default account exists', async () => {
+    const { saveChannelConfig, setChannelDefaultAccount } = await import('@electron/utils/channel-config');
+
+    await saveChannelConfig('qqbot', { appId: 'app-main', clientSecret: 'secret-main' }, 'default');
+    await saveChannelConfig('qqbot', { appId: 'app-agent', clientSecret: 'secret-agent' }, 'agent-a');
+
+    await expect(setChannelDefaultAccount('qqbot', 'agent-a')).rejects.toThrow(/always uses the "default" account/);
   });
 
   it('saves discord guild channel allowlist without schema-invalid allow flags', async () => {

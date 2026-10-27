@@ -678,9 +678,9 @@ describe('plugin installer diagnostics', () => {
     mockReadFileSync.mockImplementation((input: string) => {
       if (String(input) === `${targetDir}/package.json`) {
         return JSON.stringify({
-          name: '@openclaw/qqbot',
-          version: '2026.7.1',
-          peerDependencies: { openclaw: '>=2026.7.1' },
+          name: '@tencent-connect/openclaw-qqbot',
+          version: '2.0.3',
+          peerDependencies: { openclaw: '*' },
         });
       }
       return '{}';
@@ -779,6 +779,39 @@ describe('plugin installer diagnostics', () => {
         sourcePath: targetDir,
         installPath: targetDir,
         version: '2026.10.5',
+      }),
+    });
+  });
+
+  it('records the Tencent QQBot mirror as path-owned openclaw-qqbot and drops the legacy qqbot record', async () => {
+    const targetDir = '/home/test/.openclaw/extensions/qqbot';
+    configState.authoritative = {
+      plugins: { installs: { qqbot: { source: 'npm', spec: '@openclaw/qqbot', version: '2026.7.1' } } },
+    };
+
+    mockExistsSync.mockImplementation((input: string) => {
+      const value = String(input);
+      return value === `${targetDir}/openclaw.plugin.json`
+        || value === `${targetDir}/package.json`;
+    });
+    mockReadFileSync.mockImplementation((input: string) => {
+      if (String(input) === `${targetDir}/package.json`) {
+        return JSON.stringify({ name: '@tencent-connect/openclaw-qqbot', version: '2.0.3' });
+      }
+      return '{}';
+    });
+
+    const { syncTrustedOfficialPluginInstallRecord } = await import('@electron/utils/plugin-install');
+    await expect(syncTrustedOfficialPluginInstallRecord('qqbot', targetDir)).resolves.toBe(true);
+
+    expect(configState.authoritative).toEqual({ plugins: {} });
+    expect(mockRemovePluginInstallRecordsFromSqlite).toHaveBeenCalledWith(['qqbot']);
+    expect(mockUpsertPluginInstallRecordsIntoSqlite).toHaveBeenCalledWith({
+      'openclaw-qqbot': expect.objectContaining({
+        source: 'path',
+        sourcePath: targetDir,
+        installPath: targetDir,
+        version: '2.0.3',
       }),
     });
   });

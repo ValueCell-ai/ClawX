@@ -24,6 +24,7 @@ import {
   remapDingTalkOfficialManifest,
   remapDingTalkOfficialPackageJson,
 } from './dingtalk-plugin-compat';
+import { QQBOT_LEGACY_PLUGIN_IDS, QQBOT_NPM, QQBOT_PLUGIN_ID } from './qqbot-plugin-compat';
 import { ensureDingTalkDwsInstalled } from './dingtalk-dws';
 import { safeRmSync } from './safe-fs';
 import {
@@ -430,7 +431,7 @@ const PLUGIN_NPM_NAMES: Record<string, string> = {
   wecom: '@wecom/wecom-openclaw-plugin',
   'feishu-openclaw-plugin': '@openclaw/feishu',
   discord: '@openclaw/discord',
-  qqbot: '@openclaw/qqbot',
+  qqbot: QQBOT_NPM,
   whatsapp: '@openclaw/whatsapp',
 
   'openclaw-weixin': '@tencent-weixin/openclaw-weixin',
@@ -479,7 +480,15 @@ const TRUSTED_OFFICIAL_EXTENSION_PLUGINS: Record<string, TrustedOfficialExtensio
   },
   whatsapp: { npmName: '@openclaw/whatsapp' },
   discord: { npmName: '@openclaw/discord' },
-  qqbot: { npmName: '@openclaw/qqbot' },
+  // OpenClaw 2026.10.5 resolves the `qqbot` channel to Tencent QQBot 2.0 and
+  // lists @openclaw/qqbot as its legacy npm name. A path record under the new
+  // `openclaw-qqbot` id keeps startup migration from reinstalling it from npm.
+  qqbot: {
+    npmName: QQBOT_NPM,
+    pluginId: QQBOT_PLUGIN_ID,
+    recordSource: 'path',
+    legacyPluginIds: [...QQBOT_LEGACY_PLUGIN_IDS],
+  },
   'openclaw-weixin': { npmName: '@tencent-weixin/openclaw-weixin' },
   'clawx-openai-image': {
     npmName: 'clawx-openai-image-plugin',
@@ -908,8 +917,10 @@ export function copyPluginFromNodeModules(npmPkgPath: string, targetDir: string,
   const SKIP_PACKAGES = new Set(['typescript', '@playwright/test']);
   try {
     const pluginPkg = JSON.parse(readFileSync(fsPath(join(targetDir, 'package.json')), 'utf-8'));
+    // A peer that is also a runtime dependency must still ship with the plugin.
+    const runtimeDeps = new Set(Object.keys(pluginPkg.dependencies || {}));
     for (const peer of Object.keys(pluginPkg.peerDependencies || {})) {
-      SKIP_PACKAGES.add(peer);
+      if (!runtimeDeps.has(peer)) SKIP_PACKAGES.add(peer);
     }
   } catch { /* ignore */ }
 

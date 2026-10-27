@@ -711,8 +711,11 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
     const pluginPkg = JSON.parse(
       require('fs').readFileSync(join(destDir, 'package.json'), 'utf8')
     );
+    // A peer that is also a runtime dependency (Tencent QQBot's connector)
+    // must still ship with the plugin.
+    const runtimeDeps = new Set(Object.keys(pluginPkg.dependencies || {}));
     for (const peer of Object.keys(pluginPkg.peerDependencies || {})) {
-      SKIP_PACKAGES.add(peer);
+      if (!runtimeDeps.has(peer)) SKIP_PACKAGES.add(peer);
     }
   } catch { /* ignore */ }
 
@@ -816,7 +819,7 @@ exports.default = async function afterPack(context) {
     { npmName: '@wecom/wecom-openclaw-plugin', pluginId: 'wecom' },
     { npmName: '@openclaw/feishu', pluginId: 'feishu-openclaw-plugin' },
     { npmName: '@openclaw/discord', pluginId: 'discord' },
-    { npmName: '@openclaw/qqbot', pluginId: 'qqbot' },
+    { npmName: '@tencent-connect/openclaw-qqbot', pluginId: 'qqbot' },
     { npmName: '@openclaw/whatsapp', pluginId: 'whatsapp' },
     { npmName: '@tencent-weixin/openclaw-weixin', pluginId: 'openclaw-weixin' },
   ];

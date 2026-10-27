@@ -8,7 +8,7 @@
  *   - @dingtalk-real-ai/dingtalk-connector -> build/openclaw-plugins/dingtalk
  *   - @wecom/wecom-openclaw-plugin -> build/openclaw-plugins/wecom
  *   - @openclaw/discord -> build/openclaw-plugins/discord
- *   - @openclaw/qqbot -> build/openclaw-plugins/qqbot
+ *   - @tencent-connect/openclaw-qqbot -> build/openclaw-plugins/qqbot
  *   - @openclaw/whatsapp -> build/openclaw-plugins/whatsapp
  *   - @tencent-weixin/openclaw-weixin -> build/openclaw-plugins/openclaw-weixin
  *
@@ -44,7 +44,8 @@ const PLUGINS = [
   // Official successor to @larksuite/openclaw-lark for OpenClaw >=2026.10.5.
   { npmName: '@openclaw/feishu', pluginId: 'feishu-openclaw-plugin' },
   { npmName: '@openclaw/discord', pluginId: 'discord' },
-  { npmName: '@openclaw/qqbot', pluginId: 'qqbot' },
+  // OpenClaw 2026.10.5 serves the qqbot channel from Tencent QQBot 2.0.
+  { npmName: '@tencent-connect/openclaw-qqbot', pluginId: 'qqbot' },
   { npmName: '@openclaw/whatsapp', pluginId: 'whatsapp' },
   { npmName: '@tencent-weixin/openclaw-weixin', pluginId: 'openclaw-weixin' },
 ];
@@ -118,12 +119,15 @@ function bundleOnePlugin({ npmName, pluginId }) {
   queue.push({ nodeModulesDir: rootVirtualNM, skipPkg: npmName });
 
   // Skip peerDependencies — they're provided by the host openclaw gateway.
+  // A peer that is also a runtime dependency (Tencent QQBot's connector) must
+  // still ship with the plugin.
   const SKIP_PACKAGES = new Set(['typescript', '@playwright/test']);
   const SKIP_SCOPES = ['@types/'];
   try {
     const pluginPkg = JSON.parse(fs.readFileSync(path.join(outputDir, 'package.json'), 'utf8'));
+    const runtimeDeps = new Set(Object.keys(pluginPkg.dependencies || {}));
     for (const peer of Object.keys(pluginPkg.peerDependencies || {})) {
-      SKIP_PACKAGES.add(peer);
+      if (!runtimeDeps.has(peer)) SKIP_PACKAGES.add(peer);
     }
   } catch { /* ignore */ }
 

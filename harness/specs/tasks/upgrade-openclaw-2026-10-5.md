@@ -63,7 +63,7 @@ expectedUserBehavior:
   - Interrupted ACP turns recover across a managed Gateway restart, including accepted-prompt recovery, resumed-run lineage, and transcript/ledger replay without duplicate text.
   - Compaction keeps ClawX's no-retained-tail mode (`keepRecentTokens: 0`), aggregate tool-result pressure targets, and mid-turn progress continuation behavior.
   - TokenDance provider errors still surface documented `TokenDance-Recovery-Action` hints.
-  - Official channel plugins resolve against 2026.10.5 without peer conflicts; QQ Bot stays on its latest published 2026.7.1 because no newer release exists. Feishu uses the official successor @openclaw/feishu 2026.10.5 (channel id `feishu`), while legacy @larksuite/openclaw-lark ids migrate cleanly.
+  - Official channel plugins resolve against 2026.10.5 without peer conflicts. QQ Bot uses Tencent QQBot 2.0.3 (`@tencent-connect/openclaw-qqbot`, plugin id `openclaw-qqbot`), the 2026.10.5 catalog provider for `qqbot`. Feishu uses the official successor @openclaw/feishu 2026.10.5 (channel id `feishu`), while legacy @larksuite/openclaw-lark ids migrate cleanly. See `migrate-qqbot-feishu-plugin-index-2026-10-5`.
 requiredProfiles:
   - fast
   - comms
@@ -87,7 +87,7 @@ requiredTests:
   - tests/unit/cua-cli-exec.test.ts
   - tests/e2e/app-smoke.spec.ts
 acceptance:
-  - OpenClaw is pinned to 2026.10.5, @openclaw/ai resolves 2026.10.5, official Discord and WhatsApp plugins are 2026.10.5, QQ Bot stays 2026.7.1, WeCom is 2026.9.15, Weixin is 2.4.10, DingTalk is 0.8.26, and Open Lark stays 2026.7.16.
+  - OpenClaw is pinned to 2026.10.5, @openclaw/ai resolves 2026.10.5, official Discord and WhatsApp plugins are 2026.10.5, QQ Bot is Tencent QQBot 2.0.3, WeCom is 2026.9.15, Weixin is 2.4.10, DingTalk is 0.8.26, and Feishu is @openclaw/feishu 2026.10.5.
   - Electron is 41.10.7 (Node 24.18.0, SQLite 3.53.1) and the bundled Windows Node is 24.18.1, both satisfying OpenClaw's `>=24.16.0 <25 || >=26.1.0` engine contract.
   - `patches/openclaw@2026.10.5.patch` is regenerated against the 2026.10.5 ESM bundle and is registered in `pnpm-workspace.yaml`; it must not be carried forward by filename from 2026.7.1-2.
   - The bundle pipeline supports ESM chunks: plugin-sdk self-import rewriting scans `.mjs` extension files, the Windows PTY/windowsHide hardening targets the 2026.10.5 `terminal-pty` and `bash-tools` chunks, and the browser retry hint covers `.mjs` chunks.

@@ -11,7 +11,8 @@ Durable, non-executable reference for the ClawX kernel upgrade from
 | @openclaw/ai | 2026.7.1-2 | 2026.10.5 | pinned by openclaw |
 | @openclaw/discord | 2026.7.1 | 2026.10.5 | peer `openclaw >=2026.7.1` |
 | @openclaw/whatsapp | 2026.7.1 | 2026.10.5 | peer `openclaw >=2026.7.1` |
-| @openclaw/qqbot | 2026.7.1 | 2026.7.1 | no newer published release |
+| QQ Bot plugin | @openclaw/qqbot 2026.7.1 | **@tencent-connect/openclaw-qqbot 2.0.3** | the 2026.10.5 catalog provider for `qqbot`; plugin id `openclaw-qqbot` |
+| @tencent-connect/qqbot-connector | ^1.1.0 | 1.2.0 | exact peer and dependency of Tencent QQBot 2.0.3 |
 | @wecom/wecom-openclaw-plugin | 2026.8.17 | 2026.9.15 | local compatibility patch regenerated |
 | @tencent-weixin/openclaw-weixin | 2.4.8 | 2.4.10 | |
 | @dingtalk-real-ai/dingtalk-connector | 0.8.25 | 0.8.26 | |
@@ -212,6 +213,82 @@ continues to handle state/database migration and any legacy or user-authored
 keys outside this safe prelaunch set, including `plugins.bundledDiscovery`,
 `commands.ownerDisplay`, and `tools.media.image.models`.
 
+
+## Plugin install index in 2026.10
+
+OpenClaw 2026.10 stores the installed-plugin index as the
+`plugins.installedIndex` row of `config_machine_state` in
+`state/openclaw.sqlite`. The value is `{ revision, index }`, and `index`
+carries `installRecords`, `plugins` projections, and diagnostics. OpenClaw
+imports the older `installed_plugin_index` table only while migrating a
+database below `user_version` 13, and then drops it. Writing that table into
+a migrated database has no effect.
+
+`electron/utils/plugin-install-index.ts` therefore writes:
+
+- **Migrated databases** (`user_version` ≥ 13 with `config_machine_state`):
+  the machine-state row. The write runs inside `BEGIN IMMEDIATE` and is skipped
+  while OpenClaw holds the `core:plugin-lifecycle` / `global` state lease. An
+  invalid row is left for Doctor. The revision becomes
+  `max(now, previous + 1)`. The cached `plugins` projections of changed records
+  are dropped so OpenClaw rebuilds them. A stray `installed_plugin_index` table
+  recreated by earlier ClawX builds is dropped.
+- **Fresh or pre-13 databases:** the legacy table, which OpenClaw imports
+  during its schema migration.
+
+Records that differ only in `installedAt` are not rewritten. Existing
+`acceptedSurface*` capability consent is preserved, because OpenClaw
+re-checks it against the declared surface hash.
+
+Path-owned ClawX mirrors (DingTalk, WeCom, Feishu, QQ Bot, the OpenAI image
+relay) are never `trustedOfficialInstall`. `openclaw plugins list` therefore
+reports a `requires capability consent` warning for them until the user
+accepts with `openclaw plugins enable <id> --accept-capabilities`. The warning
+comes from the status snapshot only, and the Gateway still loads the plugin.
+
+## Channel plugin migration for 0.6.1 upgrades
+
+- **QQ Bot.** The 2026.10.5 catalog serves `qqbot` from Tencent QQBot 2.0
+  (`legacyNpmPackageNames: ["@openclaw/qqbot"]`). The host schema forbids
+  `defaultAccount` and `accounts.default`, and requires a non-wildcard
+  `allowFrom` at the root and in every account. A 0.6.1 config fails
+  `openclaw config validate`. Before launch, ClawX moves `accounts.default` to
+  the root, or keeps a mirrored named default first because Tencent uses the
+  first account when the root has no credentials. It then applies Doctor's
+  `qqbot.tencent-2.0-compatibility` allowlist rule, replacing an open or
+  wildcard `allowFrom` with explicit IDs or `openclaw:approval-disabled` plus
+  `dmPolicy: "open"`. Activation moves from `qqbot` to `openclaw-qqbot`, and
+  the install record becomes a path record under `openclaw-qqbot`. Approval,
+  `clientSecretFile`, streaming-transport, group command, and
+  `commands.allowFrom` policies stay for OpenClaw Doctor. ClawX reads the
+  Tencent shape back into its account model before mutations, and rejects a
+  named default while a `default` account exists because Tencent cannot
+  represent that state. The bundlers skip only peer dependencies that are not
+  also runtime dependencies, because `@tencent-connect/qqbot-connector` is
+  both.
+- **Feishu.** `sanitizeOpenClawConfig` runs before plugin maintenance, so the
+  first upgraded launch still reads `openclaw-lark` from the old
+  `feishu-openclaw-plugin` mirror. Right after the mirror upgrade, prelaunch
+  re-points activation at the installed manifest id (`feishu`), preserving the
+  entry settings. A failed upgrade leaves the old manifest and its activation
+  in place. The official plugin has 14 Feishu tools instead of openclaw-lark's
+  39, without calendar, task, user OAuth, sheet, or search tools. This
+  reduction is accepted for the upgrade.
+
+Evidence from a synthetic `/tmp` home on OpenClaw 2026.10.5 under Electron's
+Node 24.18.0:
+
+1. A 0.6.1 config and a legacy `@openclaw/qqbot` npm record went through the
+   ClawX prelaunch steps (config migration, mirror copy, peer link, and record
+   swap).
+2. `plugins list` migrated the state database to `user_version` 20, imported the
+   `openclaw-qqbot` path record, dropped the legacy table, and reported the
+   plugin `loaded`.
+3. `config validate` returned `valid: true`. The unmigrated 0.6.1 shape returned
+   `allowFrom` and `accounts` errors.
+4. A later machine-state write kept the index valid.
+5. `gateway run` reached `ready` with `openclaw-qqbot` loaded, and started the
+   `default` and `agent-b` accounts against Tencent's API.
 
 ## Packaging evidence (2026.10.5)
 

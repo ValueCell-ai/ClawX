@@ -28,7 +28,11 @@ import {
 } from '../utils/paths';
 import { getUvMirrorEnv } from '../utils/uv-env';
 import { cleanupDanglingWeChatPluginState, listConfiguredChannelsFromConfig, readOpenClawConfig } from '../utils/channel-config';
-import { sanitizeOpenClawConfig, batchSyncConfigFields } from '../utils/openclaw-auth';
+import {
+  sanitizeOpenClawConfig,
+  batchSyncConfigFields,
+  syncFeishuPluginRegistrationWithInstalledPlugin,
+} from '../utils/openclaw-auth';
 import { buildProxyEnv, resolveProxySettings } from '../utils/proxy';
 import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
@@ -80,7 +84,7 @@ const CHANNEL_PLUGIN_MAP: Record<string, { dirName: string; npmName: string }> =
   wecom: { dirName: 'wecom', npmName: '@wecom/wecom-openclaw-plugin' },
   feishu: { dirName: 'feishu-openclaw-plugin', npmName: '@openclaw/feishu' },
   discord: { dirName: 'discord', npmName: '@openclaw/discord' },
-  qqbot: { dirName: 'qqbot', npmName: '@openclaw/qqbot' },
+  qqbot: { dirName: 'qqbot', npmName: '@tencent-connect/openclaw-qqbot' },
   whatsapp: { dirName: 'whatsapp', npmName: '@openclaw/whatsapp' },
 
   'openclaw-weixin': { dirName: 'openclaw-weixin', npmName: '@tencent-weixin/openclaw-weixin' },
@@ -564,6 +568,10 @@ export async function syncGatewayConfigBeforeLaunch(
       },
     ));
     maintenance['plugin-maintenance'] = result;
+
+    if (configuredChannels.includes('feishu')) {
+      await syncFeishuPluginRegistrationWithInstalledPlugin();
+    }
 
     // This legacy directory can coexist with ClawX's remapped `dingtalk`
     // mirror and create a second Stream client. Remove it on upgrade before

@@ -95,9 +95,6 @@ importers:
       '@openclaw/feishu':
         specifier: 2026.10.5
         version: 2026.10.5(openclaw@2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13))
-      '@openclaw/qqbot':
-        specifier: 2026.7.1
-        version: 2026.7.1(openclaw@2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13))
       '@openclaw/whatsapp':
         specifier: 2026.10.5
         version: 2026.10.5(openclaw@2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13))
@@ -152,9 +149,12 @@ importers:
       '@streamdown/math':
         specifier: ^1.0.2
         version: 1.0.2(react@19.2.4)
+      '@tencent-connect/openclaw-qqbot':
+        specifier: 2.0.3
+        version: 2.0.3(@tencent-connect/qqbot-connector@1.2.0)(mpg123-decoder@1.0.3)(openclaw@2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13))(silk-wasm@3.7.1)
       '@tencent-connect/qqbot-connector':
-        specifier: ^1.1.0
-        version: 1.1.0
+        specifier: 1.2.0
+        version: 1.2.0
       '@tencent-weixin/openclaw-weixin':
         specifier: 2.4.10
         version: 2.4.10(openclaw@2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13))
@@ -1831,20 +1831,6 @@ packages:
     peerDependencies:
       undici: '>=8.5.0 <9'
 
-  '@openclaw/qqbot@2026.7.1':
-    resolution: {integrity: sha512-h5Ak9UyoIzMl1qs88vYwPBdtXDXfUZmta4Tjo1JVtZjEFF/3zl8JOwAfUv739mgBwJ2D7frHz+yvdLXkSV0lfA==}
-    peerDependencies:
-      openclaw: '>=2026.7.1'
-    peerDependenciesMeta:
-      openclaw:
-        optional: true
-    bundledDependencies:
-      - '@tencent-connect/qqbot-connector'
-      - mpg123-decoder
-      - silk-wasm
-      - ws
-      - zod
-
   '@openclaw/whatsapp@2026.10.5':
     resolution: {integrity: sha512-3Dbv0p60yuz6tzuZNUMHzIYjhGL816BfOPBfz2YIpszQ7kx2j1uZfgpa0xTaxH4Spbg0AFakIp0kIcWOU1ODEQ==}
     peerDependencies:
@@ -2682,9 +2668,28 @@ packages:
     resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
     engines: {node: '>=10'}
 
-  '@tencent-connect/qqbot-connector@1.1.0':
-    resolution: {integrity: sha512-3nQ2mdyzPRKpBHjd3QiKZDwNzw1F7fBN+rSq8Xms2gg+JWZR4SY2Zdf+doqTyXdyVjG4Y0QM7IA4U42zT9xxzw==}
+  '@tencent-connect/openclaw-qqbot@2.0.3':
+    resolution: {integrity: sha512-yngu/2cPeZjJfIfHWCXWB2/6KlDHrb9vpOUjKLdQxePLSp6wCn3CFOALcBIVq/9o6jlYz9WTU9idW6nfX1xpFA==}
+    hasBin: true
+    peerDependencies:
+      '@tencent-connect/qqbot-connector': 1.2.0
+      openclaw: '*'
+
+  '@tencent-connect/qqbot-connector@1.2.0':
+    resolution: {integrity: sha512-FAOUCvgxP4M9UiYbHrtVgJ7BavSlh1CHJPjeEQuTAkP9MZ91lX4yATqv6I/lB9yp15nVq+G2DaGSSJwQTSoSsA==}
     engines: {node: '>=18.0.0'}
+
+  '@tencent-connect/qqbot-nodejs@1.0.5':
+    resolution: {integrity: sha512-OAPGoZTtG3soI79lGNQ4YqdAe9xy+lYatUfzZyBPmjaRjH0uLjFeImffMlGVSmhfaM/wJQSIA2g1uZv3eorTRg==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      mpg123-decoder: ^1.0.3
+      silk-wasm: ^3.7.1
+    peerDependenciesMeta:
+      mpg123-decoder:
+        optional: true
+      silk-wasm:
+        optional: true
 
   '@tencent-weixin/openclaw-weixin@2.4.10':
     resolution: {integrity: sha512-qCN7rFtBK5BO/i5YGEJLdpC/8WQrm0dtPlQ0xNxku4RSyzGaRsiBoLVheU5hgpoOIBvfc5pUwKTktMbROLcIVg==}
@@ -3382,6 +3387,7 @@ packages:
 
   audio-decode@2.2.3:
     resolution: {integrity: sha512-Z0lHvMayR/Pad9+O9ddzaBJE0DrhZkQlStrC1RwcAHF3AhQAsdwKHeLGK8fYKyp2DDU6xHxzGb4CLMui12yVrg==}
+    deprecated: Renamed to @audio/decode — same API; this name remains a thin alias. npm i @audio/decode
 
   audio-type@2.4.1:
     resolution: {integrity: sha512-dK9Z/P83C/rBfTrXXgPD3jZ+aXxx2o/P4rq8+H1JqxbXklitEeJw4CrcwMC5CkON3CX3yy2gaWnIEVYejYh0zQ==}
@@ -5138,7 +5144,7 @@ packages:
     engines: {node: '>= 0.8.0'}
 
   libsignal@https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7:
-    resolution: {gitHosted: true, integrity: sha512-KmRMuAYSfd4upRD0xOgKbURxRXNE8X8NtgmkUOJFXOn9ESSCXguIZ7PJu8OBJIr7KGww41Vf/Pbgko+PgWQ55g==, tarball: https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7}
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7}
     version: 6.0.0
 
   lie@3.3.0:
@@ -8948,10 +8954,6 @@ snapshots:
     dependencies:
       undici: 8.11.2
 
-  '@openclaw/qqbot@2026.7.1(openclaw@2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13))':
-    optionalDependencies:
-      openclaw: 2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13)
-
   '@openclaw/whatsapp@2026.10.5(openclaw@2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13))':
     optionalDependencies:
       openclaw: 2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13)
@@ -9694,9 +9696,30 @@ snapshots:
     dependencies:
       defer-to-connect: 2.0.1
 
-  '@tencent-connect/qqbot-connector@1.1.0':
+  '@tencent-connect/openclaw-qqbot@2.0.3(@tencent-connect/qqbot-connector@1.2.0)(mpg123-decoder@1.0.3)(openclaw@2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13))(silk-wasm@3.7.1)':
+    dependencies:
+      '@tencent-connect/qqbot-connector': 1.2.0
+      '@tencent-connect/qqbot-nodejs': 1.0.5(mpg123-decoder@1.0.3)(silk-wasm@3.7.1)
+      openclaw: 2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13)
+    transitivePeerDependencies:
+      - bufferutil
+      - mpg123-decoder
+      - silk-wasm
+      - utf-8-validate
+
+  '@tencent-connect/qqbot-connector@1.2.0':
     dependencies:
       qrcode-terminal: 0.12.0
+
+  '@tencent-connect/qqbot-nodejs@1.0.5(mpg123-decoder@1.0.3)(silk-wasm@3.7.1)':
+    dependencies:
+      ws: 8.22.0
+    optionalDependencies:
+      mpg123-decoder: 1.0.3
+      silk-wasm: 3.7.1
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   '@tencent-weixin/openclaw-weixin@2.4.10(openclaw@2026.10.5(patch_hash=40b145fc0b3ba0aa0e8c548f7104b24cb1fefa7700178af761ccfbd92d5f9645)(encoding@0.1.13))':
     dependencies:

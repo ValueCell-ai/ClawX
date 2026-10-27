@@ -144,6 +144,8 @@ ClawXを初めて起動すると、**セットアップウィザード**が次�
 
 ClawXは起動時の書き込み前に、OpenClaw状態ディレクトリの `backups/clawx-openclaw-2026.10.5-pre-migration` に非公開スナップショットを保存します。旧セッション、認証情報、メディアを含み、SQLiteオンラインバックアップでコミット済みWALも保存します。作成に失敗すると起動を停止し、Gateway接続成功だけでは削除しません。OpenClawが保留中のスキーマおよび旧認証の移行を先に処理し、その後でClawXがプロバイダー資格情報を同期するため、中断後も移行元ファイルをClawXが先に書き換えることなく再試行できます。アップグレードの確認後に手動で削除できます。秘密情報を含むため共有しないでください。ランタイムのバイナリ、シンボリックリンク先、外部ワークスペースは対象外です。手動ロールバック前に別途バックアップしてください。
 
+OpenClaw 2026.10.5 では 2 つのチャネルプラグインの提供元が変わり、ClawX は最初の Gateway 起動前に両方を移行します。QQ ボットは `@openclaw/qqbot` から Tencent QQBot 2.0（`@tencent-connect/openclaw-qqbot`、プラグイン id `openclaw-qqbot`）に切り替わり、デフォルトアカウントは `channels.qqbot` の最上位に移動します。開放されていた DM は承認マーカー `openclaw:approval-disabled` を使って開放のまま維持されます。承認、シークレットファイル、グループコマンドのポリシーを含む QQ ボット設定は OpenClaw Doctor に任せます。Feishu は `@larksuite/openclaw-lark` から公式の `@openclaw/feishu` に切り替わり、アプリの認証情報はそのまま使えます。公式プラグインの Feishu ツールは 39 個から 14 個になり、カレンダー、タスク、ユーザー OAuth、シート、検索のツールは使えなくなります。
+
 ### ローカルComputer Use
 
 ClawX は CUA SDK と Driver **0.37.0** を同梱します。macOS と Windows では、Main の組み込み daemon オプションと Gateway 経由の CLI 環境の両方に `CUA_DRIVER_RS_TELEMETRY_ENABLED=false` を設定し、CUA の製品テレメトリを無効にします。SDK は 0.22.0 からこの変数を許可しており、0.21.0 の CLI のみを対象とした暫定対応に代わるものです。システム環境変数、単独の CUA インストールの設定、ClawX 自体のテレメトリ設定は変更しません。

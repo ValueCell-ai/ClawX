@@ -21,6 +21,15 @@ For Feishu/Lark specifically:
 - when the Feishu channel is not configured, stale Feishu plugin registrations must be removed from `plugins.allow` and `plugins.entries`
 - changes to `electron/utils/openclaw-auth.ts`, `electron/utils/channel-config.ts`, or `electron/gateway/config-sync.ts` that affect channel/plugin migration must keep direct regression coverage for the dual-plugin migration state
 
+- the Feishu plugin id must follow the installed mirror manifest after prelaunch plugin maintenance. Sanitize runs before the mirror upgrade, so an in-place upgrade must re-point `openclaw-lark` activation at `feishu` once the official mirror is installed, and must leave it untouched if the upgrade fails
+
+For QQ Bot specifically:
+
+- OpenClaw 2026.10.5 serves the `qqbot` channel from Tencent QQBot 2.0 under plugin id `openclaw-qqbot`. Only `openclaw-qqbot` may be active in `plugins.allow` / `plugins.entries`, and legacy `qqbot` activation must migrate with its entry settings
+- `channels.qqbot` must be written in the Tencent 2.0 shape: the root is the `default` account, `accounts` holds only named accounts, and there is no `defaultAccount`. The root and every account need a non-wildcard `allowFrom`; open DMs use `openclaw:approval-disabled` with `dmPolicy: "open"`, matching OpenClaw Doctor
+- approval, `clientSecretFile`, legacy streaming transport, group command policy, and `commands.allowFrom` shapes belong to OpenClaw Doctor and must not be rewritten by ClawX
+- every ClawX account mutation must lift the Tencent shape back into ClawX's account model before it changes accounts, and must run the write sanitizer before committing
+
 For DingTalk specifically:
 
 - ClawX's catalog identity remains `dingtalk`. Do not expose `dingtalk-connector` as a Channels-page type

@@ -73,6 +73,12 @@ import {
   migrateDingTalkChannelSection,
   migrateDingTalkPluginRegistrations,
 } from './dingtalk-plugin-compat';
+import {
+  QQBOT_CHANNEL_ID,
+  QQBOT_PLUGIN_ID,
+  migrateQQBotChannelSection,
+  migrateQQBotPluginRegistrations,
+} from './qqbot-plugin-compat';
 
 const AUTH_STORE_VERSION = 1;
 const AUTH_PROFILE_FILENAME = 'auth-profiles.json';
@@ -804,6 +810,102 @@ async function resolveInstalledFeishuPluginId(): Promise<string | null> {
     }
   }
   return null;
+}
+
+/**
+ * Point Feishu plugin activation at `installedFeishuId` when the Feishu
+ * channel is configured, or remove every Feishu plugin id otherwise.
+ */
+function normalizeFeishuPluginRegistration(
+  config: Record<string, unknown>,
+  installedFeishuId: string | null,
+): { modified: boolean; canonicalFeishuId: string; isFeishuConfigured: boolean } {
+  const pluginsObj = isPlainRecord(config.plugins) ? config.plugins : {};
+  const pEntries = (isPlainRecord(pluginsObj.entries) ? pluginsObj.entries : {}) as Record<string, Record<string, unknown>>;
+  const allowArr = Array.isArray(pluginsObj.allow) ? pluginsObj.allow as string[] : [];
+  const isFeishuPluginId = (id: string) => (FEISHU_PLUGIN_ID_CANDIDATES as readonly string[]).includes(id);
+  let modified = false;
+
+  const configuredFeishuId =
+    FEISHU_PLUGIN_ID_CANDIDATES.find((id) => allowArr.includes(id))
+    || FEISHU_PLUGIN_ID_CANDIDATES.find((id) => Boolean(pEntries[id]));
+  const canonicalFeishuId = installedFeishuId || configuredFeishuId || DEFAULT_FEISHU_PLUGIN_ID;
+
+  // Only add feishu plugin to plugins.allow and plugins.entries when the
+  // feishu channel is actually configured.  If not configured, remove all
+  // feishu-related entries so they don't linger in the config.
+  const feishuChannelSection = (config.channels as Record<string, Record<string, unknown>> | undefined)?.feishu;
+  const isFeishuConfigured = Boolean(
+    feishuChannelSection
+    && typeof feishuChannelSection === 'object'
+    && feishuChannelSection.enabled !== false
+    && Object.keys(feishuChannelSection).length > 0,
+  );
+
+  if (isFeishuConfigured) {
+    const existingFeishuEntry =
+      FEISHU_PLUGIN_ID_CANDIDATES.map((id) => pEntries[id]).find(Boolean)
+      || pEntries.feishu;
+
+    const normalizedAllow = allowArr.filter((id) => !isFeishuPluginId(id));
+    normalizedAllow.push(canonicalFeishuId);
+    if (JSON.stringify(normalizedAllow) !== JSON.stringify(allowArr)) {
+      pluginsObj.allow = normalizedAllow;
+      modified = true;
+      console.log(`[sanitize] Normalized plugins.allow for feishu -> ${canonicalFeishuId}`);
+    }
+
+    const nextEntry = {
+      ...(existingFeishuEntry || {}),
+      ...(pEntries[canonicalFeishuId] || {}),
+      enabled: true,
+    };
+    if (JSON.stringify(nextEntry) !== JSON.stringify(pEntries[canonicalFeishuId])) {
+      pEntries[canonicalFeishuId] = nextEntry;
+      pluginsObj.entries = pEntries;
+      modified = true;
+    }
+    for (const id of FEISHU_PLUGIN_ID_CANDIDATES) {
+      if (id !== canonicalFeishuId && pEntries[id]) {
+        delete pEntries[id];
+        modified = true;
+      }
+    }
+  } else {
+    // Feishu channel not configured — remove all feishu plugin entries
+    const normalizedAllow = allowArr.filter((id) => !isFeishuPluginId(id));
+    if (normalizedAllow.length !== allowArr.length) {
+      pluginsObj.allow = normalizedAllow;
+      modified = true;
+      console.log('[sanitize] Removed unconfigured feishu plugin from plugins.allow');
+    }
+    for (const id of FEISHU_PLUGIN_ID_CANDIDATES) {
+      if (pEntries[id]) {
+        delete pEntries[id];
+        modified = true;
+        console.log(`[sanitize] Removed unconfigured feishu plugin entry: ${id}`);
+      }
+    }
+  }
+  return { modified, canonicalFeishuId, isFeishuConfigured };
+}
+
+/**
+ * Re-point Feishu plugin activation at the manifest ClawX just mirrored.
+ * Sanitize runs before the prelaunch plugin upgrade, so an in-place upgrade
+ * from the lark plugin still reads `openclaw-lark` from the old mirror.
+ * A failed upgrade leaves that manifest installed and the config unchanged.
+ */
+export async function syncFeishuPluginRegistrationWithInstalledPlugin(): Promise<void> {
+  const installedFeishuId = await resolveInstalledFeishuPluginId();
+  if (!installedFeishuId) return;
+  await mutateOpenClawConfig((config) => {
+    const configured = config as Record<string, unknown>;
+    if (!isPlainRecord(configured.plugins)) return;
+    if (normalizeFeishuPluginRegistration(configured, installedFeishuId).modified) {
+      console.log(`[plugin] Re-pointed Feishu plugin activation at installed plugin: ${installedFeishuId}`);
+    }
+  });
 }
 
 async function discoverInstalledExtensionPluginIds(): Promise<Set<string>> {
@@ -3231,10 +3333,13 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         return isPlainRecord(section) && section.enabled !== false && Object.keys(section).length > 0;
       });
       if (externalChannelIds.length > 0) {
+        const externalPluginIds = externalChannelIds.map((channelId) => (
+          channelId === QQBOT_CHANNEL_ID ? QQBOT_PLUGIN_ID : channelId
+        ));
         plugins = {
           enabled: true,
-          allow: externalChannelIds,
-          entries: Object.fromEntries(externalChannelIds.map((channelId) => [channelId, { enabled: true }])),
+          allow: externalPluginIds,
+          entries: Object.fromEntries(externalPluginIds.map((pluginId) => [pluginId, { enabled: true }])),
         };
         config.plugins = plugins;
         modified = true;
@@ -3682,68 +3787,12 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         }
       }
 
-      const installedFeishuId = await resolveInstalledFeishuPluginId();
-      const configuredFeishuId =
-        FEISHU_PLUGIN_ID_CANDIDATES.find((id) => allowArr.includes(id))
-        || FEISHU_PLUGIN_ID_CANDIDATES.find((id) => Boolean(pEntries[id]));
-      const canonicalFeishuId = installedFeishuId || configuredFeishuId || DEFAULT_FEISHU_PLUGIN_ID;
-
-      // Only add feishu plugin to plugins.allow and plugins.entries when the
-      // feishu channel is actually configured.  If not configured, remove all
-      // feishu-related entries so they don't linger in the config.
-      const feishuChannelSection = (config.channels as Record<string, Record<string, unknown>> | undefined)?.feishu;
-      const isFeishuConfigured = feishuChannelSection
-        && typeof feishuChannelSection === 'object'
-        && feishuChannelSection.enabled !== false
-        && Object.keys(feishuChannelSection).length > 0;
-
-      if (isFeishuConfigured) {
-        const existingFeishuEntry =
-          FEISHU_PLUGIN_ID_CANDIDATES.map((id) => pEntries[id]).find(Boolean)
-          || pEntries.feishu;
-
-        const normalizedAllow = allowArr.filter(
-          (id) => !FEISHU_PLUGIN_ID_CANDIDATES.includes(id as typeof FEISHU_PLUGIN_ID_CANDIDATES[number]),
-        );
-        normalizedAllow.push(canonicalFeishuId);
-        if (JSON.stringify(normalizedAllow) !== JSON.stringify(allowArr)) {
-          pluginsObj.allow = normalizedAllow;
-          modified = true;
-          console.log(`[sanitize] Normalized plugins.allow for feishu -> ${canonicalFeishuId}`);
-        }
-
-        if (existingFeishuEntry || !pEntries[canonicalFeishuId]) {
-          pEntries[canonicalFeishuId] = {
-            ...(existingFeishuEntry || {}),
-            ...(pEntries[canonicalFeishuId] || {}),
-            enabled: true,
-          };
-          modified = true;
-        }
-        for (const id of FEISHU_PLUGIN_ID_CANDIDATES) {
-          if (id !== canonicalFeishuId && pEntries[id]) {
-            delete pEntries[id];
-            modified = true;
-          }
-        }
-      } else {
-        // Feishu channel not configured — remove all feishu plugin entries
-        const normalizedAllow = allowArr.filter(
-          (id) => !FEISHU_PLUGIN_ID_CANDIDATES.includes(id as typeof FEISHU_PLUGIN_ID_CANDIDATES[number]),
-        );
-        if (normalizedAllow.length !== allowArr.length) {
-          pluginsObj.allow = normalizedAllow;
-          modified = true;
-          console.log('[sanitize] Removed unconfigured feishu plugin from plugins.allow');
-        }
-        for (const id of FEISHU_PLUGIN_ID_CANDIDATES) {
-          if (pEntries[id]) {
-            delete pEntries[id];
-            modified = true;
-            console.log(`[sanitize] Removed unconfigured feishu plugin entry: ${id}`);
-          }
-        }
-      }
+      const {
+        modified: feishuModified,
+        canonicalFeishuId,
+        isFeishuConfigured,
+      } = normalizeFeishuPluginRegistration(config, await resolveInstalledFeishuPluginId());
+      if (feishuModified) modified = true;
 
       // ── wecom-openclaw-plugin → wecom migration ────────────────
       const LEGACY_WECOM_ID = 'wecom-openclaw-plugin';
@@ -3875,31 +3924,26 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         }
       }
 
-      // QQBot is an external @openclaw/qqbot plugin in OpenClaw 2026.7.1.
-      // Migrate the legacy manifest id and keep one canonical active entry.
-      const legacyQQBotId = 'openclaw-qqbot';
-      const legacyQQBotAllowIndex = allowArr.indexOf(legacyQQBotId);
-      if (legacyQQBotAllowIndex !== -1) {
-        allowArr.splice(legacyQQBotAllowIndex, 1);
+      // OpenClaw 2026.10.5 serves the `qqbot` channel from Tencent QQBot 2.0
+      // (plugin id `openclaw-qqbot`); 2026.7.1 used @openclaw/qqbot (`qqbot`).
+      if (migrateQQBotPluginRegistrations(config)) {
         modified = true;
+        console.log(`[sanitize] Migrated QQBot plugin activation onto ${QQBOT_PLUGIN_ID}`);
       }
-      if (pEntries[legacyQQBotId]) {
-        delete pEntries[legacyQQBotId];
-        modified = true;
-      }
-      const qqbotChannel = (config.channels as Record<string, Record<string, unknown>> | undefined)?.qqbot;
+      const qqbotChannel = (config.channels as Record<string, Record<string, unknown>> | undefined)?.[QQBOT_CHANNEL_ID];
       const isQQBotConfigured = Boolean(
         qqbotChannel
         && qqbotChannel.enabled !== false
         && Object.keys(qqbotChannel).length > 0
       );
       if (isQQBotConfigured) {
-        if (!allowArr.includes('qqbot')) {
-          allowArr.push('qqbot');
+        const qqbotAllow = Array.isArray(pluginsObj.allow) ? pluginsObj.allow as string[] : [];
+        if (!qqbotAllow.includes(QQBOT_PLUGIN_ID)) {
+          pluginsObj.allow = [...qqbotAllow, QQBOT_PLUGIN_ID];
           modified = true;
         }
-        if (!pEntries.qqbot || pEntries.qqbot.enabled !== true) {
-          pEntries.qqbot = { ...(pEntries.qqbot || {}), enabled: true };
+        if (!pEntries[QQBOT_PLUGIN_ID] || pEntries[QQBOT_PLUGIN_ID].enabled !== true) {
+          pEntries[QQBOT_PLUGIN_ID] = { ...(pEntries[QQBOT_PLUGIN_ID] || {}), enabled: true };
           modified = true;
         }
       }
@@ -4166,6 +4210,14 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
           }
         }
       }
+    }
+
+    // OpenClaw 2026.10.5 validates channels.qqbot against the Tencent QQBot
+    // 2.0 schema. Migrate the account shape ClawX 0.6.x wrote; approval and
+    // secret-file policies remain for OpenClaw Doctor.
+    if (migrateQQBotChannelSection(config)) {
+      modified = true;
+      console.log('[sanitize] Migrated channels.qqbot to the Tencent QQBot 2.0 account shape');
     }
 
     const migratedApiProtocols = repairLegacyApiProtocolEntriesInConfig(config);

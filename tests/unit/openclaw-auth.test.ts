@@ -822,20 +822,32 @@ describe('sanitizeOpenClawConfig', () => {
     expect(channels.whatsapp.accounts).toEqual({
       'whatsapp-agent': { enabled: true, phoneNumber: '+15555550123' },
     });
-    expect(channels.qqbot.accounts).toEqual({
-      'qq-agent': { enabled: true, appId: 'qq-app', clientSecret: 'qq-secret' },
+    // Tencent QQBot 2.0 uses the first named account when the root has no
+    // credentials, so the selected named default stays default.
+    expect(channels.qqbot).toEqual({
+      enabled: true,
+      allowFrom: ['openclaw:approval-disabled'],
+      dmPolicy: 'open',
+      accounts: {
+        'qq-agent': {
+          enabled: true,
+          appId: 'qq-app',
+          clientSecret: 'qq-secret',
+          allowFrom: ['openclaw:approval-disabled'],
+          dmPolicy: 'open',
+        },
+      },
     });
-    expect(channels.qqbot.appId).toBe('qq-app');
-    expect(channels.qqbot.clientSecret).toBe('qq-secret');
 
     const plugins = result.plugins as Record<string, unknown>;
     const entries = plugins.entries as Record<string, Record<string, unknown>>;
     expect(entries.discord).toEqual({ enabled: true });
     expect(entries.whatsapp).toEqual({ enabled: true });
-    expect(entries.qqbot).toEqual({ enabled: true });
+    expect(entries['openclaw-qqbot']).toEqual({ enabled: true });
+    expect(entries.qqbot).toBeUndefined();
   });
 
-  it('normalizes QQBot as an external plugin without credential mirrors', async () => {
+  it('moves QQBot activation onto Tencent QQBot 2.0 and its account shape', async () => {
     await writeOpenClawJson({
       channels: {
         qqbot: {
@@ -849,9 +861,8 @@ describe('sanitizeOpenClawConfig', () => {
       },
       plugins: {
         enabled: true,
-        allow: ['openclaw-qqbot'],
+        allow: ['qqbot'],
         entries: {
-          'openclaw-qqbot': { enabled: true },
           qqbot: {
             enabled: true,
             defaultAccount: 'default',
@@ -869,10 +880,16 @@ describe('sanitizeOpenClawConfig', () => {
     const result = await readOpenClawJson();
     const plugins = result.plugins as Record<string, unknown>;
     const entries = plugins.entries as Record<string, Record<string, unknown>>;
-    expect(plugins.allow).toEqual(['qqbot']);
-    expect(entries.qqbot).toEqual({ enabled: true });
-    expect(entries['openclaw-qqbot']).toBeUndefined();
-    expect((result.channels as Record<string, unknown>).qqbot).toBeDefined();
+    expect(plugins.allow).toEqual(['openclaw-qqbot']);
+    expect(entries['openclaw-qqbot']).toEqual({ enabled: true });
+    expect(entries.qqbot).toBeUndefined();
+    expect((result.channels as Record<string, unknown>).qqbot).toEqual({
+      enabled: true,
+      appId: 'qq-app',
+      clientSecret: 'qq-secret',
+      allowFrom: ['openclaw:approval-disabled'],
+      dmPolicy: 'open',
+    });
   });
 
   it('recovers external plugin registrations for legacy channel-only configs', async () => {
@@ -890,10 +907,34 @@ describe('sanitizeOpenClawConfig', () => {
     const result = await readOpenClawJson();
     const plugins = result.plugins as Record<string, unknown>;
     const entries = plugins.entries as Record<string, Record<string, unknown>>;
-    expect(plugins.allow).toEqual(expect.arrayContaining(['discord', 'whatsapp', 'qqbot']));
+    expect(plugins.allow).toEqual(expect.arrayContaining(['discord', 'whatsapp', 'openclaw-qqbot']));
     expect(entries.discord).toEqual({ enabled: true });
     expect(entries.whatsapp).toEqual({ enabled: true });
-    expect(entries.qqbot).toEqual({ enabled: true });
+    expect(entries['openclaw-qqbot']).toEqual({ enabled: true });
+  });
+
+  it('leaves QQBot approval and secret-file policies for OpenClaw Doctor', async () => {
+    const qqbot = {
+      enabled: true,
+      appId: 'qq-app',
+      clientSecretFile: '/secure/qq-secret',
+      execApprovals: { enabled: true, approvers: ['USER1'] },
+      accounts: {
+        default: { appId: 'qq-app', clientSecretFile: '/secure/qq-secret', enabled: true },
+      },
+      defaultAccount: 'default',
+    };
+    await writeOpenClawJson({
+      channels: { qqbot },
+      plugins: { enabled: true, allow: ['qqbot'], entries: { qqbot: { enabled: true } } },
+    });
+
+    const { sanitizeOpenClawConfig } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+
+    const result = await readOpenClawJson();
+    expect((result.channels as Record<string, unknown>).qqbot).toEqual(qqbot);
+    expect((result.plugins as Record<string, unknown>).allow).toEqual(['openclaw-qqbot']);
   });
 
   it('normalizes legacy feishu plugin state to a single external plugin and removes built-in feishu', async () => {
@@ -939,6 +980,38 @@ describe('sanitizeOpenClawConfig', () => {
       config: { preserved: true },
     });
     expect(entries.feishu).toBeUndefined();
+  });
+
+  it('re-points Feishu activation at the upgraded mirror after prelaunch plugin maintenance', async () => {
+    await writeOpenClawJson({
+      channels: {
+        feishu: { enabled: true, appId: 'cli-feishu-app', appSecret: 'cli-feishu-secret' },
+      },
+      plugins: {
+        enabled: true,
+        allow: ['openclaw-lark'],
+        entries: { 'openclaw-lark': { enabled: true, config: { preserved: true } } },
+      },
+    });
+    // ClawX 0.6.1 mirrored @larksuite/openclaw-lark into this directory.
+    const mirrorDir = join(testHome, '.openclaw', 'extensions', 'feishu-openclaw-plugin');
+    await mkdir(mirrorDir, { recursive: true });
+    await writeFile(join(mirrorDir, 'openclaw.plugin.json'), JSON.stringify({ id: 'openclaw-lark' }), 'utf8');
+
+    const {
+      sanitizeOpenClawConfig,
+      syncFeishuPluginRegistrationWithInstalledPlugin,
+    } = await import('@electron/utils/openclaw-auth');
+    await sanitizeOpenClawConfig();
+    expect(((await readOpenClawJson()).plugins as Record<string, unknown>).allow).toEqual(['openclaw-lark']);
+
+    // Prelaunch maintenance replaces the mirror with the bundled @openclaw/feishu.
+    await writeFile(join(mirrorDir, 'openclaw.plugin.json'), JSON.stringify({ id: 'feishu' }), 'utf8');
+    await syncFeishuPluginRegistrationWithInstalledPlugin();
+
+    const plugins = (await readOpenClawJson()).plugins as Record<string, unknown>;
+    expect(plugins.allow).toEqual(['feishu']);
+    expect(plugins.entries).toEqual({ feishu: { enabled: true, config: { preserved: true } } });
   });
 
   it('removes residual feishu plugin registrations when feishu channel is not configured', async () => {
