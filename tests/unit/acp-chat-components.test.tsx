@@ -59,6 +59,8 @@ vi.mock('react-i18next', () => ({
         'acp.toolName.webFetch': 'Read web page',
         'acp.toolName.browser': 'Control browser',
         'acp.toolName.execCommand': 'Run command',
+        'acp.toolName.execCode': 'Run code',
+        'acp.toolName.listFiles': 'List files',
         'acp.toolName.read': 'Read',
         'acp.toolName.write': 'Write',
         'acp.toolName.spawnSubagent': 'Spawn subagent',
@@ -1367,6 +1369,13 @@ describe('ACP chat timeline components', () => {
     ['web_fetch: url: https://example.com', undefined, 'Read web page: url: https://example.com', 'globe'],
     ['browser: action: click', undefined, 'Control browser: action: click', 'square-mouse-pointer'],
     ['exec: command: ls -la', undefined, 'Run command: command: ls -la', 'monitor-play'],
+    ['exec: code: return 1 + 1', undefined, 'Run code: code: return 1 + 1', 'code-xml'],
+    ['exec', { code: 'return 1 + 1' }, 'Run code', 'code-xml'],
+    ['exec', { command: 'pwd' }, 'Run command', 'monitor-play'],
+    ['exec: command: old hint', { code: 'return 2' }, 'Run code: command: old hint', 'code-xml'],
+    ['exec: code: old hint', { command: 'pwd' }, 'Run command: code: old hint', 'monitor-play'],
+    ['ls: path: /workspace', undefined, 'List files: path: /workspace', 'list-tree'],
+    ['ls', undefined, 'List files', 'list-tree'],
     ['read: path: package.json', undefined, 'Read: path: package.json', 'scan-text'],
     ['write: path: report.md', undefined, 'Write: path: report.md', 'save'],
     ['sessions_spawn: task: Review', undefined, 'Spawn subagent: task: Review', 'bot'],
@@ -1401,11 +1410,15 @@ describe('ACP chat timeline components', () => {
 
   it.each([
     ['exec: command:', undefined],
+    ['exec: code:', undefined],
+    ['exec', { code: '   ' }],
+    ['exec', { code: 42 }],
   ])('keeps %s unchanged when it does not meet the special-case input condition', (title, input) => {
     render(<AcpToolCallCard item={toolCallItem({ title, input, status: 'running', outputParts: [] })} />);
 
     expect(screen.getByTestId('acp-tool-call-card')).toHaveTextContent(title);
     expect(screen.queryByTestId('acp-tool-icon-monitor-play')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('acp-tool-icon-code-xml')).not.toBeInTheDocument();
   });
 
   it('starts auto-collapse when details are added to a completed no-detail tool call', () => {

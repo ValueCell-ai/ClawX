@@ -1,6 +1,7 @@
 import { cjk } from '@streamdown/cjk';
 import { createCodePlugin } from '@streamdown/code';
 import { createMathPlugin } from '@streamdown/math';
+import { rehypeLocalFileLinks } from '@/lib/markdown-file-links';
 import {
   defaultRehypePlugins,
   type AnimateOptions,
@@ -19,6 +20,7 @@ const { raw: omittedRawPlugin, ...safeDefaultRehypePlugins } = defaultRehypePlug
 void omittedRawPlugin;
 
 export const streamdownRehypePlugins = Object.values(safeDefaultRehypePlugins);
+export const chatStreamdownRehypePlugins = [rehypeLocalFileLinks, ...streamdownRehypePlugins];
 
 export const streamdownLinkSafety = {
   enabled: false,

@@ -54,6 +54,8 @@
             "browser": "ブラウザーを操作",
             "computer": "コンピューターを操作",
             "execCommand": "コマンドを実行",
+            "execCode": "コードを実行",
+            "listFiles": "ファイル一覧",
             "read": "読み取り",
             "write": "書き込み",
             "spawnSubagent": "サブエージェントを起動",

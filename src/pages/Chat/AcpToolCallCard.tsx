@@ -5,9 +5,11 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDashed,
+  CodeXml,
   Database,
   Globe,
   ListChecks,
+  ListTree,
   Loader2,
   MonitorPlay,
   MousePointerClick,
@@ -30,6 +32,8 @@ const TOOL_PRESENTATIONS = {
   browser: { icon: SquareMousePointer, iconName: 'square-mouse-pointer', labelKey: 'acp.toolName.browser' },
   computer: { icon: MousePointerClick, iconName: 'mouse-pointer-click', labelKey: 'acp.toolName.computer' },
   exec: { icon: MonitorPlay, iconName: 'monitor-play', labelKey: 'acp.toolName.execCommand' },
+  execCode: { icon: CodeXml, iconName: 'code-xml', labelKey: 'acp.toolName.execCode' },
+  ls: { icon: ListTree, iconName: 'list-tree', labelKey: 'acp.toolName.listFiles' },
   read: { icon: ScanText, iconName: 'scan-text', labelKey: 'acp.toolName.read' },
   write: { icon: Save, iconName: 'save', labelKey: 'acp.toolName.write' },
   sessions_spawn: { icon: Bot, iconName: 'bot', labelKey: 'acp.toolName.spawnSubagent' },
@@ -44,6 +48,14 @@ type ExpansionState = {
 
 function statusLabelKey(status: ToolCallItem['status']): string {
   return `acp.${status}`;
+}
+
+function execPresentation(input: Record<string, unknown> | undefined, titleArguments: string) {
+  if (typeof input?.code === 'string' && input.code.trim()) return TOOL_PRESENTATIONS.execCode;
+  if (typeof input?.command === 'string' && input.command.trim()) return TOOL_PRESENTATIONS.exec;
+  if (/^code:\s*\S/.test(titleArguments)) return TOOL_PRESENTATIONS.execCode;
+  if (/^command:\s*\S/.test(titleArguments)) return TOOL_PRESENTATIONS.exec;
+  return undefined;
 }
 
 function formatToolInput(input: unknown): string | null {
@@ -87,9 +99,7 @@ export function AcpToolCallCard({ item, grouped = false }: { item: ToolCallItem;
   const toolName = separator === -1 ? item.title : item.title.slice(0, separator).trim();
   const titleArguments = separator === -1 ? '' : item.title.slice(separator + 1).trim();
   const presentation = toolName === 'exec'
-    ? ((typeof input?.command === 'string' && input.command.trim()) || /^command:\s*\S/.test(titleArguments)
-      ? TOOL_PRESENTATIONS.exec
-      : undefined)
+    ? execPresentation(input, titleArguments)
     : TOOL_PRESENTATIONS[toolName as keyof typeof TOOL_PRESENTATIONS];
   const ToolIcon = presentation?.icon;
   const title = presentation

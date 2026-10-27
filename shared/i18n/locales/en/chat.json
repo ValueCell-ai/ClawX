@@ -54,6 +54,8 @@
             "browser": "Control browser",
             "computer": "Control computer",
             "execCommand": "Run command",
+            "execCode": "Run code",
+            "listFiles": "List files",
             "read": "Read",
             "write": "Write",
             "spawnSubagent": "Spawn subagent",

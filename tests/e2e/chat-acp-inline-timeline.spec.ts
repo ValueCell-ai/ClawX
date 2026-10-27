@@ -1607,6 +1607,24 @@ test.describe('ClawX ACP inline timeline', () => {
           locations: [],
         },
         {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-code',
+          title: 'exec: code: return 1 + 1',
+          rawInput: { code: 'const total = 1 + 1;\nreturn total;' },
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: '2' } }],
+          locations: [],
+        },
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'history-tool-list',
+          title: 'ls: path: /workspace',
+          rawInput: { path: '/workspace' },
+          status: 'completed',
+          content: [{ type: 'content', content: { type: 'text', text: 'weather.md' } }],
+          locations: [],
+        },
+        {
           sessionUpdate: 'agent_message',
           messageId: 'history-assistant',
           content: [{ type: 'text', text: 'Hangzhou is cloudy today.' }],
@@ -1627,7 +1645,7 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(0);
 
       await expandAcpToolCallsGroup(page);
-      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(9);
+      await expect(page.getByTestId('acp-tool-call-card')).toHaveCount(11);
       await expect(page.getByText('Update plan: plan: [{"step":"Check weather"}]', { exact: true })).toBeVisible();
       await expect(page.getByText('Read web page: url: https://example.com/weather', { exact: true })).toBeVisible();
       await expect(page.getByText('Control browser: action: navigate', { exact: true })).toBeVisible();
@@ -1637,6 +1655,8 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByText('Spawn subagent: task: Check weather', { exact: true })).toBeVisible();
       await expect(page.getByText('Search memory: query: weather history', { exact: true })).toBeVisible();
       await expect(page.getByText('Control computer: action: screenshot', { exact: true })).toBeVisible();
+      await expect(page.getByText('Run code: code: return 1 + 1', { exact: true })).toBeVisible();
+      await expect(page.getByText('List files: path: /workspace', { exact: true })).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-list-checks')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-globe')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-square-mouse-pointer')).toBeVisible();
@@ -1646,6 +1666,12 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-tool-icon-bot')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-database')).toBeVisible();
       await expect(page.getByTestId('acp-tool-icon-mouse-pointer-click')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-code-xml')).toBeVisible();
+      await expect(page.getByTestId('acp-tool-icon-list-tree')).toBeVisible();
+      const codeCard = page.getByTestId('acp-tool-call-card').filter({ hasText: 'Run code: code: return 1 + 1' });
+      await expect(codeCard).toHaveAttribute('data-expanded', 'false');
+      await codeCard.getByTestId('acp-tool-toggle').click();
+      await expect(codeCard.getByTestId('acp-tool-input-pre')).toContainText('const total = 1 + 1;');
       await expect(page.getByTestId('acp-assistant-turn')).toContainText('Hangzhou is cloudy today.');
     } finally {
       await closeElectronApp(app);
