@@ -376,6 +376,7 @@ export type ProviderType =
   | 'moonshot-global'
   | 'siliconflow'
   | 'deepseek'
+  | 'cheaperinference'
   | 'minimax-portal'
   | 'minimax-portal-cn'
   | 'zai'

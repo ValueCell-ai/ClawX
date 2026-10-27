@@ -12,6 +12,7 @@ import custom from './custom.svg';
 import deepseek from './deepseek.svg';
 import zai from './zai.svg';
 import tokendance from './tokendance.svg';
+import cheaperinference from './cheaperinference.svg';
 
 export const providerIcons: Record<string, string> = {
     anthropic,
@@ -31,4 +32,5 @@ export const providerIcons: Record<string, string> = {
     custom,
     deepseek,
     tokendance,
+    cheaperinference,
 };
