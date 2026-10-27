@@ -183,6 +183,53 @@ expands `AggregateError` entries and causes, so this class of failure now
 appears in the ClawX log as `[Gateway stderr]` / `[Gateway doctor stderr]`
 `Reason:` and stack lines.
 
+### Windows: plugin capture recovery junctions
+
+OpenClaw 2026.10 loads each plugin module from a private "capture" copy under
+`%TEMP%\openclaw-plugin-captures-*` or `~/.openclaw/tmp/plugin-captures`. Each
+dependency package gets its own `package-N` directory, linked back with
+`fs.symlinkSync(..., "junction")`. Doctor contracts, setup entries, and the
+runtime loader then fork a recovery copy of that capture.
+`copyRecoverySource` (`plugin-generation-source-lookup-*.mjs`) does this with
+`fs.cpSync(..., { verbatimSymlinks: true })`, and that breaks on Windows:
+
+- Node's `cpSync` recreates every link with an untyped `symlinkSync`. On
+  Windows that is a `dir` or `file` symlink, which a standard user without
+  Developer Mode cannot create. The failure is
+  `EPERM: operation not permitted, symlink '<old build>\package-1\node_modules\<dep>' -> '<new build>\package-0\node_modules\<plugin>\node_modules\<dep>'`.
+- Junctions store absolute targets. Even with symlink privilege, the copied
+  link would point into the old build, which is disposed afterwards. POSIX
+  captures use relative links, so `verbatimSymlinks` relocates them.
+
+This affects every plugin with a nested `node_modules` dependency, which is
+every ClawX channel mirror. On the 2026-10-27 0.6.1 → 2026.10.5 Windows
+in-place upgrade, Doctor (started for `audit-events-v2`) reloaded the Feishu
+and QQ Bot doctor contracts about 20 times. Each attempt copied the 86 MB
+Feishu tree and then threw it away. Doctor was still running after six and
+a half minutes while the UI showed only `connecting`. OpenClaw issue
+[#163139](https://github.com/openclaw/openclaw/issues/163139) is the same
+failure on `plugins.reload` and `plugins install`. ClawX's own junctions,
+such as the `node_modules/openclaw` peer link, work on the same machine.
+
+The ClawX patch adds `copyWindowsRecoveryJunction` to the recovery copy. On
+win32, a directory link (or a dangling one, whose target is not materialized
+yet) is recreated as a junction. Targets inside the copied build are relocated
+into the recovery build, and targets outside it (host `openclaw`, native
+admission content) are kept as-is. File links and native references keep the
+existing `cpSync` and hardlink handling, and other platforms are unchanged.
+
+macOS reproduces the failure with a preload that applies Windows semantics:
+it stores junction targets as absolute paths and rejects untyped capture
+symlinks with `EPERM`. On a synthetic home with the four ClawX channel
+mirrors, `doctor --fix` without the patch logs 21 Feishu contract or
+legacy-migration failures and takes 498 s. With the patch it logs no `EPERM`,
+no contract failures, and no cross-build links, and takes 156 s, about the
+same as native macOS (110–150 s). Running Doctor from the repository's
+symlinked `node_modules/openclaw` also fails with
+`Unable to open bundled plugin public surface msteams/config-doctor-api.js`.
+That is a dev-layout artifact; Doctor from the real `build/openclaw`
+directory completes.
+
 ## 2026.10 config shape written by ClawX
 
 | 2026.7.1 key | 2026.10.5 shape |

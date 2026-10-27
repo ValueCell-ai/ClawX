@@ -114,6 +114,45 @@ diff --git a/dist/error-coercion-W9BtigRm.mjs b/dist/error-coercion-W9BtigRm.mjs
  /**
  * Normalizes an unknown thrown value into an Error. Non-Error objects become
  * the `cause` and have their enumerable fields copied so structured details
+diff --git a/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs b/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs
+--- a/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs
++++ b/dist/plugin-generation-source-lookup-Dg6DuWgm.mjs
+@@ -3,7 +3,7 @@
+ import { a as asOptionalRecord } from "./record-coerce-TIsquoVR.mjs";
+ import { o as openRootFileSync$1 } from "./boundary-file-read-CCth2Hwg.mjs";
+ import { t as hasErrnoCode } from "./errno-FR4CRyya.mjs";
+-import { r as isPathInside } from "./path-guards-CH7noY0Z.mjs";
++import { o as normalizeWindowsPathPreservingCase, r as isPathInside } from "./path-guards-CH7noY0Z.mjs";
+ import { t as escapeRegExp } from "./regexp-BZyMFTlj.mjs";
+ import { t as formatErrorMessage } from "./errors-J9olDZqH.mjs";
+ import { a as createSqliteLifecycleAggregateError } from "./sqlite-lifecycle-errors-DuOygjcn.mjs";
+@@ -1145,6 +1145,17 @@
+ 		return captured;
+ 	};
+ }
++/**
++* Windows captures link directories with junctions, which store absolute targets and
++* need no symlink privilege. fs.cpSync would recreate them as untyped symlinks (EPERM
++* for standard users) still pointing into the source capture, so relink them here.
++*/
++function copyWindowsRecoveryJunction(boundaryRoot, directory, from, to) {
++	if (process.platform !== "win32" || !fs.lstatSync(from).isSymbolicLink() || fs.statSync(from, { throwIfNoEntry: false })?.isFile()) return false;
++	const linked = path.resolve(path.dirname(from), normalizeWindowsPathPreservingCase(fs.readlinkSync(from)));
++	fs.symlinkSync(isPathInside(boundaryRoot, linked) ? path.join(directory, path.relative(boundaryRoot, linked)) : linked, to, "junction");
++	return true;
++}
+ function copyRecoverySource({ rootDir, sourceRoot, capturedRoot, boundaryRoot, sources, native: suppliedNative }) {
+ 	let native = suppliedNative;
+ 	let recovery;
+@@ -1156,7 +1167,7 @@
+ 			verbatimSymlinks: true,
+ 			filter: (from, to) => {
+ 				const fact = native?.references.get(from);
+-				if (!fact) return true;
++				if (!fact) return !copyWindowsRecoveryJunction(boundaryRoot, recovery.directory, from, to);
+ 				const retained = {
+ 					...fact,
+ 					sourceIdentity: fact.capturedIdentity
 diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
 --- a/dist/server-DkfYuk25.mjs
 +++ b/dist/server-DkfYuk25.mjs

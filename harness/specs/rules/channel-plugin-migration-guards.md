@@ -29,6 +29,11 @@ For OpenClaw capability consent:
 - consent must go through OpenClaw (`openclaw plugins enable <ids...> --accept-capabilities`) offline before Gateway start. ClawX must not compute or write `acceptedSurface*` fields itself, because the hash covers OpenClaw's normalized manifest metadata
 - the consent CLI must be cached per install-record fingerprint and attempted once per fingerprint, so its per-plugin cost (about 9s) is paid only after an install, upgrade, or runtime change
 
+For plugin loading on Windows:
+
+- OpenClaw plugin captures link directories with junctions, which store absolute targets. Any copy of a capture tree must recreate directory links as junctions and relocate in-tree targets; `fs.cpSync` with `verbatimSymlinks` creates untyped symlinks that standard Windows users cannot create (`EPERM`). Keep `tests/unit/openclaw-windows-recovery-junction-patch.test.ts` covering the ClawX OpenClaw patch for this
+- macOS cannot reproduce Windows link failures natively. Validate changes to capture linking with a preload that stores junction targets as absolute paths and rejects untyped capture symlinks with `EPERM`
+
 For QQ Bot specifically:
 
 - OpenClaw 2026.10.5 serves the `qqbot` channel from Tencent QQBot 2.0 under plugin id `openclaw-qqbot`. Only `openclaw-qqbot` may be active in `plugins.allow` / `plugins.entries`, and legacy `qqbot` activation must migrate with its entry settings
