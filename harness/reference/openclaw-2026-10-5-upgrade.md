@@ -249,6 +249,40 @@ minute with `Legacy session store requires migration`. A Doctor run that
 completes imports the store, so this failure needs the junction fix and does
 not need a separate session-store repair.
 
+### Windows: capture cleanup deleted the bundled OpenClaw
+
+Plugin captures contain directory junctions that point outside the capture.
+`linkHost` junctions `node_modules/openclaw` to the bundled runtime
+(`resources/openclaw`). Recovery copies keep that target, and the
+copy-only fallback can junction `content` to the retained plugin source.
+OpenClaw removes captures with `fs.rmSync(..., { recursive: true, force:
+true })` in the exit handler and in `dispose()`. In Node 24, the native
+`rmSync` on Windows descends into a directory junction and deletes the
+target's files instead of removing the link. The asynchronous `fs.rm` and
+`fs.promises.rm` use the JavaScript implementation, which checks `lstat` and
+unlinks junctions.
+
+On the 2026-10-28 0.6.1 in-place upgrade, the first launch with the junction
+patch ran `plugins enable ... --accept-capabilities` for 129 s. The config
+still had the 0.6.1 shape, so the command failed. Its exit handler then logged
+`Plugin source capture exit cleanup failed: Error: EPERM, Permission denied:
+\\?\...\plugin-captures\<id>\captures`. The removal had already deleted
+files under `resources\openclaw` and stopped at a file the process still held.
+Every later OpenClaw process, including the Gateway and the Doctor repair,
+exited at once with `Cannot find module ...\resources\openclaw\node-compile-cache.mjs`.
+Only reinstalling restores the files.
+
+On win32, the runtime compatibility shim replaces `fs.rmSync`. When
+`recursive` is set, it first unlinks every symlink and junction in the tree
+(`lstat`, then `unlink` with an `rmdir` fallback) and never descends into
+them. It then calls the original `rmSync`. A link passed as the root is
+unlinked. ClawX's own Main-process removals use `safeRmSync`
+(`electron/utils/safe-fs.ts`). Capability consent also runs `config validate
+--json` first, which takes 2–3 s and loads no plugin code. If the config is
+invalid, consent is deferred to a later launch and nothing is cached, so the
+first upgraded launch no longer runs a plugin scan that Doctor would have to
+redo.
+
 ### Windows: console windows from runtime re-execs
 
 OpenClaw re-executes `process.execPath` without `windowsHide`, for example in
@@ -416,6 +450,10 @@ can restart the channel.
   retried one id at a time. A timeout is not retried. Each fingerprint is
   attempted once, so a persistent failure leaves only the status warning and
   does not slow every launch.
+- **Invalid config.** Before the CLI runs, `openclaw config validate --json`
+  must pass. On the first launch after an upgrade, the config still has the
+  pre-2026.10 shape, so consent is deferred without caching. It runs on the
+  next launch after Doctor has migrated the config.
 - **Config side effects.** OpenClaw rewrites `openclaw.json` through its own
   writer. It moves the accepted `plugins.entries` keys to the end, adds `meta`,
   and rotates `.bak` files. Allowlists are preserved in CLI mode.

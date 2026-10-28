@@ -67,6 +67,31 @@ function getBundledBinPath(): string {
     : path.join(process.cwd(), 'resources', 'bin', target);
 }
 
+const CONFIG_VALIDATE_TIMEOUT_MS = 60_000;
+
+/**
+ * `openclaw config validate --json` takes a few seconds and loads no plugin
+ * code. Commands that mutate plugin state should not run on a config that
+ * only Doctor can migrate: they fail after their full plugin scan.
+ */
+export async function validateOpenClawConfig(): Promise<{ valid: boolean; summary: string }> {
+  const result = await runOpenClawCommand(['config', 'validate', '--json'], {
+    label: 'config validate',
+    timeoutMs: CONFIG_VALIDATE_TIMEOUT_MS,
+  });
+  if (result.success) return { valid: true, summary: '' };
+  try {
+    const report = JSON.parse(result.stdout.slice(result.stdout.indexOf('{'))) as {
+      issues?: Array<{ path?: unknown }>;
+    };
+    const paths = (report.issues ?? []).map((issue) => String(issue.path ?? '')).filter(Boolean);
+    if (paths.length > 0) return { valid: false, summary: `invalid keys: ${paths.slice(0, 5).join(', ')}` };
+  } catch {
+    // Fall through to the raw failure text.
+  }
+  return { valid: false, summary: result.error ?? (result.stderr || result.stdout).trim().split('\n').slice(-3).join(' | ') };
+}
+
 /** Run an OpenClaw CLI command in the utility process with bounded output. */
 export async function runOpenClawCommand(
   args: string[],

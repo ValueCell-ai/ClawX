@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -127,6 +127,54 @@ await closed(fork(new URL('./hide-child.mjs', import.meta.url), { stdio: 'ignore
 process.stdout.write(JSON.stringify(globalThis.__windowsHide));
 `;
 
+// Mirrors Node 24's native rmSync on Windows, which deletes through directory
+// junctions instead of removing the link.
+const WINDOWS_RM_PRELOAD_SOURCE = `
+import fs from 'node:fs';
+import path from 'node:path';
+import { syncBuiltinESMExports } from 'node:module';
+
+Object.defineProperty(process, 'platform', { value: 'win32' });
+const followLinks = (target) => {
+  const stat = fs.statSync(target, { throwIfNoEntry: false });
+  if (!stat) return;
+  if (!stat.isDirectory()) return fs.unlinkSync(target);
+  for (const child of fs.readdirSync(target)) followLinks(path.join(target, child));
+  if (fs.lstatSync(target).isSymbolicLink()) fs.unlinkSync(target);
+  else fs.rmdirSync(target);
+};
+const rmSync = fs.rmSync;
+fs.rmSync = (target, options) => options?.recursive ? followLinks(String(target)) : rmSync(target, options);
+syncBuiltinESMExports();
+`;
+
+const WINDOWS_RM_ENTRY_SOURCE = `
+import fs, { rmSync } from 'node:fs';
+import path from 'node:path';
+
+const root = process.env.CLAWX_RM_ROOT;
+const host = path.join(root, 'host');
+const captures = path.join(root, 'captures');
+fs.mkdirSync(path.join(host, 'dist'), { recursive: true });
+fs.writeFileSync(path.join(host, 'node-compile-cache.mjs'), 'export {};');
+const build = path.join(captures, 'build', 'package-0', 'node_modules');
+fs.mkdirSync(build, { recursive: true });
+fs.symlinkSync(host, path.join(build, 'openclaw'), 'junction');
+fs.symlinkSync(path.join(host, 'dist'), path.join(captures, 'build', 'dist-link'), 'junction');
+fs.writeFileSync(path.join(build, 'plugin.js'), '');
+const topLink = path.join(root, 'top-link');
+fs.symlinkSync(host, topLink, 'junction');
+
+fs.rmSync(captures, { recursive: true, force: true });
+rmSync(topLink, { recursive: true, force: true });
+fs.rmSync(path.join(root, 'missing'), { recursive: true, force: true });
+process.stdout.write(JSON.stringify({
+  hostKept: fs.existsSync(path.join(host, 'node-compile-cache.mjs')) && fs.existsSync(path.join(host, 'dist')),
+  capturesRemoved: !fs.existsSync(captures),
+  topLinkRemoved: !fs.existsSync(topLink),
+}));
+`;
+
 function envWithoutRunAsNode(extra: Record<string, string>): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, ...extra };
   delete env.ELECTRON_RUN_AS_NODE;
@@ -203,6 +251,33 @@ describe('OpenClaw utility-process bootstrap', () => {
       'execSync:true',
       'fork:true',
     ]);
+  }, 30_000);
+
+  it('keeps Windows junction targets when OpenClaw recursively removes a capture', async () => {
+    const { ensureOpenClawUtilityBootstrap } = await import('@electron/utils/openclaw-utility-process');
+    const bootstrapPath = ensureOpenClawUtilityBootstrap(workDir);
+    const preloadPath = join(workDir, 'windows-rm-preload.mjs');
+    const entryPath = join(workDir, 'windows-rm-entry.mjs');
+    writeFileSync(preloadPath, WINDOWS_RM_PRELOAD_SOURCE, 'utf8');
+    writeFileSync(entryPath, WINDOWS_RM_ENTRY_SOURCE, 'utf8');
+    const run = (root: string, args: string[]) => {
+      mkdirSync(root);
+      const result = spawnSync(process.execPath, ['--import', pathToFileURL(preloadPath).href, ...args], {
+        encoding: 'utf8',
+        timeout: 20000,
+        env: envWithoutRunAsNode({ CLAWX_OPENCLAW_ENTRY: entryPath, CLAWX_RM_ROOT: root }),
+      });
+      expect(result.stderr).toBe('');
+      expect(result.status).toBe(0);
+      return JSON.parse(result.stdout);
+    };
+
+    expect(run(join(workDir, 'without-shim'), [entryPath])).toMatchObject({ hostKept: false });
+    expect(run(join(workDir, 'with-shim'), [bootstrapPath])).toEqual({
+      hostKept: true,
+      capturesRemoved: true,
+      topLinkRemoved: true,
+    });
   }, 30_000);
 
   it('hands Electron fork() a path when OpenClaw forks a worker from a file URL', async () => {

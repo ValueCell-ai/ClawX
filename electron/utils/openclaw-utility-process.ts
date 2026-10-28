@@ -17,6 +17,7 @@ export const OPENCLAW_RUNTIME_COMPAT_FILE = 'openclaw-runtime-compat.mjs';
  */
 export const OPENCLAW_RUNTIME_COMPAT_SOURCE = String.raw`
 import childProcess from 'node:child_process';
+import fs from 'node:fs';
 import workerThreads from 'node:worker_threads';
 import { syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
@@ -97,6 +98,47 @@ childProcess.fork = function (modulePath, args, options) {
   }
   return originalFork.call(this, modulePath instanceof URL ? fileURLToPath(modulePath) : modulePath, args, hidden(options));
 };
+// Node 24's native recursive rmSync descends into Windows directory junctions
+// and deletes their targets. Plugin captures junction node_modules/openclaw to
+// the bundled runtime, so removing a capture emptied the ClawX installation.
+if (process.platform === 'win32') {
+  const originalRmSync = fs.rmSync;
+  const unlinkLink = (target) => {
+    try {
+      fs.unlinkSync(target);
+    } catch (error) {
+      if (error?.code === 'ENOENT') return;
+      if (error?.code !== 'EPERM' && error?.code !== 'EISDIR') throw error;
+      fs.rmdirSync(target);
+    }
+  };
+  const unlinkNestedLinks = (directory) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch (error) {
+      if (error?.code === 'ENOENT') return;
+      throw error;
+    }
+    for (const entry of entries) {
+      if (!entry.isSymbolicLink() && !entry.isDirectory()) continue;
+      const target = path.join(directory, entry.name);
+      const stat = fs.lstatSync(target, { throwIfNoEntry: false });
+      if (stat?.isSymbolicLink()) unlinkLink(target);
+      else if (stat?.isDirectory()) unlinkNestedLinks(target);
+    }
+  };
+  fs.rmSync = function (target, options) {
+    if (options?.recursive && (typeof target === 'string' || target instanceof URL)) {
+      const file = target instanceof URL ? fileURLToPath(target) : target;
+      const stat = fs.lstatSync(file, { throwIfNoEntry: false });
+      if (stat?.isSymbolicLink()) return unlinkLink(file);
+      if (stat?.isDirectory()) unlinkNestedLinks(file);
+    }
+    return originalRmSync.call(this, target, options);
+  };
+}
+
 const OriginalWorker = workerThreads.Worker;
 workerThreads.Worker = class extends OriginalWorker {
   constructor(filename, options) {

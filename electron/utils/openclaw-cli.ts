@@ -255,7 +255,7 @@ export function getOpenClawEmbeddedForkSpec(args: string[] = []): OpenClawEmbedd
       cwd: getOpenClawDir(),
       env,
       execPath,
-      execArgv: ['--import', pathToFileURL(ensureOpenClawRuntimeCompat()).href],
+      execArgv: getOpenClawRuntimeCompatExecArgv(),
       stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
       windowsHide: true,
     },
@@ -511,6 +511,10 @@ function getNodeExecForCli(): string {
   return process.execPath;
 }
 
+function getOpenClawRuntimeCompatExecArgv(): string[] {
+  return ['--import', pathToFileURL(ensureOpenClawRuntimeCompat()).href];
+}
+
 export function generateCompletionCache(): void {
   if (!app.isPackaged) return;
 
@@ -519,7 +523,7 @@ export function generateCompletionCache(): void {
 
   const execPath = getNodeExecForCli();
 
-  const child = spawn(execPath, [entryPath, 'completion', '--write-state'], {
+  const child = spawn(execPath, [...getOpenClawRuntimeCompatExecArgv(), entryPath, 'completion', '--write-state'], {
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
@@ -555,7 +559,7 @@ export function installCompletionToProfile(): void {
 
   const child = spawn(
     execPath,
-    [entryPath, 'completion', '--install', '-y'],
+    [...getOpenClawRuntimeCompatExecArgv(), entryPath, 'completion', '--install', '-y'],
     {
       env: {
         ...process.env,

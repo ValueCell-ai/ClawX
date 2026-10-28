@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { dirname, join, resolve } from 'node:path';
 import { logger } from './logger';
 import { getOpenClawResolvedDir } from './paths';
-import { runOpenClawCommand } from './openclaw-command';
+import { runOpenClawCommand, validateOpenClawConfig } from './openclaw-command';
 import { listClawXPathOwnedPluginMirrors } from './plugin-install';
 import { readPluginInstallRecordsFromSqlite } from './plugin-install-index';
 
@@ -38,7 +38,7 @@ interface ConsentCacheFile {
 }
 
 export interface PluginCapabilityConsentSummary {
-  status: 'up-to-date' | 'accepted' | 'failed';
+  status: 'up-to-date' | 'accepted' | 'failed' | 'deferred';
   attempted: string[];
   accepted: string[];
 }
@@ -137,7 +137,8 @@ async function enableWithConsent(pluginIds: string[]): Promise<{ success: boolea
  * Accept the declared capabilities of enabled ClawX path-owned mirrors whose
  * install record changed since the last attempt. Each record fingerprint is
  * attempted once, so a persistent failure does not slow every launch; it only
- * leaves OpenClaw's status-only consent warning in place.
+ * leaves OpenClaw's status-only consent warning in place. An invalid config
+ * defers the attempt without recording it.
  */
 export async function ensureClawXPluginCapabilityConsent(
   config: Record<string, unknown>,
@@ -171,6 +172,13 @@ export async function ensureClawXPluginCapabilityConsent(
   }
 
   const pendingIds = pending.map((entry) => entry.pluginId);
+  // The first launch after an upgrade still has the old config shape, which
+  // only Doctor migrates. Retry on a later launch instead of caching a failure.
+  const validation = await validateOpenClawConfig();
+  if (!validation.valid) {
+    logger.info(`[plugin] Deferring capability consent for ${pendingIds.join(', ')} until OpenClaw Doctor repairs the config (${validation.summary})`);
+    return { status: 'deferred', attempted: [], accepted: [] };
+  }
   logger.info(`[plugin] Accepting declared capabilities for ClawX plugins: ${pendingIds.join(', ')}`);
   const batch = await enableWithConsent(pendingIds);
 
