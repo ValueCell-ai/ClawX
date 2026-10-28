@@ -1,22 +1,32 @@
 #!/usr/bin/env zx
 
 import 'zx/globals';
+import { downloadBufferWithRetry } from './download-with-retry.mjs';
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 // OpenClaw 2026.10.x requires Node >=24.16.0 (<25) or >=26.1.0; keep the Windows
 // packaged runtime on the same Node 24.18 line as Electron 41.
 const NODE_VERSION = '24.18.1';
-const BASE_URL = `https://nodejs.org/dist/v${NODE_VERSION}`;
+// nodejs.org (Cloudflare) can drop GitHub-hosted runners mid-download, so the
+// same archive is also fetched from a mirror. Both are checked against the
+// SHA256 values published in nodejs.org's SHASUMS256.txt; update them with
+// NODE_VERSION.
+const BASE_URLS = [
+  `https://nodejs.org/dist/v${NODE_VERSION}`,
+  `https://cdn.npmmirror.com/binaries/node/v${NODE_VERSION}`,
+];
 const OUTPUT_BASE = path.join(ROOT_DIR, 'resources', 'bin');
 
 const TARGETS = {
   'win32-x64': {
     filename: `node-v${NODE_VERSION}-win-x64.zip`,
     sourceDir: `node-v${NODE_VERSION}-win-x64`,
+    sha256: 'ec56b84a7551893ab2324ebdfdc4ab974a63b4781162600b68a1293cc3e53765',
   },
   'win32-arm64': {
     filename: `node-v${NODE_VERSION}-win-arm64.zip`,
     sourceDir: `node-v${NODE_VERSION}-win-arm64`,
+    sha256: 'ffbc7d3e1baf6804f7431ff94f19b9a885a650568c93ea4ccb1bb0038f6af825',
   },
 };
 
@@ -34,7 +44,7 @@ async function setupTarget(id) {
   const targetDir = path.join(OUTPUT_BASE, id);
   const tempDir = path.join(ROOT_DIR, 'temp_node_extract');
   const archivePath = path.join(ROOT_DIR, target.filename);
-  const downloadUrl = `${BASE_URL}/${target.filename}`;
+  const downloadUrls = BASE_URLS.map((baseUrl) => `${baseUrl}/${target.filename}`);
 
   echo(chalk.blue`\n📦 Setting up Node.js for ${id}...`);
 
@@ -49,11 +59,12 @@ async function setupTarget(id) {
   await fs.ensureDir(tempDir);
 
   try {
-    echo`⬇️ Downloading: ${downloadUrl}`;
-    const response = await fetch(downloadUrl);
-    if (!response.ok) throw new Error(`Failed to download: ${response.statusText}`);
-    const buffer = await response.arrayBuffer();
-    await fs.writeFile(archivePath, Buffer.from(buffer));
+    echo`⬇️ Downloading: ${downloadUrls[0]}`;
+    const buffer = await downloadBufferWithRetry(downloadUrls, {
+      label: target.filename,
+      sha256: target.sha256,
+    });
+    await fs.writeFile(archivePath, buffer);
 
     echo`📂 Extracting...`;
     if (os.platform() === 'win32') {
