@@ -11,7 +11,10 @@ import { probeGatewayReady } from './ws-client';
 
 // Doctor runs OpenClaw's offline state and agent database migrations, whose
 // duration scales with the size of the existing state tree.
-export const OPENCLAW_DOCTOR_REPAIR_TIMEOUT_MS = 10 * 60_000;
+// Killing Doctor mid-migration leaves state half-migrated. On a slow Windows
+// machine with four channel plugins, the first 2026.10 upgrade repair was still
+// finishing after 10 minutes.
+export const OPENCLAW_DOCTOR_REPAIR_TIMEOUT_MS = 30 * 60_000;
 
 export function warmupManagedPythonReadiness(): void {
   void isPythonReady().then((pythonReady) => {
@@ -349,7 +352,7 @@ export async function runOpenClawDoctorRepair(): Promise<boolean> {
       for (const line of raw.split(/\r?\n/)) {
         const normalized = line.trim();
         if (!normalized) continue;
-        logger.debug(`[Gateway doctor stdout] ${normalized}`);
+        logger.info(`[Gateway doctor stdout] ${normalized}`);
       }
     });
 
@@ -364,6 +367,7 @@ export async function runOpenClawDoctorRepair(): Promise<boolean> {
 
     child.on('exit', (code: number) => {
       clearTimeout(timeout);
+      if (settled) return;
       if (code === 0) {
         logger.info('OpenClaw doctor repair completed successfully');
         finish(true);

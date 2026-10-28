@@ -24,3 +24,21 @@ describe('installer.nsh running-app guard', () => {
     expect(guard).not.toContain('${nsProcess::FindProcess}');
   });
 });
+
+describe('installer.nsh directory existence checks', () => {
+  it('never checks a directory with a trailing backslash, which FindFirstFile cannot match', () => {
+    const checks = installerNsh
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith(';'))
+      .flatMap((line) => [...line.matchAll(/IfFileExists\s+"([^"]*)"/g)].map((match) => match[1]));
+
+    expect(checks.length).toBeGreaterThan(0);
+    expect(checks.filter((path) => path.endsWith('\\'))).toEqual([]);
+  });
+
+  it('moves the previous install directory out of the way before extracting', () => {
+    expect(installerNsh).toContain('IfFileExists "$INSTDIR\\*.*" 0 _instdir_clean');
+    expect(installerNsh).toContain('Rename "$INSTDIR" "$INSTDIR._stale_$R8"');
+    expect(installerNsh).toContain('IfFileExists "$INSTDIR._stale_0\\*.*" 0 _ci_stale_cleaned');
+  });
+});

@@ -162,8 +162,7 @@ config keys. The Gateway may exit with code 78 or, in packaged utility-process
 launches, collapse the same admission failure to a generic code 1 with
 `The CLI command failed`. `startup-recovery.ts` treats the explicit diagnostics
 and the startup-only code 1 as a bounded config-repair opportunity, so the
-orchestrator runs one doctor repair (10-minute timeout for large agent
-databases) and relaunches. Pre-2026.10 agent registries
+orchestrator runs a doctor repair (30-minute timeout) and relaunches. Pre-2026.10 agent registries
 store absolute paths, so doctor writes `.bak` copies next to the original
 agent databases; sandboxed reproductions must not copy that state without
 accounting for it. Legacy managed outgoing image records also store absolute
@@ -174,6 +173,53 @@ first path to the end of the line; the structured OpenClaw file log
 (`/tmp/openclaw/openclaw-<date>.log`, `%TEMP%\openclaw\` on Windows) keeps
 per-step progress and is exported under `logs/openclaw-runtime/` in issue
 reports.
+
+### Doctor exit status and repeated repairs
+
+The Gateway reports one pending maintenance step at a time. On the
+2026-10-28 Windows upgrade, it first refused with `state database schema
+migration required (audit-events-v2)`. After Doctor ran, it refused with
+`Legacy session store requires migration`. Doctor's exit status does not show
+whether its migrations completed. After migrating everything, the second run
+exited 1 because `core/doctor/workspace-status` listed broken plugins: a
+user-installed plugin missing its `tar` dependency, and stale 2026.7.1
+bundled extensions. The Gateway then started normally.
+
+So the orchestrator relaunches the Gateway after every Doctor run, whatever
+its exit status, and lets the Gateway decide whether state is usable. It runs
+Doctor again only when the Gateway refuses for a different reason than before
+the previous run (`getGatewayStartupFailureReason`), at most twice per
+startup. An unchanged reason fails startup instead of looping.
+
+The repair timeout is 30 minutes. With four channel plugins on a slow Windows
+laptop, the first repair was still in its final `shared-state` cleanup when
+the old 10-minute timeout killed it. Killing Doctor mid-migration is worse than
+waiting. Doctor's stdout is logged at info level, because the ClawX log is
+otherwise the only place an issue report shows which step a long repair is in.
+
+### Windows: stale 2026.7.1 extensions after an overwrite install
+
+The stale bundled extensions above were real files in
+`resources\openclaw\dist\extensions`. They were created by the 0.6.1 install
+and carried its build mtime, alongside all 67 of the 2026.10.5 extensions.
+2026.10.5 then failed to load them (for example, a missing
+`resolveUnsupportedToolSchemaKeywords` export from `@openclaw/ai/internal/openai`).
+
+`scripts/installer.nsh` is meant to rename the old `$INSTDIR` to
+`$INSTDIR._stale_N` before extraction, but that step never ran. NSIS
+`IfFileExists` is a raw `FindFirstFile` call, and a path ending in `\` never
+matches. So `IfFileExists "$INSTDIR\"` always took the "missing" branch. That
+also skipped the `resources\openclaw\skills` cleanup and the delayed
+`_stale_*` deletion. electron-builder then fell back to running the old
+uninstaller. Its per-file `atomicRMDir` evidently did not empty the large
+OpenClaw tree: the files kept their 0.6.1 creation times. `customUnInstallCheck`
+ignores a failed old uninstaller, so the new files were extracted on top of
+the old tree.
+
+Directory checks in `installer.nsh` must use `"<dir>\*.*"`, and
+`tests/unit/installer-nsh.test.ts` rejects trailing-backslash checks. Machines
+that already upgraded keep the stale files until they install again with a
+fixed installer, which renames the whole old directory away.
 
 ### Windows: koffi and the state snapshot
 
@@ -277,11 +323,10 @@ On win32, the runtime compatibility shim replaces `fs.rmSync`. When
 (`lstat`, then `unlink` with an `rmdir` fallback) and never descends into
 them. It then calls the original `rmSync`. A link passed as the root is
 unlinked. ClawX's own Main-process removals use `safeRmSync`
-(`electron/utils/safe-fs.ts`). Capability consent also runs `config validate
---json` first, which takes 2–3 s and loads no plugin code. If the config is
-invalid, consent is deferred to a later launch and nothing is cached, so the
-first upgraded launch no longer runs a plugin scan that Doctor would have to
-redo.
+(`electron/utils/safe-fs.ts`). Capability consent also waits until the
+Gateway has started on the current OpenClaw version (see *Capability consent
+for ClawX mirrors*), so the first upgraded launch no longer runs a plugin scan
+against unmigrated state.
 
 ### Windows: console windows from runtime re-execs
 
@@ -450,10 +495,14 @@ can restart the channel.
   retried one id at a time. A timeout is not retried. Each fingerprint is
   attempted once, so a persistent failure leaves only the status warning and
   does not slow every launch.
-- **Invalid config.** Before the CLI runs, `openclaw config validate --json`
-  must pass. On the first launch after an upgrade, the config still has the
-  pre-2026.10 shape, so consent is deferred without caching. It runs on the
-  next launch after Doctor has migrated the config.
+- **Unmigrated state.** The CLI runs only after the managed Gateway has become
+  ready on the current OpenClaw version. ClawX records that version as
+  `gatewayReadyOpenClawVersion` in the consent cache. Until then, consent is
+  deferred without caching, so the first launch after an upgrade or a fresh
+  install goes straight to the Gateway and its Doctor repair. A Gateway that
+  started has already accepted the config and state, so no separate
+  `config validate` is needed. On a slow Windows laptop, `config validate`
+  alone hit its 60 s timeout.
 - **Config side effects.** OpenClaw rewrites `openclaw.json` through its own
   writer. It moves the accepted `plugins.entries` keys to the end, adds `meta`,
   and rotates `.bak` files. Allowlists are preserved in CLI mode.

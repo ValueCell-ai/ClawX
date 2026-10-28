@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { dirname, join, resolve } from 'node:path';
 import { logger } from './logger';
 import { getOpenClawResolvedDir } from './paths';
-import { runOpenClawCommand, validateOpenClawConfig } from './openclaw-command';
+import { runOpenClawCommand } from './openclaw-command';
 import { listClawXPathOwnedPluginMirrors } from './plugin-install';
 import { readPluginInstallRecordsFromSqlite } from './plugin-install-index';
 
@@ -35,6 +35,8 @@ interface ConsentCacheEntry {
 interface ConsentCacheFile {
   schemaVersion: number;
   plugins: Record<string, ConsentCacheEntry>;
+  /** OpenClaw version on which the managed Gateway last became ready. */
+  gatewayReadyOpenClawVersion?: string;
 }
 
 export interface PluginCapabilityConsentSummary {
@@ -134,11 +136,26 @@ async function enableWithConsent(pluginIds: string[]): Promise<{ success: boolea
 }
 
 /**
+ * Marks the current OpenClaw runtime as one whose config and state the Gateway
+ * accepted. Until then, Doctor may still have migrations to run, and consent
+ * commands would only scan plugins against unmigrated state.
+ */
+export function recordGatewayReadyForCapabilityConsent(options: { cachePath?: string } = {}): void {
+  const cachePath = options.cachePath ?? getDefaultCachePath();
+  const openclawVersion = readOpenClawVersion();
+  const cache = readCache(cachePath);
+  if (cache.gatewayReadyOpenClawVersion === openclawVersion) return;
+  cache.gatewayReadyOpenClawVersion = openclawVersion;
+  writeCache(cachePath, cache);
+}
+
+/**
  * Accept the declared capabilities of enabled ClawX path-owned mirrors whose
  * install record changed since the last attempt. Each record fingerprint is
  * attempted once, so a persistent failure does not slow every launch; it only
- * leaves OpenClaw's status-only consent warning in place. An invalid config
- * defers the attempt without recording it.
+ * leaves OpenClaw's status-only consent warning in place. Until the Gateway
+ * has become ready on the current OpenClaw version, the attempt is deferred
+ * without recording it.
  */
 export async function ensureClawXPluginCapabilityConsent(
   config: Record<string, unknown>,
@@ -172,11 +189,8 @@ export async function ensureClawXPluginCapabilityConsent(
   }
 
   const pendingIds = pending.map((entry) => entry.pluginId);
-  // The first launch after an upgrade still has the old config shape, which
-  // only Doctor migrates. Retry on a later launch instead of caching a failure.
-  const validation = await validateOpenClawConfig();
-  if (!validation.valid) {
-    logger.info(`[plugin] Deferring capability consent for ${pendingIds.join(', ')} until OpenClaw Doctor repairs the config (${validation.summary})`);
+  if (cache.gatewayReadyOpenClawVersion !== openclawVersion) {
+    logger.info(`[plugin] Deferring capability consent for ${pendingIds.join(', ')} until the Gateway has started on OpenClaw ${openclawVersion}`);
     return { status: 'deferred', attempted: [], accepted: [] };
   }
   logger.info(`[plugin] Accepting declared capabilities for ClawX plugins: ${pendingIds.join(', ')}`);

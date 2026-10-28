@@ -197,6 +197,63 @@ describe('runGatewayStartupSequence', () => {
     expect(hooks.onConnectedToManagedGateway).toHaveBeenCalledTimes(1);
   });
 
+  const STATE_MIGRATION_REFUSAL = 'Gateway failed to start: OpenClaw state database schema migration required (audit-events-v2) at C:\\Users\\u\\.openclaw\\state\\openclaw.sqlite; run openclaw doctor --fix to migrate it. | gateway.maintenance_required.';
+  const SESSION_STORE_REFUSAL = 'Gateway failed to start: Legacy session store requires migration: C:\\Users\\u\\.openclaw\\agents\\main\\sessions\\sessions.json. Run "openclaw doctor --fix" against the same state/config before starting OpenClaw. | gateway.maintenance_required.';
+
+  function refusingGateway(refusals: string[]) {
+    let attempt = 0;
+    let stderr: string[] = [];
+    return {
+      waitForReady: vi.fn().mockImplementation(async () => {
+        const refusal = refusals[attempt++];
+        if (refusal === undefined) return;
+        stderr = ['[gateway] requires migration', refusal];
+        throw new Error('Gateway process exited before becoming ready (code=78)');
+      }),
+      getStartupStderrLines: vi.fn(() => stderr),
+      getProcessExitCode: vi.fn(() => (stderr.length > 0 ? 78 : null)),
+      resetStartupStderrLines: vi.fn(() => { stderr = []; }),
+    };
+  }
+
+  it('retries the Gateway after a non-zero Doctor exit and repairs again when the refusal changes', async () => {
+    const hooks = createMockHooks({
+      ...refusingGateway([STATE_MIGRATION_REFUSAL, SESSION_STORE_REFUSAL]),
+      runDoctorRepair: vi.fn().mockResolvedValue(false),
+    });
+
+    await runGatewayStartupSequence(hooks);
+
+    expect(hooks.runDoctorRepair).toHaveBeenCalledTimes(2);
+    expect(hooks.startProcess).toHaveBeenCalledTimes(3);
+    expect(hooks.onConnectedToManagedGateway).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops when the Gateway refuses for the same reason after Doctor', async () => {
+    const hooks = createMockHooks({
+      ...refusingGateway([STATE_MIGRATION_REFUSAL, STATE_MIGRATION_REFUSAL]),
+      runDoctorRepair: vi.fn().mockResolvedValue(true),
+    });
+
+    await expect(runGatewayStartupSequence(hooks)).rejects.toThrow('code=78');
+
+    expect(hooks.runDoctorRepair).toHaveBeenCalledTimes(1);
+    expect(hooks.startProcess).toHaveBeenCalledTimes(2);
+    expect(hooks.onConnectedToManagedGateway).not.toHaveBeenCalled();
+  });
+
+  it('runs Doctor at most twice even when every refusal differs', async () => {
+    const hooks = createMockHooks({
+      ...refusingGateway([STATE_MIGRATION_REFUSAL, SESSION_STORE_REFUSAL, `${SESSION_STORE_REFUSAL} (2)`]),
+      runDoctorRepair: vi.fn().mockResolvedValue(true),
+    });
+
+    await expect(runGatewayStartupSequence(hooks)).rejects.toThrow('code=78');
+
+    expect(hooks.runDoctorRepair).toHaveBeenCalledTimes(2);
+    expect(hooks.startProcess).toHaveBeenCalledTimes(3);
+  });
+
   it('fails after max attempts with transient errors', async () => {
     const hooks = createMockHooks({
       findExistingGateway: vi.fn().mockResolvedValue(null),

@@ -62,6 +62,7 @@ import {
   recordGatewayStartupStderrLine,
 } from './startup-stderr';
 import { runGatewayStartupSequence } from './startup-orchestrator';
+import { recordGatewayReadyForCapabilityConsent } from '../utils/plugin-capability-consent';
 import {
   hasFatalRuntimeFailureSignal,
   hasInvalidConfigFailureSignal,
@@ -474,6 +475,7 @@ export class GatewayManager extends EventEmitter {
         },
         onConnectedToManagedGateway: () => {
           this.startHealthCheck();
+          recordGatewayReadyForCapabilityConsent();
           const tConnected = Date.now();
           const spawnToReadyMs = tReady && tSpawned ? tReady - tSpawned : undefined;
           const startupTrace = this.startupTraceCollector.getSummary();

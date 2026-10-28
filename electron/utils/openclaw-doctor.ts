@@ -2,7 +2,7 @@ import { runOpenClawCommand, type OpenClawCommandResult } from './openclaw-comma
 
 const OPENCLAW_DOCTOR_TIMEOUT_MS = 60_000;
 // `doctor --fix` performs offline state and agent database migrations.
-const OPENCLAW_DOCTOR_FIX_TIMEOUT_MS = 10 * 60_000;
+const OPENCLAW_DOCTOR_FIX_TIMEOUT_MS = 30 * 60_000;
 const OPENCLAW_DOCTOR_ARGS = ['doctor'];
 const OPENCLAW_DOCTOR_FIX_ARGS = ['doctor', '--fix', '--yes', '--non-interactive'];
 

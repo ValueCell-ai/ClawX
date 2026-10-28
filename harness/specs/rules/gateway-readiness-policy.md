@@ -8,6 +8,7 @@ requiredTests:
   - tests/unit/gateway-events.test.ts
   - tests/unit/gateway-ready-fallback.test.ts
   - tests/unit/gateway-ws-client.test.ts
+  - tests/unit/gateway-startup-orchestrator.test.ts
 ---
 
 Gateway status handling must preserve `gatewayReady` semantics.
@@ -24,6 +25,13 @@ The ACP child is a Gateway client that also opens OpenClaw shared state. Main fo
 it only after the managed Gateway reports a connection, with a finite wait that fails
 the ACP request clearly instead of starting ACP against a Gateway that never came up.
 The startup Doctor repair stops any running ACP child before it migrates shared state.
+
+Doctor's exit status is not a readiness signal: it exits non-zero for any unhealthy
+plugin even after its migrations succeed. After every startup Doctor run, Main relaunches
+the Gateway and lets it decide. A second Doctor run is allowed only when the Gateway
+refuses for a different reason, at most twice per startup. The repair timeout must stay
+long enough for a full migration on slow Windows machines (30 minutes), because killing
+Doctor mid-migration leaves state half-migrated.
 
 Every OpenClaw utility process (Gateway, startup Doctor, Settings Doctor) and the ACP
 child run with `OPENCLAW_DEBUG=1`, so a CLI failure prints `Reason:` and the stack.

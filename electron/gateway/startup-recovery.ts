@@ -183,6 +183,17 @@ export async function connectGatewayWithStartupRetry(options: {
 
 export type GatewayStartupRecoveryAction = 'repair' | 'retry' | 'fail';
 
+/**
+ * The reason a Gateway refused to start, used to tell whether a Doctor run
+ * made progress. OpenClaw reports one pending maintenance step at a time, so a
+ * state migration followed by a session store migration shows two reasons.
+ */
+export function getGatewayStartupFailureReason(startupStderrLines: string[]): string {
+  const lines = startupStderrLines.map((line) => line.trim()).filter(Boolean);
+  const failure = [...lines].reverse().find((line) => line.includes('Gateway failed to start:'));
+  return (failure ?? lines.at(-1) ?? '').replace(/^.*?Gateway failed to start:\s*/, '');
+}
+
 export function getGatewayStartupRecoveryAction(options: {
   startupError: unknown;
   startupStderrLines: string[];

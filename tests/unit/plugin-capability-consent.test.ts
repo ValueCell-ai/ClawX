@@ -10,7 +10,6 @@ const mocks = vi.hoisted(() => ({
   mirrors: [] as Array<{ pluginDirName: string; pluginId: string; targetDir: string }>,
   openclawDir: '',
   runCommand: vi.fn(),
-  validateConfig: vi.fn(),
   info: vi.fn(),
   warn: vi.fn(),
 }));
@@ -18,10 +17,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('electron', () => ({ app: { getPath: () => tmpdir() } }));
 vi.mock('@electron/utils/logger', () => ({ logger: { info: mocks.info, warn: mocks.warn } }));
 vi.mock('@electron/utils/paths', () => ({ getOpenClawResolvedDir: () => mocks.openclawDir }));
-vi.mock('@electron/utils/openclaw-command', () => ({
-  runOpenClawCommand: mocks.runCommand,
-  validateOpenClawConfig: mocks.validateConfig,
-}));
+vi.mock('@electron/utils/openclaw-command', () => ({ runOpenClawCommand: mocks.runCommand }));
 vi.mock('@electron/utils/plugin-install', () => ({ listClawXPathOwnedPluginMirrors: () => mocks.mirrors }));
 vi.mock('@electron/utils/plugin-install-index', () => ({
   readPluginInstallRecordsFromSqlite: () => structuredClone(mocks.records),
@@ -69,9 +65,9 @@ describe('ClawX plugin capability consent', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
-    mocks.validateConfig.mockResolvedValue({ valid: true, summary: '' });
     root = mkdtempSync(join(tmpdir(), 'clawx-consent-'));
     cachePath = join(root, 'cache.json');
+    writeFileSync(cachePath, JSON.stringify({ schemaVersion: 1, plugins: {}, gatewayReadyOpenClawVersion: '2026.10.5' }));
     mocks.records = {};
     mocks.mirrors = [];
     mocks.openclawDir = join(root, 'openclaw');
@@ -142,13 +138,15 @@ describe('ClawX plugin capability consent', () => {
       acceptFor(args.slice(2, -1));
       return commandResult(true);
     });
-    const { ensureClawXPluginCapabilityConsent } = await import('@electron/utils/plugin-capability-consent');
+    const { ensureClawXPluginCapabilityConsent, recordGatewayReadyForCapabilityConsent } = await import('@electron/utils/plugin-capability-consent');
     const config = enabledConfig(['wecom']);
 
     await ensureClawXPluginCapabilityConsent(config, { cachePath });
     mocks.records.wecom.version = '1.0.1';
     await ensureClawXPluginCapabilityConsent(config, { cachePath });
     writeFileSync(join(mocks.openclawDir, 'package.json'), JSON.stringify({ version: '2026.11.1' }));
+    expect((await ensureClawXPluginCapabilityConsent(config, { cachePath })).status).toBe('deferred');
+    recordGatewayReadyForCapabilityConsent({ cachePath });
     await ensureClawXPluginCapabilityConsent(config, { cachePath });
 
     expect(mocks.runCommand).toHaveBeenCalledTimes(3);
@@ -199,14 +197,14 @@ describe('ClawX plugin capability consent', () => {
     expect(mocks.runCommand).toHaveBeenCalledTimes(1);
   });
 
-  it('defers without caching while the config still needs OpenClaw Doctor', async () => {
+  it('defers without caching until the Gateway has started on the current OpenClaw version', async () => {
+    writeFileSync(cachePath, JSON.stringify({ schemaVersion: 1, plugins: {}, gatewayReadyOpenClawVersion: '2026.7.1-2' }));
     addMirror('wecom', 'wecom');
-    mocks.validateConfig.mockResolvedValueOnce({ valid: false, summary: 'invalid keys: session' });
     mocks.runCommand.mockImplementation(async (args: string[]) => {
       acceptFor(args.slice(2, -1));
       return commandResult(true);
     });
-    const { ensureClawXPluginCapabilityConsent } = await import('@electron/utils/plugin-capability-consent');
+    const { ensureClawXPluginCapabilityConsent, recordGatewayReadyForCapabilityConsent } = await import('@electron/utils/plugin-capability-consent');
     const config = enabledConfig(['wecom']);
 
     expect(await ensureClawXPluginCapabilityConsent(config, { cachePath })).toEqual({
@@ -215,17 +213,20 @@ describe('ClawX plugin capability consent', () => {
       accepted: [],
     });
     expect(mocks.runCommand).not.toHaveBeenCalled();
+    expect(JSON.parse(readFileSync(cachePath, 'utf-8')).plugins).toEqual({});
 
+    recordGatewayReadyForCapabilityConsent({ cachePath });
     expect((await ensureClawXPluginCapabilityConsent(config, { cachePath })).accepted).toEqual(['wecom']);
     expect(mocks.runCommand).toHaveBeenCalledTimes(1);
-    expect(mocks.validateConfig).toHaveBeenCalledTimes(2);
   });
 
-  it('does not validate the config when no mirror needs consent', async () => {
+  it('defers on a fresh install with no consent cache', async () => {
+    rmSync(cachePath);
+    addMirror('wecom', 'wecom');
     const { ensureClawXPluginCapabilityConsent } = await import('@electron/utils/plugin-capability-consent');
 
-    expect((await ensureClawXPluginCapabilityConsent(enabledConfig([]), { cachePath })).status).toBe('up-to-date');
-    expect(mocks.validateConfig).not.toHaveBeenCalled();
+    expect((await ensureClawXPluginCapabilityConsent(enabledConfig(['wecom']), { cachePath })).status).toBe('deferred');
+    expect(mocks.runCommand).not.toHaveBeenCalled();
   });
 
   it('counts an already-current acceptance that OpenClaw leaves untouched', async () => {

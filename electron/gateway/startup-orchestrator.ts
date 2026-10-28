@@ -1,6 +1,12 @@
 import { logger } from '../utils/logger';
 import { LifecycleSupersededError } from './lifecycle-controller';
-import { connectGatewayWithStartupRetry, getGatewayStartupRecoveryAction } from './startup-recovery';
+import {
+  connectGatewayWithStartupRetry,
+  getGatewayStartupFailureReason,
+  getGatewayStartupRecoveryAction,
+} from './startup-recovery';
+
+const MAX_DOCTOR_REPAIRS = 2;
 
 export interface ExistingGatewayInfo {
   port: number;
@@ -48,7 +54,8 @@ async function connectWithStartupRetry(
 }
 
 export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<void> {
-  let configRepairAttempted = false;
+  let doctorRepairs = 0;
+  let lastRepairedReason: string | undefined;
   let startAttempts = 0;
   const maxStartAttempts = hooks.maxStartAttempts ?? 3;
 
@@ -114,27 +121,37 @@ export async function runGatewayStartupSequence(hooks: StartupHooks): Promise<vo
         throw error;
       }
 
+      const startupStderrLines = hooks.getStartupStderrLines();
+      const failureReason = getGatewayStartupFailureReason(startupStderrLines);
+      // Another Doctor run is useful only when the previous one made progress,
+      // which shows as the Gateway refusing for a different reason.
+      const repairExhausted = doctorRepairs >= MAX_DOCTOR_REPAIRS
+        || (doctorRepairs > 0 && failureReason === lastRepairedReason);
       const recoveryAction = getGatewayStartupRecoveryAction({
         startupError: error,
-        startupStderrLines: hooks.getStartupStderrLines(),
+        startupStderrLines,
         processExitCode: hooks.getProcessExitCode(),
-        configRepairAttempted,
+        configRepairAttempted: repairExhausted,
         attempt: startAttempts,
         maxAttempts: maxStartAttempts,
       });
 
       if (recoveryAction === 'repair') {
-        configRepairAttempted = true;
+        doctorRepairs++;
+        lastRepairedReason = failureReason;
         logger.warn(
-          'Detected invalid OpenClaw config during Gateway startup; running doctor repair before retry',
+          `Detected invalid OpenClaw config during Gateway startup; running doctor repair before retry (${doctorRepairs}/${MAX_DOCTOR_REPAIRS})`,
         );
         const repaired = await hooks.runDoctorRepair();
         if (repaired) {
           logger.info('OpenClaw doctor repair completed; retrying Gateway startup');
           hooks.onDoctorRepairSuccess();
-          continue;
+        } else {
+          // Doctor exits non-zero for any unhealthy plugin even after its
+          // migrations succeed; the Gateway decides whether state is usable.
+          logger.warn('OpenClaw doctor repair did not finish cleanly; retrying Gateway startup to verify state');
         }
-        logger.error('OpenClaw doctor repair failed; not retrying Gateway startup');
+        continue;
       }
 
       if (recoveryAction === 'retry') {
