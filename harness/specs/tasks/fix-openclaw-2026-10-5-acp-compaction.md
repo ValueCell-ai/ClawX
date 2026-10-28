@@ -9,6 +9,7 @@ touchedAreas:
   - pnpm-lock.yaml
   - tests/unit/openclaw-acp-compaction-patch.test.ts
   - tests/unit/openclaw-acp-compaction-runtime.test.ts
+  - tests/unit/openclaw-acp-stream-patch.test.ts
   - tests/e2e/chat-acp-process-timeline.spec.ts
   - harness/specs/tasks/fix-openclaw-2026-10-5-acp-compaction.md
   - harness/specs/rules/acp-chat-state-and-history.md
@@ -36,6 +37,7 @@ requiredRules:
 requiredTests:
   - tests/unit/openclaw-acp-compaction-patch.test.ts
   - tests/unit/openclaw-acp-compaction-runtime.test.ts
+  - tests/unit/openclaw-acp-stream-patch.test.ts
   - tests/unit/openclaw-acp-restart-runtime.test.ts
   - tests/unit/openclaw-acp-offline-replay-runtime.test.ts
   - tests/e2e/chat-acp-process-timeline.spec.ts

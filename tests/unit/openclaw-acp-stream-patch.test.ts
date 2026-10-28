@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { runInNewContext } from 'node:vm';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const dist = path.join(root, 'node_modules/openclaw/dist');
@@ -89,11 +89,86 @@ describe('OpenClaw ACP assistant stream patch', () => {
     expect(source).not.toContain('stopReason = payload.errorKind === "refusal"');
   });
 
-  it('dispatches session.tool and session.operation events through the prompt stream', () => {
-    expect(bundle).toContain('evt.event === "agent" || evt.event === "session.tool"');
-    expect(bundle).toContain('evt.event === "session.operation"');
-    expect(bundle).toContain('async handleSessionOperationEvent(evt)');
-    expect(bundle).toContain('buildAcpCompactionUpdate(payload, operationRunId)');
+  function loadDispatchHarness() {
+    const dispatchStart = bundle.indexOf('async dispatchGatewayEvent(evt) {');
+    const operationStart = bundle.indexOf('async handleSessionOperationEvent(evt) {', dispatchStart);
+    const end = bundle.indexOf('async prompt(params) {', operationStart);
+    expect(dispatchStart).toBeGreaterThanOrEqual(0);
+    expect(operationStart).toBeGreaterThan(dispatchStart);
+    expect(end).toBeGreaterThan(operationStart);
+    const methods = runInNewContext(`({
+      ${bundle.slice(dispatchStart, operationStart)},
+      ${bundle.slice(operationStart, end)}
+    })`, {
+      normalizeOptionalString: (value: unknown) => (
+        typeof value === 'string' && value.trim() ? value.trim() : undefined
+      ),
+    }) as { dispatchGatewayEvent: (event: Record<string, unknown>) => Promise<void> };
+    const pending = { sessionId: 'acp-session', sessionKey: 'agent:main:fixture', idempotencyKey: 'prompt-run' };
+    const ambient = {
+      handleAgentEvent: vi.fn().mockResolvedValue(false),
+      emitCompactionUpdate: vi.fn().mockResolvedValue(undefined),
+    };
+    const agentEvents = {
+      handleAgentEvent: vi.fn().mockResolvedValue(undefined),
+    };
+    const stream = Object.assign(methods, {
+      findPendingBySessionKey: vi.fn().mockReturnValue(pending),
+      findUniquePendingBySessionKey: vi.fn().mockReturnValue(pending),
+      ambient,
+      agentEvents,
+    });
+    return { stream, pending, ambient, agentEvents };
+  }
+
+  it('dispatches run-owned and ambient session.tool events without duplicate delivery', async () => {
+    const { stream, pending, ambient, agentEvents } = loadDispatchHarness();
+    const event = {
+      event: 'session.tool',
+      payload: { sessionKey: pending.sessionKey, runId: 'tool-run', stream: 'tool' },
+    };
+    await stream.dispatchGatewayEvent(event);
+    expect(stream.findPendingBySessionKey).toHaveBeenCalledWith(pending.sessionKey, 'tool-run', undefined);
+    expect(agentEvents.handleAgentEvent).toHaveBeenCalledWith(event);
+    expect(ambient.handleAgentEvent).not.toHaveBeenCalled();
+
+    stream.findPendingBySessionKey.mockReturnValue(undefined);
+    ambient.handleAgentEvent.mockResolvedValue(true);
+    agentEvents.handleAgentEvent.mockClear();
+    await stream.dispatchGatewayEvent(event);
+    expect(ambient.handleAgentEvent).toHaveBeenCalledWith(event);
+    expect(agentEvents.handleAgentEvent).not.toHaveBeenCalled();
+  });
+
+  it('projects agent and session-operation compaction events through the shared scoped projection', async () => {
+    const { stream, pending, ambient, agentEvents } = loadDispatchHarness();
+    const data = { phase: 'start', compactionId: 'cmp-preflight', source: 'preflight' };
+    await stream.dispatchGatewayEvent({
+      event: 'agent',
+      payload: { sessionKey: pending.sessionKey, runId: 'recovered-run', resumedFromRunId: 'prompt-run', stream: 'compaction', data },
+    });
+    expect(stream.findPendingBySessionKey).toHaveBeenCalledWith(pending.sessionKey, 'recovered-run', 'prompt-run');
+    expect(ambient.emitCompactionUpdate).toHaveBeenLastCalledWith(pending.sessionKey, 'recovered-run', data, pending);
+
+    const operation = { sessionKey: pending.sessionKey, operation: 'compact', phase: 'end', compactionId: 'cmp-manual', source: 'manual', completed: true };
+    await stream.dispatchGatewayEvent({ event: 'session.operation', payload: operation });
+    expect(stream.findUniquePendingBySessionKey).toHaveBeenCalledWith(pending.sessionKey);
+    expect(ambient.emitCompactionUpdate).toHaveBeenLastCalledWith(pending.sessionKey, undefined, operation, pending);
+    expect(ambient.emitCompactionUpdate).toHaveBeenCalledTimes(2);
+    expect(agentEvents.handleAgentEvent).not.toHaveBeenCalled();
+  });
+
+  it('forwards passive compaction to the scoped projector and ignores unrelated or malformed operations', async () => {
+    const { stream, pending, ambient } = loadDispatchHarness();
+    stream.findUniquePendingBySessionKey.mockReturnValue(undefined);
+    const operation = { sessionKey: pending.sessionKey, operation: 'compact', phase: 'start', compactionId: 'cmp-passive', source: 'manual' };
+    await stream.dispatchGatewayEvent({ event: 'session.operation', payload: operation });
+    expect(ambient.emitCompactionUpdate).toHaveBeenCalledWith(pending.sessionKey, undefined, operation, undefined);
+
+    await stream.dispatchGatewayEvent({ event: 'session.operation', payload: { ...operation, operation: 'reset' } });
+    await stream.dispatchGatewayEvent({ event: 'session.operation', payload: { ...operation, sessionKey: ' ' } });
+    await stream.dispatchGatewayEvent({ event: 'session.operation' });
+    expect(ambient.emitCompactionUpdate).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the patched ACP chunk syntactically valid', async () => {
