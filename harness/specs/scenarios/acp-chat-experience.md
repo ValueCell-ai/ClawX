@@ -78,3 +78,11 @@ Known OpenClaw 2026.10.5 follow-ups (deferred tool UI coverage and intermediate 
 [Live patch verification](../../reference/openclaw-patch-live-verification.md) records real-model restart, replay, cancellation, subagent and compaction observations on the 2026.10.5 port. Reproduced failures and existing compensations refine the static port map; pending repairs are not implemented by that evidence record.
 
 The durable architecture, exceptions, access boundary, file-activity separation, Office preview behavior, Markdown rendering, Electron rendering performance policy, and validation anchors are documented in `harness/reference/acp-chat.md`, `harness/reference/acp-generated-media-and-diagnostics.md`, `harness/reference/acp-attachment-access-control.md`, `harness/reference/openclaw-file-activity.md`, `harness/reference/office-document-preview.md`, `harness/reference/markdown-rendering.md`, and `harness/reference/electron-rendering-performance.md`.
+
+
+Offline completion replay is covered by
+[fix-openclaw-2026-10-5-acp-offline-replay](../tasks/fix-openclaw-2026-10-5-acp-offline-replay.md).
+OpenClaw reconciles newer native transcript records into its own ledger atomically;
+ClawX preserves the existing ACP-only content boundary. Validate repeated loads,
+subsequent prompts, process reload, concurrent readers, transactional failure and
+buffered live-event overlap, plus Electron navigation and reload behavior.

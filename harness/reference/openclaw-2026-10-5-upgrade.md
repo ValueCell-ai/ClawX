@@ -88,7 +88,7 @@ compensations. New homes and the corrected status follow:
 | Settings keepRecentTokens=0 | `agent-settings-*.js` | `agent-settings-*.mjs` | ported |
 | No-tail boundary hardening | `compact-*.js` | upstream removed `hardenManualCompactionBoundary` | obsolete |
 | Compaction ids/timestamps | `selection-*.js` | `builtin-openclaw-*.mjs` | ported |
-| ACP ambient/subagent streaming | `acp-cli-*.js` | `server-*.mjs` new prompt stream | fresh-session completion passes via ClawX's settled-prompt reload; out-of-band reload coverage remains incomplete |
+| ACP ambient/subagent streaming | `acp-cli-*.js` | `server-*.mjs` new prompt stream | fresh-session completion retained; complete-ledger offline tail is now imported atomically after live confirmation; covered-interval gaps remain separate |
 | Restart-recovery run lineage | `agent-*.js`, `agent-events-*.js` | upstream core and ACP translator | repaired after live confirmation: admitted lineage, finite ACP waiting and recovered-run adoption are ported |
 | Main-session restart recovery | `main-session-restart-recovery-*.js` | upstream `main-session-restart-recovery-*.mjs` | native scheduler retained; ACP/UI now receive and settle the linked recovery run |
 | `session.operation` broadcast | `sessions-*.js` | `sessions-compact-*.mjs`, `sessions-shared-*.mjs` | metadata ported; exact message-only subscriber missed real start/end events |
@@ -653,3 +653,16 @@ terminal reconciliation by exact run/session ownership. The Renderer retains a
 running conversation while a reconnect catalog is incomplete. See
 [ACP architecture](acp-chat.md) and [live verification](openclaw-patch-live-verification.md).
 Offline transcript-tail replay and compaction lifecycle delivery are separate repairs.
+
+
+### Offline completion replay repair (2026-10-28)
+
+After live user confirmation, complete-ledger loads also reconcile the bounded
+native transcript tail. Native record identities and commit timestamps gate an
+atomic append to the existing ACP ledger; imported events retain their source time
+rather than poisoning coverage with the time of the load. Ordered replay remains
+authoritative, and run-scoped baselines deduplicate events buffered during load.
+Existing incomplete-ledger fallback is preserved. Known-run suffix checks do not
+repair missing messages inside an already-covered ledger interval. See
+[ACP history authority](acp-chat.md#history-authority) and
+[the live verification report](openclaw-patch-live-verification.md).

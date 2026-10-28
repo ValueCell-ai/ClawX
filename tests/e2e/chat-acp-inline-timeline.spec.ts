@@ -612,6 +612,45 @@ async function openChat(app: ElectronApplication) {
 }
 
 test.describe('ClawX ACP inline timeline', () => {
+  test('restores an offline completion from ACP replay after switching conversations and reloading', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const awayKey = 'agent:main:session-offline-away';
+    const baseline: AcpSessionUpdate[] = [
+      { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Start a background task' } },
+      { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Background task started.' } },
+    ];
+    const repaired: AcpSessionUpdate[] = [...baseline, {
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: '\n\nThe task completed while this conversation was offline.' },
+      _meta: { 'openclaw.ai/transcript-replay': { version: 1, id: '["native-window",13]', textPrefix: true, terminal: true } },
+    }];
+    try {
+      await installAcpChatMocks(app, { success: true, generation: 1 }, [
+        { key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE },
+        { key: awayKey, displayName: 'Other conversation', workspacePath: MAIN_WORKSPACE },
+      ]);
+      await installAcpLoadReplayBySessionMock(app, { [MAIN_SESSION_KEY]: [baseline, repaired, repaired, repaired, repaired], [awayKey]: [[], [], []] });
+      const page = await openChat(app);
+      await expect(page.getByTestId('acp-assistant-message')).toContainText('Background task started.');
+      await expect(page.getByTestId('acp-chat-timeline')).not.toContainText('The task completed while');
+
+      await page.getByTestId(`sidebar-session-${awayKey}`).click();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      const completion = page.getByText('The task completed while this conversation was offline.', { exact: true });
+      await expect(completion).toHaveCount(1);
+      await expect(completion).toBeVisible();
+
+      await page.getByTestId(`sidebar-session-${awayKey}`).click();
+      await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
+      await page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`).click();
+      await expect(completion).toHaveCount(1);
+      await page.reload();
+      await expect(completion).toHaveCount(1);
+      await expect(completion).toBeVisible();
+    } finally { await closeElectronApp(app); }
+  });
+
   test('keeps the live turn visible through Gateway restart and shows recovered tools and completion', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
     try {

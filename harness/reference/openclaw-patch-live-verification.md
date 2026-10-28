@@ -27,7 +27,7 @@ ClawX 的真实 host API 通过另一个连接触发压缩。测试没有用 Mai
 | --- | --- | --- |
 | 已接受的请求能跨越 ClawX 管理的 Gateway 重启，并跟随替代 run 继续执行 | 已复现退化，用户现场确认；随后补丁修复，真机恢复结果已送达 ACP/UI | 已补回已接受请求的有限等待预算、可信恢复 run 接续和终态对账；保留新版原生恢复准入 |
 | 中止时保留已发送或缓冲中的回复尾部 | 原生 abort 和界面停止按钮两种场景均未复现丢字；Gateway 会先补发增量，再发送中止终态 | 不能仅凭旧条件分支缺失就恢复旧的终态消息补丁 |
-| 加载完整 ACP ledger 时，能恢复此后在当前 ACP 监听之外产生的 transcript 新消息 | 切走会话再返回、刷新整个 Renderer 后均复现缺失 | 待下一项现场确认后，在 OpenClaw/ACP 内修复回放覆盖范围，保留 ACP 对历史内容的唯一权威地位 |
+| 加载完整 ACP ledger 时，能恢复此后在当前 ACP 监听之外产生的 transcript 新消息 | 用户现场确认后已修复；既有故障对话和新后台任务均通过真机复测 | 原生提交时间与持久记录身份限定尾部，原子补入 ACP 自身账本，并去重回放期间的重叠事件 |
 | 新建对话在父代理回复后能收到子代理完成通知 | 显式使用 `expectsCompletionMessage: true` 时通过；ClawX 的请求结束后加载流程激活了 ambient 事件投递 | 本场景不足以支持单独给 `newSession` 补激活逻辑 |
 | 工具结果超限后仍可继续，不会陷入无效压缩或重试耗尽 | 四次真实的大结果调用经过两次原生压缩后完成，未复现旧卡死 | 保留新版恢复架构；旧裁剪算法另作证据收集或优化评估，暂不回搬 |
 | 手动压缩和恢复过程中的压缩生命周期能送达 ACP 与 Chat | `/compact` 和真实超限恢复均缺少生命周期展示；仅订阅会话消息的连接漏收原生 RPC 的压缩事件 | 待对应问题现场确认后，修复事件生产端元数据、精确订阅者投递和 ACP 事件投影 |
@@ -92,6 +92,36 @@ Gateway 会在发送终态快照前调用 `flushBufferedChatDeltaIfNeeded`，先
 未计入丢尾字的结论；另一次被模型拒绝的重复文本请求，也未计入有效测试。
 
 ### 回放：在当前 ACP 监听之外完成的回复，重新加载后仍缺失
+
+**2026-10-28 修复及复测：** 用户在真实 ClawX 中确认缺失后，已修复原生 ACP 的
+complete-ledger 加载路径。故障会话 `agent:main:session-1793142847299` 保留原账本，
+原来的 11 条事件全部保持不变；新增 2 条带持久来源身份的更新（thought、assistant），
+事件时间保留为原生提交时间 `1793142961930`，恢复了 `OFFLINE_CHILD_FINISHED_20261028`。
+应用及 ACP 重启后再次进入，回复仍只显示一次。
+
+新增真机复测会话为 `agent:main:session-1793143785992`。父代理发出
+`REPLAY_FIX_PARENT_READY_20261028` 后，ClawX 在 `1793143826666` 切到另一对话。
+后台子任务等待约 45 秒后完成，原生 announce 在 `1793143880775` 发出最终回复；
+此时 ACP 尚未收到这段 assistant 文本。切回来后，ClawX 成功通过 `session/load` 补回
+`REPLAY_FIX_CHILD_DONE_20261028`；再次切走/切回、刷新 Renderer 并重新选择对话后，
+对应完成段落始终只有 1 份。账本仍为 complete，原生记录的 thought/text 两条导入更新
+各仅保存一次，`loading=false`、`sending=false`、`error=null`。判定依据为原生事件、
+SQLite 记录和实际界面断言。
+
+补丁在 OpenClaw 内部完成：读取已有的有界原生历史，只处理有限提交时间严格晚于账本
+高水位且有持久 ID/位置的记录，在事务内重读账本并原子补入，避免并发加载、重复记录或
+写入中途失败产生半批数据。导入操作的墙钟时间不会充当历史覆盖时间。已知 run 的文本
+仅在有界原生聚合与账本前缀匹配时追加后缀，既有内容不被改写；回放期间缓冲的 live
+事件使用 run、工具和终态基线去重。此规则不补齐已覆盖区间内部的历史缺口。
+
+真实 ACP 子进程测试覆盖旧 complete ledger、原生提交时间/记录身份、工具顺序、重复加载、
+后续 prompt、进程重建、双 ACP 并发、导入事务回滚、无效记录、读取失败、部分前缀和
+回放/live 重叠（包括 incomplete-ledger fallback）。5 组相关单元测试共 29 项、Electron
+离线回放 E2E、类型检查、通信回放/对比和 harness CI 检查通过。证据保存在忽略目录
+`artifacts/review/openclaw-offline-replay-fix/`，包括 `live-verified.json`、`live-verified.png`
+和新旧会话的 transcript/ledger 快照。
+
+以下为修复前的验证记录：
 
 父代理以 `expectsCompletionMessage: true` 启动子代理，然后返回自己的标记。
 用户切换到其他对话后，子代理完成，原生 announce run 将一条包含

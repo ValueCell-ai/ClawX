@@ -30,6 +30,7 @@ function loadAmbientClass() {
   expect(start).toBeGreaterThanOrEqual(0);
   expect(end).toBeGreaterThan(start);
   const context = {
+    ACP_TRANSCRIPT_REPLAY_META: 'openclaw.ai/transcript-replay',
     normalizeOptionalString: (value: unknown) => (
       typeof value === 'string' && value.trim() ? value.trim() : undefined
     ),
