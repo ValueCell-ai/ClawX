@@ -86,3 +86,8 @@ OpenClaw reconciles newer native transcript records into its own ledger atomical
 ClawX preserves the existing ACP-only content boundary. Validate repeated loads,
 subsequent prompts, process reload, concurrent readers, transactional failure and
 buffered live-event overlap, plus Electron navigation and reload behavior.
+
+Compaction lifecycle coverage is maintained by
+[fix-openclaw-2026-10-5-acp-compaction](../tasks/fix-openclaw-2026-10-5-acp-compaction.md).
+Validate native /compact and recovery producers, exact-session operation delivery,
+pending and passive ACP projections, replay overlap and in-place Electron markers.

@@ -51,3 +51,10 @@ outage deadlines. Failed handshakes cannot renew the outage deadline. A running
 ACP conversation must remain selected through an incomplete reconnect catalog;
 explicit deletion remains authoritative. Native recovery admission and wait sharing
 authorization must remain intact.
+
+The [2026.10.5 compaction repair](../tasks/fix-openclaw-2026-10-5-acp-compaction.md)
+must retain native run ownership and scoped Gateway authorization. Verify both
+command and direct recovery producers, not only metadata helpers. A loaded exact
+session receives compaction updates even without a pending prompt; this exception
+must not widen ordinary parent ambient text. Deduplicate combined subscriptions
+and replay/live overlap by occurrence identity, retaining one terminal marker.

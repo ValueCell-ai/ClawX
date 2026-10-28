@@ -79,8 +79,8 @@ compensations. New homes and the corrected status follow:
 | Feature | Old chunk | 2026.10.5 target | Status |
 | --- | --- | --- | --- |
 | TokenDance recovery header | `errors-sMD712F3.js` | `error-coercion-*.mjs` | ported |
-| ACP compaction update projection | `acp-cli-*.js` | `server-*.mjs` | partial: helpers exist; real manual/direct-recovery lifecycle delivery is incomplete |
-| ACP tool/toolCall/compaction replay | `acp-cli-*.js` | `server-*.mjs` `extractReplayChunks` | transcript fallback ported; complete ledgers omit newer out-of-band transcript tails |
+| ACP compaction update projection | `acp-cli-*.js` | `server-*.mjs` | repaired: manual/recovery producers, exact-session operation delivery and pending/passive ACP projection |
+| ACP tool/toolCall/compaction replay | `acp-cli-*.js` | `server-*.mjs` `extractReplayChunks` | transcript fallback ported; newer out-of-band tails reconcile into complete ledgers atomically; covered-interval holes remain separate |
 | ACP snapshot-aware delta/text snapshot | `acp-cli-*.js` | `server-*.mjs` | ported |
 | Manual compaction operation metadata | `sessions-*.js` | `sessions-compact-*.mjs` | ported |
 | Compaction cut point (`keepRecentTokens: 0`) | `proxy-*.js` | `agent-core-*.mjs` `prepareCompaction` | ported |
@@ -666,3 +666,9 @@ Existing incomplete-ledger fallback is preserved. Known-run suffix checks do not
 repair missing messages inside an already-covered ledger interval. See
 [ACP history authority](acp-chat.md#history-authority) and
 [the live verification report](openclaw-patch-live-verification.md).
+
+The user-confirmed compaction lifecycle gap is repaired by
+[fix-openclaw-2026-10-5-acp-compaction](../specs/tasks/fix-openclaw-2026-10-5-acp-compaction.md).
+This adds lifecycle reporting and delivery around the current compactor; it does
+not restore the old pressure-recovery algorithm. See the live verification report
+for observed results and remaining evidence limits.

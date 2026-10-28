@@ -30,7 +30,7 @@ ClawX 的真实 host API 通过另一个连接触发压缩。测试没有用 Mai
 | 加载完整 ACP ledger 时，能恢复此后在当前 ACP 监听之外产生的 transcript 新消息 | 用户现场确认后已修复；既有故障对话和新后台任务均通过真机复测 | 原生提交时间与持久记录身份限定尾部，原子补入 ACP 自身账本，并去重回放期间的重叠事件 |
 | 新建对话在父代理回复后能收到子代理完成通知 | 显式使用 `expectsCompletionMessage: true` 时通过；ClawX 的请求结束后加载流程激活了 ambient 事件投递 | 本场景不足以支持单独给 `newSession` 补激活逻辑 |
 | 工具结果超限后仍可继续，不会陷入无效压缩或重试耗尽 | 四次真实的大结果调用经过两次原生压缩后完成，未复现旧卡死 | 保留新版恢复架构；旧裁剪算法另作证据收集或优化评估，暂不回搬 |
-| 手动压缩和恢复过程中的压缩生命周期能送达 ACP 与 Chat | `/compact` 和真实超限恢复均缺少生命周期展示；仅订阅会话消息的连接漏收原生 RPC 的压缩事件 | 待对应问题现场确认后，修复事件生产端元数据、精确订阅者投递和 ACP 事件投影 |
+| 手动压缩和恢复过程中的压缩生命周期能送达 ACP 与 Chat | 用户现场确认后已修复；真实 `/compact` 已显示同一行的进行中与完成状态 | 已补 `/compact` 与恢复压缩事件生产、精确会话投递和 pending/passive ACP 投影；保留新版压缩算法 |
 
 ### 重启：ACP 请求失败后，原生恢复仍成功完成
 
@@ -58,7 +58,7 @@ E2E、类型检查、通信回放/对比及 harness CI 检查通过。
 实现保留新版原生恢复准入机制，从已验证的恢复记录提取前驱关系；已接受请求使用 Main
 传入的 8 分钟预算，未确认请求保留 5 秒期限，失败重连不会重置截止时间。测试覆盖真实
 ACP 子进程的重连、无效来源/跨会话事件、连续恢复、工具、取消、已完成恢复 run 对账和超时。
-离线 transcript 尾部回放与压缩生命周期仍属于后续独立问题。
+重启修复没有一并修改离线 transcript 尾部回放和压缩生命周期；后续修复结果见各自复测章节。
 
 修复前，在新对话中发起一次 Code Mode 调用，内部通过 shell 执行 `sleep 45`，完成后回复一个
 唯一标记。工具开始运行后，通过 ClawX 真实的 `gateway.restart` host 操作重启网关。
@@ -205,3 +205,45 @@ SQLite transcript 中存在两条真实压缩记录。四次调用全部完成�
 
 本次未修改依赖补丁。已检查 README 中的相关流程；这些改动只记录验证证据，
 没有引入新的产品行为或用户操作流程。
+
+## 压缩生命周期修复复测（用户现场确认后）
+
+任务：[fix-openclaw-2026-10-5-acp-compaction](../specs/tasks/fix-openclaw-2026-10-5-acp-compaction.md)。
+用户在 `agent:main:session-1793146977431` 确认故障后才开始修改补丁。
+修复前 `/compact` 用时 33155 ms，原生历史从约 19k 降至 477 tokens，
+100 ms 的界面采样全程观测到零条压缩状态行。
+
+修复后使用真实配置与 `zai/glm-5.3-flash` 在同一对话重新准备虚构历史，
+通过真实输入框执行 `/compact`。ACP 于 00:32:42.236Z 发出 `in_progress`，
+于 00:33:29.093Z 发出 `completed`，两者共用
+`5d60f46d-e866-4b43-b094-81537c85ac57`。界面从“正在压缩上下文”原位变为
+“已压缩历史上下文”，全程最多一行；压缩结果约为 20k → 752 tokens。
+切到另一对话再返回后仍只有一条完成行。
+
+此补丁补齐排队手动压缩和显式恢复压缩的结构化事件，保留现有 threshold
+事件与新版压缩算法。原生 RPC 扩展到精确会话订阅者并对连接去重，仍经过既有
+Gateway 权限检查；ACP 统一投影到匹配的 pending prompt 或当前加载的精确会话。
+回放缓冲和有界状态缓存避免重复投递或迟到 start 重开已完成状态。
+
+35 项相关单元测试（包括真实已安装 ACP 子进程、生产端包装和投递函数执行）、
+Electron 压缩 E2E 及两个前置测试、类型检查、ESLint、comms replay/compare、
+harness task validate、选定流程 dry run 和 harness CI 通过。
+另一次真实外部 RPC 在 Chat 没有 pending prompt 时，用同一 ID
+`93cb39fb-4a5f-4b19-9c98-93f04fceb88a` 送达开始和完成，界面新增一条状态行并原位结束。
+诊断使用的 Main 通用 RPC 调用先在 30 秒超时，原生操作于约 35 秒实际完成；
+ACP 生命周期仍完整送达。该通用 RPC 超时策略未在本次修改。
+
+自动 preflight/overflow/timeout 包装与 threshold ACP 投影由自动测试覆盖；
+这里的手动真机证据不能代替各模型与所有自动压缩错误路径的真机验证。
+
+本次证据位于忽略目录 `artifacts/review/openclaw-compaction-fix/`，包括
+`live-command.json`、`live-in-progress.png`、`live-completed.png` 和检查日志。
+既有 complete ledger 覆盖区间内的历史缺口仍不在本次补丁范围内。
+
+精确订阅终态复测使用 120 秒观察窗口和三个独立真实 CLI 连接：只订阅目标会话、
+同时订阅全局与目标会话、仅订阅另一会话。一次真实 `sessions.compact` 用时约 55 秒，
+返回 `compacted: true`（18,474 → 1,072 tokens）。前两种连接各收到一次 start 和一次 end，
+另一会话连接为零条；ID 均为 `38d82ad9-347f-429c-940a-0651cd6692dd`。
+ClawX 此时没有 pending prompt，仍收到同一 ID 的两个 ACP 状态并原位完成。
+页面 reload 并重新选择会话后，三次本次新增压缩仍恰好显示三条完成行。
+证据：`rpc-subscriptions.json`、`live-rpc-direct.json`、`live-final-replayed.png`。
