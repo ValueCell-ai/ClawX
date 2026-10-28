@@ -653,6 +653,7 @@ test.describe('ClawX ACP inline timeline', () => {
 
   test('keeps the live turn visible through Gateway restart and shows recovered tools and completion', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
+    const otherSessionKey = 'agent:main:session-restart-catalog';
     try {
       await installAcpChatMocks(app);
       await installAcpPromptDeferredMock(app);
@@ -660,21 +661,52 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(page.getByTestId('acp-chat-empty-state')).toBeVisible();
       await page.getByTestId('chat-composer-input').fill('Continue through Gateway restart');
       await page.getByTestId('chat-composer-send').click();
+      await expect.poll(() => app.evaluate(() => (
+        typeof (globalThis as unknown as { __resolveAcpPrompt?: unknown }).__resolveAcpPrompt
+      ))).toBe('function');
       await emitAcpSessionUpdates(app, [{ sessionUpdate: 'tool_call', toolCallId: 'interrupted-tool', title: 'Before restart', kind: 'execute', status: 'in_progress' }]);
       await app.evaluate(async () => {
         const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
         for (const window of BrowserWindow.getAllWindows()) window.webContents.send('gateway:status-changed', { state: 'starting', port: 18789, gatewayReady: false });
       });
-      // The reconnect catalog briefly contains another conversation only.
-      await installIpcMocks(app, {
-        gatewayRpc: {
-          [stableStringify(['sessions.list', {}])]: { success: true, result: { sessions: [{ key: REVIEWER_SESSION_KEY, displayName: 'reviewer', workspacePath: REVIEWER_WORKSPACE }] } },
-        },
+      // One incomplete reconnect snapshot, followed by the recovered catalog.
+      // Keeping every later response incomplete would also model deletion after
+      // the prompt settles, rather than the transient restart gap under test.
+      await app.evaluate(({ ipcMain }, payload) => {
+        type Request = { id?: string; module?: string; action?: string; payload?: { method?: string } };
+        const handlers = (ipcMain as unknown as {
+          _invokeHandlers: Map<string, (event: unknown, request: Request) => unknown>;
+        })._invokeHandlers;
+        const previous = handlers.get('host:invoke')!;
+        const state = { reads: 0 };
+        (globalThis as unknown as { __restartCatalog: typeof state }).__restartCatalog = state;
+        ipcMain.removeHandler('host:invoke');
+        ipcMain.handle('host:invoke', (event, request: Request) => {
+          if (request.module === 'gateway' && request.action === 'rpc' && request.payload?.method === 'sessions.list') {
+            state.reads++;
+            return {
+              id: request.id, ok: true,
+              data: {
+                ts: Date.now(),
+                sessions: state.reads === 1 ? [payload.other] : [payload.main, payload.other],
+              },
+            };
+          }
+          return previous(event, request);
+        });
+      }, {
+        main: { key: MAIN_SESSION_KEY, displayName: 'main', workspacePath: MAIN_WORKSPACE },
+        other: { key: otherSessionKey, displayName: 'Other conversation', workspacePath: MAIN_WORKSPACE },
       });
       await app.evaluate(async () => {
         const { BrowserWindow } = process.mainModule!.require('electron') as typeof import('electron');
         for (const window of BrowserWindow.getAllWindows()) window.webContents.send('gateway:status-changed', { state: 'running', port: 18789, gatewayReady: true, connectedAt: Date.now(), pid: 54321 });
       });
+      await expect.poll(() => app.evaluate(() => (
+        (globalThis as unknown as { __restartCatalog: { reads: number } }).__restartCatalog.reads
+      ))).toBeGreaterThan(0);
+      await expect(page.getByTestId(`sidebar-session-${otherSessionKey}`)).toBeVisible();
+      await expect(page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`)).toBeVisible();
       await expect(page.getByTestId('chat-composer-send')).toHaveAttribute('title', 'Stop');
       await emitAcpSessionUpdates(app, [
         { sessionUpdate: 'tool_call_update', toolCallId: 'interrupted-tool', status: 'failed' },
@@ -682,8 +714,8 @@ test.describe('ClawX ACP inline timeline', () => {
         { sessionUpdate: 'tool_call_update', toolCallId: 'recovered-tool', status: 'completed' },
         { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Gateway restarted; the task continued and completed.' } },
       ]);
-      await resolveDeferredAcpPrompt(app);
       await expect(page.getByTestId('acp-assistant-message')).toContainText('Gateway restarted; the task continued and completed.');
+      await resolveDeferredAcpPrompt(app);
       await expect(page.getByTestId('chat-composer-send')).toHaveAttribute('title', 'Send');
       await expect(page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`)).toBeVisible();
       await expect(page.getByTestId('acp-chat-timeline')).not.toContainText('[OpenClaw interruption]');
