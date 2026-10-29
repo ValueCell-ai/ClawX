@@ -38,7 +38,7 @@ import { syncProxyConfigToOpenClaw } from '../utils/openclaw-proxy';
 import { logger } from '../utils/logger';
 import { prependPathEntry } from '../utils/env-path';
 import { ensureDingTalkDwsInstalled, resolveDingTalkDwsBinDir } from '../utils/dingtalk-dws';
-import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, removeLegacyOfficialDingTalkExtension, resolvePluginNpmPackagePath } from '../utils/plugin-install';
+import { copyPluginFromNodeModules, fixupPluginManifest, cpSyncSafe, replacePluginMirror, buildCandidateSources, repairTrustedOfficialPluginInstallRecords, removeTrustedOfficialPluginInstallRecord, removeLegacyOfficialDingTalkExtension, resolvePluginNpmPackagePath } from '../utils/plugin-install';
 import { ensureClawXPluginCapabilityConsent } from '../utils/plugin-capability-consent';
 import { safeRmSync } from '../utils/safe-fs';
 import { CLAWX_OPENAI_IMAGE_PROVIDER_KEY } from '../utils/openclaw-image-relay-constants';
@@ -224,8 +224,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean 
         logger.info(`[plugin] ${isInstalled ? 'Auto-upgrading' : 'Installing'} ${channelType} plugin${isInstalled ? `: ${installedVersion} → ${sourceVersion}` : `: ${sourceVersion}`} (bundled)`);
         try {
           mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
-          safeRmSync(fsPath(targetDir));
-          cpSyncSafe(bundledDir, targetDir);
+          replacePluginMirror(targetDir, (stagedDir) => cpSyncSafe(bundledDir, stagedDir));
           fixupPluginManifest(targetDir);
         } catch (err) {
           logger.warn(`[plugin] Failed to ${isInstalled ? 'auto-upgrade' : 'install'} ${channelType} plugin:`, err);
@@ -260,7 +259,7 @@ function ensureConfiguredPluginsUpgraded(configuredChannels: string[]): boolean 
 
         try {
           mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
-          copyPluginFromNodeModules(npmPkgPath, targetDir, npmName);
+          replacePluginMirror(targetDir, (stagedDir) => copyPluginFromNodeModules(npmPkgPath, stagedDir, npmName));
           fixupPluginManifest(targetDir);
         } catch (err) {
           logger.warn(`[plugin] Failed to ${isInstalled ? 'auto-upgrade' : 'install'} ${channelType} plugin from node_modules:`, err);

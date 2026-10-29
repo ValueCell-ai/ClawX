@@ -22,6 +22,9 @@ For Feishu/Lark specifically:
 - changes to `electron/utils/openclaw-auth.ts`, `electron/utils/channel-config.ts`, or `electron/gateway/config-sync.ts` that affect channel/plugin migration must keep direct regression coverage for the dual-plugin migration state
 
 - the Feishu plugin id must follow the installed mirror manifest after prelaunch plugin maintenance. Sanitize runs before the mirror upgrade, so an in-place upgrade must re-point `openclaw-lark` activation at `feishu` once the official mirror is installed, and must leave it untouched if the upgrade fails
+- the official `feishu` channel schema forbids unknown keys, so one leftover openclaw-lark setting invalidates the whole `openclaw.json`, and Doctor does not remove them. When activation moves off a legacy id, ClawX must prune `channels.feishu` and its accounts against the installed manifest's `channelConfigs.feishu.schema` (never a hardcoded key list), map boolean `streaming` like Doctor, and leave the aliases that the official Doctor contract migrates (`streamMode`, `chunkMode`, `blockStreaming`, `blockStreamingCoalesce`, `webhookHost`, `webhookPort`, `tools.base`). A legacy entry's `config` must not carry over into `plugins.entries.feishu`
+
+Plugin mirror upgrades must never leave a partial mirror in `~/.openclaw/extensions/`. Copy into a staging directory outside plugin discovery and swap it in with `replacePluginMirror` only once it holds a manifest, keeping the previous mirror if the copy or swap fails. Otherwise a retry would see a matching `package.json` and skip a broken install.
 
 For OpenClaw capability consent:
 

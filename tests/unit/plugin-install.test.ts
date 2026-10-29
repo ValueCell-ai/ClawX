@@ -9,6 +9,7 @@ const {
   mockLstatSync,
   mockMkdirSync,
   mockRmSync,
+  mockRenameSync,
   mockSymlinkSync,
   mockUnlinkSync,
   mockReadFileSync,
@@ -32,6 +33,7 @@ const {
   mockLstatSync: vi.fn(),
   mockMkdirSync: vi.fn(),
   mockRmSync: vi.fn(),
+  mockRenameSync: vi.fn(),
   mockSymlinkSync: vi.fn(),
   mockUnlinkSync: vi.fn(),
   mockReadFileSync: vi.fn(),
@@ -67,6 +69,7 @@ vi.mock('node:fs', async () => {
     lstatSync: mockLstatSync,
     mkdirSync: mockMkdirSync,
     rmSync: mockRmSync,
+    renameSync: mockRenameSync,
     symlinkSync: mockSymlinkSync,
     unlinkSync: mockUnlinkSync,
     readFileSync: mockReadFileSync,
@@ -144,6 +147,7 @@ describe('plugin installer diagnostics', () => {
     mockCpSync.mockImplementation(() => undefined);
     mockMkdirSync.mockImplementation(() => undefined);
     mockRmSync.mockImplementation(() => undefined);
+    mockRenameSync.mockImplementation(() => undefined);
     mockSymlinkSync.mockImplementation(() => undefined);
     mockUnlinkSync.mockImplementation(() => undefined);
     mockLstatSync.mockImplementation(() => {
@@ -284,7 +288,7 @@ describe('plugin installer diagnostics', () => {
       `${sourceDir}/package.json`,
       `${targetDir}/openclaw.plugin.json`,
       `${targetDir}/package.json`,
-    ].includes(String(input)));
+    ].includes(String(input)) || /\/\.clawx-plugin-staging\/dingtalk-[^/]+\/next\/openclaw\.plugin\.json$/.test(String(input)));
     mockReadFileSync.mockImplementation((input: string) => {
       const value = String(input);
       if (value === `${targetDir}/package.json`) {
@@ -308,7 +312,15 @@ describe('plugin installer diagnostics', () => {
     const { ensurePluginInstalled } = await import('@electron/utils/plugin-install');
     const result = await ensurePluginInstalled('dingtalk', [sourceDir], 'DingTalk');
     expect(result.installed).toBe(true);
-    expect(mockCpSync).toHaveBeenCalled();
+    expect(mockCpSync).toHaveBeenCalledWith(
+      sourceDir,
+      expect.stringMatching(/\/\.openclaw\/\.clawx-plugin-staging\/dingtalk-[^/]+\/next$/),
+      expect.anything(),
+    );
+    expect(mockRenameSync).toHaveBeenCalledWith(
+      expect.stringMatching(/\/\.clawx-plugin-staging\/dingtalk-[^/]+\/next$/),
+      targetDir,
+    );
   });
 
   it('removes a legacy official directory only after the remapped official mirror exists', async () => {

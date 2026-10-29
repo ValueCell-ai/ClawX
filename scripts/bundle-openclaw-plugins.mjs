@@ -15,12 +15,17 @@
  * The output plugin directory contains:
  *   - plugin source files (index.ts, openclaw.plugin.json, package.json, ...)
  *   - plugin runtime node_modules/ (flattened direct + transitive deps)
+ *
+ * Plugins with a PLUGIN_COMPACT_POLICIES entry are then shrunk by
+ * openclaw-plugin-compact.mjs because OpenClaw copies every plugin file into a
+ * source capture per start.
  */
 
 import 'zx/globals';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { compactPluginMirror, PLUGIN_COMPACT_POLICIES } from './openclaw-plugin-compact.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -90,7 +95,7 @@ function listPackages(nodeModulesDir) {
   return result;
 }
 
-function bundleOnePlugin({ npmName, pluginId }) {
+async function bundleOnePlugin({ npmName, pluginId }) {
   const pkgPath = path.join(NODE_MODULES, ...npmName.split('/'));
   if (!fs.existsSync(pkgPath)) {
     throw new Error(`Missing dependency "${npmName}". Run pnpm install first.`);
@@ -189,6 +194,16 @@ function bundleOnePlugin({ npmName, pluginId }) {
   patchPluginId(outputDir, pluginId);
 
   echo`   ✅ ${pluginId}: copied ${copiedCount} deps (skipped dupes: ${skippedDupes})`;
+
+  const compact = PLUGIN_COMPACT_POLICIES[pluginId];
+  if (compact) {
+    const result = await compactPluginMirror(outputDir, compact);
+    const bundled = result.bundledPackages ? `, bundled ${result.bundledPackages.size} deps` : '';
+    echo`   🗜️  ${pluginId}: ${result.before} -> ${result.after} files${bundled}`;
+    if (result.unresolved?.size) {
+      echo`   ⚠️  ${pluginId}: left unshipped optional imports external: ${[...result.unresolved].join(', ')}`;
+    }
+  }
 }
 
 /**
@@ -249,7 +264,7 @@ echo`📦 Bundling OpenClaw plugin mirrors...`;
 fs.mkdirSync(OUTPUT_ROOT, { recursive: true });
 
 for (const plugin of PLUGINS) {
-  bundleOnePlugin(plugin);
+  await bundleOnePlugin(plugin);
 }
 
 echo`✅ Plugin mirrors ready: ${OUTPUT_ROOT}`;

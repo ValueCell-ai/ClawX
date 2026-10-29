@@ -56,6 +56,22 @@ describe('after-pack cleanup helpers', () => {
     expect(existsSync(join(nodeModules, '@openai', 'codex-linux-x64'))).toBe(false);
   });
 
+  it('keeps only the target fs-safe native package next to the feishu plugin', () => {
+    const nodeModules = makeTempNodeModules();
+    makePackage(join(nodeModules, '@openclaw', 'fs-safe'));
+    for (const target of ['darwin-arm64', 'darwin-x64', 'linux-arm64-gnu', 'linux-x64-musl', 'win32-x64-msvc']) {
+      makePackage(join(nodeModules, '@openclaw', `fs-safe-${target}`));
+    }
+
+    afterPack.__test!.cleanupNativePlatformPackages(nodeModules, 'win32', 'x64');
+
+    expect(existsSync(join(nodeModules, '@openclaw', 'fs-safe'))).toBe(true);
+    expect(existsSync(join(nodeModules, '@openclaw', 'fs-safe-win32-x64-msvc'))).toBe(true);
+    for (const target of ['darwin-arm64', 'darwin-x64', 'linux-arm64-gnu', 'linux-x64-musl']) {
+      expect(existsSync(join(nodeModules, '@openclaw', `fs-safe-${target}`))).toBe(false);
+    }
+  });
+
   it('keeps both mac tree-sitter-bash prebuilds for universal builds', () => {
     const nodeModules = makeTempNodeModules();
     const prebuilds = join(nodeModules, 'tree-sitter-bash', 'prebuilds');

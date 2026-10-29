@@ -1014,7 +1014,134 @@ describe('sanitizeOpenClawConfig', () => {
 
     const plugins = (await readOpenClawJson()).plugins as Record<string, unknown>;
     expect(plugins.allow).toEqual(['feishu']);
-    expect(plugins.entries).toEqual({ feishu: { enabled: true, config: { preserved: true } } });
+    // openclaw-lark settings would violate the official plugin's empty configSchema.
+    expect(plugins.entries).toEqual({ feishu: { enabled: true } });
+  });
+
+  const OFFICIAL_FEISHU_ENTRY_SCHEMA = {
+    type: 'object',
+    properties: {
+      enabled: { type: 'boolean' },
+      appId: { type: 'string' },
+      appSecret: { type: 'string' },
+      dmPolicy: { type: 'string' },
+      allowFrom: { type: 'array' },
+      groups: { type: 'object', additionalProperties: { type: 'object' } },
+      streaming: {
+        type: 'object',
+        properties: { mode: { type: 'string', enum: ['off', 'partial'] } },
+        additionalProperties: false,
+      },
+      tools: {
+        type: 'object',
+        properties: { doc: { type: 'boolean' }, bitable: { type: 'boolean' } },
+        additionalProperties: false,
+      },
+    },
+    additionalProperties: false,
+  };
+  const OFFICIAL_FEISHU_MANIFEST = {
+    id: 'feishu',
+    configSchema: { type: 'object', additionalProperties: false, properties: {} },
+    channelConfigs: {
+      feishu: {
+        schema: {
+          ...OFFICIAL_FEISHU_ENTRY_SCHEMA,
+          properties: {
+            ...OFFICIAL_FEISHU_ENTRY_SCHEMA.properties,
+            defaultAccount: { type: 'string' },
+            accounts: { type: 'object', additionalProperties: OFFICIAL_FEISHU_ENTRY_SCHEMA },
+          },
+        },
+      },
+    },
+  };
+
+  async function upgradeLegacyFeishuMirror(feishu: Record<string, unknown>): Promise<Record<string, unknown>> {
+    await writeOpenClawJson({
+      channels: { feishu },
+      plugins: { enabled: true, allow: ['openclaw-lark'], entries: { 'openclaw-lark': { enabled: true } } },
+    });
+    const mirrorDir = join(testHome, '.openclaw', 'extensions', 'feishu-openclaw-plugin');
+    await mkdir(mirrorDir, { recursive: true });
+    await writeFile(join(mirrorDir, 'openclaw.plugin.json'), JSON.stringify(OFFICIAL_FEISHU_MANIFEST), 'utf8');
+    const { syncFeishuPluginRegistrationWithInstalledPlugin } = await import('@electron/utils/openclaw-auth');
+    await syncFeishuPluginRegistrationWithInstalledPlugin();
+    return (await readOpenClawJson()).channels as Record<string, unknown>;
+  }
+
+  it('drops openclaw-lark channel settings the official Feishu schema rejects when activation moves', async () => {
+    const channels = await upgradeLegacyFeishuMirror({
+      enabled: true,
+      appId: 'cli-feishu-app',
+      appSecret: 'cli-feishu-secret',
+      dmPolicy: 'open',
+      allowFrom: ['*'],
+      streaming: true,
+      footer: { enabled: true },
+      threadSession: true,
+      uat: { enabled: true },
+      replyMode: 'streaming',
+      tools: { doc: true, calendar: true },
+      groups: { oc_1: { requireMention: true, larkOnly: true } },
+      accounts: {
+        default: { appId: 'cli-feishu-app', appSecret: 'cli-feishu-secret', streaming: false, footer: {} },
+      },
+    });
+
+    expect(channels.feishu).toEqual({
+      enabled: true,
+      appId: 'cli-feishu-app',
+      appSecret: 'cli-feishu-secret',
+      dmPolicy: 'open',
+      allowFrom: ['*'],
+      streaming: { mode: 'partial' },
+      tools: { doc: true },
+      groups: { oc_1: { requireMention: true, larkOnly: true } },
+      accounts: {
+        default: { appId: 'cli-feishu-app', appSecret: 'cli-feishu-secret', streaming: { mode: 'off' } },
+      },
+    });
+  });
+
+  it('leaves aliases that the official Feishu Doctor contract migrates', async () => {
+    const channels = await upgradeLegacyFeishuMirror({
+      enabled: true,
+      appId: 'cli-feishu-app',
+      appSecret: 'cli-feishu-secret',
+      streaming: true,
+      streamMode: 'off',
+      blockStreaming: true,
+      webhookPort: 3000,
+      tools: { base: true },
+    });
+
+    expect(channels.feishu).toEqual({
+      enabled: true,
+      appId: 'cli-feishu-app',
+      appSecret: 'cli-feishu-secret',
+      streaming: true,
+      streamMode: 'off',
+      blockStreaming: true,
+      webhookPort: 3000,
+      tools: { base: true },
+    });
+  });
+
+  it('does not prune Feishu channel settings once activation is already on the official plugin', async () => {
+    await writeOpenClawJson({
+      channels: { feishu: { enabled: true, appId: 'cli-feishu-app', appSecret: 'cli-feishu-secret', footer: {} } },
+      plugins: { enabled: true, allow: ['feishu'], entries: { feishu: { enabled: true } } },
+    });
+    const mirrorDir = join(testHome, '.openclaw', 'extensions', 'feishu-openclaw-plugin');
+    await mkdir(mirrorDir, { recursive: true });
+    await writeFile(join(mirrorDir, 'openclaw.plugin.json'), JSON.stringify(OFFICIAL_FEISHU_MANIFEST), 'utf8');
+
+    const { syncFeishuPluginRegistrationWithInstalledPlugin } = await import('@electron/utils/openclaw-auth');
+    await syncFeishuPluginRegistrationWithInstalledPlugin();
+
+    const channels = (await readOpenClawJson()).channels as Record<string, Record<string, unknown>>;
+    expect(channels.feishu.footer).toEqual({});
   });
 
   it('removes residual feishu plugin registrations when feishu channel is not configured', async () => {

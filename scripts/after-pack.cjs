@@ -23,6 +23,7 @@ const { cpSync, existsSync, readdirSync, rmSync, statSync, mkdirSync, realpathSy
 const { execFileSync } = require('child_process');
 const { join, dirname, basename, relative } = require('path');
 const { ELECTRON_MAIN_RUNTIME_PACKAGES } = require('./openclaw-bundle-config.mjs');
+const { compactPluginMirror, PLUGIN_COMPACT_POLICIES } = require('./openclaw-plugin-compact.mjs');
 const { patchNsisExtractTemplate } = require('./patch-nsis-extract.mjs');
 const { patchNsisInstallSectionTemplate } = require('./patch-nsis-install-section.mjs');
 const { patchNsisUninstallTemplate } = require('./patch-nsis-uninstall.mjs');
@@ -241,6 +242,7 @@ const PLATFORM_NATIVE_SCOPES = {
   '@node-llama-cpp': /^(mac|linux|win)-(arm64|x64|armv7l)(-metal|-cuda|-cuda-ext|-vulkan)?$/,
   '@esbuild': /^(darwin|linux|win32|android|freebsd|netbsd|openbsd|sunos|aix|openharmony)-(x64|arm64|arm|ia32|loong64|mips64el|ppc64|riscv64|s390x)/,
   '@openai': /^codex-(darwin|linux|win32)-(x64|arm64)$/,
+  '@openclaw': /^fs-safe-(darwin|linux|win32)-(x64|arm64)/,
 };
 
 // Unscoped packages that follow a <name>-<platform>-<arch> convention.
@@ -425,6 +427,7 @@ exports.__test = {
   assertCuaPackagedRuntime,
   cleanupNativePlatformPackages,
   cleanupNodeModulesRuntimeJunk,
+  packageBundledPlugin,
 };
 
 // ── Broken module patcher ─────────────────────────────────────────────────────
@@ -756,6 +759,29 @@ function bundlePlugin(nodeModulesRoot, npmName, destDir) {
   return true;
 }
 
+async function packageBundledPlugin(nodeModulesRoot, npmName, pluginId, pluginDestDir, platform, arch) {
+  console.log(`[after-pack] Bundling plugin ${npmName} -> ${pluginDestDir}`);
+  if (!bundlePlugin(nodeModulesRoot, npmName, pluginDestDir)) return;
+  const pluginNM = join(pluginDestDir, 'node_modules');
+  cleanupUnnecessaryFiles(pluginDestDir);
+  if (existsSync(pluginNM)) {
+    const pluginJunkRemoved = cleanupKnownRuntimeJunk(pluginDestDir, platform, arch);
+    if (pluginJunkRemoved > 0) {
+      console.log(`[after-pack] ✅ ${pluginId}: removed ${pluginJunkRemoved} known runtime junk files/directories.`);
+    }
+    cleanupKoffi(pluginNM, platform, arch);
+    cleanupNativePlatformPackages(pluginNM, platform, arch);
+  }
+  // Fix hardcoded plugin ID mismatches in compiled JS
+  patchPluginIds(pluginDestDir, pluginId);
+  // OpenClaw copies every plugin file into a source capture on each Gateway start.
+  const compactPolicy = PLUGIN_COMPACT_POLICIES[pluginId];
+  if (compactPolicy) {
+    const result = await compactPluginMirror(pluginDestDir, compactPolicy);
+    console.log(`[after-pack] 🗜️  ${pluginId}: compacted ${result.before} -> ${result.after} files.`);
+  }
+}
+
 // ── Main hook ────────────────────────────────────────────────────────────────
 
 exports.default = async function afterPack(context) {
@@ -826,23 +852,7 @@ exports.default = async function afterPack(context) {
 
   mkdirSync(pluginsDestRoot, { recursive: true });
   for (const { npmName, pluginId } of BUNDLED_PLUGINS) {
-    const pluginDestDir = join(pluginsDestRoot, pluginId);
-    console.log(`[after-pack] Bundling plugin ${npmName} -> ${pluginDestDir}`);
-    const ok = bundlePlugin(nodeModulesRoot, npmName, pluginDestDir);
-    if (ok) {
-      const pluginNM = join(pluginDestDir, 'node_modules');
-      cleanupUnnecessaryFiles(pluginDestDir);
-      if (existsSync(pluginNM)) {
-        const pluginJunkRemoved = cleanupKnownRuntimeJunk(pluginDestDir, platform, arch);
-        if (pluginJunkRemoved > 0) {
-          console.log(`[after-pack] ✅ ${pluginId}: removed ${pluginJunkRemoved} known runtime junk files/directories.`);
-        }
-        cleanupKoffi(pluginNM, platform, arch);
-        cleanupNativePlatformPackages(pluginNM, platform, arch);
-      }
-      // Fix hardcoded plugin ID mismatches in compiled JS
-      patchPluginIds(pluginDestDir, pluginId);
-    }
+    await packageBundledPlugin(nodeModulesRoot, npmName, pluginId, join(pluginsDestRoot, pluginId), platform, arch);
   }
 
   // 1.1b Bundle the official DingTalk workspace CLI (`dws`) so calendar/doc

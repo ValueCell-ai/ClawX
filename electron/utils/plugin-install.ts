@@ -8,7 +8,7 @@
 import { app } from 'electron';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { existsSync, cpSync, copyFileSync, statSync, lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync, readdirSync, realpathSync, symlinkSync, unlinkSync, type Dirent } from 'node:fs';
+import { existsSync, cpSync, copyFileSync, statSync, lstatSync, mkdirSync, readFileSync, readlinkSync, renameSync, writeFileSync, readdirSync, realpathSync, symlinkSync, unlinkSync, type Dirent } from 'node:fs';
 import { readdir, stat, copyFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -79,6 +79,64 @@ function _copyDirSyncRecursive(src: string, dest: string): void {
       _copyDirSyncRecursive(srcChild, destChild);
     } else {
       copyFileSync(srcChild, destChild);
+    }
+  }
+}
+
+const PLUGIN_STAGING_DIR = '.clawx-plugin-staging';
+
+/**
+ * Replace the plugin mirror at `targetDir` without ever leaving a partial
+ * copy in `extensions/`. `populate` fills a staging directory next to
+ * `extensions/` (same volume, outside plugin discovery); it is swapped in
+ * only once it holds a manifest, and the previous mirror is restored if the
+ * swap fails.
+ */
+export function replacePluginMirror(targetDir: string, populate: (stagedDir: string) => void): void {
+  const extensionsRoot = path.dirname(targetDir);
+  const stagingDir = join(
+    path.dirname(extensionsRoot),
+    PLUGIN_STAGING_DIR,
+    `${path.basename(targetDir)}-${process.pid}-${Date.now()}`,
+  );
+  const stagedDir = join(stagingDir, 'next');
+  const previousDir = join(stagingDir, 'previous');
+  let movedPrevious = false;
+  let previousRestored = true;
+  try {
+    mkdirSync(fsPath(stagingDir), { recursive: true });
+    populate(stagedDir);
+    if (!existsSync(fsPath(join(stagedDir, 'openclaw.plugin.json')))) {
+      throw new Error(`Staged plugin mirror has no openclaw.plugin.json: ${stagedDir}`);
+    }
+    mkdirSync(fsPath(extensionsRoot), { recursive: true });
+    try {
+      renameSync(fsPath(targetDir), fsPath(previousDir));
+      movedPrevious = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    try {
+      renameSync(fsPath(stagedDir), fsPath(targetDir));
+    } catch (error) {
+      if (movedPrevious) {
+        try {
+          renameSync(fsPath(previousDir), fsPath(targetDir));
+        } catch {
+          previousRestored = false;
+        }
+      }
+      throw error;
+    }
+  } finally {
+    if (!previousRestored) {
+      logger.warn(`[plugin] Retained previous plugin mirror for recovery: ${previousDir}`);
+    } else {
+      try {
+        safeRmSync(fsPath(stagingDir));
+      } catch (error) {
+        logger.warn(`[plugin] Failed to remove plugin staging directory ${stagingDir}:`, error);
+      }
     }
   }
 }
@@ -1039,24 +1097,13 @@ export async function ensurePluginInstalled(
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         mkdirSync(fsPath(extensionsRoot), { recursive: true });
-        safeRmSync(fsPath(targetDir));
-        cpSyncSafe(sourceDir, targetDir);
-        if (!existsSync(fsPath(join(targetDir, 'openclaw.plugin.json')))) {
-          return { installed: false, warning: `Failed to install ${pluginLabel} plugin mirror (manifest missing).` };
-        }
+        replacePluginMirror(targetDir, (stagedDir) => cpSyncSafe(sourceDir, stagedDir));
         const installed = await finalizeInstalledMirror();
         logger.info(`Installed ${pluginLabel} plugin from bundled mirror: ${sourceDir}`);
         return installed;
       } catch (error) {
         const diagnostic = toErrorDiagnostic(error);
         attempts.push({ attempt, ...diagnostic });
-        if (attempt < maxAttempts) {
-          try {
-            safeRmSync(fsPath(targetDir));
-          } catch {
-            // Ignore cleanup failures before retry.
-          }
-        }
       }
     }
 
@@ -1090,10 +1137,8 @@ export async function ensurePluginInstalled(
           );
           try {
             mkdirSync(fsPath(join(homedir(), '.openclaw', 'extensions')), { recursive: true });
-            copyPluginFromNodeModules(npmPkgPath, targetDir, npmName);
-            if (existsSync(fsPath(join(targetDir, 'openclaw.plugin.json')))) {
-              return await finalizeInstalledMirror();
-            }
+            replacePluginMirror(targetDir, (stagedDir) => copyPluginFromNodeModules(npmPkgPath, stagedDir, npmName));
+            return await finalizeInstalledMirror();
           } catch (err) {
             logger.warn(
               `[plugin] Failed to install ${pluginLabel} plugin from node_modules`,

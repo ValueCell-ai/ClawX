@@ -609,6 +609,22 @@ installed through ClawX's own install code:
   in place. The official plugin has 14 Feishu tools instead of openclaw-lark's
   39, without calendar, task, user OAuth, sheet, or search tools. This
   reduction is accepted for the upgrade.
+- **Feishu channel config.** openclaw-lark accepted any channel keys, but the
+  official schema sets `additionalProperties: false` at the root, per account,
+  and in nested objects such as `streaming` and `tools`. Keys that only
+  openclaw-lark read (for example `footer`, `threadSession`, `uat`, and
+  `replyMode`) make the whole `openclaw.json` invalid. On a synthetic home,
+  `doctor --fix` ran for 151 s, exited 0, and only moved boolean `streaming` to
+  `streaming.mode`; `config validate` still failed with `must not have
+  additional properties: "footer", "threadSession", "uat", "replyMode"`.
+  Startup recovery runs Doctor once, so this left the Gateway down. When
+  activation moves off a legacy id, ClawX now prunes the channel config against
+  the installed manifest's `channelConfigs.feishu.schema`, maps boolean
+  `streaming` the way Doctor does, and leaves the aliases that the Feishu Doctor
+  contract migrates itself. The same 0.6.1 config with these keys then passed
+  `config validate` with no warnings. The removed values remain in the upgrade
+  snapshot of `openclaw.json`. The ClawX settings UI never wrote these keys;
+  they come from the openclaw-lark setup wizard or manual edits.
 
 Evidence from a synthetic `/tmp` home on OpenClaw 2026.10.5 under Electron's
 Node 24.18.0:
@@ -624,6 +640,37 @@ Node 24.18.0:
 4. A later machine-state write kept the index valid.
 5. `gateway run` reached `ready` with `openclaw-qqbot` loaded, and started the
    `default` and `agent-b` accounts against Tencent's API.
+
+## Plugin source capture cost
+
+On every Gateway start, `capturePluginGenerationArtifact` copies and sha256
+hashes each file of an external plugin, including its whole `node_modules`
+tree, into a generation snapshot. It rejects a plugin whose declared
+dependencies are missing, and tolerates missing optional platform packages.
+The cost scales with file count: about 5 ms per file on a Windows machine
+with Defender on (ClawX 0.6.1.0 upgraded in place to 2026.10.5), where capture
+took 27.8 s of a 28.9 s Gateway plugin load.
+
+ClawX compacts the DingTalk, WeCom, and Feishu mirrors with esbuild at build
+time and only prunes QQ Bot (`scripts/openclaw-plugin-compact.mjs`, applied by
+both the dev bundler and after-pack). Own modules keep their paths because the
+plugins resolve files relative to `import.meta.url`. Feishu's
+`@openclaw/fs-safe` is re-bundled in place because it locates its batch worker,
+WASM archive parser, and PowerShell bridge next to its own modules, and loads
+its native addon by a computed package name.
+
+| Plugin | Dev mirror files | Packaged files (win32/x64 simulation) |
+| --- | --- | --- |
+| DingTalk | 2266 → 81 | 1594 → 74 |
+| WeCom | 1060 → 236 | 705 → 232 |
+| Feishu | 4528 → 193 | 2366 → 179 |
+| QQ Bot (prune only) | 507 → 219 | 298 → 219 |
+
+Evidence from macOS under Electron's Node 24.18.0: export snapshots of all 124
+own modules were identical before and after, the fs-safe native addon loaded
+through the public API, all ten lazy chunks imported, an fs-safe archive and
+path smoke test behaved identically, and capture of the four mirrors dropped
+from about 73 s to about 4.9 s.
 
 ## Packaging evidence (2026.10.5)
 

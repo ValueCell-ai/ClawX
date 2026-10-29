@@ -804,25 +804,109 @@ async function readOpenClawJson(): Promise<Record<string, unknown>> {
   return (await readOpenClawConfigSnapshot()).config;
 }
 
-async function resolveInstalledFeishuPluginId(): Promise<string | null> {
+type InstalledFeishuPlugin = { id: string; channelSchema: unknown };
+
+async function resolveInstalledFeishuPlugin(): Promise<InstalledFeishuPlugin | null> {
   const extensionRoot = join(homedir(), '.openclaw', 'extensions');
   for (const dirName of FEISHU_PLUGIN_DIR_CANDIDATES) {
     const manifestPath = join(extensionRoot, dirName, 'openclaw.plugin.json');
-    const manifest = await readJsonFile<{ id?: unknown }>(manifestPath);
+    const manifest = await readJsonFile<{
+      id?: unknown;
+      channelConfigs?: { feishu?: { schema?: unknown } };
+    }>(manifestPath);
     if (typeof manifest?.id === 'string' && manifest.id.trim()) {
-      return manifest.id.trim();
+      return { id: manifest.id.trim(), channelSchema: manifest.channelConfigs?.feishu?.schema };
     }
   }
   return null;
 }
 
+// The official plugin's Doctor contract carries these openclaw-lark era
+// aliases into the nested shape, so they are left for `doctor --fix`.
+const FEISHU_DOCTOR_MIGRATED_KEYS = new Set([
+  'streamMode',
+  'chunkMode',
+  'blockStreaming',
+  'blockStreamingCoalesce',
+  'webhookHost',
+  'webhookPort',
+  'tools.base',
+]);
+
+function pruneRecordToSchema(
+  value: Record<string, unknown>,
+  schema: unknown,
+  relativePath: string,
+  pathPrefix: string,
+  removed: string[],
+): void {
+  if (!isPlainRecord(schema) || !isPlainRecord(schema.properties)) return;
+  const properties = schema.properties;
+  for (const key of Object.keys(value)) {
+    const keyPath = relativePath ? `${relativePath}.${key}` : key;
+    if (Object.hasOwn(properties, key)) {
+      const child = value[key];
+      if (isPlainRecord(child)) pruneRecordToSchema(child, properties[key], keyPath, pathPrefix, removed);
+      continue;
+    }
+    if (schema.additionalProperties === false && !FEISHU_DOCTOR_MIGRATED_KEYS.has(keyPath)) {
+      delete value[key];
+      removed.push(`${pathPrefix}.${keyPath}`);
+    }
+  }
+}
+
+function migrateFeishuEntryToSchema(
+  entry: Record<string, unknown>,
+  schema: unknown,
+  pathPrefix: string,
+  removed: string[],
+): void {
+  // Same mapping as Doctor's alias migration, which lets streamMode win.
+  if (typeof entry.streaming === 'boolean' && entry.streamMode === undefined) {
+    entry.streaming = { mode: entry.streaming ? 'partial' : 'off' };
+    console.log(`[plugin] Moved ${pathPrefix}.streaming (boolean) to ${pathPrefix}.streaming.mode`);
+  }
+  pruneRecordToSchema(entry, schema, '', pathPrefix, removed);
+}
+
+/**
+ * Drop openclaw-lark settings that the official Feishu channel schema
+ * rejects. The schema forbids unknown keys, so a single leftover key would
+ * make the whole openclaw.json invalid and keep the Gateway from starting.
+ */
+function migrateLegacyFeishuChannelConfig(config: Record<string, unknown>, channelSchema: unknown): boolean {
+  const channels = isPlainRecord(config.channels) ? config.channels : null;
+  const section = channels && isPlainRecord(channels.feishu) ? channels.feishu : null;
+  if (!section || !isPlainRecord(channelSchema) || !isPlainRecord(channelSchema.properties)) return false;
+
+  const before = JSON.stringify(section);
+  const removed: string[] = [];
+  migrateFeishuEntryToSchema(section, channelSchema, 'channels.feishu', removed);
+  const accountsSchema = channelSchema.properties.accounts;
+  const accountSchema = isPlainRecord(accountsSchema) ? accountsSchema.additionalProperties : undefined;
+  if (isPlainRecord(section.accounts) && isPlainRecord(accountSchema)) {
+    for (const [accountId, account] of Object.entries(section.accounts)) {
+      if (!isPlainRecord(account)) continue;
+      migrateFeishuEntryToSchema(account, accountSchema, `channels.feishu.accounts.${accountId}`, removed);
+    }
+  }
+  if (removed.length > 0) {
+    console.log(`[plugin] Removed openclaw-lark settings unsupported by the official Feishu plugin: ${removed.join(', ')}`);
+  }
+  return JSON.stringify(section) !== before;
+}
+
 /**
  * Point Feishu plugin activation at `installedFeishuId` when the Feishu
- * channel is configured, or remove every Feishu plugin id otherwise.
+ * channel is configured, or remove every Feishu plugin id otherwise. When
+ * activation moves off a legacy openclaw-lark id onto the installed official
+ * plugin, its channel config is migrated against `installedChannelSchema`.
  */
 function normalizeFeishuPluginRegistration(
   config: Record<string, unknown>,
   installedFeishuId: string | null,
+  installedChannelSchema?: unknown,
 ): { modified: boolean; canonicalFeishuId: string; isFeishuConfigured: boolean } {
   const pluginsObj = isPlainRecord(config.plugins) ? config.plugins : {};
   const pEntries = (isPlainRecord(pluginsObj.entries) ? pluginsObj.entries : {}) as Record<string, Record<string, unknown>>;
@@ -847,9 +931,20 @@ function normalizeFeishuPluginRegistration(
   );
 
   if (isFeishuConfigured) {
-    const existingFeishuEntry =
-      FEISHU_PLUGIN_ID_CANDIDATES.map((id) => pEntries[id]).find(Boolean)
-      || pEntries.feishu;
+    const existingFeishuId = FEISHU_PLUGIN_ID_CANDIDATES.find((id) => Boolean(pEntries[id]));
+    let inheritedEntry = existingFeishuId ? pEntries[existingFeishuId] : undefined;
+    if (existingFeishuId !== canonicalFeishuId && inheritedEntry && 'config' in inheritedEntry) {
+      // Plugin config is validated against the owning plugin's configSchema;
+      // another Feishu plugin's settings would make the entry invalid.
+      inheritedEntry = { ...inheritedEntry };
+      delete inheritedEntry.config;
+      console.log(`[sanitize] Dropped plugins.entries.${existingFeishuId}.config while moving to ${canonicalFeishuId}`);
+    }
+    const migratesToInstalledPlugin = Boolean(installedFeishuId)
+      && canonicalFeishuId === installedFeishuId
+      && FEISHU_PLUGIN_ID_CANDIDATES.some((id) => (
+        id !== canonicalFeishuId && (allowArr.includes(id) || Boolean(pEntries[id]))
+      ));
 
     const normalizedAllow = allowArr.filter((id) => !isFeishuPluginId(id));
     normalizedAllow.push(canonicalFeishuId);
@@ -860,7 +955,7 @@ function normalizeFeishuPluginRegistration(
     }
 
     const nextEntry = {
-      ...(existingFeishuEntry || {}),
+      ...(inheritedEntry || {}),
       ...(pEntries[canonicalFeishuId] || {}),
       enabled: true,
     };
@@ -874,6 +969,10 @@ function normalizeFeishuPluginRegistration(
         delete pEntries[id];
         modified = true;
       }
+    }
+    if (migratesToInstalledPlugin && canonicalFeishuId === DEFAULT_FEISHU_PLUGIN_ID
+      && migrateLegacyFeishuChannelConfig(config, installedChannelSchema)) {
+      modified = true;
     }
   } else {
     // Feishu channel not configured — remove all feishu plugin entries
@@ -901,13 +1000,13 @@ function normalizeFeishuPluginRegistration(
  * A failed upgrade leaves that manifest installed and the config unchanged.
  */
 export async function syncFeishuPluginRegistrationWithInstalledPlugin(): Promise<void> {
-  const installedFeishuId = await resolveInstalledFeishuPluginId();
-  if (!installedFeishuId) return;
+  const installed = await resolveInstalledFeishuPlugin();
+  if (!installed) return;
   await mutateOpenClawConfig((config) => {
     const configured = config as Record<string, unknown>;
     if (!isPlainRecord(configured.plugins)) return;
-    if (normalizeFeishuPluginRegistration(configured, installedFeishuId).modified) {
-      console.log(`[plugin] Re-pointed Feishu plugin activation at installed plugin: ${installedFeishuId}`);
+    if (normalizeFeishuPluginRegistration(configured, installed.id, installed.channelSchema).modified) {
+      console.log(`[plugin] Re-pointed Feishu plugin activation at installed plugin: ${installed.id}`);
     }
   });
 }
@@ -3791,11 +3890,12 @@ export async function sanitizeOpenClawConfig(): Promise<void> {
         }
       }
 
+      const installedFeishu = await resolveInstalledFeishuPlugin();
       const {
         modified: feishuModified,
         canonicalFeishuId,
         isFeishuConfigured,
-      } = normalizeFeishuPluginRegistration(config, await resolveInstalledFeishuPluginId());
+      } = normalizeFeishuPluginRegistration(config, installedFeishu?.id ?? null, installedFeishu?.channelSchema);
       if (feishuModified) modified = true;
 
       // ── wecom-openclaw-plugin → wecom migration ────────────────
