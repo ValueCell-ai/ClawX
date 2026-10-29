@@ -196,6 +196,7 @@ export class GatewayManager extends EventEmitter {
   private startLock = false;
   private lastSpawnSummary: string | null = null;
   private recentStartupStderrLines: string[] = [];
+  private lastProcessOutputAt = 0;
   private readonly startupTraceCollector = new GatewayStartupTraceCollector();
   private pendingRequests: Map<string, PendingGatewayRequest> = new Map();
   private deviceIdentity: DeviceIdentity | null = null;
@@ -448,9 +449,11 @@ export class GatewayManager extends EventEmitter {
               getProcessExitCode: () => this.processExitCode,
               // A code-1012 in-process reload normally returns within seconds.
               // Use a smaller bounded retry budget for an owned process that
-              // stopped serving WS, while cold startup uses the explicit
-              // readiness deadline in waitForGatewayReady.
-              ...(recoveringOwnedProcess ? { retries: 50 } : {}),
+              // stopped serving WS, while a cold start waits as long as the
+              // new process keeps writing output.
+              ...(recoveringOwnedProcess
+                ? { retries: 50 }
+                : { getLastProgressAt: () => this.lastProcessOutputAt }),
             });
           } catch (error) {
             // A process that remains alive but never emits a challenge is
@@ -1003,6 +1006,7 @@ export class GatewayManager extends EventEmitter {
       getCurrentState: () => this.status.state,
       getShouldReconnect: () => this.shouldReconnect,
       onStderrLine: (line) => {
+        this.lastProcessOutputAt = Date.now();
         this.compactionActivity.recordStderrLine(line);
         recordGatewayStartupStderrLine(this.recentStartupStderrLines, line);
         const traceStage = this.startupTraceCollector.record(line);

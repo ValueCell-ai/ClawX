@@ -17,6 +17,8 @@ export interface OpenClawCommandResult {
   cwd: string;
   durationMs: number;
   timedOut?: boolean;
+  /** The command printed its completion output but had not exited within the grace period. */
+  completedByOutput?: boolean;
   error?: string;
 }
 
@@ -24,7 +26,16 @@ export interface OpenClawCommandOptions {
   /** Used in log lines, e.g. `doctor`. */
   label: string;
   timeoutMs: number;
+  /**
+   * Returns true once stdout shows the command's work is persisted. Some
+   * OpenClaw commands keep the process alive afterwards, so a process still
+   * running `completionGraceMs` later is stopped and reported as successful.
+   */
+  completeWhen?: (stdout: string) => boolean;
+  completionGraceMs?: number;
 }
+
+const DEFAULT_COMPLETION_GRACE_MS = 5_000;
 
 function appendCommandOutput(
   label: string,
@@ -72,7 +83,7 @@ export async function runOpenClawCommand(
   args: string[],
   options: OpenClawCommandOptions,
 ): Promise<OpenClawCommandResult> {
-  const { label, timeoutMs } = options;
+  const { label, timeoutMs, completeWhen, completionGraceMs = DEFAULT_COMPLETION_GRACE_MS } = options;
   const openclawDir = getOpenClawDir();
   const entryScript = getOpenClawEntryPath();
   const command = `openclaw ${args.join(' ')}`;
@@ -123,10 +134,13 @@ export async function runOpenClawCommand(
     let stdoutTruncated = false;
     let stderrTruncated = false;
     let settled = false;
+    let completionTimer: ReturnType<typeof setTimeout> | undefined;
 
     const finish = (result: Omit<OpenClawCommandResult, 'durationMs'>) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timeout);
+      clearTimeout(completionTimer);
       resolve({
         ...result,
         durationMs: Date.now() - startedAt,
@@ -157,6 +171,25 @@ export async function runOpenClawCommand(
       stdout = next.output;
       stdoutBytes = next.bytes;
       stdoutTruncated = next.truncated;
+      if (completeWhen && !completionTimer && !settled && completeWhen(stdout)) {
+        completionTimer = setTimeout(() => {
+          logger.warn(`OpenClaw ${label} reported completion but was still running after ${completionGraceMs}ms; stopping it`);
+          try {
+            child.kill();
+          } catch {
+            // ignore
+          }
+          finish({
+            success: true,
+            exitCode: null,
+            stdout,
+            stderr,
+            command,
+            cwd: openclawDir,
+            completedByOutput: true,
+          });
+        }, completionGraceMs);
+      }
     });
 
     child.stderr?.on('data', (data) => {

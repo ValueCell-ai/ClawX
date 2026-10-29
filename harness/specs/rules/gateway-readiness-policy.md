@@ -20,6 +20,11 @@ Gateway manager fallback may mark readiness true after its timeout, but it must 
 Managed cold-start readiness must use a finite deadline. When a ClawX-owned process
 remains alive without serving the readiness challenge, Main must reclaim that stale
 process before scheduling another startup attempt instead of waiting on the same PID.
+The deadline follows the Gateway's output: a cold start fails after 180 seconds
+without any Gateway output, or after 10 minutes in total. A fixed deadline measured
+from spawn killed slow but progressing upgraded Windows starts. Terminating a Gateway
+that missed its deadline also exits with code 1 on Windows. That exit is not a config
+failure and must not trigger the startup Doctor repair.
 
 The ACP child is a Gateway client that also opens OpenClaw shared state. Main forks
 it only after the managed Gateway reports a connection, with a finite wait that fails

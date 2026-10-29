@@ -197,6 +197,33 @@ the old 10-minute timeout killed it. Killing Doctor mid-migration is worse than
 waiting. Doctor's stdout is logged at info level, because the ClawX log is
 otherwise the only place an issue report shows which step a long repair is in.
 
+### Slow upgraded starts and the readiness deadline
+
+The 2026-10-29 report came from the same laptop after a clean overwrite
+install. Every Gateway start was slow before plugin loading:
+
+- `cli.main.gateway-run-select-environment` took 12-21 s, which is mostly
+  module import.
+- `cli.bootstrap.admission.state-snapshot` took 5-21 s.
+- `gateway.server-start-import` was reached after 28-95 s.
+
+Plugin loading for four channel plugins then blocked the event loop for
+70-90 s, with no output (`liveness heartbeat delayed: overdue=40952ms`). The
+one start that succeeded became ready 85 s after spawn.
+
+The readiness deadline was a fixed 120 s from spawn, so later starts were
+killed during plugin loading. On Windows the forced exit reports code 1,
+which the startup recovery treated as a config failure. Each kill was
+followed by a 12-minute Doctor run, then another start that was killed the
+same way. That cost over an hour.
+
+The readiness deadline now follows Gateway output: 180 s without output, or
+10 minutes in total. A readiness-timeout exit never triggers Doctor
+(`isGatewayReadinessTimeoutError`). The slow module import is not yet
+explained. A likely contributor is Defender real-time scanning: the per-user
+installer cannot add its Defender exclusion, which needs elevation, and the
+bundle holds about 54k files. That has not been measured.
+
 ### Windows: stale 2026.7.1 extensions after an overwrite install
 
 The stale bundled extensions above were real files in
@@ -495,6 +522,12 @@ can restart the channel.
   retried one id at a time. A timeout is not retried. Each fingerprint is
   attempted once, so a persistent failure leaves only the status warning and
   does not slow every launch.
+- **Lingering CLI.** On the 2026-10-28 Windows laptop, the CLI printed
+  `Enabled plugin "<id>". Saved for the next Gateway start.` for all four ids,
+  then stayed alive until the 210 s timeout, delaying the Gateway start. That
+  line is printed after the change is persisted. So once every id has printed
+  it, ClawX gives the CLI 5 s to exit, then stops it and counts the batch as
+  successful (`completeWhen` in `runOpenClawCommand`).
 - **Unmigrated state.** The CLI runs only after the managed Gateway has become
   ready on the current OpenClaw version. ClawX records that version as
   `gatewayReadyOpenClawVersion` in the consent cache. Until then, consent is

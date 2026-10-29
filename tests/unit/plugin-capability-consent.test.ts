@@ -101,6 +101,25 @@ describe('ClawX plugin capability consent', () => {
     expect(mocks.runCommand).toHaveBeenCalledTimes(1);
   });
 
+  it('treats the CLI as finished once it has reported every id as enabled', async () => {
+    addMirror('wecom', 'wecom');
+    addMirror('qqbot', 'openclaw-qqbot');
+    mocks.runCommand.mockImplementation(async (args: string[]) => {
+      acceptFor(args.slice(2, -1));
+      return commandResult(true, { exitCode: null, completedByOutput: true });
+    });
+    const { ensureClawXPluginCapabilityConsent, hasEnabledEveryPlugin } = await import('@electron/utils/plugin-capability-consent');
+
+    const summary = await ensureClawXPluginCapabilityConsent(enabledConfig(['wecom', 'openclaw-qqbot']), { cachePath });
+    expect(summary.status).toBe('accepted');
+
+    const { completeWhen } = mocks.runCommand.mock.calls[0][1] as { completeWhen: (stdout: string) => boolean };
+    const wecomLine = 'Enabled plugin "wecom". Saved for the next Gateway start.\n';
+    expect(completeWhen(wecomLine)).toBe(false);
+    expect(completeWhen(`${wecomLine}Enabled plugin "openclaw-qqbot". Saved for the next Gateway start.\n`)).toBe(true);
+    expect(hasEnabledEveryPlugin('Enabled plugin "openclaw-qqbot-extra".', ['openclaw-qqbot'])).toBe(false);
+  });
+
   it('never enables a plugin that is disabled, denied, outside the allowlist, or not ClawX-owned', async () => {
     addMirror('wecom', 'wecom');
     addMirror('dingtalk', 'dingtalk');

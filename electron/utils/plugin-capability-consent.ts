@@ -124,10 +124,20 @@ function summarizeFailure(result: { stderr: string; stdout: string; error?: stri
   return result.error ? `${result.error}${output ? `: ${output}` : ''}` : output;
 }
 
+/**
+ * `plugins enable` prints this per id once the change is persisted. On Windows
+ * the CLI can then stay alive until the timeout (210s for four ids in the
+ * field), holding up the Gateway start.
+ */
+export function hasEnabledEveryPlugin(stdout: string, pluginIds: string[]): boolean {
+  return pluginIds.every((pluginId) => stdout.includes(`Enabled plugin "${pluginId}".`));
+}
+
 async function enableWithConsent(pluginIds: string[]): Promise<{ success: boolean; timedOut: boolean }> {
   const result = await runOpenClawCommand(['plugins', 'enable', ...pluginIds, '--accept-capabilities'], {
     label: 'plugin capability consent',
     timeoutMs: BASE_TIMEOUT_MS + PER_PLUGIN_TIMEOUT_MS * pluginIds.length,
+    completeWhen: (stdout) => hasEnabledEveryPlugin(stdout, pluginIds),
   });
   if (!result.success) {
     logger.warn(`[plugin] Capability consent failed for ${pluginIds.join(', ')}: ${summarizeFailure(result)}`);

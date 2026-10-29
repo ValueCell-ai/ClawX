@@ -194,6 +194,11 @@ export function getGatewayStartupFailureReason(startupStderrLines: string[]): st
   return (failure ?? lines.at(-1) ?? '').replace(/^.*?Gateway failed to start:\s*/, '');
 }
 
+/** The error `waitForGatewayReady` throws when its readiness deadline passes. */
+export function isGatewayReadinessTimeoutError(error: unknown): boolean {
+  return error instanceof Error && /^Gateway failed to start after \d+ms\b/.test(error.message);
+}
+
 export function getGatewayStartupRecoveryAction(options: {
   startupError: unknown;
   startupStderrLines: string[];
@@ -209,7 +214,10 @@ export function getGatewayStartupRecoveryAction(options: {
     return 'fail';
   }
 
-  const hasGenericConfigExit = options.processExitCode === 1;
+  // ClawX terminates a Gateway that never became ready, and on Windows that
+  // forced exit also reports code 1. It says nothing about the config.
+  const hasGenericConfigExit = options.processExitCode === 1
+    && !isGatewayReadinessTimeoutError(options.startupError);
   if (hasInvalidConfigFailureSignal(options.startupError, options.startupStderrLines)
     || hasGenericConfigExit) {
     // Some packaged OpenClaw 2026.10 builds print only "The CLI command

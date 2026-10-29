@@ -5,6 +5,7 @@ import {
   hasFatalRuntimeFailureSignal,
   hasInvalidConfigFailureSignal,
   hasStartupMigrationLockSignal,
+  isGatewayReadinessTimeoutError,
   isGatewayStillStartingError,
   isInvalidConfigSignal,
   isTransientGatewayStartError,
@@ -135,6 +136,30 @@ describe('getGatewayStartupRecoveryAction', () => {
       maxAttempts: 3,
     });
     expect(action).toBe('repair');
+  });
+
+  it('does not run doctor when ClawX terminated a Gateway that never became ready', () => {
+    const readinessTimeout = new Error('Gateway failed to start after 120014ms (256 readiness probes, port 18789)');
+    expect(isGatewayReadinessTimeoutError(readinessTimeout)).toBe(true);
+    expect(getGatewayStartupRecoveryAction({
+      startupError: readinessTimeout,
+      startupStderrLines: ['[gateway] startup phase: gateway.server-start-import starting total=28849.2ms'],
+      processExitCode: 1,
+      configRepairAttempted: false,
+      attempt: 1,
+      maxAttempts: 3,
+    })).toBe('fail');
+  });
+
+  it('still repairs a config error reported before the readiness timeout', () => {
+    expect(getGatewayStartupRecoveryAction({
+      startupError: new Error('Gateway failed to start after 120014ms (256 readiness probes, port 18789)'),
+      startupStderrLines: configInvalidStderr,
+      processExitCode: 1,
+      configRepairAttempted: false,
+      attempt: 1,
+      maxAttempts: 3,
+    })).toBe('repair');
   });
 
   it('returns repair on first config-invalid failure', () => {
