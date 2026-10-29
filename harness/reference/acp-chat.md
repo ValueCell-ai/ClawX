@@ -64,6 +64,32 @@ Main passes an eight-minute (`480000 ms`) accepted-prompt budget derived from li
 
 A new ACP session can precede native session materialization. Prompt subscription interest must survive an initial `sessions.messages.subscribe` failure, retry after send acceptance, and remain registered for reconnect recovery. During a recovery outage, failed subscription acquisition is retried alongside reconciliation. Releasing or replacing a prompt still releases exactly its own interest. Without this, ordinary tools reach the original `chat.send` connection but recovered tools have no eligible subscriber.
 
+### Gateway reconnect admission and errors
+
+Main and ACP own independent Gateway WebSockets. After a completed turn and
+Gateway restart, new session/new, session/load, session/resume, session/list and
+session/prompt operations wait for ACP's authenticated connection and reconnect
+subscription recovery. The default wait is bounded at 60 seconds; prompt
+admission shares its original deadline across the readiness check before
+subscription acquisition and the recheck immediately before native run creation.
+This queue is separate from the existing accepted/unacknowledged run recovery
+budget. Cancellation or supersession settles the queued prompt and aborts its
+readiness waiter so it cannot send later. Recovery completion is scoped to its
+connection generation, and shutdown rejects all remaining waiters. No previously
+sent chat.send is retried by this gate.
+
+ACP SDK internal errors can retain the original cause in data.details. Main
+extracts only bounded message/details/error/cause fields and safe protocol codes,
+redacts credentials, and uses the resulting description consistently in the
+operation response, log and ACP trace. Arbitrary request/config/headers fields
+are not forwarded. A known reconnect timeout also carries a typed code for the
+Renderer's four-locale explanation while retaining the concrete diagnostic
+reason. Live evidence and validation are tracked in
+[the existing restart task](../specs/tasks/fix-openclaw-2026-10-5-acp-restart.md) and
+[the live verification report](openclaw-patch-live-verification.md#gateway-重启后新一轮消息的入场与错误透出2026-10-30).
+
+### Run-scoped terminal reconciliation
+
 `agent.wait` takes the current run and session key. Native-admitted successor routing is retained in the existing bounded job cache, allowing ACP to discover a run whose live events were missed, including a completed successor. After a further process restart, durable terminal fallback requires an exact `lastRunId`, no active lifecycle owner, a terminal status and a finite end timestamp. The existing sharing authorization runs before and after the wait, and terminal text recovery independently matches transcript run/session receipts. Session-wide status or a later run cannot settle an older prompt. Renderer continues to use ACP notifications and prompt completion, with normal generation, session and workspace guards.
 
 A Gateway lifecycle error is provisional while its retry-grace timer is active. Gateway retains the live assistant buffer during that grace and terminal Chat projection flushes it before clearing run state. If the same run emits a subsequent lifecycle start first, Gateway clears the prior attempt at that retry boundary so old and new attempt text cannot merge. An aborted terminal also includes the buffered assistant snapshot, and the ACP bridge records any unseen suffix before settling the prompt as cancelled. A true error terminal may flush real buffered assistant text as an ordinary delta, but its synthetic error message remains error state rather than assistant prose. The pinned ACP bridge rejects the pending prompt with the Gateway-provided error message rather than converting the error to a successful stop reason. Renderer retains any assistant deltas delivered before that rejection and renders the prompt failure after a non-empty timeline, adjacent to the interrupted output.

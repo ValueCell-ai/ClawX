@@ -125,7 +125,8 @@
             "open": "{{name}} を開く",
             "preview": "{{name}} をプレビュー",
             "openFailed": "添付ファイルを開けませんでした"
-        }
+        },
+        "gatewayReconnectTimeout": "会話の接続の復旧を待機中にタイムアウトしました。もう一度お試しください。"
     },
     "artifactPanel": {
         "tabs": {

@@ -175,6 +175,10 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 function failedOperationMessage(result: AcpChatOperationResult, fallback: string): string {
+  if (result.errorCode === 'ACP_GATEWAY_RECONNECT_TIMEOUT') {
+    const explanation = i18n.t('chat:acp.gatewayReconnectTimeout');
+    return result.error ? `${explanation}\n${result.error}` : explanation;
+  }
   return result.error || fallback;
 }
 

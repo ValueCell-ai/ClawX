@@ -32,6 +32,7 @@ import {
 } from '../utils/control-ui-device-pairing';
 import { logger } from '../utils/logger';
 import { recordAcpTrace } from './acp-trace';
+import { describeAcpError } from './acp-error';
 import { AcpSessionAccessRegistry, type AcpSessionAccessContext } from './acp-session-access-registry';
 import { expandPath } from '../utils/paths';
 import { getSetting } from '../utils/store';
@@ -99,7 +100,7 @@ function ok(generation?: number, sessionUpdates?: AcpSessionUpdateEnvelope[]): A
 }
 
 function fail(error: unknown): AcpChatOperationResult {
-  return { success: false, error: error instanceof Error ? error.message : String(error) };
+  return { success: false, ...describeAcpError(error) };
 }
 
 function failSessionFamily(error: unknown): AcpSessionFamilyResult {
@@ -107,7 +108,7 @@ function failSessionFamily(error: unknown): AcpSessionFamilyResult {
     success: false,
     current: null,
     children: [],
-    error: error instanceof Error ? error.message : String(error),
+    error: describeAcpError(error).error,
   };
 }
 
@@ -509,13 +510,14 @@ export class AcpChatService {
         this.permissionsEnabled = previousPermissionsEnabled;
         this.accessRegistry.restore(previousAccessGrant);
       }
-      logger.error(`[acp-chat] loadSession failed: ${String(error)}`);
+      const failure = fail(error);
+      logger.error(`[acp-chat] loadSession failed: ${failure.error}`);
       this.trace('session/load:failed', {
         sessionKey: payload.sessionKey,
         generation: previousGeneration,
-        details: { error: error instanceof Error ? error.message : String(error) },
+        details: { error: failure.error, errorCode: failure.errorCode },
       });
-      return fail(error);
+      return failure;
     }
   }
 
@@ -575,12 +577,13 @@ export class AcpChatService {
       });
       return ok(generation);
     } catch (error) {
-      logger.error(`[acp-chat] prompt failed: ${String(error)}`);
+      const failure = fail(error);
+      logger.error(`[acp-chat] prompt failed: ${failure.error}`);
       this.trace('session/prompt:failed', {
         sessionKey: payload.sessionKey,
-        details: { error: error instanceof Error ? error.message : String(error) },
+        details: { error: failure.error, errorCode: failure.errorCode },
       });
-      return fail(error);
+      return failure;
     } finally {
       if (this.livePrompts.get(payload.sessionKey) === promptContext) {
         this.livePrompts.delete(payload.sessionKey);

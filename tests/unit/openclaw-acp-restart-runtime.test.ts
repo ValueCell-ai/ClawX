@@ -13,7 +13,7 @@ const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const close of cleanups.splice(0).reverse()) await close(); });
 
 /** Real installed ACP stdio process and real reconnecting GatewayClient. */
-async function runtime(options: { acknowledge?: boolean; grace?: number; unmaterialized?: boolean; reconnectSubscriptionFailures?: number } = {}) {
+async function runtime(options: { acknowledge?: boolean; grace?: number; unmaterialized?: boolean; reconnectSubscriptionFailures?: number; holdReconnectHello?: boolean; readinessTimeout?: number } = {}) {
   const home = await mkdtemp(path.join(tmpdir(), 'clawx-acp-restart-'));
   cleanups.push(() => rm(home, { recursive: true, force: true }));
   const config = path.join(home, 'openclaw.json');
@@ -34,6 +34,7 @@ async function runtime(options: { acknowledge?: boolean; grace?: number; unmater
   let waitResult: Json = { status: 'timeout' };
   let holdWait = false;
   const heldWaits: Array<() => void> = [];
+  const heldHellos: Array<() => void> = [];
   server.on('connection', (ws) => {
     if (offline) { ws.close(1012, 'fixture restart'); return; }
     socket = ws;
@@ -46,6 +47,11 @@ async function runtime(options: { acknowledge?: boolean; grace?: number; unmater
       if (request.method === 'connect') {
         connects++;
         payload = { type: 'hello-ok', protocol: 3, server: { version: 'fixture', connId: String(connects) }, features: { methods: [], events: [] }, snapshot: {}, policy: { tickIntervalMs: 60_000 } };
+        if (connects > 1 && options.holdReconnectHello) {
+          const hello = payload;
+          heldHellos.push(() => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'res', id: request.id, ok: true, payload: hello })); });
+          return;
+        }
       } else if (request.method === 'sessions.resolve') payload = { key: sessionKey };
       else if (request.method === 'sessions.list') payload = { sessions: [{ key: sessionKey, sessionId: 'native-session' }] };
       else if (request.method === 'sessions.messages.subscribe') {
@@ -74,7 +80,9 @@ async function runtime(options: { acknowledge?: boolean; grace?: number; unmater
   });
   const port = (server.address() as { port: number }).port;
   const child = spawn(process.execPath, [path.resolve('node_modules/openclaw/dist/server-DkfYuk25.mjs'), '--url', `ws://127.0.0.1:${port}`, '--token', 'fixture', '--verbose'], {
-    env: { ...process.env, HOME: home, OPENCLAW_STATE_DIR: home, OPENCLAW_CONFIG_PATH: config, OPENCLAW_ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS: String(options.grace ?? 480_000) },
+    env: { ...process.env, HOME: home, OPENCLAW_STATE_DIR: home, OPENCLAW_CONFIG_PATH: config,
+      OPENCLAW_ACP_ACCEPTED_PROMPT_RECOVERY_GRACE_MS: String(options.grace ?? 480_000),
+      ...(options.readinessTimeout ? { OPENCLAW_ACP_GATEWAY_RECONNECT_TIMEOUT_MS: String(options.readinessTimeout) } : {}) },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   cleanups.push(async () => {
@@ -93,7 +101,7 @@ async function runtime(options: { acknowledge?: boolean; grace?: number; unmater
     if (typeof message.id === 'number') {
       const waiter = pending.get(message.id);
       pending.delete(message.id);
-      if (message.error) waiter?.reject(new Error(message.error.message));
+      if (message.error) waiter?.reject(Object.assign(new Error(message.error.message), { code: message.error.code, data: message.error.data }));
       else waiter?.resolve(message.result);
     }
   });
@@ -120,8 +128,10 @@ async function runtime(options: { acknowledge?: boolean; grace?: number; unmater
       socket!.send(JSON.stringify({ type: 'event', event: eventName, payload }));
     };
     return {
-      updates, requests, runId, outcome,
+      updates, requests, runId, outcome, call, sessionId: session.sessionId, home,
       get connects() { return connects; },
+      get diagnostics() { return diagnostics; },
+      releaseHello: () => { options.holdReconnectHello = false; for (const release of heldHellos.splice(0)) release(); },
       setWaitResult: (result: Json) => { waitResult = result; },
       holdWait: () => { holdWait = true; },
       releaseWait: () => { holdWait = false; for (const release of heldWaits.splice(0)) release(); },
@@ -135,6 +145,73 @@ async function runtime(options: { acknowledge?: boolean; grace?: number; unmater
 }
 
 describe('installed OpenClaw ACP restart continuation', () => {
+  it.each(['retained', 'fresh', 'load'] as const)('waits for ACP authentication before the next %s-session prompt after a completed turn', async (mode) => {
+    const r = await runtime({ holdReconnectHello: true });
+    r.chat(r.runId, undefined, 'final', 'first completed');
+    await expect(r.outcome).resolves.toEqual({ result: { stopReason: 'end_turn' } });
+    r.disconnect();
+    await expect.poll(() => r.diagnostics.includes('gateway disconnected')).toBe(true);
+    r.reconnect(); // The Gateway endpoint is available; ACP's hello is still held.
+    let settled = false;
+    const next = (async () => {
+      let id = r.sessionId;
+      if (mode === 'fresh') id = (await r.call('session/new', { cwd: r.home, mcpServers: [], _meta: { sessionKey } })).sessionId;
+      if (mode === 'load') { id = sessionKey; await r.call('session/load', { sessionId: id, cwd: r.home, mcpServers: [] }); }
+      return r.call('session/prompt', { sessionId: id, prompt: [{ type: 'text', text: 'next turn' }] });
+    })().then((result) => { settled = true; return result; }, (error) => { settled = true; throw error; });
+    await new Promise((resolve) => setTimeout(resolve, mode === 'retained' ? 5500 : 200));
+    expect(settled).toBe(false);
+    expect(r.requests.filter((q) => q.method === 'chat.send')).toHaveLength(1);
+    await expect.poll(() => r.connects, { timeout: 10_000 }).toBe(2);
+    r.releaseHello();
+    await expect.poll(() => r.requests.filter((q) => q.method === 'chat.send').length).toBe(2);
+    const nextRun = String(r.requests.filter((q) => q.method === 'chat.send')[1].params.idempotencyKey);
+    r.chat(nextRun, undefined, 'final', 'next completed');
+    await expect(next).resolves.toEqual({ stopReason: 'end_turn' });
+  }, 30_000);
+
+  it('cancels a queued prompt without sending it when the ACP connection recovers', async () => {
+    const r = await runtime({ holdReconnectHello: true });
+    r.chat(r.runId, undefined, 'final', 'first completed'); await r.outcome;
+    r.disconnect();
+    await expect.poll(() => r.diagnostics.includes('gateway disconnected')).toBe(true);
+    r.reconnect();
+    const next = r.call('session/prompt', { sessionId: r.sessionId, prompt: [{ type: 'text', text: 'cancel this' }] });
+    r.cancel();
+    await expect(next).resolves.toEqual({ stopReason: 'cancelled' });
+    await expect.poll(() => r.connects, { timeout: 10_000 }).toBe(2);
+    r.releaseHello();
+    await r.call('session/list', {}); // Recovery processing barrier.
+    expect(r.requests.filter((q) => q.method === 'chat.send')).toHaveLength(1);
+  }, 20_000);
+
+  it('supersedes a queued prompt and sends only its replacement', async () => {
+    const r = await runtime({ holdReconnectHello: true });
+    r.chat(r.runId, undefined, 'final', 'first completed'); await r.outcome;
+    r.disconnect();
+    await expect.poll(() => r.diagnostics.includes('gateway disconnected')).toBe(true);
+    r.reconnect();
+    const first = r.call('session/prompt', { sessionId: r.sessionId, prompt: [{ type: 'text', text: 'old queued turn' }] });
+    const next = r.call('session/prompt', { sessionId: r.sessionId, prompt: [{ type: 'text', text: 'replacement turn' }] });
+    await expect(first).resolves.toEqual({ stopReason: 'cancelled' });
+    await expect.poll(() => r.connects, { timeout: 10_000 }).toBe(2); r.releaseHello();
+    await expect.poll(() => r.requests.filter((q) => q.method === 'chat.send').length).toBe(2);
+    const send = r.requests.filter((q) => q.method === 'chat.send')[1];
+    expect(send.params.message).toContain('replacement turn');
+    r.chat(String(send.params.idempotencyKey), undefined, 'final', 'replacement completed');
+    await expect(next).resolves.toEqual({ stopReason: 'end_turn' });
+  }, 20_000);
+
+  it('returns a concrete bounded reconnect timeout before sending a native run', async () => {
+    const r = await runtime({ readinessTimeout: 1000 });
+    r.chat(r.runId, undefined, 'final', 'first completed'); await r.outcome;
+    r.disconnect();
+    await expect.poll(() => r.diagnostics.includes('gateway disconnected')).toBe(true);
+    await expect(r.call('session/prompt', { sessionId: r.sessionId, prompt: [{ type: 'text', text: 'timeout turn' }] }))
+      .rejects.toMatchObject({ code: -32000, message: 'ACP did not reconnect to Gateway within 1s', data: { code: 'ACP_GATEWAY_RECONNECT_TIMEOUT' } });
+    expect(r.requests.filter((q) => q.method === 'chat.send')).toHaveLength(1);
+  }, 20_000);
+
   it('survives more than five seconds, rejects unrelated lineage, streams tools and settles the original prompt', async () => {
     const r = await runtime({ unmaterialized: true, reconnectSubscriptionFailures: 2 });
     await new Promise((resolve) => setTimeout(resolve, 50)); // let chat.send acknowledgement reach ACP

@@ -52,6 +52,19 @@ ACP conversation must remain selected through an incomplete reconnect catalog;
 explicit deletion remains authoritative. Native recovery admission and wait sharing
 authorization must remain intact.
 
+Gateway ready in Main does not establish ACP readiness. New ACP session operations
+and prompts must wait for the ACP-owned authenticated connection and subscription
+recovery, under a finite deadline. A queued prompt has not entered native run
+recovery: cancelling or superseding it must remove its waiter and prevent later
+submission. A disconnect during subscription acquisition requires a readiness
+recheck under the same admission deadline. Never retry a possibly transmitted
+chat.send to repair this gap. Exercise fresh, loaded and retained sessions with a
+completed first turn and a Gateway endpoint available before ACP hello completes.
+Read and sanitize concrete protocol reason fields and codes for UI/log/trace
+delivery; never dump arbitrary error data. Known reconnect timeout explanations
+must cover every UI locale. See
+[ACP connection readiness](../../reference/acp-chat.md#gateway-reconnect-admission-and-errors).
+
 The [2026.10.5 compaction repair](../tasks/fix-openclaw-2026-10-5-acp-compaction.md)
 must retain native run ownership and scoped Gateway authorization. Verify both
 command and direct recovery producers, not only metadata helpers. A loaded exact

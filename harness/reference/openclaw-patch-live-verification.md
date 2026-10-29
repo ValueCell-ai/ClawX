@@ -247,3 +247,72 @@ ACP 生命周期仍完整送达。该通用 RPC 超时策略未在本次修改�
 ClawX 此时没有 pending prompt，仍收到同一 ID 的两个 ACP 状态并原位完成。
 页面 reload 并重新选择会话后，三次本次新增压缩仍恰好显示三条完成行。
 证据：`rpc-subscriptions.json`、`live-rpc-direct.json`、`live-final-replayed.png`。
+
+## Gateway 重启后新一轮消息的入场与错误透出（2026-10-30）
+
+用户反馈的是“已完成一轮对话，重启 Gateway 后发送新 prompt 失败”，与前面的
+“已接收运行被重启中断后续跑”不同。用户导出的 Windows 调试包显示：首轮 WebUI
+和 ACP 推理正常，重启并等待 Gateway ready 后，继续同一逻辑会话返回
+`Internal error`，没有新的推理请求。包中没有保留 `error.data`，不能仅凭该包
+确定那一次异常的具体原因。
+
+在当前版本的真实 ACP 子进程与 Gateway 上独立复现后，完整错误是：
+
+```json
+{"code":-32603,"message":"Internal error","data":{"details":"gateway not connected"}}
+```
+
+Main 与 ACP 分别持有到 Gateway 的 WebSocket。Main 的 `gatewayReady=true`
+以及存活的 ACP stdio 通道，都不能证明 ACP 自己的连接已完成认证重连。
+旧适配器的 session/new、session/load 在断连时可能降级成功，随后 chat.send
+才在发出请求前失败；ACP SDK 把原始原因包装进 data.details，Main 又只记录
+message，因而界面最终只显示 Internal error。
+
+已安装运行时的对照覆盖了新建、加载和直接复用 ACP session 三条路径：仅等待
+Gateway ready 都能触发故障，等 ACP 实际恢复后都能发送。故障期间，新连接的
+Gateway 客户端仍能在同一逻辑会话成功聊天，会话目录也仍有该会话。以下真实
+ClawX 界面对照使用 macOS 真实 profile 和 `zai/glm-5.3-flash`，没有替换 IPC
+handler 或模拟模型响应。
+
+| 条件 | Gateway ready 到实际点击发送 | 结果 |
+| --- | --- | --- |
+| 修复前，全新进程和新会话，首轮正常后只重启一次 | 108 ms | 点击后 20 ms 内 Internal error |
+| 修复前，同一会话的延时对照，重启后额外等待 15 秒 | 15,100 ms | 正常收到真实模型回复 |
+| 修复后，新会话首轮正常，重启后立即发送 | 110 ms | 正常收到“立即续聊修复成功”，error=null |
+
+独立重复测试前正常退出了旧 ClawX、ACP 和 Gateway，重新启动后先确认首轮成功且
+error=null，再执行一次重启；点击时记录新 PID、running 和 gatewayReady=true。
+因此有效的立即发送故障不依赖上一条失败对话的状态。首次在 starting 阶段发送的
+试操作不计入这个证据；连续强制终止触发原生 restart-loop breaker 的额外超时，
+也没有被混作同一个错误或通过结果。本地成功对照不能代替 Windows 真机验证，
+也不能推出每个环境固定等 15 秒都足够。
+
+修复由 ACP 自己的连接代际门槛控制，新操作等待认证和订阅恢复。新 prompt 的
+两次就绪检查共用一个默认 60 秒入场截止时间；取消、取代和退出会清理等待者，
+尚未提交的消息不会在取消后补发。既有 accepted/unacknowledged run 恢复预算
+保持不变，也不重试已发送或结果不明的 chat.send。Main 向界面、日志和 trace
+提供有界、脱敏的具体原因和错误码，已知重连超时另有四语言说明。
+完整行为约束见 [ACP connection readiness](acp-chat.md#gateway-reconnect-admission-and-errors)，
+可执行验收并入[现有重启修复任务](../specs/tasks/fix-openclaw-2026-10-5-acp-restart.md)。
+
+后续测试需要保留的经验：
+
+- 将“Gateway 端点已可用”和“ACP hello 已完成”分别控制。只在 fixture 确认 ACP
+  已重连后才发送的测试会隐藏该窗口；新测试在端点可用时暂扣 ACP hello，并覆盖
+  新建、加载、复用、取消、取代、超时和迟到的旧代际完成。
+- 区分原始错误的 message 与 data.details，只提取有限的原因字段和安全错误码，
+  不把 request/config/headers 等整个对象倾倒到界面或导出包。
+- 历史回放夹具依据实际发送完成来返回 settled replay，不能将“第二次加载”
+  当作发送已经发生的证据；初始化和页面 reload 都可能增加加载次数。
+
+最终验证：239 个单测文件通过，**2897 个测试通过、3 个原有跳过项**；ACP inline
+timeline Electron E2E **31 项通过**。完整类型检查、lint（0 错误、7 个未改动
+组件的既有警告）、comms replay/compare、harness task validate、选定流程
+dry-run 和 harness CI 均通过。
+
+忽略目录 `artifacts/review/acp-post-restart-20261030/` 保存修复前独立重复的
+`live-clean-repeat-evidence.json`、`live-clean-repeat-error.png` 和延时对照的
+`live-wait15-evidence.json`、`live-wait15-success.png`。
+`artifacts/review/acp-post-restart-fix-20261030/` 保存修复后的
+`live-fixed-evidence.json`、`live-fixed-success.png`、`live-fixed-dev.log` 和验证日志。
+详细 PID、毫秒时间线及中间试操作留在本地证据中，不重复保存在任务 spec。

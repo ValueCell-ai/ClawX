@@ -125,7 +125,8 @@
             "open": "打开 {{name}}",
             "preview": "预览 {{name}}",
             "openFailed": "无法打开附件"
-        }
+        },
+        "gatewayReconnectTimeout": "等待对话连接恢复超时，请稍后重试。"
     },
     "artifactPanel": {
         "tabs": {

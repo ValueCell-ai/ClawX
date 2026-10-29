@@ -398,7 +398,7 @@ index 19956c366dfa4a3c3037e2d2e6b42905e31014a0..478781584ccf12f8faa70a4e1ac21a8d
  					...fact,
  					sourceIdentity: fact.capturedIdentity
 diff --git a/dist/server-DkfYuk25.mjs b/dist/server-DkfYuk25.mjs
-index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc66dafe382 100644
+index 543e336a26fb1b13b08fe2ee745cc6123f95364a..bf6bb662a31310b565bca652079440067dc4650a 100644
 --- a/dist/server-DkfYuk25.mjs
 +++ b/dist/server-DkfYuk25.mjs
 @@ -6,6 +6,7 @@ import { a as asOptionalRecord, c as isRecord, o as asRecord } from "./record-co
@@ -409,6 +409,15 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
  import { t as finalizeActiveDebugProxyCaptures } from "./runtime-cleanup-AyeSBMlV.mjs";
  import { a as executeSqliteQueryTakeFirstSync, i as executeSqliteQuerySync, l as prepareSqliteQuerySync, n as createSqliteQueryCache, o as getNodeSqliteKysely } from "./kysely-sync-_Jx0TluS.mjs";
  import { i as routeLogsToStderr } from "./console-Dzm4OzJw.mjs";
+@@ -36,7 +37,7 @@ import path from "node:path";
+ import os from "node:os";
+ import { randomUUID } from "node:crypto";
+ import { Readable, Writable } from "node:stream";
+-import { AGENT_METHODS, AgentSideConnection, PROTOCOL_VERSION, ndJsonStream } from "@agentclientprotocol/sdk";
++import { AGENT_METHODS, AgentSideConnection, PROTOCOL_VERSION, RequestError, ndJsonStream } from "@agentclientprotocol/sdk";
+ //#region src/acp/event-ledger.types.ts
+ const DEFAULT_MAX_SESSIONS = 200;
+ const DEFAULT_MAX_EVENTS_PER_SESSION = 5e3;
 @@ -254,7 +255,7 @@ function appendSqliteUpdate(db, state, params) {
  	queries.insertEvent({
  		sessionId: params.sessionId,
@@ -759,30 +768,47 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
  	}
  	async prompt(params) {
  		const session = this.sessionStore.getSession(params.sessionId);
-@@ -1248,6 +1320,7 @@ var AcpTranslatorPromptStream = class {
+@@ -1247,7 +1319,13 @@ var AcpTranslatorPromptStream = class {
+ 			settled: createDeferredCore()
  		};
  		this.pendingPromptAdmissions.set(params.sessionId, admission);
- 		if (admission.previous) admission.previous.closed = true;
+-		if (admission.previous) admission.previous.closed = true;
++		if (admission.previous) {
++			admission.previous.closed = true;
++			admission.previous.closure.resolve();
++		}
++		const readinessAbort = new AbortController();
++		const readinessDeadline = Date.now() + ACP_GATEWAY_RECONNECT_TIMEOUT_MS;
 +		let subscriptionKey;
  		try {
  			if (!this.ownsPromptAdmission(admission)) return { stopReason: "cancelled" };
  			if (session.abortController || this.pendingPrompts.has(params.sessionId)) {
-@@ -1259,8 +1332,14 @@ var AcpTranslatorPromptStream = class {
+@@ -1259,8 +1337,24 @@ var AcpTranslatorPromptStream = class {
  				if (!this.ownsPromptAdmission(admission)) return { stopReason: "cancelled" };
  				admission.previous = void 0;
  			}
++			if (this.opts.waitForGatewayReady) await Promise.race([
++				this.opts.waitForGatewayReady(readinessAbort.signal, readinessDeadline), admission.closure.promise
++			]);
++			if (!this.ownsPromptAdmission(admission)) return { stopReason: "cancelled" };
 +			try {
 +				subscriptionKey = session.sessionKey;
 +				await this.ambient.acquireSessionMessageSubscription(subscriptionKey, true);
 +			} catch (err) { this.log(`prompt subscription failed: ${String(err)}`); }
++			// Subscription acquisition can itself span another disconnect. Recheck
++			// before creating a run; no already-sent prompt is retried here.
++			if (this.opts.waitForGatewayReady) await Promise.race([
++				this.opts.waitForGatewayReady(readinessAbort.signal, readinessDeadline), admission.closure.promise
++			]);
 +			if (!this.ownsPromptAdmission(admission)) return { stopReason: "cancelled" };
  			return await Promise.race([this.submitPrompt(params, session), admission.closure.promise.then(() => ({ stopReason: "cancelled" }))]);
  		} finally {
++			readinessAbort.abort();
 +			if (subscriptionKey) await this.ambient.releaseSessionMessageSubscription(subscriptionKey);
  			admission.settled.resolve();
  			if (this.pendingPromptAdmissions.get(params.sessionId) === admission) this.pendingPromptAdmissions.delete(params.sessionId);
  		}
-@@ -1318,6 +1397,8 @@ var AcpTranslatorPromptStream = class {
+@@ -1318,6 +1412,8 @@ var AcpTranslatorPromptStream = class {
  					const pending = this.getPendingPrompt(params.sessionId, runId);
  					if (!pending) return false;
  					pending.sendAccepted = true;
@@ -791,7 +817,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
  					return true;
  				};
  				const applyTerminalAck = async (ack) => {
-@@ -1432,8 +1513,11 @@ var AcpTranslatorPromptStream = class {
+@@ -1432,8 +1528,11 @@ var AcpTranslatorPromptStream = class {
  		const state = payload.state;
  		const runId = payload.runId;
  		if (!sessionKey || !state) return;
@@ -805,7 +831,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
  		const messageData = state === "delta" ? mergeChatStreamMessage(pending.streamMessage, payload) : payload.message;
  		if (isRecord(messageData) && (state === "delta" || state === "final")) {
  			pending.streamMessage = messageData;
-@@ -1450,8 +1534,10 @@ var AcpTranslatorPromptStream = class {
+@@ -1450,8 +1549,10 @@ var AcpTranslatorPromptStream = class {
  			return;
  		}
  		if (state === "error") {
@@ -818,7 +844,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
  		}
  	}
  	async handleDeltaEvent(pending, messageData) {
-@@ -1470,10 +1556,12 @@ var AcpTranslatorPromptStream = class {
+@@ -1470,10 +1571,12 @@ var AcpTranslatorPromptStream = class {
  			"agent_message_chunk"
  		]]) {
  			const fullText = content?.filter((block) => block?.type === blockType).map((block) => block[field] ?? "").join("\n").trimEnd();
@@ -835,7 +861,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
  			if (this.getPendingPrompt(sessionId, pending.idempotencyKey) !== pending) return false;
  		}
  		return true;
-@@ -1521,6 +1609,7 @@ var AcpTranslatorPromptStream = class {
+@@ -1521,6 +1624,7 @@ var AcpTranslatorPromptStream = class {
  		});
  	}
  	async settleRecoveredPrompt(sessionId, pending, result) {
@@ -843,7 +869,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
  		const signal = this.sessionStore.getSession(sessionId)?.abortController?.signal ?? new AbortController().signal;
  		const reply = await recoverTerminalReply({
  			runId: pending.idempotencyKey,
-@@ -1532,7 +1621,7 @@ var AcpTranslatorPromptStream = class {
+@@ -1532,7 +1636,7 @@ var AcpTranslatorPromptStream = class {
  			outputText: void 0,
  			unavailable: "recovery-cancelled"
  		}));
@@ -852,7 +878,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
  		const sentText = pending.sentText ?? "";
  		const outputText = reply.outputText;
  		const unavailable = reply.unavailable ?? (outputText?.startsWith(sentText) === false ? "reply-rewritten" : void 0);
-@@ -1552,7 +1641,27 @@ var AcpTranslatorPromptStream = class {
+@@ -1552,7 +1656,27 @@ var AcpTranslatorPromptStream = class {
  		await this.emitPromptChunk(pending, "agent_message_chunk", `[OpenClaw interruption] ${message}`, false);
  		await this.rejectPendingPrompt(pending, new Error(message), { claimed: true });
  	}
@@ -881,7 +907,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
  		for (const pending of this.pendingPrompts.values()) {
  			if (pending.sessionKey !== sessionKey) continue;
  			if (runId && pending.idempotencyKey !== runId) continue;
-@@ -1564,6 +1673,16 @@ var AcpTranslatorPromptStream = class {
+@@ -1564,6 +1688,16 @@ var AcpTranslatorPromptStream = class {
  			return pending;
  		}
  	}
@@ -898,7 +924,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
  	reconcilePendingSessionKey(pending, sessionKey) {
  		if (pending.sessionKey === sessionKey) return;
  		this.log(`session key reconciled: ${pending.sessionKey} -> ${sessionKey}`);
-@@ -1590,8 +1709,89 @@ var AcpTranslatorPromptStream = class {
+@@ -1590,8 +1724,89 @@ var AcpTranslatorPromptStream = class {
  };
  //#endregion
  //#region src/acp/translator.replay.ts
@@ -988,7 +1014,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
  	if (role !== "user" && role !== "assistant") return [];
  	if (typeof message.content === "string") return message.content.length > 0 ? [{
  		sessionUpdate: role === "user" ? "user_message_chunk" : "agent_message_chunk",
-@@ -1613,10 +1813,119 @@ function extractReplayChunks(message) {
+@@ -1613,10 +1828,119 @@ function extractReplayChunks(message) {
  			sessionUpdate: "agent_thought_chunk",
  			text: typedBlock.thinking
  		});
@@ -1108,7 +1134,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
  //#region src/acp/translator.session-list.ts
  const ACP_LIST_SESSIONS_DEFAULT_PAGE_SIZE = 100;
  const ACP_LIST_SESSIONS_MAX_PAGE_SIZE = 100;
-@@ -1660,10 +1969,497 @@ function resolveListSessionsPageSize(meta) {
+@@ -1660,10 +1984,497 @@ function resolveListSessionsPageSize(meta) {
  	return Math.min(ACP_LIST_SESSIONS_MAX_PAGE_SIZE, Math.max(1, Math.floor(requested)));
  }
  //#endregion
@@ -1607,7 +1633,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
  		this.gateway = gateway;
  		this.opts = opts;
  		this.sessionStore = sessionStore;
-@@ -1672,6 +2468,7 @@ var AcpTranslatorSessionLifecycle = class {
+@@ -1672,9 +2483,11 @@ var AcpTranslatorSessionLifecycle = class {
  		this.sessionCreateRateLimiter = sessionCreateRateLimiter;
  		this.cancelSessionWork = cancelSessionWork;
  		this.log = log;
@@ -1615,7 +1641,19 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
  	}
  	async newSession(params) {
  		this.assertSupportedSessionSetup(params.mcpServers);
-@@ -1717,7 +2514,7 @@ var AcpTranslatorSessionLifecycle = class {
++		await this.opts.waitForGatewayReady?.();
+ 		this.enforceSessionCreateRateLimit("newSession");
+ 		const sessionId = randomUUID();
+ 		const meta = parseSessionMeta(params["_meta"]);
+@@ -1701,6 +2514,7 @@ var AcpTranslatorSessionLifecycle = class {
+ 	}
+ 	async loadSession(params) {
+ 		this.assertSupportedSessionSetup(params.mcpServers);
++		await this.opts.waitForGatewayReady?.();
+ 		if (!this.sessionStore.hasSession(params.sessionId)) this.enforceSessionCreateRateLimit("loadSession");
+ 		const meta = parseSessionMeta(params["_meta"]);
+ 		const hasExplicitRouting = Boolean(meta.sessionKey || meta.sessionLabel || this.opts.defaultSessionKey || this.opts.defaultSessionLabel);
+@@ -1717,7 +2531,7 @@ var AcpTranslatorSessionLifecycle = class {
  			meta,
  			fallbackKey: routedLedgerReplay.sessionKey ?? params.sessionId
  		});
@@ -1624,7 +1662,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
  			sessionId: params.sessionId,
  			sessionKey
  		});
-@@ -1729,27 +2526,32 @@ var AcpTranslatorSessionLifecycle = class {
+@@ -1729,29 +2543,35 @@ var AcpTranslatorSessionLifecycle = class {
  		});
  		await this.sessionUpdates.startLedgerSession(session, { complete: ledgerReplay.complete });
  		this.log(`loadSession: ${session.sessionId} -> ${session.sessionKey}`);
@@ -1677,8 +1715,19 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
 +		}
  	}
  	async listSessions(params) {
++		await this.opts.waitForGatewayReady?.();
  		const requestedCwd = normalizeOptionalString(params.cwd);
-@@ -1801,11 +2603,13 @@ var AcpTranslatorSessionLifecycle = class {
+ 		if (requestedCwd) assertAbsoluteCwd(requestedCwd, "session/list");
+ 		const fallbackCwd = requestedCwd ?? process.cwd();
+@@ -1785,6 +2605,7 @@ var AcpTranslatorSessionLifecycle = class {
+ 	}
+ 	async resumeSession(params) {
+ 		this.assertSupportedSessionSetup(params.mcpServers ?? []);
++		await this.opts.waitForGatewayReady?.();
+ 		assertAbsoluteCwd(params.cwd, "session/resume");
+ 		const existingSession = this.sessionStore.getSession(params.sessionId);
+ 		if (!existingSession) this.enforceSessionCreateRateLimit("resumeSession");
+@@ -1801,11 +2622,13 @@ var AcpTranslatorSessionLifecycle = class {
  			cwd: params.cwd
  		});
  		await this.sessionUpdates.startLedgerSession(session, { complete: false });
@@ -1692,7 +1741,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
  		await this.cancelSessionWork(session);
  		this.sessionStore.deleteSession(params.sessionId);
  		this.log(`closeSession: ${params.sessionId}`);
-@@ -2309,6 +3113,16 @@ var AcpTranslatorSessionUpdates = class {
+@@ -2309,6 +3132,16 @@ var AcpTranslatorSessionUpdates = class {
  			this.options.log(`event ledger session start failed for ${session.sessionId}: ${String(err)}`);
  		}
  	}
@@ -1709,7 +1758,7 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
  	readLedgerReplay(params) {
  		return this.readReplay(() => this.options.eventLedger.readReplay(params), `replay fallback for ${params.sessionId}`);
  	}
-@@ -2426,12 +3240,13 @@ var AcpGatewayAgent = class {
+@@ -2426,12 +3259,13 @@ var AcpGatewayAgent = class {
  			log: this.log
  		});
  		const sessionState = new AcpTranslatorSessionState(gateway, this.sessionUpdates, this.log);
@@ -1725,6 +1774,127 @@ index 543e336a26fb1b13b08fe2ee745cc6123f95364a..d3d79ddffddf498ee033439d30483dc6
  		this.newSession = sessionLifecycle.newSession.bind(sessionLifecycle);
  		this.loadSession = sessionLifecycle.loadSession.bind(sessionLifecycle);
  		this.listSessions = sessionLifecycle.listSessions.bind(sessionLifecycle);
+@@ -2455,7 +3289,7 @@ var AcpGatewayAgent = class {
+ 		}
+ 	}
+ 	handleGatewayReconnect() {
+-		this.promptStream.handleGatewayReconnect();
++		return this.promptStream.handleGatewayReconnect();
+ 	}
+ 	handleGatewayDisconnect(reason) {
+ 		this.promptStream.handleGatewayDisconnect(reason);
+@@ -2490,6 +3324,67 @@ var AcpGatewayAgent = class {
+ };
+ //#endregion
+ //#region src/acp/server.ts
++const ACP_GATEWAY_RECONNECT_TIMEOUT_MS = (() => {
++	const value = Number(process.env.OPENCLAW_ACP_GATEWAY_RECONNECT_TIMEOUT_MS);
++	return Number.isSafeInteger(value) && value >= 1000 && value <= 300000 ? value : 60000;
++})();
++// Readiness belongs to this ACP client's authenticated connection, not Main's
++// independent Gateway connection. Each reconnect recovery owns one generation.
++function createAcpGatewayReadiness(timeoutMs = ACP_GATEWAY_RECONNECT_TIMEOUT_MS) {
++	let generation = 0;
++	let ready = false;
++	let stopped = false;
++	let reason;
++	const waiters = new Set();
++	return {
++		invalidate(detail) {
++			ready = false;
++			if (detail) reason = String(detail).slice(0, 500);
++			generation++;
++		},
++		async recover(recovery) {
++			const observed = ++generation;
++			ready = false;
++			try {
++				await recovery();
++			} catch (err) {
++				if (!stopped && observed === generation) reason = formatErrorMessage(err).slice(0, 500);
++				return;
++			}
++			if (stopped || observed !== generation) return;
++			ready = true;
++			reason = void 0;
++			for (const finish of [...waiters]) finish();
++		},
++		wait(signal, deadline = Date.now() + timeoutMs) {
++			if (stopped) return Promise.reject(new Error("ACP Gateway connection is closed"));
++			if (signal?.aborted) return Promise.reject(new Error("ACP Gateway connection wait cancelled"));
++			if (ready) return Promise.resolve();
++			return new Promise((resolve, reject) => {
++				const finish = (error) => {
++					clearTimeout(timer);
++					signal?.removeEventListener("abort", abort);
++					waiters.delete(finish);
++					error ? reject(error) : resolve();
++				};
++				const abort = () => finish(new Error("ACP Gateway connection wait cancelled"));
++				const timer = setTimeout(() => finish(new RequestError(-32000,
++					`ACP did not reconnect to Gateway within ${timeoutMs / 1000}s`,
++					{ code: "ACP_GATEWAY_RECONNECT_TIMEOUT", ...reason ? { details: reason } : {} }
++				)), Math.max(0, deadline - Date.now()));
++				timer.unref?.();
++				waiters.add(finish);
++				signal?.addEventListener("abort", abort, { once: true });
++			});
++		},
++		stop() {
++			stopped = true;
++			ready = false;
++			generation++;
++			for (const finish of [...waiters]) finish(new Error("ACP Gateway connection is closed"));
++		}
++	};
++}
+ const MAX_STARTUP_ACP_BUFFER_BYTES = 1048576;
+ function createStartupInputMonitor(input) {
+ 	const [monitor, readable] = input.tee();
+@@ -2552,6 +3447,7 @@ async function serveAcpGateway(opts = {}) {
+ 	const startupAbortController = new AbortController();
+ 	let stopped = false;
+ 	let gatewayConnected = false;
++	const connectionReadiness = createAcpGatewayReadiness();
+ 	const { promise: gatewayReady, resolve: resolveGatewayReady, reject: rejectReady } = createDeferredCore();
+ 	const rejectGatewayReady = (err) => {
+ 		rejectReady(err instanceof Error ? err : new Error(String(err)));
+@@ -2595,13 +3491,15 @@ async function serveAcpGateway(opts = {}) {
+ 		onHelloOk: () => {
+ 			gatewayConnected = true;
+ 			resolveGatewayReady();
+-			agent?.handleGatewayReconnect();
++			void connectionReadiness.recover(() => agent?.handleGatewayReconnect());
+ 		},
+ 		onConnectError: (err) => {
++			connectionReadiness.invalidate(formatErrorMessage(err));
+ 			rejectGatewayReady(err);
+ 		},
+ 		onClose: (code, reason) => {
+ 			if (stopped) return;
++			connectionReadiness.invalidate(`${code}: ${reason}`);
+ 			rejectGatewayReady(/* @__PURE__ */ new Error(`gateway closed before ready (${code}): ${reason}`));
+ 			agent?.handleGatewayDisconnect(`${code}: ${reason}`);
+ 		}
+@@ -2614,6 +3512,7 @@ async function serveAcpGateway(opts = {}) {
+ 		shuttingDown = (async () => {
+ 			if (!stopped) {
+ 				stopped = true;
++				connectionReadiness.stop();
+ 				startupAbortController.abort();
+ 				startupInput.dispose();
+ 				process.stdin.pause();
+@@ -2676,6 +3575,10 @@ async function serveAcpGateway(opts = {}) {
+ 	new AgentSideConnection((conn) => {
+ 		agent = new AcpGatewayAgent(conn, gateway, {
+ 			...opts,
++			waitForGatewayReady: (signal, deadline) => {
++				if (!gateway.connected) connectionReadiness.invalidate("gateway not connected");
++				return connectionReadiness.wait(signal, deadline);
++			},
+ 			eventLedger,
+ 			sessionStore: sessionStore ?? void 0
+ 		});
 diff --git a/dist/server-chat-M7FtQZJ3.mjs b/dist/server-chat-M7FtQZJ3.mjs
 index c15a706d139ffaae89c5742a5d8c6d9090926a95..c6fe14c6c995faea3850bf57c9171c1ee8292eff 100644
 --- a/dist/server-chat-M7FtQZJ3.mjs

@@ -335,6 +335,7 @@ async function installAcpPromptFailureMock(
   app: ElectronApplication,
   error: string,
   partialReply?: string,
+  errorCode?: string,
 ) {
   await app.evaluate(async ({ app: _app }, input) => {
     const { BrowserWindow, ipcMain } = process.mainModule!.require('electron') as typeof import('electron');
@@ -367,11 +368,11 @@ async function installAcpPromptFailureMock(
           }
           await new Promise((resolve) => setTimeout(resolve, 50));
         }
-        return { id: request.id, ok: true, data: { success: false, error: input.error } };
+        return { id: request.id, ok: true, data: { success: false, error: input.error, ...(input.errorCode ? { errorCode: input.errorCode } : {}) } };
       }
       return originalHostInvoke?.(event, request) ?? { id: request?.id, ok: true, data: {} };
     });
-  }, { error, partialReply });
+  }, { error, partialReply, errorCode });
 }
 
 async function installSettledAcpHydrationMock(
@@ -389,7 +390,7 @@ async function installSettledAcpHydrationMock(
     type IpcInvokeHandler = (event: unknown, request: HostInvokeRequest) => Promise<unknown>;
     const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, IpcInvokeHandler> })._invokeHandlers;
     const originalHostInvoke = handlers?.get('host:invoke');
-    let loadCount = 0;
+    let promptCompleted = false;
     const envelope = (generation: number, update: Record<string, unknown>) => ({
       sessionKey: payload.sessionKey,
       generation,
@@ -400,8 +401,7 @@ async function installSettledAcpHydrationMock(
     ipcMain.removeHandler('host:invoke');
     ipcMain.handle('host:invoke', async (event: unknown, request: HostInvokeRequest) => {
       if (request.module === 'chat' && request.action === 'loadAcpSession') {
-        loadCount += 1;
-        if (loadCount === 1) {
+        if (!promptCompleted) {
           return { id: request.id, ok: true, data: { success: true, generation: 1 } };
         }
         await new Promise((resolve) => setTimeout(resolve, 500));
@@ -441,6 +441,7 @@ async function installSettledAcpHydrationMock(
             },
           });
         }
+        promptCompleted = true;
         return { id: request.id, ok: true, data: { success: true, generation: 1 } };
       }
       return originalHostInvoke?.(event, request) ?? { id: request.id, ok: true, data: {} };
@@ -2165,7 +2166,7 @@ test.describe('ClawX ACP inline timeline', () => {
 
   test('keeps partial output and places a provider prompt failure after the interrupted turn', async ({ launchElectronApp }) => {
     const app = await launchElectronApp({ skipSetup: true });
-    const error = 'Provider finish_reason: content_filter';
+    const error = 'Internal error (-32603): Provider finish_reason: content_filter';
     const partialReply = 'The provider returned this partial result before filtering.';
 
     try {
@@ -2243,6 +2244,26 @@ test.describe('ClawX ACP inline timeline', () => {
       await expect(errorBanner).toContainText('Failed to send prompt');
       await expect(errorBanner).toContainText(error);
       await expect(page.locator('[data-testid="acp-chat-timeline"] + [data-testid="acp-error-banner"]')).toBeVisible();
+    } finally {
+      await closeElectronApp(app);
+    }
+  });
+
+  test('explains an ACP reconnect timeout and displays its concrete protocol detail', async ({ launchElectronApp }) => {
+    const app = await launchElectronApp({ skipSetup: true });
+    const detail = 'ACP did not reconnect to Gateway within 60s (-32000): authentication unavailable';
+    try {
+      await installAcpChatMocks(app);
+      await installAcpPromptFailureMock(app, detail, undefined, 'ACP_GATEWAY_RECONNECT_TIMEOUT');
+      const page = await openChat(app);
+      await page.getByTestId('chat-composer-input').fill('Send immediately after Gateway restart');
+      await page.getByTestId('chat-composer-send').click();
+      const error = page.getByTestId('acp-error-banner');
+      await expect(error).toBeVisible();
+      await expect(error).toContainText('Timed out waiting for the conversation connection to recover. Please try again.');
+      await expect(error).toContainText(detail);
+      await expect(page.getByTestId('chat-composer-send')).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
     } finally {
       await closeElectronApp(app);
     }

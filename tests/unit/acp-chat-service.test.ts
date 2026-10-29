@@ -697,6 +697,32 @@ describe('AcpChatService', () => {
     });
   });
 
+  it('returns and traces a concrete sanitized protocol cause instead of only Internal error', async () => {
+    const { service, connection } = await createService();
+    await service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' });
+    connection.prompt.mockRejectedValueOnce(Object.assign(new Error('Internal error'), {
+      code: -32603, data: { details: 'gateway not connected; token=PRIVATE_TOKEN', request: { prompt: 'PRIVATE_PROMPT' } },
+    }));
+    const result = await service.sendPrompt({ sessionKey: 'agent:pi:s1', cwd: '/repo', message: 'next turn' });
+    expect(result).toEqual({ success: false, error: 'Internal error (-32603): gateway not connected; token=[redacted]' });
+    expect(loggerMock.error).toHaveBeenCalledWith(`[acp-chat] prompt failed: ${result.error}`);
+    const { getAcpTraceSnapshot } = await import('@electron/services/acp-trace');
+    const trace = getAcpTraceSnapshot().entries.filter((entry) => entry.event === 'session/prompt:failed').at(-1);
+    expect(trace?.details).toMatchObject({ error: result.error });
+    expect(JSON.stringify(trace)).not.toContain('PRIVATE_');
+  });
+
+  it('keeps reconnect timeout metadata and detail on a failed session load', async () => {
+    const { service, connection } = await createService();
+    connection.loadSession.mockRejectedValueOnce(Object.assign(new Error('ACP did not reconnect to Gateway within 60s'), {
+      code: -32000, data: { code: 'ACP_GATEWAY_RECONNECT_TIMEOUT', details: 'authentication unavailable' },
+    }));
+    await expect(service.loadSession({ sessionKey: 'agent:pi:s1', workspaceRoot: '/repo', cwd: '/repo' })).resolves.toEqual({
+      success: false, error: 'ACP did not reconnect to Gateway within 60s (-32000): authentication unavailable',
+      errorCode: 'ACP_GATEWAY_RECONNECT_TIMEOUT',
+    });
+  });
+
   it.each([
     '/status',
     '  /compact',

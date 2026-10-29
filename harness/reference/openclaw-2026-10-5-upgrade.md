@@ -852,6 +852,13 @@ running conversation while a reconnect catalog is incomplete. See
 [ACP architecture](acp-chat.md) and [live verification](openclaw-patch-live-verification.md).
 Offline transcript-tail replay and compaction lifecycle delivery are separate repairs.
 
+The completed-turn follow-up also gates new ACP operations on the ACP-owned
+authenticated connection and subscription recovery, with a shared 60-second
+prompt admission deadline. Main's gatewayReady alone is insufficient. Concrete
+sanitized protocol reasons and codes reach the UI; accepted-run recovery budgets
+remain unchanged. See [ACP connection readiness](acp-chat.md#gateway-reconnect-admission-and-errors)
+and the [before/after live controls](openclaw-patch-live-verification.md#gateway-重启后新一轮消息的入场与错误透出2026-10-30).
+
 
 ### Offline completion replay repair (2026-10-28)
 
