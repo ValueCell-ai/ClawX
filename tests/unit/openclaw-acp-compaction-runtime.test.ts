@@ -120,7 +120,9 @@ const lifecycle = (id: string, phase: string, extra: Json = {}) => ({
   completed: phase === 'end', aborted: false, timestamp: new Date().toISOString(), ...extra,
 });
 
-describe('installed ACP compaction lifecycle', () => {
+// Each case cold-starts the installed OpenClaw ACP process, which can exceed
+// Vitest's 5s default on loaded CI runners.
+describe('installed ACP compaction lifecycle', { timeout: 30_000 }, () => {
   it('records pending manual and automatic operations once and replays them after a fresh process', async () => {
     const f = await fixture();
     const prompt = f.acp.call('session/prompt', { sessionId: f.sessionId, prompt: [{ type: 'text', text: '/compact' }] });

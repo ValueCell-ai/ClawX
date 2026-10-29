@@ -47,7 +47,10 @@ async function openUsableChat(app: ElectronApplication) {
   // E2E deliberately skips Gateway auto-start. These shortcut tests edit a
   // draft, so install the standard running-Gateway/workspace boundary before
   // reloading instead of depending on platform-specific realpath behavior.
+  // ACP loads would otherwise wait 15s on the absent Gateway and keep the
+  // composer disabled.
   await installIpcMocks(app, {
+    emptyAcpSessions: ['agent:main:main'],
     gatewayStatus: {
       state: 'running',
       gatewayReady: true,
