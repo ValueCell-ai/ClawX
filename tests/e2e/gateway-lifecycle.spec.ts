@@ -358,4 +358,86 @@ test.describe('ClawX gateway lifecycle resilience', () => {
     await expect(page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`)).toContainText('history after ready', { timeout: 10_000 });
     await expect(page.getByTestId('sidebar-gateway-restarting')).toHaveAttribute('data-state', 'hidden');
   });
+
+  test('chat sidebar keeps conversations while a restarted gateway is still admitting agent databases', async ({ electronApp, page }) => {
+    const agentsRoute = {
+      [stableStringify(['/api/agents', 'GET'])]: {
+        ok: true,
+        data: {
+          status: 200,
+          ok: true,
+          json: { success: true, agents: [{ id: 'main', name: 'main', workspace: DEFAULT_WORKSPACE, mainSessionKey: MAIN_SESSION_KEY }] },
+        },
+      },
+      [stableStringify(['chat', 'loadAcpSession', { sessionKey: MAIN_SESSION_KEY, workspaceRoot: DEFAULT_WORKSPACE, cwd: DEFAULT_WORKSPACE }])]: {
+        success: true,
+        generation: 1,
+      },
+    };
+    const statusRoute = (status: Record<string, unknown>) => ({
+      [stableStringify(['/api/gateway/status', 'GET'])]: {
+        ok: true,
+        data: { status: 200, ok: true, json: status },
+      },
+    });
+    const readyBeforeRestart = { state: 'running', port: 18789, pid: 100, connectedAt: 1, gatewayReady: true };
+    const admittingAfterRestart = { state: 'running', port: 18789, pid: 200, connectedAt: 2, gatewayReady: false };
+    const readyAfterAdmission = { ...admittingAfterRestart, gatewayReady: true };
+
+    await installIpcMocks(electronApp, {
+      gatewayStatus: readyBeforeRestart,
+      hostApi: { ...statusRoute(readyBeforeRestart), ...agentsRoute },
+      gatewayRpc: {
+        [stableStringify(['sessions.list', SESSIONS_LIST_PAYLOAD])]: {
+          success: true,
+          result: {
+            sessions: [{ key: MAIN_SESSION_KEY, displayName: 'conversation before restart', updatedAt: 1000 }],
+          },
+        },
+      },
+    });
+
+    await completeSetup(page);
+    const sessionRow = page.getByTestId(`sidebar-session-${MAIN_SESSION_KEY}`);
+    await expect(sessionRow).toContainText('conversation before restart', { timeout: 10_000 });
+
+    // Restarted Gateway is connected but its agent database is still being admitted:
+    // Main keeps gatewayReady=false, and sessions.list would answer with an empty catalog.
+    await installIpcMocks(electronApp, {
+      gatewayStatus: admittingAfterRestart,
+      hostApi: { ...statusRoute(admittingAfterRestart), ...agentsRoute },
+      gatewayRpc: {
+        [stableStringify(['sessions.list', SESSIONS_LIST_PAYLOAD])]: {
+          success: true,
+          result: { sessions: [] },
+        },
+      },
+    });
+    await electronApp.evaluate(({ BrowserWindow }, status) => {
+      BrowserWindow.getAllWindows()[0]?.webContents.send('gateway:status-changed', status);
+    }, admittingAfterRestart);
+
+    await expect(page.getByTestId('sidebar-gateway-restarting')).toHaveAttribute('data-state', 'visible');
+    await page.waitForTimeout(1_500);
+    await expect(sessionRow).toContainText('conversation before restart');
+
+    await installIpcMocks(electronApp, {
+      gatewayStatus: readyAfterAdmission,
+      hostApi: { ...statusRoute(readyAfterAdmission), ...agentsRoute },
+      gatewayRpc: {
+        [stableStringify(['sessions.list', SESSIONS_LIST_PAYLOAD])]: {
+          success: true,
+          result: {
+            sessions: [{ key: MAIN_SESSION_KEY, displayName: 'conversation after admission', updatedAt: 1001 }],
+          },
+        },
+      },
+    });
+    await electronApp.evaluate(({ BrowserWindow }, status) => {
+      BrowserWindow.getAllWindows()[0]?.webContents.send('gateway:status-changed', status);
+    }, readyAfterAdmission);
+
+    await expect(sessionRow).toContainText('conversation after admission', { timeout: 10_000 });
+    await expect(page.getByTestId('sidebar-gateway-restarting')).toHaveAttribute('data-state', 'hidden');
+  });
 });

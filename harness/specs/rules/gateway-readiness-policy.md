@@ -7,6 +7,7 @@ appliesTo:
 requiredTests:
   - tests/unit/gateway-events.test.ts
   - tests/unit/gateway-ready-fallback.test.ts
+  - tests/unit/gateway-agent-database-admission.test.ts
   - tests/unit/gateway-ws-client.test.ts
   - tests/unit/gateway-startup-orchestrator.test.ts
 ---
@@ -16,6 +17,17 @@ Gateway status handling must preserve `gatewayReady` semantics.
 `gatewayReady: false` means runtime-dependent refreshes should wait. `gatewayReady: true` means the Gateway reported readiness. `gatewayReady: undefined` is backward-compatible with older Gateway versions and must be treated as ready when the Gateway state is running.
 
 Gateway manager fallback may mark readiness true after its timeout, but it must not emit duplicate ready transitions.
+
+Every path that marks `gatewayReady: true` (the ready event and the fallback probe) must first
+wait for OpenClaw agent-database admission. After an unclean Gateway exit, such as a Windows
+forced kill or a crash, OpenClaw admits agent databases in the background. Until admission
+completes, `sessions.list` succeeds with an empty catalog, and no `sessions.changed` event
+follows. Renderer session hydration keys off `gatewayReady`, so publishing readiness early
+replaces the sidebar with that empty list. Main reads the pending agents from the loopback
+`/readyz` probe (`agent-database-inspection-pending`), polls until none remain, and caps the
+wait at `GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS`. An unreachable probe or an older Gateway
+without `agentDatabases` must not block readiness. The renderer must not call `/readyz`
+itself. See `harness/reference/openclaw-2026-10-5-upgrade.md` (agent database admission).
 
 Managed cold-start readiness must use a finite deadline. When a ClawX-owned process
 remains alive without serving the readiness challenge, Main must reclaim that stale

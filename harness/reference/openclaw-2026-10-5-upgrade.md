@@ -376,6 +376,37 @@ is kept. `getOpenClawEmbeddedForkSpec` preloads the same shim into the ACP
 fork with `--import`, so ACP's children inherit both the hidden-window default
 and the preload. The option has no effect on macOS and Linux.
 
+## Agent database admission after an unclean Gateway exit
+
+OpenClaw leases each agent database while the Gateway runs. A graceful stop
+(SIGTERM) writes a clean-close receipt, and the next start admits the database
+synchronously (`session-readiness targetCount=1`). A forced stop leaves a stale
+lease (`owner-pid-dead`). ClawX forces the stop on Windows
+(`taskkill /F /T`), and so does any crash. In that case the next start defers
+inspection to the background (`targetCount=0`) and logs
+`agent database recovered after background inspection and preparation` when
+it is done. This took about 5-6 s on the reported Windows machine and in a
+local repro.
+
+During that window:
+
+- `sessions.list` succeeds with `count=0` and carries no diagnostic flag.
+- `sessions.messages.subscribe` fails with `UNAVAILABLE`
+  (`has not completed startup inspection and preparation`).
+- No `sessions.changed` event follows admission, so a client that hydrated in
+  the window keeps the empty catalog.
+- The loopback `/readyz` probe stays `ready: true` (pending databases are
+  allowed). For direct-local requests it lists
+  `agentDatabases: [{ agentId, code: "agent-database-inspection-pending" }]`.
+  The entry disappears at the moment `sessions.list` returns the full catalog.
+
+The data is intact: once admission completes, the same Gateway returns every
+session. Main therefore publishes `gatewayReady: true` only after `/readyz`
+lists no pending agent database (`electron/gateway/agent-database-admission.ts`),
+with a bounded wait (`GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS`). An
+unreachable probe or an older Gateway without `agentDatabases` does not block
+readiness.
+
 ## 2026.10 config shape written by ClawX
 
 | 2026.7.1 key | 2026.10.5 shape |

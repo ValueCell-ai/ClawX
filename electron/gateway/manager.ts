@@ -90,7 +90,10 @@ import {
   GATEWAY_HEARTBEAT_TIMEOUT_MS,
   GATEWAY_CONTROL_PROBE_TIMEOUT_MS,
   GATEWAY_READY_FALLBACK_PROBE_DELAYS_MS,
+  GATEWAY_AGENT_DATABASE_ADMISSION_POLL_MS,
+  GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS,
 } from './recovery-budget';
+import { probePendingAgentDatabaseAdmissions } from './agent-database-admission';
 
 export interface GatewayStatus {
   state: GatewayLifecycleState;
@@ -220,6 +223,12 @@ export class GatewayManager extends EventEmitter {
   private isAutoReconnectStart = false;
   private gatewayReadyFallbackTimer: NodeJS.Timeout | null = null;
   private gatewayReadyFallbackAttempt = 0;
+  private gatewayReadyAdmissionGate: {
+    connectedAt: number | undefined;
+    startedAt: number;
+    pendingLogged: boolean;
+  } | null = null;
+  private gatewayReadyAdmissionTimer: NodeJS.Timeout | null = null;
   private readonly capabilityMonitor = new GatewayCapabilityMonitor();
   private diagnostics: GatewayDiagnosticsSnapshot = {
     consecutiveHeartbeatMisses: 0,
@@ -270,7 +279,7 @@ export class GatewayManager extends EventEmitter {
       this.resetGatewayReadyFallback();
       if (this.status.state === 'running' && !this.status.gatewayReady) {
         logger.info('Gateway subsystems ready (event received)');
-        this.setStatus({ gatewayReady: true });
+        this.markGatewayReady();
       }
     });
     this.on('gateway:health', (payload) => {
@@ -747,6 +756,75 @@ export class GatewayManager extends EventEmitter {
     this.cancelDeadlineRecovery();
     this.restartController.clearDebounceTimer();
     this.resetGatewayReadyFallback();
+    this.clearGatewayReadyAdmission();
+  }
+
+  private clearGatewayReadyAdmission(): void {
+    if (this.gatewayReadyAdmissionTimer) {
+      clearTimeout(this.gatewayReadyAdmissionTimer);
+      this.gatewayReadyAdmissionTimer = null;
+    }
+    this.gatewayReadyAdmissionGate = null;
+  }
+
+  /**
+   * Publishes gatewayReady only once OpenClaw has admitted every agent
+   * database. Renderer session hydration keys off gatewayReady, and a
+   * pending admission answers sessions.list with an empty catalog.
+   */
+  private markGatewayReady(): void {
+    if (this.status.state !== 'running' || this.status.gatewayReady) {
+      return;
+    }
+    if (this.gatewayReadyAdmissionGate?.connectedAt === this.status.connectedAt) {
+      return;
+    }
+    this.clearGatewayReadyAdmission();
+    this.gatewayReadyAdmissionGate = {
+      connectedAt: this.status.connectedAt,
+      startedAt: Date.now(),
+      pendingLogged: false,
+    };
+    void this.checkGatewayReadyAdmission();
+  }
+
+  private async checkGatewayReadyAdmission(): Promise<void> {
+    const gate = this.gatewayReadyAdmissionGate;
+    const isCurrent = () => this.gatewayReadyAdmissionGate === gate
+      && this.status.state === 'running'
+      && !this.status.gatewayReady
+      && this.status.connectedAt === gate?.connectedAt;
+    if (!gate || !isCurrent()) {
+      return;
+    }
+
+    const pendingAgents = await probePendingAgentDatabaseAdmissions(this.status.port);
+    if (!isCurrent()) {
+      return;
+    }
+
+    const waitedMs = Date.now() - gate.startedAt;
+    if (pendingAgents && pendingAgents.length > 0) {
+      if (waitedMs < GATEWAY_AGENT_DATABASE_ADMISSION_WAIT_MS) {
+        if (!gate.pendingLogged) {
+          gate.pendingLogged = true;
+          logger.info(`Gateway ready deferred: agent database admission pending (agents=${pendingAgents.join(',')})`);
+        }
+        this.gatewayReadyAdmissionTimer = setTimeout(() => {
+          this.gatewayReadyAdmissionTimer = null;
+          void this.checkGatewayReadyAdmission();
+        }, GATEWAY_AGENT_DATABASE_ADMISSION_POLL_MS);
+        return;
+      }
+      logger.warn(
+        `Gateway agent database admission still pending after ${waitedMs}ms (agents=${pendingAgents.join(',')}); marking ready anyway`,
+      );
+    } else if (gate.pendingLogged) {
+      logger.info(`Gateway agent database admission completed after ${waitedMs}ms`);
+    }
+
+    this.clearGatewayReadyAdmission();
+    this.setStatus({ gatewayReady: true });
   }
 
   private clearGatewayReadyFallbackTimer(): void {
@@ -798,7 +876,7 @@ export class GatewayManager extends EventEmitter {
       if (this.status.state === 'running' && !this.status.gatewayReady) {
         logger.info('Gateway ready fallback RPC router probe succeeded');
         this.resetGatewayReadyFallback();
-        this.setStatus({ gatewayReady: true });
+        this.markGatewayReady();
       }
     } catch (error) {
       this.capabilityMonitor.recordCoreProbe({
